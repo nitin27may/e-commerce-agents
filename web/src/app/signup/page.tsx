@@ -41,7 +41,7 @@ export default function SignupPage() {
 
     setIsLoading(true);
     try {
-      await signup(email, password, name);
+      await signup(name, email, password);
       router.push("/chat");
     } catch (err) {
       const message =
