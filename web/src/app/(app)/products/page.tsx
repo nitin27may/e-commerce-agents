@@ -24,6 +24,7 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import { Search, Star, Package, Loader2 } from "lucide-react";
+import { productImageUrl } from "@/lib/images";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -109,6 +110,7 @@ function getCategoryColor(category: string): string {
 function ProductCardSkeleton() {
   return (
     <Card className="flex flex-col animate-pulse">
+      <div className="aspect-[4/3] w-full animate-pulse rounded-t-xl bg-slate-200" />
       <CardHeader>
         <div className="flex items-start justify-between">
           <div className="space-y-2 flex-1">
@@ -335,9 +337,22 @@ export default function ProductsPage() {
               return (
                 <Card
                   key={product.id}
-                  className="flex cursor-pointer flex-col transition-shadow hover:shadow-md"
+                  className="group flex cursor-pointer flex-col transition-shadow hover:shadow-md"
                   onClick={() => router.push(`/products/${product.id}`)}
                 >
+                  <div className="relative aspect-[4/3] w-full overflow-hidden rounded-t-xl bg-slate-100">
+                    <img
+                      src={productImageUrl(product.id)}
+                      alt={product.name}
+                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                      loading="lazy"
+                    />
+                    {product.original_price && product.original_price > product.price && (
+                      <span className="absolute top-2 left-2 rounded-md bg-red-500 px-2 py-0.5 text-xs font-semibold text-white">
+                        {Math.round((1 - product.price / product.original_price) * 100)}% OFF
+                      </span>
+                    )}
+                  </div>
                   <CardHeader>
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">

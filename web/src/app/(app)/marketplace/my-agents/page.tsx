@@ -39,9 +39,10 @@ const AGENT_ICONS: Record<string, React.ElementType> = {
   customer_support: Headphones,
 };
 
-function getAgentIcon(agentId: string): React.ElementType {
+function getAgentIcon(agentName: string | undefined): React.ElementType {
+  if (!agentName) return Store;
   for (const [key, Icon] of Object.entries(AGENT_ICONS)) {
-    if (agentId.includes(key)) return Icon;
+    if (agentName.includes(key)) return Icon;
   }
   return Store;
 }
@@ -51,7 +52,7 @@ function getAgentIcon(agentId: string): React.ElementType {
 // ---------------------------------------------------------------------------
 
 interface MyAgent {
-  agent_id: string;
+  agent_name: string;
   display_name: string;
   role: string;
   granted_at: string;
@@ -172,9 +173,9 @@ export default function MyAgentsPage() {
               </TableHeader>
               <TableBody>
                 {agents.map((agent) => {
-                  const IconComponent = getAgentIcon(agent.agent_id);
+                  const IconComponent = getAgentIcon(agent.agent_name);
                   return (
-                    <TableRow key={agent.agent_id}>
+                    <TableRow key={agent.agent_name}>
                       <TableCell>
                         <div className="flex items-center gap-3">
                           <div className="flex size-8 items-center justify-center rounded-md bg-teal-50">

@@ -32,6 +32,7 @@ import {
   MapPin,
   Loader2,
 } from "lucide-react";
+import { productImageUrl } from "@/lib/images";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -63,12 +64,13 @@ interface ShippingInfo {
 }
 
 interface ReturnInfo {
+  id: string;
   reason: string;
-  return_status: string;
+  status: string;
   refund_method: string;
-  refund_amount: number;
-  return_date?: string;
-  refund_date?: string;
+  refund_amount: number | null;
+  created_at?: string;
+  resolved_at?: string | null;
 }
 
 interface OrderDetail {
@@ -82,7 +84,7 @@ interface OrderDetail {
   tracking?: string;
   discount: number;
   total: number;
-  return_info?: ReturnInfo;
+  return?: ReturnInfo | null;
   [key: string]: unknown;
 }
 
@@ -378,6 +380,7 @@ export default function OrderDetailPage() {
                   <Table>
                     <TableHeader>
                       <TableRow className="hover:bg-transparent">
+                        <TableHead className="w-12"></TableHead>
                         <TableHead>Product</TableHead>
                         <TableHead>Category</TableHead>
                         <TableHead className="text-right">Qty</TableHead>
@@ -398,6 +401,14 @@ export default function OrderDetailPage() {
                             router.push(`/products/${item.product_id}`)
                           }
                         >
+                          <TableCell>
+                            <img
+                              src={productImageUrl(item.product_id, 48, 48)}
+                              alt={item.name}
+                              className="size-10 rounded-md object-cover bg-slate-100"
+                              loading="lazy"
+                            />
+                          </TableCell>
                           <TableCell className="font-medium text-slate-800">
                             {item.name}
                           </TableCell>
@@ -500,7 +511,7 @@ export default function OrderDetailPage() {
               </Card>
 
               {/* Return Info */}
-              {order.return_info && (
+              {order["return"] && (
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
@@ -513,7 +524,7 @@ export default function OrderDetailPage() {
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-slate-500">Reason</span>
                         <span className="text-slate-700">
-                          {order.return_info.reason}
+                          {(order["return"] as ReturnInfo).reason}
                         </span>
                       </div>
                       <div className="flex items-center justify-between text-sm">
@@ -522,40 +533,42 @@ export default function OrderDetailPage() {
                           variant="outline"
                           className="border-orange-200 bg-orange-50 text-orange-700"
                         >
-                          {order.return_info.return_status}
+                          {(order["return"] as ReturnInfo).status}
                         </Badge>
                       </div>
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-slate-500">Refund Method</span>
                         <span className="text-slate-700">
-                          {order.return_info.refund_method}
+                          {(order["return"] as ReturnInfo).refund_method}
                         </span>
                       </div>
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-slate-500">Refund Amount</span>
-                        <span className="font-medium text-emerald-600">
-                          {formatPrice(order.return_info.refund_amount)}
-                        </span>
-                      </div>
+                      {(order["return"] as ReturnInfo).refund_amount != null && (
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-slate-500">Refund Amount</span>
+                          <span className="font-medium text-emerald-600">
+                            {formatPrice((order["return"] as ReturnInfo).refund_amount!)}
+                          </span>
+                        </div>
+                      )}
                     </div>
-                    {(order.return_info.return_date ||
-                      order.return_info.refund_date) && (
+                    {((order["return"] as ReturnInfo).created_at ||
+                      (order["return"] as ReturnInfo).resolved_at) && (
                       <>
                         <Separator />
                         <div className="space-y-1.5">
-                          {order.return_info.return_date && (
+                          {(order["return"] as ReturnInfo).created_at && (
                             <div className="flex items-center justify-between text-xs text-slate-500">
                               <span>Return initiated</span>
                               <span>
-                                {formatDate(order.return_info.return_date)}
+                                {formatDate((order["return"] as ReturnInfo).created_at!)}
                               </span>
                             </div>
                           )}
-                          {order.return_info.refund_date && (
+                          {(order["return"] as ReturnInfo).resolved_at && (
                             <div className="flex items-center justify-between text-xs text-slate-500">
                               <span>Refund processed</span>
                               <span>
-                                {formatDate(order.return_info.refund_date)}
+                                {formatDate((order["return"] as ReturnInfo).resolved_at!)}
                               </span>
                             </div>
                           )}

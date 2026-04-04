@@ -32,6 +32,7 @@ import {
   Loader2,
   MapPin,
 } from "lucide-react";
+import { productImageUrl } from "@/lib/images";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -39,7 +40,7 @@ import {
 
 interface Review {
   id: string;
-  reviewer_name: string;
+  reviewer: string;
   rating: number;
   title: string;
   body: string;
@@ -48,7 +49,8 @@ interface Review {
 }
 
 interface WarehouseStock {
-  warehouse: string;
+  name: string;
+  region: string;
   quantity: number;
 }
 
@@ -62,11 +64,12 @@ interface ProductDetail {
   rating: number;
   review_count: number;
   description: string;
-  specs: Record<string, string>;
-  stock: number;
-  warehouse_stock?: WarehouseStock[];
-  rating_distribution: Record<string, number>;
-  reviews: Review[];
+  specs?: Record<string, string>;
+  in_stock: boolean;
+  total_stock: number;
+  warehouses?: WarehouseStock[];
+  rating_distribution?: Record<string, number>;
+  reviews?: Review[];
 }
 
 // ---------------------------------------------------------------------------
@@ -290,8 +293,23 @@ export default function ProductDetailPage() {
                 <span className="text-slate-700">{product.name}</span>
               </nav>
 
-              {/* Product header info */}
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              {/* Product hero: image + info */}
+              <div className="grid gap-8 lg:grid-cols-2">
+                {/* Image */}
+                <div className="relative aspect-square overflow-hidden rounded-2xl bg-slate-100">
+                  <img
+                    src={productImageUrl(product.id, 800, 800)}
+                    alt={product.name}
+                    className="h-full w-full object-cover"
+                  />
+                  {product.original_price && product.original_price > product.price && (
+                    <span className="absolute top-4 left-4 rounded-lg bg-red-500 px-3 py-1 text-sm font-bold text-white shadow-lg">
+                      Save {Math.round((1 - product.price / product.original_price) * 100)}%
+                    </span>
+                  )}
+                </div>
+
+                {/* Product Info */}
                 <div>
                   <div className="flex items-center gap-3">
                     <h1 className="text-2xl font-bold text-slate-900">
@@ -311,10 +329,8 @@ export default function ProductDetailPage() {
                       count={product.review_count}
                     />
                   </div>
-                </div>
 
-                <div className="flex flex-col items-end gap-2">
-                  <div className="flex items-baseline gap-2">
+                  <div className="mt-6 flex items-baseline gap-2">
                     <span className="text-3xl font-bold text-slate-900">
                       {formatPrice(product.price)}
                     </span>
@@ -325,10 +341,32 @@ export default function ProductDetailPage() {
                     )}
                   </div>
                   {onSale && (
-                    <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">
+                    <Badge className="mt-2 bg-emerald-100 text-emerald-700 border-emerald-200">
                       Save {savePct}%
                     </Badge>
                   )}
+
+                  <p className="mt-6 leading-relaxed text-slate-600">
+                    {product.description}
+                  </p>
+
+                  <div className="mt-6">
+                    {product.in_stock ? (
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="size-5 text-emerald-500" />
+                        <span className="font-medium text-emerald-700">
+                          In Stock ({product.total_stock} units)
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <XCircle className="size-5 text-red-500" />
+                        <span className="font-medium text-red-700">
+                          Out of Stock
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </>
@@ -413,7 +451,7 @@ export default function ProductDetailPage() {
                             <div>
                               <div className="flex items-center gap-2">
                                 <span className="text-sm font-medium text-slate-800">
-                                  {review.reviewer_name}
+                                  {review.reviewer}
                                 </span>
                                 {review.verified && (
                                   <Badge
@@ -455,11 +493,11 @@ export default function ProductDetailPage() {
                   <CardTitle>Availability</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {product.stock > 0 ? (
+                  {product.in_stock ? (
                     <div className="flex items-center gap-2">
                       <CheckCircle className="size-5 text-emerald-500" />
                       <span className="font-medium text-emerald-700">
-                        In Stock ({product.stock} units)
+                        In Stock ({product.total_stock} units)
                       </span>
                     </div>
                   ) : (
@@ -472,21 +510,21 @@ export default function ProductDetailPage() {
                   )}
 
                   {/* Warehouse breakdown */}
-                  {product.warehouse_stock &&
-                    product.warehouse_stock.length > 0 && (
+                  {product.warehouses &&
+                    product.warehouses.length > 0 && (
                       <div className="space-y-2">
                         <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">
                           Warehouse Breakdown
                         </p>
-                        {product.warehouse_stock.map((ws) => (
+                        {product.warehouses.map((ws) => (
                           <div
-                            key={ws.warehouse}
+                            key={ws.name}
                             className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2"
                           >
                             <div className="flex items-center gap-2">
                               <MapPin className="size-3.5 text-slate-400" />
                               <span className="text-sm text-slate-600">
-                                {ws.warehouse}
+                                {ws.name}
                               </span>
                             </div>
                             <span

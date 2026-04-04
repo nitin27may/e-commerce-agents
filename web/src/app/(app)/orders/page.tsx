@@ -30,12 +30,12 @@ import {
 
 interface Order {
   id: string;
-  order_date: string;
+  date: string;
   status: string;
   item_count: number;
   total: number;
   carrier?: string;
-  tracking_number?: string;
+  tracking?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -296,7 +296,7 @@ export default function OrdersPage() {
                         </div>
 
                         <div className="flex flex-wrap items-center gap-4 text-sm text-slate-500">
-                          <span>{formatDate(order.order_date)}</span>
+                          <span>{formatDate(order.date)}</span>
                           <span>
                             {order.item_count} item
                             {order.item_count !== 1 ? "s" : ""}
@@ -305,9 +305,9 @@ export default function OrdersPage() {
                             <span className="flex items-center gap-1">
                               <Truck className="size-3.5" />
                               {order.carrier}
-                              {order.tracking_number && (
+                              {order.tracking && (
                                 <span className="font-mono text-xs">
-                                  {order.tracking_number}
+                                  {order.tracking}
                                 </span>
                               )}
                             </span>

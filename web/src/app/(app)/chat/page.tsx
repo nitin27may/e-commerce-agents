@@ -8,8 +8,10 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from "react";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
+import { RichMessage } from "@/components/chat/rich-message";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
@@ -187,6 +189,9 @@ export default function ChatPage() {
   const [isResponding, setIsResponding] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
 
+  const searchParams = useSearchParams();
+  const pendingQueryRef = useRef<string | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -195,6 +200,29 @@ export default function ChatPage() {
     if (!isAuthenticated) return;
     loadConversations();
   }, [isAuthenticated]);
+
+  // ---- Auto-send ?q= query param on mount ----
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const q = searchParams.get("q");
+    if (q) {
+      pendingQueryRef.current = q;
+    }
+  }, [isAuthenticated, searchParams]);
+
+  // Fire the pending query once conversations have loaded (initial mount)
+  useEffect(() => {
+    if (pendingQueryRef.current && !isResponding) {
+      const q = pendingQueryRef.current;
+      pendingQueryRef.current = null;
+      setInput(q);
+      // Use a microtask so setInput has committed before we send
+      queueMicrotask(() => {
+        sendMessage(q);
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversations]);
 
   async function loadConversations() {
     try {
@@ -260,12 +288,11 @@ export default function ChatPage() {
     [activeConversationId],
   );
 
-  // ---- Send message ----
-  async function handleSend(e?: FormEvent) {
-    e?.preventDefault();
+  // ---- Core send logic (shared by form submit and ?q= auto-send) ----
+  async function sendMessage(text: string) {
+    if (!text.trim() || isResponding) return;
 
-    const trimmed = input.trim();
-    if (!trimmed || isResponding) return;
+    const trimmed = text.trim();
 
     // Optimistic user message
     const userMessage: Message = {
@@ -306,6 +333,12 @@ export default function ChatPage() {
       setIsResponding(false);
       textareaRef.current?.focus();
     }
+  }
+
+  // ---- Send message (form handler) ----
+  async function handleSend(e?: FormEvent) {
+    e?.preventDefault();
+    await sendMessage(input);
   }
 
   // ---- Keyboard: Enter sends, Shift+Enter adds newline ----
@@ -427,7 +460,11 @@ export default function ChatPage() {
                         : "bg-muted text-foreground"
                     }`}
                   >
-                    <MessageContent content={msg.content} />
+                    {msg.role === "assistant" ? (
+                      <RichMessage content={msg.content} />
+                    ) : (
+                      <MessageContent content={msg.content} />
+                    )}
 
                     {msg.agents_involved && msg.agents_involved.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1">

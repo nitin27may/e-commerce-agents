@@ -8,6 +8,7 @@ import {
   Package,
   Store,
   Shield,
+  BarChart3,
   LogOut,
   User,
   Menu,
@@ -31,6 +32,7 @@ interface NavItem {
   icon: React.ElementType;
   badge?: string;
   adminOnly?: boolean;
+  sellerOnly?: boolean;
 }
 
 const navItems: NavItem[] = [
@@ -38,6 +40,7 @@ const navItems: NavItem[] = [
   { label: "Products", href: "/products", icon: ShoppingBag },
   { label: "Orders", href: "/orders", icon: Package },
   { label: "Marketplace", href: "/marketplace", icon: Store },
+  { label: "Seller", href: "/seller", icon: BarChart3, sellerOnly: true },
   { label: "Admin", href: "/admin", icon: Shield, adminOnly: true },
 ];
 
@@ -78,8 +81,14 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const { user, logout, isAdmin } = useAuth();
   const pathname = usePathname();
 
+  const isSeller = user?.role === "seller" || isAdmin;
+
   const visibleItems = navItems.filter(
-    (item) => !item.adminOnly || isAdmin
+    (item) => {
+      if (item.adminOnly) return isAdmin;
+      if (item.sellerOnly) return isSeller;
+      return true;
+    }
   );
 
   const initials = user?.name
