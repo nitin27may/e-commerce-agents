@@ -1,30 +1,26 @@
-"""Product Discovery agent — A2A host entry point."""
-
-from contextlib import asynccontextmanager
-
-from agent_framework_a2a import A2AAgentHost
+"""Product Discovery agent — entry point."""
 
 from product_discovery.agent import create_product_discovery_agent
+from shared.agent_host import create_agent_app
 from shared.auth import AgentAuthMiddleware
 from shared.db import close_db_pool, init_db_pool
-from shared.telemetry import instrument_starlette, setup_telemetry
+from shared.telemetry import instrument_fastapi, setup_telemetry
 
 agent = create_product_discovery_agent()
 
 
-@asynccontextmanager
-async def lifespan(app):
+async def on_startup(app):
     setup_telemetry("agentbazaar.product-discovery")
-    instrument_starlette(app)
+    instrument_fastapi(app)
     await init_db_pool()
-    yield
-    await close_db_pool()
 
 
-host = A2AAgentHost(
+app = create_agent_app(
     agent=agent,
+    agent_name="product-discovery",
     port=8081,
-    lifespan=lifespan,
+    description="Natural language product search with personalized recommendations.",
+    on_startup=on_startup,
+    on_shutdown=close_db_pool,
 )
-app = host.app
 app.add_middleware(AgentAuthMiddleware, agent_name="product-discovery")

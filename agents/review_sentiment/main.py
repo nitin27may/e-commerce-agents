@@ -1,30 +1,26 @@
-"""Review & Sentiment agent — A2A host entry point."""
-
-from contextlib import asynccontextmanager
-
-from agent_framework_a2a import A2AAgentHost
+"""Review & Sentiment agent — entry point."""
 
 from review_sentiment.agent import create_review_sentiment_agent
+from shared.agent_host import create_agent_app
 from shared.auth import AgentAuthMiddleware
 from shared.db import close_db_pool, init_db_pool
-from shared.telemetry import instrument_starlette, setup_telemetry
+from shared.telemetry import instrument_fastapi, setup_telemetry
 
 agent = create_review_sentiment_agent()
 
 
-@asynccontextmanager
-async def lifespan(app):
+async def on_startup(app):
     setup_telemetry("agentbazaar.review-sentiment")
-    instrument_starlette(app)
+    instrument_fastapi(app)
     await init_db_pool()
-    yield
-    await close_db_pool()
 
 
-host = A2AAgentHost(
+app = create_agent_app(
     agent=agent,
+    agent_name="review-sentiment",
     port=8084,
-    lifespan=lifespan,
+    description="Review analysis, sentiment breakdown, fake review detection.",
+    on_startup=on_startup,
+    on_shutdown=close_db_pool,
 )
-app = host.app
 app.add_middleware(AgentAuthMiddleware, agent_name="review-sentiment")

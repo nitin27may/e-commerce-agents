@@ -1,30 +1,26 @@
-"""Pricing & Promotions agent — A2A host entry point."""
-
-from contextlib import asynccontextmanager
-
-from agent_framework_a2a import A2AAgentHost
+"""Pricing & Promotions agent — entry point."""
 
 from pricing_promotions.agent import create_pricing_promotions_agent
+from shared.agent_host import create_agent_app
 from shared.auth import AgentAuthMiddleware
 from shared.db import close_db_pool, init_db_pool
-from shared.telemetry import instrument_starlette, setup_telemetry
+from shared.telemetry import instrument_fastapi, setup_telemetry
 
 agent = create_pricing_promotions_agent()
 
 
-@asynccontextmanager
-async def lifespan(app):
+async def on_startup(app):
     setup_telemetry("agentbazaar.pricing-promotions")
-    instrument_starlette(app)
+    instrument_fastapi(app)
     await init_db_pool()
-    yield
-    await close_db_pool()
 
 
-host = A2AAgentHost(
+app = create_agent_app(
     agent=agent,
+    agent_name="pricing-promotions",
     port=8083,
-    lifespan=lifespan,
+    description="Coupon validation, cart optimization, loyalty discounts, and deal discovery.",
+    on_startup=on_startup,
+    on_shutdown=close_db_pool,
 )
-app = host.app
 app.add_middleware(AgentAuthMiddleware, agent_name="pricing-promotions")

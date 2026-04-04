@@ -23,6 +23,10 @@ WORKDIR /app
 COPY pyproject.toml .
 RUN uv sync --no-dev --no-install-project
 
+# Patch MAF v1.0 empty __init__.py (ships without re-exports)
+COPY patch_maf.py .
+RUN uv run --no-project python patch_maf.py
+
 # Copy shared library (all agents need this)
 COPY shared/ shared/
 
