@@ -284,7 +284,7 @@ export default function OrdersPage() {
                       <div className="flex-1 space-y-2">
                         <div className="flex flex-wrap items-center gap-3">
                           <span className="font-mono text-sm font-medium text-slate-800">
-                            #{order.id.length > 8 ? order.id.slice(0, 8) + "..." : order.id}
+                            #{order.id}
                           </span>
                           <Badge
                             variant="outline"

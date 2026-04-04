@@ -274,8 +274,28 @@ async def chat(body: ChatRequest, user: dict[str, Any] = Depends(require_auth)) 
     )
     history = [{"role": r["role"], "content": r["content"]} for r in history_rows]
 
+    # Fetch user context (profile + recent orders) for the agent
+    user_row = await pool.fetchrow(
+        "SELECT name, role, loyalty_tier, total_spend FROM users WHERE email = $1", user_email,
+    )
+    user_context_lines = []
+    if user_row:
+        user_context_lines.append(f"Logged-in user: {user_row['name']} ({user_email})")
+        user_context_lines.append(f"Role: {user_row['role']}, Loyalty: {user_row['loyalty_tier']}, Total spend: ${user_row['total_spend']:.2f}")
+    recent_orders = await pool.fetch(
+        """SELECT o.id, o.status, o.total, o.created_at
+           FROM orders o JOIN users u ON o.user_id = u.id
+           WHERE u.email = $1 ORDER BY o.created_at DESC LIMIT 5""",
+        user_email,
+    )
+    if recent_orders:
+        user_context_lines.append(f"Recent orders ({len(recent_orders)}):")
+        for o in recent_orders:
+            user_context_lines.append(f"  - Order {o['id']} | {o['status']} | ${o['total']:.2f} | {o['created_at'].strftime('%Y-%m-%d')}")
+    user_context = "\n".join(user_context_lines) if user_context_lines else None
+
     # Call the orchestrator agent using direct chat completions API
-    from orchestrator.agent import create_orchestrator_agent, ORCHESTRATOR_TOOLS
+    from orchestrator.agent import ORCHESTRATOR_TOOLS
     from orchestrator.prompts import SYSTEM_PROMPT
     from shared.agent_host import _run_agent_with_tools
 
@@ -287,6 +307,8 @@ async def chat(body: ChatRequest, user: dict[str, Any] = Depends(require_auth)) 
                 system_prompt=SYSTEM_PROMPT,
                 tools=ORCHESTRATOR_TOOLS,
                 user_message=body.message,
+                history=history,
+                user_context=user_context,
             )
         except Exception:
             logger.exception("chat.agent_error user=%s conversation=%s", user_email, conversation_id)

@@ -24,8 +24,18 @@ async def _run_agent_with_tools(
     system_prompt: str,
     tools: list[Callable],
     user_message: str,
+    history: list[dict] | None = None,
+    user_context: str | None = None,
 ) -> str:
-    """Run a tool-calling loop using the OpenAI chat completions API directly."""
+    """Run a tool-calling loop using the OpenAI chat completions API directly.
+
+    Args:
+        system_prompt: The agent's system instructions.
+        tools: List of MAF FunctionTool objects.
+        user_message: The current user message.
+        history: Previous conversation messages [{"role": ..., "content": ...}].
+        user_context: Extra context about the current user (injected into system prompt).
+    """
     import openai
 
     if settings.LLM_PROVIDER == "azure":
@@ -67,10 +77,21 @@ async def _run_agent_with_tools(
         # Map name to the FunctionTool's invoke method or the tool itself
         tool_map[name] = t
 
-    messages: list[dict] = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_message},
-    ]
+    # Build system prompt with user context
+    full_system = system_prompt
+    if user_context:
+        full_system += f"\n\n## Current User Context\n{user_context}"
+
+    messages: list[dict] = [{"role": "system", "content": full_system}]
+
+    # Add conversation history (excluding system messages)
+    if history:
+        for h in history:
+            if h.get("role") in ("user", "assistant"):
+                messages.append({"role": h["role"], "content": h["content"]})
+
+    # Add current user message
+    messages.append({"role": "user", "content": user_message})
 
     # Tool-calling loop (max 5 iterations)
     for _ in range(5):
@@ -161,7 +182,13 @@ def create_agent_app(
             elif hasattr(agent, "tools"):
                 tools = list(agent.tools) if agent.tools else []
 
-            response_text = await _run_agent_with_tools(system_prompt, tools, message)
+            # Build user context from request headers (set by orchestrator A2A call)
+            user_email = request.headers.get("x-user-email", "")
+            user_context = f"Current user email: {user_email}" if user_email else None
+
+            response_text = await _run_agent_with_tools(
+                system_prompt, tools, message, user_context=user_context,
+            )
             return {"response": response_text}
 
         except Exception:

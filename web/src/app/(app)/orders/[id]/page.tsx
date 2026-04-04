@@ -332,7 +332,7 @@ export default function OrderDetailPage() {
               <div>
                 <div className="flex flex-wrap items-center gap-3">
                   <h1 className="text-2xl font-bold text-slate-900">
-                    Order #{order.id.length > 12 ? order.id.slice(0, 12) + "..." : order.id}
+                    Order #{order.id}
                   </h1>
                   <Badge variant="outline" className={statusCfg.color}>
                     {statusCfg.label}
