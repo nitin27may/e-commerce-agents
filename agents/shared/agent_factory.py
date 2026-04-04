@@ -59,16 +59,25 @@ def create_chat_client() -> OpenAIChatClient:
         )
     elif provider == "azure":
         _validate_azure()
+        # MAF v1.0 uses the Responses API which requires api_version >= 2025-03-01-preview
+        api_version = settings.AZURE_OPENAI_API_VERSION
+        if api_version < "2025-03-01":
+            api_version = "2025-03-01-preview"
+            logger.warning(
+                "Upgraded AZURE_OPENAI_API_VERSION to %s (MAF requires Responses API)",
+                api_version,
+            )
         logger.info(
-            "Creating Azure OpenAI chat client (deployment=%s, endpoint=%s)",
+            "Creating Azure OpenAI chat client (deployment=%s, endpoint=%s, api_version=%s)",
             settings.AZURE_OPENAI_DEPLOYMENT,
             settings.AZURE_OPENAI_ENDPOINT,
+            api_version,
         )
         return OpenAIChatClient(
             model=settings.AZURE_OPENAI_DEPLOYMENT,
             azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
             api_key=settings.AZURE_OPENAI_KEY,
-            api_version=settings.AZURE_OPENAI_API_VERSION,
+            api_version=api_version,
         )
     else:
         raise ValueError(

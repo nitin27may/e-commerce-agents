@@ -20,6 +20,7 @@ from orchestrator.routes import router
 from shared.db import close_db_pool, init_db_pool
 from shared.telemetry import instrument_fastapi, setup_telemetry
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 

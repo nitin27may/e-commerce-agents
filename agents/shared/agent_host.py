@@ -1,7 +1,7 @@
 """Lightweight A2A-compatible host for specialist agents.
 
-Provides a FastAPI app with /health, /message:send, and /.well-known/agent-card.json
-endpoints. Replaces A2AAgentHost which has import issues in the MAF v1.0 beta.
+Uses the OpenAI chat completions API directly (not MAF's Responses API)
+for compatibility with all Azure OpenAI API versions.
 """
 
 from __future__ import annotations
@@ -14,7 +14,100 @@ from typing import Any, Callable
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from shared.config import settings
+
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+async def _run_agent_with_tools(
+    system_prompt: str,
+    tools: list[Callable],
+    user_message: str,
+) -> str:
+    """Run a tool-calling loop using the OpenAI chat completions API directly."""
+    import openai
+
+    if settings.LLM_PROVIDER == "azure":
+        client = openai.AsyncAzureOpenAI(
+            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            api_key=settings.AZURE_OPENAI_KEY,
+            api_version=settings.AZURE_OPENAI_API_VERSION,
+        )
+        model = settings.AZURE_OPENAI_DEPLOYMENT
+    else:
+        client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        model = settings.LLM_MODEL
+
+    # Build tool definitions from MAF FunctionTool objects
+    tool_defs = []
+    tool_map = {}
+    for t in tools:
+        # MAF @tool decorator returns FunctionTool with .name, .description, .to_json_schema_spec()
+        name = getattr(t, "name", None) or getattr(t, "__name__", str(t))
+        desc = getattr(t, "description", None) or getattr(t, "__doc__", "") or ""
+
+        # Get the full JSON schema from MAF FunctionTool
+        try:
+            schema = t.to_json_schema_spec()
+            # Schema is {"type": "function", "function": {"name": ..., "parameters": ...}}
+            func_schema = schema.get("function", schema)
+            params = func_schema.get("parameters", {"type": "object", "properties": {}})
+        except Exception:
+            params = {"type": "object", "properties": {}}
+
+        tool_defs.append({
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": desc[:1024],
+                "parameters": params,
+            },
+        })
+        # Map name to the FunctionTool's invoke method or the tool itself
+        tool_map[name] = t
+
+    messages: list[dict] = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_message},
+    ]
+
+    # Tool-calling loop (max 5 iterations)
+    for _ in range(5):
+        kwargs: dict[str, Any] = {"model": model, "messages": messages}
+        if tool_defs:
+            kwargs["tools"] = tool_defs
+
+        response = await client.chat.completions.create(**kwargs)
+        choice = response.choices[0]
+
+        if choice.finish_reason == "tool_calls" and choice.message.tool_calls:
+            messages.append(choice.message.model_dump())
+            for tc in choice.message.tool_calls:
+                fn_name = tc.function.name
+                fn_args = json.loads(tc.function.arguments) if tc.function.arguments else {}
+                tool_fn = tool_map.get(fn_name)
+                if tool_fn:
+                    try:
+                        # FunctionTool has .func for the raw async function
+                        raw_fn = getattr(tool_fn, "func", tool_fn)
+                        if callable(raw_fn):
+                            result = await raw_fn(**fn_args)
+                        else:
+                            result = await tool_fn.invoke(**fn_args)
+                        result_str = json.dumps(result, default=str) if not isinstance(result, str) else result
+                    except Exception as e:
+                        logger.exception("tool.error name=%s", fn_name)
+                        result_str = json.dumps({"error": str(e)})
+                else:
+                    result_str = json.dumps({"error": f"Unknown tool: {fn_name}"})
+                messages.append({"role": "tool", "tool_call_id": tc.id, "content": result_str})
+            continue
+
+        # Final response (no tool calls)
+        return choice.message.content or ""
+
+    return "I processed your request but reached the maximum number of steps."
 
 
 def create_agent_app(
@@ -26,16 +119,7 @@ def create_agent_app(
     on_startup: Callable | None = None,
     on_shutdown: Callable | None = None,
 ) -> FastAPI:
-    """Create a FastAPI app that hosts a MAF Agent with A2A-compatible endpoints.
-
-    Args:
-        agent: The MAF Agent instance
-        agent_name: Agent identifier (e.g., "product-discovery")
-        port: Port number for metadata
-        description: Agent description for the agent card
-        on_startup: Async callable for startup (init DB, telemetry, etc.)
-        on_shutdown: Async callable for shutdown (close DB, etc.)
-    """
+    """Create a FastAPI app that hosts an agent with A2A-compatible endpoints."""
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -45,7 +129,6 @@ def create_agent_app(
         yield
         if on_shutdown:
             await on_shutdown()
-        logger.info("%s.stopped", agent_name)
 
     app = FastAPI(title=agent_name, lifespan=lifespan)
 
@@ -60,39 +143,31 @@ def create_agent_app(
             "description": description,
             "url": f"http://{agent_name}:{port}",
             "version": "1.0",
-            "capabilities": {"streaming": False, "pushNotifications": False},
         }
 
     @app.post("/message:send")
     async def message_send(request: Request):
-        """A2A-compatible message endpoint."""
         try:
             body = await request.json()
             message = body.get("message", "")
             if not message:
                 return JSONResponse({"error": "No message provided"}, status_code=400)
 
-            # Build messages list for the agent
-            messages = [{"role": "user", "content": message}]
+            # Get system prompt and tools from the MAF agent
+            system_prompt = getattr(agent, "_instructions", "") or getattr(agent, "instructions", "") or ""
+            tools = []
+            if hasattr(agent, "_tools"):
+                tools = list(agent._tools) if agent._tools else []
+            elif hasattr(agent, "tools"):
+                tools = list(agent.tools) if agent.tools else []
 
-            # Run the agent
-            result = await agent.run(messages=messages)
-
-            # Extract response text
-            response_text = ""
-            if hasattr(result, "value") and result.value:
-                response_text = str(result.value)
-            elif hasattr(result, "text") and result.text:
-                response_text = str(result.text)
-            else:
-                response_text = str(result)
-
+            response_text = await _run_agent_with_tools(system_prompt, tools, message)
             return {"response": response_text}
 
         except Exception:
             logger.exception("%s.message_error", agent_name)
             return JSONResponse(
-                {"error": "Agent processing failed", "response": "I encountered an error processing your request."},
+                {"error": "Agent processing failed"},
                 status_code=500,
             )
 

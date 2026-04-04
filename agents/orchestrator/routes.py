@@ -274,30 +274,23 @@ async def chat(body: ChatRequest, user: dict[str, Any] = Depends(require_auth)) 
     )
     history = [{"role": r["role"], "content": r["content"]} for r in history_rows]
 
-    # Call the orchestrator agent
-    agent = create_orchestrator_agent()
+    # Call the orchestrator agent using direct chat completions API
+    from orchestrator.agent import create_orchestrator_agent, ORCHESTRATOR_TOOLS
+    from orchestrator.prompts import SYSTEM_PROMPT
+    from shared.agent_host import _run_agent_with_tools
+
     agents_involved: list[str] = ["orchestrator"]
 
-    result = None
     with UsageTimer() as timer:
         try:
-            result = await agent.run(messages=history)
-            response_text = result.value if hasattr(result, "value") else str(result)
-            if not response_text:
-                response_text = result.text if hasattr(result, "text") else str(result)
+            response_text = await _run_agent_with_tools(
+                system_prompt=SYSTEM_PROMPT,
+                tools=ORCHESTRATOR_TOOLS,
+                user_message=body.message,
+            )
         except Exception:
             logger.exception("chat.agent_error user=%s conversation=%s", user_email, conversation_id)
             response_text = "I apologize, but I encountered an issue processing your request. Please try again."
-
-    # Extract agents involved from the response metadata if available
-    if result and hasattr(result, "steps"):
-        for step in getattr(result, "steps", []):
-            if hasattr(step, "tool_name") and step.tool_name == "call_specialist_agent":
-                tool_input = getattr(step, "tool_input", {})
-                if isinstance(tool_input, dict):
-                    agent_name = tool_input.get("agent_name", "")
-                    if agent_name and agent_name not in agents_involved:
-                        agents_involved.append(agent_name)
 
     # Save assistant message
     await pool.execute(

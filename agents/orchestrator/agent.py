@@ -71,6 +71,10 @@ async def call_specialist_agent(
             return f"Failed to reach the {agent_name} agent. Please try again later."
 
 
+# Export tools list for direct use by routes.py (bypassing MAF Responses API)
+ORCHESTRATOR_TOOLS = [call_specialist_agent]
+
+
 def create_orchestrator_agent() -> Agent:
     """Create the Customer Support orchestrator ChatAgent."""
     return Agent(
@@ -78,6 +82,6 @@ def create_orchestrator_agent() -> Agent:
         name="orchestrator",
         description="Customer support orchestrator that routes requests to specialist agents.",
         instructions=SYSTEM_PROMPT,
-        tools=[call_specialist_agent],
+        tools=ORCHESTRATOR_TOOLS,
         context_providers=[ECommerceContextProvider()],
     )
