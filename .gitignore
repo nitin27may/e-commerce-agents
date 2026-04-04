@@ -6,11 +6,18 @@ __pycache__/
 dist/
 .venv/
 .uv/
+uv.lock
 
 # Node
 node_modules/
 .next/
 out/
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
 
 # Environment
 .env
@@ -30,5 +37,5 @@ docker/postgres/data/
 .DS_Store
 Thumbs.db
 
-# Telemetry
+# Logs
 *.log
