@@ -90,7 +90,7 @@ cp .env.example .env
 ./scripts/dev.sh
 
 # Open:
-#   Frontend:        httIp://localhost:3000
+#   Frontend:        http://localhost:3000 
 #   Aspire Dashboard: http://localhost:18888
 ```
 

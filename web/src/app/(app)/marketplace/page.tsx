@@ -73,7 +73,8 @@ function getCategoryColor(category: string): string {
   return "bg-slate-50 text-slate-700 border-slate-200";
 }
 
-function getAgentIcon(agentId: string): React.ElementType {
+function getAgentIcon(agentId: string | undefined | null): React.ElementType {
+  if (!agentId) return Store;
   for (const [key, Icon] of Object.entries(AGENT_ICONS)) {
     if (agentId.includes(key)) return Icon;
   }
@@ -85,14 +86,15 @@ function getAgentIcon(agentId: string): React.ElementType {
 // ---------------------------------------------------------------------------
 
 interface AgentCatalogEntry {
-  agent_id: string;
+  id: string;
+  name: string;
   display_name: string;
   description: string;
   category: string;
   capabilities: string[];
   requires_approval: boolean;
   status: string;
-  user_has_access: boolean;
+  user_has_access?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -149,7 +151,7 @@ export default function MarketplacePage() {
     setRequestResult(null);
     try {
       await api.requestAccess(
-        selectedAgent.agent_id,
+        selectedAgent.name,
         "user",
         useCase.trim()
       );
@@ -249,12 +251,12 @@ export default function MarketplacePage() {
         {!loading && !error && filteredAgents.length > 0 && (
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {filteredAgents.map((agent) => {
-              const IconComponent = getAgentIcon(agent.agent_id);
+              const IconComponent = getAgentIcon(agent.name);
               const catColor = getCategoryColor(agent.category);
 
               return (
                 <Card
-                  key={agent.agent_id}
+                  key={agent.name}
                   className="flex flex-col transition-shadow hover:shadow-md"
                 >
                   <CardHeader>

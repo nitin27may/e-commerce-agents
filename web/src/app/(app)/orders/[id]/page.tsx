@@ -46,7 +46,7 @@ interface StatusHistoryEntry {
 
 interface OrderItem {
   product_id: string;
-  product_name: string;
+  name: string;
   category: string;
   quantity: number;
   unit_price: number;
@@ -73,15 +73,17 @@ interface ReturnInfo {
 
 interface OrderDetail {
   id: string;
-  order_date: string;
+  date: string;
   status: string;
   items: OrderItem[];
   status_history: StatusHistoryEntry[];
-  shipping: ShippingInfo;
-  subtotal: number;
+  shipping_address: ShippingInfo;
+  carrier?: string;
+  tracking?: string;
   discount: number;
   total: number;
   return_info?: ReturnInfo;
+  [key: string]: unknown;
 }
 
 // ---------------------------------------------------------------------------
@@ -339,7 +341,7 @@ export default function OrderDetailPage() {
                   </Badge>
                 </div>
                 <p className="mt-1 text-sm text-slate-500">
-                  Placed on {formatDate(order.order_date)}
+                  Placed on {formatDate(order.date)}
                 </p>
               </div>
             </div>
@@ -397,7 +399,7 @@ export default function OrderDetailPage() {
                           }
                         >
                           <TableCell className="font-medium text-slate-800">
-                            {item.product_name}
+                            {item.name}
                           </TableCell>
                           <TableCell>
                             <Badge
@@ -427,7 +429,7 @@ export default function OrderDetailPage() {
             {/* Right column: shipping, summary, return */}
             <div className="space-y-6">
               {/* Shipping Info */}
-              {order.shipping && (
+              {order.shipping_address && (
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
@@ -437,25 +439,25 @@ export default function OrderDetailPage() {
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <div className="text-sm text-slate-600">
-                      <p>{order.shipping.street}</p>
+                      <p>{order.shipping_address.street}</p>
                       <p>
-                        {order.shipping.city}, {order.shipping.state}{" "}
-                        {order.shipping.zip}
+                        {order.shipping_address.city}, {order.shipping_address.state}{" "}
+                        {order.shipping_address.zip}
                       </p>
                     </div>
-                    {order.shipping.carrier && (
+                    {order.carrier && (
                       <>
                         <Separator />
                         <div className="space-y-1.5">
                           <div className="flex items-center gap-2 text-sm">
                             <Truck className="size-4 text-slate-400" />
                             <span className="font-medium text-slate-700">
-                              {order.shipping.carrier}
+                              {order.carrier}
                             </span>
                           </div>
-                          {order.shipping.tracking_number && (
+                          {order.tracking && (
                             <p className="font-mono text-xs text-slate-500 pl-6">
-                              {order.shipping.tracking_number}
+                              {order.tracking}
                             </p>
                           )}
                         </div>
@@ -474,7 +476,7 @@ export default function OrderDetailPage() {
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-slate-500">Subtotal</span>
                     <span className="text-slate-700">
-                      {formatPrice(order.subtotal)}
+                      {formatPrice(order.items?.reduce((sum: number, i: OrderItem) => sum + i.subtotal, 0) ?? 0)}
                     </span>
                   </div>
                   {order.discount > 0 && (

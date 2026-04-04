@@ -64,13 +64,15 @@ interface UsageStats {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function formatNumber(n: number): string {
+function formatNumber(n: number | undefined | null): string {
+  if (n == null) return "0";
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return n.toLocaleString();
 }
 
-function formatDuration(ms: number): string {
+function formatDuration(ms: number | undefined | null): string {
+  if (ms == null) return "0ms";
   if (ms < 1000) return `${Math.round(ms)}ms`;
   return `${(ms / 1000).toFixed(2)}s`;
 }
@@ -108,8 +110,31 @@ export default function AdminDashboardPage() {
     try {
       setLoading(true);
       setError(null);
-      const data = await api.getUsageStats();
-      setStats(data);
+      const raw = await api.getUsageStats();
+      // Map API response to frontend UsageStats shape
+      const overall = raw.overall || {};
+      setStats({
+        total_invocations: overall.total_requests ?? 0,
+        total_tokens_in: overall.total_tokens_in ?? 0,
+        total_tokens_out: overall.total_tokens_out ?? 0,
+        active_agents: raw.by_agent?.length ?? 0,
+        pending_requests: overall.pending_requests ?? 0,
+        avg_duration_ms: overall.avg_duration_ms ?? 0,
+        per_agent: (raw.by_agent || []).map((a: Record<string, unknown>) => ({
+          agent_id: a.agent_name,
+          agent_name: a.agent_name as string,
+          invocations: (a.request_count ?? 0) as number,
+          tokens_in: (a.tokens_in ?? 0) as number,
+          tokens_out: (a.tokens_out ?? 0) as number,
+          avg_duration_ms: (a.avg_duration_ms ?? 0) as number,
+        })),
+        daily_trend: (raw.daily || []).map((d: Record<string, unknown>) => ({
+          date: d.date as string,
+          invocations: (d.request_count ?? 0) as number,
+          tokens_in: (d.tokens_in ?? 0) as number,
+          tokens_out: (d.tokens_out ?? 0) as number,
+        })),
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load stats");
     } finally {
