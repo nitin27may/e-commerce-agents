@@ -186,7 +186,11 @@ docker compose --profile seed --profile agents --profile frontend down --remove-
 # ── Build ─────────────────────────────────────────────────────
 
 step "Building images"
-docker compose --profile seed --profile agents build
+if [ "$CLEAN" = true ]; then
+    docker compose --profile seed --profile agents build --no-cache
+else
+    docker compose --profile seed --profile agents build
+fi
 
 # ── Start Infrastructure ──────────────────────────────────────
 
