@@ -1,6 +1,6 @@
 """Order Management agent definition."""
 
-from agent_framework import ChatAgent
+from agent_framework import Agent
 
 from order_management.prompts import SYSTEM_PROMPT
 from order_management.tools import (
@@ -21,10 +21,10 @@ from shared.tools.return_tools import (
 from shared.tools.user_tools import get_user_profile
 
 
-def create_order_management_agent() -> ChatAgent:
+def create_order_management_agent() -> Agent:
     """Create the Order Management ChatAgent with all tools."""
-    return ChatAgent(
-        chat_client=create_chat_client(),
+    return Agent(
+        client=create_chat_client(),
         name="order-management",
         description="Order tracking, cancellation, modification, returns, and refund processing.",
         instructions=SYSTEM_PROMPT,

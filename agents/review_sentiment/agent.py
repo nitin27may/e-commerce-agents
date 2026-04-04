@@ -1,6 +1,6 @@
 """Review & Sentiment agent definition."""
 
-from agent_framework import ChatAgent
+from agent_framework import Agent
 
 from review_sentiment.prompts import SYSTEM_PROMPT
 from review_sentiment.tools import (
@@ -18,10 +18,10 @@ from shared.context_providers import ECommerceContextProvider
 from shared.tools.user_tools import get_purchase_history, get_user_profile
 
 
-def create_review_sentiment_agent() -> ChatAgent:
+def create_review_sentiment_agent() -> Agent:
     """Create the Review & Sentiment ChatAgent with all tools."""
-    return ChatAgent(
-        chat_client=create_chat_client(),
+    return Agent(
+        client=create_chat_client(),
         name="review-sentiment",
         description="Product review analysis with sentiment breakdown, topic insights, trend tracking, fake review detection, and cross-product comparisons.",
         instructions=SYSTEM_PROMPT,

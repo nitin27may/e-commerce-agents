@@ -1,6 +1,6 @@
 """Inventory & Fulfillment agent definition."""
 
-from agent_framework import ChatAgent
+from agent_framework import Agent
 
 from inventory_fulfillment.prompts import SYSTEM_PROMPT
 from inventory_fulfillment.tools import (
@@ -17,10 +17,10 @@ from shared.tools.inventory_tools import check_stock, get_warehouse_availability
 from shared.tools.user_tools import get_user_profile
 
 
-def create_inventory_fulfillment_agent() -> ChatAgent:
+def create_inventory_fulfillment_agent() -> Agent:
     """Create the Inventory & Fulfillment ChatAgent with all tools."""
-    return ChatAgent(
-        chat_client=create_chat_client(),
+    return Agent(
+        client=create_chat_client(),
         name="inventory-fulfillment",
         description="Real-time inventory tracking, shipping estimation, carrier comparison, fulfillment planning, and backorder management.",
         instructions=SYSTEM_PROMPT,

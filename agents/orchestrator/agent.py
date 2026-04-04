@@ -7,7 +7,7 @@ import logging
 from typing import Annotated
 
 import httpx
-from agent_framework import ChatAgent, tool
+from agent_framework import Agent, tool
 from pydantic import Field
 
 from orchestrator.prompts import SYSTEM_PROMPT
@@ -71,10 +71,10 @@ async def call_specialist_agent(
             return f"Failed to reach the {agent_name} agent. Please try again later."
 
 
-def create_orchestrator_agent() -> ChatAgent:
+def create_orchestrator_agent() -> Agent:
     """Create the Customer Support orchestrator ChatAgent."""
-    return ChatAgent(
-        chat_client=create_chat_client(),
+    return Agent(
+        client=create_chat_client(),
         name="orchestrator",
         description="Customer support orchestrator that routes requests to specialist agents.",
         instructions=SYSTEM_PROMPT,

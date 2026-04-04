@@ -1,6 +1,6 @@
 """Pricing & Promotions agent definition."""
 
-from agent_framework import ChatAgent
+from agent_framework import Agent
 
 from pricing_promotions.prompts import SYSTEM_PROMPT
 from pricing_promotions.tools import (
@@ -20,10 +20,10 @@ from shared.tools.pricing_tools import get_price_history
 from shared.tools.user_tools import get_purchase_history, get_user_profile
 
 
-def create_pricing_promotions_agent() -> ChatAgent:
+def create_pricing_promotions_agent() -> Agent:
     """Create the Pricing & Promotions ChatAgent with all tools."""
-    return ChatAgent(
-        chat_client=create_chat_client(),
+    return Agent(
+        client=create_chat_client(),
         name="pricing-promotions",
         description="Coupon validation, cart optimization, loyalty discounts, bundle deals, and active promotions discovery.",
         instructions=SYSTEM_PROMPT,

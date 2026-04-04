@@ -1,6 +1,6 @@
 """Product Discovery agent definition."""
 
-from agent_framework import ChatAgent
+from agent_framework import Agent
 
 from product_discovery.prompts import SYSTEM_PROMPT
 from product_discovery.tools import (
@@ -18,10 +18,10 @@ from shared.tools.pricing_tools import get_price_history
 from shared.tools.user_tools import get_purchase_history, get_user_profile
 
 
-def create_product_discovery_agent() -> ChatAgent:
+def create_product_discovery_agent() -> Agent:
     """Create the Product Discovery ChatAgent with all tools."""
-    return ChatAgent(
-        chat_client=create_chat_client(),
+    return Agent(
+        client=create_chat_client(),
         name="product-discovery",
         description="Natural language product search with personalized recommendations, semantic search, and price tracking.",
         instructions=SYSTEM_PROMPT,
