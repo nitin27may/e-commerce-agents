@@ -1,0 +1,183 @@
+# ============================================================
+# AgentBazaar — Docker Compose
+# Usage: ./scripts/dev.sh  (or docker compose up --build)
+# ============================================================
+
+services:
+  # ── Infrastructure ─────────────────────────────────────────
+
+  db:
+    image: pgvector/pgvector:pg16
+    ports: ["5432:5432"]
+    environment:
+      POSTGRES_DB: agentbazaar
+      POSTGRES_USER: agentbazaar
+      POSTGRES_PASSWORD: agentbazaar
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentbazaar"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── Aspire Dashboard (OpenTelemetry) ────────────────────────
+
+  aspire:
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:latest
+    ports:
+      - "18888:18888"   # Dashboard UI
+      - "18890:18889"   # OTLP receiver
+    environment:
+      DASHBOARD__FRONTEND__AUTHMODE: Unsecured
+
+  # ── Seed Database (runs once, exits) ────────────────────────
+
+  seeder:
+    build:
+      context: ./agents
+      args:
+        AGENT_NAME: orchestrator
+    working_dir: /app
+    command: uv run python -m scripts.seed
+    volumes:
+      - ./scripts:/app/scripts:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://agentbazaar:agentbazaar@db:5432/agentbazaar
+    restart: "no"
+    profiles: ["seed"]
+
+  # ── Orchestrator (Customer Support Agent) ───────────────────
+
+  orchestrator:
+    build:
+      context: ./agents
+      args:
+        AGENT_NAME: orchestrator
+        AGENT_PORT: 8080
+    ports: ["8080:8080"]
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      aspire: { condition: service_started }
+    environment: &agent-env
+      DATABASE_URL: postgresql://agentbazaar:agentbazaar@db:5432/agentbazaar
+      REDIS_URL: redis://redis:6379
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4.1}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_KEY: ${AZURE_OPENAI_KEY:-}
+      AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2024-12-01-preview}
+      AZURE_EMBEDDING_DEPLOYMENT: ${AZURE_EMBEDDING_DEPLOYMENT:-}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production-use-random-256-bit-key}
+      AGENT_SHARED_SECRET: ${AGENT_SHARED_SECRET:-agent-internal-shared-secret}
+      OTEL_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://aspire:18889
+      OTEL_SERVICE_NAME: agentbazaar.orchestrator
+      AGENT_REGISTRY: >-
+        {
+          "product-discovery": "http://product-discovery:8081",
+          "order-management": "http://order-management:8082",
+          "pricing-promotions": "http://pricing-promotions:8083",
+          "review-sentiment": "http://review-sentiment:8084",
+          "inventory-fulfillment": "http://inventory-fulfillment:8085"
+        }
+    profiles: ["agents"]
+
+  # ── Specialist Agents ──────────────────────────────────────
+
+  product-discovery:
+    build:
+      context: ./agents
+      args: { AGENT_NAME: product_discovery, AGENT_PORT: 8081 }
+    ports: ["8081:8081"]
+    depends_on:
+      db: { condition: service_healthy }
+      aspire: { condition: service_started }
+    environment:
+      <<: *agent-env
+      OTEL_SERVICE_NAME: agentbazaar.product-discovery
+    profiles: ["agents"]
+
+  order-management:
+    build:
+      context: ./agents
+      args: { AGENT_NAME: order_management, AGENT_PORT: 8082 }
+    ports: ["8082:8082"]
+    depends_on:
+      db: { condition: service_healthy }
+      aspire: { condition: service_started }
+    environment:
+      <<: *agent-env
+      OTEL_SERVICE_NAME: agentbazaar.order-management
+    profiles: ["agents"]
+
+  pricing-promotions:
+    build:
+      context: ./agents
+      args: { AGENT_NAME: pricing_promotions, AGENT_PORT: 8083 }
+    ports: ["8083:8083"]
+    depends_on:
+      db: { condition: service_healthy }
+      aspire: { condition: service_started }
+    environment:
+      <<: *agent-env
+      OTEL_SERVICE_NAME: agentbazaar.pricing-promotions
+    profiles: ["agents"]
+
+  review-sentiment:
+    build:
+      context: ./agents
+      args: { AGENT_NAME: review_sentiment, AGENT_PORT: 8084 }
+    ports: ["8084:8084"]
+    depends_on:
+      db: { condition: service_healthy }
+      aspire: { condition: service_started }
+    environment:
+      <<: *agent-env
+      OTEL_SERVICE_NAME: agentbazaar.review-sentiment
+    profiles: ["agents"]
+
+  inventory-fulfillment:
+    build:
+      context: ./agents
+      args: { AGENT_NAME: inventory_fulfillment, AGENT_PORT: 8085 }
+    ports: ["8085:8085"]
+    depends_on:
+      db: { condition: service_healthy }
+      aspire: { condition: service_started }
+    environment:
+      <<: *agent-env
+      OTEL_SERVICE_NAME: agentbazaar.inventory-fulfillment
+    profiles: ["agents"]
+
+  # ── Frontend ────────────────────────────────────────────────
+
+  frontend:
+    build:
+      context: ./web
+    ports: ["3000:3000"]
+    depends_on:
+      - orchestrator
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8080
+    profiles: ["frontend"]
+
+volumes:
+  pgdata:

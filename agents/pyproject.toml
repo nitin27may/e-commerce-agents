@@ -1,0 +1,64 @@
+[project]
+name = "agentbazaar"
+version = "0.1.0"
+description = "E-Commerce Multi-Agent Platform built with Microsoft Agent Framework"
+requires-python = ">=3.12"
+dependencies = [
+    # Microsoft Agent Framework (accept pre-release/beta versions)
+    "agent-framework>=1.0.0b0",
+    "agent-framework-a2a>=1.0.0b0",
+    "agent-framework-openai>=1.0.0b0",
+
+    # Web
+    "fastapi>=0.115",
+    "uvicorn>=0.34",
+    "starlette>=0.45",
+    "sse-starlette>=2.2",
+
+    # Database
+    "asyncpg>=0.30",
+    "pgvector>=0.3",
+
+    # Config & Validation
+    "pydantic>=2.10",
+    "pydantic-settings>=2.7",
+
+    # Auth
+    "PyJWT>=2.9",
+    "bcrypt>=4.2",
+
+    # HTTP & LLM
+    "httpx>=0.28",
+    "openai>=1.60",
+    "tiktoken>=0.8",
+
+    # Telemetry (from day 1)
+    "opentelemetry-sdk>=1.28",
+    "opentelemetry-exporter-otlp-proto-http>=1.28",
+    "opentelemetry-instrumentation-fastapi>=0.49b0",
+    "opentelemetry-instrumentation-starlette>=0.49b0",
+    "opentelemetry-instrumentation-httpx>=0.49b0",
+    "opentelemetry-instrumentation-asyncpg>=0.49b0",
+    "opentelemetry-instrumentation-logging>=0.49b0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
