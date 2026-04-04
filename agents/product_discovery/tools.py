@@ -8,8 +8,7 @@ from typing import Annotated
 from agent_framework import tool
 from pydantic import Field
 
-from shared.agent_factory import create_embedding_client
-from shared.config import settings
+from shared.agent_factory import create_embedding_client, get_embedding_model
 from shared.db import get_pool
 
 
@@ -160,8 +159,7 @@ async def semantic_search(
 
     # Generate embedding via OpenAI / Azure OpenAI
     client = create_embedding_client()
-    model = settings.AZURE_EMBEDDING_DEPLOYMENT if settings.LLM_PROVIDER == "azure" and settings.AZURE_EMBEDDING_DEPLOYMENT else settings.EMBEDDING_MODEL
-    response = await client.embeddings.create(model=model, input=[query])
+    response = await client.embeddings.create(model=get_embedding_model(), input=[query])
     embedding = response.data[0].embedding
 
     async with pool.acquire() as conn:

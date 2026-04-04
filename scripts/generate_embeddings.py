@@ -32,12 +32,24 @@ BATCH_SIZE = 20  # OpenAI supports up to 2048 inputs per request
 def create_client() -> openai.AsyncOpenAI:
     """Create the embedding client based on LLM_PROVIDER."""
     if LLM_PROVIDER == "azure":
+        endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT", "")
+        key = os.environ.get("AZURE_OPENAI_KEY", "")
+        if not endpoint or not key:
+            raise ValueError(
+                "Azure OpenAI requires AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_KEY. "
+                "Set them in .env or switch LLM_PROVIDER=openai."
+            )
         return openai.AsyncAzureOpenAI(
-            azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
-            api_key=os.environ["AZURE_OPENAI_KEY"],
+            azure_endpoint=endpoint,
+            api_key=key,
             api_version=os.environ.get("AZURE_OPENAI_API_VERSION", "2024-12-01-preview"),
         )
-    return openai.AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+    api_key = os.environ.get("OPENAI_API_KEY", "")
+    if not api_key:
+        raise ValueError(
+            "OpenAI requires OPENAI_API_KEY. Set it in .env or switch LLM_PROVIDER=azure."
+        )
+    return openai.AsyncOpenAI(api_key=api_key)
 
 
 def build_embedding_text(product: dict) -> str:
@@ -75,7 +87,9 @@ async def main() -> None:
         logger.info("Cleared existing embeddings")
 
         client = create_client()
-        model = os.environ.get("AZURE_EMBEDDING_DEPLOYMENT", EMBEDDING_MODEL) if LLM_PROVIDER == "azure" else EMBEDDING_MODEL
+        azure_deployment = os.environ.get("AZURE_EMBEDDING_DEPLOYMENT", "")
+        model = azure_deployment if LLM_PROVIDER == "azure" and azure_deployment else EMBEDDING_MODEL
+        logger.info("Using LLM_PROVIDER=%s, embedding model=%s", LLM_PROVIDER, model)
 
         # Process in batches
         for i in range(0, len(products), BATCH_SIZE):

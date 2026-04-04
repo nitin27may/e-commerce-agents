@@ -2,14 +2,47 @@
 
 Creates the appropriate ChatClient based on the LLM_PROVIDER env var.
 Also provides an embedding client for product semantic search.
+
+Supported providers:
+  - "openai"  → requires OPENAI_API_KEY
+  - "azure"   → requires AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_KEY, AZURE_OPENAI_DEPLOYMENT
 """
 
 from __future__ import annotations
+
+import logging
 
 import openai
 from agent_framework.openai import OpenAIChatClient
 
 from shared.config import settings
+
+logger = logging.getLogger(__name__)
+
+
+def _validate_openai() -> None:
+    """Validate OpenAI configuration."""
+    if not settings.OPENAI_API_KEY:
+        raise ValueError(
+            "OPENAI_API_KEY is required when LLM_PROVIDER=openai. "
+            "Set it in .env or switch to LLM_PROVIDER=azure."
+        )
+
+
+def _validate_azure() -> None:
+    """Validate Azure OpenAI configuration."""
+    missing = []
+    if not settings.AZURE_OPENAI_ENDPOINT:
+        missing.append("AZURE_OPENAI_ENDPOINT")
+    if not settings.AZURE_OPENAI_KEY:
+        missing.append("AZURE_OPENAI_KEY")
+    if not settings.AZURE_OPENAI_DEPLOYMENT:
+        missing.append("AZURE_OPENAI_DEPLOYMENT")
+    if missing:
+        raise ValueError(
+            f"Azure OpenAI requires {', '.join(missing)}. "
+            "Set them in .env or switch to LLM_PROVIDER=openai."
+        )
 
 
 def create_chat_client() -> OpenAIChatClient:
@@ -17,15 +50,26 @@ def create_chat_client() -> OpenAIChatClient:
 
     Returns:
         OpenAIChatClient configured for either OpenAI or Azure OpenAI.
+
+    Raises:
+        ValueError: If provider is unknown or required credentials are missing.
     """
     provider = settings.LLM_PROVIDER
 
     if provider == "openai":
+        _validate_openai()
+        logger.info("Creating OpenAI chat client (model=%s)", settings.LLM_MODEL)
         return OpenAIChatClient(
             model_id=settings.LLM_MODEL,
             api_key=settings.OPENAI_API_KEY,
         )
     elif provider == "azure":
+        _validate_azure()
+        logger.info(
+            "Creating Azure OpenAI chat client (deployment=%s, endpoint=%s)",
+            settings.AZURE_OPENAI_DEPLOYMENT,
+            settings.AZURE_OPENAI_ENDPOINT,
+        )
         from agent_framework.azure import AzureOpenAIChatClient
         return AzureOpenAIChatClient(
             model_id=settings.AZURE_OPENAI_DEPLOYMENT,
@@ -34,7 +78,9 @@ def create_chat_client() -> OpenAIChatClient:
             api_version=settings.AZURE_OPENAI_API_VERSION,
         )
     else:
-        raise ValueError(f"Unknown LLM provider: {provider}. Use 'openai' or 'azure'.")
+        raise ValueError(
+            f"Unknown LLM_PROVIDER: '{provider}'. Must be 'openai' or 'azure'."
+        )
 
 
 def create_embedding_client() -> openai.AsyncOpenAI | openai.AsyncAzureOpenAI:
@@ -42,11 +88,27 @@ def create_embedding_client() -> openai.AsyncOpenAI | openai.AsyncAzureOpenAI:
 
     Returns:
         AsyncOpenAI or AsyncAzureOpenAI client for calling embeddings.create().
+
+    Raises:
+        ValueError: If required credentials are missing.
     """
     if settings.LLM_PROVIDER == "azure":
+        _validate_azure()
         return openai.AsyncAzureOpenAI(
             azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
             api_key=settings.AZURE_OPENAI_KEY,
             api_version=settings.AZURE_OPENAI_API_VERSION,
         )
+    _validate_openai()
     return openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+
+
+def get_embedding_model() -> str:
+    """Get the correct embedding model/deployment name for the current provider.
+
+    For Azure, prefers AZURE_EMBEDDING_DEPLOYMENT if set, else falls back to EMBEDDING_MODEL.
+    For OpenAI, always uses EMBEDDING_MODEL.
+    """
+    if settings.LLM_PROVIDER == "azure" and settings.AZURE_EMBEDDING_DEPLOYMENT:
+        return settings.AZURE_EMBEDDING_DEPLOYMENT
+    return settings.EMBEDDING_MODEL
