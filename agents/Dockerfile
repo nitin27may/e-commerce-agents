@@ -33,10 +33,14 @@ ARG AGENT_PORT=8080
 # Copy agent module (Python package name uses underscores)
 COPY ${AGENT_NAME}/ ${AGENT_NAME}/
 
+# Give non-root user ownership of the app directory (for uv cache + runtime)
+RUN chown -R agent:agent /app
+
 ENV AGENT_NAME=${AGENT_NAME}
 ENV AGENT_PORT=${AGENT_PORT}
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
+ENV UV_CACHE_DIR=/app/.cache/uv
 
 # Switch to non-root
 USER agent
@@ -47,4 +51,5 @@ HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:${AGENT_PORT}/health || exit 1
 
 # Use shell form so env vars are expanded at runtime
-CMD uv run uvicorn ${AGENT_NAME}.main:app --host 0.0.0.0 --port ${AGENT_PORT}
+# --no-project: skip building the project package (we run modules directly)
+CMD uv run --no-project uvicorn ${AGENT_NAME}.main:app --host 0.0.0.0 --port ${AGENT_PORT}

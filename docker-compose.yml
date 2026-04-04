@@ -49,7 +49,7 @@ services:
       args:
         AGENT_NAME: orchestrator
     working_dir: /app
-    command: uv run python -m scripts.seed
+    command: uv run --no-project python -m scripts.seed
     volumes:
       - ./scripts:/app/scripts:ro
     depends_on:
