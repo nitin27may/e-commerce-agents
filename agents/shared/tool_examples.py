@@ -1,0 +1,175 @@
+"""Tool usage examples for agent system prompts.
+
+Shows the LLM how to call each tool and what responses look like.
+"""
+
+ORDER_TOOL_EXAMPLES = """
+## Tool Usage Guide
+
+### get_user_orders(status?, limit?)
+Lists the current user's orders. No need to pass email — it uses the logged-in user automatically.
+- `get_user_orders()` → all orders
+- `get_user_orders(status="shipped")` → only shipped orders
+- `get_user_orders(status="placed", limit=5)` → up to 5 placed orders
+- Valid statuses: placed, confirmed, shipped, out_for_delivery, delivered, cancelled, returned
+→ Returns: [{"order_id": "uuid", "status": "shipped", "total": 129.99, "item_count": 2, "date": "2026-03-15T..."}]
+
+### get_order_details(order_id)
+Full order info including items, shipping, and status timeline.
+→ Returns: {"order_id": "...", "status": "shipped", "total": 129.99, "items": [{"name": "Sony WH-1000XM5", "quantity": 1, "unit_price": 299.99}], "status_history": [{"status": "placed", "timestamp": "..."}], "shipping_address": {"street": "...", "city": "...", "state": "..."}}
+
+### get_order_tracking(order_id)
+Latest tracking status and full timeline for shipped orders.
+→ Returns: {"current_status": "shipped", "location": "Distribution Center", "timeline": [...]}
+
+### cancel_order(order_id, reason)
+Cancel an order. Only works if status is "placed" or "confirmed".
+→ Returns: {"success": true, "refund_amount": 129.99} or {"error": "Cannot cancel — order already shipped"}
+
+### modify_order(order_id, new_address)
+Change shipping address. Only works if not yet shipped.
+- new_address must have: street, city, state, zip, country
+
+### check_return_eligibility(order_id)
+Check if an order can be returned (must be delivered within 30 days).
+→ Returns: {"eligible": true, "days_remaining": 15} or {"eligible": false, "reason": "..."}
+
+### initiate_return(order_id, reason, refund_method)
+Start a return. refund_method: "original_payment" or "store_credit"
+→ Returns: {"return_id": "...", "label_url": "https://...", "status": "requested"}
+
+### get_user_profile()
+Current user's profile. No parameters needed.
+→ Returns: {"name": "Alice Johnson", "email": "alice@example.com", "role": "customer", "loyalty_tier": "gold", "total_spend": 4200.00}
+"""
+
+PRODUCT_TOOL_EXAMPLES = """
+## Tool Usage Guide
+
+### search_products(query, category?, min_price?, max_price?, min_rating?, sort_by?, limit?)
+Search by keywords with optional filters.
+- `search_products(query="wireless headphones")` → text search
+- `search_products(query="running shoes", category="Clothing", max_price=150)` → filtered
+- sort_by options: price_asc, price_desc, rating, newest
+→ Returns: [{"id": "uuid", "name": "Sony WH-1000XM5", "price": 299.99, "rating": 4.7, "category": "Electronics", "on_sale": true}]
+
+### get_product_details(product_id)
+Full product info with specs.
+→ Returns: {"id": "...", "name": "...", "description": "...", "specs": {"battery": "30 hours", "weight": "250g"}, "rating": 4.7, "review_count": 45}
+
+### compare_products(product_ids)
+Side-by-side comparison of 2-3 products. Pass a list of UUIDs.
+
+### semantic_search(query, limit?)
+AI-powered search for vague/descriptive queries. Best for: "something cozy for winter", "gift for a tech enthusiast", "workout gear for beginners"
+→ Returns: [{"id": "...", "name": "...", "similarity": 0.89, ...}]
+
+### find_similar_products(product_id, limit?)
+Find products similar to a given product using embeddings.
+
+### get_trending_products(category?, days?, limit?)
+Products with most orders in the last N days.
+
+### check_stock(product_id)
+Stock levels across all warehouses.
+→ Returns: {"in_stock": true, "total_quantity": 150, "warehouses": [{"warehouse": "East", "quantity": 80}, ...]}
+
+### get_price_history(product_id, days?)
+Price trends. days: 30, 60, or 90.
+→ Returns: {"current_price": 99.99, "average_price": 112.50, "min_price": 89.99, "trend": "decreasing", "is_good_deal": true}
+
+### get_purchase_history(limit?)
+Current user's past orders for personalized recommendations.
+"""
+
+PRICING_TOOL_EXAMPLES = """
+## Tool Usage Guide
+
+### validate_coupon(code, cart_total?, category?)
+Check if a coupon code is valid and calculate discount.
+- `validate_coupon(code="WELCOME10")` → basic validation
+- `validate_coupon(code="TECHSAVE", cart_total=200, category="Electronics")` → with context
+→ Returns: {"valid": true, "discount_amount": 30.00, "description": "15% off Electronics"} or {"valid": false, "reason": "Coupon expired"}
+
+### optimize_cart(product_ids_with_quantities)
+Find the best price for a cart. Pass [{"product_id": "uuid", "quantity": 1}, ...].
+→ Returns: {"original_total": 500.00, "best_coupon": "TECHSAVE", "coupon_discount": 75.00, "loyalty_discount": 50.00, "final_total": 375.00}
+
+### get_active_deals()
+List all current promotions and non-expired coupons.
+→ Returns: {"coupons": [...], "promotions": [...]}
+
+### check_bundle_eligibility(product_ids)
+Check if products qualify for bundle/quantity discounts.
+
+### get_loyalty_tier()
+Current user's tier and benefits. No parameters needed.
+→ Returns: {"tier": "gold", "discount_pct": 10, "free_shipping_threshold": 0, "priority_support": true}
+
+### calculate_loyalty_discount(cart_total)
+Calculate tier-specific discount for a cart total.
+→ Returns: {"tier": "gold", "discount_pct": 10, "discount_amount": 50.00, "free_shipping": true}
+"""
+
+REVIEW_TOOL_EXAMPLES = """
+## Tool Usage Guide
+
+### get_product_reviews(product_id, sort_by?, limit?, offset?)
+Paginated reviews. sort_by: newest, helpful, rating_high, rating_low.
+→ Returns: {"reviews": [{"rating": 5, "title": "Great!", "body": "...", "verified": true, "reviewer": "Alice", "date": "..."}], "total": 45}
+
+### analyze_sentiment(product_id)
+Aggregate sentiment analysis for a product.
+→ Returns: {"avg_rating": 4.5, "total_reviews": 45, "distribution": {"5": 20, "4": 15, "3": 5, "2": 3, "1": 2}, "sentiment": "very_positive", "pros": ["great battery", "comfortable"], "cons": ["heavy", "expensive"]}
+
+### get_sentiment_by_topic(product_id)
+Breakdown by topic: quality, value, shipping, design, durability.
+→ Returns: {"topics": [{"topic": "quality", "mentions": 30, "avg_rating": 4.8}, {"topic": "value", "mentions": 20, "avg_rating": 3.9}]}
+
+### get_sentiment_trend(product_id, months?)
+Monthly sentiment trend. Returns: {"months": [{"month": "2026-01", "avg_rating": 4.2, "count": 12}, ...], "direction": "improving"}
+
+### detect_fake_reviews(product_id)
+Find suspicious reviews. Returns: {"suspicious_count": 3, "total_reviews": 45, "flagged": [...], "risk_level": "low"}
+
+### search_reviews(product_id, keyword)
+Search review text for a keyword.
+
+### draft_seller_response(review_id)
+Generate a professional response template for a review.
+
+### compare_product_reviews(product_ids)
+Compare sentiment across 2-3 products.
+"""
+
+INVENTORY_TOOL_EXAMPLES = """
+## Tool Usage Guide
+
+### check_stock(product_id)
+Stock across all warehouses. No user context needed.
+→ Returns: {"in_stock": true, "total_quantity": 150, "warehouses": [{"warehouse": "East Coast", "region": "east", "quantity": 80, "low_stock": false}]}
+
+### get_warehouse_availability(product_id)
+Detailed availability with restock info.
+→ Returns: {"warehouses": [...], "upcoming_restocks": [{"warehouse": "West", "expected_quantity": 50, "expected_date": "2026-04-15"}]}
+
+### get_restock_schedule(product_id)
+When out-of-stock products will be restocked.
+→ Returns: [{"warehouse": "East", "expected_quantity": 50, "expected_date": "2026-04-15"}]
+
+### estimate_shipping(product_id, destination_region)
+Shipping options and costs. destination_region: east, central, or west.
+→ Returns: {"options": [{"carrier": "Standard", "price": 5.99, "days": "5-7"}, {"carrier": "Express", "price": 14.99, "days": "2-3"}]}
+
+### compare_carriers(region_from, region_to)
+Compare all carriers for a route.
+
+### get_tracking_status(order_id)
+Tracking for a specific order (user-scoped).
+
+### calculate_fulfillment_plan(product_ids, destination_region)
+Optimal warehouse routing for multi-item orders.
+
+### place_backorder(product_id, quantity)
+Create a backorder for out-of-stock items.
+"""

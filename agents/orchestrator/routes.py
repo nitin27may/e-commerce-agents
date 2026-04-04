@@ -9,7 +9,7 @@ import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from shared.context import current_user_email, current_user_role, current_session_id
+from shared.context import current_user_email, current_user_role, current_session_id, current_conversation_history
 from shared.db import get_pool
 from shared.jwt_utils import (
     create_access_token,
@@ -300,6 +300,9 @@ async def chat(body: ChatRequest, user: dict[str, Any] = Depends(require_auth)) 
     from shared.agent_host import _run_agent_with_tools
 
     agents_involved: list[str] = ["orchestrator"]
+
+    # Set conversation history ContextVar so call_specialist_agent can forward it
+    current_conversation_history.set(history)
 
     with UsageTimer() as timer:
         try:

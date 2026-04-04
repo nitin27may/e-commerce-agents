@@ -174,6 +174,9 @@ def create_agent_app(
             if not message:
                 return JSONResponse({"error": "No message provided"}, status_code=400)
 
+            # Conversation history forwarded by orchestrator
+            history = body.get("history", None)
+
             # Get system prompt and tools from the MAF agent
             system_prompt = getattr(agent, "_instructions", "") or getattr(agent, "instructions", "") or ""
             tools = []
@@ -187,7 +190,9 @@ def create_agent_app(
             user_context = f"Current user email: {user_email}" if user_email else None
 
             response_text = await _run_agent_with_tools(
-                system_prompt, tools, message, user_context=user_context,
+                system_prompt, tools, message,
+                history=history,
+                user_context=user_context,
             )
             return {"response": response_text}
 
