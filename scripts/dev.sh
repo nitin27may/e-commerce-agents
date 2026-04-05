@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# AgentBazaar — Development Environment Setup
+# E-Commerce Agents — Development Environment Setup
 # Usage:
 #   ./scripts/dev.sh              Full rebuild and start everything
 #   ./scripts/dev.sh --clean      Nuke volumes, rebuild from scratch
@@ -69,7 +69,7 @@ wait_for_http() {
 print_summary() {
     echo ""
     echo -e "${BOLD}${CYAN}============================================================${NC}"
-    echo -e "${BOLD}${CYAN}  AgentBazaar — Services Running${NC}"
+    echo -e "${BOLD}${CYAN}  E-Commerce Agents — Services Running${NC}"
     echo -e "${BOLD}${CYAN}============================================================${NC}"
     echo ""
     echo -e "  ${BOLD}Infrastructure${NC}"
@@ -170,7 +170,7 @@ if [ "$SEED_ONLY" = true ]; then
 
     # Ensure infra is running
     docker compose up -d db redis aspire
-    wait_for_health "PostgreSQL" "docker compose exec db pg_isready -U agentbazaar"
+    wait_for_health "PostgreSQL" "docker compose exec db pg_isready -U ecommerce"
     wait_for_health "Redis" "docker compose exec redis redis-cli ping"
 
     docker compose --profile seed run --rm seeder
@@ -197,7 +197,7 @@ fi
 step "Starting infrastructure (db, redis, aspire)"
 docker compose up -d db redis aspire
 
-wait_for_health "PostgreSQL" "docker compose exec db pg_isready -U agentbazaar"
+wait_for_health "PostgreSQL" "docker compose exec db pg_isready -U ecommerce"
 wait_for_health "Redis" "docker compose exec redis redis-cli ping"
 success "Infrastructure is ready"
 
@@ -241,4 +241,4 @@ success "Frontend is running"
 # ── Summary ───────────────────────────────────────────────────
 
 print_summary
-success "AgentBazaar is ready!"
+success "E-Commerce Agents is ready!"

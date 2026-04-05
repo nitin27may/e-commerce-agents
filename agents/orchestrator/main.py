@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup: telemetry + DB pool. Shutdown: close pool."""
-    setup_telemetry("agentbazaar.orchestrator")
+    setup_telemetry("ecommerce.orchestrator")
     instrument_fastapi(app)
     await init_db_pool()
     logger.info("orchestrator.started")
@@ -37,7 +37,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="AgentBazaar",
+    title="E-Commerce Agents",
     description="E-Commerce Multi-Agent Platform — Orchestrator API",
     version="1.0.0",
     lifespan=lifespan,

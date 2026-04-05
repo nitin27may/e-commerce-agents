@@ -10,7 +10,7 @@ agent = create_order_management_agent()
 
 
 async def on_startup(app):
-    setup_telemetry("agentbazaar.order-management")
+    setup_telemetry("ecommerce.order-management")
     instrument_fastapi(app)
     await init_db_pool()
 

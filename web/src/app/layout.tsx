@@ -10,7 +10,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "AgentBazaar",
+  title: "E-Commerce Agents",
   description:
     "Multi-agent e-commerce platform powered by Microsoft Agent Framework",
 };

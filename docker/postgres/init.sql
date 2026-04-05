@@ -1,5 +1,5 @@
 -- ============================================================
--- AgentBazaar — Database Schema
+-- E-Commerce Agents — Database Schema
 -- PostgreSQL 16 + pgvector
 -- ============================================================
 

@@ -4,11 +4,11 @@ const API_URL = "http://localhost:8080";
 
 // Test users from seed data
 const USERS = {
-  customer: { email: "alice@example.com", password: "customer123", name: "Alice Johnson", role: "customer" },
-  admin: { email: "admin@agentbazaar.com", password: "admin123", name: "Admin User", role: "admin" },
-  powerUser: { email: "power@agentbazaar.com", password: "power123", name: "Power User", role: "power_user" },
-  seller: { email: "seller@agentbazaar.com", password: "seller123", name: "Acme Store", role: "seller" },
-  customer2: { email: "bob@example.com", password: "customer123", name: "Bob Smith", role: "customer" },
+  customer: { email: "alice.johnson@gmail.com", password: "customer123", name: "Alice Johnson", role: "customer" },
+  admin: { email: "admin.demo@gmail.com", password: "admin123", name: "Admin User", role: "admin" },
+  powerUser: { email: "power.demo@gmail.com", password: "power123", name: "Power User", role: "power_user" },
+  seller: { email: "seller.demo@gmail.com", password: "seller123", name: "Acme Store", role: "seller" },
+  customer2: { email: "bob.smith@gmail.com", password: "customer123", name: "Bob Smith", role: "customer" },
 };
 
 // ---------------------------------------------------------------------------
@@ -28,9 +28,9 @@ async function ensureLoggedOut(page: Page) {
   await page.goto("/login");
   // Clear localStorage
   await page.evaluate(() => {
-    localStorage.removeItem("agentbazaar_user");
-    localStorage.removeItem("agentbazaar_access_token");
-    localStorage.removeItem("agentbazaar_refresh_token");
+    localStorage.removeItem("ecommerce_user");
+    localStorage.removeItem("ecommerce_access_token");
+    localStorage.removeItem("ecommerce_refresh_token");
   });
 }
 
@@ -62,7 +62,7 @@ test.describe("Authentication", () => {
 
   test("login with invalid credentials shows error", async ({ page }) => {
     await page.goto("/login");
-    await page.fill('input[type="email"]', "wrong@example.com");
+    await page.fill('input[type="email"]', "wrong@gmail.com");
     await page.fill('input[type="password"]', "wrongpass");
     await page.getByRole("button", { name: /log\s*in|sign\s*in/i }).click();
     // Should show error message
@@ -71,7 +71,7 @@ test.describe("Authentication", () => {
 
   test("signup creates new account", async ({ page }) => {
     // Use crypto-random suffix to avoid duplicate email across test runs
-    const unique = `pw_test_${Date.now()}_${Math.random().toString(36).slice(2, 8)}@example.com`;
+    const unique = `pw_test_${Date.now()}_${Math.random().toString(36).slice(2, 8)}@gmail.com`;
     await page.goto("/signup");
     await page.locator("#name").fill("Test User");
     await page.locator("#email").fill(unique);

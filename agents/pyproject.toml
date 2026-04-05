@@ -1,5 +1,5 @@
 [project]
-name = "agentbazaar"
+name = "e-commerce-agents"
 version = "0.1.0"
 description = "E-Commerce Multi-Agent Platform built with Microsoft Agent Framework"
 requires-python = ">=3.12"

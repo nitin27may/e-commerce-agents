@@ -31,9 +31,9 @@ interface AuthContextValue extends AuthState {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const STORAGE_KEY_USER = "agentbazaar_user";
-const STORAGE_KEY_ACCESS = "agentbazaar_access_token";
-const STORAGE_KEY_REFRESH = "agentbazaar_refresh_token";
+const STORAGE_KEY_USER = "ecommerce_user";
+const STORAGE_KEY_ACCESS = "ecommerce_access_token";
+const STORAGE_KEY_REFRESH = "ecommerce_refresh_token";
 
 function persistAuth(
   user: User,

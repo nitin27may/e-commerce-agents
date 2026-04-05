@@ -10,7 +10,7 @@ agent = create_product_discovery_agent()
 
 
 async def on_startup(app):
-    setup_telemetry("agentbazaar.product-discovery")
+    setup_telemetry("ecommerce.product-discovery")
     instrument_fastapi(app)
     await init_db_pool()
 

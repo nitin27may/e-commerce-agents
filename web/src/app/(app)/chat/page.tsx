@@ -517,7 +517,7 @@ export default function ChatPage() {
             </Button>
           </form>
           <p className="mx-auto mt-1.5 max-w-3xl text-center text-[11px] text-muted-foreground">
-            Powered by AgentBazaar multi-agent orchestration
+            Powered by E-Commerce Agents multi-agent orchestration
           </p>
         </div>
       </div>

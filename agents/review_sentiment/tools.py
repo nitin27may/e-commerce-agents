@@ -479,7 +479,7 @@ async def draft_seller_response(
                 f"Could you please reach out to our customer support team so we can investigate "
                 f"your concern and find a suitable resolution?\n\n"
                 f"We appreciate your patience and look forward to resolving this for you.\n\n"
-                f"Best regards,\n[Your Name]\nAgentBazaar Seller Support"
+                f"Best regards,\n[Your Name]\nSeller Support Team"
             )
         elif rating == 3:
             template = (
@@ -489,8 +489,8 @@ async def draft_seller_response(
                 f"Your feedback helps us enhance our products and service. "
                 f"If there is anything specific we can do to improve your experience, "
                 f"please do not hesitate to contact our support team.\n\n"
-                f"Thank you for choosing AgentBazaar.\n\n"
-                f"Best regards,\n[Your Name]\nAgentBazaar Seller Support"
+                f"Thank you for choosing our platform.\n\n"
+                f"Best regards,\n[Your Name]\nSeller Support Team"
             )
         else:
             template = (
@@ -498,7 +498,7 @@ async def draft_seller_response(
                 f"Thank you for your review of the {product_name}! "
                 f"We are glad to hear about your experience.\n\n"
                 f"If there is anything else we can help with, please let us know.\n\n"
-                f"Best regards,\n[Your Name]\nAgentBazaar Seller Support"
+                f"Best regards,\n[Your Name]\nSeller Support Team"
             )
 
         return {

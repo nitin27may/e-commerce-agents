@@ -126,7 +126,7 @@ async def initiate_return(
 
         # Generate mock return label URL
         label_token = uuid.uuid4().hex[:12]
-        return_label_url = f"https://returns.agentbazaar.com/labels/{label_token}"
+        return_label_url = f"https://returns.example.com/labels/{label_token}"
 
         # Create return record
         return_id = await conn.fetchval(

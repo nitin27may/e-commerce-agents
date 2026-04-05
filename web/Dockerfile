@@ -1,5 +1,5 @@
 # ============================================================
-# AgentBazaar — Frontend Dockerfile
+# E-Commerce Agents — Frontend Dockerfile
 # Multi-stage build: deps → build → runtime
 # ============================================================
 

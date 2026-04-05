@@ -1,5 +1,5 @@
 """
-AgentBazaar — Database Seeder
+E-Commerce Agents — Database Seeder
 
 Seeds the database with realistic e-commerce data:
 - 20 users (1 admin, 2 power_users, 2 sellers, 15 customers)
@@ -32,7 +32,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.environ.get(
-    "DATABASE_URL", "postgresql://agentbazaar:agentbazaar@localhost:5432/agentbazaar"
+    "DATABASE_URL", "postgresql://ecommerce:ecommerce_secret@localhost:5432/ecommerce_agents"
 )
 
 # Deterministic seed for reproducible data
@@ -49,26 +49,26 @@ def hash_pw(password: str) -> str:
 
 USERS = [
     # (email, password, name, role, loyalty_tier, total_spend)
-    ("admin@agentbazaar.com", "admin123", "Admin User", "admin", "gold", 5000),
-    ("power@agentbazaar.com", "power123", "Power User", "power_user", "gold", 3500),
-    ("power2@agentbazaar.com", "power123", "Sam Power", "power_user", "silver", 1200),
-    ("seller@agentbazaar.com", "seller123", "Acme Store", "seller", "bronze", 0),
-    ("seller2@agentbazaar.com", "seller123", "TechMart", "seller", "bronze", 0),
-    ("alice@example.com", "customer123", "Alice Johnson", "customer", "gold", 4200),
-    ("bob@example.com", "customer123", "Bob Smith", "customer", "silver", 1800),
-    ("carol@example.com", "customer123", "Carol Davis", "customer", "silver", 1500),
-    ("dave@example.com", "customer123", "Dave Wilson", "customer", "bronze", 450),
-    ("emma@example.com", "customer123", "Emma Brown", "customer", "bronze", 320),
-    ("frank@example.com", "customer123", "Frank Miller", "customer", "bronze", 200),
-    ("grace@example.com", "customer123", "Grace Lee", "customer", "bronze", 150),
-    ("henry@example.com", "customer123", "Henry Taylor", "customer", "gold", 3800),
-    ("iris@example.com", "customer123", "Iris Chen", "customer", "silver", 1100),
-    ("jack@example.com", "customer123", "Jack Anderson", "customer", "bronze", 600),
-    ("kate@example.com", "customer123", "Kate Martinez", "customer", "bronze", 280),
-    ("leo@example.com", "customer123", "Leo Garcia", "customer", "bronze", 90),
-    ("mia@example.com", "customer123", "Mia Robinson", "customer", "bronze", 50),
-    ("noah@example.com", "customer123", "Noah Thomas", "customer", "bronze", 75),
-    ("olivia@example.com", "customer123", "Olivia White", "customer", "silver", 1350),
+    ("admin.demo@gmail.com", "admin123", "Admin User", "admin", "gold", 5000),
+    ("power.demo@gmail.com", "power123", "Power User", "power_user", "gold", 3500),
+    ("power2.demo@gmail.com", "power123", "Sam Power", "power_user", "silver", 1200),
+    ("seller.demo@gmail.com", "seller123", "Acme Store", "seller", "bronze", 0),
+    ("seller2.demo@gmail.com", "seller123", "TechMart", "seller", "bronze", 0),
+    ("alice.johnson@gmail.com", "customer123", "Alice Johnson", "customer", "gold", 4200),
+    ("bob.smith@gmail.com", "customer123", "Bob Smith", "customer", "silver", 1800),
+    ("carol.davis@gmail.com", "customer123", "Carol Davis", "customer", "silver", 1500),
+    ("dave.wilson@gmail.com", "customer123", "Dave Wilson", "customer", "bronze", 450),
+    ("emma.brown@gmail.com", "customer123", "Emma Brown", "customer", "bronze", 320),
+    ("frank.miller@gmail.com", "customer123", "Frank Miller", "customer", "bronze", 200),
+    ("grace.lee@gmail.com", "customer123", "Grace Lee", "customer", "bronze", 150),
+    ("henry.taylor@gmail.com", "customer123", "Henry Taylor", "customer", "gold", 3800),
+    ("iris.chen@gmail.com", "customer123", "Iris Chen", "customer", "silver", 1100),
+    ("jack.anderson@gmail.com", "customer123", "Jack Anderson", "customer", "bronze", 600),
+    ("kate.martinez@gmail.com", "customer123", "Kate Martinez", "customer", "bronze", 280),
+    ("leo.garcia@gmail.com", "customer123", "Leo Garcia", "customer", "bronze", 90),
+    ("mia.robinson@gmail.com", "customer123", "Mia Robinson", "customer", "bronze", 50),
+    ("noah.thomas@gmail.com", "customer123", "Noah Thomas", "customer", "bronze", 75),
+    ("olivia.white@gmail.com", "customer123", "Olivia White", "customer", "silver", 1350),
 ]
 
 PRODUCTS = [
@@ -153,13 +153,13 @@ COUPONS = [
     ("LOYALTY20", "20% off for Gold members", "percentage", 20, 0, 100, None, None, None, None),
     ("SPRING25", "$25 off orders $150+", "fixed", 25, 150, None, 500, "2026-04-30", None, None),
     ("BOOKWORM", "10% off Books", "percentage", 10, 0, 20, 100, None, ["Books"], None),
-    ("ALICE15", "Personal 15% off for Alice", "percentage", 15, 50, 40, 1, None, None, "alice@example.com"),
+    ("ALICE15", "Personal 15% off for Alice", "percentage", 15, 50, 40, 1, None, None, "alice.johnson@gmail.com"),
     ("FLASH20", "$20 off flash sale", "fixed", 20, 75, None, 300, "2026-04-10", None, None),
     ("SPORTS10", "10% off Sports gear", "percentage", 10, 0, 30, 150, None, ["Sports"], None),
     ("HOME15", "15% off Home items", "percentage", 15, 100, 60, 100, None, ["Home"], None),
     ("NEWUSER", "$10 off first order", "fixed", 10, 25, None, None, None, None, None),
     ("SUMMER30", "30% off Clothing", "percentage", 30, 50, 80, None, "2026-07-31", ["Clothing"], None),
-    ("VIP50", "$50 off for VIP", "fixed", 50, 200, None, 10, None, None, "power@agentbazaar.com"),
+    ("VIP50", "$50 off for VIP", "fixed", 50, 200, None, 10, None, None, "power.demo@gmail.com"),
     ("EXPIRED10", "Expired coupon", "percentage", 10, 0, 20, 100, "2026-01-01", None, None),
     ("BUNDLE5", "$5 off any order", "fixed", 5, 0, None, 1000, None, None, None),
 ]
@@ -261,12 +261,12 @@ async def seed_users(conn: asyncpg.Connection) -> dict[str, uuid.UUID]:
 
 async def seed_products(conn: asyncpg.Connection, user_ids: dict[str, uuid.UUID]) -> list[dict]:
     """Insert products and return list with ids. Assigns seller ownership."""
-    seller1_id = user_ids["seller@agentbazaar.com"]
-    seller2_id = user_ids["seller2@agentbazaar.com"]
+    seller1_id = user_ids["seller.demo@gmail.com"]
+    seller2_id = user_ids["seller2.demo@gmail.com"]
 
     products_with_ids = []
     for i, p in enumerate(PRODUCTS):
-        # First 25 products -> seller@agentbazaar.com, remaining 25 -> seller2@agentbazaar.com
+        # First 25 products -> seller.demo@gmail.com, remaining 25 -> seller2.demo@gmail.com
         seller_id = seller1_id if i < 25 else seller2_id
         row = await conn.fetchrow(
             """INSERT INTO products (name, description, category, brand, price, original_price, rating, review_count, specs, seller_id)
@@ -598,7 +598,7 @@ async def seed_agent_catalog(conn: asyncpg.Connection) -> None:
 
 async def seed_agent_permissions(conn: asyncpg.Connection, user_ids: dict[str, uuid.UUID]) -> None:
     """Grant agent permissions to admin and power users."""
-    admin_id = user_ids["admin@agentbazaar.com"]
+    admin_id = user_ids["admin.demo@gmail.com"]
     agents = [a[0] for a in AGENT_CATALOG]
 
     # Admin gets access to all agents
@@ -610,7 +610,7 @@ async def seed_agent_permissions(conn: asyncpg.Connection, user_ids: dict[str, u
         )
 
     # Power users get access to all agents
-    for pu_email in ["power@agentbazaar.com", "power2@agentbazaar.com"]:
+    for pu_email in ["power.demo@gmail.com", "power2.demo@gmail.com"]:
         pu_id = user_ids[pu_email]
         for agent_name in agents:
             await conn.execute(

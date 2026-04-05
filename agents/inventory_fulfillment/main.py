@@ -10,7 +10,7 @@ agent = create_inventory_fulfillment_agent()
 
 
 async def on_startup(app):
-    setup_telemetry("agentbazaar.inventory-fulfillment")
+    setup_telemetry("ecommerce.inventory-fulfillment")
     instrument_fastapi(app)
     await init_db_pool()
 

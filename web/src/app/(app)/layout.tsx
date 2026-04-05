@@ -36,7 +36,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {/* Mobile header */}
         <header className="flex h-14 items-center gap-2 border-b bg-background px-4 lg:hidden">
           <MobileSidebar />
-          <span className="text-sm font-semibold">AgentBazaar</span>
+          <span className="text-sm font-semibold">E-Commerce Agents</span>
         </header>
         {/* Main content */}
         <main className="flex-1 overflow-y-auto">{children}</main>

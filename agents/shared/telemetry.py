@@ -1,5 +1,5 @@
 """
-OpenTelemetry setup for AgentBazaar agents.
+OpenTelemetry setup for E-Commerce Agents.
 
 Every agent calls `setup_telemetry(service_name)` in its lifespan to enable:
 - Traces: HTTP spans, DB queries, LLM calls, A2A calls → Aspire Dashboard
@@ -123,13 +123,13 @@ def instrument_starlette(app: Any) -> None:
         logger.exception("Failed to instrument Starlette")
 
 
-def get_tracer(name: str = "agentbazaar") -> Any:
+def get_tracer(name: str = "ecommerce") -> Any:
     """Get an OTel Tracer for creating custom spans."""
     from opentelemetry import trace
     return trace.get_tracer(name)
 
 
-def get_meter(name: str = "agentbazaar") -> Any:
+def get_meter(name: str = "ecommerce") -> Any:
     """Get an OTel Meter for creating custom metrics."""
     from opentelemetry import metrics
     return metrics.get_meter(name)
@@ -148,7 +148,7 @@ def get_current_trace_id() -> str | None:
 @contextmanager
 def a2a_call_span(source_agent: str, target_agent: str, target_url: str):
     """Context manager for custom A2A call spans in the orchestrator."""
-    tracer = get_tracer("agentbazaar.orchestrator")
+    tracer = get_tracer("ecommerce.orchestrator")
     with tracer.start_as_current_span(
         "agent.a2a_call",
         attributes={
@@ -176,7 +176,7 @@ def traced_tool(fn: Callable) -> Callable:
         @traced_tool
         async def search_products(...) -> ...:
     """
-    tracer = get_tracer("agentbazaar")
+    tracer = get_tracer("ecommerce")
 
     @wraps(fn)
     async def wrapper(*args: Any, **kwargs: Any) -> Any:

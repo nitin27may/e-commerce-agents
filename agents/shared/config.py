@@ -1,11 +1,11 @@
-"""Pydantic Settings for AgentBazaar agents."""
+"""Pydantic Settings for E-Commerce Agents."""
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     # Database
-    DATABASE_URL: str = "postgresql://agentbazaar:agentbazaar@localhost:5432/agentbazaar"
+    DATABASE_URL: str = "postgresql://ecommerce:ecommerce_secret@localhost:5432/ecommerce_agents"
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379"
@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     # Telemetry
     OTEL_ENABLED: bool = False
     OTEL_EXPORTER_OTLP_ENDPOINT: str = "http://localhost:18889"
-    OTEL_SERVICE_NAME: str = "agentbazaar"
+    OTEL_SERVICE_NAME: str = "ecommerce"
 
     # General
     ENVIRONMENT: str = "development"

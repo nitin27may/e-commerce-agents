@@ -1,5 +1,5 @@
 """
-AgentBazaar — Product Embedding Generator
+E-Commerce Agents — Product Embedding Generator
 
 Reads all products from the database and generates embeddings
 using OpenAI / Azure OpenAI text-embedding-3-small (1536 dimensions).
@@ -22,7 +22,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.environ.get(
-    "DATABASE_URL", "postgresql://agentbazaar:agentbazaar@localhost:5432/agentbazaar"
+    "DATABASE_URL", "postgresql://ecommerce:ecommerce_secret@localhost:5432/ecommerce_agents"
 )
 LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "openai")
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-3-small")

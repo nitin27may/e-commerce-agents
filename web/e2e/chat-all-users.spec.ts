@@ -6,11 +6,11 @@ import { test, expect, type Page } from "@playwright/test";
  */
 
 const USERS = [
-  { email: "alice@example.com", password: "customer123", name: "Alice Johnson", role: "customer" },
-  { email: "admin@agentbazaar.com", password: "admin123", name: "Admin User", role: "admin" },
-  { email: "bob@example.com", password: "customer123", name: "Bob Smith", role: "customer" },
-  { email: "power@agentbazaar.com", password: "power123", name: "Power User", role: "power_user" },
-  { email: "seller@agentbazaar.com", password: "seller123", name: "Acme Store", role: "seller" },
+  { email: "alice.johnson@gmail.com", password: "customer123", name: "Alice Johnson", role: "customer" },
+  { email: "admin.demo@gmail.com", password: "admin123", name: "Admin User", role: "admin" },
+  { email: "bob.smith@gmail.com", password: "customer123", name: "Bob Smith", role: "customer" },
+  { email: "power.demo@gmail.com", password: "power123", name: "Power User", role: "power_user" },
+  { email: "seller.demo@gmail.com", password: "seller123", name: "Acme Store", role: "seller" },
 ];
 
 // Increase timeout for LLM responses
@@ -20,9 +20,9 @@ async function loginAndGoToChat(page: Page, email: string, password: string) {
   // Clear any existing session
   await page.goto("/login");
   await page.evaluate(() => {
-    localStorage.removeItem("agentbazaar_user");
-    localStorage.removeItem("agentbazaar_access_token");
-    localStorage.removeItem("agentbazaar_refresh_token");
+    localStorage.removeItem("ecommerce_user");
+    localStorage.removeItem("ecommerce_access_token");
+    localStorage.removeItem("ecommerce_refresh_token");
   });
   await page.goto("/login");
 
@@ -125,12 +125,12 @@ for (const user of USERS) {
 test.describe("Chat — Cross-User", () => {
   test("Alice's conversations are not visible to Bob", async ({ page }) => {
     // Login as Alice and create a conversation
-    await loginAndGoToChat(page, "alice@example.com", "customer123");
+    await loginAndGoToChat(page, "alice.johnson@gmail.com", "customer123");
     await sendMessageAndWaitForResponse(page, "Alice unique chat test message xyz123");
     await page.waitForTimeout(1000);
 
     // Logout and login as Bob
-    await loginAndGoToChat(page, "bob@example.com", "customer123");
+    await loginAndGoToChat(page, "bob.smith@gmail.com", "customer123");
     await page.waitForTimeout(1000);
 
     // Bob should NOT see Alice's conversation

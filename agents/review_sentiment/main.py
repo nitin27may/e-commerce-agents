@@ -10,7 +10,7 @@ agent = create_review_sentiment_agent()
 
 
 async def on_startup(app):
-    setup_telemetry("agentbazaar.review-sentiment")
+    setup_telemetry("ecommerce.review-sentiment")
     instrument_fastapi(app)
     await init_db_pool()
 

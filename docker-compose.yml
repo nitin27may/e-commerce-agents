@@ -1,5 +1,5 @@
 # ============================================================
-# AgentBazaar — Docker Compose
+# E-Commerce Agents — Docker Compose
 # Usage: ./scripts/dev.sh  (or docker compose up --build)
 # ============================================================
 
@@ -10,14 +10,14 @@ services:
     image: pgvector/pgvector:pg16
     ports: ["5432:5432"]
     environment:
-      POSTGRES_DB: agentbazaar
-      POSTGRES_USER: agentbazaar
-      POSTGRES_PASSWORD: agentbazaar
+      POSTGRES_DB: ecommerce_agents
+      POSTGRES_USER: ecommerce
+      POSTGRES_PASSWORD: ecommerce_secret
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U agentbazaar"]
+      test: ["CMD-SHELL", "pg_isready -U ecommerce"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -56,7 +56,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://agentbazaar:agentbazaar@db:5432/agentbazaar
+      DATABASE_URL: postgresql://ecommerce:ecommerce_secret@db:5432/ecommerce_agents
     restart: "no"
     profiles: ["seed"]
 
@@ -74,7 +74,7 @@ services:
       redis: { condition: service_healthy }
       aspire: { condition: service_started }
     environment: &agent-env
-      DATABASE_URL: postgresql://agentbazaar:agentbazaar@db:5432/agentbazaar
+      DATABASE_URL: postgresql://ecommerce:ecommerce_secret@db:5432/ecommerce_agents
       REDIS_URL: redis://redis:6379
       LLM_PROVIDER: ${LLM_PROVIDER:-openai}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -89,7 +89,7 @@ services:
       AGENT_SHARED_SECRET: ${AGENT_SHARED_SECRET:-agent-internal-shared-secret}
       OTEL_ENABLED: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://aspire:18889
-      OTEL_SERVICE_NAME: agentbazaar.orchestrator
+      OTEL_SERVICE_NAME: ecommerce.orchestrator
       AGENT_REGISTRY: >-
         {
           "product-discovery": "http://product-discovery:8081",
@@ -112,7 +112,7 @@ services:
       aspire: { condition: service_started }
     environment:
       <<: *agent-env
-      OTEL_SERVICE_NAME: agentbazaar.product-discovery
+      OTEL_SERVICE_NAME: ecommerce.product-discovery
     profiles: ["agents"]
 
   order-management:
@@ -125,7 +125,7 @@ services:
       aspire: { condition: service_started }
     environment:
       <<: *agent-env
-      OTEL_SERVICE_NAME: agentbazaar.order-management
+      OTEL_SERVICE_NAME: ecommerce.order-management
     profiles: ["agents"]
 
   pricing-promotions:
@@ -138,7 +138,7 @@ services:
       aspire: { condition: service_started }
     environment:
       <<: *agent-env
-      OTEL_SERVICE_NAME: agentbazaar.pricing-promotions
+      OTEL_SERVICE_NAME: ecommerce.pricing-promotions
     profiles: ["agents"]
 
   review-sentiment:
@@ -151,7 +151,7 @@ services:
       aspire: { condition: service_started }
     environment:
       <<: *agent-env
-      OTEL_SERVICE_NAME: agentbazaar.review-sentiment
+      OTEL_SERVICE_NAME: ecommerce.review-sentiment
     profiles: ["agents"]
 
   inventory-fulfillment:
@@ -164,7 +164,7 @@ services:
       aspire: { condition: service_started }
     environment:
       <<: *agent-env
-      OTEL_SERVICE_NAME: agentbazaar.inventory-fulfillment
+      OTEL_SERVICE_NAME: ecommerce.inventory-fulfillment
     profiles: ["agents"]
 
   # ── Frontend ────────────────────────────────────────────────

@@ -1,24 +1,24 @@
 import { test, expect, type Page } from "@playwright/test";
 
 /**
- * UI Feature tests for the enhanced AgentBazaar frontend.
+ * UI Feature tests for the enhanced E-Commerce Agents frontend.
  * Tests product images, rich chat, seller dashboard, order detail, and admin pages.
  */
 
 test.setTimeout(60_000);
 
 const USERS = {
-  customer: { email: "alice@example.com", password: "customer123" },
-  admin: { email: "admin@agentbazaar.com", password: "admin123" },
-  seller: { email: "seller@agentbazaar.com", password: "seller123" },
+  customer: { email: "alice.johnson@gmail.com", password: "customer123" },
+  admin: { email: "admin.demo@gmail.com", password: "admin123" },
+  seller: { email: "seller.demo@gmail.com", password: "seller123" },
 };
 
 async function login(page: Page, email: string, password: string) {
   await page.goto("/login");
   await page.evaluate(() => {
-    localStorage.removeItem("agentbazaar_user");
-    localStorage.removeItem("agentbazaar_access_token");
-    localStorage.removeItem("agentbazaar_refresh_token");
+    localStorage.removeItem("ecommerce_user");
+    localStorage.removeItem("ecommerce_access_token");
+    localStorage.removeItem("ecommerce_refresh_token");
   });
   await page.goto("/login");
   await page.fill('input[type="email"]', email);

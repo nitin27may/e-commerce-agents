@@ -1,5 +1,5 @@
 # ============================================================
-# AgentBazaar — Multi-target Agent Dockerfile
+# E-Commerce Agents — Multi-target Agent Dockerfile
 # Build context: ./agents
 # Usage: docker build --build-arg AGENT_NAME=product_discovery .
 # ============================================================

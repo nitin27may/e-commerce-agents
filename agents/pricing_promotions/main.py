@@ -10,7 +10,7 @@ agent = create_pricing_promotions_agent()
 
 
 async def on_startup(app):
-    setup_telemetry("agentbazaar.pricing-promotions")
+    setup_telemetry("ecommerce.pricing-promotions")
     instrument_fastapi(app)
     await init_db_pool()
 

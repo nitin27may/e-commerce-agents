@@ -108,7 +108,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           <Store className="size-4 text-primary-foreground" />
         </div>
         <span className="text-lg font-semibold tracking-tight">
-          AgentBazaar
+          E-Commerce Agents
         </span>
       </div>
 

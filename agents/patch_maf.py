@@ -8,7 +8,7 @@ import importlib
 import pathlib
 
 PATCH = '''\
-"""Microsoft Agent Framework — re-exports for AgentBazaar."""
+"""Microsoft Agent Framework — re-exports for E-Commerce Agents."""
 __version__ = "1.0.0"
 
 from agent_framework._agents import Agent, RawAgent, BaseAgent
