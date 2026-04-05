@@ -136,6 +136,19 @@ class ApiClient {
     return this.request<any[]>("/api/admin/audit");
   }
 
+  // Seller
+  getSellerProducts() {
+    return this.request<{ products: any[]; total: number }>("/api/seller/products");
+  }
+
+  getSellerOrders() {
+    return this.request<{ orders: any[]; total: number }>("/api/seller/orders");
+  }
+
+  getSellerStats() {
+    return this.request<any>("/api/seller/stats");
+  }
+
   // Products
   getProducts(params?: { category?: string; min_price?: number; max_price?: number; search?: string; sort?: string }) {
     const qs = new URLSearchParams();

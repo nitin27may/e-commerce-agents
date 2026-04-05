@@ -52,7 +52,7 @@ export default function SellerProductsPage() {
     try {
       setLoading(true);
       setError(null);
-      const data = await api.getProducts();
+      const data = await api.getSellerProducts();
       setProducts(data.products);
     } catch (err) {
       setError(
@@ -97,10 +97,10 @@ export default function SellerProductsPage() {
               </div>
               <div>
                 <h1 className="text-2xl font-bold text-slate-900">
-                  Product Management
+                  My Products
                 </h1>
                 <p className="text-sm text-slate-500">
-                  {products.length} products in catalog
+                  {products.length} products in your catalog
                 </p>
               </div>
             </div>
@@ -118,8 +118,8 @@ export default function SellerProductsPage() {
                 <DialogHeader>
                   <DialogTitle>Coming Soon</DialogTitle>
                   <DialogDescription>
-                    Product creation is not yet available in the preview release.
-                    Full seller capabilities including product creation, editing,
+                    Product creation is not yet available. Full seller
+                    capabilities including product creation, editing,
                     and inventory management are on the roadmap.
                   </DialogDescription>
                 </DialogHeader>
@@ -152,7 +152,7 @@ export default function SellerProductsPage() {
           <div className="py-20 text-center">
             <Package className="mx-auto size-10 text-slate-300" />
             <p className="mt-3 text-sm text-slate-500">
-              No products in the catalog.
+              You have no products yet.
             </p>
           </div>
         )}
@@ -169,83 +169,77 @@ export default function SellerProductsPage() {
                     <TableHead>Category</TableHead>
                     <TableHead className="text-right">Price</TableHead>
                     <TableHead className="text-right">Rating</TableHead>
-                    <TableHead className="text-center">Stock</TableHead>
+                    <TableHead className="text-center">Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {products.map((product: any) => {
-                    const inStock =
-                      product.stock_quantity == null ||
-                      product.stock_quantity > 0;
-
-                    return (
-                      <TableRow
-                        key={product.id}
-                        className="cursor-pointer"
-                        onClick={() =>
-                          router.push(`/products/${product.id}`)
-                        }
-                      >
-                        <TableCell>
-                          <img
-                            src={productImageUrl(product.id, 48, 48)}
-                            alt={product.name}
-                            className="size-10 rounded-md object-cover bg-slate-100"
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <div>
-                            <p className="font-medium text-slate-800">
-                              {product.name}
-                            </p>
-                            <p className="text-xs text-slate-500">
-                              {product.brand}
-                            </p>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="text-[10px]">
-                            {product.category}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div>
-                            <span className="font-medium text-slate-800">
-                              {formatPrice(product.price)}
-                            </span>
-                            {product.original_price &&
-                              product.original_price > product.price && (
-                                <span className="ml-1 text-xs text-slate-400 line-through">
-                                  {formatPrice(product.original_price)}
-                                </span>
-                              )}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <span className="flex items-center justify-end gap-1 text-xs">
-                            <Star className="size-3 fill-amber-400 text-amber-400" />
-                            {product.rating?.toFixed(1) ?? "N/A"}
-                            <span className="text-slate-400">
-                              ({product.review_count ?? 0})
-                            </span>
+                  {products.map((product: any) => (
+                    <TableRow
+                      key={product.id}
+                      className="cursor-pointer"
+                      onClick={() =>
+                        router.push(`/products/${product.id}`)
+                      }
+                    >
+                      <TableCell>
+                        <img
+                          src={productImageUrl(product.id, 48, 48)}
+                          alt={product.name}
+                          className="size-10 rounded-md object-cover bg-slate-100"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <div>
+                          <p className="font-medium text-slate-800">
+                            {product.name}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {product.brand}
+                          </p>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-[10px]">
+                          {product.category}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div>
+                          <span className="font-medium text-slate-800">
+                            {formatPrice(product.price)}
                           </span>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {inStock ? (
-                            <span className="inline-flex items-center gap-1 text-xs text-green-700">
-                              <CheckCircle className="size-3" />
-                              In Stock
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-xs text-red-600">
-                              <XCircle className="size-3" />
-                              Out of Stock
-                            </span>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
+                          {product.original_price &&
+                            product.original_price > product.price && (
+                              <span className="ml-1 text-xs text-slate-400 line-through">
+                                {formatPrice(product.original_price)}
+                              </span>
+                            )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <span className="flex items-center justify-end gap-1 text-xs">
+                          <Star className="size-3 fill-amber-400 text-amber-400" />
+                          {product.rating?.toFixed(1) ?? "N/A"}
+                          <span className="text-slate-400">
+                            ({product.review_count ?? 0})
+                          </span>
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {product.is_active ? (
+                          <span className="inline-flex items-center gap-1 text-xs text-green-700">
+                            <CheckCircle className="size-3" />
+                            Active
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-xs text-red-600">
+                            <XCircle className="size-3" />
+                            Inactive
+                          </span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             </CardContent>

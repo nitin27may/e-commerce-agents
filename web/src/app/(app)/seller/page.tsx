@@ -13,7 +13,6 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableHeader,
@@ -25,13 +24,12 @@ import {
 import {
   BarChart3,
   Package,
+  DollarSign,
   ShoppingCart,
-  Info,
   Star,
   ArrowRight,
   Loader2,
 } from "lucide-react";
-import { productImageUrl } from "@/lib/images";
 import { formatPrice, formatDate } from "@/lib/format";
 import { OrderStatusBadge } from "@/components/status-badge";
 
@@ -39,7 +37,7 @@ export default function SellerDashboardPage() {
   const router = useRouter();
   const { user, isLoading: authLoading, isAdmin } = useAuth();
 
-  const [products, setProducts] = useState<any[]>([]);
+  const [stats, setStats] = useState<any>(null);
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -50,11 +48,11 @@ export default function SellerDashboardPage() {
     try {
       setLoading(true);
       setError(null);
-      const [productsRes, ordersRes] = await Promise.all([
-        api.getProducts(),
-        api.getOrders(),
+      const [statsRes, ordersRes] = await Promise.all([
+        api.getSellerStats(),
+        api.getSellerOrders(),
       ]);
-      setProducts(productsRes.products);
+      setStats(statsRes);
       setOrders(ordersRes.orders);
     } catch (err) {
       setError(
@@ -88,7 +86,6 @@ export default function SellerDashboardPage() {
   }
 
   const recentOrders = orders.slice(0, 5);
-  const recentProducts = products.slice(0, 5);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -112,21 +109,6 @@ export default function SellerDashboardPage() {
       </div>
 
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        {/* Preview banner */}
-        <div className="mb-6 flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
-          <Info className="mt-0.5 size-4 shrink-0 text-blue-600" />
-          <div>
-            <p className="text-sm font-medium text-blue-800">
-              Seller Dashboard (Preview)
-            </p>
-            <p className="mt-0.5 text-xs text-blue-600">
-              This is a read-only preview of seller capabilities. Full seller
-              features including product creation, inventory management, and
-              order fulfillment are coming soon.
-            </p>
-          </div>
-        </div>
-
         {/* Loading */}
         {loading && (
           <div className="flex items-center justify-center py-20">
@@ -141,14 +123,16 @@ export default function SellerDashboardPage() {
           </div>
         )}
 
-        {!loading && !error && (
+        {!loading && !error && stats && (
           <>
             {/* Summary cards */}
-            <div className="mb-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="mb-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
               <Card>
                 <CardHeader>
                   <CardDescription>Total Products</CardDescription>
-                  <CardTitle className="text-3xl">{products.length}</CardTitle>
+                  <CardTitle className="text-3xl">
+                    {stats.product_count}
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <Link href="/seller/products">
@@ -161,15 +145,31 @@ export default function SellerDashboardPage() {
 
               <Card>
                 <CardHeader>
-                  <CardDescription>Recent Orders</CardDescription>
-                  <CardTitle className="text-3xl">{orders.length}</CardTitle>
+                  <CardDescription>Total Revenue</CardDescription>
+                  <CardTitle className="flex items-center gap-2 text-3xl">
+                    <DollarSign className="size-6 text-green-600" />
+                    {formatPrice(stats.total_revenue)}
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <Link href="/orders">
-                    <Button variant="outline" size="sm">
-                      View All <ArrowRight className="ml-1 size-3" />
-                    </Button>
-                  </Link>
+                  <p className="text-xs text-slate-500">
+                    Across {stats.order_count} orders
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardDescription>Orders Received</CardDescription>
+                  <CardTitle className="flex items-center gap-2 text-3xl">
+                    <ShoppingCart className="size-6 text-blue-600" />
+                    {stats.order_count}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-xs text-slate-500">
+                    Orders containing your products
+                  </p>
                 </CardContent>
               </Card>
 
@@ -177,102 +177,16 @@ export default function SellerDashboardPage() {
                 <CardHeader>
                   <CardDescription>Avg. Product Rating</CardDescription>
                   <CardTitle className="flex items-center gap-2 text-3xl">
-                    {products.length > 0
-                      ? (
-                          products.reduce(
-                            (sum: number, p: any) => sum + (p.rating || 0),
-                            0,
-                          ) / products.length
-                        ).toFixed(1)
-                      : "N/A"}
-                    {products.length > 0 && (
+                    {stats.avg_rating > 0 ? stats.avg_rating.toFixed(1) : "N/A"}
+                    {stats.avg_rating > 0 && (
                       <Star className="size-6 fill-amber-400 text-amber-400" />
                     )}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <p className="text-xs text-slate-500">
-                    Across {products.length} products
+                    Across {stats.product_count} products
                   </p>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Recent products table */}
-            <div className="mb-8">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-slate-800">
-                  Products
-                </h2>
-                <Link href="/seller/products">
-                  <Button variant="outline" size="sm">
-                    View All
-                  </Button>
-                </Link>
-              </div>
-              <Card>
-                <CardContent className="p-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-[60px]">Image</TableHead>
-                        <TableHead>Product</TableHead>
-                        <TableHead>Category</TableHead>
-                        <TableHead className="text-right">Price</TableHead>
-                        <TableHead className="text-right">Rating</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {recentProducts.map((product: any) => (
-                        <TableRow
-                          key={product.id}
-                          className="cursor-pointer"
-                          onClick={() =>
-                            router.push(`/products/${product.id}`)
-                          }
-                        >
-                          <TableCell>
-                            <img
-                              src={productImageUrl(product.id, 48, 48)}
-                              alt={product.name}
-                              className="size-10 rounded-md object-cover bg-slate-100"
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <div>
-                              <p className="font-medium text-slate-800">
-                                {product.name}
-                              </p>
-                              <p className="text-xs text-slate-500">
-                                {product.brand}
-                              </p>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="text-[10px]">
-                              {product.category}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right font-medium">
-                            {formatPrice(product.price)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <span className="flex items-center justify-end gap-1 text-xs">
-                              <Star className="size-3 fill-amber-400 text-amber-400" />
-                              {product.rating?.toFixed(1) ?? "N/A"}
-                            </span>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                      {recentProducts.length === 0 && (
-                        <TableRow>
-                          <TableCell colSpan={5} className="py-8 text-center text-sm text-slate-500">
-                            No products found.
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
                 </CardContent>
               </Card>
             </div>
@@ -283,9 +197,9 @@ export default function SellerDashboardPage() {
                 <h2 className="text-lg font-semibold text-slate-800">
                   Recent Orders
                 </h2>
-                <Link href="/orders">
+                <Link href="/seller/products">
                   <Button variant="outline" size="sm">
-                    View All
+                    Manage Products
                   </Button>
                 </Link>
               </div>
@@ -295,6 +209,7 @@ export default function SellerDashboardPage() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Order ID</TableHead>
+                        <TableHead>Buyer</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Date</TableHead>
                         <TableHead>Items</TableHead>
@@ -303,13 +218,19 @@ export default function SellerDashboardPage() {
                     </TableHeader>
                     <TableBody>
                       {recentOrders.map((order: any) => (
-                        <TableRow
-                          key={order.id}
-                          className="cursor-pointer"
-                          onClick={() => router.push(`/orders/${order.id}`)}
-                        >
+                        <TableRow key={order.id}>
                           <TableCell className="font-mono text-xs text-slate-600">
                             #{order.id?.slice(0, 8)}
+                          </TableCell>
+                          <TableCell>
+                            <div>
+                              <p className="text-sm font-medium text-slate-800">
+                                {order.buyer_name}
+                              </p>
+                              <p className="text-xs text-slate-400">
+                                {order.buyer_email}
+                              </p>
+                            </div>
                           </TableCell>
                           <TableCell>
                             <OrderStatusBadge status={order.status} />
@@ -328,8 +249,11 @@ export default function SellerDashboardPage() {
                       ))}
                       {recentOrders.length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={5} className="py-8 text-center text-sm text-slate-500">
-                            No orders found.
+                          <TableCell
+                            colSpan={6}
+                            className="py-8 text-center text-sm text-slate-500"
+                          >
+                            No orders found for your products.
                           </TableCell>
                         </TableRow>
                       )}

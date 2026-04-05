@@ -104,6 +104,13 @@ async def require_admin(user: dict[str, Any] = Depends(require_auth)) -> dict[st
     return user
 
 
+async def require_seller(user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
+    """Require the authenticated user to have seller or admin role."""
+    if user.get("role") not in ("seller", "admin"):
+        raise HTTPException(status_code=403, detail="Seller access required")
+    return user
+
+
 # ── Auth Routes (PUBLIC) ──────────────────────────────────────
 
 
@@ -296,8 +303,11 @@ async def chat(body: ChatRequest, user: dict[str, Any] = Depends(require_auth)) 
 
     # Call the orchestrator agent using direct chat completions API
     from orchestrator.agent import ORCHESTRATOR_TOOLS
-    from orchestrator.prompts import SYSTEM_PROMPT
+    from orchestrator.prompts import get_system_prompt
     from shared.agent_host import _run_agent_with_tools
+
+    user_role = current_user_role.get() or "customer"
+    system_prompt = get_system_prompt(user_role)
 
     agents_involved: list[str] = ["orchestrator"]
 
@@ -307,7 +317,7 @@ async def chat(body: ChatRequest, user: dict[str, Any] = Depends(require_auth)) 
     with UsageTimer() as timer:
         try:
             response_text = await _run_agent_with_tools(
-                system_prompt=SYSTEM_PROMPT,
+                system_prompt=system_prompt,
                 tools=ORCHESTRATOR_TOOLS,
                 user_message=body.message,
                 history=history,
@@ -1200,4 +1210,157 @@ async def get_profile(user: dict = Depends(require_auth)):
             "free_shipping_threshold": float(row["free_shipping_threshold"]) if row["free_shipping_threshold"] else None,
             "priority_support": row["priority_support"] if row["priority_support"] is not None else False,
         },
+    }
+
+
+# ── Seller Routes ────────────────────────────────────────────
+
+
+@router.get("/api/seller/products")
+async def list_seller_products(
+    category: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    user: dict[str, Any] = Depends(require_seller),
+) -> dict[str, Any]:
+    """List products owned by the authenticated seller."""
+    pool = get_pool()
+    user_id = user.get("user_id", "")
+
+    conditions = ["p.seller_id = $1"]
+    args: list = [user_id]
+    idx = 2
+
+    if category:
+        conditions.append(f"p.category = ${idx}")
+        args.append(category)
+        idx += 1
+
+    where = " AND ".join(conditions)
+    rows = await pool.fetch(
+        f"""SELECT p.id, p.name, p.description, p.category, p.brand, p.price,
+                   p.original_price, p.image_url, p.rating, p.review_count, p.is_active
+            FROM products p WHERE {where}
+            ORDER BY p.created_at DESC
+            LIMIT {limit} OFFSET {offset}""",
+        *args,
+    )
+    total = await pool.fetchval(f"SELECT COUNT(*) FROM products p WHERE {where}", *args)
+
+    return {
+        "products": [
+            {
+                "id": str(r["id"]),
+                "name": r["name"],
+                "description": r["description"][:200],
+                "category": r["category"],
+                "brand": r["brand"],
+                "price": float(r["price"]),
+                "original_price": float(r["original_price"]) if r["original_price"] else None,
+                "image_url": r["image_url"],
+                "rating": float(r["rating"]),
+                "review_count": r["review_count"],
+                "is_active": r["is_active"],
+            }
+            for r in rows
+        ],
+        "total": total,
+    }
+
+
+@router.get("/api/seller/orders")
+async def list_seller_orders(
+    status: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
+    user: dict[str, Any] = Depends(require_seller),
+) -> dict[str, Any]:
+    """List orders containing the authenticated seller's products."""
+    pool = get_pool()
+    user_id = user.get("user_id", "")
+
+    conditions = ["p.seller_id = $1"]
+    args: list = [user_id]
+    idx = 2
+
+    if status:
+        conditions.append(f"o.status = ${idx}")
+        args.append(status)
+        idx += 1
+
+    where = " AND ".join(conditions)
+    rows = await pool.fetch(
+        f"""SELECT DISTINCT o.id, o.status, o.total, o.created_at,
+                   buyer.name as buyer_name, buyer.email as buyer_email,
+                   COUNT(oi.id) as item_count
+            FROM orders o
+            JOIN order_items oi ON oi.order_id = o.id
+            JOIN products p ON oi.product_id = p.id
+            JOIN users buyer ON o.user_id = buyer.id
+            WHERE {where}
+            GROUP BY o.id, o.status, o.total, o.created_at, buyer.name, buyer.email
+            ORDER BY o.created_at DESC
+            LIMIT {limit} OFFSET {offset}""",
+        *args,
+    )
+    total = await pool.fetchval(
+        f"""SELECT COUNT(DISTINCT o.id)
+            FROM orders o
+            JOIN order_items oi ON oi.order_id = o.id
+            JOIN products p ON oi.product_id = p.id
+            WHERE {where}""",
+        *args,
+    )
+
+    return {
+        "orders": [
+            {
+                "id": str(r["id"]),
+                "status": r["status"],
+                "total": float(r["total"]),
+                "date": r["created_at"].isoformat(),
+                "buyer_name": r["buyer_name"],
+                "buyer_email": r["buyer_email"],
+                "item_count": r["item_count"],
+            }
+            for r in rows
+        ],
+        "total": total,
+    }
+
+
+@router.get("/api/seller/stats")
+async def get_seller_stats(user: dict[str, Any] = Depends(require_seller)) -> dict[str, Any]:
+    """Get aggregate sales statistics for the authenticated seller."""
+    pool = get_pool()
+    user_id = user.get("user_id", "")
+
+    product_count = await pool.fetchval(
+        "SELECT COUNT(*) FROM products WHERE seller_id = $1", user_id,
+    )
+    total_revenue = await pool.fetchval(
+        """SELECT COALESCE(SUM(oi.subtotal), 0)
+           FROM order_items oi
+           JOIN products p ON oi.product_id = p.id
+           WHERE p.seller_id = $1""",
+        user_id,
+    )
+    order_count = await pool.fetchval(
+        """SELECT COUNT(DISTINCT o.id)
+           FROM orders o
+           JOIN order_items oi ON oi.order_id = o.id
+           JOIN products p ON oi.product_id = p.id
+           WHERE p.seller_id = $1""",
+        user_id,
+    )
+    avg_rating = await pool.fetchval(
+        "SELECT COALESCE(AVG(rating), 0) FROM products WHERE seller_id = $1",
+        user_id,
+    )
+
+    return {
+        "product_count": product_count,
+        "total_revenue": float(total_revenue),
+        "order_count": order_count,
+        "avg_rating": round(float(avg_rating), 2),
     }

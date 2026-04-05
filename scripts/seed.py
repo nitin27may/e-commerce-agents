@@ -259,19 +259,24 @@ async def seed_users(conn: asyncpg.Connection) -> dict[str, uuid.UUID]:
     return user_ids
 
 
-async def seed_products(conn: asyncpg.Connection) -> list[dict]:
-    """Insert products and return list with ids."""
+async def seed_products(conn: asyncpg.Connection, user_ids: dict[str, uuid.UUID]) -> list[dict]:
+    """Insert products and return list with ids. Assigns seller ownership."""
+    seller1_id = user_ids["seller@agentbazaar.com"]
+    seller2_id = user_ids["seller2@agentbazaar.com"]
+
     products_with_ids = []
-    for p in PRODUCTS:
+    for i, p in enumerate(PRODUCTS):
+        # First 25 products -> seller@agentbazaar.com, remaining 25 -> seller2@agentbazaar.com
+        seller_id = seller1_id if i < 25 else seller2_id
         row = await conn.fetchrow(
-            """INSERT INTO products (name, description, category, brand, price, original_price, rating, review_count, specs)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+            """INSERT INTO products (name, description, category, brand, price, original_price, rating, review_count, specs, seller_id)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10)
                ON CONFLICT DO NOTHING
                RETURNING id""",
             p["name"], p["description"], p["category"], p["brand"],
             Decimal(str(p["price"])), Decimal(str(p.get("original_price", p["price"]))),
             Decimal(str(p["rating"])), p["review_count"],
-            json.dumps(p["specs"]),
+            json.dumps(p["specs"]), seller_id,
         )
         if row:
             products_with_ids.append({**p, "id": row["id"]})
@@ -655,7 +660,7 @@ async def main() -> None:
             """)
 
         user_ids = await seed_users(conn)
-        products = await seed_products(conn)
+        products = await seed_products(conn, user_ids)
         warehouse_ids = await seed_warehouses(conn)
         await seed_warehouse_inventory(conn, warehouse_ids, products)
         carrier_ids = await seed_carriers(conn)

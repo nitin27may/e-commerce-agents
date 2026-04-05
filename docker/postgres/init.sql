@@ -39,6 +39,7 @@ CREATE TABLE products (
     review_count INTEGER DEFAULT 0,
     specs JSONB DEFAULT '{}',          -- Product-specific attributes
     is_active BOOLEAN DEFAULT TRUE,
+    seller_id UUID REFERENCES users(id),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -311,6 +312,7 @@ CREATE TABLE agent_execution_steps (
 -- INDEXES
 -- ============================================================
 
+CREATE INDEX idx_products_seller ON products(seller_id);
 CREATE INDEX idx_products_category ON products(category);
 CREATE INDEX idx_products_price ON products(price);
 CREATE INDEX idx_products_rating ON products(rating DESC);

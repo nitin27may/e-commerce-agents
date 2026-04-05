@@ -95,9 +95,10 @@ async def _run_agent_with_tools(
 
     # Tool-calling loop (max 5 iterations)
     for _ in range(5):
-        kwargs: dict[str, Any] = {"model": model, "messages": messages}
+        kwargs: dict[str, Any] = {"model": model, "messages": messages, "temperature": 0.1}
         if tool_defs:
             kwargs["tools"] = tool_defs
+            kwargs["tool_choice"] = "auto"
 
         response = await client.chat.completions.create(**kwargs)
         choice = response.choices[0]
@@ -177,16 +178,22 @@ def create_agent_app(
             # Conversation history forwarded by orchestrator
             history = body.get("history", None)
 
-            # Get system prompt and tools from the MAF agent
-            system_prompt = getattr(agent, "_instructions", "") or getattr(agent, "instructions", "") or ""
+            # Get tools from the MAF agent
             tools = []
             if hasattr(agent, "_tools"):
                 tools = list(agent._tools) if agent._tools else []
             elif hasattr(agent, "tools"):
                 tools = list(agent.tools) if agent.tools else []
 
-            # Build user context from request headers (set by orchestrator A2A call)
+            # Load role-aware prompt from YAML if the agent has get_system_prompt
             user_email = request.headers.get("x-user-email", "")
+            user_role = request.headers.get("x-user-role", "customer")
+            prompt_module = getattr(agent, "_prompt_module", None)
+            if prompt_module and hasattr(prompt_module, "get_system_prompt"):
+                system_prompt = prompt_module.get_system_prompt(user_role)
+            else:
+                system_prompt = getattr(agent, "_instructions", "") or getattr(agent, "instructions", "") or ""
+
             user_context = f"Current user email: {user_email}" if user_email else None
 
             response_text = await _run_agent_with_tools(
