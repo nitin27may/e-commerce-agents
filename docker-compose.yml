@@ -17,10 +17,11 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ecommerce"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ecommerce -d ecommerce_agents"]
+      interval: 3s
       timeout: 3s
-      retries: 5
+      retries: 10
+      start_period: 10s
 
   redis:
     image: redis:7-alpine
@@ -173,8 +174,6 @@ services:
     build:
       context: ./web
     ports: ["3000:3000"]
-    depends_on:
-      - orchestrator
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8080
     profiles: ["frontend"]

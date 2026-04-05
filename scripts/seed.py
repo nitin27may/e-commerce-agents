@@ -638,9 +638,27 @@ async def seed_agent_permissions(conn: asyncpg.Connection, user_ids: dict[str, u
 # MAIN
 # ============================================================
 
+async def connect_with_retry(
+    dsn: str, *, max_retries: int = 15, delay: float = 2.0
+) -> asyncpg.Connection:
+    """Connect to PostgreSQL with retries for first-run init race conditions."""
+    for attempt in range(1, max_retries + 1):
+        try:
+            return await asyncpg.connect(dsn)
+        except (asyncpg.InvalidPasswordError, OSError, asyncpg.CannotConnectNowError) as exc:
+            if attempt == max_retries:
+                raise
+            logger.warning(
+                "Connection attempt %d/%d failed (%s), retrying in %.0fs...",
+                attempt, max_retries, exc, delay,
+            )
+            await asyncio.sleep(delay)
+    raise RuntimeError("Unreachable")
+
+
 async def main() -> None:
     logger.info("Connecting to database: %s", DATABASE_URL.split("@")[-1])
-    conn = await asyncpg.connect(DATABASE_URL)
+    conn = await connect_with_retry(DATABASE_URL)
 
     try:
         # Check if already seeded

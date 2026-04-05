@@ -170,8 +170,19 @@ if [ "$SEED_ONLY" = true ]; then
 
     # Ensure infra is running
     docker compose up -d db redis aspire
-    wait_for_health "PostgreSQL" "docker compose exec db pg_isready -U ecommerce"
+    wait_for_health "PostgreSQL" "docker compose exec db pg_isready -h 127.0.0.1 -U ecommerce -d ecommerce_agents" 60
     wait_for_health "Redis" "docker compose exec redis redis-cli ping"
+
+    # Verify DB credentials work (catches stale volumes)
+    if ! docker compose exec -T db sh -c 'PGPASSWORD=ecommerce_secret psql -h 127.0.0.1 -U ecommerce -d ecommerce_agents -c "SELECT 1"' > /dev/null 2>&1; then
+        warn "Database auth failed — stale Docker volume. Reinitializing..."
+        docker compose stop db
+        docker compose rm -f db
+        docker volume ls -q | grep '_pgdata$' | xargs docker volume rm 2>/dev/null || true
+        docker compose up -d db
+        wait_for_health "PostgreSQL" "docker compose exec db pg_isready -h 127.0.0.1 -U ecommerce -d ecommerce_agents" 60
+        success "Database reinitialized with correct credentials"
+    fi
 
     docker compose --profile seed run --rm seeder
     success "Seeder complete"
@@ -187,9 +198,9 @@ docker compose --profile seed --profile agents --profile frontend down --remove-
 
 step "Building images"
 if [ "$CLEAN" = true ]; then
-    docker compose --profile seed --profile agents build --no-cache
+    docker compose --profile seed --profile agents --profile frontend build --no-cache
 else
-    docker compose --profile seed --profile agents build
+    docker compose --profile seed --profile agents --profile frontend build
 fi
 
 # ── Start Infrastructure ──────────────────────────────────────
@@ -197,8 +208,20 @@ fi
 step "Starting infrastructure (db, redis, aspire)"
 docker compose up -d db redis aspire
 
-wait_for_health "PostgreSQL" "docker compose exec db pg_isready -U ecommerce"
+wait_for_health "PostgreSQL" "docker compose exec db pg_isready -h 127.0.0.1 -U ecommerce -d ecommerce_agents" 60
 wait_for_health "Redis" "docker compose exec redis redis-cli ping"
+
+# Verify DB credentials work (catches stale volumes with old passwords)
+if ! docker compose exec -T db sh -c 'PGPASSWORD=ecommerce_secret psql -h 127.0.0.1 -U ecommerce -d ecommerce_agents -c "SELECT 1"' > /dev/null 2>&1; then
+    warn "Database auth failed — stale Docker volume detected. Reinitializing..."
+    docker compose stop db
+    docker compose rm -f db
+    docker volume ls -q | grep '_pgdata$' | xargs docker volume rm 2>/dev/null || true
+    docker compose up -d db
+    wait_for_health "PostgreSQL" "docker compose exec db pg_isready -h 127.0.0.1 -U ecommerce -d ecommerce_agents" 60
+    success "Database reinitialized with correct credentials"
+fi
+
 success "Infrastructure is ready"
 
 # ── Run Seeder ────────────────────────────────────────────────
@@ -217,8 +240,8 @@ fi
 
 # ── Start Agents ──────────────────────────────────────────────
 
-step "Starting agents"
-docker compose --profile agents up -d
+step "Starting agents and frontend"
+docker compose --profile agents --profile frontend up -d
 
 wait_for_http "Orchestrator"      "http://localhost:8080/health"
 wait_for_http "Product Discovery" "http://localhost:8081/health"
@@ -228,11 +251,6 @@ wait_for_http "Review & Sentim."  "http://localhost:8084/health"
 wait_for_http "Inventory & Ful."  "http://localhost:8085/health"
 
 success "All agents are running"
-
-# ── Start Frontend ────────────────────────────────────────────
-
-step "Starting frontend"
-docker compose --profile frontend up -d
 
 wait_for_http "Frontend" "http://localhost:3000" 90
 
