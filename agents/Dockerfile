@@ -27,8 +27,9 @@ RUN uv sync --no-dev --no-install-project
 COPY patch_maf.py .
 RUN uv run --no-project python patch_maf.py
 
-# Copy shared library (all agents need this)
+# Copy shared library and prompt configs (all agents need these)
 COPY shared/ shared/
+COPY config/ config/
 
 # ── Agent-specific copy ──────────────────────────────────────
 ARG AGENT_NAME=orchestrator

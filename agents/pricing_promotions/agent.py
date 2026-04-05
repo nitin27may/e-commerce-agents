@@ -19,6 +19,19 @@ from shared.tools.loyalty_tools import (
 from shared.tools.pricing_tools import get_price_history
 from shared.tools.user_tools import get_purchase_history, get_user_profile
 
+AGENT_TOOLS = [
+    validate_coupon,
+    optimize_cart,
+    get_active_deals,
+    check_bundle_eligibility,
+    get_loyalty_tier,
+    calculate_loyalty_discount,
+    get_loyalty_benefits,
+    get_price_history,
+    get_user_profile,
+    get_purchase_history,
+]
+
 
 def create_pricing_promotions_agent() -> Agent:
     """Create the Pricing & Promotions ChatAgent with all tools."""
@@ -27,17 +40,6 @@ def create_pricing_promotions_agent() -> Agent:
         name="pricing-promotions",
         description="Coupon validation, cart optimization, loyalty discounts, bundle deals, and active promotions discovery.",
         instructions=SYSTEM_PROMPT,
-        tools=[
-            validate_coupon,
-            optimize_cart,
-            get_active_deals,
-            check_bundle_eligibility,
-            get_loyalty_tier,
-            calculate_loyalty_discount,
-            get_loyalty_benefits,
-            get_price_history,
-            get_user_profile,
-            get_purchase_history,
-        ],
+        tools=AGENT_TOOLS,
         context_providers=[ECommerceContextProvider()],
     )

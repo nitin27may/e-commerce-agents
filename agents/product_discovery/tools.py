@@ -14,7 +14,7 @@ from shared.db import get_pool
 
 @tool(name="search_products", description="Search the product catalog using natural language. Supports filtering by category, price range, and rating.")
 async def search_products(
-    query: Annotated[str, Field(description="Natural language search query")],
+    query: Annotated[str | None, Field(description="Natural language search query (optional if using category filter)")] = None,
     category: Annotated[str | None, Field(description="Filter by category: Electronics, Clothing, Home, Sports, Books")] = None,
     min_price: Annotated[float | None, Field(description="Minimum price filter")] = None,
     max_price: Annotated[float | None, Field(description="Maximum price filter")] = None,

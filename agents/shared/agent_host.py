@@ -118,6 +118,7 @@ async def _run_agent_with_tools(
                         else:
                             result = await tool_fn.invoke(**fn_args)
                         result_str = json.dumps(result, default=str) if not isinstance(result, str) else result
+                        logger.info("tool.result name=%s len=%d content=%s", fn_name, len(result_str), result_str[:500])
                     except Exception as e:
                         logger.exception("tool.error name=%s", fn_name)
                         result_str = json.dumps({"error": str(e)})
@@ -138,10 +139,19 @@ def create_agent_app(
     agent_name: str,
     port: int,
     description: str = "",
+    tools: list | None = None,
     on_startup: Callable | None = None,
     on_shutdown: Callable | None = None,
 ) -> FastAPI:
-    """Create a FastAPI app that hosts an agent with A2A-compatible endpoints."""
+    """Create a FastAPI app that hosts an agent with A2A-compatible endpoints.
+
+    Args:
+        agent: The MAF Agent instance (used for metadata only now)
+        agent_name: Agent identifier matching the YAML config filename
+        port: Port number
+        tools: List of MAF FunctionTool objects for the tool-calling loop
+        on_startup/on_shutdown: Lifecycle callbacks
+    """
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -178,26 +188,22 @@ def create_agent_app(
             # Conversation history forwarded by orchestrator
             history = body.get("history", None)
 
-            # Get tools from the MAF agent
-            tools = []
-            if hasattr(agent, "_tools"):
-                tools = list(agent._tools) if agent._tools else []
-            elif hasattr(agent, "tools"):
-                tools = list(agent.tools) if agent.tools else []
-
-            # Load role-aware prompt from YAML if the agent has get_system_prompt
+            # Load role-aware prompt from YAML config
             user_email = request.headers.get("x-user-email", "")
             user_role = request.headers.get("x-user-role", "customer")
-            prompt_module = getattr(agent, "_prompt_module", None)
-            if prompt_module and hasattr(prompt_module, "get_system_prompt"):
-                system_prompt = prompt_module.get_system_prompt(user_role)
-            else:
+            try:
+                from shared.prompt_loader import load_prompt
+                system_prompt = load_prompt(agent_name, user_role)
+            except Exception:
                 system_prompt = getattr(agent, "_instructions", "") or getattr(agent, "instructions", "") or ""
 
             user_context = f"Current user email: {user_email}" if user_email else None
 
+            # Use the tools list passed to create_agent_app
+            agent_tools = tools or []
+
             response_text = await _run_agent_with_tools(
-                system_prompt, tools, message,
+                system_prompt, agent_tools, message,
                 history=history,
                 user_context=user_context,
             )

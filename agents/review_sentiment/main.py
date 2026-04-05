@@ -1,6 +1,6 @@
 """Review & Sentiment agent — entry point."""
 
-from review_sentiment.agent import create_review_sentiment_agent
+from review_sentiment.agent import AGENT_TOOLS, create_review_sentiment_agent
 from shared.agent_host import create_agent_app
 from shared.auth import AgentAuthMiddleware
 from shared.db import close_db_pool, init_db_pool
@@ -20,6 +20,7 @@ app = create_agent_app(
     agent_name="review-sentiment",
     port=8084,
     description="Review analysis, sentiment breakdown, fake review detection.",
+    tools=AGENT_TOOLS,
     on_startup=on_startup,
     on_shutdown=close_db_pool,
 )

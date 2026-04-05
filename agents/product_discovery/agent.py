@@ -17,6 +17,20 @@ from shared.tools.inventory_tools import check_stock, get_warehouse_availability
 from shared.tools.pricing_tools import get_price_history
 from shared.tools.user_tools import get_purchase_history, get_user_profile
 
+AGENT_TOOLS = [
+    search_products,
+    get_product_details,
+    compare_products,
+    semantic_search,
+    find_similar_products,
+    get_trending_products,
+    check_stock,
+    get_warehouse_availability,
+    get_price_history,
+    get_user_profile,
+    get_purchase_history,
+]
+
 
 def create_product_discovery_agent() -> Agent:
     """Create the Product Discovery ChatAgent with all tools."""
@@ -25,18 +39,6 @@ def create_product_discovery_agent() -> Agent:
         name="product-discovery",
         description="Natural language product search with personalized recommendations, semantic search, and price tracking.",
         instructions=SYSTEM_PROMPT,
-        tools=[
-            search_products,
-            get_product_details,
-            compare_products,
-            semantic_search,
-            find_similar_products,
-            get_trending_products,
-            check_stock,
-            get_warehouse_availability,
-            get_price_history,
-            get_user_profile,
-            get_purchase_history,
-        ],
+        tools=AGENT_TOOLS,
         context_providers=[ECommerceContextProvider()],
     )

@@ -17,6 +17,19 @@ from shared.agent_factory import create_chat_client
 from shared.context_providers import ECommerceContextProvider
 from shared.tools.user_tools import get_purchase_history, get_user_profile
 
+AGENT_TOOLS = [
+    get_product_reviews,
+    analyze_sentiment,
+    get_sentiment_by_topic,
+    get_sentiment_trend,
+    detect_fake_reviews,
+    search_reviews,
+    draft_seller_response,
+    compare_product_reviews,
+    get_user_profile,
+    get_purchase_history,
+]
+
 
 def create_review_sentiment_agent() -> Agent:
     """Create the Review & Sentiment ChatAgent with all tools."""
@@ -25,17 +38,6 @@ def create_review_sentiment_agent() -> Agent:
         name="review-sentiment",
         description="Product review analysis with sentiment breakdown, topic insights, trend tracking, fake review detection, and cross-product comparisons.",
         instructions=SYSTEM_PROMPT,
-        tools=[
-            get_product_reviews,
-            analyze_sentiment,
-            get_sentiment_by_topic,
-            get_sentiment_trend,
-            detect_fake_reviews,
-            search_reviews,
-            draft_seller_response,
-            compare_product_reviews,
-            get_user_profile,
-            get_purchase_history,
-        ],
+        tools=AGENT_TOOLS,
         context_providers=[ECommerceContextProvider()],
     )

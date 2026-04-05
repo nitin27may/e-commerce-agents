@@ -20,6 +20,19 @@ from shared.tools.return_tools import (
 )
 from shared.tools.user_tools import get_user_profile
 
+AGENT_TOOLS = [
+    get_user_orders,
+    get_order_details,
+    get_order_tracking,
+    cancel_order,
+    modify_order,
+    check_return_eligibility,
+    initiate_return,
+    process_refund,
+    get_return_status,
+    get_user_profile,
+]
+
 
 def create_order_management_agent() -> Agent:
     """Create the Order Management ChatAgent with all tools."""
@@ -28,17 +41,6 @@ def create_order_management_agent() -> Agent:
         name="order-management",
         description="Order tracking, cancellation, modification, returns, and refund processing.",
         instructions=SYSTEM_PROMPT,
-        tools=[
-            get_user_orders,
-            get_order_details,
-            get_order_tracking,
-            cancel_order,
-            modify_order,
-            check_return_eligibility,
-            initiate_return,
-            process_refund,
-            get_return_status,
-            get_user_profile,
-        ],
+        tools=AGENT_TOOLS,
         context_providers=[ECommerceContextProvider()],
     )
