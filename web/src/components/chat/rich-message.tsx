@@ -74,27 +74,46 @@ function detectProductsInText(text: string): { name: string; price?: number; rat
   // Also: "- Product Name ($XX.XX)" or "Product Name – $XX.XX | Rating: X.X"
   const lines = text.split("\n");
   for (const line of lines) {
-    // Match lines with a product name and price like:
-    // "Sony WH-1000XM5 — $299.99" or "**Logitech MX** — $99.99 (on sale)"
-    const productMatch = line.match(
-      /(?:\*\*|^[-•]\s*|^\d+\.\s*)(.{5,60}?)(?:\*\*)?[\s—–-]+.*?\$(\d+\.?\d*)/
-    );
-    if (productMatch) {
-      const name = productMatch[1].replace(/\*\*/g, "").trim();
-      const price = parseFloat(productMatch[2]);
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.length < 10) continue;
 
-      // Try to find rating
-      const ratingMatch = line.match(/Rating[:\s]*(\d\.?\d?)/i) || line.match(/(\d\.\d)\s*(?:\/\s*5|stars?|\u2605)/i);
-      const rating = ratingMatch ? parseFloat(ratingMatch[1]) : undefined;
+    // Skip header/label lines
+    if (/^(Order|Status|Total|Shipping|Tracking|Address|Date|Hi |Would|If |Products in)/i.test(trimmed)) continue;
 
-      // Try to find category
-      const catMatch = line.match(/\((Electronics|Clothing|Home|Sports|Books)/i);
-      const category = catMatch ? catMatch[1] : undefined;
+    // Find any $ price in the line
+    const priceMatch = trimmed.match(/\$(\d[\d,]*\.?\d*)/);
+    if (!priceMatch) continue;
 
-      if (name.length > 3 && !name.match(/^(Price|Total|Status|Order|Shipping|Tracking)/i)) {
-        products.push({ name, price, rating, category });
-      }
+    const price = parseFloat(priceMatch[1].replace(",", ""));
+
+    // Extract product name — everything before the first ( or — or – or $
+    let name = trimmed
+      .replace(/^[-•*]\s*/, "")        // strip leading bullet
+      .replace(/^\d+\.\s*/, "")        // strip "1. "
+      .replace(/^\*\*/, "").replace(/\*\*/, "")  // strip bold
+      .split(/\s*[—–]\s*|\s*\((?:Electronics|Clothing|Home|Sports|Books)/i)[0]
+      .trim();
+
+    // If name still has price in it, cut before $
+    if (name.includes("$")) {
+      name = name.split("$")[0].trim();
     }
+
+    // Clean trailing punctuation
+    name = name.replace(/[,:\s]+$/, "");
+
+    if (name.length < 4 || name.length > 80) continue;
+    if (/^(Price|Total|Status|Order|Shipping|Tracking|Would|Hi )/i.test(name)) continue;
+
+    // Extract category
+    const catMatch = trimmed.match(/\((Electronics|Clothing|Home|Sports|Books)/i);
+    const category = catMatch ? catMatch[1] : undefined;
+
+    // Extract rating
+    const ratingMatch = trimmed.match(/Rating[:\s]*(\d\.?\d?)/i) || trimmed.match(/(\d\.\d)\s*(?:\/\s*5|stars?)/i);
+    const rating = ratingMatch ? parseFloat(ratingMatch[1]) : undefined;
+
+    products.push({ name, price, rating, category });
   }
 
   return products;
