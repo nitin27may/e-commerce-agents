@@ -8,7 +8,7 @@ import { productImageUrl } from "@/lib/images";
 
 interface ProductData {
   id?: string;
-  name: string;
+  name?: string;
   price?: number;
   original_price?: number;
   rating?: number;
