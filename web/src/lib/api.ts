@@ -76,6 +76,88 @@ class ApiClient {
     });
   }
 
+  /**
+   * Streaming chat — reads SSE events and calls onChunk for each text delta.
+   * Returns conversation metadata once the stream completes.
+   */
+  async chatStream(
+    message: string,
+    conversationId: string | undefined,
+    onChunk: (text: string) => void,
+  ): Promise<{ conversation_id: string; agents_involved: string[] }> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (this.token) {
+      headers["Authorization"] = `Bearer ${this.token}`;
+    }
+
+    const res = await fetch(`${API_URL}/api/chat/stream`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ message, conversation_id: conversationId }),
+    });
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || body.error || `API error ${res.status}`);
+    }
+
+    const reader = res.body?.getReader();
+    if (!reader) {
+      throw new Error("ReadableStream not supported");
+    }
+
+    const decoder = new TextDecoder();
+    let metadata: { conversation_id: string; agents_involved: string[] } | null = null;
+    let buffer = "";
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        // Keep the last potentially incomplete line in the buffer
+        buffer = lines.pop() ?? "";
+
+        let currentEventType = "";
+        for (const line of lines) {
+          if (line.startsWith("event: ")) {
+            currentEventType = line.slice(7).trim();
+            continue;
+          }
+          if (line.startsWith("data: ")) {
+            const data = line.slice(6);
+
+            if (data === "[DONE]") {
+              continue;
+            }
+
+            if (currentEventType === "metadata") {
+              try {
+                metadata = JSON.parse(data);
+              } catch {
+                // Ignore malformed metadata
+              }
+              currentEventType = "";
+              continue;
+            }
+
+            // Regular text chunk
+            onChunk(data);
+            currentEventType = "";
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    return metadata ?? { conversation_id: conversationId ?? "", agents_involved: [] };
+  }
+
   // Conversations
   getConversations() {
     return this.request<any[]>("/api/conversations");
@@ -198,4 +280,12 @@ export function deleteConversation(id: string) {
 
 export function chat(message: string, conversationId?: string) {
   return api.chat(message, conversationId);
+}
+
+export function chatStream(
+  message: string,
+  conversationId: string | undefined,
+  onChunk: (text: string) => void,
+) {
+  return api.chatStream(message, conversationId, onChunk);
 }

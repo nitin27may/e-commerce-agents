@@ -1,0 +1,51 @@
+[
+  {
+    "input": "Show me my recent orders",
+    "expected_tools": ["get_user_orders"],
+    "expected_fields": ["order_id", "status", "total", "created_at"],
+    "criteria": {
+      "grounded": true,
+      "tool_called": true
+    }
+  },
+  {
+    "input": "What is the status of order 550e8400-e29b-41d4-a716-446655440001?",
+    "expected_tools": ["get_order_details"],
+    "expected_fields": ["order_id", "status", "items"],
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "order_id_passed": true
+    }
+  },
+  {
+    "input": "Where is my package for order 550e8400-e29b-41d4-a716-446655440002? I want tracking info.",
+    "expected_tools": ["get_order_tracking"],
+    "expected_fields": ["order_id", "status", "tracking_number"],
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "tracking_requested": true
+    }
+  },
+  {
+    "input": "Cancel my order 550e8400-e29b-41d4-a716-446655440003, I found a better deal elsewhere",
+    "expected_tools": ["cancel_order"],
+    "expected_fields": ["order_id", "new_status", "refund_amount"],
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "cancellation_attempted": true
+    }
+  },
+  {
+    "input": "I want to return the laptop from order 550e8400-e29b-41d4-a716-446655440004, it has a defective screen",
+    "expected_tools": ["check_return_eligibility", "initiate_return"],
+    "expected_fields": ["order_id", "return_eligible"],
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "return_flow_initiated": true
+    }
+  }
+]

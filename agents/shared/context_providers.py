@@ -49,6 +49,17 @@ class ECommerceContextProvider(ContextProvider):
                 email,
             )
 
+            memories = await conn.fetch(
+                """SELECT category, content, importance
+                   FROM agent_memories m
+                   JOIN users u ON m.user_id = u.id
+                   WHERE u.email = $1 AND m.is_active = TRUE
+                     AND (m.expires_at IS NULL OR m.expires_at > NOW())
+                   ORDER BY m.importance DESC, m.created_at DESC
+                   LIMIT 10""",
+                email,
+            )
+
         lines = [
             f"Current user: {user['name']} ({email})",
             f"Role: {user['role']}, Loyalty tier: {user['loyalty_tier']}, Total spend: ${user['total_spend']:.2f}",
@@ -59,6 +70,12 @@ class ECommerceContextProvider(ContextProvider):
                 lines.append(
                     f"  - Order {str(o['id'])[:8]}... | {o['status']} | ${o['total']:.2f} | {o['created_at'].strftime('%Y-%m-%d')}"
                 )
+
+        if memories:
+            lines.append("")
+            lines.append("## User Preferences & History")
+            for m in memories:
+                lines.append(f"  - [{m['category']}] {m['content']} (importance: {m['importance']})")
 
         state["user_context"] = "\n".join(lines)
 

@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import time
+from collections.abc import AsyncGenerator
 from typing import Any
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
+from starlette.responses import StreamingResponse
 
 from shared.context import current_user_email, current_user_role, current_session_id, current_conversation_history
 from shared.db import get_pool
@@ -355,6 +359,144 @@ async def chat(body: ChatRequest, user: dict[str, Any] = Depends(require_auth)) 
         response=response_text,
         conversation_id=conversation_id,
         agents_involved=agents_involved,
+    )
+
+
+@router.post("/api/chat/stream")
+async def chat_stream(body: ChatRequest, request: Request, user: dict[str, Any] = Depends(require_auth)):
+    """Streaming chat endpoint — sends SSE events as the agent generates tokens."""
+    from orchestrator.agent import ORCHESTRATOR_TOOLS, create_orchestrator_agent
+    from orchestrator.prompts import get_system_prompt
+    from shared.agent_host import _run_agent_with_tools_stream
+
+    pool = get_pool()
+    user_email = user.get("sub", "")
+    user_id = user.get("user_id", "")
+
+    # Resolve or create conversation
+    conversation_id = body.conversation_id
+    if conversation_id:
+        conv = await pool.fetchrow(
+            """SELECT id FROM conversations
+               WHERE id = $1 AND user_id = $2 AND is_active = TRUE""",
+            conversation_id,
+            user_id,
+        )
+        if not conv:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+    else:
+        title = body.message[:100] if len(body.message) > 100 else body.message
+        row = await pool.fetchrow(
+            """INSERT INTO conversations (user_id, title)
+               VALUES ($1, $2)
+               RETURNING id""",
+            user_id,
+            title,
+        )
+        conversation_id = str(row["id"])
+
+    # Save user message
+    await pool.execute(
+        """INSERT INTO messages (conversation_id, role, content, agent_name)
+           VALUES ($1, 'user', $2, NULL)""",
+        conversation_id,
+        body.message,
+    )
+
+    # Load conversation history
+    history_rows = await pool.fetch(
+        """SELECT role, content FROM messages
+           WHERE conversation_id = $1
+           ORDER BY created_at ASC
+           LIMIT 50""",
+        conversation_id,
+    )
+    history = [{"role": r["role"], "content": r["content"]} for r in history_rows]
+
+    # Fetch user context
+    user_row = await pool.fetchrow(
+        "SELECT name, role, loyalty_tier, total_spend FROM users WHERE email = $1", user_email,
+    )
+    user_context_lines: list[str] = []
+    if user_row:
+        user_context_lines.append(f"Logged-in user: {user_row['name']} ({user_email})")
+        user_context_lines.append(f"Role: {user_row['role']}, Loyalty: {user_row['loyalty_tier']}, Total spend: ${user_row['total_spend']:.2f}")
+    recent_orders = await pool.fetch(
+        """SELECT o.id, o.status, o.total, o.created_at
+           FROM orders o JOIN users u ON o.user_id = u.id
+           WHERE u.email = $1 ORDER BY o.created_at DESC LIMIT 5""",
+        user_email,
+    )
+    if recent_orders:
+        user_context_lines.append(f"Recent orders ({len(recent_orders)}):")
+        for o in recent_orders:
+            user_context_lines.append(f"  - Order {o['id']} | {o['status']} | ${o['total']:.2f} | {o['created_at'].strftime('%Y-%m-%d')}")
+    user_context = "\n".join(user_context_lines) if user_context_lines else None
+
+    user_role = current_user_role.get() or "customer"
+    system_prompt = get_system_prompt(user_role)
+    agents_involved: list[str] = ["orchestrator"]
+    current_conversation_history.set(history)
+
+    async def event_generator() -> AsyncGenerator[str, None]:
+        """Yield SSE-formatted events from the streaming agent response."""
+        full_response: list[str] = []
+        start_time = time.monotonic()
+
+        try:
+            async for chunk in _run_agent_with_tools_stream(
+                system_prompt=system_prompt,
+                tools=ORCHESTRATOR_TOOLS,
+                user_message=body.message,
+                history=history,
+                user_context=user_context,
+            ):
+                full_response.append(chunk)
+                yield f"data: {chunk}\n\n"
+
+        except Exception:
+            logger.exception("chat_stream.agent_error user=%s conversation=%s", user_email, conversation_id)
+            error_msg = "I apologize, but I encountered an issue processing your request. Please try again."
+            full_response.append(error_msg)
+            yield f"data: {error_msg}\n\n"
+
+        # Send metadata and termination event
+        response_text = "".join(full_response)
+        yield f"event: metadata\ndata: {json.dumps({"conversation_id": conversation_id, "agents_involved": agents_involved})}\n\n"
+        yield "data: [DONE]\n\n"
+
+        # Persist assistant message and update conversation (fire-and-forget)
+        try:
+            await pool.execute(
+                """INSERT INTO messages (conversation_id, role, content, agent_name, agents_involved)
+                   VALUES ($1, 'assistant', $2, 'orchestrator', $3)""",
+                conversation_id,
+                response_text,
+                agents_involved,
+            )
+            await pool.execute(
+                "UPDATE conversations SET last_message_at = NOW() WHERE id = $1",
+                conversation_id,
+            )
+            duration_ms = int((time.monotonic() - start_time) * 1000)
+            await log_agent_usage(
+                user_id=user_id,
+                agent_name="orchestrator",
+                input_summary=body.message,
+                duration_ms=duration_ms,
+                tool_calls_count=len(agents_involved) - 1,
+            )
+        except Exception:
+            logger.exception("chat_stream.persist_error conversation=%s", conversation_id)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 

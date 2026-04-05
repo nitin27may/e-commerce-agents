@@ -1,0 +1,51 @@
+[
+  {
+    "input": "Find me wireless headphones under $300",
+    "expected_tools": ["search_products"],
+    "expected_fields": ["name", "price"],
+    "criteria": {
+      "grounded": true,
+      "max_price_respected": true,
+      "tool_called": true
+    }
+  },
+  {
+    "input": "Show me the details for product abc-123",
+    "expected_tools": ["get_product_details"],
+    "expected_fields": ["name", "description", "price", "rating", "specs"],
+    "criteria": {
+      "grounded": true,
+      "tool_called": true
+    }
+  },
+  {
+    "input": "Compare the Sony WH-1000XM5 and the Bose QuietComfort Ultra",
+    "expected_tools": ["search_products", "compare_products"],
+    "expected_fields": ["name", "price", "rating"],
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "multiple_tools_used": true
+    }
+  },
+  {
+    "input": "I need something cozy for winter, maybe a blanket or warm jacket",
+    "expected_tools": ["semantic_search"],
+    "expected_fields": ["name", "price", "category"],
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "semantic_search_used": true
+    }
+  },
+  {
+    "input": "What are the trending electronics this month?",
+    "expected_tools": ["get_trending_products"],
+    "expected_fields": ["name", "price", "category"],
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "category_filter_applied": true
+    }
+  }
+]

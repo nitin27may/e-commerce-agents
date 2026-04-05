@@ -327,3 +327,18 @@ CREATE INDEX idx_usage_logs_user ON usage_logs(user_id, created_at DESC);
 CREATE INDEX idx_usage_logs_agent ON usage_logs(agent_name, created_at DESC);
 CREATE INDEX idx_usage_logs_trace ON usage_logs(trace_id);
 CREATE INDEX idx_messages_conversation ON messages(conversation_id, created_at);
+
+-- ── Agent Memory ──────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS agent_memories (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id),
+    category VARCHAR(50) NOT NULL,
+    content TEXT NOT NULL,
+    importance SMALLINT DEFAULT 5,
+    embedding vector(1536),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    expires_at TIMESTAMPTZ,
+    is_active BOOLEAN DEFAULT TRUE
+);
+CREATE INDEX IF NOT EXISTS idx_memories_user ON agent_memories(user_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_memories_category ON agent_memories(user_id, category);

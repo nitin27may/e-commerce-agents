@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any, Callable
 
@@ -131,6 +132,176 @@ async def _run_agent_with_tools(
         return choice.message.content or ""
 
     return "I processed your request but reached the maximum number of steps."
+
+
+async def _run_agent_with_tools_stream(
+    system_prompt: str,
+    tools: list[Callable],
+    user_message: str,
+    history: list[dict] | None = None,
+    user_context: str | None = None,
+) -> AsyncGenerator[str, None]:
+    """Streaming variant of _run_agent_with_tools.
+
+    Yields text chunks as they arrive from the LLM. When the model invokes
+    tools mid-stream, the generator accumulates the tool calls, executes
+    them, appends the results, and re-enters the streaming loop so the
+    next LLM turn is also streamed.
+
+    Args:
+        system_prompt: The agent's system instructions.
+        tools: List of MAF FunctionTool objects.
+        user_message: The current user message.
+        history: Previous conversation messages [{"role": ..., "content": ...}].
+        user_context: Extra context about the current user (injected into system prompt).
+    """
+    import openai
+
+    if settings.LLM_PROVIDER == "azure":
+        client = openai.AsyncAzureOpenAI(
+            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            api_key=settings.AZURE_OPENAI_KEY,
+            api_version=settings.AZURE_OPENAI_API_VERSION,
+        )
+        model = settings.AZURE_OPENAI_DEPLOYMENT
+    else:
+        client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        model = settings.LLM_MODEL
+
+    # Build tool definitions from MAF FunctionTool objects
+    tool_defs: list[dict] = []
+    tool_map: dict[str, Any] = {}
+    for t in tools:
+        name = getattr(t, "name", None) or getattr(t, "__name__", str(t))
+        desc = getattr(t, "description", None) or getattr(t, "__doc__", "") or ""
+        try:
+            schema = t.to_json_schema_spec()
+            func_schema = schema.get("function", schema)
+            params = func_schema.get("parameters", {"type": "object", "properties": {}})
+        except Exception:
+            params = {"type": "object", "properties": {}}
+
+        tool_defs.append({
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": desc[:1024],
+                "parameters": params,
+            },
+        })
+        tool_map[name] = t
+
+    # Build system prompt with user context
+    full_system = system_prompt
+    if user_context:
+        full_system += f"\n\n## Current User Context\n{user_context}"
+
+    messages: list[dict] = [{"role": "system", "content": full_system}]
+    if history:
+        for h in history:
+            if h.get("role") in ("user", "assistant"):
+                messages.append({"role": h["role"], "content": h["content"]})
+    messages.append({"role": "user", "content": user_message})
+
+    # Streaming tool-calling loop (max 5 iterations for tool rounds)
+    for _ in range(5):
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "temperature": 0.1,
+            "stream": True,
+        }
+        if tool_defs:
+            kwargs["tools"] = tool_defs
+            kwargs["tool_choice"] = "auto"
+
+        # Accumulators for the streamed response
+        content_chunks: list[str] = []
+        tool_calls_by_index: dict[int, dict] = {}
+
+        stream = await client.chat.completions.create(**kwargs)
+
+        async for chunk in stream:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+
+            # --- Text content ---
+            if delta.content:
+                content_chunks.append(delta.content)
+                yield delta.content
+
+            # --- Tool calls (accumulated across deltas) ---
+            if delta.tool_calls:
+                for tc_delta in delta.tool_calls:
+                    idx = tc_delta.index
+                    if idx not in tool_calls_by_index:
+                        tool_calls_by_index[idx] = {
+                            "id": tc_delta.id or "",
+                            "name": "",
+                            "arguments": "",
+                        }
+                    entry = tool_calls_by_index[idx]
+                    if tc_delta.id:
+                        entry["id"] = tc_delta.id
+                    if tc_delta.function:
+                        if tc_delta.function.name:
+                            entry["name"] = tc_delta.function.name
+                        if tc_delta.function.arguments:
+                            entry["arguments"] += tc_delta.function.arguments
+
+            # Check for stream end
+            if chunk.choices[0].finish_reason is not None:
+                break
+
+        # If no tool calls were accumulated, the response is complete
+        if not tool_calls_by_index:
+            return
+
+        # Execute accumulated tool calls and feed results back
+        assistant_tool_calls = []
+        for idx in sorted(tool_calls_by_index):
+            tc = tool_calls_by_index[idx]
+            assistant_tool_calls.append({
+                "id": tc["id"],
+                "type": "function",
+                "function": {"name": tc["name"], "arguments": tc["arguments"]},
+            })
+
+        messages.append({
+            "role": "assistant",
+            "content": "".join(content_chunks) or None,
+            "tool_calls": assistant_tool_calls,
+        })
+
+        for tc in assistant_tool_calls:
+            fn_name = tc["function"]["name"]
+            fn_args_str = tc["function"]["arguments"]
+            fn_args = json.loads(fn_args_str) if fn_args_str else {}
+            tool_fn = tool_map.get(fn_name)
+
+            if tool_fn:
+                try:
+                    raw_fn = getattr(tool_fn, "func", tool_fn)
+                    if callable(raw_fn):
+                        result = await raw_fn(**fn_args)
+                    else:
+                        result = await tool_fn.invoke(**fn_args)
+                    result_str = json.dumps(result, default=str) if not isinstance(result, str) else result
+                    logger.info("tool.result name=%s len=%d content=%s", fn_name, len(result_str), result_str[:500])
+                except Exception as e:
+                    logger.exception("tool.error name=%s", fn_name)
+                    result_str = json.dumps({"error": str(e)})
+            else:
+                result_str = json.dumps({"error": f"Unknown tool: {fn_name}"})
+
+            messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result_str})
+
+        # Reset content accumulator for the next LLM turn
+        content_chunks = []
+        # Continue the loop — the next iteration will stream the post-tool response
+
+    yield "I processed your request but reached the maximum number of steps."
 
 
 def create_agent_app(
