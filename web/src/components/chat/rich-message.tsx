@@ -16,7 +16,13 @@ export function RichMessage({ content, onAction }: RichMessageProps) {
     <div className="space-y-3">
       {segments.map((seg, i) => {
         if (seg.type === "product" && seg.data) {
-          return <ChatProductCard key={i} data={seg.data as any} />;
+          return (
+            <ChatProductCard
+              key={i}
+              data={seg.data as any}
+              onAction={onAction}
+            />
+          );
         }
         if (seg.type === "order" && seg.data) {
           return <ChatOrderCard key={i} data={seg.data as any} />;
@@ -34,101 +40,25 @@ export function RichMessage({ content, onAction }: RichMessageProps) {
   );
 }
 
+// ─── Types ────────────────────────────────────────────────────────────
+
 interface Segment {
   type: string;
   text: string;
   data?: Record<string, unknown>;
 }
 
-// UUID pattern
-const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+// ─── 1. Fenced Code Block Parser (primary path) ──────────────────────
 
-// Detect order summary blocks in plain text
-function detectOrderInText(text: string): { id: string; status?: string; total?: number; tracking?: string } | null {
-  // Look for "Order ID: <uuid>" or "(Order ID: <uuid>)" patterns
-  const orderIdMatch = text.match(/Order\s*(?:ID|#)?[:\s]*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
-  if (!orderIdMatch) return null;
-
-  const id = orderIdMatch[1];
-
-  // Try to extract status
-  const statusMatch = text.match(/Status[:\s]*(\w[\w\s]*?)(?:\n|$|\()/i);
-  const status = statusMatch ? statusMatch[1].trim().toLowerCase().replace(/\s+/g, "_") : undefined;
-
-  // Try to extract total
-  const totalMatch = text.match(/Total[:\s]*\$?([\d,]+\.?\d*)/i);
-  const total = totalMatch ? parseFloat(totalMatch[1].replace(",", "")) : undefined;
-
-  // Try to extract tracking
-  const trackingMatch = text.match(/Tracking\s*(?:Number)?[:\s]*(TRK\w+|\w{10,})/i);
-  const tracking = trackingMatch ? trackingMatch[1] : undefined;
-
-  return { id, status, total, tracking };
-}
-
-// Detect product mentions with prices
-function detectProductsInText(text: string): { name: string; price?: number; rating?: number; category?: string }[] {
-  const products: { name: string; price?: number; rating?: number; category?: string }[] = [];
-
-  // Pattern: "**Product Name** — description. Price: $XX.XX" or "Product Name — $XX.XX"
-  // Also: "- Product Name ($XX.XX)" or "Product Name – $XX.XX | Rating: X.X"
-  const lines = text.split("\n");
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.length < 10) continue;
-
-    // Skip header/label lines
-    if (/^(Order|Status|Total|Shipping|Tracking|Address|Date|Hi |Would|If |Products in)/i.test(trimmed)) continue;
-
-    // Find any $ price in the line
-    const priceMatch = trimmed.match(/\$(\d[\d,]*\.?\d*)/);
-    if (!priceMatch) continue;
-
-    const price = parseFloat(priceMatch[1].replace(",", ""));
-
-    // Extract product name — everything before the first ( or — or – or $
-    let name = trimmed
-      .replace(/^[-•*]\s*/, "")        // strip leading bullet
-      .replace(/^\d+\.\s*/, "")        // strip "1. "
-      .replace(/^\*\*/, "").replace(/\*\*/, "")  // strip bold
-      .split(/\s*[—–]\s*|\s*\((?:Electronics|Clothing|Home|Sports|Books)/i)[0]
-      .trim();
-
-    // If name still has price in it, cut before $
-    if (name.includes("$")) {
-      name = name.split("$")[0].trim();
-    }
-
-    // Clean trailing punctuation
-    name = name.replace(/[,:\s]+$/, "");
-
-    if (name.length < 4 || name.length > 80) continue;
-    if (/^(Price|Total|Status|Order|Shipping|Tracking|Would|Hi )/i.test(name)) continue;
-
-    // Extract category
-    const catMatch = trimmed.match(/\((Electronics|Clothing|Home|Sports|Books)/i);
-    const category = catMatch ? catMatch[1] : undefined;
-
-    // Extract rating
-    const ratingMatch = trimmed.match(/Rating[:\s]*(\d\.?\d?)/i) || trimmed.match(/(\d\.\d)\s*(?:\/\s*5|stars?)/i);
-    const rating = ratingMatch ? parseFloat(ratingMatch[1]) : undefined;
-
-    products.push({ name, price, rating, category });
-  }
-
-  return products;
-}
-
-function parseContent(content: string): Segment[] {
-  // 1. First check for fenced code blocks (```product, ```order)
+function parseCodeBlocks(content: string): Segment[] | null {
   const codeBlockRegex = /```(product|order|products)\n([\s\S]*?)```/g;
   const segments: Segment[] = [];
   let lastIndex = 0;
   let match;
-  let hasCodeBlocks = false;
+  let found = false;
 
   while ((match = codeBlockRegex.exec(content)) !== null) {
-    hasCodeBlocks = true;
+    found = true;
     if (match.index > lastIndex) {
       const text = content.slice(lastIndex, match.index).trim();
       if (text) segments.push({ type: "text", text });
@@ -137,7 +67,7 @@ function parseContent(content: string): Segment[] {
       const data = JSON.parse(match[2]);
       if (match[1] === "products" && Array.isArray(data)) {
         data.forEach((d: Record<string, unknown>) =>
-          segments.push({ type: "product", text: "", data: d }),
+          segments.push({ type: "product", text: "", data: d })
         );
       } else {
         segments.push({ type: match[1], text: "", data });
@@ -148,35 +78,306 @@ function parseContent(content: string): Segment[] {
     lastIndex = match.index + match[0].length;
   }
 
-  if (hasCodeBlocks) {
-    if (lastIndex < content.length) {
-      const text = content.slice(lastIndex).trim();
+  if (!found) return null;
+
+  if (lastIndex < content.length) {
+    const text = content.slice(lastIndex).trim();
+    if (text) segments.push({ type: "text", text });
+  }
+  return segments;
+}
+
+// ─── 2. Order Text Detection (fallback) ──────────────────────────────
+
+interface OrderItem {
+  name: string;
+  quantity: number;
+  unit_price: number;
+  total?: number;
+  category?: string;
+  brand?: string;
+}
+
+interface TimelineEvent {
+  status: string;
+  date: string;
+}
+
+function parseOrderInText(content: string): Segment[] | null {
+  // Must have a UUID in an "Order" context
+  if (
+    !/Order\s*(?:ID|#)?[:\s]*[0-9a-f]{8}-/i.test(content)
+  )
+    return null;
+
+  const paragraphs = content.split(/\n\n+/);
+
+  const isOrderParagraph = (para: string): boolean => {
+    const t = para.trim();
+    return (
+      /^Order\s*(Summary|ID|#)/im.test(t) ||
+      /^Status[:\s]/im.test(t) ||
+      /^Total[:\s]*\$/im.test(t) ||
+      /(?:Shipping|Tracking|Carrier|Address|Placed)[:\s]/im.test(t) ||
+      /^Items?\s*(in|:|\()/im.test(t) ||
+      /[—–]\s*\d+\s*[×x]\s*\$/m.test(t) ||
+      /^Order\s*Status\s*Timeline/im.test(t) ||
+      /^\d{4}-\d{2}-\d{2}[:\s]/m.test(t)
+    );
+  };
+
+  // Find first and last order-related paragraph
+  let startIdx = -1;
+  let endIdx = -1;
+  for (let i = 0; i < paragraphs.length; i++) {
+    if (isOrderParagraph(paragraphs[i])) {
+      if (startIdx === -1) startIdx = i;
+      endIdx = i;
+    } else if (startIdx !== -1) {
+      // Stop at first non-order paragraph after the order block
+      break;
+    }
+  }
+  if (startIdx === -1) return null;
+
+  // Merge all order paragraphs and extract structured data
+  const orderText = paragraphs.slice(startIdx, endIdx + 1).join("\n\n");
+  const orderData = extractOrderData(orderText);
+  if (!orderData) return null;
+
+  const segments: Segment[] = [];
+  const introText = paragraphs.slice(0, startIdx).join("\n\n").trim();
+  if (introText) segments.push({ type: "text", text: introText });
+  segments.push({ type: "order", text: "", data: orderData as any });
+  const outroText = paragraphs.slice(endIdx + 1).join("\n\n").trim();
+  if (outroText) segments.push({ type: "text", text: outroText });
+  return segments;
+}
+
+function extractOrderData(
+  text: string
+): Record<string, unknown> | null {
+  const idMatch = text.match(
+    /Order\s*(?:ID|#)?[:\s]*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i
+  );
+  if (!idMatch) return null;
+
+  const id = idMatch[1];
+
+  // Use line-anchored regexes to avoid matching stray words
+  const statusMatch = text.match(/^Status[:\s]+(\w[\w\s]*?)$/im);
+  const status = statusMatch
+    ? statusMatch[1].trim().toLowerCase().replace(/\s+/g, "_")
+    : undefined;
+
+  const totalMatch = text.match(/Total[:\s]*\$?([\d,]+\.?\d*)/i);
+  const total = totalMatch
+    ? parseFloat(totalMatch[1].replace(",", ""))
+    : undefined;
+
+  const trackingMatch = text.match(
+    /Tracking\s*(?:Number)?[:\s]*(TRK\w+|\w{10,})/i
+  );
+  const tracking = trackingMatch ? trackingMatch[1] : undefined;
+
+  const carrierMatch = text.match(
+    /(?:Shipping\s*)?Carrier[:\s]*(.+?)(?:\n|$)/i
+  );
+  const carrier = carrierMatch ? carrierMatch[1].trim() : undefined;
+
+  const addressMatch = text.match(
+    /(?:Shipping\s*)?Address[:\s]*(.+?)(?:\n|$)/i
+  );
+  const shipping_address = addressMatch
+    ? addressMatch[1].trim()
+    : undefined;
+
+  const dateMatch = text.match(
+    /(?:Order\s*)?(?:Placed|Date)[:\s]*(.+?)(?:\n|$)/i
+  );
+  const date = dateMatch ? dateMatch[1].trim() : undefined;
+
+  // Parse items: "Product Name (Brand, Category) — Qty × $Price = $Total"
+  const items: OrderItem[] = [];
+  const itemRegex =
+    /^[-•*]?\s*(.+?)\s*\(([^)]+)\)\s*[—–-]\s*(\d+)\s*[×x]\s*\$([\d,.]+)(?:\s*=\s*\$([\d,.]+))?/gm;
+  let m;
+  while ((m = itemRegex.exec(text)) !== null) {
+    const parts = m[2].split(/,\s*/);
+    const unitPrice = parseFloat(m[4].replace(",", ""));
+    const qty = parseInt(m[3]);
+    items.push({
+      name: m[1].trim(),
+      quantity: qty,
+      unit_price: unitPrice,
+      total: m[5] ? parseFloat(m[5].replace(",", "")) : unitPrice * qty,
+      brand: parts[0]?.trim() || undefined,
+      category: parts[1]?.trim() || undefined,
+    });
+  }
+
+  // Parse timeline: "2026-03-25: Order placed"
+  const timeline: TimelineEvent[] = [];
+  const tlRegex = /^(\d{4}-\d{2}-\d{2})[:\s]+(.+?)$/gm;
+  while ((m = tlRegex.exec(text)) !== null) {
+    timeline.push({ status: m[2].trim(), date: m[1] });
+  }
+
+  return {
+    id,
+    status,
+    total,
+    tracking,
+    carrier,
+    shipping_address,
+    date,
+    items: items.length > 0 ? items : undefined,
+    item_count: items.length || undefined,
+    timeline: timeline.length > 0 ? timeline : undefined,
+  };
+}
+
+// ─── 3. Product Text Detection (fallback) ────────────────────────────
+
+function parseProductsInText(content: string): Segment[] | null {
+  const paragraphs = content.split(/\n\n+/);
+  if (paragraphs.length < 2) return null;
+
+  const segments: Segment[] = [];
+  let productCount = 0;
+
+  for (const para of paragraphs) {
+    const product = tryParseProductParagraph(para.trim());
+    if (product) {
+      productCount++;
+      segments.push({ type: "product", text: "", data: product as any });
+    } else {
+      const text = para.trim();
       if (text) segments.push({ type: "text", text });
     }
-    return segments;
   }
 
-  // 2. No code blocks — try to detect order/product patterns in plain text
-  const orderData = detectOrderInText(content);
-  if (orderData) {
-    // Split: put the order card at the top, then render the rest as markdown
-    segments.push({ type: "order", text: "", data: orderData });
-    segments.push({ type: "text", text: content });
-    return segments;
-  }
+  if (productCount === 0) return null;
+  return segments;
+}
 
-  // 3. Detect product listings in plain text
-  const products = detectProductsInText(content);
-  if (products.length >= 2) {
-    // Render as markdown first, then product cards below
-    segments.push({ type: "text", text: content });
-    for (const p of products.slice(0, 8)) {
-      segments.push({ type: "product", text: "", data: p });
+function tryParseProductParagraph(
+  para: string
+): Record<string, unknown> | null {
+  const lines = para
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length < 2) return null;
+
+  // First line = product name
+  let nameLine = lines[0]
+    .replace(/^\*\*/, "")
+    .replace(/\*\*$/, "")
+    .replace(/^[-•*]\s*/, "")
+    .replace(/^\d+\.\s*/, "")
+    .trim();
+
+  if (nameLine.length < 3 || nameLine.length > 100) return null;
+  // Skip conversational/sentence lines
+  if (
+    /^(Hi |Hello|Would|Here |I |Let me|Based on|If you|These |This |For |Check|You |We |Our |Sure|Of course|Great|Thank)/i.test(
+      nameLine
+    )
+  )
+    return null;
+  if (nameLine.endsWith("?") || nameLine.endsWith("!")) return null;
+
+  // Must have a "Price:" line somewhere in the block
+  const hasPrice = lines.some((l) => /Price[:\s]*\$/i.test(l));
+  const hasDollar = lines.some((l) => /\$\d/.test(l));
+  const hasRating = lines.some((l) => /Rating[:\s]/i.test(l));
+
+  if (!hasPrice && !(hasDollar && hasRating)) return null;
+
+  let price: number | undefined;
+  let original_price: number | undefined;
+  let rating: number | undefined;
+  let review_count: number | undefined;
+  let description: string | undefined;
+  let brand: string | undefined;
+  let category: string | undefined;
+
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Price: $299.99 (was $349.99)
+    const priceMatch = line.match(/Price[:\s]*\$([\d,.]+)/i);
+    if (priceMatch) {
+      price = parseFloat(priceMatch[1].replace(",", ""));
+      const wasMatch = line.match(/was\s*\$([\d,.]+)/i);
+      if (wasMatch)
+        original_price = parseFloat(wasMatch[1].replace(",", ""));
     }
-    return segments;
+
+    // Rating: 4.7/5 (15 reviews)
+    const ratingMatch = line.match(/Rating[:\s]*([\d.]+)\s*\/\s*5/i);
+    if (ratingMatch) {
+      rating = parseFloat(ratingMatch[1]);
+      const revMatch = line.match(/\((\d+)\s*reviews?\)/i);
+      if (revMatch) review_count = parseInt(revMatch[1]);
+    }
+
+    // Features: ...
+    if (/^Features?[:\s]/i.test(line)) {
+      description = line.replace(/^Features?[:\s]*/i, "").trim();
+    }
+
+    // Category / Brand explicit lines
+    if (/^Category[:\s]/i.test(line))
+      category = line.replace(/^Category[:\s]*/i, "").trim();
+    if (/^Brand[:\s]/i.test(line))
+      brand = line.replace(/^Brand[:\s]*/i, "").trim();
+
+    // "Why it's great:" — append to description
+    if (/^Why\s/i.test(line)) {
+      const extra = line.replace(/^Why\s+\S+\s*[:.]?\s*/i, "").trim();
+      description = description ? `${description}. ${extra}` : extra;
+    }
   }
+
+  if (price === undefined) return null;
+
+  // Extract brand from name: "AirPods Max (Apple)"
+  const brandInName = nameLine.match(/\((\w[\w\s]*)\)$/);
+  if (brandInName && !brand) {
+    brand = brandInName[1].trim();
+    nameLine = nameLine.replace(/\s*\(\w[\w\s]*\)$/, "").trim();
+  }
+
+  return {
+    name: nameLine,
+    price,
+    original_price,
+    rating,
+    review_count,
+    category,
+    brand,
+    description,
+    on_sale: original_price != null && original_price > price,
+  };
+}
+
+// ─── Main Parser ──────────────────────────────────────────────────────
+
+function parseContent(content: string): Segment[] {
+  // 1. Fenced code blocks (highest priority, most reliable)
+  const codeBlockResult = parseCodeBlocks(content);
+  if (codeBlockResult) return codeBlockResult;
+
+  // 2. Order block with items in plain text
+  const orderResult = parseOrderInText(content);
+  if (orderResult) return orderResult;
+
+  // 3. Product blocks in plain text
+  const productResult = parseProductsInText(content);
+  if (productResult) return productResult;
 
   // 4. Default: just markdown
-  segments.push({ type: "text", text: content });
-  return segments;
+  return [{ type: "text", text: content }];
 }

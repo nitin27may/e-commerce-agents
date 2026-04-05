@@ -461,7 +461,7 @@ export default function ChatPage() {
                     }`}
                   >
                     {msg.role === "assistant" ? (
-                      <RichMessage content={msg.content} />
+                      <RichMessage content={msg.content} onAction={(text) => sendMessage(text)} />
                     ) : (
                       <MessageContent content={msg.content} />
                     )}

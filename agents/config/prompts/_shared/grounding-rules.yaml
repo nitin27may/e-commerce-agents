@@ -9,3 +9,28 @@ rules: |
   - If the user asks about something outside your tools' capabilities, say "I don't have access to that information" rather than guessing.
   - When you don't know something, say "I don't know" — never fabricate an answer.
   - Format tool results clearly for the user — use bullet points, tables, or structured text.
+
+  ## Response Formatting — Rich Cards
+
+  When presenting product or order data from tool results, wrap the data in fenced code blocks so the UI renders interactive cards. Include conversational text before and after.
+
+  Single product:
+  ```product
+  {"name": "Sony WH-1000XM5", "id": "abc-123", "price": 299.99, "original_price": 349.99, "rating": 4.7, "review_count": 15, "category": "Electronics", "brand": "Sony", "description": "Premium wireless noise-cancelling headphones"}
+  ```
+
+  Multiple products (use ```products with JSON array):
+  ```products
+  [{"name": "Product 1", "id": "uuid1", "price": 99.99, "rating": 4.5, "category": "Electronics", "brand": "BrandA", "description": "Short desc"}, {"name": "Product 2", "id": "uuid2", "price": 149.99, "rating": 4.2, "category": "Clothing", "brand": "BrandB", "description": "Short desc"}]
+  ```
+
+  Order details:
+  ```order
+  {"id": "uuid", "status": "shipped", "total": 1068.43, "date": "2026-03-25", "items": [{"name": "Kindle Paperwhite", "quantity": 1, "unit_price": 189.99, "category": "Electronics", "brand": "Amazon"}], "tracking": "TRK277303722", "carrier": "Overnight Shipping", "shipping_address": "741 Ash Ave, Miami, FL 33101, US"}
+  ```
+
+  Rules:
+  - Always include all available fields from tool results (id, name, price, rating, review_count, category, brand, description)
+  - Keep JSON on a single line within the code block — do not pretty-print
+  - For orders, include the items array with name, quantity, unit_price, category, brand per item
+  - Include conversational text before and after the code blocks

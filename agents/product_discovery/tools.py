@@ -27,11 +27,14 @@ async def search_products(
     args: list = []
     idx = 1
 
-    # Full-text search on name + description
+    # Full-text search on name + description — split query into words
+    # so "wireless headphones" matches "wireless noise-cancelling headphones"
     if query:
-        conditions.append(f"(p.name ILIKE ${idx} OR p.description ILIKE ${idx})")
-        args.append(f"%{query}%")
-        idx += 1
+        words = [w for w in query.strip().split() if len(w) >= 2]
+        for word in words:
+            conditions.append(f"(p.name ILIKE ${idx} OR p.description ILIKE ${idx})")
+            args.append(f"%{word}%")
+            idx += 1
 
     if category:
         conditions.append(f"p.category = ${idx}")
