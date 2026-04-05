@@ -1,6 +1,6 @@
 # Agent Collaboration Flows
 
-Detailed sequence diagrams for five multi-agent collaboration scenarios in AgentBazaar. Each flow demonstrates how the Orchestrator classifies intent, routes to multiple specialist agents via A2A protocol, and synthesizes a unified response.
+Detailed sequence diagrams for five multi-agent collaboration scenarios in E-Commerce Agents. Each flow demonstrates how the Orchestrator classifies intent, routes to multiple specialist agents via A2A protocol, and synthesizes a unified response.
 
 ---
 

@@ -1,8 +1,8 @@
-# CLAUDE.md — AgentBazaar
+# CLAUDE.md — E-Commerce Agents
 
 ## What This Is
 
-AgentBazaar is an e-commerce multi-agent platform built with **Microsoft Agent Framework (MAF)** Python SDK. 6 specialized agents collaborate via **A2A protocol** to handle product discovery, orders, pricing, reviews, inventory, and customer support. Includes a marketplace layer with agent catalog, access requests, and admin approval.
+E-Commerce Agents is an e-commerce multi-agent platform built with **Microsoft Agent Framework (MAF)** Python SDK. 6 specialized agents collaborate via **A2A protocol** to handle product discovery, orders, pricing, reviews, inventory, and customer support. Includes a marketplace layer with agent catalog, access requests, and admin approval.
 
 Companion demo repo for the AI article series on nitinksingh.com.
 
@@ -158,7 +158,7 @@ The orchestrator uses `HandoffOrchestration` from MAF to route between specialis
 - **Auto-instrumented** (zero code): httpx (LLM + A2A calls), asyncpg (DB queries), FastAPI/Starlette (HTTP), Python logging (trace_id correlation)
 - **Custom spans**: Only where MAF doesn't auto-instrument (e.g., `agent.a2a_call` in orchestrator)
 - **Cross-agent traces**: httpx injects `traceparent` header → Starlette reads it → single trace spans orchestrator + specialist + LLM + DB
-- **OTEL_SERVICE_NAME per agent**: e.g., `agentbazaar.product-discovery` — filterable in Aspire
+- **OTEL_SERVICE_NAME per agent**: e.g., `ecommerce.product-discovery` — filterable in Aspire
 
 ## Database
 

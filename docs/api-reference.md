@@ -1,6 +1,6 @@
 # API Reference
 
-AgentBazaar exposes 20 REST endpoints through the orchestrator service (FastAPI, port 8080). All endpoints are prefixed with `/api/`.
+E-Commerce Agents exposes 20 REST endpoints through the orchestrator service (FastAPI, port 8080). All endpoints are prefixed with `/api/`.
 
 ## Route Overview
 
@@ -42,7 +42,7 @@ graph LR
     Client --> Authenticated
     Client --> Admin
 
-    style Client fill:#64748b,stroke:#475569,color:#fff
+    style Client fill:#6366f1,stroke:#4f46e5,color:#fff
 ```
 
 ## Authentication
@@ -73,7 +73,7 @@ Create a new user account and receive tokens.
 
 ```json
 {
-  "email": "alice@example.com",
+  "email": "alice.johnson@gmail.com",
   "password": "securepassword",
   "name": "Alice Johnson"
 }
@@ -87,7 +87,7 @@ Create a new user account and receive tokens.
   "refresh_token": "eyJhbGciOi...",
   "user": {
     "id": "550e8400-e29b-41d4-a716-446655440000",
-    "email": "alice@example.com",
+    "email": "alice.johnson@gmail.com",
     "name": "Alice Johnson",
     "role": "customer",
     "loyalty_tier": "bronze",
@@ -113,7 +113,7 @@ Authenticate an existing user and receive tokens.
 
 ```json
 {
-  "email": "alice@example.com",
+  "email": "alice.johnson@gmail.com",
   "password": "securepassword"
 }
 ```
@@ -126,7 +126,7 @@ Authenticate an existing user and receive tokens.
   "refresh_token": "eyJhbGciOi...",
   "user": {
     "id": "550e8400-e29b-41d4-a716-446655440000",
-    "email": "alice@example.com",
+    "email": "alice.johnson@gmail.com",
     "name": "Alice Johnson",
     "role": "customer",
     "loyalty_tier": "gold",
@@ -545,7 +545,7 @@ Get the authenticated user's profile, including loyalty tier benefits and activi
 ```json
 {
   "id": "user-uuid-1",
-  "email": "alice@example.com",
+  "email": "alice.johnson@gmail.com",
   "name": "Alice Johnson",
   "role": "customer",
   "loyalty_tier": "gold",
@@ -694,7 +694,7 @@ List all pending access requests across all users.
     "use_case": "I need advanced product search capabilities.",
     "status": "pending",
     "created_at": "2026-04-01T08:00:00+00:00",
-    "user_email": "bob@example.com",
+    "user_email": "bob.smith@gmail.com",
     "user_name": "Bob Smith",
     "user_role": "customer"
   }
@@ -848,7 +848,7 @@ Get a detailed audit log from `usage_logs` with associated `agent_execution_step
     {
       "id": "log-uuid-1",
       "agent_name": "orchestrator",
-      "user_email": "alice@example.com",
+      "user_email": "alice.johnson@gmail.com",
       "user_name": "Alice Johnson",
       "input_summary": "What are the best headphones?",
       "tokens_in": 150,

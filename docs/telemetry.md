@@ -1,6 +1,6 @@
 # Telemetry & Observability
 
-AgentBazaar uses OpenTelemetry to export traces, metrics, and logs to the .NET Aspire Dashboard. Every agent calls `setup_telemetry(service_name)` during its lifespan startup, which configures providers, exporters, and auto-instrumentation in a single call.
+E-Commerce Agents uses OpenTelemetry to export traces, metrics, and logs to the .NET Aspire Dashboard. Every agent calls `setup_telemetry(service_name)` during its lifespan startup, which configures providers, exporters, and auto-instrumentation in a single call.
 
 ## Telemetry Pipeline
 
@@ -22,7 +22,7 @@ graph LR
     end
 
     subgraph Dashboard
-        style Dashboard fill:#0d9488,stroke:#0f766e,color:#fff
+        style Dashboard fill:#0d9488,stroke:#115e59,color:#fff
         ASPIRE[Aspire Dashboard<br/>port 18888]
     end
 
@@ -73,12 +73,12 @@ graph TD
     end
 
     subgraph Tool["Tool Execution"]
-        style Tool fill:#0d9488,stroke:#0f766e,color:#fff
+        style Tool fill:#0ea5e9,stroke:#0284c7,color:#fff
         C["agent.tool_call<br/><i>traced_tool decorator</i><br/>tool.name = search_products"]
     end
 
     subgraph DB["Database Query (auto)"]
-        style DB fill:#64748b,stroke:#475569,color:#fff
+        style DB fill:#0d9488,stroke:#115e59,color:#fff
         D["SELECT ... FROM products<br/><i>asyncpg auto-span</i>"]
     end
 
@@ -104,7 +104,7 @@ graph TD
     end
 
     subgraph A2A["A2A Call (custom)"]
-        style A2A fill:#0d9488,stroke:#0f766e,color:#fff
+        style A2A fill:#0ea5e9,stroke:#0284c7,color:#fff
         C["agent.a2a_call<br/>source=orchestrator<br/>target=product-discovery"]
     end
 
@@ -124,7 +124,7 @@ graph TD
     end
 
     subgraph Tool["Tool + DB"]
-        style Tool fill:#64748b,stroke:#475569,color:#fff
+        style Tool fill:#0d9488,stroke:#115e59,color:#fff
         G["agent.tool_call + asyncpg query"]
     end
 
@@ -190,12 +190,12 @@ Each agent reports with a distinct `OTEL_SERVICE_NAME` so traces and metrics can
 
 | Agent | Service Name | Port |
 |-------|-------------|------|
-| Orchestrator (Customer Support) | `agentbazaar-orchestrator` | 8080 |
-| Product Discovery | `agentbazaar-product-discovery` | 8081 |
-| Order Management | `agentbazaar-order-management` | 8082 |
-| Pricing & Promotions | `agentbazaar-pricing-promotions` | 8083 |
-| Review & Sentiment | `agentbazaar-review-sentiment` | 8084 |
-| Inventory & Fulfillment | `agentbazaar-inventory-fulfillment` | 8085 |
+| Orchestrator (Customer Support) | `ecommerce-orchestrator` | 8080 |
+| Product Discovery | `ecommerce-product-discovery` | 8081 |
+| Order Management | `ecommerce-order-management` | 8082 |
+| Pricing & Promotions | `ecommerce-pricing-promotions` | 8083 |
+| Review & Sentiment | `ecommerce-review-sentiment` | 8084 |
+| Inventory & Fulfillment | `ecommerce-inventory-fulfillment` | 8085 |
 
 The service name is passed to `setup_telemetry()` in each agent's lifespan function and becomes the `service.name` resource attribute on all telemetry.
 
@@ -238,7 +238,7 @@ Auth mode is set to `Unsecured` for local development (`DASHBOARD__FRONTEND__AUT
 
 ### Typical Investigation Flow
 
-1. User reports slow response -- go to **Traces**, filter by service `agentbazaar-orchestrator`, sort by duration.
+1. User reports slow response -- go to **Traces**, filter by service `ecommerce-orchestrator`, sort by duration.
 2. Find the slow trace -- expand to see which child span took the longest (LLM call? DB query? A2A call to a specialist?).
 3. If the bottleneck is an A2A call -- click into the specialist's trace to see its internal spans.
 4. Cross-reference with **Structured Logs** to see any warnings or errors logged during that trace.
@@ -254,7 +254,7 @@ All telemetry settings are managed via environment variables, loaded through Pyd
 |----------|---------|-------------|
 | `OTEL_ENABLED` | `false` | Master toggle. When `false`, `setup_telemetry()` returns immediately and no instrumentation is loaded. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:18889` | Base URL for the OTLP HTTP receiver. The code appends `/v1/traces`, `/v1/metrics`, and `/v1/logs` automatically. |
-| `OTEL_SERVICE_NAME` | `agentbazaar` | Fallback service name. Overridden by each agent's `setup_telemetry(service_name)` call. |
+| `OTEL_SERVICE_NAME` | `ecommerce` | Fallback service name. Overridden by each agent's `setup_telemetry(service_name)` call. |
 | `ENVIRONMENT` | `development` | Mapped to `deployment.environment` resource attribute. |
 
 ### Docker Compose Ports

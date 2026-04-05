@@ -25,19 +25,19 @@ The platform runs 11 services organized into 4 profile groups. Services without 
 ```mermaid
 graph TB
     subgraph default["Default (always start)"]
-        style default fill:#ecfdf5,stroke:#10b981,stroke-width:2px
+        style default fill:#f8fafc,stroke:#e2e8f0,stroke-width:2px
         db["PostgreSQL 16 + pgvector<br/>:5432"]
         redis["Redis 7<br/>:6379"]
         aspire["Aspire Dashboard<br/>:18888"]
     end
 
     subgraph seed["Profile: seed"]
-        style seed fill:#fef3c7,stroke:#f59e0b,stroke-width:2px
+        style seed fill:#f8fafc,stroke:#e2e8f0,stroke-width:2px
         seeder["Seeder<br/>(run once, exits)"]
     end
 
     subgraph agents["Profile: agents"]
-        style agents fill:#e0f2fe,stroke:#0ea5e9,stroke-width:2px
+        style agents fill:#f8fafc,stroke:#e2e8f0,stroke-width:2px
         orchestrator["Orchestrator<br/>:8080"]
         product["Product Discovery<br/>:8081"]
         order["Order Management<br/>:8082"]
@@ -47,7 +47,7 @@ graph TB
     end
 
     subgraph frontend_profile["Profile: frontend"]
-        style frontend_profile fill:#e0f2fe,stroke:#0ea5e9,stroke-width:2px
+        style frontend_profile fill:#f8fafc,stroke:#e2e8f0,stroke-width:2px
         frontend["Next.js Frontend<br/>:3000"]
     end
 
@@ -195,10 +195,10 @@ cp .env.example .env
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `POSTGRES_DB` | No | `agentbazaar` | PostgreSQL database name |
-| `POSTGRES_USER` | No | `agentbazaar` | PostgreSQL user |
-| `POSTGRES_PASSWORD` | No | `agentbazaar` | PostgreSQL password |
-| `DATABASE_URL` | No | `postgresql://agentbazaar:agentbazaar@db:5432/agentbazaar` | Full connection string. In Docker, `db` resolves to the Compose service. For local dev, use `localhost`. |
+| `POSTGRES_DB` | No | `ecommerce_agents` | PostgreSQL database name |
+| `POSTGRES_USER` | No | `ecommerce` | PostgreSQL user |
+| `POSTGRES_PASSWORD` | No | `ecommerce_secret` | PostgreSQL password |
+| `DATABASE_URL` | No | `postgresql://ecommerce:ecommerce_secret@db:5432/ecommerce_agents` | Full connection string. In Docker, `db` resolves to the Compose service. For local dev, use `localhost`. |
 
 ### Redis
 
@@ -219,7 +219,7 @@ cp .env.example .env
 |----------|----------|---------|-------------|
 | `OTEL_ENABLED` | No | `true` | Enable/disable OpenTelemetry export |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | No | `http://aspire:18889` | OTLP receiver endpoint (Aspire Dashboard) |
-| `OTEL_SERVICE_NAME` | No | `agentbazaar.orchestrator` | Service name reported to OTLP. Each agent overrides this in `docker-compose.yml`. |
+| `OTEL_SERVICE_NAME` | No | `ecommerce.orchestrator` | Service name reported to OTLP. Each agent overrides this in `docker-compose.yml`. |
 
 ### General
 
@@ -280,7 +280,7 @@ For faster iteration, run infrastructure in Docker and agents/frontend locally.
 
 ```bash
 cd agents
-export DATABASE_URL=postgresql://agentbazaar:agentbazaar@localhost:5432/agentbazaar
+export DATABASE_URL=postgresql://ecommerce:ecommerce_secret@localhost:5432/ecommerce_agents
 export REDIS_URL=redis://localhost:6379
 export OPENAI_API_KEY=sk-your-key
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:18890
@@ -311,7 +311,7 @@ The frontend starts on `http://localhost:3000` and expects the orchestrator at `
 
 ```bash
 cd agents
-DATABASE_URL=postgresql://agentbazaar:agentbazaar@localhost:5432/agentbazaar \
+DATABASE_URL=postgresql://ecommerce:ecommerce_secret@localhost:5432/ecommerce_agents \
   uv run python -m scripts.seed
 ```
 
@@ -319,7 +319,7 @@ DATABASE_URL=postgresql://agentbazaar:agentbazaar@localhost:5432/agentbazaar \
 
 ```bash
 cd agents
-DATABASE_URL=postgresql://agentbazaar:agentbazaar@localhost:5432/agentbazaar \
+DATABASE_URL=postgresql://ecommerce:ecommerce_secret@localhost:5432/ecommerce_agents \
 OPENAI_API_KEY=sk-your-key \
   uv run python -m scripts.generate_embeddings
 ```
@@ -348,7 +348,7 @@ All services have built-in health checks defined in `docker-compose.yml` or the 
 
 | Service | Check | Interval | Timeout | Retries |
 |---------|-------|----------|---------|---------|
-| PostgreSQL | `pg_isready -U agentbazaar` | 5s | 3s | 5 |
+| PostgreSQL | `pg_isready -U ecommerce` | 5s | 3s | 5 |
 | Redis | `redis-cli ping` | 5s | 3s | 5 |
 | All agents | `curl -f http://localhost:{PORT}/health` | 15s | 5s | 3 (30s start period) |
 
@@ -367,7 +367,7 @@ curl http://localhost:8084/health   # Review & Sentiment
 curl http://localhost:8085/health   # Inventory & Fulfillment
 
 # Check PostgreSQL connectivity
-docker compose exec db pg_isready -U agentbazaar
+docker compose exec db pg_isready -U ecommerce
 
 # Check Redis
 docker compose exec redis redis-cli ping
@@ -386,7 +386,7 @@ open http://localhost:18888
 
 ```bash
 docker compose up -d db
-docker compose exec db pg_isready -U agentbazaar   # Wait until this returns 0
+docker compose exec db pg_isready -U ecommerce   # Wait until this returns 0
 ```
 
 ### "OPENAI_API_KEY not set" or LLM errors
@@ -411,7 +411,7 @@ If using Azure, ensure `LLM_PROVIDER=azure` and all `AZURE_OPENAI_*` variables a
 # Find what's using the port
 lsof -i :8080
 
-# Stop all AgentBazaar containers
+# Stop all E-Commerce Agents containers
 docker compose --profile seed --profile agents --profile frontend down
 ```
 

@@ -1,6 +1,6 @@
 # Database Schema
 
-AgentBazaar uses PostgreSQL 16 with the **pgvector** extension for embedding-based semantic search and **pgcrypto** for UUID generation. The schema contains 24 tables organized into 8 logical groups.
+E-Commerce Agents uses PostgreSQL 16 with the **pgvector** extension for embedding-based semantic search and **pgcrypto** for UUID generation. The schema contains 24 tables organized into 8 logical groups.
 
 ## Entity-Relationship Diagram
 
@@ -436,9 +436,9 @@ The seeder (`scripts/seed.py`) populates the database with deterministic data (`
 
 | Role | Email | Password |
 |------|-------|----------|
-| Admin | `admin@agentbazaar.com` | `admin123` |
-| Power User | `power@agentbazaar.com` | `power123` |
-| Customer | `alice@example.com` | `customer123` |
+| Admin | `admin.demo@gmail.com` | `admin123` |
+| Power User | `power.demo@gmail.com` | `power123` |
+| Customer | `alice.johnson@gmail.com` | `customer123` |
 
 ---
 

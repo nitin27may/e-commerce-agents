@@ -1,6 +1,6 @@
 # Architecture
 
-AgentBazaar is a multi-agent e-commerce platform built on Microsoft Agent Framework (MAF). Six specialized agents collaborate via A2A protocol, orchestrated by a central Customer Support agent that classifies user intent and routes requests to the right specialist.
+E-Commerce Agents is a multi-agent e-commerce platform built on Microsoft Agent Framework (MAF). Six specialized agents collaborate via A2A protocol, orchestrated by a central Customer Support agent that classifies user intent and routes requests to the right specialist.
 
 ---
 
@@ -67,15 +67,15 @@ graph TB
     RS -.->|"OTLP"| ASPIRE
     IF -.->|"OTLP"| ASPIRE
 
-    style FE fill:#0ea5e9,stroke:#0284c7,color:#fff
-    style ORCH fill:#0284c7,stroke:#075985,color:#fff
+    style FE fill:#6366f1,stroke:#4f46e5,color:#fff
+    style ORCH fill:#0ea5e9,stroke:#0284c7,color:#fff
     style PD fill:#0d9488,stroke:#0f766e,color:#fff
     style OM fill:#0d9488,stroke:#0f766e,color:#fff
     style PP fill:#0d9488,stroke:#0f766e,color:#fff
     style RS fill:#0d9488,stroke:#0f766e,color:#fff
     style IF fill:#0d9488,stroke:#0f766e,color:#fff
-    style PG fill:#0ea5e9,stroke:#0284c7,color:#fff
-    style RD fill:#0ea5e9,stroke:#0284c7,color:#fff
+    style PG fill:#0d9488,stroke:#115e59,color:#fff
+    style RD fill:#0d9488,stroke:#115e59,color:#fff
     style ASPIRE fill:#64748b,stroke:#475569,color:#fff
     style LLM fill:#f59e0b,stroke:#d97706,color:#fff
 ```
@@ -167,12 +167,12 @@ graph TB
     AUTH --> CONFIG
     FACTORY --> CONFIG
 
-    style MAIN fill:#0284c7,stroke:#075985,color:#fff
-    style AGENTPY fill:#0d9488,stroke:#0f766e,color:#fff
-    style TOOLS fill:#0d9488,stroke:#0f766e,color:#fff
-    style PROMPTS fill:#0d9488,stroke:#0f766e,color:#fff
+    style MAIN fill:#0ea5e9,stroke:#0284c7,color:#fff
+    style AGENTPY fill:#0ea5e9,stroke:#0284c7,color:#fff
+    style TOOLS fill:#0ea5e9,stroke:#0284c7,color:#fff
+    style PROMPTS fill:#0ea5e9,stroke:#0284c7,color:#fff
     style CONFIG fill:#64748b,stroke:#475569,color:#fff
-    style DBMOD fill:#0ea5e9,stroke:#0284c7,color:#fff
+    style DBMOD fill:#0d9488,stroke:#115e59,color:#fff
     style AUTH fill:#ef4444,stroke:#dc2626,color:#fff
     style CTX fill:#64748b,stroke:#475569,color:#fff
     style CTXPROV fill:#64748b,stroke:#475569,color:#fff
@@ -251,14 +251,14 @@ flowchart TD
     style LOAD fill:#0ea5e9,stroke:#0284c7,color:#fff
     style CLASSIFY fill:#f59e0b,stroke:#d97706,color:#fff
     style SINGLE fill:#f59e0b,stroke:#d97706,color:#fff
-    style ROUTE_ONE fill:#0d9488,stroke:#0f766e,color:#fff
-    style ROUTE_MULTI fill:#0d9488,stroke:#0f766e,color:#fff
-    style A2A_CALL fill:#0d9488,stroke:#0f766e,color:#fff
+    style ROUTE_ONE fill:#0ea5e9,stroke:#0284c7,color:#fff
+    style ROUTE_MULTI fill:#0ea5e9,stroke:#0284c7,color:#fff
+    style A2A_CALL fill:#0ea5e9,stroke:#0284c7,color:#fff
     style TIMEOUT fill:#ef4444,stroke:#dc2626,color:#fff
     style ERROR fill:#ef4444,stroke:#dc2626,color:#fff
     style RESPONSE fill:#10b981,stroke:#059669,color:#fff
     style SYNTH fill:#f59e0b,stroke:#d97706,color:#fff
-    style PERSIST fill:#0ea5e9,stroke:#0284c7,color:#fff
+    style PERSIST fill:#0d9488,stroke:#115e59,color:#fff
     style RETURN fill:#10b981,stroke:#059669,color:#fff
 ```
 
@@ -266,7 +266,7 @@ flowchart TD
 
 ## 5. Auth Flow
 
-AgentBazaar uses self-contained JWT authentication (PyJWT + bcrypt). There is no external identity provider. Inter-agent calls use a shared secret instead of JWT.
+E-Commerce Agents uses self-contained JWT authentication (PyJWT + bcrypt). There is no external identity provider. Inter-agent calls use a shared secret instead of JWT.
 
 ### User Authentication
 
@@ -323,7 +323,7 @@ sequenceDiagram
     participant AGENT as Specialist Agent
     participant MW as AgentAuthMiddleware
 
-    ORCH->>AGENT: POST /message:send<br/>X-Agent-Secret: {AGENT_SHARED_SECRET}<br/>X-User-Email: user@example.com<br/>X-User-Role: customer
+    ORCH->>AGENT: POST /message:send<br/>X-Agent-Secret: {AGENT_SHARED_SECRET}<br/>X-User-Email: alice.johnson@gmail.com<br/>X-User-Role: customer
 
     AGENT->>MW: Request intercepted
 
@@ -425,16 +425,16 @@ flowchart LR
     style CTX_LOAD fill:#0ea5e9,stroke:#0284c7,color:#fff
     style LLM_ROUTE fill:#f59e0b,stroke:#d97706,color:#fff
     style PD_LLM fill:#f59e0b,stroke:#d97706,color:#fff
-    style PD_SEARCH fill:#0d9488,stroke:#0f766e,color:#fff
-    style PD_FILTER fill:#0d9488,stroke:#0f766e,color:#fff
-    style PD_STOCK fill:#0d9488,stroke:#0f766e,color:#fff
+    style PD_SEARCH fill:#0ea5e9,stroke:#0284c7,color:#fff
+    style PD_FILTER fill:#0ea5e9,stroke:#0284c7,color:#fff
+    style PD_STOCK fill:#0ea5e9,stroke:#0284c7,color:#fff
     style RS_LLM fill:#f59e0b,stroke:#d97706,color:#fff
-    style RS_REVIEWS fill:#0d9488,stroke:#0f766e,color:#fff
-    style RS_SENT fill:#0d9488,stroke:#0f766e,color:#fff
+    style RS_REVIEWS fill:#0ea5e9,stroke:#0284c7,color:#fff
+    style RS_SENT fill:#0ea5e9,stroke:#0284c7,color:#fff
     style COMBINE fill:#f59e0b,stroke:#d97706,color:#fff
-    style CONV fill:#0ea5e9,stroke:#0284c7,color:#fff
-    style MSG fill:#0ea5e9,stroke:#0284c7,color:#fff
-    style USAGE fill:#0ea5e9,stroke:#0284c7,color:#fff
+    style CONV fill:#0d9488,stroke:#115e59,color:#fff
+    style MSG fill:#0d9488,stroke:#115e59,color:#fff
+    style USAGE fill:#0d9488,stroke:#115e59,color:#fff
     style RESP fill:#10b981,stroke:#059669,color:#fff
 ```
 
