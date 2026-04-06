@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { useCart } from "@/lib/cart-context";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +32,10 @@ import {
   ChevronRight,
   Loader2,
   MapPin,
+  ShoppingCart,
+  Check,
+  Minus,
+  Plus,
 } from "lucide-react";
 import { productImageUrl } from "@/lib/images";
 
@@ -61,6 +66,7 @@ interface ProductDetail {
   category: string;
   price: number;
   original_price?: number;
+  image_url?: string;
   rating: number;
   review_count: number;
   description: string;
@@ -218,9 +224,14 @@ export default function ProductDetailPage() {
   const params = useParams();
   const { user, isLoading: authLoading } = useAuth();
 
+  const { addItem } = useCart();
+
   const [product, setProduct] = useState<ProductDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [qty, setQty] = useState(1);
+  const [added, setAdded] = useState(false);
+  const [addingToCart, setAddingToCart] = useState(false);
 
   const productId = params.id as string;
 
@@ -298,7 +309,7 @@ export default function ProductDetailPage() {
                 {/* Image */}
                 <div className="relative aspect-square overflow-hidden rounded-2xl bg-slate-100">
                   <img
-                    src={productImageUrl(product.id, 800, 800)}
+                    src={productImageUrl(product.id, 800, 800, product.image_url, product.category)}
                     alt={product.name}
                     className="h-full w-full object-cover"
                   />
@@ -367,6 +378,62 @@ export default function ProductDetailPage() {
                       </div>
                     )}
                   </div>
+
+                  {/* Add to Cart */}
+                  {product.in_stock && (
+                    <div className="mt-6 space-y-3">
+                      <div className="flex items-center gap-3">
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="size-9"
+                          disabled={qty <= 1}
+                          onClick={() => setQty((q) => Math.max(1, q - 1))}
+                        >
+                          <Minus className="size-4" />
+                        </Button>
+                        <span className="w-8 text-center text-lg font-semibold text-slate-800">
+                          {qty}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="size-9"
+                          disabled={qty >= 10}
+                          onClick={() => setQty((q) => Math.min(10, q + 1))}
+                        >
+                          <Plus className="size-4" />
+                        </Button>
+                      </div>
+                      <Button
+                        className={`w-full text-base py-5 ${
+                          added
+                            ? "bg-emerald-600 hover:bg-emerald-700"
+                            : "bg-teal-600 hover:bg-teal-700"
+                        } text-white`}
+                        disabled={addingToCart}
+                        onClick={async () => {
+                          try {
+                            setAddingToCart(true);
+                            await addItem(product.id, qty);
+                            setAdded(true);
+                            setTimeout(() => setAdded(false), 2000);
+                          } finally {
+                            setAddingToCart(false);
+                          }
+                        }}
+                      >
+                        {addingToCart ? (
+                          <Loader2 className="mr-2 size-5 animate-spin" />
+                        ) : added ? (
+                          <Check className="mr-2 size-5" />
+                        ) : (
+                          <ShoppingCart className="mr-2 size-5" />
+                        )}
+                        {added ? "Added to Cart!" : "Add to Cart"}
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
             </>

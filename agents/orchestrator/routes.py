@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -72,6 +73,41 @@ class AccessRequestBody(BaseModel):
 
 class AdminActionBody(BaseModel):
     admin_notes: str = ""
+
+
+class AddToCartRequest(BaseModel):
+    product_id: str
+    quantity: int = 1
+
+
+class UpdateCartItemRequest(BaseModel):
+    quantity: int
+
+
+class CartAddressRequest(BaseModel):
+    shipping_address: dict | None = None
+    billing_address: dict | None = None
+    billing_same_as_shipping: bool = True
+
+
+class ApplyCouponRequest(BaseModel):
+    code: str
+
+
+class CheckoutRequest(BaseModel):
+    shipping_address: dict
+    billing_address: dict | None = None
+    billing_same_as_shipping: bool = True
+    payment_method: str = "demo"
+
+
+class CancelOrderRequest(BaseModel):
+    reason: str
+
+
+class ReturnOrderRequest(BaseModel):
+    reason: str
+    refund_method: str = "original_payment"
 
 
 # ── Auth Dependency ────────────────────────────────────────────
@@ -1144,7 +1180,6 @@ async def get_product(product_id: str, _user: dict = Depends(require_auth)):
         product_id,
     )
 
-    import json
     return {
         "id": str(row["id"]),
         "name": row["name"],
@@ -1237,8 +1272,9 @@ async def get_order(order_id: str, user: dict = Depends(require_auth)):
     email = current_user_email.get()
 
     order = await pool.fetchrow(
-        """SELECT o.id, o.status, o.total, o.shipping_address, o.shipping_carrier,
-                  o.tracking_number, o.coupon_code, o.discount_amount, o.created_at
+        """SELECT o.id, o.status, o.total, o.shipping_address, o.billing_address,
+                  o.shipping_carrier, o.tracking_number, o.coupon_code,
+                  o.discount_amount, o.created_at
            FROM orders o
            JOIN users u ON o.user_id = u.id
            WHERE o.id = $1 AND u.email = $2""",
@@ -1262,16 +1298,16 @@ async def get_order(order_id: str, user: dict = Depends(require_auth)):
     )
 
     ret = await pool.fetchrow(
-        "SELECT id, reason, status, refund_method, refund_amount, created_at, resolved_at FROM returns WHERE order_id = $1",
+        "SELECT id, reason, status, refund_method, refund_amount, return_label_url, created_at, resolved_at FROM returns WHERE order_id = $1",
         order_id,
     )
 
-    import json
     return {
         "id": str(order["id"]),
         "status": order["status"],
         "total": float(order["total"]),
         "shipping_address": json.loads(order["shipping_address"]) if isinstance(order["shipping_address"], str) else dict(order["shipping_address"]) if order["shipping_address"] else {},
+        "billing_address": json.loads(order["billing_address"]) if isinstance(order["billing_address"], str) else dict(order["billing_address"]) if order["billing_address"] else {},
         "carrier": order["shipping_carrier"],
         "tracking": order["tracking_number"],
         "coupon": order["coupon_code"],
@@ -1304,9 +1340,598 @@ async def get_order(order_id: str, user: dict = Depends(require_auth)):
             "status": ret["status"],
             "refund_method": ret["refund_method"],
             "refund_amount": float(ret["refund_amount"]) if ret["refund_amount"] else None,
+            "return_label_url": ret["return_label_url"],
             "created_at": ret["created_at"].isoformat(),
             "resolved_at": ret["resolved_at"].isoformat() if ret["resolved_at"] else None,
         } if ret else None,
+    }
+
+
+@router.post("/api/orders/{order_id}/cancel")
+async def cancel_order(order_id: str, body: CancelOrderRequest, user: dict = Depends(require_auth)):
+    """Cancel a placed or confirmed order."""
+    pool = get_pool()
+    email = current_user_email.get()
+
+    order = await pool.fetchrow(
+        """SELECT o.id, o.status, o.total
+           FROM orders o
+           JOIN users u ON o.user_id = u.id
+           WHERE o.id = $1 AND u.email = $2""",
+        order_id, email,
+    )
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    if order["status"] not in ("placed", "confirmed"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot cancel order with status '{order['status']}'. Only placed or confirmed orders can be cancelled.",
+        )
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "UPDATE orders SET status = 'cancelled' WHERE id = $1",
+                order_id,
+            )
+            await conn.execute(
+                """INSERT INTO order_status_history (order_id, status, notes)
+                   VALUES ($1, 'cancelled', $2)""",
+                order_id,
+                body.reason,
+            )
+
+    return {
+        "order_id": str(order["id"]),
+        "status": "cancelled",
+        "refund_amount": float(order["total"]),
+    }
+
+
+@router.post("/api/orders/{order_id}/return")
+async def return_order(order_id: str, body: ReturnOrderRequest, user: dict = Depends(require_auth)):
+    """Request a return for a delivered order."""
+    pool = get_pool()
+    email = current_user_email.get()
+
+    order = await pool.fetchrow(
+        """SELECT o.id, o.status, o.total, o.user_id
+           FROM orders o
+           JOIN users u ON o.user_id = u.id
+           WHERE o.id = $1 AND u.email = $2""",
+        order_id, email,
+    )
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    if order["status"] != "delivered":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot return order with status '{order['status']}'. Only delivered orders can be returned.",
+        )
+
+    existing_return = await pool.fetchrow(
+        "SELECT id FROM returns WHERE order_id = $1", order_id,
+    )
+    if existing_return:
+        raise HTTPException(status_code=409, detail="A return has already been requested for this order")
+
+    return_label_url = f"https://returns.example.com/labels/{uuid.uuid4().hex[:12]}"
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            ret = await conn.fetchrow(
+                """INSERT INTO returns (order_id, user_id, reason, status, return_label_url, refund_method, refund_amount)
+                   VALUES ($1, $2, $3, 'requested', $4, $5, $6)
+                   RETURNING id""",
+                order_id,
+                str(order["user_id"]),
+                body.reason,
+                return_label_url,
+                body.refund_method,
+                float(order["total"]),
+            )
+            await conn.execute(
+                "UPDATE orders SET status = 'returned' WHERE id = $1",
+                order_id,
+            )
+            await conn.execute(
+                """INSERT INTO order_status_history (order_id, status, notes)
+                   VALUES ($1, 'returned', $2)""",
+                order_id,
+                body.reason,
+            )
+
+    return {
+        "return_id": str(ret["id"]),
+        "order_id": str(order["id"]),
+        "status": "requested",
+        "return_label_url": return_label_url,
+        "refund_amount": float(order["total"]),
+        "refund_method": body.refund_method,
+    }
+
+
+# ── Cart Routes ──────────────────────────────────────────────
+
+
+@router.get("/api/cart")
+async def get_cart(user: dict = Depends(require_auth)):
+    """Get the current user's shopping cart with items."""
+    pool = get_pool()
+    user_id = user.get("user_id", "")
+
+    # Lazy-create cart for user
+    cart = await pool.fetchrow(
+        """SELECT id, coupon_code, discount_amount, shipping_address, billing_address,
+                  billing_same_as_shipping
+           FROM carts WHERE user_id = $1""",
+        user_id,
+    )
+    if not cart:
+        cart = await pool.fetchrow(
+            """INSERT INTO carts (user_id) VALUES ($1)
+               RETURNING id, coupon_code, discount_amount, shipping_address, billing_address,
+                         billing_same_as_shipping""",
+            user_id,
+        )
+
+    cart_id = str(cart["id"])
+
+    # Fetch items with product details and stock
+    items = await pool.fetch(
+        """SELECT ci.id, ci.product_id, ci.quantity,
+                  p.name, p.brand, p.category, p.price, p.original_price, p.image_url,
+                  COALESCE((SELECT SUM(wi.quantity) FROM warehouse_inventory wi WHERE wi.product_id = ci.product_id), 0) as available_qty
+           FROM cart_items ci
+           JOIN products p ON ci.product_id = p.id
+           WHERE ci.cart_id = $1
+           ORDER BY ci.added_at""",
+        cart_id,
+    )
+
+    subtotal = sum(float(i["price"]) * i["quantity"] for i in items)
+    discount_amount = float(cart["discount_amount"]) if cart["discount_amount"] else 0
+    total = max(subtotal - discount_amount, 0)
+
+    return {
+        "id": cart_id,
+        "items": [
+            {
+                "id": str(i["id"]),
+                "product_id": str(i["product_id"]),
+                "name": i["name"],
+                "brand": i["brand"],
+                "category": i["category"],
+                "price": float(i["price"]),
+                "original_price": float(i["original_price"]) if i["original_price"] else None,
+                "quantity": i["quantity"],
+                "subtotal": round(float(i["price"]) * i["quantity"], 2),
+                "image_url": i["image_url"],
+                "in_stock": i["available_qty"] > 0,
+                "available_qty": i["available_qty"],
+            }
+            for i in items
+        ],
+        "item_count": sum(i["quantity"] for i in items),
+        "subtotal": round(subtotal, 2),
+        "discount_amount": discount_amount,
+        "coupon_code": cart["coupon_code"],
+        "total": round(total, 2),
+        "shipping_address": json.loads(cart["shipping_address"]) if isinstance(cart["shipping_address"], str) else dict(cart["shipping_address"]) if cart["shipping_address"] else None,
+        "billing_address": json.loads(cart["billing_address"]) if isinstance(cart["billing_address"], str) else dict(cart["billing_address"]) if cart["billing_address"] else None,
+        "billing_same_as_shipping": cart["billing_same_as_shipping"] if cart["billing_same_as_shipping"] is not None else True,
+    }
+
+
+@router.post("/api/cart/items")
+async def add_cart_item(body: AddToCartRequest, user: dict = Depends(require_auth)):
+    """Add an item to the cart or increase its quantity."""
+    pool = get_pool()
+    user_id = user.get("user_id", "")
+
+    # Validate product exists and is active
+    product = await pool.fetchrow(
+        "SELECT id, is_active FROM products WHERE id = $1", body.product_id,
+    )
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    if not product["is_active"]:
+        raise HTTPException(status_code=400, detail="Product is no longer available")
+
+    # Get or create cart
+    cart = await pool.fetchrow("SELECT id FROM carts WHERE user_id = $1", user_id)
+    if not cart:
+        cart = await pool.fetchrow(
+            "INSERT INTO carts (user_id) VALUES ($1) RETURNING id", user_id,
+        )
+    cart_id = str(cart["id"])
+
+    # Upsert item
+    await pool.execute(
+        """INSERT INTO cart_items (cart_id, product_id, quantity)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (cart_id, product_id)
+           DO UPDATE SET quantity = cart_items.quantity + EXCLUDED.quantity""",
+        cart_id,
+        body.product_id,
+        body.quantity,
+    )
+
+    # Touch cart updated_at
+    await pool.execute("UPDATE carts SET updated_at = NOW() WHERE id = $1", cart_id)
+
+    return {"status": "added", "product_id": body.product_id, "quantity": body.quantity}
+
+
+@router.put("/api/cart/items/{item_id}")
+async def update_cart_item(item_id: str, body: UpdateCartItemRequest, user: dict = Depends(require_auth)):
+    """Update the quantity of a cart item."""
+    pool = get_pool()
+    user_id = user.get("user_id", "")
+
+    # Verify item belongs to user's cart
+    item = await pool.fetchrow(
+        """SELECT ci.id, ci.cart_id
+           FROM cart_items ci
+           JOIN carts c ON ci.cart_id = c.id
+           WHERE ci.id = $1 AND c.user_id = $2""",
+        item_id, user_id,
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Cart item not found")
+
+    if body.quantity <= 0:
+        await pool.execute("DELETE FROM cart_items WHERE id = $1", item_id)
+    else:
+        await pool.execute(
+            "UPDATE cart_items SET quantity = $1 WHERE id = $2",
+            body.quantity, item_id,
+        )
+
+    await pool.execute("UPDATE carts SET updated_at = NOW() WHERE id = $1", str(item["cart_id"]))
+
+    return {"status": "updated"}
+
+
+@router.delete("/api/cart/items/{item_id}")
+async def remove_cart_item(item_id: str, user: dict = Depends(require_auth)):
+    """Remove an item from the cart."""
+    pool = get_pool()
+    user_id = user.get("user_id", "")
+
+    item = await pool.fetchrow(
+        """SELECT ci.id, ci.cart_id
+           FROM cart_items ci
+           JOIN carts c ON ci.cart_id = c.id
+           WHERE ci.id = $1 AND c.user_id = $2""",
+        item_id, user_id,
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Cart item not found")
+
+    await pool.execute("DELETE FROM cart_items WHERE id = $1", item_id)
+    await pool.execute("UPDATE carts SET updated_at = NOW() WHERE id = $1", str(item["cart_id"]))
+
+    return {"status": "removed"}
+
+
+@router.post("/api/cart/coupon")
+async def apply_coupon(body: ApplyCouponRequest, user: dict = Depends(require_auth)):
+    """Validate and apply a coupon code to the cart."""
+    pool = get_pool()
+    user_id = user.get("user_id", "")
+    email = current_user_email.get()
+
+    # Get user's cart
+    cart = await pool.fetchrow("SELECT id FROM carts WHERE user_id = $1", user_id)
+    if not cart:
+        raise HTTPException(status_code=400, detail="Cart not found")
+    cart_id = str(cart["id"])
+
+    # Calculate current cart subtotal
+    items = await pool.fetch(
+        """SELECT ci.quantity, p.price
+           FROM cart_items ci
+           JOIN products p ON ci.product_id = p.id
+           WHERE ci.cart_id = $1""",
+        cart_id,
+    )
+    if not items:
+        raise HTTPException(status_code=400, detail="Cart is empty")
+
+    subtotal = sum(float(i["price"]) * i["quantity"] for i in items)
+
+    # Validate coupon
+    coupon = await pool.fetchrow(
+        """SELECT id, code, description, discount_type, discount_value,
+                  min_spend, max_discount, usage_limit, times_used,
+                  valid_from, valid_until, user_specific_email, is_active
+           FROM coupons WHERE code = $1""",
+        body.code.upper(),
+    )
+    if not coupon:
+        raise HTTPException(status_code=404, detail="Coupon not found")
+    if not coupon["is_active"]:
+        raise HTTPException(status_code=400, detail="Coupon is no longer active")
+    if coupon["valid_until"] and coupon["valid_until"].timestamp() < time.time():
+        raise HTTPException(status_code=400, detail="Coupon has expired")
+    if coupon["usage_limit"] and coupon["times_used"] >= coupon["usage_limit"]:
+        raise HTTPException(status_code=400, detail="Coupon usage limit reached")
+    if coupon["min_spend"] and subtotal < float(coupon["min_spend"]):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Minimum spend of ${float(coupon['min_spend']):.2f} required",
+        )
+    if coupon["user_specific_email"] and coupon["user_specific_email"] != email:
+        raise HTTPException(status_code=400, detail="This coupon is not valid for your account")
+
+    # Calculate discount
+    if coupon["discount_type"] == "percentage":
+        discount = subtotal * float(coupon["discount_value"]) / 100
+        if coupon["max_discount"]:
+            discount = min(discount, float(coupon["max_discount"]))
+    else:
+        discount = float(coupon["discount_value"])
+
+    discount = round(min(discount, subtotal), 2)
+
+    # Apply to cart
+    await pool.execute(
+        "UPDATE carts SET coupon_code = $1, discount_amount = $2, updated_at = NOW() WHERE id = $3",
+        coupon["code"], discount, cart_id,
+    )
+
+    return {
+        "status": "applied",
+        "code": coupon["code"],
+        "discount_amount": discount,
+        "description": coupon["description"],
+    }
+
+
+@router.delete("/api/cart/coupon")
+async def remove_coupon(user: dict = Depends(require_auth)):
+    """Remove the applied coupon from the cart."""
+    pool = get_pool()
+    user_id = user.get("user_id", "")
+
+    await pool.execute(
+        "UPDATE carts SET coupon_code = NULL, discount_amount = 0, updated_at = NOW() WHERE user_id = $1",
+        user_id,
+    )
+
+    return {"status": "removed"}
+
+
+@router.put("/api/cart/address")
+async def update_cart_address(body: CartAddressRequest, user: dict = Depends(require_auth)):
+    """Update shipping and/or billing address on the cart."""
+    pool = get_pool()
+    user_id = user.get("user_id", "")
+
+    # Get or create cart
+    cart = await pool.fetchrow("SELECT id FROM carts WHERE user_id = $1", user_id)
+    if not cart:
+        cart = await pool.fetchrow(
+            "INSERT INTO carts (user_id) VALUES ($1) RETURNING id", user_id,
+        )
+    cart_id = str(cart["id"])
+
+    shipping = json.dumps(body.shipping_address) if body.shipping_address else None
+    billing = json.dumps(body.billing_address) if body.billing_address else None
+
+    if body.billing_same_as_shipping and body.shipping_address:
+        billing = shipping
+
+    await pool.execute(
+        """UPDATE carts
+           SET shipping_address = COALESCE($1::jsonb, shipping_address),
+               billing_address = COALESCE($2::jsonb, billing_address),
+               billing_same_as_shipping = $3,
+               updated_at = NOW()
+           WHERE id = $4""",
+        shipping, billing, body.billing_same_as_shipping, cart_id,
+    )
+
+    return {"status": "updated"}
+
+
+# ── Checkout Route ───────────────────────────────────────────
+
+
+@router.post("/api/checkout")
+async def checkout(body: CheckoutRequest, user: dict = Depends(require_auth)):
+    """Process checkout: validate cart, create order, decrement inventory, clear cart."""
+    pool = get_pool()
+    user_id = user.get("user_id", "")
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            # 1. Fetch cart
+            cart = await conn.fetchrow(
+                "SELECT id, coupon_code, discount_amount FROM carts WHERE user_id = $1",
+                user_id,
+            )
+            if not cart:
+                raise HTTPException(status_code=400, detail="No cart found")
+            cart_id = str(cart["id"])
+
+            # 2. Fetch cart items with product info
+            items = await conn.fetch(
+                """SELECT ci.id, ci.product_id, ci.quantity,
+                          p.name, p.price, p.is_active
+                   FROM cart_items ci
+                   JOIN products p ON ci.product_id = p.id
+                   WHERE ci.cart_id = $1""",
+                cart_id,
+            )
+            if not items:
+                raise HTTPException(status_code=400, detail="Cart is empty")
+
+            # 3. Validate all products are active
+            inactive = [i["name"] for i in items if not i["is_active"]]
+            if inactive:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"The following products are no longer available: {', '.join(inactive)}",
+                )
+
+            # 4. Check stock for each item
+            for item in items:
+                stock = await conn.fetchval(
+                    "SELECT COALESCE(SUM(quantity), 0) FROM warehouse_inventory WHERE product_id = $1",
+                    str(item["product_id"]),
+                )
+                if stock < item["quantity"]:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Insufficient stock for '{item['name']}'. Available: {stock}, requested: {item['quantity']}",
+                    )
+
+            # 5. Calculate subtotal
+            subtotal = sum(float(i["price"]) * i["quantity"] for i in items)
+
+            # 6. Handle coupon discount
+            coupon_discount = 0.0
+            coupon_code = cart["coupon_code"]
+            if coupon_code:
+                coupon = await conn.fetchrow(
+                    """SELECT discount_type, discount_value, max_discount, is_active,
+                              valid_until, usage_limit, times_used, min_spend
+                       FROM coupons WHERE code = $1""",
+                    coupon_code,
+                )
+                if coupon and coupon["is_active"]:
+                    valid = True
+                    if coupon["valid_until"] and coupon["valid_until"].timestamp() < time.time():
+                        valid = False
+                    if coupon["usage_limit"] and coupon["times_used"] >= coupon["usage_limit"]:
+                        valid = False
+                    if coupon["min_spend"] and subtotal < float(coupon["min_spend"]):
+                        valid = False
+
+                    if valid:
+                        if coupon["discount_type"] == "percentage":
+                            coupon_discount = subtotal * float(coupon["discount_value"]) / 100
+                            if coupon["max_discount"]:
+                                coupon_discount = min(coupon_discount, float(coupon["max_discount"]))
+                        else:
+                            coupon_discount = float(coupon["discount_value"])
+
+                        # Increment usage
+                        await conn.execute(
+                            "UPDATE coupons SET times_used = times_used + 1 WHERE code = $1",
+                            coupon_code,
+                        )
+                    else:
+                        coupon_code = None
+                else:
+                    coupon_code = None
+
+            # 7. Handle loyalty discount
+            loyalty_discount = 0.0
+            loyalty_row = await conn.fetchrow(
+                """SELECT lt.discount_pct
+                   FROM users u
+                   JOIN loyalty_tiers lt ON lt.name = u.loyalty_tier
+                   WHERE u.id = $1""",
+                user_id,
+            )
+            if loyalty_row and loyalty_row["discount_pct"]:
+                loyalty_discount = subtotal * float(loyalty_row["discount_pct"]) / 100
+
+            # 8. Final total
+            total = max(subtotal - coupon_discount - loyalty_discount, 0)
+            total = round(total, 2)
+
+            # 9. Resolve billing address
+            shipping_address = json.dumps(body.shipping_address)
+            if body.billing_same_as_shipping or not body.billing_address:
+                billing_address = shipping_address
+            else:
+                billing_address = json.dumps(body.billing_address)
+
+            # 10. Pick a carrier
+            carrier = await conn.fetchrow(
+                "SELECT id, name FROM carriers ORDER BY base_rate LIMIT 1",
+            )
+            carrier_name = carrier["name"] if carrier else "Standard Shipping"
+
+            # 11. Generate tracking number
+            tracking = f"TRK-{uuid.uuid4().hex[:12].upper()}"
+
+            # 12. Insert order
+            total_discount = round(coupon_discount + loyalty_discount, 2)
+            order = await conn.fetchrow(
+                """INSERT INTO orders (user_id, status, total, shipping_address, billing_address,
+                                       shipping_carrier, tracking_number, coupon_code, discount_amount)
+                   VALUES ($1, 'placed', $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8)
+                   RETURNING id""",
+                user_id, total, shipping_address, billing_address,
+                carrier_name, tracking, coupon_code, total_discount,
+            )
+            order_id = str(order["id"])
+
+            # 13. Insert order items
+            for item in items:
+                item_subtotal = round(float(item["price"]) * item["quantity"], 2)
+                await conn.execute(
+                    """INSERT INTO order_items (order_id, product_id, quantity, unit_price, subtotal)
+                       VALUES ($1, $2, $3, $4, $5)""",
+                    order_id, str(item["product_id"]), item["quantity"],
+                    float(item["price"]), item_subtotal,
+                )
+
+            # 14. Insert order status history
+            await conn.execute(
+                """INSERT INTO order_status_history (order_id, status, notes)
+                   VALUES ($1, 'placed', 'Order placed via checkout')""",
+                order_id,
+            )
+
+            # 15. Decrement warehouse inventory
+            for item in items:
+                remaining = item["quantity"]
+                warehouses = await conn.fetch(
+                    """SELECT warehouse_id, product_id, quantity FROM warehouse_inventory
+                       WHERE product_id = $1 AND quantity > 0
+                       ORDER BY quantity DESC""",
+                    str(item["product_id"]),
+                )
+                for wh in warehouses:
+                    if remaining <= 0:
+                        break
+                    deduct = min(remaining, wh["quantity"])
+                    await conn.execute(
+                        "UPDATE warehouse_inventory SET quantity = quantity - $1 WHERE warehouse_id = $2 AND product_id = $3",
+                        deduct, wh["warehouse_id"], wh["product_id"],
+                    )
+                    remaining -= deduct
+
+            # 16. Update user total_spend
+            await conn.execute(
+                "UPDATE users SET total_spend = total_spend + $1 WHERE id = $2",
+                total, user_id,
+            )
+
+            # 17. Clear cart
+            await conn.execute("DELETE FROM cart_items WHERE cart_id = $1", cart_id)
+            await conn.execute(
+                """UPDATE carts
+                   SET coupon_code = NULL, discount_amount = 0, notes = NULL, updated_at = NOW()
+                   WHERE id = $1""",
+                cart_id,
+            )
+
+    return {
+        "order_id": order_id,
+        "total": total,
+        "item_count": len(items),
+        "status": "placed",
+        "tracking_number": tracking,
+        "carrier": carrier_name,
     }
 
 

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   MessageSquare,
   ShoppingBag,
+  ShoppingCart,
   Package,
   Store,
   Shield,
@@ -14,6 +15,7 @@ import {
   Menu,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { useCart } from "@/lib/cart-context";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -38,6 +40,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { label: "Chat", href: "/chat", icon: MessageSquare },
   { label: "Products", href: "/products", icon: ShoppingBag },
+  { label: "Cart", href: "/cart", icon: ShoppingCart },
   { label: "Orders", href: "/orders", icon: Package },
   { label: "Marketplace", href: "/marketplace", icon: Store },
   { label: "Seller", href: "/seller", icon: BarChart3, sellerOnly: true },
@@ -68,12 +71,23 @@ function NavLink({
     >
       <Icon className="size-4 shrink-0" />
       <span className="flex-1">{item.label}</span>
+      {item.label === "Cart" && <CartBadge />}
       {item.badge && (
         <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
           {item.badge}
         </span>
       )}
     </Link>
+  );
+}
+
+function CartBadge() {
+  const { itemCount } = useCart();
+  if (itemCount === 0) return null;
+  return (
+    <span className="flex size-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+      {itemCount > 99 ? "99+" : itemCount}
+    </span>
   );
 }
 

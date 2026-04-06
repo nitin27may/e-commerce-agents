@@ -1,5 +1,43 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
+export interface Address {
+  name?: string;
+  street: string;
+  city: string;
+  state: string;
+  zip: string;
+  country: string;
+  phone?: string;
+}
+
+export interface CartItem {
+  id: string;
+  product_id: string;
+  name: string;
+  brand: string;
+  category: string;
+  price: number;
+  original_price?: number;
+  quantity: number;
+  subtotal: number;
+  image_url?: string;
+  in_stock?: boolean;
+  available_qty?: number;
+}
+
+export interface CartResponse {
+  id: string;
+  items: CartItem[];
+  item_count: number;
+  subtotal: number;
+  discount_amount: number;
+  coupon_code: string | null;
+  total: number;
+  shipping_address: Address | null;
+  billing_address: Address | null;
+  billing_same_as_shipping: boolean;
+}
+
 class ApiClient {
   private token: string | null = null;
 
@@ -245,6 +283,118 @@ class ApiClient {
 
   getProduct(id: string) {
     return this.request<any>(`/api/products/${id}`);
+  }
+
+  // Cart
+  getCart() {
+    return this.request<{
+      id: string;
+      items: CartItem[];
+      item_count: number;
+      subtotal: number;
+      discount_amount: number;
+      coupon_code: string | null;
+      total: number;
+      shipping_address: Address | null;
+      billing_address: Address | null;
+      billing_same_as_shipping: boolean;
+    }>("/api/cart");
+  }
+
+  addToCart(productId: string, quantity: number = 1) {
+    return this.request<{ status: string; product_id: string; quantity: number }>(
+      "/api/cart/items",
+      {
+        method: "POST",
+        body: JSON.stringify({ product_id: productId, quantity }),
+      }
+    );
+  }
+
+  updateCartItem(itemId: string, quantity: number) {
+    return this.request<{ status: string }>(`/api/cart/items/${itemId}`, {
+      method: "PUT",
+      body: JSON.stringify({ quantity }),
+    });
+  }
+
+  removeCartItem(itemId: string) {
+    return this.request<{ status: string }>(`/api/cart/items/${itemId}`, {
+      method: "DELETE",
+    });
+  }
+
+  applyCoupon(code: string) {
+    return this.request<{
+      status: string;
+      code: string;
+      discount_amount: number;
+      description: string;
+    }>("/api/cart/coupon", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    });
+  }
+
+  removeCoupon() {
+    return this.request<{ status: string }>("/api/cart/coupon", {
+      method: "DELETE",
+    });
+  }
+
+  updateCartAddress(data: {
+    shipping_address?: Address;
+    billing_address?: Address;
+    billing_same_as_shipping?: boolean;
+  }) {
+    return this.request<{ status: string }>("/api/cart/address", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  checkout(data: {
+    shipping_address: Address;
+    billing_address?: Address | null;
+    billing_same_as_shipping?: boolean;
+    payment_method?: string;
+  }) {
+    return this.request<{
+      order_id: string;
+      total: number;
+      item_count: number;
+      status: string;
+      tracking_number: string;
+      carrier: string;
+    }>("/api/checkout", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  cancelOrder(orderId: string, reason: string) {
+    return this.request<{
+      order_id: string;
+      status: string;
+      refund_amount: number;
+    }>(`/api/orders/${orderId}/cancel`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  initiateReturn(orderId: string, reason: string, refundMethod: string) {
+    return this.request<{
+      return_id: string;
+      order_id: string;
+      status: string;
+      return_label_url: string;
+      refund_amount: number;
+      refund_method: string;
+    }>(`/api/orders/${orderId}/return`, {
+      method: "POST",
+      body: JSON.stringify({ reason, refund_method: refundMethod }),
+    });
   }
 
   // Orders

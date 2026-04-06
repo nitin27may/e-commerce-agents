@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { useCart } from "@/lib/cart-context";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -23,7 +24,7 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
-import { Search, Star, Package, Loader2 } from "lucide-react";
+import { Search, Star, Package, Loader2, ShoppingCart, Check } from "lucide-react";
 import { productImageUrl } from "@/lib/images";
 
 // ---------------------------------------------------------------------------
@@ -150,12 +151,14 @@ const SORT_OPTIONS = [
 export default function ProductsPage() {
   const router = useRouter();
   const { user, isLoading: authLoading } = useAuth();
+  const { addItem } = useCart();
 
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
 
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
@@ -342,7 +345,7 @@ export default function ProductsPage() {
                 >
                   <div className="relative aspect-[4/3] w-full overflow-hidden rounded-t-xl bg-slate-100">
                     <img
-                      src={productImageUrl(product.id)}
+                      src={productImageUrl(product.id, 400, 300, product.image_url, product.category)}
                       alt={product.name}
                       className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                       loading="lazy"
@@ -383,7 +386,7 @@ export default function ProductsPage() {
                     />
                   </CardContent>
 
-                  <CardFooter>
+                  <CardFooter className="flex items-center justify-between">
                     <div className="flex items-baseline gap-2">
                       <span className="text-lg font-bold text-slate-900">
                         {formatPrice(product.price)}
@@ -394,6 +397,34 @@ export default function ProductsPage() {
                         </span>
                       )}
                     </div>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className={`shrink-0 transition-colors ${
+                        addedIds.has(product.id)
+                          ? "border-emerald-300 bg-emerald-50 text-emerald-600"
+                          : "hover:border-teal-300 hover:bg-teal-50 hover:text-teal-600"
+                      }`}
+                      onClick={async (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        await addItem(product.id);
+                        setAddedIds((prev) => new Set(prev).add(product.id));
+                        setTimeout(() => {
+                          setAddedIds((prev) => {
+                            const next = new Set(prev);
+                            next.delete(product.id);
+                            return next;
+                          });
+                        }, 2000);
+                      }}
+                    >
+                      {addedIds.has(product.id) ? (
+                        <Check className="size-4" />
+                      ) : (
+                        <ShoppingCart className="size-4" />
+                      )}
+                    </Button>
                   </CardFooter>
                 </Card>
               );

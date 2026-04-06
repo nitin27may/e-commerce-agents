@@ -41,7 +41,12 @@ interface OrderData {
   timeline?: TimelineEvent[];
 }
 
-export function ChatOrderCard({ data }: { data: OrderData }) {
+interface ChatOrderCardProps {
+  data: OrderData;
+  onAction?: (message: string) => void;
+}
+
+export function ChatOrderCard({ data, onAction }: ChatOrderCardProps) {
   const orderId = data.id || data.order_id || "";
   const shortId =
     orderId.length > 12
@@ -61,13 +66,35 @@ export function ChatOrderCard({ data }: { data: OrderData }) {
           </span>
           {data.status && <OrderStatusBadge status={data.status} />}
         </div>
-        {orderId && (
-          <Link href={`/orders/${orderId}`}>
-            <Button size="sm" variant="outline" className="h-7 text-xs">
-              <ExternalLink className="mr-1 size-3" /> View
+        <div className="flex items-center gap-1.5">
+          {orderId && (
+            <Link href={`/orders/${orderId}`}>
+              <Button size="sm" variant="outline" className="h-7 text-xs">
+                <ExternalLink className="mr-1 size-3" /> View
+              </Button>
+            </Link>
+          )}
+          {(data.status === "placed" || data.status === "confirmed") && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs border-red-200 text-red-600 hover:bg-red-50"
+              onClick={() => onAction?.(`Cancel my order #${data.id || data.order_id}`)}
+            >
+              Cancel
             </Button>
-          </Link>
-        )}
+          )}
+          {data.status === "delivered" && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs border-orange-200 text-orange-600 hover:bg-orange-50"
+              onClick={() => onAction?.(`I want to return order #${data.id || data.order_id}`)}
+            >
+              Return
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Items table */}

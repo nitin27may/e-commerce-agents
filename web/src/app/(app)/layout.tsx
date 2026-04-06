@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { CartProvider } from "@/lib/cart-context";
 import { DesktopSidebar, MobileSidebar } from "@/components/sidebar";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -30,17 +31,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <DesktopSidebar />
-      <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Mobile header */}
-        <header className="flex h-14 items-center gap-2 border-b bg-background px-4 lg:hidden">
-          <MobileSidebar />
-          <span className="text-sm font-semibold">E-Commerce Agents</span>
-        </header>
-        {/* Main content */}
-        <main className="flex-1 overflow-y-auto">{children}</main>
+    <CartProvider>
+      <div className="flex h-screen overflow-hidden">
+        <DesktopSidebar />
+        <div className="flex flex-1 flex-col overflow-hidden">
+          {/* Mobile header */}
+          <header className="flex h-14 items-center gap-2 border-b bg-background px-4 lg:hidden">
+            <MobileSidebar />
+            <span className="text-sm font-semibold">E-Commerce Agents</span>
+          </header>
+          {/* Main content */}
+          <main className="flex-1 overflow-y-auto">{children}</main>
+        </div>
       </div>
-    </div>
+    </CartProvider>
   );
 }

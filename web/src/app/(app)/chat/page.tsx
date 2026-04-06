@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { useCart } from "@/lib/cart-context";
 import { api } from "@/lib/api";
 import { RichMessage } from "@/components/chat/rich-message";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import Link from "next/link";
 import {
   MessageSquarePlusIcon,
   Trash2Icon,
@@ -32,6 +34,7 @@ import {
   PanelLeftIcon,
   BotIcon,
   UserIcon,
+  ShoppingCart,
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
@@ -179,6 +182,7 @@ function MessageContent({ content }: { content: string }) {
 
 export default function ChatPage() {
   const { isAuthenticated } = useAuth();
+  const { itemCount } = useCart();
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<
@@ -400,6 +404,18 @@ export default function ChatPage() {
                   ?.title ?? "Chat"
               : "New chat"}
           </h2>
+
+          <Link
+            href="/cart"
+            className="relative flex items-center gap-1 rounded-lg px-2 py-1 text-sm text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+          >
+            <ShoppingCart className="size-4" />
+            {itemCount > 0 && (
+              <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
+                {itemCount > 99 ? "99+" : itemCount}
+              </span>
+            )}
+          </Link>
 
           <Button
             variant="ghost"

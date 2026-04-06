@@ -1,16 +1,19 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { Star, ExternalLink, ShoppingCart, ShoppingBag } from "lucide-react";
+import { Star, ExternalLink, ShoppingCart, ShoppingBag, Check, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { productImageUrl } from "@/lib/images";
+import { useCart } from "@/lib/cart-context";
 
 interface ProductData {
   id?: string;
   name?: string;
   price?: number;
   original_price?: number;
+  image_url?: string;
   rating?: number;
   review_count?: number;
   category?: string;
@@ -33,6 +36,10 @@ interface ChatProductCardProps {
 }
 
 export function ChatProductCard({ data, onAction }: ChatProductCardProps) {
+  const [added, setAdded] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const { addItem } = useCart();
+
   if (!data.name) return null;
 
   const hasDiscount =
@@ -52,7 +59,7 @@ export function ChatProductCard({ data, onAction }: ChatProductCardProps) {
         <div className="size-20 shrink-0 rounded-lg overflow-hidden bg-slate-100 flex items-center justify-center">
           {data.id ? (
             <img
-              src={productImageUrl(data.id, 100, 100)}
+              src={productImageUrl(data.id, 100, 100, data.image_url, data.category)}
               alt={data.name}
               className="size-full object-cover"
               loading="lazy"
@@ -132,16 +139,37 @@ export function ChatProductCard({ data, onAction }: ChatProductCardProps) {
       </div>
 
       {/* Action buttons */}
-      {(onAction || data.id) && (
+      {(data.id || onAction) && (
         <div className="flex items-center gap-2 border-t border-slate-100 px-3 py-2">
-          {onAction && (
+          {data.id && (
             <Button
               size="sm"
-              className="h-7 text-xs bg-teal-600 hover:bg-teal-700 text-white"
-              onClick={() => onAction(`I'd like to order "${data.name}"`)}
+              className={`h-7 text-xs ${
+                added
+                  ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                  : "bg-teal-600 hover:bg-teal-700 text-white"
+              }`}
+              disabled={adding}
+              onClick={async (e) => {
+                e.stopPropagation();
+                if (!data.id || adding) return;
+                setAdding(true);
+                try {
+                  await addItem(data.id);
+                  setAdded(true);
+                  setTimeout(() => setAdded(false), 2000);
+                } catch { /* ignore */ }
+                setAdding(false);
+              }}
             >
-              <ShoppingCart className="mr-1 size-3" />
-              Add to Cart
+              {adding ? (
+                <Loader2 className="mr-1 size-3 animate-spin" />
+              ) : added ? (
+                <Check className="mr-1 size-3" />
+              ) : (
+                <ShoppingCart className="mr-1 size-3" />
+              )}
+              {added ? "Added!" : "Add to Cart"}
             </Button>
           )}
           {data.id && (

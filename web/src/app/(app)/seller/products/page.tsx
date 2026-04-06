@@ -183,7 +183,7 @@ export default function SellerProductsPage() {
                     >
                       <TableCell>
                         <img
-                          src={productImageUrl(product.id, 48, 48)}
+                          src={productImageUrl(product.id, 48, 48, product.image_url, product.category)}
                           alt={product.name}
                           className="size-10 rounded-md object-cover bg-slate-100"
                         />

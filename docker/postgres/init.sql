@@ -70,7 +70,8 @@ CREATE TABLE orders (
     status VARCHAR(50) NOT NULL DEFAULT 'placed',
         -- placed, confirmed, shipped, out_for_delivery, delivered, cancelled, returned
     total DECIMAL(10, 2) NOT NULL,
-    shipping_address JSONB NOT NULL,    -- {street, city, state, zip, country}
+    shipping_address JSONB NOT NULL,    -- {name, street, city, state, zip, country, phone}
+    billing_address JSONB,              -- {name, street, city, state, zip, country, phone}
     shipping_carrier VARCHAR(100),
     tracking_number VARCHAR(255),
     coupon_code VARCHAR(50),
@@ -108,6 +109,35 @@ CREATE TABLE returns (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     resolved_at TIMESTAMPTZ
 );
+
+-- ============================================================
+-- SHOPPING CART
+-- ============================================================
+
+CREATE TABLE carts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) UNIQUE NOT NULL,  -- one cart per user
+    shipping_address JSONB,              -- {name, street, city, state, zip, country, phone}
+    billing_address JSONB,               -- {name, street, city, state, zip, country, phone}
+    billing_same_as_shipping BOOLEAN DEFAULT TRUE,
+    coupon_code VARCHAR(50),
+    discount_amount DECIMAL(10, 2) DEFAULT 0,
+    notes TEXT,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE cart_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    cart_id UUID REFERENCES carts(id) ON DELETE CASCADE,
+    product_id UUID REFERENCES products(id),
+    quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
+    added_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(cart_id, product_id)
+);
+
+CREATE INDEX idx_carts_user ON carts(user_id);
+CREATE INDEX idx_cart_items_cart ON cart_items(cart_id);
 
 -- ============================================================
 -- REVIEWS

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,15 @@ import {
   CardTitle,
   CardContent,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
   TableHeader,
@@ -31,6 +40,9 @@ import {
   RotateCcw,
   MapPin,
   Loader2,
+  Download,
+  Ban,
+  AlertCircle,
 } from "lucide-react";
 import { productImageUrl } from "@/lib/images";
 
@@ -49,6 +61,7 @@ interface OrderItem {
   product_id: string;
   name: string;
   category: string;
+  image_url?: string;
   quantity: number;
   unit_price: number;
   subtotal: number;
@@ -71,6 +84,16 @@ interface ReturnInfo {
   refund_amount: number | null;
   created_at?: string;
   resolved_at?: string | null;
+  return_label_url?: string;
+}
+
+interface BillingAddress {
+  street: string;
+  city: string;
+  state: string;
+  zip: string;
+  name?: string;
+  country?: string;
 }
 
 interface OrderDetail {
@@ -80,6 +103,7 @@ interface OrderDetail {
   items: OrderItem[];
   status_history: StatusHistoryEntry[];
   shipping_address: ShippingInfo;
+  billing_address?: BillingAddress | null;
   carrier?: string;
   tracking?: string;
   discount: number;
@@ -277,11 +301,25 @@ function DetailSkeleton() {
 export default function OrderDetailPage() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const { user, isLoading: authLoading } = useAuth();
+
+  const justPlaced = searchParams.get("placed") === "true";
 
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Cancel order state
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelling, setCancelling] = useState(false);
+
+  // Return order state
+  const [returnOpen, setReturnOpen] = useState(false);
+  const [returnReason, setReturnReason] = useState("");
+  const [refundMethod, setRefundMethod] = useState<"original_payment" | "store_credit">("original_payment");
+  const [returning, setReturning] = useState(false);
 
   const orderId = params.id as string;
 
@@ -303,6 +341,37 @@ export default function OrderDetailPage() {
   useEffect(() => {
     if (user && orderId) loadOrder();
   }, [user, orderId, loadOrder]);
+
+  const handleCancelOrder = async () => {
+    if (!cancelReason.trim()) return;
+    try {
+      setCancelling(true);
+      await api.cancelOrder(orderId, cancelReason);
+      setCancelOpen(false);
+      setCancelReason("");
+      await loadOrder();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to cancel order");
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  const handleReturnOrder = async () => {
+    if (!returnReason.trim()) return;
+    try {
+      setReturning(true);
+      await api.initiateReturn(orderId, returnReason, refundMethod);
+      setReturnOpen(false);
+      setReturnReason("");
+      setRefundMethod("original_payment");
+      await loadOrder();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to initiate return");
+    } finally {
+      setReturning(false);
+    }
+  };
 
   if (authLoading || !user) return null;
 
@@ -346,10 +415,139 @@ export default function OrderDetailPage() {
                   Placed on {formatDate(order.date)}
                 </p>
               </div>
+
+              {/* Cancel / Return action buttons */}
+              <div className="flex items-center gap-2">
+                {(order.status === "placed" || order.status === "confirmed") && (
+                  <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
+                    <DialogTrigger
+                      render={
+                        <Button variant="outline" className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700">
+                          <Ban className="mr-1.5 size-4" />
+                          Cancel Order
+                        </Button>
+                      }
+                    />
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Cancel Order</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4 pt-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="cancel-reason">Reason for cancellation</Label>
+                          <Textarea
+                            id="cancel-reason"
+                            placeholder="Tell us why you want to cancel this order..."
+                            value={cancelReason}
+                            onChange={(e) => setCancelReason(e.target.value)}
+                            rows={3}
+                          />
+                        </div>
+                        <Button
+                          className="w-full bg-red-600 text-white hover:bg-red-700"
+                          disabled={cancelling || !cancelReason.trim()}
+                          onClick={handleCancelOrder}
+                        >
+                          {cancelling && <Loader2 className="mr-2 size-4 animate-spin" />}
+                          Confirm Cancellation
+                        </Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                )}
+
+                {order.status === "delivered" && !order["return"] && (
+                  <Dialog open={returnOpen} onOpenChange={setReturnOpen}>
+                    <DialogTrigger
+                      render={
+                        <Button variant="outline" className="border-orange-200 text-orange-600 hover:bg-orange-50 hover:text-orange-700">
+                          <RotateCcw className="mr-1.5 size-4" />
+                          Return Order
+                        </Button>
+                      }
+                    />
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Return Order</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4 pt-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="return-reason">Reason for return</Label>
+                          <Textarea
+                            id="return-reason"
+                            placeholder="Tell us why you want to return this order..."
+                            value={returnReason}
+                            onChange={(e) => setReturnReason(e.target.value)}
+                            rows={3}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Refund method</Label>
+                          <div className="flex gap-2">
+                            <Button
+                              type="button"
+                              variant={refundMethod === "original_payment" ? "default" : "outline"}
+                              size="sm"
+                              className={refundMethod === "original_payment" ? "bg-teal-600 hover:bg-teal-700" : ""}
+                              onClick={() => setRefundMethod("original_payment")}
+                            >
+                              Original Payment
+                            </Button>
+                            <Button
+                              type="button"
+                              variant={refundMethod === "store_credit" ? "default" : "outline"}
+                              size="sm"
+                              className={refundMethod === "store_credit" ? "bg-teal-600 hover:bg-teal-700" : ""}
+                              onClick={() => setRefundMethod("store_credit")}
+                            >
+                              Store Credit
+                            </Button>
+                          </div>
+                        </div>
+                        <Button
+                          className="w-full bg-orange-600 text-white hover:bg-orange-700"
+                          disabled={returning || !returnReason.trim()}
+                          onClick={handleReturnOrder}
+                        >
+                          {returning && <Loader2 className="mr-2 size-4 animate-spin" />}
+                          Submit Return
+                        </Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                )}
+              </div>
             </div>
           )}
         </div>
       </div>
+
+      {/* Order Placed Confirmation Banner */}
+      {justPlaced && !loading && !error && order && (
+        <div className="border-b border-emerald-200 bg-emerald-50">
+          <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
+            <div className="flex items-center gap-3">
+              <CheckCircle className="size-5 text-emerald-600 shrink-0" />
+              <div>
+                <p className="font-medium text-emerald-800">
+                  Order placed successfully!
+                </p>
+                <p className="text-sm text-emerald-600">
+                  Your order is being processed.
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0 border-emerald-300 text-emerald-700 hover:bg-emerald-100"
+              onClick={() => router.push("/products")}
+            >
+              Continue Shopping
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Content */}
       {!loading && !error && order && (
@@ -403,7 +601,7 @@ export default function OrderDetailPage() {
                         >
                           <TableCell>
                             <img
-                              src={productImageUrl(item.product_id, 48, 48)}
+                              src={productImageUrl(item.product_id, 48, 48, item.image_url, item.category)}
                               alt={item.name}
                               className="size-10 rounded-md object-cover bg-slate-100"
                               loading="lazy"
@@ -474,6 +672,37 @@ export default function OrderDetailPage() {
                         </div>
                       </>
                     )}
+
+                    {/* Billing Address */}
+                    <Separator />
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">
+                        Billing Address
+                      </p>
+                      {order.billing_address &&
+                       (order.billing_address.street !== order.shipping_address.street ||
+                        order.billing_address.city !== order.shipping_address.city ||
+                        order.billing_address.state !== order.shipping_address.state ||
+                        order.billing_address.zip !== order.shipping_address.zip) ? (
+                        <div className="text-sm text-slate-600">
+                          {order.billing_address.name && (
+                            <p className="font-medium text-slate-700">{order.billing_address.name}</p>
+                          )}
+                          <p>{order.billing_address.street}</p>
+                          <p>
+                            {order.billing_address.city}, {order.billing_address.state}{" "}
+                            {order.billing_address.zip}
+                          </p>
+                          {order.billing_address.country && (
+                            <p>{order.billing_address.country}</p>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-slate-500 italic">
+                          Same as shipping address
+                        </p>
+                      )}
+                    </div>
                   </CardContent>
                 </Card>
               )}
@@ -572,6 +801,31 @@ export default function OrderDetailPage() {
                               </span>
                             </div>
                           )}
+                        </div>
+                      </>
+                    )}
+
+                    {/* Return Label Download */}
+                    {(order["return"] as ReturnInfo).return_label_url && (
+                      <>
+                        <Separator />
+                        <div className="space-y-2">
+                          <Button
+                            variant="outline"
+                            className="w-full border-orange-200 text-orange-700 hover:bg-orange-50"
+                            onClick={() =>
+                              window.open(
+                                (order["return"] as ReturnInfo).return_label_url,
+                                "_blank"
+                              )
+                            }
+                          >
+                            <Download className="mr-2 size-4" />
+                            Download Return Label
+                          </Button>
+                          <p className="text-xs text-slate-500 text-center">
+                            Print the return label and drop off at any carrier location
+                          </p>
                         </div>
                       </>
                     )}

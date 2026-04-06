@@ -3,6 +3,8 @@
 import ReactMarkdown from "react-markdown";
 import { ChatProductCard } from "./product-card";
 import { ChatOrderCard } from "./order-card";
+import { ChatCheckoutCard } from "./checkout-card";
+import { ChatReturnCard } from "./return-card";
 
 interface RichMessageProps {
   content: string;
@@ -25,7 +27,13 @@ export function RichMessage({ content, onAction }: RichMessageProps) {
           );
         }
         if (seg.type === "order" && seg.data) {
-          return <ChatOrderCard key={i} data={seg.data as any} />;
+          return <ChatOrderCard key={i} data={seg.data as any} onAction={onAction} />;
+        }
+        if (seg.type === "checkout" && seg.data) {
+          return <ChatCheckoutCard key={i} data={seg.data as any} />;
+        }
+        if (seg.type === "return" && seg.data) {
+          return <ChatReturnCard key={i} data={seg.data as any} />;
         }
         return (
           <div
@@ -51,7 +59,7 @@ interface Segment {
 // ─── 1. Fenced Code Block Parser (primary path) ──────────────────────
 
 function parseCodeBlocks(content: string): Segment[] | null {
-  const codeBlockRegex = /```(product|order|products)\n([\s\S]*?)```/g;
+  const codeBlockRegex = /```(product|order|products|checkout|return)\n([\s\S]*?)```/g;
   const segments: Segment[] = [];
   let lastIndex = 0;
   let match;

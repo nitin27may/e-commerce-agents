@@ -12,6 +12,16 @@ from order_management.tools import (
 )
 from shared.agent_factory import create_chat_client
 from shared.context_providers import ECommerceContextProvider
+from shared.tools.cart_tools import (
+    add_to_cart,
+    apply_coupon_to_cart,
+    get_cart,
+    remove_from_cart,
+    set_billing_address,
+    set_billing_same_as_shipping,
+    set_shipping_address,
+    update_cart_quantity,
+)
 from shared.tools.return_tools import (
     check_return_eligibility,
     get_return_status,
@@ -31,6 +41,14 @@ AGENT_TOOLS = [
     process_refund,
     get_return_status,
     get_user_profile,
+    add_to_cart,
+    get_cart,
+    remove_from_cart,
+    update_cart_quantity,
+    set_shipping_address,
+    set_billing_address,
+    set_billing_same_as_shipping,
+    apply_coupon_to_cart,
 ]
 
 
