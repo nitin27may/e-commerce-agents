@@ -18,17 +18,17 @@ graph TB
         ORCH["Orchestrator<br/>FastAPI :8080<br/>JWT Auth + Intent Routing"]
     end
 
-    subgraph Agents["Specialist Agent Tier (A2A Protocol)"]
+    subgraph Agents["Specialist Agent Tier · A2A Protocol"]
         PD["Product Discovery<br/>:8081"]
         OM["Order Management<br/>:8082"]
-        PP["Pricing & Promotions<br/>:8083"]
-        RS["Review & Sentiment<br/>:8084"]
-        IF["Inventory & Fulfillment<br/>:8085"]
+        PP["Pricing &amp; Promotions<br/>:8083"]
+        RS["Review &amp; Sentiment<br/>:8084"]
+        IF["Inventory &amp; Fulfillment<br/>:8085"]
     end
 
     subgraph Infra["Infrastructure"]
-        PG["PostgreSQL 16<br/>+ pgvector"]
-        RD["Redis 7"]
+        PG[("PostgreSQL 16<br/>+ pgvector")]
+        RD[("Redis 7")]
         ASPIRE[".NET Aspire Dashboard<br/>:18888"]
     end
 
@@ -67,17 +67,26 @@ graph TB
     RS -.->|"OTLP"| ASPIRE
     IF -.->|"OTLP"| ASPIRE
 
-    style FE fill:#6366f1,stroke:#4f46e5,color:#fff
-    style ORCH fill:#0ea5e9,stroke:#0284c7,color:#fff
-    style PD fill:#0d9488,stroke:#0f766e,color:#fff
-    style OM fill:#0d9488,stroke:#0f766e,color:#fff
-    style PP fill:#0d9488,stroke:#0f766e,color:#fff
-    style RS fill:#0d9488,stroke:#0f766e,color:#fff
-    style IF fill:#0d9488,stroke:#0f766e,color:#fff
-    style PG fill:#0d9488,stroke:#115e59,color:#fff
-    style RD fill:#0d9488,stroke:#115e59,color:#fff
-    style ASPIRE fill:#64748b,stroke:#475569,color:#fff
-    style LLM fill:#f59e0b,stroke:#d97706,color:#fff
+    style Client fill:#6366f1,stroke:#4f46e5,stroke-width:2px,color:#fff
+    style FE fill:#818cf8,stroke:#6366f1,color:#fff
+
+    style Gateway fill:#0891b2,stroke:#0e7490,stroke-width:2px,color:#fff
+    style ORCH fill:#22d3ee,stroke:#06b6d4,color:#0c4a6e
+
+    style Agents fill:#0d9488,stroke:#0f766e,stroke-width:2px,color:#fff
+    style PD fill:#2dd4bf,stroke:#14b8a6,color:#134e4a
+    style OM fill:#2dd4bf,stroke:#14b8a6,color:#134e4a
+    style PP fill:#2dd4bf,stroke:#14b8a6,color:#134e4a
+    style RS fill:#2dd4bf,stroke:#14b8a6,color:#134e4a
+    style IF fill:#2dd4bf,stroke:#14b8a6,color:#134e4a
+
+    style Infra fill:#475569,stroke:#334155,stroke-width:2px,color:#fff
+    style PG fill:#94a3b8,stroke:#64748b,color:#1e293b
+    style RD fill:#94a3b8,stroke:#64748b,color:#1e293b
+    style ASPIRE fill:#94a3b8,stroke:#64748b,color:#1e293b
+
+    style External fill:#d97706,stroke:#b45309,stroke-width:2px,color:#fff
+    style LLM fill:#fbbf24,stroke:#f59e0b,color:#78350f
 ```
 
 ---

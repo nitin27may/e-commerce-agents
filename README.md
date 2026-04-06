@@ -13,15 +13,18 @@ Companion demo repo for the AI article series on [nitinksingh.com](https://nitin
 
 ## Architecture
 
+![System Architecture](docs/architecture.png)
+
+<details>
+<summary>View as Mermaid diagram</summary>
+
 ```mermaid
 graph TB
     subgraph Client["Browser / Client"]
-        style Client fill:#eef2ff,stroke:#6366f1,stroke-width:2px,color:#312e81
         FE["Next.js 15<br/>React 19 + Tailwind CSS"]
     end
 
     subgraph Orchestrator["Orchestrator Agent :8080"]
-        style Orchestrator fill:#f0fdfa,stroke:#0d9488,stroke-width:2px,color:#134e4a
         FA["FastAPI + MAF"]
         AUTH["JWT Auth + RBAC"]
         ROUTER["Intent Router"]
@@ -29,24 +32,21 @@ graph TB
         MKT["Marketplace API"]
     end
 
-    subgraph Specialists["Specialist Agents (A2A Protocol)"]
-        style Specialists fill:#f0f9ff,stroke:#0ea5e9,stroke-width:2px,color:#0c4a6e
+    subgraph Specialists["Specialist Agents · A2A Protocol"]
         PD["Product Discovery<br/>:8081"]
         OM["Order Management<br/>:8082"]
-        PP["Pricing & Promotions<br/>:8083"]
-        RS["Review & Sentiment<br/>:8084"]
-        IF["Inventory & Fulfillment<br/>:8085"]
+        PP["Pricing &amp; Promotions<br/>:8083"]
+        RS["Review &amp; Sentiment<br/>:8084"]
+        IF["Inventory &amp; Fulfillment<br/>:8085"]
     end
 
     subgraph Infrastructure["Shared Infrastructure"]
-        style Infrastructure fill:#f8fafc,stroke:#64748b,stroke-width:2px,color:#1e293b
         PG[("PostgreSQL 16<br/>+ pgvector")]
         RD[("Redis 7")]
         ASP["Aspire Dashboard<br/>:18888"]
     end
 
     subgraph LLM["LLM Provider"]
-        style LLM fill:#fffbeb,stroke:#f59e0b,stroke-width:2px,color:#78350f
         OAI["OpenAI API<br/>gpt-4.1"]
         AZ["Azure OpenAI<br/>(configurable)"]
     end
@@ -54,11 +54,11 @@ graph TB
     FE -->|"HTTP/JSON"| FA
     FA --> AUTH
     AUTH --> ROUTER
-    ROUTER -->|"A2A Protocol"| PD
-    ROUTER -->|"A2A Protocol"| OM
-    ROUTER -->|"A2A Protocol"| PP
-    ROUTER -->|"A2A Protocol"| RS
-    ROUTER -->|"A2A Protocol"| IF
+    ROUTER -->|"A2A"| PD
+    ROUTER -->|"A2A"| OM
+    ROUTER -->|"A2A"| PP
+    ROUTER -->|"A2A"| RS
+    ROUTER -->|"A2A"| IF
 
     PD --> PG
     OM --> PG
@@ -74,7 +74,34 @@ graph TB
     Orchestrator -->|"OTLP"| ASP
     Specialists --> OAI
     Specialists -.-> AZ
+
+    style Client fill:#6366f1,stroke:#4f46e5,stroke-width:2px,color:#fff
+    style FE fill:#818cf8,stroke:#6366f1,color:#fff
+
+    style Orchestrator fill:#0891b2,stroke:#0e7490,stroke-width:2px,color:#fff
+    style FA fill:#22d3ee,stroke:#06b6d4,color:#0c4a6e
+    style AUTH fill:#fca5a5,stroke:#f87171,color:#7f1d1d
+    style ROUTER fill:#67e8f9,stroke:#22d3ee,color:#0c4a6e
+    style CONV fill:#67e8f9,stroke:#22d3ee,color:#0c4a6e
+    style MKT fill:#67e8f9,stroke:#22d3ee,color:#0c4a6e
+
+    style Specialists fill:#0d9488,stroke:#0f766e,stroke-width:2px,color:#fff
+    style PD fill:#2dd4bf,stroke:#14b8a6,color:#134e4a
+    style OM fill:#2dd4bf,stroke:#14b8a6,color:#134e4a
+    style PP fill:#2dd4bf,stroke:#14b8a6,color:#134e4a
+    style RS fill:#2dd4bf,stroke:#14b8a6,color:#134e4a
+    style IF fill:#2dd4bf,stroke:#14b8a6,color:#134e4a
+
+    style Infrastructure fill:#475569,stroke:#334155,stroke-width:2px,color:#fff
+    style PG fill:#94a3b8,stroke:#64748b,color:#1e293b
+    style RD fill:#94a3b8,stroke:#64748b,color:#1e293b
+    style ASP fill:#94a3b8,stroke:#64748b,color:#1e293b
+
+    style LLM fill:#d97706,stroke:#b45309,stroke-width:2px,color:#fff
+    style OAI fill:#fbbf24,stroke:#f59e0b,color:#78350f
+    style AZ fill:#fbbf24,stroke:#f59e0b,color:#78350f
 ```
+</details>
 
 ---
 
