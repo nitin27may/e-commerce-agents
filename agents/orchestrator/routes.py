@@ -1417,7 +1417,8 @@ async def return_order(order_id: str, body: ReturnOrderRequest, user: dict = Dep
     if existing_return:
         raise HTTPException(status_code=409, detail="A return has already been requested for this order")
 
-    return_label_url = f"https://returns.example.com/labels/{uuid.uuid4().hex[:12]}"
+    label_token = uuid.uuid4().hex[:12]
+    return_label_url = f"/api/returns/{label_token}/label"
 
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -1451,6 +1452,220 @@ async def return_order(order_id: str, body: ReturnOrderRequest, user: dict = Dep
         "refund_amount": float(order["total"]),
         "refund_method": body.refund_method,
     }
+
+
+# ── Return Label PDF ─────────────────────────────────────────
+
+
+@router.get("/api/returns/{label_token}/label")
+async def get_return_label(label_token: str):
+    """Generate a return shipping label PDF for the given token."""
+    pool = get_pool()
+
+    # Find the return by label URL pattern
+    ret = await pool.fetchrow(
+        """SELECT r.id, r.order_id, r.reason, r.status, r.return_label_url,
+                  r.refund_method, r.refund_amount, r.created_at,
+                  o.shipping_address, o.shipping_carrier,
+                  u.name as user_name, u.email as user_email
+           FROM returns r
+           JOIN orders o ON r.order_id = o.id
+           JOIN users u ON r.user_id = u.id
+           WHERE r.return_label_url LIKE $1""",
+        f"%{label_token}%",
+    )
+    if not ret:
+        raise HTTPException(status_code=404, detail="Return label not found")
+
+    address = ret["shipping_address"]
+    if isinstance(address, str):
+        address = json.loads(address)
+
+    # Build a simple PDF using raw PDF syntax (no dependencies needed)
+    user_name = ret["user_name"] or "Customer"
+    user_email = ret["user_email"] or ""
+    order_id = str(ret["order_id"])[:8]
+    return_id = str(ret["id"])[:8]
+    carrier = ret["shipping_carrier"] or "Standard Shipping"
+    reason = ret["reason"] or "Return"
+    created = ret["created_at"].strftime("%Y-%m-%d") if ret["created_at"] else ""
+    addr_street = address.get("street", "") if address else ""
+    addr_city = address.get("city", "") if address else ""
+    addr_state = address.get("state", "") if address else ""
+    addr_zip = address.get("zip", "") if address else ""
+
+    barcode_text = f"RTN-{label_token.upper()}"
+
+    pdf_content = _build_return_label_pdf(
+        barcode=barcode_text,
+        user_name=user_name,
+        user_email=user_email,
+        order_id=order_id,
+        return_id=return_id,
+        carrier=carrier,
+        reason=reason,
+        created=created,
+        addr_street=addr_street,
+        addr_city=addr_city,
+        addr_state=addr_state,
+        addr_zip=addr_zip,
+    )
+
+    from starlette.responses import Response
+    return Response(
+        content=pdf_content,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="return-label-{label_token}.pdf"',
+        },
+    )
+
+
+def _build_return_label_pdf(
+    barcode: str,
+    user_name: str,
+    user_email: str,
+    order_id: str,
+    return_id: str,
+    carrier: str,
+    reason: str,
+    created: str,
+    addr_street: str,
+    addr_city: str,
+    addr_state: str,
+    addr_zip: str,
+) -> bytes:
+    """Generate a minimal return shipping label as raw PDF (no external libs)."""
+    # Page dimensions: Letter size (612 x 792 points)
+    # This creates a clean, professional-looking return label
+
+    def pdf_str(s: str) -> str:
+        return s.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+    from_addr = f"{pdf_str(user_name)}\\n{pdf_str(addr_street)}\\n{pdf_str(addr_city)}, {pdf_str(addr_state)} {pdf_str(addr_zip)}"
+    to_addr = "E-Commerce Agents Returns Center\\n1200 Returns Blvd, Suite 400\\nMemphis, TN 38118"
+
+    # Build PDF objects
+    objects = []
+
+    # Object 1: Catalog
+    objects.append("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj")
+
+    # Object 2: Pages
+    objects.append("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj")
+
+    # Object 3: Page
+    objects.append(
+        "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+        "/Contents 4 0 R /Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> >>\nendobj"
+    )
+
+    # Object 5: Helvetica font
+    objects.append("5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj")
+
+    # Object 6: Helvetica-Bold font
+    objects.append("6 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj")
+
+    # Object 4: Page content stream
+    stream_lines = [
+        # --- Header bar ---
+        "0.05 0.58 0.55 rg",  # Teal fill
+        "0 742 612 50 re f",
+        "1 1 1 rg",  # White text
+        "BT /F2 20 Tf 30 760 Td (RETURN SHIPPING LABEL) Tj ET",
+
+        # --- Barcode area ---
+        "0.95 0.95 0.95 rg",
+        "30 680 552 50 re f",
+        "0 0 0 rg",
+        f"BT /F2 16 Tf 180 700 Td ({pdf_str(barcode)}) Tj ET",
+        f"BT /F1 9 Tf 30 685 Td (Scan or enter this code at drop-off) Tj ET",
+
+        # --- Carrier ---
+        "0 0 0 rg",
+        f"BT /F2 12 Tf 30 655 Td (Carrier: {pdf_str(carrier)}) Tj ET",
+        f"BT /F1 10 Tf 400 655 Td (Date: {pdf_str(created)}) Tj ET",
+
+        # --- Divider ---
+        "0.8 0.8 0.8 RG", "0.5 w", "30 640 m 582 640 l S",
+
+        # --- FROM Section ---
+        "0 0 0 rg",
+        "BT /F2 11 Tf 30 620 Td (FROM:) Tj ET",
+        f"BT /F1 11 Tf 30 605 Td ({pdf_str(user_name)}) Tj ET",
+        f"BT /F1 10 Tf 30 591 Td ({pdf_str(addr_street)}) Tj ET",
+        f"BT /F1 10 Tf 30 577 Td ({pdf_str(addr_city)}, {pdf_str(addr_state)} {pdf_str(addr_zip)}) Tj ET",
+        f"BT /F1 9 Tf 30 562 Td ({pdf_str(user_email)}) Tj ET",
+
+        # --- TO Section ---
+        "BT /F2 11 Tf 320 620 Td (TO:) Tj ET",
+        "BT /F1 11 Tf 320 605 Td (E-Commerce Agents Returns Center) Tj ET",
+        "BT /F1 10 Tf 320 591 Td (1200 Returns Blvd, Suite 400) Tj ET",
+        "BT /F1 10 Tf 320 577 Td (Memphis, TN 38118) Tj ET",
+
+        # --- Divider ---
+        "30 545 m 582 545 l S",
+
+        # --- Return Details Box ---
+        "0.97 0.97 0.97 rg",
+        "30 460 552 75 re f",
+        "0 0 0 rg",
+        f"BT /F2 10 Tf 40 520 Td (Order ID:) Tj ET",
+        f"BT /F1 10 Tf 140 520 Td (#{pdf_str(order_id)}...) Tj ET",
+        f"BT /F2 10 Tf 40 504 Td (Return ID:) Tj ET",
+        f"BT /F1 10 Tf 140 504 Td (#{pdf_str(return_id)}...) Tj ET",
+        f"BT /F2 10 Tf 40 488 Td (Reason:) Tj ET",
+        f"BT /F1 10 Tf 140 488 Td ({pdf_str(reason[:60])}) Tj ET",
+        f"BT /F2 10 Tf 40 472 Td (Status:) Tj ET",
+        f"BT /F1 10 Tf 140 472 Td (Return Requested) Tj ET",
+
+        # --- Instructions Box ---
+        "0.05 0.58 0.55 rg",  # Teal
+        "30 380 552 60 re f",
+        "1 1 1 rg",
+        "BT /F2 12 Tf 40 420 Td (INSTRUCTIONS) Tj ET",
+        "BT /F1 10 Tf 40 404 Td (1. Print this label and cut along the border.) Tj ET",
+        "BT /F1 10 Tf 40 390 Td (2. Pack all items securely in the original packaging.) Tj ET",
+
+        # Continue instructions below the box
+        "0 0 0 rg",
+        "BT /F1 10 Tf 40 360 Td (3. Attach this label to the outside of the package.) Tj ET",
+        "BT /F1 10 Tf 40 346 Td (4. Drop off at any carrier location or schedule a pickup.) Tj ET",
+        "BT /F1 10 Tf 40 332 Td (5. Your refund will be processed after we receive and inspect the items.) Tj ET",
+
+        # --- Footer ---
+        "0.6 0.6 0.6 rg",
+        "BT /F1 8 Tf 30 50 Td (Generated by E-Commerce Agents | This label is valid for 30 days from the return request date.) Tj ET",
+        f"BT /F1 8 Tf 30 38 Td (Label ID: {pdf_str(barcode)} | For support, contact support@ecommerce-agents.com) Tj ET",
+    ]
+
+    stream = "\n".join(stream_lines)
+    stream_bytes = stream.encode("latin-1")
+
+    objects.insert(3, f"4 0 obj\n<< /Length {len(stream_bytes)} >>\nstream\n{stream}\nendstream\nendobj")
+
+    # Build the PDF file
+    pdf_lines = ["%PDF-1.4"]
+    offsets = []
+
+    for obj in objects:
+        offsets.append(len("\n".join(pdf_lines).encode("latin-1")) + 1)
+        pdf_lines.append(obj)
+
+    xref_offset = len("\n".join(pdf_lines).encode("latin-1")) + 1
+    pdf_lines.append("xref")
+    pdf_lines.append(f"0 {len(objects) + 1}")
+    pdf_lines.append("0000000000 65535 f ")
+    for off in offsets:
+        pdf_lines.append(f"{off:010d} 00000 n ")
+
+    pdf_lines.append("trailer")
+    pdf_lines.append(f"<< /Size {len(objects) + 1} /Root 1 0 R >>")
+    pdf_lines.append("startxref")
+    pdf_lines.append(str(xref_offset))
+    pdf_lines.append("%%EOF")
+
+    return "\n".join(pdf_lines).encode("latin-1")
 
 
 # ── Cart Routes ──────────────────────────────────────────────

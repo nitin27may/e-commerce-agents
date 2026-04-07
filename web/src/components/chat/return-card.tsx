@@ -32,7 +32,11 @@ export function ChatReturnCard({ data }: { data: ReturnData }) {
       </div>
 
       {data.return_label_url && (
-        <a href={data.return_label_url} target="_blank" rel="noopener noreferrer">
+        <a
+          href={data.return_label_url.startsWith("/api") ? `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}${data.return_label_url}` : data.return_label_url}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
           <Button variant="outline" className="w-full gap-2 border-orange-300 text-orange-700 hover:bg-orange-100">
             <Download className="size-4" />
             Download Return Label

@@ -813,12 +813,13 @@ export default function OrderDetailPage() {
                           <Button
                             variant="outline"
                             className="w-full border-orange-200 text-orange-700 hover:bg-orange-50"
-                            onClick={() =>
-                              window.open(
-                                (order["return"] as ReturnInfo).return_label_url,
-                                "_blank"
-                              )
-                            }
+                            onClick={() => {
+                              const url = (order["return"] as ReturnInfo).return_label_url || "";
+                              const resolved = url.startsWith("/api")
+                                ? `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}${url}`
+                                : url;
+                              window.open(resolved, "_blank");
+                            }}
                           >
                             <Download className="mr-2 size-4" />
                             Download Return Label

@@ -124,9 +124,9 @@ async def initiate_return(
         if existing:
             return {"error": "A return has already been initiated for this order.", "return_id": str(existing["id"])}
 
-        # Generate mock return label URL
+        # Generate return label URL pointing to our own PDF endpoint
         label_token = uuid.uuid4().hex[:12]
-        return_label_url = f"https://returns.example.com/labels/{label_token}"
+        return_label_url = f"/api/returns/{label_token}/label"
 
         # Create return record
         return_id = await conn.fetchval(
