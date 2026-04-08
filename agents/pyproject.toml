@@ -8,31 +8,25 @@ dependencies = [
     "agent-framework>=1.0.0b0",
     "agent-framework-a2a>=1.0.0b0",
     "agent-framework-openai>=1.0.0b0",
-
     # Web
     "fastapi>=0.115",
     "uvicorn>=0.34",
     "starlette>=0.45",
     "sse-starlette>=2.2",
-
     # Database
     "asyncpg>=0.30",
     "pgvector>=0.3",
-
     # Config & Validation
     "pydantic>=2.10",
     "pydantic-settings>=2.7",
     "pyyaml>=6.0",
-
     # Auth
     "PyJWT>=2.9",
     "bcrypt>=4.2",
-
     # HTTP & LLM
     "httpx>=0.28",
     "openai>=1.60",
     "tiktoken>=0.8",
-
     # Telemetry (from day 1)
     "opentelemetry-sdk>=1.28",
     "opentelemetry-exporter-otlp-proto-grpc>=1.28",
@@ -42,6 +36,7 @@ dependencies = [
     "opentelemetry-instrumentation-httpx>=0.49b0",
     "opentelemetry-instrumentation-asyncpg>=0.49b0",
     "opentelemetry-instrumentation-logging>=0.49b0",
+    "opentelemetry-instrumentation-openai-v2>=0.1",
 ]
 
 [project.optional-dependencies]

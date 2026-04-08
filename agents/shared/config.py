@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     OTEL_ENABLED: bool = False
     OTEL_EXPORTER_OTLP_ENDPOINT: str = "http://localhost:18889"
     OTEL_SERVICE_NAME: str = "ecommerce"
+    # Set true to capture prompt/completion content in traces (may contain PII)
+    GENAI_CAPTURE_CONTENT: bool = False
 
     # General
     ENVIRONMENT: str = "development"

@@ -345,6 +345,7 @@ async def chat(body: ChatRequest, user: dict[str, Any] = Depends(require_auth)) 
     from orchestrator.agent import ORCHESTRATOR_TOOLS
     from orchestrator.prompts import get_system_prompt
     from shared.agent_host import _run_agent_with_tools
+    from shared.telemetry import agent_run_span
 
     user_role = current_user_role.get() or "customer"
     system_prompt = get_system_prompt(user_role)
@@ -355,17 +356,18 @@ async def chat(body: ChatRequest, user: dict[str, Any] = Depends(require_auth)) 
     current_conversation_history.set(history)
 
     with UsageTimer() as timer:
-        try:
-            response_text = await _run_agent_with_tools(
-                system_prompt=system_prompt,
-                tools=ORCHESTRATOR_TOOLS,
-                user_message=body.message,
-                history=history,
-                user_context=user_context,
-            )
-        except Exception:
-            logger.exception("chat.agent_error user=%s conversation=%s", user_email, conversation_id)
-            response_text = "I apologize, but I encountered an issue processing your request. Please try again."
+        with agent_run_span("orchestrator"):
+            try:
+                response_text = await _run_agent_with_tools(
+                    system_prompt=system_prompt,
+                    tools=ORCHESTRATOR_TOOLS,
+                    user_message=body.message,
+                    history=history,
+                    user_context=user_context,
+                )
+            except Exception:
+                logger.exception("chat.agent_error user=%s conversation=%s", user_email, conversation_id)
+                response_text = "I apologize, but I encountered an issue processing your request. Please try again."
 
     # Save assistant message
     await pool.execute(
@@ -476,25 +478,27 @@ async def chat_stream(body: ChatRequest, request: Request, user: dict[str, Any] 
 
     async def event_generator() -> AsyncGenerator[str, None]:
         """Yield SSE-formatted events from the streaming agent response."""
+        from shared.telemetry import agent_run_span
         full_response: list[str] = []
         start_time = time.monotonic()
 
-        try:
-            async for chunk in _run_agent_with_tools_stream(
-                system_prompt=system_prompt,
-                tools=ORCHESTRATOR_TOOLS,
-                user_message=body.message,
-                history=history,
-                user_context=user_context,
-            ):
-                full_response.append(chunk)
-                yield f"data: {chunk}\n\n"
+        with agent_run_span("orchestrator"):
+            try:
+                async for chunk in _run_agent_with_tools_stream(
+                    system_prompt=system_prompt,
+                    tools=ORCHESTRATOR_TOOLS,
+                    user_message=body.message,
+                    history=history,
+                    user_context=user_context,
+                ):
+                    full_response.append(chunk)
+                    yield f"data: {chunk}\n\n"
 
-        except Exception:
-            logger.exception("chat_stream.agent_error user=%s conversation=%s", user_email, conversation_id)
-            error_msg = "I apologize, but I encountered an issue processing your request. Please try again."
-            full_response.append(error_msg)
-            yield f"data: {error_msg}\n\n"
+            except Exception:
+                logger.exception("chat_stream.agent_error user=%s conversation=%s", user_email, conversation_id)
+                error_msg = "I apologize, but I encountered an issue processing your request. Please try again."
+                full_response.append(error_msg)
+                yield f"data: {error_msg}\n\n"
 
         # Send metadata and termination event
         response_text = "".join(full_response)

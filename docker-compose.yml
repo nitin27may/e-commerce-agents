@@ -91,6 +91,9 @@ services:
       OTEL_ENABLED: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://aspire:18889
       OTEL_SERVICE_NAME: ecommerce.orchestrator
+      # Capture LLM input/output content in Aspire GenAI telemetry view
+      # Set to "false" in production environments that process PII
+      OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: ${OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT:-true}
       AGENT_REGISTRY: >-
         {
           "product-discovery": "http://product-discovery:8081",

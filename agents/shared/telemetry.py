@@ -52,12 +52,18 @@ def setup_telemetry(service_name: str, service_version: str = "1.0.0") -> None:
 
 
 def _do_setup(service_name: str, service_version: str) -> None:
+    import os
     from opentelemetry import trace, metrics
     from opentelemetry.sdk.resources import Resource, SERVICE_NAME, SERVICE_VERSION
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
     from opentelemetry.sdk.metrics import MeterProvider
     from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+
+    # Opt into latest experimental GenAI semantic conventions (required for Aspire GenAI view)
+    os.environ.setdefault("OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental")
+    if settings.GENAI_CAPTURE_CONTENT:
+        os.environ.setdefault("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "true")
 
     endpoint = settings.OTEL_EXPORTER_OTLP_ENDPOINT.rstrip("/")
 
@@ -86,16 +92,16 @@ def _do_setup(service_name: str, service_version: str) -> None:
     tracer_provider.add_span_processor(BatchSpanProcessor(span_exporter))
     trace.set_tracer_provider(tracer_provider)
 
-    # Metrics
-    metric_reader = PeriodicExportingMetricReader(metric_exporter, export_interval_millis=15000)
+    # Metrics — 5s export interval for responsive Aspire dashboard updates
+    metric_reader = PeriodicExportingMetricReader(metric_exporter, export_interval_millis=5000)
     meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
     metrics.set_meter_provider(meter_provider)
 
-    # Logs — skip the OTel log bridge to avoid recursive loop issues.
-    # Python logging still works via the logging instrumentor which adds
-    # trace_id/span_id to log records for correlation.
+    # Logs — OTel LoggerProvider bridges Python logging to Aspire's structured log view
+    _setup_log_provider(resource, endpoint)
 
     # Auto-instrument libraries
+    _instrument_openai()
     _instrument_httpx()
     _instrument_asyncpg()
     _instrument_logging()
@@ -145,17 +151,118 @@ def get_current_trace_id() -> str | None:
     return None
 
 
+def enrich_span_with_session(agent_name: str = "") -> None:
+    """Add session/user/agent context from ContextVars to the current active span.
+
+    Sets both session.id and gen_ai.conversation.id so Aspire can group LLM calls
+    by conversation and correlate them with the correct user identity.
+    """
+    if not settings.OTEL_ENABLED:
+        return
+    try:
+        from opentelemetry import trace
+        from shared.context import current_user_email, current_user_role, current_session_id
+        span = trace.get_current_span()
+        if not span.is_recording():
+            return
+        if email := current_user_email.get(""):
+            span.set_attribute("enduser.id", email)
+        if role := current_user_role.get(""):
+            span.set_attribute("enduser.role", role)
+        if session := current_session_id.get(""):
+            span.set_attribute("session.id", session)
+            # gen_ai.conversation.id is the Aspire GenAI semantic convention attribute
+            # that groups all LLM calls belonging to one conversation thread
+            span.set_attribute("gen_ai.conversation.id", session)
+        if agent_name:
+            span.set_attribute("gen_ai.agent.name", agent_name)
+    except Exception:
+        pass  # Telemetry must never break app flow
+
+
+@contextmanager
+def agent_run_span(agent_name: str):
+    """Context manager wrapping one agent invocation with GenAI semantic convention attributes.
+
+    Uses the OTel GenAI agent span convention (invoke_agent) so Aspire renders
+    this span with the agent badge and groups it under the GenAI telemetry view.
+
+    Span hierarchy in Aspire:
+        invoke_agent orchestrator        ← this span (INTERNAL, orchestrator process)
+          chat gpt-4.1                   ← OpenAI instrumentor (LLM call)
+          invoke_agent product-discovery ← a2a_call_span (CLIENT, cross-process)
+            invoke_agent product-discovery ← agent_run_span in specialist (INTERNAL)
+              chat gpt-4.1              ← OpenAI instrumentor
+              asyncpg SELECT ...        ← DB query
+    """
+    if not settings.OTEL_ENABLED:
+        yield None
+        return
+
+    from opentelemetry.trace import SpanKind
+    tracer = get_tracer("ecommerce.agent")
+    with tracer.start_as_current_span(
+        f"invoke_agent {agent_name}",
+        kind=SpanKind.INTERNAL,
+    ) as span:
+        span.set_attribute("gen_ai.operation.name", "invoke_agent")
+        span.set_attribute("gen_ai.system", "openai")
+        enrich_span_with_session(agent_name)
+        try:
+            yield span
+        except Exception as e:
+            from opentelemetry import trace as trace_api
+            span.record_exception(e)
+            span.set_status(trace_api.StatusCode.ERROR, str(e))
+            raise
+
+
 @contextmanager
 def a2a_call_span(source_agent: str, target_agent: str, target_url: str):
-    """Context manager for custom A2A call spans in the orchestrator."""
+    """Context manager for cross-process A2A agent calls from the orchestrator.
+
+    Uses SpanKind.CLIENT and the invoke_agent convention so Aspire renders the
+    outbound call as a GenAI agent invocation with the target agent name.
+    Trace context is propagated by httpx instrumentation into the downstream span.
+    """
+    from opentelemetry.trace import SpanKind
     tracer = get_tracer("ecommerce.orchestrator")
     with tracer.start_as_current_span(
-        "agent.a2a_call",
-        attributes={
-            "agent.source": source_agent,
-            "agent.target": target_agent,
-            "agent.target_url": target_url,
-        },
+        f"invoke_agent {target_agent}",
+        kind=SpanKind.CLIENT,
+    ) as span:
+        span.set_attribute("gen_ai.operation.name", "invoke_agent")
+        span.set_attribute("gen_ai.system", "openai")
+        span.set_attribute("gen_ai.agent.name", target_agent)
+        span.set_attribute("agent.source", source_agent)
+        span.set_attribute("agent.target_url", target_url)
+        enrich_span_with_session()
+        try:
+            yield span
+        except Exception as e:
+            from opentelemetry import trace as trace_api
+            span.record_exception(e)
+            span.set_status(trace_api.StatusCode.ERROR, str(e))
+            raise
+
+
+@contextmanager
+def tool_call_span(tool_name: str):
+    """Context manager for individual tool invocations inside the tool-calling loop.
+
+    Wraps the execution of a single LLM-chosen tool call. In Aspire, this produces
+    a child span under the LLM call, showing tool name, duration, and success/failure.
+    """
+    if not settings.OTEL_ENABLED:
+        yield None
+        return
+
+    from opentelemetry.trace import SpanKind
+    tracer = get_tracer("ecommerce.agent")
+    with tracer.start_as_current_span(
+        f"tool {tool_name}",
+        kind=SpanKind.INTERNAL,
+        attributes={"tool.name": tool_name},
     ) as span:
         try:
             yield span
@@ -202,6 +309,72 @@ def traced_tool(fn: Callable) -> Callable:
 
 
 # ── Private instrumentation helpers ──────────────────────────
+
+
+def _setup_log_provider(resource: Any, endpoint: str) -> None:
+    """Wire Python's logging module to an OTel LoggerProvider with OTLP export.
+
+    This is what populates Aspire Dashboard's structured log view. Each Python
+    log record becomes an OTel LogRecord with body, severity, trace_id/span_id
+    (correlation to the active span), and resource attributes (service.name).
+
+    The filter on the handler prevents OTel SDK's own internal log records from
+    re-entering the pipeline and causing recursive export loops.
+    """
+    import logging as _logging
+    try:
+        from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+        from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+        from opentelemetry._logs import set_logger_provider
+
+        try:
+            from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
+            log_exporter = OTLPLogExporter(endpoint=endpoint, insecure=True)
+        except ImportError:
+            from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
+            log_exporter = OTLPLogExporter(endpoint=f"{endpoint}/v1/logs")
+
+        log_provider = LoggerProvider(resource=resource)
+        log_provider.add_log_record_processor(BatchLogRecordProcessor(log_exporter))
+        set_logger_provider(log_provider)
+
+        # Bridge Python root logger → OTel log records
+        handler = LoggingHandler(level=_logging.DEBUG, logger_provider=log_provider)
+
+        # Prevent OTel SDK's own logger output from re-entering the pipeline
+        class _NoOtelLoopFilter(_logging.Filter):
+            def filter(self, record: _logging.LogRecord) -> bool:
+                return not record.name.startswith("opentelemetry")
+
+        handler.addFilter(_NoOtelLoopFilter())
+        _logging.getLogger().addHandler(handler)
+        logger.info("OTel log provider initialized — Python logs will appear in Aspire structured log view")
+    except Exception:
+        logger.warning("Failed to set up OTel log provider — structured logs will not appear in Aspire", exc_info=True)
+
+
+def _instrument_openai() -> None:
+    """Instrument the OpenAI Python SDK with GenAI semantic conventions.
+
+    Automatically adds to every chat.completions.create() call:
+      - gen_ai.system, gen_ai.operation.name, gen_ai.request.model
+      - gen_ai.response.model, gen_ai.response.finish_reason
+      - gen_ai.usage.input_tokens, gen_ai.usage.output_tokens (as span attrs + metrics)
+
+    Works for both openai.AsyncOpenAI and openai.AsyncAzureOpenAI clients.
+    """
+    try:
+        from opentelemetry.instrumentation.openai_v2 import OpenAIInstrumentor
+        OpenAIInstrumentor().instrument()
+        logger.info("OpenAI SDK instrumented with GenAI semantic conventions")
+    except ImportError:
+        logger.warning(
+            "opentelemetry-instrumentation-openai-v2 not installed — "
+            "LLM spans will appear as raw HTTP spans without model/token details. "
+            "Run: uv add opentelemetry-instrumentation-openai-v2"
+        )
+    except Exception:
+        logger.warning("Failed to instrument OpenAI SDK", exc_info=True)
 
 
 def _instrument_httpx() -> None:

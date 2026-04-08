@@ -160,7 +160,10 @@ fi
 if [ "$CLEAN" = true ]; then
     step "Cleaning up (removing containers, volumes, orphans)"
     docker compose --profile seed --profile agents --profile frontend down -v --remove-orphans
-    success "Clean complete"
+    # Aspire has no persistent volume — removing the container clears all in-memory
+    # telemetry (traces, structured logs, metrics). Explicitly remove it to be certain.
+    docker compose rm -f aspire 2>/dev/null || true
+    success "Clean complete — containers, volumes, and Aspire telemetry data cleared"
 fi
 
 # ── Seed Only ─────────────────────────────────────────────────

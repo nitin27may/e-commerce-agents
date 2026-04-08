@@ -13,7 +13,7 @@ from pydantic import Field
 from orchestrator.prompts import SYSTEM_PROMPT
 from shared.agent_factory import create_chat_client
 from shared.config import settings
-from shared.context import current_user_email, current_user_role, current_conversation_history
+from shared.context import current_user_email, current_user_role, current_conversation_history, current_session_id
 from shared.context_providers import ECommerceContextProvider
 from shared.telemetry import a2a_call_span
 
@@ -62,6 +62,7 @@ async def call_specialist_agent(
                         "x-agent-secret": settings.AGENT_SHARED_SECRET,
                         "x-user-email": user_email,
                         "x-user-role": user_role,
+                        "x-session-id": current_session_id.get(""),
                     },
                 )
                 resp.raise_for_status()

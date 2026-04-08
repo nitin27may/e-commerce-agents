@@ -40,7 +40,7 @@ export function RichMessage({ content, onAction }: RichMessageProps) {
             key={i}
             className="prose prose-sm prose-slate max-w-none prose-p:my-1 prose-li:my-0.5 prose-headings:mt-3 prose-headings:mb-1 prose-ul:my-1 prose-ol:my-1 prose-strong:text-slate-800"
           >
-            <ReactMarkdown breaks>{seg.text}</ReactMarkdown>
+            <ReactMarkdown>{seg.text}</ReactMarkdown>
           </div>
         );
       })}
@@ -92,7 +92,37 @@ function parseCodeBlocks(content: string): Segment[] | null {
     const text = content.slice(lastIndex).trim();
     if (text) segments.push({ type: "text", text });
   }
-  return segments;
+
+  return suppressRedundantText(segments);
+}
+
+// Remove text segments that are plain-text dumps of adjacent structured cards.
+function suppressRedundantText(segments: Segment[]): Segment[] {
+  const cardTypes = new Set(["order", "product", "products", "checkout", "return"]);
+  return segments.filter((seg, i) => {
+    if (seg.type !== "text") return true;
+    const prev = segments[i - 1];
+    const next = segments[i + 1];
+    const adjacentToCard =
+      (prev && cardTypes.has(prev.type)) ||
+      (next && cardTypes.has(next.type));
+    return !(adjacentToCard && looksLikeStructuredDump(seg.text));
+  });
+}
+
+function looksLikeStructuredDump(text: string): boolean {
+  const patterns = [
+    /^Status[:\s]/im,
+    /^Order\s*(Total|ID|#)[:\s]/im,
+    /Tracking\s*(Number)?[:\s]/i,
+    /Shipping\s*(Carrier|Address)[:\s]/i,
+    /Items?\s*(in your order|:)/i,
+    /[—–]\s*\d+\s*[×x]\s*\$/m,
+    /Order\s*(Status\s*)?Timeline/i,
+    /^Price[:\s]*\$/im,
+    /^Rating[:\s]/im,
+  ];
+  return patterns.filter((p) => p.test(text)).length >= 3;
 }
 
 // ─── 2. Order Text Detection (fallback) ──────────────────────────────

@@ -5,8 +5,6 @@ import {
   useEffect,
   useRef,
   useCallback,
-  type FormEvent,
-  type KeyboardEvent,
 } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
@@ -15,7 +13,7 @@ import { api } from "@/lib/api";
 import { RichMessage } from "@/components/chat/rich-message";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
+import { PromptInputBox } from "@/components/ui/ai-prompt-box";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -30,7 +28,6 @@ import Link from "next/link";
 import {
   MessageSquarePlusIcon,
   Trash2Icon,
-  SendIcon,
   PanelLeftIcon,
   BotIcon,
   UserIcon,
@@ -189,7 +186,6 @@ export default function ChatPage() {
     string | null
   >(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
   const [isResponding, setIsResponding] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
 
@@ -197,7 +193,6 @@ export default function ChatPage() {
   const pendingQueryRef = useRef<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // ---- Load conversations on mount ----
   useEffect(() => {
@@ -219,11 +214,7 @@ export default function ChatPage() {
     if (pendingQueryRef.current && !isResponding) {
       const q = pendingQueryRef.current;
       pendingQueryRef.current = null;
-      setInput(q);
-      // Use a microtask so setInput has committed before we send
-      queueMicrotask(() => {
-        sendMessage(q);
-      });
+      sendMessage(q);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversations]);
@@ -264,9 +255,7 @@ export default function ChatPage() {
   const handleNewChat = useCallback(() => {
     setActiveConversationId(null);
     setMessages([]);
-    setInput("");
     setSheetOpen(false);
-    textareaRef.current?.focus();
   }, []);
 
   // ---- Select conversation ----
@@ -305,7 +294,6 @@ export default function ChatPage() {
       content: trimmed,
     };
     setMessages((prev) => [...prev, userMessage]);
-    setInput("");
     setIsResponding(true);
 
     try {
@@ -335,21 +323,6 @@ export default function ChatPage() {
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setIsResponding(false);
-      textareaRef.current?.focus();
-    }
-  }
-
-  // ---- Send message (form handler) ----
-  async function handleSend(e?: FormEvent) {
-    e?.preventDefault();
-    await sendMessage(input);
-  }
-
-  // ---- Keyboard: Enter sends, Shift+Enter adds newline ----
-  function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
     }
   }
 
@@ -508,33 +481,16 @@ export default function ChatPage() {
 
         {/* ---- Input area ---- */}
         <div className="border-t bg-background px-4 py-3">
-          <form
-            onSubmit={handleSend}
-            className="mx-auto flex max-w-3xl items-end gap-2"
-          >
-            <Textarea
-              ref={textareaRef}
-              placeholder="Type your message..."
-              className="min-h-[40px] max-h-40 resize-none"
-              rows={1}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              disabled={isResponding}
+          <div className="mx-auto max-w-3xl">
+            <PromptInputBox
+              onSend={(message) => sendMessage(message)}
+              isLoading={isResponding}
+              placeholder="Ask about products, orders, or anything..."
             />
-            <Button
-              type="submit"
-              size="icon"
-              disabled={isResponding || !input.trim()}
-              className="shrink-0 bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-40"
-              title="Send message"
-            >
-              <SendIcon className="size-4" />
-            </Button>
-          </form>
-          <p className="mx-auto mt-1.5 max-w-3xl text-center text-[11px] text-muted-foreground">
-            Powered by E-Commerce Agents multi-agent orchestration
-          </p>
+            <p className="mt-1.5 text-center text-[11px] text-muted-foreground">
+              Powered by E-Commerce Agents multi-agent orchestration
+            </p>
+          </div>
         </div>
       </div>
     </div>

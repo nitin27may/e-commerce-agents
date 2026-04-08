@@ -106,23 +106,27 @@ async def _run_agent_with_tools(
 
         if choice.finish_reason == "tool_calls" and choice.message.tool_calls:
             messages.append(choice.message.model_dump())
+            from shared.telemetry import tool_call_span
             for tc in choice.message.tool_calls:
                 fn_name = tc.function.name
                 fn_args = json.loads(tc.function.arguments) if tc.function.arguments else {}
                 tool_fn = tool_map.get(fn_name)
                 if tool_fn:
-                    try:
-                        # FunctionTool has .func for the raw async function
-                        raw_fn = getattr(tool_fn, "func", tool_fn)
-                        if callable(raw_fn):
-                            result = await raw_fn(**fn_args)
-                        else:
-                            result = await tool_fn.invoke(**fn_args)
-                        result_str = json.dumps(result, default=str) if not isinstance(result, str) else result
-                        logger.info("tool.result name=%s len=%d content=%s", fn_name, len(result_str), result_str[:500])
-                    except Exception as e:
-                        logger.exception("tool.error name=%s", fn_name)
-                        result_str = json.dumps({"error": str(e)})
+                    with tool_call_span(fn_name) as tspan:
+                        try:
+                            # FunctionTool has .func for the raw async function
+                            raw_fn = getattr(tool_fn, "func", tool_fn)
+                            if callable(raw_fn):
+                                result = await raw_fn(**fn_args)
+                            else:
+                                result = await tool_fn.invoke(**fn_args)
+                            result_str = json.dumps(result, default=str) if not isinstance(result, str) else result
+                            if tspan:
+                                tspan.set_attribute("tool.result.length", len(result_str))
+                            logger.info("tool.result name=%s len=%d", fn_name, len(result_str))
+                        except Exception as e:
+                            logger.exception("tool.error name=%s", fn_name)
+                            result_str = json.dumps({"error": str(e)})
                 else:
                     result_str = json.dumps({"error": f"Unknown tool: {fn_name}"})
                 messages.append({"role": "tool", "tool_call_id": tc.id, "content": result_str})
@@ -274,6 +278,7 @@ async def _run_agent_with_tools_stream(
             "tool_calls": assistant_tool_calls,
         })
 
+        from shared.telemetry import tool_call_span
         for tc in assistant_tool_calls:
             fn_name = tc["function"]["name"]
             fn_args_str = tc["function"]["arguments"]
@@ -281,17 +286,20 @@ async def _run_agent_with_tools_stream(
             tool_fn = tool_map.get(fn_name)
 
             if tool_fn:
-                try:
-                    raw_fn = getattr(tool_fn, "func", tool_fn)
-                    if callable(raw_fn):
-                        result = await raw_fn(**fn_args)
-                    else:
-                        result = await tool_fn.invoke(**fn_args)
-                    result_str = json.dumps(result, default=str) if not isinstance(result, str) else result
-                    logger.info("tool.result name=%s len=%d content=%s", fn_name, len(result_str), result_str[:500])
-                except Exception as e:
-                    logger.exception("tool.error name=%s", fn_name)
-                    result_str = json.dumps({"error": str(e)})
+                with tool_call_span(fn_name) as tspan:
+                    try:
+                        raw_fn = getattr(tool_fn, "func", tool_fn)
+                        if callable(raw_fn):
+                            result = await raw_fn(**fn_args)
+                        else:
+                            result = await tool_fn.invoke(**fn_args)
+                        result_str = json.dumps(result, default=str) if not isinstance(result, str) else result
+                        if tspan:
+                            tspan.set_attribute("tool.result.length", len(result_str))
+                        logger.info("tool.result name=%s len=%d", fn_name, len(result_str))
+                    except Exception as e:
+                        logger.exception("tool.error name=%s", fn_name)
+                        result_str = json.dumps({"error": str(e)})
             else:
                 result_str = json.dumps({"error": f"Unknown tool: {fn_name}"})
 
@@ -373,11 +381,13 @@ def create_agent_app(
             # Use the tools list passed to create_agent_app
             agent_tools = tools or []
 
-            response_text = await _run_agent_with_tools(
-                system_prompt, agent_tools, message,
-                history=history,
-                user_context=user_context,
-            )
+            from shared.telemetry import agent_run_span
+            with agent_run_span(agent_name):
+                response_text = await _run_agent_with_tools(
+                    system_prompt, agent_tools, message,
+                    history=history,
+                    user_context=user_context,
+                )
             return {"response": response_text}
 
         except Exception:
