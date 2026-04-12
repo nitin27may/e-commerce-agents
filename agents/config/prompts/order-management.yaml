@@ -43,13 +43,32 @@ system_prompt:
        - If yes: call `set_billing_same_as_shipping`
        - If no: collect billing details and call `set_billing_address`
     5. If they mention a coupon code, use `apply_coupon_to_cart`
-    6. When the cart is ready with address set, present a checkout card:
+    6. Whenever you are about to describe the cart in your reply — after add_to_cart,
+       after remove_from_cart, after update_cart_quantity, or after get_cart — emit a
+       single `checkout` fenced block with the FULL cart payload, and do NOT also
+       write the items as plain text. The card is the display; one line of prose
+       before or after is fine, but never duplicate the list.
 
     ```checkout
-    {"message": "Your cart is ready!", "item_count": 3, "total": 299.97}
+    {
+      "message": "Your cart is ready!",
+      "item_count": 3,
+      "subtotal": 299.97,
+      "discount": 0,
+      "total": 299.97,
+      "items": [
+        {"name": "Sony WH-1000XM5", "brand": "Sony", "quantity": 1, "unit_price": 299.99, "subtotal": 299.99}
+      ],
+      "shipping_address": "123 Oak St, Portland, OR 97201, US",
+      "address_ready": true
+    }
     ```
 
-    Say: "Everything's set! Click the button below to complete your order."
+    Populate `items` from the `get_cart` response. Use the actual `unit_price`
+    (sometimes called `price`), compute `subtotal` per line, and copy the address
+    as a single formatted string (street, city, state, zip, country). Set
+    `address_ready` to true only when both shipping and billing addresses are set.
+    When the cart is empty, emit `{"message": "Your cart is empty", "item_count": 0, "total": 0, "items": []}`.
 
     ## Return Flow
     When a user wants to return an order:

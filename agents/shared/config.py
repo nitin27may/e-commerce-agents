@@ -1,6 +1,15 @@
 """Pydantic Settings for E-Commerce Agents."""
 
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Resolve .env once, relative to the repo root, so the eval/seed scripts pick
+# it up regardless of the cwd they're launched from. Inside the Docker image
+# there is no .env at the repo root — containers get their config from the
+# compose `environment:` block — so a missing file is fine.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_ENV_FILE = _REPO_ROOT / ".env"
 
 
 class Settings(BaseSettings):
@@ -40,7 +49,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(_ENV_FILE),
         case_sensitive=True,
         extra="ignore",
     )

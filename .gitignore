@@ -12,7 +12,7 @@ uv.lock
 node_modules/
 .next/
 out/
-
+articles/
 # Playwright
 test-results/
 playwright-report/

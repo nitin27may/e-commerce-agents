@@ -44,6 +44,7 @@ interface Message {
   content: string;
   agents_involved?: string[];
   created_at?: string;
+  streaming?: boolean;
 }
 
 interface Conversation {
@@ -296,31 +297,68 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, userMessage]);
     setIsResponding(true);
 
+    const assistantId = crypto.randomUUID();
+    let assistantCreated = false;
+
     try {
-      const response = await api.chat(trimmed, activeConversationId ?? undefined);
+      const meta = await api.chatStream(
+        trimmed,
+        activeConversationId ?? undefined,
+        (chunk) => {
+          if (!assistantCreated) {
+            assistantCreated = true;
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: assistantId,
+                role: "assistant",
+                content: chunk,
+                streaming: true,
+              },
+            ]);
+          } else {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? { ...m, content: m.content + chunk }
+                  : m,
+              ),
+            );
+          }
+        },
+      );
 
       // If this was the first message, a new conversation was created
-      if (!activeConversationId && response.conversation_id) {
-        setActiveConversationId(response.conversation_id);
+      if (!activeConversationId && meta.conversation_id) {
+        setActiveConversationId(meta.conversation_id);
         await loadConversations();
       }
 
-      const assistantMessage: Message = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: response.response,
-        agents_involved: response.agents_involved,
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
+      // Finalize: drop streaming flag, attach agents_involved
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantId
+            ? { ...m, streaming: false, agents_involved: meta.agents_involved }
+            : m,
+        ),
+      );
     } catch (err) {
       const errMsg =
         err instanceof Error ? err.message : "Something went wrong.";
-      const errorMessage: Message = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: `Error: ${errMsg}`,
-      };
-      setMessages((prev) => [...prev, errorMessage]);
+      setMessages((prev) => {
+        const existing = prev.find((m) => m.id === assistantId);
+        if (existing) {
+          return prev.map((m) =>
+            m.id === assistantId
+              ? { ...m, content: `Error: ${errMsg}`, streaming: false }
+              : m,
+          );
+        }
+        return [
+          ...prev,
+          { id: assistantId, role: "assistant", content: `Error: ${errMsg}` },
+        ];
+      });
     } finally {
       setIsResponding(false);
     }
@@ -450,7 +488,11 @@ export default function ChatPage() {
                     }`}
                   >
                     {msg.role === "assistant" ? (
-                      <RichMessage content={msg.content} onAction={(text) => sendMessage(text)} />
+                      <RichMessage
+                        content={msg.content}
+                        streaming={msg.streaming}
+                        onAction={(text) => sendMessage(text)}
+                      />
                     ) : (
                       <MessageContent content={msg.content} />
                     )}
@@ -472,7 +514,10 @@ export default function ChatPage() {
                 </div>
               ))}
 
-              {isResponding && <TypingDots />}
+              {isResponding &&
+                messages[messages.length - 1]?.role !== "assistant" && (
+                  <TypingDots />
+                )}
 
               <div ref={messagesEndRef} />
             </div>

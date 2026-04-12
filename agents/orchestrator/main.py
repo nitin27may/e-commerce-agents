@@ -13,8 +13,10 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from asyncpg.exceptions import ForeignKeyViolationError
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from orchestrator.routes import router
 from shared.db import close_db_pool, init_db_pool
@@ -52,6 +54,24 @@ app.add_middleware(
 )
 
 app.include_router(router)
+
+
+@app.exception_handler(ForeignKeyViolationError)
+async def stale_user_handler(request: Request, exc: ForeignKeyViolationError) -> JSONResponse:
+    # JWT carries a user_id that's no longer in the users table — typically
+    # after a DB reseed. Map to 401 so the frontend clears its token.
+    detail = str(exc)
+    if "user_id" in detail:
+        logger.warning("stale_jwt.fk_violation path=%s", request.url.path)
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Session invalid — please log in again."},
+        )
+    logger.exception("fk_violation.unhandled path=%s", request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Database constraint error"},
+    )
 
 
 @app.get("/health")

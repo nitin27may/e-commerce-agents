@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Star, ExternalLink, ShoppingCart, ShoppingBag, Check, Loader2 } from "lucide-react";
+import { Star, ExternalLink, ShoppingCart, ShoppingBag, Check, AlertCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { productImageUrl } from "@/lib/images";
@@ -36,11 +36,17 @@ interface ChatProductCardProps {
 }
 
 export function ChatProductCard({ data, onAction }: ChatProductCardProps) {
-  const [added, setAdded] = useState(false);
-  const [adding, setAdding] = useState(false);
-  const { addItem } = useCart();
+  const { cart, addItem } = useCart();
+  const [optimisticAdded, setOptimisticAdded] = useState(false);
+  const [error, setError] = useState(false);
 
   if (!data.name) return null;
+
+  // "Added" derives from cart state so it persists across re-renders and
+  // reflects reality (e.g. after navigating back to the conversation).
+  const inCart =
+    !!data.id && !!cart?.items?.some((i) => i.product_id === data.id);
+  const showAdded = inCart || optimisticAdded;
 
   const hasDiscount =
     data.original_price && data.original_price > (data.price || 0);
@@ -145,31 +151,43 @@ export function ChatProductCard({ data, onAction }: ChatProductCardProps) {
             <Button
               size="sm"
               className={`h-7 text-xs ${
-                added
-                  ? "bg-emerald-600 hover:bg-emerald-700 text-white"
-                  : "bg-teal-600 hover:bg-teal-700 text-white"
+                error
+                  ? "bg-red-600 hover:bg-red-700 text-white"
+                  : showAdded
+                    ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                    : "bg-teal-600 hover:bg-teal-700 text-white"
               }`}
-              disabled={adding}
-              onClick={async (e) => {
+              disabled={showAdded && !error}
+              onClick={(e) => {
                 e.stopPropagation();
-                if (!data.id || adding) return;
-                setAdding(true);
-                try {
-                  await addItem(data.id);
-                  setAdded(true);
-                  setTimeout(() => setAdded(false), 2000);
-                } catch { /* ignore */ }
-                setAdding(false);
+                if (!data.id) return;
+                // Optimistic — flip UI immediately, fire the network call
+                // in the background so the chat stays responsive.
+                setError(false);
+                setOptimisticAdded(true);
+                addItem(data.id)
+                  .then(() => {
+                    // Mirror the typed-message flow: ask the chat to show
+                    // the updated cart so a checkout card renders.
+                    if (onAction && data.name) {
+                      onAction(`I just added ${data.name} to my cart. Show me my updated cart.`);
+                    }
+                  })
+                  .catch(() => {
+                    setOptimisticAdded(false);
+                    setError(true);
+                    setTimeout(() => setError(false), 2500);
+                  });
               }}
             >
-              {adding ? (
-                <Loader2 className="mr-1 size-3 animate-spin" />
-              ) : added ? (
+              {error ? (
+                <AlertCircle className="mr-1 size-3" />
+              ) : showAdded ? (
                 <Check className="mr-1 size-3" />
               ) : (
                 <ShoppingCart className="mr-1 size-3" />
               )}
-              {added ? "Added!" : "Add to Cart"}
+              {error ? "Retry" : showAdded ? "Added" : "Add to Cart"}
             </Button>
           )}
           {data.id && (

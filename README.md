@@ -299,6 +299,77 @@ See [Deployment Guide](docs/deployment.md) for all configuration options.
 
 ---
 
+## Upcoming Enhancements
+
+Planned improvements on the roadmap. Contributions welcome.
+
+### Search & Retrieval
+
+Today, `search_products` uses `ILIKE '%word%'` pattern matching split on whitespace. This works for exact keyword matches but misses stems, synonyms, and relevance ranking. The product catalog already has 1536-dim embeddings stored in `product_embeddings` (pgvector + ivfflat), and a separate `semantic_search` tool, but the two retrieval paths are not yet fused.
+
+**Planned work:**
+
+- **Postgres full-text search in `search_products`** — add a generated `tsvector` column on `products(name, description, brand)`, a GIN index, and replace the `ILIKE` loop with `plainto_tsquery` + `ts_rank` for stemming, multi-word matching, and proper relevance ordering.
+- **Hybrid retrieval (FTS + vector)** — combine lexical (FTS) and semantic (pgvector) scores via Reciprocal Rank Fusion in a single CTE. Beats either approach alone on ambiguous queries like "something cozy for winter" or "gift for a developer".
+- **Smarter tool routing** — update `agents/config/prompts/product-discovery.yaml` so the LLM routes descriptive / vague queries to `semantic_search` and attribute-driven queries ("Nike running shoes under $100") to `search_products`.
+- **Typed filter DSL** — replace the flat parameter list on `search_products` with a structured `ProductFilters` Pydantic model (category, price range, brand, specs match, sort) that the LLM populates as JSON. Keeps SQL parameterized and safe while giving the model more expressive power than fixed arguments.
+
+**Why not text-to-SQL?** A dynamic "LLM writes the query" approach was considered and rejected for this codebase. Key reasons:
+
+- **Security** — tools currently enforce `user_email` / `user_role` scoping via ContextVars. LLM-generated SQL bypasses that contract and would require full Postgres RLS across all 24 tables plus a read-only role and a SQL parser to reject writes.
+- **Correctness on financial data** — orders, payments, returns, and loyalty points can't tolerate hallucinated JOINs or missing soft-delete filters.
+- **Retrieval quality** — the real problem is that `ILIKE` ignores the embeddings that already exist. Hybrid search solves that without handing the model a SQL console.
+- **Determinism & observability** — hardcoded `@tool` functions produce stable OpenTelemetry spans, cacheable parameter shapes, and reproducible tests.
+
+The typed filter DSL gives the model flexibility at the boundary while keeping SQL generation server-side, parameterized, and auditable.
+
+### MCP as the agent data-access layer
+
+Today, specialist agents call data tools directly via MAF's `@tool` decorator over asyncpg (`shared/tools/inventory_tools.py`, `shared/tools/cart_tools.py`, etc.). A reference [Model Context Protocol](https://modelcontextprotocol.io/) server already exists at `agents/mcp/inventory_server.py` — it exposes `check_stock`, `get_warehouses`, and `estimate_shipping` over the MCP standard — but no agent currently routes through it. The native path and the MCP path co-exist against the same PostgreSQL schema.
+
+**The planned shift:** migrate agent queries from the native `@tool` path to MCP tool calls, so the MCP server becomes the single query surface for all data access. Any MCP-compatible runtime (Claude Desktop, Cursor, MAF's `MCPStreamableHTTPTool`, an external LangGraph agent) gets the same capabilities with zero glue code.
+
+**Planned work:**
+
+- **Promote the inventory MCP server into the compose stack** — add it as a service on port 9000, health-check it, and have the `inventory-fulfillment` agent consume it via MCP instead of importing `inventory_tools.py` directly.
+- **Expand the MCP surface beyond inventory** — port `product_tools`, `order_tools`, `cart_tools`, `pricing_tools`, and `review_tools` into MCP servers (or a single multi-resource server), each publishing its own `/.well-known/mcp.json`. Land one specialist at a time so the migration is incremental and reversible.
+- **Agent-side MCP client wiring** — replace the `tools=[native_tool, ...]` lists in `create_<agent>_agent()` factories with an MCP client that discovers tools from the manifest at startup. Preserves the `@tool` signature contract so prompts and tool-call loops stay unchanged.
+- **Auth propagation** — today, `user_email` / `user_role` flow through ContextVars inside the same process. Over MCP, they'll need to ride as authenticated headers (`X-User-Email`, `X-User-Role`) signed by `AGENT_SHARED_SECRET`, mirroring the existing A2A inter-agent pattern in `shared/auth.py`.
+- **Telemetry parity** — MCP tool calls should produce the same OpenTelemetry spans (`tool.call`, `tool.result`) that native `@tool` calls emit today, so Aspire Dashboard views keep working after the cutover.
+- **Eval gate** — expand `agents/evals/` to run each dataset twice (once against native tools, once against MCP) and fail CI if the MCP run scores below the native baseline. This keeps the migration honest.
+
+**Why bother?**
+
+- **Language-agnostic tool layer** — any runtime that speaks MCP (not just MAF, not just Python) can talk to the platform's data without importing Python modules.
+- **Clean separation of concerns** — agents become pure reasoning + orchestration; data access lives behind a versioned, discoverable protocol.
+- **External integration surface** — opens the door to Claude Desktop / Cursor / third-party agents consuming the same tools the internal specialists use, with identical auth and observability.
+- **Incremental, reversible** — each specialist can be cut over independently; the native `@tool` path stays as a fallback until the MCP server is at feature + performance parity.
+
+**Quick demo of the existing standalone server** (nothing migrated yet — just the reference implementation):
+
+```bash
+# Start the MCP server (Postgres already running via ./scripts/dev.sh)
+cd agents && uv run uvicorn mcp.inventory_server:app --port 9000
+
+# In another terminal — fetch the capability manifest
+curl -s http://localhost:9000/.well-known/mcp.json | python3 -m json.tool
+
+# Execute the check_stock tool against a seeded product
+curl -s -X POST http://localhost:9000/mcp/tools/check_stock \
+  -H "Content-Type: application/json" \
+  -d '{"product_id":"4b4d727a-25d7-4f0b-9941-7ae2a4d9c6ec"}' | python3 -m json.tool
+```
+
+### Other Roadmap Items
+
+- **Evaluation harness** — scripted eval set (precision@k, recall@k, answer faithfulness) running nightly against the seeded catalog.
+- **Prompt caching** — cache system prompts and tool schemas per agent to reduce per-request token cost on repeated specialist invocations.
+- **Streaming tool calls end-to-end** — propagate partial tool results over SSE so the UI can render product cards as they arrive rather than after the full agent turn completes.
+- **Observability dashboards** — pre-built Aspire Dashboard views for agent latency, tool error rates, and LLM token spend per specialist.
+- **Multi-turn memory** — persistent per-user long-term memory (preferences, past orders, recurring intents) surfaced to the orchestrator via a dedicated memory tool.
+
+---
+
 ## Contributing
 
 1. Fork the repository

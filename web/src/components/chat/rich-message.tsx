@@ -8,11 +8,13 @@ import { ChatReturnCard } from "./return-card";
 
 interface RichMessageProps {
   content: string;
+  streaming?: boolean;
   onAction?: (message: string) => void;
 }
 
-export function RichMessage({ content, onAction }: RichMessageProps) {
-  const segments = parseContent(content);
+export function RichMessage({ content, streaming, onAction }: RichMessageProps) {
+  const processed = streaming ? stripUnclosedFence(content) : content;
+  const segments = parseContent(processed);
 
   return (
     <div className="space-y-3">
@@ -54,6 +56,32 @@ interface Segment {
   type: string;
   text: string;
   data?: Record<string, unknown>;
+}
+
+// ─── Streaming helper: drop a trailing unclosed structured fence ─────
+//
+// While chunks arrive, a fence like ```product\n{"id":"p1"... may be
+// half-written. We don't want raw JSON flickering in the bubble — hide
+// everything from the unclosed opener until the stream finishes.
+
+function stripUnclosedFence(content: string): string {
+  const openRegex = /```(product|order|products|checkout|return)\n/g;
+  let cursor = 0;
+  let lastUnclosedStart = -1;
+  let match;
+  while ((match = openRegex.exec(content)) !== null) {
+    const openStart = match.index;
+    const afterOpen = openStart + match[0].length;
+    const closeIdx = content.indexOf("```", afterOpen);
+    if (closeIdx === -1) {
+      lastUnclosedStart = openStart;
+      break;
+    }
+    cursor = closeIdx + 3;
+    openRegex.lastIndex = cursor;
+  }
+  if (lastUnclosedStart === -1) return content;
+  return content.slice(0, lastUnclosedStart).trimEnd();
 }
 
 // ─── 1. Fenced Code Block Parser (primary path) ──────────────────────
@@ -111,16 +139,22 @@ function suppressRedundantText(segments: Segment[]): Segment[] {
 }
 
 function looksLikeStructuredDump(text: string): boolean {
+  // Line-prefix tolerant: lines may start with "- ", "* ", bullets, or nothing.
+  // LINE = start-of-line, optional bullet/dash, optional whitespace.
+  const LINE = "^[\\s]*[-*•]?[\\s]*";
   const patterns = [
-    /^Status[:\s]/im,
-    /^Order\s*(Total|ID|#)[:\s]/im,
-    /Tracking\s*(Number)?[:\s]/i,
-    /Shipping\s*(Carrier|Address)[:\s]/i,
-    /Items?\s*(in your order|:)/i,
-    /[—–]\s*\d+\s*[×x]\s*\$/m,
+    new RegExp(`${LINE}Status[:\\s]`, "im"),
+    new RegExp(`${LINE}Order\\s*(Total|ID|#|Date|Placed)[:\\s]`, "im"),
+    new RegExp(`${LINE}Tracking(\\s*Number)?[:\\s]`, "im"),
+    new RegExp(`${LINE}(Shipping\\s*(Carrier|Address)|Carrier|Address)[:\\s]`, "im"),
+    new RegExp(`${LINE}(Total|Subtotal|Amount)[:\\s]*\\$`, "im"),
+    new RegExp(`${LINE}(Date|Placed)[:\\s]*\\d{4}-\\d{2}-\\d{2}`, "im"),
+    /Items?\s*(in (?:this|your) order|:)/i,
+    /[—–-]\s*\d+\s*[×x]\s*\$/m,
+    /\(\s*\d+\s*[×x]\s*\$[\d,.]+\s*\)/, // "(1 × $189.99)"
     /Order\s*(Status\s*)?Timeline/i,
-    /^Price[:\s]*\$/im,
-    /^Rating[:\s]/im,
+    new RegExp(`${LINE}Price[:\\s]*\\$`, "im"),
+    new RegExp(`${LINE}Rating[:\\s]`, "im"),
   ];
   return patterns.filter((p) => p.test(text)).length >= 3;
 }

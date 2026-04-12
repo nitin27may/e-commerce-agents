@@ -38,6 +38,17 @@ export interface CartResponse {
   billing_same_as_shipping: boolean;
 }
 
+// Stale JWT → clear auth and bounce to /login. Idempotent.
+function handleUnauthorized() {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem("ecommerce_user");
+  localStorage.removeItem("ecommerce_access_token");
+  localStorage.removeItem("ecommerce_refresh_token");
+  if (!window.location.pathname.startsWith("/login")) {
+    window.location.href = "/login";
+  }
+}
+
 class ApiClient {
   private token: string | null = null;
 
@@ -62,6 +73,12 @@ class ApiClient {
     }
 
     const res = await fetch(`${API_URL}${path}`, { ...options, headers });
+
+    if (res.status === 401) {
+      this.token = null;
+      handleUnauthorized();
+      throw new Error("Session expired — please log in again.");
+    }
 
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
@@ -135,6 +152,12 @@ class ApiClient {
       headers,
       body: JSON.stringify({ message, conversation_id: conversationId }),
     });
+
+    if (res.status === 401) {
+      this.token = null;
+      handleUnauthorized();
+      throw new Error("Session expired — please log in again.");
+    }
 
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));

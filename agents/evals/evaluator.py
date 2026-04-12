@@ -236,48 +236,104 @@ class AgentEvaluator:
         return result
 
     async def _run_agent(self, user_input: str) -> dict[str, Any]:
-        """Run the agent and capture tool calls and response.
+        """Run the agent through a chat-completions tool-call loop.
 
-        Uses the MAF Agent.run() method with a tool call interceptor
-        to track which tools were invoked.
+        We can't use ``Agent.run()`` directly because MAF's default agent
+        client goes through Azure's Responses API (``/openai/v1/responses``),
+        which many Azure deployments don't yet support. Production agents
+        avoid this by calling the chat completions API directly via
+        ``shared.agent_host._run_agent_with_tools``. The evaluator mirrors
+        that path locally so it can also record which tools were called.
         """
-        from agent_framework import UserMessage
+        import openai
 
-        messages = [UserMessage(content=user_input)]
+        from shared.config import settings
+
+        # Pull instructions + tools from the MAF Agent's default options.
+        opts = getattr(self.agent, "default_options", {}) or {}
+        system_prompt = opts.get("instructions") or ""
+        tools = list(opts.get("tools") or [])
+
+        # Build OpenAI client matching the production provider.
+        if settings.LLM_PROVIDER == "azure":
+            client = openai.AsyncAzureOpenAI(
+                azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+                api_key=settings.AZURE_OPENAI_KEY,
+                api_version=settings.AZURE_OPENAI_API_VERSION,
+            )
+            model = settings.AZURE_OPENAI_DEPLOYMENT
+        else:
+            client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+            model = settings.LLM_MODEL
+
+        # Build OpenAI tool defs from MAF FunctionTool objects.
+        tool_defs: list[dict[str, Any]] = []
+        tool_map: dict[str, Any] = {}
+        for t in tools:
+            name = getattr(t, "name", None) or getattr(t, "__name__", str(t))
+            desc = getattr(t, "description", None) or getattr(t, "__doc__", "") or ""
+            try:
+                schema = t.to_json_schema_spec()
+                func_schema = schema.get("function", schema)
+                params = func_schema.get("parameters", {"type": "object", "properties": {}})
+            except Exception:
+                params = {"type": "object", "properties": {}}
+            tool_defs.append({
+                "type": "function",
+                "function": {"name": name, "description": desc[:1024], "parameters": params},
+            })
+            tool_map[name] = t
+
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_input},
+        ]
+
         response_text = ""
         tokens_in = 0
         tokens_out = 0
 
-        # Run the agent's tool-calling loop
-        result = await self.agent.run(messages=messages)
+        # Tool-calling loop — matches shared.agent_host._run_agent_with_tools
+        for _ in range(5):
+            kwargs: dict[str, Any] = {"model": model, "messages": messages, "temperature": 0.1}
+            if tool_defs:
+                kwargs["tools"] = tool_defs
+                kwargs["tool_choice"] = "auto"
 
-        # Extract tool calls from the run result
-        if hasattr(result, "tool_calls") and result.tool_calls:
-            self._tool_calls = [tc.name for tc in result.tool_calls]
-        elif hasattr(result, "steps"):
-            for step in result.steps:
-                if hasattr(step, "tool_calls") and step.tool_calls:
-                    self._tool_calls.extend(tc.name for tc in step.tool_calls)
+            response = await client.chat.completions.create(**kwargs)
+            if getattr(response, "usage", None):
+                tokens_in += getattr(response.usage, "prompt_tokens", 0) or 0
+                tokens_out += getattr(response.usage, "completion_tokens", 0) or 0
 
-        # Extract response text
-        if hasattr(result, "text"):
-            response_text = result.text
-        elif hasattr(result, "content"):
-            response_text = str(result.content)
-        elif hasattr(result, "messages") and result.messages:
-            last_msg = result.messages[-1]
-            response_text = getattr(last_msg, "content", str(last_msg))
+            choice = response.choices[0]
+            msg = choice.message
 
-        # Extract token usage if available
-        if hasattr(result, "usage"):
-            tokens_in = getattr(result.usage, "input_tokens", 0) or 0
-            tokens_out = getattr(result.usage, "output_tokens", 0) or 0
+            if choice.finish_reason == "tool_calls" and msg.tool_calls:
+                messages.append(msg.model_dump())
+                for tc in msg.tool_calls:
+                    fn_name = tc.function.name
+                    self._tool_calls.append(fn_name)
+                    fn_args = json.loads(tc.function.arguments) if tc.function.arguments else {}
+                    tool_fn = tool_map.get(fn_name)
+                    if tool_fn:
+                        try:
+                            raw_fn = getattr(tool_fn, "func", tool_fn)
+                            if callable(raw_fn):
+                                result = await raw_fn(**fn_args)
+                            else:
+                                result = await tool_fn.invoke(**fn_args)
+                            result_str = json.dumps(result, default=str) if not isinstance(result, str) else result
+                        except Exception as e:
+                            result_str = json.dumps({"error": str(e)})
+                    else:
+                        result_str = json.dumps({"error": f"Unknown tool: {fn_name}"})
+                    messages.append({"role": "tool", "tool_call_id": tc.id, "content": result_str})
+                continue
 
-        return {
-            "text": response_text,
-            "tokens_in": tokens_in,
-            "tokens_out": tokens_out,
-        }
+            response_text = msg.content or ""
+            return {"text": response_text, "tokens_in": tokens_in, "tokens_out": tokens_out}
+
+        return {"text": response_text or "(max tool-call iterations reached)", "tokens_in": tokens_in, "tokens_out": tokens_out}
 
     @staticmethod
     def _score_groundedness(tools_called: list[str], criteria: dict[str, bool]) -> float:

@@ -24,6 +24,44 @@ async def _get_or_create_cart(conn, user_id: str) -> str:
     return str(row["id"])
 
 
+async def _resolve_product(conn, product_id: str) -> dict | None:
+    """Resolve a product by UUID or fuzzy name.
+
+    LLMs frequently pass a product name ("Sony WH-1000XM5") instead of the
+    UUID, especially when the product wasn't looked up earlier in the turn.
+    We accept either: try parsing as UUID first, then fall back to an ILIKE
+    name search. Returns a dict with row fields + a `matches` list (for
+    ambiguous name matches) or None if nothing found.
+    """
+    try:
+        pid = uuid.UUID(product_id)
+    except ValueError:
+        pid = None
+
+    if pid is not None:
+        row = await conn.fetchrow(
+            "SELECT id, name, price, is_active FROM products WHERE id = $1",
+            pid,
+        )
+        return dict(row) if row else None
+
+    # Not a UUID — fuzzy name lookup, prefer exact ILIKE then prefix
+    rows = await conn.fetch(
+        """SELECT id, name, price, is_active
+             FROM products
+            WHERE name ILIKE $1 OR name ILIKE $2
+            ORDER BY (name ILIKE $1) DESC, name ASC
+            LIMIT 5""",
+        product_id,
+        f"%{product_id}%",
+    )
+    if not rows:
+        return None
+    if len(rows) == 1:
+        return dict(rows[0])
+    return {"matches": [dict(r) for r in rows]}
+
+
 @tool(name="add_to_cart", description="Add a product to the user's shopping cart. If the product is already in the cart, the quantity is increased.")
 async def add_to_cart(
     product_id: Annotated[str, Field(description="UUID of the product to add")],
@@ -42,16 +80,24 @@ async def add_to_cart(
         if not user:
             return {"error": "User not found"}
 
-        # Validate product exists and is active
-        product = await conn.fetchrow(
-            "SELECT id, name, price, is_active FROM products WHERE id = $1",
-            uuid.UUID(product_id),
-        )
-        if not product:
-            return {"error": f"Product not found: {product_id}"}
+        product = await _resolve_product(conn, product_id)
+        if product is None:
+            return {
+                "error": f"No product matches '{product_id}'. Call search_products first to find the correct product.",
+            }
+        if "matches" in product:
+            names = [f"{m['name']} (id={m['id']})" for m in product["matches"]]
+            return {
+                "error": (
+                    f"Multiple products match '{product_id}'. Ask the user which one, "
+                    "or call search_products for full details. Candidates: "
+                    + "; ".join(names)
+                ),
+            }
         if not product["is_active"]:
             return {"error": f"Product '{product['name']}' is no longer available"}
 
+        resolved_product_id = product["id"]
         cart_id = await _get_or_create_cart(conn, user["id"])
 
         # Upsert: insert or add to existing quantity
@@ -61,11 +107,11 @@ async def add_to_cart(
                ON CONFLICT (cart_id, product_id)
                DO UPDATE SET quantity = cart_items.quantity + EXCLUDED.quantity
                RETURNING quantity""",
-            uuid.UUID(cart_id), uuid.UUID(product_id), quantity,
+            uuid.UUID(cart_id), resolved_product_id, quantity,
         )
 
         return {
-            "product_id": product_id,
+            "product_id": str(resolved_product_id),
             "product_name": product["name"],
             "price": float(product["price"]),
             "quantity_in_cart": row["quantity"],
@@ -168,18 +214,25 @@ async def remove_from_cart(
         if not cart:
             return {"error": "Cart is empty, nothing to remove"}
 
+        product = await _resolve_product(conn, product_id)
+        if product is None:
+            return {"error": f"No product matches '{product_id}'."}
+        if "matches" in product:
+            names = [f"{m['name']}" for m in product["matches"]]
+            return {"error": f"Multiple products match '{product_id}': {'; '.join(names)}. Please be more specific."}
+
         deleted = await conn.fetchrow(
             """DELETE FROM cart_items ci
                USING products p
                WHERE ci.cart_id = $1 AND ci.product_id = $2 AND p.id = ci.product_id
                RETURNING p.name""",
-            cart["id"], uuid.UUID(product_id),
+            cart["id"], product["id"],
         )
         if not deleted:
-            return {"error": f"Product {product_id} not found in cart"}
+            return {"error": f"Product '{product['name']}' not found in cart"}
 
         return {
-            "product_id": product_id,
+            "product_id": str(product["id"]),
             "product_name": deleted["name"],
             "message": f"Removed '{deleted['name']}' from cart.",
         }
@@ -204,6 +257,15 @@ async def update_cart_quantity(
         if not cart:
             return {"error": "Cart is empty, nothing to update"}
 
+        product = await _resolve_product(conn, product_id)
+        if product is None:
+            return {"error": f"No product matches '{product_id}'."}
+        if "matches" in product:
+            names = [f"{m['name']}" for m in product["matches"]]
+            return {"error": f"Multiple products match '{product_id}': {'; '.join(names)}. Please be more specific."}
+
+        resolved_pid = product["id"]
+
         # If quantity <= 0, remove the item
         if quantity <= 0:
             deleted = await conn.fetchrow(
@@ -211,12 +273,12 @@ async def update_cart_quantity(
                    USING products p
                    WHERE ci.cart_id = $1 AND ci.product_id = $2 AND p.id = ci.product_id
                    RETURNING p.name""",
-                cart["id"], uuid.UUID(product_id),
+                cart["id"], resolved_pid,
             )
             if not deleted:
-                return {"error": f"Product {product_id} not found in cart"}
+                return {"error": f"Product '{product['name']}' not found in cart"}
             return {
-                "product_id": product_id,
+                "product_id": str(resolved_pid),
                 "product_name": deleted["name"],
                 "quantity": 0,
                 "message": f"Removed '{deleted['name']}' from cart.",
@@ -229,13 +291,13 @@ async def update_cart_quantity(
                FROM products p
                WHERE ci.cart_id = $1 AND ci.product_id = $2 AND p.id = ci.product_id
                RETURNING p.name, p.price, ci.quantity""",
-            cart["id"], uuid.UUID(product_id), quantity,
+            cart["id"], resolved_pid, quantity,
         )
         if not updated:
-            return {"error": f"Product {product_id} not found in cart"}
+            return {"error": f"Product '{product['name']}' not found in cart"}
 
         return {
-            "product_id": product_id,
+            "product_id": str(resolved_pid),
             "product_name": updated["name"],
             "price": float(updated["price"]),
             "quantity": updated["quantity"],
