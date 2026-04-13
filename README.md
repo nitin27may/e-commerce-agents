@@ -407,7 +407,7 @@ curl -s -X POST http://localhost:9000/mcp/tools/check_stock \
 
 - [ ] **Prompt caching** — cache system prompts and tool schemas per agent to reduce per-request token cost on repeated specialist invocations.
 - [ ] **Streaming tool calls end-to-end** `In progress` — propagate partial tool results over SSE so the UI can render product cards as they arrive rather than after the full agent turn completes.
-- [~] **Observability dashboards** — pre-built Aspire Dashboard views for agent latency, tool error rates, and LLM token spend per specialist.
+- [x] **Observability dashboards** — pre-built Aspire Dashboard views for agent latency, tool error rates, and LLM token spend per specialist.
 
 
 ---
