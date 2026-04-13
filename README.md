@@ -11,6 +11,32 @@ Companion demo repo for the AI article series on [nitinksingh.com](https://nitin
 
 ---
 
+## Project Status
+
+**This is v1 — the Python version is live today.** It runs end-to-end: six specialist agents, orchestrator, marketplace, auth, telemetry, and a full Next.js frontend.
+
+Several larger capabilities are actively in progress and will land in upcoming releases. Track them in the [Roadmap](#roadmap) section below. The **.NET / C# port** for teams building in the Microsoft ecosystem is also under active development and will be released as a sibling repository.
+
+---
+
+## Table of Contents
+
+- [Architecture](#architecture)
+- [Quick Start](#quick-start)
+- [Test Users](#test-users)
+- [Agent Catalog](#agent-catalog)
+- [Demo Scenarios](#demo-scenarios)
+- [Tech Stack](#tech-stack)
+- [Project Structure](#project-structure)
+- [Configuration](#configuration)
+- [Documentation](#documentation)
+- [Port Map](#port-map)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
+
 ## Architecture
 
 ![System Architecture](docs/architecture.png)
@@ -299,22 +325,37 @@ See [Deployment Guide](docs/deployment.md) for all configuration options.
 
 ---
 
-## Upcoming Enhancements
+## Roadmap
 
-Planned improvements on the roadmap. Contributions welcome.
+This is v1. The Python platform is live and stable. Several high-impact capabilities are actively in progress — we're shipping them incrementally and they will land in upcoming releases.
 
-### Search & Retrieval
+Legend: `[x]` shipped in v1 · `[~]` in progress, coming soon · `[ ]` planned · contributions welcome.
+
+### In Progress — Coming Soon
+
+The following items are under active development and will land in the next few releases:
+
+- [~] **Agent evaluators** — automated response-quality measurement across every specialist. Scripted eval sets (precision@k, recall@k, answer faithfulness, tool-call correctness) run against the seeded catalog with nightly CI gating, so regressions are caught before they reach production.
+- [~] **Prompt injection prevention** — hardening against a massively underestimated attack surface. Input classification, system-prompt isolation, tool-allow-listing per role, and output filtering before any user-facing render. Every specialist gets the same defense-in-depth layer.
+- [~] **Session memory & context persistence** — long-running memory across conversations. Per-user preferences, recent intents, and past orders are surfaced to the orchestrator via a dedicated memory tool, so follow-ups feel continuous rather than amnesiac.
+- [~] **Human-in-the-loop approval flows** — explicit approval gates for high-stakes actions (refunds over a threshold, inventory writes, bulk price changes). The agent pauses, renders an approval card in the UI, and only proceeds once the operator confirms.
+- [~] **Per-agent cost tracking** — token spend and dollar cost attributed to each specialist, each tool call, and each user session. Surfaced as first-class OpenTelemetry metrics in the Aspire Dashboard.
+- [~] **Full .NET / C# port** — a sibling repository targeting teams building in the Microsoft ecosystem, powered by the [Microsoft Agent Framework .NET SDK](https://github.com/microsoft/agent-framework). Same six agents, same A2A protocol, same PostgreSQL schema — idiomatic .NET throughout.
+
+> **Status:** the Python version is live today. The .NET version is coming.
+
+---
+
+### Planned — Search & Retrieval
 
 Today, `search_products` uses `ILIKE '%word%'` pattern matching split on whitespace. This works for exact keyword matches but misses stems, synonyms, and relevance ranking. The product catalog already has 1536-dim embeddings stored in `product_embeddings` (pgvector + ivfflat), and a separate `semantic_search` tool, but the two retrieval paths are not yet fused.
 
-**Planned work:**
+- [ ] **Postgres full-text search in `search_products`** — add a generated `tsvector` column on `products(name, description, brand)`, a GIN index, and replace the `ILIKE` loop with `plainto_tsquery` + `ts_rank` for stemming, multi-word matching, and proper relevance ordering.
+- [ ] **Hybrid retrieval (FTS + vector)** — combine lexical (FTS) and semantic (pgvector) scores via Reciprocal Rank Fusion in a single CTE. Beats either approach alone on ambiguous queries like "something cozy for winter" or "gift for a developer".
+- [ ] **Smarter tool routing** — update `agents/config/prompts/product-discovery.yaml` so the LLM routes descriptive / vague queries to `semantic_search` and attribute-driven queries ("Nike running shoes under $100") to `search_products`.
+- [ ] **Typed filter DSL** — replace the flat parameter list on `search_products` with a structured `ProductFilters` Pydantic model (category, price range, brand, specs match, sort) that the LLM populates as JSON. Keeps SQL parameterized and safe while giving the model more expressive power than fixed arguments.
 
-- **Postgres full-text search in `search_products`** — add a generated `tsvector` column on `products(name, description, brand)`, a GIN index, and replace the `ILIKE` loop with `plainto_tsquery` + `ts_rank` for stemming, multi-word matching, and proper relevance ordering.
-- **Hybrid retrieval (FTS + vector)** — combine lexical (FTS) and semantic (pgvector) scores via Reciprocal Rank Fusion in a single CTE. Beats either approach alone on ambiguous queries like "something cozy for winter" or "gift for a developer".
-- **Smarter tool routing** — update `agents/config/prompts/product-discovery.yaml` so the LLM routes descriptive / vague queries to `semantic_search` and attribute-driven queries ("Nike running shoes under $100") to `search_products`.
-- **Typed filter DSL** — replace the flat parameter list on `search_products` with a structured `ProductFilters` Pydantic model (category, price range, brand, specs match, sort) that the LLM populates as JSON. Keeps SQL parameterized and safe while giving the model more expressive power than fixed arguments.
-
-**Why not text-to-SQL?** A dynamic "LLM writes the query" approach was considered and rejected for this codebase. Key reasons:
+**Why not text-to-SQL?** A dynamic "LLM writes the query" approach was considered and rejected for this codebase:
 
 - **Security** — tools currently enforce `user_email` / `user_role` scoping via ContextVars. LLM-generated SQL bypasses that contract and would require full Postgres RLS across all 24 tables plus a read-only role and a SQL parser to reject writes.
 - **Correctness on financial data** — orders, payments, returns, and loyalty points can't tolerate hallucinated JOINs or missing soft-delete filters.
@@ -323,20 +364,20 @@ Today, `search_products` uses `ILIKE '%word%'` pattern matching split on whitesp
 
 The typed filter DSL gives the model flexibility at the boundary while keeping SQL generation server-side, parameterized, and auditable.
 
-### MCP as the agent data-access layer
+---
 
-Today, specialist agents call data tools directly via MAF's `@tool` decorator over asyncpg (`shared/tools/inventory_tools.py`, `shared/tools/cart_tools.py`, etc.). A reference [Model Context Protocol](https://modelcontextprotocol.io/) server already exists at `agents/mcp/inventory_server.py` — it exposes `check_stock`, `get_warehouses`, and `estimate_shipping` over the MCP standard — but no agent currently routes through it. The native path and the MCP path co-exist against the same PostgreSQL schema.
+### Planned — MCP as the Agent Data-Access Layer
+
+Today, specialist agents call data tools directly via MAF's `@tool` decorator over asyncpg (`shared/tools/inventory_tools.py`, `shared/tools/cart_tools.py`, etc.). A reference [Model Context Protocol](https://modelcontextprotocol.io/) server already exists at `agents/mcp/inventory_server.py` — it exposes `check_stock`, `get_warehouses`, and `estimate_shipping` over the MCP standard — but no agent currently routes through it.
 
 **The planned shift:** migrate agent queries from the native `@tool` path to MCP tool calls, so the MCP server becomes the single query surface for all data access. Any MCP-compatible runtime (Claude Desktop, Cursor, MAF's `MCPStreamableHTTPTool`, an external LangGraph agent) gets the same capabilities with zero glue code.
 
-**Planned work:**
-
-- **Promote the inventory MCP server into the compose stack** — add it as a service on port 9000, health-check it, and have the `inventory-fulfillment` agent consume it via MCP instead of importing `inventory_tools.py` directly.
-- **Expand the MCP surface beyond inventory** — port `product_tools`, `order_tools`, `cart_tools`, `pricing_tools`, and `review_tools` into MCP servers (or a single multi-resource server), each publishing its own `/.well-known/mcp.json`. Land one specialist at a time so the migration is incremental and reversible.
-- **Agent-side MCP client wiring** — replace the `tools=[native_tool, ...]` lists in `create_<agent>_agent()` factories with an MCP client that discovers tools from the manifest at startup. Preserves the `@tool` signature contract so prompts and tool-call loops stay unchanged.
-- **Auth propagation** — today, `user_email` / `user_role` flow through ContextVars inside the same process. Over MCP, they'll need to ride as authenticated headers (`X-User-Email`, `X-User-Role`) signed by `AGENT_SHARED_SECRET`, mirroring the existing A2A inter-agent pattern in `shared/auth.py`.
-- **Telemetry parity** — MCP tool calls should produce the same OpenTelemetry spans (`tool.call`, `tool.result`) that native `@tool` calls emit today, so Aspire Dashboard views keep working after the cutover.
-- **Eval gate** — expand `agents/evals/` to run each dataset twice (once against native tools, once against MCP) and fail CI if the MCP run scores below the native baseline. This keeps the migration honest.
+- [ ] **Promote the inventory MCP server into the compose stack** — add it as a service on port 9000, health-check it, and have the `inventory-fulfillment` agent consume it via MCP instead of importing `inventory_tools.py` directly.
+- [ ] **Expand the MCP surface beyond inventory** — port `product_tools`, `order_tools`, `cart_tools`, `pricing_tools`, and `review_tools` into MCP servers, each publishing its own `/.well-known/mcp.json`. Land one specialist at a time so the migration is incremental and reversible.
+- [ ] **Agent-side MCP client wiring** — replace the `tools=[native_tool, ...]` lists in `create_<agent>_agent()` factories with an MCP client that discovers tools from the manifest at startup. Preserves the `@tool` signature contract so prompts and tool-call loops stay unchanged.
+- [ ] **Auth propagation** — today, `user_email` / `user_role` flow through ContextVars inside the same process. Over MCP, they'll need to ride as authenticated headers (`X-User-Email`, `X-User-Role`) signed by `AGENT_SHARED_SECRET`, mirroring the existing A2A inter-agent pattern in `shared/auth.py`.
+- [ ] **Telemetry parity** — MCP tool calls should produce the same OpenTelemetry spans (`tool.call`, `tool.result`) that native `@tool` calls emit today, so Aspire Dashboard views keep working after the cutover.
+- [ ] **Eval gate** — expand `agents/evals/` to run each dataset twice (once against native tools, once against MCP) and fail CI if the MCP run scores below the native baseline.
 
 **Why bother?**
 
@@ -360,13 +401,14 @@ curl -s -X POST http://localhost:9000/mcp/tools/check_stock \
   -d '{"product_id":"4b4d727a-25d7-4f0b-9941-7ae2a4d9c6ec"}' | python3 -m json.tool
 ```
 
-### Other Roadmap Items
+---
 
-- **Evaluation harness** — scripted eval set (precision@k, recall@k, answer faithfulness) running nightly against the seeded catalog.
-- **Prompt caching** — cache system prompts and tool schemas per agent to reduce per-request token cost on repeated specialist invocations.
-- **Streaming tool calls end-to-end** — propagate partial tool results over SSE so the UI can render product cards as they arrive rather than after the full agent turn completes.
-- **Observability dashboards** — pre-built Aspire Dashboard views for agent latency, tool error rates, and LLM token spend per specialist.
-- **Multi-turn memory** — persistent per-user long-term memory (preferences, past orders, recurring intents) surfaced to the orchestrator via a dedicated memory tool.
+### Planned — Platform & Observability
+
+- [ ] **Prompt caching** — cache system prompts and tool schemas per agent to reduce per-request token cost on repeated specialist invocations.
+- [*] **Streaming tool calls end-to-end** — propagate partial tool results over SSE so the UI can render product cards as they arrive rather than after the full agent turn completes.
+- [~] **Observability dashboards** — pre-built Aspire Dashboard views for agent latency, tool error rates, and LLM token spend per specialist.
+
 
 ---
 
