@@ -329,18 +329,18 @@ See [Deployment Guide](docs/deployment.md) for all configuration options.
 
 This is v1. The Python platform is live and stable. Several high-impact capabilities are actively in progress — we're shipping them incrementally and they will land in upcoming releases.
 
-Legend: `[x]` shipped in v1 · `[~]` in progress, coming soon · `[ ]` planned · contributions welcome.
+Legend: `- [x]` shipped in v1 · `- [ ]` planned or in progress. Items tagged **`In progress`** are under active development and will land in upcoming releases.
 
 ### In Progress — Coming Soon
 
 The following items are under active development and will land in the next few releases:
 
-- [~] **Agent evaluators** — automated response-quality measurement across every specialist. Scripted eval sets (precision@k, recall@k, answer faithfulness, tool-call correctness) run against the seeded catalog with nightly CI gating, so regressions are caught before they reach production.
-- [~] **Prompt injection prevention** — hardening against a massively underestimated attack surface. Input classification, system-prompt isolation, tool-allow-listing per role, and output filtering before any user-facing render. Every specialist gets the same defense-in-depth layer.
-- [~] **Session memory & context persistence** — long-running memory across conversations. Per-user preferences, recent intents, and past orders are surfaced to the orchestrator via a dedicated memory tool, so follow-ups feel continuous rather than amnesiac.
-- [~] **Human-in-the-loop approval flows** — explicit approval gates for high-stakes actions (refunds over a threshold, inventory writes, bulk price changes). The agent pauses, renders an approval card in the UI, and only proceeds once the operator confirms.
-- [~] **Per-agent cost tracking** — token spend and dollar cost attributed to each specialist, each tool call, and each user session. Surfaced as first-class OpenTelemetry metrics in the Aspire Dashboard.
-- [~] **Full .NET / C# port** — a sibling repository targeting teams building in the Microsoft ecosystem, powered by the [Microsoft Agent Framework .NET SDK](https://github.com/microsoft/agent-framework). Same six agents, same A2A protocol, same PostgreSQL schema — idiomatic .NET throughout.
+- [ ] **Agent evaluators** `In progress` — automated response-quality measurement across every specialist. Scripted eval sets (precision@k, recall@k, answer faithfulness, tool-call correctness) run against the seeded catalog with nightly CI gating, so regressions are caught before they reach production.
+- [ ] **Prompt injection prevention** `In progress` — hardening against a massively underestimated attack surface. Input classification, system-prompt isolation, tool-allow-listing per role, and output filtering before any user-facing render. Every specialist gets the same defense-in-depth layer.
+- [ ] **Session memory & context persistence** `In progress` — long-running memory across conversations. Per-user preferences, recent intents, and past orders are surfaced to the orchestrator via a dedicated memory tool, so follow-ups feel continuous rather than amnesiac.
+- [ ] **Human-in-the-loop approval flows** `In progress` — explicit approval gates for high-stakes actions (refunds over a threshold, inventory writes, bulk price changes). The agent pauses, renders an approval card in the UI, and only proceeds once the operator confirms.
+- [ ] **Per-agent cost tracking** `In progress` — token spend and dollar cost attributed to each specialist, each tool call, and each user session. Surfaced as first-class OpenTelemetry metrics in the Aspire Dashboard.
+- [ ] **Full .NET / C# port** `In progress` — a sibling repository targeting teams building in the Microsoft ecosystem, powered by the [Microsoft Agent Framework .NET SDK](https://github.com/microsoft/agent-framework). Same six agents, same A2A protocol, same PostgreSQL schema — idiomatic .NET throughout.
 
 > **Status:** the Python version is live today. The .NET version is coming.
 
@@ -406,7 +406,7 @@ curl -s -X POST http://localhost:9000/mcp/tools/check_stock \
 ### Planned — Platform & Observability
 
 - [ ] **Prompt caching** — cache system prompts and tool schemas per agent to reduce per-request token cost on repeated specialist invocations.
-- [*] **Streaming tool calls end-to-end** — propagate partial tool results over SSE so the UI can render product cards as they arrive rather than after the full agent turn completes.
+- [ ] **Streaming tool calls end-to-end** `In progress` — propagate partial tool results over SSE so the UI can render product cards as they arrive rather than after the full agent turn completes.
 - [~] **Observability dashboards** — pre-built Aspire Dashboard views for agent latency, tool error rates, and LLM token spend per specialist.
 
 
