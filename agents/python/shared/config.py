@@ -92,10 +92,6 @@ class Settings(BaseSettings):
     # These switches back the Phase 7 refactor. Every flag defaults to the
     # behavior the app had before the refactor, so turning them on is opt-in.
 
-    # When true, specialist agents use MAF's native execution path
-    # (agent.run) instead of the custom OpenAI tool loop in shared/agent_host.
-    MAF_NATIVE_EXECUTION: bool = True
-
     # Conversation-state backend:
     #   postgres — use the existing Postgres schema
     #   file     — write to MAF_SESSION_DIR

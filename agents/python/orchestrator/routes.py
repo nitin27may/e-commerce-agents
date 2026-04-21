@@ -341,15 +341,18 @@ async def chat(body: ChatRequest, user: dict[str, Any] = Depends(require_auth)) 
             user_context_lines.append(f"  - Order {o['id']} | {o['status']} | ${o['total']:.2f} | {o['created_at'].strftime('%Y-%m-%d')}")
     user_context = "\n".join(user_context_lines) if user_context_lines else None
 
-    # Call the orchestrator agent using direct chat completions API
-    from orchestrator.agent import ORCHESTRATOR_TOOLS
-    from orchestrator.prompts import get_system_prompt
-    from shared.agent_host import _run_agent_with_tools
+    # Call the orchestrator agent via MAF-native execution. The Agent
+    # already owns its tools + instructions + context providers, and the
+    # ECommerceContextProvider chain injects user_context (profile +
+    # recent orders) into state before each run — see
+    # shared/context_providers.py. _user_context is retained for telemetry
+    # only.
+    _ = user_context  # context is injected via ContextProvider, kept for symmetry
+    from orchestrator.agent import create_orchestrator_agent
+    from shared.agent_host import _run_agent_native
     from shared.telemetry import agent_run_span
 
-    user_role = current_user_role.get() or "customer"
-    system_prompt = get_system_prompt(user_role)
-
+    agent = create_orchestrator_agent()
     agents_involved: list[str] = ["orchestrator"]
 
     # Set conversation history ContextVar so call_specialist_agent can forward it
@@ -358,13 +361,7 @@ async def chat(body: ChatRequest, user: dict[str, Any] = Depends(require_auth)) 
     with UsageTimer() as timer:
         with agent_run_span("orchestrator"):
             try:
-                response_text = await _run_agent_with_tools(
-                    system_prompt=system_prompt,
-                    tools=ORCHESTRATOR_TOOLS,
-                    user_message=body.message,
-                    history=history,
-                    user_context=user_context,
-                )
+                response_text = await _run_agent_native(agent, body.message, history=history)
             except Exception:
                 logger.exception("chat.agent_error user=%s conversation=%s", user_email, conversation_id)
                 response_text = "I apologize, but I encountered an issue processing your request. Please try again."
@@ -403,9 +400,8 @@ async def chat(body: ChatRequest, user: dict[str, Any] = Depends(require_auth)) 
 @router.post("/api/chat/stream")
 async def chat_stream(body: ChatRequest, request: Request, user: dict[str, Any] = Depends(require_auth)):
     """Streaming chat endpoint — sends SSE events as the agent generates tokens."""
-    from orchestrator.agent import ORCHESTRATOR_TOOLS, create_orchestrator_agent
-    from orchestrator.prompts import get_system_prompt
-    from shared.agent_host import _run_agent_with_tools_stream
+    from orchestrator.agent import create_orchestrator_agent
+    from shared.agent_host import _run_agent_native_stream
 
     pool = get_pool()
     user_email = user.get("sub", "")
@@ -471,8 +467,9 @@ async def chat_stream(body: ChatRequest, request: Request, user: dict[str, Any] 
             user_context_lines.append(f"  - Order {o['id']} | {o['status']} | ${o['total']:.2f} | {o['created_at'].strftime('%Y-%m-%d')}")
     user_context = "\n".join(user_context_lines) if user_context_lines else None
 
-    user_role = current_user_role.get() or "customer"
-    system_prompt = get_system_prompt(user_role)
+    # See chat() — same reasoning: Agent owns tools / prompt / providers.
+    _ = user_context  # injected via ContextProvider, unused here
+    agent = create_orchestrator_agent()
     agents_involved: list[str] = ["orchestrator"]
     current_conversation_history.set(history)
 
@@ -497,12 +494,10 @@ async def chat_stream(body: ChatRequest, request: Request, user: dict[str, Any] 
 
         with agent_run_span("orchestrator"):
             try:
-                async for chunk in _run_agent_with_tools_stream(
-                    system_prompt=system_prompt,
-                    tools=ORCHESTRATOR_TOOLS,
-                    user_message=body.message,
+                async for chunk in _run_agent_native_stream(
+                    agent,
+                    body.message,
                     history=history,
-                    user_context=user_context,
                 ):
                     if await request.is_disconnected():
                         logger.info(

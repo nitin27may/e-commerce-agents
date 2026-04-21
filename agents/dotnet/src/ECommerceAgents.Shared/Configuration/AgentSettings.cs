@@ -55,7 +55,6 @@ public sealed record AgentSettings
     public string LogLevel { get; init; } = "INFO";
 
     // ── MAF v1 feature flags (all optional, safe defaults) ──────
-    public bool MafNativeExecution { get; init; } = true;
     public string MafSessionBackend { get; init; } = "postgres";
     public string MafSessionDir { get; init; } = "./.sessions";
     public string MafCheckpointBackend { get; init; } = "postgres";

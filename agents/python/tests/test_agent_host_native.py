@@ -24,7 +24,7 @@ import pytest
 
 # Load the repo-root .env into os.environ so the integration tests see the
 # live Azure / OpenAI credentials the rest of the suite uses.
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3]))
 from tutorials._shared import maf_bootstrap  # noqa: E402
 
 maf_bootstrap.bootstrap()

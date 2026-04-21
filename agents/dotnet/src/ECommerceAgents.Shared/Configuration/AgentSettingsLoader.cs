@@ -72,7 +72,6 @@ public static class AgentSettingsLoader
             Environment = Get("ENVIRONMENT", "development"),
             LogLevel = Get("LOG_LEVEL", "INFO"),
 
-            MafNativeExecution = GetBool("MAF_NATIVE_EXECUTION", true),
             MafSessionBackend = Get("MAF_SESSION_BACKEND", "postgres").ToLowerInvariant(),
             MafSessionDir = Get("MAF_SESSION_DIR", "./.sessions"),
             MafCheckpointBackend = Get("MAF_CHECKPOINT_BACKEND", "postgres").ToLowerInvariant(),

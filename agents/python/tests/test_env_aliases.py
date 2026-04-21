@@ -26,7 +26,7 @@ def _reload_settings(monkeypatch, **env) -> object:
         "AZURE_OPENAI_DEPLOYMENT", "AZURE_OPENAI_DEPLOYMENT_NAME",
         "AZURE_OPENAI_API_VERSION", "AZURE_EMBEDDING_DEPLOYMENT",
         "AGENT_REGISTRY",
-        "MAF_NATIVE_EXECUTION", "MAF_SESSION_BACKEND", "MAF_SESSION_DIR",
+        "MAF_SESSION_BACKEND", "MAF_SESSION_DIR",
         "MAF_CHECKPOINT_BACKEND", "MAF_CHECKPOINT_DIR",
         "RETURN_HITL_THRESHOLD", "HANDOFF_AUTONOMOUS_MODE",
         "WORKFLOW_VISUALIZATION_ON_BUILD",
@@ -68,7 +68,6 @@ def test_azure_deployment_alias_accepts_deployment_name(monkeypatch) -> None:
 
 def test_maf_feature_flags_have_safe_defaults(monkeypatch) -> None:
     settings = _reload_settings(monkeypatch)
-    assert settings.MAF_NATIVE_EXECUTION is True
     assert settings.MAF_SESSION_BACKEND == "postgres"
     assert settings.MAF_CHECKPOINT_BACKEND == "postgres"
     assert settings.RETURN_HITL_THRESHOLD == 500.0
@@ -79,11 +78,9 @@ def test_maf_feature_flags_have_safe_defaults(monkeypatch) -> None:
 def test_maf_feature_flags_override_from_env(monkeypatch) -> None:
     settings = _reload_settings(
         monkeypatch,
-        MAF_NATIVE_EXECUTION="false",
         MAF_SESSION_BACKEND="file",
         RETURN_HITL_THRESHOLD="1000",
     )
-    assert settings.MAF_NATIVE_EXECUTION is False
     assert settings.MAF_SESSION_BACKEND == "file"
     assert settings.RETURN_HITL_THRESHOLD == 1000.0
 

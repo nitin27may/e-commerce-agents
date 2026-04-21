@@ -238,12 +238,10 @@ class AgentEvaluator:
     async def _run_agent(self, user_input: str) -> dict[str, Any]:
         """Run the agent through a chat-completions tool-call loop.
 
-        We can't use ``Agent.run()`` directly because MAF's default agent
-        client goes through Azure's Responses API (``/openai/v1/responses``),
-        which many Azure deployments don't yet support. Production agents
-        avoid this by calling the chat completions API directly via
-        ``shared.agent_host._run_agent_with_tools``. The evaluator mirrors
-        that path locally so it can also record which tools were called.
+        The evaluator keeps its own OpenAI chat-completions loop here —
+        rather than calling ``agent.run()`` — so it can observe each
+        tool call and record it in the step trace. The production host
+        (``shared.agent_host``) uses MAF's native path.
         """
         import openai
 
@@ -293,7 +291,7 @@ class AgentEvaluator:
         tokens_in = 0
         tokens_out = 0
 
-        # Tool-calling loop — matches shared.agent_host._run_agent_with_tools
+        # Tool-calling loop — eval harness owns this to capture each call
         for _ in range(5):
             kwargs: dict[str, Any] = {"model": model, "messages": messages, "temperature": 0.1}
             if tool_defs:
