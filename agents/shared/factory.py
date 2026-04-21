@@ -165,14 +165,20 @@ def get_session_storage() -> Any:
     return None
 
 
-def get_checkpoint_storage() -> Any:
-    """Return a MAF workflow checkpoint backend per MAF_CHECKPOINT_BACKEND.
+def get_checkpoint_storage(*, pool: Any = None) -> Any:
+    """Return a MAF workflow checkpoint backend per ``MAF_CHECKPOINT_BACKEND``.
 
-    Similar to get_session_storage — returns a concrete FileCheckpointStorage
-    when backend=file (easiest to wire today), None for postgres/memory until
-    `plans/refactor/11-checkpointing.md` lands the Postgres schema.
+    Backends:
+
+    - ``postgres`` — durable storage in the ``workflow_checkpoints`` table.
+      Requires an asyncpg pool; either pass one explicitly or rely on
+      ``shared.db.get_pool()`` (returns ``None`` cleanly when the pool
+      isn't initialized, e.g., in scripts).
+    - ``file`` — FileCheckpointStorage at ``MAF_CHECKPOINT_DIR``.
+    - ``memory`` — ephemeral, for tests.
     """
     backend = settings.MAF_CHECKPOINT_BACKEND.lower()
+
     if backend == "file":
         from agent_framework._workflows._checkpoint import FileCheckpointStorage
         Path(settings.MAF_CHECKPOINT_DIR).mkdir(parents=True, exist_ok=True)
@@ -183,8 +189,15 @@ def get_checkpoint_storage() -> Any:
         return InMemoryCheckpointStorage()
 
     if backend == "postgres":
-        logger.debug("Postgres checkpoint backend not wired yet — returning None")
-        return None
+        if pool is None:
+            try:
+                from shared.db import get_pool
+                pool = get_pool()
+            except Exception as exc:  # pool not initialised (tests, scripts)
+                logger.debug("Postgres pool unavailable for checkpoint storage: %s", exc)
+                return None
+        from shared.checkpoint_storage import PostgresCheckpointStorage
+        return PostgresCheckpointStorage(pool)
 
     raise ValueError(
         f"MAF_CHECKPOINT_BACKEND must be one of postgres|file|memory, got {backend!r}"

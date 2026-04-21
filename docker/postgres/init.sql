@@ -372,3 +372,35 @@ CREATE TABLE IF NOT EXISTS agent_memories (
 );
 CREATE INDEX IF NOT EXISTS idx_memories_user ON agent_memories(user_id, is_active);
 CREATE INDEX IF NOT EXISTS idx_memories_category ON agent_memories(user_id, category);
+
+-- ============================================================
+-- MAF v1 PHASE 7 — DURABLE WORKFLOW STATE
+-- ============================================================
+-- Checkpoints: one row per superstep per workflow run. Populated by
+-- PostgresCheckpointStorage (shared/checkpoint_storage.py).
+CREATE TABLE IF NOT EXISTS workflow_checkpoints (
+    checkpoint_id  UUID PRIMARY KEY,
+    workflow_name  TEXT NOT NULL,
+    payload        JSONB NOT NULL,           -- encoded WorkflowCheckpoint dict
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_checkpoints_workflow_created
+    ON workflow_checkpoints(workflow_name, created_at DESC);
+
+-- HITL requests: one row per pause, resolved by user/admin response.
+-- Consumed by the return/replace approval gate (plans/refactor/09).
+CREATE TABLE IF NOT EXISTS hitl_requests (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workflow_run_id  UUID NOT NULL,
+    user_email       TEXT NOT NULL,
+    kind             TEXT NOT NULL,          -- 'return_approval' | 'tool_approval' | ...
+    payload          JSONB NOT NULL,         -- request data surfaced to the UI
+    status           TEXT NOT NULL DEFAULT 'pending',  -- pending | approved | rejected | timeout
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    responded_at     TIMESTAMPTZ,
+    response         JSONB                   -- decision payload (null while pending)
+);
+CREATE INDEX IF NOT EXISTS idx_hitl_user_status
+    ON hitl_requests(user_email, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_hitl_run
+    ON hitl_requests(workflow_run_id);
