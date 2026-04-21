@@ -9,6 +9,14 @@
     <AssemblyName>Handoff</AssemblyName>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <!--
+      MAAIW001: CreateHandoffBuilderWith / WithHandoffs are marked
+      [Experimental]. The handoff workflow is public preview in MAF 1.1; the
+      shape is stable enough for this tutorial but the attribute turns every
+      call into a compile error when TreatWarningsAsErrors=true. Suppress
+      locally rather than dropping warnings-as-errors.
+    -->
+    <NoWarn>$(NoWarn);MAAIW001</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

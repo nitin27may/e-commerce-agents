@@ -1,0 +1,20 @@
+# A minimal declarative workflow spec loaded at runtime by .NET.
+# Same three-executor pipeline as Ch09, but data-driven.
+# Matches the Python spec at ../python/workflow.yaml so both runtimes
+# produce identical outputs.
+
+name: text-pipeline
+start: uppercase
+executors:
+  - id: uppercase
+    op: upper        # built-in ops: upper, lower, strip, reverse
+  - id: validate
+    op: non_empty    # emits a final output when input is blank
+  - id: log
+    op: prefix
+    prefix: "LOGGED: "
+edges:
+  - from: uppercase
+    to: validate
+  - from: validate
+    to: log

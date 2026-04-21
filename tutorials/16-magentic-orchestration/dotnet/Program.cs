@@ -1,8 +1,17 @@
-// MAF v1 — Chapter 16: Magentic Orchestration (.NET)
+// MAF v1 — Chapter 16: Magentic Orchestration (.NET status stub)
 //
-// Reference: MagenticBuilder in .NET builds a workflow where a manager
-// agent plans tasks, maintains a task ledger, and delegates to workers.
-// Python is the canonical runnable example.
+// Microsoft's official docs state:
+//
+//   "Magentic Orchestration is not yet supported in C#."
+//   https://learn.microsoft.com/en-us/agent-framework/workflows/orchestrations/magentic?pivots=programming-language-csharp
+//
+// Confirmed against Microsoft.Agents.AI.Workflows 1.1.0 — there is no
+// MagenticBuilder / StandardMagenticManager symbol in the .NET assembly.
+// Any .NET sample that claims otherwise is invented API.
+//
+// This file is a placeholder that prints the current status so the chapter
+// dotnet project stays runnable (`dotnet build`, `dotnet run`). Swap it
+// for a real sample once the types land in a future package version.
 
 namespace MafV1.Ch16.Magentic;
 
@@ -12,22 +21,20 @@ public static class Program
     {
         Console.WriteLine("Chapter 16 — Magentic Orchestration");
         Console.WriteLine();
-        Console.WriteLine("Python (runnable): python tutorials/16-magentic-orchestration/python/main.py");
+        Console.WriteLine("Magentic orchestration is Python-only in Microsoft Agent Framework v1.1.");
+        Console.WriteLine("From the official docs:");
         Console.WriteLine();
-        Console.WriteLine(".NET API surface (reference):");
+        Console.WriteLine("    \"Magentic Orchestration is not yet supported in C#.\"");
         Console.WriteLine();
-        Console.WriteLine("  var manager = new StandardMagenticManager(managerAgent) {");
-        Console.WriteLine("      MaxRoundCount = 6, MaxStallCount = 2,");
-        Console.WriteLine("  };");
+        Console.WriteLine("    https://learn.microsoft.com/en-us/agent-framework/workflows/orchestrations/magentic?pivots=programming-language-csharp");
         Console.WriteLine();
-        Console.WriteLine("  var workflow = new MagenticBuilder {");
-        Console.WriteLine("      Participants = new[] { researcher, marketer, legal },");
-        Console.WriteLine("      Manager = manager,");
-        Console.WriteLine("  }.Build();");
+        Console.WriteLine("Run the Python reference implementation instead:");
         Console.WriteLine();
-        Console.WriteLine("  await foreach (var evt in InProcessExecution.StreamAsync(workflow, task)) {");
-        Console.WriteLine("      if (evt is MagenticOrchestratorEvent m) Console.WriteLine($\"manager: {m.EventType}\");");
-        Console.WriteLine("      else if (evt is GroupChatRequestSentEvent g) Console.WriteLine($\"-> {g.ParticipantName}\");");
-        Console.WriteLine("  }");
+        Console.WriteLine("    python tutorials/16-magentic-orchestration/python/main.py \\");
+        Console.WriteLine("        \"plan a short launch brief for an AI meal planner\"");
+        Console.WriteLine();
+        Console.WriteLine("The chapter README walks the Python manager loop end-to-end — facts");
+        Console.WriteLine("ledger, plan, progress ledger, stall detection, reset — and explains");
+        Console.WriteLine("what to expect when Magentic lands in Microsoft.Agents.AI.Workflows.");
     }
 }

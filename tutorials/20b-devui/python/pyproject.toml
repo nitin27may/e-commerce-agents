@@ -1,0 +1,29 @@
+[project]
+name = "maf-v1-ch20b-devui"
+version = "0.1.0"
+description = "MAF v1 — Ch20b: DevUI quickstart (Python)"
+requires-python = ">=3.12"
+dependencies = [
+    # Microsoft Agent Framework (beta/pre-release track)
+    "agent-framework>=1.0.0b0",
+    "agent-framework-openai>=1.0.0b0",
+    # DevUI ships as its own package, pre-release.
+    # `pip install agent-framework-devui --pre` on the docs page.
+    "agent-framework-devui>=0.1.0b0",
+    # Used to drive DevUI from tests / scripts via the OpenAI Responses API
+    "openai>=1.60",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

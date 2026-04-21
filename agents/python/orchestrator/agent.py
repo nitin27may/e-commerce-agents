@@ -42,27 +42,27 @@ async def call_specialist_agent(
 
     user_email = current_user_email.get()
     user_role = current_user_role.get()
+    session_id = current_session_id.get("")
 
     logger.info("a2a.call source=orchestrator target=%s user=%s", agent_name, user_email)
 
-    # Forward recent conversation history so specialists can handle follow-ups
-    conv_history = current_conversation_history.get([])
-    recent_history = [
-        {"role": h["role"], "content": h["content"][:500]}
-        for h in conv_history[-10:]
-    ] if conv_history else []
+    # Audit fix #14: stop forwarding a truncated copy of the conversation
+    # history on every A2A call. The session id travels in the header; the
+    # specialist side rehydrates from Postgres via shared.agent_host when
+    # it needs prior context. Dropping the payload frees us from the 10-msg
+    # / 500-char window that was silently losing context on long chats.
 
     with a2a_call_span("orchestrator", agent_name, url):
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 resp = await client.post(
                     f"{url}/message:send",
-                    json={"message": message, "history": recent_history},
+                    json={"message": message},
                     headers={
                         "x-agent-secret": settings.AGENT_SHARED_SECRET,
                         "x-user-email": user_email,
                         "x-user-role": user_role,
-                        "x-session-id": current_session_id.get(""),
+                        "x-session-id": session_id,
                     },
                 )
                 resp.raise_for_status()

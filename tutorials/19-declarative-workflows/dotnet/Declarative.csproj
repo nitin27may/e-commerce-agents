@@ -13,6 +13,26 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Agents.AI.Workflows" Version="1.1.0" />
+    <PackageReference Include="Microsoft.Agents.AI.Workflows.Generators" Version="1.1.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
     <PackageReference Include="YamlDotNet" Version="16.2.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="workflow.yaml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="tests/**/*.cs" />
+    <None Remove="tests/**/*.cs" />
+    <None Remove="tests/**/*.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Declarative.Tests" />
   </ItemGroup>
 </Project>

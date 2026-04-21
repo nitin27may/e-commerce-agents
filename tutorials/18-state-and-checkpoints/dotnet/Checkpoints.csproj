@@ -13,5 +13,9 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Agents.AI.Workflows" Version="1.1.0" />
+    <PackageReference Include="Microsoft.Agents.AI.Workflows.Generators" Version="1.1.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
   </ItemGroup>
 </Project>

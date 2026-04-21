@@ -7,12 +7,39 @@ dist/
 .venv/
 .uv/
 uv.lock
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# .NET / C#
+bin/
+obj/
+*.user
+*.suo
+*.userprefs
+.vs/
+.dotnet/
+project.lock.json
+packages/
+TestResults/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+*.pdb
+*.dll
+*.exe
+*.nupkg
+*.snupkg
 
 # Node
 node_modules/
 .next/
 out/
 articles/
+
 # Playwright
 test-results/
 playwright-report/
@@ -23,6 +50,7 @@ playwright/.cache/
 .env
 .env.local
 .env.*.local
+!.env.example
 
 # Docker
 docker/postgres/data/
@@ -32,6 +60,7 @@ docker/postgres/data/
 .idea/
 *.swp
 *.swo
+*.swn
 
 # OS
 .DS_Store
@@ -39,3 +68,12 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Tutorial local-run artifacts
+# (workflow.mmd / workflow.dot / session.json are intentionally committed in
+# some chapters as reference output — don't ignore those. Only ignore clearly
+# transient runtime state: checkpoints written during a run.)
+tutorials/*/python/checkpoints/
+tutorials/*/python/.checkpoints/
+tutorials/*/dotnet/checkpoints/
+tutorials/*/dotnet/.checkpoints/

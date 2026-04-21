@@ -40,6 +40,7 @@ Each chapter is self-contained and in a separate folder under `tutorials/`. Ever
 | 18 | [State and Checkpoints](./18-state-and-checkpoints/) | Draft | — |
 | 19 | [Declarative Workflows](./19-declarative-workflows/) | Draft | — |
 | 20 | [Workflow Visualization](./20-visualization/) | Draft | — |
+| 20b | [DevUI (interactive dashboard)](./20b-devui/) | Draft | — |
 | 21 | [Capstone Tour](./21-capstone-tour/) | Draft | — |
 
 ---

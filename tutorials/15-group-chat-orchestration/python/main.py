@@ -1,18 +1,24 @@
 """
 MAF v1 — Chapter 15: Group Chat Orchestration (Python)
 
-Three agents — Writer, Critic, Editor — discuss a short piece of copy.
-A round-robin selection function picks speakers; max_rounds caps the
-iteration count so the chat doesn't loop forever.
+Three agents — Writer, Critic, Editor — discuss a short piece of copy. A
+centralized manager picks who speaks next each round. Two manager strategies
+are demonstrated:
+
+  1. Round-robin via ``selection_func`` — a plain function over GroupChatState
+     that picks the next speaker by index. Deterministic, no LLM call.
+  2. Prompt-driven via ``orchestrator_agent`` — a full ``Agent`` acts as the
+     manager and chooses the next speaker (and when to stop) from the roster
+     and the conversation so far.
 
 Run:
     python tutorials/15-group-chat-orchestration/python/main.py "slogan for a coffee shop"
+    python tutorials/15-group-chat-orchestration/python/main.py "slogan for a coffee shop" prompt
 """
 
 from __future__ import annotations
 
 import asyncio
-import itertools
 import os
 import pathlib
 import sys
@@ -24,7 +30,7 @@ maf_bootstrap.bootstrap()
 
 from agent_framework import Agent  # noqa: E402
 from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient  # noqa: E402
-from agent_framework.orchestrations import GroupChatBuilder  # noqa: E402
+from agent_framework.orchestrations import GroupChatBuilder, GroupChatState  # noqa: E402
 
 
 def _default_client() -> OpenAIChatClient | OpenAIChatCompletionClient:
@@ -75,38 +81,77 @@ def editor() -> Agent:
     )
 
 
-def round_robin_selector():
-    """Closure-based round-robin: writer → critic → editor, and then terminate."""
-    order = iter(["writer", "critic", "editor"])
+def round_robin_selector(state: GroupChatState) -> str:
+    """Round-robin: pick participants by index for each round.
 
-    async def select(state) -> str:
-        try:
-            return next(order)
-        except StopIteration:
-            return ""  # empty string signals termination
-
-    return select
+    GroupChatState.participants is an OrderedDict[name, description]. Returning
+    the name at ``current_round % n`` cycles through the roster deterministically.
+    ``max_rounds=3`` on the builder caps total turns.
+    """
+    names = list(state.participants.keys())
+    return names[state.current_round % len(names)]
 
 
-def build_workflow():
+def prompt_driven_orchestrator() -> Agent:
+    """Build an LLM-backed orchestrator agent that picks the next speaker.
+
+    Returning an ``Agent`` as ``orchestrator_agent`` on ``GroupChatBuilder``
+    wires a prompt-driven manager: each round MAF asks this agent (with the
+    conversation so far) which participant should speak next. No custom code
+    required beyond the instructions.
+    """
+    return Agent(
+        _default_client(),
+        name="orchestrator",
+        description="Coordinates the Writer/Critic/Editor group chat.",
+        instructions=(
+            "You coordinate a Writer/Critic/Editor group chat about marketing copy.\n"
+            "Guidelines:\n"
+            "- Start with the Writer so there is a draft to react to.\n"
+            "- Invite the Critic after the Writer has produced a draft.\n"
+            "- Invite the Editor only after both Writer and Critic have spoken.\n"
+            "- Stop once the Editor has produced a polished final line."
+        ),
+    )
+
+
+def build_workflow(strategy: str = "round-robin"):
+    """Build the group-chat workflow for the given manager strategy.
+
+    ``strategy`` accepts:
+        * ``"round-robin"`` — deterministic walk via ``selection_func``.
+        * ``"prompt"``      — LLM-driven via ``orchestrator_agent``.
+    """
+    participants = [writer(), critic(), editor()]
+
+    if strategy == "prompt":
+        return (
+            GroupChatBuilder(
+                participants=participants,
+                orchestrator_agent=prompt_driven_orchestrator(),
+                # Hard safety net; the orchestrator may finish earlier.
+                max_rounds=4,
+            )
+            .build()
+        )
+
     return (
         GroupChatBuilder(
-            participants=[writer(), critic(), editor()],
-            selection_func=round_robin_selector(),
+            participants=participants,
+            selection_func=round_robin_selector,
             max_rounds=3,
         )
         .build()
     )
 
 
-async def run(topic: str) -> list[tuple[str, str]]:
-    """Run the group chat and return [(speaker, text)] in turn order."""
-    workflow = build_workflow()
+async def run(topic: str, strategy: str = "round-robin") -> list[tuple[str, str]]:
+    """Run the group chat and return ``[(speaker, text)]`` in turn order."""
+    workflow = build_workflow(strategy)
     turns: list[tuple[str, str]] = []
     async for event in workflow.run(topic, stream=True):
         etype = getattr(event, "type", None)
         if etype == "group_chat":
-            # Each speaker's message arrives as a dedicated group_chat event.
             data = getattr(event, "data", None)
             speaker = getattr(data, "agent_name", None) or getattr(data, "source", None)
             message = getattr(data, "message", None) or getattr(data, "content", None)
@@ -114,7 +159,6 @@ async def run(topic: str) -> list[tuple[str, str]]:
             if speaker and text:
                 turns.append((speaker, text))
         elif etype == "executor_completed":
-            # Fallback: some runs surface messages here too.
             payload = getattr(event, "data", None)
             if isinstance(payload, list):
                 for item in payload:
@@ -128,8 +172,11 @@ async def run(topic: str) -> list[tuple[str, str]]:
 
 async def main() -> None:
     topic = sys.argv[1] if len(sys.argv) > 1 else "slogan for a coffee shop"
-    print(f"Topic: {topic}\n")
-    turns = await run(topic)
+    strategy = sys.argv[2] if len(sys.argv) > 2 else "round-robin"
+    print(f"Topic: {topic}")
+    print(f"Manager: {strategy}\n")
+
+    turns = await run(topic, strategy)
     for speaker, text in turns:
         print(f"{speaker:<8} {text}\n")
 

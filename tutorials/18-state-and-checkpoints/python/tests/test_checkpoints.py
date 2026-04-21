@@ -19,17 +19,20 @@ maf_bootstrap.bootstrap()
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from main import (  # noqa: E402
     WORKFLOW_NAME,
-    CounterExecutor,
+    AccumulatorExecutor,
     build_workflow,
-    restore_and_replay,
+    resume_from_checkpoint,
     run_once,
 )
 
-from agent_framework._workflows._checkpoint import FileCheckpointStorage  # noqa: E402
+from agent_framework._workflows._checkpoint import (  # noqa: E402
+    FileCheckpointStorage,
+    InMemoryCheckpointStorage,
+)
 
 
 @pytest.fixture
-def tmp_storage():
+def tmp_file_storage():
     path = pathlib.Path(tempfile.mkdtemp(prefix="maf-v1-ch18-"))
     try:
         yield FileCheckpointStorage(str(path)), path
@@ -38,65 +41,83 @@ def tmp_storage():
 
 
 @pytest.mark.asyncio
-async def test_counter_increments_its_internal_state() -> None:
-    counter = CounterExecutor()
-    saved_state = await counter.on_checkpoint_save()
-    assert saved_state == {"total": 0}
+async def test_on_checkpoint_save_roundtrips_total() -> None:
+    counter = AccumulatorExecutor(seed=10)
+    assert (await counter.on_checkpoint_save()) == {"total": 10}
 
     counter.total = 42
-    saved_state = await counter.on_checkpoint_save()
-    assert saved_state == {"total": 42}
+    assert (await counter.on_checkpoint_save()) == {"total": 42}
 
 
 @pytest.mark.asyncio
-async def test_on_checkpoint_restore_populates_state() -> None:
-    counter = CounterExecutor()
+async def test_on_checkpoint_restore_overwrites_seeded_state() -> None:
+    """Restore must clobber whatever seed was passed to __init__."""
+    counter = AccumulatorExecutor(seed=999)
+    assert counter.total == 999
     await counter.on_checkpoint_restore({"total": 17})
     assert counter.total == 17
 
 
 @pytest.mark.asyncio
-async def test_running_workflow_writes_checkpoint(tmp_storage) -> None:
-    storage, directory = tmp_storage
-    await run_once(storage, amount=5)
+async def test_on_checkpoint_restore_defaults_when_key_missing() -> None:
+    counter = AccumulatorExecutor(seed=5)
+    await counter.on_checkpoint_restore({})
+    assert counter.total == 0
+
+
+@pytest.mark.asyncio
+async def test_running_workflow_writes_checkpoints_to_disk(tmp_file_storage) -> None:
+    storage, directory = tmp_file_storage
+    result = await run_once(storage, seed=10, amount=5)
+    assert result == 15
     files = list(directory.iterdir())
     assert files, "expected at least one checkpoint file on disk"
 
 
 @pytest.mark.asyncio
-async def test_storage_get_latest_returns_a_checkpoint(tmp_storage) -> None:
-    storage, _ = tmp_storage
-    await run_once(storage, amount=5)
-    latest = await storage.get_latest(workflow_name=WORKFLOW_NAME)
-    assert latest is not None
-    assert latest.checkpoint_id
-    assert latest.workflow_name == WORKFLOW_NAME
+async def test_list_checkpoints_returns_non_empty(tmp_file_storage) -> None:
+    storage, _ = tmp_file_storage
+    await run_once(storage, seed=10, amount=5)
+    checkpoints = await storage.list_checkpoints(workflow_name=WORKFLOW_NAME)
+    assert checkpoints
+    assert all(cp.workflow_name == WORKFLOW_NAME for cp in checkpoints)
 
 
 @pytest.mark.asyncio
-async def test_restore_from_checkpoint_does_not_crash(tmp_storage) -> None:
-    """The replay path must complete cleanly and produce a final value."""
-    storage, _ = tmp_storage
-    await run_once(storage, amount=5)
-    latest = await storage.get_latest(workflow_name=WORKFLOW_NAME)
-    assert latest is not None
-    # Even if replay yields no new output (all work was done), the call must
-    # not raise.
-    result = await restore_and_replay(storage, latest.checkpoint_id)
-    assert isinstance(result, int)
+async def test_resume_restores_state_across_fresh_workflow(tmp_file_storage) -> None:
+    """The round-trip contract: resume from first checkpoint with a
+    deliberately wrong seed; on_checkpoint_restore must bring the total
+    back so Finalizer yields the original result."""
+    storage, _ = tmp_file_storage
+    expected = await run_once(storage, seed=10, amount=5)
+    assert expected == 15
+
+    checkpoints = await storage.list_checkpoints(workflow_name=WORKFLOW_NAME)
+    checkpoints.sort(key=lambda cp: cp.timestamp)
+    first = checkpoints[0]
+
+    replayed = await resume_from_checkpoint(storage, first.checkpoint_id, resume_seed=999)
+    assert replayed == expected
 
 
 @pytest.mark.asyncio
-async def test_multiple_runs_produce_multiple_checkpoints(tmp_storage) -> None:
-    storage, directory = tmp_storage
-    for _ in range(3):
-        await run_once(storage, amount=1)
-    files = list(directory.iterdir())
-    assert len(files) >= 3, f"expected ≥3 checkpoint files, got {len(files)}"
+async def test_in_memory_storage_produces_same_replay_result() -> None:
+    """Swap FileCheckpointStorage for InMemoryCheckpointStorage: same outcome."""
+    storage = InMemoryCheckpointStorage()
+    expected = await run_once(storage, seed=7, amount=3)
+    assert expected == 10
+
+    checkpoints = await storage.list_checkpoints(workflow_name=WORKFLOW_NAME)
+    checkpoints.sort(key=lambda cp: cp.timestamp)
+    replayed = await resume_from_checkpoint(
+        storage, checkpoints[0].checkpoint_id, resume_seed=999
+    )
+    assert replayed == expected
 
 
 @pytest.mark.asyncio
-async def test_workflow_builds_with_checkpoint_storage(tmp_storage) -> None:
-    storage, _ = tmp_storage
-    workflow = build_workflow(storage)
+async def test_workflow_builds_with_checkpoint_storage(tmp_file_storage) -> None:
+    storage, _ = tmp_file_storage
+    workflow = build_workflow(storage, seed=0)
     assert workflow is not None
+    assert workflow.name == WORKFLOW_NAME
