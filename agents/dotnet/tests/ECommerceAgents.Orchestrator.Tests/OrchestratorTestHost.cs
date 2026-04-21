@@ -45,7 +45,9 @@ public static class OrchestratorTestHost
                     app.Use(async (ctx, next) =>
                     {
                         var email = ctx.Request.Headers["X-Test-Email"].ToString();
-                        using var scope = RequestContext.Scope(email, "customer", "");
+                        var role = ctx.Request.Headers["X-Test-Role"].ToString();
+                        if (string.IsNullOrEmpty(role)) role = "customer";
+                        using var scope = RequestContext.Scope(email, role, "");
                         await next();
                     });
                     app.UseRouting();

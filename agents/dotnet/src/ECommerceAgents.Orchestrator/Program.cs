@@ -60,6 +60,9 @@ app.MapCartRoutes();
 app.MapCheckoutRoutes();
 app.MapProfileRoutes();
 app.MapReturnLabelRoutes();
+app.MapMarketplaceRoutes();
+app.MapAdminRoutes();
+app.MapSellerRoutes();
 
 var urls = Environment.GetEnvironmentVariable("ASPNETCORE_URLS");
 app.Run(string.IsNullOrWhiteSpace(urls) ? "http://0.0.0.0:8080" : urls);
