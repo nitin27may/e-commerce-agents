@@ -1,0 +1,18 @@
+name: text-pipeline
+description: Canonical three-stage pipeline — uppercase, validate, log.
+start: uppercase
+
+executors:
+  - id: uppercase
+    op: upper
+  - id: validate
+    op: non_empty
+  - id: log
+    op: prefix
+    prefix: "LOGGED: "
+
+edges:
+  - from: uppercase
+    to: validate
+  - from: validate
+    to: log
