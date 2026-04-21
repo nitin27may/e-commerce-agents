@@ -214,7 +214,11 @@ async def get_order_tracking(
         }
 
 
-@tool(name="cancel_order", description="Cancel an order. Only orders in 'placed' or 'confirmed' status can be cancelled.")
+@tool(
+    name="cancel_order",
+    description="Cancel an order. Only orders in 'placed' or 'confirmed' status can be cancelled.",
+    approval_mode="always_require",
+)
 async def cancel_order(
     order_id: Annotated[str, Field(description="UUID of the order to cancel")],
     reason: Annotated[str, Field(description="Reason for cancellation")],
@@ -266,7 +270,11 @@ async def cancel_order(
         }
 
 
-@tool(name="modify_order", description="Modify the shipping address of an order. Only orders that haven't shipped yet can be modified.")
+@tool(
+    name="modify_order",
+    description="Modify the shipping address of an order. Only orders that haven't shipped yet can be modified.",
+    approval_mode="always_require",
+)
 async def modify_order(
     order_id: Annotated[str, Field(description="UUID of the order to modify")],
     new_address: Annotated[dict, Field(description="New shipping address with keys: street, city, state, zip, country")],

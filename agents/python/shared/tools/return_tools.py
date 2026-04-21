@@ -87,7 +87,11 @@ async def check_return_eligibility(
         }
 
 
-@tool(name="initiate_return", description="Initiate a return for a delivered order. Generates a return shipping label.")
+@tool(
+    name="initiate_return",
+    description="Initiate a return for a delivered order. Generates a return shipping label.",
+    approval_mode="always_require",
+)
 async def initiate_return(
     order_id: Annotated[str, Field(description="UUID of the order to return")],
     reason: Annotated[str, Field(description="Reason for the return")],
@@ -163,7 +167,11 @@ async def initiate_return(
         }
 
 
-@tool(name="process_refund", description="Process the refund for an approved return. Updates return status to refunded.")
+@tool(
+    name="process_refund",
+    description="Process the refund for an approved return. Updates return status to refunded.",
+    approval_mode="always_require",
+)
 async def process_refund(
     return_id: Annotated[str, Field(description="UUID of the return to process refund for")],
 ) -> dict:

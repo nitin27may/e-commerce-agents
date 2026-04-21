@@ -313,7 +313,11 @@ async def calculate_fulfillment_plan(
         }
 
 
-@tool(name="place_backorder", description="Place a backorder for an out-of-stock product. Checks stock first and only creates a backorder if the product is truly unavailable.")
+@tool(
+    name="place_backorder",
+    description="Place a backorder for an out-of-stock product. Checks stock first and only creates a backorder if the product is truly unavailable.",
+    approval_mode="always_require",
+)
 async def place_backorder(
     product_id: Annotated[str, Field(description="UUID of the product to backorder")],
     quantity: Annotated[int, Field(description="Quantity to backorder")],
