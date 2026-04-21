@@ -194,6 +194,17 @@ export default function ChatPage() {
   const pendingQueryRef = useRef<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  // Per-message abort controller. New send aborts any in-flight stream;
+  // unmount aborts whatever's still running. Plugs the SSE-leak finding.
+  const streamAbortRef = useRef<AbortController | null>(null);
+
+  // Cancel in-flight stream when the component unmounts (route change).
+  useEffect(
+    () => () => {
+      streamAbortRef.current?.abort();
+    },
+    []
+  );
 
   // ---- Load conversations on mount ----
   useEffect(() => {
@@ -300,6 +311,11 @@ export default function ChatPage() {
     const assistantId = crypto.randomUUID();
     let assistantCreated = false;
 
+    // Abort any prior stream still draining before starting a new one.
+    streamAbortRef.current?.abort();
+    const controller = new AbortController();
+    streamAbortRef.current = controller;
+
     try {
       const meta = await api.chatStream(
         trimmed,
@@ -326,6 +342,7 @@ export default function ChatPage() {
             );
           }
         },
+        controller.signal,
       );
 
       // If this was the first message, a new conversation was created

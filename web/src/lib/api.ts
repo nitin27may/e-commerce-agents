@@ -51,6 +51,9 @@ function handleUnauthorized() {
 
 class ApiClient {
   private token: string | null = null;
+  private refreshToken: string | null = null;
+  // Single in-flight refresh — rapid concurrent 401s share one network call.
+  private inflightRefresh: Promise<string | null> | null = null;
 
   setToken(token: string | null) {
     this.token = token;
@@ -60,9 +63,46 @@ class ApiClient {
     return this.token;
   }
 
+  setRefreshToken(token: string | null) {
+    this.refreshToken = token;
+  }
+
+  /**
+   * Attempt to swap the current refresh_token for a fresh access token.
+   * Returns the new access token, or `null` if refresh isn't possible —
+   * caller should then bounce the user to /login.
+   */
+  private async tryRefresh(): Promise<string | null> {
+    if (!this.refreshToken) return null;
+    if (this.inflightRefresh) return this.inflightRefresh;
+    this.inflightRefresh = (async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/auth/refresh`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: this.refreshToken }),
+        });
+        if (!res.ok) return null;
+        const data = (await res.json()) as { access_token?: string };
+        if (!data.access_token) return null;
+        this.token = data.access_token;
+        if (typeof window !== "undefined") {
+          localStorage.setItem("ecommerce_access_token", data.access_token);
+        }
+        return data.access_token;
+      } catch {
+        return null;
+      } finally {
+        this.inflightRefresh = null;
+      }
+    })();
+    return this.inflightRefresh;
+  }
+
   private async request<T>(
     path: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    { allowRefresh = true }: { allowRefresh?: boolean } = {}
   ): Promise<T> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -75,6 +115,15 @@ class ApiClient {
     const res = await fetch(`${API_URL}${path}`, { ...options, headers });
 
     if (res.status === 401) {
+      // One retry: if we have a refresh token, swap it for a fresh
+      // access token and replay the request once. Avoids the silent
+      // session-death audit finding on long chat sessions.
+      if (allowRefresh) {
+        const fresh = await this.tryRefresh();
+        if (fresh) {
+          return this.request<T>(path, options, { allowRefresh: false });
+        }
+      }
       this.token = null;
       handleUnauthorized();
       throw new Error("Session expired — please log in again.");
@@ -119,7 +168,7 @@ class ApiClient {
   }
 
   // Chat
-  chat(message: string, conversationId?: string) {
+  chat(message: string, conversationId?: string, signal?: AbortSignal) {
     return this.request<{
       response: string;
       conversation_id: string;
@@ -128,18 +177,26 @@ class ApiClient {
     }>("/api/chat", {
       method: "POST",
       body: JSON.stringify({ message, conversation_id: conversationId }),
+      signal,
     });
   }
 
   /**
    * Streaming chat — reads SSE events and calls onChunk for each text delta.
    * Returns conversation metadata once the stream completes.
+   *
+   * Pass an `AbortSignal` to cancel mid-stream (e.g. user navigates away
+   * or hits "Stop"). On a 401 the client refreshes once and retries the
+   * stream; if the refresh fails the user is bounced to /login.
    */
   async chatStream(
     message: string,
     conversationId: string | undefined,
     onChunk: (text: string) => void,
+    signal?: AbortSignal,
+    options: { allowRefresh?: boolean } = {}
   ): Promise<{ conversation_id: string; agents_involved: string[] }> {
+    const allowRefresh = options.allowRefresh ?? true;
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
@@ -151,9 +208,18 @@ class ApiClient {
       method: "POST",
       headers,
       body: JSON.stringify({ message, conversation_id: conversationId }),
+      signal,
     });
 
     if (res.status === 401) {
+      if (allowRefresh) {
+        const fresh = await this.tryRefresh();
+        if (fresh) {
+          return this.chatStream(message, conversationId, onChunk, signal, {
+            allowRefresh: false,
+          });
+        }
+      }
       this.token = null;
       handleUnauthorized();
       throw new Error("Session expired — please log in again.");
@@ -212,6 +278,12 @@ class ApiClient {
           }
         }
       }
+    } catch (err) {
+      // AbortError on user-initiated cancel: don't throw, just stop.
+      if (err instanceof DOMException && err.name === "AbortError") {
+        return metadata ?? { conversation_id: conversationId ?? "", agents_involved: [] };
+      }
+      throw err;
     } finally {
       reader.releaseLock();
     }

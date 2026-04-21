@@ -44,6 +44,7 @@ function persistAuth(
   localStorage.setItem(STORAGE_KEY_ACCESS, accessToken);
   localStorage.setItem(STORAGE_KEY_REFRESH, refreshToken);
   api.setToken(accessToken);
+  api.setRefreshToken(refreshToken);
 }
 
 function clearAuth(): void {
@@ -51,6 +52,7 @@ function clearAuth(): void {
   localStorage.removeItem(STORAGE_KEY_ACCESS);
   localStorage.removeItem(STORAGE_KEY_REFRESH);
   api.setToken(null);
+  api.setRefreshToken(null);
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -67,7 +69,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (storedUser && storedToken) {
         const user = JSON.parse(storedUser) as User;
+        const storedRefresh = localStorage.getItem(STORAGE_KEY_REFRESH);
         api.setToken(storedToken);
+        api.setRefreshToken(storedRefresh);
         setState({ user, isLoading: false });
       } else {
         setState({ user: null, isLoading: false });
