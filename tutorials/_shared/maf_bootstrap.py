@@ -23,15 +23,31 @@ import pathlib
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 ENV_FILE = REPO_ROOT / ".env"
 
-_PATCH = '''\
+_PATCH_MARKER = "# maf-v1-bootstrap-patch-v2"
+_PATCH = f'''\
+{_PATCH_MARKER}
 """Microsoft Agent Framework — re-exports for MAF v1 tutorials."""
 __version__ = "1.0.0"
 
-from agent_framework._agents import Agent, RawAgent, BaseAgent
+from agent_framework._agents import Agent, RawAgent, BaseAgent, SupportsAgentRun
 from agent_framework._tools import tool, FunctionTool
-from agent_framework._types import Message, Content, Role
+from agent_framework._types import (
+    Message,
+    Content,
+    Role,
+    AgentResponse,
+    AgentResponseUpdate,
+    ChatResponse,
+    ChatResponseUpdate,
+    ResponseStream,
+)
 from agent_framework._clients import BaseChatClient
-from agent_framework._sessions import AgentSession, HistoryProvider, InMemoryHistoryProvider, ContextProvider
+from agent_framework._sessions import (
+    AgentSession,
+    HistoryProvider,
+    InMemoryHistoryProvider,
+    ContextProvider,
+)
 '''
 
 
@@ -39,7 +55,12 @@ def _patch_init() -> None:
     import agent_framework
 
     init_path = pathlib.Path(agent_framework.__file__)
-    if init_path.read_text().strip() == "":
+    current = init_path.read_text()
+    # Patch when empty (first run) OR when an older bootstrap installed an
+    # earlier patch that we now need to supersede with a newer export list.
+    if current.strip() == "" or (
+        _PATCH_MARKER not in current and "Microsoft Agent Framework — re-exports" in current
+    ):
         init_path.write_text(_PATCH)
         importlib.reload(agent_framework)
 
