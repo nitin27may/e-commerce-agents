@@ -7,8 +7,16 @@ using ECommerceAgents.Shared.Data;
 using ECommerceAgents.Shared.Prompts;
 using ECommerceAgents.Shared.Telemetry;
 using Microsoft.Agents.AI;
+using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.ConfigureHttpJsonOptions(opts =>
+{
+    opts.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower;
+    opts.SerializerOptions.DictionaryKeyPolicy = JsonNamingPolicy.SnakeCaseLower;
+    opts.SerializerOptions.PropertyNameCaseInsensitive = true;
+});
 
 var settings = AgentSettingsLoader.Load(builder.Configuration);
 AgentSettingsValidator.Validate(
@@ -48,6 +56,10 @@ app.MapChatRoutes();
 app.MapConversationRoutes();
 app.MapProductRoutes();
 app.MapOrderRoutes();
+app.MapCartRoutes();
+app.MapCheckoutRoutes();
+app.MapProfileRoutes();
+app.MapReturnLabelRoutes();
 
 var urls = Environment.GetEnvironmentVariable("ASPNETCORE_URLS");
 app.Run(string.IsNullOrWhiteSpace(urls) ? "http://0.0.0.0:8080" : urls);

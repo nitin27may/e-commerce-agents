@@ -203,7 +203,7 @@ public sealed class OrchestratorRouteTests : IAsyncLifetime
         using var client = ClientFor(r => r.MapOrderRoutes());
         var response = await client.PostAsJsonAsync(
             $"/api/orders/{_orderDeliveredId}/return",
-            new { reason = "arrived broken", refundMethod = "store_credit" }
+            new { reason = "arrived broken", refund_method = "store_credit" }
         );
         response.EnsureSuccessStatusCode();
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();

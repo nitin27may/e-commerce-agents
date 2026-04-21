@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using System.Text.Json;
 
 namespace ECommerceAgents.Orchestrator.Tests;
 
@@ -32,6 +33,12 @@ public static class OrchestratorTestHost
                     services.AddSingleton(pool);
                     services.AddSingleton(new AgentSettings { DatabaseUrl = pool.DataSource.ConnectionString });
                     services.AddRouting();
+                    services.ConfigureHttpJsonOptions(opts =>
+                    {
+                        opts.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower;
+                        opts.SerializerOptions.DictionaryKeyPolicy = JsonNamingPolicy.SnakeCaseLower;
+                        opts.SerializerOptions.PropertyNameCaseInsensitive = true;
+                    });
                 });
                 web.Configure(app =>
                 {
