@@ -22,6 +22,8 @@ public sealed class InventoryTools(DatabasePool pool)
         AIFunctionFactory.Create(EstimateShipping, nameof(EstimateShipping)),
         AIFunctionFactory.Create(CompareCarriers, nameof(CompareCarriers)),
         AIFunctionFactory.Create(GetTrackingStatus, nameof(GetTrackingStatus)),
+        AIFunctionFactory.Create(CalculateFulfillmentPlan, nameof(CalculateFulfillmentPlan)),
+        AIFunctionFactory.Create(PlaceBackorder, nameof(PlaceBackorder)),
     };
 
     // ─────────────────────── get_restock_schedule ────────────
@@ -280,6 +282,210 @@ public sealed class InventoryTools(DatabasePool pool)
             Message: null
         );
     }
+
+    // ─────────────────────── calculate_fulfillment_plan ──────
+
+    [Description("Calculate the optimal fulfillment plan for a multi-item order. Determines the best warehouse for each product and estimates total shipping cost.")]
+    public async Task<FulfillmentPlanResult> CalculateFulfillmentPlan(
+        [Description("List of product UUIDs to fulfill")] List<string> productIds,
+        [Description("Destination region: 'east', 'central', or 'west'")] string destinationRegion
+    )
+    {
+        if (productIds is null || productIds.Count == 0)
+        {
+            return FulfillmentPlanResult.Failure("No product IDs provided");
+        }
+
+        await using var conn = await _pool.OpenAsync();
+        var planItems = new List<PlanItem>();
+        var unavailable = new List<string>();
+        var shipmentsByWarehouse = new Dictionary<string, List<PlanItem>>(StringComparer.Ordinal);
+
+        foreach (var pidStr in productIds)
+        {
+            if (!Guid.TryParse(pidStr, out var pid))
+            {
+                unavailable.Add(pidStr);
+                continue;
+            }
+
+            var product = await conn.QueryFirstOrDefaultAsync(
+                "SELECT id, name, price FROM products WHERE id = @pid",
+                new { pid }
+            );
+            if (product is null)
+            {
+                unavailable.Add(pidStr);
+                continue;
+            }
+
+            var invRows = (await conn.QueryAsync(
+                @"SELECT w.id AS warehouse_id, w.name AS warehouse, w.region, wi.quantity
+                  FROM warehouse_inventory wi
+                  JOIN warehouses w ON wi.warehouse_id = w.id
+                  WHERE wi.product_id = @pid AND wi.quantity > 0
+                  ORDER BY
+                      CASE WHEN w.region = @region THEN 0 ELSE 1 END,
+                      wi.quantity DESC",
+                new { pid, region = destinationRegion }
+            )).ToList();
+
+            if (invRows.Count == 0)
+            {
+                unavailable.Add(pidStr);
+                continue;
+            }
+
+            var best = invRows[0];
+            var item = new PlanItem(
+                ProductId: ((Guid)product.id).ToString(),
+                ProductName: (string)product.name,
+                Warehouse: (string)best.warehouse,
+                Region: (string)best.region,
+                QuantityAvailable: (int)best.quantity
+            );
+            planItems.Add(item);
+
+            var key = $"{item.Warehouse} ({item.Region})";
+            if (!shipmentsByWarehouse.TryGetValue(key, out var bucket))
+            {
+                bucket = new List<PlanItem>();
+                shipmentsByWarehouse[key] = bucket;
+            }
+            bucket.Add(item);
+        }
+
+        decimal totalShipping = 0m;
+        var shipmentDetails = new List<ShipmentDetail>();
+        foreach (var (warehouseKey, items) in shipmentsByWarehouse)
+        {
+            var regionFrom = items[0].Region;
+            var rate = await conn.QueryFirstOrDefaultAsync(
+                @"SELECT c.name AS carrier, sr.price, sr.estimated_days_min, sr.estimated_days_max
+                  FROM shipping_rates sr
+                  JOIN carriers c ON sr.carrier_id = c.id
+                  WHERE sr.region_from = @from AND sr.region_to = @to
+                  ORDER BY sr.price
+                  LIMIT 1",
+                new { from = regionFrom, to = destinationRegion }
+            );
+
+            var cost = rate is null ? 0m : (decimal)rate.price;
+            totalShipping += cost;
+            shipmentDetails.Add(new ShipmentDetail(
+                Warehouse: warehouseKey,
+                Items: items.Select(i => i.ProductName).ToList(),
+                ItemCount: items.Count,
+                Carrier: rate is null ? "Unknown" : (string)rate.carrier,
+                ShippingCost: cost,
+                DeliveryWindow: rate is null
+                    ? "Unknown"
+                    : $"{(int)rate.estimated_days_min}-{(int)rate.estimated_days_max} business days"
+            ));
+        }
+
+        return new FulfillmentPlanResult(
+            Error: null,
+            DestinationRegion: destinationRegion,
+            TotalItems: planItems.Count,
+            TotalShipments: shipmentDetails.Count,
+            TotalShippingCost: Math.Round(totalShipping, 2),
+            Shipments: shipmentDetails,
+            UnavailableProducts: unavailable,
+            AllAvailable: unavailable.Count == 0
+        );
+    }
+
+    // ─────────────────────── place_backorder ─────────────────
+
+    [Description("Place a backorder for an out-of-stock product. Checks stock first and only creates a backorder if the product is truly unavailable.")]
+    public async Task<PlaceBackorderResult> PlaceBackorder(
+        [Description("UUID of the product to backorder")] string productId,
+        [Description("Quantity to backorder (>=1)")] int quantity
+    )
+    {
+        var email = RequestContext.CurrentUserEmail;
+        if (string.IsNullOrEmpty(email))
+        {
+            return PlaceBackorderResult.Failure("No user context available");
+        }
+        if (!Guid.TryParse(productId, out var pid))
+        {
+            return PlaceBackorderResult.Failure($"Product not found: {productId}");
+        }
+        if (quantity <= 0)
+        {
+            return PlaceBackorderResult.Failure("Quantity must be greater than zero");
+        }
+
+        await using var conn = await _pool.OpenAsync();
+        var product = await conn.QueryFirstOrDefaultAsync(
+            "SELECT id, name, price FROM products WHERE id = @pid",
+            new { pid }
+        );
+        if (product is null)
+        {
+            return PlaceBackorderResult.Failure($"Product not found: {productId}");
+        }
+
+        var totalStock = await conn.ExecuteScalarAsync<int>(
+            @"SELECT COALESCE(SUM(quantity), 0)
+              FROM warehouse_inventory
+              WHERE product_id = @pid",
+            new { pid }
+        );
+
+        var productName = (string)product.name;
+        if (totalStock > 0)
+        {
+            return new PlaceBackorderResult(
+                Error: null,
+                BackorderPlaced: false,
+                BackorderId: null,
+                ProductId: productId,
+                ProductName: productName,
+                Quantity: null,
+                UnitPrice: null,
+                EstimatedTotal: null,
+                UserEmail: email,
+                ExpectedRestock: null,
+                CurrentStock: totalStock,
+                Message: $"Product is currently in stock ({totalStock} units available). No backorder needed."
+            );
+        }
+
+        var nextRestock = await conn.QueryFirstOrDefaultAsync(
+            @"SELECT rs.expected_date, rs.expected_quantity, w.name AS warehouse
+              FROM restock_schedule rs
+              JOIN warehouses w ON rs.warehouse_id = w.id
+              WHERE rs.product_id = @pid AND rs.expected_date >= CURRENT_DATE
+              ORDER BY rs.expected_date
+              LIMIT 1",
+            new { pid }
+        );
+
+        var unitPrice = (decimal)product.price;
+        return new PlaceBackorderResult(
+            Error: null,
+            BackorderPlaced: true,
+            BackorderId: Guid.NewGuid().ToString(),
+            ProductId: productId,
+            ProductName: productName,
+            Quantity: quantity,
+            UnitPrice: unitPrice,
+            EstimatedTotal: Math.Round(unitPrice * quantity, 2),
+            UserEmail: email,
+            ExpectedRestock: nextRestock is null
+                ? null
+                : new RestockForecast(
+                    Date: ((DateTime)nextRestock.expected_date).ToString("yyyy-MM-dd"),
+                    Quantity: (int)nextRestock.expected_quantity,
+                    Warehouse: (string)nextRestock.warehouse
+                ),
+            CurrentStock: 0,
+            Message: "Backorder placed successfully. You will be notified when the product is back in stock."
+        );
+    }
 }
 
 // ─────────────────────── DTOs ───────────────────────
@@ -355,4 +561,57 @@ public sealed record TrackingStatusResult(
 {
     public static TrackingStatusResult Failure(string error) =>
         new(error, "", null, null, null, null, null, null);
+}
+
+public sealed record PlanItem(
+    string ProductId,
+    string ProductName,
+    string Warehouse,
+    string Region,
+    int QuantityAvailable
+);
+
+public sealed record ShipmentDetail(
+    string Warehouse,
+    List<string> Items,
+    int ItemCount,
+    string Carrier,
+    decimal ShippingCost,
+    string DeliveryWindow
+);
+
+public sealed record FulfillmentPlanResult(
+    string? Error,
+    string? DestinationRegion,
+    int? TotalItems,
+    int? TotalShipments,
+    decimal? TotalShippingCost,
+    List<ShipmentDetail>? Shipments,
+    List<string>? UnavailableProducts,
+    bool? AllAvailable
+)
+{
+    public static FulfillmentPlanResult Failure(string error) =>
+        new(error, null, null, null, null, null, null, null);
+}
+
+public sealed record RestockForecast(string Date, int Quantity, string Warehouse);
+
+public sealed record PlaceBackorderResult(
+    string? Error,
+    bool? BackorderPlaced,
+    string? BackorderId,
+    string ProductId,
+    string? ProductName,
+    int? Quantity,
+    decimal? UnitPrice,
+    decimal? EstimatedTotal,
+    string? UserEmail,
+    RestockForecast? ExpectedRestock,
+    int? CurrentStock,
+    string? Message
+)
+{
+    public static PlaceBackorderResult Failure(string error) =>
+        new(error, null, null, "", null, null, null, null, null, null, null, null);
 }

@@ -151,6 +151,98 @@ public sealed class ReviewToolsTests : IAsyncLifetime
         result.Comparisons!.Should().Contain(c => c.Error == "Product not found");
     }
 
+    // ─────────────────────── get_sentiment_by_topic ─────────
+
+    [Fact]
+    public async Task GetSentimentByTopic_AggregatesKeywordMentions()
+    {
+        var result = await _tools.GetSentimentByTopic(_productAId.ToString());
+        result.Error.Should().BeNull();
+        result.Topics.Should().NotBeNull();
+        result.Topics!.Keys.Should().Contain(["quality", "value", "shipping", "design", "durability"]);
+        // Seed has "excellent quality" wording, so quality must be seen.
+        result.Topics["quality"].Mentions.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task GetSentimentByTopic_RejectsUnknownProduct()
+    {
+        var result = await _tools.GetSentimentByTopic(Guid.NewGuid().ToString());
+        result.Error.Should().Contain("not found");
+    }
+
+    // ─────────────────────── get_sentiment_trend ─────────────
+
+    [Fact]
+    public async Task GetSentimentTrend_ComputesMonthlyAverages()
+    {
+        var result = await _tools.GetSentimentTrend(_productAId.ToString(), months: 12);
+        result.Error.Should().BeNull();
+        result.MonthlyData.Should().NotBeEmpty();
+        result.Trend.Should().NotBeNull();
+    }
+
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(48, 36)]
+    [InlineData(-5, 1)]
+    public async Task GetSentimentTrend_ClampsMonths(int requested, int expectedMax)
+    {
+        var result = await _tools.GetSentimentTrend(_productAId.ToString(), months: requested);
+        result.PeriodMonths.Should().Be(Math.Clamp(requested, 1, 36));
+        result.PeriodMonths.Should().BeLessThanOrEqualTo(expectedMax);
+    }
+
+    // ─────────────────────── detect_fake_reviews ─────────────
+
+    [Fact]
+    public async Task DetectFakeReviews_SurfacesUnverifiedFiveStarAndGeneric()
+    {
+        var result = await _tools.DetectFakeReviews(_productAId.ToString());
+        result.Error.Should().BeNull();
+        result.TotalReviews.Should().Be(5);
+        result.RiskLevel.Should().BeOneOf("low", "medium", "high");
+        // Must aggregate all three sources.
+        result.FlaggedReviews.Should().NotBeNull();
+        result.UnverifiedFiveStar.Should().NotBeNull();
+        result.GenericLanguageMatches.Should().NotBeNull();
+    }
+
+    // ─────────────────────── draft_seller_response ───────────
+
+    [Fact]
+    public async Task DraftSellerResponse_PicksApologeticTemplateForOneStar()
+    {
+        await using var conn = await _pool.OpenAsync();
+        var reviewId = await conn.ExecuteScalarAsync<Guid>(
+            "SELECT id FROM reviews WHERE product_id = @pid AND rating = 1 LIMIT 1",
+            new { pid = _productAId }
+        );
+        var result = await _tools.DraftSellerResponse(reviewId.ToString());
+        result.Error.Should().BeNull();
+        result.ResponseTemplate.Should().Contain("apologize");
+    }
+
+    [Fact]
+    public async Task DraftSellerResponse_PicksWarmTemplateForFiveStar()
+    {
+        await using var conn = await _pool.OpenAsync();
+        var reviewId = await conn.ExecuteScalarAsync<Guid>(
+            "SELECT id FROM reviews WHERE product_id = @pid AND rating = 5 LIMIT 1",
+            new { pid = _productAId }
+        );
+        var result = await _tools.DraftSellerResponse(reviewId.ToString());
+        result.Error.Should().BeNull();
+        result.ResponseTemplate.Should().Contain("glad");
+    }
+
+    [Fact]
+    public async Task DraftSellerResponse_RejectsBadGuid()
+    {
+        var result = await _tools.DraftSellerResponse("not-a-uuid");
+        result.Error.Should().Contain("not found");
+    }
+
     // ─────────────────────── seed ────────────────────────────
 
     private async Task SeedAsync()

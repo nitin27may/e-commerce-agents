@@ -166,6 +166,83 @@ public sealed class InventoryToolsTests : IAsyncLifetime
         result.LatestUpdate.Should().BeNull();
     }
 
+    // ─────────────────────── calculate_fulfillment_plan ─────
+
+    [Fact]
+    public async Task CalculateFulfillmentPlan_RejectsEmptyList()
+    {
+        var result = await _tools.CalculateFulfillmentPlan([], "east");
+        result.Error.Should().Contain("No product IDs");
+    }
+
+    [Fact]
+    public async Task CalculateFulfillmentPlan_ReportsUnavailableProducts()
+    {
+        var unknown = Guid.NewGuid().ToString();
+        var result = await _tools.CalculateFulfillmentPlan(
+            [_productId.ToString(), unknown, "not-a-uuid"],
+            "east"
+        );
+        result.AllAvailable.Should().BeFalse();
+        result.UnavailableProducts.Should().Contain(unknown);
+        result.UnavailableProducts.Should().Contain("not-a-uuid");
+        result.TotalItems.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task CalculateFulfillmentPlan_BuildsSingleShipmentPerWarehouse()
+    {
+        var result = await _tools.CalculateFulfillmentPlan([_productId.ToString()], "east");
+        result.Error.Should().BeNull();
+        result.TotalShipments.Should().Be(1);
+        result.TotalShippingCost.Should().BeGreaterThan(0m);
+        result.Shipments.Should().HaveCount(1);
+    }
+
+    // ─────────────────────── place_backorder ─────────────────
+
+    [Fact]
+    public async Task PlaceBackorder_RequiresUserContext()
+    {
+        EnsureUserScope();
+        RequestContext.CurrentUserEmail = "";
+        var result = await _tools.PlaceBackorder(_productId.ToString(), 1);
+        result.Error.Should().Contain("user context");
+    }
+
+    [Fact]
+    public async Task PlaceBackorder_RejectsNonPositiveQuantity()
+    {
+        EnsureUserScope();
+        var result = await _tools.PlaceBackorder(_productId.ToString(), 0);
+        result.Error.Should().Contain("greater than zero");
+    }
+
+    [Fact]
+    public async Task PlaceBackorder_RefusesWhenStockAvailable()
+    {
+        EnsureUserScope();
+        var result = await _tools.PlaceBackorder(_productId.ToString(), 1);
+        result.BackorderPlaced.Should().BeFalse();
+        result.Message.Should().Contain("in stock");
+        result.CurrentStock.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task PlaceBackorder_CreatesBackorderWhenOutOfStock()
+    {
+        EnsureUserScope();
+        await using (var conn = await _pool.OpenAsync())
+        {
+            await conn.ExecuteAsync("UPDATE warehouse_inventory SET quantity = 0");
+        }
+        var result = await _tools.PlaceBackorder(_productId.ToString(), 3);
+        result.BackorderPlaced.Should().BeTrue();
+        result.BackorderId.Should().NotBeNullOrEmpty();
+        result.Quantity.Should().Be(3);
+        result.ExpectedRestock.Should().NotBeNull();
+    }
+
     // ─────────────────────── seed ────────────────────────────
 
     private async Task SeedAsync()
