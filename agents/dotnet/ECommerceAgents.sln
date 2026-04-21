@@ -29,6 +29,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ECommerceAgents.Shared.Test
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ECommerceAgents.OrderManagement.Tests", "tests\ECommerceAgents.OrderManagement.Tests\ECommerceAgents.OrderManagement.Tests.csproj", "{8CED21F9-CACA-4E54-831E-449100C945E9}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ECommerceAgents.PricingPromotions.Tests", "tests\ECommerceAgents.PricingPromotions.Tests\ECommerceAgents.PricingPromotions.Tests.csproj", "{161B1AD2-E1BD-4287-9018-FE06F0909409}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -171,6 +173,18 @@ Global
 		{8CED21F9-CACA-4E54-831E-449100C945E9}.Release|x64.Build.0 = Release|Any CPU
 		{8CED21F9-CACA-4E54-831E-449100C945E9}.Release|x86.ActiveCfg = Release|Any CPU
 		{8CED21F9-CACA-4E54-831E-449100C945E9}.Release|x86.Build.0 = Release|Any CPU
+		{161B1AD2-E1BD-4287-9018-FE06F0909409}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{161B1AD2-E1BD-4287-9018-FE06F0909409}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{161B1AD2-E1BD-4287-9018-FE06F0909409}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{161B1AD2-E1BD-4287-9018-FE06F0909409}.Debug|x64.Build.0 = Debug|Any CPU
+		{161B1AD2-E1BD-4287-9018-FE06F0909409}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{161B1AD2-E1BD-4287-9018-FE06F0909409}.Debug|x86.Build.0 = Debug|Any CPU
+		{161B1AD2-E1BD-4287-9018-FE06F0909409}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{161B1AD2-E1BD-4287-9018-FE06F0909409}.Release|Any CPU.Build.0 = Release|Any CPU
+		{161B1AD2-E1BD-4287-9018-FE06F0909409}.Release|x64.ActiveCfg = Release|Any CPU
+		{161B1AD2-E1BD-4287-9018-FE06F0909409}.Release|x64.Build.0 = Release|Any CPU
+		{161B1AD2-E1BD-4287-9018-FE06F0909409}.Release|x86.ActiveCfg = Release|Any CPU
+		{161B1AD2-E1BD-4287-9018-FE06F0909409}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -187,5 +201,6 @@ Global
 		{ED91455C-C0F8-499F-8AFF-72141B87A7A3} = {A0000000-0000-0000-0000-000000000002}
 		{98F2391B-6BE9-46B2-ACA0-95C84C9562FC} = {A0000000-0000-0000-0000-000000000002}
 		{8CED21F9-CACA-4E54-831E-449100C945E9} = {A0000000-0000-0000-0000-000000000002}
+		{161B1AD2-E1BD-4287-9018-FE06F0909409} = {A0000000-0000-0000-0000-000000000002}
 	EndGlobalSection
 EndGlobal
