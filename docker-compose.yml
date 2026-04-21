@@ -94,6 +94,16 @@ services:
       # Capture LLM input/output content in Aspire GenAI telemetry view
       # Set to "false" in production environments that process PII
       OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: ${OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT:-true}
+      # MAF v1 feature flags — defaults preserve existing behaviour. The .NET
+      # compose set these from day one; the Python compose was missing them
+      # so toggling MAF_NATIVE_EXECUTION / RETURN_HITL_THRESHOLD / etc.
+      # required editing the running container. (Audit fix #6.)
+      MAF_NATIVE_EXECUTION: ${MAF_NATIVE_EXECUTION:-true}
+      MAF_SESSION_BACKEND: ${MAF_SESSION_BACKEND:-postgres}
+      MAF_CHECKPOINT_BACKEND: ${MAF_CHECKPOINT_BACKEND:-postgres}
+      MAF_HANDOFF_MODE: ${MAF_HANDOFF_MODE:-tool}
+      RETURN_HITL_THRESHOLD: ${RETURN_HITL_THRESHOLD:-500}
+      HANDOFF_AUTONOMOUS_MODE: ${HANDOFF_AUTONOMOUS_MODE:-true}
       AGENT_REGISTRY: >-
         {
           "product-discovery": "http://product-discovery:8081",
