@@ -16,6 +16,29 @@ public sealed class ProductTools(DatabasePool pool)
 {
     private readonly DatabasePool _pool = pool;
 
+    /// <summary>
+    /// Whitelist of allowed <c>ORDER BY</c> clauses. Keys come from the
+    /// LLM-facing <c>sortBy</c> parameter; values are SQL-safe strings
+    /// the tool guarantees it will emit. Any value outside this map
+    /// falls through to the default — no user input ever reaches the
+    /// SQL string directly.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, string> SortClauses =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["price_asc"] = "p.price ASC",
+            ["price_desc"] = "p.price DESC",
+            ["rating"] = "p.rating DESC",
+            ["newest"] = "p.created_at DESC",
+        };
+
+    private const string DefaultSortClause = "p.rating DESC, p.review_count DESC";
+
+    /// <summary>Hard ceiling so an LLM-supplied LIMIT can't scan the whole table.</summary>
+    private const int MaxLimit = 100;
+
+    private static int ClampLimit(int requested) => Math.Clamp(requested, 1, MaxLimit);
+
     public IEnumerable<AITool> All() => new AITool[]
     {
         AIFunctionFactory.Create(SearchProducts, nameof(SearchProducts)),
@@ -71,14 +94,12 @@ public sealed class ProductTools(DatabasePool pool)
         Add("p.price", maxPrice, "<=");
         Add("p.rating", minRating, ">=");
 
-        var order = sortBy switch
-        {
-            "price_asc" => "p.price ASC",
-            "price_desc" => "p.price DESC",
-            "rating" => "p.rating DESC",
-            "newest" => "p.created_at DESC",
-            _ => "p.rating DESC, p.review_count DESC",
-        };
+        var order = sortBy is not null && SortClauses.TryGetValue(sortBy, out var clause)
+            ? clause
+            : DefaultSortClause;
+
+        var clampedLimit = ClampLimit(limit);
+        parameters.Add("limit", clampedLimit);
 
         var sql = $@"
             SELECT p.id, p.name, p.description, p.category, p.brand, p.price,
@@ -86,7 +107,7 @@ public sealed class ProductTools(DatabasePool pool)
             FROM products p
             WHERE {string.Join(" AND ", conditions)}
             ORDER BY {order}
-            LIMIT {limit}";
+            LIMIT @limit";
 
         await using var conn = await _pool.OpenAsync();
         var rows = await conn.QueryAsync(sql, parameters);
@@ -195,7 +216,10 @@ public sealed class ProductTools(DatabasePool pool)
             LIMIT @limit";
 
         await using var conn = await _pool.OpenAsync();
-        var rows = await conn.QueryAsync(sql, new { days = days.ToString(), category, limit });
+        var rows = await conn.QueryAsync(
+            sql,
+            new { days = days.ToString(), category, limit = ClampLimit(limit) }
+        );
         return rows.Select(r => new TrendingProduct(
             Id: ((Guid)r.id).ToString(),
             Name: (string)r.name,
