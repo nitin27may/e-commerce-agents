@@ -31,6 +31,8 @@
 
     <PackageReference Include="YamlDotNet" />
 
+    <PackageReference Include="Polly" />
+
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 </Project>
