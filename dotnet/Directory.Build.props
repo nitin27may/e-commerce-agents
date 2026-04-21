@@ -1,0 +1,20 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningsAsErrors />
+    <WarningsNotAsErrors>NU5104</WarningsNotAsErrors>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <Authors>Nitin Kumar Singh</Authors>
+    <Copyright>Copyright (c) $([System.DateTime]::Now.Year)</Copyright>
+    <RepositoryUrl>https://github.com/nitin27may/e-commerce-agents</RepositoryUrl>
+  </PropertyGroup>
+
+  <!--
+    All projects use central package management via Directory.Packages.props at the repo root (one level up).
+    Project-level <PackageReference> entries omit the Version attribute.
+  -->
+</Project>

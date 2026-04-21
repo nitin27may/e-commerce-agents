@@ -15,12 +15,34 @@ Companion demo repo for the AI article series on [nitinksingh.com](https://nitin
 
 **This is v1 — the Python version is live today.** It runs end-to-end: six specialist agents, orchestrator, marketplace, auth, telemetry, and a full Next.js frontend.
 
-Several larger capabilities are actively in progress and will land in upcoming releases. Track them in the [Roadmap](#roadmap) section below. The **.NET / C# port** for teams building in the Microsoft ecosystem is also under active development and will be released as a sibling repository.
+Several larger capabilities are actively in progress and will land in upcoming releases. Track them in the [Roadmap](#roadmap) section below. The **.NET / C# port** for teams building in the Microsoft ecosystem is scaffolded at [`dotnet/`](./dotnet/) and ships module-by-module via the plans in [`plans/dotnet-port/`](./plans/dotnet-port/).
+
+---
+
+## Learning Path — *MAF v1: Python and .NET*
+
+A new step-by-step tutorial series walks through **every Microsoft Agent Framework concept** — agents, tools, memory, middleware, workflow primitives, all five orchestration patterns, HITL, checkpoints, declarative workflows, visualization — with runnable examples in **both Python and .NET**. This repository is the capstone.
+
+**Start here:** [`tutorials/README.md`](./tutorials/README.md)
+
+| Tier | Chapters | Topics |
+|------|----------|--------|
+| 1 · Core Agent | [01–04](./tutorials/) | First agent · tools · streaming · sessions |
+| 2 · Agent Internals | 05–08 | Context providers · middleware · OpenTelemetry · MCP |
+| 3 · Workflow Foundations | 09–11 | Executors · edges · events · builder · agents in workflows |
+| 4 · Orchestrations | 12–16 | Sequential · Concurrent · Handoff · Group Chat · Magentic |
+| 5 · Advanced | 17–20 | HITL · checkpoints · declarative YAML · visualization |
+| Capstone | 21 | Guided tour of this repo |
+
+Each chapter has `python/`, `dotnet/`, `tests/`, a Hugo-ready article draft (`README.md`), and a per-chapter plan (`PLAN.md`). Chapters cross-post to [nitinksingh.com](https://nitinksingh.com) under the *MAF v1: Python and .NET* series, complementing the [original Python-only series](https://nitinksingh.com/posts/building-a-multi-agent-e-commerce-platform-the-complete-guide/).
+
+> Looking for implementation plans? See [`plans/README.md`](./plans/README.md) for the .NET port, refactor-to-MAF-workflows, and publishing sub-plans.
 
 ---
 
 ## Table of Contents
 
+- [Learning Path](#learning-path--maf-v1-python-and-net)
 - [Architecture](#architecture)
 - [Quick Start](#quick-start)
 - [Test Users](#test-users)

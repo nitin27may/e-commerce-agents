@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <Description>Shared library for the .NET ECommerceAgents port: config, auth, telemetry, context providers, prompt loader, DB pool.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Placeholder references. Full set lands in plans/dotnet-port/01-shared.md. -->
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="YamlDotNet" />
+  </ItemGroup>
+</Project>

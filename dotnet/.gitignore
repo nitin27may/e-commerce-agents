@@ -1,0 +1,23 @@
+# .NET build artifacts
+bin/
+obj/
+*.user
+*.suo
+.vs/
+.vscode/
+
+# NuGet
+packages/
+*.nuget.props
+*.nuget.targets
+
+# Test results
+TestResults/
+coverage.cobertura.xml
+coverage.opencover.xml
+*.trx
+.coverlet/
+
+# Rider
+.idea/
+*.sln.iml

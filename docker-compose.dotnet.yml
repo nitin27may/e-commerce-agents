@@ -1,0 +1,195 @@
+# ============================================================
+# E-Commerce Agents — Docker Compose (.NET stack)
+# Usage: docker compose -f docker-compose.dotnet.yml up --build
+# ============================================================
+# Mirrors docker-compose.yml but substitutes .NET agents for the Python
+# agents. Infrastructure (Postgres, Redis, Aspire, seeder, frontend) and
+# environment contract are identical so the Next.js frontend works against
+# either stack by toggling NEXT_PUBLIC_BACKEND_STACK.
+#
+# Dockerfiles for each .NET project are added as each plans/dotnet-port/
+# sub-plan lands. Phase 0 scaffolds only the compose structure; attempting
+# to build it today will fail on missing Dockerfiles — this is expected.
+# ============================================================
+
+services:
+  # ── Infrastructure ─────────────────────────────────────────
+
+  db:
+    image: pgvector/pgvector:pg16
+    ports: ["5432:5432"]
+    environment:
+      POSTGRES_DB: ecommerce_agents
+      POSTGRES_USER: ecommerce
+      POSTGRES_PASSWORD: ecommerce_secret
+    volumes:
+      - pgdata-dotnet:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ecommerce -d ecommerce_agents"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  aspire:
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:latest
+    ports:
+      - "18888:18888"
+      - "18890:18889"
+    environment:
+      DASHBOARD__FRONTEND__AUTHMODE: Unsecured
+
+  # ── Seeder (reuses the Python script; single source of truth) ──
+
+  seeder:
+    build:
+      context: ./agents
+      args:
+        AGENT_NAME: orchestrator
+    working_dir: /app
+    command: uv run --no-project python -m scripts.seed
+    volumes:
+      - ./scripts:/app/scripts:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://ecommerce:ecommerce_secret@db:5432/ecommerce_agents
+    restart: "no"
+    profiles: ["seed"]
+
+  # ── Orchestrator (.NET) ────────────────────────────────────
+
+  orchestrator:
+    build:
+      context: ./dotnet
+      dockerfile: src/ECommerceAgents.Orchestrator/Dockerfile
+    ports: ["8080:8080"]
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      aspire: { condition: service_started }
+    environment: &agent-env
+      ConnectionStrings__Postgres: Host=db;Port=5432;Database=ecommerce_agents;Username=ecommerce;Password=ecommerce_secret
+      ConnectionStrings__Redis: redis:6379
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4.1}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_KEY: ${AZURE_OPENAI_KEY:-}
+      AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2025-03-01-preview}
+      AZURE_EMBEDDING_DEPLOYMENT: ${AZURE_EMBEDDING_DEPLOYMENT:-}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production-use-random-256-bit-key}
+      AGENT_SHARED_SECRET: ${AGENT_SHARED_SECRET:-agent-internal-shared-secret}
+      OTEL_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://aspire:18889
+      OTEL_SERVICE_NAME: ecommerce.orchestrator.dotnet
+      OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: ${OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT:-true}
+      # New optional MAF feature flags (defaults preserve existing behavior)
+      MAF_NATIVE_EXECUTION: ${MAF_NATIVE_EXECUTION:-true}
+      MAF_SESSION_BACKEND: ${MAF_SESSION_BACKEND:-postgres}
+      MAF_CHECKPOINT_BACKEND: ${MAF_CHECKPOINT_BACKEND:-postgres}
+      RETURN_HITL_THRESHOLD: ${RETURN_HITL_THRESHOLD:-500}
+      HANDOFF_AUTONOMOUS_MODE: ${HANDOFF_AUTONOMOUS_MODE:-true}
+      AGENT_REGISTRY: >-
+        {
+          "product-discovery": "http://product-discovery:8081",
+          "order-management": "http://order-management:8082",
+          "pricing-promotions": "http://pricing-promotions:8083",
+          "review-sentiment": "http://review-sentiment:8084",
+          "inventory-fulfillment": "http://inventory-fulfillment:8085"
+        }
+    profiles: ["agents"]
+
+  # ── Specialist Agents (.NET) ───────────────────────────────
+
+  product-discovery:
+    build:
+      context: ./dotnet
+      dockerfile: src/ECommerceAgents.ProductDiscovery/Dockerfile
+    ports: ["8081:8081"]
+    depends_on:
+      db: { condition: service_healthy }
+      aspire: { condition: service_started }
+    environment:
+      <<: *agent-env
+      OTEL_SERVICE_NAME: ecommerce.product-discovery.dotnet
+    profiles: ["agents"]
+
+  order-management:
+    build:
+      context: ./dotnet
+      dockerfile: src/ECommerceAgents.OrderManagement/Dockerfile
+    ports: ["8082:8082"]
+    depends_on:
+      db: { condition: service_healthy }
+      aspire: { condition: service_started }
+    environment:
+      <<: *agent-env
+      OTEL_SERVICE_NAME: ecommerce.order-management.dotnet
+    profiles: ["agents"]
+
+  pricing-promotions:
+    build:
+      context: ./dotnet
+      dockerfile: src/ECommerceAgents.PricingPromotions/Dockerfile
+    ports: ["8083:8083"]
+    depends_on:
+      db: { condition: service_healthy }
+      aspire: { condition: service_started }
+    environment:
+      <<: *agent-env
+      OTEL_SERVICE_NAME: ecommerce.pricing-promotions.dotnet
+    profiles: ["agents"]
+
+  review-sentiment:
+    build:
+      context: ./dotnet
+      dockerfile: src/ECommerceAgents.ReviewSentiment/Dockerfile
+    ports: ["8084:8084"]
+    depends_on:
+      db: { condition: service_healthy }
+      aspire: { condition: service_started }
+    environment:
+      <<: *agent-env
+      OTEL_SERVICE_NAME: ecommerce.review-sentiment.dotnet
+    profiles: ["agents"]
+
+  inventory-fulfillment:
+    build:
+      context: ./dotnet
+      dockerfile: src/ECommerceAgents.InventoryFulfillment/Dockerfile
+    ports: ["8085:8085"]
+    depends_on:
+      db: { condition: service_healthy }
+      aspire: { condition: service_started }
+    environment:
+      <<: *agent-env
+      OTEL_SERVICE_NAME: ecommerce.inventory-fulfillment.dotnet
+    profiles: ["agents"]
+
+  # ── Frontend (same Next.js; points at .NET backend on :8080) ──
+
+  frontend:
+    build:
+      context: ./web
+    ports: ["3000:3000"]
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8080
+      NEXT_PUBLIC_BACKEND_STACK: dotnet
+    profiles: ["frontend"]
+
+volumes:
+  pgdata-dotnet:

@@ -43,6 +43,8 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
+    "pytest-cov>=5.0",
+    "testcontainers[postgres]>=4.8",
     "ruff>=0.8",
 ]
 
@@ -62,3 +64,26 @@ select = ["E", "F", "I", "N", "W", "UP"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "-ra",
+]
+markers = [
+    "integration: tests that require a live Postgres container (via testcontainers)",
+    "slow: tests that take more than a few seconds",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["shared", "orchestrator", "product_discovery", "order_management", "pricing_promotions", "review_sentiment", "inventory_fulfillment"]
+omit = ["**/tests/*", "**/__init__.py"]
+
+[tool.coverage.report]
+fail_under = 70
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]

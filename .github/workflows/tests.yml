@@ -1,0 +1,164 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-tests:
+    name: Python · pytest + coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install Python 3.12
+        run: uv python install 3.12
+
+      - name: Sync dependencies
+        working-directory: agents
+        run: uv sync --extra dev
+
+      - name: Run pytest with coverage
+        working-directory: agents
+        run: |
+          uv run pytest \
+            --cov \
+            --cov-report=xml \
+            --cov-report=term-missing \
+            --cov-fail-under=70
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-coverage
+          path: agents/coverage.xml
+          retention-days: 30
+
+  dotnet-tests:
+    name: .NET · dotnet test + coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Restore
+        working-directory: dotnet
+        run: dotnet restore ECommerceAgents.sln
+
+      - name: Build
+        working-directory: dotnet
+        run: dotnet build ECommerceAgents.sln --configuration Release --no-restore
+
+      - name: Test
+        working-directory: dotnet
+        run: |
+          dotnet test ECommerceAgents.sln \
+            --configuration Release \
+            --no-build \
+            --logger "trx;LogFileName=test-results.trx" \
+            --collect:"XPlat Code Coverage" \
+            --results-directory TestResults
+
+      - name: Upload .NET test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dotnet-test-results
+          path: dotnet/TestResults/
+          retention-days: 30
+
+  playwright-e2e:
+    name: Playwright · web E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # Phase 0 scaffold: only run when the web/e2e/ suite is non-empty.
+    # Subsequent chapters will flip this gate off and make this job required.
+    if: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install web deps
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        working-directory: web
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Start backend (Python stack)
+        run: docker compose up -d --wait
+
+      - name: Run Playwright
+        working-directory: web
+        run: pnpm exec playwright test
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: web/playwright-report/
+          retention-days: 30
+
+  workflow-visualization-drift:
+    name: Workflow diagrams · drift check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Gated on an explicit flag until visualization lands in Phase 7.
+    if: ${{ vars.WORKFLOW_VISUALIZATION_ON_BUILD == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Sync deps
+        working-directory: agents
+        run: uv sync --extra dev
+
+      - name: Regenerate diagrams
+        working-directory: agents
+        run: uv run python -m scripts.visualize_workflows
+
+      - name: Fail on uncommitted diff
+        run: |
+          if ! git diff --quiet docs/workflows/; then
+            echo "::error::workflow diagrams are out of date. Re-run scripts/visualize_workflows.py and commit."
+            git diff docs/workflows/
+            exit 1
+          fi

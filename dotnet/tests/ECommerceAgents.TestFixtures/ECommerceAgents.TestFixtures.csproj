@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <IsPackable>false</IsPackable>
+    <Description>
+      Shared test fixtures for every ECommerceAgents test project:
+      - PostgresFixture: one Postgres testcontainer per test session, schema-migrated from docker/postgres/init.sql
+      - FakeChatClient: deterministic IChatClient for LLM-less unit tests
+      - AgentRegistryFixture: stub A2A endpoints for cross-specialist testing
+    </Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ECommerceAgents.Shared\ECommerceAgents.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Moq" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+</Project>
