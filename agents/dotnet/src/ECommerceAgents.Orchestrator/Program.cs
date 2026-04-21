@@ -11,6 +11,10 @@ using Microsoft.Agents.AI;
 var builder = WebApplication.CreateBuilder(args);
 
 var settings = AgentSettingsLoader.Load(builder.Configuration);
+AgentSettingsValidator.Validate(
+    settings,
+    LoggerFactory.Create(lb => lb.AddConsole()).CreateLogger("SettingsValidator")
+);
 builder.Services.AddSingleton(settings);
 builder.Services.AddSingleton(new DatabasePool(settings));
 builder.Services.AddSingleton(new JwtTokenService(settings));

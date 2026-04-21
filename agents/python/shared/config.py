@@ -13,10 +13,24 @@ Existing names take precedence; the aliases exist so MAF docs read naturally
 without breaking our current `.env` files.
 """
 
+import logging
 from pathlib import Path
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
+
+# Secrets below this length are considered unsafe for HS256 and are also
+# the shape of the shipped `.env.example` placeholders. 32 bytes (256 bits)
+# matches both HS256's minimum key size and MAF's .NET validator.
+_MIN_SECRET_BYTES = 32
+_UNSAFE_SECRET_DEFAULTS = {
+    "change-me-in-production",
+    "change-me-generate-a-random-256-bit-key",
+    "agent-internal-secret",
+    "agent-internal-shared-secret",
+}
 
 # Resolve .env once, relative to the repo root, so the eval/seed scripts pick
 # it up regardless of the cwd they're launched from. Inside the Docker image
@@ -117,6 +131,36 @@ class Settings(BaseSettings):
         extra="ignore",
         populate_by_name=True,
     )
+
+    @model_validator(mode="after")
+    def _validate_secrets(self) -> "Settings":
+        """Fail fast on weak / default secrets in production; warn in dev.
+
+        HS256 demands at least a 256-bit key; shorter secrets are stretched
+        via SHA-256 on the .NET side but nothing stops PyJWT from signing
+        with a 20-byte placeholder. Matching both sides means rejecting the
+        placeholders we ship in ``.env.example`` whenever we're not in
+        development — and logging a loud warning even then.
+        """
+        is_prod = self.ENVIRONMENT.lower() not in {"development", "dev", "test"}
+
+        def _check(name: str, value: str) -> None:
+            stripped = value.strip()
+            too_short = len(stripped.encode("utf-8")) < _MIN_SECRET_BYTES
+            is_default = stripped in _UNSAFE_SECRET_DEFAULTS
+            if too_short or is_default:
+                msg = (
+                    f"{name} is unsafe ("
+                    + ("placeholder default" if is_default else f"{len(stripped)} chars < {_MIN_SECRET_BYTES}")
+                    + "). Generate a fresh random 256-bit value."
+                )
+                if is_prod:
+                    raise ValueError(msg)
+                logger.warning("settings.secret_unsafe var=%s reason=%s", name, msg)
+
+        _check("JWT_SECRET", self.JWT_SECRET)
+        _check("AGENT_SHARED_SECRET", self.AGENT_SHARED_SECRET)
+        return self
 
 
 settings = Settings()

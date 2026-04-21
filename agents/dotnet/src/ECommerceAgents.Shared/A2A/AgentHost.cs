@@ -50,6 +50,12 @@ public static class AgentHost
         var builder = WebApplication.CreateBuilder();
 
         var settings = AgentSettingsLoader.Load(builder.Configuration);
+        AgentSettingsValidator.Validate(
+            settings,
+            LoggerFactory
+                .Create(lb => lb.AddConsole())
+                .CreateLogger<AgentHostMarker>()
+        );
         builder.Services.AddSingleton(settings);
         builder.Services.AddSingleton(new DatabasePool(settings));
         builder.Services.AddSingleton(new JwtTokenService(settings));
