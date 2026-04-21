@@ -1,7 +1,24 @@
 """Lightweight A2A-compatible host for specialist agents.
 
-Uses the OpenAI chat completions API directly (not MAF's Responses API)
-for compatibility with all Azure OpenAI API versions.
+Two execution paths live here, switchable via the ``MAF_NATIVE_EXECUTION``
+env flag (plans/refactor/03-retire-agent-host-custom-loop.md):
+
+- When ``MAF_NATIVE_EXECUTION=true`` (default, Phase 7 step 03+):
+  ``create_agent_app`` drives each request through MAF's native
+  ``agent.run()`` / ``agent.run(..., stream=True)`` — the canonical
+  code path that the tutorial series teaches. Tool definitions and
+  system prompts are owned by the ``Agent`` object itself.
+
+- When ``MAF_NATIVE_EXECUTION=false``: the legacy custom
+  ``_run_agent_with_tools`` / ``_run_agent_with_tools_stream``
+  functions run instead. They use the OpenAI chat-completions API
+  directly to dodge an older Azure API-version incompatibility. Kept
+  as a rollback escape hatch behind the flag; will be removed once
+  production deployments are settled on the native path.
+
+Both paths produce identical observable output on the ``/message:send``
+HTTP contract, so the flag can be flipped per-environment without any
+code change on the consumer side.
 """
 
 from __future__ import annotations
@@ -19,6 +36,51 @@ from shared.config import settings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+# ─────────────────────── MAF-native execution ───────────────────────
+
+
+def _history_as_maf_messages(history: list[dict] | None, user_message: str) -> list[Any]:
+    """Convert the A2A history payload + current user message into MAF
+    :class:`agent_framework.Message` objects.
+
+    The legacy code path kept history as raw OpenAI-style dicts and stitched
+    them into the prompt by hand. The native path hands the full list to
+    ``agent.run`` which is responsible for threading it through the
+    conversation.
+    """
+    from agent_framework import Message
+
+    messages: list[Any] = []
+    if history:
+        for entry in history:
+            role = entry.get("role")
+            content = entry.get("content")
+            if role in ("user", "assistant") and content:
+                messages.append(Message(role=role, contents=[content]))
+    messages.append(Message(role="user", contents=[user_message]))
+    return messages
+
+
+async def _run_agent_native(agent: Any, user_message: str, history: list[dict] | None = None) -> str:
+    """Run an agent via MAF's native execution path and return the answer text."""
+    messages = _history_as_maf_messages(history, user_message)
+    response = await agent.run(messages)
+    return response.text or ""
+
+
+async def _run_agent_native_stream(
+    agent: Any,
+    user_message: str,
+    history: list[dict] | None = None,
+) -> AsyncGenerator[str, None]:
+    """Streaming variant — yields the same text chunks the legacy loop produced."""
+    messages = _history_as_maf_messages(history, user_message)
+    async for update in agent.run(messages, stream=True):
+        text = getattr(update, "text", None)
+        if text:
+            yield text
 
 
 async def _run_agent_with_tools(
@@ -383,11 +445,19 @@ def create_agent_app(
 
             from shared.telemetry import agent_run_span
             with agent_run_span(agent_name):
-                response_text = await _run_agent_with_tools(
-                    system_prompt, agent_tools, message,
-                    history=history,
-                    user_context=user_context,
-                )
+                if settings.MAF_NATIVE_EXECUTION:
+                    # New path: agent already owns its tools/instructions/providers.
+                    # History is threaded through MAF Message objects; user context
+                    # is injected by the ContextProvider chain registered on the
+                    # Agent (see shared/context_providers.py).
+                    response_text = await _run_agent_native(agent, message, history=history)
+                else:
+                    # Legacy path — custom OpenAI chat-completions loop.
+                    response_text = await _run_agent_with_tools(
+                        system_prompt, agent_tools, message,
+                        history=history,
+                        user_context=user_context,
+                    )
             return {"response": response_text}
 
         except Exception:

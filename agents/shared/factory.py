@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 import openai
-from agent_framework.openai import OpenAIChatClient
+from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient
 
 from shared.config import settings
 
@@ -61,8 +61,18 @@ def _validate_azure() -> None:
 
 # ─────────────────────── LLM clients ───────────────────────
 
-def get_chat_client() -> OpenAIChatClient:
-    """Return a MAF chat client configured for the active LLM_PROVIDER."""
+def get_chat_client() -> OpenAIChatClient | OpenAIChatCompletionClient:
+    """Return a MAF chat client configured for the active LLM_PROVIDER.
+
+    * ``openai``  → ``OpenAIChatClient`` (Responses API — public OpenAI
+      supports it on every model).
+    * ``azure``   → ``OpenAIChatCompletionClient`` (Chat Completions API —
+      universally supported across Azure OpenAI deployments; the
+      Responses-API variant only works on the newest Azure regions).
+
+    This matches the decision documented in the Ch01/Ch07 tutorial code —
+    see docs/architecture.md for the full rationale.
+    """
     provider = settings.LLM_PROVIDER.lower()
 
     if provider == "openai":
@@ -76,19 +86,14 @@ def get_chat_client() -> OpenAIChatClient:
     if provider == "azure":
         _validate_azure()
         api_version = settings.AZURE_OPENAI_API_VERSION
-        if api_version < "2025-03-01":
-            api_version = "2025-03-01-preview"
-            logger.warning(
-                "Upgraded AZURE_OPENAI_API_VERSION to %s (MAF requires Responses API)",
-                api_version,
-            )
         logger.info(
-            "Creating Azure OpenAI chat client (deployment=%s, endpoint=%s, api_version=%s)",
+            "Creating Azure OpenAI chat-completions client "
+            "(deployment=%s, endpoint=%s, api_version=%s)",
             settings.AZURE_OPENAI_DEPLOYMENT,
             settings.AZURE_OPENAI_ENDPOINT,
             api_version,
         )
-        return OpenAIChatClient(
+        return OpenAIChatCompletionClient(
             model=settings.AZURE_OPENAI_DEPLOYMENT,
             azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
             api_key=settings.AZURE_OPENAI_KEY,
