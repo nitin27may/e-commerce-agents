@@ -105,18 +105,18 @@ esac
 
 section "Workspace structure"
 check "tutorials/ present" "[[ -d tutorials ]]"
-check "dotnet/ solution present" "[[ -f dotnet/ECommerceAgents.sln ]]"
+check "agents/dotnet/ solution present" "[[ -f agents/dotnet/ECommerceAgents.sln ]]"
 check "docker-compose.yml present" "[[ -f docker-compose.yml ]]"
 check "docker-compose.dotnet.yml present" "[[ -f docker-compose.dotnet.yml ]]"
-check "agents/ Python backend present" "[[ -d agents ]]"
+check "agents/python/ backend present" "[[ -d agents/python ]]"
 check "web/ Next.js frontend present" "[[ -d web ]]"
 
 section "Quick-build smoke"
 if command -v dotnet >/dev/null 2>&1; then
-    if (cd dotnet && dotnet build --nologo --verbosity quiet 2>&1 | grep -q "Build succeeded"); then
+    if (cd agents/dotnet && dotnet build --nologo --verbosity quiet 2>&1 | grep -q "Build succeeded"); then
         info ".NET solution builds green"
     else
-        warn ".NET solution build failed (run 'cd dotnet && dotnet build' for details)"
+        warn ".NET solution build failed (run 'cd agents/dotnet && dotnet build' for details)"
         fail_count=$((fail_count + 1))
     fi
 else

@@ -53,7 +53,7 @@ services:
 
   seeder:
     build:
-      context: ./agents
+      context: ./agents/python
       args:
         AGENT_NAME: orchestrator
     working_dir: /app
@@ -72,8 +72,8 @@ services:
 
   orchestrator:
     build:
-      context: ./dotnet
-      dockerfile: src/ECommerceAgents.Orchestrator/Dockerfile
+      context: .
+      dockerfile: agents/dotnet/src/ECommerceAgents.Orchestrator/Dockerfile
     ports: ["8080:8080"]
     depends_on:
       db: { condition: service_healthy }
@@ -117,8 +117,8 @@ services:
 
   product-discovery:
     build:
-      context: ./dotnet
-      dockerfile: src/ECommerceAgents.ProductDiscovery/Dockerfile
+      context: .
+      dockerfile: agents/dotnet/src/ECommerceAgents.ProductDiscovery/Dockerfile
     ports: ["8081:8081"]
     depends_on:
       db: { condition: service_healthy }
@@ -130,8 +130,8 @@ services:
 
   order-management:
     build:
-      context: ./dotnet
-      dockerfile: src/ECommerceAgents.OrderManagement/Dockerfile
+      context: .
+      dockerfile: agents/dotnet/src/ECommerceAgents.OrderManagement/Dockerfile
     ports: ["8082:8082"]
     depends_on:
       db: { condition: service_healthy }
@@ -143,8 +143,8 @@ services:
 
   pricing-promotions:
     build:
-      context: ./dotnet
-      dockerfile: src/ECommerceAgents.PricingPromotions/Dockerfile
+      context: .
+      dockerfile: agents/dotnet/src/ECommerceAgents.PricingPromotions/Dockerfile
     ports: ["8083:8083"]
     depends_on:
       db: { condition: service_healthy }
@@ -156,8 +156,8 @@ services:
 
   review-sentiment:
     build:
-      context: ./dotnet
-      dockerfile: src/ECommerceAgents.ReviewSentiment/Dockerfile
+      context: .
+      dockerfile: agents/dotnet/src/ECommerceAgents.ReviewSentiment/Dockerfile
     ports: ["8084:8084"]
     depends_on:
       db: { condition: service_healthy }
@@ -169,8 +169,8 @@ services:
 
   inventory-fulfillment:
     build:
-      context: ./dotnet
-      dockerfile: src/ECommerceAgents.InventoryFulfillment/Dockerfile
+      context: .
+      dockerfile: agents/dotnet/src/ECommerceAgents.InventoryFulfillment/Dockerfile
     ports: ["8085:8085"]
     depends_on:
       db: { condition: service_healthy }

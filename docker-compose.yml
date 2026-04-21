@@ -46,7 +46,7 @@ services:
 
   seeder:
     build:
-      context: ./agents
+      context: ./agents/python
       args:
         AGENT_NAME: orchestrator
     working_dir: /app
@@ -65,7 +65,7 @@ services:
 
   orchestrator:
     build:
-      context: ./agents
+      context: ./agents/python
       args:
         AGENT_NAME: orchestrator
         AGENT_PORT: 8080
@@ -108,7 +108,7 @@ services:
 
   product-discovery:
     build:
-      context: ./agents
+      context: ./agents/python
       args: { AGENT_NAME: product_discovery, AGENT_PORT: 8081 }
     ports: ["8081:8081"]
     depends_on:
@@ -121,7 +121,7 @@ services:
 
   order-management:
     build:
-      context: ./agents
+      context: ./agents/python
       args: { AGENT_NAME: order_management, AGENT_PORT: 8082 }
     ports: ["8082:8082"]
     depends_on:
@@ -134,7 +134,7 @@ services:
 
   pricing-promotions:
     build:
-      context: ./agents
+      context: ./agents/python
       args: { AGENT_NAME: pricing_promotions, AGENT_PORT: 8083 }
     ports: ["8083:8083"]
     depends_on:
@@ -147,7 +147,7 @@ services:
 
   review-sentiment:
     build:
-      context: ./agents
+      context: ./agents/python
       args: { AGENT_NAME: review_sentiment, AGENT_PORT: 8084 }
     ports: ["8084:8084"]
     depends_on:
@@ -160,7 +160,7 @@ services:
 
   inventory-fulfillment:
     build:
-      context: ./agents
+      context: ./agents/python
       args: { AGENT_NAME: inventory_fulfillment, AGENT_PORT: 8085 }
     ports: ["8085:8085"]
     depends_on:

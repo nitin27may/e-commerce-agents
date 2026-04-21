@@ -27,21 +27,21 @@ Companion demo repo for the AI article series on nitinksingh.com.
 docker compose up --build
 
 # Run a single agent locally (for dev)
-cd agents && uv run uvicorn product_discovery.main:app --port 8081 --reload
+cd agents/python && uv run uvicorn product_discovery.main:app --port 8081 --reload
 
 # Run frontend locally
 cd web && pnpm dev
 
 # Generate embeddings
-cd agents && uv run python -m scripts.generate_embeddings
+cd agents/python && uv run python -m scripts.generate_embeddings
 
 # Lint Python
-cd agents && uv run ruff check .
-cd agents && uv run ruff format --check .
+cd agents/python && uv run ruff check .
+cd agents/python && uv run ruff format --check .
 
 # Run Python tests
-cd agents && uv run pytest
-cd agents && uv run pytest tests/test_specific.py -k "test_name"
+cd agents/python && uv run pytest
+cd agents/python && uv run pytest tests/test_specific.py -k "test_name"
 
 # Lint frontend
 cd web && pnpm lint
@@ -68,13 +68,13 @@ Each specialist agent runs as an independent microservice with its own port and 
 
 ### MAF Package Patch
 
-`agents/patch_maf.py` — The agent-framework package ships with an empty `__init__.py`. The Dockerfile runs this patch before starting agents to re-export public APIs. This is a workaround for a packaging bug in MAF v1.0.
+`agents/python/patch_maf.py` — The agent-framework package ships with an empty `__init__.py`. The Dockerfile runs this patch before starting agents to re-export public APIs. This is a workaround for a packaging bug in MAF v1.0.
 
 ### YAML Prompt Composition System
 
-Prompts are NOT hardcoded strings. `shared/prompt_loader.py` loads from `agents/config/prompts/{agent_name}.yaml` and composes: base prompt + grounding-rules (shared) + role-specific instructions + schema context + tool examples.
+Prompts are NOT hardcoded strings. `shared/prompt_loader.py` loads from `agents/python/config/prompts/{agent_name}.yaml` and composes: base prompt + grounding-rules (shared) + role-specific instructions + schema context + tool examples.
 
-Shared prompt fragments live in `agents/config/prompts/_shared/` (grounding-rules.yaml, schema-context.yaml, tool-examples.yaml).
+Shared prompt fragments live in `agents/python/config/prompts/_shared/` (grounding-rules.yaml, schema-context.yaml, tool-examples.yaml).
 
 `load_prompt(agent_name, user_role)` is called per-request, making prompts role-aware (admin sees different instructions than customer).
 
@@ -173,5 +173,5 @@ AZURE_OPENAI_API_VERSION=2024-12-01-preview
 - Use `npm` or `yarn` — use `pnpm` for Node
 - Skip type hints on any function
 - Use `requests` — use `httpx` for async HTTP
-- Hardcode prompts in Python — use YAML config in `agents/config/prompts/`
+- Hardcode prompts in Python — use YAML config in `agents/python/config/prompts/`
 - Pass user identity as function args — use ContextVars from `shared/context.py`

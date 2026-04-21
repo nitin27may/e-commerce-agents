@@ -15,7 +15,7 @@ Companion demo repo for the AI article series on [nitinksingh.com](https://nitin
 
 **This is v1 — the Python version is live today.** It runs end-to-end: six specialist agents, orchestrator, marketplace, auth, telemetry, and a full Next.js frontend.
 
-Several larger capabilities are actively in progress and will land in upcoming releases. Track them in the [Roadmap](#roadmap) section below. The **.NET / C# port** for teams building in the Microsoft ecosystem is scaffolded at [`dotnet/`](./dotnet/) and ships module-by-module via the plans in [`plans/dotnet-port/`](./plans/dotnet-port/).
+Several larger capabilities are actively in progress and will land in upcoming releases. Track them in the [Roadmap](#roadmap) section below. The **.NET / C# port** for teams building in the Microsoft ecosystem lives at [`agents/dotnet/`](./agents/dotnet/) alongside the Python backend at [`agents/python/`](./agents/python/); module-by-module plans are in [`plans/dotnet-port/`](./plans/dotnet-port/).
 
 ---
 
@@ -255,25 +255,29 @@ Try these in the chat after logging in:
 e-commerce-agents/
 ├── docker-compose.yml               # 11 services with profiles
 ├── .env.example                     # Environment template
-├── agents/                          # Python backend
-│   ├── Dockerfile                   # Multi-target (ARG AGENT_NAME)
-│   ├── pyproject.toml               # Dependencies (MAF, OTel, FastAPI)
-│   ├── shared/                      # Shared library
-│   │   ├── telemetry.py            # OTel auto-instrumentation
-│   │   ├── config.py               # Pydantic Settings
-│   │   ├── db.py                   # asyncpg connection pool
-│   │   ├── auth.py                 # JWT + inter-agent auth
-│   │   ├── agent_factory.py        # OpenAI / Azure client factory
-│   │   ├── agent_host.py           # A2A-compatible agent host
-│   │   ├── prompt_loader.py        # YAML prompt loader
-│   │   └── tools/                  # Shared tool functions
-│   ├── config/prompts/             # YAML prompt configs per agent
-│   ├── orchestrator/               # Customer Support (:8080)
-│   ├── product_discovery/          # Product Discovery (:8081)
-│   ├── order_management/           # Order Management (:8082)
-│   ├── pricing_promotions/         # Pricing & Promotions (:8083)
-│   ├── review_sentiment/           # Review & Sentiment (:8084)
-│   └── inventory_fulfillment/      # Inventory & Fulfillment (:8085)
+├── agents/                          # Both backends live here
+│   ├── python/                      # Python backend
+│   │   ├── Dockerfile               # Multi-target (ARG AGENT_NAME)
+│   │   ├── pyproject.toml           # Dependencies (MAF, OTel, FastAPI)
+│   │   ├── shared/                  # Shared library (config, auth, DB, prompts, telemetry, session)
+│   │   ├── config/prompts/          # YAML prompt configs (shared with .NET)
+│   │   ├── orchestrator/            # Customer Support (:8080)
+│   │   ├── product_discovery/       # Product Discovery (:8081)
+│   │   ├── order_management/        # Order Management (:8082)
+│   │   ├── pricing_promotions/      # Pricing & Promotions (:8083)
+│   │   ├── review_sentiment/        # Review & Sentiment (:8084)
+│   │   └── inventory_fulfillment/   # Inventory & Fulfillment (:8085)
+│   └── dotnet/                      # .NET backend — parity with Python
+│       ├── ECommerceAgents.sln
+│       ├── Directory.Packages.props # Central package versions
+│       └── src/
+│           ├── ECommerceAgents.Shared/         # Cross-cutting library
+│           ├── ECommerceAgents.Orchestrator/   # :8080
+│           ├── ECommerceAgents.ProductDiscovery/
+│           ├── ECommerceAgents.OrderManagement/
+│           ├── ECommerceAgents.PricingPromotions/
+│           ├── ECommerceAgents.ReviewSentiment/
+│           └── ECommerceAgents.InventoryFulfillment/
 ├── docker/postgres/
 │   └── init.sql                    # 24-table schema + pgvector
 ├── scripts/
@@ -374,7 +378,7 @@ Today, `search_products` uses `ILIKE '%word%'` pattern matching split on whitesp
 
 - [ ] **Postgres full-text search in `search_products`** — add a generated `tsvector` column on `products(name, description, brand)`, a GIN index, and replace the `ILIKE` loop with `plainto_tsquery` + `ts_rank` for stemming, multi-word matching, and proper relevance ordering.
 - [ ] **Hybrid retrieval (FTS + vector)** — combine lexical (FTS) and semantic (pgvector) scores via Reciprocal Rank Fusion in a single CTE. Beats either approach alone on ambiguous queries like "something cozy for winter" or "gift for a developer".
-- [ ] **Smarter tool routing** — update `agents/config/prompts/product-discovery.yaml` so the LLM routes descriptive / vague queries to `semantic_search` and attribute-driven queries ("Nike running shoes under $100") to `search_products`.
+- [ ] **Smarter tool routing** — update `agents/python/config/prompts/product-discovery.yaml` so the LLM routes descriptive / vague queries to `semantic_search` and attribute-driven queries ("Nike running shoes under $100") to `search_products`.
 - [ ] **Typed filter DSL** — replace the flat parameter list on `search_products` with a structured `ProductFilters` Pydantic model (category, price range, brand, specs match, sort) that the LLM populates as JSON. Keeps SQL parameterized and safe while giving the model more expressive power than fixed arguments.
 
 **Why not text-to-SQL?** A dynamic "LLM writes the query" approach was considered and rejected for this codebase:
@@ -390,7 +394,7 @@ The typed filter DSL gives the model flexibility at the boundary while keeping S
 
 ### Planned — MCP as the Agent Data-Access Layer
 
-Today, specialist agents call data tools directly via MAF's `@tool` decorator over asyncpg (`shared/tools/inventory_tools.py`, `shared/tools/cart_tools.py`, etc.). A reference [Model Context Protocol](https://modelcontextprotocol.io/) server already exists at `agents/mcp/inventory_server.py` — it exposes `check_stock`, `get_warehouses`, and `estimate_shipping` over the MCP standard — but no agent currently routes through it.
+Today, specialist agents call data tools directly via MAF's `@tool` decorator over asyncpg (`shared/tools/inventory_tools.py`, `shared/tools/cart_tools.py`, etc.). A reference [Model Context Protocol](https://modelcontextprotocol.io/) server already exists at `agents/python/mcp/inventory_server.py` — it exposes `check_stock`, `get_warehouses`, and `estimate_shipping` over the MCP standard — but no agent currently routes through it.
 
 **The planned shift:** migrate agent queries from the native `@tool` path to MCP tool calls, so the MCP server becomes the single query surface for all data access. Any MCP-compatible runtime (Claude Desktop, Cursor, MAF's `MCPStreamableHTTPTool`, an external LangGraph agent) gets the same capabilities with zero glue code.
 
@@ -399,7 +403,7 @@ Today, specialist agents call data tools directly via MAF's `@tool` decorator ov
 - [ ] **Agent-side MCP client wiring** — replace the `tools=[native_tool, ...]` lists in `create_<agent>_agent()` factories with an MCP client that discovers tools from the manifest at startup. Preserves the `@tool` signature contract so prompts and tool-call loops stay unchanged.
 - [ ] **Auth propagation** — today, `user_email` / `user_role` flow through ContextVars inside the same process. Over MCP, they'll need to ride as authenticated headers (`X-User-Email`, `X-User-Role`) signed by `AGENT_SHARED_SECRET`, mirroring the existing A2A inter-agent pattern in `shared/auth.py`.
 - [ ] **Telemetry parity** — MCP tool calls should produce the same OpenTelemetry spans (`tool.call`, `tool.result`) that native `@tool` calls emit today, so Aspire Dashboard views keep working after the cutover.
-- [ ] **Eval gate** — expand `agents/evals/` to run each dataset twice (once against native tools, once against MCP) and fail CI if the MCP run scores below the native baseline.
+- [ ] **Eval gate** — expand `agents/python/evals/` to run each dataset twice (once against native tools, once against MCP) and fail CI if the MCP run scores below the native baseline.
 
 **Why bother?**
 

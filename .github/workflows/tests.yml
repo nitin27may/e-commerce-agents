@@ -32,11 +32,11 @@ jobs:
         run: uv python install 3.12
 
       - name: Sync dependencies
-        working-directory: agents
+        working-directory: agents/python
         run: uv sync --extra dev
 
       - name: Run pytest with coverage
-        working-directory: agents
+        working-directory: agents/python
         run: |
           uv run pytest \
             --cov \
@@ -49,7 +49,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: python-coverage
-          path: agents/coverage.xml
+          path: agents/python/coverage.xml
           retention-days: 30
 
   dotnet-tests:
@@ -59,21 +59,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup .NET 9
+      - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: "9.0.x"
+          dotnet-version: "10.0.x"
 
       - name: Restore
-        working-directory: dotnet
+        working-directory: agents/dotnet
         run: dotnet restore ECommerceAgents.sln
 
       - name: Build
-        working-directory: dotnet
+        working-directory: agents/dotnet
         run: dotnet build ECommerceAgents.sln --configuration Release --no-restore
 
       - name: Test
-        working-directory: dotnet
+        working-directory: agents/dotnet
         run: |
           dotnet test ECommerceAgents.sln \
             --configuration Release \
@@ -87,7 +87,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dotnet-test-results
-          path: dotnet/TestResults/
+          path: agents/dotnet/TestResults/
           retention-days: 30
 
   playwright-e2e:
@@ -148,11 +148,11 @@ jobs:
         uses: astral-sh/setup-uv@v4
 
       - name: Sync deps
-        working-directory: agents
+        working-directory: agents/python
         run: uv sync --extra dev
 
       - name: Regenerate diagrams
-        working-directory: agents
+        working-directory: agents/python
         run: uv run python -m scripts.visualize_workflows
 
       - name: Fail on uncommitted diff

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Render every MAF workflow spec in the repo as Mermaid and Graphviz DOT.
 
-Walks ``agents/config/workflows/*.yaml`` (or a directory passed via
+Walks ``agents/python/config/workflows/*.yaml`` (or a directory passed via
 ``--specs``), loads each via :func:`shared.workflow_loader.load_workflow`,
 and writes ``docs/workflows/{name}.mmd`` + ``{name}.dot``.
 
@@ -25,11 +25,11 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SPECS = REPO_ROOT / "agents" / "config" / "workflows"
+DEFAULT_SPECS = REPO_ROOT / "agents" / "python" / "config" / "workflows"
 DEFAULT_OUT = REPO_ROOT / "docs" / "workflows"
 
 # Make ``shared.*`` importable when running as a plain script.
-sys.path.insert(0, str(REPO_ROOT / "agents"))
+sys.path.insert(0, str(REPO_ROOT / "agents" / "python"))
 
 from agent_framework._workflows._viz import WorkflowViz  # noqa: E402
 from shared.workflow_loader import load_workflows_directory  # noqa: E402

@@ -38,11 +38,11 @@ app.Run(Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "http://0.0.0.0
 static string PromptsRoot()
 {
     var dir = new DirectoryInfo(AppContext.BaseDirectory);
-    while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, "agents", "config", "prompts")))
+    while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, "agents", "python", "config", "prompts")))
     {
         dir = dir.Parent;
     }
     return dir is not null
-        ? Path.Combine(dir.FullName, "agents", "config", "prompts")
+        ? Path.Combine(dir.FullName, "agents", "python", "config", "prompts")
         : Path.Combine(AppContext.BaseDirectory, "config", "prompts");
 }

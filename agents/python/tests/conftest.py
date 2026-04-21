@@ -23,7 +23,7 @@ import pytest_asyncio
 from testcontainers.postgres import PostgresContainer
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 INIT_SQL = REPO_ROOT / "docker" / "postgres" / "init.sql"
 
 
