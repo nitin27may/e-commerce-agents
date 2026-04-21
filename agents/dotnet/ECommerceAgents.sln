@@ -31,6 +31,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ECommerceAgents.OrderManage
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ECommerceAgents.PricingPromotions.Tests", "tests\ECommerceAgents.PricingPromotions.Tests\ECommerceAgents.PricingPromotions.Tests.csproj", "{161B1AD2-E1BD-4287-9018-FE06F0909409}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ECommerceAgents.ReviewSentiment.Tests", "tests\ECommerceAgents.ReviewSentiment.Tests\ECommerceAgents.ReviewSentiment.Tests.csproj", "{593272FD-51B8-4C10-98F4-BE2B97C6AA96}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -185,6 +187,18 @@ Global
 		{161B1AD2-E1BD-4287-9018-FE06F0909409}.Release|x64.Build.0 = Release|Any CPU
 		{161B1AD2-E1BD-4287-9018-FE06F0909409}.Release|x86.ActiveCfg = Release|Any CPU
 		{161B1AD2-E1BD-4287-9018-FE06F0909409}.Release|x86.Build.0 = Release|Any CPU
+		{593272FD-51B8-4C10-98F4-BE2B97C6AA96}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{593272FD-51B8-4C10-98F4-BE2B97C6AA96}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{593272FD-51B8-4C10-98F4-BE2B97C6AA96}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{593272FD-51B8-4C10-98F4-BE2B97C6AA96}.Debug|x64.Build.0 = Debug|Any CPU
+		{593272FD-51B8-4C10-98F4-BE2B97C6AA96}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{593272FD-51B8-4C10-98F4-BE2B97C6AA96}.Debug|x86.Build.0 = Debug|Any CPU
+		{593272FD-51B8-4C10-98F4-BE2B97C6AA96}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{593272FD-51B8-4C10-98F4-BE2B97C6AA96}.Release|Any CPU.Build.0 = Release|Any CPU
+		{593272FD-51B8-4C10-98F4-BE2B97C6AA96}.Release|x64.ActiveCfg = Release|Any CPU
+		{593272FD-51B8-4C10-98F4-BE2B97C6AA96}.Release|x64.Build.0 = Release|Any CPU
+		{593272FD-51B8-4C10-98F4-BE2B97C6AA96}.Release|x86.ActiveCfg = Release|Any CPU
+		{593272FD-51B8-4C10-98F4-BE2B97C6AA96}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -202,5 +216,6 @@ Global
 		{98F2391B-6BE9-46B2-ACA0-95C84C9562FC} = {A0000000-0000-0000-0000-000000000002}
 		{8CED21F9-CACA-4E54-831E-449100C945E9} = {A0000000-0000-0000-0000-000000000002}
 		{161B1AD2-E1BD-4287-9018-FE06F0909409} = {A0000000-0000-0000-0000-000000000002}
+		{593272FD-51B8-4C10-98F4-BE2B97C6AA96} = {A0000000-0000-0000-0000-000000000002}
 	EndGlobalSection
 EndGlobal

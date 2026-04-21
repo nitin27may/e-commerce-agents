@@ -1,3 +1,4 @@
+using ECommerceAgents.ReviewSentiment.Tools;
 using ECommerceAgents.Shared.A2A;
 using ECommerceAgents.Shared.Agents;
 using ECommerceAgents.Shared.Prompts;
@@ -17,10 +18,12 @@ var app = AgentHost.Build(
     configureServices: (builder, settings) =>
     {
         builder.Services.AddSingleton(new PromptLoader(PromptsRoot()));
+        builder.Services.AddSingleton<ReviewTools>();
         builder.Services.AddSingleton<AIAgent>(sp =>
         {
             var prompts = sp.GetRequiredService<PromptLoader>();
-            return SpecialistAgentFactory.Create(settings, prompts, "review_sentiment");
+            var tools = sp.GetRequiredService<ReviewTools>();
+            return SpecialistAgentFactory.Create(settings, prompts, "review_sentiment", tools.All());
         });
     }
 );
