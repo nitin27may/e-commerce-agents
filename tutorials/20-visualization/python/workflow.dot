@@ -1,0 +1,11 @@
+digraph Workflow {
+  rankdir=TD;
+  node [shape=box, style=filled, fillcolor=lightblue];
+  edge [color=black, arrowhead=vee];
+
+  "uppercase" [fillcolor=lightgreen, label="uppercase\n(Start)"];
+  "validate" [label="validate"];
+  "log" [label="log"];
+  "uppercase" -> "validate";
+  "validate" -> "log";
+}
