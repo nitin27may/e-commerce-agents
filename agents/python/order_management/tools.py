@@ -229,45 +229,47 @@ async def cancel_order(
 
     pool = get_pool()
     async with pool.acquire() as conn:
-        # Verify ownership and check status
-        order = await conn.fetchrow(
-            """SELECT o.id, o.status, o.total
-               FROM orders o
-               JOIN users u ON o.user_id = u.id
-               WHERE o.id = $1 AND u.email = $2""",
-            order_id, email,
-        )
-        if not order:
-            return {"error": f"Order not found or access denied: {order_id}"}
+        # Single transaction so SELECT-then-UPDATE can't race with a
+        # concurrent cancellation. SELECT ... FOR UPDATE locks the row
+        # until commit, so a second agent doing the same dance blocks
+        # behind us instead of double-cancelling.
+        async with conn.transaction():
+            order = await conn.fetchrow(
+                """SELECT o.id, o.status, o.total
+                   FROM orders o
+                   JOIN users u ON o.user_id = u.id
+                   WHERE o.id = $1 AND u.email = $2
+                   FOR UPDATE OF o""",
+                order_id, email,
+            )
+            if not order:
+                return {"error": f"Order not found or access denied: {order_id}"}
 
-        if order["status"] not in ("placed", "confirmed"):
+            if order["status"] not in ("placed", "confirmed"):
+                return {
+                    "error": f"Cannot cancel order in '{order['status']}' status. Only 'placed' or 'confirmed' orders can be cancelled.",
+                    "order_id": str(order["id"]),
+                    "current_status": order["status"],
+                }
+
+            await conn.execute(
+                "UPDATE orders SET status = 'cancelled' WHERE id = $1",
+                order_id,
+            )
+            await conn.execute(
+                """INSERT INTO order_status_history (order_id, status, notes)
+                   VALUES ($1, 'cancelled', $2)""",
+                order_id, f"Cancelled by customer: {reason}",
+            )
+
             return {
-                "error": f"Cannot cancel order in '{order['status']}' status. Only 'placed' or 'confirmed' orders can be cancelled.",
                 "order_id": str(order["id"]),
-                "current_status": order["status"],
+                "previous_status": order["status"],
+                "new_status": "cancelled",
+                "reason": reason,
+                "refund_amount": float(order["total"]),
+                "message": f"Order cancelled successfully. A refund of ${float(order['total']):.2f} will be processed within 5-7 business days.",
             }
-
-        # Update order status
-        await conn.execute(
-            "UPDATE orders SET status = 'cancelled' WHERE id = $1",
-            order_id,
-        )
-
-        # Record in status history
-        await conn.execute(
-            """INSERT INTO order_status_history (order_id, status, notes)
-               VALUES ($1, 'cancelled', $2)""",
-            order_id, f"Cancelled by customer: {reason}",
-        )
-
-        return {
-            "order_id": str(order["id"]),
-            "previous_status": order["status"],
-            "new_status": "cancelled",
-            "reason": reason,
-            "refund_amount": float(order["total"]),
-            "message": f"Order cancelled successfully. A refund of ${float(order['total']):.2f} will be processed within 5-7 business days.",
-        }
 
 
 @tool(

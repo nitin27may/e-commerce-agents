@@ -106,52 +106,49 @@ async def initiate_return(
 
     pool = get_pool()
     async with pool.acquire() as conn:
-        # Verify ownership and delivered status
-        order = await conn.fetchrow(
-            """SELECT o.id, o.user_id, o.status, o.total
-               FROM orders o
-               JOIN users u ON o.user_id = u.id
-               WHERE o.id = $1 AND u.email = $2""",
-            order_id, email,
-        )
-        if not order:
-            return {"error": f"Order not found or access denied: {order_id}"}
+        # Lock the order row + the existence-check on `returns` together
+        # so two concurrent agents can't both observe "no return yet"
+        # and create one each.
+        async with conn.transaction():
+            order = await conn.fetchrow(
+                """SELECT o.id, o.user_id, o.status, o.total
+                   FROM orders o
+                   JOIN users u ON o.user_id = u.id
+                   WHERE o.id = $1 AND u.email = $2
+                   FOR UPDATE OF o""",
+                order_id, email,
+            )
+            if not order:
+                return {"error": f"Order not found or access denied: {order_id}"}
 
-        if order["status"] != "delivered":
-            return {"error": f"Cannot return order in '{order['status']}' status. Only delivered orders can be returned."}
+            if order["status"] != "delivered":
+                return {"error": f"Cannot return order in '{order['status']}' status. Only delivered orders can be returned."}
 
-        # Check no existing return
-        existing = await conn.fetchrow(
-            "SELECT id FROM returns WHERE order_id = $1",
-            order_id,
-        )
-        if existing:
-            return {"error": "A return has already been initiated for this order.", "return_id": str(existing["id"])}
+            existing = await conn.fetchrow(
+                "SELECT id FROM returns WHERE order_id = $1",
+                order_id,
+            )
+            if existing:
+                return {"error": "A return has already been initiated for this order.", "return_id": str(existing["id"])}
 
-        # Generate return label URL pointing to our own PDF endpoint
-        label_token = uuid.uuid4().hex[:12]
-        return_label_url = f"/api/returns/{label_token}/label"
+            label_token = uuid.uuid4().hex[:12]
+            return_label_url = f"/api/returns/{label_token}/label"
 
-        # Create return record
-        return_id = await conn.fetchval(
-            """INSERT INTO returns (order_id, user_id, reason, status, return_label_url, refund_method, refund_amount)
-               VALUES ($1, $2, $3, 'requested', $4, $5, $6)
-               RETURNING id""",
-            order_id, order["user_id"], reason, return_label_url, refund_method, order["total"],
-        )
-
-        # Update order status
-        await conn.execute(
-            "UPDATE orders SET status = 'returned' WHERE id = $1",
-            order_id,
-        )
-
-        # Record in order status history
-        await conn.execute(
-            """INSERT INTO order_status_history (order_id, status, notes)
-               VALUES ($1, 'returned', $2)""",
-            order_id, f"Return initiated: {reason}",
-        )
+            return_id = await conn.fetchval(
+                """INSERT INTO returns (order_id, user_id, reason, status, return_label_url, refund_method, refund_amount)
+                   VALUES ($1, $2, $3, 'requested', $4, $5, $6)
+                   RETURNING id""",
+                order_id, order["user_id"], reason, return_label_url, refund_method, order["total"],
+            )
+            await conn.execute(
+                "UPDATE orders SET status = 'returned' WHERE id = $1",
+                order_id,
+            )
+            await conn.execute(
+                """INSERT INTO order_status_history (order_id, status, notes)
+                   VALUES ($1, 'returned', $2)""",
+                order_id, f"Return initiated: {reason}",
+            )
 
         refund_timeline = "instantly" if refund_method == "store_credit" else "within 5-7 business days"
 
@@ -181,28 +178,30 @@ async def process_refund(
 
     pool = get_pool()
     async with pool.acquire() as conn:
-        # Verify ownership via return -> order -> user
-        ret = await conn.fetchrow(
-            """SELECT r.id, r.order_id, r.status, r.refund_method, r.refund_amount
-               FROM returns r
-               JOIN users u ON r.user_id = u.id
-               WHERE r.id = $1 AND u.email = $2""",
-            return_id, email,
-        )
-        if not ret:
-            return {"error": f"Return not found or access denied: {return_id}"}
+        # Lock the return row before re-checking status. Without this a
+        # double-click on "issue refund" can fund the customer twice.
+        async with conn.transaction():
+            ret = await conn.fetchrow(
+                """SELECT r.id, r.order_id, r.status, r.refund_method, r.refund_amount
+                   FROM returns r
+                   JOIN users u ON r.user_id = u.id
+                   WHERE r.id = $1 AND u.email = $2
+                   FOR UPDATE OF r""",
+                return_id, email,
+            )
+            if not ret:
+                return {"error": f"Return not found or access denied: {return_id}"}
 
-        if ret["status"] == "refunded":
-            return {"error": "This return has already been refunded.", "return_id": str(ret["id"])}
+            if ret["status"] == "refunded":
+                return {"error": "This return has already been refunded.", "return_id": str(ret["id"])}
 
-        if ret["status"] == "denied":
-            return {"error": "This return was denied and cannot be refunded.", "return_id": str(ret["id"])}
+            if ret["status"] == "denied":
+                return {"error": "This return was denied and cannot be refunded.", "return_id": str(ret["id"])}
 
-        # Update return to refunded
-        await conn.execute(
-            "UPDATE returns SET status = 'refunded', resolved_at = NOW() WHERE id = $1",
-            return_id,
-        )
+            await conn.execute(
+                "UPDATE returns SET status = 'refunded', resolved_at = NOW() WHERE id = $1",
+                return_id,
+            )
 
         refund_amount = float(ret["refund_amount"]) if ret["refund_amount"] else 0
         refund_method = ret["refund_method"] or "original_payment"
