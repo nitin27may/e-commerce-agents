@@ -45,6 +45,9 @@ app.MapGet("/health", () => Results.Ok(new { healthy = true }));
 
 app.MapAuthRoutes();
 app.MapChatRoutes();
+app.MapConversationRoutes();
+app.MapProductRoutes();
+app.MapOrderRoutes();
 
 var urls = Environment.GetEnvironmentVariable("ASPNETCORE_URLS");
 app.Run(string.IsNullOrWhiteSpace(urls) ? "http://0.0.0.0:8080" : urls);

@@ -39,6 +39,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ECommerceAgents.Mcp", "src\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ECommerceAgents.Mcp.Tests", "tests\ECommerceAgents.Mcp.Tests\ECommerceAgents.Mcp.Tests.csproj", "{3B9770F8-91DC-4914-8B88-4F92888A31B6}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ECommerceAgents.Orchestrator.Tests", "tests\ECommerceAgents.Orchestrator.Tests\ECommerceAgents.Orchestrator.Tests.csproj", "{F5BD626C-BC44-4FC9-8AB3-777D716EF9A3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -241,6 +243,18 @@ Global
 		{3B9770F8-91DC-4914-8B88-4F92888A31B6}.Release|x64.Build.0 = Release|Any CPU
 		{3B9770F8-91DC-4914-8B88-4F92888A31B6}.Release|x86.ActiveCfg = Release|Any CPU
 		{3B9770F8-91DC-4914-8B88-4F92888A31B6}.Release|x86.Build.0 = Release|Any CPU
+		{F5BD626C-BC44-4FC9-8AB3-777D716EF9A3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F5BD626C-BC44-4FC9-8AB3-777D716EF9A3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F5BD626C-BC44-4FC9-8AB3-777D716EF9A3}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{F5BD626C-BC44-4FC9-8AB3-777D716EF9A3}.Debug|x64.Build.0 = Debug|Any CPU
+		{F5BD626C-BC44-4FC9-8AB3-777D716EF9A3}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{F5BD626C-BC44-4FC9-8AB3-777D716EF9A3}.Debug|x86.Build.0 = Debug|Any CPU
+		{F5BD626C-BC44-4FC9-8AB3-777D716EF9A3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F5BD626C-BC44-4FC9-8AB3-777D716EF9A3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F5BD626C-BC44-4FC9-8AB3-777D716EF9A3}.Release|x64.ActiveCfg = Release|Any CPU
+		{F5BD626C-BC44-4FC9-8AB3-777D716EF9A3}.Release|x64.Build.0 = Release|Any CPU
+		{F5BD626C-BC44-4FC9-8AB3-777D716EF9A3}.Release|x86.ActiveCfg = Release|Any CPU
+		{F5BD626C-BC44-4FC9-8AB3-777D716EF9A3}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -262,5 +276,6 @@ Global
 		{FCD1D6E6-32B0-478F-BAFC-9A696D4A026E} = {A0000000-0000-0000-0000-000000000002}
 		{AC577B49-A993-4F34-B309-CE159CF941D4} = {A0000000-0000-0000-0000-000000000001}
 		{3B9770F8-91DC-4914-8B88-4F92888A31B6} = {A0000000-0000-0000-0000-000000000002}
+		{F5BD626C-BC44-4FC9-8AB3-777D716EF9A3} = {A0000000-0000-0000-0000-000000000002}
 	EndGlobalSection
 EndGlobal
