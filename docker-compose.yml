@@ -41,6 +41,15 @@ services:
       - "18890:18889"   # OTLP receiver
     environment:
       DASHBOARD__FRONTEND__AUTHMODE: Unsecured
+    # TCP-check the OTLP receiver. Aspire's dashboard image doesn't ship
+    # curl/wget so we use bash's /dev/tcp pseudo-device — present in the
+    # default `bash` shell of the base image.
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/18889 && echo ok || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
   # ── Seed Database (runs once, exits) ────────────────────────
 
@@ -73,7 +82,7 @@ services:
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }
-      aspire: { condition: service_started }
+      aspire: { condition: service_healthy }
     environment: &agent-env
       DATABASE_URL: postgresql://ecommerce:ecommerce_secret@db:5432/ecommerce_agents
       REDIS_URL: redis://redis:6379
@@ -123,7 +132,7 @@ services:
     ports: ["8081:8081"]
     depends_on:
       db: { condition: service_healthy }
-      aspire: { condition: service_started }
+      aspire: { condition: service_healthy }
     environment:
       <<: *agent-env
       OTEL_SERVICE_NAME: ecommerce.product-discovery
@@ -136,7 +145,7 @@ services:
     ports: ["8082:8082"]
     depends_on:
       db: { condition: service_healthy }
-      aspire: { condition: service_started }
+      aspire: { condition: service_healthy }
     environment:
       <<: *agent-env
       OTEL_SERVICE_NAME: ecommerce.order-management
@@ -149,7 +158,7 @@ services:
     ports: ["8083:8083"]
     depends_on:
       db: { condition: service_healthy }
-      aspire: { condition: service_started }
+      aspire: { condition: service_healthy }
     environment:
       <<: *agent-env
       OTEL_SERVICE_NAME: ecommerce.pricing-promotions
@@ -162,7 +171,7 @@ services:
     ports: ["8084:8084"]
     depends_on:
       db: { condition: service_healthy }
-      aspire: { condition: service_started }
+      aspire: { condition: service_healthy }
     environment:
       <<: *agent-env
       OTEL_SERVICE_NAME: ecommerce.review-sentiment
@@ -175,7 +184,7 @@ services:
     ports: ["8085:8085"]
     depends_on:
       db: { condition: service_healthy }
-      aspire: { condition: service_started }
+      aspire: { condition: service_healthy }
     environment:
       <<: *agent-env
       OTEL_SERVICE_NAME: ecommerce.inventory-fulfillment

@@ -94,9 +94,15 @@ jobs:
     name: Playwright · web E2E
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    # Phase 0 scaffold: only run when the web/e2e/ suite is non-empty.
-    # Subsequent chapters will flip this gate off and make this job required.
-    if: false
+    # Audit fix #7: 6 spec files now exist under web/e2e/. The job runs
+    # on every PR; failures block merge. Flip back to `false` only if a
+    # single bad commit needs to land hot — and file an issue when you
+    # do.
+    if: true
+    # Don't fail the whole CI matrix for an e2e flake — surface the
+    # diff in the PR via the uploaded artifact and keep the merge
+    # blocked via required-status-checks instead.
+    continue-on-error: false
     steps:
       - uses: actions/checkout@v4
 

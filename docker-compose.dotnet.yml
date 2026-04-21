@@ -48,6 +48,12 @@ services:
       - "18890:18889"
     environment:
       DASHBOARD__FRONTEND__AUTHMODE: Unsecured
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/18889 && echo ok || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
   # ── Seeder (reuses the Python script; single source of truth) ──
 
@@ -78,7 +84,7 @@ services:
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }
-      aspire: { condition: service_started }
+      aspire: { condition: service_healthy }
     environment: &agent-env
       ConnectionStrings__Postgres: Host=db;Port=5432;Database=ecommerce_agents;Username=ecommerce;Password=ecommerce_secret
       ConnectionStrings__Redis: redis:6379
@@ -122,7 +128,7 @@ services:
     ports: ["8081:8081"]
     depends_on:
       db: { condition: service_healthy }
-      aspire: { condition: service_started }
+      aspire: { condition: service_healthy }
     environment:
       <<: *agent-env
       OTEL_SERVICE_NAME: ecommerce.product-discovery.dotnet
@@ -135,7 +141,7 @@ services:
     ports: ["8082:8082"]
     depends_on:
       db: { condition: service_healthy }
-      aspire: { condition: service_started }
+      aspire: { condition: service_healthy }
     environment:
       <<: *agent-env
       OTEL_SERVICE_NAME: ecommerce.order-management.dotnet
@@ -148,7 +154,7 @@ services:
     ports: ["8083:8083"]
     depends_on:
       db: { condition: service_healthy }
-      aspire: { condition: service_started }
+      aspire: { condition: service_healthy }
     environment:
       <<: *agent-env
       OTEL_SERVICE_NAME: ecommerce.pricing-promotions.dotnet
@@ -161,7 +167,7 @@ services:
     ports: ["8084:8084"]
     depends_on:
       db: { condition: service_healthy }
-      aspire: { condition: service_started }
+      aspire: { condition: service_healthy }
     environment:
       <<: *agent-env
       OTEL_SERVICE_NAME: ecommerce.review-sentiment.dotnet
@@ -174,7 +180,7 @@ services:
     ports: ["8085:8085"]
     depends_on:
       db: { condition: service_healthy }
-      aspire: { condition: service_started }
+      aspire: { condition: service_healthy }
     environment:
       <<: *agent-env
       OTEL_SERVICE_NAME: ecommerce.inventory-fulfillment.dotnet

@@ -348,6 +348,10 @@ CREATE INDEX idx_products_price ON products(price);
 CREATE INDEX idx_products_rating ON products(rating DESC);
 CREATE INDEX idx_orders_user ON orders(user_id, created_at DESC);
 CREATE INDEX idx_orders_status ON orders(status);
+-- Audit fix #7: order_items.product_id is a FK with no index, so every
+-- "orders that include product X" lookup or trending-products query
+-- sequentially scans the join table. One b-tree on the FK fixes it.
+CREATE INDEX idx_order_items_product ON order_items(product_id);
 CREATE INDEX idx_reviews_product ON reviews(product_id, created_at DESC);
 CREATE INDEX idx_reviews_rating ON reviews(product_id, rating);
 CREATE INDEX idx_warehouse_inv ON warehouse_inventory(product_id);
