@@ -477,10 +477,23 @@ async def chat_stream(body: ChatRequest, request: Request, user: dict[str, Any] 
     current_conversation_history.set(history)
 
     async def event_generator() -> AsyncGenerator[str, None]:
-        """Yield SSE-formatted events from the streaming agent response."""
+        """Yield SSE-formatted events from the streaming agent response.
+
+        Audit fix #9: every chunk is gated on three checks before it
+        ships to the wire — wall-clock budget, accumulator-byte ceiling,
+        and client-disconnect probe. None of them existed before, so a
+        slow client or a runaway model could pin a Starlette worker
+        and grow the in-memory transcript without bound.
+        """
         from shared.telemetry import agent_run_span
+        from shared.config import settings
+
         full_response: list[str] = []
+        full_bytes = 0
+        truncated = False
         start_time = time.monotonic()
+        deadline = start_time + float(settings.MAF_STREAM_TIMEOUT_SECONDS)
+        max_bytes = int(settings.MAF_STREAM_MAX_BYTES)
 
         with agent_run_span("orchestrator"):
             try:
@@ -491,8 +504,36 @@ async def chat_stream(body: ChatRequest, request: Request, user: dict[str, Any] 
                     history=history,
                     user_context=user_context,
                 ):
-                    full_response.append(chunk)
-                    yield f"data: {chunk}\n\n"
+                    if await request.is_disconnected():
+                        logger.info(
+                            "chat_stream.client_disconnected conversation=%s elapsed_ms=%d",
+                            conversation_id,
+                            int((time.monotonic() - start_time) * 1000),
+                        )
+                        break
+                    if time.monotonic() > deadline:
+                        logger.warning(
+                            "chat_stream.timeout conversation=%s budget_s=%s",
+                            conversation_id,
+                            settings.MAF_STREAM_TIMEOUT_SECONDS,
+                        )
+                        timeout_msg = (
+                            " [stream timed out — the agent took too long; please retry]"
+                        )
+                        full_response.append(timeout_msg)
+                        yield f"data: {timeout_msg}\n\n"
+                        break
+                    if not truncated:
+                        chunk_bytes = len(chunk.encode("utf-8"))
+                        if full_bytes + chunk_bytes > max_bytes:
+                            truncated = True
+                            marker = " [response truncated at limit]"
+                            full_response.append(marker)
+                            yield f"data: {marker}\n\n"
+                            continue
+                        full_bytes += chunk_bytes
+                        full_response.append(chunk)
+                        yield f"data: {chunk}\n\n"
 
             except Exception:
                 logger.exception("chat_stream.agent_error user=%s conversation=%s", user_email, conversation_id)

@@ -122,6 +122,18 @@ class Settings(BaseSettings):
     # Default stays "tool" so rollouts are opt-in.
     MAF_HANDOFF_MODE: str = "tool"
 
+    # Hard ceiling on a single SSE stream's wall-clock duration. The
+    # orchestrator's chat-stream endpoint aborts the underlying generator
+    # after this many seconds even if the LLM is still producing tokens.
+    # Prevents runaway streams from holding a Starlette worker forever.
+    MAF_STREAM_TIMEOUT_SECONDS: float = 120.0
+
+    # Hard ceiling on the bytes we'll buffer per stream for the
+    # persisted-message accumulator. A pathological model output that
+    # exceeds this is truncated and an `[truncated]` marker is yielded
+    # so the user sees the cutoff instead of a hung stream.
+    MAF_STREAM_MAX_BYTES: int = 10_000_000
+
     # When true, CI regenerates docs/workflows/*.mmd and fails on drift.
     WORKFLOW_VISUALIZATION_ON_BUILD: bool = False
 
