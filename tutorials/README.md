@@ -19,10 +19,10 @@ Each chapter is self-contained and in a separate folder under `tutorials/`. Ever
 
 | # | Chapter | Status | Article |
 |---|---------|--------|---------|
-| 00 | [Setup your dev environment](./00-setup/) | Draft | — |
-| 01 | [Your First Agent](./01-first-agent/) | Draft | — |
-| 02 | [Adding Tools](./02-add-tools/) | Draft | — |
-| 03 | [Streaming and Multi-turn](./03-streaming-and-multiturn/) | Draft | — |
+| 00 | [Setup your dev environment](./00-setup/) | Code done · draft | — |
+| 01 | [Your First Agent](./01-first-agent/) | Code done · draft | — |
+| 02 | [Adding Tools](./02-add-tools/) | Code done · draft | — |
+| 03 | [Streaming and Multi-turn](./03-streaming-and-multiturn/) | Code done · draft | — |
 | 04 | [Sessions and Memory](./04-sessions/) | Draft | — |
 | 05 | [Context Providers](./05-context-providers/) | Draft | — |
 | 06 | [Middleware](./06-middleware/) | Draft | — |

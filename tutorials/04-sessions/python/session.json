@@ -1,0 +1,61 @@
+{
+  "type": "session",
+  "session_id": "3b7a2468-86d7-47d9-9843-0ed91b97eb65",
+  "service_session_id": null,
+  "state": {
+    "in_memory": {
+      "messages": [
+        {
+          "type": "message",
+          "role": "user",
+          "contents": [
+            {
+              "type": "text",
+              "text": "Remember: my favorite color is teal.",
+              "additional_properties": {}
+            }
+          ],
+          "additional_properties": {}
+        },
+        {
+          "type": "message",
+          "role": "assistant",
+          "contents": [
+            {
+              "type": "text",
+              "text": "Got it! Your favorite color is teal.",
+              "additional_properties": {}
+            }
+          ],
+          "author_name": "stateful-agent",
+          "additional_properties": {}
+        },
+        {
+          "type": "message",
+          "role": "user",
+          "contents": [
+            {
+              "type": "text",
+              "text": "What color did I tell you I liked? Answer with the color only.",
+              "additional_properties": {}
+            }
+          ],
+          "additional_properties": {}
+        },
+        {
+          "type": "message",
+          "role": "assistant",
+          "contents": [
+            {
+              "type": "text",
+              "text": "Teal",
+              "additional_properties": {}
+            }
+          ],
+          "author_name": "stateful-agent",
+          "additional_properties": {}
+        }
+      ]
+    }
+  }
+}
