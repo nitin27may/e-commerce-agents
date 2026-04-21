@@ -42,7 +42,8 @@ app.MapGet("/health", () => Results.Ok(new { healthy = true }));
 app.MapAuthRoutes();
 app.MapChatRoutes();
 
-app.Run("http://0.0.0.0:8080");
+var urls = Environment.GetEnvironmentVariable("ASPNETCORE_URLS");
+app.Run(string.IsNullOrWhiteSpace(urls) ? "http://0.0.0.0:8080" : urls);
 
 
 static string PromptsRoot()

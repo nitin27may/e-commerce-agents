@@ -28,7 +28,7 @@ var app = AgentHost.Build(
     }
 );
 
-app.Run($"http://0.0.0.0:8081");
+app.Run(Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "http://0.0.0.0:8081");
 
 
 // Locate the shared prompts root — the YAML files live in

@@ -25,7 +25,7 @@ var app = AgentHost.Build(
     }
 );
 
-app.Run("http://0.0.0.0:8082");
+app.Run(Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "http://0.0.0.0:8082");
 
 
 static string PromptsRoot()

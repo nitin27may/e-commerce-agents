@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
@@ -83,7 +84,7 @@ public sealed class AgentAuthMiddleware
             ValidateAudience = false,
             ValidateLifetime = true,
             ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_settings.JwtSecret)),
+            IssuerSigningKey = new SymmetricSecurityKey(DeriveKeyBytes(_settings.JwtSecret)),
             ClockSkew = TimeSpan.FromMinutes(1),
         };
 
@@ -108,6 +109,13 @@ public sealed class AgentAuthMiddleware
         context.Response.StatusCode = status;
         context.Response.ContentType = "application/json";
         await context.Response.WriteAsync(JsonSerializer.Serialize(new { detail }));
+    }
+
+    /// <summary>Matches the same derivation used by <c>JwtTokenService.DeriveKeyBytes</c>.</summary>
+    private static byte[] DeriveKeyBytes(string secret)
+    {
+        var raw = Encoding.UTF8.GetBytes(secret);
+        return raw.Length >= 32 ? raw : SHA256.HashData(raw);
     }
 }
 

@@ -34,7 +34,9 @@ public sealed class A2AClient
     )
     {
         using var activity = TelemetrySetup.A2ACallSpan("orchestrator", agentName, baseUrl);
-        var url = new Uri(new Uri(baseUrl.TrimEnd('/') + "/"), "message:send");
+        // Concatenate manually: `new Uri(base, "message:send")` reinterprets the
+        // colon as a scheme separator.
+        var url = new Uri($"{baseUrl.TrimEnd('/')}/message:send");
 
         var request = new HttpRequestMessage(HttpMethod.Post, url)
         {

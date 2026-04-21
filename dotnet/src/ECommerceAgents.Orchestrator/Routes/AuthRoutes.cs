@@ -55,9 +55,9 @@ public static class AuthRoutes
         }
 
         await conn.ExecuteAsync(
-            @"INSERT INTO users (email, password_hash, full_name, role)
-              VALUES (@email, @passwordHash, @fullName, @role)",
-            new { email, passwordHash, fullName = request.FullName, role }
+            @"INSERT INTO users (email, password_hash, name, role)
+              VALUES (@email, @passwordHash, @name, @role)",
+            new { email, passwordHash, name = request.FullName ?? email, role }
         );
 
         return Results.Ok(new TokenResponse(

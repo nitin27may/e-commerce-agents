@@ -5,19 +5,31 @@ namespace ECommerceAgents.Shared.Prompts;
 
 /// <summary>
 /// Loads agent system prompts from <c>config/prompts/*.yaml</c>. Mirrors
-/// Python's <c>shared/prompt_loader.py</c> composition rules so the .NET
-/// backend can consume the same YAML files the Python backend uses —
-/// zero duplication of prompt text.
+/// the composition rules in Python's <c>shared/prompt_loader.py</c> so
+/// both backends read the same YAML files and produce identical system
+/// prompts for a given agent + role.
 /// </summary>
 /// <remarks>
-/// Prompts compose four sections:
+/// The YAML schema is:
+/// <code>
+/// name: orchestrator
+/// system_prompt:
+///   base: |
+///     You are the Customer Support orchestrator...
+///   role_instructions:
+///     customer: |
+///       ...
+///     admin: |
+///       ...
+///   schema_refs: [users, orders]
+///   tool_example_refs: [call_specialist_agent]
+/// </code>
+/// Shared fragments live in <c>_shared/</c>:
 /// <list type="bullet">
-/// <item>agent base (required) — per-agent <c>base_prompt</c>.</item>
-/// <item><c>_shared/grounding-rules.yaml</c> — shared DB/tool guardrails.</item>
-/// <item><c>_shared/schema-context.yaml</c> — table shapes for DB-aware agents.</item>
-/// <item><c>_shared/tool-examples.yaml</c> — few-shot tool-use snippets.</item>
+/// <item><c>grounding-rules.yaml</c> with top-level <c>rules:</c></item>
+/// <item><c>schema-context.yaml</c> — arbitrary keyed sections matched by <c>schema_refs</c></item>
+/// <item><c>tool-examples.yaml</c> — arbitrary keyed sections matched by <c>tool_example_refs</c></item>
 /// </list>
-/// Each agent YAML can declare per-role overrides under <c>roles:</c>.
 /// </remarks>
 public sealed class PromptLoader
 {
@@ -37,89 +49,111 @@ public sealed class PromptLoader
         _promptsRoot = promptsRoot;
     }
 
-    /// <summary>
-    /// Compose the full system prompt for <paramref name="agentName"/>,
-    /// optionally applying <paramref name="userRole"/> overrides.
-    /// </summary>
+    /// <summary>Compose the full system prompt for <paramref name="agentName"/> in <paramref name="userRole"/>.</summary>
     public string Load(string agentName, string? userRole = null)
     {
+        var role = string.IsNullOrWhiteSpace(userRole) ? "customer" : userRole;
         var agentPath = Path.Combine(_promptsRoot, $"{agentName}.yaml");
         if (!File.Exists(agentPath))
         {
-            throw new FileNotFoundException($"Prompt file not found: {agentPath}");
+            return string.Empty;
         }
 
-        var agent = DeserializeAgentPrompt(File.ReadAllText(agentPath));
-        var grounding = TryReadSharedFragment("grounding-rules.yaml");
-        var schema = TryReadSharedFragment("schema-context.yaml");
-        var examples = TryReadSharedFragment("tool-examples.yaml");
+        var config = _yaml.Deserialize<Dictionary<string, object>>(File.ReadAllText(agentPath))
+                     ?? new Dictionary<string, object>();
+        var systemPrompt = ExtractDictionary(config, "system_prompt");
 
-        var sections = new List<string>();
-        if (!string.IsNullOrWhiteSpace(agent.BasePrompt))
+        var parts = new List<string>();
+
+        // 1. Base prompt.
+        var basePrompt = ExtractString(systemPrompt, "base");
+        if (!string.IsNullOrWhiteSpace(basePrompt))
         {
-            sections.Add(agent.BasePrompt.Trim());
+            parts.Add(basePrompt.Trim());
         }
 
-        var roleOverride = ResolveRoleOverride(agent, userRole);
-        if (!string.IsNullOrWhiteSpace(roleOverride))
+        // 2. Grounding rules — always included.
+        var grounding = LoadSharedFile("grounding-rules.yaml");
+        var rules = ExtractString(grounding, "rules");
+        if (!string.IsNullOrWhiteSpace(rules))
         {
-            sections.Add(roleOverride.Trim());
+            parts.Add(rules.Trim());
         }
 
-        if (!string.IsNullOrWhiteSpace(grounding))
+        // 3. Role-specific instructions (falls back to customer).
+        var roleInstructions = ExtractDictionary(systemPrompt, "role_instructions");
+        var roleText = ExtractString(roleInstructions, role) ?? ExtractString(roleInstructions, "customer");
+        if (!string.IsNullOrWhiteSpace(roleText))
         {
-            sections.Add(grounding.Trim());
+            parts.Add($"## Your Role Context\n{roleText.Trim()}");
         }
 
-        if (!string.IsNullOrWhiteSpace(schema) && agent.IncludeSchema)
+        // 4. Schema context.
+        var schemaData = LoadSharedFile("schema-context.yaml");
+        foreach (var key in ExtractStringList(systemPrompt, "schema_refs"))
         {
-            sections.Add(schema.Trim());
+            var section = ExtractString(schemaData, key);
+            if (!string.IsNullOrWhiteSpace(section))
+            {
+                parts.Add(section.Trim());
+            }
         }
 
-        if (!string.IsNullOrWhiteSpace(examples) && agent.IncludeExamples)
+        // 5. Tool examples.
+        var toolData = LoadSharedFile("tool-examples.yaml");
+        foreach (var key in ExtractStringList(systemPrompt, "tool_example_refs"))
         {
-            sections.Add(examples.Trim());
+            var section = ExtractString(toolData, key);
+            if (!string.IsNullOrWhiteSpace(section))
+            {
+                parts.Add(section.Trim());
+            }
         }
 
-        return string.Join("\n\n", sections);
+        return string.Join("\n\n", parts);
     }
 
-    private string? TryReadSharedFragment(string filename)
+    private Dictionary<string, object> LoadSharedFile(string filename)
     {
         var path = Path.Combine(_promptsRoot, "_shared", filename);
         if (!File.Exists(path))
         {
-            return null;
+            return new Dictionary<string, object>();
         }
 
-        var fragment = _yaml.Deserialize<SharedFragment>(File.ReadAllText(path));
-        return fragment?.Content;
+        return _yaml.Deserialize<Dictionary<string, object>>(File.ReadAllText(path))
+               ?? new Dictionary<string, object>();
     }
 
-    private AgentPromptFile DeserializeAgentPrompt(string yaml) =>
-        _yaml.Deserialize<AgentPromptFile>(yaml)
-        ?? throw new InvalidDataException("Agent prompt YAML deserialized to null");
-
-    private static string? ResolveRoleOverride(AgentPromptFile file, string? role)
+    private static Dictionary<string, object> ExtractDictionary(IDictionary<string, object> source, string key)
     {
-        if (role is null || file.Roles is null)
+        if (source.TryGetValue(key, out var value) && value is Dictionary<object, object> mapping)
+        {
+            return mapping.Where(kv => kv.Key is string)
+                          .ToDictionary(kv => (string)kv.Key, kv => kv.Value);
+        }
+        return new Dictionary<string, object>();
+    }
+
+    private static string? ExtractString(IDictionary<string, object> source, string key)
+    {
+        if (!source.TryGetValue(key, out var value) || value is null)
         {
             return null;
         }
 
-        return file.Roles.TryGetValue(role.ToLowerInvariant(), out var text) ? text : null;
+        return value is string s ? s : value.ToString();
     }
 
-    private sealed class AgentPromptFile
+    private static List<string> ExtractStringList(IDictionary<string, object> source, string key)
     {
-        public string BasePrompt { get; set; } = "";
-        public bool IncludeSchema { get; set; } = true;
-        public bool IncludeExamples { get; set; } = true;
-        public Dictionary<string, string>? Roles { get; set; }
-    }
+        if (!source.TryGetValue(key, out var value) || value is not List<object> list)
+        {
+            return new List<string>();
+        }
 
-    private sealed class SharedFragment
-    {
-        public string Content { get; set; } = "";
+        return list.Select(item => item?.ToString() ?? string.Empty)
+                   .Where(s => !string.IsNullOrWhiteSpace(s))
+                   .ToList();
     }
 }
