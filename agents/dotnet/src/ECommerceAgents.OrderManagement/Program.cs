@@ -1,3 +1,4 @@
+using ECommerceAgents.OrderManagement.Tools;
 using ECommerceAgents.Shared.A2A;
 using ECommerceAgents.Shared.Agents;
 using ECommerceAgents.Shared.Prompts;
@@ -17,10 +18,12 @@ var app = AgentHost.Build(
     configureServices: (builder, settings) =>
     {
         builder.Services.AddSingleton(new PromptLoader(PromptsRoot()));
+        builder.Services.AddSingleton<OrderTools>();
         builder.Services.AddSingleton<AIAgent>(sp =>
         {
             var prompts = sp.GetRequiredService<PromptLoader>();
-            return SpecialistAgentFactory.Create(settings, prompts, "order_management");
+            var tools = sp.GetRequiredService<OrderTools>();
+            return SpecialistAgentFactory.Create(settings, prompts, "order_management", tools.All());
         });
     }
 );
