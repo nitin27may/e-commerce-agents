@@ -1,15 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <Description>PricingPromotions specialist agent. Listens on :8083. Real implementation lands in plans/dotnet-port/.</Description>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Description>PricingPromotions specialist agent. Listens on :8083.</Description>
+    <UserSecretsId>ecommerce-pricing-promotions-dotnet</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\ECommerceAgents.Shared\ECommerceAgents.Shared.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
-    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
   </ItemGroup>
 </Project>
