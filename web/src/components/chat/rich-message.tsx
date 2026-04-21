@@ -1,10 +1,35 @@
 "use client";
 
 import ReactMarkdown from "react-markdown";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { ChatProductCard } from "./product-card";
 import { ChatOrderCard } from "./order-card";
 import { ChatCheckoutCard } from "./checkout-card";
 import { ChatReturnCard } from "./return-card";
+import {
+  CardKind,
+  validateCard,
+} from "@/lib/chat-schemas";
+
+// rehype-sanitize's default schema strips `<script>`, on* attributes,
+// `javascript:` URLs and similar. We allow class names so the prose
+// styling on `<code>` / `<pre>` / `<table>` keeps working — that's the
+// only deviation from the default.
+const SANITIZE_SCHEMA = {
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    code: [...(defaultSchema.attributes?.code ?? []), "className"],
+  },
+};
+
+function SanitisedMarkdown({ children }: { children: string }) {
+  return (
+    <ReactMarkdown rehypePlugins={[[rehypeSanitize, SANITIZE_SCHEMA]]}>
+      {children}
+    </ReactMarkdown>
+  );
+}
 
 interface RichMessageProps {
   content: string;
@@ -42,7 +67,7 @@ export function RichMessage({ content, streaming, onAction }: RichMessageProps) 
             key={i}
             className="prose prose-sm prose-slate max-w-none prose-p:my-1 prose-li:my-0.5 prose-headings:mt-3 prose-headings:mb-1 prose-ul:my-1 prose-ol:my-1 prose-strong:text-slate-800"
           >
-            <ReactMarkdown>{seg.text}</ReactMarkdown>
+            <SanitisedMarkdown>{seg.text}</SanitisedMarkdown>
           </div>
         );
       })}
@@ -102,11 +127,23 @@ function parseCodeBlocks(content: string): Segment[] | null {
     try {
       const data = JSON.parse(match[2]);
       if (match[1] === "products" && Array.isArray(data)) {
-        data.forEach((d: Record<string, unknown>) =>
-          segments.push({ type: "product", text: "", data: d })
-        );
+        data.forEach((d: unknown) => {
+          const validated = validateCard("product", d);
+          if (validated) {
+            segments.push({ type: "product", text: "", data: validated });
+          }
+        });
       } else {
-        segments.push({ type: match[1], text: "", data });
+        const kind = match[1] as CardKind;
+        const validated = validateCard(kind, data);
+        if (validated) {
+          segments.push({ type: kind, text: "", data: validated });
+        } else {
+          // Schema rejected the payload — render the original fenced
+          // block as plain text so the user still sees something
+          // rather than a missing card.
+          segments.push({ type: "text", text: match[0] });
+        }
       }
     } catch {
       segments.push({ type: "text", text: match[0] });
