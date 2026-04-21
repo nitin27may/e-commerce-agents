@@ -6,10 +6,15 @@ import uuid
 from typing import Annotated
 
 from agent_framework import tool
-from pydantic import Field
+from pydantic import Field, ValidationError
 
 from shared.context import current_user_email
 from shared.db import get_pool
+from shared.tool_inputs import (
+    InitiateReturnInput,
+    ProcessRefundInput,
+    validation_error_payload,
+)
 
 
 @tool(name="check_return_eligibility", description="Check if an order is eligible for return. Orders must be delivered within the last 30 days.")
@@ -101,8 +106,15 @@ async def initiate_return(
     if not email:
         return {"error": "No user context available"}
 
-    if refund_method not in ("original_payment", "store_credit"):
-        return {"error": "Invalid refund method. Choose 'original_payment' or 'store_credit'."}
+    try:
+        validated = InitiateReturnInput(
+            order_id=order_id, reason=reason, refund_method=refund_method
+        )
+    except ValidationError as exc:
+        return validation_error_payload("initiate_return", exc)
+    order_id = str(validated.order_id)
+    reason = validated.reason
+    refund_method = validated.refund_method
 
     pool = get_pool()
     async with pool.acquire() as conn:
@@ -175,6 +187,12 @@ async def process_refund(
     email = current_user_email.get()
     if not email:
         return {"error": "No user context available"}
+
+    try:
+        validated = ProcessRefundInput(return_id=return_id)
+    except ValidationError as exc:
+        return validation_error_payload("process_refund", exc)
+    return_id = str(validated.return_id)
 
     pool = get_pool()
     async with pool.acquire() as conn:

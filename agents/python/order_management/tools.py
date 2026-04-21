@@ -6,10 +6,15 @@ import json
 from typing import Annotated
 
 from agent_framework import tool
-from pydantic import Field
+from pydantic import Field, ValidationError
 
 from shared.context import current_user_email
 from shared.db import get_pool
+from shared.tool_inputs import (
+    CancelOrderInput,
+    ModifyOrderInput,
+    validation_error_payload,
+)
 
 
 @tool(name="get_user_orders", description="List orders for the current user, optionally filtered by status.")
@@ -227,6 +232,13 @@ async def cancel_order(
     if not email:
         return {"error": "No user context available"}
 
+    try:
+        validated = CancelOrderInput(order_id=order_id, reason=reason)
+    except ValidationError as exc:
+        return validation_error_payload("cancel_order", exc)
+    order_id = str(validated.order_id)
+    reason = validated.reason
+
     pool = get_pool()
     async with pool.acquire() as conn:
         # Single transaction so SELECT-then-UPDATE can't race with a
@@ -285,6 +297,14 @@ async def modify_order(
     if not email:
         return {"error": "No user context available"}
 
+    try:
+        validated = ModifyOrderInput(order_id=order_id, new_address=new_address)
+    except ValidationError as exc:
+        return validation_error_payload("modify_order", exc)
+    order_id = str(validated.order_id)
+    # Re-serialise from the validated model so unknown keys are dropped.
+    new_address = validated.new_address.model_dump()
+
     pool = get_pool()
     async with pool.acquire() as conn:
         # Verify ownership and check status
@@ -305,13 +325,7 @@ async def modify_order(
                 "current_status": order["status"],
             }
 
-        # Validate address fields
-        required_fields = {"street", "city", "state", "zip", "country"}
-        missing = required_fields - set(new_address.keys())
-        if missing:
-            return {"error": f"Missing required address fields: {', '.join(missing)}"}
-
-        # Update shipping address
+        # Update shipping address (input was validated above by Pydantic).
         await conn.execute(
             "UPDATE orders SET shipping_address = $1 WHERE id = $2",
             json.dumps(new_address), order_id,
