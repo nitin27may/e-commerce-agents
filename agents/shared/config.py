@@ -102,6 +102,12 @@ class Settings(BaseSettings):
     # for UI breadcrumbs / observability.
     HANDOFF_AUTONOMOUS_MODE: bool = True
 
+    # Orchestrator routing mode:
+    #   tool    — LLM calls call_specialist_agent tool (today's behavior)
+    #   handoff — MAF HandoffBuilder workflow with remote A2A proxies
+    # Default stays "tool" so rollouts are opt-in.
+    MAF_HANDOFF_MODE: str = "tool"
+
     # When true, CI regenerates docs/workflows/*.mmd and fails on drift.
     WORKFLOW_VISUALIZATION_ON_BUILD: bool = False
 
