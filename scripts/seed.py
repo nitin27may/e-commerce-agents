@@ -691,6 +691,126 @@ async def seed_carts(conn: asyncpg.Connection, user_ids: dict[str, uuid.UUID], p
     logger.info("Seeded 2 demo carts")
 
 
+async def seed_workflow_checkpoints(conn: asyncpg.Connection) -> None:
+    """Drop a handful of resumable-workflow checkpoints into the table.
+
+    Mirrors the shape that ``shared/checkpoint_storage.PostgresCheckpointStorage``
+    writes: ``checkpoint_id`` UUID, ``workflow_name`` string, ``payload``
+    JSONB containing the encoded ``WorkflowCheckpoint`` dict. The values
+    here aren't load-bearing — they're just enough for the admin UI and
+    the eval harness to render rows without a runtime first having to
+    execute a workflow.
+    """
+    samples = [
+        (
+            "return-and-replace",
+            {
+                "superstep": 2,
+                "executor_states": {
+                    "check-eligibility": {"completed": True},
+                    "initiate-return": {"completed": True},
+                },
+                "messages": [],
+                "workflow_id": "demo-return-001",
+            },
+        ),
+        (
+            "return-and-replace",
+            {
+                "superstep": 3,
+                "executor_states": {
+                    "check-eligibility": {"completed": True},
+                    "initiate-return": {"completed": True},
+                    "search-replacements": {"completed": True},
+                },
+                "messages": [],
+                "workflow_id": "demo-return-002",
+            },
+        ),
+        (
+            "pre-purchase",
+            {
+                "superstep": 1,
+                "executor_states": {"fan-out": {"completed": True}},
+                "messages": [],
+                "workflow_id": "demo-prepurchase-001",
+            },
+        ),
+    ]
+    for workflow_name, payload in samples:
+        await conn.execute(
+            """INSERT INTO workflow_checkpoints (checkpoint_id, workflow_name, payload)
+               VALUES ($1, $2, $3::jsonb)""",
+            uuid.uuid4(),
+            workflow_name,
+            json.dumps(payload),
+        )
+    logger.info("Seeded %d workflow checkpoints", len(samples))
+
+
+async def seed_hitl_requests(conn: asyncpg.Connection, user_ids: dict[str, uuid.UUID]) -> None:
+    """Create one of each HITL state so the admin pending-approvals UI
+    has something to show on first login.
+
+    Pending: still waiting for a reviewer.
+    Approved: reviewer said yes — workflow resumed.
+    Rejected: reviewer said no — workflow ended with an error.
+    """
+    if not user_ids:
+        return
+
+    # First three users get one HITL row apiece in different states.
+    emails = list(user_ids.keys())[:3]
+    states = [
+        (
+            "pending",
+            {
+                "order_id": "demo-order-001",
+                "order_total": 720.0,
+                "refund_amount": 720.0,
+                "replacement_count": 4,
+            },
+            None,
+        ),
+        (
+            "approved",
+            {
+                "order_id": "demo-order-002",
+                "order_total": 1_350.5,
+                "refund_amount": 1_350.5,
+                "replacement_count": 2,
+            },
+            {"approved": True, "reviewer_note": "Auto-approved (loyalty tier gold)."},
+        ),
+        (
+            "rejected",
+            {
+                "order_id": "demo-order-003",
+                "order_total": 9_999.99,
+                "refund_amount": 9_999.99,
+                "replacement_count": 0,
+            },
+            {"approved": False, "reviewer_note": "Suspected fraud — manual investigation."},
+        ),
+    ]
+
+    for email, (status, payload, response) in zip(emails, states):
+        await conn.execute(
+            """INSERT INTO hitl_requests
+                 (workflow_run_id, user_email, kind, payload, status, responded_at, response)
+               VALUES ($1, $2, $3, $4::jsonb, $5,
+                       CASE WHEN $5 = 'pending' THEN NULL ELSE NOW() - INTERVAL '1 hour' END,
+                       $6::jsonb)""",
+            uuid.uuid4(),
+            email,
+            "return_approval",
+            json.dumps(payload),
+            status,
+            json.dumps(response) if response else None,
+        )
+    logger.info("Seeded %d HITL requests (pending + approved + rejected)", len(states))
+
+
 async def main() -> None:
     logger.info("Connecting to database: %s", DATABASE_URL.split("@")[-1])
     conn = await connect_with_retry(DATABASE_URL)
@@ -700,9 +820,13 @@ async def main() -> None:
         count = await conn.fetchval("SELECT COUNT(*) FROM users")
         if count > 0:
             logger.info("Database already has %d users — clearing and re-seeding", count)
-            # Truncate all tables in dependency order
+            # Truncate all tables in dependency order. Phase-7 tables
+            # (workflow_checkpoints, hitl_requests) sit at the leaves so
+            # CASCADE handles them, but we list them explicitly so a
+            # future schema change doesn't silently leave demo rows.
             await conn.execute("""
-                TRUNCATE agent_execution_steps, usage_logs, messages, conversations,
+                TRUNCATE workflow_checkpoints, hitl_requests,
+                         agent_execution_steps, usage_logs, messages, conversations,
                          agent_permissions, access_requests, agent_catalog,
                          restock_schedule, shipping_rates, warehouse_inventory,
                          price_history, product_embeddings, reviews,
@@ -729,6 +853,8 @@ async def main() -> None:
         await seed_agent_catalog(conn)
         await seed_agent_permissions(conn, user_ids)
         await seed_carts(conn, user_ids, products)
+        await seed_workflow_checkpoints(conn)
+        await seed_hitl_requests(conn, user_ids)
 
         logger.info("Seeding complete!")
 
