@@ -40,7 +40,15 @@ CREATE TABLE products (
     specs JSONB DEFAULT '{}',          -- Product-specific attributes
     is_active BOOLEAN DEFAULT TRUE,
     seller_id UUID REFERENCES users(id),
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    -- Full-text search vector, maintained by Postgres on every write.
+    -- Weighted so a name hit outranks a brand hit, which outranks a
+    -- description hit — ts_rank() reads these weights when ordering.
+    search_vector tsvector GENERATED ALWAYS AS (
+        setweight(to_tsvector('english', coalesce(name, '')), 'A') ||
+        setweight(to_tsvector('english', coalesce(brand, '')), 'B') ||
+        setweight(to_tsvector('english', coalesce(description, '')), 'C')
+    ) STORED
 );
 
 CREATE TABLE product_embeddings (
@@ -395,6 +403,7 @@ CREATE INDEX idx_products_seller ON products(seller_id);
 CREATE INDEX idx_products_category ON products(category);
 CREATE INDEX idx_products_price ON products(price);
 CREATE INDEX idx_products_rating ON products(rating DESC);
+CREATE INDEX idx_products_search ON products USING GIN (search_vector);
 CREATE INDEX idx_orders_user ON orders(user_id, created_at DESC);
 CREATE INDEX idx_orders_status ON orders(status);
 -- Audit fix #7: order_items.product_id is a FK with no index, so every

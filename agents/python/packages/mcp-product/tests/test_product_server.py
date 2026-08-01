@@ -155,3 +155,77 @@ async def test_get_price_history_no_history(
     assert result["product_id"] == product_id
     # No price_history rows seeded → summary field present
     assert "current_price" in result
+
+
+# ─────────────────────── Full-text search parity ────────────────────────────
+#
+# The MCP path must answer the same queries the same way as the native
+# product_discovery tool. This server used to LIKE the whole query as one
+# `%phrase%`, so any multi-word query needed an exact substring — far stricter
+# than the native tool's per-word matching, and a real behavior difference
+# between MCP_ENABLED=true and false.
+
+
+@pytest_asyncio.fixture
+async def fts_catalog(postgres_pool: asyncpg.Pool) -> dict[str, str]:
+    """Two products whose terms differ morphologically from the test queries."""
+    async with postgres_pool.acquire() as conn:
+        anc = await conn.fetchval(
+            """INSERT INTO products (name, description, category, brand, price, rating, is_active)
+               VALUES ('Wireless Headphones with ANC',
+                       'Over-ear wireless headphones with active noise cancelling.',
+                       'Electronics', 'Sony', 279.99, 4.5, TRUE)
+               RETURNING id"""
+        )
+        kettle = await conn.fetchval(
+            """INSERT INTO products (name, description, category, brand, price, rating, is_active)
+               VALUES ('Electric Kettle', 'Stainless steel kettle with rapid boil.',
+                       'Home', 'Breville', 59.99, 4.8, TRUE)
+               RETURNING id"""
+        )
+    return {"anc": str(anc), "kettle": str(kettle)}
+
+
+@pytest.mark.integration
+async def test_search_matches_stemmed_terms(
+    fts_catalog: dict[str, str],
+    _patched_pool: None,
+) -> None:
+    """"noise cancellation" must find "noise cancelling" — no literal substring."""
+    from ecommerce_mcp_product.server import search_products
+
+    results = await search_products(query="noise cancellation headphones")
+
+    assert fts_catalog["anc"] in [r["id"] for r in results]
+
+
+@pytest.mark.integration
+async def test_search_does_not_require_every_term(
+    fts_catalog: dict[str, str],
+    _patched_pool: None,
+) -> None:
+    """No product mentions bluetooth; that must not empty the result set."""
+    from ecommerce_mcp_product.server import search_products
+
+    results = await search_products(query="wireless bluetooth headphones")
+
+    assert fts_catalog["anc"] in [r["id"] for r in results]
+
+
+@pytest.mark.integration
+async def test_search_stopword_only_query_falls_back_to_filters(
+    fts_catalog: dict[str, str],
+    _patched_pool: None,
+) -> None:
+    """`plainto_tsquery('the ???')` is an empty tsquery matching no rows — that
+    must not turn a filtered browse into zero results.
+
+    This package's `postgres_pool` is session-scoped with no per-test truncate,
+    so assert on membership and the filter, not on an exact row set.
+    """
+    from ecommerce_mcp_product.server import search_products
+
+    results = await search_products(query="the ???", category="Home")
+
+    assert fts_catalog["kettle"] in [r["id"] for r in results]
+    assert all(r["category"] == "Home" for r in results)

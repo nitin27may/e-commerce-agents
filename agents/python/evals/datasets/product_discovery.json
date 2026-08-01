@@ -29,6 +29,17 @@
     }
   },
   {
+    "input": "wireless headphones with noise cancellation under $300",
+    "expected_tools": ["search_products"],
+    "expected_fields": ["name", "price"],
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "max_price_respected": true,
+      "non_empty_results": true
+    }
+  },
+  {
     "input": "I need something cozy for winter, maybe a blanket or warm jacket",
     "expected_tools": ["semantic_search"],
     "expected_fields": ["name", "price", "category"],
