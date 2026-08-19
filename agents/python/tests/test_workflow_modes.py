@@ -14,6 +14,7 @@ shape.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import pytest
@@ -114,6 +115,25 @@ def test_pre_purchase_mode_graph_mermaid_is_static() -> None:
     assert graph is not None
     assert "fan_out" in graph
     assert "synthesis" in graph
+
+
+@pytest.mark.asyncio
+async def test_pre_purchase_mode_live_node_ids_correlate_to_the_graph() -> None:
+    """A client animating orchestration-graph.tsx needs every live
+    node_id (from node_enter/node_exit events) to resolve to a node in
+    graph_mermaid()'s output via node_id.replace("-", "_") — no hardcoded
+    per-mode alias table. Verifies that contract against a real run, not
+    just eyeballing the two strings."""
+    mode = PrePurchaseMode(tools=PRE_PURCHASE_TOOLS)
+    events = [e async for e in mode.run(PRODUCT_UUID, RunContext(history=[]))]
+    live_node_ids = {e.node_id for e in events if e.kind in ("node_enter", "node_exit") and e.node_id}
+    assert live_node_ids, "expected at least one node event"
+
+    graph = mode.graph_mermaid()
+    assert graph is not None
+    mermaid_ids = set(re.findall(r"[\w]+", graph))
+    for node_id in live_node_ids:
+        assert node_id.replace("-", "_") in mermaid_ids, f"{node_id!r} has no matching node in graph_mermaid()"
 
 
 # ─────────────────────── ReturnReplaceMode ───────────────────────
@@ -219,3 +239,24 @@ def test_return_replace_mode_graph_mermaid_is_static() -> None:
     graph = ReturnReplaceMode().graph_mermaid()
     assert graph is not None
     assert "hitl-gate" in graph or "gate" in graph
+
+
+@pytest.mark.asyncio
+async def test_return_replace_mode_live_node_ids_correlate_to_the_graph(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Same node_id.replace("-", "_") correlation contract as
+    pre-purchase's — see that test's docstring."""
+    import order_management.tools as order_tools
+
+    monkeypatch.setattr(order_tools, "get_order_details", _stub_order_details(50.0))
+    current_user_email.set("alice@example.com")
+
+    mode = ReturnReplaceMode(tools=RETURN_TOOLS)
+    events = [e async for e in mode.run(f"return order {ORDER_UUID}", RunContext(history=[]))]
+    live_node_ids = {e.node_id for e in events if e.kind in ("node_enter", "node_exit") and e.node_id}
+    assert live_node_ids, "expected at least one node event"
+
+    graph = mode.graph_mermaid()
+    assert graph is not None
+    mermaid_ids = set(re.findall(r"[\w]+", graph))
+    for node_id in live_node_ids:
+        assert node_id.replace("-", "_") in mermaid_ids, f"{node_id!r} has no matching node in graph_mermaid()"

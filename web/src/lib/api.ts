@@ -404,6 +404,12 @@ class ApiClient {
     return this.request<OrchestrationMode[]>("/api/orchestration/modes");
   }
 
+  getModeGraph(name: string) {
+    return this.request<{ name: string; mermaid: string | null }>(
+      `/api/orchestration/modes/${encodeURIComponent(name)}/graph`,
+    );
+  }
+
   // Conversations
   getConversations() {
     return this.request<any[]>("/api/conversations");

@@ -12,6 +12,7 @@ import { useCart } from "@/lib/cart-context";
 import { api, type AgentStep } from "@/lib/api";
 import { RichMessage } from "@/components/chat/rich-message";
 import { AgentTimeline } from "@/components/chat/agent-timeline";
+import { OrchestrationGraph } from "@/components/chat/orchestration-graph";
 import { ModeSwitcher } from "@/components/chat/mode-switcher";
 import { QUICK_PROMPTS } from "@/lib/scenarios";
 import { Button } from "@/components/ui/button";
@@ -57,6 +58,14 @@ interface Message {
   steps?: AgentStep[];
   created_at?: string;
   streaming?: boolean;
+  /** Orchestration mode this turn ran through — set on the assistant
+   * message so OrchestrationGraph knows which mode's graph to render,
+   * independent of whatever's currently selected in the switcher. */
+  mode?: string;
+  /** Executor ids (dashed, live form) currently mid-run / completed / errored — from `event: node`/`error` SSE frames. */
+  activeNodeIds?: string[];
+  doneNodeIds?: string[];
+  errorNodeIds?: string[];
 }
 
 interface Conversation {
@@ -305,6 +314,11 @@ export default function ChatPage() {
   // Per-message abort controller. New send aborts any in-flight stream;
   // unmount aborts whatever's still running. Plugs the SSE-leak finding.
   const streamAbortRef = useRef<AbortController | null>(null);
+  // Set by sendMessage() right after it creates a new conversation, so the
+  // "load messages when active conversation changes" effect below can skip
+  // its usual server reload for that one transition — see that effect's
+  // comment.
+  const justCreatedConversationRef = useRef<string | null>(null);
 
   // Cancel in-flight stream when the component unmounts (route change).
   useEffect(
@@ -354,6 +368,18 @@ export default function ChatPage() {
   useEffect(() => {
     if (!activeConversationId) {
       setMessages([]);
+      return;
+    }
+    if (justCreatedConversationRef.current === activeConversationId) {
+      // sendMessage() just set this id after creating the conversation for
+      // its own first turn — local `messages` state is already complete
+      // (and richer: it carries client-only fields like an assistant
+      // message's `mode`/`activeNodeIds` that OrchestrationGraph needs and
+      // the server has nowhere to persist). Reloading from the server here
+      // would silently replace those messages and wipe those fields —
+      // found live, as the graph rendering then disappearing a few hundred
+      // ms after every first send in a new conversation.
+      justCreatedConversationRef.current = null;
       return;
     }
     loadMessages(activeConversationId);
@@ -441,6 +467,11 @@ export default function ChatPage() {
 
     const assistantId = crypto.randomUUID();
     let assistantCreated = false;
+    // Snapshot now — orchestrationMode may change before this turn resolves
+    // (e.g. the user picks a different mode for their next message while
+    // this one is still streaming), but this message ran through whatever
+    // was selected at send time.
+    const messageMode = orchestrationMode || "tool";
 
     // Abort any prior stream still draining before starting a new one.
     streamAbortRef.current?.abort();
@@ -461,6 +492,7 @@ export default function ChatPage() {
                 role: "assistant",
                 content: chunk,
                 streaming: true,
+                mode: messageMode,
               },
             ]);
           } else {
@@ -499,6 +531,7 @@ export default function ChatPage() {
                     content: "",
                     streaming: true,
                     steps: [step],
+                    mode: messageMode,
                   },
                 ];
               }
@@ -507,6 +540,39 @@ export default function ChatPage() {
                   ? { ...m, steps: [...(m.steps ?? []), step] }
                   : m,
               );
+            });
+          },
+          onOrchestrationEvent: (eventName, data) => {
+            if (eventName !== "node" && eventName !== "error") return;
+            const frame = data as { node_id?: string; phase?: "enter" | "exit" };
+            const nodeId = frame.node_id;
+            if (!nodeId) return;
+
+            setMessages((prev) => {
+              const existing = prev.find((m) => m.id === assistantId);
+              const base: Message = existing ?? {
+                id: assistantId,
+                role: "assistant",
+                content: "",
+                streaming: true,
+                mode: messageMode,
+              };
+              if (!existing) assistantCreated = true;
+
+              let next: Message;
+              if (eventName === "error") {
+                next = { ...base, errorNodeIds: [...(base.errorNodeIds ?? []), nodeId] };
+              } else if (frame.phase === "exit") {
+                next = {
+                  ...base,
+                  activeNodeIds: (base.activeNodeIds ?? []).filter((id) => id !== nodeId),
+                  doneNodeIds: [...(base.doneNodeIds ?? []), nodeId],
+                };
+              } else {
+                next = { ...base, activeNodeIds: [...(base.activeNodeIds ?? []), nodeId] };
+              }
+
+              return existing ? prev.map((m) => (m.id === assistantId ? next : m)) : [...prev, next];
             });
           },
           mode: orchestrationMode || undefined,
@@ -518,6 +584,7 @@ export default function ChatPage() {
       // reload still picks it up.
       if (!activeConversationId && meta.conversation_id) {
         storeOrchestrationMode(meta.conversation_id, orchestrationMode);
+        justCreatedConversationRef.current = meta.conversation_id;
         setActiveConversationId(meta.conversation_id);
         await loadConversations();
       }
@@ -714,6 +781,15 @@ export default function ChatPage() {
                     {msg.role === "assistant" &&
                       msg.steps &&
                       msg.steps.length > 0 && <AgentTimeline steps={msg.steps} />}
+
+                    {msg.role === "assistant" && msg.mode && (
+                      <OrchestrationGraph
+                        mode={msg.mode}
+                        activeNodeIds={msg.activeNodeIds}
+                        doneNodeIds={msg.doneNodeIds}
+                        errorNodeIds={msg.errorNodeIds}
+                      />
+                    )}
 
                     {msg.role === "assistant" && !msg.streaming && msg.content && (
                       <MessageActions

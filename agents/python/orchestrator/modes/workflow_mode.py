@@ -162,15 +162,22 @@ class PrePurchaseMode:
         )
 
     def graph_mermaid(self) -> str | None:
+        # Node ids are the real executor ids (workflows/pre_purchase.py's
+        # Executor(id=...) strings) with dashes swapped for underscores —
+        # Mermaid doesn't allow dashes in bare node ids. That systematic,
+        # reversible transform is deliberate: it's what lets a client
+        # correlate a live `node_id` from an OrchestrationEvent (which
+        # carries the real dashed executor id) back to a node in this
+        # diagram without a hardcoded per-mode alias table.
         return (
             "graph LR\n"
             "  fan_out[fan-out] --> reviews\n"
             "  fan_out --> stock\n"
             "  fan_out --> price_history[price-history]\n"
-            "  reviews --> merge[merge-and-ship]\n"
-            "  stock --> merge\n"
-            "  price_history --> merge\n"
-            "  merge --> synthesis\n"
+            "  reviews --> merge_and_ship[merge-and-ship]\n"
+            "  stock --> merge_and_ship\n"
+            "  price_history --> merge_and_ship\n"
+            "  merge_and_ship --> synthesis\n"
         )
 
 
@@ -367,11 +374,13 @@ class ReturnReplaceMode:
         )
 
     def graph_mermaid(self) -> str | None:
+        # Same dash-to-underscore node-id convention as PrePurchaseMode's
+        # graph_mermaid() — see its comment.
         return (
             "graph LR\n"
-            "  check[check-eligibility] --> initiate[initiate-return]\n"
-            "  initiate --> search[search-replacements]\n"
-            "  search --> gate[hitl-gate]\n"
-            "  gate --> discount[apply-discount]\n"
-            "  discount --> finalize\n"
+            "  check_eligibility[check-eligibility] --> initiate_return[initiate-return]\n"
+            "  initiate_return --> search_replacements[search-replacements]\n"
+            "  search_replacements --> hitl_gate[hitl-gate]\n"
+            "  hitl_gate --> apply_discount[apply-discount]\n"
+            "  apply_discount --> finalize\n"
         )
