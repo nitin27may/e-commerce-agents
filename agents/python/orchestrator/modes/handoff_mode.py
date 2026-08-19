@@ -80,6 +80,15 @@ class HandoffMode:
         agents_involved = list(dict.fromkeys(eid for eid, _ in assembled)) or ["orchestrator"]
         final_text = assembled[-1][1] if assembled else ""
 
+        # No "grounding" key here (unlike tool_router.py): each participant's
+        # own agent.run() call still runs GroundingVerificationMiddleware and
+        # still corrects/strips its finalized response before persistence,
+        # but final_text above is assembled by concatenating raw streamed
+        # AgentResponseUpdate chunks off HandoffBuilder's workflow event
+        # stream — it never exposes the per-participant AgentResponse whose
+        # additional_properties carries the report. Surfacing it in the UI
+        # for this mode needs a HandoffBuilder event-stream change, not a
+        # grounding change.
         yield OrchestrationEvent(
             kind="run_completed",
             payload={"text": final_text, "agents_involved": agents_involved},

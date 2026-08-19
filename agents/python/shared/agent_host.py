@@ -62,10 +62,19 @@ async def _run_agent_native(
     agent: Any,
     user_message: str,
     history: list[dict] | None = None,
+    metadata_box: dict[str, Any] | None = None,
 ) -> str:
-    """Run an agent via MAF's native execution path and return answer text."""
+    """Run an agent via MAF's native execution path and return answer text.
+
+    ``metadata_box``, if given, is filled in place with the response's
+    ``additional_properties`` (e.g. the grounding report
+    ``GroundingVerificationMiddleware`` attaches) — a plain ``str`` return
+    can't carry that side-channel data.
+    """
     messages = _history_as_maf_messages(history, user_message)
     response = await agent.run(messages, options=_run_options())
+    if metadata_box is not None:
+        metadata_box.update(getattr(response, "additional_properties", None) or {})
     return response.text or ""
 
 
@@ -73,13 +82,28 @@ async def _run_agent_native_stream(
     agent: Any,
     user_message: str,
     history: list[dict] | None = None,
+    metadata_box: dict[str, Any] | None = None,
 ) -> AsyncGenerator[str, None]:
-    """Streaming variant — yields text chunks as MAF produces them."""
+    """Streaming variant — yields text chunks as MAF produces them.
+
+    ``metadata_box``, if given, is filled in place once the underlying
+    stream is exhausted. A plain ``async for`` loop over ``agent.run(...,
+    stream=True)`` already drives MAF's ``ResponseStream`` to call
+    ``get_final_response()`` internally on completion (see
+    ``shared/grounding/middleware.py``'s docstring), so the finalized
+    response — including any grounding report — is available immediately
+    after this generator returns; calling ``get_final_response()`` again
+    here just returns that cached result.
+    """
     messages = _history_as_maf_messages(history, user_message)
-    async for update in agent.run(messages, stream=True, options=_run_options()):
+    stream = agent.run(messages, stream=True, options=_run_options())
+    async for update in stream:
         text = getattr(update, "text", None)
         if text:
             yield text
+    if metadata_box is not None and hasattr(stream, "get_final_response"):
+        final = await stream.get_final_response()
+        metadata_box.update(getattr(final, "additional_properties", None) or {})
 
 
 # ─────────────────────── Session rehydration ──────────────────────

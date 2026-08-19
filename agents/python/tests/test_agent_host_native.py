@@ -136,8 +136,9 @@ async def test_rehydrate_swallows_missing_pool(monkeypatch) -> None:
 
 
 class _FakeResponse:
-    def __init__(self, text: str) -> None:
+    def __init__(self, text: str, additional_properties: dict | None = None) -> None:
         self.text = text
+        self.additional_properties = additional_properties or {}
 
 
 class _FakeStreamingUpdate:
@@ -204,6 +205,27 @@ async def test_run_agent_native_threads_history_into_messages() -> None:
 
 
 @pytest.mark.asyncio
+async def test_run_agent_native_fills_metadata_box_from_additional_properties() -> None:
+    class _AgentWithMetadata:
+        def run(self, messages=None, *, stream: bool = False, options=None, **_kwargs):
+            async def _return():
+                return _FakeResponse("ok", additional_properties={"grounding": {"verified": 1}})
+            return _return()
+
+    box: dict = {}
+    await _run_agent_native(_AgentWithMetadata(), "hi", metadata_box=box)
+    assert box == {"grounding": {"verified": 1}}
+
+
+@pytest.mark.asyncio
+async def test_run_agent_native_metadata_box_untouched_when_none_passed() -> None:
+    # Must not raise when the caller doesn't care about metadata.
+    agent = _FakeAgent("ok")
+    text = await _run_agent_native(agent, "hi")
+    assert text == "ok"
+
+
+@pytest.mark.asyncio
 async def test_run_agent_native_stream_yields_all_chunks() -> None:
     agent = _FakeAgent("Paris is the capital of France.")
     pieces = [chunk async for chunk in _run_agent_native_stream(agent, "hi")]
@@ -225,6 +247,50 @@ async def test_run_agent_native_stream_skips_empty_updates() -> None:
 
     chunks = [c async for c in _run_agent_native_stream(_AgentWithEmptyDeltas(), "hi")]
     assert chunks == ["real"]
+
+
+@pytest.mark.asyncio
+async def test_run_agent_native_stream_fills_metadata_box_after_exhaustion() -> None:
+    class _FakeResponseStream:
+        """Minimal stand-in for MAF's ResponseStream: async-iterable plus a
+        get_final_response() the helper calls once iteration completes."""
+
+        def __init__(self, chunks: list[str], final: _FakeResponse) -> None:
+            self._chunks = chunks
+            self._final = final
+
+        def __aiter__(self):
+            return self._gen()
+
+        async def _gen(self):
+            for c in self._chunks:
+                yield _FakeStreamingUpdate(c)
+
+        async def get_final_response(self) -> _FakeResponse:
+            return self._final
+
+    class _AgentWithStreamingMetadata:
+        def run(self, messages=None, *, stream: bool = False, options=None, **_kwargs):
+            return _FakeResponseStream(
+                ["hi"], _FakeResponse("hi", additional_properties={"grounding": {"verified": 2}}),
+            )
+
+    box: dict = {}
+    chunks = [c async for c in _run_agent_native_stream(_AgentWithStreamingMetadata(), "hi", metadata_box=box)]
+    assert chunks == ["hi"]
+    assert box == {"grounding": {"verified": 2}}
+
+
+@pytest.mark.asyncio
+async def test_run_agent_native_stream_metadata_box_skipped_when_stream_has_no_finalizer() -> None:
+    # A plain async generator (no get_final_response) must not raise —
+    # covers every existing _FakeAgent-based test above, which return bare
+    # generators rather than a real MAF ResponseStream.
+    agent = _FakeAgent("ok")
+    box: dict = {}
+    chunks = [c async for c in _run_agent_native_stream(agent, "hi", metadata_box=box)]
+    assert "".join(chunks) == "ok"
+    assert box == {}
 
 
 # ─────────────────────── Live LLM parity ───────────────────

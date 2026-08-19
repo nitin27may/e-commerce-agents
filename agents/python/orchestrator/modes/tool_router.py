@@ -42,7 +42,8 @@ class ToolRouterMode:
         reset_steps()
         reset_grounding_ledger()
 
-        response_text = await _run_agent_native(agent, message, history=ctx.history)
+        run_metadata: dict = {}
+        response_text = await _run_agent_native(agent, message, history=ctx.history, metadata_box=run_metadata)
 
         steps = get_steps()
         for step in steps:
@@ -52,7 +53,12 @@ class ToolRouterMode:
         agents_involved = list(dict.fromkeys(["orchestrator", *(s.get("agent", "orchestrator") for s in steps)]))
         yield OrchestrationEvent(
             kind="run_completed",
-            payload={"text": response_text, "agents_involved": agents_involved, "steps": steps},
+            payload={
+                "text": response_text,
+                "agents_involved": agents_involved,
+                "steps": steps,
+                "grounding": run_metadata.get("grounding"),
+            },
         )
 
     def graph_mermaid(self) -> str | None:

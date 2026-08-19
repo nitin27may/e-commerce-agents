@@ -78,6 +78,7 @@ class ChatResponse(BaseModel):
     response: str
     conversation_id: str
     agents_involved: list[str]
+    grounding: dict[str, Any] | None = None
 
 
 async def _link_run_artifacts(pool: Any, usage_log_id: Any, user_email: str, run_payload: dict[str, Any]) -> None:
@@ -238,6 +239,7 @@ async def chat(body: ChatRequest, user: dict[str, Any] = Depends(optional_auth))
         response=response_text,
         conversation_id=conversation_id or "",
         agents_involved=agents_involved,
+        grounding=run_payload.get("grounding"),
     )
 
 
@@ -361,14 +363,19 @@ async def chat_stream(body: ChatRequest, request: Request, user: dict[str, Any] 
             from shared.agent_host import _run_agent_native_stream
 
             agent = create_orchestrator_agent()
+            run_metadata: dict[str, Any] = {}
 
             async def _run_mode_task() -> None:
                 reset_steps()
                 reset_grounding_ledger()
                 with agent_run_span("orchestrator"):
                     try:
-                        async for chunk in _run_agent_native_stream(agent, body.message, history=history):
+                        async for chunk in _run_agent_native_stream(
+                            agent, body.message, history=history, metadata_box=run_metadata,
+                        ):
                             await queue.put(("text", chunk))
+                        if "grounding" in run_metadata:
+                            await queue.put(("frame", "grounding", run_metadata["grounding"]))
                     except Exception:
                         logger.exception(
                             "chat_stream.agent_error user=%s conversation=%s",

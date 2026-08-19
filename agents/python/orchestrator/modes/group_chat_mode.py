@@ -114,6 +114,12 @@ class GroupChatMode:
                 if isinstance(data, GroupChatState):
                     final_state = data
 
+        # No "grounding" key here: each panelist's own agent.run() call still
+        # runs GroundingVerificationMiddleware against its own turn's text
+        # (see _make_agent_responder above), but that per-turn report isn't
+        # threaded back through workflows/group_chat.py's transcript entries
+        # ({"speaker", "text"} only) or GroupChatState. Surfacing it in the
+        # UI would mean extending that data model, not the grounding code.
         agents_involved = [name for name, _ in panelists] + ["moderator"]
         yield OrchestrationEvent(
             kind="run_completed",
