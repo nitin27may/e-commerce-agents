@@ -35,6 +35,23 @@ export interface AgentStep {
   duration_ms?: number;
 }
 
+/** What a mode supports — from `GET /api/orchestration/modes` (orchestrator/modes/base.py::ModeCapabilities). */
+export interface OrchestrationModeCapabilities {
+  streams: boolean;
+  supports_hitl: boolean;
+  supports_checkpoints: boolean;
+  is_graph: boolean;
+}
+
+/** One entry in `GET /api/orchestration/modes` — a mode `/api/chat`'s `mode` field can select. */
+export interface OrchestrationMode {
+  name: string;
+  label: string;
+  description: string;
+  capabilities: OrchestrationModeCapabilities;
+  default: boolean;
+}
+
 export interface RunStep {
   step_index: number;
   tool_name: string;
@@ -236,11 +253,14 @@ class ApiClient {
        * Fired for any SSE frame that isn't `step`/`metadata`/display text —
        * currently `node`, `handoff`, `checkpoint`, `request_info`, `error`
        * from a non-"tool" orchestration mode (see `orchestrator/routes/chat.py`).
-       * No UI consumes these yet; the hook exists so the parser has
-       * somewhere safe to route them instead of rendering raw JSON as chat
-       * text.
        */
       onOrchestrationEvent?: (eventName: string, data: unknown) => void;
+      /**
+       * Orchestration mode to run this turn through — a `name` from
+       * `GET /api/orchestration/modes`. Omitted (or `undefined`) lets the
+       * backend fall back to `settings.ORCHESTRATION_MODE` (default `"tool"`).
+       */
+      mode?: string;
     } = {}
   ): Promise<{ conversation_id: string; agents_involved: string[] }> {
     const allowRefresh = options.allowRefresh ?? true;
@@ -254,7 +274,11 @@ class ApiClient {
     const res = await fetch(`${API_URL}/api/chat/stream`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ message, conversation_id: conversationId }),
+      body: JSON.stringify({
+        message,
+        conversation_id: conversationId,
+        mode: options.mode,
+      }),
       signal,
     });
 
@@ -373,6 +397,11 @@ class ApiClient {
     }
 
     return metadata ?? { conversation_id: conversationId ?? "", agents_involved: [] };
+  }
+
+  // Orchestration modes
+  getOrchestrationModes() {
+    return this.request<OrchestrationMode[]>("/api/orchestration/modes");
   }
 
   // Conversations

@@ -864,13 +864,28 @@ async def seed_hitl_requests(conn: asyncpg.Connection, user_ids: dict[str, uuid.
     ]
 
     for email, (status, payload, response) in zip(emails, states):
+        # hitl_requests.workflow_run_id is a real FK to usage_logs (Phase
+        # 1.5) — needs a row to point at, not a bare random UUID. These
+        # demo rows never carry request_id/checkpoint_id (NULL, same as
+        # any pre-checkpoint-era request): they're for the admin
+        # pending-approvals UI to have something to show, not meant to be
+        # actually resumable via POST /api/orchestration/{run_id}/resume
+        # (which correctly 409s on a request with no checkpoint to resume
+        # from).
+        usage_log_id = await conn.fetchval(
+            """INSERT INTO usage_logs (user_id, agent_name, input_summary, status)
+               VALUES ($1, 'orchestrator', $2, 'success')
+               RETURNING id""",
+            user_ids[email],
+            f"Return request for order {payload['order_id']}",
+        )
         await conn.execute(
             """INSERT INTO hitl_requests
                  (workflow_run_id, user_email, kind, payload, status, responded_at, response)
                VALUES ($1, $2, $3, $4::jsonb, $5,
                        CASE WHEN $5 = 'pending' THEN NULL ELSE NOW() - INTERVAL '1 hour' END,
                        $6::jsonb)""",
-            uuid.uuid4(),
+            usage_log_id,
             email,
             "return_approval",
             json.dumps(payload),

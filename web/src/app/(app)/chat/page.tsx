@@ -12,6 +12,7 @@ import { useCart } from "@/lib/cart-context";
 import { api, type AgentStep } from "@/lib/api";
 import { RichMessage } from "@/components/chat/rich-message";
 import { AgentTimeline } from "@/components/chat/agent-timeline";
+import { ModeSwitcher } from "@/components/chat/mode-switcher";
 import { QUICK_PROMPTS } from "@/lib/scenarios";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -63,6 +64,36 @@ interface Conversation {
   title: string;
   created_at: string;
   updated_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Orchestration mode persistence — remembered per conversation (and for a
+// not-yet-created conversation, under a "draft" key) so a reload keeps the
+// same mode selected. Distinct from AGENT_MODES/agentMode in
+// ai-prompt-box.tsx, which pick a specialist to route to directly — this
+// picks how the orchestrator itself runs the turn.
+// ---------------------------------------------------------------------------
+
+const ORCH_MODE_STORAGE_PREFIX = "ecommerce_orch_mode:";
+const ORCH_MODE_DRAFT_KEY = "draft";
+
+function loadStoredOrchestrationMode(conversationId: string | null): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return localStorage.getItem(ORCH_MODE_STORAGE_PREFIX + (conversationId ?? ORCH_MODE_DRAFT_KEY)) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function storeOrchestrationMode(conversationId: string | null, mode: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(ORCH_MODE_STORAGE_PREFIX + (conversationId ?? ORCH_MODE_DRAFT_KEY), mode);
+  } catch {
+    // Private browsing / storage full — the mode still works for this
+    // session via component state, it just won't survive a reload.
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -265,6 +296,7 @@ export default function ChatPage() {
   const [isResponding, setIsResponding] = useState(false);
   const [thinkingLabel, setThinkingLabel] = useState<string>("Routing to specialists...");
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [orchestrationMode, setOrchestrationMode] = useState<string>("");
 
   const searchParams = useSearchParams();
   const pendingQueryRef = useRef<string | null>(null);
@@ -326,6 +358,19 @@ export default function ChatPage() {
     }
     loadMessages(activeConversationId);
   }, [activeConversationId]);
+
+  // ---- Restore the orchestration mode remembered for this conversation ----
+  useEffect(() => {
+    setOrchestrationMode(loadStoredOrchestrationMode(activeConversationId));
+  }, [activeConversationId]);
+
+  const handleModeChange = useCallback(
+    (mode: string) => {
+      setOrchestrationMode(mode);
+      storeOrchestrationMode(activeConversationId, mode);
+    },
+    [activeConversationId],
+  );
 
   async function loadMessages(conversationId: string) {
     try {
@@ -464,11 +509,15 @@ export default function ChatPage() {
               );
             });
           },
+          mode: orchestrationMode || undefined,
         },
       );
 
-      // If this was the first message, a new conversation was created
+      // If this was the first message, a new conversation was created —
+      // re-key the draft-stored mode under the real conversation id so a
+      // reload still picks it up.
       if (!activeConversationId && meta.conversation_id) {
+        storeOrchestrationMode(meta.conversation_id, orchestrationMode);
         setActiveConversationId(meta.conversation_id);
         await loadConversations();
       }
@@ -704,7 +753,10 @@ export default function ChatPage() {
 
         {/* ---- Input area ---- */}
         <div className="border-t bg-background px-4 py-3">
-          <div className="mx-auto max-w-3xl">
+          <div className="mx-auto max-w-3xl space-y-2">
+            <div className="flex items-center justify-end">
+              <ModeSwitcher value={orchestrationMode} onChange={handleModeChange} disabled={isResponding} />
+            </div>
             <PromptInputBox
               onSend={(message, agentMode) => sendMessage(message, agentMode)}
               isLoading={isResponding}
