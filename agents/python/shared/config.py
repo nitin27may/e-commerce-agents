@@ -61,8 +61,21 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379"
 
     # ── LLM ─────────────────────────────────────────────────────────
-    LLM_PROVIDER: str = "openai"  # openai | azure
+    LLM_PROVIDER: str = "openai"  # openai | azure | replay
     LLM_MODEL: str = "gpt-4.1"
+    # Optional base_url override for the OpenAI-compatible `openai` provider —
+    # points OpenAIChatClient at any OpenAI-compatible endpoint (GitHub Models,
+    # OpenRouter, vLLM, LM Studio, Azure AI Foundry's OpenAI-compatible route)
+    # instead of api.openai.com. Unset by default; only takes effect when
+    # LLM_PROVIDER=openai. See tutorials/00-setup/README.md for the GitHub
+    # Models path, which is free with a GitHub PAT.
+    LLM_BASE_URL: str = ""
+    # replay-provider settings — see shared/replay_client.py. RECORD=true makes
+    # a missing fixture fall through to a real call (via REPLAY_RECORD_PROVIDER)
+    # and persist the result instead of raising.
+    REPLAY_RECORD_PROVIDER: str = "openai"  # openai | azure — used only when RECORD=true
+    REPLAY_FIXTURES_DIR: str = "tests/fixtures/replay"
+    RECORD: bool = False
     # Sampling temperature for every agent run. Defaults LOW for consistent,
     # reproducible answers — at the provider default (~1.0) the same query can
     # yield categorically different results (e.g. finding vs. not finding a
