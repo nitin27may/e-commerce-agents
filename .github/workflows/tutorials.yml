@@ -4,16 +4,30 @@ name: Tutorials
 #   uv sync --project tutorials
 #   uv run --project tutorials python tutorials/<chapter>/python/main.py
 #   uv run --project tutorials pytest tutorials/<chapter>/python/tests -v
-# and this workflow runs the deterministic half of that (`pytest -m "not
-# integration"`) on every push and PR so a chapter can't silently stop
-# collecting or start failing without CI going red.
+# and this workflow runs `pytest -m "not integration"` on every push and PR
+# so a chapter can't silently stop collecting or start failing without CI
+# going red.
 #
 # 14 of the 21 tutorial test files are marked `@pytest.mark.integration` and
-# require a live OPENAI_API_KEY / AZURE_OPENAI_* key to run (chapters 06 and
-# 07 are 100% integration) — this job intentionally does NOT provide one, so
-# those tests are collected but skipped/deselected here, not deleted or
-# unmarked. A later phase adds a replay-based chat client so the integration
-# suite can run keylessly too.
+# require a live OPENAI_API_KEY / AZURE_OPENAI_* key to run — this job
+# intentionally does NOT provide one, so those specific tests are collected
+# but skipped/deselected here, not deleted or unmarked. Every one of those 14
+# chapters ALSO ships a keyless replay-based test (unmarked, so it IS covered
+# by "not integration") that plays back a committed fixture via
+# `LLM_PROVIDER=replay` — see tutorials/_shared/replay_client.py and
+# tutorials/01-first-agent/ for the reference implementation. That's what
+# lets this job exercise the "hits an LLM and gets a real answer" assertion
+# on every PR with zero secrets configured.
+#
+# PYTHONHASHSEED is pinned because chapter 14's HandoffBuilder mesh
+# construction is sensitive to Python's per-process hash randomization,
+# which changes what gets built into later handoff turns and therefore the
+# replay fixture hash for those turns (see
+# tutorials/14-handoff-orchestration/python/tests/test_handoff.py's module
+# docstring). Fixtures were recorded with PYTHONHASHSEED=0; without the same
+# pin here, that one chapter's replay test would flake. No other chapter
+# needs this — their participant lists are consumed in list order, not
+# through anything hash-order-sensitive.
 #
 # Chapter 20b (DevUI) ships its own pyproject.toml and chapter 22
 # (Group-Chat Debate) runs against agents/python instead of tutorials/ — see
@@ -42,6 +56,9 @@ jobs:
     name: Tutorials · pytest (non-integration)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      # See the top-of-file comment — pins reproducible replay for chapter 14.
+      PYTHONHASHSEED: "0"
     steps:
       - uses: actions/checkout@v4
 

@@ -1,0 +1,50 @@
+{
+  "request": {
+    "instructions": "You are a translator. Translate the user's message to French. Output ONLY the translation \u2014 no quotes, no preamble, no explanation.",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "Hello, how are you?",
+            "type": "text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      }
+    ],
+    "tools": []
+  },
+  "response": {
+    "created_at": "2026-08-19T18:23:36.000000Z",
+    "finish_reason": "stop",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "Bonjour, comment \u00e7a va ?",
+            "type": "text"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      }
+    ],
+    "model": "gpt-4.1-2025-04-14",
+    "response_id": "chatcmpl-EEfEm05j4rldFj9Dmb3wdS7fWtnyP",
+    "type": "chat_response",
+    "usage_details": {
+      "cache_read_input_token_count": 0,
+      "completion/reasoning_tokens": 0,
+      "input_token_count": 44,
+      "output_token_count": 7,
+      "prompt/cached_tokens": 0,
+      "reasoning_output_token_count": 0,
+      "total_token_count": 51
+    }
+  }
+}

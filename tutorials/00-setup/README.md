@@ -25,16 +25,56 @@ cp .env.example .env
 
 ## Environment variables
 
-Set one of the two blocks in repo-root `.env`:
+Set one of the blocks in repo-root `.env`:
 
 | Provider | Required | Optional |
 |----------|----------|----------|
-| **OpenAI** | `OPENAI_API_KEY` | `LLM_MODEL` (default `gpt-4.1`), `EMBEDDING_MODEL` (default `text-embedding-3-small`) |
+| **OpenAI** | `OPENAI_API_KEY` | `LLM_MODEL` (default `gpt-4.1`), `EMBEDDING_MODEL` (default `text-embedding-3-small`), `LLM_BASE_URL` — see below |
 | **Azure OpenAI** | `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_KEY`, `AZURE_OPENAI_DEPLOYMENT` | `AZURE_OPENAI_API_VERSION` (default `2025-03-01-preview`), `AZURE_EMBEDDING_DEPLOYMENT` |
+| **Replay** (no key needed) | — | `REPLAY_FIXTURES_DIR`, `RECORD`, `REPLAY_RECORD_PROVIDER` — see below |
 
-`LLM_PROVIDER` selects the block (`openai` or `azure`). `JWT_SECRET` and `AGENT_SHARED_SECRET` stay at their defaults for local dev.
+`LLM_PROVIDER` selects the block (`openai`, `azure`, or `replay`). `JWT_SECRET` and `AGENT_SHARED_SECRET` stay at their defaults for local dev.
 
 Full variable reference with purpose and defaults: see the [full article](https://nitinksingh.com/posts/maf-v1-00-setup/#environment-variable-reference).
+
+### Don't have a paid API key? Two options
+
+**Option 1 — GitHub Models (free, real model, `LLM_PROVIDER=openai`).** GitHub Models
+exposes an OpenAI-compatible endpoint, free with a GitHub personal access token:
+
+```bash
+LLM_PROVIDER=openai
+OPENAI_API_KEY=<a GitHub PAT with the models:read scope>
+LLM_BASE_URL=https://models.inference.ai.azure.com
+LLM_MODEL=gpt-4o
+```
+
+`LLM_BASE_URL` works with any OpenAI-compatible endpoint the same way — OpenRouter, a
+local vLLM/LM Studio server, etc. — not just GitHub Models.
+
+**Option 2 — Replay (free, no network, no key at all).** Every chapter's `tests/`
+directory ships committed fixtures recorded against a real model. Set
+`LLM_PROVIDER=replay` and the chapter's own client construction plays them back with
+zero credentials:
+
+```bash
+LLM_PROVIDER=replay uv run --project tutorials python tutorials/01-first-agent/python/main.py
+```
+
+This is also what lets the tutorial test suite run in CI without secrets — see
+`shared/replay_client.py` (production) or `tutorials/_shared/replay_client.py`
+(tutorials) for how it works, and each chapter's own test file for the recorded
+question it plays back. To record a fixture yourself (e.g. after changing a chapter's
+prompt or question), set `RECORD=true` and a real provider's credentials —
+`REPLAY_RECORD_PROVIDER` picks which one (`openai` or `azure`, default `openai`):
+
+```bash
+LLM_PROVIDER=replay RECORD=true REPLAY_RECORD_PROVIDER=azure \
+  uv run --project tutorials python tutorials/01-first-agent/python/main.py "your question"
+```
+
+Re-run without `RECORD` afterward to confirm it replays deterministically, and commit
+the new fixture file under that chapter's `tests/fixtures/replay/`.
 
 ## Troubleshooting
 

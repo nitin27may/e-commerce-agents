@@ -22,9 +22,10 @@ maf_bootstrap.bootstrap()
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from agent_framework import AgentSession  # noqa: E402
-from main import ask_and_save, build_agent  # noqa: E402
+from main import FIXTURES_DIR, ask_and_save, build_agent  # noqa: E402
 
 # ─────────── Unit tests (no LLM) ───────────
+
 
 def test_session_roundtrip_preserves_session_id() -> None:
     original = AgentSession(session_id="sess-42")
@@ -60,7 +61,40 @@ def test_fresh_session_has_new_id() -> None:
     assert a.session_id != b.session_id
 
 
+# ─────────── Replay test (no credentials, runs in CI) ───────────
+
+
+@pytest.mark.asyncio
+async def test_replay_session_persists_across_fresh_agent_instances(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """Plays back tests/fixtures/replay/ — no network, no credentials.
+
+    Recorded once against a real LLM
+    (test_session_persists_across_fresh_agent_instances below, run with
+    RECORD=true) and committed. Two turns, so two fixtures are involved —
+    one per turn's message history.
+    """
+    if not any(FIXTURES_DIR.glob("*.json")):
+        pytest.skip(f"no recorded fixtures in {FIXTURES_DIR} — run with RECORD=true first")
+    monkeypatch.setenv("LLM_PROVIDER", "replay")
+    session_file = tmp_path / "session.json"
+
+    agent1 = build_agent()
+    await ask_and_save(agent1, "Remember: my favorite color is teal.", session_file)
+    assert session_file.exists()
+
+    agent2 = build_agent()
+    answer = await ask_and_save(
+        agent2,
+        "What color did I tell you I liked? Answer with the color only.",
+        session_file,
+    )
+    assert "teal" in answer.lower(), f"expected 'teal' in follow-up answer, got: {answer!r}"
+
+
 # ─────────── Integration: real LLM persistence ───────────
+
 
 def _llm_available() -> bool:
     provider = os.environ.get("LLM_PROVIDER", "openai").lower()

@@ -1,0 +1,50 @@
+{
+  "request": {
+    "instructions": "You are a concise geography assistant. Keep answers to one short sentence.",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "What is the capital of France? Answer with the city name only.",
+            "type": "text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      }
+    ],
+    "tools": []
+  },
+  "response": {
+    "created_at": "2026-08-19T18:13:21.000000Z",
+    "finish_reason": "stop",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "Paris",
+            "type": "text"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      }
+    ],
+    "model": "gpt-4.1-2025-04-14",
+    "response_id": "chatcmpl-EEf4rIAmDluTlXrOmstr7IWc11QDE",
+    "type": "chat_response",
+    "usage_details": {
+      "cache_read_input_token_count": 0,
+      "completion/reasoning_tokens": 0,
+      "input_token_count": 39,
+      "output_token_count": 2,
+      "prompt/cached_tokens": 0,
+      "reasoning_output_token_count": 0,
+      "total_token_count": 41
+    }
+  }
+}

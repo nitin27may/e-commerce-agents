@@ -21,12 +21,37 @@ maf_bootstrap.bootstrap()
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from main import (  # noqa: E402
+    FIXTURES_DIR,
     ArgValidatorMiddleware,
     LoggingAgentMiddleware,
     PiiRedactionChatMiddleware,
     ask,
     build_agent,
 )
+
+# ─────────────────── Replay test (no credentials, runs in CI) ────
+
+
+@pytest.mark.asyncio
+async def test_replay_agent_and_function_middleware_observe_weather_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Plays back tests/fixtures/replay/ — no network, no credentials.
+
+    Recorded once against a real LLM (with RECORD=true) and committed. Mirrors
+    test_agent_middleware_observes_every_run and
+    test_function_middleware_intercepts_tool_calls, which share the same
+    "What's the weather in Paris?" input.
+    """
+    if not any(FIXTURES_DIR.glob("*.json")):
+        pytest.skip(f"no recorded fixtures in {FIXTURES_DIR} — run with RECORD=true first")
+    monkeypatch.setenv("LLM_PROVIDER", "replay")
+    logger = LoggingAgentMiddleware()
+    validator = ArgValidatorMiddleware()
+    agent = build_agent(logger, validator, PiiRedactionChatMiddleware())
+    await ask(agent, "What's the weather in Paris?")
+    assert logger.events == ["agent:before", "agent:after"]
+    assert "Paris" in validator.invocations
 
 
 def _llm_available() -> bool:

@@ -19,9 +19,10 @@ from tutorials._shared import maf_bootstrap  # noqa: E402
 maf_bootstrap.bootstrap()
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
-from main import ask, build_agent, get_weather  # noqa: E402
+from main import FIXTURES_DIR, ask, build_agent, get_weather  # noqa: E402
 
 # ─────────────────── Tool-function unit tests ──────────────────
+
 
 def test_weather_tool_returns_canned_data() -> None:
     result = get_weather.func("Paris")  # @tool exposes the original via __wrapped__
@@ -43,7 +44,27 @@ def test_agent_has_weather_tool_registered() -> None:
     assert "get_weather" in tool_names
 
 
+# ─────────────────── Replay test (no credentials, runs in CI) ────
+
+
+@pytest.mark.asyncio
+async def test_replay_invokes_weather_tool(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Plays back tests/fixtures/replay/ — no network, no credentials.
+
+    Recorded once against a real LLM (test_real_llm_invokes_weather_tool
+    below, run with RECORD=true) and committed.
+    """
+    if not any(FIXTURES_DIR.glob("*.json")):
+        pytest.skip(f"no recorded fixtures in {FIXTURES_DIR} — run with RECORD=true first")
+    monkeypatch.setenv("LLM_PROVIDER", "replay")
+    agent = build_agent()
+    answer = await ask(agent, "What's the weather in Paris?")
+    lowered = answer.lower()
+    assert "sunny" in lowered or "18" in lowered, f"expected weather-tool data in the answer, got: {answer!r}"
+
+
 # ─────────────────── Real-LLM integration tests ────────────────
+
 
 def _llm_available() -> bool:
     provider = os.environ.get("LLM_PROVIDER", "openai").lower()
@@ -65,9 +86,7 @@ async def test_real_llm_invokes_weather_tool() -> None:
     answer = await ask(agent, "What's the weather in Paris?")
     # The canned response seeds "Sunny" / "18" — if the LLM called the tool, one will appear.
     lowered = answer.lower()
-    assert "sunny" in lowered or "18" in lowered, (
-        f"expected weather-tool data in the answer, got: {answer!r}"
-    )
+    assert "sunny" in lowered or "18" in lowered, f"expected weather-tool data in the answer, got: {answer!r}"
 
 
 @pytest.mark.integration

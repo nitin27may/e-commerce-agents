@@ -20,8 +20,26 @@ from tutorials._shared import maf_bootstrap  # noqa: E402
 maf_bootstrap.bootstrap()
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
-from main import build_mcp_tool, run  # noqa: E402
+from main import FIXTURES_DIR, build_mcp_tool, run  # noqa: E402
 from weather_mcp_server import get_weather  # noqa: E402
+
+# ─────────────────── Replay test (no credentials, runs in CI) ────
+
+
+@pytest.mark.asyncio
+async def test_replay_calls_mcp_weather_tool(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Plays back tests/fixtures/replay/ — no network LLM calls, no credentials.
+
+    The MCP server subprocess still runs for real (it's local and free); only
+    the LLM call is replayed. Recorded once against a real LLM (with
+    RECORD=true) and committed. Mirrors test_real_llm_calls_mcp_weather_tool.
+    """
+    if not any(FIXTURES_DIR.glob("*.json")):
+        pytest.skip(f"no recorded fixtures in {FIXTURES_DIR} — run with RECORD=true first")
+    monkeypatch.setenv("LLM_PROVIDER", "replay")
+    answer = await run("What's the weather in Paris?")
+    lowered = answer.lower()
+    assert "sunny" in lowered or "18" in lowered, f"expected MCP tool data in answer, got: {answer!r}"
 
 
 def test_weather_tool_returns_canned_data() -> None:
@@ -58,9 +76,7 @@ def _llm_available() -> bool:
 async def test_real_llm_calls_mcp_weather_tool() -> None:
     answer = await run("What's the weather in Paris?")
     lowered = answer.lower()
-    assert "sunny" in lowered or "18" in lowered, (
-        f"expected MCP tool data in answer, got: {answer!r}"
-    )
+    assert "sunny" in lowered or "18" in lowered, f"expected MCP tool data in answer, got: {answer!r}"
 
 
 @pytest.mark.integration

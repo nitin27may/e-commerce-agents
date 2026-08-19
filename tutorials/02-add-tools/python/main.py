@@ -25,6 +25,7 @@ maf_bootstrap.bootstrap()
 from agent_framework import Agent, tool  # noqa: E402
 from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient  # noqa: E402
 from pydantic import Field  # noqa: E402
+from tutorials._shared.replay_client import ReplayChatClient  # noqa: E402
 
 INSTRUCTIONS = (
     "You are a helpful assistant. "
@@ -32,6 +33,8 @@ INSTRUCTIONS = (
     "For other questions, answer directly in one short sentence."
 )
 DEFAULT_QUESTION = "What's the weather in Paris?"
+
+FIXTURES_DIR = pathlib.Path(__file__).resolve().parent / "tests" / "fixtures" / "replay"
 
 
 # The canonical canned-data weather tool from the MAF docs. Decorated with
@@ -50,8 +53,14 @@ def get_weather(
     return canned.get(city.lower(), f"No weather data for {city}.")
 
 
-def _default_client() -> OpenAIChatClient | OpenAIChatCompletionClient:
+def _default_client() -> OpenAIChatClient | OpenAIChatCompletionClient | ReplayChatClient:
     provider = os.environ.get("LLM_PROVIDER", "openai").lower()
+    if provider == "replay":
+        return ReplayChatClient(
+            fixtures_dir=FIXTURES_DIR,
+            record=os.environ.get("RECORD", "").lower() in ("1", "true", "yes"),
+            record_provider=os.environ.get("REPLAY_RECORD_PROVIDER", "openai"),
+        )
     if provider == "azure":
         return OpenAIChatCompletionClient(
             model=os.environ["AZURE_OPENAI_DEPLOYMENT"],

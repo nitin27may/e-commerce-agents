@@ -1,0 +1,110 @@
+{
+  "request": {
+    "instructions": "You are a helpful assistant. When the user asks about weather in a city, call the get_weather tool. Keep answers to one short sentence.",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "What's the weather in Paris?",
+            "type": "text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      },
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "arguments": "{\"city\":\"Paris\"}",
+            "call_id": "call_DL2ytVDOxsJNbPXGceoE2Q5H",
+            "name": "get_weather",
+            "type": "function_call"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      },
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "call_id": "call_DL2ytVDOxsJNbPXGceoE2Q5H",
+            "items": [
+              {
+                "additional_properties": {},
+                "text": "Sunny, 18\u00b0C.",
+                "type": "text"
+              },
+              {
+                "additional_properties": {},
+                "text": "{\"result\": \"Sunny, 18\\u00b0C.\"}",
+                "type": "text"
+              }
+            ],
+            "result": "Sunny, 18\u00b0C.\n{\"result\": \"Sunny, 18\\u00b0C.\"}",
+            "type": "function_result"
+          }
+        ],
+        "role": "tool",
+        "type": "message"
+      }
+    ],
+    "tools": [
+      {
+        "function": {
+          "description": "Look up the current weather for a city (canned data).",
+          "name": "get_weather",
+          "parameters": {
+            "properties": {
+              "city": {
+                "title": "City",
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "title": "get_weatherArguments",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      }
+    ]
+  },
+  "response": {
+    "created_at": "2026-08-19T18:19:26.000000Z",
+    "finish_reason": "stop",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "The weather in Paris is sunny and 18\u00b0C.",
+            "type": "text"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      }
+    ],
+    "model": "gpt-4.1-2025-04-14",
+    "response_id": "chatcmpl-EEfAk6D0sturq6DfS0KH19TftR1Is",
+    "type": "chat_response",
+    "usage_details": {
+      "cache_read_input_token_count": 0,
+      "completion/reasoning_tokens": 0,
+      "input_token_count": 136,
+      "output_token_count": 13,
+      "prompt/cached_tokens": 0,
+      "reasoning_output_token_count": 0,
+      "total_token_count": 149
+    }
+  }
+}

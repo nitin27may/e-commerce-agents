@@ -1,10 +1,14 @@
 """
 Tests for Chapter 01 — Your First Agent.
 
-Two modes:
+Three modes:
 - Unit tests use a canned BaseChatClient subclass — no LLM calls, run anywhere.
-- Integration test hits the real LLM using keys from the repo-root .env.
-  It is skipped when OPENAI_API_KEY (or Azure equivalent) is missing.
+- The replay test plays back a committed fixture (tests/fixtures/replay/) via
+  LLM_PROVIDER=replay — no credentials, runs in CI.
+- The integration test hits a real LLM using keys from the repo-root .env, to
+  verify against an actual model (not just the fixture). Skipped when
+  OPENAI_API_KEY (or Azure equivalent) is missing. Also how the fixture used
+  by the replay test above was recorded — see main.py's module docstring.
 """
 
 from __future__ import annotations
@@ -26,7 +30,7 @@ maf_bootstrap.bootstrap()
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from agent_framework import Agent, BaseChatClient, Message  # noqa: E402
 from agent_framework._types import ChatResponse, ChatResponseUpdate, ResponseStream  # noqa: E402
-from main import INSTRUCTIONS, ask, build_agent  # noqa: E402
+from main import FIXTURES_DIR, INSTRUCTIONS, ask, build_agent  # noqa: E402
 
 
 class CannedChatClient(BaseChatClient):
@@ -58,6 +62,7 @@ class CannedChatClient(BaseChatClient):
 
 
 # ───────────────────── Unit tests (no LLM) ──────────────────────
+
 
 def test_build_agent_uses_instructions() -> None:
     client = CannedChatClient("Paris.")
@@ -113,7 +118,27 @@ async def test_run_out_of_canned_responses_raises() -> None:
         await ask(agent, "nothing to say")
 
 
+# ─────────────────── Replay test (no credentials, runs in CI) ────
+
+
+@pytest.mark.asyncio
+async def test_replay_answers_capital_of_france(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Plays back tests/fixtures/replay/ — no network, no credentials.
+
+    Recorded once against a real LLM (test_real_llm_answers_capital_of_france
+    below, run with RECORD=true) and committed. This is what lets this
+    chapter's "real LLM" assertion run in CI on every PR.
+    """
+    if not any(FIXTURES_DIR.glob("*.json")):
+        pytest.skip(f"no recorded fixtures in {FIXTURES_DIR} — run with RECORD=true first")
+    monkeypatch.setenv("LLM_PROVIDER", "replay")
+    agent = build_agent()
+    answer = await ask(agent, "What is the capital of France? Answer with the city name only.")
+    assert "paris" in answer.lower(), f"expected Paris in answer, got: {answer!r}"
+
+
 # ─────────────────── Integration test (hits LLM) ────────────────
+
 
 def _llm_available() -> bool:
     provider = os.environ.get("LLM_PROVIDER", "openai").lower()

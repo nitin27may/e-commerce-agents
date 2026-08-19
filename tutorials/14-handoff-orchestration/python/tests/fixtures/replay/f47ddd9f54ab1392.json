@@ -1,0 +1,77 @@
+{
+  "request": {
+    "instructions": "You are a Triage agent. Read the user's question and hand off to the right specialist: math for arithmetic/math questions, history for historical facts or dates. If the specialist answers, simply acknowledge and stop \u2014 do not rewrite the answer.",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "What is 37 * 42?",
+            "type": "text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      }
+    ],
+    "tools": [
+      {
+        "function": {
+          "description": "Handoff to the math agent.",
+          "name": "handoff_to_math",
+          "parameters": {
+            "properties": {},
+            "title": "handoff_to_math_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      },
+      {
+        "function": {
+          "description": "Handoff to the history agent.",
+          "name": "handoff_to_history",
+          "parameters": {
+            "properties": {},
+            "title": "handoff_to_history_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      }
+    ]
+  },
+  "response": {
+    "created_at": "2026-08-19T18:45:20.000000Z",
+    "finish_reason": "tool_calls",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "arguments": "{}",
+            "call_id": "call_IFFffDCAhXe1CIPT5O91H6lA",
+            "name": "handoff_to_math",
+            "type": "function_call"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      }
+    ],
+    "model": "gpt-4.1-2025-04-14",
+    "response_id": "chatcmpl-EEfZo4z7hq6F07uJ5EJjyAZOz7uAL",
+    "type": "chat_response",
+    "usage_details": {
+      "cache_read_input_token_count": 0,
+      "completion/reasoning_tokens": 0,
+      "input_token_count": 113,
+      "output_token_count": 13,
+      "prompt/cached_tokens": 0,
+      "reasoning_output_token_count": 0,
+      "total_token_count": 126
+    }
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "request": {
+    "instructions": "You are a Writer. Draft or revise copy the user asks for. Output exactly one short line \u2014 no preamble.",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "slogan for a coffee shop",
+            "type": "text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      }
+    ],
+    "tools": []
+  },
+  "response": {
+    "created_at": "2026-08-19T18:25:55.000000Z",
+    "finish_reason": "stop",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "Fuel Your Day, One Cup at a Time.",
+            "type": "text"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      }
+    ],
+    "model": "gpt-4.1-2025-04-14",
+    "response_id": "chatcmpl-EEfH1To3JGbn01fhim5y28xJELmcA",
+    "type": "chat_response",
+    "usage_details": {
+      "cache_read_input_token_count": 0,
+      "completion/reasoning_tokens": 0,
+      "input_token_count": 41,
+      "output_token_count": 11,
+      "prompt/cached_tokens": 0,
+      "reasoning_output_token_count": 0,
+      "total_token_count": 52
+    }
+  }
+}

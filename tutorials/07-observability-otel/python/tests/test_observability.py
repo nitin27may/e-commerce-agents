@@ -19,13 +19,40 @@ from tutorials._shared import maf_bootstrap  # noqa: E402
 maf_bootstrap.bootstrap()
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
-from main import ask, build_agent, setup_tracing  # noqa: E402
+from main import FIXTURES_DIR, ask, build_agent, setup_tracing  # noqa: E402
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter  # noqa: E402
 
 # One global in-memory exporter shared across all tests — the OTel
 # TracerProvider can only be set once per process, so we install it here.
 _EXPORTER = InMemorySpanExporter()
 setup_tracing(service_name="maf-v1-ch07-tests", exporter=_EXPORTER)
+
+
+# ─────────────────── Replay test (no credentials, runs in CI) ────
+
+
+@pytest.mark.asyncio
+async def test_replay_run_emits_spans(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Plays back tests/fixtures/replay/ — no network, no credentials.
+
+    Recorded once against a real LLM (with RECORD=true) and committed. Mirrors
+    test_real_llm_run_emits_spans.
+    """
+    if not any(FIXTURES_DIR.glob("*.json")):
+        pytest.skip(f"no recorded fixtures in {FIXTURES_DIR} — run with RECORD=true first")
+    monkeypatch.setenv("LLM_PROVIDER", "replay")
+    _EXPORTER.clear()
+    from opentelemetry import trace
+
+    provider = trace.get_tracer_provider()
+
+    agent = build_agent()
+    answer = await ask(agent, "Say 'hello' and nothing else.")
+    provider.force_flush()
+
+    spans = _EXPORTER.get_finished_spans()
+    assert spans, "expected at least one span after a completed agent run"
+    assert answer, "expected a non-empty answer"
 
 
 def _llm_available() -> bool:
@@ -45,6 +72,7 @@ def _llm_available() -> bool:
 async def test_real_llm_run_emits_spans() -> None:
     _EXPORTER.clear()
     from opentelemetry import trace
+
     provider = trace.get_tracer_provider()
 
     agent = build_agent()
@@ -62,6 +90,7 @@ async def test_real_llm_run_emits_spans() -> None:
 async def test_spans_include_genai_attributes() -> None:
     _EXPORTER.clear()
     from opentelemetry import trace
+
     provider = trace.get_tracer_provider()
 
     agent = build_agent()
@@ -71,12 +100,7 @@ async def test_spans_include_genai_attributes() -> None:
     spans = _EXPORTER.get_finished_spans()
     # MAF's instrumentation uses the GenAI semantic conventions — at least one
     # span should carry gen_ai.* attributes.
-    genai_attrs = [
-        k
-        for span in spans
-        for k in (span.attributes or {}).keys()
-        if k.startswith("gen_ai.")
-    ]
+    genai_attrs = [k for span in spans for k in (span.attributes or {}).keys() if k.startswith("gen_ai.")]
     all_keys = [list((s.attributes or {}).keys()) for s in spans]
     assert genai_attrs, f"expected GenAI attributes on spans; got keys: {all_keys}"
 
@@ -87,6 +111,7 @@ async def test_spans_include_genai_attributes() -> None:
 async def test_two_runs_produce_distinct_trace_ids() -> None:
     _EXPORTER.clear()
     from opentelemetry import trace
+
     provider = trace.get_tracer_provider()
 
     agent = build_agent()

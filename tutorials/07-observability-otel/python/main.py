@@ -28,8 +28,11 @@ from opentelemetry import trace  # noqa: E402
 from opentelemetry.sdk.resources import SERVICE_NAME, Resource  # noqa: E402
 from opentelemetry.sdk.trace import TracerProvider  # noqa: E402
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter  # noqa: E402
+from tutorials._shared.replay_client import ReplayChatClient  # noqa: E402
 
 INSTRUCTIONS = "You are a concise assistant. Keep answers to one short sentence."
+
+FIXTURES_DIR = pathlib.Path(__file__).resolve().parent / "tests" / "fixtures" / "replay"
 
 
 def setup_tracing(service_name: str = "maf-v1-ch07", exporter: object | None = None) -> TracerProvider:
@@ -42,8 +45,14 @@ def setup_tracing(service_name: str = "maf-v1-ch07", exporter: object | None = N
     return provider
 
 
-def _default_client() -> OpenAIChatClient | OpenAIChatCompletionClient:
+def _default_client() -> OpenAIChatClient | OpenAIChatCompletionClient | ReplayChatClient:
     provider = os.environ.get("LLM_PROVIDER", "openai").lower()
+    if provider == "replay":
+        return ReplayChatClient(
+            fixtures_dir=FIXTURES_DIR,
+            record=os.environ.get("RECORD", "").lower() in ("1", "true", "yes"),
+            record_provider=os.environ.get("REPLAY_RECORD_PROVIDER", "openai"),
+        )
     if provider == "azure":
         return OpenAIChatCompletionClient(
             model=os.environ["AZURE_OPENAI_DEPLOYMENT"],

@@ -19,7 +19,7 @@ from tutorials._shared import maf_bootstrap  # noqa: E402
 maf_bootstrap.bootstrap()
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
-from main import analyze, build_workflow  # noqa: E402
+from main import FIXTURES_DIR, analyze, build_workflow  # noqa: E402
 
 
 def _llm_available() -> bool:
@@ -35,6 +35,24 @@ def _llm_available() -> bool:
 
 def test_workflow_builds() -> None:
     assert build_workflow() is not None
+
+
+@pytest.mark.asyncio
+async def test_replay_all_three_agents_respond(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Plays back tests/fixtures/replay/ — no network, no credentials.
+
+    Recorded once against a real LLM (test_real_llm_all_three_agents_respond
+    below, run with RECORD=true) and committed.
+    """
+    recording = os.environ.get("RECORD", "").lower() in ("1", "true", "yes")
+    if not recording and not any(FIXTURES_DIR.glob("*.json")):
+        pytest.skip(f"no recorded fixtures in {FIXTURES_DIR} — run with RECORD=true first")
+    monkeypatch.setenv("LLM_PROVIDER", "replay")
+    per_agent, _ = await analyze("ultrasonic pet collar")
+    assert "researcher" in per_agent
+    assert "marketer" in per_agent
+    assert "legal" in per_agent
+    assert all(per_agent[name] for name in ("researcher", "marketer", "legal"))
 
 
 @pytest.mark.integration

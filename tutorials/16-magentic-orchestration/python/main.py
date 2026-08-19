@@ -26,10 +26,19 @@ from agent_framework import Agent  # noqa: E402
 from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient  # noqa: E402
 from agent_framework.orchestrations import MagenticBuilder  # noqa: E402
 from agent_framework_orchestrations._magentic import StandardMagenticManager  # noqa: E402
+from tutorials._shared.replay_client import ReplayChatClient  # noqa: E402
+
+FIXTURES_DIR = pathlib.Path(__file__).resolve().parent / "tests" / "fixtures" / "replay"
 
 
-def _default_client() -> OpenAIChatClient | OpenAIChatCompletionClient:
+def _default_client() -> OpenAIChatClient | OpenAIChatCompletionClient | ReplayChatClient:
     provider = os.environ.get("LLM_PROVIDER", "openai").lower()
+    if provider == "replay":
+        return ReplayChatClient(
+            fixtures_dir=FIXTURES_DIR,
+            record=os.environ.get("RECORD", "").lower() in ("1", "true", "yes"),
+            record_provider=os.environ.get("REPLAY_RECORD_PROVIDER", "openai"),
+        )
     if provider == "azure":
         return OpenAIChatCompletionClient(
             model=os.environ["AZURE_OPENAI_DEPLOYMENT"],
@@ -92,12 +101,26 @@ def build_workflow():
     ).build()
 
 
+async def _workflow_events(workflow, message: str):
+    """Yield workflow events from a streaming run.
+
+    ``workflow.run(..., stream=True)`` drives each participant's turn through
+    MAF's streaming AgentExecutor path, which in turn streams the chat
+    client's response. ``ReplayChatClient`` (see
+    tutorials/_shared/replay_client.py) wires the same finalizer real clients
+    use, so replay mode streams correctly through this same path — no
+    provider-specific branch needed here.
+    """
+    async for event in workflow.run(message, stream=True):
+        yield event
+
+
 async def plan(task: str) -> tuple[list[str], str]:
     """Run the Magentic flow; return (participants consulted in order, final answer)."""
     workflow = build_workflow()
     speakers: list[str] = []
     final_messages: list[str] = []
-    async for event in workflow.run(task, stream=True):
+    async for event in _workflow_events(workflow, task):
         etype = getattr(event, "type", None)
         if etype == "group_chat":
             data = getattr(event, "data", None)
@@ -108,11 +131,14 @@ async def plan(task: str) -> tuple[list[str], str]:
                     speakers.append(pname)
         elif etype == "output":
             payload = getattr(event, "data", None)
-            if isinstance(payload, list):
-                for item in payload:
-                    text = getattr(item, "text", None)
-                    if text:
-                        final_messages.append(text)
+            # The magentic manager's final "output" event carries either a
+            # list of AgentResponseUpdate items or a single one, depending on
+            # the run — handle both shapes.
+            items = payload if isinstance(payload, list) else [payload] if payload is not None else []
+            for item in items:
+                text = getattr(item, "text", None)
+                if text:
+                    final_messages.append(text)
     return speakers, "\n\n".join(final_messages).strip()
 
 

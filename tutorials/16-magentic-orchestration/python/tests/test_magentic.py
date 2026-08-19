@@ -19,7 +19,7 @@ from tutorials._shared import maf_bootstrap  # noqa: E402
 maf_bootstrap.bootstrap()
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
-from main import build_workflow, plan  # noqa: E402
+from main import FIXTURES_DIR, build_workflow, plan  # noqa: E402
 
 
 def _llm_available() -> bool:
@@ -35,6 +35,25 @@ def _llm_available() -> bool:
 
 def test_workflow_builds() -> None:
     assert build_workflow() is not None
+
+
+@pytest.mark.asyncio
+async def test_replay_manager_delegates_to_at_least_one_worker(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Plays back tests/fixtures/replay/ — no network, no credentials.
+
+    Recorded once against a real LLM (test_real_llm_manager_delegates_to_at_least_one_worker
+    below, run with RECORD=true) and committed. Magentic's manager loop is
+    non-deterministic in how many rounds it takes, so — mirroring the
+    integration test — we assert on the final outcome (a substantive answer)
+    rather than an exact turn count.
+    """
+    recording = os.environ.get("RECORD", "").lower() in ("1", "true", "yes")
+    if not recording and not any(FIXTURES_DIR.glob("*.json")):
+        pytest.skip(f"no recorded fixtures in {FIXTURES_DIR} — run with RECORD=true first")
+    monkeypatch.setenv("LLM_PROVIDER", "replay")
+    _, answer = await plan("plan a short launch brief for an AI meal planner")
+    assert answer, "final answer must not be empty"
+    assert len(answer) > 50, "final answer should be substantive, not a stub"
 
 
 @pytest.mark.integration
@@ -53,11 +72,7 @@ async def test_real_llm_manager_delegates_to_at_least_one_worker() -> None:
 @pytest.mark.skipif(not _llm_available(), reason="no LLM credentials in .env")
 async def test_real_llm_manager_can_select_from_multiple_workers() -> None:
     """Over a broader task, the manager should engage multiple workers."""
-    speakers, _ = await plan(
-        "produce a brief covering market context, a tagline, and one regulatory note"
-    )
+    speakers, _ = await plan("produce a brief covering market context, a tagline, and one regulatory note")
     # Expect at least one delegation — the set of available worker names.
     known = {"researcher", "marketer", "legal"}
-    assert any(s in known for s in speakers) or not speakers, (
-        f"unexpected speaker list: {speakers}"
-    )
+    assert any(s in known for s in speakers) or not speakers, f"unexpected speaker list: {speakers}"

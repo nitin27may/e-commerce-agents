@@ -31,10 +31,19 @@ maf_bootstrap.bootstrap()
 from agent_framework import Agent  # noqa: E402
 from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient  # noqa: E402
 from agent_framework.orchestrations import GroupChatBuilder, GroupChatState  # noqa: E402
+from tutorials._shared.replay_client import ReplayChatClient  # noqa: E402
+
+FIXTURES_DIR = pathlib.Path(__file__).resolve().parent / "tests" / "fixtures" / "replay"
 
 
-def _default_client() -> OpenAIChatClient | OpenAIChatCompletionClient:
+def _default_client() -> OpenAIChatClient | OpenAIChatCompletionClient | ReplayChatClient:
     provider = os.environ.get("LLM_PROVIDER", "openai").lower()
+    if provider == "replay":
+        return ReplayChatClient(
+            fixtures_dir=FIXTURES_DIR,
+            record=os.environ.get("RECORD", "").lower() in ("1", "true", "yes"),
+            record_provider=os.environ.get("REPLAY_RECORD_PROVIDER", "openai"),
+        )
     if provider == "azure":
         return OpenAIChatCompletionClient(
             model=os.environ["AZURE_OPENAI_DEPLOYMENT"],
@@ -52,8 +61,7 @@ def writer() -> Agent:
     return Agent(
         _default_client(),
         instructions=(
-            "You are a Writer. Draft or revise copy the user asks for. "
-            "Output exactly one short line — no preamble."
+            "You are a Writer. Draft or revise copy the user asks for. Output exactly one short line — no preamble."
         ),
         name="writer",
     )
@@ -125,31 +133,39 @@ def build_workflow(strategy: str = "round-robin"):
     participants = [writer(), critic(), editor()]
 
     if strategy == "prompt":
-        return (
-            GroupChatBuilder(
-                participants=participants,
-                orchestrator_agent=prompt_driven_orchestrator(),
-                # Hard safety net; the orchestrator may finish earlier.
-                max_rounds=4,
-            )
-            .build()
-        )
-
-    return (
-        GroupChatBuilder(
+        return GroupChatBuilder(
             participants=participants,
-            selection_func=round_robin_selector,
-            max_rounds=3,
-        )
-        .build()
-    )
+            orchestrator_agent=prompt_driven_orchestrator(),
+            # Hard safety net; the orchestrator may finish earlier.
+            max_rounds=4,
+        ).build()
+
+    return GroupChatBuilder(
+        participants=participants,
+        selection_func=round_robin_selector,
+        max_rounds=3,
+    ).build()
+
+
+async def _workflow_events(workflow, message: str):
+    """Yield workflow events from a streaming run.
+
+    ``workflow.run(..., stream=True)`` drives each participant's turn through
+    MAF's streaming AgentExecutor path, which in turn streams the chat
+    client's response. ``ReplayChatClient`` (see
+    tutorials/_shared/replay_client.py) wires the same finalizer real clients
+    use, so replay mode streams correctly through this same path — no
+    provider-specific branch needed here.
+    """
+    async for event in workflow.run(message, stream=True):
+        yield event
 
 
 async def run(topic: str, strategy: str = "round-robin") -> list[tuple[str, str]]:
     """Run the group chat and return ``[(speaker, text)]`` in turn order."""
     workflow = build_workflow(strategy)
     turns: list[tuple[str, str]] = []
-    async for event in workflow.run(topic, stream=True):
+    async for event in _workflow_events(workflow, topic):
         etype = getattr(event, "type", None)
         if etype == "group_chat":
             data = getattr(event, "data", None)

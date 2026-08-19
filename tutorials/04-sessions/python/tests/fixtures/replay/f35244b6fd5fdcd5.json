@@ -1,0 +1,85 @@
+{
+  "request": {
+    "instructions": "You are a helpful assistant. Keep answers short.",
+    "messages": [
+      {
+        "additional_properties": {
+          "_attribution": {
+            "source_id": "in_memory",
+            "source_type": "InMemoryHistoryProvider"
+          }
+        },
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "Remember: my favorite color is teal.",
+            "type": "text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      },
+      {
+        "additional_properties": {
+          "_attribution": {
+            "source_id": "in_memory",
+            "source_type": "InMemoryHistoryProvider"
+          }
+        },
+        "author_name": "stateful-agent",
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "Got it! Your favorite color is teal.",
+            "type": "text"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      },
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "What color did I tell you I liked? Answer with the color only.",
+            "type": "text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      }
+    ],
+    "tools": []
+  },
+  "response": {
+    "created_at": "2026-08-19T18:27:31.000000Z",
+    "finish_reason": "stop",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "Teal",
+            "type": "text"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      }
+    ],
+    "model": "gpt-4.1-2025-04-14",
+    "response_id": "chatcmpl-EEfIZwjEWrBZSSaqcvWLCXZ6KfNEs",
+    "type": "chat_response",
+    "usage_details": {
+      "cache_read_input_token_count": 0,
+      "completion/reasoning_tokens": 0,
+      "input_token_count": 65,
+      "output_token_count": 3,
+      "prompt/cached_tokens": 0,
+      "reasoning_output_token_count": 0,
+      "total_token_count": 68
+    }
+  }
+}
