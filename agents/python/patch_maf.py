@@ -1,7 +1,11 @@
 """Patch agent_framework __init__.py if it's empty (MAF v1.0 packaging bug).
 
-Run this before starting any agent if using agent-framework==1.0.0.
-The package ships with an empty __init__.py that doesn't re-export public APIs.
+This only applied to agent-framework-core==1.0.0, whose __init__.py shipped
+empty. Fixed upstream by 1.14.0 (the version this repo now pins) — the
+package ships a real __init__.py with proper re-exports, so patch() is
+already a no-op (it only writes when the file is empty) and this script does
+nothing on a current install. Left in place as a defensive fallback rather
+than removed outright; see the "MAF Package Patch" note in CLAUDE.md.
 """
 
 import importlib

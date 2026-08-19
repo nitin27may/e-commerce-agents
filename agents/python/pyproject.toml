@@ -4,10 +4,18 @@ version = "0.1.0"
 description = "E-Commerce Multi-Agent Platform built with Microsoft Agent Framework"
 requires-python = ">=3.12"
 dependencies = [
-    # Microsoft Agent Framework (accept pre-release/beta versions)
-    "agent-framework>=1.0.0b0",
-    "agent-framework-a2a>=1.0.0b0",
-    "agent-framework-openai>=1.0.0b0",
+    # Microsoft Agent Framework — pinned to the latest stable release of
+    # each package actually used. Depend on agent-framework-core directly
+    # (not the agent-framework meta-package's [all] extra) — [all] pulls in
+    # provider integrations that are still pre-release-only and make the
+    # resolution unsatisfiable without --prerelease=allow. orchestrations is
+    # a direct dependency because orchestrator/handoff.py imports
+    # HandoffBuilder from it. a2a/devui are not used (this repo's "A2A
+    # protocol" is a hand-rolled HTTP contract in shared/agent_host.py, not
+    # the agent-framework-a2a SDK package).
+    "agent-framework-core==1.14.0",
+    "agent-framework-openai==1.13.0",
+    "agent-framework-orchestrations==1.1.0",
     # Web
     "fastapi>=0.115",
     "uvicorn>=0.34",
@@ -37,7 +45,7 @@ dependencies = [
     "opentelemetry-instrumentation-asyncpg>=0.49b0",
     "opentelemetry-instrumentation-logging>=0.49b0",
     "opentelemetry-instrumentation-openai-v2>=0.1",
-    "mcp[cli]>=1.27.0",
+    "mcp[cli]>=1.27.0,<2",  # 2.0.0 relocates mcp.server.fastmcp; pin below it until migrated
     "authlib>=1.6",
 ]
 

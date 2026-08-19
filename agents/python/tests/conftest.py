@@ -20,7 +20,7 @@ from typing import Any
 import asyncpg
 import pytest
 import pytest_asyncio
-from testcontainers.postgres import PostgresContainer
+from testcontainers.community.postgres import PostgresContainer
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]

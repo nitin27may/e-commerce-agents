@@ -33,11 +33,23 @@ _UNSAFE_SECRET_DEFAULTS = {
     "dev-oauth-seed-change-me",
 }
 
+# Inbound injection-detection providers that are actually implemented today.
+# "azure_content_safety" is a reserved/planned value — see docs/security-guide.md
+# ("Azure AI Content Safety — Optional Integration") — but
+# shared/guardrails/azure_shield.py does not exist yet, so selecting it must
+# fail fast rather than silently falling back to the regex provider.
+_SUPPORTED_INJECTION_PROVIDERS = {"regex"}
+_NOT_YET_IMPLEMENTED_INJECTION_PROVIDERS = {"azure_content_safety"}
+
 # Resolve .env once, relative to the repo root, so the eval/seed scripts pick
 # it up regardless of the cwd they're launched from. Inside the Docker image
 # there is no .env at the repo root — containers get their config from the
 # compose `environment:` block — so a missing file is fine.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+# config.py lives at <repo>/agents/python/shared/, so the repo root is 3 levels
+# up — parents[2] stops at <repo>/agents and silently resolved to a path with no
+# .env, which meant pydantic's env_file loading never fired and Settings fell back
+# to defaults even when a real .env was present.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 _ENV_FILE = _REPO_ROOT / ".env"
 
 
@@ -281,6 +293,30 @@ class Settings(BaseSettings):
                 )
                 raise ValueError(msg)
 
+        return self
+
+    @model_validator(mode="after")
+    def _validate_injection_provider(self) -> "Settings":
+        """Reject injection-detection providers that aren't implemented.
+
+        ``GUARDRAILS_INJECTION_PROVIDER`` historically accepted
+        "azure_content_safety" as a value with no code behind it — selecting
+        it silently ran the default regex provider instead. Fail fast instead
+        so misconfiguration is caught at startup, not discovered in
+        production traffic.
+        """
+        provider = self.GUARDRAILS_INJECTION_PROVIDER
+        if provider in _NOT_YET_IMPLEMENTED_INJECTION_PROVIDERS:
+            raise ValueError(
+                f"GUARDRAILS_INJECTION_PROVIDER={provider!r} is not implemented "
+                f"(shared/guardrails/azure_shield.py does not exist yet). "
+                f"Supported values: {sorted(_SUPPORTED_INJECTION_PROVIDERS)!r}."
+            )
+        if provider not in _SUPPORTED_INJECTION_PROVIDERS:
+            raise ValueError(
+                f"GUARDRAILS_INJECTION_PROVIDER={provider!r} is not a recognized value. "
+                f"Supported values: {sorted(_SUPPORTED_INJECTION_PROVIDERS)!r}."
+            )
         return self
 
 

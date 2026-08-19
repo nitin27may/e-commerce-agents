@@ -10,13 +10,14 @@ import httpx
 from agent_framework import Agent, tool
 from pydantic import Field
 
-from orchestrator.prompts import SYSTEM_PROMPT
+from orchestrator.prompts import get_system_prompt
 from shared.agent_factory import create_chat_client
 from shared.config import settings
 from shared.context import (
     current_steps,
     current_stream_queue,
     current_user_email,
+    current_user_role,
 )
 from shared.context_providers import ECommerceContextProvider
 from shared.middleware import build_specialist_middleware
@@ -147,8 +148,15 @@ def create_orchestrator_agent() -> Agent:
         client=create_chat_client(),
         name="orchestrator",
         description="Customer support orchestrator that routes requests to specialist agents.",
-        instructions=SYSTEM_PROMPT,
+        instructions=get_system_prompt(current_user_role.get() or "customer"),
         tools=ORCHESTRATOR_TOOLS,
         context_providers=[ECommerceContextProvider()],
         middleware=build_specialist_middleware(),
+        # No HistoryProvider is attached today, so this is currently a no-op —
+        # but agent-framework-orchestrations>=1.0.1 requires it on every
+        # HandoffBuilder participant (see orchestrator/handoff.py), and it's
+        # also a prerequisite for wiring shared/session.py's HistoryProvider
+        # onto this agent later. Set unconditionally rather than only on the
+        # handoff path so both call sites stay consistent.
+        require_per_service_call_history_persistence=True,
     )

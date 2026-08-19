@@ -2,7 +2,14 @@
 Phase 7 Refactor 09 — ReturnAndReplaceWorkflow (MAF Sequential + HITL) tests.
 
 Tools are stubbed so tests run without a DB or LLM. HITL tests exercise
-the request_info pause + resume cycle end-to-end.
+the request_info pause + resume cycle end-to-end, including the
+``@response_handler`` resume path via ``workflow.run(responses=...)``.
+
+Resume note: the first ``run()`` stream must be drained to completion before
+resuming. Breaking out of it early (e.g. at the first ``request_info`` event)
+leaves the workflow with ``_is_running=True`` and the resuming ``run()`` fails
+with "Workflow is already running". Any HTTP handler that suspends a workflow
+across requests has to drain first, then persist.
 """
 
 from __future__ import annotations
@@ -13,11 +20,10 @@ import pytest
 
 from shared.config import settings
 from workflows.return_replace import (
-    ReturnApprovalRequest,
     ReturnAndReplaceWorkflow,
+    ReturnApprovalRequest,
     WorkflowState,
 )
-
 
 # ─────────────────────── Tool stubs ───────────────────────
 
@@ -180,3 +186,67 @@ def test_workflow_builder_wires_all_six_executors() -> None:
         "apply-discount",
         "finalize",
     } <= ids
+
+
+# ─────────────────────── HITL resume (response_handler) ─────
+
+
+async def _pause_and_collect_request_id(workflow, state) -> str:
+    """Drain the first run to completion and return the pending request id.
+
+    Draining matters: abandoning the stream early leaves the workflow marked
+    as running, and the resuming ``run()`` then raises "Workflow is already
+    running". See the module docstring.
+    """
+    request_id: str | None = None
+    async for event in workflow.run(state, stream=True):
+        if request_id is None and getattr(event, "type", None) == "request_info":
+            request_id = getattr(event, "request_id", None)
+    assert request_id, "expected a request_info event to pause the workflow"
+    return request_id
+
+
+@pytest.mark.asyncio
+async def test_hitl_approval_resumes_and_finalizes() -> None:
+    """An approved high-value return resumes through discount + finalize."""
+    high = settings.RETURN_HITL_THRESHOLD + 100.0
+    state = WorkflowState(user_email="a@b.com", order_id="o10", order_total=high)
+    workflow = ReturnAndReplaceWorkflow(TOOLS_HAPPY)._build_maf_workflow()
+
+    request_id = await _pause_and_collect_request_id(workflow, state)
+
+    outputs: list[WorkflowState] = []
+    async for event in workflow.run(responses={request_id: True}, stream=True):
+        if getattr(event, "type", None) == "output":
+            data = getattr(event, "data", None)
+            if isinstance(data, WorkflowState):
+                outputs.append(data)
+
+    assert outputs, "resume must produce a terminal workflow state"
+    final = outputs[-1]
+    assert final.hitl_approved is True
+    assert "finalize" in final.completed_steps
+    assert not final.errors
+
+
+@pytest.mark.asyncio
+async def test_hitl_rejection_resumes_and_stops_before_finalize() -> None:
+    """A rejected return resumes, records the rejection, and never finalizes."""
+    high = settings.RETURN_HITL_THRESHOLD + 100.0
+    state = WorkflowState(user_email="a@b.com", order_id="o11", order_total=high)
+    workflow = ReturnAndReplaceWorkflow(TOOLS_HAPPY)._build_maf_workflow()
+
+    request_id = await _pause_and_collect_request_id(workflow, state)
+
+    outputs: list[WorkflowState] = []
+    async for event in workflow.run(responses={request_id: False}, stream=True):
+        if getattr(event, "type", None) == "output":
+            data = getattr(event, "data", None)
+            if isinstance(data, WorkflowState):
+                outputs.append(data)
+
+    assert outputs, "resume must produce a terminal workflow state"
+    final = outputs[-1]
+    assert final.hitl_approved is False
+    assert "finalize" not in final.completed_steps
+    assert any("rejected by reviewer" in e for e in final.errors)

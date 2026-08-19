@@ -138,4 +138,9 @@ def make_remote_specialist_agent(name: str, url: str, *, description: str | None
         name=name,
         description=description or f"Remote specialist {name} accessed over A2A.",
         instructions=f"You are the remote {name} specialist. Reply directly with the user's request.",
+        # Required by agent-framework-orchestrations>=1.0.1: HandoffBuilder.build()
+        # validates every participant has this set, since its middleware
+        # short-circuits tool calls and local history would otherwise drift
+        # from what the remote service actually saw.
+        require_per_service_call_history_persistence=True,
     )
