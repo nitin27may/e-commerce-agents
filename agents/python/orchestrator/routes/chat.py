@@ -24,6 +24,21 @@ pre-purchase run. For those, ``_run_mode_task()`` falls back to pushing
 ``run_completed``'s full text as a single chunk if nothing streamed
 incrementally, so every mode is guaranteed a non-empty visible response
 either way.
+
+History (Phase 1.5): both endpoints read conversation history via
+``shared.session.get_history_as_dicts`` + ``get_history_provider`` instead
+of a hand-rolled ``SELECT ... FROM messages``. The read now happens
+*before* the current turn's user message is inserted — the old order
+(insert, then select) meant the just-inserted row came back in
+``history`` and got appended a second time by
+``shared/agent_host.py::_history_as_maf_messages``, which always appends
+the current message itself. Message *writes* are untouched: a generic
+``HistoryProvider.save_messages()`` only persists role/content, not the
+``agent_name``/``agents_involved``/``metadata`` this app's own insert
+carries for the timeline UI — verified directly that attaching a
+``HistoryProvider`` as an automatic ``context_providers=[...]`` hook
+would auto-save on every turn and double up rows, so it's deliberately
+not wired that way.
 """
 
 from __future__ import annotations
@@ -42,6 +57,7 @@ from starlette.responses import StreamingResponse
 from shared.agent_observability import get_steps, reset_steps
 from shared.context import current_conversation_history
 from shared.db import get_pool
+from shared.session import get_history_as_dicts, get_history_provider
 from shared.usage_db import UsageTimer, log_agent_usage, log_execution_step
 
 from .legacy import optional_auth
@@ -101,6 +117,13 @@ async def chat(body: ChatRequest, user: dict[str, Any] = Depends(optional_auth))
             )
             conversation_id = str(row["id"])
 
+        # Load conversation history *before* saving this turn's user message —
+        # history is everything that came before it. _run_agent_native /
+        # RunContext append the current message separately (see
+        # shared/agent_host.py::_history_as_maf_messages); reading after the
+        # insert would double it into the context sent to the LLM.
+        history = await get_history_as_dicts(get_history_provider(pool=pool), conversation_id)
+
         # Save user message
         await pool.execute(
             """INSERT INTO messages (conversation_id, role, content, agent_name)
@@ -108,16 +131,6 @@ async def chat(body: ChatRequest, user: dict[str, Any] = Depends(optional_auth))
             conversation_id,
             body.message,
         )
-
-        # Load conversation history for context
-        history_rows = await pool.fetch(
-            """SELECT role, content FROM messages
-               WHERE conversation_id = $1
-               ORDER BY created_at ASC
-               LIMIT 50""",
-            conversation_id,
-        )
-        history = [{"role": r["role"], "content": r["content"]} for r in history_rows]
 
         # Fetch user context (profile + recent orders) for the agent — injected
         # via the ECommerceContextProvider chain (shared/context_providers.py).
@@ -238,6 +251,10 @@ async def chat_stream(body: ChatRequest, request: Request, user: dict[str, Any] 
             )
             conversation_id = str(row["id"])
 
+        # Load history before saving this turn's user message — see chat()'s
+        # matching comment for why the ordering matters.
+        history = await get_history_as_dicts(get_history_provider(pool=pool), conversation_id)
+
         # Save user message
         await pool.execute(
             """INSERT INTO messages (conversation_id, role, content, agent_name)
@@ -245,16 +262,6 @@ async def chat_stream(body: ChatRequest, request: Request, user: dict[str, Any] 
             conversation_id,
             body.message,
         )
-
-        # Load conversation history
-        history_rows = await pool.fetch(
-            """SELECT role, content FROM messages
-               WHERE conversation_id = $1
-               ORDER BY created_at ASC
-               LIMIT 50""",
-            conversation_id,
-        )
-        history = [{"role": r["role"], "content": r["content"]} for r in history_rows]
 
         # Fetch user context — injected via the ECommerceContextProvider chain.
         user_row = await pool.fetchrow(

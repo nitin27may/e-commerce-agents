@@ -20,10 +20,10 @@ from shared.session import (
     FileSessionHistoryProvider,
     InMemorySessionHistoryProvider,
     PostgresSessionHistoryProvider,
+    get_history_as_dicts,
     get_history_provider,
     session_from_id,
 )
-
 
 # ─────────────────────── InMemory ───────────────────────
 
@@ -103,7 +103,7 @@ class _FakePool:
     def __init__(self, rows: list[dict[str, Any]] | None = None) -> None:
         self.conn = _FakeConn(rows or [])
 
-    def acquire(self) -> "_FakePool":
+    def acquire(self) -> _FakePool:
         return self
 
     async def __aenter__(self) -> _FakeConn:
@@ -170,9 +170,7 @@ def test_get_history_provider_selects_memory_backend(monkeypatch: pytest.MonkeyP
     assert isinstance(provider, InMemorySessionHistoryProvider)
 
 
-def test_get_history_provider_selects_file_backend(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_get_history_provider_selects_file_backend(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     from shared import config as config_mod
 
     monkeypatch.setattr(config_mod.settings, "MAF_SESSION_BACKEND", "file")
@@ -208,3 +206,34 @@ def test_session_from_id_generates_fresh_id_when_empty() -> None:
     s2 = session_from_id(None)
     assert s1.session_id and s2.session_id
     assert s1.session_id != s2.session_id
+
+
+# ─────────────────────── get_history_as_dicts ──────────
+
+
+@pytest.mark.asyncio
+async def test_get_history_as_dicts_flattens_to_plain_dicts() -> None:
+    provider = InMemorySessionHistoryProvider()
+    await provider.save_messages(
+        "c",
+        [Message(role="user", contents=["hi"]), Message(role="assistant", contents=["hello"])],
+    )
+    history = await get_history_as_dicts(provider, "c")
+    assert history == [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello"}]
+
+
+@pytest.mark.asyncio
+async def test_get_history_as_dicts_skips_messages_with_no_text() -> None:
+    provider = InMemorySessionHistoryProvider()
+    await provider.save_messages(
+        "c",
+        [Message(role="user", contents=["kept"]), Message(role="assistant", contents=[])],
+    )
+    history = await get_history_as_dicts(provider, "c")
+    assert history == [{"role": "user", "content": "kept"}]
+
+
+@pytest.mark.asyncio
+async def test_get_history_as_dicts_empty_for_unknown_session() -> None:
+    provider = InMemorySessionHistoryProvider()
+    assert await get_history_as_dicts(provider, "nope") == []

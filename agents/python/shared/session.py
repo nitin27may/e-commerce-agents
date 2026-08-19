@@ -227,3 +227,24 @@ def session_from_id(session_id: str | None) -> AgentSession:
     If ``session_id`` is empty a fresh session id is generated.
     """
     return AgentSession(session_id=session_id) if session_id else AgentSession()
+
+
+async def get_history_as_dicts(provider: HistoryProvider, session_id: str | None) -> list[dict[str, str]]:
+    """Fetch session history and flatten to the plain ``{role, content}``
+    dict shape this app forwards history in everywhere — MAF ``Message``
+    objects don't cross the ``RunContext``/``_history_as_maf_messages``
+    boundary (``shared/agent_host.py``), plain dicts do.
+
+    Not wired as an automatic ``context_providers=[...]`` hook on the
+    orchestrator agent: verified directly (a real ``Agent`` + a
+    ``HistoryProvider`` in ``context_providers``, called via
+    ``agent.run(message, session=...)``) that attaching one this way
+    auto-persists on every turn through ``save_messages`` — which would
+    double up rows in the ``messages`` table alongside this app's own
+    richer insert (``agent_name``, ``agents_involved``, ``metadata`` for
+    the timeline UI, none of which a generic ``HistoryProvider`` write
+    carries). This function only replaces the *read* side; writes stay
+    exactly as every route already does them.
+    """
+    messages = await provider.get_messages(session_id)
+    return [{"role": str(m.role), "content": m.text} for m in messages if m.text]
