@@ -6,12 +6,16 @@ now dispatches through ``orchestrator.modes.get_mode()`` (mode precedence:
 request body ``mode`` -> ``settings.ORCHESTRATION_MODE`` -> registry
 default) instead of calling the tool-router agent directly.
 
-``chat_stream()`` still calls the tool-router agent directly rather than
-going through the mode registry: none of the modes yield token-level
-deltas yet (``ToolRouterMode.run()`` awaits the full response before
-yielding anything), so routing it through ``get_mode()`` today would
-replace real incremental streaming with a single dump at the end for the
-default mode. Making the modes stream-capable is Phase 1.4's job.
+``chat_stream()`` branches on the resolved mode: ``tool`` keeps its
+original direct-agent streaming path unchanged (``ToolRouterMode.run()``
+awaits the full response before yielding anything, so routing the
+default mode through the registry would replace real incremental
+streaming with a single end-of-run dump). Every other mode streams
+through ``get_mode(...).run()`` directly — MAF workflow events already
+carry real incremental text (verified against a live handoff run: the
+``"output"`` event type maps to ``kind="delta"`` via
+``adapt_workflow_event``), so non-default modes get real streaming too,
+just not through the same code path as ``tool``.
 """
 
 from __future__ import annotations
@@ -186,9 +190,15 @@ async def chat_stream(body: ChatRequest, request: Request, user: dict[str, Any] 
     Anonymous (storefront) callers get product-discovery only: nothing is
     persisted and no user context is loaded.
     """
-    from orchestrator.agent import create_orchestrator_agent
-    from shared.agent_host import _run_agent_native_stream
+    from orchestrator.modes import RunContext, UnknownModeError, get_mode
+    from shared.config import settings
     from shared.context import current_stream_queue
+
+    mode_name = body.mode or settings.ORCHESTRATION_MODE
+    try:
+        mode = get_mode(mode_name)
+    except UnknownModeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
 
     pool = get_pool()
     user_email = user.get("sub", "")
@@ -252,9 +262,9 @@ async def chat_stream(body: ChatRequest, request: Request, user: dict[str, Any] 
             )
             _ = recent_orders
 
-    agent = create_orchestrator_agent()
     agents_involved: list[str] = ["orchestrator"]
     current_conversation_history.set(history)
+    ctx = RunContext(history=history, conversation_id=conversation_id)
 
     async def event_generator() -> AsyncGenerator[str, None]:
         """Yield SSE-formatted events from the streaming agent response.
@@ -264,11 +274,18 @@ async def chat_stream(body: ChatRequest, request: Request, user: dict[str, Any] 
         from both tiers in real time — no silent gap during specialist calls.
 
         Queue item shapes:
-          ("text",  chunk)               — orchestrator LLM token
-          ("delta", agent_name, chunk)   — specialist streamed token
-          None                           — sentinel: agent run finished
+          ("text",  chunk)                     — display text (LLM token,
+                                                   specialist chunk, or a
+                                                   non-``tool`` mode's
+                                                   extracted delta text)
+          ("delta", agent_name, chunk)          — specialist streamed token
+                                                   (``tool`` mode only)
+          ("frame", event_name, payload_dict)   — a structured SSE frame for
+                                                   a non-``tool`` mode's
+                                                   graph/handoff/checkpoint/
+                                                   request_info/error events
+          None                                  — sentinel: run finished
         """
-        from shared.config import settings
         from shared.telemetry import agent_run_span
 
         full_response: list[str] = []
@@ -282,23 +299,88 @@ async def chat_stream(body: ChatRequest, request: Request, user: dict[str, Any] 
         queue: _asyncio.Queue = _asyncio.Queue()
         current_stream_queue.set(queue)
 
-        async def _run_agent_task() -> None:
-            reset_steps()
-            with agent_run_span("orchestrator"):
-                try:
-                    async for chunk in _run_agent_native_stream(agent, body.message, history=history):
-                        await queue.put(("text", chunk))
-                except Exception:
-                    logger.exception(
-                        "chat_stream.agent_error user=%s conversation=%s",
-                        user_email,
-                        conversation_id,
-                    )
-                    error_msg = "I apologize, but I encountered an issue. Please try again."
-                    await queue.put(("text", error_msg))
-            await queue.put(None)  # sentinel
+        if mode.name == "tool":
+            from orchestrator.agent import create_orchestrator_agent
+            from shared.agent_host import _run_agent_native_stream
 
-        agent_task = _asyncio.create_task(_run_agent_task())
+            agent = create_orchestrator_agent()
+
+            async def _run_mode_task() -> None:
+                reset_steps()
+                with agent_run_span("orchestrator"):
+                    try:
+                        async for chunk in _run_agent_native_stream(agent, body.message, history=history):
+                            await queue.put(("text", chunk))
+                    except Exception:
+                        logger.exception(
+                            "chat_stream.agent_error user=%s conversation=%s",
+                            user_email,
+                            conversation_id,
+                        )
+                        error_msg = "I apologize, but I encountered an issue. Please try again."
+                        await queue.put(("text", error_msg))
+                await queue.put(None)  # sentinel
+        else:
+            from orchestrator.events import delta_text
+
+            async def _run_mode_task() -> None:
+                final_agents_involved = list(agents_involved)
+                with agent_run_span("orchestrator"):
+                    try:
+                        async for event in mode.run(body.message, ctx):
+                            if event.kind == "delta":
+                                text = delta_text(event.payload)
+                                if text:
+                                    await queue.put(("text", text))
+                            elif event.kind in ("node_enter", "node_exit"):
+                                await queue.put(
+                                    (
+                                        "frame",
+                                        "node",
+                                        {
+                                            "node_id": event.node_id,
+                                            "phase": "enter" if event.kind == "node_enter" else "exit",
+                                            "agent": event.agent,
+                                            "payload": event.payload,
+                                        },
+                                    )
+                                )
+                            elif event.kind == "handoff":
+                                await queue.put(("frame", "handoff", {"node_id": event.node_id, **event.payload}))
+                            elif event.kind == "tool_call":
+                                await queue.put(
+                                    (
+                                        "frame",
+                                        "step",
+                                        {
+                                            "agent": event.agent,
+                                            "tool_name": event.node_id,
+                                            **event.payload,
+                                        },
+                                    )
+                                )
+                            elif event.kind == "checkpoint":
+                                await queue.put(("frame", "checkpoint", {"node_id": event.node_id, **event.payload}))
+                            elif event.kind == "request_info":
+                                await queue.put(("frame", "request_info", {"node_id": event.node_id, **event.payload}))
+                            elif event.kind == "error":
+                                await queue.put(("frame", "error", {"node_id": event.node_id, **event.payload}))
+                                await queue.put(("text", " [an error occurred] "))
+                            elif event.kind == "run_completed":
+                                final_agents_involved = event.payload.get("agents_involved", final_agents_involved)
+                            # run_started / graph / grounding: nothing to render yet.
+                    except Exception:
+                        logger.exception(
+                            "chat_stream.mode_error user=%s conversation=%s mode=%s",
+                            user_email,
+                            conversation_id,
+                            mode_name,
+                        )
+                        await queue.put(("text", "I apologize, but I encountered an issue. Please try again."))
+                agents_involved[:] = final_agents_involved
+                await queue.put(None)  # sentinel
+
+        agent_task = _asyncio.create_task(_run_mode_task())
 
         try:
             while True:
@@ -354,6 +436,14 @@ async def chat_stream(body: ChatRequest, request: Request, user: dict[str, Any] 
                     full_response.append(delta_chunk)
                     yield f"event: delta\ndata: {delta_chunk}\n\n"
 
+                elif item[0] == "frame":
+                    # Structured event from a non-"tool" mode (node/handoff/
+                    # checkpoint/request_info/error) — not display text, so
+                    # it bypasses the byte-cap/truncation accounting above.
+                    frame_name: str = item[1]
+                    frame_payload: dict[str, Any] = item[2]
+                    yield f"event: {frame_name}\ndata: {json.dumps(frame_payload, default=str)}\n\n"
+
         finally:
             if not agent_task.done():
                 agent_task.cancel()
@@ -364,13 +454,19 @@ async def chat_stream(body: ChatRequest, request: Request, user: dict[str, Any] 
 
         response_text = "".join(full_response)
 
-        # Drain captured tool steps → timeline frames + agents_involved.
-        steps = get_steps()
-        for s in steps:
-            s.setdefault("agent", "orchestrator")
-        agents_involved[:] = list(dict.fromkeys(["orchestrator", *[s.get("agent", "orchestrator") for s in steps]]))
-        for s in steps:
-            yield f"event: step\ndata: {json.dumps(s, default=str)}\n\n"
+        if mode.name == "tool":
+            # Drain captured tool steps → timeline frames + agents_involved.
+            steps = get_steps()
+            for s in steps:
+                s.setdefault("agent", "orchestrator")
+            agents_involved[:] = list(dict.fromkeys(["orchestrator", *[s.get("agent", "orchestrator") for s in steps]]))
+            for s in steps:
+                yield f"event: step\ndata: {json.dumps(s, default=str)}\n\n"
+        else:
+            # Non-"tool" modes already emitted their own "step"/"node"/
+            # "handoff" frames inline as they occurred; agents_involved was
+            # set from the mode's run_completed event.
+            steps = []
 
         yield f"event: metadata\ndata: {json.dumps({'conversation_id': conversation_id, 'agents_involved': agents_involved})}\n\n"
         yield "data: [DONE]\n\n"

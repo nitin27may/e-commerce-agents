@@ -229,7 +229,19 @@ class ApiClient {
     conversationId: string | undefined,
     onChunk: (text: string) => void,
     signal?: AbortSignal,
-    options: { allowRefresh?: boolean; onStep?: (step: AgentStep) => void } = {}
+    options: {
+      allowRefresh?: boolean;
+      onStep?: (step: AgentStep) => void;
+      /**
+       * Fired for any SSE frame that isn't `step`/`metadata`/display text —
+       * currently `node`, `handoff`, `checkpoint`, `request_info`, `error`
+       * from a non-"tool" orchestration mode (see `orchestrator/routes/chat.py`).
+       * No UI consumes these yet; the hook exists so the parser has
+       * somewhere safe to route them instead of rendering raw JSON as chat
+       * text.
+       */
+      onOrchestrationEvent?: (eventName: string, data: unknown) => void;
+    } = {}
   ): Promise<{ conversation_id: string; agents_involved: string[] }> {
     const allowRefresh = options.allowRefresh ?? true;
     const headers: Record<string, string> = {
@@ -331,8 +343,23 @@ class ApiClient {
             continue;
           }
 
-          // Regular text / delta chunk
-          onChunk(data);
+          // "" (plain `data:` frame) and "delta" (specialist streamed token)
+          // are the only event types carrying real display text.
+          if (currentEventType === "" || currentEventType === "delta") {
+            onChunk(data);
+            continue;
+          }
+
+          // Any other named frame (e.g. `node`/`handoff`/`checkpoint`/
+          // `request_info`/`error` from a non-"tool" orchestration mode) is
+          // structured data, not display text — forward it to the optional
+          // hook rather than falling through to onChunk, which would render
+          // its raw JSON payload as if it were part of the chat message.
+          try {
+            options.onOrchestrationEvent?.(currentEventType, JSON.parse(data));
+          } catch {
+            // Ignore malformed frame
+          }
         }
       }
     } catch (err) {

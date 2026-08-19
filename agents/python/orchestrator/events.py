@@ -173,6 +173,28 @@ def adapt_workflow_event(event: Any) -> OrchestrationEvent | None:
     return OrchestrationEvent(kind="delta", node_id=executor_id, payload={"type": etype, "data": _jsonable(data)})
 
 
+def delta_text(payload: dict[str, Any]) -> str:
+    """Extract user-visible assistant text from a ``kind="delta"`` event's payload.
+
+    ``adapt_workflow_event`` wraps a workflow's raw ``AgentResponseUpdate``-shaped
+    ``data`` as ``{"type": ..., "data": {"contents": [...], "role": ..., ...}}``
+    — verified directly against a live handoff run (see
+    ``orchestrator/modes/handoff_mode.py``'s own text-assembly logic, which
+    reads the same shape pre-``_jsonable``). Only ``contents`` entries of
+    type ``"text"`` are real display text — a ``"function_call"``/
+    ``"function_result"`` content item is tool machinery (e.g. the
+    synthesized ``handoff_to_x`` call), and must not leak into a chat
+    bubble as raw JSON.
+    """
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        return ""
+    contents = data.get("contents")
+    if not isinstance(contents, list):
+        return ""
+    return "".join(c.get("text", "") for c in contents if isinstance(c, dict) and c.get("type") == "text")
+
+
 def adapt_step(step: dict[str, Any]) -> OrchestrationEvent:
     """Convert a step-recorder dict (``shared/agent_observability.py``) into
     the normalized protocol.
