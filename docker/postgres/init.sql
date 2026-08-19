@@ -405,20 +405,38 @@ CREATE INDEX IF NOT EXISTS idx_memories_category ON agent_memories(user_id, cate
 -- ============================================================
 -- Checkpoints: one row per superstep per workflow run. Populated by
 -- PostgresCheckpointStorage (shared/checkpoint_storage.py).
+--
+-- usage_log_id correlates a checkpoint back to the "run" the web UI and
+-- GET /api/runs already know about (usage_logs) — MAF's own
+-- CheckpointStorage interface only scopes list/get_latest by
+-- workflow_name, which is fixed per workflow *type* ("pre-purchase",
+-- "return-and-replace"), not per run instance, so it can't disambiguate
+-- two users' concurrent runs of the same workflow on its own.
 CREATE TABLE IF NOT EXISTS workflow_checkpoints (
     checkpoint_id  UUID PRIMARY KEY,
     workflow_name  TEXT NOT NULL,
     payload        JSONB NOT NULL,           -- encoded WorkflowCheckpoint dict
+    usage_log_id   UUID REFERENCES usage_logs(id) ON DELETE SET NULL,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_checkpoints_workflow_created
     ON workflow_checkpoints(workflow_name, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_checkpoints_usage_log
+    ON workflow_checkpoints(usage_log_id);
 
 -- HITL requests: one row per pause, resolved by user/admin response.
--- Consumed by the return/replace approval gate (plans/refactor/09).
+-- Consumed by workflow:return-replace's in-workflow ctx.request_info gate
+-- (orchestrator/modes/workflow_mode.py::ReturnReplaceMode) via
+-- POST /api/orchestration/{run_id}/resume. request_id is MAF's own pause
+-- token — the key resuming workflow.run(responses={request_id: ...})
+-- needs; checkpoint_id is which durable point to reload from. Both are
+-- null only for request kinds this table predates (tool-level approval,
+-- shared/hitl.py, which never paused a MAF workflow to begin with).
 CREATE TABLE IF NOT EXISTS hitl_requests (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    workflow_run_id  UUID NOT NULL,
+    workflow_run_id  UUID NOT NULL REFERENCES usage_logs(id) ON DELETE CASCADE,
+    request_id       TEXT,
+    checkpoint_id    UUID REFERENCES workflow_checkpoints(checkpoint_id) ON DELETE SET NULL,
     user_email       TEXT NOT NULL,
     kind             TEXT NOT NULL,          -- 'return_approval' | 'tool_approval' | ...
     payload          JSONB NOT NULL,         -- request data surfaced to the UI

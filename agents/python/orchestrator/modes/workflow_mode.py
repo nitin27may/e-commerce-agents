@@ -13,14 +13,22 @@ building that initial state: a UUID literal in the message if present,
 else a lightweight lookup (``search_products`` for pre-purchase, the
 current user's most recent order for return-replace).
 
-HITL note: return-replace's in-workflow gate (``ctx.request_info``)
-pauses correctly — this mode surfaces that pause as a ``request_info``
-event and a ``run_completed`` with ``payload["pending_approval"] = True``
-— but *resuming* it needs either the paused ``Workflow`` object held
-across requests, or (once it lands) Phase 1.5's checkpoint storage.
-Neither exists yet, so this mode cannot resume a paused run today. See
-the Phase 1.4 design-constraint note in the plan for why "drain, don't
-suspend across requests" comes before "resume" rather than after.
+HITL + checkpoints (Phase 1.5): every ``.run()`` call on the built MAF
+workflow attaches a checkpoint storage backend (``shared.factory.get_checkpoint_storage``,
+``None`` if no pool is configured — checkpointing degrades to a no-op
+rather than failing), wrapped in ``RecordingCheckpointStorage`` so each
+save can be surfaced as its own ``kind="checkpoint"`` event — MAF's own
+event stream never mentions a save, verified directly. Every
+``run_completed`` payload carries ``latest_checkpoint_id``. For
+return-replace specifically, a pause also carries ``request_id`` (MAF's
+own resume token, read off the adapted ``request_info`` event) — together
+these are exactly what a *separate* request needs to resume a *different*
+``Workflow`` object from the paused one: verified directly that
+``workflow.run(responses={request_id: ...}, checkpoint_id=..., checkpoint_storage=...)``
+on a freshly-built workflow (not the one that paused) replays correctly
+through to ``finalize``. ``ReturnReplaceMode.resume()`` is that second
+call; ``orchestrator/routes/orchestration.py``'s resume endpoint is what
+reaches it from a live request — the first caller for both.
 """
 
 from __future__ import annotations
@@ -30,7 +38,9 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from orchestrator.events import OrchestrationEvent, adapt_workflow_event
+from shared.checkpoint_storage import RecordingCheckpointStorage, drain_new_checkpoint_ids
 from shared.context import current_conversation_history
+from shared.factory import get_checkpoint_storage
 
 from .base import ModeCapabilities, RunContext
 
@@ -119,8 +129,12 @@ class PrePurchaseMode:
         state = ResearchState(product_id=product_id)
         maf_workflow = PrePurchaseWorkflow(self._resolve_tools())._build_maf_workflow()
 
+        inner_storage = get_checkpoint_storage()
+        recorder = RecordingCheckpointStorage(inner_storage) if inner_storage is not None else None
+        seen = 0
+
         final_state = state
-        async for event in maf_workflow.run(state, stream=True):
+        async for event in maf_workflow.run(state, stream=True, checkpoint_storage=recorder):
             adapted = adapt_workflow_event(event)
             if adapted is not None:
                 yield adapted
@@ -128,6 +142,14 @@ class PrePurchaseMode:
                 data = getattr(event, "data", None)
                 if isinstance(data, ResearchState):
                     final_state = data
+            if recorder is not None:
+                new_ids = drain_new_checkpoint_ids(recorder, seen)
+                for checkpoint_id in new_ids:
+                    yield OrchestrationEvent(
+                        kind="checkpoint",
+                        payload={"checkpoint_id": checkpoint_id, "workflow_name": maf_workflow.name},
+                    )
+                seen += len(new_ids)
 
         yield OrchestrationEvent(
             kind="run_completed",
@@ -135,6 +157,7 @@ class PrePurchaseMode:
                 "text": final_state.recommendation,
                 "agents_involved": list(final_state.completed_steps) or ["pre-purchase-research"],
                 "product_id": product_id,
+                "latest_checkpoint_id": recorder.saved[-1] if recorder and recorder.saved else None,
             },
         )
 
@@ -202,8 +225,13 @@ class ReturnReplaceMode:
         state = WorkflowState(user_email=email, order_id=order_id, order_total=order_total or 0.0, reason=message)
         maf_workflow = ReturnAndReplaceWorkflow(self._resolve_tools())._build_maf_workflow()
 
+        inner_storage = get_checkpoint_storage()
+        recorder = RecordingCheckpointStorage(inner_storage) if inner_storage is not None else None
+        seen = 0
+        pending_request_id: str | None = None
+
         final_state = state
-        async for event in maf_workflow.run(state, stream=True):
+        async for event in maf_workflow.run(state, stream=True, checkpoint_storage=recorder):
             adapted = adapt_workflow_event(event)
             if adapted is not None:
                 yield adapted
@@ -211,8 +239,19 @@ class ReturnReplaceMode:
                 data = getattr(event, "data", None)
                 if isinstance(data, WorkflowState):
                     final_state = data
+            if getattr(event, "type", None) == "request_info":
+                pending_request_id = getattr(event, "request_id", None)
+            if recorder is not None:
+                new_ids = drain_new_checkpoint_ids(recorder, seen)
+                for checkpoint_id in new_ids:
+                    yield OrchestrationEvent(
+                        kind="checkpoint",
+                        payload={"checkpoint_id": checkpoint_id, "workflow_name": maf_workflow.name},
+                    )
+                seen += len(new_ids)
 
         agents_involved = list(final_state.completed_steps) or ["return-replace"]
+        latest_checkpoint_id = recorder.saved[-1] if recorder and recorder.saved else None
 
         if final_state.hitl_requested and final_state.hitl_approved is None:
             text = (
@@ -221,7 +260,13 @@ class ReturnReplaceMode:
             )
             yield OrchestrationEvent(
                 kind="run_completed",
-                payload={"text": text, "agents_involved": agents_involved, "pending_approval": True},
+                payload={
+                    "text": text,
+                    "agents_involved": agents_involved,
+                    "pending_approval": True,
+                    "request_id": pending_request_id,
+                    "latest_checkpoint_id": latest_checkpoint_id,
+                },
             )
             return
 
@@ -236,7 +281,89 @@ class ReturnReplaceMode:
 
         yield OrchestrationEvent(
             kind="run_completed",
-            payload={"text": text, "agents_involved": agents_involved, "pending_approval": False},
+            payload={
+                "text": text,
+                "agents_involved": agents_involved,
+                "pending_approval": False,
+                "latest_checkpoint_id": latest_checkpoint_id,
+            },
+        )
+
+    async def resume(self, *, checkpoint_id: str, request_id: str, approved: bool) -> AsyncIterator[OrchestrationEvent]:
+        """Resume a paused return-replace run from a saved checkpoint.
+
+        Not part of the ``OrchestrationMode`` protocol — ``tool``/``handoff``
+        never pause, and ``workflow:pre-purchase``/``group-chat`` have no
+        HITL gate, so this is specific to the one mode that needs it.
+        Builds a *fresh* ``Workflow`` (not the paused instance — there is
+        none; it lived in a prior request's process memory and is long
+        gone) and resumes purely from ``checkpoint_id`` + ``responses``,
+        verified directly to replay correctly through discount + finalize.
+        Caller (``orchestrator/routes/orchestration.py``) is responsible
+        for knowing which checkpoint/request_id belong to which paused run
+        — see ``hitl_requests`` in ``docker/postgres/init.sql``.
+        """
+        from workflows.return_replace import ReturnAndReplaceWorkflow, WorkflowState
+
+        maf_workflow = ReturnAndReplaceWorkflow(self._resolve_tools())._build_maf_workflow()
+        inner_storage = get_checkpoint_storage()
+        recorder = RecordingCheckpointStorage(inner_storage) if inner_storage is not None else None
+        seen = 0
+
+        final_state: WorkflowState | None = None
+        async for event in maf_workflow.run(
+            responses={request_id: approved},
+            checkpoint_id=checkpoint_id,
+            checkpoint_storage=recorder,
+            stream=True,
+        ):
+            adapted = adapt_workflow_event(event)
+            if adapted is not None:
+                yield adapted
+            if getattr(event, "type", None) == "output":
+                data = getattr(event, "data", None)
+                if isinstance(data, WorkflowState):
+                    final_state = data
+            if recorder is not None:
+                new_ids = drain_new_checkpoint_ids(recorder, seen)
+                for cid in new_ids:
+                    yield OrchestrationEvent(
+                        kind="checkpoint",
+                        payload={"checkpoint_id": cid, "workflow_name": maf_workflow.name},
+                    )
+                seen += len(new_ids)
+
+        if final_state is None:
+            text = "Resume did not produce a terminal state."
+            agents_involved: list[str] = []
+        elif final_state.errors:
+            text = "; ".join(final_state.errors)
+            agents_involved = list(final_state.completed_steps)
+        elif final_state.hitl_approved and "finalize" in final_state.completed_steps:
+            # Not final_state.return_id: _HitlGateExecutor.on_approval()
+            # (workflows/return_replace.py) deliberately rebuilds a minimal
+            # WorkflowState from the ReturnApprovalRequest snapshot on
+            # resume — order_id/order_total/refund_amount only, not
+            # return_id or replacement_products from the paused run. That's
+            # correct for return_replace.py's own executors (apply-discount
+            # and finalize only need the refund context), but it means text
+            # here can't reference the original return_id.
+            text = f"Return for order {final_state.order_id} approved and finalized."
+            if final_state.applied_discount:
+                text += f" Loyalty discount applied: {final_state.applied_discount}."
+            agents_involved = list(final_state.completed_steps)
+        else:
+            text = "Return could not be completed."
+            agents_involved = list(final_state.completed_steps)
+
+        yield OrchestrationEvent(
+            kind="run_completed",
+            payload={
+                "text": text,
+                "agents_involved": agents_involved or ["return-replace"],
+                "pending_approval": False,
+                "latest_checkpoint_id": recorder.saved[-1] if recorder and recorder.saved else None,
+            },
         )
 
     def graph_mermaid(self) -> str | None:
