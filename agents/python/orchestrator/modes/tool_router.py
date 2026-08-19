@@ -14,6 +14,7 @@ from collections.abc import AsyncIterator
 from orchestrator.events import OrchestrationEvent, adapt_step
 from shared.agent_observability import get_steps, reset_steps
 from shared.context import current_conversation_history
+from shared.grounding.ledger import reset_grounding_ledger
 
 from .base import ModeCapabilities, RunContext
 
@@ -39,6 +40,7 @@ class ToolRouterMode:
         agent = create_orchestrator_agent()
         current_conversation_history.set(ctx.history)
         reset_steps()
+        reset_grounding_ledger()
 
         response_text = await _run_agent_native(agent, message, history=ctx.history)
 

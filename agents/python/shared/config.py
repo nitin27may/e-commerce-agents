@@ -40,6 +40,7 @@ _UNSAFE_SECRET_DEFAULTS = {
 # fail fast rather than silently falling back to the regex provider.
 _SUPPORTED_INJECTION_PROVIDERS = {"regex"}
 _NOT_YET_IMPLEMENTED_INJECTION_PROVIDERS = {"azure_content_safety"}
+_SUPPORTED_GROUNDING_MODES = {"off", "observe", "annotate", "enforce"}
 
 # Resolve .env once, relative to the repo root, so the eval/seed scripts pick
 # it up regardless of the cwd they're launched from. Inside the Docker image
@@ -266,6 +267,17 @@ class Settings(BaseSettings):
     # or "azure_content_safety" (Azure AI Content Safety — Prompt Shields).
     GUARDRAILS_INJECTION_PROVIDER: str = "regex"
 
+    # ── Grounding (Track A — server-side fact verification) ─────────
+    # off      — GroundingVerificationMiddleware is skipped entirely.
+    # observe  — verify and log counts; nothing surfaced to the caller.
+    # annotate — verify and attach a report to response.additional_properties["grounding"].
+    # enforce  — annotate, plus strip not-found cards and correct price/total
+    #            mismatches in the finalized response text. See
+    #            shared/grounding/middleware.py for the streaming caveat: this
+    #            corrects the persisted/final response, not chunks already
+    #            streamed to the browser.
+    GROUNDING_MODE: str = "annotate"
+
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE),
         case_sensitive=True,
@@ -335,6 +347,15 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"GUARDRAILS_INJECTION_PROVIDER={provider!r} is not a recognized value. "
                 f"Supported values: {sorted(_SUPPORTED_INJECTION_PROVIDERS)!r}."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_grounding_mode(self) -> "Settings":
+        if self.GROUNDING_MODE not in _SUPPORTED_GROUNDING_MODES:
+            raise ValueError(
+                f"GROUNDING_MODE={self.GROUNDING_MODE!r} is not a recognized value. "
+                f"Supported values: {sorted(_SUPPORTED_GROUNDING_MODES)!r}."
             )
         return self
 

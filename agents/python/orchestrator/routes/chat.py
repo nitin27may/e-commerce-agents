@@ -57,6 +57,7 @@ from starlette.responses import StreamingResponse
 from shared.agent_observability import get_steps, reset_steps
 from shared.context import current_conversation_history
 from shared.db import get_pool
+from shared.grounding.ledger import reset_grounding_ledger
 from shared.session import get_history_as_dicts, get_history_provider
 from shared.usage_db import UsageTimer, log_agent_usage, log_execution_step
 
@@ -363,6 +364,7 @@ async def chat_stream(body: ChatRequest, request: Request, user: dict[str, Any] 
 
             async def _run_mode_task() -> None:
                 reset_steps()
+                reset_grounding_ledger()
                 with agent_run_span("orchestrator"):
                     try:
                         async for chunk in _run_agent_native_stream(agent, body.message, history=history):

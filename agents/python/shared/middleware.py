@@ -189,15 +189,20 @@ def build_specialist_middleware(*, include_steps: bool = True) -> list[Any]:
     - ``InjectionDetection``    (chat)     — flag inbound injection (observe-first)
     - ``PiiRedactionMiddleware``(chat)     — mask card / SSN before the LLM
     - ``OutputSanitization``    (function) — defang stored injection in tool output
+    - ``GroundingLedger``       (function) — record real product/order facts (optional)
+    - ``GroundingVerification`` (agent)    — verify/correct the final text (optional)
     - ``StepRecorder``          (function) — agentic-timeline capture (optional)
 
     The guardrail layers are gated by ``GUARDRAILS_ENABLED`` so the feature can
-    be disabled without a redeploy; PII redaction stays on regardless.
+    be disabled without a redeploy; PII redaction stays on regardless. Grounding
+    is gated by ``GROUNDING_MODE`` — "off" skips both grounding middleware.
     """
     # Imported lazily to avoid a circular import (the guardrails package imports
     # shared.config, which is cheap, but the middleware module is imported early
     # by agents — keep the dependency one-directional).
     from shared.agent_observability import STEP_MIDDLEWARE
+    from shared.grounding.ledger import GROUNDING_LEDGER_MIDDLEWARE
+    from shared.grounding.middleware import GroundingVerificationMiddleware
     from shared.guardrails.injection_middleware import InjectionDetectionChatMiddleware
     from shared.guardrails.output_middleware import OutputSanitizationMiddleware
     from shared.hitl import HITLFunctionMiddleware
@@ -210,6 +215,9 @@ def build_specialist_middleware(*, include_steps: bool = True) -> list[Any]:
         stack.append(OutputSanitizationMiddleware())
     if settings.HITL_ENABLED:
         stack.append(HITLFunctionMiddleware())
+    if settings.GROUNDING_MODE != "off":
+        stack.extend(GROUNDING_LEDGER_MIDDLEWARE)
+        stack.append(GroundingVerificationMiddleware())
     if include_steps:
         stack.extend(STEP_MIDDLEWARE)
     return stack

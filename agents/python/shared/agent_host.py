@@ -206,9 +206,11 @@ def create_agent_app(
                     history = await _rehydrate_history_from_session(session_id)
 
             from shared.agent_observability import get_steps, reset_steps
+            from shared.grounding.ledger import reset_grounding_ledger
             from shared.telemetry import agent_run_span
 
             reset_steps()
+            reset_grounding_ledger()
             with agent_run_span(agent_name):
                 response_text = await _run_agent_native(agent, message, history=history)
             # Return this specialist's captured tool steps so the orchestrator
@@ -254,10 +256,12 @@ def create_agent_app(
             )
 
         from shared.agent_observability import get_steps, reset_steps
+        from shared.grounding.ledger import reset_grounding_ledger
         from shared.telemetry import agent_run_span
 
         async def _generate():
             reset_steps()
+            reset_grounding_ledger()
             with agent_run_span(agent_name):
                 try:
                     async for chunk in _run_agent_native_stream(agent, message, history=history):

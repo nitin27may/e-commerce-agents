@@ -25,6 +25,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 
 from orchestrator.events import OrchestrationEvent, adapt_workflow_event
 from shared.context import current_conversation_history
+from shared.grounding.ledger import reset_grounding_ledger
 
 from .base import ModeCapabilities, RunContext
 
@@ -53,8 +54,20 @@ def _make_agent_responder(panel_name: str, instructions: str) -> Callable[[str, 
         from agent_framework import Agent
 
         from shared.factory import get_chat_client
+        from shared.middleware import build_specialist_middleware
 
-        agent = Agent(client=get_chat_client(), instructions=instructions, name=panel_name)
+        # Panelists are free-form LLM commentary with no tools attached, but
+        # they were built with no middleware at all — meaning no PII
+        # redaction, no injection detection, and (before this) no grounding
+        # check on their own output. Same wiring point every other agent
+        # uses; StepRecorderMiddleware/GroundingLedgerMiddleware are no-ops
+        # here since there are no tool calls to record.
+        agent = Agent(
+            client=get_chat_client(),
+            instructions=instructions,
+            name=panel_name,
+            middleware=build_specialist_middleware(),
+        )
         prompt = f"Question: {question}\n\nTranscript so far:\n{_format_transcript(transcript)}"
         response = await agent.run(prompt)
         return response.text or f"({panel_name} had nothing to add)"
@@ -85,6 +98,7 @@ class GroupChatMode:
         from workflows.group_chat import GroupChatState, GroupChatWorkflow
 
         current_conversation_history.set(ctx.history)
+        reset_grounding_ledger()
 
         panelists = self._resolve_panelists()
         maf_workflow = GroupChatWorkflow(panelists=panelists)._build()
