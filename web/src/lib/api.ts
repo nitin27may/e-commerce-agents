@@ -35,6 +35,28 @@ export interface AgentStep {
   duration_ms?: number;
 }
 
+/** One verified/unverified claim inside a GroundingReport (shared/grounding/verifier.py::ClaimVerdict). */
+export interface GroundingClaim {
+  type: "product" | "order" | "bare_id" | "amount" | "tracking";
+  id: string;
+  status: "verified" | "price_mismatch" | "not_found" | "unverifiable";
+  detail: string | null;
+  source: "ledger" | "db" | null;
+}
+
+/**
+ * Server-side grounding verdict for one assistant message — how many of its
+ * product/order card claims were checked against Postgres, not just
+ * format-validated (shared/grounding/middleware.py::_attach_report). Present
+ * only when `GROUNDING_MODE` is `annotate` or `enforce` (default: annotate).
+ */
+export interface GroundingReport {
+  total: number;
+  verified: number;
+  unverified: number;
+  claims: GroundingClaim[];
+}
+
 /** What a mode supports — from `GET /api/orchestration/modes` (orchestrator/modes/base.py::ModeCapabilities). */
 export interface OrchestrationModeCapabilities {
   streams: boolean;
@@ -243,6 +265,7 @@ class ApiClient {
       conversation_id: string;
       agents_involved: string[];
       message_id?: string;
+      grounding?: GroundingReport | null;
     }>("/api/chat", {
       method: "POST",
       body: JSON.stringify({ message, conversation_id: conversationId }),
@@ -272,6 +295,12 @@ class ApiClient {
        * from a non-"tool" orchestration mode (see `orchestrator/routes/chat.py`).
        */
       onOrchestrationEvent?: (eventName: string, data: unknown) => void;
+      /**
+       * Fired once per `event: grounding` frame — currently only "tool" mode
+       * emits it (see `orchestrator/modes/tool_router.py` and
+       * `orchestrator/routes/chat.py`'s streaming generator).
+       */
+      onGrounding?: (report: GroundingReport) => void;
       /**
        * Orchestration mode to run this turn through — a `name` from
        * `GET /api/orchestration/modes`. Omitted (or `undefined`) lets the
@@ -380,6 +409,15 @@ class ApiClient {
               metadata = JSON.parse(data);
             } catch {
               // Ignore malformed metadata
+            }
+            continue;
+          }
+
+          if (currentEventType === "grounding") {
+            try {
+              options.onGrounding?.(JSON.parse(data) as GroundingReport);
+            } catch {
+              // Ignore malformed grounding report
             }
             continue;
           }

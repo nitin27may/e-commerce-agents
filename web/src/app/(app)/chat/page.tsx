@@ -9,9 +9,10 @@ import {
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useCart } from "@/lib/cart-context";
-import { api, type AgentStep } from "@/lib/api";
+import { api, type AgentStep, type GroundingReport } from "@/lib/api";
 import { RichMessage } from "@/components/chat/rich-message";
 import { AgentTimeline } from "@/components/chat/agent-timeline";
+import { GroundingBadge } from "@/components/chat/grounding-badge";
 import { OrchestrationGraph } from "@/components/chat/orchestration-graph";
 import { ModeSwitcher } from "@/components/chat/mode-switcher";
 import { ModeComparison } from "@/components/chat/mode-comparison";
@@ -67,6 +68,8 @@ interface Message {
   activeNodeIds?: string[];
   doneNodeIds?: string[];
   errorNodeIds?: string[];
+  /** Server-side fact-check report from `event: grounding` (tool mode only, GROUNDING_MODE != off). */
+  grounding?: GroundingReport;
 }
 
 interface Conversation {
@@ -576,6 +579,11 @@ export default function ChatPage() {
               return existing ? prev.map((m) => (m.id === assistantId ? next : m)) : [...prev, next];
             });
           },
+          onGrounding: (report) => {
+            setMessages((prev) =>
+              prev.map((m) => (m.id === assistantId ? { ...m, grounding: report } : m)),
+            );
+          },
           mode: orchestrationMode || undefined,
         },
       );
@@ -782,6 +790,8 @@ export default function ChatPage() {
                     {msg.role === "assistant" &&
                       msg.steps &&
                       msg.steps.length > 0 && <AgentTimeline steps={msg.steps} />}
+
+                    {msg.role === "assistant" && <GroundingBadge report={msg.grounding} />}
 
                     {msg.role === "assistant" && msg.mode && (
                       <OrchestrationGraph
