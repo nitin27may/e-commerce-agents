@@ -1,63 +1,52 @@
 """Orchestration introspection routes — mode listing, graphs, comparison, resume.
 
-This module's shape is set by Phase 1.3; its contents fill in over the rest
-of Phase 1. Today (1.3) only ``GET /api/orchestration/modes`` does something
-real, and it reports the one mode actually reachable from ``/api/chat`` —
-the plain LLM tool router (``orchestrator/agent.py::create_orchestrator_agent``,
-called directly by ``.chat``). The other three endpoints exist as documented,
-correctly-shaped stubs rather than being added later as a surprise — each
-raises 501 naming the phase step that implements it, instead of 404 (which
-would look like the route doesn't exist) or a silent empty response (which
-would look like it works and returns nothing).
-
-Phase 1.2 replaces the hardcoded list below with a real mode registry
-(``orchestrator/modes/``) and gives ``.chat`` a ``mode`` field to actually
-dispatch on — until then, every mode other than ``tool`` is unreachable from
-the live app regardless of what a client requests.
+``GET /modes`` and ``GET /modes/{name}/graph`` read the real mode
+registry (``orchestrator/modes/``) — Phase 1.2 wired five modes into it;
+this route just has to ask, not hardcode a list that drifts out of sync
+with what ``/api/chat`` can actually run (a stale hardcoded list is
+exactly the kind of doc/code gap the rest of this project exists to
+fix). ``POST /compare`` is still a real 501 stub — it's Phase 1.6c's
+mode-comparison UI, genuinely not built yet. ``POST /{run_id}/resume``
+is real as of Phase 1.5: it resumes a paused ``workflow:return-replace``
+run from the ``hitl_requests`` row Phase 1.5's ``chat.py`` linkage wrote.
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+import json
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+
+from shared.context import current_user_email, current_user_role
+from shared.db import get_pool
+
+from .legacy import require_auth
 
 router = APIRouter(prefix="/api/orchestration")
-
-
-# Static for now — becomes OrchestrationMode.describe() over the mode
-# registry in Phase 1.2. Kept as a plain dict (not a Pydantic response
-# model) since the shape itself is expected to grow per-mode capability
-# fields as 1.2-1.6 land; freezing a schema now would just mean revising it
-# immediately.
-_MODES: list[dict[str, object]] = [
-    {
-        "name": "tool",
-        "label": "Tool Router",
-        "description": "The orchestrator LLM calls call_specialist_agent to route to a specialist. "
-        "Single-hop: one specialist per turn, decided by the model.",
-        "capabilities": {
-            "streams": True,
-            "supports_hitl": True,  # via shared/hitl.py middleware, not in-workflow
-            "supports_checkpoints": False,
-            "is_graph": False,
-        },
-        "default": True,
-    },
-]
 
 
 @router.get("/modes")
 async def list_modes() -> list[dict[str, object]]:
     """Every mode ``/api/chat`` can be asked to run, and what each supports."""
-    return _MODES
+    from orchestrator.modes import list_modes as registry_list_modes
+
+    return registry_list_modes()
 
 
 @router.get("/modes/{name}/graph")
 async def get_mode_graph(name: str) -> dict[str, object]:
-    """Static Mermaid graph for a mode — lands with each mode in Phase 1.2/1.6."""
-    raise HTTPException(
-        status_code=501,
-        detail=f"Mode graphs land in Phase 1.6 (web UI). Requested mode: {name!r}.",
-    )
+    """A mode's static Mermaid graph, or ``None`` for a mode that routes
+    per-turn instead of along a fixed topology (``tool``, ``handoff``) —
+    see each mode's own ``graph_mermaid()``."""
+    from orchestrator.modes import UnknownModeError, get_mode
+
+    try:
+        mode = get_mode(name)
+    except UnknownModeError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from None
+    return {"name": name, "mermaid": mode.graph_mermaid()}
 
 
 @router.post("/compare")
@@ -71,12 +60,78 @@ async def compare_modes() -> dict[str, object]:
     raise HTTPException(status_code=501, detail="Mode comparison lands in Phase 1.6c.")
 
 
+class ResumeRequest(BaseModel):
+    approved: bool
+
+
 @router.post("/{run_id}/resume")
-async def resume_run(run_id: str) -> dict[str, object]:
+async def resume_run(run_id: str, body: ResumeRequest, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     """Resume a workflow paused on in-workflow HITL, from committed checkpoint state.
 
-    Depends on Phase 1.5's checkpoint wiring — a workflow only has something
-    to resume from once ``PostgresCheckpointStorage`` is actually attached to
-    ``workflow_mode.py``.
+    Looks up the most recent *pending* ``hitl_requests`` row for
+    ``run_id`` (scoped to the caller unless admin — the same ownership
+    check ``GET /api/runs/{id}/checkpoints`` uses), resumes via
+    ``ReturnReplaceMode.resume()`` (currently the only mode with anything
+    to resume), and marks the request resolved. A request with no
+    ``request_id``/``checkpoint_id`` predates Phase 1.5's checkpoint
+    wiring and can't be resumed this way — surfaced as 409, not silently
+    treated as "not found".
     """
-    raise HTTPException(status_code=501, detail=f"Resume lands in Phase 1.5 (checkpoints). run_id={run_id!r}.")
+    pool = get_pool()
+    email = current_user_email.get()
+    role = current_user_role.get()
+
+    if role == "admin":
+        hitl = await pool.fetchrow(
+            """SELECT * FROM hitl_requests
+               WHERE workflow_run_id = $1 AND status = 'pending'
+               ORDER BY created_at DESC LIMIT 1""",
+            run_id,
+        )
+    else:
+        hitl = await pool.fetchrow(
+            """SELECT * FROM hitl_requests
+               WHERE workflow_run_id = $1 AND status = 'pending' AND user_email = $2
+               ORDER BY created_at DESC LIMIT 1""",
+            run_id,
+            email,
+        )
+    if not hitl:
+        raise HTTPException(status_code=404, detail="No pending approval found for this run")
+    if hitl["kind"] != "return_approval":
+        raise HTTPException(status_code=400, detail=f"Resume not supported for request kind {hitl['kind']!r}")
+    if not hitl["request_id"] or not hitl["checkpoint_id"]:
+        raise HTTPException(status_code=409, detail="This pending request predates checkpoint-based resume")
+
+    from orchestrator.modes.workflow_mode import ReturnReplaceMode
+
+    mode = ReturnReplaceMode()
+    final_payload: dict[str, Any] = {}
+    async for event in mode.resume(
+        checkpoint_id=str(hitl["checkpoint_id"]), request_id=hitl["request_id"], approved=body.approved
+    ):
+        if event.kind == "run_completed":
+            final_payload = event.payload
+
+    await pool.execute(
+        """UPDATE hitl_requests
+           SET status = $1, responded_at = NOW(), response = $2::jsonb
+           WHERE id = $3""",
+        "approved" if body.approved else "rejected",
+        json.dumps({"approved": body.approved}),
+        hitl["id"],
+    )
+    new_checkpoint_id = final_payload.get("latest_checkpoint_id")
+    if new_checkpoint_id:
+        await pool.execute(
+            "UPDATE workflow_checkpoints SET usage_log_id = $1 WHERE checkpoint_id = $2",
+            run_id,
+            new_checkpoint_id,
+        )
+
+    return {
+        "run_id": run_id,
+        "approved": body.approved,
+        "text": final_payload.get("text", ""),
+        "agents_involved": final_payload.get("agents_involved", []),
+    }

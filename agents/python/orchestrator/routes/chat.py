@@ -79,6 +79,39 @@ class ChatResponse(BaseModel):
     agents_involved: list[str]
 
 
+async def _link_run_artifacts(pool: Any, usage_log_id: Any, user_email: str, run_payload: dict[str, Any]) -> None:
+    """Correlate a run's checkpoint + HITL pause (if any) back to its
+    ``usage_logs`` row — what ``GET /api/runs/{id}/checkpoints`` and
+    ``POST /api/orchestration/{run_id}/resume`` need to find them later.
+
+    A no-op for every mode that doesn't set these payload keys (``tool``,
+    ``handoff``, a completed ``workflow:pre-purchase``/``group-chat`` run,
+    or a ``workflow:return-replace`` run that didn't pause) — checking
+    ``usage_log_id`` and ``latest_checkpoint_id`` before doing anything
+    covers all of those without a mode-name branch.
+    """
+    if not usage_log_id:
+        return
+    checkpoint_id = run_payload.get("latest_checkpoint_id")
+    if checkpoint_id:
+        await pool.execute(
+            "UPDATE workflow_checkpoints SET usage_log_id = $1 WHERE checkpoint_id = $2",
+            usage_log_id,
+            checkpoint_id,
+        )
+    if run_payload.get("pending_approval") and run_payload.get("request_id"):
+        await pool.execute(
+            """INSERT INTO hitl_requests
+                   (workflow_run_id, request_id, checkpoint_id, user_email, kind, payload, status)
+               VALUES ($1, $2, $3, $4, 'return_approval', $5::jsonb, 'pending')""",
+            usage_log_id,
+            run_payload["request_id"],
+            checkpoint_id,
+            user_email,
+            json.dumps({"text": run_payload.get("text", "")}, default=str),
+        )
+
+
 @router.post("/api/chat", response_model=ChatResponse)
 async def chat(body: ChatRequest, user: dict[str, Any] = Depends(optional_auth)) -> ChatResponse:
     """Main chat endpoint — sends message to the orchestrator agent.
@@ -159,6 +192,7 @@ async def chat(body: ChatRequest, user: dict[str, Any] = Depends(optional_auth))
 
     agents_involved: list[str] = ["orchestrator"]
     steps: list[dict[str, Any]] = []
+    run_payload: dict[str, Any] = {}
     ctx = RunContext(history=history, conversation_id=conversation_id)
 
     with UsageTimer() as timer:
@@ -167,9 +201,10 @@ async def chat(body: ChatRequest, user: dict[str, Any] = Depends(optional_auth))
                 response_text = ""
                 async for event in mode.run(body.message, ctx):
                     if event.kind == "run_completed":
-                        response_text = event.payload.get("text", "")
-                        agents_involved = event.payload.get("agents_involved", agents_involved)
-                        steps = event.payload.get("steps", steps)
+                        run_payload = event.payload
+                        response_text = run_payload.get("text", "")
+                        agents_involved = run_payload.get("agents_involved", agents_involved)
+                        steps = run_payload.get("steps", steps)
             except Exception:
                 logger.exception(
                     "chat.agent_error user=%s conversation=%s mode=%s", user_email, conversation_id, mode_name
@@ -189,13 +224,14 @@ async def chat(body: ChatRequest, user: dict[str, Any] = Depends(optional_auth))
             "UPDATE conversations SET last_message_at = NOW() WHERE id = $1",
             conversation_id,
         )
-        await log_agent_usage(
+        usage_log_id = await log_agent_usage(
             user_id=user_id,
             agent_name="orchestrator",
             input_summary=body.message,
             duration_ms=timer.duration_ms,
             tool_calls_count=len(steps) if steps else max(len(agents_involved) - 1, 0),
         )
+        await _link_run_artifacts(pool, usage_log_id, user_email, run_payload)
 
     return ChatResponse(
         response=response_text,
@@ -314,6 +350,11 @@ async def chat_stream(body: ChatRequest, request: Request, user: dict[str, Any] 
         queue: _asyncio.Queue = _asyncio.Queue()
         current_stream_queue.set(queue)
 
+        # Mutable box for run_completed's full payload (checkpoint/HITL
+        # linkage needs more than agents_involved) — stays empty for "tool"
+        # mode, which has no OrchestrationEvent stream to read one from.
+        run_payload_box: dict[str, Any] = {}
+
         if mode.name == "tool":
             from orchestrator.agent import create_orchestrator_agent
             from shared.agent_host import _run_agent_native_stream
@@ -393,6 +434,7 @@ async def chat_stream(body: ChatRequest, request: Request, user: dict[str, Any] 
                                 await queue.put(("frame", "error", {"node_id": event.node_id, **event.payload}))
                                 await queue.put(("text", " [an error occurred] "))
                             elif event.kind == "run_completed":
+                                run_payload_box.update(event.payload)
                                 final_agents_involved = event.payload.get("agents_involved", final_agents_involved)
                                 if not streamed_any_text:
                                     final_text = event.payload.get("text", "")
@@ -541,6 +583,7 @@ async def chat_stream(body: ChatRequest, request: Request, user: dict[str, Any] 
                         status=s.get("status", "success"),
                         duration_ms=s.get("duration_ms", 0),
                     )
+            await _link_run_artifacts(pool, usage_log_id, user_email, run_payload_box)
         except Exception:
             logger.exception("chat_stream.persist_error conversation=%s", conversation_id)
 

@@ -1114,6 +1114,77 @@ async def list_runs(
     return {"entries": entries, "total": total, "limit": limit, "offset": offset}
 
 
+@router.get("/api/runs/{run_id}/checkpoints")
+async def get_run_checkpoints(run_id: str, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
+    """Checkpoints saved during a run — Phase 1.5, ``workflow_mode.py``'s
+    ``RecordingCheckpointStorage`` links each save back to its
+    ``usage_logs`` row via ``workflow_checkpoints.usage_log_id``.
+
+    Scoped the same way ``GET /api/runs`` is: admins can look up any run,
+    everyone else only their own (checked against ``usage_logs.user_id``,
+    not just "does this checkpoint_id exist" — a checkpoint's payload can
+    carry order/refund details, so ownership matters here).
+    """
+    pool = get_pool()
+    email = current_user_email.get()
+    role = current_user_role.get()
+
+    if role == "admin":
+        run = await pool.fetchrow("SELECT id FROM usage_logs WHERE id = $1", run_id)
+    else:
+        run = await pool.fetchrow(
+            """SELECT ul.id FROM usage_logs ul
+               JOIN users u ON ul.user_id = u.id
+               WHERE ul.id = $1 AND u.email = $2""",
+            run_id,
+            email,
+        )
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    rows = await pool.fetch(
+        """SELECT checkpoint_id, workflow_name, created_at
+           FROM workflow_checkpoints
+           WHERE usage_log_id = $1
+           ORDER BY created_at ASC""",
+        run_id,
+    )
+    hitl = await pool.fetchrow(
+        """SELECT id, status, payload, response, created_at, responded_at
+           FROM hitl_requests WHERE workflow_run_id = $1
+           ORDER BY created_at DESC LIMIT 1""",
+        run_id,
+    )
+
+    return {
+        "run_id": run_id,
+        "checkpoints": [
+            {
+                "checkpoint_id": str(r["checkpoint_id"]),
+                "workflow_name": r["workflow_name"],
+                "created_at": r["created_at"].isoformat(),
+            }
+            for r in rows
+        ],
+        "hitl_request": (
+            {
+                "id": str(hitl["id"]),
+                "status": hitl["status"],
+                # asyncpg returns JSONB as raw str with no codec configured
+                # (shared/db.py registers none) — verified directly, not
+                # assumed; every other JSONB read in this codebase (e.g.
+                # PostgresCheckpointStorage._payload) has the same guard.
+                "payload": json.loads(hitl["payload"]) if isinstance(hitl["payload"], str) else hitl["payload"],
+                "response": (json.loads(hitl["response"]) if isinstance(hitl["response"], str) else hitl["response"]),
+                "created_at": hitl["created_at"].isoformat(),
+                "responded_at": hitl["responded_at"].isoformat() if hitl["responded_at"] else None,
+            }
+            if hitl
+            else None
+        ),
+    }
+
+
 # ── Product Routes ────────────────────────────────────────────
 
 
