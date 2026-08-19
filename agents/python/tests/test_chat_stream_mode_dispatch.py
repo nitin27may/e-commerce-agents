@@ -121,6 +121,57 @@ async def test_chat_stream_handoff_mode_emits_structured_frames_and_real_text(
 
 
 @pytest.mark.asyncio
+async def test_chat_stream_falls_back_to_end_of_run_dump_for_non_streaming_modes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """workflow:pre-purchase never emits a delta with readable .contents (its
+    one ctx.yield_output() carries the raw ResearchState dataclass, not
+    AgentResponseUpdate content — verified empirically, see chat.py's module
+    docstring). Without the run_completed fallback this regresses to an
+    empty chat bubble; this proves the fallback actually fires.
+    """
+    import orchestrator.modes as modes_module
+    from orchestrator.modes.workflow_mode import PrePurchaseMode
+
+    async def _sentiment_ok(product_id: str) -> dict:
+        return {"sentiment": "positive", "total_reviews": 42}
+
+    async def _stock_ok(product_id: str) -> dict:
+        return {"in_stock": True, "total_quantity": 17}
+
+    async def _price_good(product_id: str, days: int) -> dict:
+        return {"is_good_deal": True, "average_price": 120.5, "trend": "flat"}
+
+    async def _shipping_fast(product_id: str, destination_region: str) -> dict:
+        return {"options": [{"price": 4.99, "days": 2}]}
+
+    stub_tools = {
+        "analyze_sentiment": _sentiment_ok,
+        "check_stock": _stock_ok,
+        "get_price_history": _price_good,
+        "estimate_shipping": _shipping_fast,
+    }
+    monkeypatch.setitem(modes_module.MODES, "workflow:pre-purchase", PrePurchaseMode(tools=stub_tools))
+    monkeypatch.setattr("shared.db._pool", object(), raising=False)
+
+    response = await chat_stream(
+        ChatRequest(message="11111111-1111-1111-1111-111111111111", mode="workflow:pre-purchase"),
+        _FakeRequest(),
+        user=ANON_USER,
+    )
+    raw = await _drain(response)
+    frames = _parse_sse(raw)
+
+    text_chunks = [d for name, d in frames if name == ""]
+    assert any("Reviews: positive" in chunk for chunk in text_chunks), (
+        f"expected the final recommendation to reach the display as text, got: {frames}"
+    )
+
+    node_frames = [d for name, d in frames if name == "node"]
+    assert node_frames, "expected node frames from the fan-out/fan-in graph"
+
+
+@pytest.mark.asyncio
 async def test_chat_stream_rejects_unknown_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("shared.db._pool", object(), raising=False)
 

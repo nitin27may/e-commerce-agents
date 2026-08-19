@@ -56,3 +56,21 @@ async def test_requires_at_least_one_panelist() -> None:
 def test_default_synthesis_mentions_speakers() -> None:
     state = GroupChatState(question="q?", transcript=[{"speaker": "value", "text": "t"}])
     assert "value" in _default_synthesis(state)
+
+
+async def test_async_responder_is_awaited() -> None:
+    """An agent-backed panelist returns a coroutine, not a str — the
+    executor must await it rather than threading the coroutine object
+    itself into the transcript."""
+
+    async def value(_q: str, _t: list[dict[str, str]]) -> str:
+        return "Great price for the feature set."
+
+    def quality(_q: str, transcript: list[dict[str, str]]) -> str:
+        return f"Saw {len(transcript)} prior turn(s); build quality is excellent."
+
+    wf = GroupChatWorkflow(panelists=[("value", value), ("quality", quality)])
+    state = await wf.execute("Is the Sony WH-1000XM5 worth it?")
+
+    assert state.transcript[0]["text"] == "Great price for the feature set."
+    assert "Saw 1 prior turn" in state.transcript[1]["text"]

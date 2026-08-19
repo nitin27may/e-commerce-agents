@@ -89,3 +89,42 @@ async def test_chat_route_rejects_unknown_mode(monkeypatch: pytest.MonkeyPatch) 
         await chat(ChatRequest(message="hello", mode="not-a-real-mode"), user=ANON_USER)
 
     assert exc_info.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_chat_route_reaches_a_workflow_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A non-"tool" mode with no delta events at all (see chat.py's module
+    docstring) still returns its answer through chat()'s blocking path,
+    which reads run_completed's text directly rather than reconstructing
+    it from streamed chunks."""
+    import orchestrator.modes as modes_module
+    from orchestrator.modes.workflow_mode import PrePurchaseMode
+
+    async def _sentiment_ok(product_id: str) -> dict:
+        return {"sentiment": "positive", "total_reviews": 42}
+
+    async def _stock_ok(product_id: str) -> dict:
+        return {"in_stock": True, "total_quantity": 17}
+
+    async def _price_good(product_id: str, days: int) -> dict:
+        return {"is_good_deal": True, "average_price": 120.5, "trend": "flat"}
+
+    async def _shipping_fast(product_id: str, destination_region: str) -> dict:
+        return {"options": [{"price": 4.99, "days": 2}]}
+
+    stub_tools = {
+        "analyze_sentiment": _sentiment_ok,
+        "check_stock": _stock_ok,
+        "get_price_history": _price_good,
+        "estimate_shipping": _shipping_fast,
+    }
+    monkeypatch.setitem(modes_module.MODES, "workflow:pre-purchase", PrePurchaseMode(tools=stub_tools))
+    monkeypatch.setattr("shared.db._pool", object(), raising=False)
+
+    response = await chat(
+        ChatRequest(message="11111111-1111-1111-1111-111111111111", mode="workflow:pre-purchase"),
+        user=ANON_USER,
+    )
+
+    assert "Reviews: positive" in response.response
+    assert set(response.agents_involved) >= {"reviews", "stock"}

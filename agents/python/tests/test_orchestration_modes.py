@@ -86,8 +86,14 @@ def test_default_mode_is_tool() -> None:
 
 
 def test_get_mode_resolves_registered_names() -> None:
+    from orchestrator.modes.group_chat_mode import GroupChatMode
+    from orchestrator.modes.workflow_mode import PrePurchaseMode, ReturnReplaceMode
+
     assert isinstance(get_mode("tool"), ToolRouterMode)
     assert isinstance(get_mode("handoff"), HandoffMode)
+    assert isinstance(get_mode("workflow:pre-purchase"), PrePurchaseMode)
+    assert isinstance(get_mode("workflow:return-replace"), ReturnReplaceMode)
+    assert isinstance(get_mode("group-chat"), GroupChatMode)
 
 
 def test_get_mode_raises_named_error_for_unknown_mode() -> None:

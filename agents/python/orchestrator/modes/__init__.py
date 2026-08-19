@@ -4,26 +4,33 @@
 tool-router agent and run it" — they resolve a mode name to an
 :class:`OrchestrationMode` and call its ``run()``. This is what makes the
 capstone's flagship claim true: the same domain, run through the plain LLM
-tool router, MAF's ``HandoffBuilder`` mesh, and (as later steps in this
-phase land) MAF ``WorkflowBuilder`` graphs, side by side, from one endpoint.
+tool router, MAF's ``HandoffBuilder`` mesh, MAF ``WorkflowBuilder`` fan-out/
+fan-in and sequential+HITL graphs, and a round-table debate, side by side,
+from one endpoint.
 
-Two modes exist as of this step — ``tool`` (the only one with no
-prerequisites) and ``handoff`` (needs ``AGENT_REGISTRY`` populated, same as
-today). ``workflow:*``, ``group-chat``, and ``magentic`` land in later
-steps of this phase; ``get_mode()`` already raises a clear, named error for
-an unregistered mode rather than a bare ``KeyError``, so requesting one of
-those early is diagnosable.
+Six modes are registered as of this step — ``tool`` and ``handoff`` (Phase
+1.2), ``workflow:pre-purchase``/``workflow:return-replace`` (fixed MAF
+workflow graphs, previously tests-only) and ``group-chat`` (sequential
+shared-transcript debate, also previously tests-only). ``magentic`` and a
+declarative-YAML mode may land in later steps; ``get_mode()`` already
+raises a clear, named error for an unregistered mode rather than a bare
+``KeyError``, so requesting one of those early is diagnosable.
 """
 
 from __future__ import annotations
 
 from .base import ModeCapabilities, OrchestrationMode, RunContext
+from .group_chat_mode import GroupChatMode
 from .handoff_mode import HandoffMode
 from .tool_router import ToolRouterMode
+from .workflow_mode import PrePurchaseMode, ReturnReplaceMode
 
 MODES: dict[str, OrchestrationMode] = {
     "tool": ToolRouterMode(),
     "handoff": HandoffMode(),
+    "workflow:pre-purchase": PrePurchaseMode(),
+    "workflow:return-replace": ReturnReplaceMode(),
+    "group-chat": GroupChatMode(),
 }
 
 DEFAULT_MODE = "tool"

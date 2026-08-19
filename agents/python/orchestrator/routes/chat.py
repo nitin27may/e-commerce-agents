@@ -11,11 +11,19 @@ original direct-agent streaming path unchanged (``ToolRouterMode.run()``
 awaits the full response before yielding anything, so routing the
 default mode through the registry would replace real incremental
 streaming with a single end-of-run dump). Every other mode streams
-through ``get_mode(...).run()`` directly — MAF workflow events already
-carry real incremental text (verified against a live handoff run: the
-``"output"`` event type maps to ``kind="delta"`` via
-``adapt_workflow_event``), so non-default modes get real streaming too,
-just not through the same code path as ``tool``.
+through ``get_mode(...).run()`` directly. Some — ``handoff`` — carry real
+incremental text (verified against a live run: the ``"output"`` event
+type maps to ``kind="delta"`` via ``adapt_workflow_event``, and its data
+is ``AgentResponseUpdate``-shaped, which ``events.delta_text()`` can
+read). Others don't: the fan-out/fan-in and sequential MAF workflows
+(``workflow:pre-purchase``, ``workflow:return-replace``, ``group-chat``)
+mostly call ``ctx.send_message()`` between executors, which produces no
+delta at all, and their one ``ctx.yield_output()`` carries the raw state
+dataclass, not ``AgentResponseUpdate`` content — verified against a live
+pre-purchase run. For those, ``_run_mode_task()`` falls back to pushing
+``run_completed``'s full text as a single chunk if nothing streamed
+incrementally, so every mode is guaranteed a non-empty visible response
+either way.
 """
 
 from __future__ import annotations
@@ -325,12 +333,23 @@ async def chat_stream(body: ChatRequest, request: Request, user: dict[str, Any] 
 
             async def _run_mode_task() -> None:
                 final_agents_involved = list(agents_involved)
+                # Not every mode streams token-level deltas — MAF only emits an
+                # "output" WorkflowEvent for ctx.yield_output() calls (verified
+                # against a live pre-purchase run: fan-out/fan-in executors use
+                # ctx.send_message(), which produces no delta at all, and the
+                # one yield_output() carries the raw state dataclass, not
+                # AgentResponseUpdate-shaped contents delta_text() can read).
+                # Track whether anything actually reached the display so
+                # run_completed can fall back to a single end-of-run dump,
+                # the same guarantee "tool" mode gets for free.
+                streamed_any_text = False
                 with agent_run_span("orchestrator"):
                     try:
                         async for event in mode.run(body.message, ctx):
                             if event.kind == "delta":
                                 text = delta_text(event.payload)
                                 if text:
+                                    streamed_any_text = True
                                     await queue.put(("text", text))
                             elif event.kind in ("node_enter", "node_exit"):
                                 await queue.put(
@@ -368,6 +387,10 @@ async def chat_stream(body: ChatRequest, request: Request, user: dict[str, Any] 
                                 await queue.put(("text", " [an error occurred] "))
                             elif event.kind == "run_completed":
                                 final_agents_involved = event.payload.get("agents_involved", final_agents_involved)
+                                if not streamed_any_text:
+                                    final_text = event.payload.get("text", "")
+                                    if final_text:
+                                        await queue.put(("text", final_text))
                             # run_started / graph / grounding: nothing to render yet.
                     except Exception:
                         logger.exception(
