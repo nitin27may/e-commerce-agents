@@ -544,6 +544,28 @@ class ApiClient {
     }>(`/api/runs${qs ? `?${qs}` : ""}`);
   }
 
+  getRunCheckpoints(runId: string) {
+    return this.request<{
+      run_id: string;
+      checkpoints: { checkpoint_id: string; workflow_name: string; created_at: string }[];
+      hitl_request: {
+        id: string;
+        status: "pending" | "approved" | "rejected" | "timeout";
+        payload: Record<string, unknown>;
+        response: Record<string, unknown> | null;
+        created_at: string;
+        responded_at: string | null;
+      } | null;
+    }>(`/api/runs/${runId}/checkpoints`);
+  }
+
+  resumeRun(runId: string, approved: boolean) {
+    return this.request<{ run_id: string; approved: boolean; text: string; agents_involved: string[] }>(
+      `/api/orchestration/${runId}/resume`,
+      { method: "POST", body: JSON.stringify({ approved }) },
+    );
+  }
+
   getAuditLog(params?: {
     limit?: number;
     offset?: number;
