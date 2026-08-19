@@ -17,11 +17,12 @@ The assembly-line pattern for agents. `SequentialBuilder` / `BuildSequential` hi
 
 ### Python
 
+Run from the repo root using the shared `tutorials/` uv project (one `uv sync` covers every chapter):
+
 ```bash
-cd tutorials/12-sequential-orchestration/python
-uv sync
-uv run python main.py
-uv run pytest -v
+uv sync --project tutorials
+uv run --project tutorials python tutorials/12-sequential-orchestration/python/main.py
+uv run --project tutorials pytest tutorials/12-sequential-orchestration/python/tests -v
 ```
 
 ### .NET

@@ -17,13 +17,13 @@ import pathlib
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3]))
-from tutorials._shared import maf_bootstrap  # noqa: E402
+from tutorials._shared import maf_bootstrap
 
 maf_bootstrap.bootstrap()
 
-from agent_framework import Agent  # noqa: E402
-from agent_framework.devui import serve  # noqa: E402
-from agent_framework.openai import (  # noqa: E402
+from agent_framework import Agent
+from agent_framework.devui import serve
+from agent_framework.openai import (
     OpenAIChatClient,
     OpenAIChatCompletionClient,
 )

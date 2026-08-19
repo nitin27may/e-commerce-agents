@@ -13,7 +13,8 @@ Run:
 import asyncio
 import pathlib
 import sys
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3]))
 from tutorials._shared import maf_bootstrap  # noqa: E402
@@ -21,12 +22,10 @@ from tutorials._shared import maf_bootstrap  # noqa: E402
 maf_bootstrap.bootstrap()
 
 import yaml  # noqa: E402
-
 from agent_framework._workflows._executor import Executor, handler  # noqa: E402
 from agent_framework._workflows._workflow import Workflow  # noqa: E402
 from agent_framework._workflows._workflow_builder import WorkflowBuilder  # noqa: E402
 from agent_framework._workflows._workflow_context import WorkflowContext  # noqa: E402
-
 
 SPEC_PATH = pathlib.Path(__file__).resolve().parent / "workflow.yaml"
 

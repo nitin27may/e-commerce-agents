@@ -27,7 +27,6 @@ maf_bootstrap.bootstrap()
 from agent_framework import Agent, ContextProvider  # noqa: E402
 from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient  # noqa: E402
 
-
 INSTRUCTIONS = (
     "You are a personal shopping assistant. "
     "Greet the user by name if you know it. "

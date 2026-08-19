@@ -12,11 +12,12 @@ Make workflow state durable: executors snapshot at superstep boundaries, storage
 
 ### Python
 
+Run from the repo root using the shared `tutorials/` uv project (one `uv sync` covers every chapter):
+
 ```bash
-cd tutorials/18-state-and-checkpoints/python
-uv sync
-uv run python main.py       # writes checkpoint to ./checkpoints/
-uv run pytest -v
+uv sync --project tutorials
+uv run --project tutorials python tutorials/18-state-and-checkpoints/python/main.py       # writes checkpoints to tutorials/18-state-and-checkpoints/python/.checkpoints/
+uv run --project tutorials pytest tutorials/18-state-and-checkpoints/python/tests -v
 ```
 
 ### .NET

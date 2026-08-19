@@ -28,7 +28,6 @@ maf_bootstrap.bootstrap()
 from agent_framework import Agent, AgentSession  # noqa: E402
 from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient  # noqa: E402
 
-
 INSTRUCTIONS = "You are a concise assistant. Keep answers to one short paragraph."
 
 

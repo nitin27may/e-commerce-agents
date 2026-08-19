@@ -12,11 +12,12 @@ Step beyond single-agent runs into deterministic orchestration. Executors are th
 
 ### Python
 
+Run from the repo root using the shared `tutorials/` uv project (one `uv sync` covers every chapter):
+
 ```bash
-cd tutorials/09-workflow-executors-and-edges/python
-uv sync
-uv run python main.py
-uv run pytest -v
+uv sync --project tutorials
+uv run --project tutorials python tutorials/09-workflow-executors-and-edges/python/main.py
+uv run --project tutorials pytest tutorials/09-workflow-executors-and-edges/python/tests -v
 ```
 
 ### .NET

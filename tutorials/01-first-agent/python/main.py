@@ -34,7 +34,6 @@ import os  # noqa: E402
 from agent_framework import Agent  # noqa: E402
 from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient  # noqa: E402
 
-
 INSTRUCTIONS = "You are a concise geography assistant. Keep answers to one short sentence."
 DEFAULT_QUESTION = "What is the capital of France?"
 

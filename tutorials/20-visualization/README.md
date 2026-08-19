@@ -14,11 +14,12 @@ Render any workflow as Mermaid (GitHub-friendly) or Graphviz DOT (production run
 
 ### Python
 
+Run from the repo root using the shared `tutorials/` uv project (one `uv sync` covers every chapter):
+
 ```bash
-cd tutorials/20-visualization/python
-uv sync
-uv run python main.py         # writes workflow.mmd + workflow.dot
-uv run pytest -v              # 9 tests, including determinism
+uv sync --project tutorials
+uv run --project tutorials python tutorials/20-visualization/python/main.py         # writes workflow.mmd + workflow.dot
+uv run --project tutorials pytest tutorials/20-visualization/python/tests -v              # 9 tests, including determinism
 ```
 
 ### .NET

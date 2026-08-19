@@ -52,14 +52,21 @@ async def test_workflow_output_accompanies_progress() -> None:
 
 @pytest.mark.asyncio
 async def test_event_stream_yields_incrementally() -> None:
-    """Progress events should arrive before the final output, not batched."""
+    """Progress events should arrive before the final output, not batched.
+
+    Bucketed by payload shape, not the workflow's type='output' /
+    type='intermediate' label — see run_with_events's docstring in main.py.
+    """
     workflow = build_workflow()
     order: list[str] = []
     async for event in workflow.run("stream-test", stream=True):
         etype = getattr(event, "type", None)
-        if etype == "data" and isinstance(getattr(event, "data", None), ProgressPayload):
-            order.append(f"progress:{event.data.step}")
-        elif etype == "output":
+        if etype not in ("output", "intermediate"):
+            continue
+        data = getattr(event, "data", None)
+        if isinstance(data, ProgressPayload):
+            order.append(f"progress:{data.step}")
+        else:
             order.append("output")
     # At minimum, output must come after the final progress event.
     assert order[-1] == "output"

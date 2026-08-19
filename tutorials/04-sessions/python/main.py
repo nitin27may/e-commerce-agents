@@ -29,7 +29,6 @@ maf_bootstrap.bootstrap()
 from agent_framework import Agent, AgentSession, InMemoryHistoryProvider  # noqa: E402
 from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient  # noqa: E402
 
-
 INSTRUCTIONS = "You are a helpful assistant. Keep answers short."
 SESSION_FILE = pathlib.Path(__file__).resolve().parent / "session.json"
 

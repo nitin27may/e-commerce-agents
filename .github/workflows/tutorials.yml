@@ -1,0 +1,83 @@
+name: Tutorials
+
+# Keeps the tutorials/ chapters honest: every README documents
+#   uv sync --project tutorials
+#   uv run --project tutorials python tutorials/<chapter>/python/main.py
+#   uv run --project tutorials pytest tutorials/<chapter>/python/tests -v
+# and this workflow runs the deterministic half of that (`pytest -m "not
+# integration"`) on every push and PR so a chapter can't silently stop
+# collecting or start failing without CI going red.
+#
+# 14 of the 21 tutorial test files are marked `@pytest.mark.integration` and
+# require a live OPENAI_API_KEY / AZURE_OPENAI_* key to run (chapters 06 and
+# 07 are 100% integration) — this job intentionally does NOT provide one, so
+# those tests are collected but skipped/deselected here, not deleted or
+# unmarked. A later phase adds a replay-based chat client so the integration
+# suite can run keylessly too.
+#
+# Chapter 20b (DevUI) ships its own pyproject.toml and chapter 22
+# (Group-Chat Debate) runs against agents/python instead of tutorials/ — see
+# tutorials/README.md's "Running a chapter" section. Both are still covered
+# here: 20b's tests are collected because agent-framework-devui is also a
+# dependency of tutorials/pyproject.toml, and 22 has no tests/ directory of
+# its own (it exercises agents/python/tests/test_workflow_group_chat.py,
+# which is covered by the tests.yml workflow, not this one).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutorials-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tutorials-tests:
+    name: Tutorials · pytest (non-integration)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install Python 3.12
+        run: uv python install 3.12
+
+      - name: Sync dependencies
+        working-directory: tutorials
+        run: uv sync --frozen --extra dev
+
+      - name: Run pytest (deterministic chapters only)
+        run: uv run --project tutorials pytest tutorials/ -m "not integration"
+
+  tutorials-lint:
+    name: Tutorials · ruff check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install Python 3.12
+        run: uv python install 3.12
+
+      - name: Sync dependencies
+        working-directory: tutorials
+        run: uv sync --frozen --extra dev
+
+      - name: ruff check
+        run: uv run --project tutorials ruff check tutorials/

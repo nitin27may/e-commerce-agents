@@ -17,14 +17,13 @@ A centralized manager picks who speaks next each round. Round-robin, prompt-driv
 
 ### Python
 
-Two manager strategies supported via CLI arg:
+Two manager strategies supported via CLI arg. Run from the repo root using the shared `tutorials/` uv project (one `uv sync` covers every chapter):
 
 ```bash
-cd tutorials/15-group-chat-orchestration/python
-uv sync
-uv run python main.py "slogan for a coffee shop"          # round-robin
-uv run python main.py "slogan for a coffee shop" prompt   # prompt-driven
-uv run pytest -v
+uv sync --project tutorials
+uv run --project tutorials python tutorials/15-group-chat-orchestration/python/main.py "slogan for a coffee shop"          # round-robin
+uv run --project tutorials python tutorials/15-group-chat-orchestration/python/main.py "slogan for a coffee shop" prompt   # prompt-driven
+uv run --project tutorials pytest tutorials/15-group-chat-orchestration/python/tests -v
 ```
 
 ### .NET

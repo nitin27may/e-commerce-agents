@@ -18,7 +18,7 @@ import sys
 import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[4]))
-from tutorials._shared import maf_bootstrap  # noqa: E402
+from tutorials._shared import maf_bootstrap
 
 maf_bootstrap.bootstrap()
 
@@ -40,9 +40,9 @@ pytestmark = pytest.mark.skipif(
 
 def test_main_module_imports() -> None:
     """DevUI + MAF imports resolve without error."""
-    import main  # noqa: F401
+    from agent_framework.devui import serve
 
-    from agent_framework.devui import serve  # noqa: F401 — the public API we depend on
+    import main  # noqa: F401
 
     assert callable(serve)
 

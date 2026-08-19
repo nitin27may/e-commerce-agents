@@ -21,7 +21,6 @@ maf_bootstrap.bootstrap()
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from main import ask, build_agent, get_weather  # noqa: E402
 
-
 # ─────────────────── Tool-function unit tests ──────────────────
 
 def test_weather_tool_returns_canned_data() -> None:

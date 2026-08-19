@@ -25,7 +25,6 @@ from agent_framework._workflows._request_info_mixin import response_handler  # n
 from agent_framework._workflows._workflow_builder import WorkflowBuilder  # noqa: E402
 from agent_framework._workflows._workflow_context import WorkflowContext  # noqa: E402
 
-
 # ─────────────── Request / response shapes ───────────────
 
 @dataclass(frozen=True)

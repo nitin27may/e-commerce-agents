@@ -65,7 +65,7 @@ async def test_real_llm_runs_in_parallel_not_serial() -> None:
 async def test_real_llm_perspectives_differ_between_agents() -> None:
     per_agent, _ = await analyze("AI-powered meal planner")
     # Three distinct perspectives should produce three different strings.
-    r, m, l = per_agent["researcher"], per_agent["marketer"], per_agent["legal"]
+    r, m, lg = per_agent["researcher"], per_agent["marketer"], per_agent["legal"]
     assert r != m
-    assert m != l
-    assert r != l
+    assert m != lg
+    assert r != lg

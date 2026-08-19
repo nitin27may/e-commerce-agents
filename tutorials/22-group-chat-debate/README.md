@@ -61,11 +61,23 @@ for turn in state.transcript:
     print(f"  {turn['speaker']}: {turn['text']}")
 ```
 
+`workflows/group_chat.py` lives inside the `agents/python` package (it's the real
+production module, not a copy), so the runnable demo script and its tests import it
+as `workflows.group_chat` and need to run with `agents/python` on the path — this
+chapter is not part of the `tutorials/` uv project:
+
+```bash
+cd agents/python
+uv run python ../../tutorials/22-group-chat-debate/python/main.py
+uv run pytest tests/test_workflow_group_chat.py -v
+```
+
 In production, wire each panelist to a specialist agent (e.g. `pricing-promotions`
 and `review-sentiment`) by passing an agent-backed responder.
 
-See `agents/python/python/main.py` in this chapter for a runnable script and
-`agents/python/tests/test_workflow_group_chat.py` for the deterministic tests.
+See `tutorials/22-group-chat-debate/python/main.py` in this chapter for a runnable
+script and `agents/python/tests/test_workflow_group_chat.py` for the deterministic
+tests.
 
 ## Key points
 

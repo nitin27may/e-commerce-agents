@@ -17,11 +17,12 @@ The clean hook for per-request context. One provider per concern, composed befor
 
 ### Python
 
+Run from the repo root using the shared `tutorials/` uv project (one `uv sync` covers every chapter):
+
 ```bash
-cd tutorials/05-context-providers/python
-uv sync
-uv run python main.py
-uv run pytest -v
+uv sync --project tutorials
+uv run --project tutorials python tutorials/05-context-providers/python/main.py
+uv run --project tutorials pytest tutorials/05-context-providers/python/tests -v
 ```
 
 ### .NET

@@ -29,7 +29,6 @@ from opentelemetry.sdk.resources import SERVICE_NAME, Resource  # noqa: E402
 from opentelemetry.sdk.trace import TracerProvider  # noqa: E402
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter  # noqa: E402
 
-
 INSTRUCTIONS = "You are a concise assistant. Keep answers to one short sentence."
 
 

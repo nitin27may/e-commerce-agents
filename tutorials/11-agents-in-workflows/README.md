@@ -17,11 +17,12 @@ LLM reasoning as a step in a deterministic pipeline: wrap a ChatClientAgent as a
 
 ### Python
 
+Run from the repo root using the shared `tutorials/` uv project (one `uv sync` covers every chapter):
+
 ```bash
-cd tutorials/11-agents-in-workflows/python
-uv sync
-uv run python main.py
-uv run pytest -v
+uv sync --project tutorials
+uv run --project tutorials python tutorials/11-agents-in-workflows/python/main.py
+uv run --project tutorials pytest tutorials/11-agents-in-workflows/python/tests -v
 ```
 
 ### .NET

@@ -17,11 +17,12 @@ The smallest useful Microsoft Agent Framework program — 40 lines of code, one 
 
 ### Python
 
+Run from the repo root using the shared `tutorials/` uv project (one `uv sync` covers every chapter):
+
 ```bash
-cd tutorials/01-first-agent/python
-uv sync
-uv run python main.py
-uv run pytest -v
+uv sync --project tutorials
+uv run --project tutorials python tutorials/01-first-agent/python/main.py
+uv run --project tutorials pytest tutorials/01-first-agent/python/tests -v
 ```
 
 ### .NET

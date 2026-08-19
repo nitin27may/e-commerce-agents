@@ -17,11 +17,12 @@ Give an agent a function — the LLM decides when to call it, MAF runs the loop.
 
 ### Python
 
+Run from the repo root using the shared `tutorials/` uv project (one `uv sync` covers every chapter):
+
 ```bash
-cd tutorials/02-add-tools/python
-uv sync
-uv run python main.py
-uv run pytest -v
+uv sync --project tutorials
+uv run --project tutorials python tutorials/02-add-tools/python/main.py
+uv run --project tutorials pytest tutorials/02-add-tools/python/tests -v
 ```
 
 ### .NET

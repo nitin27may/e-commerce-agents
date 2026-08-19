@@ -17,11 +17,12 @@ Three agents, one input, parallel LLM calls. Fan-out to an expert panel, fan-in 
 
 ### Python
 
+Run from the repo root using the shared `tutorials/` uv project (one `uv sync` covers every chapter):
+
 ```bash
-cd tutorials/13-concurrent-orchestration/python
-uv sync
-uv run python main.py
-uv run pytest -v
+uv sync --project tutorials
+uv run --project tutorials python tutorials/13-concurrent-orchestration/python/main.py
+uv run --project tutorials pytest tutorials/13-concurrent-orchestration/python/tests -v
 ```
 
 ### .NET

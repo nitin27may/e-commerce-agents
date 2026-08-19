@@ -17,11 +17,12 @@ Stream tokens as they arrive and reuse a session across turns so the LLM sees th
 
 ### Python
 
+Run from the repo root using the shared `tutorials/` uv project (one `uv sync` covers every chapter):
+
 ```bash
-cd tutorials/03-streaming-and-multiturn/python
-uv sync
-uv run python main.py
-uv run pytest -v
+uv sync --project tutorials
+uv run --project tutorials python tutorials/03-streaming-and-multiturn/python/main.py
+uv run --project tutorials pytest tutorials/03-streaming-and-multiturn/python/tests -v
 ```
 
 ### .NET

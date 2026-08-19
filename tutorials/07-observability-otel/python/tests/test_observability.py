@@ -20,9 +20,7 @@ maf_bootstrap.bootstrap()
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from main import ask, build_agent, setup_tracing  # noqa: E402
-
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter  # noqa: E402
-
 
 # One global in-memory exporter shared across all tests — the OTel
 # TracerProvider can only be set once per process, so we install it here.
@@ -79,7 +77,8 @@ async def test_spans_include_genai_attributes() -> None:
         for k in (span.attributes or {}).keys()
         if k.startswith("gen_ai.")
     ]
-    assert genai_attrs, f"expected GenAI attributes on spans; got keys: {[list((s.attributes or {}).keys()) for s in spans]}"
+    all_keys = [list((s.attributes or {}).keys()) for s in spans]
+    assert genai_attrs, f"expected GenAI attributes on spans; got keys: {all_keys}"
 
 
 @pytest.mark.integration

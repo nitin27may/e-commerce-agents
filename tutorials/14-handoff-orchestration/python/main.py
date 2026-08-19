@@ -52,6 +52,11 @@ def triage() -> Agent:
             "and stop — do not rewrite the answer."
         ),
         name="triage",
+        # HandoffBuilder.build() requires this on every participant as of
+        # agent-framework-orchestrations>=1.0.1 — its middleware short-circuits
+        # tool calls during a handoff, so local history has to stay in sync
+        # with what the service actually saw.
+        require_per_service_call_history_persistence=True,
     )
 
 
@@ -63,6 +68,7 @@ def math_expert() -> Agent:
             "with a single short sentence containing the numerical answer."
         ),
         name="math",
+        require_per_service_call_history_persistence=True,
     )
 
 
@@ -74,6 +80,7 @@ def history_expert() -> Agent:
             "sentence with the specific date or year."
         ),
         name="history",
+        require_per_service_call_history_persistence=True,
     )
 
 

@@ -12,11 +12,12 @@ Define a workflow in YAML and load it at runtime. Config-driven orchestration â€
 
 ### Python
 
+Run from the repo root using the shared `tutorials/` uv project (one `uv sync` covers every chapter):
+
 ```bash
-cd tutorials/19-declarative-workflows/python
-uv sync
-uv run python main.py "hello world"    # loads workflow.yaml
-uv run pytest -v
+uv sync --project tutorials
+uv run --project tutorials python tutorials/19-declarative-workflows/python/main.py "hello world"    # loads workflow.yaml
+uv run --project tutorials pytest tutorials/19-declarative-workflows/python/tests -v
 ```
 
 ### .NET

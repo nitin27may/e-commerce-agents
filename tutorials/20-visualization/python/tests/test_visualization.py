@@ -7,8 +7,6 @@ No LLM — pure graph rendering.
 import pathlib
 import sys
 
-import pytest
-
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[4]))
 from tutorials._shared import maf_bootstrap  # noqa: E402
 

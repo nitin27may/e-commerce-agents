@@ -17,11 +17,12 @@ Three layers, one composable pipeline. Wrap every agent run, intercept every too
 
 ### Python
 
+Run from the repo root using the shared `tutorials/` uv project (one `uv sync` covers every chapter):
+
 ```bash
-cd tutorials/06-middleware/python
-uv sync
-uv run python main.py
-uv run pytest -v
+uv sync --project tutorials
+uv run --project tutorials python tutorials/06-middleware/python/main.py
+uv run --project tutorials pytest tutorials/06-middleware/python/tests -v
 ```
 
 ### .NET

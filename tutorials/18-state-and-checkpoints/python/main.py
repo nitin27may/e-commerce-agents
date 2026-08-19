@@ -32,7 +32,6 @@ from agent_framework._workflows._executor import Executor, handler  # noqa: E402
 from agent_framework._workflows._workflow_builder import WorkflowBuilder  # noqa: E402
 from agent_framework._workflows._workflow_context import WorkflowContext  # noqa: E402
 
-
 CHECKPOINT_DIR = pathlib.Path(__file__).resolve().parent / ".checkpoints"
 WORKFLOW_NAME = "accumulator-workflow"
 

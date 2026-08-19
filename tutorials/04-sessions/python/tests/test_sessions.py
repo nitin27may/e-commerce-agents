@@ -21,10 +21,8 @@ from tutorials._shared import maf_bootstrap  # noqa: E402
 maf_bootstrap.bootstrap()
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
-from main import ask_and_save, build_agent  # noqa: E402
-
 from agent_framework import AgentSession  # noqa: E402
-
+from main import ask_and_save, build_agent  # noqa: E402
 
 # ─────────── Unit tests (no LLM) ───────────
 

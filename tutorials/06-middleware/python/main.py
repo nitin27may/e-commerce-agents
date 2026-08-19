@@ -38,7 +38,6 @@ from agent_framework._middleware import (  # noqa: E402
 from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient  # noqa: E402
 from pydantic import Field  # noqa: E402
 
-
 INSTRUCTIONS = (
     "You are a helpful assistant. "
     "When the user asks about weather in a city, call get_weather. "

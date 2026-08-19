@@ -25,7 +25,6 @@ from agent_framework import Agent  # noqa: E402
 from agent_framework._mcp import MCPStdioTool  # noqa: E402
 from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient  # noqa: E402
 
-
 INSTRUCTIONS = (
     "You are a helpful assistant. "
     "When the user asks about weather in a city, call the get_weather tool. "
