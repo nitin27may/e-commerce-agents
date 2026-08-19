@@ -75,6 +75,10 @@ The **orchestrator** is the front door. All user requests go through it. Its LLM
 
 Each specialist agent runs as an independent microservice with its own port and A2A endpoint, but all share a single Dockerfile (multi-target via `ARG AGENT_NAME`).
 
+### Orchestrator route layout
+
+`orchestrator/routes/` is a package, not a single file: `chat.py` holds `/api/chat` + `/api/chat/stream` (the one route surface every orchestration mode touches — this is where Phase 1.2's mode registry attaches), `orchestration.py` holds the mode-introspection endpoints (`/api/orchestration/modes`, `.../graph`, `.../compare`, `.../resume` — most still 501 stubs until their owning phase lands, see the module docstring), and `legacy.py` holds everything else (auth, marketplace, admin, cart, checkout, orders, seller) — the pre-split monolith, kept together since the split's purpose was isolating chat, not fully decomposing the route surface. `orchestrator/routes/__init__.py` combines all three into the single `router` `orchestrator/main.py` includes, and re-exports `optional_auth`/`require_auth`/`require_admin`/`require_seller`/`settings` so existing import sites are unaffected.
+
 ### MAF-Native Execution in agent_host.py
 
 `shared/agent_host.py` is a lightweight A2A-compatible FastAPI host. It does **not** implement a custom tool-calling loop — the legacy `_run_agent_with_tools()` / `_run_agent_with_tools_stream()` OpenAI chat-completions loop was removed once MAF-native execution was confirmed compatible with production Azure deployments (see the module docstring). Every request now goes through MAF's own `agent.run()` (blocking) / `agent.run(..., stream=True)` (SSE streaming); the `Agent` object owns its tools, system prompt, and context-provider chain, so `agent_host.py` just threads the A2A request into the right MAF call and (for streaming) forwards chunks over SSE.
@@ -89,7 +93,7 @@ Prompts are NOT hardcoded strings. `shared/prompt_loader.py` loads from `agents/
 
 Shared prompt fragments live in `agents/python/config/prompts/_shared/` (grounding-rules.yaml, schema-context.yaml, tool-examples.yaml).
 
-Each agent's `create_*_agent()` factory calls `get_system_prompt(current_user_role.get())` (which wraps `load_prompt(agent_name, user_role)`) at agent-construction time, and agents are rebuilt on every request (see `orchestrator/routes.py`) — so the composed prompt is genuinely role-aware per request (admin sees different instructions than customer). Earlier revisions built the prompt once at *import* time with a hardcoded default role, which silently defeated the role-specific YAML blocks; that bug is fixed.
+Each agent's `create_*_agent()` factory calls `get_system_prompt(current_user_role.get())` (which wraps `load_prompt(agent_name, user_role)`) at agent-construction time, and agents are rebuilt on every request (see `orchestrator/routes/chat.py`) — so the composed prompt is genuinely role-aware per request (admin sees different instructions than customer). Earlier revisions built the prompt once at *import* time with a hardcoded default role, which silently defeated the role-specific YAML blocks; that bug is fixed.
 
 ### Auth & Identity Flow
 

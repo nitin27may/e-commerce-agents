@@ -19,7 +19,7 @@ import pytest_asyncio
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-import orchestrator.routes as routes_module
+import orchestrator.routes.legacy as routes_module
 import shared.db as shared_db
 from orchestrator.routes import router
 from shared.jwt_utils import hash_password
