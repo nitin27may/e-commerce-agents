@@ -71,7 +71,7 @@ class MyExecutor(Executor):
 | **Concurrent** (fan-out / fan-in) | Independent data gathering that merges once | `workflows/pre_purchase.py` |
 | **Sequential + HITL** | Ordered steps where a step needs human approval | `workflows/return_replace.py` |
 | **Round-table group chat** | Multiple perspectives debate over a shared transcript, then synthesize | `workflows/group_chat.py` |
-| **Handoff** | LLM-driven hand-off of control between agents | `orchestrator/handoff.py` (`HandoffBuilder`, flag-gated `MAF_HANDOFF_MODE`) |
+| **Handoff** | LLM-driven hand-off of control between agents | `orchestrator/handoff.py` (`HandoffBuilder`), reachable via `orchestrator/modes/handoff_mode.py` (`ORCHESTRATION_MODE=handoff` or per-request `mode`) |
 | **Declarative (YAML)** | Simple, config-defined pipelines without code | `shared/workflow_loader.py` + `config/workflows/*.yaml` |
 | **Tool routing** | Front-door orchestrator picks a specialist per turn | `orchestrator/agent.py` `call_specialist_agent` (default) |
 
@@ -132,12 +132,18 @@ unit-testable without an LLM; production wires panelists to agents. See
 
 ### Handoff & tool-routing — orchestration
 
-The orchestrator routes user requests to specialists. Two interchangeable modes:
+The orchestrator routes user requests to specialists. Multiple interchangeable modes
+live behind `orchestrator/modes/` (see `GET /api/orchestration/modes`); as of this
+writing:
 
 - **Tool routing (default):** the orchestrator LLM calls the `call_specialist_agent`
   tool over A2A. Simple, observable, and what the routing eval scores.
-- **MAF Handoff (`MAF_HANDOFF_MODE=handoff`):** a `HandoffBuilder` mesh where the
-  orchestrator mechanically hands control to a specialist and back.
+- **MAF Handoff (`mode=handoff`, or `ORCHESTRATION_MODE=handoff` as the default):**
+  a `HandoffBuilder` mesh where the orchestrator mechanically hands control to a
+  specialist and back.
+
+Per-request selection takes priority over the `ORCHESTRATION_MODE` env default —
+see `orchestrator/modes/__init__.py::get_mode` for the resolution order.
 
 ### Declarative — YAML pipelines
 

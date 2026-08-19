@@ -1,10 +1,17 @@
 """Chat routes — ``/api/chat``, ``/api/chat/stream``.
 
 Split out of the pre-Phase-1 monolithic ``routes.py`` (now ``.legacy``)
-because chat is the one route every orchestration mode touches — Phase 1.2's
-mode registry (``orchestrator/modes/``) attaches here, not in ``.legacy`` or
-``.orchestration``. Behavior in this module is unchanged from the pre-split
-file; the only difference is location.
+because chat is the one route every orchestration mode touches. ``chat()``
+now dispatches through ``orchestrator.modes.get_mode()`` (mode precedence:
+request body ``mode`` -> ``settings.ORCHESTRATION_MODE`` -> registry
+default) instead of calling the tool-router agent directly.
+
+``chat_stream()`` still calls the tool-router agent directly rather than
+going through the mode registry: none of the modes yield token-level
+deltas yet (``ToolRouterMode.run()`` awaits the full response before
+yielding anything), so routing it through ``get_mode()`` today would
+replace real incremental streaming with a single dump at the end for the
+default mode. Making the modes stream-capable is Phase 1.4's job.
 """
 
 from __future__ import annotations
@@ -35,6 +42,7 @@ router = APIRouter()
 class ChatRequest(BaseModel):
     message: str
     conversation_id: str | None = None
+    mode: str | None = None
 
 
 class ChatResponse(BaseModel):
@@ -114,22 +122,33 @@ async def chat(body: ChatRequest, user: dict[str, Any] = Depends(optional_auth))
             )
             _ = recent_orders  # context injected via ContextProvider
 
-    from orchestrator.agent import create_orchestrator_agent
-    from shared.agent_host import _run_agent_native
+    from orchestrator.modes import RunContext, UnknownModeError, get_mode
+    from shared.config import settings
     from shared.telemetry import agent_run_span
 
-    agent = create_orchestrator_agent()
-    agents_involved: list[str] = ["orchestrator"]
+    mode_name = body.mode or settings.ORCHESTRATION_MODE
+    try:
+        mode = get_mode(mode_name)
+    except UnknownModeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
 
-    # Set conversation history ContextVar so call_specialist_agent can forward it
-    current_conversation_history.set(history)
+    agents_involved: list[str] = ["orchestrator"]
+    steps: list[dict[str, Any]] = []
+    ctx = RunContext(history=history, conversation_id=conversation_id)
 
     with UsageTimer() as timer:
         with agent_run_span("orchestrator"):
             try:
-                response_text = await _run_agent_native(agent, body.message, history=history)
+                response_text = ""
+                async for event in mode.run(body.message, ctx):
+                    if event.kind == "run_completed":
+                        response_text = event.payload.get("text", "")
+                        agents_involved = event.payload.get("agents_involved", agents_involved)
+                        steps = event.payload.get("steps", steps)
             except Exception:
-                logger.exception("chat.agent_error user=%s conversation=%s", user_email, conversation_id)
+                logger.exception(
+                    "chat.agent_error user=%s conversation=%s mode=%s", user_email, conversation_id, mode_name
+                )
                 response_text = "I apologize, but I encountered an issue processing your request. Please try again."
 
     if not is_anon:
@@ -150,7 +169,7 @@ async def chat(body: ChatRequest, user: dict[str, Any] = Depends(optional_auth))
             agent_name="orchestrator",
             input_summary=body.message,
             duration_ms=timer.duration_ms,
-            tool_calls_count=len(agents_involved) - 1,
+            tool_calls_count=len(steps) if steps else max(len(agents_involved) - 1, 0),
         )
 
     return ChatResponse(

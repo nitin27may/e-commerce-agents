@@ -212,11 +212,17 @@ class Settings(BaseSettings):
     # for UI breadcrumbs / observability.
     HANDOFF_AUTONOMOUS_MODE: bool = True
 
-    # Orchestrator routing mode:
-    #   tool    — LLM calls call_specialist_agent tool (today's behavior)
-    #   handoff — MAF HandoffBuilder workflow with remote A2A proxies
-    # Default stays "tool" so rollouts are opt-in.
-    MAF_HANDOFF_MODE: str = "tool"
+    # Default orchestration mode when a request doesn't specify one — see
+    # orchestrator/modes/. "tool" (LLM calls call_specialist_agent) is the
+    # only mode with no other prerequisites; "handoff" requires AGENT_REGISTRY
+    # to be populated. Renamed from MAF_HANDOFF_MODE now that the mode
+    # registry supports more than a tool/handoff binary choice; the old name
+    # is accepted as an alias so existing .env files and docker-compose.yml
+    # don't need to change immediately.
+    ORCHESTRATION_MODE: str = Field(
+        default="tool",
+        validation_alias=AliasChoices("ORCHESTRATION_MODE", "MAF_HANDOFF_MODE"),
+    )
 
     # Hard ceiling on a single SSE stream's wall-clock duration. The
     # orchestrator's chat-stream endpoint aborts the underlying generator

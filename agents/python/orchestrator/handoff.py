@@ -1,17 +1,20 @@
 """MAF Handoff workflow for the orchestrator → specialist mesh.
 
-This is the Phase 7 step-10 replacement for the ``call_specialist_agent``
-tool router. When ``settings.MAF_HANDOFF_MODE == "handoff"`` the routes
-layer builds this workflow instead of the tool-backed agent, and MAF
-routes turns between the orchestrator and the 5 specialists mechanically
-via the Handoff orchestration.
+This is the ``handoff`` alternative to the ``tool``-mode
+``call_specialist_agent`` tool router. ``orchestrator/modes/handoff_mode.py``
+wraps :func:`build_orchestrator_handoff_workflow` and is what makes this
+reachable from a live request — via ``mode="handoff"`` on ``/api/chat``, or
+``ORCHESTRATION_MODE=handoff`` as the deployment-wide default. MAF routes
+turns between the orchestrator and the specialists mechanically via the
+Handoff orchestration.
 
 Each specialist is a :class:`~shared.remote_agent.RemoteSpecialistChatClient`
 wrapped in an ``Agent``, so handoffs still traverse A2A HTTP on the wire
 — the mechanism is Handoff, the transport is A2A.
 
-Default stays tool-based (`MAF_HANDOFF_MODE=tool`), so this module is
-additive; nothing in the existing runtime changes until the flag flips.
+Default stays tool-based (``ORCHESTRATION_MODE=tool``), so this module is
+additive; nothing in the existing runtime changes unless a request or the
+deployment config selects ``handoff``.
 """
 
 import json
