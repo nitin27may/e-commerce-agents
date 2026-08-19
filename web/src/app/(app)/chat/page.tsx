@@ -14,6 +14,7 @@ import { RichMessage } from "@/components/chat/rich-message";
 import { AgentTimeline } from "@/components/chat/agent-timeline";
 import { OrchestrationGraph } from "@/components/chat/orchestration-graph";
 import { ModeSwitcher } from "@/components/chat/mode-switcher";
+import { ModeComparison } from "@/components/chat/mode-comparison";
 import { QUICK_PROMPTS } from "@/lib/scenarios";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -830,7 +831,8 @@ export default function ChatPage() {
         {/* ---- Input area ---- */}
         <div className="border-t bg-background px-4 py-3">
           <div className="mx-auto max-w-3xl space-y-2">
-            <div className="flex items-center justify-end">
+            <div className="flex items-center justify-end gap-2">
+              <ModeComparison />
               <ModeSwitcher value={orchestrationMode} onChange={handleModeChange} disabled={isResponding} />
             </div>
             <PromptInputBox

@@ -52,6 +52,23 @@ export interface OrchestrationMode {
   default: boolean;
 }
 
+/** One mode's result from `POST /api/orchestration/compare`. */
+export interface CompareModeResult {
+  mode: string;
+  label: string;
+  text: string;
+  latency_ms: number;
+  agents_involved: string[];
+  step_count: number;
+  graph_mermaid: string | null;
+  error: string | null;
+}
+
+export interface CompareResponse {
+  message: string;
+  results: CompareModeResult[];
+}
+
 export interface RunStep {
   step_index: number;
   tool_name: string;
@@ -408,6 +425,13 @@ class ApiClient {
     return this.request<{ name: string; mermaid: string | null }>(
       `/api/orchestration/modes/${encodeURIComponent(name)}/graph`,
     );
+  }
+
+  compareModes(message: string, modes: string[]) {
+    return this.request<CompareResponse>("/api/orchestration/compare", {
+      method: "POST",
+      body: JSON.stringify({ message, modes }),
+    });
   }
 
   // Conversations
