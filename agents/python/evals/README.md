@@ -88,10 +88,16 @@ Each case names a `target_agent` and an `attack_type` (`injection` | `jailbreak`
 ## CI/CD Integration
 
 Evals call a real LLM + seeded DB, so they run in a dedicated workflow
-(`.github/workflows/evals.yml`) on a nightly schedule and via manual dispatch —
-**not** in the PR-blocking `tests.yml`. The job needs an `OPENAI_API_KEY` repository
-secret, runs every quality dataset plus the safety suite, gates on the score, and
-uploads the per-suite JSON results as an artifact.
+(`.github/workflows/evals.yml`) that is **`workflow_dispatch`-only** — there is
+no schedule (nightly or otherwise) triggering it automatically, and it is
+**not** in the PR-blocking `tests.yml`. Run it manually from the Actions tab
+(or `gh workflow run evals.yml`) whenever an `OPENAI_API_KEY` repository secret
+is available; it then runs every quality dataset plus the safety suite, gates
+on the score, and uploads the per-suite JSON results as an artifact.
+
+A PR-blocking smoke gate (a small, fast subset of the eval suite wired into
+`tests.yml`) is planned but not yet implemented — today, a regression only
+surfaces the next time someone runs this workflow by hand.
 
 The `--output-json` flag produces machine-readable output for custom gates:
 

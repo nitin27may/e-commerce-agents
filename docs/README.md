@@ -59,4 +59,4 @@ This folder contains the full technical documentation for E-Commerce Agents.
 
 ## Diagrams
 
-26 Mermaid diagrams are embedded across these docs. The static system architecture image is [`architecture.png`](architecture.png) (editable source: [`architecture.drawio`](architecture.drawio)). Screenshots of the running application are in [`images/`](images/).
+23 Mermaid diagrams are embedded across these docs. The static system architecture image is [`architecture.png`](architecture.png) (editable source: [`architecture.drawio`](architecture.drawio)). Screenshots of the running application are in [`images/`](images/).

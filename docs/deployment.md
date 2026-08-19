@@ -330,7 +330,7 @@ OPENAI_API_KEY=sk-your-key \
 |------|---------|----------|-------|
 | 3000 | Next.js Frontend | HTTP | Browser-facing UI |
 | 5432 | PostgreSQL | TCP | pgvector enabled |
-| 6379 | Redis | TCP | Session cache, rate limiting |
+| 6379 | Redis | TCP | Session cache (rate limiting is not implemented yet — planned) |
 | 8080 | Orchestrator (Customer Support Agent) | HTTP | API gateway -- all user requests enter here |
 | 8081 | Product Discovery Agent | HTTP | A2A endpoint, called by orchestrator |
 | 8082 | Order Management Agent | HTTP | A2A endpoint, called by orchestrator |

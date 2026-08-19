@@ -139,7 +139,7 @@ A new step-by-step tutorial series walks through **every Microsoft Agent Framewo
 | 5 · Advanced | 17–20 | HITL · checkpoints · declarative YAML · visualization |
 | Capstone | 21 | Guided tour of this repo |
 
-Each chapter has `python/`, `dotnet/`, `tests/`, a Hugo-ready article draft (`README.md`), and a per-chapter plan (`PLAN.md`). Chapters cross-post to [nitinksingh.com](https://nitinksingh.com) under the *MAF v1: Python and .NET* series, complementing the [original Python-only series](https://nitinksingh.com/posts/building-a-multi-agent-e-commerce-platform-the-complete-guide/).
+Each chapter has `python/`, `dotnet/`, `tests/`, and a Hugo-ready article draft (`README.md`). (`tutorials/_template/PLAN.md` is a template for authoring new chapters — individual chapters don't ship their own `PLAN.md`.) Chapters cross-post to [nitinksingh.com](https://nitinksingh.com) under the *MAF v1: Python and .NET* series, complementing the [original Python-only series](https://nitinksingh.com/posts/building-a-multi-agent-e-commerce-platform-the-complete-guide/).
 
 ---
 
@@ -484,7 +484,7 @@ Legend: `- [x]` shipped · `- [ ]` planned or in progress.
 
 ### Shipped in v1
 
-- [x] **Agent evaluators** — scripted eval sets (precision@k, recall@k, answer faithfulness, tool-call correctness) across all six specialists, run against the seeded catalog. Nightly CI via `.github/workflows/evals.yml` (deliberately not a PR gate — LLM calls are slow and non-deterministic; nightly is the right cadence).
+- [x] **Agent evaluators** — scripted eval sets (precision@k, recall@k, answer faithfulness, tool-call correctness) across all six specialists, run against the seeded catalog. `.github/workflows/evals.yml` is `workflow_dispatch`-only today — run it manually from the Actions tab (or `gh workflow run evals.yml`) whenever an `OPENAI_API_KEY` secret is available; there is no automatic schedule yet, and it deliberately isn't a PR gate (LLM calls are slow and non-deterministic). A PR-blocking smoke gate (a fast subset of the suite) is planned but not yet implemented.
 - [x] **Prompt injection prevention** — `shared/guardrails/` wired into the middleware stack for all agents. Enabled by default (`GUARDRAILS_ENABLED=true`); runs in observe-first mode (`GUARDRAILS_FAIL_OPEN=true`) — flags and logs injections. Set `GUARDRAILS_BLOCK_ON_INJECTION=true` to enable hard blocking once false-positive rates are measured in your environment.
 - [x] **Session memory & context persistence** — `store_memory` / `recall_memories` tools in `shared/tools/memory_tools.py`, surfaced to the orchestrator via `shared/context_providers.py`. Per-user preferences, recent intents, and history make follow-ups feel continuous.
 - [x] **Full .NET / C# port** — same six specialist agents plus an MCP server, same A2A protocol and PostgreSQL schema, idiomatic .NET throughout. Nine test projects, ~191 tests. See [`agents/dotnet/`](./agents/dotnet/).

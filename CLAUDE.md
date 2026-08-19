@@ -75,13 +75,13 @@ The **orchestrator** is the front door. All user requests go through it. Its LLM
 
 Each specialist agent runs as an independent microservice with its own port and A2A endpoint, but all share a single Dockerfile (multi-target via `ARG AGENT_NAME`).
 
-### Critical: Custom Tool-Calling Loop in agent_host.py
+### MAF-Native Execution in agent_host.py
 
-`shared/agent_host.py` does **not** use MAF's Responses API. Instead, it implements a custom tool-calling loop using OpenAI's chat completions API directly. This was a deliberate choice for Azure OpenAI compatibility across API versions. Both `_run_agent_with_tools()` (blocking) and `_run_agent_with_tools_stream()` (SSE streaming) exist.
+`shared/agent_host.py` is a lightweight A2A-compatible FastAPI host. It does **not** implement a custom tool-calling loop — the legacy `_run_agent_with_tools()` / `_run_agent_with_tools_stream()` OpenAI chat-completions loop was removed once MAF-native execution was confirmed compatible with production Azure deployments (see the module docstring). Every request now goes through MAF's own `agent.run()` (blocking) / `agent.run(..., stream=True)` (SSE streaming); the `Agent` object owns its tools, system prompt, and context-provider chain, so `agent_host.py` just threads the A2A request into the right MAF call and (for streaming) forwards chunks over SSE.
 
 ### MAF Package Patch
 
-`agents/python/patch_maf.py` — The agent-framework package ships with an empty `__init__.py`. The Dockerfile runs this patch before starting agents to re-export public APIs. This is a workaround for a packaging bug in MAF v1.0.
+`agents/python/patch_maf.py` — workaround for a packaging bug in `agent-framework-core==1.0.0`, whose `__init__.py` shipped empty with no public re-exports. Fixed upstream by 1.14.0 (the version this repo now pins), so `patch()` is already a no-op on a current install (it only writes when the file is empty). The Dockerfile still runs it defensively; it does nothing today.
 
 ### YAML Prompt Composition System
 
@@ -89,7 +89,7 @@ Prompts are NOT hardcoded strings. `shared/prompt_loader.py` loads from `agents/
 
 Shared prompt fragments live in `agents/python/config/prompts/_shared/` (grounding-rules.yaml, schema-context.yaml, tool-examples.yaml).
 
-`load_prompt(agent_name, user_role)` is called per-request, making prompts role-aware (admin sees different instructions than customer).
+Each agent's `create_*_agent()` factory calls `get_system_prompt(current_user_role.get())` (which wraps `load_prompt(agent_name, user_role)`) at agent-construction time, and agents are rebuilt on every request (see `orchestrator/routes.py`) — so the composed prompt is genuinely role-aware per request (admin sees different instructions than customer). Earlier revisions built the prompt once at *import* time with a hardcoded default role, which silently defeated the role-specific YAML blocks; that bug is fixed.
 
 ### Auth & Identity Flow
 
@@ -99,7 +99,7 @@ Shared prompt fragments live in `agents/python/config/prompts/_shared/` (groundi
 
 ### Conversation History Forwarding
 
-When orchestrator calls specialists via A2A, it includes recent conversation history (last 10 messages, truncated to 500 chars each). Specialists can handle follow-ups contextually.
+The orchestrator no longer forwards a truncated copy of the conversation history on A2A calls (that "last 10 messages, 500 chars each" window was removed — see the comment in `orchestrator/agent.py::call_specialist_agent`). Instead only the session id travels, via the `x-session-id` header; each specialist rehydrates prior context itself by querying Postgres for the session's messages (`shared/agent_host.py::_rehydrate_history_from_session`) when it needs to handle a follow-up contextually.
 
 ## Tech Stack
 
