@@ -1,12 +1,12 @@
 """
 MAF v1 — Chapter 02: Adding Tools (Python)
 
-Extend Chapter 01 with a single canned weather tool. The LLM decides whether
-to call the tool based on the user's question.
+Extend Chapter 01 with a single canned product-price lookup tool. The LLM
+decides whether to call the tool based on the user's question.
 
 Run:
     source agents/.venv/bin/activate
-    python tutorials/02-add-tools/python/main.py "What's the weather in Paris?"
+    python tutorials/02-add-tools/python/main.py "What's the price of SKU-001?"
 """
 
 from __future__ import annotations
@@ -29,28 +29,28 @@ from tutorials._shared.replay_client import ReplayChatClient  # noqa: E402
 
 INSTRUCTIONS = (
     "You are a helpful assistant. "
-    "When the user asks about the weather in a city, call the `get_weather` tool. "
+    "When the user asks about the price of a product by SKU, call the `get_product_price` tool. "
     "For other questions, answer directly in one short sentence."
 )
-DEFAULT_QUESTION = "What's the weather in Paris?"
+DEFAULT_QUESTION = "What's the price of SKU-001?"
 
 FIXTURES_DIR = pathlib.Path(__file__).resolve().parent / "tests" / "fixtures" / "replay"
 
 
-# The canonical canned-data weather tool from the MAF docs. Decorated with
-# @tool so MAF exposes it to the LLM with a name + JSON schema + description.
-@tool(name="get_weather", description="Look up the current weather for a city.")
-def get_weather(
-    city: Annotated[str, Field(description="The city to look up, e.g. 'Paris'.")],
+# The canonical canned-data product-price tool from the MAF docs. Decorated
+# with @tool so MAF exposes it to the LLM with a name + JSON schema + description.
+@tool(name="get_product_price", description="Look up the current price for a product SKU.")
+def get_product_price(
+    sku: Annotated[str, Field(description="The product SKU to look up, e.g. 'SKU-001'.")],
 ) -> str:
-    # Deterministic canned data. No real weather API call.
+    # Deterministic canned data. No real catalog/pricing API call.
     canned = {
-        "paris": "Sunny, 18°C, light breeze.",
-        "london": "Overcast, 12°C, light drizzle.",
-        "canberra": "Partly cloudy, 21°C.",
-        "tokyo": "Rain, 15°C.",
+        "sku-001": "$79.99 — Wireless Mouse",
+        "sku-002": "$129.99 — Mechanical Keyboard",
+        "sku-003": "$45.50 — USB-C Hub",
+        "sku-004": "$249.00 — 27-inch Monitor",
     }
-    return canned.get(city.lower(), f"No weather data for {city}.")
+    return canned.get(sku.lower(), f"No pricing data for {sku}.")
 
 
 def _default_client() -> OpenAIChatClient | OpenAIChatCompletionClient | ReplayChatClient:
@@ -78,8 +78,8 @@ def build_agent(client: object | None = None) -> Agent:
     return Agent(
         client or _default_client(),
         instructions=INSTRUCTIONS,
-        name="weather-agent",
-        tools=[get_weather],
+        name="product-agent",
+        tools=[get_product_price],
     )
 
 
