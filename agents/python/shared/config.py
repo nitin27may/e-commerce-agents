@@ -42,6 +42,7 @@ _SUPPORTED_INJECTION_PROVIDERS = {"regex"}
 _NOT_YET_IMPLEMENTED_INJECTION_PROVIDERS = {"azure_content_safety"}
 _SUPPORTED_GROUNDING_MODES = {"off", "observe", "annotate", "enforce"}
 _SUPPORTED_COST_BUDGET_MODES = {"off", "observe", "enforce"}
+_SUPPORTED_OUTPUT_MODERATION_MODES = {"off", "observe", "enforce"}
 
 # Resolve .env once, relative to the repo root, so the eval/seed scripts pick
 # it up regardless of the cwd they're launched from. Inside the Docker image
@@ -310,6 +311,27 @@ class Settings(BaseSettings):
     # matching this repo's other guardrail flags' default-off posture.
     COST_BUDGET_USD_PER_RUN: float | None = None
 
+    # ── Output moderation (Phase 6.4) ────────────────────────────────
+    # shared/guardrails/output_middleware.py's OutputSanitizationMiddleware
+    # defangs adversarial *instructions* hiding in untrusted tool output —
+    # a different problem from the model's own generated text containing
+    # content-policy violations (self-harm, violence, hate/harassment,
+    # sexual content), which nothing checked for until this.
+    #
+    # off      — OutputModerationMiddleware is skipped entirely.
+    # observe  — classify the final response and log any flagged
+    #            categories; never blocks. Default, because the classifier
+    #            (shared/guardrails/moderation.py) is a small set of
+    #            high-precision local patterns, not a trained model — a
+    #            false positive blocking a legitimate response is a worse
+    #            failure mode than one going unflagged in observe mode.
+    # enforce  — same classification, plus replaces the response with a
+    #            refusal when the non-streaming path flags a category.
+    #            Streamed responses can only be flagged, not blocked —
+    #            same streaming caveat as GROUNDING_MODE=enforce: chunks
+    #            already sent to the browser can't be un-sent.
+    OUTPUT_MODERATION_MODE: str = "observe"
+
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE),
         case_sensitive=True,
@@ -397,6 +419,15 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"COST_BUDGET_MODE={self.COST_BUDGET_MODE!r} is not a recognized value. "
                 f"Supported values: {sorted(_SUPPORTED_COST_BUDGET_MODES)!r}."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_output_moderation_mode(self) -> "Settings":
+        if self.OUTPUT_MODERATION_MODE not in _SUPPORTED_OUTPUT_MODERATION_MODES:
+            raise ValueError(
+                f"OUTPUT_MODERATION_MODE={self.OUTPUT_MODERATION_MODE!r} is not a recognized value. "
+                f"Supported values: {sorted(_SUPPORTED_OUTPUT_MODERATION_MODES)!r}."
             )
         return self
 
