@@ -18,14 +18,14 @@ interface ReturnData {
 
 export function ChatReturnCard({ data }: { data: ReturnData }) {
   return (
-    <div className="my-2 max-w-md rounded-xl border border-orange-200 bg-orange-50/50 p-5 space-y-3">
+    <div className="my-2 max-w-md rounded-xl border border-warning/30 bg-warning/5 p-5 space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <RotateCcw className="size-4 text-orange-500" />
+          <RotateCcw className="size-4 text-warning" />
           <span className="font-semibold text-foreground">Return Initiated</span>
         </div>
         {data.status && (
-          <Badge variant="outline" className="border-orange-200 bg-orange-50 text-orange-700 text-xs">
+          <Badge variant="outline" className="border-warning/30 bg-warning/10 text-warning text-xs">
             {data.status}
           </Badge>
         )}
@@ -37,7 +37,7 @@ export function ChatReturnCard({ data }: { data: ReturnData }) {
           target="_blank"
           rel="noopener noreferrer"
         >
-          <Button variant="outline" className="w-full gap-2 border-orange-300 text-orange-700 hover:bg-orange-100">
+          <Button variant="outline" className="w-full gap-2 border-warning/40 text-warning hover:bg-warning/10">
             <Download className="size-4" />
             Download Return Label
           </Button>
@@ -49,13 +49,13 @@ export function ChatReturnCard({ data }: { data: ReturnData }) {
         Print the label, pack your items, and drop off at any carrier location
       </p>
 
-      <Separator className="bg-orange-200/50" />
+      <Separator className="bg-warning/20" />
 
       <div className="space-y-1.5 text-sm">
         {data.refund_amount != null && (
           <div className="flex justify-between">
             <span className="text-muted-foreground">Refund Amount</span>
-            <span className="font-medium text-emerald-600">${data.refund_amount.toFixed(2)}</span>
+            <span className="font-medium text-success">${data.refund_amount.toFixed(2)}</span>
           </div>
         )}
         {data.refund_method && (

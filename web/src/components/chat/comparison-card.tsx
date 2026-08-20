@@ -70,9 +70,9 @@ function AddToCartButton({
       size="sm"
       className={`h-7 w-full text-xs ${
         error
-          ? "bg-red-600 hover:bg-red-700 text-white"
+          ? "bg-destructive hover:bg-destructive/90 text-white"
           : added
-            ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+            ? "bg-success hover:bg-success/90 text-success-foreground"
             : "bg-primary hover:opacity-90 text-primary-foreground"
       }`}
       disabled={added && !error}
@@ -136,12 +136,12 @@ function ProductColumn({
       {/* Badges */}
       <div className="flex flex-wrap gap-1 justify-center">
         {isBetterValue && (
-          <Badge className="bg-emerald-500 text-white border-0 text-[9px] px-1.5 py-0">
+          <Badge className="bg-success text-success-foreground border-0 text-[9px] px-1.5 py-0">
             Better value
           </Badge>
         )}
         {isBetterRated && (
-          <Badge className="bg-amber-500 text-white border-0 text-[9px] px-1.5 py-0">
+          <Badge className="bg-warning text-warning-foreground border-0 text-[9px] px-1.5 py-0">
             Higher rated
           </Badge>
         )}
@@ -178,7 +178,7 @@ function ProductColumn({
                 key={i}
                 className={`size-2.5 ${
                   i < Math.round(product.rating!)
-                    ? "fill-amber-400 text-amber-400"
+                    ? "fill-warning text-warning"
                     : "fill-border text-border"
                 }`}
               />

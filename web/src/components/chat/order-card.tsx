@@ -95,7 +95,7 @@ export function ChatOrderCard({ data, onAction }: ChatOrderCardProps) {
             <Button
               variant="outline"
               size="sm"
-              className="h-7 text-xs border-sky-200 text-sky-600 hover:bg-sky-50 dark:border-sky-500/30 dark:text-sky-300 dark:hover:bg-sky-500/10"
+              className="h-7 text-xs border-info/30 text-info hover:bg-info/10"
               onClick={() => onAction(`Track the shipment for my order #${data.id || data.order_id}`)}
             >
               <Navigation className="mr-1 size-3" />
@@ -106,7 +106,7 @@ export function ChatOrderCard({ data, onAction }: ChatOrderCardProps) {
             <Button
               variant="outline"
               size="sm"
-              className="h-7 text-xs border-red-200 text-red-600 hover:bg-red-50"
+              className="h-7 text-xs border-destructive/30 text-destructive hover:bg-destructive/10"
               onClick={() => onAction?.(`Cancel my order #${data.id || data.order_id}`)}
             >
               Cancel
@@ -116,7 +116,7 @@ export function ChatOrderCard({ data, onAction }: ChatOrderCardProps) {
             <Button
               variant="outline"
               size="sm"
-              className="h-7 text-xs border-orange-200 text-orange-600 hover:bg-orange-50"
+              className="h-7 text-xs border-warning/30 text-warning hover:bg-warning/10"
               onClick={() => onAction?.(`I want to return order #${data.id || data.order_id}`)}
             >
               Return
