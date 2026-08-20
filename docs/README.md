@@ -61,6 +61,7 @@ This folder contains the full technical documentation for E-Commerce Agents.
 | [security-guide.md](security-guide.md) | Threat model, guardrails stack, auth/identity propagation, SQL controls, hardening |
 | [agent-quality.md](agent-quality.md) | Eval methodology, datasets, red-team scenarios, scoring, CI gate |
 | [agent-audit-matrix.md](agent-audit-matrix.md) | Per-agent security posture matrix and open hardening items |
+| [parity-matrix.md](parity-matrix.md) | Python vs .NET feature parity — honest per-concept status, priority, and tracking issue |
 | [troubleshooting.md](troubleshooting.md) | Common local-stack issues and fixes |
 
 ---

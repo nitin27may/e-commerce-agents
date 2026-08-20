@@ -1,7 +1,9 @@
 # ECommerceAgents — .NET Backend
 
-A complete, feature-parity .NET / C# implementation of the platform, built with Microsoft Agent
-Framework alongside the Python backend at `../python/`.
+A complete, working .NET / C# implementation of the platform, built with Microsoft Agent
+Framework alongside the Python backend at `../python/`. Development here is Python-first — see
+[`../../docs/parity-matrix.md`](../../docs/parity-matrix.md) for exactly which concepts are at
+full parity today versus still on the .NET backlog.
 
 Both stacks share:
 - Postgres schema at `../../docker/postgres/init.sql`
@@ -54,7 +56,17 @@ All package versions live in `Directory.Packages.props` at this folder root. Ind
 
 ## Status
 
-The .NET backend is functionally complete and at parity with the Python backend. All six specialist agents plus an MCP server are implemented, along with the full shared layer: A2A client/host, JWT auth middleware, tool audit logging, PII redaction, checkpoint storage (in-memory, file, and Postgres backends), declarative workflow primitives, and config validation.
+The .NET backend is functionally complete for the core domain: all six specialist agents plus an
+MCP-shaped server are implemented, along with a shared layer covering A2A client/host, JWT auth
+middleware, tool audit logging, PII redaction, checkpoint storage (in-memory, file, and Postgres
+backends), declarative workflow primitives, and config validation.
+
+It is **not** at full parity with the Python backend — see
+[`../../docs/parity-matrix.md`](../../docs/parity-matrix.md) for the honest, per-concept
+breakdown. The biggest current gaps: agent middleware/context providers exist but aren't wired
+into any live agent, the MCP server speaks REST rather than the real MCP protocol, specialist
+agents have no streaming (`/message:stream`) endpoint, and there's no output sanitization/
+injection detection, step recorder, or `WorkflowBuilder`-based fan-out.
 
 Nine test projects mirror the source structure — one per agent plus Shared and MCP — with ~191 test methods covering tools, middleware, auth, and A2A protocol behavior. The same PostgreSQL schema and A2A wire format are used across both stacks; you can point the frontend at either backend by setting `NEXT_PUBLIC_BACKEND_STACK=dotnet`.
 

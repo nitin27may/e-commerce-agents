@@ -10,7 +10,7 @@
 [![PostgreSQL + pgvector](https://img.shields.io/badge/PostgreSQL-pgvector-336791.svg)](https://github.com/pgvector/pgvector)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED.svg)](https://docs.docker.com/compose/)
 
-A **multi-agent e-commerce platform** built with [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) (MAF). Ships as **two complete, feature-parity backends — Python and .NET / C#** — both fully working implementations, not samples. Six specialized AI agents collaborate via **A2A protocol** to handle product discovery, orders, pricing, reviews, inventory, and customer support.
+A **multi-agent e-commerce platform** built with [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) (MAF). Ships as **two complete, working backends — Python and .NET / C#** — real implementations, not samples, developed Python-first with .NET following on a published, prioritized backlog (see [`docs/parity-matrix.md`](./docs/parity-matrix.md) for exactly where the two stand today, not an implied parity claim). Six specialized AI agents collaborate via **A2A protocol** to handle product discovery, orders, pricing, reviews, inventory, and customer support.
 
 **Generative UI, not raw JSON.** The chat surface never dumps a tool result as text or a code block. Every agent response is inspected by shape and rendered as the right interactive component: a single detailed result becomes a card, a list becomes a table, a distribution or trend becomes a chart, a status becomes a tone-coded badge — see it live in the [Screens](#screens) gallery below (review sentiment: rating distribution + 6-month trend, rendered from the same data an LLM would otherwise only describe in prose).
 
@@ -377,7 +377,7 @@ e-commerce-agents/
 │   │   ├── pricing_promotions/      # Pricing & Promotions (:8083)
 │   │   ├── review_sentiment/        # Review & Sentiment (:8084)
 │   │   └── inventory_fulfillment/   # Inventory & Fulfillment (:8085)
-│   └── dotnet/                      # .NET backend — parity with Python
+│   └── dotnet/                      # .NET backend — see docs/parity-matrix.md for current gaps
 │       ├── ECommerceAgents.sln
 │       ├── Directory.Packages.props # Central package versions
 │       └── src/
