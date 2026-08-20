@@ -129,6 +129,61 @@ export const ReturnDataSchema = z
   })
   .passthrough();
 
+// ── Generative-UI primitives (Phase 8.4 Stage 3) ──────────────────────────
+// Generic shapes for the reusable DataTable/TrendChart/DistributionChart/
+// StatTile components (web/src/components/ui/). Not yet registered as their
+// own fence tags below — Stage 4 wires each specialist's specific fence
+// (e.g. a sentiment-distribution or stock-table tag) to one of these, once
+// that specialist's real data shape is known. Exported now so the schema
+// and the component it validates for land together, mirroring the existing
+// pattern of building the render layer and its guard rail as one unit.
+
+const SEMANTIC_TONE = z.enum(["success", "warning", "info", "destructive", "neutral"]);
+
+export const DataTableColumnSchema = z
+  .object({
+    key: safeString,
+    header: safeString,
+    align: z.enum(["left", "center", "right"]).optional(),
+  })
+  .passthrough();
+
+export const DataTableDataSchema = z
+  .object({
+    title: optionalSafeString,
+    columns: z.array(DataTableColumnSchema).max(10),
+    rows: z
+      .array(z.record(z.string(), z.union([safeString, positiveNumber, z.boolean(), z.null()])))
+      .max(50),
+  })
+  .passthrough();
+
+export const TrendChartDataSchema = z
+  .object({
+    title: optionalSafeString,
+    xKey: safeString,
+    series: z.array(z.object({ key: safeString, label: safeString }).passthrough()).max(5),
+    data: z.array(z.record(z.string(), z.union([safeString, z.number()]))).max(100),
+  })
+  .passthrough();
+
+export const DistributionChartDataSchema = z
+  .object({
+    title: optionalSafeString,
+    valueLabel: optionalSafeString,
+    data: z.array(z.object({ label: safeString, value: z.number() }).passthrough()).max(50),
+  })
+  .passthrough();
+
+export const StatTileDataSchema = z
+  .object({
+    label: safeString,
+    value: z.union([safeString, positiveNumber]),
+    hint: optionalSafeString,
+    tone: SEMANTIC_TONE.optional(),
+  })
+  .passthrough();
+
 export type CardKind = "product" | "order" | "checkout" | "return";
 
 const SCHEMAS = {
