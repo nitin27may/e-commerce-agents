@@ -238,6 +238,28 @@ const RestockEntrySchema = z
   })
   .passthrough();
 
+// Phase 8.4 Stage 5 — estimate_shipping's fields. The one genuinely
+// interactive case in this fence: each option is a real choice, not just
+// display, wired to the re-prompt path (see inventory-card.tsx) since
+// there's no direct-mutation endpoint for "select a shipping carrier" —
+// unlike cart add-item, which already has one.
+const ShipsFromSchema = z
+  .object({
+    warehouse: optionalSafeString,
+    region: optionalSafeString,
+    quantity_available: z.number().int().min(0).optional(),
+  })
+  .passthrough();
+
+const ShippingOptionSchema = z
+  .object({
+    carrier: safeString,
+    speed_tier: optionalSafeString,
+    price: positiveNumber,
+    delivery_window: optionalSafeString,
+  })
+  .passthrough();
+
 export const InventoryDataSchema = z
   .object({
     product_id: optionalSafeString,
@@ -247,6 +269,8 @@ export const InventoryDataSchema = z
     warehouses: z.array(WarehouseStockSchema).max(20).optional(),
     upcoming_restocks: z.array(RestockEntrySchema).max(20).optional(),
     next_restock: optionalSafeString,
+    ships_from: ShipsFromSchema.optional(),
+    shipping_options: z.array(ShippingOptionSchema).max(10).optional(),
   })
   .passthrough();
 

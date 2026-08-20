@@ -101,7 +101,7 @@ export function RichMessage({ content, streaming, onAction }: RichMessageProps) 
         if (seg.type === "inventory" && seg.data) {
           return (
             <CardMotion key={i}>
-              <ChatInventoryCard data={seg.data as any} />
+              <ChatInventoryCard data={seg.data as any} onAction={onAction} />
             </CardMotion>
           );
         }
