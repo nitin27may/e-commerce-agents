@@ -24,7 +24,13 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from main import FIXTURES_DIR, build_workflow, translate  # noqa: E402
 
 
-def test_workflow_has_four_executors_including_two_agents() -> None:
+def test_workflow_has_four_executors_including_two_agents(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Construction-only — never calls the LLM, so it shouldn't need real
+    # credentials. _default_client()'s OpenAI branch reads OPENAI_API_KEY via
+    # a hard os.environ[...] lookup (fails fast for real runs with no key at
+    # all), which this test tripped over in a credential-less CI job. A
+    # placeholder is enough since the client is never actually invoked.
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-placeholder-not-used")
     workflow = build_workflow()
     ids = {getattr(e, "id", None) for e in workflow.get_executors_list()}
     assert {"input-adapter", "en-to-fr", "fr-to-es", "output-adapter"} <= ids

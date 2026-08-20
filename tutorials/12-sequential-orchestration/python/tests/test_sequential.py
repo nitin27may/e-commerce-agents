@@ -32,7 +32,13 @@ def _llm_available() -> bool:
     return bool(key) and not key.startswith("sk-your-")
 
 
-def test_workflow_builds_with_three_participants() -> None:
+def test_workflow_builds_with_three_participants(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Construction-only — never calls the LLM, so it shouldn't need real
+    # credentials. _default_client()'s OpenAI branch reads OPENAI_API_KEY via
+    # a hard os.environ[...] lookup, which this test tripped over in a
+    # credential-less CI job. A placeholder is enough since the client is
+    # never actually invoked.
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-placeholder-not-used")
     workflow = build_workflow()
     assert workflow is not None
 
