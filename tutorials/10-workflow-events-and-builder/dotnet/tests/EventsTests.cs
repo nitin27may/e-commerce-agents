@@ -15,16 +15,16 @@ public sealed class EventsTests
     [Fact]
     public async Task Progress_Events_Emit_In_Pipeline_Order_On_Happy_Path()
     {
-        var progress = await CollectProgress("hello world");
+        var progress = await CollectProgress("ord-8842");
 
-        progress.Select(p => p.Step).Should().Equal("uppercase", "validate", "log");
+        progress.Select(p => p.Step).Should().Equal("normalize-order", "validate-order", "log-order");
         progress.Select(p => p.Percent).Should().Equal(33, 66, 100);
     }
 
     [Fact]
     public async Task Progress_Events_Carry_Structured_Payload()
     {
-        var progress = await CollectProgress("hello");
+        var progress = await CollectProgress("ord-1");
 
         progress.Should().AllBeOfType<ProgressEvent>();
         progress.Should().AllSatisfy(p =>
@@ -35,13 +35,13 @@ public sealed class EventsTests
     }
 
     [Fact]
-    public async Task Empty_Input_Short_Circuits_Before_Log_Emits_Progress()
+    public async Task Empty_Order_Id_Short_Circuits_Before_Log_Emits_Progress()
     {
         var (progress, outputs) = await Collect(string.Empty);
 
-        progress.Select(p => p.Step).Should().Contain("uppercase").And.Contain("validate");
-        progress.Select(p => p.Step).Should().NotContain("log", "log must not run when validate short-circuits");
-        outputs.Should().ContainSingle().Which.Should().Be("[skipped: empty input]");
+        progress.Select(p => p.Step).Should().Contain("normalize-order").And.Contain("validate-order");
+        progress.Select(p => p.Step).Should().NotContain("log-order", "log-order must not run when validate short-circuits");
+        outputs.Should().ContainSingle().Which.Should().Be("[rejected: empty order id]");
     }
 
     [Fact]
@@ -49,7 +49,7 @@ public sealed class EventsTests
     {
         var (progress, outputs) = await Collect("hi");
 
-        outputs.Should().ContainSingle().Which.Should().Be("LOGGED: HI");
+        outputs.Should().ContainSingle().Which.Should().Be("ORDER LOGGED: HI");
         progress.Last().Percent.Should().Be(100);
     }
 
@@ -62,7 +62,7 @@ public sealed class EventsTests
         var workflow = WorkflowFactory.Build();
         var trail = new List<string>();
 
-        await using StreamingRun run = await InProcessExecution.RunStreamingAsync(workflow, "mix");
+        await using StreamingRun run = await InProcessExecution.RunStreamingAsync(workflow, "ord-mix");
         await foreach (WorkflowEvent evt in run.WatchStreamAsync())
         {
             switch (evt)
@@ -79,13 +79,13 @@ public sealed class EventsTests
             }
         }
 
-        // Uppercase: invoked fires before its custom progress event,
+        // NormalizeOrder: invoked fires before its custom progress event,
         // which fires before the next executor's invoked event.
-        trail.IndexOf("invoked:uppercase").Should().BeLessThan(trail.IndexOf("custom:uppercase"));
-        trail.IndexOf("custom:uppercase").Should().BeLessThan(trail.IndexOf("invoked:validate"));
-        trail.IndexOf("invoked:validate").Should().BeLessThan(trail.IndexOf("custom:validate"));
-        trail.IndexOf("custom:validate").Should().BeLessThan(trail.IndexOf("invoked:log"));
-        trail.IndexOf("invoked:log").Should().BeLessThan(trail.IndexOf("custom:log"));
+        trail.IndexOf("invoked:normalize-order").Should().BeLessThan(trail.IndexOf("custom:normalize-order"));
+        trail.IndexOf("custom:normalize-order").Should().BeLessThan(trail.IndexOf("invoked:validate-order"));
+        trail.IndexOf("invoked:validate-order").Should().BeLessThan(trail.IndexOf("custom:validate-order"));
+        trail.IndexOf("custom:validate-order").Should().BeLessThan(trail.IndexOf("invoked:log-order"));
+        trail.IndexOf("invoked:log-order").Should().BeLessThan(trail.IndexOf("custom:log-order"));
         trail.Last().Should().Be("output", "the final workflow output arrives after all progress events");
     }
 
@@ -98,7 +98,7 @@ public sealed class EventsTests
         var workflow = WorkflowFactory.Build();
         var order = new List<string>();
 
-        await using StreamingRun run = await InProcessExecution.RunStreamingAsync(workflow, "stream-test");
+        await using StreamingRun run = await InProcessExecution.RunStreamingAsync(workflow, "ord-stream-test");
         await foreach (WorkflowEvent evt in run.WatchStreamAsync())
         {
             if (evt is ProgressEvent p)
@@ -112,7 +112,7 @@ public sealed class EventsTests
         }
 
         order.Last().Should().Be("output");
-        order.IndexOf("progress:log").Should().BeLessThan(order.IndexOf("output"));
+        order.IndexOf("progress:log-order").Should().BeLessThan(order.IndexOf("output"));
     }
 
     // ─────────────── helpers ───────────────

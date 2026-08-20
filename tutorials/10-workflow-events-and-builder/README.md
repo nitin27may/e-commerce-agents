@@ -11,13 +11,13 @@ The two SDKs solve this the same way at a conceptual level but with a real API d
 ## Prerequisites
 
 - Completed [Chapter 09 — Workflow Executors and Edges](../09-workflow-executors-and-edges/)
-- Environment variables: none. This chapter's executors are pure string transformations — no LLM calls, no `OPENAI_API_KEY` needed.
+- Environment variables: none. This chapter's executors are pure order-id transformations — no LLM calls, no `OPENAI_API_KEY` needed.
 
 ## The concept
 
 Every workflow run streams a sequence of `WorkflowEvent`s (Python) / `WorkflowEvent` subclasses (.NET). Some are automatic — `ExecutorInvokedEvent`, `ExecutorCompletedEvent`, `SuperStepStartedEvent`, and so on, one per executor per step, emitted by the framework whether you ask for them or not. Others are yours — values your executor produces mid-run that aren't the workflow's final answer, but that a caller still wants to see as they happen.
 
-The three-executor pipeline from Chapter 09 (`Uppercase -> Validate -> Log`) is extended here so each executor reports a `ProgressPayload(step, percent)` before it does its real work. The final executor's actual output ("LOGGED: ...") flows through the same stream, distinguished from the progress payloads by shape, not by a separate channel.
+The three-executor pipeline from Chapter 09 (`NormalizeOrder -> ValidateOrder -> LogOrder`) is extended here so each executor reports a `ProgressPayload(step, percent)` before it does its real work. The final executor's actual output ("ORDER LOGGED: ...") flows through the same stream, distinguished from the progress payloads by shape, not by a separate channel.
 
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': {
@@ -31,22 +31,22 @@ flowchart LR
   classDef infra    fill:#64748b,stroke:#334155,color:#ffffff
 
   builder[[WorkflowBuilder]]
-  up[Uppercase executor]
-  validate[Validate executor]
-  log[Log executor]
+  norm[NormalizeOrder executor]
+  validate[ValidateOrder executor]
+  log[LogOrder executor]
   stream[(Event stream)]
   caller([Caller / progress UI])
 
-  builder -- "add_edge" --> up
+  builder -- "add_edge" --> norm
   builder -- "add_edge" --> validate
   builder -- "add_edge" --> log
-  up -- "yield_output: 33%" --> stream
+  norm -- "yield_output: 33%" --> stream
   validate -- "yield_output: 66%" --> stream
   log -- "yield_output: 100% + final text" --> stream
   stream -- "ordered events" --> caller
 
   class builder core
-  class up core
+  class norm core
   class validate core
   class log core
   class stream infra
@@ -69,22 +69,22 @@ The current Python SDK (`agent-framework-core==1.14.0`, pinned in `tutorials/pyp
 
 ```python
 def build_workflow():
-    up = UppercaseExecutor()
-    validate = ValidateExecutor()
-    log = LogExecutor()
+    normalize = NormalizeOrderExecutor()
+    validate = ValidateOrderExecutor()
+    log = LogOrderExecutor()
     return (
         WorkflowBuilder(
-            start_executor=up,
-            intermediate_output_from=[up, validate],
+            start_executor=normalize,
+            intermediate_output_from=[normalize, validate],
             output_from=[log],
         )
-        .add_edge(up, validate)
+        .add_edge(normalize, validate)
         .add_edge(validate, log)
         .build()
     )
 ```
 
-`UppercaseExecutor` and `ValidateExecutor` are listed under `intermediate_output_from`, so every `yield_output()` call they make surfaces as `type="intermediate"` — that's the progress channel. `LogExecutor` is listed under `output_from`, so its yields surface as `type="output"` — the pipeline's real result. This designation is fixed per executor at build time, not chosen per call — which is why `ValidateExecutor`'s early-exit `yield_output("[skipped: empty input]")` still comes through as `type="intermediate"` even though it's really the terminal message for that run. The consumer tells progress from results by payload shape (`isinstance(data, ProgressPayload)`), not by the event's type label:
+`NormalizeOrderExecutor` and `ValidateOrderExecutor` are listed under `intermediate_output_from`, so every `yield_output()` call they make surfaces as `type="intermediate"` — that's the progress channel. `LogOrderExecutor` is listed under `output_from`, so its yields surface as `type="output"` — the pipeline's real result. This designation is fixed per executor at build time, not chosen per call — which is why `ValidateOrderExecutor`'s early-exit `yield_output("[rejected: empty order id]")` still comes through as `type="intermediate"` even though it's really the terminal message for that run. The consumer tells progress from results by payload shape (`isinstance(data, ProgressPayload)`), not by the event's type label:
 
 ```python
 async for event in workflow.run(text, stream=True):
@@ -101,11 +101,11 @@ async for event in workflow.run(text, stream=True):
 Running it:
 
 ```
-input: 'hello world'
-  progress: uppercase → 33%
-  progress: validate → 66%
-  progress: log → 100%
-output: 'LOGGED: HELLO WORLD'
+input: 'ord-8842'
+  progress: normalize-order → 33%
+  progress: validate-order → 66%
+  progress: log-order → 100%
+output: 'ORDER LOGGED: ORD-8842'
 ```
 
 ## .NET
@@ -127,10 +127,10 @@ internal sealed class ProgressEvent(string step, int percent)
 }
 
 [MessageHandler]
-public async ValueTask HandleAsync(string message, IWorkflowContext context, CancellationToken ct = default)
+public async ValueTask HandleAsync(string orderId, IWorkflowContext context, CancellationToken ct = default)
 {
-    await context.AddEventAsync(new ProgressEvent("uppercase", 33), ct);
-    await context.SendMessageAsync(message.ToUpperInvariant(), ct);
+    await context.AddEventAsync(new ProgressEvent("normalize-order", 33), ct);
+    await context.SendMessageAsync(orderId.Trim().ToUpperInvariant(), ct);
 }
 ```
 
@@ -141,14 +141,14 @@ await foreach (WorkflowEvent evt in run.WatchStreamAsync())
 {
     switch (evt)
     {
-        case ProgressEvent p: Console.WriteLine($"  [progress] {p.Step,-10} -> {p.Percent,3}%"); break;
+        case ProgressEvent p: Console.WriteLine($"  [progress] {p.Step,-14} -> {p.Percent,3}%"); break;
         case ExecutorInvokedEvent i: Console.WriteLine($"[lifecycle] executor_invoked {i.ExecutorId}"); break;
         case WorkflowOutputEvent o: Console.WriteLine($"  [output]   {o.Data}"); break;
     }
 }
 ```
 
-`WorkflowFactory.Build()` uses `.WithOutputFrom(validate, log)` — either executor can be the source of the final workflow output, since `ValidateExecutor` short-circuits on empty input and `LogExecutor` is the normal terminal step.
+`WorkflowFactory.Build()` uses `.WithOutputFrom(validate, log)` — either executor can be the source of the final workflow output, since `ValidateOrderExecutor` short-circuits on an empty order id and `LogOrderExecutor` is the normal terminal step.
 
 ## Side-by-side differences
 
@@ -163,9 +163,9 @@ await foreach (WorkflowEvent evt in run.WatchStreamAsync())
 ## Gotchas
 
 - **Don't port the Python `add_event()` pattern from older examples or blog posts.** `WorkflowEvent.emit()` triggers a `DeprecationWarning` and `ctx.add_event()` now silently drops (and logs a warning for) any executor-origin event typed `output`/`intermediate` — use `ctx.yield_output()` with `intermediate_output_from`/`output_from` instead.
-- **The output/intermediate label is fixed per executor, not per call.** Every `yield_output()` call from a given executor carries the same label, decided by which list (`output_from` / `intermediate_output_from`) that executor was passed to at `WorkflowBuilder` construction time. You can't have one executor emit some yields as progress and others as final output — see `ValidateExecutor`'s short-circuit case in `python/main.py`, which still yields `type="intermediate"` even though `"[skipped: empty input]"` is really the terminal message for that run.
-- **Short-circuited branches drop downstream progress.** If `ValidateExecutor` yields its short-circuit output and returns without calling `send_message`, `LogExecutor` never runs, and its 100% progress event never fires. `test_short_circuit_stops_at_validate_before_log_progress` (Python) and `Empty_Input_Short_Circuits_Before_Log_Emits_Progress` (.NET) lock that in.
-- **Filter by payload shape in Python, not by type label alone** — both `ProgressPayload` and a plain-string result can carry `type="intermediate"` (see `ValidateExecutor`'s short-circuit above), so `isinstance()` on the payload is the reliable discriminator, not the event's `type`.
+- **The output/intermediate label is fixed per executor, not per call.** Every `yield_output()` call from a given executor carries the same label, decided by which list (`output_from` / `intermediate_output_from`) that executor was passed to at `WorkflowBuilder` construction time. You can't have one executor emit some yields as progress and others as final output — see `ValidateOrderExecutor`'s short-circuit case in `python/main.py`, which still yields `type="intermediate"` even though `"[rejected: empty order id]"` is really the terminal message for that run.
+- **Short-circuited branches drop downstream progress.** If `ValidateOrderExecutor` yields its short-circuit output and returns without calling `send_message`, `LogOrderExecutor` never runs, and its 100% progress event never fires. `test_short_circuit_stops_at_validate_before_log_progress` (Python) and `Empty_Order_Id_Short_Circuits_Before_Log_Emits_Progress` (.NET) lock that in.
+- **Filter by payload shape in Python, not by type label alone** — both `ProgressPayload` and a plain-string result can carry `type="intermediate"` (see `ValidateOrderExecutor`'s short-circuit above), so `isinstance()` on the payload is the reliable discriminator, not the event's `type`.
 
 ## Tests
 
@@ -173,7 +173,7 @@ Both languages ship unit tests exercising the same five behaviors — see `tutor
 
 1. Progress events emit in pipeline order with the expected percentages.
 2. Progress events carry the structured `ProgressPayload` (not a raw string).
-3. Empty input short-circuits at `validate`, so `log`'s progress event never fires.
+3. Empty order id short-circuits at `validate-order`, so `log-order`'s progress event never fires.
 4. The final output arrives after the last progress event, not before it.
 5. Events stream incrementally rather than batching — the .NET suite adds a sixth test asserting lifecycle and custom events interleave in true arrival order (`Lifecycle_Events_Interleave_With_Custom_Events_In_Arrival_Order`).
 

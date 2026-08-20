@@ -1,16 +1,16 @@
 // MAF v1 — Chapter 10: Workflow Events and Builder (.NET)
 //
-// Extends the Ch09 Uppercase -> Validate -> Log pipeline with a *custom*
-// ProgressEvent emitted from each executor before it does its work. The
-// consumer interleaves lifecycle events (ExecutorInvokedEvent,
+// Extends the Ch09 NormalizeOrder -> ValidateOrder -> LogOrder pipeline with
+// a *custom* ProgressEvent emitted from each executor before it does its
+// work. The consumer interleaves lifecycle events (ExecutorInvokedEvent,
 // ExecutorCompletedEvent, SuperStep*, WorkflowOutputEvent) with those
 // custom events, so you see exactly what the workflow is doing while it
 // runs.
 //
 // Run:
-//   dotnet run                   # happy path ("hello world")
-//   dotnet run -- "maf rocks"    # happy path, custom input
-//   dotnet run -- ""             # empty -> Validate short-circuits, Log never fires
+//   dotnet run                   # happy path ("ord-8842")
+//   dotnet run -- "ord-42a"      # happy path, custom input
+//   dotnet run -- ""             # empty -> ValidateOrder short-circuits, LogOrder never fires
 
 using Microsoft.Agents.AI.Workflows;
 
@@ -20,14 +20,14 @@ public static class Program
 {
     public static async Task<int> Main(string[] args)
     {
-        string text = args.Length > 0 ? args[0] : "hello world";
+        string orderId = args.Length > 0 ? args[0] : "ord-8842";
 
         Workflow workflow = WorkflowFactory.Build();
 
-        Console.WriteLine($"input:  '{text}'");
+        Console.WriteLine($"input:  '{orderId}'");
         Console.WriteLine();
 
-        await foreach (string line in WorkflowRunner.RunAsync(workflow, text))
+        await foreach (string line in WorkflowRunner.RunAsync(workflow, orderId))
         {
             Console.WriteLine(line);
         }
@@ -60,19 +60,19 @@ internal sealed record ProgressPayload(string Step, int Percent);
 
 /// <summary>
 /// Composes the three executors into a linear workflow:
-/// <c>Uppercase -> Validate -> Log</c>.
+/// <c>NormalizeOrder -> ValidateOrder -> LogOrder</c>.
 /// Each executor emits a <see cref="ProgressEvent"/> before forwarding.
 /// </summary>
 internal static class WorkflowFactory
 {
     public static Workflow Build()
     {
-        var uppercase = new UppercaseExecutor();
-        var validate = new ValidateExecutor();
-        var log = new LogExecutor();
+        var normalize = new NormalizeOrderExecutor();
+        var validate = new ValidateOrderExecutor();
+        var log = new LogOrderExecutor();
 
-        return new WorkflowBuilder(uppercase)
-            .AddEdge(uppercase, validate)
+        return new WorkflowBuilder(normalize)
+            .AddEdge(normalize, validate)
             .AddEdge(validate, log)
             .WithOutputFrom(validate, log) // either can emit the final output
             .Build();
@@ -112,7 +112,7 @@ internal static class WorkflowRunner
     private static string? Format(WorkflowEvent evt) => evt switch
     {
         // Custom events first — always match the concrete type before the base.
-        ProgressEvent p => $"  [progress]  {p.Step,-10} -> {p.Percent,3}%",
+        ProgressEvent p => $"  [progress]  {p.Step,-14} -> {p.Percent,3}%",
 
         // Executor lifecycle.
         ExecutorInvokedEvent invoke => $"[lifecycle] executor_invoked    {invoke.ExecutorId}",
@@ -148,62 +148,63 @@ internal static class WorkflowRunner
 // follows it.
 
 /// <summary>
-/// Uppercases the input and forwards it. Emits a 33% progress event first.
+/// Normalizes the order id (trims + uppercases) and forwards it. Emits a
+/// 33% progress event first.
 /// </summary>
 [SendsMessage(typeof(string))]
-internal sealed partial class UppercaseExecutor() : Executor("uppercase")
+internal sealed partial class NormalizeOrderExecutor() : Executor("normalize-order")
 {
     [MessageHandler]
     public async ValueTask HandleAsync(
-        string message,
+        string orderId,
         IWorkflowContext context,
         CancellationToken cancellationToken = default)
     {
-        await context.AddEventAsync(new ProgressEvent("uppercase", 33), cancellationToken);
-        await context.SendMessageAsync(message.ToUpperInvariant(), cancellationToken);
+        await context.AddEventAsync(new ProgressEvent("normalize-order", 33), cancellationToken);
+        await context.SendMessageAsync(orderId.Trim().ToUpperInvariant(), cancellationToken);
     }
 }
 
 /// <summary>
-/// Routes valid inputs downstream; short-circuits empty/whitespace-only inputs
-/// by yielding a terminal workflow output. Emits a 66% progress event.
+/// Routes valid order ids downstream; short-circuits empty/whitespace-only
+/// ids by yielding a terminal workflow output. Emits a 66% progress event.
 /// </summary>
 [SendsMessage(typeof(string))]
 [YieldsOutput(typeof(string))]
-internal sealed partial class ValidateExecutor() : Executor("validate")
+internal sealed partial class ValidateOrderExecutor() : Executor("validate-order")
 {
     [MessageHandler]
     public async ValueTask HandleAsync(
-        string message,
+        string orderId,
         IWorkflowContext context,
         CancellationToken cancellationToken = default)
     {
-        await context.AddEventAsync(new ProgressEvent("validate", 66), cancellationToken);
+        await context.AddEventAsync(new ProgressEvent("validate-order", 66), cancellationToken);
 
-        if (string.IsNullOrWhiteSpace(message))
+        if (string.IsNullOrWhiteSpace(orderId))
         {
-            await context.YieldOutputAsync("[skipped: empty input]", cancellationToken);
+            await context.YieldOutputAsync("[rejected: empty order id]", cancellationToken);
             return;
         }
 
-        await context.SendMessageAsync(message, cancellationToken);
+        await context.SendMessageAsync(orderId, cancellationToken);
     }
 }
 
 /// <summary>
-/// Terminal executor: prefixes the text with "LOGGED:" and yields the final
-/// workflow output. Emits a 100% progress event first.
+/// Terminal executor: prefixes the order id with "ORDER LOGGED:" and yields
+/// the final workflow output. Emits a 100% progress event first.
 /// </summary>
 [YieldsOutput(typeof(string))]
-internal sealed partial class LogExecutor() : Executor("log")
+internal sealed partial class LogOrderExecutor() : Executor("log-order")
 {
     [MessageHandler]
     public async ValueTask HandleAsync(
-        string message,
+        string orderId,
         IWorkflowContext context,
         CancellationToken cancellationToken = default)
     {
-        await context.AddEventAsync(new ProgressEvent("log", 100), cancellationToken);
-        await context.YieldOutputAsync($"LOGGED: {message}", cancellationToken);
+        await context.AddEventAsync(new ProgressEvent("log-order", 100), cancellationToken);
+        await context.YieldOutputAsync($"ORDER LOGGED: {orderId}", cancellationToken);
     }
 }
