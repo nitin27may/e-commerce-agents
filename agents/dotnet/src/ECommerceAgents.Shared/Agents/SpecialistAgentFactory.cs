@@ -42,7 +42,7 @@ public static class SpecialistAgentFactory
         }
 
         var agent = chatClient.AsAIAgent(options);
-        return services is not null ? SpecialistPipeline.Apply(agent, settings, services) : agent;
+        return services is not null ? SpecialistPipeline.Apply(agent, settings, services, agentName) : agent;
     }
 
     /// <summary>

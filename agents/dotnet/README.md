@@ -67,12 +67,15 @@ It is **not** at full parity with the Python backend — see
 breakdown. Agent middleware/context providers are now wired into every live agent, specialist
 agents have a real `/message:stream` SSE endpoint (with live delta forwarding through the
 orchestrator's own chat stream), the guardrail stack now includes inbound prompt-injection
-detection, stored-content sanitization, and output moderation, and every tool call is now
+detection, stored-content sanitization, and output moderation, every tool call is now
 captured into a live agentic timeline (`/runs`, `event: step` SSE frames) across both the
-orchestrator and specialist processes. The biggest remaining gap: workflows are hand-rolled
-`Task.WhenAll` rather than `WorkflowBuilder`, and HITL approval lives in tool bodies instead of
-middleware.
+orchestrator and specialist processes, `PrePurchaseWorkflow` runs on a real MAF `WorkflowBuilder`
+graph, and human-in-the-loop approval is a real function-invocation pipeline stage rather than a
+call-site wrapper each gated tool had to invoke itself. The biggest remaining gap:
+`ReturnAndReplaceWorkflow` (the workflow with a pause/resume HITL gate) is still hand-rolled —
+porting its gate to MAF's `RequestPort` needs either long-lived `StreamingRun` caching or
+checkpointing, real design work beyond a mechanical port.
 
-Eight test projects mirror the source structure — one per agent plus Shared and MCP — with 410 test methods covering tools, middleware, guardrails, timeline capture, auth, streaming, and A2A protocol behavior (verified directly: `dotnet test ECommerceAgents.sln`). The same PostgreSQL schema and A2A wire format are used across both stacks; you can point the frontend at either backend by setting `NEXT_PUBLIC_BACKEND_STACK=dotnet`.
+Eight test projects mirror the source structure — one per agent plus Shared and MCP — with 415 test methods covering tools, middleware, guardrails, timeline capture, workflows, auth, streaming, and A2A protocol behavior (verified directly: `dotnet test ECommerceAgents.sln`). The same PostgreSQL schema and A2A wire format are used across both stacks; you can point the frontend at either backend by setting `NEXT_PUBLIC_BACKEND_STACK=dotnet`.
 
 Enhancement plans are tracked in [`.claude/plans/enhancements/`](../../.claude/plans/enhancements/).

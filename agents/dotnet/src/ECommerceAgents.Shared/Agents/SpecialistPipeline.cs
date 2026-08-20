@@ -37,20 +37,29 @@ namespace ECommerceAgents.Shared.Agents;
 /// actually happened to a tool call after sanitization/audit — same
 /// ordering Python uses (<c>STEP_MIDDLEWARE</c> appended last in
 /// <c>build_specialist_middleware</c>).
+///
+/// Issue #17 (piece 2 of 3) moves human-in-the-loop approval from a
+/// call-site wrapper each gated tool method had to invoke itself
+/// (<c>HitlApprovalMiddleware.GuardAsync</c>, removed) into this pipeline
+/// as <see cref="HitlCheck"/> — the .NET twin of Python's
+/// <c>HITLFunctionMiddleware</c>. A gated tool method is now only ever
+/// reached once this stage has already let the call through.
 /// </remarks>
 public static class SpecialistPipeline
 {
     /// <summary>
     /// Wraps <paramref name="inner"/> in, outermost to innermost: agent-run
     /// logging, inbound injection detection + outbound content moderation,
-    /// PII redaction of inbound messages, per-tool-call audit logging, and
+    /// PII redaction of inbound messages, per-tool-call audit logging,
+    /// human-in-the-loop approval gating on destructive tools, and
     /// stored-injection sanitization of allowlisted tool results.
     /// </summary>
-    public static AIAgent Apply(AIAgent inner, AgentSettings settings, IServiceProvider services)
+    public static AIAgent Apply(AIAgent inner, AgentSettings settings, IServiceProvider services, string agentName)
     {
         var runLogger = services.GetRequiredService<AgentRunLogger>();
         var redactor = services.GetRequiredService<PiiRedactor>();
         var toolAudit = services.GetRequiredService<ToolAuditMiddleware>();
+        var hitlGate = services.GetRequiredService<HitlGate>();
         var logger = services.GetRequiredService<ILogger<AgentRunLoggerAdapter>>();
         var guardrailLogger = services.GetRequiredService<ILogger<GuardrailGateAdapter>>();
 
@@ -72,6 +81,7 @@ public static class SpecialistPipeline
 
         return builder
             .Use(AuditToolCalls(toolAudit))
+            .Use(HitlCheck(hitlGate, agentName))
             .Use(RecordSteps())
             .Build(services);
     }
@@ -173,6 +183,31 @@ public static class SpecialistPipeline
     > AuditToolCalls(ToolAuditMiddleware audit) =>
         (agent, context, next, ct) =>
             new ValueTask<object?>(audit.RecordAsync(context.Function.Name, () => next(context, ct).AsTask()));
+
+    /// <summary>
+    /// Human-in-the-loop approval gate on destructive tools (issue #17,
+    /// piece 2 of 3) — the .NET twin of Python's
+    /// <c>HITLFunctionMiddleware</c>. Checks <see cref="HitlGate.TryGateAsync"/>
+    /// before calling <paramref name="next"/> at all; if it returns a
+    /// non-null pending-approval (or error) object, that becomes the tool's
+    /// result and the real tool method never runs — matching Python's "don't
+    /// call call_next()" short-circuit exactly.
+    /// </summary>
+    private static Func<
+        AIAgent,
+        FunctionInvocationContext,
+        Func<FunctionInvocationContext, CancellationToken, ValueTask<object?>>,
+        CancellationToken,
+        ValueTask<object?>
+    > HitlCheck(HitlGate gate, string agentName) =>
+        async (agent, context, next, ct) =>
+        {
+            var toolInput = context.Arguments is null
+                ? new Dictionary<string, object?>()
+                : new Dictionary<string, object?>(context.Arguments);
+            var pending = await gate.TryGateAsync(context.Function.Name, agentName, toolInput);
+            return pending ?? await next(context, ct);
+        };
 
     /// <summary>
     /// Defangs stored-injection markers in allowlisted tool results (issue

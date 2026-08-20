@@ -22,15 +22,18 @@ namespace ECommerceAgents.OrderManagement.Tools;
 /// <remarks>
 /// Read-only tools: <see cref="GetUserOrders"/>, <see cref="GetOrderDetails"/>,
 /// <see cref="GetOrderTracking"/>.<br/>
-/// State-mutating tools (gated for human approval upstream and wrapped
-/// in row-locked transactions to avoid double-cancel / double-modify):
-/// <see cref="CancelOrder"/>, <see cref="ModifyOrder"/>.
+/// State-mutating tools (gated for human approval and wrapped in
+/// row-locked transactions to avoid double-cancel / double-modify):
+/// <see cref="CancelOrder"/>, <see cref="ModifyOrder"/>. Approval gating
+/// itself lives one layer up now, in <c>Agents.SpecialistPipeline</c>'s
+/// function-invocation pipeline (issue #17) — these methods no longer
+/// know or need to know they're gated; by the time either runs, the
+/// pipeline has already let the call through.
 /// </remarks>
-public sealed class OrderTools(DatabasePool pool, AgentSettings settings, HitlApprovalMiddleware hitl)
+public sealed class OrderTools(DatabasePool pool, AgentSettings settings)
 {
     private readonly DatabasePool _pool = pool;
     private readonly AgentSettings _settings = settings;
-    private readonly HitlApprovalMiddleware _hitl = hitl;
 
     /// <summary>Hard ceiling for the LLM-supplied <c>limit</c> parameter on list queries.</summary>
     private const int MaxLimit = 100;
@@ -265,109 +268,88 @@ public sealed class OrderTools(DatabasePool pool, AgentSettings settings, HitlAp
         [Description("Reason for cancellation")] string reason
     )
     {
-        // HITL gate first — mirrors Python's HITLFunctionMiddleware, which
-        // intercepts by tool name alone before the tool function body (and
-        // therefore before any of this method's own validation) ever runs.
-        return await _hitl.GuardAsync(
-            toolName: "cancel_order",
-            agentName: "order-management",
-            toolInputForAudit: new { order_id = orderId, reason },
-            body: async () =>
-            {
-                if (RoleGuard.Ensure(_settings, "customer", "seller") is { } denied)
-                {
-                    return CancelOrderResult.Failure(denied);
-                }
+        // Human-in-the-loop approval already ran (Agents.SpecialistPipeline's
+        // HitlCheck stage) before this method was ever called — nothing to
+        // gate here.
+        if (RoleGuard.Ensure(_settings, "customer", "seller") is { } denied)
+        {
+            return CancelOrderResult.Failure(denied);
+        }
 
-                var email = RequestContext.CurrentUserEmail;
-                if (string.IsNullOrEmpty(email))
-                {
-                    return CancelOrderResult.Failure("No user context available");
-                }
+        var email = RequestContext.CurrentUserEmail;
+        if (string.IsNullOrEmpty(email))
+        {
+            return CancelOrderResult.Failure("No user context available");
+        }
 
-                if (!Guid.TryParse(orderId, out var orderGuid))
-                {
-                    return CancelOrderResult.Failure("order_id must be a UUID");
-                }
+        if (!Guid.TryParse(orderId, out var orderGuid))
+        {
+            return CancelOrderResult.Failure("order_id must be a UUID");
+        }
 
-                if (string.IsNullOrWhiteSpace(reason) || reason.Length > 500)
-                {
-                    return CancelOrderResult.Failure("reason must be 1-500 characters");
-                }
+        if (string.IsNullOrWhiteSpace(reason) || reason.Length > 500)
+        {
+            return CancelOrderResult.Failure("reason must be 1-500 characters");
+        }
 
-                await using var conn = await _pool.OpenAsync();
-                await using var tx = await conn.BeginTransactionAsync();
+        await using var conn = await _pool.OpenAsync();
+        await using var tx = await conn.BeginTransactionAsync();
 
-                // FOR UPDATE OF o so a concurrent cancel blocks behind us.
-                var order = await conn.QueryFirstOrDefaultAsync(
-                    @"SELECT o.id, o.status, o.total
-                      FROM orders o
-                      JOIN users u ON o.user_id = u.id
-                      WHERE o.id = @id AND u.email = @email
-                      FOR UPDATE OF o",
-                    new { id = orderGuid, email },
-                    tx
-                );
-                if (order is null)
-                {
-                    return CancelOrderResult.Failure($"Order not found or access denied: {orderId}");
-                }
+        // FOR UPDATE OF o so a concurrent cancel blocks behind us.
+        var order = await conn.QueryFirstOrDefaultAsync(
+            @"SELECT o.id, o.status, o.total
+              FROM orders o
+              JOIN users u ON o.user_id = u.id
+              WHERE o.id = @id AND u.email = @email
+              FOR UPDATE OF o",
+            new { id = orderGuid, email },
+            tx
+        );
+        if (order is null)
+        {
+            return CancelOrderResult.Failure($"Order not found or access denied: {orderId}");
+        }
 
-                var currentStatus = (string)order.status;
-                if (!CancellableStatuses.Contains(currentStatus))
-                {
-                    return new CancelOrderResult(
-                        Error:
-                            $"Cannot cancel order in '{currentStatus}' status. Only 'placed' or 'confirmed' orders can be cancelled.",
-                        OrderId: ((Guid)order.id).ToString(),
-                        CurrentStatus: currentStatus,
-                        PreviousStatus: null,
-                        NewStatus: null,
-                        Reason: null,
-                        RefundAmount: null,
-                        Message: null
-                    );
-                }
-
-                await conn.ExecuteAsync(
-                    "UPDATE orders SET status = 'cancelled' WHERE id = @id",
-                    new { id = orderGuid },
-                    tx
-                );
-                await conn.ExecuteAsync(
-                    @"INSERT INTO order_status_history (order_id, status, notes)
-                      VALUES (@id, 'cancelled', @notes)",
-                    new { id = orderGuid, notes = $"Cancelled by customer: {reason}" },
-                    tx
-                );
-                await tx.CommitAsync();
-
-                var refundAmount = (decimal)order.total;
-                return new CancelOrderResult(
-                    Error: null,
-                    OrderId: ((Guid)order.id).ToString(),
-                    CurrentStatus: null,
-                    PreviousStatus: currentStatus,
-                    NewStatus: "cancelled",
-                    Reason: reason,
-                    RefundAmount: refundAmount,
-                    Message:
-                        $"Order cancelled successfully. A refund of ${refundAmount:F2} will be processed within 5-7 business days."
-                );
-            },
-            pendingResult: requestId => new CancelOrderResult(
-                Error: null,
-                OrderId: orderId,
-                CurrentStatus: null,
+        var currentStatus = (string)order.status;
+        if (!CancellableStatuses.Contains(currentStatus))
+        {
+            return new CancelOrderResult(
+                Error:
+                    $"Cannot cancel order in '{currentStatus}' status. Only 'placed' or 'confirmed' orders can be cancelled.",
+                OrderId: ((Guid)order.id).ToString(),
+                CurrentStatus: currentStatus,
                 PreviousStatus: null,
                 NewStatus: null,
-                Reason: reason,
+                Reason: null,
                 RefundAmount: null,
-                Message:
-                    $"Your request to cancel order has been submitted for manager approval " +
-                    $"(ref: {requestId.ToString()[..8]}). You will be notified once an admin reviews it. " +
-                    "No changes have been made yet."
-            )
+                Message: null
+            );
+        }
+
+        await conn.ExecuteAsync(
+            "UPDATE orders SET status = 'cancelled' WHERE id = @id",
+            new { id = orderGuid },
+            tx
+        );
+        await conn.ExecuteAsync(
+            @"INSERT INTO order_status_history (order_id, status, notes)
+              VALUES (@id, 'cancelled', @notes)",
+            new { id = orderGuid, notes = $"Cancelled by customer: {reason}" },
+            tx
+        );
+        await tx.CommitAsync();
+
+        var refundAmount = (decimal)order.total;
+        return new CancelOrderResult(
+            Error: null,
+            OrderId: ((Guid)order.id).ToString(),
+            CurrentStatus: null,
+            PreviousStatus: currentStatus,
+            NewStatus: "cancelled",
+            Reason: reason,
+            RefundAmount: refundAmount,
+            Message:
+                $"Order cancelled successfully. A refund of ${refundAmount:F2} will be processed within 5-7 business days."
         );
     }
 
@@ -378,97 +360,82 @@ public sealed class OrderTools(DatabasePool pool, AgentSettings settings, HitlAp
             ShippingAddressInput newAddress
     )
     {
-        return await _hitl.GuardAsync(
-            toolName: "modify_order",
-            agentName: "order-management",
-            toolInputForAudit: new { order_id = orderId, new_address = newAddress },
-            body: async () =>
-            {
-                if (RoleGuard.Ensure(_settings, "customer", "seller") is { } denied)
-                {
-                    return ModifyOrderResult.Failure(denied);
-                }
+        // Human-in-the-loop approval already ran (Agents.SpecialistPipeline's
+        // HitlCheck stage) before this method was ever called — nothing to
+        // gate here.
+        if (RoleGuard.Ensure(_settings, "customer", "seller") is { } denied)
+        {
+            return ModifyOrderResult.Failure(denied);
+        }
 
-                var email = RequestContext.CurrentUserEmail;
-                if (string.IsNullOrEmpty(email))
-                {
-                    return ModifyOrderResult.Failure("No user context available");
-                }
+        var email = RequestContext.CurrentUserEmail;
+        if (string.IsNullOrEmpty(email))
+        {
+            return ModifyOrderResult.Failure("No user context available");
+        }
 
-                if (!Guid.TryParse(orderId, out var orderGuid))
-                {
-                    return ModifyOrderResult.Failure("order_id must be a UUID");
-                }
+        if (!Guid.TryParse(orderId, out var orderGuid))
+        {
+            return ModifyOrderResult.Failure("order_id must be a UUID");
+        }
 
-                var validation = newAddress.Validate();
-                if (validation is not null)
-                {
-                    return ModifyOrderResult.Failure(validation);
-                }
+        var validation = newAddress.Validate();
+        if (validation is not null)
+        {
+            return ModifyOrderResult.Failure(validation);
+        }
 
-                await using var conn = await _pool.OpenAsync();
-                await using var tx = await conn.BeginTransactionAsync();
+        await using var conn = await _pool.OpenAsync();
+        await using var tx = await conn.BeginTransactionAsync();
 
-                var order = await conn.QueryFirstOrDefaultAsync(
-                    @"SELECT o.id, o.status
-                      FROM orders o
-                      JOIN users u ON o.user_id = u.id
-                      WHERE o.id = @id AND u.email = @email
-                      FOR UPDATE OF o",
-                    new { id = orderGuid, email },
-                    tx
-                );
-                if (order is null)
-                {
-                    return ModifyOrderResult.Failure($"Order not found or access denied: {orderId}");
-                }
+        var order = await conn.QueryFirstOrDefaultAsync(
+            @"SELECT o.id, o.status
+              FROM orders o
+              JOIN users u ON o.user_id = u.id
+              WHERE o.id = @id AND u.email = @email
+              FOR UPDATE OF o",
+            new { id = orderGuid, email },
+            tx
+        );
+        if (order is null)
+        {
+            return ModifyOrderResult.Failure($"Order not found or access denied: {orderId}");
+        }
 
-                var currentStatus = (string)order.status;
-                if (!ModifiableStatuses.Contains(currentStatus))
-                {
-                    return new ModifyOrderResult(
-                        Error:
-                            $"Cannot modify order in '{currentStatus}' status. Only 'placed' or 'confirmed' orders can be modified.",
-                        OrderId: ((Guid)order.id).ToString(),
-                        CurrentStatus: currentStatus,
-                        NewAddress: null,
-                        Message: null
-                    );
-                }
+        var currentStatus = (string)order.status;
+        if (!ModifiableStatuses.Contains(currentStatus))
+        {
+            return new ModifyOrderResult(
+                Error:
+                    $"Cannot modify order in '{currentStatus}' status. Only 'placed' or 'confirmed' orders can be modified.",
+                OrderId: ((Guid)order.id).ToString(),
+                CurrentStatus: currentStatus,
+                NewAddress: null,
+                Message: null
+            );
+        }
 
-                var addressJson = JsonSerializer.Serialize(newAddress);
-                // Cast text → jsonb so the column accepts the document.
-                var sql = "UPDATE orders SET shipping_address = @json::jsonb WHERE id = @id";
-                var cmd = new NpgsqlCommand(sql, (NpgsqlConnection)conn, (NpgsqlTransaction)tx);
-                cmd.Parameters.Add(new NpgsqlParameter("@json", addressJson));
-                cmd.Parameters.Add(new NpgsqlParameter("@id", orderGuid));
-                await cmd.ExecuteNonQueryAsync();
-                await conn.ExecuteAsync(
-                    @"INSERT INTO order_status_history (order_id, status, notes)
-                      VALUES (@id, @status, 'Shipping address updated by customer')",
-                    new { id = orderGuid, status = currentStatus },
-                    tx
-                );
-                await tx.CommitAsync();
+        var addressJson = JsonSerializer.Serialize(newAddress);
+        // Cast text → jsonb so the column accepts the document.
+        var sql = "UPDATE orders SET shipping_address = @json::jsonb WHERE id = @id";
+        var cmd = new NpgsqlCommand(sql, (NpgsqlConnection)conn, (NpgsqlTransaction)tx);
+        cmd.Parameters.Add(new NpgsqlParameter("@json", addressJson));
+        cmd.Parameters.Add(new NpgsqlParameter("@id", orderGuid));
+        await cmd.ExecuteNonQueryAsync();
+        await conn.ExecuteAsync(
+            @"INSERT INTO order_status_history (order_id, status, notes)
+              VALUES (@id, @status, 'Shipping address updated by customer')",
+            new { id = orderGuid, status = currentStatus },
+            tx
+        );
+        await tx.CommitAsync();
 
-                return new ModifyOrderResult(
-                    Error: null,
-                    OrderId: ((Guid)order.id).ToString(),
-                    CurrentStatus: null,
-                    NewAddress: newAddress,
-                    Message: $"Shipping address updated for order {orderGuid}."
-                );
-            },
-            pendingResult: requestId => new ModifyOrderResult(
-                Error: null,
-                OrderId: orderId,
-                CurrentStatus: null,
-                NewAddress: newAddress,
-                Message:
-                    $"Your request to modify order has been submitted for manager approval " +
-                    $"(ref: {requestId.ToString()[..8]}). You will be notified once an admin reviews it. " +
-                    "No changes have been made yet."
-            )
+        return new ModifyOrderResult(
+            Error: null,
+            OrderId: ((Guid)order.id).ToString(),
+            CurrentStatus: null,
+            NewAddress: newAddress,
+            Message: $"Shipping address updated for order {orderGuid}."
         );
     }
 }

@@ -3,7 +3,6 @@ using ECommerceAgents.InventoryFulfillment.Tools;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Data;
-using ECommerceAgents.Shared.Middleware;
 using ECommerceAgents.TestFixtures;
 using FluentAssertions;
 using Xunit;
@@ -36,11 +35,14 @@ public sealed class InventoryToolsTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        // HitlEnabled: false — these tests exercise place_backorder's own
-        // business logic, not the HITL gate (that's HitlApprovalTests.cs).
-        var settings = new AgentSettings { DatabaseUrl = _pg.ConnectionString, HitlEnabled = false };
+        // This fixture calls PlaceBackorder directly, exercising only its
+        // own business logic — HITL approval gating now happens one layer
+        // up, in Agents.SpecialistPipeline's function-invocation pipeline
+        // (issue #17), which a direct method call bypasses entirely. See
+        // HitlGateTests.cs for gate coverage.
+        var settings = new AgentSettings { DatabaseUrl = _pg.ConnectionString };
         _pool = new DatabasePool(settings);
-        _tools = new InventoryTools(_pool, settings, new HitlApprovalMiddleware(_pool, settings));
+        _tools = new InventoryTools(_pool, settings);
         RequestContext.CurrentUserEmail = Email;
         RequestContext.CurrentUserRole = "seller";
         await SeedAsync();
@@ -274,33 +276,6 @@ public sealed class InventoryToolsTests : IAsyncLifetime
         result.BackorderId.Should().NotBeNullOrEmpty();
         result.Quantity.Should().Be(3);
         result.ExpectedRestock.Should().NotBeNull();
-    }
-
-    [Fact]
-    public async Task PlaceBackorder_WhenHitlEnabled_ReturnsPendingAndCreatesNoBackorder()
-    {
-        // Separate HitlEnabled=true instance — the class-level _tools fixture
-        // runs with it off (see InitializeAsync) so the tests above exercise
-        // real business logic, not the gate.
-        var settings = new AgentSettings { DatabaseUrl = _pg.ConnectionString, HitlEnabled = true };
-        var gatedTools = new InventoryTools(_pool, settings, new HitlApprovalMiddleware(_pool, settings));
-
-        EnsureUserScope();
-        await using (var conn = await _pool.OpenAsync())
-        {
-            await conn.ExecuteAsync("UPDATE warehouse_inventory SET quantity = 0");
-        }
-        var result = await gatedTools.PlaceBackorder(_productId.ToString(), 3);
-
-        result.Error.Should().BeNull();
-        result.Message.Should().Contain("submitted for manager approval");
-        result.BackorderPlaced.Should().BeFalse(); // not actually placed yet
-
-        await using var check = await _pool.OpenAsync();
-        var pendingCount = await check.ExecuteScalarAsync<long>(
-            "SELECT COUNT(*) FROM tool_approval_requests WHERE tool_name = 'place_backorder' AND status = 'pending'"
-        );
-        pendingCount.Should().Be(1);
     }
 
     // ─────────────────────── seed ────────────────────────────

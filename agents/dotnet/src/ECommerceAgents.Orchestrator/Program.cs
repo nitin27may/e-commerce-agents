@@ -54,6 +54,7 @@ builder.Services.AddSingleton<AgentRunLogger>();
 builder.Services.AddSingleton<ToolAuditMiddleware>();
 builder.Services.AddSingleton<PiiRedactor>();
 builder.Services.AddSingleton<ContextEnricher>();
+builder.Services.AddSingleton<HitlGate>();
 
 builder.Services.AddSingleton<OrchestratorTools>();
 builder.Services.AddSingleton<AIAgent>(sp =>

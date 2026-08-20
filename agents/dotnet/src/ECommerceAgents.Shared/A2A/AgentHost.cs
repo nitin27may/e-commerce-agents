@@ -80,7 +80,7 @@ public static class AgentHost
         builder.Services.AddSingleton(new JwtTokenService(settings));
         builder.Services.AddHttpClient<JwksKeyProvider>();
         builder.Services.AddAgentTelemetry(settings);
-        builder.Services.AddSingleton<HitlApprovalMiddleware>();
+        builder.Services.AddSingleton<HitlGate>();
 
         // Cross-cutting agent pipeline (issue #12) — resolved by
         // Agents.SpecialistPipeline / SpecialistAgentFactory.Create when
