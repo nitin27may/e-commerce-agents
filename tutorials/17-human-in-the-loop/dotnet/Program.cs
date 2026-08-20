@@ -1,75 +1,52 @@
 // MAF v1 — Chapter 17: Human-in-the-Loop (.NET)
 //
-// A workflow that pauses mid-run to ask a human operator to guess a number,
-// then resumes when the answer arrives. Demonstrates the canonical .NET HITL
-// surface:
+// A workflow that pauses mid-run to ask a human approver whether a refund
+// should go through, then resumes when the decision arrives. Demonstrates
+// the canonical .NET HITL surface:
 //
 //   - RequestPort.Create<TRequest, TResponse>(id) — the pause/resume channel
-//   - WorkflowBuilder(port).AddEdge(port, judge).AddEdge(judge, port)
-//   - Judge sends hint signals back through the port; the port re-emits
-//     RequestInfoEvent to the caller, who supplies the next guess
-//   - Caller sees each RequestInfoEvent on the stream, calls
-//     run.SendResponseAsync(evt.Request.CreateResponse(guess)) and keeps
+//   - WorkflowBuilder(port).AddEdge(port, decision) — port feeds the decision
+//     executor once a response comes back
+//   - The caller sees a RequestInfoEvent on the stream, calls
+//     run.SendResponseAsync(evt.Request.CreateResponse(approved)) and keeps
 //     iterating the same StreamingRun until WorkflowOutputEvent arrives
 //
 // No LLM required — HITL is framework plumbing, not model behaviour.
 //
 // Run:
 //   cd tutorials/17-human-in-the-loop/dotnet
-//   dotnet run           # interactive: prompts for each guess
-//   dotnet run -- 7      # scripted: keeps guessing 7 until the game ends
+//   dotnet run           # interactive: prompts for the approval decision
+//   dotnet run -- y      # scripted: approves automatically
+//   dotnet run -- n      # scripted: denies automatically
 
 using Microsoft.Agents.AI.Workflows;
 
 namespace MafV1.Ch17.Hitl;
 
 /// <summary>
-/// Signal the workflow sends out through the <see cref="RequestPort"/> when it
-/// needs a (new) guess. The <see cref="NumberSignal.Init"/> value kicks off the
-/// first round; subsequent values tell the caller whether the previous guess
-/// was too high or too low.
+/// A refund awaiting a human approval decision. Doubles as both the value
+/// that kicks the workflow off and the payload the request port hands to
+/// the caller when it pauses — there's nothing extra to derive along the way.
 /// </summary>
-internal enum NumberSignal
-{
-    Init,
-    Above,
-    Below,
-}
+internal sealed record RefundRequest(string OrderId, double Amount);
 
 /// <summary>
-/// Holds the secret and judges each guess. On a miss it sends a hint back
-/// through the request port; the port re-emits RequestInfoEvent to the caller,
-/// who supplies the next guess.
+/// Receives the approve/deny decision routed back through the request port
+/// and reports the outcome. The refund details are captured at construction
+/// time — the same run already knows what it's asking approval for.
 /// </summary>
-[SendsMessage(typeof(NumberSignal))]
 [YieldsOutput(typeof(string))]
-internal sealed class JudgeExecutor() : Executor<int>("judge")
+internal sealed class RefundDecisionExecutor(RefundRequest refund) : Executor<bool>("refund-decision")
 {
-    private readonly int _target;
-    private int _tries;
-
-    public JudgeExecutor(int target) : this()
-    {
-        this._target = target;
-    }
-
     public override async ValueTask HandleAsync(
-        int guess,
+        bool approved,
         IWorkflowContext context,
         CancellationToken cancellationToken = default)
     {
-        this._tries++;
-
-        if (guess == this._target)
-        {
-            await context.YieldOutputAsync(
-                $"correct! the number was {this._target} (after {this._tries} tries)",
-                cancellationToken);
-            return;
-        }
-
-        NumberSignal hint = guess < this._target ? NumberSignal.Below : NumberSignal.Above;
-        await context.SendMessageAsync(hint, cancellationToken: cancellationToken);
+        string message = approved
+            ? $"refund approved for order {refund.OrderId}: ${refund.Amount:F2}"
+            : $"refund denied for order {refund.OrderId}";
+        await context.YieldOutputAsync(message, cancellationToken);
     }
 }
 
@@ -77,51 +54,47 @@ public static class Program
 {
     public static async Task<int> Main(string[] args)
     {
-        const int Secret = 7;
+        RefundRequest refund = new("ord-482", 245.50);
 
         // Build the workflow. The request port is BOTH the starting executor
-        // (it emits the first RequestInfoEvent when we kick the run off with a
-        // NumberSignal.Init) and the downstream target of the judge, so the
-        // loop keeps pausing until the judge yields output.
-        RequestPort numberPort = RequestPort.Create<NumberSignal, int>("GuessNumber");
-        JudgeExecutor judge = new(Secret);
+        // (it emits a RequestInfoEvent as soon as we kick the run off with
+        // the refund) and the upstream source of the decision executor, so
+        // the run pauses exactly once, then resolves.
+        RequestPort approvalPort = RequestPort.Create<RefundRequest, bool>("ApproveRefund");
+        RefundDecisionExecutor decision = new(refund);
 
-        Workflow workflow = new WorkflowBuilder(numberPort)
-            .AddEdge(numberPort, judge)
-            .AddEdge(judge, numberPort)
-            .WithOutputFrom(judge)
+        Workflow workflow = new WorkflowBuilder(approvalPort)
+            .AddEdge(approvalPort, decision)
+            .WithOutputFrom(decision)
             .Build();
 
-        // Optional scripted mode: `dotnet run -- 7` keeps replying with the
-        // same guess every time, which is useful for CI and for readers who
-        // just want to see a deterministic pass.
-        int? scriptedGuess = null;
-        if (args.Length > 0 && int.TryParse(args[0], out int canned))
-        {
-            scriptedGuess = canned;
-        }
+        // Optional scripted mode: `dotnet run -- y` / `dotnet run -- n`
+        // answers the approval automatically, which is useful for CI and for
+        // readers who just want to see a deterministic pass.
+        bool? scriptedApproval = args.Length > 0
+            ? args[0].Equals("y", StringComparison.OrdinalIgnoreCase) || args[0].Equals("yes", StringComparison.OrdinalIgnoreCase)
+            : null;
 
-        Console.WriteLine("Chapter 17 — Human-in-the-Loop (guess the number 1..10)");
+        Console.WriteLine("Chapter 17 — Human-in-the-Loop (refund approval)");
         Console.WriteLine();
 
-        await using StreamingRun run = await InProcessExecution
-            .RunStreamingAsync(workflow, NumberSignal.Init);
+        await using StreamingRun run = await InProcessExecution.RunStreamingAsync(workflow, refund);
 
-        // Single StreamingRun, single foreach. Each pause is handled inline
+        // Single StreamingRun, single foreach. The pause is handled inline
         // with run.SendResponseAsync(...); the framework routes the response
-        // to the request port, which forwards it to the judge. Contrast with
-        // Python where you make two separate workflow.run(...) calls.
+        // to the decision executor. Contrast with Python where you make two
+        // separate workflow.run(...) calls.
         await foreach (WorkflowEvent evt in run.WatchStreamAsync())
         {
             switch (evt)
             {
                 case RequestInfoEvent request:
-                    int guess = scriptedGuess ?? ReadGuessFrom(request);
-                    if (scriptedGuess is not null)
+                    bool approved = scriptedApproval ?? ReadApprovalFrom(request);
+                    if (scriptedApproval is not null)
                     {
-                        Console.WriteLine($"  -> sending scripted guess {guess}");
+                        Console.WriteLine($"  -> sending scripted decision: {(approved ? "approve" : "deny")}");
                     }
-                    await run.SendResponseAsync(request.Request.CreateResponse(guess));
+                    await run.SendResponseAsync(request.Request.CreateResponse(approved));
                     break;
 
                 case WorkflowOutputEvent output:
@@ -142,16 +115,15 @@ public static class Program
         return 0;
     }
 
-    private static int ReadGuessFrom(RequestInfoEvent evt)
+    private static bool ReadApprovalFrom(RequestInfoEvent evt)
     {
-        // The payload on the first round is NumberSignal.Init; on subsequent
-        // rounds it's Above / Below so we can prompt better.
-        string hint = evt.Request.TryGetDataAs<NumberSignal>(out NumberSignal signal) && signal != NumberSignal.Init
-            ? $" (previous guess was too {signal.ToString().ToLowerInvariant()})"
-            : "";
-        Console.Write($"Your guess 1..10{hint}: ");
+        string prompt = evt.Request.TryGetDataAs<RefundRequest>(out RefundRequest? refund) && refund is not null
+            ? $"Approve refund of ${refund.Amount:F2} for order {refund.OrderId}? [y/n]: "
+            : "Approve? [y/n]: ";
+        Console.Write(prompt);
 
-        string? line = Console.ReadLine();
-        return int.TryParse(line, out int g) ? g : 1;
+        string? line = Console.ReadLine()?.Trim();
+        return string.Equals(line, "y", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(line, "yes", StringComparison.OrdinalIgnoreCase);
     }
 }

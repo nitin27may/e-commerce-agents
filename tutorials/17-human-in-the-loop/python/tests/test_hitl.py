@@ -15,40 +15,36 @@ from tutorials._shared import maf_bootstrap  # noqa: E402
 maf_bootstrap.bootstrap()
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
-from main import build_workflow, run_with_response  # noqa: E402
+from main import RefundApprovalRequest, build_workflow, run_with_response  # noqa: E402
 
 
 @pytest.mark.asyncio
 async def test_workflow_builds() -> None:
-    assert build_workflow(secret=42) is not None
+    assert build_workflow() is not None
 
 
 @pytest.mark.asyncio
-async def test_correct_guess_reports_correct() -> None:
-    result = await run_with_response(secret=7, guess=7)
-    assert "correct" in result.lower()
-    assert "7" in result
+async def test_approved_refund_reports_approved() -> None:
+    result = await run_with_response(order_id="ord-1001", amount=125.0, approved=True)
+    assert "approved" in result.lower()
+    assert "ord-1001" in result
+    assert "125" in result
 
 
 @pytest.mark.asyncio
-async def test_low_guess_reports_too_low() -> None:
-    result = await run_with_response(secret=7, guess=3)
-    assert "too low" in result.lower()
-
-
-@pytest.mark.asyncio
-async def test_high_guess_reports_too_high() -> None:
-    result = await run_with_response(secret=7, guess=10)
-    assert "too high" in result.lower()
+async def test_denied_refund_reports_denied() -> None:
+    result = await run_with_response(order_id="ord-2002", amount=75.0, approved=False)
+    assert "denied" in result.lower()
+    assert "ord-2002" in result
 
 
 @pytest.mark.asyncio
 async def test_workflow_pauses_for_human_before_first_response() -> None:
     """The first run should emit a request_info event and pause, not complete."""
-    workflow = build_workflow(secret=5)
+    workflow = build_workflow()
     saw_request = False
     saw_output = False
-    async for event in workflow.run("Pick a number:", stream=True):
+    async for event in workflow.run(RefundApprovalRequest(order_id="ord-3003", amount=50.0), stream=True):
         etype = getattr(event, "type", None)
         if etype == "request_info":
             saw_request = True

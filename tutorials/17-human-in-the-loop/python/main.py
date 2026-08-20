@@ -2,8 +2,9 @@
 MAF v1 — Chapter 17: Human-in-the-Loop (Python)
 
 A workflow that pauses mid-execution to ask a human for input, then
-resumes with the response. Canonical example: a number-guessing game
-where the workflow keeps a secret number and asks the user to guess.
+resumes with the response. Domain: refund approval — an executor holds a
+proposed refund and pauses via request_info to ask a human approver to
+approve or deny it before the refund takes effect.
 
 Run interactively:
     python tutorials/17-human-in-the-loop/python/main.py
@@ -11,7 +12,6 @@ Run interactively:
 
 import asyncio
 import pathlib
-import random
 import sys
 from dataclasses import dataclass
 
@@ -28,73 +28,72 @@ from agent_framework._workflows._workflow_context import WorkflowContext  # noqa
 # ─────────────── Request / response shapes ───────────────
 
 @dataclass(frozen=True)
-class GuessRequest:
-    """Sent from the workflow to the caller — contains the prompt."""
-    prompt: str
+class RefundApprovalRequest:
+    """A refund awaiting a human decision.
+
+    Doubles as both the workflow's kick-off input (order_id + amount the
+    customer wants refunded) and the payload the workflow hands to the
+    caller when it pauses — there's nothing extra to derive along the way.
+    """
+    order_id: str
+    amount: float
 
 
 # ─────────────── Executors ───────────────
 
-class GuessingGame(Executor):
+class RefundApprovalGate(Executor):
     """
-    Holds a secret number. On each run it pauses via request_info to ask
-    for a guess. When the guess arrives it compares and yields an output.
+    Receives a proposed refund. On each run it pauses via request_info to
+    ask a human approver to approve or deny it. When the decision arrives
+    it yields the outcome.
     """
 
-    def __init__(self, secret: int) -> None:
-        super().__init__(id="guessing-game")
-        self.secret = secret
+    def __init__(self) -> None:
+        super().__init__(id="refund-approval-gate")
 
     @handler
-    async def start(self, prompt: str, ctx: WorkflowContext[None, str]) -> None:
-        # Pause the workflow and wait for a human guess. The `int` type tells
-        # MAF what shape to expect in the response.
-        await ctx.request_info(
-            request_data=GuessRequest(prompt=prompt or "Pick a number 1–10:"),
-            response_type=int,
-        )
+    async def start(self, refund: RefundApprovalRequest, ctx: WorkflowContext[None, str]) -> None:
+        # Pause the workflow and wait for a human approve/deny decision.
+        # The `bool` type tells MAF what shape to expect in the response.
+        await ctx.request_info(request_data=refund, response_type=bool)
 
     @response_handler
     async def check(
         self,
-        request: GuessRequest,
-        guess: int,
+        request: RefundApprovalRequest,
+        approved: bool,
         ctx: WorkflowContext[None, str],
     ) -> None:
-        if guess == self.secret:
-            await ctx.yield_output(f"correct! the number was {self.secret}")
-        elif guess < self.secret:
-            await ctx.yield_output(f"too low — secret was {self.secret}")
+        if approved:
+            await ctx.yield_output(f"refund approved for order {request.order_id}: ${request.amount:.2f}")
         else:
-            await ctx.yield_output(f"too high — secret was {self.secret}")
+            await ctx.yield_output(f"refund denied for order {request.order_id}")
 
 
-def build_workflow(secret: int):
-    game = GuessingGame(secret)
-    return WorkflowBuilder(start_executor=game).build()
+def build_workflow():
+    gate = RefundApprovalGate()
+    return WorkflowBuilder(start_executor=gate).build()
 
 
 # ─────────────── Drivers ───────────────
 
-async def run_with_response(secret: int, guess: int) -> str:
-    """Run once and feed a canned response when the workflow pauses."""
-    workflow = build_workflow(secret)
+async def run_with_response(order_id: str, amount: float, approved: bool) -> str:
+    """Run once and feed a canned approval decision when the workflow pauses."""
+    workflow = build_workflow()
 
     # First run — workflow pauses on request_info. Consume the full stream so
     # the workflow's internal run state is cleanly idle before we resume.
     pending_request_id: str | None = None
-    first_events = []
-    async for event in workflow.run("Pick a number 1–10:", stream=True):
-        first_events.append(event)
+    async for event in workflow.run(RefundApprovalRequest(order_id=order_id, amount=amount), stream=True):
         if pending_request_id is None and getattr(event, "type", None) == "request_info":
             pending_request_id = getattr(event, "request_id", None)
 
     assert pending_request_id, "expected a request_info event to pause the workflow"
 
-    # Resume with the canned response. Run returns more events until completion.
+    # Resume with the canned decision. Run returns more events until completion.
     outputs: list[str] = []
     async for event in workflow.run(
-        responses={pending_request_id: guess},
+        responses={pending_request_id: approved},
         stream=True,
     ):
         if getattr(event, "type", None) == "output":
@@ -105,30 +104,28 @@ async def run_with_response(secret: int, guess: int) -> str:
 
 
 async def main() -> None:
-    secret = random.randint(1, 10)
-    workflow = build_workflow(secret)
+    order_id = "ord-482"
+    amount = 245.50
+    workflow = build_workflow()
 
     pending_request_id: str | None = None
-    prompt_text = ""
-    async for event in workflow.run("Pick a number 1–10:", stream=True):
+    request_data: RefundApprovalRequest | None = None
+    async for event in workflow.run(RefundApprovalRequest(order_id=order_id, amount=amount), stream=True):
         if getattr(event, "type", None) == "request_info":
             pending_request_id = getattr(event, "request_id", None)
             request_data = getattr(event, "data", None)
-            prompt_text = getattr(request_data, "prompt", "") or "Your guess:"
             break
 
-    if not pending_request_id:
+    if not pending_request_id or request_data is None:
         print("Workflow finished without a pause — unexpected.")
         return
 
-    try:
-        guess = int(input(f"{prompt_text} ").strip())
-    except ValueError:
-        print("Not a number; aborting.")
-        return
+    prompt = f"Approve refund of ${request_data.amount:.2f} for order {request_data.order_id}? [y/n]: "
+    answer = input(prompt).strip().lower()
+    approved = answer in ("y", "yes")
 
     async for event in workflow.run(
-        responses={pending_request_id: guess},
+        responses={pending_request_id: approved},
         stream=True,
     ):
         if getattr(event, "type", None) == "output":
