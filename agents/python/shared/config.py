@@ -52,7 +52,22 @@ _SUPPORTED_OUTPUT_MODERATION_MODES = {"off", "observe", "enforce"}
 # up — parents[2] stops at <repo>/agents and silently resolved to a path with no
 # .env, which meant pydantic's env_file loading never fired and Settings fell back
 # to defaults even when a real .env was present.
-_REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _resolve_repo_root(config_path: Path) -> Path:
+    """Repo root 3 levels above this file — but inside the Docker image,
+    config.py is copied flatly to /app/shared/config.py (the agent
+    Dockerfile's build context is ./agents, so agents/python/ never exists
+    as a path component in the image), leaving only 2 real parents. Indexing
+    parents[3] there raises IndexError and crashes every container at import
+    time. Fall back to the immediate parent in that case; it won't contain a
+    .env either, which is exactly the "missing file is fine" behavior above.
+    """
+    parents = config_path.resolve().parents
+    return parents[3] if len(parents) > 3 else config_path.resolve().parent
+
+
+_REPO_ROOT = _resolve_repo_root(Path(__file__))
 _ENV_FILE = _REPO_ROOT / ".env"
 
 
