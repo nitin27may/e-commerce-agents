@@ -41,6 +41,7 @@ _UNSAFE_SECRET_DEFAULTS = {
 _SUPPORTED_INJECTION_PROVIDERS = {"regex"}
 _NOT_YET_IMPLEMENTED_INJECTION_PROVIDERS = {"azure_content_safety"}
 _SUPPORTED_GROUNDING_MODES = {"off", "observe", "annotate", "enforce"}
+_SUPPORTED_COST_BUDGET_MODES = {"off", "observe", "enforce"}
 
 # Resolve .env once, relative to the repo root, so the eval/seed scripts pick
 # it up regardless of the cwd they're launched from. Inside the Docker image
@@ -278,6 +279,26 @@ class Settings(BaseSettings):
     #            streamed to the browser.
     GROUNDING_MODE: str = "annotate"
 
+    # ── Cost budget (per-run ceiling) ────────────────────────────────
+    # ``shared/cost.py::estimate_cost`` previously had exactly one caller
+    # (``evals/evaluator.py``, for after-the-fact eval reporting) — nothing
+    # read it at runtime, so an agentic loop that keeps calling tools /
+    # re-prompting had no ceiling on what a single run could spend. These two
+    # flags back ``shared.guardrails.cost_budget_middleware.CostBudgetMiddleware``,
+    # the runtime consumer that closes that gap.
+    #
+    # off      — CostBudgetMiddleware is skipped entirely (not attached).
+    # observe  — accumulate and log the running per-run cost; never blocks,
+    #            even past COST_BUDGET_USD_PER_RUN.
+    # enforce  — same accumulation, plus refuses to start another LLM turn
+    #            once the running total exceeds COST_BUDGET_USD_PER_RUN.
+    COST_BUDGET_MODE: str = "observe"
+
+    # USD ceiling for a single run's cumulative estimated cost. None (default)
+    # means no ceiling is enforced even in "enforce" mode — additive, opt-in,
+    # matching this repo's other guardrail flags' default-off posture.
+    COST_BUDGET_USD_PER_RUN: float | None = None
+
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE),
         case_sensitive=True,
@@ -356,6 +377,15 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"GROUNDING_MODE={self.GROUNDING_MODE!r} is not a recognized value. "
                 f"Supported values: {sorted(_SUPPORTED_GROUNDING_MODES)!r}."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_cost_budget_mode(self) -> "Settings":
+        if self.COST_BUDGET_MODE not in _SUPPORTED_COST_BUDGET_MODES:
+            raise ValueError(
+                f"COST_BUDGET_MODE={self.COST_BUDGET_MODE!r} is not a recognized value. "
+                f"Supported values: {sorted(_SUPPORTED_COST_BUDGET_MODES)!r}."
             )
         return self
 
