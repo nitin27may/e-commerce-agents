@@ -49,6 +49,7 @@ interface OrderData {
   carrier?: string;
   shipping_address?: string | ShippingAddressObj;
   timeline?: TimelineEvent[];
+  return_eligible?: boolean;
 }
 
 interface ChatOrderCardProps {
@@ -63,6 +64,32 @@ function formatAddress(addr: OrderData["shipping_address"]): string | null {
   return parts.length ? parts.join(", ") : null;
 }
 
+const RETURN_WINDOW_DAYS = 30;
+
+// The agent may already have called check_return_eligibility and set
+// return_eligible explicitly. Otherwise, fall back to a client-side
+// heuristic from the delivered timeline date (or the order date as a
+// last resort) — same 30-day rule as shared/tools/return_tools.py's
+// check_return_eligibility. When there's not enough data to compute a
+// date, default to eligible: hiding a legitimately usable Return button
+// is worse than occasionally showing one the agent will still refuse.
+function isReturnEligible(data: OrderData): boolean {
+  if (data.status !== "delivered") return false;
+  if (data.return_eligible !== undefined) return data.return_eligible;
+
+  const deliveredEvent = (data.timeline || []).find(
+    (e) => (e.status || e.label || "").toLowerCase() === "delivered" && e.date
+  );
+  const referenceDate = deliveredEvent?.date || data.date;
+  if (!referenceDate) return true;
+
+  const parsed = new Date(referenceDate);
+  if (Number.isNaN(parsed.getTime())) return true;
+
+  const daysSince = (Date.now() - parsed.getTime()) / (1000 * 60 * 60 * 24);
+  return daysSince <= RETURN_WINDOW_DAYS;
+}
+
 export function ChatOrderCard({ data, onAction }: ChatOrderCardProps) {
   const orderId = data.id || data.order_id || "";
   const shortId =
@@ -71,6 +98,7 @@ export function ChatOrderCard({ data, onAction }: ChatOrderCardProps) {
       : orderId;
   const items = data.items || [];
   const timeline = data.timeline || [];
+  const returnEligible = isReturnEligible(data);
 
   return (
     <div className="rounded-xl border border-border bg-card shadow-sm max-w-lg overflow-hidden">
@@ -112,7 +140,7 @@ export function ChatOrderCard({ data, onAction }: ChatOrderCardProps) {
               Cancel
             </Button>
           )}
-          {data.status === "delivered" && (
+          {returnEligible && (
             <Button
               variant="outline"
               size="sm"
