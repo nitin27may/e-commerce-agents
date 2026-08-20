@@ -8,6 +8,7 @@ import { ChatOrderCard } from "./order-card";
 import { ChatCheckoutCard } from "./checkout-card";
 import { ChatReturnCard } from "./return-card";
 import { ComparisonCard } from "./comparison-card";
+import { ChatSentimentCard } from "./sentiment-card";
 import { listItem } from "@/lib/motion";
 import {
   CardKind,
@@ -88,6 +89,13 @@ export function RichMessage({ content, streaming, onAction }: RichMessageProps) 
             </CardMotion>
           );
         }
+        if (seg.type === "sentiment" && seg.data) {
+          return (
+            <CardMotion key={i}>
+              <ChatSentimentCard data={seg.data as any} />
+            </CardMotion>
+          );
+        }
         return (
           <div
             key={i}
@@ -119,7 +127,7 @@ function stripUnclosedFence(content: string): string {
   // `products` listed before `product` so the longer kind wins; no trailing
   // \n requirement — the SSE transport can drop the newline after the fence
   // marker, collapsing ```product\n{...} into ```product{...}.
-  const openRegex = /```(products|product|order|checkout|return)/g;
+  const openRegex = /```(products|product|order|checkout|return|sentiment)/g;
   let cursor = 0;
   let lastUnclosedStart = -1;
   let match;
@@ -146,7 +154,7 @@ function parseCodeBlocks(content: string): Segment[] | null {
   // and ```product\n{...} arrives as ```product{...}. We tolerate any
   // whitespace (incl. none) and require the body to start with { or [ so a
   // stray ```product-ideas block isn't misread as a card.
-  const codeBlockRegex = /```(products|product|order|checkout|return)\s*([[{][\s\S]*?)```/g;
+  const codeBlockRegex = /```(products|product|order|checkout|return|sentiment)\s*([[{][\s\S]*?)```/g;
   const segments: Segment[] = [];
   let lastIndex = 0;
   let match;
@@ -247,6 +255,9 @@ function dedupeCards(segments: Segment[]): Segment[] {
     } else if (seg.type === "return" && seg.data) {
       const d = seg.data as { return_id?: string; order_id?: string };
       key = `return:${d.return_id ?? d.order_id ?? ""}`;
+    } else if (seg.type === "sentiment" && seg.data) {
+      const d = seg.data as { product_id?: string; product_name?: string };
+      key = `sentiment:${d.product_id ?? d.product_name ?? ""}`;
     }
     if (key === null) return true;
     if (seen.has(key)) return false;
@@ -578,7 +589,7 @@ function tryParseProductParagraph(
 // treats any ``` fence as a generic code block and renders the raw JSON
 // verbatim: exactly the "never show raw JSON" failure this component
 // exists to prevent for the 5 known tags.
-const KNOWN_CARD_TAGS = new Set(["products", "product", "order", "checkout", "return"]);
+const KNOWN_CARD_TAGS = new Set(["products", "product", "order", "checkout", "return", "sentiment"]);
 const ANY_FENCE_RE = /```([a-zA-Z0-9_-]*)\s*([[{][\s\S]*?)```/g;
 
 function stripUnrecognizedJsonFences(content: string): string {

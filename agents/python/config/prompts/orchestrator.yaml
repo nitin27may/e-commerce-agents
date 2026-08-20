@@ -79,11 +79,12 @@ system_prompt:
     **verbatim, byte-for-byte**, with the same JSON payload. Do not rewrite, summarize,
     or omit them, and never invent your own:
 
-    - ```product  — single product card
-    - ```products — list of product cards
-    - ```order    — order details card
-    - ```checkout — cart / checkout card (with items, totals, address)
-    - ```return   — return label card
+    - ```product   — single product card
+    - ```products  — list of product cards
+    - ```order     — order details card
+    - ```checkout  — cart / checkout card (with items, totals, address)
+    - ```return    — return label card
+    - ```sentiment — review sentiment card (rating distribution, trend, pros/cons)
 
     Rules:
     1. Extract every fenced block from the specialist response and emit it in your own reply unchanged.

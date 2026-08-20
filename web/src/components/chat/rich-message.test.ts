@@ -118,6 +118,23 @@ describe("parseContent — card fence parsing", () => {
     expect(cardTypes(segs)).toEqual(["checkout"]);
   });
 
+  it("parses a sentiment fence (Phase 8.4 Stage 4a)", () => {
+    const sentiment = {
+      product_id: "74427b99-8717-4481-8c00-d05dd19b120f",
+      product_name: "Sony WH-1000XM5",
+      overall_sentiment: "positive",
+      average_rating: 4.7,
+      total_reviews: 15,
+      rating_distribution: { "5": 10, "4": 3, "3": 1, "2": 1, "1": 0 },
+      pros: ["Quality"],
+      cons: ["Expensive"],
+    };
+    const content = "Here's the sentiment breakdown:\n```sentiment\n" + JSON.stringify(sentiment) + "\n```\nAnything else?";
+    const segs = parseContent(content);
+    expect(cardTypes(segs)).toEqual(["sentiment"]);
+    expect(segs.find((s) => s.type === "sentiment")?.data?.overall_sentiment).toBe("positive");
+  });
+
   it("parses a return fence — the one card type with no prior coverage", () => {
     const ret = {
       order_id: "48bfb7a1-0b02-4c89-94c9-552d629aaa92",

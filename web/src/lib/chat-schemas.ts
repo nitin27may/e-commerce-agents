@@ -184,13 +184,45 @@ export const StatTileDataSchema = z
   })
   .passthrough();
 
-export type CardKind = "product" | "order" | "checkout" | "return";
+// ── review-sentiment (Phase 8.4 Stage 4a) ──────────────────────────────────
+// Every field optional: analyze_sentiment, get_sentiment_trend, and
+// detect_fake_reviews each populate a different subset in one `sentiment`
+// fence, so the card renders whichever pieces are present rather than
+// requiring all three tool calls before showing anything.
+
+const MonthlyRatingPointSchema = z
+  .object({
+    month: safeString,
+    average_rating: z.number().min(0).max(5),
+    review_count: z.number().int().min(0).optional(),
+  })
+  .passthrough();
+
+export const SentimentDataSchema = z
+  .object({
+    product_id: optionalSafeString,
+    product_name: optionalSafeString,
+    overall_sentiment: z.enum(["very_positive", "positive", "mixed", "negative", "very_negative"]).optional(),
+    average_rating: z.number().min(0).max(5).optional(),
+    total_reviews: z.number().int().min(0).optional(),
+    rating_distribution: z.record(z.string(), z.number().int().min(0)).optional(),
+    pros: z.array(safeString).max(10).optional(),
+    cons: z.array(safeString).max(10).optional(),
+    trend: z.enum(["improving", "declining", "stable", "insufficient_data"]).optional(),
+    monthly_data: z.array(MonthlyRatingPointSchema).max(24).optional(),
+    risk_level: z.enum(["high", "medium", "low"]).optional(),
+    suspicious_count: z.number().int().min(0).optional(),
+  })
+  .passthrough();
+
+export type CardKind = "product" | "order" | "checkout" | "return" | "sentiment";
 
 const SCHEMAS = {
   product: ProductDataSchema,
   order: OrderDataSchema,
   checkout: CheckoutDataSchema,
   return: ReturnDataSchema,
+  sentiment: SentimentDataSchema,
 } as const;
 
 /**
