@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
+using ModelContextProtocol.Client;
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Json;
@@ -21,12 +22,19 @@ using Xunit;
 namespace ECommerceAgents.Mcp.Tests;
 
 /// <summary>
-/// Phase D: OAuth 2.1 resource-server mode for <see cref="McpEndpoints"/>.
-/// Real per-test RSA keypair + <see cref="TestServer"/>, JWKS-serving
+/// Phase D: OAuth 2.1 resource-server mode for the real MCP server (issue
+/// #13 replaced the REST-imitation dispatch this originally tested with
+/// <see cref="ModelContextProtocol.AspNetCore"/>'s <c>MapMcp()</c> — see
+/// <see cref="McpEndpoints.UseMcpAuthGate"/>). The gate is plain ASP.NET
+/// Core middleware registered *before* <c>MapMcp()</c> in the pipeline, so
+/// it rejects unauthenticated/invalid-token requests under
+/// <see cref="McpEndpoints.McpRoutePrefix"/> before the MCP protocol layer
+/// ever sees them — a raw POST is enough to exercise it, real JSON-RPC
+/// framing isn't required for the negative-path tests below. Real per-test
+/// RSA keypair + <see cref="TestServer"/>, JWKS-serving
 /// <see cref="HttpMessageHandler"/> stubbed (no real network call) — same
 /// convention as the orchestrator/agent-side
-/// <c>AgentAuthMiddlewareInterAgentTests.cs</c>. Zero prior test coverage
-/// existed for this endpoint's auth at all before this phase.
+/// <c>AgentAuthMiddlewareInterAgentTests.cs</c>.
 /// </summary>
 [Collection(nameof(LocalPostgresCollection))]
 public sealed class McpAuthTests : IAsyncLifetime
@@ -119,15 +127,50 @@ public sealed class McpAuthTests : IAsyncLifetime
                     new JwksKeyProvider(new HttpClient(new StaticResponseHandler(BuildJwksJson(key))), settings)
                 );
                 services.AddRouting();
+                services.AddMcpServer()
+                    .WithHttpTransport(o => o.Stateless = true)
+                    .WithToolsFromAssembly(typeof(McpTools).Assembly);
             });
             web.Configure(app =>
             {
                 app.UseRouting();
-                app.UseEndpoints(endpoints => endpoints.MapMcpEndpoints());
+                app.UseMcpAuthGate();
+                app.UseEndpoints(endpoints =>
+                {
+                    endpoints.MapMcpHealthEndpoints();
+                    endpoints.MapMcp(McpEndpoints.McpRoutePrefix);
+                });
             });
         });
 
         return hostBuilder.Start().GetTestServer();
+    }
+
+    // The auth gate (McpEndpoints.UseMcpAuthGate) runs as plain middleware
+    // registered before MapMcp() in the pipeline, matching on path prefix
+    // alone — it rejects missing/invalid tokens before the request ever
+    // reaches MCP protocol parsing. A bare POST with no JSON-RPC body is
+    // enough to exercise it for the negative-path tests below; only the
+    // "does auth actually let a real call through" tests need a genuine
+    // JSON-RPC envelope (see McpProtocolTests.cs for full tool-call
+    // coverage through a real McpClient).
+    private const string InitializeRequest = """
+        {"jsonrpc":"2.0","id":"1","method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1.0.0"}}}
+        """;
+
+    private static HttpRequestMessage InitializeRequestMessage(string? bearerToken = null)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, McpEndpoints.McpRoutePrefix)
+        {
+            Content = new StringContent(InitializeRequest, Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Accept.Add(new("application/json"));
+        request.Headers.Accept.Add(new("text/event-stream"));
+        if (bearerToken is not null)
+        {
+            request.Headers.Add("Authorization", $"Bearer {bearerToken}");
+        }
+        return request;
     }
 
     [Fact]
@@ -137,7 +180,7 @@ public sealed class McpAuthTests : IAsyncLifetime
         using var server = BuildServer(SettingsFor(), key);
         using var client = server.CreateClient();
 
-        var response = await client.PostAsync("/mcp/tools/get_warehouses", null);
+        var response = await client.PostAsync(McpEndpoints.McpRoutePrefix, null);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         response.Headers.WwwAuthenticate.ToString().Should().Contain("invalid_token");
@@ -152,9 +195,7 @@ public sealed class McpAuthTests : IAsyncLifetime
         using var server = BuildServer(settings, key);
         using var client = server.CreateClient();
 
-        var request = new HttpRequestMessage(HttpMethod.Post, "/mcp/tools/get_warehouses");
-        request.Headers.Add("Authorization", $"Bearer {token}");
-        var response = await client.SendAsync(request);
+        var response = await client.SendAsync(InitializeRequestMessage(token));
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
@@ -168,7 +209,7 @@ public sealed class McpAuthTests : IAsyncLifetime
         using var server = BuildServer(settings, key);
         using var client = server.CreateClient();
 
-        var request = new HttpRequestMessage(HttpMethod.Post, "/mcp/tools/get_warehouses");
+        var request = new HttpRequestMessage(HttpMethod.Post, McpEndpoints.McpRoutePrefix);
         request.Headers.Add("Authorization", $"Bearer {token}");
         var response = await client.SendAsync(request);
 
@@ -184,7 +225,7 @@ public sealed class McpAuthTests : IAsyncLifetime
         using var server = BuildServer(settings, key);
         using var client = server.CreateClient();
 
-        var request = new HttpRequestMessage(HttpMethod.Post, "/mcp/tools/get_warehouses");
+        var request = new HttpRequestMessage(HttpMethod.Post, McpEndpoints.McpRoutePrefix);
         request.Headers.Add("Authorization", $"Bearer {token}");
         var response = await client.SendAsync(request);
 
@@ -206,7 +247,7 @@ public sealed class McpAuthTests : IAsyncLifetime
         using var server = BuildServer(settings, key);
         using var client = server.CreateClient();
 
-        var request = new HttpRequestMessage(HttpMethod.Post, "/mcp/tools/get_warehouses");
+        var request = new HttpRequestMessage(HttpMethod.Post, McpEndpoints.McpRoutePrefix);
         request.Headers.Add("Authorization", $"Bearer {token}");
         var response = await client.SendAsync(request);
 
@@ -221,7 +262,7 @@ public sealed class McpAuthTests : IAsyncLifetime
         using var server = BuildServer(settings, key);
         using var client = server.CreateClient();
 
-        var response = await client.PostAsync("/mcp/tools/get_warehouses", null);
+        var response = await client.SendAsync(InitializeRequestMessage());
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }

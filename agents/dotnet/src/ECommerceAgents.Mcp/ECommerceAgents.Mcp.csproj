@@ -10,5 +10,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ECommerceAgents.Shared\ECommerceAgents.Shared.csproj" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" />
   </ItemGroup>
 </Project>

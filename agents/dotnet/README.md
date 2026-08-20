@@ -57,17 +57,18 @@ All package versions live in `Directory.Packages.props` at this folder root. Ind
 ## Status
 
 The .NET backend is functionally complete for the core domain: all six specialist agents plus an
-MCP-shaped server are implemented, along with a shared layer covering A2A client/host, JWT auth
-middleware, tool audit logging, PII redaction, checkpoint storage (in-memory, file, and Postgres
-backends), declarative workflow primitives, and config validation.
+MCP server (`ECommerceAgents.Mcp`, real JSON-RPC over streamable HTTP via the official
+`ModelContextProtocol.AspNetCore` SDK) are implemented, along with a shared layer covering A2A
+client/host, JWT auth middleware, tool audit logging, PII redaction, checkpoint storage
+(in-memory, file, and Postgres backends), declarative workflow primitives, and config validation.
 
 It is **not** at full parity with the Python backend — see
 [`../../docs/parity-matrix.md`](../../docs/parity-matrix.md) for the honest, per-concept
 breakdown. The biggest current gaps: agent middleware/context providers exist but aren't wired
-into any live agent, the MCP server speaks REST rather than the real MCP protocol, specialist
-agents have no streaming (`/message:stream`) endpoint, and there's no output sanitization/
-injection detection, step recorder, or `WorkflowBuilder`-based fan-out.
+into any live agent, specialist agents have no streaming (`/message:stream`) endpoint, and
+there's no output sanitization/injection detection, step recorder, or `WorkflowBuilder`-based
+fan-out.
 
-Nine test projects mirror the source structure — one per agent plus Shared and MCP — with ~191 test methods covering tools, middleware, auth, and A2A protocol behavior. The same PostgreSQL schema and A2A wire format are used across both stacks; you can point the frontend at either backend by setting `NEXT_PUBLIC_BACKEND_STACK=dotnet`.
+Eight test projects mirror the source structure — one per agent plus Shared and MCP — with 349 test methods covering tools, middleware, auth, and A2A protocol behavior (verified directly: `dotnet test ECommerceAgents.sln`). The same PostgreSQL schema and A2A wire format are used across both stacks; you can point the frontend at either backend by setting `NEXT_PUBLIC_BACKEND_STACK=dotnet`.
 
 Enhancement plans are tracked in [`.claude/plans/enhancements/`](../../.claude/plans/enhancements/).
