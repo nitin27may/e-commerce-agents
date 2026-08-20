@@ -37,6 +37,19 @@ public sealed class PrePurchaseWorkflowTests
     [Fact]
     public async Task Execute_FansOutInParallel()
     {
+        // Re-verified against the WorkflowBuilder port (issue #17): a fixed
+        // Task.Delay(50) + InvocationCount == 3 assertion (the original
+        // version of this test) passed 5/5 in isolation but failed once
+        // under full-suite thread-pool contention — exactly the flakiness
+        // risk flagged during scoping. Replaced with a deterministic signal
+        // instead of a timing guess: allInvoked only resolves once the 3rd
+        // concurrent call increments the counter. If the three fan-out
+        // targets ran sequentially instead of concurrently, the 1st call
+        // would block forever on gate.Task before the 2nd/3rd ever started
+        // — allInvoked would never resolve and WaitAsync's timeout below
+        // would fail the test cleanly rather than hang.
+        var allInvoked = new TaskCompletionSource();
+        var invokedCount = 0;
         var gate = new TaskCompletionSource();
         var tools = new StubTools
         {
@@ -46,6 +59,10 @@ public sealed class PrePurchaseWorkflowTests
             // Hold each tool until all three are invoked; forces parallelism.
             BeforeEach = async () =>
             {
+                if (Interlocked.Increment(ref invokedCount) == 3)
+                {
+                    allInvoked.TrySetResult();
+                }
                 await gate.Task;
             },
         };
@@ -53,8 +70,7 @@ public sealed class PrePurchaseWorkflowTests
         var wf = new PrePurchaseWorkflow(tools);
         var task = wf.ExecuteAsync(new ResearchState("p-2"));
 
-        // All three fan-out calls start concurrently.
-        await Task.Delay(50);
+        await allInvoked.Task.WaitAsync(TimeSpan.FromSeconds(5));
         tools.InvocationCount.Should().Be(3);
         gate.SetResult();
 

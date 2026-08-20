@@ -11,6 +11,11 @@
   <ItemGroup Label="Microsoft Agent Framework">
     <PackageVersion Include="Microsoft.Agents.AI" Version="1.18.0" />
     <PackageVersion Include="Microsoft.Agents.AI.OpenAI" Version="1.18.0" />
+    <!-- Real WorkflowBuilder graphs (issue #17) — same version line as
+         Microsoft.Agents.AI above; the package's own nuspec tracks it in
+         lockstep (verified: 1.1.0 Workflows -> 1.1.0 core), so pinning both
+         at 1.18.0 keeps them aligned. -->
+    <PackageVersion Include="Microsoft.Agents.AI.Workflows" Version="1.18.0" />
     <PackageVersion Include="Azure.AI.OpenAI" Version="2.1.0" />
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
   </ItemGroup>
