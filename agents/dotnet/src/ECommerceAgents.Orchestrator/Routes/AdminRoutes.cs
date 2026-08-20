@@ -228,7 +228,7 @@ public static class AdminRoutes
               ORDER BY day DESC"
         )).Select(r => new
         {
-            day = ((DateTime)r.day).ToString("yyyy-MM-dd"),
+            day = ((DateOnly)r.day).ToString("yyyy-MM-dd"),
             request_count = Convert.ToInt64(r.request_count),
             unique_users = Convert.ToInt64(r.unique_users),
         }).ToList();

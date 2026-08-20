@@ -24,7 +24,6 @@ from agent_framework._workflows._viz import WorkflowViz  # noqa: E402
 from agent_framework._workflows._workflow_builder import WorkflowBuilder  # noqa: E402
 from agent_framework._workflows._workflow_context import WorkflowContext  # noqa: E402
 
-
 OUT_DIR = pathlib.Path(__file__).resolve().parent
 
 

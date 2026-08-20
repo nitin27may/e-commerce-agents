@@ -27,13 +27,21 @@ maf_bootstrap.bootstrap()
 
 from agent_framework import Agent, AgentSession  # noqa: E402
 from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient  # noqa: E402
-
+from tutorials._shared.replay_client import ReplayChatClient  # noqa: E402
 
 INSTRUCTIONS = "You are a concise assistant. Keep answers to one short paragraph."
 
+FIXTURES_DIR = pathlib.Path(__file__).resolve().parent / "tests" / "fixtures" / "replay"
 
-def _default_client() -> OpenAIChatClient | OpenAIChatCompletionClient:
+
+def _default_client() -> OpenAIChatClient | OpenAIChatCompletionClient | ReplayChatClient:
     provider = os.environ.get("LLM_PROVIDER", "openai").lower()
+    if provider == "replay":
+        return ReplayChatClient(
+            fixtures_dir=FIXTURES_DIR,
+            record=os.environ.get("RECORD", "").lower() in ("1", "true", "yes"),
+            record_provider=os.environ.get("REPLAY_RECORD_PROVIDER", "openai"),
+        )
     if provider == "azure":
         return OpenAIChatCompletionClient(
             model=os.environ["AZURE_OPENAI_DEPLOYMENT"],
@@ -44,6 +52,10 @@ def _default_client() -> OpenAIChatClient | OpenAIChatCompletionClient:
     return OpenAIChatClient(
         model=os.environ.get("LLM_MODEL", "gpt-4.1"),
         api_key=os.environ["OPENAI_API_KEY"],
+        # Phase 9: any OpenAI-compatible endpoint (GitHub Models, OpenRouter,
+        # vLLM, LM Studio, Ollama) instead of api.openai.com — see
+        # tutorials/00-setup/README.md's "Don't have a paid API key?" section.
+        base_url=os.environ.get("LLM_BASE_URL") or None,
     )
 
 
@@ -59,6 +71,14 @@ async def stream_answer(
     """
     Stream the agent's answer. Prints each chunk as it arrives and returns
     the list of chunks so callers can verify streaming happened.
+
+    ``agent.run(..., stream=True)`` drives MAF's streaming function-invocation
+    loop, which finalizes each streamed turn via the chat client's
+    ``ResponseStream``. ``ReplayChatClient`` (see
+    tutorials/_shared/replay_client.py) wires the same finalizer real clients
+    use (``BaseChatClient._build_response_stream``), so replay mode streams
+    correctly through the same path as every other provider — no fallback
+    needed here.
     """
     chunks: list[str] = []
     async for update in agent.run(question, stream=True, session=session):

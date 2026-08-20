@@ -8,7 +8,7 @@ of calling asyncpg directly. Both modes expose the same capabilities.
 from agent_framework import Agent
 from agent_framework._mcp import MCPStreamableHTTPTool
 
-from product_discovery.prompts import SYSTEM_PROMPT
+from product_discovery.prompts import get_system_prompt
 from product_discovery.tools import (
     compare_products,
     find_similar_products,
@@ -19,6 +19,7 @@ from product_discovery.tools import (
 )
 from shared.agent_factory import create_chat_client
 from shared.config import settings
+from shared.context import current_user_role
 from shared.context_providers import ECommerceContextProvider
 from shared.middleware import build_specialist_middleware
 from shared.oauth.service_client import acquire_service_token, build_mcp_http_client, set_mcp_auth_header
@@ -86,7 +87,7 @@ def create_product_discovery_agent() -> Agent:
         client=create_chat_client(),
         name="product-discovery",
         description="Natural language product search, semantic similarity, recommendations, and price tracking.",
-        instructions=SYSTEM_PROMPT,
+        instructions=get_system_prompt(current_user_role.get() or "customer"),
         tools=tools,
         context_providers=[ECommerceContextProvider()],
         middleware=build_specialist_middleware(),

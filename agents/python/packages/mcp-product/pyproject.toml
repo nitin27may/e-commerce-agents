@@ -14,7 +14,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Application Frameworks",
 ]
 dependencies = [
-    "mcp[cli]>=1.27.0",
+    "mcp[cli]>=1.27.0,<2",  # 2.0.0 relocates mcp.server.fastmcp; pin below it until migrated
     "asyncpg>=0.30",
     "uvicorn>=0.34",
     "pyjwt[crypto]>=2.10.1",

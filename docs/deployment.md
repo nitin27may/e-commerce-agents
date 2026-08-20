@@ -166,14 +166,15 @@ cp .env.example .env
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `LLM_PROVIDER` | Yes | `openai` | LLM provider: `openai` or `azure` |
+| `LLM_PROVIDER` | Yes | `openai` | LLM provider: `openai`, `azure`, or `replay` (plays back recorded fixtures, no credentials — see `shared/replay_client.py`) |
 
 ### OpenAI Configuration
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `OPENAI_API_KEY` | Yes (if `openai`) | -- | Your OpenAI API key |
+| `OPENAI_API_KEY` | Yes (if `openai`) | -- | Your OpenAI API key. Any non-empty string works against a local server that doesn't check it (Ollama, LM Studio) |
 | `LLM_MODEL` | No | `gpt-4.1` | Chat completion model name |
+| `LLM_BASE_URL` | No | unset (uses `api.openai.com`) | Only takes effect when `LLM_PROVIDER=openai`. Points `OpenAIChatClient` at any OpenAI-compatible endpoint instead — GitHub Models, OpenRouter, vLLM, LM Studio, or a local Ollama server (`http://localhost:11434/v1`). See `tutorials/00-setup/README.md` for worked examples and a tool-calling-support gotcha before picking a local model. |
 
 ### Azure OpenAI Configuration
 
@@ -330,7 +331,7 @@ OPENAI_API_KEY=sk-your-key \
 |------|---------|----------|-------|
 | 3000 | Next.js Frontend | HTTP | Browser-facing UI |
 | 5432 | PostgreSQL | TCP | pgvector enabled |
-| 6379 | Redis | TCP | Session cache, rate limiting |
+| 6379 | Redis | TCP | Session cache (rate limiting is not implemented yet — planned) |
 | 8080 | Orchestrator (Customer Support Agent) | HTTP | API gateway -- all user requests enter here |
 | 8081 | Product Discovery Agent | HTTP | A2A endpoint, called by orchestrator |
 | 8082 | Order Management Agent | HTTP | A2A endpoint, called by orchestrator |

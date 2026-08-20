@@ -1,0 +1,76 @@
+{
+  "request": {
+    "instructions": "You are an Editor. Given the Writer's draft and the Critic's feedback, produce the final polished line. Output exactly one short line \u2014 no preamble.",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "slogan for a coffee shop",
+            "type": "text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      },
+      {
+        "additional_properties": {},
+        "author_name": "writer",
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "Fuel Your Day, One Cup at a Time.",
+            "type": "text"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      },
+      {
+        "additional_properties": {},
+        "author_name": "critic",
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "Consider adding a unique detail that highlights what makes your coffee shop special to make the slogan more memorable.",
+            "type": "text"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      }
+    ],
+    "tools": []
+  },
+  "response": {
+    "created_at": "2026-08-19T18:25:57.000000Z",
+    "finish_reason": "stop",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "Fuel Your Day with Freshly Brewed Flavor.",
+            "type": "text"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      }
+    ],
+    "model": "gpt-4.1-2025-04-14",
+    "response_id": "chatcmpl-EEfH3Ylfz03iw9bYQHi7WJ1sfb8tR",
+    "type": "chat_response",
+    "usage_details": {
+      "cache_read_input_token_count": 0,
+      "completion/reasoning_tokens": 0,
+      "input_token_count": 92,
+      "output_token_count": 11,
+      "prompt/cached_tokens": 0,
+      "reasoning_output_token_count": 0,
+      "total_token_count": 103
+    }
+  }
+}

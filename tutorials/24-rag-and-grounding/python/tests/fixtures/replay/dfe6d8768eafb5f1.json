@@ -1,0 +1,74 @@
+{
+  "request": {
+    "instructions": "You are a shopping assistant for a small store. When the user asks about products, call the `search_products` tool \u2014 never answer from memory. When you mention a product in your answer, always include its exact product id (e.g. 'P001') and its exact price, copied verbatim from the tool result, not rounded or paraphrased. For other questions, answer directly in one short sentence.",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "Do you have any noise-cancelling headphones? What's the price and product id?",
+            "type": "text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      }
+    ],
+    "tools": [
+      {
+        "function": {
+          "description": "Search the product catalog by keyword. Returns matching products with id, name, and price.",
+          "name": "search_products",
+          "parameters": {
+            "properties": {
+              "query": {
+                "description": "Keyword(s) to match against product name or category, e.g. 'headphones'.",
+                "title": "Query",
+                "type": "string"
+              }
+            },
+            "required": [
+              "query"
+            ],
+            "title": "search_products_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      }
+    ]
+  },
+  "response": {
+    "created_at": "2026-08-20T02:34:05.000000Z",
+    "finish_reason": "tool_calls",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "arguments": "{\"query\":\"noise-cancelling headphones\"}",
+            "call_id": "call_ANXyuFhTF0Pp5GJl9nprPQAr",
+            "name": "search_products",
+            "type": "function_call"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      }
+    ],
+    "model": "gpt-4.1-2025-04-14",
+    "response_id": "chatcmpl-EEmtRNeLvdNplDtEWHkVVc0ZTr5h3",
+    "type": "chat_response",
+    "usage_details": {
+      "cache_read_input_token_count": 0,
+      "completion/reasoning_tokens": 0,
+      "input_token_count": 183,
+      "output_token_count": 19,
+      "prompt/cached_tokens": 0,
+      "reasoning_output_token_count": 0,
+      "total_token_count": 202
+    }
+  }
+}

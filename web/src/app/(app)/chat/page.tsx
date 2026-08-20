@@ -9,9 +9,13 @@ import {
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useCart } from "@/lib/cart-context";
-import { api, type AgentStep } from "@/lib/api";
+import { api, type AgentStep, type GroundingReport } from "@/lib/api";
 import { RichMessage } from "@/components/chat/rich-message";
 import { AgentTimeline } from "@/components/chat/agent-timeline";
+import { GroundingBadge } from "@/components/chat/grounding-badge";
+import { OrchestrationGraph } from "@/components/chat/orchestration-graph";
+import { ModeSwitcher } from "@/components/chat/mode-switcher";
+import { ModeComparison } from "@/components/chat/mode-comparison";
 import { QUICK_PROMPTS } from "@/lib/scenarios";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -56,6 +60,16 @@ interface Message {
   steps?: AgentStep[];
   created_at?: string;
   streaming?: boolean;
+  /** Orchestration mode this turn ran through — set on the assistant
+   * message so OrchestrationGraph knows which mode's graph to render,
+   * independent of whatever's currently selected in the switcher. */
+  mode?: string;
+  /** Executor ids (dashed, live form) currently mid-run / completed / errored — from `event: node`/`error` SSE frames. */
+  activeNodeIds?: string[];
+  doneNodeIds?: string[];
+  errorNodeIds?: string[];
+  /** Server-side fact-check report from `event: grounding` (tool mode only, GROUNDING_MODE != off). */
+  grounding?: GroundingReport;
 }
 
 interface Conversation {
@@ -63,6 +77,36 @@ interface Conversation {
   title: string;
   created_at: string;
   updated_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Orchestration mode persistence — remembered per conversation (and for a
+// not-yet-created conversation, under a "draft" key) so a reload keeps the
+// same mode selected. Distinct from AGENT_MODES/agentMode in
+// ai-prompt-box.tsx, which pick a specialist to route to directly — this
+// picks how the orchestrator itself runs the turn.
+// ---------------------------------------------------------------------------
+
+const ORCH_MODE_STORAGE_PREFIX = "ecommerce_orch_mode:";
+const ORCH_MODE_DRAFT_KEY = "draft";
+
+function loadStoredOrchestrationMode(conversationId: string | null): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return localStorage.getItem(ORCH_MODE_STORAGE_PREFIX + (conversationId ?? ORCH_MODE_DRAFT_KEY)) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function storeOrchestrationMode(conversationId: string | null, mode: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(ORCH_MODE_STORAGE_PREFIX + (conversationId ?? ORCH_MODE_DRAFT_KEY), mode);
+  } catch {
+    // Private browsing / storage full — the mode still works for this
+    // session via component state, it just won't survive a reload.
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -265,6 +309,7 @@ export default function ChatPage() {
   const [isResponding, setIsResponding] = useState(false);
   const [thinkingLabel, setThinkingLabel] = useState<string>("Routing to specialists...");
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [orchestrationMode, setOrchestrationMode] = useState<string>("");
 
   const searchParams = useSearchParams();
   const pendingQueryRef = useRef<string | null>(null);
@@ -273,6 +318,11 @@ export default function ChatPage() {
   // Per-message abort controller. New send aborts any in-flight stream;
   // unmount aborts whatever's still running. Plugs the SSE-leak finding.
   const streamAbortRef = useRef<AbortController | null>(null);
+  // Set by sendMessage() right after it creates a new conversation, so the
+  // "load messages when active conversation changes" effect below can skip
+  // its usual server reload for that one transition — see that effect's
+  // comment.
+  const justCreatedConversationRef = useRef<string | null>(null);
 
   // Cancel in-flight stream when the component unmounts (route change).
   useEffect(
@@ -324,8 +374,33 @@ export default function ChatPage() {
       setMessages([]);
       return;
     }
+    if (justCreatedConversationRef.current === activeConversationId) {
+      // sendMessage() just set this id after creating the conversation for
+      // its own first turn — local `messages` state is already complete
+      // (and richer: it carries client-only fields like an assistant
+      // message's `mode`/`activeNodeIds` that OrchestrationGraph needs and
+      // the server has nowhere to persist). Reloading from the server here
+      // would silently replace those messages and wipe those fields —
+      // found live, as the graph rendering then disappearing a few hundred
+      // ms after every first send in a new conversation.
+      justCreatedConversationRef.current = null;
+      return;
+    }
     loadMessages(activeConversationId);
   }, [activeConversationId]);
+
+  // ---- Restore the orchestration mode remembered for this conversation ----
+  useEffect(() => {
+    setOrchestrationMode(loadStoredOrchestrationMode(activeConversationId));
+  }, [activeConversationId]);
+
+  const handleModeChange = useCallback(
+    (mode: string) => {
+      setOrchestrationMode(mode);
+      storeOrchestrationMode(activeConversationId, mode);
+    },
+    [activeConversationId],
+  );
 
   async function loadMessages(conversationId: string) {
     try {
@@ -396,6 +471,20 @@ export default function ChatPage() {
 
     const assistantId = crypto.randomUUID();
     let assistantCreated = false;
+    // Set once the orchestrator's own final text (onChunk) starts arriving
+    // for this turn. Before that, any content shown is a specialist's live
+    // `delta` preview (onDeltaChunk) — the first real-text chunk *replaces*
+    // it rather than appending, since the backend no longer persists the
+    // preview into the saved message either (Phase 8.1): the specialist's
+    // preview and the orchestrator's own final answer restate the same
+    // content in independently-generated wording, so showing both was a
+    // visible duplication, not two genuinely different things.
+    let receivedFinalText = false;
+    // Snapshot now — orchestrationMode may change before this turn resolves
+    // (e.g. the user picks a different mode for their next message while
+    // this one is still streaming), but this message ran through whatever
+    // was selected at send time.
+    const messageMode = orchestrationMode || "tool";
 
     // Abort any prior stream still draining before starting a new one.
     streamAbortRef.current?.abort();
@@ -407,6 +496,8 @@ export default function ChatPage() {
         trimmed,
         activeConversationId ?? undefined,
         (chunk) => {
+          const isFirstFinalChunk = !receivedFinalText;
+          receivedFinalText = true;
           if (!assistantCreated) {
             assistantCreated = true;
             setMessages((prev) => [
@@ -416,13 +507,14 @@ export default function ChatPage() {
                 role: "assistant",
                 content: chunk,
                 streaming: true,
+                mode: messageMode,
               },
             ]);
           } else {
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === assistantId
-                  ? { ...m, content: m.content + chunk }
+                  ? { ...m, content: isFirstFinalChunk ? chunk : m.content + chunk }
                   : m,
               ),
             );
@@ -430,6 +522,34 @@ export default function ChatPage() {
         },
         controller.signal,
         {
+          onDeltaChunk: (chunk) => {
+            // Guard only — MAF's own execution order means a specialist's
+            // delta block completes and closes before the orchestrator's
+            // final block starts (verified: they never interleave), so
+            // this should never actually fire once receivedFinalText is
+            // true. If it somehow did, dropping it is strictly safer than
+            // re-appending a stale preview onto the real answer.
+            if (receivedFinalText) return;
+            if (!assistantCreated) {
+              assistantCreated = true;
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: assistantId,
+                  role: "assistant",
+                  content: chunk,
+                  streaming: true,
+                  mode: messageMode,
+                },
+              ]);
+            } else {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId ? { ...m, content: m.content + chunk } : m,
+                ),
+              );
+            }
+          },
           onStep: (step) => {
             // Update thinking label with the active agent
             const agent = step.agent ?? "orchestrator";
@@ -454,6 +574,7 @@ export default function ChatPage() {
                     content: "",
                     streaming: true,
                     steps: [step],
+                    mode: messageMode,
                   },
                 ];
               }
@@ -464,11 +585,54 @@ export default function ChatPage() {
               );
             });
           },
+          onOrchestrationEvent: (eventName, data) => {
+            if (eventName !== "node" && eventName !== "error") return;
+            const frame = data as { node_id?: string; phase?: "enter" | "exit" };
+            const nodeId = frame.node_id;
+            if (!nodeId) return;
+
+            setMessages((prev) => {
+              const existing = prev.find((m) => m.id === assistantId);
+              const base: Message = existing ?? {
+                id: assistantId,
+                role: "assistant",
+                content: "",
+                streaming: true,
+                mode: messageMode,
+              };
+              if (!existing) assistantCreated = true;
+
+              let next: Message;
+              if (eventName === "error") {
+                next = { ...base, errorNodeIds: [...(base.errorNodeIds ?? []), nodeId] };
+              } else if (frame.phase === "exit") {
+                next = {
+                  ...base,
+                  activeNodeIds: (base.activeNodeIds ?? []).filter((id) => id !== nodeId),
+                  doneNodeIds: [...(base.doneNodeIds ?? []), nodeId],
+                };
+              } else {
+                next = { ...base, activeNodeIds: [...(base.activeNodeIds ?? []), nodeId] };
+              }
+
+              return existing ? prev.map((m) => (m.id === assistantId ? next : m)) : [...prev, next];
+            });
+          },
+          onGrounding: (report) => {
+            setMessages((prev) =>
+              prev.map((m) => (m.id === assistantId ? { ...m, grounding: report } : m)),
+            );
+          },
+          mode: orchestrationMode || undefined,
         },
       );
 
-      // If this was the first message, a new conversation was created
+      // If this was the first message, a new conversation was created —
+      // re-key the draft-stored mode under the real conversation id so a
+      // reload still picks it up.
       if (!activeConversationId && meta.conversation_id) {
+        storeOrchestrationMode(meta.conversation_id, orchestrationMode);
+        justCreatedConversationRef.current = meta.conversation_id;
         setActiveConversationId(meta.conversation_id);
         await loadConversations();
       }
@@ -666,6 +830,17 @@ export default function ChatPage() {
                       msg.steps &&
                       msg.steps.length > 0 && <AgentTimeline steps={msg.steps} />}
 
+                    {msg.role === "assistant" && <GroundingBadge report={msg.grounding} />}
+
+                    {msg.role === "assistant" && msg.mode && (
+                      <OrchestrationGraph
+                        mode={msg.mode}
+                        activeNodeIds={msg.activeNodeIds}
+                        doneNodeIds={msg.doneNodeIds}
+                        errorNodeIds={msg.errorNodeIds}
+                      />
+                    )}
+
                     {msg.role === "assistant" && !msg.streaming && msg.content && (
                       <MessageActions
                         text={msg.content}
@@ -704,7 +879,11 @@ export default function ChatPage() {
 
         {/* ---- Input area ---- */}
         <div className="border-t bg-background px-4 py-3">
-          <div className="mx-auto max-w-3xl">
+          <div className="mx-auto max-w-3xl space-y-2">
+            <div className="flex items-center justify-end gap-2">
+              <ModeComparison />
+              <ModeSwitcher value={orchestrationMode} onChange={handleModeChange} disabled={isResponding} />
+            </div>
             <PromptInputBox
               onSend={(message, agentMode) => sendMessage(message, agentMode)}
               isLoading={isResponding}

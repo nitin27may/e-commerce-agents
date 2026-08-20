@@ -8,14 +8,16 @@ import { Button } from "@/components/ui/button";
 import {
   Activity,
   ChevronDown,
-  ChevronRight,
   Check,
   X,
   Clock,
   Zap,
   ExternalLink,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+type CheckpointData = Awaited<ReturnType<typeof api.getRunCheckpoints>>;
 
 export default function RunsPage() {
   const [entries, setEntries] = useState<RunEntry[]>([]);
@@ -23,6 +25,12 @@ export default function RunsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
+  // Keyed by run id. Fetched eagerly for every visible row, not lazily on
+  // expand — a lazy fetch means the "Needs approval" badge below can't
+  // show until a row has already been opened once, defeating its purpose
+  // as something to scan the list for. Each request is a single indexed
+  // lookup; this page is a low-traffic admin surface, not a hot path.
+  const [checkpoints, setCheckpoints] = useState<Record<string, CheckpointData>>({});
   const limit = 20;
 
   useEffect(() => {
@@ -33,12 +41,29 @@ export default function RunsPage() {
         setEntries(r.entries);
         setTotal(r.total);
         setLoading(false);
+        setCheckpoints({});
+        Promise.allSettled(r.entries.map((e) => api.getRunCheckpoints(e.id))).then((results) => {
+          setCheckpoints((prev) => {
+            const next = { ...prev };
+            results.forEach((res, i) => {
+              if (res.status === "fulfilled") next[r.entries[i].id] = res.value;
+            });
+            return next;
+          });
+        });
       })
       .catch(() => {
         setError("Failed to load runs");
         setLoading(false);
       });
   }, [page]);
+
+  function refreshCheckpoints(runId: string) {
+    api
+      .getRunCheckpoints(runId)
+      .then((data) => setCheckpoints((prev) => ({ ...prev, [runId]: data })))
+      .catch(() => {});
+  }
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-6">
@@ -87,7 +112,12 @@ export default function RunsPage() {
       {!loading && !error && entries.length > 0 && (
         <div className="space-y-2">
           {entries.map((entry) => (
-            <RunRow key={entry.id} entry={entry} />
+            <RunRow
+              key={entry.id}
+              entry={entry}
+              checkpointData={checkpoints[entry.id]}
+              onResumed={() => refreshCheckpoints(entry.id)}
+            />
           ))}
         </div>
       )}
@@ -119,16 +149,50 @@ export default function RunsPage() {
   );
 }
 
-function RunRow({ entry }: { entry: RunEntry }) {
+function RunRow({
+  entry,
+  checkpointData,
+  onResumed,
+}: {
+  entry: RunEntry;
+  checkpointData: CheckpointData | undefined;
+  onResumed: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const hasSteps = entry.steps.length > 0;
+
+  // Workflow modes (workflow:pre-purchase, workflow:return-replace,
+  // group-chat) don't produce agent_execution_steps rows — only "tool"
+  // mode's log_execution_step() calls do — so hasSteps alone would hide
+  // the expand affordance for exactly the runs most likely to have a
+  // pending approval. checkpointData comes from the parent (fetched
+  // eagerly for every visible row, not lazily on expand — see
+  // RunsPage's comment on why).
+  const [resuming, setResuming] = useState<"approve" | "reject" | null>(null);
+  const [resumeError, setResumeError] = useState<string | null>(null);
 
   const agentsInvolved = Array.from(
     new Set(entry.steps.map((s) => s.tool_name.split(":")[0]).filter(Boolean))
   );
 
+  async function handleResume(approved: boolean) {
+    setResuming(approved ? "approve" : "reject");
+    setResumeError(null);
+    try {
+      await api.resumeRun(entry.id, approved);
+      onResumed();
+    } catch (err) {
+      setResumeError(err instanceof Error ? err.message : "Resume failed.");
+    } finally {
+      setResuming(null);
+    }
+  }
+
+  const hitl = checkpointData?.hitl_request;
+  const pendingApproval = hitl?.status === "pending";
+
   return (
-    <Card className="overflow-hidden">
+    <Card className={cn("overflow-hidden", pendingApproval && "ring-1 ring-amber-400/60")}>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -180,30 +244,77 @@ function RunRow({ entry }: { entry: RunEntry }) {
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
+          {pendingApproval && (
+            <Badge className="bg-amber-500 text-white text-xs">Needs approval</Badge>
+          )}
           {hasSteps && (
             <Badge variant="outline" className="text-xs">
               {entry.steps.length} step{entry.steps.length !== 1 ? "s" : ""}
             </Badge>
           )}
-          {hasSteps && (
-            <ChevronDown
-              className={cn(
-                "size-4 text-muted-foreground transition-transform",
-                open && "rotate-180"
-              )}
-            />
-          )}
-          {!hasSteps && <ChevronRight className="size-4 text-muted-foreground/30" />}
+          <ChevronDown
+            className={cn(
+              "size-4 text-muted-foreground transition-transform",
+              open && "rotate-180"
+            )}
+          />
         </div>
       </button>
 
-      {open && hasSteps && (
+      {open && (
         <div className="border-t bg-muted/10">
-          <ol className="divide-y text-xs">
-            {entry.steps.map((step, i) => (
-              <StepDetailRow key={i} step={step} />
-            ))}
-          </ol>
+          {hasSteps && (
+            <ol className="divide-y text-xs">
+              {entry.steps.map((step, i) => (
+                <StepDetailRow key={i} step={step} />
+              ))}
+            </ol>
+          )}
+
+          {checkpointData === undefined && (
+            <p className="px-4 py-3 text-xs text-muted-foreground">Loading checkpoints…</p>
+          )}
+
+          {hitl && (
+            <div className="space-y-2 border-t px-4 py-3 text-xs">
+              <p className="font-medium text-foreground">
+                Return approval — {hitl.status}
+                {hitl.payload?.order_id ? ` (order ${hitl.payload.order_id})` : ""}
+              </p>
+              {pendingApproval ? (
+                <>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      disabled={resuming !== null}
+                      onClick={() => handleResume(true)}
+                    >
+                      {resuming === "approve" && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+                      Approve
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={resuming !== null}
+                      onClick={() => handleResume(false)}
+                    >
+                      {resuming === "reject" && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+                      Reject
+                    </Button>
+                  </div>
+                  {resumeError && <p className="text-destructive">{resumeError}</p>}
+                </>
+              ) : (
+                <p className="text-muted-foreground">
+                  Resolved {hitl.responded_at ? new Date(hitl.responded_at).toLocaleString() : ""}
+                </p>
+              )}
+            </div>
+          )}
+
+          {!hasSteps && checkpointData !== undefined && !hitl && (
+            <p className="px-4 py-3 text-xs text-muted-foreground">No further detail for this run.</p>
+          )}
         </div>
       )}
     </Card>

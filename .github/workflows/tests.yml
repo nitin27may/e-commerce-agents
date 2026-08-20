@@ -61,8 +61,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # Registration/import smoke tests only — no testcontainer Postgres needed.
-    # Integration-marked tests are skipped here; they run in the nightly evals job
-    # which already provisions a Postgres container.
+    # Integration-marked tests are skipped here (`-m "not integration"`). They
+    # are NOT run by any other scheduled job today — evals.yml is
+    # workflow_dispatch-only and only runs `evals.run_evals`, not pytest, so it
+    # never exercises these packages' integration tests. A PR-blocking smoke
+    # gate that would cover this is planned but not yet implemented.
     strategy:
       matrix:
         package:

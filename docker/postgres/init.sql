@@ -350,7 +350,11 @@ CREATE TABLE IF NOT EXISTS tool_approval_requests (
     agent_name VARCHAR(100) NOT NULL,
     tool_name VARCHAR(255) NOT NULL,
     tool_input JSONB NOT NULL,
-    status VARCHAR(50) DEFAULT 'pending',  -- pending, approved, denied, executed
+    status VARCHAR(50) DEFAULT 'pending',
+        -- pending, processing (transient — claimed by an admin approve/deny
+        -- request, atomically flipped from pending before the underlying
+        -- action executes, so two concurrent approve clicks can't both run
+        -- it), approved, denied, executed
     admin_note TEXT,
     approved_by VARCHAR(255),
     execution_result JSONB,
@@ -360,6 +364,28 @@ CREATE TABLE IF NOT EXISTS tool_approval_requests (
 
 CREATE INDEX IF NOT EXISTS idx_tool_approvals_status ON tool_approval_requests(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tool_approvals_user ON tool_approval_requests(user_email, created_at DESC);
+
+-- ============================================================
+-- IDEMPOTENCY KEYS
+-- Phase 6.1: dedupes retried money-moving operations (checkout, refunds,
+-- returns) so a client-side retry after a timeout/network blip replays the
+-- original result instead of executing a second time. See
+-- agents/python/shared/idempotency.py for the reservation protocol this
+-- table implements (INSERT ... ON CONFLICT DO NOTHING as a claim, an
+-- "in_progress" row older than the staleness window is treated as an
+-- abandoned attempt and taken over, not a permanent lock).
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+    key VARCHAR(600) PRIMARY KEY,
+    scope VARCHAR(255) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'in_progress',  -- in_progress, completed
+    result JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_idempotency_keys_scope ON idempotency_keys(scope, created_at DESC);
 
 -- ============================================================
 -- INDEXES
@@ -405,20 +431,38 @@ CREATE INDEX IF NOT EXISTS idx_memories_category ON agent_memories(user_id, cate
 -- ============================================================
 -- Checkpoints: one row per superstep per workflow run. Populated by
 -- PostgresCheckpointStorage (shared/checkpoint_storage.py).
+--
+-- usage_log_id correlates a checkpoint back to the "run" the web UI and
+-- GET /api/runs already know about (usage_logs) — MAF's own
+-- CheckpointStorage interface only scopes list/get_latest by
+-- workflow_name, which is fixed per workflow *type* ("pre-purchase",
+-- "return-and-replace"), not per run instance, so it can't disambiguate
+-- two users' concurrent runs of the same workflow on its own.
 CREATE TABLE IF NOT EXISTS workflow_checkpoints (
     checkpoint_id  UUID PRIMARY KEY,
     workflow_name  TEXT NOT NULL,
     payload        JSONB NOT NULL,           -- encoded WorkflowCheckpoint dict
+    usage_log_id   UUID REFERENCES usage_logs(id) ON DELETE SET NULL,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_checkpoints_workflow_created
     ON workflow_checkpoints(workflow_name, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_checkpoints_usage_log
+    ON workflow_checkpoints(usage_log_id);
 
 -- HITL requests: one row per pause, resolved by user/admin response.
--- Consumed by the return/replace approval gate (plans/refactor/09).
+-- Consumed by workflow:return-replace's in-workflow ctx.request_info gate
+-- (orchestrator/modes/workflow_mode.py::ReturnReplaceMode) via
+-- POST /api/orchestration/{run_id}/resume. request_id is MAF's own pause
+-- token — the key resuming workflow.run(responses={request_id: ...})
+-- needs; checkpoint_id is which durable point to reload from. Both are
+-- null only for request kinds this table predates (tool-level approval,
+-- shared/hitl.py, which never paused a MAF workflow to begin with).
 CREATE TABLE IF NOT EXISTS hitl_requests (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    workflow_run_id  UUID NOT NULL,
+    workflow_run_id  UUID NOT NULL REFERENCES usage_logs(id) ON DELETE CASCADE,
+    request_id       TEXT,
+    checkpoint_id    UUID REFERENCES workflow_checkpoints(checkpoint_id) ON DELETE SET NULL,
     user_email       TEXT NOT NULL,
     kind             TEXT NOT NULL,          -- 'return_approval' | 'tool_approval' | ...
     payload          JSONB NOT NULL,         -- request data surfaced to the UI

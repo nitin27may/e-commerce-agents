@@ -8,9 +8,9 @@ Persist an AgentSession to disk between process runs. Demonstrates:
 
 Usage:
     # Turn 1 writes session.json:
-    python tutorials/04-sessions/python/main.py save "Remember: my favorite color is teal."
+    python tutorials/04-sessions/python/main.py save "Remember: I want to buy SKU-4471."
     # Turn 2 reads session.json and asks a follow-up:
-    python tutorials/04-sessions/python/main.py load "What color did I tell you I liked?"
+    python tutorials/04-sessions/python/main.py load "What did I say I wanted to buy?"
 """
 
 from __future__ import annotations
@@ -28,14 +28,22 @@ maf_bootstrap.bootstrap()
 
 from agent_framework import Agent, AgentSession, InMemoryHistoryProvider  # noqa: E402
 from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient  # noqa: E402
-
+from tutorials._shared.replay_client import ReplayChatClient  # noqa: E402
 
 INSTRUCTIONS = "You are a helpful assistant. Keep answers short."
 SESSION_FILE = pathlib.Path(__file__).resolve().parent / "session.json"
 
+FIXTURES_DIR = pathlib.Path(__file__).resolve().parent / "tests" / "fixtures" / "replay"
 
-def _default_client() -> OpenAIChatClient | OpenAIChatCompletionClient:
+
+def _default_client() -> OpenAIChatClient | OpenAIChatCompletionClient | ReplayChatClient:
     provider = os.environ.get("LLM_PROVIDER", "openai").lower()
+    if provider == "replay":
+        return ReplayChatClient(
+            fixtures_dir=FIXTURES_DIR,
+            record=os.environ.get("RECORD", "").lower() in ("1", "true", "yes"),
+            record_provider=os.environ.get("REPLAY_RECORD_PROVIDER", "openai"),
+        )
     if provider == "azure":
         return OpenAIChatCompletionClient(
             model=os.environ["AZURE_OPENAI_DEPLOYMENT"],
@@ -46,6 +54,10 @@ def _default_client() -> OpenAIChatClient | OpenAIChatCompletionClient:
     return OpenAIChatClient(
         model=os.environ.get("LLM_MODEL", "gpt-4.1"),
         api_key=os.environ["OPENAI_API_KEY"],
+        # Phase 9: any OpenAI-compatible endpoint (GitHub Models, OpenRouter,
+        # vLLM, LM Studio, Ollama) instead of api.openai.com — see
+        # tutorials/00-setup/README.md's "Don't have a paid API key?" section.
+        base_url=os.environ.get("LLM_BASE_URL") or None,
     )
 
 

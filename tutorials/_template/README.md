@@ -32,10 +32,11 @@ toc: true
 
 ## Python
 
+Run from the repo root using the shared `tutorials/` uv project (one `uv sync` covers every chapter):
+
 ```bash
-cd tutorials/<chapter>/python
-uv sync
-uv run python main.py
+uv sync --project tutorials
+uv run --project tutorials python tutorials/<chapter>/python/main.py
 ```
 
 <Walk through the key parts of `main.py`. Full file is linked; show only the instructive 10–20 lines inline.>
@@ -72,7 +73,7 @@ Both languages ship with unit tests exercising:
 3. **Concept assertion** — <what specifically proves the MAF concept was exercised, e.g., "tool was invoked exactly once", "middleware observed the run">
 
 ```bash
-cd tutorials/<chapter>/python && uv run pytest
+uv run --project tutorials pytest tutorials/<chapter>/python/tests -v
 cd tutorials/<chapter>/dotnet && dotnet test
 ```
 

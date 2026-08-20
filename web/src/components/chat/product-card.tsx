@@ -24,12 +24,19 @@ interface ProductData {
   on_sale?: boolean;
 }
 
+// Reuses the app's existing categorical chart palette (chart-1..5, already
+// OKLCH design tokens) rather than one-off Tailwind color literals — a
+// category tag is exactly the "distinguish N categorical values" case those
+// tokens exist for. `books` reuses the Stage 1 `warning` token instead
+// (matching amber hue, and there's no 5th chart slot to spare); `sports`
+// drifts from its old literal orange since no chart slot is orange-hued —
+// disclosed, not a like-for-like recolor.
 const CATEGORY_COLORS: Record<string, string> = {
-  electronics: "bg-sky-100 text-sky-800 border-sky-200",
-  clothing: "bg-violet-100 text-violet-800 border-violet-200",
-  home: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  sports: "bg-orange-100 text-orange-800 border-orange-200",
-  books: "bg-amber-100 text-amber-800 border-amber-200",
+  electronics: "bg-chart-1/10 text-chart-1 border-chart-1/30 dark:bg-chart-1/15",
+  clothing: "bg-chart-3/10 text-chart-3 border-chart-3/30 dark:bg-chart-3/15",
+  home: "bg-chart-4/10 text-chart-4 border-chart-4/30 dark:bg-chart-4/15",
+  sports: "bg-chart-2/10 text-chart-2 border-chart-2/30 dark:bg-chart-2/15",
+  books: "bg-warning/10 text-warning border-warning/30 dark:bg-warning/15",
 };
 
 interface ChatProductCardProps {
@@ -133,7 +140,7 @@ export function ChatProductCard({ data, onAction }: ChatProductCardProps) {
               </span>
             )}
             {hasDiscount && discountPct > 0 && (
-              <Badge className="bg-red-500 text-white border-0 text-[9px] px-1.5 py-0">
+              <Badge className="bg-destructive text-white border-0 text-[9px] px-1.5 py-0">
                 {discountPct}% OFF
               </Badge>
             )}
@@ -148,7 +155,7 @@ export function ChatProductCard({ data, onAction }: ChatProductCardProps) {
                     key={i}
                     className={`size-3 ${
                       i < Math.round(data.rating!)
-                        ? "fill-amber-400 text-amber-400"
+                        ? "fill-warning text-warning"
                         : "fill-muted text-muted"
                     }`}
                   />
@@ -185,9 +192,9 @@ export function ChatProductCard({ data, onAction }: ChatProductCardProps) {
               size="sm"
               className={`h-7 text-xs ${
                 error
-                  ? "bg-red-600 hover:bg-red-700 text-white"
+                  ? "bg-destructive hover:bg-destructive/90 text-white"
                   : showAdded
-                    ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                    ? "bg-success hover:bg-success/90 text-success-foreground"
                     : "bg-primary hover:opacity-90 text-primary-foreground"
               }`}
               disabled={showAdded && !error}

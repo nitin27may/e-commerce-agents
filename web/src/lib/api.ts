@@ -26,6 +26,12 @@ export interface CartItem {
 }
 
 /** One step in the agentic timeline streamed via `event: step` SSE frames. */
+/** Where a step's data came from — shared/agent_observability.py's StepRecorderMiddleware. */
+export interface StepProvenance {
+  source: string;
+  row_ids: string[];
+}
+
 export interface AgentStep {
   agent?: string;
   tool_name: string;
@@ -33,6 +39,63 @@ export interface AgentStep {
   tool_output?: unknown;
   status?: string;
   duration_ms?: number;
+  provenance?: StepProvenance;
+}
+
+/** One verified/unverified claim inside a GroundingReport (shared/grounding/verifier.py::ClaimVerdict). */
+export interface GroundingClaim {
+  type: "product" | "order" | "bare_id" | "amount" | "tracking";
+  id: string;
+  status: "verified" | "price_mismatch" | "not_found" | "unverifiable";
+  detail: string | null;
+  source: "ledger" | "db" | null;
+}
+
+/**
+ * Server-side grounding verdict for one assistant message — how many of its
+ * product/order card claims were checked against Postgres, not just
+ * format-validated (shared/grounding/middleware.py::_attach_report). Present
+ * only when `GROUNDING_MODE` is `annotate` or `enforce` (default: annotate).
+ */
+export interface GroundingReport {
+  total: number;
+  verified: number;
+  unverified: number;
+  claims: GroundingClaim[];
+}
+
+/** What a mode supports — from `GET /api/orchestration/modes` (orchestrator/modes/base.py::ModeCapabilities). */
+export interface OrchestrationModeCapabilities {
+  streams: boolean;
+  supports_hitl: boolean;
+  supports_checkpoints: boolean;
+  is_graph: boolean;
+}
+
+/** One entry in `GET /api/orchestration/modes` — a mode `/api/chat`'s `mode` field can select. */
+export interface OrchestrationMode {
+  name: string;
+  label: string;
+  description: string;
+  capabilities: OrchestrationModeCapabilities;
+  default: boolean;
+}
+
+/** One mode's result from `POST /api/orchestration/compare`. */
+export interface CompareModeResult {
+  mode: string;
+  label: string;
+  text: string;
+  latency_ms: number;
+  agents_involved: string[];
+  step_count: number;
+  graph_mermaid: string | null;
+  error: string | null;
+}
+
+export interface CompareResponse {
+  message: string;
+  results: CompareModeResult[];
 }
 
 export interface RunStep {
@@ -209,6 +272,7 @@ class ApiClient {
       conversation_id: string;
       agents_involved: string[];
       message_id?: string;
+      grounding?: GroundingReport | null;
     }>("/api/chat", {
       method: "POST",
       body: JSON.stringify({ message, conversation_id: conversationId }),
@@ -229,7 +293,43 @@ class ApiClient {
     conversationId: string | undefined,
     onChunk: (text: string) => void,
     signal?: AbortSignal,
-    options: { allowRefresh?: boolean; onStep?: (step: AgentStep) => void } = {}
+    options: {
+      allowRefresh?: boolean;
+      onStep?: (step: AgentStep) => void;
+      /**
+       * Fired for any SSE frame that isn't `step`/`metadata`/display text —
+       * currently `node`, `handoff`, `checkpoint`, `request_info`, `error`
+       * from a non-"tool" orchestration mode (see `orchestrator/routes/chat.py`).
+       */
+      onOrchestrationEvent?: (eventName: string, data: unknown) => void;
+      /**
+       * Fired once per `event: grounding` frame — currently only "tool" mode
+       * emits it (see `orchestrator/modes/tool_router.py` and
+       * `orchestrator/routes/chat.py`'s streaming generator).
+       */
+      onGrounding?: (report: GroundingReport) => void;
+      /**
+       * Fired for `event: delta` frames — a specialist's own live-streamed
+       * text, forwarded in real time during a "tool" mode turn's
+       * `call_specialist_agent` tool call, so the user sees a continuous
+       * stream instead of silence during the tool-call gap. This is a
+       * *preview*, not the final answer: the orchestrator's own separately-
+       * composed final text (delivered via `onChunk`) restates the same
+       * content afterward, and the backend never persists delta text into
+       * the saved message (Phase 8.1) — kept as a distinct callback rather
+       * than folded into `onChunk` so callers can render it as a
+       * replaceable preview instead of accumulating it into the same
+       * buffer the final answer also writes to, which is what caused the
+       * visible duplication this callback's separation fixes.
+       */
+      onDeltaChunk?: (text: string) => void;
+      /**
+       * Orchestration mode to run this turn through — a `name` from
+       * `GET /api/orchestration/modes`. Omitted (or `undefined`) lets the
+       * backend fall back to `settings.ORCHESTRATION_MODE` (default `"tool"`).
+       */
+      mode?: string;
+    } = {}
   ): Promise<{ conversation_id: string; agents_involved: string[] }> {
     const allowRefresh = options.allowRefresh ?? true;
     const headers: Record<string, string> = {
@@ -242,7 +342,11 @@ class ApiClient {
     const res = await fetch(`${API_URL}/api/chat/stream`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ message, conversation_id: conversationId }),
+      body: JSON.stringify({
+        message,
+        conversation_id: conversationId,
+        mode: options.mode,
+      }),
       signal,
     });
 
@@ -331,8 +435,39 @@ class ApiClient {
             continue;
           }
 
-          // Regular text / delta chunk
-          onChunk(data);
+          if (currentEventType === "grounding") {
+            try {
+              options.onGrounding?.(JSON.parse(data) as GroundingReport);
+            } catch {
+              // Ignore malformed grounding report
+            }
+            continue;
+          }
+
+          // "" (plain `data:` frame) is the orchestrator's own final text —
+          // the persisted answer. "delta" (a specialist's live-streamed
+          // token) is a preview only, routed to its own callback so callers
+          // can treat it as replaceable rather than accumulating it into
+          // the same buffer as the final answer (see onDeltaChunk's doc).
+          if (currentEventType === "") {
+            onChunk(data);
+            continue;
+          }
+          if (currentEventType === "delta") {
+            options.onDeltaChunk?.(data);
+            continue;
+          }
+
+          // Any other named frame (e.g. `node`/`handoff`/`checkpoint`/
+          // `request_info`/`error` from a non-"tool" orchestration mode) is
+          // structured data, not display text — forward it to the optional
+          // hook rather than falling through to onChunk, which would render
+          // its raw JSON payload as if it were part of the chat message.
+          try {
+            options.onOrchestrationEvent?.(currentEventType, JSON.parse(data));
+          } catch {
+            // Ignore malformed frame
+          }
         }
       }
     } catch (err) {
@@ -346,6 +481,24 @@ class ApiClient {
     }
 
     return metadata ?? { conversation_id: conversationId ?? "", agents_involved: [] };
+  }
+
+  // Orchestration modes
+  getOrchestrationModes() {
+    return this.request<OrchestrationMode[]>("/api/orchestration/modes");
+  }
+
+  getModeGraph(name: string) {
+    return this.request<{ name: string; mermaid: string | null }>(
+      `/api/orchestration/modes/${encodeURIComponent(name)}/graph`,
+    );
+  }
+
+  compareModes(message: string, modes: string[]) {
+    return this.request<CompareResponse>("/api/orchestration/compare", {
+      method: "POST",
+      body: JSON.stringify({ message, modes }),
+    });
   }
 
   // Conversations
@@ -456,6 +609,28 @@ class ApiClient {
       limit: number;
       offset: number;
     }>(`/api/runs${qs ? `?${qs}` : ""}`);
+  }
+
+  getRunCheckpoints(runId: string) {
+    return this.request<{
+      run_id: string;
+      checkpoints: { checkpoint_id: string; workflow_name: string; created_at: string }[];
+      hitl_request: {
+        id: string;
+        status: "pending" | "approved" | "rejected" | "timeout";
+        payload: Record<string, unknown>;
+        response: Record<string, unknown> | null;
+        created_at: string;
+        responded_at: string | null;
+      } | null;
+    }>(`/api/runs/${runId}/checkpoints`);
+  }
+
+  resumeRun(runId: string, approved: boolean) {
+    return this.request<{ run_id: string; approved: boolean; text: string; agents_involved: string[] }>(
+      `/api/orchestration/${runId}/resume`,
+      { method: "POST", body: JSON.stringify({ approved }) },
+    );
   }
 
   getAuditLog(params?: {

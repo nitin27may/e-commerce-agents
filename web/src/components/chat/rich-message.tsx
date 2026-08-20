@@ -8,6 +8,9 @@ import { ChatOrderCard } from "./order-card";
 import { ChatCheckoutCard } from "./checkout-card";
 import { ChatReturnCard } from "./return-card";
 import { ComparisonCard } from "./comparison-card";
+import { ChatSentimentCard } from "./sentiment-card";
+import { ChatInventoryCard } from "./inventory-card";
+import { ChatPricingCard } from "./pricing-card";
 import { listItem } from "@/lib/motion";
 import {
   CardKind,
@@ -88,6 +91,27 @@ export function RichMessage({ content, streaming, onAction }: RichMessageProps) 
             </CardMotion>
           );
         }
+        if (seg.type === "sentiment" && seg.data) {
+          return (
+            <CardMotion key={i}>
+              <ChatSentimentCard data={seg.data as any} />
+            </CardMotion>
+          );
+        }
+        if (seg.type === "inventory" && seg.data) {
+          return (
+            <CardMotion key={i}>
+              <ChatInventoryCard data={seg.data as any} onAction={onAction} />
+            </CardMotion>
+          );
+        }
+        if (seg.type === "pricing" && seg.data) {
+          return (
+            <CardMotion key={i}>
+              <ChatPricingCard data={seg.data as any} />
+            </CardMotion>
+          );
+        }
         return (
           <div
             key={i}
@@ -119,7 +143,7 @@ function stripUnclosedFence(content: string): string {
   // `products` listed before `product` so the longer kind wins; no trailing
   // \n requirement — the SSE transport can drop the newline after the fence
   // marker, collapsing ```product\n{...} into ```product{...}.
-  const openRegex = /```(products|product|order|checkout|return)/g;
+  const openRegex = /```(products|product|order|checkout|return|sentiment|inventory|pricing)/g;
   let cursor = 0;
   let lastUnclosedStart = -1;
   let match;
@@ -146,7 +170,7 @@ function parseCodeBlocks(content: string): Segment[] | null {
   // and ```product\n{...} arrives as ```product{...}. We tolerate any
   // whitespace (incl. none) and require the body to start with { or [ so a
   // stray ```product-ideas block isn't misread as a card.
-  const codeBlockRegex = /```(products|product|order|checkout|return)\s*([[{][\s\S]*?)```/g;
+  const codeBlockRegex = /```(products|product|order|checkout|return|sentiment|inventory|pricing)\s*([[{][\s\S]*?)```/g;
   const segments: Segment[] = [];
   let lastIndex = 0;
   let match;
@@ -187,14 +211,25 @@ function parseCodeBlocks(content: string): Segment[] | null {
         if (validated) {
           segments.push({ type: kind, text: "", data: validated });
         } else {
-          // Schema rejected the payload — render the original fenced
-          // block as plain text so the user still sees something
-          // rather than a missing card.
-          segments.push({ type: "text", text: match[0] });
+          // Schema rejected the payload — drop the fence rather than
+          // showing the raw JSON, matching the "products" array branch's
+          // existing silent-drop convention above (an item that fails
+          // validateCard there is dropped too, not shown raw). The
+          // surrounding conversational text is unaffected — it was
+          // already captured as its own segment by the lastIndex
+          // bookkeeping around this match. Logged so a bad LLM response
+          // is still debuggable without being user-visible.
+          if (process.env.NODE_ENV !== "production") {
+            console.warn(`[rich-message] dropped a \`${kind}\` fence that failed schema validation`, data);
+          }
         }
       }
-    } catch {
-      segments.push({ type: "text", text: match[0] });
+    } catch (err) {
+      // Malformed JSON inside a recognized fence tag — same treatment:
+      // drop it, don't show the raw (broken) JSON to the user.
+      if (process.env.NODE_ENV !== "production") {
+        console.warn(`[rich-message] dropped a \`${match[1]}\` fence with malformed JSON`, err);
+      }
     }
     lastIndex = match.index + match[0].length;
   }
@@ -236,6 +271,15 @@ function dedupeCards(segments: Segment[]): Segment[] {
     } else if (seg.type === "return" && seg.data) {
       const d = seg.data as { return_id?: string; order_id?: string };
       key = `return:${d.return_id ?? d.order_id ?? ""}`;
+    } else if (seg.type === "sentiment" && seg.data) {
+      const d = seg.data as { product_id?: string; product_name?: string };
+      key = `sentiment:${d.product_id ?? d.product_name ?? ""}`;
+    } else if (seg.type === "inventory" && seg.data) {
+      const d = seg.data as { product_id?: string; product_name?: string };
+      key = `inventory:${d.product_id ?? d.product_name ?? ""}`;
+    } else if (seg.type === "pricing" && seg.data) {
+      const d = seg.data as { original_total?: number; final_total?: number; coupons?: unknown[] };
+      key = `pricing:${d.original_total ?? ""}:${d.final_total ?? ""}:${d.coupons?.length ?? ""}`;
     }
     if (key === null) return true;
     if (seen.has(key)) return false;
@@ -555,9 +599,36 @@ function tryParseProductParagraph(
   };
 }
 
+// ─── Guard: strip any JSON-shaped fence this parser doesn't know about ──
+//
+// parseCodeBlocks only recognizes the 5 known card tags. Every real
+// backend-emitted fence tag matches one of those today (verified against
+// every prompt YAML that emits a fence), so this is defense against a
+// tag this parser was never taught — an LLM hallucinating a wrong tag
+// name, or a future card type added to the backend before this file is
+// updated for it — not a currently-reachable path. Without this, an
+// unrecognized tag falls through untouched to ReactMarkdown, which
+// treats any ``` fence as a generic code block and renders the raw JSON
+// verbatim: exactly the "never show raw JSON" failure this component
+// exists to prevent for the 5 known tags.
+const KNOWN_CARD_TAGS = new Set(["products", "product", "order", "checkout", "return", "sentiment", "inventory", "pricing"]);
+const ANY_FENCE_RE = /```([a-zA-Z0-9_-]*)\s*([[{][\s\S]*?)```/g;
+
+function stripUnrecognizedJsonFences(content: string): string {
+  return content.replace(ANY_FENCE_RE, (full, tag: string) => {
+    if (KNOWN_CARD_TAGS.has(tag)) return full; // parseCodeBlocks handles these
+    if (process.env.NODE_ENV !== "production") {
+      console.warn(`[rich-message] dropped an unrecognized \`${tag || "(untagged)"}\` JSON-shaped fence`);
+    }
+    return "";
+  });
+}
+
 // ─── Main Parser ──────────────────────────────────────────────────────
 
-export function parseContent(content: string): Segment[] {
+export function parseContent(rawContent: string): Segment[] {
+  const content = stripUnrecognizedJsonFences(rawContent);
+
   // 1. Fenced code blocks (highest priority, most reliable)
   const codeBlockResult = parseCodeBlocks(content);
   if (codeBlockResult) return codeBlockResult;

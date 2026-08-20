@@ -27,9 +27,10 @@ pytestmark = pytest.mark.asyncio
 async def storage(postgres_pool):
     """Return a PostgresCheckpointStorage backed by the testcontainer pool."""
     from shared.checkpoint_storage import PostgresCheckpointStorage
-    # Clear any prior checkpoints from other tests.
+    # Clear any prior checkpoints from other tests. CASCADE because
+    # hitl_requests now carries an FK to workflow_checkpoints (Phase 1.5).
     async with postgres_pool.acquire() as conn:
-        await conn.execute("TRUNCATE TABLE workflow_checkpoints")
+        await conn.execute("TRUNCATE TABLE workflow_checkpoints CASCADE")
     return PostgresCheckpointStorage(postgres_pool)
 
 
@@ -145,3 +146,46 @@ async def test_factory_returns_postgres_storage_when_backend_is_postgres(
     storage = factory_mod.get_checkpoint_storage(pool=postgres_pool)
     from shared.checkpoint_storage import PostgresCheckpointStorage
     assert isinstance(storage, PostgresCheckpointStorage)
+
+
+# ─────────────────────── RecordingCheckpointStorage ─────────
+
+
+async def test_recording_storage_records_every_save_in_order(storage) -> None:
+    from shared.checkpoint_storage import RecordingCheckpointStorage
+
+    recorder = RecordingCheckpointStorage(storage)
+    cp1 = await recorder.save(_checkpoint("rec", iteration=0))
+    cp2 = await recorder.save(_checkpoint("rec", iteration=1))
+
+    assert recorder.saved == [cp1, cp2]
+    # Delegates to the wrapped storage for real, not just bookkeeping.
+    loaded = await recorder.load(cp2)
+    assert loaded.iteration_count == 1
+
+
+async def test_recording_storage_delegates_every_other_method(storage) -> None:
+    from shared.checkpoint_storage import RecordingCheckpointStorage
+
+    recorder = RecordingCheckpointStorage(storage)
+    await recorder.save(_checkpoint("rec2", iteration=5))
+
+    assert len(await recorder.list_checkpoints(workflow_name="rec2")) == 1
+    assert len(await recorder.list_checkpoint_ids(workflow_name="rec2")) == 1
+    latest = await recorder.get_latest(workflow_name="rec2")
+    assert latest is not None and latest.iteration_count == 5
+
+    cp_id = recorder.saved[0]
+    assert await recorder.delete(cp_id) is True
+    assert await recorder.get_latest(workflow_name="rec2") is None
+
+
+async def test_drain_new_checkpoint_ids_returns_only_unseen_entries() -> None:
+    from shared.checkpoint_storage import RecordingCheckpointStorage, drain_new_checkpoint_ids
+
+    recorder = RecordingCheckpointStorage(inner=None)
+    recorder.saved = ["a", "b", "c"]
+
+    assert drain_new_checkpoint_ids(recorder, already_seen=0) == ["a", "b", "c"]
+    assert drain_new_checkpoint_ids(recorder, already_seen=2) == ["c"]
+    assert drain_new_checkpoint_ids(recorder, already_seen=3) == []

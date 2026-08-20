@@ -1,0 +1,50 @@
+{
+  "request": {
+    "instructions": "You are a planning assistant for an e-commerce store. Given a shopping request, decompose it into a short ordered list of concrete steps needed to satisfy it \u2014 typically: search the catalog for relevant products, narrow results by a constraint such as price, pick the best candidates, and summarize a recommendation. For any step that should search the product catalog, set `query` to the search text for that step. For steps that only reason over results gathered by earlier steps (filtering, picking, summarizing), leave `query` null. Respond with the structured plan only \u2014 do not execute any step yourself.",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "Help me put together a birthday gift for someone who likes photography, under $200.",
+            "type": "text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      }
+    ],
+    "tools": []
+  },
+  "response": {
+    "created_at": "2026-08-20T02:49:25.000000Z",
+    "finish_reason": "stop",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "{\"goal\":\"Select a photography-related birthday gift under $200.\",\"steps\":[{\"step\":1,\"action\":\"Search for photography-related products.\",\"query\":\"photography gifts\"},{\"step\":2,\"action\":\"Filter the results to items priced under $200.\",\"query\":null},{\"step\":3,\"action\":\"Pick the best-suited items for a birthday gift from the filtered results.\",\"query\":null},{\"step\":4,\"action\":\"Summarize a top recommendation for a photography gift within the budget.\",\"query\":null}]}",
+            "type": "text"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      }
+    ],
+    "model": "gpt-4.1-2025-04-14",
+    "response_id": "chatcmpl-EEn8H62jY3IOrG2yDP5eoSUiYUtTi",
+    "type": "chat_response",
+    "usage_details": {
+      "cache_read_input_token_count": 0,
+      "completion/reasoning_tokens": 0,
+      "input_token_count": 335,
+      "output_token_count": 105,
+      "prompt/cached_tokens": 0,
+      "reasoning_output_token_count": 0,
+      "total_token_count": 440
+    }
+  }
+}

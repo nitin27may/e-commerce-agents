@@ -218,6 +218,32 @@ public sealed class MarketplaceAdminSellerTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AdminUsage_ReturnsDailyBreakdownWhenLogsExist()
+    {
+        // Regression test: AdminRoutes.cs's daily-usage query casts a
+        // DATE(created_at) SQL expression, which Npgsql maps to DateOnly
+        // (not DateTime) as of Npgsql 10 — this path had zero coverage
+        // before (AdminUsage_ReturnsZeroWhenNoLogs seeds no rows, so the
+        // day = ((DateTime)r.day)... projection never ran).
+        await using (var conn = await _pool.OpenAsync())
+        {
+            await conn.ExecuteAsync(
+                "INSERT INTO usage_logs (user_id, agent_name, created_at) VALUES (@uid, 'orchestrator', NOW())",
+                new { uid = _buyerId }
+            );
+        }
+
+        using var adminClient = ClientFor(r => r.MapAdminRoutes(), AdminEmail, role: "admin");
+        var response = await adminClient.GetAsync("/api/admin/usage");
+        response.EnsureSuccessStatusCode();
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        payload.GetProperty("overall").GetProperty("total_requests").GetInt64().Should().Be(1);
+        var daily = payload.GetProperty("daily_trend").EnumerateArray().ToList();
+        daily.Should().ContainSingle();
+        daily[0].GetProperty("day").GetString().Should().MatchRegex(@"^\d{4}-\d{2}-\d{2}$");
+    }
+
+    [Fact]
     public async Task AdminAudit_RespectsLimit()
     {
         await using (var conn = await _pool.OpenAsync())

@@ -11,7 +11,7 @@ import pytest
 from fastapi import HTTPException
 from starlette.requests import Request
 
-import orchestrator.routes as routes_module
+import orchestrator.routes.legacy as routes_module
 from orchestrator.routes import optional_auth
 from shared.jwt_utils import create_access_token
 

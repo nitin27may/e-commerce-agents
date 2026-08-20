@@ -1,0 +1,50 @@
+{
+  "request": {
+    "instructions": "You are a strict copy editor grading a product description against three named criteria: PRICE (does it mention the exact price given), FEATURE (does it mention at least one of the listed features), LENGTH (is it at or under the given word limit). Respond in EXACTLY this format, one line per criterion, nothing before or after it:\nPRICE: PASS or FAIL\nFEATURE: PASS or FAIL\nLENGTH: PASS or FAIL\nFEEDBACK: one sentence covering every FAIL, or 'none' if all three pass\nGrade exactly what the text says \u2014 do not soften a FAIL into a PASS to be polite.",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "Product: Aurora Desk Lamp\nPrice: $39.99\nFeatures: adjustable color temperature, USB-C charging port, touch dimmer\nWord limit: 40\n\nDescription to grade:\nIlluminate your workspace with the Aurora Desk Lamp, featuring adjustable color temperature and a convenient touch dimmer. USB-C charging port keeps your devices powered. Modern, versatile, and perfect for any desktop\u2014all for just $39.99.\n\nGrade it against the PRICE, FEATURE, and LENGTH criteria.",
+            "type": "text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      }
+    ],
+    "tools": []
+  },
+  "response": {
+    "created_at": "2026-08-20T02:49:42.000000Z",
+    "finish_reason": "stop",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "PRICE: PASS\nFEATURE: PASS\nLENGTH: PASS\nFEEDBACK: none",
+            "type": "text"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      }
+    ],
+    "model": "gpt-4.1-2025-04-14",
+    "response_id": "chatcmpl-EEn8YTCYwBR8wBLa2lAAbXbCTcMp6",
+    "type": "chat_response",
+    "usage_details": {
+      "cache_read_input_token_count": 0,
+      "completion/reasoning_tokens": 0,
+      "input_token_count": 231,
+      "output_token_count": 18,
+      "prompt/cached_tokens": 0,
+      "reasoning_output_token_count": 0,
+      "total_token_count": 249
+    }
+  }
+}

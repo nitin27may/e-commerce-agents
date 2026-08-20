@@ -457,7 +457,7 @@ flowchart LR
 |----------|--------|-----------|
 | **Agent Framework** | Microsoft Agent Framework (MAF) Python SDK | First-class `ChatAgent` abstraction with `@tool` decorators, `ContextProvider`, and built-in A2A support. Avoids hand-rolling function-calling loops. |
 | **Inter-Agent Protocol** | A2A via `agent-framework-a2a` | Standard protocol for agent-to-agent communication. Each specialist exposes `/message:send`. Decoupled from transport -- could swap HTTP for gRPC later. |
-| **LLM Provider** | OpenAI / Azure OpenAI (configurable) | Single `ChatClient` interface via MAF. Swap with `LLM_PROVIDER` env var. Azure for production (managed identity, RBAC); OpenAI for local dev. |
+| **LLM Provider** | OpenAI / Azure OpenAI (configurable) | Single `ChatClient` interface via MAF. Swap with `LLM_PROVIDER` env var. Azure for production (managed identity, RBAC); OpenAI for local dev — or any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, OpenRouter) via `LLM_BASE_URL` for a fully local, zero-cost dev loop. |
 | **Database** | PostgreSQL 16 + pgvector | Single database for relational data and vector embeddings. `text-embedding-3-small` (1536 dims) for semantic product search. IVFFlat index for fast cosine similarity. |
 | **Web Framework** | FastAPI (orchestrator) + Starlette (specialists) | FastAPI for the orchestrator because it needs REST endpoints (auth, chat, marketplace, admin). Specialists use the lighter `A2AAgentHost` which wraps Starlette. |
 | **Auth** | Self-contained JWT (HS256) + bcrypt | No external IdP dependency for the demo. Access tokens (60 min) + refresh tokens (7 days). Inter-agent auth via shared secret header. |

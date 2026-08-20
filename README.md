@@ -12,6 +12,8 @@
 
 A **multi-agent e-commerce platform** built with [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) (MAF). Ships as **two complete, feature-parity backends — Python and .NET / C#** — both fully working implementations, not samples. Six specialized AI agents collaborate via **A2A protocol** to handle product discovery, orders, pricing, reviews, inventory, and customer support.
 
+**Generative UI, not raw JSON.** The chat surface never dumps a tool result as text or a code block. Every agent response is inspected by shape and rendered as the right interactive component: a single detailed result becomes a card, a list becomes a table, a distribution or trend becomes a chart, a status becomes a tone-coded badge — see it live in the [Screens](#screens) gallery below (review sentiment: rating distribution + 6-month trend, rendered from the same data an LLM would otherwise only describe in prose).
+
 **Pick your stack:** [`agents/python/`](./agents/python/) (see [Quick Start → Python](#run-the-python-backend) below) or [`agents/dotnet/`](./agents/dotnet/) (see [Quick Start → .NET](#run-the-net-backend) below, or [`agents/dotnet/README.md`](./agents/dotnet/README.md)) — same database schema, same prompts, same Next.js frontend for either (toggle with `NEXT_PUBLIC_BACKEND_STACK`).
 
 Companion demo repo for the AI article series on [nitinksingh.com](https://nitinksingh.com/posts/maf-v1-21-putting-it-all-together/).
@@ -24,11 +26,13 @@ Companion demo repo for the AI article series on [nitinksingh.com](https://nitin
 
 | I want to... | Go here |
 |---|---|
+| Learn what an agent even is — new to AI/agents | [docs/concepts/](docs/concepts/) — start at page 01 |
 | Run the Python backend locally | [Quick Start → Python](#run-the-python-backend) below |
 | Run the .NET backend locally | [Quick Start → .NET](#run-the-net-backend) below |
 | Understand how the agents work / add a new one | [Architecture](docs/architecture.md) · [Adding an Agent](docs/adding-an-agent.md) |
 | Use the MCP server | [MCP Integration](docs/mcp-integration.md) |
 | Follow the step-by-step tutorial series | [tutorials/README.md](./tutorials/README.md) |
+| See the generative UI in action (cards, tables, charts — never raw JSON) | [Screens](#screens) below |
 
 ---
 
@@ -139,7 +143,7 @@ A new step-by-step tutorial series walks through **every Microsoft Agent Framewo
 | 5 · Advanced | 17–20 | HITL · checkpoints · declarative YAML · visualization |
 | Capstone | 21 | Guided tour of this repo |
 
-Each chapter has `python/`, `dotnet/`, `tests/`, a Hugo-ready article draft (`README.md`), and a per-chapter plan (`PLAN.md`). Chapters cross-post to [nitinksingh.com](https://nitinksingh.com) under the *MAF v1: Python and .NET* series, complementing the [original Python-only series](https://nitinksingh.com/posts/building-a-multi-agent-e-commerce-platform-the-complete-guide/).
+Each chapter has `python/`, `dotnet/`, `tests/`, and a Hugo-ready article draft (`README.md`). (`tutorials/_template/PLAN.md` is a template for authoring new chapters — individual chapters don't ship their own `PLAN.md`.) Chapters cross-post to [nitinksingh.com](https://nitinksingh.com) under the *MAF v1: Python and .NET* series, complementing the [original Python-only series](https://nitinksingh.com/posts/building-a-multi-agent-e-commerce-platform-the-complete-guide/).
 
 ---
 
@@ -255,7 +259,7 @@ Anyone can browse the catalog, use the AI shopping assistant, and explore produc
 
 ### AI shopping flow (signed in)
 
-Sign in as any seeded user to access cart, checkout, order tracking, and returns — all driven by natural language in the chat interface.
+Sign in as any seeded user to access cart, checkout, order tracking, and returns — all driven by natural language in the chat interface. Every response renders as generative UI, not raw text: the component (card, table, chart, badge) is chosen by the shape of the data an agent returns.
 
 <table>
 <tr><td><img src="docs/images/flow-product-search.png" alt="AI chat — product search with cards" width="820"/></td></tr>
@@ -268,6 +272,8 @@ Sign in as any seeded user to access cart, checkout, order tracking, and returns
 <tr><td align="center"><em>Track an order — Order Management agent returns live status and shipment detail</em></td></tr>
 <tr><td><img src="docs/images/flow-refund.png" alt="AI chat — return / refund request" width="820"/></td></tr>
 <tr><td align="center"><em>Return / refund — agent initiates the return flow and issues a return label</em></td></tr>
+<tr><td><img src="docs/images/flow-review-sentiment.png" alt="AI chat — review sentiment analysis with generative UI charts" width="820"/></td></tr>
+<tr><td align="center"><em>Generative UI — the Review & Sentiment agent's data renders as an interactive card: a rating-distribution bar chart, a 6-month trend line chart, and tone-coded pros/cons, all picked from the shape of the data itself, not a fixed template</em></td></tr>
 </table>
 
 ### Platform
@@ -337,7 +343,7 @@ Try these in the chat after logging in:
 |-------|-----------|
 | Agent Framework | [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) v1.0 — Python SDK **and** .NET SDK (both backends fully implemented) |
 | Agent Communication | A2A Protocol (HTTP) |
-| LLM | OpenAI / Azure OpenAI (gpt-4.1) |
+| LLM | OpenAI / Azure OpenAI (gpt-4.1) — plus any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, OpenRouter, GitHub Models) via `LLM_PROVIDER=openai` + `LLM_BASE_URL`, see [Setup](./tutorials/00-setup/) |
 | Orchestrator | FastAPI (Python 3.12) · ASP.NET Core minimal APIs (.NET 10, C#) |
 | Database | PostgreSQL 16 + pgvector (1536-dim embeddings) |
 | Cache | Redis 7 |
@@ -429,9 +435,17 @@ LLM_PROVIDER=azure
 AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
 AZURE_OPENAI_KEY=...
 AZURE_OPENAI_DEPLOYMENT=gpt-4.1
+
+# Local / self-hosted / free (Ollama, LM Studio, OpenRouter, vLLM, GitHub Models)
+LLM_PROVIDER=openai
+LLM_BASE_URL=http://localhost:11434/v1   # any OpenAI-compatible endpoint
+OPENAI_API_KEY=ollama                    # any non-empty string for local servers
+LLM_MODEL=qwen2.5:14b                    # a tool-calling-capable model
 ```
 
-See [Deployment Guide](docs/deployment.md) for all configuration options.
+See [Setup — Chapter 00](tutorials/00-setup/README.md) for the full walkthrough (including a
+tool-calling gotcha worth reading before picking a local model) and
+[Deployment Guide](docs/deployment.md) for all configuration options.
 
 ---
 
@@ -484,7 +498,7 @@ Legend: `- [x]` shipped · `- [ ]` planned or in progress.
 
 ### Shipped in v1
 
-- [x] **Agent evaluators** — scripted eval sets (precision@k, recall@k, answer faithfulness, tool-call correctness) across all six specialists, run against the seeded catalog. Nightly CI via `.github/workflows/evals.yml` (deliberately not a PR gate — LLM calls are slow and non-deterministic; nightly is the right cadence).
+- [x] **Agent evaluators** — scripted eval sets (precision@k, recall@k, answer faithfulness, tool-call correctness) across all six specialists, run against the seeded catalog. `.github/workflows/evals.yml` is `workflow_dispatch`-only today — run it manually from the Actions tab (or `gh workflow run evals.yml`) whenever an `OPENAI_API_KEY` secret is available; there is no automatic schedule yet, and it deliberately isn't a PR gate (LLM calls are slow and non-deterministic). A PR-blocking smoke gate (a fast subset of the suite) is planned but not yet implemented.
 - [x] **Prompt injection prevention** — `shared/guardrails/` wired into the middleware stack for all agents. Enabled by default (`GUARDRAILS_ENABLED=true`); runs in observe-first mode (`GUARDRAILS_FAIL_OPEN=true`) — flags and logs injections. Set `GUARDRAILS_BLOCK_ON_INJECTION=true` to enable hard blocking once false-positive rates are measured in your environment.
 - [x] **Session memory & context persistence** — `store_memory` / `recall_memories` tools in `shared/tools/memory_tools.py`, surfaced to the orchestrator via `shared/context_providers.py`. Per-user preferences, recent intents, and history make follow-ups feel continuous.
 - [x] **Full .NET / C# port** — same six specialist agents plus an MCP server, same A2A protocol and PostgreSQL schema, idiomatic .NET throughout. Nine test projects, ~191 tests. See [`agents/dotnet/`](./agents/dotnet/).

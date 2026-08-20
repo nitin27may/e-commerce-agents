@@ -21,13 +21,38 @@ from tutorials._shared import maf_bootstrap  # noqa: E402
 maf_bootstrap.bootstrap()
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
-from main import build_workflow, translate  # noqa: E402
+from main import FIXTURES_DIR, build_workflow, translate  # noqa: E402
 
 
-def test_workflow_has_four_executors_including_two_agents() -> None:
+def test_workflow_has_four_executors_including_two_agents(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Construction-only — never calls the LLM, so it shouldn't need real
+    # credentials. _default_client()'s OpenAI branch reads OPENAI_API_KEY via
+    # a hard os.environ[...] lookup (fails fast for real runs with no key at
+    # all), which this test tripped over in a credential-less CI job. A
+    # placeholder is enough since the client is never actually invoked.
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-placeholder-not-used")
     workflow = build_workflow()
     ids = {getattr(e, "id", None) for e in workflow.get_executors_list()}
     assert {"input-adapter", "en-to-fr", "fr-to-es", "output-adapter"} <= ids
+
+
+# ─────────────────── Replay test (no credentials, runs in CI) ────
+
+
+@pytest.mark.asyncio
+async def test_replay_translates_hello_to_spanish(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Plays back tests/fixtures/replay/ — no network, no credentials.
+
+    Two agent executors, two recorded fixtures (English→French,
+    French→Spanish). Recorded once against a real LLM (with RECORD=true) and
+    committed. Mirrors test_real_llm_translates_hello_to_spanish.
+    """
+    if not any(FIXTURES_DIR.glob("*.json")):
+        pytest.skip(f"no recorded fixtures in {FIXTURES_DIR} — run with RECORD=true first")
+    monkeypatch.setenv("LLM_PROVIDER", "replay")
+    result = (await translate("Hello, how are you?")).lower()
+    # Spanish equivalent is "hola, ¿cómo estás?" — accept either noun.
+    assert "hola" in result, f"expected Spanish in final output, got: {result!r}"
 
 
 def _llm_available() -> bool:
@@ -55,8 +80,6 @@ async def test_real_llm_translates_hello_to_spanish() -> None:
 @pytest.mark.skipif(not _llm_available(), reason="no LLM credentials in .env")
 async def test_real_llm_chain_fires_both_agent_executors() -> None:
     """Track which agent executors emit output events during the run."""
-    from main import build_workflow
-
     workflow = build_workflow()
     invoked: list[str] = []
     async for event in workflow.run("Good morning", stream=True):

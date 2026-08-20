@@ -12,28 +12,28 @@ public sealed class AddToolsTests
     // ─────────── Unit tests (tool function directly) ───────────
 
     [Fact]
-    public void Weather_Tool_Returns_Canned_Data_For_Known_City()
+    public void Product_Price_Tool_Returns_Canned_Data_For_Known_Sku()
     {
-        Program.GetWeather("Paris").Should().Contain("Sunny").And.Contain("18");
+        Program.GetProductPrice("SKU-001").Should().Contain("79.99").And.Contain("Wireless Mouse");
     }
 
     [Fact]
-    public void Weather_Tool_Is_Case_Insensitive()
+    public void Product_Price_Tool_Is_Case_Insensitive()
     {
-        Program.GetWeather("paris").Should().Be(Program.GetWeather("PARIS"));
+        Program.GetProductPrice("sku-001").Should().Be(Program.GetProductPrice("SKU-001"));
     }
 
     [Fact]
-    public void Weather_Tool_Handles_Unknown_City()
+    public void Product_Price_Tool_Handles_Unknown_Sku()
     {
-        Program.GetWeather("Atlantis").Should().Contain("No weather data");
+        Program.GetProductPrice("SKU-999").Should().Contain("No pricing data");
     }
 
     // ─────────── Integration (hits real LLM) ───────────
 
     [Fact]
     [Trait("Category", "Integration")]
-    public async Task Real_LLM_Invokes_Weather_Tool()
+    public async Task Real_LLM_Invokes_Product_Price_Tool()
     {
         if (!LlmCredentialsPresent())
         {
@@ -42,9 +42,9 @@ public sealed class AddToolsTests
         }
 
         var agent = Program.BuildAgent();
-        var answer = (await Program.Ask(agent, "What's the weather in Paris?")).ToLowerInvariant();
-        answer.Should().Match(a => a.Contains("sunny") || a.Contains("18"),
-            "canned weather data should reach the final answer when the tool is called");
+        var answer = (await Program.Ask(agent, "What's the price of SKU-001?")).ToLowerInvariant();
+        answer.Should().Match(a => a.Contains("79.99") || a.Contains("wireless mouse"),
+            "canned product-price data should reach the final answer when the tool is called");
     }
 
     [Fact]
@@ -63,8 +63,8 @@ public sealed class AddToolsTests
             "What is the capital of France? Answer with only the city name.")).ToLowerInvariant();
 
         answer.Should().Contain("paris");
-        answer.Should().NotContain("sunny",
-            "canned weather data must not bleed into a non-weather answer");
+        answer.Should().NotContain("79.99",
+            "canned product-price data must not bleed into a non-price answer");
     }
 
     // ─────────── Helpers ───────────

@@ -21,10 +21,9 @@ from tutorials._shared import maf_bootstrap  # noqa: E402
 maf_bootstrap.bootstrap()
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
-from main import build_agent, chat, stream_answer  # noqa: E402
-
 from agent_framework import BaseChatClient, Content, Message  # noqa: E402
 from agent_framework._types import ChatResponse, ChatResponseUpdate, ResponseStream  # noqa: E402
+from main import FIXTURES_DIR, build_agent, chat, stream_answer  # noqa: E402
 
 
 class StreamingCannedClient(BaseChatClient):
@@ -70,9 +69,7 @@ class StreamingCannedClient(BaseChatClient):
             )
 
         async def _return() -> ChatResponse:
-            return ChatResponse(
-                messages=[Message(role="assistant", contents=[Content(type="text", text=text)])]
-            )
+            return ChatResponse(messages=[Message(role="assistant", contents=[Content(type="text", text=text)])])
 
         return _return()
 
@@ -86,6 +83,7 @@ def _split_in_three(s: str) -> list[str]:
 
 
 # ─────────── Unit tests (stubbed streaming) ───────────
+
 
 @pytest.mark.asyncio
 async def test_stream_yields_multiple_chunks() -> None:
@@ -116,7 +114,34 @@ async def test_streamed_chunks_combine_to_full_text() -> None:
     assert "".join(chunks) == "abcdefghij"
 
 
+# ─────────── Replay test (no credentials, runs in CI) ───────────
+
+
+@pytest.mark.asyncio
+async def test_replay_multiturn_preserves_context(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Plays back tests/fixtures/replay/ — no network, no credentials.
+
+    Recorded once against a real LLM (test_real_llm_multiturn_preserves_context
+    below, run with RECORD=true) and committed. Multi-turn, so two fixtures
+    are involved — one per turn's message history.
+    """
+    if not any(FIXTURES_DIR.glob("*.json")):
+        pytest.skip(f"no recorded fixtures in {FIXTURES_DIR} — run with RECORD=true first")
+    monkeypatch.setenv("LLM_PROVIDER", "replay")
+    agent = build_agent()
+    per_turn = await chat(
+        agent,
+        [
+            "What is Python in one line?",
+            "What year was it first released? Answer with the year only.",
+        ],
+    )
+    second_answer = "".join(per_turn[1])
+    assert "1991" in second_answer, f"expected 1991 in follow-up, got: {second_answer!r}"
+
+
 # ─────────── Integration (real LLM) ───────────
+
 
 def _llm_available() -> bool:
     provider = os.environ.get("LLM_PROVIDER", "openai").lower()
@@ -135,9 +160,12 @@ def _llm_available() -> bool:
 async def test_real_llm_multiturn_preserves_context() -> None:
     """Second turn must be able to resolve 'it' to Python from turn 1."""
     agent = build_agent()
-    per_turn = await chat(agent, [
-        "What is Python in one line?",
-        "What year was it first released? Answer with the year only.",
-    ])
+    per_turn = await chat(
+        agent,
+        [
+            "What is Python in one line?",
+            "What year was it first released? Answer with the year only.",
+        ],
+    )
     second_answer = "".join(per_turn[1])
     assert "1991" in second_answer, f"expected 1991 in follow-up, got: {second_answer!r}"

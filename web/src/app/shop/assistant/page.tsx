@@ -4,15 +4,17 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Sparkles, ArrowUp, Loader2, User as UserIcon, Bot } from "lucide-react";
-import { api, type AgentStep } from "@/lib/api";
+import { api, type AgentStep, type GroundingReport } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { AgentTimeline } from "@/components/chat/agent-timeline";
+import { GroundingBadge } from "@/components/chat/grounding-badge";
 import { RichMessage } from "@/components/chat/rich-message";
 
 interface Msg {
   role: "user" | "assistant";
   content: string;
   steps?: AgentStep[];
+  grounding?: GroundingReport;
 }
 
 const STARTERS = [
@@ -56,6 +58,14 @@ function Assistant() {
                 const next = [...m];
                 const last = next[next.length - 1];
                 if (last?.role === "assistant") last.steps = [...(last.steps ?? []), step];
+                return next;
+              });
+            },
+            onGrounding: (report) => {
+              setMessages((m) => {
+                const next = [...m];
+                const last = next[next.length - 1];
+                if (last?.role === "assistant") last.grounding = report;
                 return next;
               });
             },
@@ -154,6 +164,7 @@ function Assistant() {
                   {m.role === "assistant" && m.steps && m.steps.length > 0 && (
                     <AgentTimeline steps={m.steps} />
                   )}
+                  {m.role === "assistant" && <GroundingBadge report={m.grounding} />}
                 </div>
                 {m.role === "user" && (
                   <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">

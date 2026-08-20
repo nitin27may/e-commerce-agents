@@ -23,17 +23,17 @@ public sealed class SessionsTests
         try
         {
             var agent1 = Program.BuildAgent();
-            await Program.AskAndSave(agent1, "Remember: my favorite color is teal.", sessionPath);
+            await Program.AskAndSave(agent1, "Remember: I want to buy SKU-4471.", sessionPath);
             File.Exists(sessionPath).Should().BeTrue();
 
             // Fresh agent instance (what a separate CLI run would produce).
             var agent2 = Program.BuildAgent();
             var (answer, _) = await Program.AskAndSave(
                 agent2,
-                "What color did I tell you I liked? Answer with only the color.",
+                "What did I say I wanted to buy? Answer with only the SKU.",
                 sessionPath);
 
-            answer.ToLowerInvariant().Should().Contain("teal",
+            answer.ToUpperInvariant().Should().Contain("SKU-4471",
                 "the second agent instance must see turn 1 via the persisted session");
         }
         finally

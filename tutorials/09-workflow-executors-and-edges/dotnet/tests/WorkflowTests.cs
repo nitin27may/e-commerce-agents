@@ -13,24 +13,24 @@ namespace MafV1.Ch09.WorkflowDemo.Tests;
 public sealed class WorkflowTests
 {
     [Fact]
-    public async Task Happy_Path_Pipeline_Returns_Uppercased_Logged_Output()
+    public async Task Happy_Path_Pipeline_Returns_Normalized_Logged_Output()
     {
-        var outputs = await RunAndCollect("hello world");
-        outputs.Should().ContainSingle().Which.Should().Be("LOGGED: HELLO WORLD");
+        var outputs = await RunAndCollect(" ord-8842 ");
+        outputs.Should().ContainSingle().Which.Should().Be("ORDER LOGGED: ORD-8842");
     }
 
     [Fact]
-    public async Task Empty_Input_Short_Circuits_At_Validate_Executor()
+    public async Task Empty_Order_Id_Short_Circuits_At_Validate_Executor()
     {
         var outputs = await RunAndCollect(string.Empty);
-        outputs.Should().ContainSingle().Which.Should().Be("[skipped: empty input]");
+        outputs.Should().ContainSingle().Which.Should().Be("[rejected: empty order id]");
     }
 
     [Fact]
-    public async Task Whitespace_Only_Input_Treated_As_Empty()
+    public async Task Whitespace_Only_Order_Id_Treated_As_Empty()
     {
         var outputs = await RunAndCollect("   ");
-        outputs.Should().ContainSingle().Which.Should().Be("[skipped: empty input]");
+        outputs.Should().ContainSingle().Which.Should().Be("[rejected: empty order id]");
     }
 
     [Fact]
@@ -50,7 +50,7 @@ public sealed class WorkflowTests
         var workflow = WorkflowFactory.Build();
         var invokedOrder = new List<string>();
 
-        await using StreamingRun run = await InProcessExecution.RunStreamingAsync(workflow, "pipeline-test");
+        await using StreamingRun run = await InProcessExecution.RunStreamingAsync(workflow, "ord-1234");
         await foreach (WorkflowEvent evt in run.WatchStreamAsync())
         {
             if (evt is ExecutorInvokedEvent invoked)
@@ -59,7 +59,7 @@ public sealed class WorkflowTests
             }
         }
 
-        invokedOrder.Should().ContainInOrder("uppercase", "validate", "log");
+        invokedOrder.Should().ContainInOrder("normalize-order", "validate-order", "log-order");
     }
 
     [Fact]
@@ -77,8 +77,8 @@ public sealed class WorkflowTests
             }
         }
 
-        invokedOrder.Should().Contain("uppercase").And.Contain("validate");
-        invokedOrder.Should().NotContain("log");
+        invokedOrder.Should().Contain("normalize-order").And.Contain("validate-order");
+        invokedOrder.Should().NotContain("log-order");
     }
 
     // ─────────────── helpers ───────────────

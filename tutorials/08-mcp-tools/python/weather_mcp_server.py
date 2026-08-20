@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from mcp.server.fastmcp import FastMCP
 
-
 server = FastMCP("maf-v1-ch08-weather")
 
 

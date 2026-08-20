@@ -1,0 +1,50 @@
+{
+  "request": {
+    "instructions": "You write short e-commerce product descriptions. Follow the price, feature, and word-limit constraints given in the prompt exactly \u2014 do not round the price and do not invent features not listed. Return only the description text, no preamble, no quotes.",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "Write a product description for 'Aurora Desk Lamp'. Price: $39.99. Features: adjustable color temperature, USB-C charging port, touch dimmer. Keep it to 40 words or fewer.",
+            "type": "text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      }
+    ],
+    "tools": []
+  },
+  "response": {
+    "created_at": "2026-08-20T02:49:42.000000Z",
+    "finish_reason": "stop",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "Illuminate your workspace with the Aurora Desk Lamp, featuring adjustable color temperature and a convenient touch dimmer. USB-C charging port keeps your devices powered. Modern, versatile, and perfect for any desktop\u2014all for just $39.99.",
+            "type": "text"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      }
+    ],
+    "model": "gpt-4.1-2025-04-14",
+    "response_id": "chatcmpl-EEn8YyDt5du74WwpwNjTyfbjAYg3H",
+    "type": "chat_response",
+    "usage_details": {
+      "cache_read_input_token_count": 0,
+      "completion/reasoning_tokens": 0,
+      "input_token_count": 103,
+      "output_token_count": 47,
+      "prompt/cached_tokens": 0,
+      "reasoning_output_token_count": 0,
+      "total_token_count": 150
+    }
+  }
+}

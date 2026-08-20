@@ -71,7 +71,7 @@ public sealed class InventoryTools(DatabasePool pool, AgentSettings settings, Hi
             Warehouse: (string)r.warehouse,
             Region: (string)r.region,
             ExpectedQuantity: (int)r.expected_quantity,
-            ExpectedDate: ((DateTime)r.expected_date).ToString("yyyy-MM-dd")
+            ExpectedDate: ((DateOnly)r.expected_date).ToString("yyyy-MM-dd")
         )).ToList();
 
         return new RestockScheduleResult(
@@ -503,7 +503,7 @@ public sealed class InventoryTools(DatabasePool pool, AgentSettings settings, Hi
                     ExpectedRestock: nextRestock is null
                         ? null
                         : new RestockForecast(
-                            Date: ((DateTime)nextRestock.expected_date).ToString("yyyy-MM-dd"),
+                            Date: ((DateOnly)nextRestock.expected_date).ToString("yyyy-MM-dd"),
                             Quantity: (int)nextRestock.expected_quantity,
                             Warehouse: (string)nextRestock.warehouse
                         ),

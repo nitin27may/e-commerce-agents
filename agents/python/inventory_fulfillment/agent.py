@@ -8,7 +8,7 @@ of calling asyncpg directly. Both modes expose the same capabilities.
 from agent_framework import Agent
 from agent_framework._mcp import MCPStreamableHTTPTool
 
-from inventory_fulfillment.prompts import SYSTEM_PROMPT
+from inventory_fulfillment.prompts import get_system_prompt
 from inventory_fulfillment.tools import (
     calculate_fulfillment_plan,
     compare_carriers,
@@ -19,6 +19,7 @@ from inventory_fulfillment.tools import (
 )
 from shared.agent_factory import create_chat_client
 from shared.config import settings
+from shared.context import current_user_role
 from shared.context_providers import ECommerceContextProvider
 from shared.middleware import build_specialist_middleware
 from shared.oauth.service_client import acquire_service_token, build_mcp_http_client, set_mcp_auth_header
@@ -76,7 +77,7 @@ def create_inventory_fulfillment_agent() -> Agent:
         client=create_chat_client(),
         name="inventory-fulfillment",
         description="Real-time inventory tracking, shipping estimation, carrier comparison, and backorder management.",
-        instructions=SYSTEM_PROMPT,
+        instructions=get_system_prompt(current_user_role.get() or "customer"),
         tools=tools,
         context_providers=[ECommerceContextProvider()],
         middleware=build_specialist_middleware(),

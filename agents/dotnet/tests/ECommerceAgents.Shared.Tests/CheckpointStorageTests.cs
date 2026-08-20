@@ -99,13 +99,19 @@ public sealed class PostgresCheckpointStorageTests : IAsyncLifetime
         _pool = new DatabasePool(settings);
         _store = new PostgresCheckpointStorage(_pool);
         await using var conn = await _pool.OpenAsync();
-        await conn.ExecuteAsync("TRUNCATE workflow_checkpoints");
+        // CASCADE: hitl_requests.checkpoint_id has a foreign key onto this
+        // table (docker/postgres/init.sql), so a bare TRUNCATE fails with
+        // "cannot truncate a table referenced in a foreign key constraint"
+        // regardless of the FK's ON DELETE action — TRUNCATE's dependency
+        // check is stricter than DELETE's. Safe here: this is an isolated,
+        // per-test-run testcontainer database, not a shared one.
+        await conn.ExecuteAsync("TRUNCATE workflow_checkpoints CASCADE");
     }
 
     public async Task DisposeAsync()
     {
         await using var conn = await _pool.OpenAsync();
-        await conn.ExecuteAsync("TRUNCATE workflow_checkpoints");
+        await conn.ExecuteAsync("TRUNCATE workflow_checkpoints CASCADE");
         await _pool.DisposeAsync();
     }
 

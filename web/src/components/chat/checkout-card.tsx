@@ -40,10 +40,13 @@ export function ChatCheckoutCard({ data }: { data: CheckoutData }) {
   const addressStr = formatAddress(data.shipping_address);
 
   return (
-    <div className="my-2 max-w-md rounded-xl border-2 border-teal-200 bg-gradient-to-br from-teal-50 to-white overflow-hidden">
+    // Checkout's brand accent reuses the chart-2 token (teal-hued already)
+    // instead of a literal teal-* — a deliberate accent, not a status color,
+    // but still theme-consistent so a future re-skin carries it along.
+    <div className="my-2 max-w-md rounded-xl border-2 border-chart-2/30 bg-gradient-to-br from-chart-2/10 to-card overflow-hidden">
       {/* Header */}
       <div className="flex items-center gap-3 px-5 pt-4 pb-3">
-        <div className="flex size-10 items-center justify-center rounded-full bg-teal-100">
+        <div className="flex size-10 items-center justify-center rounded-full bg-chart-2/15">
           <ShoppingCart className="size-5 text-primary" />
         </div>
         <div className="flex-1 min-w-0">
@@ -56,9 +59,9 @@ export function ChatCheckoutCard({ data }: { data: CheckoutData }) {
 
       {/* Items */}
       {items.length > 0 && (
-        <div className="border-y border-teal-100 bg-card/60">
+        <div className="border-y border-chart-2/20 bg-card/60">
           <table className="w-full text-xs">
-            <tbody className="divide-y divide-teal-50">
+            <tbody className="divide-y divide-chart-2/10">
               {items.map((item, i) => {
                 const unit = item.unit_price ?? item.price ?? 0;
                 const lineTotal = item.subtotal ?? unit * (item.quantity || 1);

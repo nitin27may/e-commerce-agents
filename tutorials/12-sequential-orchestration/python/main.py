@@ -24,10 +24,19 @@ maf_bootstrap.bootstrap()
 from agent_framework import Agent  # noqa: E402
 from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient  # noqa: E402
 from agent_framework.orchestrations import SequentialBuilder  # noqa: E402
+from tutorials._shared.replay_client import ReplayChatClient  # noqa: E402
+
+FIXTURES_DIR = pathlib.Path(__file__).resolve().parent / "tests" / "fixtures" / "replay"
 
 
-def _default_client() -> OpenAIChatClient | OpenAIChatCompletionClient:
+def _default_client() -> OpenAIChatClient | OpenAIChatCompletionClient | ReplayChatClient:
     provider = os.environ.get("LLM_PROVIDER", "openai").lower()
+    if provider == "replay":
+        return ReplayChatClient(
+            fixtures_dir=FIXTURES_DIR,
+            record=os.environ.get("RECORD", "").lower() in ("1", "true", "yes"),
+            record_provider=os.environ.get("REPLAY_RECORD_PROVIDER", "openai"),
+        )
     if provider == "azure":
         return OpenAIChatCompletionClient(
             model=os.environ["AZURE_OPENAI_DEPLOYMENT"],
@@ -38,16 +47,17 @@ def _default_client() -> OpenAIChatClient | OpenAIChatCompletionClient:
     return OpenAIChatClient(
         model=os.environ.get("LLM_MODEL", "gpt-4.1"),
         api_key=os.environ["OPENAI_API_KEY"],
+        # Phase 9: any OpenAI-compatible endpoint (GitHub Models, OpenRouter,
+        # vLLM, LM Studio, Ollama) instead of api.openai.com — see
+        # tutorials/00-setup/README.md's "Don't have a paid API key?" section.
+        base_url=os.environ.get("LLM_BASE_URL") or None,
     )
 
 
 def writer() -> Agent:
     return Agent(
         _default_client(),
-        instructions=(
-            "You are a Writer. Draft a 2-sentence paragraph on the topic the user provides. "
-            "Keep it short."
-        ),
+        instructions=("You are a Writer. Draft a 2-sentence paragraph on the topic the user provides. Keep it short."),
         name="writer",
     )
 
@@ -78,11 +88,25 @@ def build_workflow():
     return SequentialBuilder(participants=[writer(), reviewer(), finalizer()]).build()
 
 
+async def _workflow_events(workflow, message: str):
+    """Yield workflow events from a streaming run.
+
+    ``workflow.run(..., stream=True)`` drives each participant's turn through
+    MAF's streaming AgentExecutor path, which in turn streams the chat
+    client's response. ``ReplayChatClient`` (see
+    tutorials/_shared/replay_client.py) wires the same finalizer real clients
+    use, so replay mode streams correctly through this same path — no
+    provider-specific branch needed here.
+    """
+    async for event in workflow.run(message, stream=True):
+        yield event
+
+
 async def run(topic: str) -> list[str]:
     """Run the Sequential pipeline and return each agent's response text in order."""
     workflow = build_workflow()
     per_agent: dict[str, str] = {}
-    async for event in workflow.run(topic, stream=True):
+    async for event in _workflow_events(workflow, topic):
         # Each agent's turn surfaces in an executor_completed event whose
         # data is a list containing one AgentExecutorResponse.
         if getattr(event, "type", None) != "executor_completed":

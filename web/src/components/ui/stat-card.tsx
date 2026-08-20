@@ -15,10 +15,12 @@ export interface StatCardProps {
   /** Secondary line under the value. */
   hint?: string;
   className?: string;
+  /** Extra classes for the value text — e.g. a semantic tone color. */
+  valueClassName?: string;
 }
 
 const TREND_CLASS: Record<StatDelta["trend"], string> = {
-  up: "text-emerald-600 dark:text-emerald-400",
+  up: "text-success",
   down: "text-destructive",
   neutral: "text-muted-foreground",
 };
@@ -31,6 +33,7 @@ export function StatCard({
   delta,
   hint,
   className,
+  valueClassName,
 }: StatCardProps) {
   return (
     <div
@@ -49,7 +52,7 @@ export function StatCard({
         )}
       </div>
       <div className="mt-2 flex items-baseline gap-2">
-        <span className="text-2xl font-semibold tracking-tight tabular-nums">
+        <span className={cn("text-2xl font-semibold tracking-tight tabular-nums", valueClassName)}>
           {value}
         </span>
         {delta && (

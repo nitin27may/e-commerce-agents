@@ -11,7 +11,9 @@ import { cn } from "@/lib/utils";
  * Each step row expands to show tool_input / tool_output as formatted JSON.
  */
 export function AgentTimeline({ steps }: { steps: AgentStep[] }) {
-  const [open, setOpen] = useState(false);
+  // Open by default — the agentic timeline is the one thing this repo
+  // exists to show; hiding it behind a click buried the point.
+  const [open, setOpen] = useState(true);
 
   if (!steps.length) return null;
 
@@ -89,6 +91,15 @@ function StepRow({ step: s }: { step: AgentStep }) {
           )}
           {s.tool_output !== undefined && (
             <JsonBlock label="Output" value={s.tool_output} />
+          )}
+          {s.provenance && s.provenance.row_ids.length > 0 && (
+            <p className="text-muted-foreground">
+              Sourced from <span className="font-mono text-foreground/80">{s.provenance.source}</span>
+              {" — "}
+              {s.provenance.row_ids.length} row{s.provenance.row_ids.length === 1 ? "" : "s"}
+              {": "}
+              <span className="font-mono text-foreground/70">{s.provenance.row_ids.join(", ")}</span>
+            </p>
           )}
         </div>
       )}

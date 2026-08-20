@@ -19,7 +19,7 @@ This matrix is the anchor reference for [`docs/security-guide.md`](security-guid
 | # | Dimension | What it covers |
 |---|-----------|---------------|
 | 1 | **Injection defense — inbound** | `InjectionDetectionChatMiddleware` scanning user messages before they reach the model |
-| 2 | **Injection defense — stored** | `OutputSanitizationMiddleware` neutralizing tool results that carry user-generated text before it re-enters the model |
+| 2 | **Injection defense — stored** | `OutputSanitizationMiddleware` neutralizing tool results that carry user-generated text before it re-enters the model. **Python-only** — there is no .NET equivalent; the .NET stack has no stored-injection defense at all |
 | 3 | **Role enforcement** | `@requires_role` / `ensure_role` checks on destructive or privileged tools |
 | 4 | **Eval dataset** | Named dataset file under `agents/python/evals/datasets/` |
 | 5 | **Red-team coverage** | Attack vectors from `red_team.json` that target this agent |

@@ -75,13 +75,27 @@ The **orchestrator** is the front door. All user requests go through it. Its LLM
 
 Each specialist agent runs as an independent microservice with its own port and A2A endpoint, but all share a single Dockerfile (multi-target via `ARG AGENT_NAME`).
 
-### Critical: Custom Tool-Calling Loop in agent_host.py
+### Orchestrator route layout
 
-`shared/agent_host.py` does **not** use MAF's Responses API. Instead, it implements a custom tool-calling loop using OpenAI's chat completions API directly. This was a deliberate choice for Azure OpenAI compatibility across API versions. Both `_run_agent_with_tools()` (blocking) and `_run_agent_with_tools_stream()` (SSE streaming) exist.
+`orchestrator/routes/` is a package, not a single file: `chat.py` holds `/api/chat` + `/api/chat/stream`, `orchestration.py` holds the mode-introspection endpoints (`/api/orchestration/modes`, `.../graph`, `.../compare` — real as of Phase 1.6c, runs one prompt through several modes sequentially and reports per-mode text/latency/steps/graph; `tokens`/`est_cost_usd`/`grounding` aren't in the response yet, since they need Phase 3.5/Phase 2 infrastructure that doesn't exist — and `.../{run_id}/resume`, real as of Phase 1.5), and `legacy.py` holds everything else (auth, marketplace, admin, cart, checkout, orders, seller, and — Phase 1.5 — `GET /api/runs/{id}/checkpoints`) — the pre-split monolith, kept together since the split's purpose was isolating chat, not fully decomposing the route surface. `orchestrator/routes/__init__.py` combines all three into the single `router` `orchestrator/main.py` includes, and re-exports `optional_auth`/`require_auth`/`require_admin`/`require_seller`/`settings` so existing import sites are unaffected.
+
+**Web UI (Phase 1.6).** `web/src/components/chat/mode-switcher.tsx` (1.6a) is a composer control fed by `GET /api/orchestration/modes`, threading the selected mode through `api.ts::chatStream()`'s `mode` option and persisting it per conversation in localStorage. `orchestration-graph.tsx` (1.6b) renders a mode's `graph_mermaid()` output client-side (house palette applied client-side — the backend's generated source carries no styling) and animates nodes live from the `onOrchestrationEvent` hook's `node`/`error` frames; correlating a live `node_id` to a diagram node relies on a deliberate backend convention — every workflow mode's `graph_mermaid()` uses the real executor id with dashes swapped for underscores as the Mermaid node id (see `PrePurchaseMode.graph_mermaid()`'s comment in `workflow_mode.py`). `mode-comparison.tsx` (1.6c) is a standalone dialog (not tied to the active conversation) that calls `POST /api/orchestration/compare` and renders a result card per mode, reusing `orchestration-graph.tsx` in a static (non-live) rendering by passing the mode's `agents_involved` as `doneNodeIds`.
+
+**Resume UI (`/runs`).** `web/src/app/(app)/runs/page.tsx` fetches `GET /api/runs/{id}/checkpoints` for every visible run up front (not lazily on row-expand — a lazy fetch means a "Needs approval" badge can never show until a row's already been opened once, defeating its purpose as something to scan the list for), and shows Approve/Reject buttons calling `POST /api/orchestration/{run_id}/resume` for any row with a pending `hitl_request`. Rows are always expandable now, not gated on `steps.length > 0` — workflow modes never populate `agent_execution_steps` (only "tool" mode's `log_execution_step()` calls do), so that gate used to hide the expand affordance for exactly the runs most likely to have a pending approval.
+
+Both chat endpoints resolve an orchestration mode (request body `mode` -> `settings.ORCHESTRATION_MODE` -> `"tool"`) via `orchestrator.modes.get_mode()` and dispatch through it — `orchestrator/modes/` is what makes those modes reachable from a live request rather than tests-only. Five are registered: `tool` (default, LLM calls `call_specialist_agent`), `handoff` (`orchestrator/handoff.py`'s `HandoffBuilder` mesh), `workflow:pre-purchase` (`workflows/pre_purchase.py`'s concurrent fan-out/fan-in), `workflow:return-replace` (`workflows/return_replace.py`'s sequential graph with an in-workflow `ctx.request_info` HITL gate), and `group-chat` (`workflows/group_chat.py`'s round-table debate, two agent-backed panelists then a moderator). The two workflow modes and group-chat resolve a product_id/order_id out of the chat message themselves (a UUID literal if present, else a lookup — `search_products` / the user's most recent order) since neither underlying workflow ever took free text.
+
+**Checkpoints + resume (Phase 1.5).** `PrePurchaseMode` and `ReturnReplaceMode` attach `shared.factory.get_checkpoint_storage()` to every workflow run, wrapped in `shared.checkpoint_storage.RecordingCheckpointStorage` so each save surfaces as its own `kind="checkpoint"` event (MAF's own event stream never mentions a save). `chat.py`'s `_link_run_artifacts()` correlates a run's `usage_logs` row to its checkpoints (`workflow_checkpoints.usage_log_id`) and, when `workflow:return-replace` pauses, writes a `hitl_requests` row carrying MAF's own resume token (`request_id`) and the paused checkpoint. `ReturnReplaceMode.resume()` — reached from `POST /api/orchestration/{run_id}/resume` — builds a *fresh* `Workflow` object (there's no live one to reuse; the one that paused lived in a prior request's process memory) and resumes purely from `checkpoint_id` + `responses={request_id: approved}`, verified directly to replay correctly through discount and finalize. Note: `_HitlGateExecutor.on_approval()` (`workflows/return_replace.py`, unchanged) rebuilds a minimal `WorkflowState` from the approval-request snapshot on resume — `return_id`/`replacement_products` from the original run don't survive; `resume()`'s response text is written to not depend on them.
+
+`chat_stream()` branches on the resolved mode: `tool` keeps its original direct-agent SSE path (no mode streams token-level deltas the way `_run_agent_native_stream` does), while every other mode streams through `get_mode(...).run()` directly, translating each `OrchestrationEvent` into an SSE frame — `delta` becomes real display text (extracted via `orchestrator.events.delta_text`) when it's present, `node_enter`/`node_exit` becomes `event: node`, `handoff` becomes `event: handoff`, `tool_call` becomes `event: step`, `checkpoint`/`request_info`/`error` get their own named frames. Not every mode streams incremental text — `handoff` does (its "output" events carry `AgentResponseUpdate` content), but the three MAF-workflow modes mostly don't (their executors call `ctx.send_message()`, which produces no delta; the one `ctx.yield_output()` carries a raw state dataclass) — so `_run_mode_task()` falls back to pushing `run_completed`'s full text as a single chunk if nothing streamed incrementally, guaranteeing every mode a non-empty visible response. The web client (`web/src/lib/api.ts::chatStream`) routes any SSE event name outside `step`/`metadata`/`delta`/plain-text to an `onOrchestrationEvent` hook rather than rendering it as chat text — no UI consumes these frames yet (that's Phase 1.6), but the parser had to be fixed to not corrupt the chat bubble with raw JSON once a caller sets `mode` to anything other than `tool`.
+
+### MAF-Native Execution in agent_host.py
+
+`shared/agent_host.py` is a lightweight A2A-compatible FastAPI host. It does **not** implement a custom tool-calling loop — the legacy `_run_agent_with_tools()` / `_run_agent_with_tools_stream()` OpenAI chat-completions loop was removed once MAF-native execution was confirmed compatible with production Azure deployments (see the module docstring). Every request now goes through MAF's own `agent.run()` (blocking) / `agent.run(..., stream=True)` (SSE streaming); the `Agent` object owns its tools, system prompt, and context-provider chain, so `agent_host.py` just threads the A2A request into the right MAF call and (for streaming) forwards chunks over SSE.
 
 ### MAF Package Patch
 
-`agents/python/patch_maf.py` — The agent-framework package ships with an empty `__init__.py`. The Dockerfile runs this patch before starting agents to re-export public APIs. This is a workaround for a packaging bug in MAF v1.0.
+`agents/python/patch_maf.py` — workaround for a packaging bug in `agent-framework-core==1.0.0`, whose `__init__.py` shipped empty with no public re-exports. Fixed upstream by 1.14.0 (the version this repo now pins), so `patch()` is already a no-op on a current install (it only writes when the file is empty). The Dockerfile still runs it defensively; it does nothing today.
 
 ### YAML Prompt Composition System
 
@@ -89,7 +103,7 @@ Prompts are NOT hardcoded strings. `shared/prompt_loader.py` loads from `agents/
 
 Shared prompt fragments live in `agents/python/config/prompts/_shared/` (grounding-rules.yaml, schema-context.yaml, tool-examples.yaml).
 
-`load_prompt(agent_name, user_role)` is called per-request, making prompts role-aware (admin sees different instructions than customer).
+Each agent's `create_*_agent()` factory calls `get_system_prompt(current_user_role.get())` (which wraps `load_prompt(agent_name, user_role)`) at agent-construction time, and agents are rebuilt on every request (see `orchestrator/routes/chat.py`) — so the composed prompt is genuinely role-aware per request (admin sees different instructions than customer). Earlier revisions built the prompt once at *import* time with a hardcoded default role, which silently defeated the role-specific YAML blocks; that bug is fixed.
 
 ### Auth & Identity Flow
 
@@ -99,7 +113,9 @@ Shared prompt fragments live in `agents/python/config/prompts/_shared/` (groundi
 
 ### Conversation History Forwarding
 
-When orchestrator calls specialists via A2A, it includes recent conversation history (last 10 messages, truncated to 500 chars each). Specialists can handle follow-ups contextually.
+The orchestrator no longer forwards a truncated copy of the conversation history on A2A calls (that "last 10 messages, 500 chars each" window was removed — see the comment in `orchestrator/agent.py::call_specialist_agent`). Instead only the session id travels, via the `x-session-id` header; each specialist rehydrates prior context itself by querying Postgres for the session's messages (`shared/agent_host.py::_rehydrate_history_from_session`) when it needs to handle a follow-up contextually.
+
+Separately, the orchestrator's own read of *its* conversation's history (for `RunContext.history`, forwarded into every orchestration mode) goes through `shared/session.py::get_history_as_dicts` + `get_history_provider`, not a hand-rolled `SELECT`. Message *writes* stay as each route's own richer `INSERT` (carries `agent_name`/`agents_involved`/`metadata` a generic `HistoryProvider` write doesn't) — see `orchestrator/routes/chat.py`'s module docstring for why a `HistoryProvider` isn't attached as an automatic `context_providers=[...]` hook (verified it would double-write).
 
 ## Tech Stack
 
@@ -107,7 +123,7 @@ When orchestrator calls specialists via A2A, it includes recent conversation his
 |-------|-----------|
 | Agent Framework | `agent-framework` v1.0 (MAF Python SDK, beta) |
 | Agent Communication | A2A Protocol (HTTP POST to `/message:send`) |
-| LLM | OpenAI / Azure OpenAI (gpt-4.1), configurable via `LLM_PROVIDER` env var |
+| LLM | OpenAI / Azure OpenAI (gpt-4.1), configurable via `LLM_PROVIDER` env var — plus any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, OpenRouter, GitHub Models) via `LLM_PROVIDER=openai` + `LLM_BASE_URL` |
 | Backend | Python 3.12, FastAPI (orchestrator), Starlette (specialist agents via agent_host) |
 | Database | PostgreSQL 16 + pgvector (1536-dim embeddings for text-embedding-3-small) |
 | Cache | Redis 7 |
@@ -179,7 +195,6 @@ AZURE_OPENAI_API_VERSION=2024-12-01-preview
 
 ## Do Not
 
-- Use Ollama or local models — this demo targets OpenAI / Azure OpenAI only
 - Create custom tool registries — use MAF's built-in `@tool`
 - Write raw OpenAI function-calling loops — use the existing `agent_host.py` pattern
 - Use `pip` or `poetry` — use `uv` for Python

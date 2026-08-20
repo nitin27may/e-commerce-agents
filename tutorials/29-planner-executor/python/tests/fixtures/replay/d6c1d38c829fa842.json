@@ -1,0 +1,201 @@
+{
+  "request": {
+    "instructions": "You are an execution assistant for an e-commerce store, running one step of an already-approved plan at a time. Each user message names the step to perform right now. If the step needs to search the catalog, call the `search_products` tool. Otherwise reason directly over the product results already visible earlier in this conversation. Keep your answer to a few sentences and stay focused on this one step.",
+    "messages": [
+      {
+        "additional_properties": {
+          "_attribution": {
+            "source_id": "in_memory",
+            "source_type": "InMemoryHistoryProvider"
+          }
+        },
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "Step 1: Search for photography-related products. Use search_products with query='photography gifts'.",
+            "type": "text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      },
+      {
+        "additional_properties": {
+          "_attribution": {
+            "source_id": "in_memory",
+            "source_type": "InMemoryHistoryProvider"
+          }
+        },
+        "author_name": "executor-agent",
+        "contents": [
+          {
+            "additional_properties": {},
+            "arguments": "{\"query\":\"photography gifts\"}",
+            "call_id": "call_fw1Wv149oLwKoVxvMR6O4mwc",
+            "name": "search_products",
+            "type": "function_call"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      },
+      {
+        "additional_properties": {
+          "_attribution": {
+            "source_id": "in_memory",
+            "source_type": "InMemoryHistoryProvider"
+          }
+        },
+        "author_name": "executor-agent",
+        "contents": [
+          {
+            "additional_properties": {},
+            "call_id": "call_fw1Wv149oLwKoVxvMR6O4mwc",
+            "items": [
+              {
+                "additional_properties": {},
+                "text": "- Compact Mirrorless Camera ($189): Beginner-friendly mirrorless camera with a kit lens.\n- 50mm Prime Lens ($129): Fast prime lens for portraits and low light.\n- Travel Camera Tripod ($39): Lightweight aluminum tripod, folds to 16 inches.\n- Padded Camera Strap ($19): Padded leather camera strap with quick-release buckles.\n- Professional Studio Light Kit ($349): Two-softbox studio lighting kit for indoor shoots.",
+                "type": "text"
+              }
+            ],
+            "result": "- Compact Mirrorless Camera ($189): Beginner-friendly mirrorless camera with a kit lens.\n- 50mm Prime Lens ($129): Fast prime lens for portraits and low light.\n- Travel Camera Tripod ($39): Lightweight aluminum tripod, folds to 16 inches.\n- Padded Camera Strap ($19): Padded leather camera strap with quick-release buckles.\n- Professional Studio Light Kit ($349): Two-softbox studio lighting kit for indoor shoots.",
+            "type": "function_result"
+          }
+        ],
+        "role": "tool",
+        "type": "message"
+      },
+      {
+        "additional_properties": {
+          "_attribution": {
+            "source_id": "in_memory",
+            "source_type": "InMemoryHistoryProvider"
+          }
+        },
+        "author_name": "executor-agent",
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "Here are the photography-related products found:\n\n- Compact Mirrorless Camera ($189)\n- 50mm Prime Lens ($129)\n- Travel Camera Tripod ($39)\n- Padded Camera Strap ($19)\n- Professional Studio Light Kit ($349)\n\nLet me know the next step you\u2019d like to take.",
+            "type": "text"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      },
+      {
+        "additional_properties": {
+          "_attribution": {
+            "source_id": "in_memory",
+            "source_type": "InMemoryHistoryProvider"
+          }
+        },
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "Step 2: Filter the results to items priced under $200.",
+            "type": "text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      },
+      {
+        "additional_properties": {
+          "_attribution": {
+            "source_id": "in_memory",
+            "source_type": "InMemoryHistoryProvider"
+          }
+        },
+        "author_name": "executor-agent",
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "The following photography-related products are priced under $200:\n\n- Compact Mirrorless Camera ($189)\n- 50mm Prime Lens ($129)\n- Travel Camera Tripod ($39)\n- Padded Camera Strap ($19)\n\nOnly the Professional Studio Light Kit ($349) exceeds your $200 limit.",
+            "type": "text"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      },
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "Step 3: Pick the best-suited items for a birthday gift from the filtered results.",
+            "type": "text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      }
+    ],
+    "tools": [
+      {
+        "function": {
+          "description": "Search the toy product catalog by keyword, optionally capped by an inclusive max price.",
+          "name": "search_products",
+          "parameters": {
+            "properties": {
+              "max_price": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Optional inclusive price ceiling in USD.",
+                "title": "Max Price"
+              },
+              "query": {
+                "description": "Free-text search, matched against name/category/description.",
+                "title": "Query",
+                "type": "string"
+              }
+            },
+            "required": [
+              "query"
+            ],
+            "title": "search_products_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      }
+    ]
+  },
+  "response": {
+    "created_at": "2026-08-20T02:49:30.000000Z",
+    "finish_reason": "stop",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "The best-suited items for a birthday gift from the filtered list are:\n\n- Compact Mirrorless Camera ($189): Great for someone interested in exploring photography or upgrading from a smartphone.\n- 50mm Prime Lens ($129): Perfect for someone who already owns a compatible camera and wants to experiment with creative portrait or low-light shots.\n- Travel Camera Tripod ($39): Practical for travelers and outdoor enthusiasts.\n- Padded Camera Strap ($19): A thoughtful, useful accessory for any camera owner.\n\nIf you want a standout, main gift, the Compact Mirrorless Camera is an excellent choice. For a smaller, thoughtful present, the 50mm Prime Lens or Travel Camera Tripod also make great options.",
+            "type": "text"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      }
+    ],
+    "model": "gpt-4.1-2025-04-14",
+    "response_id": "chatcmpl-EEn8Mr1q7Kx1HhP7vIMSQzElQr9CJ",
+    "type": "chat_response",
+    "usage_details": {
+      "cache_read_input_token_count": 0,
+      "completion/reasoning_tokens": 0,
+      "input_token_count": 489,
+      "output_token_count": 143,
+      "prompt/cached_tokens": 0,
+      "reasoning_output_token_count": 0,
+      "total_token_count": 632
+    }
+  }
+}

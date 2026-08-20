@@ -254,17 +254,17 @@ All database access uses `asyncpg`'s parameterized query syntax (`$1, $2, …`).
 
 ## Azure AI Content Safety — Optional Integration
 
-The `GUARDRAILS_INJECTION_PROVIDER` config flag reserves the integration point for [Azure AI Content Safety Prompt Shields](https://learn.microsoft.com/en-us/azure/ai-services/content-safety/concepts/jailbreak-detection). When set to `azure-content-safety`, the injection detection pipeline would call the Prompt Shields API before the regex layer, providing a cloud-backed ML classifier with higher recall and continuous Microsoft model updates.
+The `GUARDRAILS_INJECTION_PROVIDER` config flag reserves the integration point for [Azure AI Content Safety Prompt Shields](https://learn.microsoft.com/en-us/azure/ai-services/content-safety/concepts/jailbreak-detection). When set to `azure_content_safety`, the injection detection pipeline would call the Prompt Shields API before the regex layer, providing a cloud-backed ML classifier with higher recall and continuous Microsoft model updates.
 
-**Current state**: the flag is wired but the Azure backend is not yet implemented. The regex-based provider (`GUARDRAILS_INJECTION_PROVIDER=regex`) remains the active path.
+**Current state**: the flag is wired but the Azure backend is not yet implemented — `shared/guardrails/azure_shield.py` does not exist. Setting `GUARDRAILS_INJECTION_PROVIDER=azure_content_safety` is rejected at startup with a "not implemented" error (`shared/config.py::_validate_injection_provider`) rather than silently falling back to the regex provider. The regex-based provider (`GUARDRAILS_INJECTION_PROVIDER=regex`) remains the only active, supported path.
 
-**When to enable this**: in production deployments handling untrusted end users at scale, especially if the eval suite shows the regex layer missing novel phrasing. The API adds latency (~100–200 ms per request); gate it behind `GUARDRAILS_BLOCK_ON_INJECTION` to avoid blocking on false positives during rollout.
+**When to enable this**: in production deployments handling untrusted end users at scale, especially if the eval suite shows the regex layer missing novel phrasing. The API adds latency (~100–200 ms per request); gate it behind `GUARDRAILS_BLOCK_ON_INJECTION` to avoid blocking on false positives during rollout. This remains aspirational until `azure_shield.py` ships.
 
 **Implementation sketch** (not yet merged):
 
 ```python
 # shared/guardrails/injection_middleware.py — proposed extension
-if settings.GUARDRAILS_INJECTION_PROVIDER == "azure-content-safety":
+if settings.GUARDRAILS_INJECTION_PROVIDER == "azure_content_safety":
     from shared.guardrails.azure_shield import check_prompt_shields
     flagged = await check_prompt_shields(messages)
 else:

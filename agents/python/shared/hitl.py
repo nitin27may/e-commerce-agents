@@ -30,6 +30,7 @@ from agent_framework._middleware import FunctionInvocationContext, FunctionMiddl
 
 from shared.config import settings
 from shared.context import current_session_id, current_user_email
+from shared.idempotency import idempotent
 
 logger = logging.getLogger(__name__)
 
@@ -102,8 +103,19 @@ class HITLFunctionMiddleware(FunctionMiddleware):
             )
         except Exception:
             logger.exception("hitl: failed to create approval request for %s", tool_name)
-            # Fail open — let the tool execute rather than silently failing
-            await call_next()
+            # Fail CLOSED — a high-stakes tool (cancel_order, process_refund,
+            # initiate_return, modify_order, place_backorder) must never
+            # execute unapproved just because the approval record couldn't
+            # be written. Refuse the call the same way a denied request
+            # would read to the caller, rather than silently letting it
+            # through — a transient DB error is not consent.
+            context.result = {
+                "status": "error",
+                "message": (
+                    f"Could not submit your {tool_name.replace('_', ' ')} request for approval "
+                    "right now — please try again in a moment. No changes have been made."
+                ),
+            }
             return
 
         logger.info(
@@ -125,6 +137,22 @@ class HITLFunctionMiddleware(FunctionMiddleware):
             "request_id": str(request_id),
         }
         # Don't call call_next() — tool not executed
+
+
+def _decode_jsonb(value: Any) -> dict | None:
+    """asyncpg returns JSONB columns as raw JSON text by default (no codec
+    registered on this pool) — decode explicitly rather than ``dict(value)``,
+    which silently "succeeds" on iterating a string's characters and raises
+    a confusing ``ValueError`` instead of a clear decode error. Mirrors the
+    ``isinstance(x, str)`` guard already used in
+    ``product_discovery/tools.py`` and ``orchestrator/routes/legacy.py`` for
+    the same reason, in case a future pool ever does register a codec.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return json.loads(value) if value else None
+    return dict(value)
 
 
 def _extract_agent_name(context: Any) -> str:
@@ -193,11 +221,11 @@ async def list_hitl_requests(
             "user_email": r["user_email"],
             "agent_name": r["agent_name"],
             "tool_name": r["tool_name"],
-            "tool_input": dict(r["tool_input"]) if r["tool_input"] else {},
+            "tool_input": _decode_jsonb(r["tool_input"]) or {},
             "status": r["status"],
             "admin_note": r["admin_note"],
             "approved_by": r["approved_by"],
-            "execution_result": dict(r["execution_result"]) if r["execution_result"] else None,
+            "execution_result": _decode_jsonb(r["execution_result"]),
             "created_at": r["created_at"].isoformat(),
             "resolved_at": r["resolved_at"].isoformat() if r["resolved_at"] else None,
         }
@@ -218,8 +246,42 @@ async def get_hitl_request(request_id: str) -> dict | None:
         "user_email": row["user_email"],
         "agent_name": row["agent_name"],
         "tool_name": row["tool_name"],
-        "tool_input": dict(row["tool_input"]) if row["tool_input"] else {},
+        "tool_input": _decode_jsonb(row["tool_input"]) or {},
         "status": row["status"],
+    }
+
+
+async def claim_hitl_request(request_id: str) -> dict | None:
+    """Atomically flip a pending request to 'processing' and return its full row.
+
+    Must be called before ``execute_approved_action`` runs, not after —
+    calling it after (the previous shape: check status, execute, THEN
+    atomically resolve) leaves a real window where two concurrent approve
+    calls both pass the pre-check and both execute the underlying action;
+    only the second ``resolve_hitl_request`` call would have failed, by
+    which point the damage (e.g. a duplicate refund) is already done. This
+    claims the row first, so only one caller ever proceeds to execute.
+    Returns None if the request doesn't exist or isn't 'pending' (already
+    claimed, resolved, or denied) — the caller should treat that as
+    "someone else got here first" and refuse, not retry.
+    """
+    from shared.db import get_pool
+    pool = get_pool()
+    row = await pool.fetchrow(
+        """UPDATE tool_approval_requests
+           SET status = 'processing'
+           WHERE id = $1 AND status = 'pending'
+           RETURNING id, user_email, agent_name, tool_name, tool_input""",
+        request_id,
+    )
+    if row is None:
+        return None
+    return {
+        "id": str(row["id"]),
+        "user_email": row["user_email"],
+        "agent_name": row["agent_name"],
+        "tool_name": row["tool_name"],
+        "tool_input": _decode_jsonb(row["tool_input"]) or {},
     }
 
 
@@ -230,7 +292,14 @@ async def resolve_hitl_request(
     note: str | None = None,
     execution_result: dict | None = None,
 ) -> bool:
-    """Update a HITL request's status. Returns True if a row was updated."""
+    """Update a HITL request's status. Returns True if a row was updated.
+
+    Accepts a row in either 'pending' (the deny path, which never calls
+    ``claim_hitl_request``) or 'processing' (the approve path, which does)
+    — both are "not yet finalized" states this function is allowed to
+    close out. A row already 'approved'/'denied'/'executed' is left alone
+    and this returns False, same as before.
+    """
     from shared.db import get_pool
     pool = get_pool()
     final_status = "executed" if (decision == "approved" and execution_result) else decision
@@ -238,7 +307,7 @@ async def resolve_hitl_request(
         """UPDATE tool_approval_requests
            SET status = $1, admin_note = $2, approved_by = $3,
                execution_result = $4::jsonb, resolved_at = NOW()
-           WHERE id = $5 AND status = 'pending'""",
+           WHERE id = $5 AND status IN ('pending', 'processing')""",
         final_status,
         note,
         admin_email,
@@ -251,6 +320,7 @@ async def resolve_hitl_request(
 # ─────────────────────── Action executor ────────────────────────────────────
 
 
+@idempotent("hitl_execute", identity_fn=lambda tool_name, tool_input, user_email: user_email)
 async def execute_approved_action(
     tool_name: str,
     tool_input: dict,
@@ -260,6 +330,16 @@ async def execute_approved_action(
 
     Called by the admin approve endpoint so the LLM loop does not need to
     be re-run. Each tool_name has a corresponding DB operation.
+
+    Idempotent per (user_email, tool_name, tool_input): for a given HITL
+    request, those three values are drawn from the same immutable
+    ``tool_approval_requests`` row every time, so two overlapping approve
+    attempts on the *same* request (a double-click, a route-level retry)
+    hash identically and the second replays the first's cached result
+    instead of re-executing — on top of, not instead of, the atomic
+    ``status = 'pending' -> 'processing'`` claim the approve route takes
+    before calling this at all (see ``orchestrator/routes/legacy.py``'s
+    ``approve_hitl_request``).
     """
     from shared.db import get_pool
     pool = get_pool()
@@ -286,35 +366,57 @@ async def execute_approved_action(
         return {"success": False, "message": "Order not found or already processed."}
 
     if tool_name == "process_refund":
-        order_id = tool_input.get("order_id", "")
+        # process_refund (shared/tools/return_tools.py) takes `return_id`,
+        # not `order_id` — HITLFunctionMiddleware captures whatever the
+        # gated tool was actually called with, so tool_input always has
+        # `return_id` here, never `order_id`. This branch previously read
+        # tool_input.get("order_id", "") (always empty) and updated
+        # `orders` instead of `returns`, so approving a refund silently
+        # failed to find a match and never marked the return processed —
+        # fixed to match the real tool's shape: operate on `returns` by
+        # `return_id`, guarded by status so a double-execution (a retry
+        # that reaches this code despite the idempotency wrapper above,
+        # e.g. two different HITL requests for the same return) reports
+        # "already refunded" instead of a second success.
+        return_id = tool_input.get("return_id", "")
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
-                """UPDATE orders SET status = 'refunded', updated_at = NOW()
+                """UPDATE returns SET status = 'refunded', resolved_at = NOW()
                    WHERE id = $1
                      AND user_id = (SELECT id FROM users WHERE email = $2)
-                   RETURNING id, total""",
-                order_id,
+                     AND status NOT IN ('refunded', 'denied')
+                   RETURNING id, order_id, refund_method, refund_amount""",
+                return_id,
                 user_email,
             )
         if row:
+            amount = float(row["refund_amount"]) if row["refund_amount"] else 0.0
+            method = row["refund_method"] or "original_payment"
             return {
                 "success": True,
-                "order_id": order_id,
-                "refunded_amount": float(row["total"]),
-                "message": f"Refund of ${float(row['total']):.2f} processed.",
+                "return_id": return_id,
+                "order_id": str(row["order_id"]),
+                "refunded_amount": amount,
+                "message": f"Refund of ${amount:.2f} processed via {method.replace('_', ' ')}.",
             }
-        return {"success": False, "message": "Order not found."}
+        return {"success": False, "message": "Return not found, already resolved, or access denied."}
 
     if tool_name == "initiate_return":
         order_id = tool_input.get("order_id", "")
         reason = tool_input.get("reason", "Admin-approved return")
         async with pool.acquire() as conn:
+            # NOT EXISTS guards against a second run inserting a second
+            # returns row for the same order (a double-execution here
+            # otherwise has no status/uniqueness guard at all, unlike
+            # cancel_order's WHERE ... status IN (...) or process_refund's
+            # WHERE ... status NOT IN (...) above).
             row = await conn.fetchrow(
                 """INSERT INTO returns (order_id, user_id, reason, status, refund_method)
                    SELECT o.id, o.user_id, $3, 'approved', 'original_payment'
                    FROM orders o
                    JOIN users u ON o.user_id = u.id
                    WHERE o.id = $1 AND u.email = $2
+                     AND NOT EXISTS (SELECT 1 FROM returns r WHERE r.order_id = o.id)
                    RETURNING id""",
                 order_id,
                 user_email,
@@ -325,6 +427,16 @@ async def execute_approved_action(
                 "success": True,
                 "return_id": str(row["id"]),
                 "message": "Return approved and initiated.",
+            }
+        existing = await pool.fetchval(
+            "SELECT id FROM returns WHERE order_id = $1",
+            order_id,
+        )
+        if existing:
+            return {
+                "success": False,
+                "return_id": str(existing),
+                "message": "A return has already been initiated for this order.",
             }
         return {"success": False, "message": "Order not found."}
 

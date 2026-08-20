@@ -1,7 +1,7 @@
 // MAF v1 — Chapter 02: Adding Tools (.NET)
 //
-// Same agent as Ch01 plus one canned weather tool. The LLM decides whether
-// to call the tool based on the user's question.
+// Same agent as Ch01 plus one canned product-price lookup tool. The LLM
+// decides whether to call the tool based on the user's question.
 
 using System.ClientModel;
 using System.ComponentModel;
@@ -17,10 +17,10 @@ public static class Program
 {
     public const string Instructions =
         "You are a helpful assistant. "
-        + "When the user asks about the weather in a city, call the get_weather tool. "
+        + "When the user asks about the price of a product by SKU, call the get_product_price tool. "
         + "For other questions, answer directly in one short sentence.";
 
-    public const string DefaultQuestion = "What's the weather in Paris?";
+    public const string DefaultQuestion = "What's the price of SKU-001?";
 
     public static async Task Main(string[] args)
     {
@@ -54,11 +54,11 @@ public static class Program
             chatClient = new OpenAIClient(new ApiKeyCredential(openAiKey)).GetChatClient(model);
         }
 
-        var tools = new AITool[] { AIFunctionFactory.Create(GetWeather) };
+        var tools = new AITool[] { AIFunctionFactory.Create(GetProductPrice) };
 
         return chatClient.AsAIAgent(
             instructions: Instructions,
-            name: "weather-agent",
+            name: "product-agent",
             tools: tools);
     }
 
@@ -69,21 +69,21 @@ public static class Program
     }
 
     /// <summary>
-    /// Canned-data weather lookup. The [Description] attribute drives the JSON
-    /// schema the LLM sees when deciding whether to call this function.
+    /// Canned-data product-price lookup. The [Description] attribute drives the
+    /// JSON schema the LLM sees when deciding whether to call this function.
     /// </summary>
-    [Description("Look up the current weather for a city.")]
-    public static string GetWeather(
-        [Description("The city to look up, e.g. 'Paris'.")] string city)
+    [Description("Look up the current price for a product SKU.")]
+    public static string GetProductPrice(
+        [Description("The product SKU to look up, e.g. 'SKU-001'.")] string sku)
     {
         var canned = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            ["Paris"] = "Sunny, 18°C, light breeze.",
-            ["London"] = "Overcast, 12°C, light drizzle.",
-            ["Canberra"] = "Partly cloudy, 21°C.",
-            ["Tokyo"] = "Rain, 15°C.",
+            ["SKU-001"] = "$79.99 — Wireless Mouse",
+            ["SKU-002"] = "$129.99 — Mechanical Keyboard",
+            ["SKU-003"] = "$45.50 — USB-C Hub",
+            ["SKU-004"] = "$249.00 — 27-inch Monitor",
         };
-        return canned.TryGetValue(city, out var forecast) ? forecast : $"No weather data for {city}.";
+        return canned.TryGetValue(sku, out var price) ? price : $"No pricing data for {sku}.";
     }
 
     private static string Required(string name) =>

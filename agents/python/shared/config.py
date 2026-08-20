@@ -33,11 +33,41 @@ _UNSAFE_SECRET_DEFAULTS = {
     "dev-oauth-seed-change-me",
 }
 
+# Inbound injection-detection providers that are actually implemented today.
+# "azure_content_safety" is a reserved/planned value — see docs/security-guide.md
+# ("Azure AI Content Safety — Optional Integration") — but
+# shared/guardrails/azure_shield.py does not exist yet, so selecting it must
+# fail fast rather than silently falling back to the regex provider.
+_SUPPORTED_INJECTION_PROVIDERS = {"regex"}
+_NOT_YET_IMPLEMENTED_INJECTION_PROVIDERS = {"azure_content_safety"}
+_SUPPORTED_GROUNDING_MODES = {"off", "observe", "annotate", "enforce"}
+_SUPPORTED_COST_BUDGET_MODES = {"off", "observe", "enforce"}
+_SUPPORTED_OUTPUT_MODERATION_MODES = {"off", "observe", "enforce"}
+
 # Resolve .env once, relative to the repo root, so the eval/seed scripts pick
 # it up regardless of the cwd they're launched from. Inside the Docker image
 # there is no .env at the repo root — containers get their config from the
 # compose `environment:` block — so a missing file is fine.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+# config.py lives at <repo>/agents/python/shared/, so the repo root is 3 levels
+# up — parents[2] stops at <repo>/agents and silently resolved to a path with no
+# .env, which meant pydantic's env_file loading never fired and Settings fell back
+# to defaults even when a real .env was present.
+
+
+def _resolve_repo_root(config_path: Path) -> Path:
+    """Repo root 3 levels above this file — but inside the Docker image,
+    config.py is copied flatly to /app/shared/config.py (the agent
+    Dockerfile's build context is ./agents, so agents/python/ never exists
+    as a path component in the image), leaving only 2 real parents. Indexing
+    parents[3] there raises IndexError and crashes every container at import
+    time. Fall back to the immediate parent in that case; it won't contain a
+    .env either, which is exactly the "missing file is fine" behavior above.
+    """
+    parents = config_path.resolve().parents
+    return parents[3] if len(parents) > 3 else config_path.resolve().parent
+
+
+_REPO_ROOT = _resolve_repo_root(Path(__file__))
 _ENV_FILE = _REPO_ROOT / ".env"
 
 
@@ -48,9 +78,33 @@ class Settings(BaseSettings):
     # ── Redis ───────────────────────────────────────────────────────
     REDIS_URL: str = "redis://localhost:6379"
 
+    # ── Rate limiting (shared/rate_limit.py, Phase 6.3) ────────────────
+    # Redis was provisioned here from day one but had no consumer until
+    # this. Defaults on, matching this repo's posture for the other
+    # always-on safety features (GUARDRAILS_ENABLED, HITL_ENABLED default
+    # True too) — an agentic chat endpoint reachable by anonymous
+    # storefront traffic with zero rate limit is a real cost-abuse vector,
+    # not a hypothetical one.
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_MAX_REQUESTS: int = 30
+    RATE_LIMIT_WINDOW_SECONDS: float = 60.0
+
     # ── LLM ─────────────────────────────────────────────────────────
-    LLM_PROVIDER: str = "openai"  # openai | azure
+    LLM_PROVIDER: str = "openai"  # openai | azure | replay
     LLM_MODEL: str = "gpt-4.1"
+    # Optional base_url override for the OpenAI-compatible `openai` provider —
+    # points OpenAIChatClient at any OpenAI-compatible endpoint (GitHub Models,
+    # OpenRouter, vLLM, LM Studio, Azure AI Foundry's OpenAI-compatible route)
+    # instead of api.openai.com. Unset by default; only takes effect when
+    # LLM_PROVIDER=openai. See tutorials/00-setup/README.md for the GitHub
+    # Models path, which is free with a GitHub PAT.
+    LLM_BASE_URL: str = ""
+    # replay-provider settings — see shared/replay_client.py. RECORD=true makes
+    # a missing fixture fall through to a real call (via REPLAY_RECORD_PROVIDER)
+    # and persist the result instead of raising.
+    REPLAY_RECORD_PROVIDER: str = "openai"  # openai | azure — used only when RECORD=true
+    REPLAY_FIXTURES_DIR: str = "tests/fixtures/replay"
+    RECORD: bool = False
     # Sampling temperature for every agent run. Defaults LOW for consistent,
     # reproducible answers — at the provider default (~1.0) the same query can
     # yield categorically different results (e.g. finding vs. not finding a
@@ -187,11 +241,17 @@ class Settings(BaseSettings):
     # for UI breadcrumbs / observability.
     HANDOFF_AUTONOMOUS_MODE: bool = True
 
-    # Orchestrator routing mode:
-    #   tool    — LLM calls call_specialist_agent tool (today's behavior)
-    #   handoff — MAF HandoffBuilder workflow with remote A2A proxies
-    # Default stays "tool" so rollouts are opt-in.
-    MAF_HANDOFF_MODE: str = "tool"
+    # Default orchestration mode when a request doesn't specify one — see
+    # orchestrator/modes/. "tool" (LLM calls call_specialist_agent) is the
+    # only mode with no other prerequisites; "handoff" requires AGENT_REGISTRY
+    # to be populated. Renamed from MAF_HANDOFF_MODE now that the mode
+    # registry supports more than a tool/handoff binary choice; the old name
+    # is accepted as an alias so existing .env files and docker-compose.yml
+    # don't need to change immediately.
+    ORCHESTRATION_MODE: str = Field(
+        default="tool",
+        validation_alias=AliasChoices("ORCHESTRATION_MODE", "MAF_HANDOFF_MODE"),
+    )
 
     # Hard ceiling on a single SSE stream's wall-clock duration. The
     # orchestrator's chat-stream endpoint aborts the underlying generator
@@ -234,6 +294,58 @@ class Settings(BaseSettings):
     # Inbound injection-detection provider: "regex" (default, zero-dependency)
     # or "azure_content_safety" (Azure AI Content Safety — Prompt Shields).
     GUARDRAILS_INJECTION_PROVIDER: str = "regex"
+
+    # ── Grounding (Track A — server-side fact verification) ─────────
+    # off      — GroundingVerificationMiddleware is skipped entirely.
+    # observe  — verify and log counts; nothing surfaced to the caller.
+    # annotate — verify and attach a report to response.additional_properties["grounding"].
+    # enforce  — annotate, plus strip not-found cards and correct price/total
+    #            mismatches in the finalized response text. See
+    #            shared/grounding/middleware.py for the streaming caveat: this
+    #            corrects the persisted/final response, not chunks already
+    #            streamed to the browser.
+    GROUNDING_MODE: str = "annotate"
+
+    # ── Cost budget (per-run ceiling) ────────────────────────────────
+    # ``shared/cost.py::estimate_cost`` previously had exactly one caller
+    # (``evals/evaluator.py``, for after-the-fact eval reporting) — nothing
+    # read it at runtime, so an agentic loop that keeps calling tools /
+    # re-prompting had no ceiling on what a single run could spend. These two
+    # flags back ``shared.guardrails.cost_budget_middleware.CostBudgetMiddleware``,
+    # the runtime consumer that closes that gap.
+    #
+    # off      — CostBudgetMiddleware is skipped entirely (not attached).
+    # observe  — accumulate and log the running per-run cost; never blocks,
+    #            even past COST_BUDGET_USD_PER_RUN.
+    # enforce  — same accumulation, plus refuses to start another LLM turn
+    #            once the running total exceeds COST_BUDGET_USD_PER_RUN.
+    COST_BUDGET_MODE: str = "observe"
+
+    # USD ceiling for a single run's cumulative estimated cost. None (default)
+    # means no ceiling is enforced even in "enforce" mode — additive, opt-in,
+    # matching this repo's other guardrail flags' default-off posture.
+    COST_BUDGET_USD_PER_RUN: float | None = None
+
+    # ── Output moderation (Phase 6.4) ────────────────────────────────
+    # shared/guardrails/output_middleware.py's OutputSanitizationMiddleware
+    # defangs adversarial *instructions* hiding in untrusted tool output —
+    # a different problem from the model's own generated text containing
+    # content-policy violations (self-harm, violence, hate/harassment,
+    # sexual content), which nothing checked for until this.
+    #
+    # off      — OutputModerationMiddleware is skipped entirely.
+    # observe  — classify the final response and log any flagged
+    #            categories; never blocks. Default, because the classifier
+    #            (shared/guardrails/moderation.py) is a small set of
+    #            high-precision local patterns, not a trained model — a
+    #            false positive blocking a legitimate response is a worse
+    #            failure mode than one going unflagged in observe mode.
+    # enforce  — same classification, plus replaces the response with a
+    #            refusal when the non-streaming path flags a category.
+    #            Streamed responses can only be flagged, not blocked —
+    #            same streaming caveat as GROUNDING_MODE=enforce: chunks
+    #            already sent to the browser can't be un-sent.
+    OUTPUT_MODERATION_MODE: str = "observe"
 
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE),
@@ -281,6 +393,57 @@ class Settings(BaseSettings):
                 )
                 raise ValueError(msg)
 
+        return self
+
+    @model_validator(mode="after")
+    def _validate_injection_provider(self) -> "Settings":
+        """Reject injection-detection providers that aren't implemented.
+
+        ``GUARDRAILS_INJECTION_PROVIDER`` historically accepted
+        "azure_content_safety" as a value with no code behind it — selecting
+        it silently ran the default regex provider instead. Fail fast instead
+        so misconfiguration is caught at startup, not discovered in
+        production traffic.
+        """
+        provider = self.GUARDRAILS_INJECTION_PROVIDER
+        if provider in _NOT_YET_IMPLEMENTED_INJECTION_PROVIDERS:
+            raise ValueError(
+                f"GUARDRAILS_INJECTION_PROVIDER={provider!r} is not implemented "
+                f"(shared/guardrails/azure_shield.py does not exist yet). "
+                f"Supported values: {sorted(_SUPPORTED_INJECTION_PROVIDERS)!r}."
+            )
+        if provider not in _SUPPORTED_INJECTION_PROVIDERS:
+            raise ValueError(
+                f"GUARDRAILS_INJECTION_PROVIDER={provider!r} is not a recognized value. "
+                f"Supported values: {sorted(_SUPPORTED_INJECTION_PROVIDERS)!r}."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_grounding_mode(self) -> "Settings":
+        if self.GROUNDING_MODE not in _SUPPORTED_GROUNDING_MODES:
+            raise ValueError(
+                f"GROUNDING_MODE={self.GROUNDING_MODE!r} is not a recognized value. "
+                f"Supported values: {sorted(_SUPPORTED_GROUNDING_MODES)!r}."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_cost_budget_mode(self) -> "Settings":
+        if self.COST_BUDGET_MODE not in _SUPPORTED_COST_BUDGET_MODES:
+            raise ValueError(
+                f"COST_BUDGET_MODE={self.COST_BUDGET_MODE!r} is not a recognized value. "
+                f"Supported values: {sorted(_SUPPORTED_COST_BUDGET_MODES)!r}."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_output_moderation_mode(self) -> "Settings":
+        if self.OUTPUT_MODERATION_MODE not in _SUPPORTED_OUTPUT_MODERATION_MODES:
+            raise ValueError(
+                f"OUTPUT_MODERATION_MODE={self.OUTPUT_MODERATION_MODE!r} is not a recognized value. "
+                f"Supported values: {sorted(_SUPPORTED_OUTPUT_MODERATION_MODES)!r}."
+            )
         return self
 
 

@@ -1,0 +1,74 @@
+{
+  "request": {
+    "instructions": "You are a shopping assistant. When the user asks about a product's price, call the `get_product_price` tool with the product ID and answer in one short sentence.",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "What's the price of product P-200?",
+            "type": "text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      }
+    ],
+    "tools": [
+      {
+        "function": {
+          "description": "Look up the current price for a product by ID.",
+          "name": "get_product_price",
+          "parameters": {
+            "properties": {
+              "product_id": {
+                "description": "The product ID to look up, e.g. 'P-100'.",
+                "title": "Product Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "product_id"
+            ],
+            "title": "get_product_price_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      }
+    ]
+  },
+  "response": {
+    "created_at": "2026-08-20T08:22:24.000000Z",
+    "finish_reason": "tool_calls",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "arguments": "{\"product_id\":\"P-200\"}",
+            "call_id": "call_wSEi2ZEPQqSyzkzJ10jnJ6Mq",
+            "name": "get_product_price",
+            "type": "function_call"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      }
+    ],
+    "model": "gpt-4.1-2025-04-14",
+    "response_id": "chatcmpl-EEsKWTbRdm2XbdHdlzBSRXB3cTBVx",
+    "type": "chat_response",
+    "usage_details": {
+      "cache_read_input_token_count": 0,
+      "completion/reasoning_tokens": 0,
+      "input_token_count": 120,
+      "output_token_count": 19,
+      "prompt/cached_tokens": 0,
+      "reasoning_output_token_count": 0,
+      "total_token_count": 139
+    }
+  }
+}

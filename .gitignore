@@ -8,8 +8,10 @@ dist/
 .uv/
 uv.lock
 # ...but the main Python app's lockfile IS committed so CI installs are
-# reproducible and setup-uv's cache key (**/uv.lock) resolves.
+# reproducible and setup-uv's cache key (**/uv.lock) resolves. Same reasoning
+# for the tutorials workspace (tutorials/pyproject.toml).
 !agents/python/uv.lock
+!tutorials/uv.lock
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/

@@ -1,0 +1,85 @@
+[project]
+name = "maf-v1-tutorials"
+version = "0.1.0"
+description = "MAF v1 tutorials — runnable chapter examples and tests (companion to agents/python)"
+requires-python = ">=3.12"
+dependencies = [
+    # Microsoft Agent Framework — depend on the individual sub-packages the
+    # chapters actually import (agent-framework-core provides the
+    # `agent_framework` top-level package) instead of the `agent-framework`
+    # meta-package's `[all]` extra. `[all]` also drags in ag-ui / anthropic /
+    # bedrock / azure-cosmos / etc., some of which are pre-release-only and
+    # make the resolution unsatisfiable without --prerelease=allow — the
+    # same reason agents/python/pyproject.toml depends on
+    # agent-framework-core directly rather than the meta-package.
+    #
+    # Pinned to the exact same versions as agents/python/pyproject.toml so
+    # the tutorials teach against the identical framework the capstone runs
+    # on. This resolves a version-skew history worth keeping for context:
+    #   - core==1.0.0 (an earlier agents/python pin) had a bug where a
+    #     Workflow whose first `run()` call is abandoned mid-stream (the
+    #     human-in-the-loop pattern in Chapter 17 — break out of the async
+    #     generator on a request_info event, await user input, then call
+    #     `run()` again to resume) left `_is_running` stuck True, so the
+    #     resuming `run()` raised "Workflow is already running." Fixed by
+    #     core>=1.11.0.
+    #   - agent-framework-orchestrations>=1.0.1 makes
+    #     `require_per_service_call_history_persistence=True` a hard
+    #     requirement for every HandoffBuilder participant agent — see the
+    #     same flag on orchestrator/agent.py::create_orchestrator_agent()
+    #     and shared/remote_agent.py::make_remote_specialist_agent() in
+    #     agents/python. Chapter 14's Agent construction needs the same flag.
+    "agent-framework-core==1.14.0",
+    "agent-framework-openai==1.13.0",
+    # Chapters 12-16 — orchestration builders (Sequential, Concurrent,
+    # Handoff, GroupChat, Magentic)
+    "agent-framework-orchestrations==1.1.0",
+    # Chapter 20b — DevUI (also has its own standalone pyproject.toml;
+    # declared here too so `pytest tutorials/` can collect its tests without
+    # a second venv). No stable release exists yet — pinned to the latest beta.
+    "agent-framework-devui==1.0.0b260813",
+    # Chapter 08 — MCP tools (stdio weather server + MCPStdioTool client).
+    # Capped below 2.0.0 to match agents/python — mcp==2.0.0 relocates
+    # mcp.server.fastmcp to mcp.server.mcpserver (FastMCP renamed to
+    # MCPServer) and agent-framework-core itself pins mcp<2, so this stays
+    # capped until that unblocks. See
+    # .claude/plans/enhancements/12-mcp-2x-migration.md.
+    "mcp[cli]>=1.27.0,<2",
+    # Chapter 19 — declarative workflows parse workflow.yaml directly
+    "pyyaml==6.0.3",
+    # Chapters 02, 06 — tool argument schemas
+    "pydantic==2.13.4",
+    # Chapter 07 — observability: chapter code builds its own TracerProvider
+    # and span exporters, so the SDK (not just the API) is a direct import.
+    "opentelemetry-sdk==1.44.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["."]
+# Every chapter's tests/ dir is its own `tests` package (tests/__init__.py),
+# so the default "prepend" import mode collides module names once more than
+# one chapter is collected in the same session (`tests.test_x` ambiguous
+# across chapters). importlib mode imports each test file by file path
+# instead, so identically-named packages/modules across chapters don't clash.
+addopts = ["--import-mode=importlib"]
+markers = [
+    "integration: test hits a real LLM; skipped when credentials are missing",
+]

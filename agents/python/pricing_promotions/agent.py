@@ -2,7 +2,7 @@
 
 from agent_framework import Agent
 
-from pricing_promotions.prompts import SYSTEM_PROMPT
+from pricing_promotions.prompts import get_system_prompt
 from pricing_promotions.tools import (
     check_bundle_eligibility,
     get_active_deals,
@@ -10,8 +10,9 @@ from pricing_promotions.tools import (
     validate_coupon,
 )
 from shared.agent_factory import create_chat_client
-from shared.middleware import build_specialist_middleware
+from shared.context import current_user_role
 from shared.context_providers import ECommerceContextProvider
+from shared.middleware import build_specialist_middleware
 from shared.tools.loyalty_tools import (
     calculate_loyalty_discount,
     get_loyalty_benefits,
@@ -39,8 +40,10 @@ def create_pricing_promotions_agent() -> Agent:
     return Agent(
         client=create_chat_client(),
         name="pricing-promotions",
-        description="Coupon validation, cart optimization, loyalty discounts, bundle deals, and active promotions discovery.",
-        instructions=SYSTEM_PROMPT,
+        description=(
+            "Coupon validation, cart optimization, loyalty discounts, bundle deals, and active promotions discovery."
+        ),
+        instructions=get_system_prompt(current_user_role.get() or "customer"),
         tools=AGENT_TOOLS,
         context_providers=[ECommerceContextProvider()],
         middleware=build_specialist_middleware(),

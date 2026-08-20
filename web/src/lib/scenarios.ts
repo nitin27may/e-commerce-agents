@@ -28,6 +28,15 @@ export interface Scenario {
   /** Specialist agents this scenario exercises (display labels). */
   agents: string[];
   icon: LucideIcon;
+  /**
+   * Orchestration modes (OrchestrationMode.name) worth comparing for this
+   * scenario — fed to mode-comparison.tsx. Only set on scenarios where two
+   * modes handle the same request meaningfully differently (tool's serial
+   * per-turn calls vs. a workflow's fan-out, or the middleware- vs.
+   * in-workflow HITL gate); most scenarios don't have an interesting
+   * comparison and leave this unset.
+   */
+  compareModes?: string[];
 }
 
 export const DEMO_SCENARIOS: Scenario[] = [
@@ -38,6 +47,7 @@ export const DEMO_SCENARIOS: Scenario[] = [
     prompt: "Find me wireless headphones under $300 with good noise cancellation",
     agents: ["Product Discovery"],
     icon: Search,
+    compareModes: ["tool", "workflow:pre-purchase"],
   },
   {
     id: "comparison",
@@ -62,6 +72,7 @@ export const DEMO_SCENARIOS: Scenario[] = [
     prompt: "I want to return my last order",
     agents: ["Order Management"],
     icon: RotateCcw,
+    compareModes: ["tool", "workflow:return-replace"],
   },
   {
     id: "price-check",

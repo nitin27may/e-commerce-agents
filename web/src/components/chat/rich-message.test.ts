@@ -117,4 +117,105 @@ describe("parseContent — card fence parsing", () => {
     const segs = parseContent(content);
     expect(cardTypes(segs)).toEqual(["checkout"]);
   });
+
+  it("parses a sentiment fence (Phase 8.4 Stage 4a)", () => {
+    const sentiment = {
+      product_id: "74427b99-8717-4481-8c00-d05dd19b120f",
+      product_name: "Sony WH-1000XM5",
+      overall_sentiment: "positive",
+      average_rating: 4.7,
+      total_reviews: 15,
+      rating_distribution: { "5": 10, "4": 3, "3": 1, "2": 1, "1": 0 },
+      pros: ["Quality"],
+      cons: ["Expensive"],
+    };
+    const content = "Here's the sentiment breakdown:\n```sentiment\n" + JSON.stringify(sentiment) + "\n```\nAnything else?";
+    const segs = parseContent(content);
+    expect(cardTypes(segs)).toEqual(["sentiment"]);
+    expect(segs.find((s) => s.type === "sentiment")?.data?.overall_sentiment).toBe("positive");
+  });
+
+  it("parses an inventory fence (Phase 8.4 Stage 4b)", () => {
+    const inventory = {
+      product_id: "74427b99-8717-4481-8c00-d05dd19b120f",
+      product_name: "Sony WH-1000XM5",
+      in_stock: true,
+      total_quantity: 42,
+      warehouses: [{ warehouse: "East DC", region: "east", quantity: 30, low_stock: false }],
+    };
+    const content = "Here's stock availability:\n```inventory\n" + JSON.stringify(inventory) + "\n```\nAnything else?";
+    const segs = parseContent(content);
+    expect(cardTypes(segs)).toEqual(["inventory"]);
+    expect(segs.find((s) => s.type === "inventory")?.data?.in_stock).toBe(true);
+  });
+
+  it("parses a pricing fence (Phase 8.4 Stage 4c)", () => {
+    const pricing = {
+      original_total: 349.98,
+      savings: [{ type: "coupon", code: "SAVE10", amount: 35 }],
+      total_savings: 35,
+      final_total: 314.98,
+    };
+    const content = "Here's your savings breakdown:\n```pricing\n" + JSON.stringify(pricing) + "\n```\nAnything else?";
+    const segs = parseContent(content);
+    expect(cardTypes(segs)).toEqual(["pricing"]);
+    expect(segs.find((s) => s.type === "pricing")?.data?.final_total).toBe(314.98);
+  });
+
+  it("parses a return fence — the one card type with no prior coverage", () => {
+    const ret = {
+      order_id: "48bfb7a1-0b02-4c89-94c9-552d629aaa92",
+      return_id: "9a1c1e2a-2222-4c89-94c9-552d629aaa92",
+      status: "approved",
+      return_label_url: "/api/returns/abc123/label",
+      refund_amount: 79.99,
+      refund_method: "original_payment",
+      refund_timeline: "5-7 business days",
+    };
+    const content = "Your return is set:\n```return\n" + JSON.stringify(ret) + "\n```\nAnything else?";
+    const segs = parseContent(content);
+    expect(cardTypes(segs)).toEqual(["return"]);
+    expect(segs.find((s) => s.type === "return")?.data?.refund_amount).toBe(79.99);
+  });
+});
+
+describe("parseContent — never renders raw JSON (Phase 8.2)", () => {
+  it("drops a fence that fails schema validation instead of showing the raw JSON", () => {
+    // refund_amount must be a non-negative number per ReturnDataSchema —
+    // a negative value fails validateCard.
+    const invalidReturn = { order_id: "o-1", refund_amount: -50 };
+    const content = "Before.\n```return\n" + JSON.stringify(invalidReturn) + "\n```\nAfter.";
+    const segs = parseContent(content);
+
+    expect(cardTypes(segs)).toEqual([]);
+    expect(textOf(segs)).not.toContain("refund_amount");
+    expect(textOf(segs)).not.toContain("```");
+    // Surrounding conversational text survives — only the bad fence is dropped.
+    expect(textOf(segs)).toContain("Before.");
+    expect(textOf(segs)).toContain("After.");
+  });
+
+  it("drops a recognized-tag fence with malformed JSON instead of showing the raw text", () => {
+    const content = "Before.\n```order\n{not valid json at all\n```\nAfter.";
+    const segs = parseContent(content);
+
+    expect(cardTypes(segs)).toEqual([]);
+    expect(textOf(segs)).not.toContain("not valid json");
+    expect(textOf(segs)).toContain("Before.");
+    expect(textOf(segs)).toContain("After.");
+  });
+
+  it("drops an unrecognized JSON-shaped fence tag instead of falling through to a raw code block", () => {
+    // Simulates an LLM hallucinating a tag this parser was never taught,
+    // or a future card type introduced backend-side before this file
+    // catches up — the general guard, not the 5-tag-specific one above.
+    const content = 'Before.\n```cart\n{"items": ["a", "b"], "total": 12.5}\n```\nAfter.';
+    const segs = parseContent(content);
+
+    expect(cardTypes(segs)).toEqual([]);
+    expect(textOf(segs)).not.toContain("items");
+    expect(textOf(segs)).not.toContain("```");
+    expect(textOf(segs)).toContain("Before.");
+    expect(textOf(segs)).toContain("After.");
+  });
 });

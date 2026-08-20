@@ -20,7 +20,7 @@ describe("StatCard", () => {
     );
     const delta = screen.getByText("+3 this week");
     expect(delta).toBeInTheDocument();
-    expect(delta.className).toContain("emerald");
+    expect(delta.className).toContain("text-success");
   });
 
   it("renders an optional hint and decorative icon", () => {

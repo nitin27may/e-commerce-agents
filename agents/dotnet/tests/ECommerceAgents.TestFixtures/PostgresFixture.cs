@@ -11,10 +11,11 @@ namespace ECommerceAgents.TestFixtures;
 /// </summary>
 public sealed class PostgresFixture : IAsyncLifetime
 {
-    public PostgreSqlContainer Container { get; } = new PostgreSqlBuilder()
-        // Match the production image — init.sql declares the `vector` extension
-        // and the plain `postgres:16` image doesn't ship pgvector.
-        .WithImage("pgvector/pgvector:pg16")
+    // Match the production image — init.sql declares the `vector` extension
+    // and the plain `postgres:16` image doesn't ship pgvector. Image is passed
+    // to the constructor directly (Testcontainers.PostgreSql>=4.x obsoletes the
+    // parameterless PostgreSqlBuilder() + .WithImage() chain).
+    public PostgreSqlContainer Container { get; } = new PostgreSqlBuilder("pgvector/pgvector:pg16")
         .WithDatabase("ecommerce_test")
         .WithUsername("test")
         .WithPassword("test")

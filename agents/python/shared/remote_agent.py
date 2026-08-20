@@ -31,9 +31,19 @@ from agent_framework import (
     ResponseStream,
 )
 
+from shared.http_resilience import ResilientAsyncTransport
 from shared.oauth.service_client import build_a2a_headers
 
 logger = logging.getLogger(__name__)
+
+# Shared across every RemoteSpecialistChatClient instance — a circuit
+# breaker only means anything if it remembers failures across calls; a
+# fresh ResilientAsyncTransport() per call/instance would reset that
+# memory every time. It keys its breakers by host, so one shared instance
+# already tracks every specialist independently. See
+# orchestrator/agent.py's _A2A_TRANSPORT for the same reasoning on the
+# other A2A call path.
+_A2A_TRANSPORT = ResilientAsyncTransport()
 
 
 class RemoteSpecialistChatClient(BaseChatClient):
@@ -58,7 +68,7 @@ class RemoteSpecialistChatClient(BaseChatClient):
 
     async def _post(self, prompt: str) -> str:
         headers = await build_a2a_headers()
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with httpx.AsyncClient(timeout=self._timeout, transport=_A2A_TRANSPORT) as client:
             resp = await client.post(
                 f"{self._url}/message:send",
                 json={"message": prompt, "history": []},
@@ -138,4 +148,9 @@ def make_remote_specialist_agent(name: str, url: str, *, description: str | None
         name=name,
         description=description or f"Remote specialist {name} accessed over A2A.",
         instructions=f"You are the remote {name} specialist. Reply directly with the user's request.",
+        # Required by agent-framework-orchestrations>=1.0.1: HandoffBuilder.build()
+        # validates every participant has this set, since its middleware
+        # short-circuits tool calls and local history would otherwise drift
+        # from what the remote service actually saw.
+        require_per_service_call_history_persistence=True,
     )

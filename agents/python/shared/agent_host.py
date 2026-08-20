@@ -62,10 +62,25 @@ async def _run_agent_native(
     agent: Any,
     user_message: str,
     history: list[dict] | None = None,
+    metadata_box: dict[str, Any] | None = None,
 ) -> str:
-    """Run an agent via MAF's native execution path and return answer text."""
+    """Run an agent via MAF's native execution path and return answer text.
+
+    ``metadata_box``, if given, is filled in place with the response's
+    ``additional_properties`` (e.g. the grounding report
+    ``GroundingVerificationMiddleware`` attaches) plus its ``usage_details``
+    under the reserved ``_maf_usage`` key (``UsageDetails`` is a TypedDict
+    with ``input_token_count``/``output_token_count`` — see
+    ``evals/harness.py::ProductionRunner`` for the first real consumer). A
+    plain ``str`` return can't carry that side-channel data.
+    """
     messages = _history_as_maf_messages(history, user_message)
     response = await agent.run(messages, options=_run_options())
+    if metadata_box is not None:
+        metadata_box.update(getattr(response, "additional_properties", None) or {})
+        usage = getattr(response, "usage_details", None)
+        if usage:
+            metadata_box["_maf_usage"] = dict(usage)
     return response.text or ""
 
 
@@ -73,13 +88,31 @@ async def _run_agent_native_stream(
     agent: Any,
     user_message: str,
     history: list[dict] | None = None,
+    metadata_box: dict[str, Any] | None = None,
 ) -> AsyncGenerator[str, None]:
-    """Streaming variant — yields text chunks as MAF produces them."""
+    """Streaming variant — yields text chunks as MAF produces them.
+
+    ``metadata_box``, if given, is filled in place once the underlying
+    stream is exhausted. A plain ``async for`` loop over ``agent.run(...,
+    stream=True)`` already drives MAF's ``ResponseStream`` to call
+    ``get_final_response()`` internally on completion (see
+    ``shared/grounding/middleware.py``'s docstring), so the finalized
+    response — including any grounding report — is available immediately
+    after this generator returns; calling ``get_final_response()`` again
+    here just returns that cached result.
+    """
     messages = _history_as_maf_messages(history, user_message)
-    async for update in agent.run(messages, stream=True, options=_run_options()):
+    stream = agent.run(messages, stream=True, options=_run_options())
+    async for update in stream:
         text = getattr(update, "text", None)
         if text:
             yield text
+    if metadata_box is not None and hasattr(stream, "get_final_response"):
+        final = await stream.get_final_response()
+        metadata_box.update(getattr(final, "additional_properties", None) or {})
+        usage = getattr(final, "usage_details", None)
+        if usage:
+            metadata_box["_maf_usage"] = dict(usage)
 
 
 # ─────────────────────── Session rehydration ──────────────────────
@@ -206,9 +239,11 @@ def create_agent_app(
                     history = await _rehydrate_history_from_session(session_id)
 
             from shared.agent_observability import get_steps, reset_steps
+            from shared.grounding.ledger import reset_grounding_ledger
             from shared.telemetry import agent_run_span
 
             reset_steps()
+            reset_grounding_ledger()
             with agent_run_span(agent_name):
                 response_text = await _run_agent_native(agent, message, history=history)
             # Return this specialist's captured tool steps so the orchestrator
@@ -254,10 +289,12 @@ def create_agent_app(
             )
 
         from shared.agent_observability import get_steps, reset_steps
+        from shared.grounding.ledger import reset_grounding_ledger
         from shared.telemetry import agent_run_span
 
         async def _generate():
             reset_steps()
+            reset_grounding_ledger()
             with agent_run_span(agent_name):
                 try:
                     async for chunk in _run_agent_native_stream(agent, message, history=history):

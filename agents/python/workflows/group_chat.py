@@ -20,8 +20,9 @@ checkout, so the stable submodule paths are what the other workflows use too.
 
 from __future__ import annotations
 
+import inspect
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -32,8 +33,10 @@ from agent_framework._workflows._workflow_context import WorkflowContext
 logger = logging.getLogger(__name__)
 
 # Given the question and the running transcript (prior turns), return this
-# panelist's contribution.
-Responder = Callable[[str, list[dict[str, str]]], str]
+# panelist's contribution — either directly (sync, what every test in this
+# module uses) or as an awaitable (async, for a real agent-backed panelist —
+# see orchestrator/modes/group_chat_mode.py, the first production caller).
+Responder = Callable[[str, list[dict[str, str]]], "str | Awaitable[str]"]
 
 
 @dataclass
@@ -65,7 +68,8 @@ class _PanelistExecutor(Executor):
     @handler
     async def run(self, state: GroupChatState, ctx: WorkflowContext[GroupChatState, GroupChatState]) -> None:
         try:
-            text = self._responder(state.question, list(state.transcript))
+            result = self._responder(state.question, list(state.transcript))
+            text = await result if inspect.isawaitable(result) else result
         except Exception as exc:  # pragma: no cover - defensive
             text = f"({self._name} could not respond: {exc})"
             logger.exception("group_chat.panelist_failed name=%s", self._name)

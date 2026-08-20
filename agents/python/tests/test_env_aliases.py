@@ -38,9 +38,16 @@ def _reload_settings(monkeypatch, **env) -> object:
     # Also disable the .env file so the dev's config can't leak in.
     from shared import config as config_mod
     importlib.reload(config_mod)
-    config_mod.Settings.model_config["env_file"] = None
-    config_mod.settings = config_mod.Settings()
-    return config_mod.settings
+    monkeypatch.setitem(config_mod.Settings.model_config, "env_file", None)
+    # monkeypatch.setattr (not a bare assignment) so the original singleton —
+    # reflecting the real .env — is restored at teardown. A bare
+    # `config_mod.settings = ...` here previously left every later test in
+    # the process reading a credential-stripped, .env-disabled Settings
+    # instance, since `shared.config` is a shared module and this reassigned
+    # its live `settings` attribute with no cleanup.
+    new_settings = config_mod.Settings()
+    monkeypatch.setattr(config_mod, "settings", new_settings)
+    return new_settings
 
 
 def test_azure_key_alias_accepts_api_key(monkeypatch) -> None:

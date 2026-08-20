@@ -36,11 +36,12 @@ describe("AgentTimeline", () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it("shows collapsed step count button by default", () => {
+  it("shows step rows expanded by default — the timeline is the point, not a click away from it", () => {
     render(<AgentTimeline steps={STEPS} />);
     expect(screen.getByText(/Agent activity · 3 steps/)).toBeInTheDocument();
-    // Steps are not visible until expanded
-    expect(screen.queryByText("search_products")).not.toBeInTheDocument();
+    expect(screen.getByText("search_products")).toBeInTheDocument();
+    expect(screen.getByText("call_specialist_agent")).toBeInTheDocument();
+    expect(screen.getByText("check_stock")).toBeInTheDocument();
   });
 
   it("shows total duration in the header", () => {
@@ -49,32 +50,26 @@ describe("AgentTimeline", () => {
     expect(screen.getByText("221ms total")).toBeInTheDocument();
   });
 
-  it("expands to show step rows on click", () => {
+  it("collapses to hide step rows on click", () => {
     render(<AgentTimeline steps={STEPS} />);
     fireEvent.click(screen.getByRole("button", { name: /Agent activity/ }));
-    expect(screen.getByText("call_specialist_agent")).toBeInTheDocument();
-    expect(screen.getByText("search_products")).toBeInTheDocument();
-    expect(screen.getByText("check_stock")).toBeInTheDocument();
+    expect(screen.queryByText("search_products")).not.toBeInTheDocument();
   });
 
   it("shows agent label on each row", () => {
     render(<AgentTimeline steps={STEPS} />);
-    fireEvent.click(screen.getByRole("button", { name: /Agent activity/ }));
     expect(screen.getAllByText("orchestrator").length).toBeGreaterThan(0);
     expect(screen.getAllByText("product-discovery").length).toBeGreaterThan(0);
   });
 
   it("shows duration per step", () => {
     render(<AgentTimeline steps={STEPS} />);
-    fireEvent.click(screen.getByRole("button", { name: /Agent activity/ }));
     expect(screen.getByText("120ms")).toBeInTheDocument();
     expect(screen.getByText("89ms")).toBeInTheDocument();
   });
 
   it("expands a step row to reveal tool_input and tool_output", () => {
     render(<AgentTimeline steps={STEPS} />);
-    // Open the timeline
-    fireEvent.click(screen.getByRole("button", { name: /Agent activity/ }));
     // Click the search_products step row to expand it
     fireEvent.click(screen.getByText("search_products").closest("button")!);
     expect(screen.getByText("Input")).toBeInTheDocument();
@@ -88,7 +83,6 @@ describe("AgentTimeline", () => {
       { agent: "orchestrator", tool_name: "noop", status: "success", duration_ms: 1 },
     ];
     render(<AgentTimeline steps={noDetailStep} />);
-    fireEvent.click(screen.getByRole("button", { name: /Agent activity/ }));
     // The step button should be disabled (no detail to expand)
     const stepBtn = screen.getByText("noop").closest("button")!;
     expect(stepBtn).toBeDisabled();
@@ -99,7 +93,41 @@ describe("AgentTimeline", () => {
       { tool_name: "some_tool", status: "success", duration_ms: 5 },
     ];
     render(<AgentTimeline steps={steps} />);
-    fireEvent.click(screen.getByRole("button", { name: /Agent activity/ }));
     expect(screen.getByText("orchestrator")).toBeInTheDocument();
+  });
+
+  it("shows a 'sourced from' line with row ids when the step expands and provenance has rows", () => {
+    const steps: AgentStep[] = [
+      {
+        agent: "product-discovery",
+        tool_name: "search_products",
+        tool_input: { query: "headphones" },
+        tool_output: { count: 1 },
+        status: "success",
+        duration_ms: 50,
+        provenance: { source: "tool:search_products", row_ids: ["0fd372fa-ecb2-4db0-bb71-8628a784ced9"] },
+      },
+    ];
+    render(<AgentTimeline steps={steps} />);
+    fireEvent.click(screen.getByText("search_products").closest("button")!);
+    expect(screen.getByText("tool:search_products")).toBeInTheDocument();
+    expect(screen.getByText(/0fd372fa-ecb2-4db0-bb71-8628a784ced9/)).toBeInTheDocument();
+  });
+
+  it("omits the 'sourced from' line when provenance has no row ids", () => {
+    const steps: AgentStep[] = [
+      {
+        agent: "product-discovery",
+        tool_name: "get_trending_products",
+        tool_input: {},
+        tool_output: [],
+        status: "success",
+        duration_ms: 40,
+        provenance: { source: "tool:get_trending_products", row_ids: [] },
+      },
+    ];
+    render(<AgentTimeline steps={steps} />);
+    fireEvent.click(screen.getByText("get_trending_products").closest("button")!);
+    expect(screen.queryByText(/Sourced from/)).not.toBeInTheDocument();
   });
 });

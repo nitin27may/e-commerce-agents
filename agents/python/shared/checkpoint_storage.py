@@ -113,6 +113,54 @@ class PostgresCheckpointStorage(CheckpointStorage):
         return affected > 0
 
 
+class RecordingCheckpointStorage(CheckpointStorage):
+    """Wraps a ``CheckpointStorage`` and records every checkpoint_id saved
+    through it, in order.
+
+    MAF's own ``WorkflowEvent`` stream never surfaces a save — verified
+    directly against a live run: attaching ``checkpoint_storage=...`` to
+    ``Workflow.run()`` saves one checkpoint per superstep with zero
+    corresponding event. A caller that wants to emit its own
+    ``kind="checkpoint"`` ``OrchestrationEvent`` as each save happens
+    (``orchestrator/modes/workflow_mode.py``) drains ``.saved`` between
+    iterations of its own event loop — safe because both the workflow's
+    internal ``save()`` call and the caller's loop run on the same task,
+    so nothing saved mid-step can be missed or duplicated.
+    """
+
+    def __init__(self, inner: CheckpointStorage) -> None:
+        self._inner = inner
+        self.saved: list[CheckpointID] = []
+
+    async def save(self, checkpoint: WorkflowCheckpoint) -> CheckpointID:
+        checkpoint_id = await self._inner.save(checkpoint)
+        self.saved.append(checkpoint_id)
+        return checkpoint_id
+
+    async def load(self, checkpoint_id: CheckpointID) -> WorkflowCheckpoint:
+        return await self._inner.load(checkpoint_id)
+
+    async def list_checkpoints(self, *, workflow_name: str) -> list[WorkflowCheckpoint]:
+        return await self._inner.list_checkpoints(workflow_name=workflow_name)
+
+    async def list_checkpoint_ids(self, *, workflow_name: str) -> list[CheckpointID]:
+        return await self._inner.list_checkpoint_ids(workflow_name=workflow_name)
+
+    async def get_latest(self, *, workflow_name: str) -> WorkflowCheckpoint | None:
+        return await self._inner.get_latest(workflow_name=workflow_name)
+
+    async def delete(self, checkpoint_id: CheckpointID) -> bool:
+        return await self._inner.delete(checkpoint_id)
+
+
+def drain_new_checkpoint_ids(recorder: RecordingCheckpointStorage, already_seen: int) -> list[CheckpointID]:
+    """Return checkpoint ids saved since the caller last checked (index
+    ``already_seen`` into ``recorder.saved``). Callers track the returned
+    list's length as their new ``already_seen`` for the next call.
+    """
+    return recorder.saved[already_seen:]
+
+
 # ─────────────────────── Helpers ───────────────────────
 
 

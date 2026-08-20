@@ -1,0 +1,87 @@
+{
+  "request": {
+    "instructions": "You are an execution assistant for an e-commerce store, running one step of an already-approved plan at a time. Each user message names the step to perform right now. If the step needs to search the catalog, call the `search_products` tool. Otherwise reason directly over the product results already visible earlier in this conversation. Keep your answer to a few sentences and stay focused on this one step.",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "Step 1: Search for photography-related products. Use search_products with query='photography gifts'.",
+            "type": "text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      }
+    ],
+    "tools": [
+      {
+        "function": {
+          "description": "Search the toy product catalog by keyword, optionally capped by an inclusive max price.",
+          "name": "search_products",
+          "parameters": {
+            "properties": {
+              "max_price": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Optional inclusive price ceiling in USD.",
+                "title": "Max Price"
+              },
+              "query": {
+                "description": "Free-text search, matched against name/category/description.",
+                "title": "Query",
+                "type": "string"
+              }
+            },
+            "required": [
+              "query"
+            ],
+            "title": "search_products_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      }
+    ]
+  },
+  "response": {
+    "created_at": "2026-08-20T02:49:27.000000Z",
+    "finish_reason": "tool_calls",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "arguments": "{\"query\":\"photography gifts\"}",
+            "call_id": "call_fw1Wv149oLwKoVxvMR6O4mwc",
+            "name": "search_products",
+            "type": "function_call"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      }
+    ],
+    "model": "gpt-4.1-2025-04-14",
+    "response_id": "chatcmpl-EEn8J3Ag8jKGGlFWtu1pwEEGfTOCR",
+    "type": "chat_response",
+    "usage_details": {
+      "cache_read_input_token_count": 0,
+      "completion/reasoning_tokens": 0,
+      "input_token_count": 196,
+      "output_token_count": 17,
+      "prompt/cached_tokens": 0,
+      "reasoning_output_token_count": 0,
+      "total_token_count": 213
+    }
+  }
+}

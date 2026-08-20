@@ -61,14 +61,19 @@ def _validate_azure() -> None:
 # ─────────────────────── LLM clients ───────────────────────
 
 
-def get_chat_client() -> OpenAIChatClient | OpenAIChatCompletionClient:
+def get_chat_client() -> OpenAIChatClient | OpenAIChatCompletionClient | Any:
     """Return a MAF chat client configured for the active LLM_PROVIDER.
 
     * ``openai``  → ``OpenAIChatClient`` (Responses API — public OpenAI
-      supports it on every model).
+      supports it on every model). Honors ``LLM_BASE_URL`` for any
+      OpenAI-compatible endpoint (GitHub Models, OpenRouter, vLLM, LM
+      Studio) instead of api.openai.com.
     * ``azure``   → ``OpenAIChatCompletionClient`` (Chat Completions API —
       universally supported across Azure OpenAI deployments; the
       Responses-API variant only works on the newest Azure regions).
+    * ``replay``  → ``ReplayChatClient`` (see ``shared/replay_client.py``) —
+      serves recorded fixtures with no credentials required; set
+      ``RECORD=true`` to record new ones against ``REPLAY_RECORD_PROVIDER``.
 
     This matches the decision documented in the Ch01/Ch07 tutorial code —
     see docs/architecture.md for the full rationale.
@@ -77,10 +82,11 @@ def get_chat_client() -> OpenAIChatClient | OpenAIChatCompletionClient:
 
     if provider == "openai":
         _validate_openai()
-        logger.info("Creating OpenAI chat client (model=%s)", settings.LLM_MODEL)
+        logger.info("Creating OpenAI chat client (model=%s, base_url=%s)", settings.LLM_MODEL, settings.LLM_BASE_URL)
         return OpenAIChatClient(
             model=settings.LLM_MODEL,
             api_key=settings.OPENAI_API_KEY,
+            base_url=settings.LLM_BASE_URL or None,
         )
 
     if provider == "azure":
@@ -99,7 +105,19 @@ def get_chat_client() -> OpenAIChatClient | OpenAIChatCompletionClient:
             api_version=api_version,
         )
 
-    raise ValueError(f"Unknown LLM_PROVIDER: {settings.LLM_PROVIDER!r}. Must be 'openai' or 'azure'.")
+    if provider == "replay":
+        from shared.replay_client import ReplayChatClient
+
+        logger.info(
+            "Creating replay chat client (record=%s, fixtures_dir=%s)", settings.RECORD, settings.REPLAY_FIXTURES_DIR
+        )
+        return ReplayChatClient(
+            fixtures_dir=settings.REPLAY_FIXTURES_DIR,
+            record=settings.RECORD,
+            record_provider=settings.REPLAY_RECORD_PROVIDER,
+        )
+
+    raise ValueError(f"Unknown LLM_PROVIDER: {settings.LLM_PROVIDER!r}. Must be 'openai', 'azure', or 'replay'.")
 
 
 def get_embeddings_client() -> openai.AsyncOpenAI | openai.AsyncAzureOpenAI:
@@ -112,7 +130,7 @@ def get_embeddings_client() -> openai.AsyncOpenAI | openai.AsyncAzureOpenAI:
             api_version=settings.AZURE_OPENAI_API_VERSION,
         )
     _validate_openai()
-    return openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+    return openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY, base_url=settings.LLM_BASE_URL or None)
 
 
 def get_embedding_model() -> str:

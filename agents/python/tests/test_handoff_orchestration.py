@@ -38,6 +38,9 @@ def _stub_orchestrator() -> Agent:
         name="orchestrator",
         description="Stub orchestrator used only for handoff wiring tests.",
         instructions="You are a test stub.",
+        # HandoffBuilder.build() requires this on every participant — see the
+        # same flag on orchestrator/agent.py::create_orchestrator_agent().
+        require_per_service_call_history_persistence=True,
     )
 
 

@@ -21,10 +21,9 @@ from tutorials._shared import maf_bootstrap  # noqa: E402
 maf_bootstrap.bootstrap()
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
-from main import INSTRUCTIONS, UserProfileProvider, ask, build_agent  # noqa: E402
-
 from agent_framework import BaseChatClient, Content, Message  # noqa: E402
 from agent_framework._types import ChatResponse, ChatResponseUpdate, ResponseStream  # noqa: E402
+from main import FIXTURES_DIR, INSTRUCTIONS, UserProfileProvider, ask, build_agent  # noqa: E402
 
 
 class CannedChatClient(BaseChatClient):
@@ -49,14 +48,13 @@ class CannedChatClient(BaseChatClient):
         text = self._responses.pop(0)
 
         async def _return() -> ChatResponse:
-            return ChatResponse(
-                messages=[Message(role="assistant", contents=[Content(type="text", text=text)])]
-            )
+            return ChatResponse(messages=[Message(role="assistant", contents=[Content(type="text", text=text)])])
 
         return _return()
 
 
 # ─────────── Unit tests (no LLM) ───────────
+
 
 @pytest.mark.asyncio
 async def test_provider_injects_user_into_instructions() -> None:
@@ -122,7 +120,28 @@ async def test_multiple_users_see_different_context() -> None:
     assert "Bob" in bob_instructions and "Alice" not in bob_instructions
 
 
+# ─────────── Replay test (no credentials, runs in CI) ───────────
+
+
+@pytest.mark.asyncio
+async def test_replay_uses_injected_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Plays back tests/fixtures/replay/ — no network, no credentials.
+
+    Recorded once against a real LLM (test_real_llm_uses_injected_name
+    below, run with RECORD=true) and committed.
+    """
+    if not any(FIXTURES_DIR.glob("*.json")):
+        pytest.skip(f"no recorded fixtures in {FIXTURES_DIR} — run with RECORD=true first")
+    monkeypatch.setenv("LLM_PROVIDER", "replay")
+    agent = build_agent(UserProfileProvider(email="alice@example.com", name="Alice", loyalty_tier="gold"))
+    answer = await ask(agent, "Greet me by name and tell me my loyalty tier.")
+    lowered = answer.lower()
+    assert "alice" in lowered, f"expected 'alice' in answer, got: {answer!r}"
+    assert "gold" in lowered, f"expected 'gold' tier in answer, got: {answer!r}"
+
+
 # ─────────── Integration (real LLM) ───────────
+
 
 def _llm_available() -> bool:
     provider = os.environ.get("LLM_PROVIDER", "openai").lower()

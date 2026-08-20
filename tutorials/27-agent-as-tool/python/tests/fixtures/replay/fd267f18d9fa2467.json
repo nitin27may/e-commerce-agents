@@ -1,0 +1,106 @@
+{
+  "request": {
+    "instructions": "You are a product-lookup specialist. When asked about a product, call the `search_catalog` tool with the product name and report back its price, category, and stock level in one short sentence. Do not answer anything else.",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "Get information and price for Wireless Headphones.",
+            "type": "text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      },
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "arguments": "{\"name\":\"Wireless Headphones\"}",
+            "call_id": "call_Ay2l3YUp9eeuPhk0huEvS2cY",
+            "name": "search_catalog",
+            "type": "function_call"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      },
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "call_id": "call_Ay2l3YUp9eeuPhk0huEvS2cY",
+            "items": [
+              {
+                "additional_properties": {},
+                "text": "Wireless Headphones: $149.99, category Electronics, 42 in stock.",
+                "type": "text"
+              }
+            ],
+            "result": "Wireless Headphones: $149.99, category Electronics, 42 in stock.",
+            "type": "function_result"
+          }
+        ],
+        "role": "tool",
+        "type": "message"
+      }
+    ],
+    "tools": [
+      {
+        "function": {
+          "description": "Look up a product in the catalog by name.",
+          "name": "search_catalog",
+          "parameters": {
+            "properties": {
+              "name": {
+                "description": "The product name to look up, e.g. 'Wireless Headphones'.",
+                "title": "Name",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "title": "search_catalog_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      }
+    ]
+  },
+  "response": {
+    "created_at": "2026-08-20T02:35:13.000000Z",
+    "finish_reason": "stop",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "Wireless Headphones are priced at $149.99, in the Electronics category, with 42 units currently in stock.",
+            "type": "text"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      }
+    ],
+    "model": "gpt-4.1-2025-04-14",
+    "response_id": "chatcmpl-EEmuXesD2syh4Vmk7AaQ8fk3D4Lhm",
+    "type": "chat_response",
+    "usage_details": {
+      "cache_read_input_token_count": 0,
+      "completion/reasoning_tokens": 0,
+      "input_token_count": 168,
+      "output_token_count": 26,
+      "prompt/cached_tokens": 0,
+      "reasoning_output_token_count": 0,
+      "total_token_count": 194
+    }
+  }
+}
