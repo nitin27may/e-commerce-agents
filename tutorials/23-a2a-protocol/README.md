@@ -97,7 +97,7 @@ async def call_order_specialist(message: Annotated[str, Field(description="...")
         return str(data.get("response", resp.text))
 ```
 
-This is `orchestrator/agent.py`'s blocking path, minus the streaming branch and the registry lookup — build a body, `POST /message:send`, read `response`. The LLM decides to call this tool the same way it decided to call Chapter 02's `get_weather`; the difference is what the tool *does* once called — a real (if in-process) HTTP round trip instead of a dictionary lookup.
+This is `orchestrator/agent.py`'s blocking path, minus the streaming branch and the registry lookup — build a body, `POST /message:send`, read `response`. The LLM decides to call this tool the same way it decided to call Chapter 02's `get_product_price`; the difference is what the tool *does* once called — a real (if in-process) HTTP round trip instead of a dictionary lookup.
 
 Run it and ask an order question — the LLM calls `call_order_specialist`, which does a real A2A round trip to the specialist app, and the answer folds the order's status into a sentence. `main()` also prints the raw agent-card fetch and a raw streamed call afterward, so you can see both transport shapes outside of the LLM's tool-calling loop.
 

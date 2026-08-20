@@ -69,7 +69,7 @@ async def test_agent_card_endpoint_returns_identity() -> None:
 @pytest.mark.asyncio
 async def test_call_order_specialist_tool_hits_message_send() -> None:
     # @tool exposes the original coroutine function via .func — same
-    # unwrap pattern as Chapter 02's get_weather.func(...).
+    # unwrap pattern as Chapter 02's get_product_price.func(...).
     result = await call_order_specialist.func("What's the status of ORD-1002?")
     assert "Processing" in result
 

@@ -3,10 +3,13 @@
 ## Why this chapter
 
 Every earlier chapter trusted the model's final sentence. Chapter 02 gave the agent a
-`get_weather` tool and assumed that whatever the LLM said afterward reflected the tool's
-canned string. For weather trivia that's a safe assumption. For an e-commerce agent quoting
-a product id and a price, it isn't — a wrong price in a support chat is a real-money bug, not
-a quirky typo. This chapter builds the two mechanisms that close that gap: a **retrieval**
+`get_product_price` tool and assumed that whatever the LLM said afterward reflected the tool's
+canned string — for a four-SKU demo catalog with no other consequence, that's a safe enough
+assumption to skip past. It stops being safe the moment "the LLM says a price" is a real
+support conversation with real money attached: nothing in Chapter 02 checks that the number
+in the LLM's sentence still matches the number the tool actually returned, and a model that
+paraphrases "\$79.99" as "\$97.99" would sail through undetected. This chapter builds the two
+mechanisms that close that gap: a **retrieval**
 tool so the agent has real data to answer from, and a **grounding verification** step that
 checks, after the model responds, whether its answer's specific claims actually match that
 data. They are not the same thing, and conflating them is the most common mistake in
