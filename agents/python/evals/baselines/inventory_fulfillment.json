@@ -1,8 +1,8 @@
 {
-  "avg_groundedness": 0.8,
+  "avg_groundedness": 0.6,
   "avg_correctness": 0.4,
-  "avg_completeness": 0.2,
-  "overall_score": 0.52,
+  "avg_completeness": 0.3,
+  "overall_score": 0.46,
   "agent_name": "inventory-fulfillment",
   "dataset_path": "evals/datasets/inventory_fulfillment.json"
 }

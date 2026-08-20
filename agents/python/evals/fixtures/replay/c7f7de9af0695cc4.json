@@ -226,7 +226,7 @@
     ]
   },
   "response": {
-    "created_at": "2026-08-20T18:26:25.000000Z",
+    "created_at": "2026-08-20T20:20:04.000000Z",
     "finish_reason": "tool_calls",
     "messages": [
       {
@@ -235,7 +235,7 @@
           {
             "additional_properties": {},
             "arguments": "{\"product_id\":\"0fd372fa-ecb2-4db0-bb71-8628a784ced9\"}",
-            "call_id": "call_RXX4xotkgv3HeAB8qH6Szjds",
+            "call_id": "call_Jf2TwwgyXysnpZSjHXcwa2o9",
             "name": "check_stock",
             "type": "function_call"
           }
@@ -245,14 +245,14 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-EF1l3d3UokUN5d94UXUhGCCSThhqP",
+    "response_id": "chatcmpl-EF3X2gYkJvgIb8CkbzZ4riF4gpBua",
     "type": "chat_response",
     "usage_details": {
-      "cache_read_input_token_count": 3328,
+      "cache_read_input_token_count": 2560,
       "completion/reasoning_tokens": 0,
       "input_token_count": 3440,
       "output_token_count": 37,
-      "prompt/cached_tokens": 3328,
+      "prompt/cached_tokens": 2560,
       "reasoning_output_token_count": 0,
       "total_token_count": 3477
     }

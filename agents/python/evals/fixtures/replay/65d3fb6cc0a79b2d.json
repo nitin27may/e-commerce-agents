@@ -223,7 +223,7 @@
     ]
   },
   "response": {
-    "created_at": "2026-08-20T18:25:59.000000Z",
+    "created_at": "2026-08-20T20:19:41.000000Z",
     "finish_reason": "tool_calls",
     "messages": [
       {
@@ -232,7 +232,7 @@
           {
             "additional_properties": {},
             "arguments": "{\"code\":\"SAVE20\",\"cart_total\":0}",
-            "call_id": "call_YLIUofN6nkKTpvwfd83x9qU0",
+            "call_id": "call_Rvb90MImrJWYuRgglmqjzOm1",
             "name": "validate_coupon",
             "type": "function_call"
           }
@@ -242,14 +242,14 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-EF1kdHmvbuNDtxBpIeLniH0XbK3cT",
+    "response_id": "chatcmpl-EF3WfC7lTpGOZF0rZNy9B0orgmpFD",
     "type": "chat_response",
     "usage_details": {
-      "cache_read_input_token_count": 3200,
+      "cache_read_input_token_count": 2560,
       "completion/reasoning_tokens": 0,
       "input_token_count": 3328,
       "output_token_count": 21,
-      "prompt/cached_tokens": 3200,
+      "prompt/cached_tokens": 2560,
       "reasoning_output_token_count": 0,
       "total_token_count": 3349
     }

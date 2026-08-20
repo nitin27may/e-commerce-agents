@@ -323,7 +323,7 @@
     ]
   },
   "response": {
-    "created_at": "2026-08-20T18:23:51.000000Z",
+    "created_at": "2026-08-20T20:21:25.000000Z",
     "finish_reason": "stop",
     "messages": [
       {
@@ -340,14 +340,14 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-EF1iZTbhzV2ko2hJwsqia5BnjgTIc",
+    "response_id": "chatcmpl-EF3YLf2Xt0CzbMWMKhnBg9YZfRlXN",
     "type": "chat_response",
     "usage_details": {
-      "cache_read_input_token_count": 0,
+      "cache_read_input_token_count": 3712,
       "completion/reasoning_tokens": 0,
       "input_token_count": 3736,
       "output_token_count": 13,
-      "prompt/cached_tokens": 0,
+      "prompt/cached_tokens": 3712,
       "reasoning_output_token_count": 0,
       "total_token_count": 3749
     }

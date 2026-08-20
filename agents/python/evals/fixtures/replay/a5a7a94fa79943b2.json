@@ -418,16 +418,23 @@
     ]
   },
   "response": {
-    "created_at": "2026-08-20T00:51:12.000000Z",
-    "finish_reason": "stop",
+    "created_at": "2026-08-20T20:19:17.000000Z",
+    "finish_reason": "tool_calls",
     "messages": [
       {
         "additional_properties": {},
         "contents": [
           {
             "additional_properties": {},
-            "text": "Let me find some cozy options for winter, including blankets and warm jackets. I'll focus on products with high ratings and good reviews so you get the best comfort.\n\nHere are some top picks that fit your request:\n\n```products\n[{\"name\": \"Sherpa Fleece Blanket\", \"id\": \"b2a1c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d\", \"price\": 39.99, \"rating\": 4.8, \"review_count\": 112, \"category\": \"Home\", \"brand\": \"CozyNest\", \"description\": \"Ultra-soft sherpa fleece blanket for warmth and comfort.\", \"image_url\": \"https://images.example.com/products/b2a1c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d.jpg\"}, {\"name\": \"Down Puffer Jacket\", \"id\": \"c7d8e9f0-1a2b-3c4d-5e6f-7a8b9c0d1e2f\", \"price\": 129.99, \"rating\": 4.6, \"review_count\": 87, \"category\": \"Clothing\", \"brand\": \"WarmWear\", \"description\": \"Lightweight down jacket with excellent insulation for cold weather.\", \"image_url\": \"https://images.example.com/products/c7d8e9f0-1a2b-3c4d-5e6f-7a8b9c0d1e2f.jpg\"}, {\"name\": \"Chunky Knit Throw Blanket\", \"id\": \"e3f4a5b6-c7d8-9e0f-1a2b-3c4d5e6f7a8b\", \"price\": 54.99, \"rating\": 4.7, \"review_count\": 65, \"category\": \"Home\", \"brand\": \"SnuggleSoft\", \"description\": \"Handmade chunky knit throw blanket for cozy evenings.\", \"image_url\": \"https://images.example.com/products/e3f4a5b6-c7d8-9e0f-1a2b-3c4d5e6f7a8b.jpg\"}, {\"name\": \"Thermal Parka Jacket\", \"id\": \"f1a2b3c4-d5e6-7f8a-9b0c-1d2e3f4a5b6c\", \"price\": 159.99, \"rating\": 4.5, \"review_count\": 49, \"category\": \"Clothing\", \"brand\": \"ArcticEdge\", \"description\": \"Heavy-duty thermal parka for extreme winter warmth.\", \"image_url\": \"https://images.example.com/products/f1a2b3c4-d5e6-7f8a-9b0c-1d2e3f4a5b6c.jpg\"}, {\"name\": \"Heated Blanket\", \"id\": \"a9b8c7d6-e5f4-3a2b-1c0d-9e8f7a6b5c4d\", \"price\": 79.99, \"rating\": 4.6, \"review_count\": 73, \"category\": \"Home\", \"brand\": \"HeatWave\", \"description\": \"Electric heated blanket with adjustable warmth settings.\", \"image_url\": \"https://images.example.com/products/a9b8c7d6-e5f4-3a2b-1c0d-9e8f7a6b5c4d.jpg\"}]\n```\n\nThese options are all highly rated and designed for warmth and comfort. If you want to compare any of these or see more details, let me know!",
+            "text": "Let me find some cozy options for winter, including blankets and warm jackets. I\u2019ll start with a semantic search to find products that match your request for comfort and warmth.\n\n",
             "type": "text"
+          },
+          {
+            "additional_properties": {},
+            "arguments": "{\"query\":\"cozy for winter blanket or warm jacket\",\"limit\":6}",
+            "call_id": "call_3UepSyk5EqlF6AgAd41IODpL",
+            "name": "semantic_search",
+            "type": "function_call"
           }
         ],
         "role": "assistant",
@@ -435,16 +442,16 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-EElHs09tr37cUeTOtDsRG4WreC20A",
+    "response_id": "chatcmpl-EF3WHeyIvbCgIfesokQJ4O8cq7Dwm",
     "type": "chat_response",
     "usage_details": {
       "cache_read_input_token_count": 3712,
       "completion/reasoning_tokens": 0,
       "input_token_count": 3740,
-      "output_token_count": 827,
+      "output_token_count": 62,
       "prompt/cached_tokens": 3712,
       "reasoning_output_token_count": 0,
-      "total_token_count": 4567
+      "total_token_count": 3802
     }
   }
 }

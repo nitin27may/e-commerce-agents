@@ -46,7 +46,7 @@
     ]
   },
   "response": {
-    "created_at": "2026-08-20T18:35:42.000000Z",
+    "created_at": "2026-08-20T20:20:38.000000Z",
     "finish_reason": "tool_calls",
     "messages": [
       {
@@ -55,7 +55,7 @@
           {
             "additional_properties": {},
             "arguments": "{\"agent_name\":\"product-discovery\",\"message\":\"Show me waterproof Bluetooth speakers under $100.\"}",
-            "call_id": "call_Cxu2l4uGQcf3UkFWE5anXwcj",
+            "call_id": "call_mEAZSDrQQpcwRkQwwxBamIBw",
             "name": "call_specialist_agent",
             "type": "function_call"
           }
@@ -65,14 +65,14 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-EF1u2T2yjarfomtR95xD8elAy7gKf",
+    "response_id": "chatcmpl-EF3XaLBOQzheFAbUjc24bwsyh2lYz",
     "type": "chat_response",
     "usage_details": {
-      "cache_read_input_token_count": 0,
+      "cache_read_input_token_count": 2432,
       "completion/reasoning_tokens": 0,
       "input_token_count": 2897,
       "output_token_count": 32,
-      "prompt/cached_tokens": 0,
+      "prompt/cached_tokens": 2432,
       "reasoning_output_token_count": 0,
       "total_token_count": 2929
     }

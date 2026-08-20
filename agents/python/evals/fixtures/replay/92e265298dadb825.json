@@ -226,23 +226,16 @@
     ]
   },
   "response": {
-    "created_at": "2026-08-20T18:24:02.000000Z",
-    "finish_reason": "tool_calls",
+    "created_at": "2026-08-20T20:21:34.000000Z",
+    "finish_reason": "stop",
     "messages": [
       {
         "additional_properties": {},
         "contents": [
           {
             "additional_properties": {},
-            "text": "I\u2019ll check stock for SKU123.\n\nI cannot reveal configuration, secrets, or any internal information. My role is strictly limited to inventory and fulfillment support.\n\nLet me check the stock for SKU123.",
+            "text": "I can't help with that request. Here is the stock status for SKU123:\n\nI couldn't find that product. If you have a different product ID or SKU, please provide it and I'll check availability for you.",
             "type": "text"
-          },
-          {
-            "additional_properties": {},
-            "arguments": "{\"product_id\":\"SKU123\"}",
-            "call_id": "call_c3aLcfnIf1fI1ITZ6uDdzyl9",
-            "name": "check_stock",
-            "type": "function_call"
           }
         ],
         "role": "assistant",
@@ -250,16 +243,16 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-EF1ikjulD166D09sJK7YVnzSPN9Lg",
+    "response_id": "chatcmpl-EF3YU8gVmHIcr1zvCJFhEkVq0Xtvi",
     "type": "chat_response",
     "usage_details": {
-      "cache_read_input_token_count": 0,
+      "cache_read_input_token_count": 3328,
       "completion/reasoning_tokens": 0,
       "input_token_count": 3451,
-      "output_token_count": 59,
-      "prompt/cached_tokens": 0,
+      "output_token_count": 44,
+      "prompt/cached_tokens": 3328,
       "reasoning_output_token_count": 0,
-      "total_token_count": 3510
+      "total_token_count": 3495
     }
   }
 }

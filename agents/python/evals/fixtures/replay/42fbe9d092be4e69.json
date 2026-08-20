@@ -226,7 +226,7 @@
     ]
   },
   "response": {
-    "created_at": "2026-08-20T18:36:15.000000Z",
+    "created_at": "2026-08-20T20:21:12.000000Z",
     "finish_reason": "tool_calls",
     "messages": [
       {
@@ -235,7 +235,7 @@
           {
             "additional_properties": {},
             "arguments": "{\"product_id\":\"dyson-v15\"}",
-            "call_id": "call_JXuOpDhZYkhcBeRPum01CM9T",
+            "call_id": "call_nvy677MduQJPlPz2JIizsiKi",
             "name": "check_stock",
             "type": "function_call"
           }
@@ -245,7 +245,7 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-EF1uZahItQJvzsSXsC8BLZUHMf8XU",
+    "response_id": "chatcmpl-EF3Y8p4NrCgNJQ4xaeJKe40qp0YXI",
     "type": "chat_response",
     "usage_details": {
       "cache_read_input_token_count": 3328,

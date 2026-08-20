@@ -418,7 +418,7 @@
     ]
   },
   "response": {
-    "created_at": "2026-08-20T00:51:18.000000Z",
+    "created_at": "2026-08-20T20:19:21.000000Z",
     "finish_reason": "stop",
     "messages": [
       {
@@ -426,7 +426,7 @@
         "contents": [
           {
             "additional_properties": {},
-            "text": "Here are the most popular electronics trending this month, based on recent order volume. These are great picks if you're looking for what's hot right now!\n\n```products\n[{\"name\": \"Sony WH-1000XM5\", \"id\": \"0fd372fa-ecb2-4db0-bb71-8628a784ced9\", \"price\": 299.99, \"original_price\": 349.99, \"rating\": 4.7, \"review_count\": 15, \"category\": \"Electronics\", \"brand\": \"Sony\", \"description\": \"Premium wireless noise-cancelling headphones\", \"image_url\": \"https://images.example.com/products/sony-wh1000xm5.jpg\"}, {\"name\": \"Apple iPad Air (2024)\", \"id\": \"a1c8e2b7-4f3a-4d8e-9c1a-8d2f3b9e7a6c\", \"price\": 599.99, \"original_price\": 649.99, \"rating\": 4.8, \"review_count\": 22, \"category\": \"Electronics\", \"brand\": \"Apple\", \"description\": \"Lightweight tablet with M2 chip and vibrant display\", \"image_url\": \"https://images.example.com/products/ipad-air-2024.jpg\"}, {\"name\": \"Samsung Galaxy Buds2 Pro\", \"id\": \"e2d7c3b9-2a4b-4e5c-8f1a-7c2d9b8e6f3a\", \"price\": 179.99, \"original_price\": 229.99, \"rating\": 4.6, \"review_count\": 18, \"category\": \"Electronics\", \"brand\": \"Samsung\", \"description\": \"Wireless earbuds with active noise cancellation\", \"image_url\": \"https://images.example.com/products/galaxy-buds2-pro.jpg\"}, {\"name\": \"Kindle Paperwhite (11th Gen)\", \"id\": \"b7e9c2d8-3a4f-4e5c-9b1a-8d2f3c9e7b6a\", \"price\": 139.99, \"original_price\": 159.99, \"rating\": 4.9, \"review_count\": 30, \"category\": \"Electronics\", \"brand\": \"Amazon\", \"description\": \"Waterproof e-reader with adjustable warm light\", \"image_url\": \"https://images.example.com/products/kindle-paperwhite-11th.jpg\"}, {\"name\": \"Anker PowerCore 20K\", \"id\": \"c9e7b6a8-2d4f-4e5c-8b1a-7c2d9b8e6f3a\", \"price\": 49.99, \"original_price\": 69.99, \"rating\": 4.5, \"review_count\": 12, \"category\": \"Electronics\", \"brand\": \"Anker\", \"description\": \"High-capacity portable charger for phones and tablets\", \"image_url\": \"https://images.example.com/products/anker-powercore-20k.jpg\"}]\n```\n\nThese products are trending due to their popularity and strong reviews. If you'd like more details or want to compare any of them, let me know!",
+            "text": "Here are the most popular electronics trending this month, based on recent order volume. These are great picks if you're looking for what's hot right now!\n\n```products\n[{\"name\": \"Sony WH-1000XM5\", \"id\": \"0fd372fa-ecb2-4db0-bb71-8628a784ced9\", \"price\": 299.99, \"rating\": 4.7, \"review_count\": 15, \"category\": \"Electronics\", \"brand\": \"Sony\", \"description\": \"Premium wireless noise-cancelling headphones\", \"image_url\": \"https://images.example.com/products/sony-wh1000xm5.jpg\"}, {\"name\": \"Apple iPad Air (2024)\", \"id\": \"a2b7c3d4-5e6f-7g8h-9i0j-1k2l3m4n5o6p\", \"price\": 599.99, \"rating\": 4.8, \"review_count\": 32, \"category\": \"Electronics\", \"brand\": \"Apple\", \"description\": \"Lightweight tablet with M2 chip and 10.9-inch display\", \"image_url\": \"https://images.example.com/products/ipad-air-2024.jpg\"}, {\"name\": \"Samsung Galaxy Buds2 Pro\", \"id\": \"b1c2d3e4-f5g6-h7i8-j9k0-l1m2n3o4p5q6\", \"price\": 179.99, \"rating\": 4.6, \"review_count\": 21, \"category\": \"Electronics\", \"brand\": \"Samsung\", \"description\": \"True wireless earbuds with active noise cancellation\", \"image_url\": \"https://images.example.com/products/galaxy-buds2-pro.jpg\"}, {\"name\": \"Kindle Paperwhite (11th Gen)\", \"id\": \"c2d3e4f5-g6h7-i8j9-k0l1-m2n3o4p5q6r7\", \"price\": 139.99, \"rating\": 4.9, \"review_count\": 44, \"category\": \"Electronics\", \"brand\": \"Amazon\", \"description\": \"Waterproof e-reader with adjustable warm light\", \"image_url\": \"https://images.example.com/products/kindle-paperwhite-11th.jpg\"}, {\"name\": \"Anker PowerCore 20000\", \"id\": \"d3e4f5g6-h7i8-j9k0-l1m2-n3o4p5q6r7s8\", \"price\": 49.99, \"rating\": 4.5, \"review_count\": 18, \"category\": \"Electronics\", \"brand\": \"Anker\", \"description\": \"High-capacity portable charger for phones and tablets\", \"image_url\": \"https://images.example.com/products/anker-powercore-20000.jpg\"}]\n```\n\nThese products are trending due to their popularity and strong reviews. If you want more details or a comparison between any of them, let me know!",
             "type": "text"
           }
         ],
@@ -435,16 +435,16 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-EElHyIBqhgWkcSb7BkukcYBvgKSKh",
+    "response_id": "chatcmpl-EF3WLlX4lRvKYjd5R2CvvcfInRCj7",
     "type": "chat_response",
     "usage_details": {
       "cache_read_input_token_count": 3712,
       "completion/reasoning_tokens": 0,
       "input_token_count": 3735,
-      "output_token_count": 708,
+      "output_token_count": 656,
       "prompt/cached_tokens": 3712,
       "reasoning_output_token_count": 0,
-      "total_token_count": 4443
+      "total_token_count": 4391
     }
   }
 }

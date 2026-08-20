@@ -490,7 +490,7 @@
     ]
   },
   "response": {
-    "created_at": "2026-08-20T20:09:23.000000Z",
+    "created_at": "2026-08-20T20:19:32.000000Z",
     "finish_reason": "tool_calls",
     "messages": [
       {
@@ -499,7 +499,7 @@
           {
             "additional_properties": {},
             "arguments": "{\"order_id\":\"550e8400-e29b-41d4-a716-446655440002\"}",
-            "call_id": "call_J4oA1EjZGJ3h3MRP5kuIY9ih",
+            "call_id": "call_Ps80gjXckwVBUAEMqeN7oSFv",
             "name": "get_order_tracking",
             "type": "function_call"
           }
@@ -509,7 +509,7 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-EF3MhjdZtJP55WmklnqoPuCN4YMEa",
+    "response_id": "chatcmpl-EF3WWpICKKCQxEbToMpcOhyt0mkgX",
     "type": "chat_response",
     "usage_details": {
       "cache_read_input_token_count": 4736,
