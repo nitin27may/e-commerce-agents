@@ -18,7 +18,7 @@ export interface StatCardProps {
 }
 
 const TREND_CLASS: Record<StatDelta["trend"], string> = {
-  up: "text-emerald-600 dark:text-emerald-400",
+  up: "text-success",
   down: "text-destructive",
   neutral: "text-muted-foreground",
 };
