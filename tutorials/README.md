@@ -53,6 +53,11 @@ are marked accordingly instead of linking to a page that 404s.
 | 25 | [Guardrails](./25-guardrails/) | Code done · draft | not yet published |
 | 26 | [Evals](./26-evals/) | Code done · draft | not yet published |
 | 27 | [Agent-as-tool](./27-agent-as-tool/) | Code done · draft | not yet published |
+| 28 | [Reflection and Critique](./28-reflection-and-critique/) | Code done · draft | not yet published |
+| 29 | [Planner-Executor](./29-planner-executor/) | Code done · draft | not yet published |
+| 30 | [Subworkflows](./30-subworkflows/) | Code done · draft | not yet published |
+| 31 | [Retry and Compensation (Saga Pattern)](./31-retry-and-compensation/) | Code done · draft | not yet published |
+| 32 | [Cost Control and Budgets](./32-cost-control-and-budgets/) | Code done · draft | not yet published |
 
 ---
 
@@ -66,6 +71,8 @@ are marked accordingly instead of linking to a page that 404s.
 - **Capstone** (Ch 21): a guided tour of this repo showing where every concept lives.
 - **Bonus pattern** (Ch 22): a sixth orchestration pattern — round-table group chat — added after the capstone, documented against the production `workflows/group_chat.py` module.
 - **Tier 6 — Missing Concepts** (Ch 23–27): patterns already live in this repo's production code but never taught — A2A protocol, RAG/grounding, guardrails, evals, and agent-as-tool. Each stands alone with its own dependency-free runnable example; each cross-links the matching `docs/concepts/` page instead of re-deriving the "why."
+- **Tier 7 — Patterns Without Production Wiring** (Ch 28–31): reflection/critique, planner-executor, subworkflows, and retry/compensation (saga) — all taught as standalone, dependency-free examples rather than new orchestrator modes, since the mode registry's per-mode SSE/UI/test surface makes a 6th or 7th live mode disproportionate to a single chapter. Ch 29 explicitly cross-references the still-unbuilt Magentic mode as the eventual production version of the planner-executor idea, so a bespoke production planner never has to be reconciled against it later. Ch 30 teaches MAF's real `WorkflowExecutor` nesting primitive and is honest that `return_replace.py` doesn't use it today. Ch 31 is genuinely greenfield — no saga/compensation code exists anywhere in this repo yet.
+- **Ch 32 — Cost Control and Budgets**: the one exception to Tier 7's standalone-only rule. Light, proportionate production code — `CostBudgetMiddleware` (`agents/python/shared/guardrails/cost_budget_middleware.py`) — closes a real gap (`estimate_cost()` previously had no runtime consumer, only a post-hoc eval reporter) without adding a new orchestration mode or any UI/SSE surface, so it fit inside one chapter's scope.
 
 **Declared out of scope for this series** (for now): multi-tenancy, fine-tuning, agent marketplaces, voice. Not overlooked — deliberately not yet covered.
 

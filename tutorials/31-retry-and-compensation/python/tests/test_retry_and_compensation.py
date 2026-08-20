@@ -16,6 +16,7 @@ from main import (  # noqa: E402
     Backends,
     OutOfStockError,
     PaymentDeclinedError,
+    SagaStep,
     TransientError,
     build_place_order_saga,
     run_saga,
@@ -139,8 +140,6 @@ def test_non_retryable_step_does_not_retry_on_transient_error() -> None:
     on a non-retryable step (charge_payment) by monkeypatching its action,
     and confirm the saga compensates instead of looping.
     """
-    from main import SagaStep
-
     calls = {"count": 0}
 
     def flaky_non_retryable_action() -> None:

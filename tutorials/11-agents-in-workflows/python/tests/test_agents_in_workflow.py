@@ -74,8 +74,6 @@ async def test_real_llm_translates_hello_to_spanish() -> None:
 @pytest.mark.skipif(not _llm_available(), reason="no LLM credentials in .env")
 async def test_real_llm_chain_fires_both_agent_executors() -> None:
     """Track which agent executors emit output events during the run."""
-    from main import build_workflow
-
     workflow = build_workflow()
     invoked: list[str] = []
     async for event in workflow.run("Good morning", stream=True):
