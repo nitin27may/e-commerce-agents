@@ -20,6 +20,7 @@ from shared.context import (
     current_user_role,
 )
 from shared.context_providers import ECommerceContextProvider
+from shared.http_resilience import ResilientAsyncTransport
 from shared.middleware import build_specialist_middleware
 from shared.oauth.service_client import build_a2a_headers
 from shared.telemetry import a2a_call_span
@@ -27,6 +28,16 @@ from shared.telemetry import a2a_call_span
 logger = logging.getLogger(__name__)
 
 AGENT_REGISTRY: dict[str, str] = json.loads(settings.AGENT_REGISTRY)
+
+# One shared transport (and therefore its per-host circuit breakers) reused
+# across every httpx.AsyncClient constructed below — a breaker only means
+# anything if it remembers failures across calls, and a fresh
+# ResilientAsyncTransport() per call would reset that memory every time.
+# Safe to share across many short-lived AsyncClient instances: closing a
+# client closes its transport's connection pool, but the pool reopens
+# lazily on the next request rather than raising — verified directly
+# against httpx's current behavior before relying on it here.
+_A2A_TRANSPORT = ResilientAsyncTransport()
 
 
 @tool(
@@ -69,7 +80,7 @@ async def call_specialist_agent(
             try:
                 chunks: list[str] = []
                 current_event: str = "data"
-                async with httpx.AsyncClient(timeout=60) as client:
+                async with httpx.AsyncClient(timeout=60, transport=_A2A_TRANSPORT) as client:
                     async with client.stream(
                         "POST",
                         f"{url}/message:stream",
@@ -114,7 +125,7 @@ async def call_specialist_agent(
 
         # ── Blocking path (non-streaming or stream fallback) ───────────────
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with httpx.AsyncClient(timeout=30, transport=_A2A_TRANSPORT) as client:
                 resp = await client.post(
                     f"{url}/message:send",
                     json=request_body,
