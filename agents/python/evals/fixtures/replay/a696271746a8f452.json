@@ -46,7 +46,7 @@
     ]
   },
   "response": {
-    "created_at": "2026-08-20T18:36:13.000000Z",
+    "created_at": "2026-08-20T21:26:20.000000Z",
     "finish_reason": "tool_calls",
     "messages": [
       {
@@ -55,7 +55,7 @@
           {
             "additional_properties": {},
             "arguments": "{\"agent_name\":\"inventory-fulfillment\",\"message\":\"Check if the Dyson V15 is in stock and provide shipping speed estimates to ZIP code 10001.\"}",
-            "call_id": "call_AvnNoG3LzKvpE3pWtoY4snne",
+            "call_id": "call_wp8q9z3Ndebq560lxx9tsLjT",
             "name": "call_specialist_agent",
             "type": "function_call"
           }
@@ -65,7 +65,7 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-EF1uXzUHhGFiia4VHivl8JAcwG0KD",
+    "response_id": "chatcmpl-EF4ZATx89OZvedRvOViDpNH30mqPd",
     "type": "chat_response",
     "usage_details": {
       "cache_read_input_token_count": 2816,

@@ -156,13 +156,22 @@ class PostgresSessionHistoryProvider(HistoryProvider):
         if not session_id:
             return []
         async with self._pool.acquire() as conn:
+            # ORDER BY ... ASC LIMIT $2 on the base table would take the
+            # OLDEST max_history rows, not the most recent — for any
+            # conversation longer than max_history, that silently drops
+            # exactly the messages a follow-up question needs (see #9).
+            # Take the most recent max_history rows first, then restore
+            # chronological order for the caller.
             rows = await conn.fetch(
                 """
-                SELECT role, content
-                FROM messages
-                WHERE conversation_id = $1::uuid
+                SELECT role, content FROM (
+                    SELECT role, content, created_at
+                    FROM messages
+                    WHERE conversation_id = $1::uuid
+                    ORDER BY created_at DESC
+                    LIMIT $2
+                ) recent
                 ORDER BY created_at ASC
-                LIMIT $2
                 """,
                 session_id,
                 self._max_history,

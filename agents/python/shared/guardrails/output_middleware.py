@@ -19,6 +19,7 @@ from collections.abc import Awaitable, Callable
 from agent_framework._middleware import FunctionInvocationContext, FunctionMiddleware
 
 from shared.config import settings
+from shared.function_results import rewrap_function_result, unwrap_function_result
 from shared.guardrails.config import SANITIZE_TOOLS
 from shared.guardrails.sanitize import neutralize_value
 
@@ -51,15 +52,21 @@ class OutputSanitizationMiddleware(FunctionMiddleware):
         if original is None:
             return
 
+        # MAF wraps a tool's return value in list[Content] with the JSON in
+        # .text — see shared/function_results.py's module docstring for how
+        # this was found (this middleware silently sanitized nothing before,
+        # since neutralize_value doesn't know about Content objects).
+        unwrapped = unwrap_function_result(original)
+
         try:
-            cleaned = neutralize_value(original, fields=self.tools[name])
+            cleaned = neutralize_value(unwrapped, fields=self.tools[name])
         except Exception:
             logger.exception("guardrails.output_sanitize_failed tool=%s", name)
             if settings.GUARDRAILS_FAIL_OPEN:
                 return
             raise
 
-        if cleaned != original:
+        if cleaned != unwrapped:
             self.sanitized += 1
             logger.info("guardrails.output_sanitized tool=%s", name)
-        context.result = cleaned
+        context.result = rewrap_function_result(original, cleaned)

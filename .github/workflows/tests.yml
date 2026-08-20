@@ -128,6 +128,47 @@ jobs:
           path: agents/dotnet/TestResults/
           retention-days: 30
 
+  web-tests:
+    name: Web · typecheck + lint + test + build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install dependencies
+        # pnpm-workspace.yaml's committed allowBuilds denies msw/sharp/
+        # unrs-resolver's postinstall scripts explicitly (see #7) — without
+        # it, a fresh install hits pnpm's interactive build-approval gate
+        # and fails outright in a non-interactive CI shell.
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm exec tsc --noEmit
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Unit / component tests
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
   # Playwright E2E is intentionally not run in CI. It needs the full live
   # stack (docker compose: Postgres + Redis + all agents) plus a real
   # OPENAI_API_KEY (the LLM is never mocked), which is impractical and costly

@@ -46,7 +46,7 @@
     ]
   },
   "response": {
-    "created_at": "2026-08-20T18:36:18.000000Z",
+    "created_at": "2026-08-20T21:26:32.000000Z",
     "finish_reason": "tool_calls",
     "messages": [
       {
@@ -54,8 +54,8 @@
         "contents": [
           {
             "additional_properties": {},
-            "arguments": "{\"agent_name\":\"order-management\",\"message\":\"Hi, the customer would like to cancel their order with order ID 550e8400-e29b-41d4-a716-446655440003. Please process the cancellation and provide confirmation or next steps if the order cannot be cancelled.\"}",
-            "call_id": "call_BTwEhQdML1SzHqFSFZ5kQbxs",
+            "arguments": "{\"agent_name\":\"order-management\",\"message\":\"Please cancel order 550e8400-e29b-41d4-a716-446655440003 for the customer. Confirm the cancellation status and provide any next steps if needed.\"}",
+            "call_id": "call_qwN5hW1SfJ2Ozf5XedDjYx7v",
             "name": "call_specialist_agent",
             "type": "function_call"
           }
@@ -65,16 +65,16 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-EF1uc19RQaixYxYsoNFRcY4Utv8Qm",
+    "response_id": "chatcmpl-EF4ZMsJ7hA3U1NyEb7N5VnkSKhADJ",
     "type": "chat_response",
     "usage_details": {
       "cache_read_input_token_count": 2816,
       "completion/reasoning_tokens": 0,
       "input_token_count": 2910,
-      "output_token_count": 72,
+      "output_token_count": 60,
       "prompt/cached_tokens": 2816,
       "reasoning_output_token_count": 0,
-      "total_token_count": 2982
+      "total_token_count": 2970
     }
   }
 }

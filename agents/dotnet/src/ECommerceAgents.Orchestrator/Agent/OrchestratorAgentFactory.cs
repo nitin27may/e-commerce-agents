@@ -7,13 +7,19 @@ namespace ECommerceAgents.Orchestrator.Agent;
 
 public static class OrchestratorAgentFactory
 {
-    public static AIAgent Create(AgentSettings settings, PromptLoader prompts, OrchestratorTools tools)
+    public static AIAgent Create(
+        AgentSettings settings,
+        PromptLoader prompts,
+        OrchestratorTools tools,
+        IServiceProvider? services = null
+    )
     {
         return SpecialistAgentFactory.Create(
             settings,
             prompts,
             agentName: "orchestrator",
-            tools: tools.All()
+            tools: tools.All(),
+            services: services
         );
     }
 }

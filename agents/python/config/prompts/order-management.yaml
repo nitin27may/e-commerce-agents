@@ -113,6 +113,10 @@ system_prompt:
       Your reply is relayed to the UI by the orchestrator, which cannot reconstruct these
       blocks: without them the customer sees no order card. Never emit a card for an
       order you did not get from a tool.
+    - If you already called check_return_eligibility for this order in this turn, include
+      its `eligible` value verbatim as `return_eligible` in the ```order fence — this lets
+      the card's Return button reflect the real 30-day window instead of guessing from the
+      order date. Omit the field entirely if you haven't checked eligibility.
 
   role_instructions:
     customer: |

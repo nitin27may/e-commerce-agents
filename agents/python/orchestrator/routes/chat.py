@@ -82,6 +82,97 @@ class ChatResponse(BaseModel):
     grounding: dict[str, Any] | None = None
 
 
+_PENDING_PERSIST_TASKS: set[_asyncio.Task] = set()
+
+
+def _spawn_persist_task(coro: Any) -> None:
+    """Fire-and-forget a persistence coroutine, immune to the parent
+    request/generator's own cancellation.
+
+    A client disconnecting mid-stream cancels the SSE generator's task
+    directly (Starlette's own ASGI-level disconnect handling, separate
+    from this module's own ``request.is_disconnected()`` poll) — without
+    this, that cancellation propagates straight past the persistence code
+    and silently drops the assistant's already-generated response (#10).
+    A strong reference is kept in a module-level set because asyncio only
+    holds a weak reference to a bare ``create_task()`` result — an
+    unreferenced task can be garbage-collected before it completes.
+    """
+    task = _asyncio.create_task(coro)
+    _PENDING_PERSIST_TASKS.add(task)
+    task.add_done_callback(_PENDING_PERSIST_TASKS.discard)
+
+
+async def _persist_assistant_turn(
+    *,
+    pool: Any,
+    conversation_id: str,
+    response_text: str,
+    agents_involved: list[str],
+    steps: list[dict[str, Any]],
+    user_id: str,
+    user_email: str,
+    body_message: str,
+    start_time: float,
+    run_payload_box: dict[str, Any],
+    stream_usage: dict[str, Any],
+    disconnected: bool,
+) -> None:
+    """Persist the assistant's message + timeline for one chat_stream turn.
+
+    Runs as a detached task (see ``_spawn_persist_task``) so a client
+    disconnecting mid-stream doesn't lose the response the agent already
+    generated.
+    """
+    try:
+        metadata = {"steps": steps[:50], "agents_involved": agents_involved}
+        await pool.execute(
+            """INSERT INTO messages (conversation_id, role, content, agent_name, agents_involved, metadata)
+               VALUES ($1, 'assistant', $2, 'orchestrator', $3, $4::jsonb)""",
+            conversation_id,
+            response_text,
+            agents_involved,
+            json.dumps(metadata, default=str),
+        )
+        await pool.execute(
+            "UPDATE conversations SET last_message_at = NOW() WHERE id = $1",
+            conversation_id,
+        )
+        duration_ms = int((time.monotonic() - start_time) * 1000)
+        usage_log_id = await log_agent_usage(
+            user_id=user_id,
+            agent_name="orchestrator",
+            session_id=conversation_id,
+            input_summary=body_message,
+            duration_ms=duration_ms,
+            tool_calls_count=len(steps),
+            tokens_in=stream_usage.get("input_token_count") or 0,
+            tokens_out=stream_usage.get("output_token_count") or 0,
+        )
+        if usage_log_id:
+            for idx, s in enumerate(steps):
+                ti = s.get("tool_input")
+                to = s.get("tool_output")
+                await log_execution_step(
+                    usage_log_id=usage_log_id,
+                    step_index=idx,
+                    tool_name=f"{s.get('agent', 'orchestrator')}:{s.get('tool_name', 'tool')}",
+                    tool_input=ti if isinstance(ti, dict) else {"value": ti},
+                    tool_output=to if isinstance(to, dict) else {"value": to},
+                    status=s.get("status", "success"),
+                    duration_ms=s.get("duration_ms", 0),
+                )
+        await _link_run_artifacts(pool, usage_log_id, user_email, run_payload_box)
+        if disconnected:
+            logger.info(
+                "chat_stream.persisted_after_disconnect conversation=%s chars=%d",
+                conversation_id,
+                len(response_text),
+            )
+    except Exception:
+        logger.exception("chat_stream.persist_error conversation=%s disconnected=%s", conversation_id, disconnected)
+
+
 async def _link_run_artifacts(pool: Any, usage_log_id: Any, user_email: str, run_payload: dict[str, Any]) -> None:
     """Correlate a run's checkpoint + HITL pause (if any) back to its
     ``usage_logs`` row — what ``GET /api/runs/{id}/checkpoints`` and
@@ -477,83 +568,114 @@ async def chat_stream(
         agent_task = _asyncio.create_task(_run_mode_task())
 
         try:
-            while True:
-                if await request.is_disconnected():
-                    logger.info(
-                        "chat_stream.client_disconnected conversation=%s elapsed_ms=%d",
-                        conversation_id,
-                        int((time.monotonic() - start_time) * 1000),
-                    )
-                    agent_task.cancel()
-                    break
-
-                if time.monotonic() > deadline:
-                    logger.warning(
-                        "chat_stream.timeout conversation=%s budget_s=%s",
-                        conversation_id,
-                        settings.MAF_STREAM_TIMEOUT_SECONDS,
-                    )
-                    timeout_msg = " [stream timed out — please retry]"
-                    full_response.append(timeout_msg)
-                    yield f"data: {timeout_msg}\n\n"
-                    agent_task.cancel()
-                    break
-
-                try:
-                    item = await _asyncio.wait_for(queue.get(), timeout=0.1)
-                except _asyncio.TimeoutError:
-                    continue
-
-                if item is None:
-                    break
-
-                if item[0] == "text":
-                    chunk: str = item[1]
-                    if not truncated:
-                        chunk_bytes = len(chunk.encode("utf-8"))
-                        if full_bytes + chunk_bytes > max_bytes:
-                            truncated = True
-                            marker = " [response truncated at limit]"
-                            full_response.append(marker)
-                            yield f"data: {marker}\n\n"
-                        else:
-                            full_bytes += chunk_bytes
-                            full_response.append(chunk)
-                            yield f"data: {chunk}\n\n"
-
-                elif item[0] == "delta":
-                    # Specialist token — forward immediately to the browser as
-                    # a live preview. These appear during the "tool call gap"
-                    # so the user sees a continuous stream rather than
-                    # silence. Deliberately NOT appended to full_response
-                    # (Phase 8.1): the orchestrator's own "text" stream,
-                    # produced once call_specialist_agent's tool call
-                    # resolves, restates the same content — orchestrator.yaml
-                    # explicitly instructs it to re-emit the specialist's
-                    # card fence verbatim on top of its own framing prose —
-                    # so persisting both here duplicated every tool-mode
-                    # answer. The client mirrors this: it replaces, not
-                    # appends to, the visible preview once "text" starts
-                    # arriving (see web/src/lib/api.ts's onDeltaChunk).
-                    _agent_src: str = item[1]
-                    delta_chunk: str = item[2]
-                    yield f"event: delta\ndata: {delta_chunk}\n\n"
-
-                elif item[0] == "frame":
-                    # Structured event from a non-"tool" mode (node/handoff/
-                    # checkpoint/request_info/error) — not display text, so
-                    # it bypasses the byte-cap/truncation accounting above.
-                    frame_name: str = item[1]
-                    frame_payload: dict[str, Any] = item[2]
-                    yield f"event: {frame_name}\ndata: {json.dumps(frame_payload, default=str)}\n\n"
-
-        finally:
-            if not agent_task.done():
-                agent_task.cancel()
             try:
-                await agent_task
-            except _asyncio.CancelledError:
-                pass
+                while True:
+                    if await request.is_disconnected():
+                        logger.info(
+                            "chat_stream.client_disconnected conversation=%s elapsed_ms=%d",
+                            conversation_id,
+                            int((time.monotonic() - start_time) * 1000),
+                        )
+                        agent_task.cancel()
+                        break
+
+                    if time.monotonic() > deadline:
+                        logger.warning(
+                            "chat_stream.timeout conversation=%s budget_s=%s",
+                            conversation_id,
+                            settings.MAF_STREAM_TIMEOUT_SECONDS,
+                        )
+                        timeout_msg = " [stream timed out — please retry]"
+                        full_response.append(timeout_msg)
+                        yield f"data: {timeout_msg}\n\n"
+                        agent_task.cancel()
+                        break
+
+                    try:
+                        item = await _asyncio.wait_for(queue.get(), timeout=0.1)
+                    except _asyncio.TimeoutError:
+                        continue
+
+                    if item is None:
+                        break
+
+                    if item[0] == "text":
+                        chunk: str = item[1]
+                        if not truncated:
+                            chunk_bytes = len(chunk.encode("utf-8"))
+                            if full_bytes + chunk_bytes > max_bytes:
+                                truncated = True
+                                marker = " [response truncated at limit]"
+                                full_response.append(marker)
+                                yield f"data: {marker}\n\n"
+                            else:
+                                full_bytes += chunk_bytes
+                                full_response.append(chunk)
+                                yield f"data: {chunk}\n\n"
+
+                    elif item[0] == "delta":
+                        # Specialist token — forward immediately to the browser as
+                        # a live preview. These appear during the "tool call gap"
+                        # so the user sees a continuous stream rather than
+                        # silence. Deliberately NOT appended to full_response
+                        # (Phase 8.1): the orchestrator's own "text" stream,
+                        # produced once call_specialist_agent's tool call
+                        # resolves, restates the same content — orchestrator.yaml
+                        # explicitly instructs it to re-emit the specialist's
+                        # card fence verbatim on top of its own framing prose —
+                        # so persisting both here duplicated every tool-mode
+                        # answer. The client mirrors this: it replaces, not
+                        # appends to, the visible preview once "text" starts
+                        # arriving (see web/src/lib/api.ts's onDeltaChunk).
+                        _agent_src: str = item[1]
+                        delta_chunk: str = item[2]
+                        yield f"event: delta\ndata: {delta_chunk}\n\n"
+
+                    elif item[0] == "frame":
+                        # Structured event from a non-"tool" mode (node/handoff/
+                        # checkpoint/request_info/error) — not display text, so
+                        # it bypasses the byte-cap/truncation accounting above.
+                        frame_name: str = item[1]
+                        frame_payload: dict[str, Any] = item[2]
+                        yield f"event: {frame_name}\ndata: {json.dumps(frame_payload, default=str)}\n\n"
+
+            finally:
+                if not agent_task.done():
+                    agent_task.cancel()
+                try:
+                    await agent_task
+                except _asyncio.CancelledError:
+                    pass
+        except _asyncio.CancelledError:
+            # Starlette's own ASGI-level disconnect handling cancels this
+            # generator's task directly — a race against the
+            # request.is_disconnected() poll above that it can win,
+            # skipping straight past the loop (and its own finally) without
+            # ever reaching the normal completion path below. Persist
+            # whatever text was accumulated so far via a detached task
+            # (immune to this same cancellation) rather than silently
+            # dropping it — see #10.
+            if not is_anon:
+                cancelled_steps = get_steps() if mode.name == "tool" else []
+                for s in cancelled_steps:
+                    s.setdefault("agent", "orchestrator")
+                _spawn_persist_task(
+                    _persist_assistant_turn(
+                        pool=pool,
+                        conversation_id=conversation_id,
+                        response_text="".join(full_response),
+                        agents_involved=list(agents_involved),
+                        steps=cancelled_steps,
+                        user_id=user_id,
+                        user_email=user_email,
+                        body_message=body.message,
+                        start_time=start_time,
+                        run_payload_box=run_payload_box,
+                        stream_usage=(run_metadata.get("_maf_usage") or {}) if mode.name == "tool" else {},
+                        disconnected=True,
+                    )
+                )
+            raise
 
         response_text = "".join(full_response)
 
@@ -577,50 +699,27 @@ async def chat_stream(
         yield "data: [DONE]\n\n"
 
         # Persist assistant message + timeline — authed only (anonymous
-        # storefront chat has no conversation to write to).
+        # storefront chat has no conversation to write to). Detached task
+        # (see _spawn_persist_task) so a disconnect racing the very tail of
+        # a normal completion can't drop it either.
         if is_anon:
             return
-        try:
-            metadata = {"steps": steps[:50], "agents_involved": agents_involved}
-            await pool.execute(
-                """INSERT INTO messages (conversation_id, role, content, agent_name, agents_involved, metadata)
-                   VALUES ($1, 'assistant', $2, 'orchestrator', $3, $4::jsonb)""",
-                conversation_id,
-                response_text,
-                agents_involved,
-                json.dumps(metadata, default=str),
-            )
-            await pool.execute(
-                "UPDATE conversations SET last_message_at = NOW() WHERE id = $1",
-                conversation_id,
-            )
-            duration_ms = int((time.monotonic() - start_time) * 1000)
-            usage_log_id = await log_agent_usage(
+        _spawn_persist_task(
+            _persist_assistant_turn(
+                pool=pool,
+                conversation_id=conversation_id,
+                response_text=response_text,
+                agents_involved=list(agents_involved),
+                steps=steps,
                 user_id=user_id,
-                agent_name="orchestrator",
-                session_id=conversation_id,
-                input_summary=body.message,
-                duration_ms=duration_ms,
-                tool_calls_count=len(steps),
-                tokens_in=stream_usage.get("input_token_count") or 0,
-                tokens_out=stream_usage.get("output_token_count") or 0,
+                user_email=user_email,
+                body_message=body.message,
+                start_time=start_time,
+                run_payload_box=run_payload_box,
+                stream_usage=stream_usage,
+                disconnected=False,
             )
-            if usage_log_id:
-                for idx, s in enumerate(steps):
-                    ti = s.get("tool_input")
-                    to = s.get("tool_output")
-                    await log_execution_step(
-                        usage_log_id=usage_log_id,
-                        step_index=idx,
-                        tool_name=f"{s.get('agent', 'orchestrator')}:{s.get('tool_name', 'tool')}",
-                        tool_input=ti if isinstance(ti, dict) else {"value": ti},
-                        tool_output=to if isinstance(to, dict) else {"value": to},
-                        status=s.get("status", "success"),
-                        duration_ms=s.get("duration_ms", 0),
-                    )
-            await _link_run_artifacts(pool, usage_log_id, user_email, run_payload_box)
-        except Exception:
-            logger.exception("chat_stream.persist_error conversation=%s", conversation_id)
+        )
 
     return StreamingResponse(
         event_generator(),

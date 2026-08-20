@@ -9,6 +9,8 @@ using Polly.Retry;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Runtime.CompilerServices;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace ECommerceAgents.Shared.A2A;
@@ -27,6 +29,16 @@ namespace ECommerceAgents.Shared.A2A;
 /// </remarks>
 public sealed class A2AClient
 {
+    /// <summary>
+    /// <c>Web</c> defaults (camelCase + case-insensitive reads) so this
+    /// doesn't care whether a given response was serialized by ASP.NET
+    /// Core Minimal API's own camelCase default (<c>/message:send</c>'s
+    /// <c>Results.Ok(...)</c>) or a manual <c>JsonSerializer.Serialize</c>
+    /// call with no options (<c>/message:stream</c>'s hand-written SSE
+    /// frame, <c>AgentHost.cs</c>) — both round-trip correctly either way.
+    /// </summary>
+    private static readonly JsonSerializerOptions ResponseJsonOptions = new(JsonSerializerDefaults.Web);
+
     private readonly HttpClient _http;
     private readonly AgentSettings _settings;
     private readonly AuthServerClient _authServerClient;
@@ -113,16 +125,132 @@ public sealed class A2AClient
     )
     {
         using var activity = TelemetrySetup.A2ACallSpan("orchestrator", agentName, baseUrl);
+        var (response, fallback) = await OpenAsync(agentName, baseUrl, "message:send", message, history, ct);
+        if (fallback is not null)
+        {
+            return fallback;
+        }
+
+        using var open = response!;
+        var payload = await open.Content.ReadFromJsonAsync<A2AResponse>(ResponseJsonOptions, ct);
+        MergeReturnedSteps(agentName, payload?.Steps);
+        return payload?.Response ?? string.Empty;
+    }
+
+    /// <summary>
+    /// Streaming twin of <see cref="SendAsync"/> (issue #14) — consumes a
+    /// specialist's <c>/message:stream</c> SSE response and yields its text
+    /// deltas. On any connection-level failure (unreachable specialist, open
+    /// circuit breaker, timeout, non-2xx status) yields the same single
+    /// user-facing fallback sentence <see cref="SendAsync"/> would have
+    /// returned, then completes — callers don't need a separate error path.
+    /// A failure mid-stream (after the connection succeeded) instead
+    /// propagates as an exception; the Polly pipeline above only covers
+    /// establishing the connection, matching <see cref="SendAsync"/>'s own
+    /// scope (it reads the whole response body outside the pipeline too).
+    /// </summary>
+    public async IAsyncEnumerable<string> StreamAsync(
+        string agentName,
+        string baseUrl,
+        string message,
+        IReadOnlyList<HistoryEntry>? history = null,
+        [EnumeratorCancellation] CancellationToken ct = default
+    )
+    {
+        using var activity = TelemetrySetup.A2ACallSpan("orchestrator", agentName, baseUrl);
+        var (response, fallback) = await OpenAsync(agentName, baseUrl, "message:stream", message, history, ct);
+        if (fallback is not null)
+        {
+            yield return fallback;
+            yield break;
+        }
+
+        using var open = response!;
+        await using var body = await open.Content.ReadAsStreamAsync(ct);
+        using var reader = new StreamReader(body);
+        var dataLines = new List<string>();
+        string? currentEvent = null;
+        while (await reader.ReadLineAsync(ct) is { } line)
+        {
+            if (line.StartsWith("event: ", StringComparison.Ordinal))
+            {
+                currentEvent = line["event: ".Length..];
+                continue;
+            }
+            if (line.StartsWith("data: ", StringComparison.Ordinal))
+            {
+                dataLines.Add(line["data: ".Length..]);
+                continue;
+            }
+            if (line.Length != 0 || dataLines.Count == 0)
+            {
+                continue;
+            }
+
+            var chunk = string.Join("\n", dataLines);
+            var eventType = currentEvent;
+            dataLines.Clear();
+            currentEvent = null;
+
+            if (eventType == "steps")
+            {
+                // Issue #16: the specialist's own captured timeline steps,
+                // sent as one bulk frame (AgentHost.cs's /message:stream
+                // handler) — merge into this request's own timeline, tagged
+                // with the specialist's name (a specialist doesn't know its
+                // own name in RequestContext, so it can't tag itself).
+                MergeReturnedSteps(agentName, JsonSerializer.Deserialize<List<ExecutionStep>>(chunk, ResponseJsonOptions));
+                continue;
+            }
+            if (chunk != "[DONE]")
+            {
+                yield return chunk;
+            }
+        }
+    }
+
+    private static void MergeReturnedSteps(string agentName, IReadOnlyList<ExecutionStep>? steps)
+    {
+        if (steps is null)
+        {
+            return;
+        }
+
+        foreach (var step in steps)
+        {
+            RequestContext.RecordStep(step with { Agent = agentName });
+        }
+    }
+
+    /// <summary>
+    /// Shared connection-establishing logic for <see cref="SendAsync"/> and
+    /// <see cref="StreamAsync"/>: builds the request (auth headers, identity
+    /// headers, JSON body), runs it through the retry/circuit-breaker
+    /// pipeline, and translates every failure mode into the same
+    /// caller-facing fallback sentence each method already returned before
+    /// this was factored out. Returns the open <see cref="HttpResponseMessage"/>
+    /// on success (caller owns disposal) or a non-null <c>Fallback</c> string
+    /// on any failure — never both.
+    /// </summary>
+    private async Task<(HttpResponseMessage? Response, string? Fallback)> OpenAsync(
+        string agentName,
+        string baseUrl,
+        string endpoint,
+        string message,
+        IReadOnlyList<HistoryEntry>? history,
+        CancellationToken ct
+    )
+    {
         // Concatenate manually: `new Uri(base, "message:send")` reinterprets
         // the colon as a scheme separator.
-        var url = new Uri($"{baseUrl.TrimEnd('/')}/message:send");
+        var url = new Uri($"{baseUrl.TrimEnd('/')}/{endpoint}");
         var historyList = (history ?? Array.Empty<HistoryEntry>())
             .Select(h => new A2AHistoryEntry(h.Role, h.Content))
             .ToList();
 
         try
         {
-            using var response = await _pipeline.ExecuteAsync(
+            var response = await _pipeline.ExecuteAsync(
                 async token =>
                 {
                     var request = new HttpRequestMessage(HttpMethod.Post, url)
@@ -151,26 +279,26 @@ public sealed class A2AClient
             {
                 var status = (int)response.StatusCode;
                 _logger.LogError("a2a.error target={Target} status={Status}", agentName, status);
-                return $"The {agentName} agent returned an error (status {status}). Please try again.";
+                response.Dispose();
+                return (null, $"The {agentName} agent returned an error (status {status}). Please try again.");
             }
 
-            var payload = await response.Content.ReadFromJsonAsync<A2AResponse>(cancellationToken: ct);
-            return payload?.Response ?? string.Empty;
+            return (response, null);
         }
         catch (BrokenCircuitException)
         {
             _logger.LogError("a2a.circuit_open_short_circuit target={Target}", agentName);
-            return $"The {agentName} agent is temporarily unavailable. Please try again in a moment.";
+            return (null, $"The {agentName} agent is temporarily unavailable. Please try again in a moment.");
         }
         catch (TaskCanceledException)
         {
             _logger.LogError("a2a.timeout target={Target}", agentName);
-            return $"The {agentName} agent took too long to respond. Please try again.";
+            return (null, $"The {agentName} agent took too long to respond. Please try again.");
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "a2a.failure target={Target}", agentName);
-            return $"Failed to reach the {agentName} agent. Please try again later.";
+            return (null, $"Failed to reach the {agentName} agent. Please try again later.");
         }
     }
 
@@ -185,6 +313,7 @@ public sealed class A2AClient
     );
 
     private sealed record A2AResponse(
-        [property: JsonPropertyName("response")] string Response
+        [property: JsonPropertyName("response")] string Response,
+        [property: JsonPropertyName("steps")] List<ExecutionStep>? Steps = null
     );
 }

@@ -84,6 +84,9 @@ public static class AgentSettingsLoader
             AuthAgentAudience = Get("AUTH_AGENT_AUDIENCE", "ecommerce-agents"),
             GuardrailsEnabled = GetBool("GUARDRAILS_ENABLED", true),
             GuardrailsStrictIdentity = GetBool("GUARDRAILS_STRICT_IDENTITY", false),
+            GuardrailsBlockOnInjection = GetBool("GUARDRAILS_BLOCK_ON_INJECTION", false),
+            GuardrailsOutputSanitization = GetBool("GUARDRAILS_OUTPUT_SANITIZATION", true),
+            OutputModerationMode = Get("OUTPUT_MODERATION_MODE", "observe").ToLowerInvariant(),
 
             McpAuthEnabled = GetBool("MCP_AUTH_ENABLED", false),
             McpAudience = Get("MCP_INVENTORY_AUDIENCE", "mcp-inventory"),

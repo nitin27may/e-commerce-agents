@@ -10,6 +10,7 @@ using Microsoft.Extensions.AI;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Channels;
 
 namespace ECommerceAgents.Orchestrator.Routes;
 
@@ -110,16 +111,16 @@ public static class ChatRoutes
             ctx!.History
         );
 
-        var sw = Stopwatch.StartNew();
-        var responseText = new StringBuilder();
-        await foreach (var update in agent.RunStreamingAsync(BuildMessages(ctx.History)))
-        {
-            if (string.IsNullOrEmpty(update.Text))
-            {
-                continue;
-            }
+        // Both the main loop below (plain-text frames, the orchestrator's own
+        // recomposed answer) and the forwarder task (event: delta frames, a live
+        // preview streamed from OrchestratorTools.CallSpecialistAgent while a
+        // specialist call is in flight — issue #14) write to the same
+        // HttpResponse.Body. That's only safe with one writer at a time, hence
+        // the lock — ASP.NET Core doesn't allow concurrent writes to one response.
+        var writeLock = new SemaphoreSlim(1, 1);
 
-            responseText.Append(update.Text);
+        async Task WriteFrameAsync(string? eventName, string data)
+        {
             // SSE multi-line data encoding (spec §9.2.6): a chunk containing raw
             // newlines must be sent as one "data: <line>" per line within a single
             // event, terminated by exactly one blank line — not embedded as literal
@@ -132,17 +133,63 @@ public static class ChatRoutes
             // dataParts.join("\n") correctly reassemble the chunk exactly as authored,
             // including embedded blank lines (e.g. between a ```product fence and its
             // JSON body).
-            var lines = update.Text.Split('\n');
             var frame = new StringBuilder();
-            foreach (var line in lines)
+            if (eventName is not null)
+            {
+                frame.Append("event: ").Append(eventName).Append('\n');
+            }
+            foreach (var line in data.Split('\n'))
             {
                 frame.Append("data: ").Append(line).Append('\n');
             }
             frame.Append('\n');
-            await context.Response.WriteAsync(frame.ToString(), Encoding.UTF8);
-            await context.Response.Body.FlushAsync();
+
+            await writeLock.WaitAsync();
+            try
+            {
+                await context.Response.WriteAsync(frame.ToString(), Encoding.UTF8);
+                await context.Response.Body.FlushAsync();
+            }
+            finally
+            {
+                writeLock.Release();
+            }
+        }
+
+        var deltaChannel = Channel.CreateUnbounded<string>();
+        using var streamScope = RequestContext.StreamScope(deltaChannel.Writer);
+        var forwardDeltasTask = Task.Run(async () =>
+        {
+            try
+            {
+                await foreach (var delta in deltaChannel.Reader.ReadAllAsync(context.RequestAborted))
+                {
+                    await WriteFrameAsync("delta", delta);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Client disconnected — the main loop below observes the same
+                // cancellation via context.RequestAborted and unwinds too.
+            }
+        });
+
+        var sw = Stopwatch.StartNew();
+        var responseText = new StringBuilder();
+        await foreach (var update in agent.RunStreamingAsync(BuildMessages(ctx.History), cancellationToken: context.RequestAborted))
+        {
+            if (string.IsNullOrEmpty(update.Text))
+            {
+                continue;
+            }
+
+            responseText.Append(update.Text);
+            await WriteFrameAsync(null, update.Text);
         }
         sw.Stop();
+
+        deltaChannel.Writer.Complete();
+        await forwardDeltasTask;
 
         // Dynamic agents_involved — mirrors Python's current_steps capture
         // (routes.py:651-655). RequestContext.CurrentInvokedAgents is populated by
@@ -152,6 +199,27 @@ public static class ChatRoutes
         agentsInvolved.AddRange(
             RequestContext.CurrentInvokedAgents.Distinct().Where(a => a != "orchestrator")
         );
+
+        // Issue #16: one event: step frame per captured tool call, matching
+        // web/src/lib/api.ts::chatStream's AgentStep shape exactly (field
+        // names are snake_case there, unlike the rest of this C# codebase,
+        // because the frontend's SSE parser is shared with the Python
+        // backend). Emitted as a batch here rather than incrementally as
+        // each tool call finishes — same as Python's chat.py, which drains
+        // get_steps() once after the run loop completes.
+        foreach (var step in RequestContext.CurrentSteps)
+        {
+            var stepPayload = JsonSerializer.Serialize(new
+            {
+                agent = step.Agent,
+                tool_name = step.ToolName,
+                tool_input = step.ToolInput,
+                tool_output = step.ToolOutput,
+                status = step.Status,
+                duration_ms = step.DurationMs,
+            });
+            await context.Response.WriteAsync($"event: step\ndata: {stepPayload}\n\n", Encoding.UTF8);
+        }
 
         var metadataPayload = JsonSerializer.Serialize(new
         {
@@ -306,12 +374,28 @@ public static class ChatRoutes
             );
         }
 
-        await usage.LogAgentUsageAsync(
+        var usageLogId = await usage.LogAgentUsageAsync(
             ctx.UserId,
             "orchestrator",
             inputSummary: userMessage,
             durationMs: durationMs,
             toolCallsCount: agentsInvolved.Count - 1
         );
+
+        // Issue #16: persist this turn's agentic-timeline steps —
+        // RequestContext.CurrentSteps holds both the orchestrator's own tool
+        // calls (e.g. call_specialist_agent) and, for each specialist call,
+        // that specialist's own steps merged in by A2AClient (tagged with
+        // its agent name). Mirrors Python's post-stream
+        // "drain get_steps() -> log_execution_step per step" block.
+        if (usageLogId is { } id)
+        {
+            var steps = RequestContext.CurrentSteps;
+            for (var i = 0; i < steps.Count; i++)
+            {
+                var step = steps[i];
+                await usage.LogExecutionStepAsync(id, i, step.ToolName, step.ToolInput, step.ToolOutput, step.Status, step.DurationMs);
+            }
+        }
     }
 }

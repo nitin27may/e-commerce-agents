@@ -87,6 +87,9 @@ export const OrderDataSchema = z
     carrier: optionalSafeString,
     shipping_address: z.union([safeString, ShippingAddressObj]).optional(),
     timeline: z.array(TimelineEventSchema).max(20).optional(),
+    // Populated when the agent has already called check_return_eligibility;
+    // order-card.tsx falls back to a client-side heuristic when absent.
+    return_eligible: z.boolean().optional(),
   })
   .passthrough();
 

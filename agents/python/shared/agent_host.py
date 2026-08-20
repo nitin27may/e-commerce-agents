@@ -148,13 +148,21 @@ async def _rehydrate_history_from_session(session_id: str) -> list[dict] | None:
         return None
 
     try:
+        # ORDER BY ... ASC LIMIT $2 on the base table would take the OLDEST
+        # _SESSION_HISTORY_LIMIT rows, not the most recent — for any
+        # conversation longer than the limit, that silently drops exactly
+        # the messages a follow-up question needs (see #9). Take the most
+        # recent rows first, then restore chronological order.
         rows = await pool.fetch(
             """
-            SELECT role, content
-            FROM messages
-            WHERE conversation_id = $1::uuid
+            SELECT role, content FROM (
+                SELECT role, content, created_at
+                FROM messages
+                WHERE conversation_id = $1::uuid
+                ORDER BY created_at DESC
+                LIMIT $2
+            ) recent
             ORDER BY created_at ASC
-            LIMIT $2
             """,
             session_id,
             _SESSION_HISTORY_LIMIT,

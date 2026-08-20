@@ -18,7 +18,7 @@ var app = AgentHost.Build(
         {
             var prompts = sp.GetRequiredService<PromptLoader>();
             var tools = sp.GetRequiredService<InventoryTools>();
-            return SpecialistAgentFactory.Create(settings, prompts, "inventory-fulfillment", tools.All());
+            return SpecialistAgentFactory.Create(settings, prompts, "inventory-fulfillment", tools.All(), services: sp);
         });
     }
 );

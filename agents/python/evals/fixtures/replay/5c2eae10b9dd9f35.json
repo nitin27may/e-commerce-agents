@@ -46,7 +46,7 @@
     ]
   },
   "response": {
-    "created_at": "2026-08-20T18:35:46.000000Z",
+    "created_at": "2026-08-20T21:25:50.000000Z",
     "finish_reason": "tool_calls",
     "messages": [
       {
@@ -54,8 +54,8 @@
         "contents": [
           {
             "additional_properties": {},
-            "arguments": "{\"agent_name\":\"order-management\",\"message\":\"The customer (order ID: 550e8400-e29b-41d4-a716-446655440002) wants to know the current status and tracking details for this order. Please provide the latest tracking information.\"}",
-            "call_id": "call_b0m6ZrgOCerbiIKfx1xRteat",
+            "arguments": "{\"agent_name\":\"order-management\",\"message\":\"The customer (order ID: 550e8400-e29b-41d4-a716-446655440002) wants to know the current status and tracking information for their order. Please provide tracking details.\"}",
+            "call_id": "call_sSEq6cOUB7UWFiNKPSBIu03h",
             "name": "call_specialist_agent",
             "type": "function_call"
           }
@@ -65,16 +65,16 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-EF1u6PBpgXR4kYkiGndWvw5I4b2mi",
+    "response_id": "chatcmpl-EF4YgGFVG1h6RQ8MZFAuXFtf6v59F",
     "type": "chat_response",
     "usage_details": {
       "cache_read_input_token_count": 2816,
       "completion/reasoning_tokens": 0,
       "input_token_count": 2915,
-      "output_token_count": 68,
+      "output_token_count": 66,
       "prompt/cached_tokens": 2816,
       "reasoning_output_token_count": 0,
-      "total_token_count": 2983
+      "total_token_count": 2981
     }
   }
 }

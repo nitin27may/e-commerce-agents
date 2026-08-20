@@ -52,7 +52,8 @@ cd agents/python && uv run python -m scripts.generate_embeddings
 cd agents/python && uv run ruff check .
 cd agents/python && uv run ruff format --check .
 
-# Run Python tests
+# Run Python tests (--all-packages pulls in the MCP workspace packages, e.g. ecommerce-mcp-product)
+cd agents/python && uv sync --all-packages --extra dev
 cd agents/python && uv run pytest
 cd agents/python && uv run pytest tests/test_specific.py -k "test_name"
 

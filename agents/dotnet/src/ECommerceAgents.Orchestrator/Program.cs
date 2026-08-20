@@ -3,7 +3,9 @@ using ECommerceAgents.Orchestrator.Routes;
 using ECommerceAgents.Shared.A2A;
 using ECommerceAgents.Shared.Auth;
 using ECommerceAgents.Shared.Configuration;
+using ECommerceAgents.Shared.ContextProviders;
 using ECommerceAgents.Shared.Data;
+using ECommerceAgents.Shared.Middleware;
 using ECommerceAgents.Shared.Prompts;
 using ECommerceAgents.Shared.Telemetry;
 using Microsoft.Agents.AI;
@@ -44,12 +46,22 @@ builder.Services.AddSingleton(sp =>
         sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<A2AClient>>()
     );
 });
+// Cross-cutting agent pipeline (issue #12) — resolved by
+// Agents.SpecialistPipeline / SpecialistAgentFactory.Create. AgentHost.Build
+// registers these for the 5 specialists; the orchestrator builds its own
+// WebApplication directly, so it needs the same registrations here.
+builder.Services.AddSingleton<AgentRunLogger>();
+builder.Services.AddSingleton<ToolAuditMiddleware>();
+builder.Services.AddSingleton<PiiRedactor>();
+builder.Services.AddSingleton<ContextEnricher>();
+builder.Services.AddSingleton<HitlGate>();
+
 builder.Services.AddSingleton<OrchestratorTools>();
 builder.Services.AddSingleton<AIAgent>(sp =>
 {
     var prompts = sp.GetRequiredService<PromptLoader>();
     var tools = sp.GetRequiredService<OrchestratorTools>();
-    return OrchestratorAgentFactory.Create(settings, prompts, tools);
+    return OrchestratorAgentFactory.Create(settings, prompts, tools, services: sp);
 });
 
 // Mirrors the Python orchestrator's CORSMiddleware(allow_origins=["*"], allow_credentials=True,

@@ -14,8 +14,10 @@ public sealed class LocalPostgresCollection : ICollectionFixture<PostgresFixture
 /// <summary>
 /// Tests the three MCP tool handlers against a real Postgres
 /// testcontainer. The handlers are exposed as public static methods on
-/// <see cref="McpEndpoints"/> so we don't need an HTTP test server —
-/// the behaviour we care about lives in the SQL + shape mapping.
+/// <see cref="McpTools"/> so we don't need a live MCP client — the
+/// behaviour we care about lives in the SQL + shape mapping, same as
+/// calling any other typed method (the SDK's own job is dispatching a
+/// JSON-RPC call to this exact method, covered by McpProtocolTests instead).
 /// </summary>
 [Collection(nameof(LocalPostgresCollection))]
 public sealed class McpToolTests : IAsyncLifetime
@@ -50,8 +52,7 @@ public sealed class McpToolTests : IAsyncLifetime
     [Fact]
     public async Task CheckStock_UnknownProductReturnsZero()
     {
-        var body = new Dictionary<string, object?> { ["product_id"] = Guid.NewGuid().ToString() };
-        var result = await McpEndpoints.CheckStock(_pool, body);
+        var result = await McpTools.CheckStock(_pool, Guid.NewGuid().ToString());
         result.InStock.Should().BeFalse();
         result.TotalQuantity.Should().Be(0);
     }
@@ -59,16 +60,14 @@ public sealed class McpToolTests : IAsyncLifetime
     [Fact]
     public async Task CheckStock_NonUuidReturnsZero()
     {
-        var body = new Dictionary<string, object?> { ["product_id"] = "not-a-uuid" };
-        var result = await McpEndpoints.CheckStock(_pool, body);
+        var result = await McpTools.CheckStock(_pool, "not-a-uuid");
         result.InStock.Should().BeFalse();
     }
 
     [Fact]
     public async Task CheckStock_ReturnsPerWarehouseBreakdown()
     {
-        var body = new Dictionary<string, object?> { ["product_id"] = _productId.ToString() };
-        var result = await McpEndpoints.CheckStock(_pool, body);
+        var result = await McpTools.CheckStock(_pool, _productId.ToString());
         result.InStock.Should().BeTrue();
         result.TotalQuantity.Should().Be(17); // seeded: 12 east + 5 west
         result.Warehouses.Should().HaveCount(2);
@@ -79,7 +78,7 @@ public sealed class McpToolTests : IAsyncLifetime
     [Fact]
     public async Task GetWarehouses_ListsAllSeeded()
     {
-        var result = await McpEndpoints.GetWarehouses(_pool);
+        var result = await McpTools.GetWarehouses(_pool);
         result.Should().HaveCount(2);
         result.Should().Contain(w => w.Region == "east");
         result.Should().Contain(w => w.Region == "west");
@@ -90,24 +89,14 @@ public sealed class McpToolTests : IAsyncLifetime
     [Fact]
     public async Task EstimateShipping_UnknownProductReportsUnavailable()
     {
-        var body = new Dictionary<string, object?>
-        {
-            ["product_id"] = Guid.NewGuid().ToString(),
-            ["destination_region"] = "east",
-        };
-        var result = await McpEndpoints.EstimateShipping(_pool, body);
+        var result = await McpTools.EstimateShipping(_pool, Guid.NewGuid().ToString(), "east");
         result.Available.Should().BeFalse();
     }
 
     [Fact]
     public async Task EstimateShipping_InvalidProductIdReportsUnavailable()
     {
-        var body = new Dictionary<string, object?>
-        {
-            ["product_id"] = "not-a-uuid",
-            ["destination_region"] = "east",
-        };
-        var result = await McpEndpoints.EstimateShipping(_pool, body);
+        var result = await McpTools.EstimateShipping(_pool, "not-a-uuid", "east");
         result.Available.Should().BeFalse();
         result.Message.Should().Contain("Invalid");
     }
@@ -115,12 +104,7 @@ public sealed class McpToolTests : IAsyncLifetime
     [Fact]
     public async Task EstimateShipping_PrefersSameRegionWarehouse()
     {
-        var body = new Dictionary<string, object?>
-        {
-            ["product_id"] = _productId.ToString(),
-            ["destination_region"] = "east",
-        };
-        var result = await McpEndpoints.EstimateShipping(_pool, body);
+        var result = await McpTools.EstimateShipping(_pool, _productId.ToString(), "east");
         result.Available.Should().BeTrue();
         result.ShipsFrom.Should().Be("east");
         result.Options.Should().NotBeNullOrEmpty();
@@ -137,12 +121,7 @@ public sealed class McpToolTests : IAsyncLifetime
             );
         }
 
-        var body = new Dictionary<string, object?>
-        {
-            ["product_id"] = _productId.ToString(),
-            ["destination_region"] = "east",
-        };
-        var result = await McpEndpoints.EstimateShipping(_pool, body);
+        var result = await McpTools.EstimateShipping(_pool, _productId.ToString(), "east");
         result.Available.Should().BeTrue();
         result.ShipsFrom.Should().Be("west");
     }

@@ -18,7 +18,7 @@ var app = AgentHost.Build(
         {
             var prompts = sp.GetRequiredService<PromptLoader>();
             var tools = sp.GetRequiredService<PricingTools>();
-            return SpecialistAgentFactory.Create(settings, prompts, "pricing-promotions", tools.All());
+            return SpecialistAgentFactory.Create(settings, prompts, "pricing-promotions", tools.All(), services: sp);
         });
     }
 );

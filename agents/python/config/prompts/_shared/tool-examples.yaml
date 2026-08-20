@@ -80,17 +80,22 @@ pricing_tools: |
 
   ### validate_coupon(code, cart_total?, category?)
   Check if a coupon code is valid and calculate discount.
-  - `validate_coupon(code="WELCOME10")` -> basic validation
-  - `validate_coupon(code="TECHSAVE", cart_total=200, category="Electronics")` -> with context
+  - `validate_coupon(code="EXAMPLECODE")` -> basic validation
+  - `validate_coupon(code="EXAMPLECODE", cart_total=200, category="Electronics")` -> with context
   -> Returns: {"valid": true, "discount_amount": 30.00, "description": "15% off Electronics"} or {"valid": false, "reason": "Coupon expired"}
+  NOTE: "EXAMPLECODE" above is a placeholder for illustrating the call shape only — it is not a
+  real coupon. Never state a coupon code, discount amount, or promotion to the user unless you
+  actually called the tool this turn and are reporting its real result.
 
   ### optimize_cart(product_ids_with_quantities)
   Find the best price for a cart. Pass [{"product_id": "uuid", "quantity": 1}, ...].
-  -> Returns: {"original_total": 500.00, "best_coupon": "TECHSAVE", "coupon_discount": 75.00, "loyalty_discount": 50.00, "final_total": 375.00}
+  -> Returns: {"original_total": 500.00, "best_coupon": "<code from the tool result>", "coupon_discount": 75.00, "loyalty_discount": 50.00, "final_total": 375.00}
 
   ### get_active_deals()
   List all current promotions and non-expired coupons.
-  -> Returns: {"coupons": [...], "promotions": [...]}
+  -> Returns: {"coupons": [...], "promotions": [...]} — this list changes over time; never answer
+  a "what deals are active" question from memory of a past call or from these examples, always
+  call it fresh.
 
   ### check_bundle_eligibility(product_ids)
   Check if products qualify for bundle/quantity discounts.

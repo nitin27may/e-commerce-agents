@@ -148,9 +148,11 @@ A generic OAuth 2.1 client completes the standard protected-resource discovery f
    `OAUTH_CLIENT_SECRET` in production)
 4. Call `POST /mcp` with `Authorization: Bearer <token>`
 
-The .NET MCP host (`ECommerceAgents.Mcp`) implements the equivalent surface by hand
-(`GET /.well-known/oauth-protected-resource`, the same `WWW-Authenticate` shape on 401) rather than
-via an SDK, since it's a hand-rolled REST surface rather than FastMCP's streamable-HTTP transport.
+The .NET MCP host (`ECommerceAgents.Mcp`) uses the official `ModelContextProtocol.AspNetCore` SDK
+(real JSON-RPC over streamable HTTP at `POST /mcp`, same transport shape as the Python FastMCP
+servers) with its own bearer-token gate (`GET /.well-known/oauth-protected-resource`, the same
+`WWW-Authenticate` shape on 401) implemented as ASP.NET Core middleware ahead of the SDK's own
+routing, reusing the same `JwtTokenService`/`JwksKeyProvider` the Phase B/C auth paths use.
 
 ### Getting credentials as a third-party MCP client (dynamic registration)
 

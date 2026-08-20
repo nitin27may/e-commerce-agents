@@ -96,6 +96,35 @@ public sealed class ReturnAndReplaceWorkflowTests
     }
 
     [Fact]
+    public async Task Resume_Approves_PreservesFullStateAcrossThePause()
+    {
+        // Deliberate improvement over Python (see ReturnAndReplaceWorkflow's
+        // class remarks): Python's @response_handler only receives the
+        // narrow ReturnApprovalRequest snapshot it originally sent, so its
+        // resumed state loses return_id/replacement_products/user_email.
+        // .NET's HitlResumeExecutor is constructed holding a reference to
+        // the *same* WorkflowState threaded through the rest of the chain,
+        // so nothing is lost — assert that explicitly rather than leaving
+        // it as an implicit, undocumented side effect of the design.
+        var tools = new StubTools
+        {
+            Eligibility = new ReturnEligibility(true),
+            Initiate = new InitiateReturnResult("ret-preserved", 900m),
+            Replacements = new[] { Product("Widget D"), Product("Widget E") },
+            Loyalty = new LoyaltyInfo("gold", 20m),
+        };
+        var wf = new ReturnAndReplaceWorkflow(tools, hitlThreshold: 500m);
+
+        var state = new WorkflowState("vip@example.com", "order-preserve") { OrderTotal = 900m };
+        var paused = await wf.ExecuteAsync(state);
+        var final = await wf.ResumeAsync(paused, approved: true);
+
+        final.UserEmail.Should().Be("vip@example.com");
+        final.ReturnId.Should().Be("ret-preserved");
+        final.ReplacementProducts.Should().HaveCount(2);
+    }
+
+    [Fact]
     public async Task Resume_Rejects_AppendsErrorAndSkipsDiscount()
     {
         var tools = new StubTools
@@ -125,6 +154,52 @@ public sealed class ReturnAndReplaceWorkflowTests
         var wf = new ReturnAndReplaceWorkflow(new StubTools());
         var state = new WorkflowState("x", "order-5");
         await Assert.ThrowsAsync<InvalidOperationException>(() => wf.ResumeAsync(state, approved: true));
+    }
+
+    [Fact]
+    public async Task Resume_RemovesTheCachedRun_SecondResumeThrows()
+    {
+        var wf = new ReturnAndReplaceWorkflow(
+            new StubTools { Eligibility = new ReturnEligibility(true), Initiate = new InitiateReturnResult("r", 600m), Loyalty = new LoyaltyInfo("gold", 10m) },
+            hitlThreshold: 500m
+        );
+        var state = new WorkflowState("u", "order-once") { OrderTotal = 600m };
+        var paused = await wf.ExecuteAsync(state);
+
+        await wf.ResumeAsync(paused, approved: true);
+
+        // The paused run was consumed and removed — resuming the same
+        // order again (e.g. a duplicate approval click) must not silently
+        // resume a already-completed/disposed run.
+        await Assert.ThrowsAsync<InvalidOperationException>(() => wf.ResumeAsync(paused, approved: true));
+    }
+
+    [Fact]
+    public async Task TwoOrdersPausedOnTheSameWorkflowInstance_ResumeIndependently()
+    {
+        // _pausedRuns is keyed by OrderId precisely so one long-lived
+        // ReturnAndReplaceWorkflow instance (the documented "construct once,
+        // call execute() as many times as you like" contract) can have
+        // multiple in-flight paused orders at once without cross-talk.
+        var tools = new StubTools
+        {
+            Eligibility = new ReturnEligibility(true),
+            Initiate = new InitiateReturnResult("r", 900m),
+            Loyalty = new LoyaltyInfo("gold", 15m),
+        };
+        var wf = new ReturnAndReplaceWorkflow(tools, hitlThreshold: 500m);
+
+        var stateA = new WorkflowState("a@example.com", "order-A") { OrderTotal = 900m };
+        var stateB = new WorkflowState("b@example.com", "order-B") { OrderTotal = 900m };
+        var pausedA = await wf.ExecuteAsync(stateA);
+        var pausedB = await wf.ExecuteAsync(stateB);
+
+        var finalB = await wf.ResumeAsync(pausedB, approved: false);
+        var finalA = await wf.ResumeAsync(pausedA, approved: true);
+
+        finalB.HitlApproved.Should().BeFalse();
+        finalA.HitlApproved.Should().BeTrue();
+        finalA.CompletedSteps.Should().Contain("finalize");
     }
 
     // ─────────────────────── eligibility gate ────────────────

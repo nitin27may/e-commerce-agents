@@ -1,23 +1,33 @@
 using System.Text.Json;
+using Microsoft.Agents.AI.Workflows;
 
 namespace ECommerceAgents.Shared.Workflows;
 
 /// <summary>
 /// Pre-purchase research workflow — .NET parity port of
-/// <c>agents/python/workflows/pre_purchase.py</c>.
-/// <para>
-/// Fans out three parallel data-gathering tool calls (reviews, stock,
-/// price history), waits on the barrier, runs shipping sequentially
-/// when stock is confirmed, and synthesizes a one-line recommendation.
-/// </para>
-/// <para>
-/// The .NET port uses <c>Task.WhenAll</c> for the fan-out. The
-/// observable contract — input state → populated state → recommendation
-/// string — matches the Python implementation exactly. Ch13 of the
-/// tutorial series (when it lands) re-expresses this workflow on MAF's
-/// <c>WorkflowBuilder</c> native Concurrent primitive.
-/// </para>
+/// <c>agents/python/workflows/pre_purchase.py</c>, now on MAF's real
+/// <c>WorkflowBuilder</c> (issue #17, piece A) rather than a hand-rolled
+/// <c>Task.WhenAll</c> fan-out.
 /// </summary>
+/// <remarks>
+/// Six executors mirror Python's six classes exactly (same ids, same
+/// responsibilities): <c>fan-out</c> broadcasts the initial state;
+/// <c>reviews</c>/<c>stock</c>/<c>price-history</c> each call one tool and
+/// forward; <c>merge-and-ship</c> is the fan-in barrier — it can't share one
+/// mutable <see cref="ResearchState"/> across three concurrent branches the
+/// way the old <c>Task.WhenAll</c> version did, so it collects the three
+/// partial states <c>AddFanInBarrierEdge</c> delivers one at a time and
+/// merges them (<see cref="MergeStates"/>, the .NET twin of Python's
+/// <c>_merge_states</c>) before conditionally running the shipping
+/// estimate; <c>synthesis</c> builds the recommendation string and yields
+/// it as the workflow's output. A fresh executor set and workflow graph is
+/// built on every call — same as Python's own
+/// <c>_build_maf_workflow()</c>, called once per <c>execute()</c> — so an
+/// executor's instance-level mutable state (the merge barrier's collected-
+/// inputs list) is always scoped to exactly one run.
+/// The public <c>ExecuteAsync(ResearchState, CancellationToken)</c>
+/// signature is unchanged, so existing callers don't need to change.
+/// </remarks>
 public sealed class PrePurchaseWorkflow
 {
     private readonly IPrePurchaseTools _tools;
@@ -31,29 +41,115 @@ public sealed class PrePurchaseWorkflow
     {
         ArgumentNullException.ThrowIfNull(state);
 
-        // Fan-out: three gatherers in parallel.
-        var reviewsTask = RunAsync("reviews", state,
-            async s => s.Reviews = await _tools.AnalyzeSentimentAsync(s.ProductId, ct), ct);
-        var stockTask = RunAsync("stock", state,
-            async s => s.Stock = await _tools.CheckStockAsync(s.ProductId, ct), ct);
-        var priceTask = RunAsync("price_history", state,
-            async s => s.PriceHistory = await _tools.GetPriceHistoryAsync(s.ProductId, 90, ct), ct);
+        var fanOut = new FanOutExecutor();
+        var reviews = new ReviewsExecutor(_tools, ct);
+        var stock = new StockExecutor(_tools, ct);
+        var price = new PriceHistoryExecutor(_tools, ct);
+        var merge = new MergeAndShipExecutor(_tools, ct);
+        var synthesis = new SynthesisExecutor();
 
-        await Task.WhenAll(reviewsTask, stockTask, priceTask);
+        var workflow = new WorkflowBuilder(fanOut)
+            .AddFanOutEdge(fanOut, new ExecutorBinding[] { reviews, stock, price })
+            .AddFanInBarrierEdge(new ExecutorBinding[] { reviews, stock, price }, merge)
+            .AddEdge(merge, synthesis)
+            .WithOutputFrom(synthesis)
+            .Build();
 
-        // Fan-in barrier: shipping depends on stock outcome.
-        if (IsInStock(state.Stock))
+        await using StreamingRun run = await InProcessExecution.RunStreamingAsync(workflow, state, cancellationToken: ct);
+
+        var finalState = state;
+        await foreach (var evt in run.WatchStreamAsync(ct))
         {
-            await RunAsync("shipping", state,
-                async s => s.Shipping = await _tools.EstimateShippingAsync(
-                    s.ProductId, s.UserRegion, ct), ct);
+            if (evt is WorkflowOutputEvent output && output.Data is ResearchState s)
+            {
+                finalState = s;
+            }
         }
-
-        state.Recommendation = BuildRecommendation(state);
-        return state;
+        return finalState;
     }
 
-    private static async Task RunAsync(
+    // ─────────────────────── Executors ───────────────────────
+
+    [SendsMessage(typeof(ResearchState))]
+    private sealed class FanOutExecutor() : Executor<ResearchState>("fan-out")
+    {
+        public override async ValueTask HandleAsync(ResearchState state, IWorkflowContext context, CancellationToken ct = default) =>
+            await context.SendMessageAsync(state, ct);
+    }
+
+    [SendsMessage(typeof(ResearchState))]
+    private sealed class ReviewsExecutor(IPrePurchaseTools tools, CancellationToken outerCt) : Executor<ResearchState>("reviews")
+    {
+        public override async ValueTask HandleAsync(ResearchState state, IWorkflowContext context, CancellationToken ct = default)
+        {
+            await RunStepAsync("reviews", state, async s => s.Reviews = await tools.AnalyzeSentimentAsync(s.ProductId, outerCt), outerCt);
+            await context.SendMessageAsync(state, ct);
+        }
+    }
+
+    [SendsMessage(typeof(ResearchState))]
+    private sealed class StockExecutor(IPrePurchaseTools tools, CancellationToken outerCt) : Executor<ResearchState>("stock")
+    {
+        public override async ValueTask HandleAsync(ResearchState state, IWorkflowContext context, CancellationToken ct = default)
+        {
+            await RunStepAsync("stock", state, async s => s.Stock = await tools.CheckStockAsync(s.ProductId, outerCt), outerCt);
+            await context.SendMessageAsync(state, ct);
+        }
+    }
+
+    [SendsMessage(typeof(ResearchState))]
+    private sealed class PriceHistoryExecutor(IPrePurchaseTools tools, CancellationToken outerCt) : Executor<ResearchState>("price-history")
+    {
+        public override async ValueTask HandleAsync(ResearchState state, IWorkflowContext context, CancellationToken ct = default)
+        {
+            await RunStepAsync("price_history", state, async s => s.PriceHistory = await tools.GetPriceHistoryAsync(s.ProductId, 90, outerCt), outerCt);
+            await context.SendMessageAsync(state, ct);
+        }
+    }
+
+    /// <summary>
+    /// Fan-in barrier target. <c>AddFanInBarrierEdge</c> holds the three
+    /// upstream messages until all three sources have produced one, then
+    /// delivers them one at a time within the same superstep — not as a
+    /// single batched list — so this collects into <see cref="_received"/>
+    /// and only merges/forwards once all three have arrived.
+    /// </summary>
+    [SendsMessage(typeof(ResearchState))]
+    private sealed class MergeAndShipExecutor(IPrePurchaseTools tools, CancellationToken outerCt) : Executor<ResearchState>("merge-and-ship")
+    {
+        private readonly List<ResearchState> _received = [];
+
+        public override async ValueTask HandleAsync(ResearchState state, IWorkflowContext context, CancellationToken ct = default)
+        {
+            _received.Add(state);
+            if (_received.Count < 3)
+            {
+                return;
+            }
+
+            var merged = MergeStates(_received);
+            if (IsInStock(merged.Stock))
+            {
+                await RunStepAsync("shipping", merged, async s => s.Shipping = await tools.EstimateShippingAsync(s.ProductId, s.UserRegion, outerCt), outerCt);
+            }
+
+            await context.SendMessageAsync(merged, ct);
+        }
+    }
+
+    [YieldsOutput(typeof(ResearchState))]
+    private sealed class SynthesisExecutor() : Executor<ResearchState>("synthesis")
+    {
+        public override async ValueTask HandleAsync(ResearchState state, IWorkflowContext context, CancellationToken ct = default)
+        {
+            state.Recommendation = BuildRecommendation(state);
+            await context.YieldOutputAsync(state, ct);
+        }
+    }
+
+    // ─────────────────────── Helpers ───────────────────────
+
+    private static async Task RunStepAsync(
         string step,
         ResearchState state,
         Func<ResearchState, Task> body,
@@ -73,6 +169,42 @@ public sealed class PrePurchaseWorkflow
         {
             state.Errors.Add($"{step}: {ex.Message}");
         }
+    }
+
+    /// <summary>Combines three partial <see cref="ResearchState"/>s into one — the .NET twin of Python's <c>_merge_states</c>.</summary>
+    private static ResearchState MergeStates(List<ResearchState> inputs)
+    {
+        var merged = new ResearchState(inputs[0].ProductId, inputs[0].UserRegion);
+        foreach (var partial in inputs)
+        {
+            if (partial.Reviews is not null)
+            {
+                merged.Reviews = partial.Reviews;
+            }
+            if (partial.Stock is not null)
+            {
+                merged.Stock = partial.Stock;
+            }
+            if (partial.PriceHistory is not null)
+            {
+                merged.PriceHistory = partial.PriceHistory;
+            }
+            foreach (var step in partial.CompletedSteps)
+            {
+                if (!merged.CompletedSteps.Contains(step))
+                {
+                    merged.CompletedSteps.Add(step);
+                }
+            }
+            foreach (var error in partial.Errors)
+            {
+                if (!merged.Errors.Contains(error))
+                {
+                    merged.Errors.Add(error);
+                }
+            }
+        }
+        return merged;
     }
 
     private static bool IsInStock(JsonElement? stock)

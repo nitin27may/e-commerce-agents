@@ -97,6 +97,41 @@ public sealed record AgentSettings
     /// </summary>
     public bool GuardrailsStrictIdentity { get; init; }
 
+    /// <summary>
+    /// When false (default), an inbound message carrying a prompt-injection
+    /// signal is flagged (logged + recorded on
+    /// <see cref="Context.RequestContext"/>'s guardrail flags) but still
+    /// reaches the LLM — the active defenses are the prompt-layer refusal
+    /// rules and tool-output sanitization. When true, the flagged message is
+    /// refused before it ever reaches the chat client. Mirrors Python's
+    /// <c>GUARDRAILS_BLOCK_ON_INJECTION</c>.
+    /// </summary>
+    public bool GuardrailsBlockOnInjection { get; init; }
+
+    /// <summary>
+    /// Gates <c>OutputSanitizationMiddleware</c>-equivalent stored-injection
+    /// defense (defanging adversarial instructions hiding inside untrusted
+    /// tool output — reviews, product descriptions, order notes) — distinct
+    /// from <see cref="GuardrailsBlockOnInjection"/>, which is about
+    /// user-typed input, not tool results. Mirrors Python's
+    /// <c>GUARDRAILS_OUTPUT_SANITIZATION</c> — on by default.
+    /// </summary>
+    public bool GuardrailsOutputSanitization { get; init; } = true;
+
+    /// <summary>
+    /// <c>off</c> | <c>observe</c> | <c>enforce</c> — classifies the model's
+    /// own generated text against a coarse local content-policy classifier
+    /// (self-harm, violence, hate/harassment, sexual content), a different
+    /// concern from stored-injection sanitization above (that's about
+    /// untrusted input; this is about the model's own output). Mirrors
+    /// Python's <c>OUTPUT_MODERATION_MODE</c> — <c>observe</c> by default.
+    /// <c>enforce</c> can only replace a non-streaming response; a streamed
+    /// response's chunks are already on the wire by the time the full text
+    /// is known, so <c>enforce</c> mode only flags it there (same documented
+    /// trade-off as the Python side).
+    /// </summary>
+    public string OutputModerationMode { get; init; } = "observe";
+
     // ── Agent Registry (A2A endpoint map) ───────────────────────
     public string AgentRegistry { get; init; } = "{}";
 

@@ -47,4 +47,54 @@ describe("ChatOrderCard", () => {
     render(<ChatOrderCard data={data} />);
     expect(screen.getByText("Order placed")).toBeInTheDocument();
   });
+
+  describe("Return button eligibility (Phase 10 / issue #8)", () => {
+    it("shows Return for a delivered order with no eligibility data (default: eligible)", () => {
+      const data = { id: "order-1", status: "delivered" };
+      render(<ChatOrderCard data={data} />);
+      expect(screen.getByRole("button", { name: /return/i })).toBeInTheDocument();
+    });
+
+    it("hides Return when return_eligible is explicitly false, even if delivered", () => {
+      const data = { id: "order-1", status: "delivered", return_eligible: false };
+      render(<ChatOrderCard data={data} />);
+      expect(screen.queryByRole("button", { name: /return/i })).not.toBeInTheDocument();
+    });
+
+    it("shows Return when return_eligible is explicitly true", () => {
+      const data = { id: "order-1", status: "delivered", return_eligible: true };
+      render(<ChatOrderCard data={data} />);
+      expect(screen.getByRole("button", { name: /return/i })).toBeInTheDocument();
+    });
+
+    it("hides Return when the delivered timeline date is past the 30-day window", () => {
+      const deliveredAt = new Date();
+      deliveredAt.setDate(deliveredAt.getDate() - 70);
+      const data = {
+        id: "order-1",
+        status: "delivered",
+        timeline: [{ status: "delivered", date: deliveredAt.toISOString() }],
+      };
+      render(<ChatOrderCard data={data} />);
+      expect(screen.queryByRole("button", { name: /return/i })).not.toBeInTheDocument();
+    });
+
+    it("shows Return when the delivered timeline date is within the 30-day window", () => {
+      const deliveredAt = new Date();
+      deliveredAt.setDate(deliveredAt.getDate() - 5);
+      const data = {
+        id: "order-1",
+        status: "delivered",
+        timeline: [{ status: "delivered", date: deliveredAt.toISOString() }],
+      };
+      render(<ChatOrderCard data={data} />);
+      expect(screen.getByRole("button", { name: /return/i })).toBeInTheDocument();
+    });
+
+    it("never shows Return for a non-delivered order regardless of return_eligible", () => {
+      const data = { id: "order-1", status: "shipped", return_eligible: true };
+      render(<ChatOrderCard data={data} />);
+      expect(screen.queryByRole("button", { name: /return/i })).not.toBeInTheDocument();
+    });
+  });
 });
