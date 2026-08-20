@@ -27,6 +27,7 @@ from shared.config import settings
 from shared.context import current_session_id, current_user_email, current_user_role
 from shared.db import get_pool
 from shared.factory import get_token_verifier
+from shared.idempotency import idempotent
 from shared.jwt_utils import (
     create_access_token,
     create_refresh_token,
@@ -848,20 +849,38 @@ async def approve_hitl_request(
     admin: dict[str, Any] = Depends(require_admin),
 ) -> dict[str, Any]:
     """Approve a pending HITL request and execute the underlying action."""
-    from shared.hitl import execute_approved_action, get_hitl_request, resolve_hitl_request
+    from shared.hitl import claim_hitl_request, execute_approved_action, get_hitl_request, resolve_hitl_request
 
-    req = await get_hitl_request(request_id)
+    # Atomically claim the request (pending -> processing) BEFORE executing
+    # the underlying action — this is what closes the race two concurrent
+    # approve clicks used to hit (both would pass a pre-check read here,
+    # both would execute, and only the second write-after-execute would
+    # notice). Whoever wins this UPDATE is the only caller that proceeds.
+    req = await claim_hitl_request(request_id)
     if not req:
-        raise HTTPException(status_code=404, detail="HITL request not found")
-    if req["status"] != "pending":
-        raise HTTPException(status_code=400, detail=f"Request is already {req['status']}")
+        existing = await get_hitl_request(request_id)
+        if not existing:
+            raise HTTPException(status_code=404, detail="HITL request not found")
+        raise HTTPException(status_code=400, detail=f"Request is already {existing['status']}")
 
     admin_email = admin.get("sub", "admin")
-    result = await execute_approved_action(
-        tool_name=req["tool_name"],
-        tool_input=req["tool_input"],
-        user_email=req["user_email"],
-    )
+    try:
+        result = await execute_approved_action(
+            tool_name=req["tool_name"],
+            tool_input=req["tool_input"],
+            user_email=req["user_email"],
+        )
+    except Exception:
+        # The claim above already moved this row out of 'pending' — if we
+        # left it 'processing' on an unhandled error it could never be
+        # retried (claim_hitl_request only matches 'pending'). Revert the
+        # claim so a follow-up approve attempt is possible, then let the
+        # error surface as a 500.
+        await get_pool().execute(
+            "UPDATE tool_approval_requests SET status = 'pending' WHERE id = $1 AND status = 'processing'",
+            request_id,
+        )
+        raise
 
     updated = await resolve_hitl_request(
         request_id=request_id,
@@ -2116,9 +2135,22 @@ async def update_cart_address(body: CartAddressRequest, user: dict = Depends(req
 
 @router.post("/api/checkout")
 async def checkout(body: CheckoutRequest, user: dict = Depends(require_auth)):
-    """Process checkout: validate cart, create order, decrement inventory, clear cart."""
-    pool = get_pool()
+    """Process checkout: validate cart, create order, decrement inventory, clear cart.
+
+    Delegates to ``_do_checkout``, which is idempotency-wrapped per
+    (user_id, request body) — a double-submit (double-click, a client
+    retrying after a timeout that the server actually completed) replays
+    the first attempt's order instead of placing a second one and
+    decrementing inventory twice. A genuinely new checkout (different cart
+    contents, different address) hashes differently and is not deduped.
+    """
     user_id = user.get("user_id", "")
+    return await _do_checkout(user_id, body)
+
+
+@idempotent("checkout", identity_fn=lambda user_id, body: user_id)
+async def _do_checkout(user_id: str, body: CheckoutRequest) -> dict:
+    pool = get_pool()
 
     async with pool.acquire() as conn:
         async with conn.transaction():

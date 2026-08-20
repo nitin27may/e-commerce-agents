@@ -11,6 +11,7 @@ from pydantic import Field, ValidationError
 from shared.context import current_user_email
 from shared.db import get_pool
 from shared.guardrails.roles import requires_role
+from shared.idempotency import idempotent
 from shared.tool_inputs import (
     InitiateReturnInput,
     ProcessRefundInput,
@@ -98,6 +99,7 @@ async def check_return_eligibility(
     description="Initiate a return for a delivered order. Generates a return shipping label.",
     approval_mode="always_require",
 )
+@idempotent("initiate_return")
 async def initiate_return(
     order_id: Annotated[str, Field(description="UUID of the order to return")],
     reason: Annotated[str, Field(description="Reason for the return")],
@@ -182,6 +184,7 @@ async def initiate_return(
     description="Process the refund for an approved return. Updates return status to refunded.",
     approval_mode="always_require",
 )
+@idempotent("process_refund")
 @requires_role("customer", "seller", "admin")
 async def process_refund(
     return_id: Annotated[str, Field(description="UUID of the return to process refund for")],

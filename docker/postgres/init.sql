@@ -350,7 +350,11 @@ CREATE TABLE IF NOT EXISTS tool_approval_requests (
     agent_name VARCHAR(100) NOT NULL,
     tool_name VARCHAR(255) NOT NULL,
     tool_input JSONB NOT NULL,
-    status VARCHAR(50) DEFAULT 'pending',  -- pending, approved, denied, executed
+    status VARCHAR(50) DEFAULT 'pending',
+        -- pending, processing (transient — claimed by an admin approve/deny
+        -- request, atomically flipped from pending before the underlying
+        -- action executes, so two concurrent approve clicks can't both run
+        -- it), approved, denied, executed
     admin_note TEXT,
     approved_by VARCHAR(255),
     execution_result JSONB,
@@ -360,6 +364,28 @@ CREATE TABLE IF NOT EXISTS tool_approval_requests (
 
 CREATE INDEX IF NOT EXISTS idx_tool_approvals_status ON tool_approval_requests(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tool_approvals_user ON tool_approval_requests(user_email, created_at DESC);
+
+-- ============================================================
+-- IDEMPOTENCY KEYS
+-- Phase 6.1: dedupes retried money-moving operations (checkout, refunds,
+-- returns) so a client-side retry after a timeout/network blip replays the
+-- original result instead of executing a second time. See
+-- agents/python/shared/idempotency.py for the reservation protocol this
+-- table implements (INSERT ... ON CONFLICT DO NOTHING as a claim, an
+-- "in_progress" row older than the staleness window is treated as an
+-- abandoned attempt and taken over, not a permanent lock).
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+    key VARCHAR(600) PRIMARY KEY,
+    scope VARCHAR(255) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'in_progress',  -- in_progress, completed
+    result JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_idempotency_keys_scope ON idempotency_keys(scope, created_at DESC);
 
 -- ============================================================
 -- INDEXES
