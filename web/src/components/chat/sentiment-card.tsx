@@ -49,6 +49,25 @@ const TREND_CONFIG: Record<NonNullable<SentimentData["trend"]>, { label: string;
 };
 
 export function ChatSentimentCard({ data }: { data: SentimentData }) {
+  // Nothing to show — e.g. a tool call resolved no data and the model
+  // still emitted an all-empty fence. Don't render a header with a
+  // blank body underneath it. product_name alone still counts: it
+  // identifies which product this is about, unlike pricing-card's fence
+  // (no equivalent identifying field there).
+  const hasAnyData =
+    data.product_name != null ||
+    data.overall_sentiment != null ||
+    data.average_rating != null ||
+    data.total_reviews != null ||
+    (data.rating_distribution && Object.keys(data.rating_distribution).length > 0) ||
+    (data.pros && data.pros.length > 0) ||
+    (data.cons && data.cons.length > 0) ||
+    data.trend != null ||
+    (data.monthly_data && data.monthly_data.length > 0) ||
+    data.risk_level != null ||
+    data.suspicious_count != null;
+  if (!hasAnyData) return null;
+
   const distributionData = data.rating_distribution
     ? [5, 4, 3, 2, 1]
         .filter((r) => data.rating_distribution![String(r)] != null)

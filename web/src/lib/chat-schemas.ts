@@ -250,7 +250,55 @@ export const InventoryDataSchema = z
   })
   .passthrough();
 
-export type CardKind = "product" | "order" | "checkout" | "return" | "sentiment" | "inventory";
+// ── pricing-promotions (Phase 8.4 Stage 4c) ────────────────────────────────
+// Every field optional: optimize_cart populates the discount-waterfall
+// fields (original_total/savings/total_savings/final_total), get_active_deals
+// populates coupons/promotions — same "whichever tools ran" design as 4a/4b.
+
+const SavingsLineSchema = z
+  .object({
+    type: z.enum(["coupon", "bundle_promotion", "buy_x_get_y", "flash_sale", "loyalty_discount"]),
+    code: optionalSafeString,
+    name: optionalSafeString,
+    description: optionalSafeString,
+    tier: optionalSafeString,
+    product: optionalSafeString,
+    amount: positiveNumber,
+  })
+  .passthrough();
+
+const DealCouponSchema = z
+  .object({
+    code: safeString,
+    description: optionalSafeString,
+    discount_type: z.enum(["percentage", "fixed"]).optional(),
+    discount_value: positiveNumber.optional(),
+    min_spend: positiveNumber.optional(),
+    valid_until: optionalSafeString,
+  })
+  .passthrough();
+
+const DealPromotionSchema = z
+  .object({
+    name: safeString,
+    type: optionalSafeString,
+    end_date: optionalSafeString,
+  })
+  .passthrough();
+
+export const PricingDataSchema = z
+  .object({
+    original_total: positiveNumber.optional(),
+    savings: z.array(SavingsLineSchema).max(10).optional(),
+    total_savings: positiveNumber.optional(),
+    final_total: positiveNumber.optional(),
+    savings_percentage: z.number().min(0).max(100).optional(),
+    coupons: z.array(DealCouponSchema).max(20).optional(),
+    promotions: z.array(DealPromotionSchema).max(20).optional(),
+  })
+  .passthrough();
+
+export type CardKind = "product" | "order" | "checkout" | "return" | "sentiment" | "inventory" | "pricing";
 
 const SCHEMAS = {
   product: ProductDataSchema,
@@ -259,6 +307,7 @@ const SCHEMAS = {
   return: ReturnDataSchema,
   sentiment: SentimentDataSchema,
   inventory: InventoryDataSchema,
+  pricing: PricingDataSchema,
 } as const;
 
 /**

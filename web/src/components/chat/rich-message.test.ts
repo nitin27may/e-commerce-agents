@@ -149,6 +149,19 @@ describe("parseContent — card fence parsing", () => {
     expect(segs.find((s) => s.type === "inventory")?.data?.in_stock).toBe(true);
   });
 
+  it("parses a pricing fence (Phase 8.4 Stage 4c)", () => {
+    const pricing = {
+      original_total: 349.98,
+      savings: [{ type: "coupon", code: "SAVE10", amount: 35 }],
+      total_savings: 35,
+      final_total: 314.98,
+    };
+    const content = "Here's your savings breakdown:\n```pricing\n" + JSON.stringify(pricing) + "\n```\nAnything else?";
+    const segs = parseContent(content);
+    expect(cardTypes(segs)).toEqual(["pricing"]);
+    expect(segs.find((s) => s.type === "pricing")?.data?.final_total).toBe(314.98);
+  });
+
   it("parses a return fence — the one card type with no prior coverage", () => {
     const ret = {
       order_id: "48bfb7a1-0b02-4c89-94c9-552d629aaa92",

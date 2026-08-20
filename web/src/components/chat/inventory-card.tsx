@@ -54,6 +54,19 @@ const RESTOCK_COLUMNS: DataTableColumn<RestockEntry>[] = [
 ];
 
 export function ChatInventoryCard({ data }: { data: InventoryData }) {
+  // Nothing to show — e.g. a tool call resolved no data and the model
+  // still emitted an all-empty fence. Don't render a header with a
+  // blank body underneath it. product_name alone still counts: it
+  // identifies which product this is about.
+  const hasAnyData =
+    data.product_name != null ||
+    data.in_stock != null ||
+    data.total_quantity != null ||
+    (data.warehouses && data.warehouses.length > 0) ||
+    (data.upcoming_restocks && data.upcoming_restocks.length > 0) ||
+    data.next_restock != null;
+  if (!hasAnyData) return null;
+
   return (
     <div className="my-2 max-w-md rounded-xl border border-border bg-card shadow-sm overflow-hidden">
       {/* Header */}

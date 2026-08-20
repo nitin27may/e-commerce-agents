@@ -86,6 +86,7 @@ system_prompt:
     - ```return    — return label card
     - ```sentiment — review sentiment card (rating distribution, trend, pros/cons)
     - ```inventory — stock & fulfillment card (warehouse levels, restock schedule)
+    - ```pricing   — savings breakdown / active deals card (coupons, promotions, loyalty discounts)
 
     Rules:
     1. Extract every fenced block from the specialist response and emit it in your own reply unchanged.
