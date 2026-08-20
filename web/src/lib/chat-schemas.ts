@@ -215,7 +215,42 @@ export const SentimentDataSchema = z
   })
   .passthrough();
 
-export type CardKind = "product" | "order" | "checkout" | "return" | "sentiment";
+// ── inventory-fulfillment (Phase 8.4 Stage 4b) ─────────────────────────────
+// Every field optional: check_stock, get_warehouse_availability, and
+// get_restock_schedule each populate a different subset in one `inventory`
+// fence, mirroring the `sentiment` fence's "whichever tools ran" design.
+
+const WarehouseStockSchema = z
+  .object({
+    warehouse: optionalSafeString,
+    region: optionalSafeString,
+    quantity: z.number().int().min(0).optional(),
+    low_stock: z.boolean().optional(),
+  })
+  .passthrough();
+
+const RestockEntrySchema = z
+  .object({
+    warehouse: optionalSafeString,
+    region: optionalSafeString,
+    expected_quantity: z.number().int().min(0).optional(),
+    expected_date: optionalSafeString,
+  })
+  .passthrough();
+
+export const InventoryDataSchema = z
+  .object({
+    product_id: optionalSafeString,
+    product_name: optionalSafeString,
+    in_stock: z.boolean().optional(),
+    total_quantity: z.number().int().min(0).optional(),
+    warehouses: z.array(WarehouseStockSchema).max(20).optional(),
+    upcoming_restocks: z.array(RestockEntrySchema).max(20).optional(),
+    next_restock: optionalSafeString,
+  })
+  .passthrough();
+
+export type CardKind = "product" | "order" | "checkout" | "return" | "sentiment" | "inventory";
 
 const SCHEMAS = {
   product: ProductDataSchema,
@@ -223,6 +258,7 @@ const SCHEMAS = {
   checkout: CheckoutDataSchema,
   return: ReturnDataSchema,
   sentiment: SentimentDataSchema,
+  inventory: InventoryDataSchema,
 } as const;
 
 /**

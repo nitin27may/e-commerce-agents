@@ -135,6 +135,20 @@ describe("parseContent — card fence parsing", () => {
     expect(segs.find((s) => s.type === "sentiment")?.data?.overall_sentiment).toBe("positive");
   });
 
+  it("parses an inventory fence (Phase 8.4 Stage 4b)", () => {
+    const inventory = {
+      product_id: "74427b99-8717-4481-8c00-d05dd19b120f",
+      product_name: "Sony WH-1000XM5",
+      in_stock: true,
+      total_quantity: 42,
+      warehouses: [{ warehouse: "East DC", region: "east", quantity: 30, low_stock: false }],
+    };
+    const content = "Here's stock availability:\n```inventory\n" + JSON.stringify(inventory) + "\n```\nAnything else?";
+    const segs = parseContent(content);
+    expect(cardTypes(segs)).toEqual(["inventory"]);
+    expect(segs.find((s) => s.type === "inventory")?.data?.in_stock).toBe(true);
+  });
+
   it("parses a return fence — the one card type with no prior coverage", () => {
     const ret = {
       order_id: "48bfb7a1-0b02-4c89-94c9-552d629aaa92",

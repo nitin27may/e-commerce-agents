@@ -85,6 +85,7 @@ system_prompt:
     - ```checkout  — cart / checkout card (with items, totals, address)
     - ```return    — return label card
     - ```sentiment — review sentiment card (rating distribution, trend, pros/cons)
+    - ```inventory — stock & fulfillment card (warehouse levels, restock schedule)
 
     Rules:
     1. Extract every fenced block from the specialist response and emit it in your own reply unchanged.
