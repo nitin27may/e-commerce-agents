@@ -58,6 +58,7 @@ from shared.agent_observability import get_steps, reset_steps
 from shared.context import current_conversation_history
 from shared.db import get_pool
 from shared.grounding.ledger import reset_grounding_ledger
+from shared.rate_limit import rate_limit_chat
 from shared.session import get_history_as_dicts, get_history_provider
 from shared.usage_db import UsageTimer, log_agent_usage, log_execution_step
 
@@ -115,7 +116,11 @@ async def _link_run_artifacts(pool: Any, usage_log_id: Any, user_email: str, run
 
 
 @router.post("/api/chat", response_model=ChatResponse)
-async def chat(body: ChatRequest, user: dict[str, Any] = Depends(optional_auth)) -> ChatResponse:
+async def chat(
+    body: ChatRequest,
+    user: dict[str, Any] = Depends(optional_auth),
+    _rate_limit: None = Depends(rate_limit_chat),
+) -> ChatResponse:
     """Main chat endpoint — sends message to the orchestrator agent.
 
     Anonymous (storefront) callers get product-discovery only: no conversation is
@@ -247,7 +252,12 @@ async def chat(body: ChatRequest, user: dict[str, Any] = Depends(optional_auth))
 
 
 @router.post("/api/chat/stream")
-async def chat_stream(body: ChatRequest, request: Request, user: dict[str, Any] = Depends(optional_auth)):
+async def chat_stream(
+    body: ChatRequest,
+    request: Request,
+    user: dict[str, Any] = Depends(optional_auth),
+    _rate_limit: None = Depends(rate_limit_chat),
+):
     """Streaming chat endpoint — sends SSE events as the agent generates tokens.
 
     Anonymous (storefront) callers get product-discovery only: nothing is

@@ -4,9 +4,12 @@ Shared pytest fixtures for every agents/ test module.
 Policy:
 - Never mock the database. Tests that touch DB use the `postgres_pool` fixture
   which provisions a real Postgres container via testcontainers.
+- Never mock Redis either, for the same reason — tests that touch it use the
+  `redis_client` fixture (a real container via testcontainers).
 - Never call a real LLM. Tests use the `fake_chat_client` fixture.
 - Session-scoped containers so the test suite is fast; per-test clean slate
-  via the `clean_db` fixture (truncates between tests, keeps schema).
+  via the `clean_db`/`redis_client` fixtures (truncate/flush between tests,
+  keep the container itself running for the whole session).
 """
 
 from __future__ import annotations
@@ -20,8 +23,9 @@ from typing import Any
 import asyncpg
 import pytest
 import pytest_asyncio
+import redis.asyncio as redis_asyncio
 from testcontainers.community.postgres import PostgresContainer
-
+from testcontainers.community.redis import RedisContainer
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 INIT_SQL = REPO_ROOT / "docker" / "postgres" / "init.sql"
@@ -86,6 +90,40 @@ async def clean_db(postgres_pool: asyncpg.Pool) -> AsyncGenerator[asyncpg.Pool, 
             names = ", ".join(f'"{row["tablename"]}"' for row in tables)
             await conn.execute(f"TRUNCATE TABLE {names} RESTART IDENTITY CASCADE")
     yield postgres_pool
+
+
+# ─────────────────────── Redis fixture ───────────────────────────
+
+
+@pytest.fixture(scope="session")
+def redis_container() -> Generator[RedisContainer, None, None]:
+    """One Redis container per test session, mirroring postgres_container."""
+    container = RedisContainer("redis:7-alpine")
+    container.start()
+    try:
+        yield container
+    finally:
+        container.stop()
+
+
+@pytest_asyncio.fixture
+async def redis_client(redis_container: RedisContainer) -> AsyncGenerator[redis_asyncio.Redis, None]:
+    """Real async Redis client against the shared test container, flushed before each test.
+
+    RedisContainer.get_client() returns the sync `redis.Redis` — build the
+    async client ourselves from the same host/port so it matches what
+    shared/rate_limit.py actually uses at runtime (redis.asyncio.Redis).
+    """
+    client = redis_asyncio.Redis(
+        host=redis_container.get_container_host_ip(),
+        port=int(redis_container.get_exposed_port(6379)),
+        decode_responses=True,
+    )
+    try:
+        await client.flushdb()
+        yield client
+    finally:
+        await client.aclose()
 
 
 # ─────────────────────── Fake LLM fixtures ──────────────────────

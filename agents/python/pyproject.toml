@@ -47,6 +47,12 @@ dependencies = [
     "opentelemetry-instrumentation-openai-v2>=0.1",
     "mcp[cli]>=1.27.0,<2",  # 2.0.0 relocates mcp.server.fastmcp; pin below it until migrated
     "authlib>=1.6",
+    # Cache / rate limiting — Redis was already provisioned in
+    # docker-compose.yml and REDIS_URL declared in shared/config.py, but
+    # nothing in agents/python actually used it until shared/rate_limit.py
+    # (Phase 6.3). redis-py's async client (redis.asyncio) ships in the
+    # base package, no separate async extra needed as of 4.2+.
+    "redis>=5.0",
 ]
 
 [project.optional-dependencies]
@@ -54,7 +60,7 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "pytest-cov>=5.0",
-    "testcontainers[postgres]>=4.8",
+    "testcontainers[postgres,redis]>=4.8",
     "ruff>=0.8",
 ]
 

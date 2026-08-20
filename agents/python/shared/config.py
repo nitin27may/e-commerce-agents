@@ -62,6 +62,17 @@ class Settings(BaseSettings):
     # ── Redis ───────────────────────────────────────────────────────
     REDIS_URL: str = "redis://localhost:6379"
 
+    # ── Rate limiting (shared/rate_limit.py, Phase 6.3) ────────────────
+    # Redis was provisioned here from day one but had no consumer until
+    # this. Defaults on, matching this repo's posture for the other
+    # always-on safety features (GUARDRAILS_ENABLED, HITL_ENABLED default
+    # True too) — an agentic chat endpoint reachable by anonymous
+    # storefront traffic with zero rate limit is a real cost-abuse vector,
+    # not a hypothetical one.
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_MAX_REQUESTS: int = 30
+    RATE_LIMIT_WINDOW_SECONDS: float = 60.0
+
     # ── LLM ─────────────────────────────────────────────────────────
     LLM_PROVIDER: str = "openai"  # openai | azure | replay
     LLM_MODEL: str = "gpt-4.1"
