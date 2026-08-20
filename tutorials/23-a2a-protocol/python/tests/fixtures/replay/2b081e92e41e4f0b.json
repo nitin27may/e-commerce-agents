@@ -1,0 +1,106 @@
+{
+  "request": {
+    "instructions": "You are a customer-support coordinator. When the user asks about the status of an order (they'll usually mention an order id like 'ORD-1001'), call the `call_order_specialist` tool with their question verbatim. For other questions, answer directly in one short sentence.",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "What's the status of order ORD-1001?",
+            "type": "text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      },
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "arguments": "{\"message\":\"What's the status of order ORD-1001?\"}",
+            "call_id": "call_MjW6hqk755e8NVpvLsH8Mdwn",
+            "name": "call_order_specialist",
+            "type": "function_call"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      },
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "call_id": "call_MjW6hqk755e8NVpvLsH8Mdwn",
+            "items": [
+              {
+                "additional_properties": {},
+                "text": "Shipped, arriving 2026-08-22.",
+                "type": "text"
+              }
+            ],
+            "result": "Shipped, arriving 2026-08-22.",
+            "type": "function_result"
+          }
+        ],
+        "role": "tool",
+        "type": "message"
+      }
+    ],
+    "tools": [
+      {
+        "function": {
+          "description": "Call the order-lookup specialist over A2A to check an order's status. Pass the question verbatim.",
+          "name": "call_order_specialist",
+          "parameters": {
+            "properties": {
+              "message": {
+                "description": "The order question to forward, e.g. 'What's the status of ORD-1001?'",
+                "title": "Message",
+                "type": "string"
+              }
+            },
+            "required": [
+              "message"
+            ],
+            "title": "call_order_specialist_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      }
+    ]
+  },
+  "response": {
+    "created_at": "2026-08-20T02:35:45.000000Z",
+    "finish_reason": "stop",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "Order ORD-1001 has been shipped and is scheduled to arrive on 2026-08-22.",
+            "type": "text"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      }
+    ],
+    "model": "gpt-4.1-2025-04-14",
+    "response_id": "chatcmpl-EEmv3r86jKWmXcRYfMXt0Fl2mWVnp",
+    "type": "chat_response",
+    "usage_details": {
+      "cache_read_input_token_count": 0,
+      "completion/reasoning_tokens": 0,
+      "input_token_count": 208,
+      "output_token_count": 24,
+      "prompt/cached_tokens": 0,
+      "reasoning_output_token_count": 0,
+      "total_token_count": 232
+    }
+  }
+}
