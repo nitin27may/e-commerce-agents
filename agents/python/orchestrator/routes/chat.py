@@ -226,12 +226,15 @@ async def chat(body: ChatRequest, user: dict[str, Any] = Depends(optional_auth))
             "UPDATE conversations SET last_message_at = NOW() WHERE id = $1",
             conversation_id,
         )
+        usage = run_payload.get("usage") or {}
         usage_log_id = await log_agent_usage(
             user_id=user_id,
             agent_name="orchestrator",
             input_summary=body.message,
             duration_ms=timer.duration_ms,
             tool_calls_count=len(steps) if steps else max(len(agents_involved) - 1, 0),
+            tokens_in=usage.get("input_token_count") or 0,
+            tokens_out=usage.get("output_token_count") or 0,
         )
         await _link_run_artifacts(pool, usage_log_id, user_email, run_payload)
 
@@ -543,11 +546,13 @@ async def chat_stream(body: ChatRequest, request: Request, user: dict[str, Any] 
             agents_involved[:] = list(dict.fromkeys(["orchestrator", *[s.get("agent", "orchestrator") for s in steps]]))
             for s in steps:
                 yield f"event: step\ndata: {json.dumps(s, default=str)}\n\n"
+            stream_usage = run_metadata.get("_maf_usage") or {}
         else:
             # Non-"tool" modes already emitted their own "step"/"node"/
             # "handoff" frames inline as they occurred; agents_involved was
             # set from the mode's run_completed event.
             steps = []
+            stream_usage = {}
 
         yield f"event: metadata\ndata: {json.dumps({'conversation_id': conversation_id, 'agents_involved': agents_involved})}\n\n"
         yield "data: [DONE]\n\n"
@@ -578,6 +583,8 @@ async def chat_stream(body: ChatRequest, request: Request, user: dict[str, Any] 
                 input_summary=body.message,
                 duration_ms=duration_ms,
                 tool_calls_count=len(steps),
+                tokens_in=stream_usage.get("input_token_count") or 0,
+                tokens_out=stream_usage.get("output_token_count") or 0,
             )
             if usage_log_id:
                 for idx, s in enumerate(steps):

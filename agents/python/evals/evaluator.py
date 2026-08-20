@@ -20,8 +20,17 @@ from pathlib import Path
 from typing import Any
 
 from evals.harness import ProductionRunner
+from shared.cost import estimate_cost
 
 logger = logging.getLogger(__name__)
+
+
+def _current_model() -> str:
+    from shared.config import settings
+
+    if settings.LLM_PROVIDER.lower() == "azure":
+        return settings.AZURE_OPENAI_DEPLOYMENT
+    return settings.LLM_MODEL
 
 
 @dataclass
@@ -158,10 +167,6 @@ class AgentEvaluator:
         set ``use_llm_judge=True`` for a real judge call (the full suite's mode).
     """
 
-    # Approximate token pricing for cost estimation (GPT-4.1)
-    COST_PER_1K_INPUT = 0.002
-    COST_PER_1K_OUTPUT = 0.008
-
     def __init__(self, agent_name: str, pass_threshold: float = 0.7, *, use_llm_judge: bool = False) -> None:
         self.agent_name = agent_name
         self.pass_threshold = pass_threshold
@@ -217,11 +222,7 @@ class AgentEvaluator:
                 + summary.avg_completeness * 0.2
             )
 
-        # Estimate cost
-        summary.estimated_cost_usd = (
-            (summary.total_tokens_in / 1000) * self.COST_PER_1K_INPUT
-            + (summary.total_tokens_out / 1000) * self.COST_PER_1K_OUTPUT
-        )
+        summary.estimated_cost_usd = estimate_cost(_current_model(), summary.total_tokens_in, summary.total_tokens_out)
 
         return summary
 
