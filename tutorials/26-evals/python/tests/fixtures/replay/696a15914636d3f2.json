@@ -1,0 +1,74 @@
+{
+  "request": {
+    "instructions": "You are a shopping assistant for a small electronics store. When the user asks about a product's price, stock, or availability, call the `search_catalog` tool with the product name and answer using the exact numbers it returns. Never guess a price or stock count. For anything else, answer directly in one short sentence.",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "How many Mechanical Keyboards are in stock?",
+            "type": "text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      }
+    ],
+    "tools": [
+      {
+        "function": {
+          "description": "Look up the price and stock count for a product in the catalog by name.",
+          "name": "search_catalog",
+          "parameters": {
+            "properties": {
+              "product_name": {
+                "description": "The product name to look up, e.g. 'Wireless Mouse'.",
+                "title": "Product Name",
+                "type": "string"
+              }
+            },
+            "required": [
+              "product_name"
+            ],
+            "title": "search_catalog_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      }
+    ]
+  },
+  "response": {
+    "created_at": "2026-08-20T02:34:36.000000Z",
+    "finish_reason": "tool_calls",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "arguments": "{\"product_name\":\"Mechanical Keyboard\"}",
+            "call_id": "call_ytGit8jASPDnDzQZa7xFQXtp",
+            "name": "search_catalog",
+            "type": "function_call"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      }
+    ],
+    "model": "gpt-4.1-2025-04-14",
+    "response_id": "chatcmpl-EEmtwcfEniMw0wO3yj3zU2s30ocgm",
+    "type": "chat_response",
+    "usage_details": {
+      "cache_read_input_token_count": 0,
+      "completion/reasoning_tokens": 0,
+      "input_token_count": 152,
+      "output_token_count": 17,
+      "prompt/cached_tokens": 0,
+      "reasoning_output_token_count": 0,
+      "total_token_count": 169
+    }
+  }
+}
