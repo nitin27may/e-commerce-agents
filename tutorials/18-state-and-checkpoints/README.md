@@ -9,7 +9,7 @@ This is not academic. This repo has a real production checkpoint store, and the 
 ## Prerequisites
 
 - Completed [Chapter 17 — Human-in-the-Loop](../17-human-in-the-loop/)
-- No LLM needed — this chapter uses integer accumulation, not agents
+- No LLM needed — this chapter uses a return-refund accumulation, not agents
 
 ## The concept
 
@@ -51,37 +51,37 @@ uv run --project tutorials python tutorials/18-state-and-checkpoints/python/main
 uv run --project tutorials pytest tutorials/18-state-and-checkpoints/python/tests -v
 ```
 
-Two executors: `AccumulatorExecutor` holds a seeded running total and forwards it to a stateless `FinalizerExecutor`, which yields the total as the workflow's output. The Accumulator's state round-trips through its two hooks:
+Two executors, standing in for a slice of a return-request pipeline: `ReturnRequestExecutor` holds a running refund amount, seeded with an initial refund and incremented as return line items get processed, then forwards it to a stateless `FinalizeReturnExecutor`, which yields the refund total as the workflow's output. `ReturnRequestExecutor`'s state round-trips through its two hooks:
 
 ```python
-class AccumulatorExecutor(Executor):
-    def __init__(self, seed: int) -> None:
-        super().__init__(id="accumulator")
-        self.total = seed
+class ReturnRequestExecutor(Executor):
+    def __init__(self, initial_refund: float) -> None:
+        super().__init__(id="return-request")
+        self.refund_amount = initial_refund
 
     @handler
-    async def handle(self, amount: int, ctx: WorkflowContext[int, None]) -> None:
-        self.total += amount
-        await ctx.send_message(self.total)
+    async def handle(self, item_refund: float, ctx: WorkflowContext[float, None]) -> None:
+        self.refund_amount += item_refund
+        await ctx.send_message(self.refund_amount)
 
     async def on_checkpoint_save(self) -> dict[str, Any]:
-        return {"total": self.total}
+        return {"refund_amount": self.refund_amount}
 
     async def on_checkpoint_restore(self, state: dict[str, Any]) -> None:
-        self.total = int(state.get("total", 0))
+        self.refund_amount = float(state.get("refund_amount", 0.0))
 ```
 
-The demo's real proof is in `demo()`: run the workflow end to end with `FileCheckpointStorage`, grab the *first* checkpoint (superstep 1, before the Finalizer emitted output), then build a **second** `AccumulatorExecutor` seeded with `999` — a deliberately wrong value — and resume from that checkpoint:
+The demo's real proof is in `demo()`: run the workflow end to end with `FileCheckpointStorage`, grab the *first* checkpoint (superstep 1, before FinalizeReturn emitted output), then build a **second** `ReturnRequestExecutor` seeded with an initial refund of `999.0` — a deliberately wrong value — and resume from that checkpoint:
 
 ```python
-wrong_seed = 999
+wrong_initial_refund = 999.0
 replayed = await resume_from_checkpoint(
-    storage, first.checkpoint_id, resume_seed=wrong_seed
+    storage, first.checkpoint_id, resume_initial_refund=wrong_initial_refund
 )
-print(f"Phase 2 result: total = {replayed} (expected {result})")
+print(f"Phase 2 result: refund_amount = {replayed} (expected {result})")
 ```
 
-If the replayed total matches the original run instead of reflecting `resume_seed=999`, the checkpoint — not the constructor — was the actual source of truth. `main.py` accepts `seed` and `amount` as CLI args (`python main.py 10 5`, default `10 5` → total `15`).
+If the replayed refund_amount matches the original run instead of reflecting `resume_initial_refund=999.0`, the checkpoint — not the constructor — was the actual source of truth. `main.py` accepts `initial_refund` and `item_refund` as CLI args (`python main.py 10.0 5.0`, default `10.0 5.0` → refund_amount `15.0`).
 
 ## .NET
 
@@ -100,24 +100,24 @@ var store = new FileSystemJsonCheckpointStore(checkpointDir);
 CheckpointManager checkpointManager = CheckpointManager.CreateJson(store);
 
 await using StreamingRun run = await InProcessExecution
-    .RunStreamingAsync(workflow1, input: add, checkpointManager, sessionId);
+    .RunStreamingAsync(workflow1, input: itemRefund, checkpointManager, sessionId);
 ```
 
-`AccumulatorExecutor` uses `QueueStateUpdateAsync` / `ReadStateAsync` against a string key instead of returning a dict:
+`ReturnRequestExecutor` uses `QueueStateUpdateAsync` / `ReadStateAsync` against a string key instead of returning a dict:
 
 ```csharp
 protected override ValueTask OnCheckpointingAsync(
     IWorkflowContext context, CancellationToken cancellationToken = default) =>
-    context.QueueStateUpdateAsync(StateKey, _total, cancellationToken: cancellationToken);
+    context.QueueStateUpdateAsync(StateKey, _refundAmount, cancellationToken: cancellationToken);
 
 protected override async ValueTask OnCheckpointRestoredAsync(
     IWorkflowContext context, CancellationToken cancellationToken = default)
 {
-    _total = await context.ReadStateAsync<int>(StateKey, cancellationToken: cancellationToken);
+    _refundAmount = await context.ReadStateAsync<double>(StateKey, cancellationToken: cancellationToken);
 }
 ```
 
-Resuming builds a fresh `Workflow` (`BuildWorkflow(seed)` again, same seed this time — the .NET demo doesn't deliberately poison the seed the way Python's does) and calls `InProcessExecution.ResumeStreamingAsync(workflow2, firstCheckpoint, checkpointManager)`. The program exits `0` if the replayed total matches the first run, `2` if it doesn't — a cheap smoke-test contract for `dotnet run` itself, not just `dotnet test`.
+Resuming builds a fresh `Workflow` (`BuildWorkflow(initialRefund)` again, same initial refund this time — the .NET demo doesn't deliberately poison the seed the way Python's does) and calls `InProcessExecution.ResumeStreamingAsync(workflow2, firstCheckpoint, checkpointManager)`. The program exits `0` if the replayed refund_amount matches the first run, `2` if it doesn't — a cheap smoke-test contract for `dotnet run` itself, not just `dotnet test`.
 
 ## Side-by-side differences
 
@@ -141,7 +141,7 @@ Resuming builds a fresh `Workflow` (`BuildWorkflow(seed)` again, same seed this 
 
 `tutorials/18-state-and-checkpoints/python/tests/test_checkpoints.py` has 8 tests exercising the hooks and the file-backed round trip directly (no LLM, deterministic):
 
-- `on_checkpoint_save` / `on_checkpoint_restore` round-trip `total` correctly, including that restore overwrites whatever seed the constructor set and defaults sanely when the key is missing
+- `on_checkpoint_save` / `on_checkpoint_restore` round-trip `refund_amount` correctly, including that restore overwrites whatever initial refund the constructor set and defaults sanely when the key is missing
 - running the workflow actually writes checkpoint files to disk (`FileCheckpointStorage`)
 - `list_checkpoints` returns a non-empty list after a run
 - resuming from a checkpoint into a **fresh** workflow instance restores the pre-resume state (the core proof of durability)
@@ -154,6 +154,8 @@ cd tutorials/18-state-and-checkpoints/dotnet && dotnet test
 ```
 
 ## How this shows up in the capstone
+
+This chapter's toy is a narrow approximation: one stateful executor, one checkpoint, torn down and resumed. The real `workflow:return-replace` chain (`agents/python/workflows/return_replace.py`) is a much bigger thing — six executors carrying a full `WorkflowState` dataclass (order id, refund amount, replacement products, HITL flags, completed-steps list) through `check-eligibility → initiate-return → search-replacements → hitl-gate → apply-discount → finalize`. This chapter doesn't rebuild that chain at toy scale; it isolates and teaches the one mechanic all of it depends on — a stateful executor's checkpoint save/restore hooks — so the bigger workflow below reads as a scaled-up version of exactly this, not a different trick.
 
 This chapter's toy example uses `FileCheckpointStorage`. The capstone runs a real one: `agents/python/shared/checkpoint_storage.py:34` defines `PostgresCheckpointStorage`, a `CheckpointStorage` implementation backed by `asyncpg` that reads and writes the `workflow_checkpoints` table (`docker/postgres/init.sql`), encoding each snapshot through MAF's own `encode_checkpoint_value` so the wire format matches what `FileCheckpointStorage` writes to disk — Postgres is just where it's kept. It's selected by `shared.factory.get_checkpoint_storage()` when `MAF_CHECKPOINT_BACKEND=postgres` (the production default), and every attached run is wrapped in `RecordingCheckpointStorage` so each save surfaces as its own `kind="checkpoint"` event on the SSE stream — MAF's own event stream never mentions a save otherwise (`agents/python/orchestrator/modes/workflow_mode.py:132`).
 
