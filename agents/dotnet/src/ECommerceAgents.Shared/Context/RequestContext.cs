@@ -22,6 +22,7 @@ public static class RequestContext
     private static readonly AsyncLocal<List<string>?> _invokedAgents = new();
     private static readonly AsyncLocal<ChannelWriter<string>?> _streamWriter = new();
     private static readonly AsyncLocal<Dictionary<string, bool>?> _guardrailFlags = new();
+    private static readonly AsyncLocal<List<ExecutionStep>?> _steps = new();
 
     public static string CurrentUserEmail
     {
@@ -101,6 +102,25 @@ public static class RequestContext
     /// <summary>Records a guardrail flag for the current request. No-op outside a <see cref="Scope"/>.</summary>
     public static void SetGuardrailFlag(string key, bool value) => (_guardrailFlags.Value ??= new())[key] = value;
 
+    /// <summary>
+    /// Agentic-timeline steps recorded during the current request — the .NET
+    /// analog of Python's <c>current_steps</c> ContextVar
+    /// (<c>shared/agent_observability.py</c>). One entry per tool call, in
+    /// call order, appended by <c>SpecialistPipeline</c>'s step-recording
+    /// stage. A specialist process tags its own entries with
+    /// <c>Agent: null</c> (it only knows about itself); the orchestrator's
+    /// <c>A2AClient</c> fills in <see cref="ExecutionStep.Agent"/> when it
+    /// merges a specialist's returned steps into its own list — matching
+    /// Python's "specialists record un-tagged, the orchestrator tags them on
+    /// the way back" split described in <c>agent_observability.py</c>'s
+    /// module docstring.
+    /// </summary>
+    public static IReadOnlyList<ExecutionStep> CurrentSteps =>
+        (IReadOnlyList<ExecutionStep>?)_steps.Value ?? Array.Empty<ExecutionStep>();
+
+    /// <summary>Appends one step to the current request. No-op outside a <see cref="Scope"/>.</summary>
+    public static void RecordStep(ExecutionStep step) => _steps.Value?.Add(step);
+
     public static IDisposable Scope(string email, string role, string sessionId, IReadOnlyList<HistoryEntry>? history = null)
     {
         var previous = (
@@ -109,7 +129,8 @@ public static class RequestContext
             Session: _sessionId.Value,
             History: _history.Value,
             InvokedAgents: _invokedAgents.Value,
-            GuardrailFlags: _guardrailFlags.Value
+            GuardrailFlags: _guardrailFlags.Value,
+            Steps: _steps.Value
         );
         _userEmail.Value = email;
         _userRole.Value = role;
@@ -117,6 +138,7 @@ public static class RequestContext
         _history.Value = history ?? Array.Empty<HistoryEntry>();
         _invokedAgents.Value = new List<string>();
         _guardrailFlags.Value = new Dictionary<string, bool>();
+        _steps.Value = new List<ExecutionStep>();
         return new Disposable(() =>
         {
             _userEmail.Value = previous.Email;
@@ -125,6 +147,7 @@ public static class RequestContext
             _history.Value = previous.History;
             _invokedAgents.Value = previous.InvokedAgents;
             _guardrailFlags.Value = previous.GuardrailFlags;
+            _steps.Value = previous.Steps;
         });
     }
 
@@ -138,3 +161,19 @@ public static class RequestContext
 
 /// <summary>One entry in the forwarded conversation history (A2A payload shape).</summary>
 public sealed record HistoryEntry(string Role, string Content);
+
+/// <summary>
+/// One agentic-timeline step — the .NET twin of Python's step dict
+/// (<c>shared/agent_observability.py::StepRecorderMiddleware</c>). <c>Agent</c>
+/// is null when a specialist records its own step (it doesn't know its own
+/// name in this context) and filled in by the orchestrator's <c>A2AClient</c>
+/// when merging a specialist's returned steps into its own timeline.
+/// </summary>
+public sealed record ExecutionStep(
+    string ToolName,
+    object? ToolInput,
+    object? ToolOutput,
+    string Status,
+    int DurationMs,
+    string? Agent = null
+);

@@ -28,6 +28,15 @@ namespace ECommerceAgents.Shared.Agents;
 /// outbound content moderation of the model's own generated text. Python's
 /// grounding and cost-budget layers still have no .NET port — out of scope
 /// for #15, tracked separately.
+///
+/// Issue #16 adds agentic-timeline capture: <see cref="RecordSteps"/>
+/// appends one <see cref="ExecutionStep"/> per tool call to
+/// <see cref="RequestContext.CurrentSteps"/>, unconditionally (matching
+/// Python's <c>StepRecorderMiddleware</c>, which isn't gated by any
+/// setting). It's the last function-invocation stage so it records what
+/// actually happened to a tool call after sanitization/audit — same
+/// ordering Python uses (<c>STEP_MIDDLEWARE</c> appended last in
+/// <c>build_specialist_middleware</c>).
 /// </remarks>
 public static class SpecialistPipeline
 {
@@ -63,6 +72,7 @@ public static class SpecialistPipeline
 
         return builder
             .Use(AuditToolCalls(toolAudit))
+            .Use(RecordSteps())
             .Build(services);
     }
 
@@ -193,6 +203,46 @@ public static class SpecialistPipeline
                 logger.LogInformation("guardrails.output_sanitized tool={Tool}", context.Function.Name);
             }
             return sanitized;
+        };
+
+    /// <summary>
+    /// Appends one <see cref="ExecutionStep"/> per tool call to
+    /// <see cref="RequestContext.CurrentSteps"/> — the .NET twin of Python's
+    /// <c>StepRecorderMiddleware</c> (issue #16). A no-op when
+    /// <see cref="RequestContext.CurrentSteps"/> has no active scope (the
+    /// same "safe outside a request" property every other
+    /// <c>RequestContext</c> writer already has).
+    /// </summary>
+    private static Func<
+        AIAgent,
+        FunctionInvocationContext,
+        Func<FunctionInvocationContext, CancellationToken, ValueTask<object?>>,
+        CancellationToken,
+        ValueTask<object?>
+    > RecordSteps() =>
+        async (agent, context, next, ct) =>
+        {
+            var toolName = context.Function.Name;
+            var toolInput = context.Arguments is null
+                ? null
+                : new Dictionary<string, object?>(context.Arguments);
+            var sw = Stopwatch.StartNew();
+            var status = "success";
+            object? result = null;
+            try
+            {
+                result = await next(context, ct);
+                return result;
+            }
+            catch
+            {
+                status = "error";
+                throw;
+            }
+            finally
+            {
+                RequestContext.RecordStep(new ExecutionStep(toolName, toolInput, result, status, (int)sw.ElapsedMilliseconds));
+            }
         };
 
     private const string InjectionRefusalMessage =

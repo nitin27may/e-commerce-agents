@@ -40,7 +40,14 @@ public static class AgentHost
 {
     public sealed record MessagePayload(string Message, List<HistoryEntry>? History);
 
-    public sealed record AgentResponse(string Response);
+    /// <summary>
+    /// <c>Steps</c> is the .NET twin of Python's A2A response carrying its
+    /// own captured timeline steps back to the orchestrator (issue #16) —
+    /// serializes as <c>"steps"</c> under ASP.NET Core's Minimal API default
+    /// camelCase policy, which <see cref="ECommerceAgents.Shared.A2A.A2AClient"/>'s
+    /// own response DTO matches explicitly via <c>JsonPropertyName</c>.
+    /// </summary>
+    public sealed record AgentResponse(string Response, IReadOnlyList<ExecutionStep>? Steps = null);
 
     /// <summary>
     /// Build a standalone <see cref="WebApplication"/> configured as an A2A
@@ -127,7 +134,7 @@ public static class AgentHost
             try
             {
                 var reply = await onMessage(payload.Message, services);
-                return Results.Ok(new AgentResponse(reply));
+                return Results.Ok(new AgentResponse(reply, RequestContext.CurrentSteps.ToList()));
             }
             catch (Exception ex)
             {
@@ -181,6 +188,14 @@ public static class AgentHost
                     await http.Response.WriteAsync(frame.ToString(), Encoding.UTF8);
                     await http.Response.Body.FlushAsync();
                 }
+
+                // Issue #16: the specialist's own captured steps, as one bulk frame —
+                // an A2A-internal wire detail (unlike the per-step "event: step" frames
+                // ChatRoutes.StreamAsync emits to the frontend), consumed only by
+                // A2AClient.StreamAsync, which tags each entry with this agent's name
+                // and merges it into the orchestrator's own RequestContext.CurrentSteps.
+                var stepsPayload = JsonSerializer.Serialize(RequestContext.CurrentSteps);
+                await http.Response.WriteAsync($"event: steps\ndata: {stepsPayload}\n\n", Encoding.UTF8);
                 await http.Response.WriteAsync("data: [DONE]\n\n", Encoding.UTF8);
                 await http.Response.Body.FlushAsync();
             }

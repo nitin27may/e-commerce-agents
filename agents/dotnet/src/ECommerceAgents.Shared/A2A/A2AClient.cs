@@ -10,6 +10,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace ECommerceAgents.Shared.A2A;
@@ -28,6 +29,16 @@ namespace ECommerceAgents.Shared.A2A;
 /// </remarks>
 public sealed class A2AClient
 {
+    /// <summary>
+    /// <c>Web</c> defaults (camelCase + case-insensitive reads) so this
+    /// doesn't care whether a given response was serialized by ASP.NET
+    /// Core Minimal API's own camelCase default (<c>/message:send</c>'s
+    /// <c>Results.Ok(...)</c>) or a manual <c>JsonSerializer.Serialize</c>
+    /// call with no options (<c>/message:stream</c>'s hand-written SSE
+    /// frame, <c>AgentHost.cs</c>) — both round-trip correctly either way.
+    /// </summary>
+    private static readonly JsonSerializerOptions ResponseJsonOptions = new(JsonSerializerDefaults.Web);
+
     private readonly HttpClient _http;
     private readonly AgentSettings _settings;
     private readonly AuthServerClient _authServerClient;
@@ -121,7 +132,8 @@ public sealed class A2AClient
         }
 
         using var open = response!;
-        var payload = await open.Content.ReadFromJsonAsync<A2AResponse>(cancellationToken: ct);
+        var payload = await open.Content.ReadFromJsonAsync<A2AResponse>(ResponseJsonOptions, ct);
+        MergeReturnedSteps(agentName, payload?.Steps);
         return payload?.Response ?? string.Empty;
     }
 
@@ -157,8 +169,14 @@ public sealed class A2AClient
         await using var body = await open.Content.ReadAsStreamAsync(ct);
         using var reader = new StreamReader(body);
         var dataLines = new List<string>();
+        string? currentEvent = null;
         while (await reader.ReadLineAsync(ct) is { } line)
         {
+            if (line.StartsWith("event: ", StringComparison.Ordinal))
+            {
+                currentEvent = line["event: ".Length..];
+                continue;
+            }
             if (line.StartsWith("data: ", StringComparison.Ordinal))
             {
                 dataLines.Add(line["data: ".Length..]);
@@ -168,12 +186,39 @@ public sealed class A2AClient
             {
                 continue;
             }
+
             var chunk = string.Join("\n", dataLines);
+            var eventType = currentEvent;
             dataLines.Clear();
+            currentEvent = null;
+
+            if (eventType == "steps")
+            {
+                // Issue #16: the specialist's own captured timeline steps,
+                // sent as one bulk frame (AgentHost.cs's /message:stream
+                // handler) — merge into this request's own timeline, tagged
+                // with the specialist's name (a specialist doesn't know its
+                // own name in RequestContext, so it can't tag itself).
+                MergeReturnedSteps(agentName, JsonSerializer.Deserialize<List<ExecutionStep>>(chunk, ResponseJsonOptions));
+                continue;
+            }
             if (chunk != "[DONE]")
             {
                 yield return chunk;
             }
+        }
+    }
+
+    private static void MergeReturnedSteps(string agentName, IReadOnlyList<ExecutionStep>? steps)
+    {
+        if (steps is null)
+        {
+            return;
+        }
+
+        foreach (var step in steps)
+        {
+            RequestContext.RecordStep(step with { Agent = agentName });
         }
     }
 
@@ -268,6 +313,7 @@ public sealed class A2AClient
     );
 
     private sealed record A2AResponse(
-        [property: JsonPropertyName("response")] string Response
+        [property: JsonPropertyName("response")] string Response,
+        [property: JsonPropertyName("steps")] List<ExecutionStep>? Steps = null
     );
 }

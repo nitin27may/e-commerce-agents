@@ -200,6 +200,27 @@ public static class ChatRoutes
             RequestContext.CurrentInvokedAgents.Distinct().Where(a => a != "orchestrator")
         );
 
+        // Issue #16: one event: step frame per captured tool call, matching
+        // web/src/lib/api.ts::chatStream's AgentStep shape exactly (field
+        // names are snake_case there, unlike the rest of this C# codebase,
+        // because the frontend's SSE parser is shared with the Python
+        // backend). Emitted as a batch here rather than incrementally as
+        // each tool call finishes — same as Python's chat.py, which drains
+        // get_steps() once after the run loop completes.
+        foreach (var step in RequestContext.CurrentSteps)
+        {
+            var stepPayload = JsonSerializer.Serialize(new
+            {
+                agent = step.Agent,
+                tool_name = step.ToolName,
+                tool_input = step.ToolInput,
+                tool_output = step.ToolOutput,
+                status = step.Status,
+                duration_ms = step.DurationMs,
+            });
+            await context.Response.WriteAsync($"event: step\ndata: {stepPayload}\n\n", Encoding.UTF8);
+        }
+
         var metadataPayload = JsonSerializer.Serialize(new
         {
             conversation_id = ctx.ConversationId,
@@ -353,12 +374,28 @@ public static class ChatRoutes
             );
         }
 
-        await usage.LogAgentUsageAsync(
+        var usageLogId = await usage.LogAgentUsageAsync(
             ctx.UserId,
             "orchestrator",
             inputSummary: userMessage,
             durationMs: durationMs,
             toolCallsCount: agentsInvolved.Count - 1
         );
+
+        // Issue #16: persist this turn's agentic-timeline steps —
+        // RequestContext.CurrentSteps holds both the orchestrator's own tool
+        // calls (e.g. call_specialist_agent) and, for each specialist call,
+        // that specialist's own steps merged in by A2AClient (tagged with
+        // its agent name). Mirrors Python's post-stream
+        // "drain get_steps() -> log_execution_step per step" block.
+        if (usageLogId is { } id)
+        {
+            var steps = RequestContext.CurrentSteps;
+            for (var i = 0; i < steps.Count; i++)
+            {
+                var step = steps[i];
+                await usage.LogExecutionStepAsync(id, i, step.ToolName, step.ToolInput, step.ToolOutput, step.Status, step.DurationMs);
+            }
+        }
     }
 }
