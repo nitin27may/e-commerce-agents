@@ -31,6 +31,34 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 INIT_SQL = REPO_ROOT / "docker" / "postgres" / "init.sql"
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    """Fail fast with a clear message if agent_framework's __init__.py got wiped.
+
+    A plain `uv sync` re-resolution has been observed to leave this file
+    empty. Root cause: uv hardlinks installed site-packages files back into
+    its shared cache on Linux, so any in-place write to the file — e.g. an
+    older version of patch_maf.py's write_text() — truncates the cache's
+    copy too, corrupting every future `uv sync` (in this or any other
+    project) that resolves to the same cache entry. Once the cache itself is
+    corrupted, `uv sync --reinstall-package` alone just re-links the same
+    broken archive — the cache entry has to be purged first. Without this
+    check, the failure mode is a confusing ImportError deep inside an
+    unrelated test. See issue #5.
+    """
+    import agent_framework
+
+    init_path = Path(agent_framework.__file__)
+    if init_path.read_text().strip() == "":
+        pytest.exit(
+            f"agent_framework's __init__.py is empty ({init_path}) — the "
+            "installed package is broken. Recover with:\n"
+            "  cd agents/python\n"
+            "  uv cache clean agent-framework-core\n"
+            "  uv sync --reinstall-package agent-framework-core --all-packages --extra dev",
+            returncode=1,
+        )
+
+
 # ─────────────────────── Postgres fixture ───────────────────────
 
 @pytest.fixture(scope="session")
