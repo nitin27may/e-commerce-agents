@@ -95,4 +95,39 @@ describe("AgentTimeline", () => {
     render(<AgentTimeline steps={steps} />);
     expect(screen.getByText("orchestrator")).toBeInTheDocument();
   });
+
+  it("shows a 'sourced from' line with row ids when the step expands and provenance has rows", () => {
+    const steps: AgentStep[] = [
+      {
+        agent: "product-discovery",
+        tool_name: "search_products",
+        tool_input: { query: "headphones" },
+        tool_output: { count: 1 },
+        status: "success",
+        duration_ms: 50,
+        provenance: { source: "tool:search_products", row_ids: ["0fd372fa-ecb2-4db0-bb71-8628a784ced9"] },
+      },
+    ];
+    render(<AgentTimeline steps={steps} />);
+    fireEvent.click(screen.getByText("search_products").closest("button")!);
+    expect(screen.getByText("tool:search_products")).toBeInTheDocument();
+    expect(screen.getByText(/0fd372fa-ecb2-4db0-bb71-8628a784ced9/)).toBeInTheDocument();
+  });
+
+  it("omits the 'sourced from' line when provenance has no row ids", () => {
+    const steps: AgentStep[] = [
+      {
+        agent: "product-discovery",
+        tool_name: "get_trending_products",
+        tool_input: {},
+        tool_output: [],
+        status: "success",
+        duration_ms: 40,
+        provenance: { source: "tool:get_trending_products", row_ids: [] },
+      },
+    ];
+    render(<AgentTimeline steps={steps} />);
+    fireEvent.click(screen.getByText("get_trending_products").closest("button")!);
+    expect(screen.queryByText(/Sourced from/)).not.toBeInTheDocument();
+  });
 });

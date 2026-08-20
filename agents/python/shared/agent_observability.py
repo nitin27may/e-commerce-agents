@@ -34,6 +34,26 @@ from shared.context import current_steps
 _MAX = 600
 
 
+def _extract_row_ids(result: Any) -> list[str]:
+    """Best-effort ids referenced in a tool result, for step provenance.
+
+    Duck-typed the same way shared/grounding/ledger.py recognizes fact
+    shapes (products key their id as "id", get_order_details as
+    "order_id", check_stock as "product_id") — but implemented locally
+    rather than imported, so this general-purpose observability module
+    doesn't take a dependency on the grounding subsystem.
+    """
+    ids: list[str] = []
+    items = result if isinstance(result, list) else [result]
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        row_id = item.get("id") or item.get("order_id") or item.get("product_id")
+        if row_id:
+            ids.append(str(row_id))
+    return ids
+
+
 def _summarize(value: Any, limit: int = _MAX) -> Any:
     """Best-effort JSON-serialisable, size-capped summary of tool I/O."""
     if value is None:
@@ -76,13 +96,15 @@ class StepRecorderMiddleware(FunctionMiddleware):
         finally:
             steps = current_steps.get()
             if steps is not None:
+                result = getattr(context, "result", None)
                 steps.append(
                     {
                         "tool_name": tool_name,
                         "tool_input": _summarize(tool_input),
-                        "tool_output": _summarize(getattr(context, "result", None), 400),
+                        "tool_output": _summarize(result, 400),
                         "status": status,
                         "duration_ms": int((time.perf_counter() - start) * 1000),
+                        "provenance": {"source": f"tool:{tool_name}", "row_ids": _extract_row_ids(result)},
                     }
                 )
 

@@ -92,6 +92,15 @@ function StepRow({ step: s }: { step: AgentStep }) {
           {s.tool_output !== undefined && (
             <JsonBlock label="Output" value={s.tool_output} />
           )}
+          {s.provenance && s.provenance.row_ids.length > 0 && (
+            <p className="text-muted-foreground">
+              Sourced from <span className="font-mono text-foreground/80">{s.provenance.source}</span>
+              {" — "}
+              {s.provenance.row_ids.length} row{s.provenance.row_ids.length === 1 ? "" : "s"}
+              {": "}
+              <span className="font-mono text-foreground/70">{s.provenance.row_ids.join(", ")}</span>
+            </p>
+          )}
         </div>
       )}
     </li>

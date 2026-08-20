@@ -26,6 +26,12 @@ export interface CartItem {
 }
 
 /** One step in the agentic timeline streamed via `event: step` SSE frames. */
+/** Where a step's data came from — shared/agent_observability.py's StepRecorderMiddleware. */
+export interface StepProvenance {
+  source: string;
+  row_ids: string[];
+}
+
 export interface AgentStep {
   agent?: string;
   tool_name: string;
@@ -33,6 +39,7 @@ export interface AgentStep {
   tool_output?: unknown;
   status?: string;
   duration_ms?: number;
+  provenance?: StepProvenance;
 }
 
 /** One verified/unverified claim inside a GroundingReport (shared/grounding/verifier.py::ClaimVerdict). */
