@@ -1,0 +1,134 @@
+{
+  "request": {
+    "instructions": "You are a shopping assistant coordinator. When the user asks about a product, call the `product_lookup` tool with a short task description to get its details. If the user also asks about a discount, call the `calculate_discount` tool with the price you got back and the requested percentage, then combine both results into one final answer. Never guess a price yourself \u2014 always use the tools.",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "Look up the Wireless Headphones, then tell me the price after a 20% discount.",
+            "type": "text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      },
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "arguments": "{\"task\":\"Get information and price for Wireless Headphones.\"}",
+            "call_id": "call_ioXx9FHATQ17RL1DIXdV1NLq",
+            "name": "product_lookup",
+            "type": "function_call"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      },
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "call_id": "call_ioXx9FHATQ17RL1DIXdV1NLq",
+            "items": [
+              {
+                "additional_properties": {},
+                "text": "Wireless Headphones are priced at $149.99, in the Electronics category, with 42 units currently in stock.",
+                "type": "text"
+              }
+            ],
+            "result": "Wireless Headphones are priced at $149.99, in the Electronics category, with 42 units currently in stock.",
+            "type": "function_result"
+          }
+        ],
+        "role": "tool",
+        "type": "message"
+      }
+    ],
+    "tools": [
+      {
+        "function": {
+          "description": "Delegate a product question to the product-lookup specialist agent.",
+          "name": "product_lookup",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "task": {
+                "description": "Task for product_lookup",
+                "type": "string"
+              }
+            },
+            "required": [
+              "task"
+            ],
+            "type": "object"
+          }
+        },
+        "type": "function"
+      },
+      {
+        "function": {
+          "description": "Compute a price after a percentage discount.",
+          "name": "calculate_discount",
+          "parameters": {
+            "properties": {
+              "percent": {
+                "description": "The discount percentage, e.g. 20 for 20%.",
+                "title": "Percent",
+                "type": "number"
+              },
+              "price": {
+                "description": "The original price.",
+                "title": "Price",
+                "type": "number"
+              }
+            },
+            "required": [
+              "price",
+              "percent"
+            ],
+            "title": "calculate_discount_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      }
+    ]
+  },
+  "response": {
+    "created_at": "2026-08-20T02:35:14.000000Z",
+    "finish_reason": "tool_calls",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "arguments": "{\"price\":149.99,\"percent\":20}",
+            "call_id": "call_I5mw6LrPkY2hdVP7676dyPP6",
+            "name": "calculate_discount",
+            "type": "function_call"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      }
+    ],
+    "model": "gpt-4.1-2025-04-14",
+    "response_id": "chatcmpl-EEmuYrtzz4UHA4tl5oRvg8khIm2hd",
+    "type": "chat_response",
+    "usage_details": {
+      "cache_read_input_token_count": 0,
+      "completion/reasoning_tokens": 0,
+      "input_token_count": 262,
+      "output_token_count": 21,
+      "prompt/cached_tokens": 0,
+      "reasoning_output_token_count": 0,
+      "total_token_count": 283
+    }
+  }
+}
