@@ -7,7 +7,7 @@
         "contents": [
           {
             "additional_properties": {},
-            "text": "Remember: my favorite color is teal.",
+            "text": "Remember: I want to buy SKU-4471.",
             "type": "text"
           }
         ],
@@ -18,7 +18,7 @@
     "tools": []
   },
   "response": {
-    "created_at": "2026-08-19T18:27:29.000000Z",
+    "created_at": "2026-08-20T08:36:18.000000Z",
     "finish_reason": "stop",
     "messages": [
       {
@@ -26,7 +26,7 @@
         "contents": [
           {
             "additional_properties": {},
-            "text": "Got it! Your favorite color is teal.",
+            "text": "Got it! You want to buy SKU-4471. Let me know if you need more details or help with the purchase.",
             "type": "text"
           }
         ],
@@ -35,16 +35,16 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-EEfIXozP2njVeVB0uxY8FrH1bA7wb",
+    "response_id": "chatcmpl-EEsXywyXjNYmXG7KveCc24z4utnzG",
     "type": "chat_response",
     "usage_details": {
       "cache_read_input_token_count": 0,
       "completion/reasoning_tokens": 0,
-      "input_token_count": 29,
-      "output_token_count": 10,
+      "input_token_count": 32,
+      "output_token_count": 27,
       "prompt/cached_tokens": 0,
       "reasoning_output_token_count": 0,
-      "total_token_count": 39
+      "total_token_count": 59
     }
   }
 }

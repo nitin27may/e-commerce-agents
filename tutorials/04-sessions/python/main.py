@@ -8,9 +8,9 @@ Persist an AgentSession to disk between process runs. Demonstrates:
 
 Usage:
     # Turn 1 writes session.json:
-    python tutorials/04-sessions/python/main.py save "Remember: my favorite color is teal."
+    python tutorials/04-sessions/python/main.py save "Remember: I want to buy SKU-4471."
     # Turn 2 reads session.json and asks a follow-up:
-    python tutorials/04-sessions/python/main.py load "What color did I tell you I liked?"
+    python tutorials/04-sessions/python/main.py load "What did I say I wanted to buy?"
 """
 
 from __future__ import annotations

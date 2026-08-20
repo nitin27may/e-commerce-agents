@@ -81,16 +81,16 @@ async def test_replay_session_persists_across_fresh_agent_instances(
     session_file = tmp_path / "session.json"
 
     agent1 = build_agent()
-    await ask_and_save(agent1, "Remember: my favorite color is teal.", session_file)
+    await ask_and_save(agent1, "Remember: I want to buy SKU-4471.", session_file)
     assert session_file.exists()
 
     agent2 = build_agent()
     answer = await ask_and_save(
         agent2,
-        "What color did I tell you I liked? Answer with the color only.",
+        "What did I say I wanted to buy? Answer with the SKU only.",
         session_file,
     )
-    assert "teal" in answer.lower(), f"expected 'teal' in follow-up answer, got: {answer!r}"
+    assert "SKU-4471" in answer.upper(), f"expected 'SKU-4471' in follow-up answer, got: {answer!r}"
 
 
 # ─────────── Integration: real LLM persistence ───────────
@@ -118,7 +118,7 @@ async def test_session_persists_across_fresh_agent_instances(tmp_path: pathlib.P
     session_file = tmp_path / "session.json"
 
     agent1 = build_agent()
-    await ask_and_save(agent1, "Remember: my favorite color is teal.", session_file)
+    await ask_and_save(agent1, "Remember: I want to buy SKU-4471.", session_file)
     assert session_file.exists()
 
     # Build a fresh agent (a separate Agent instance, which is what the
@@ -126,7 +126,7 @@ async def test_session_persists_across_fresh_agent_instances(tmp_path: pathlib.P
     agent2 = build_agent()
     answer = await ask_and_save(
         agent2,
-        "What color did I tell you I liked? Answer with the color only.",
+        "What did I say I wanted to buy? Answer with the SKU only.",
         session_file,
     )
-    assert "teal" in answer.lower(), f"expected 'teal' in follow-up answer, got: {answer!r}"
+    assert "SKU-4471" in answer.upper(), f"expected 'SKU-4471' in follow-up answer, got: {answer!r}"

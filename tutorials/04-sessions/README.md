@@ -58,8 +58,8 @@ Run from the repo root using the shared `tutorials/` uv project (one `uv sync` c
 
 ```bash
 uv sync --project tutorials
-uv run --project tutorials python tutorials/04-sessions/python/main.py save "Remember: my favorite color is teal."
-uv run --project tutorials python tutorials/04-sessions/python/main.py load "What color did I tell you I liked? Answer with only the color."
+uv run --project tutorials python tutorials/04-sessions/python/main.py save "Remember: I want to buy SKU-4471."
+uv run --project tutorials python tutorials/04-sessions/python/main.py load "What did I say I wanted to buy? Answer with only the SKU."
 ```
 
 Source: [`python/main.py`](./python/main.py). The agent is built with a history-carrying context provider:
@@ -103,8 +103,8 @@ Note that `main.py`'s `save`/`load` argument is cosmetic — both branches call 
 
 ```bash
 cd tutorials/04-sessions/dotnet
-dotnet run -- save "Remember: my favorite color is teal."
-dotnet run -- load "What color did I tell you I liked? Answer with only the color."
+dotnet run -- save "Remember: I want to buy SKU-4471."
+dotnet run -- load "What did I say I wanted to buy? Answer with only the SKU."
 ```
 
 Source: [`dotnet/Program.cs`](./dotnet/Program.cs). Same load/run/save shape, async because `SerializeSessionAsync`/`DeserializeSessionAsync` support providers that hit a backing service:
