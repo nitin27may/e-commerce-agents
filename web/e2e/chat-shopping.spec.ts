@@ -62,24 +62,36 @@ test.describe("Chat Shopping Experience", () => {
     expect(text?.length).toBeGreaterThan(50);
   });
 
-  test("should show product cards in chat response", async ({ page }) => {
+  test("should show a real product card, never raw JSON", async ({ page }) => {
     await sendMessage(page, "Find me wireless headphones");
-    await page.waitForTimeout(5000);
     await page.screenshot({ path: "e2e/screenshots/chat-product-cards.png", fullPage: true });
 
-    // Check if product cards are rendered (they have specific styling)
-    const productCards = page.locator('[class*="product"], [class*="rounded-xl"]');
-    const cardCount = await productCards.count();
-    console.log(`Found ${cardCount} card-like elements in chat`);
+    const main = page.locator("main");
+    const text = await main.textContent();
+    // The core "never show raw JSON" guarantee (Phase 8.1/8.2) — a fence
+    // leak means the parser fell through to a raw code block.
+    expect(text).not.toContain("```product");
+    expect(text).not.toMatch(/"id":\s*"[0-9a-f-]{36}"/);
+
+    // A real product-card action, not just prose that mentions "cart" — the
+    // button reads "Added" instead of "Add to Cart" if this seeded user's
+    // cart already has the item (state persists across test runs), so
+    // accept either rather than assuming a fresh cart.
+    await expect(page.getByRole("button", { name: /add to cart|added/i }).first()).toBeVisible();
   });
 
-  test("should ask about order status", async ({ page }) => {
+  test("should ask about order status and get a real order card", async ({ page }) => {
     await sendMessage(page, "Where is my latest order?");
     await page.screenshot({ path: "e2e/screenshots/chat-order-status.png", fullPage: true });
 
-    const responseArea = page.locator("main");
-    const text = await responseArea.textContent();
+    const main = page.locator("main");
+    const text = await main.textContent();
+    expect(text).not.toContain("```order");
     expect(text?.length).toBeGreaterThan(50);
+
+    // order-card.tsx always renders a #<shortId> tracking chip for any
+    // order it displays — a real structural marker, not a length check.
+    await expect(page.getByText(/^#[0-9a-f]{8}/)).toBeVisible();
   });
 
   test("should ask to add product to cart", async ({ page }) => {
