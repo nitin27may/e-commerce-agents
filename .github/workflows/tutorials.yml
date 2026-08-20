@@ -106,9 +106,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Phase 4c restored all 24 chapters except 21-capstone-tour (which
-      # needs the other 23 restored first — deliberately deferred to
-      # Phase 4d) from a report-only launcher-stub state to a real,
-      # merge-blocking gate. --exclude drops once 4d lands.
+      # Phase 4c + 4d restored all 24 chapters from a report-only
+      # launcher-stub state to a real, merge-blocking gate on every chapter.
       - name: Chapter contract check
-        run: python3 scripts/check_tutorial_readmes.py --check --exclude 21-capstone-tour
+        run: python3 scripts/check_tutorial_readmes.py --check

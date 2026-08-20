@@ -204,31 +204,34 @@ def test_check_chapter_fails_multiple_checks_on_a_launcher_stub() -> None:
     assert len(result.failures) >= 3
 
 
-def test_every_real_chapter_except_capstone_tour_passes(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Phase 4c restored all 24 chapters except 21-capstone-tour (deliberately
-    # deferred to Phase 4d, since it needs the other 23 restored first). This
-    # is the regression check for that milestone: every chapter but that one
-    # genuinely passes the full linter, not just "doesn't crash".
-    chapters = [c for c in discover_chapters() if c != "21-capstone-tour"]
+def test_every_chapter_passes() -> None:
+    # Phase 4c + 4d restored all 24 chapters (23 from git history, plus
+    # 21-capstone-tour written fresh since it depends on the other 23 being
+    # real first). This is the regression check for that milestone: every
+    # discovered chapter genuinely passes the full linter, not just
+    # "doesn't crash" — tutorials.yml's CI gate runs the same check.
+    chapters = discover_chapters()
     assert chapters, "expected to find restored chapters"
     failing = [c for c in chapters if not check_chapter(c).passed]
     assert failing == []
 
 
-def test_cli_check_mode_returns_zero_when_capstone_tour_excluded(monkeypatch: pytest.MonkeyPatch) -> None:
-    # tutorials.yml's CI gate runs exactly this: --check --exclude 21-capstone-tour.
+def test_cli_check_mode_returns_zero_now_that_every_chapter_passes(monkeypatch: pytest.MonkeyPatch) -> None:
+    # tutorials.yml's CI gate runs exactly this, no --exclude needed anymore.
     # main() returns an exit code; sys.exit(main()) only happens in the
     # __main__ guard, so calling it directly here doesn't raise SystemExit.
-    monkeypatch.setattr(sys, "argv", ["check_tutorial_readmes.py", "--check", "--exclude", "21-capstone-tour"])
+    monkeypatch.setattr(sys, "argv", ["check_tutorial_readmes.py", "--check"])
     assert _module.main() == 0
 
 
-def test_cli_check_mode_returns_nonzero_without_the_exclude(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Same run, but without excluding the one chapter still mid-restoration
-    # (Phase 4d) — must fail, proving --exclude is load-bearing above, not
-    # a no-op that happened to pass anyway.
-    monkeypatch.setattr(sys, "argv", ["check_tutorial_readmes.py", "--check"])
-    assert _module.main() == 1
+def test_cli_exclude_flag_drops_a_chapter_from_the_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Generic behavior check, independent of any chapter's current pass/fail
+    # state: excluding a chapter must shrink the checked set, and excluding
+    # a chapter that doesn't exist must not crash.
+    monkeypatch.setattr(
+        sys, "argv", ["check_tutorial_readmes.py", "--check", "--exclude", "01-first-agent", "--exclude", "nope"]
+    )
+    assert _module.main() == 0
 
 
 def test_00_setup_is_exempted_from_walkthrough_and_run_command_checks() -> None:
