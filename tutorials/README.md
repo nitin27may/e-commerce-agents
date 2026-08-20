@@ -48,6 +48,11 @@ are marked accordingly instead of linking to a page that 404s.
 | 20b | [DevUI (interactive dashboard)](./20b-devui/) | Draft | not yet published |
 | 21 | [Capstone Tour](./21-capstone-tour/) | Planned — folder scaffolded, no runnable code yet | not yet published |
 | 22 | [Group-Chat Debate (Round-Table Orchestration)](./22-group-chat-debate/) | Code done · draft | not yet published |
+| 23 | [A2A Protocol](./23-a2a-protocol/) | Code done · draft | not yet published |
+| 24 | [RAG and Grounding](./24-rag-and-grounding/) | Code done · draft | not yet published |
+| 25 | [Guardrails](./25-guardrails/) | Code done · draft | not yet published |
+| 26 | [Evals](./26-evals/) | Code done · draft | not yet published |
+| 27 | [Agent-as-tool](./27-agent-as-tool/) | Code done · draft | not yet published |
 
 ---
 
@@ -60,6 +65,9 @@ are marked accordingly instead of linking to a page that 404s.
 - **Tier 5 — Advanced** (Ch 17–20): HITL, checkpoints, declarative, visualization.
 - **Capstone** (Ch 21): a guided tour of this repo showing where every concept lives.
 - **Bonus pattern** (Ch 22): a sixth orchestration pattern — round-table group chat — added after the capstone, documented against the production `workflows/group_chat.py` module.
+- **Tier 6 — Missing Concepts** (Ch 23–27): patterns already live in this repo's production code but never taught — A2A protocol, RAG/grounding, guardrails, evals, and agent-as-tool. Each stands alone with its own dependency-free runnable example; each cross-links the matching `docs/concepts/` page instead of re-deriving the "why."
+
+**Declared out of scope for this series** (for now): multi-tenancy, fine-tuning, agent marketplaces, voice. Not overlooked — deliberately not yet covered.
 
 ---
 
