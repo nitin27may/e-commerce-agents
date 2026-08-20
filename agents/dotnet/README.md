@@ -64,11 +64,12 @@ client/host, JWT auth middleware, tool audit logging, PII redaction, checkpoint 
 
 It is **not** at full parity with the Python backend — see
 [`../../docs/parity-matrix.md`](../../docs/parity-matrix.md) for the honest, per-concept
-breakdown. The biggest current gaps: agent middleware/context providers exist but aren't wired
-into any live agent, specialist agents have no streaming (`/message:stream`) endpoint, and
-there's no output sanitization/injection detection, step recorder, or `WorkflowBuilder`-based
-fan-out.
+breakdown. Agent middleware/context providers are now wired into every live agent and specialist
+agents have a real `/message:stream` SSE endpoint (with live delta forwarding through the
+orchestrator's own chat stream). The biggest remaining gaps: there's no output
+sanitization/injection detection, no step recorder, and workflows are hand-rolled `Task.WhenAll`
+rather than `WorkflowBuilder`.
 
-Eight test projects mirror the source structure — one per agent plus Shared and MCP — with 349 test methods covering tools, middleware, auth, and A2A protocol behavior (verified directly: `dotnet test ECommerceAgents.sln`). The same PostgreSQL schema and A2A wire format are used across both stacks; you can point the frontend at either backend by setting `NEXT_PUBLIC_BACKEND_STACK=dotnet`.
+Eight test projects mirror the source structure — one per agent plus Shared and MCP — with 361 test methods covering tools, middleware, auth, streaming, and A2A protocol behavior (verified directly: `dotnet test ECommerceAgents.sln`). The same PostgreSQL schema and A2A wire format are used across both stacks; you can point the frontend at either backend by setting `NEXT_PUBLIC_BACKEND_STACK=dotnet`.
 
 Enhancement plans are tracked in [`.claude/plans/enhancements/`](../../.claude/plans/enhancements/).

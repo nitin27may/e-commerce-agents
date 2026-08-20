@@ -107,6 +107,45 @@ public sealed class AgentHostHistoryTests : IAsyncLifetime
         messages[0].Text.Should().Be("solo message");
     }
 
+    // ─────────────────────── streaming (issue #14) ───────────
+
+    [Fact]
+    public async Task RunAgentWithHistoryStreamingAsync_YieldsTheChatClientsStreamedText()
+    {
+        var chatClient = new FakeChatClient().EnqueueResponse("streamed reply");
+        var services = BuildServices(chatClient);
+        using var scope = RequestContext.Scope("u@example.com", "customer", "");
+
+        var chunks = new List<string>();
+        await foreach (var chunk in AgentHost.RunAgentWithHistoryStreamingAsync(services, "hi"))
+        {
+            chunks.Add(chunk);
+        }
+
+        string.Concat(chunks).Should().Be("streamed reply");
+    }
+
+    [Fact]
+    public async Task RunAgentWithHistoryStreamingAsync_BuildsTheSameMessageHistoryAsTheBlockingPath()
+    {
+        var conversationId = await SeedConversationWithHistoryAsync();
+        var chatClient = new FakeChatClient().EnqueueResponse("reply");
+        var services = BuildServices(chatClient);
+        using var scope = RequestContext.Scope("rehydrate@example.com", "customer", conversationId.ToString());
+
+        await foreach (var _ in AgentHost.RunAgentWithHistoryStreamingAsync(services, "new message"))
+        {
+            // drain
+        }
+
+        var messages = chatClient.ReceivedMessages.Single().ToList();
+        messages.Select(m => (m.Role, m.Text)).Should().Equal(
+            (ChatRole.User, "earlier question"),
+            (ChatRole.Assistant, "earlier answer"),
+            (ChatRole.User, "new message")
+        );
+    }
+
     private async Task<Guid> SeedConversationWithHistoryAsync()
     {
         await using var conn = await _pool.OpenAsync();

@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
+using System.Threading.Channels;
 using Xunit;
 
 namespace ECommerceAgents.Orchestrator.Tests;
@@ -79,5 +80,73 @@ public sealed class OrchestratorToolsTests
         await tools.CallSpecialistAgent("order-management", "what's the status");
 
         RequestContext.CurrentInvokedAgents.Should().Equal("order-management", "order-management");
+    }
+
+    // ─────────────────────── streaming forward (issue #14) ───────────
+
+    private sealed class SseResponseHandler(string sseBody) : HttpMessageHandler
+    {
+        public string? RequestedPath { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            RequestedPath = request.RequestUri?.AbsolutePath;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(sseBody, Encoding.UTF8, "text/event-stream"),
+            });
+        }
+    }
+
+    private static OrchestratorTools BuildStreamingTools(SseResponseHandler handler, string agentName = "product-discovery")
+    {
+        var settings = new AgentSettings
+        {
+            AgentSharedSecret = new string('s', 48),
+            AuthMode = "local",
+            AgentRegistry = $$"""{"{{agentName}}":"http://fake-{{agentName}}"}""",
+        };
+        var http = new HttpClient(handler);
+        var a2a = new A2AClient(http, settings, new AuthServerClient(new HttpClient(), settings), NullLogger<A2AClient>.Instance);
+        return new OrchestratorTools(a2a, settings, NullLogger<OrchestratorTools>.Instance);
+    }
+
+    [Fact]
+    public async Task CallSpecialistAgent_WithNoStreamWriter_CallsMessageSendNotMessageStream()
+    {
+        // No RequestContext.StreamScope open (mirrors blocking /api/chat, or this
+        // tool exercised directly, as every other test in this file does) — must
+        // keep using the plain, non-streaming A2A endpoint exactly as before this
+        // change.
+        var tools = BuildTools("product-discovery");
+        using var scope = RequestContext.Scope("alice@example.com", "customer", "sess-1");
+
+        var reply = await tools.CallSpecialistAgent("product-discovery", "find headphones");
+
+        reply.Should().Be("specialist reply");
+    }
+
+    [Fact]
+    public async Task CallSpecialistAgent_WithStreamWriterOpen_UsesMessageStreamAndForwardsDeltas()
+    {
+        var handler = new SseResponseHandler("data: Wire\n\ndata: less headphones\n\ndata: [DONE]\n\n");
+        var tools = BuildStreamingTools(handler);
+        using var scope = RequestContext.Scope("alice@example.com", "customer", "sess-1");
+
+        var channel = Channel.CreateUnbounded<string>();
+        using var streamScope = RequestContext.StreamScope(channel.Writer);
+
+        var reply = await tools.CallSpecialistAgent("product-discovery", "find headphones");
+        channel.Writer.Complete();
+
+        var forwarded = new List<string>();
+        await foreach (var delta in channel.Reader.ReadAllAsync())
+        {
+            forwarded.Add(delta);
+        }
+
+        handler.RequestedPath.Should().Be("/message:stream");
+        forwarded.Should().Equal("Wire", "less headphones");
+        reply.Should().Be("Wireless headphones");
     }
 }

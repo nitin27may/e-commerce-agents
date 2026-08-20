@@ -1,3 +1,5 @@
+using System.Threading.Channels;
+
 namespace ECommerceAgents.Shared.Context;
 
 /// <summary>
@@ -18,6 +20,7 @@ public static class RequestContext
     private static readonly AsyncLocal<string?> _sessionId = new();
     private static readonly AsyncLocal<IReadOnlyList<HistoryEntry>?> _history = new();
     private static readonly AsyncLocal<List<string>?> _invokedAgents = new();
+    private static readonly AsyncLocal<ChannelWriter<string>?> _streamWriter = new();
 
     public static string CurrentUserEmail
     {
@@ -56,6 +59,28 @@ public static class RequestContext
 
     /// <summary>Records that <paramref name="agentName"/> was called via A2A during this request.</summary>
     public static void RecordInvokedAgent(string agentName) => _invokedAgents.Value?.Add(agentName);
+
+    /// <summary>
+    /// Set only around a streaming chat turn (<c>ChatRoutes.StreamAsync</c>) — the
+    /// .NET analog of Python's <c>current_stream_queue</c> ContextVar
+    /// (<c>orchestrator/agent.py</c>). <c>OrchestratorTools.CallSpecialistAgent</c>
+    /// writes each specialist delta here as it streams from
+    /// <c>A2AClient.StreamAsync</c>, so the outer HTTP response can forward a live
+    /// preview of the specialist's answer (<c>event: delta</c>) while the
+    /// orchestrator's own agent run is still blocked awaiting that tool call.
+    /// <c>null</c> outside a streaming turn (blocking <c>/api/chat</c>, or any
+    /// caller that never opened a scope) — every write site must treat that as a
+    /// safe no-op, matching <see cref="RecordInvokedAgent"/>'s own null-safety.
+    /// </summary>
+    public static ChannelWriter<string>? CurrentStreamWriter => _streamWriter.Value;
+
+    /// <summary>Opens a scope for the duration of one streaming chat turn; restores the previous writer (normally none) on dispose.</summary>
+    public static IDisposable StreamScope(ChannelWriter<string> writer)
+    {
+        var previous = _streamWriter.Value;
+        _streamWriter.Value = writer;
+        return new Disposable(() => _streamWriter.Value = previous);
+    }
 
     public static IDisposable Scope(string email, string role, string sessionId, IReadOnlyList<HistoryEntry>? history = null)
     {

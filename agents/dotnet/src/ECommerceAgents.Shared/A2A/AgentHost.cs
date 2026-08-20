@@ -13,6 +13,8 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json;
 
 namespace ECommerceAgents.Shared.A2A;
@@ -23,10 +25,16 @@ namespace ECommerceAgents.Shared.A2A;
 /// <item><c>GET /</c> and <c>GET /health</c></item>
 /// <item><c>GET /.well-known/agent-card.json</c></item>
 /// <item><c>POST /message:send</c></item>
+/// <item><c>POST /message:stream</c> (issue #14 — see <see cref="RunAgentWithHistoryStreamingAsync"/>)</item>
 /// </list>
-/// This mirrors Python's <c>shared/agent_host.py</c>. The request delegate
-/// is supplied by the caller — the host knows nothing about what the
-/// agent actually does with the user message.
+/// This mirrors Python's <c>shared/agent_host.py</c>. The blocking request
+/// delegate is supplied by the caller — the host knows nothing about what
+/// the agent actually does with the user message. <c>/message:stream</c> is
+/// NOT similarly parameterized: every specialist's <c>Program.cs</c> passes
+/// the same <see cref="RunAgentWithHistoryAsync"/> delegate for
+/// <c>onMessage</c> today, so its streaming twin is wired directly rather
+/// than threading a second delegate through <see cref="Build"/> and all 5
+/// call sites for a distinction that doesn't currently exist in practice.
 /// </summary>
 public static class AgentHost
 {
@@ -90,7 +98,7 @@ public static class AgentHost
                 name,
                 description,
                 url = $"http://0.0.0.0:{port}",
-                capabilities = new[] { "message:send" },
+                capabilities = new[] { "message:send", "message:stream" },
                 transport = "a2a",
             })
         );
@@ -130,6 +138,63 @@ public static class AgentHost
             }
         });
 
+        app.MapPost("/message:stream", async (
+            [FromBody] MessagePayload payload,
+            HttpContext http,
+            ILogger<AgentHostMarker> logger,
+            IServiceProvider services
+        ) =>
+        {
+            if (string.IsNullOrWhiteSpace(payload?.Message))
+            {
+                http.Response.StatusCode = 400;
+                await http.Response.WriteAsync("message is required");
+                return;
+            }
+
+            using var span = TelemetrySetup.AgentRunSpan(name, settings.LlmModel);
+            var history = payload.History ?? new List<HistoryEntry>();
+            using var scope = RequestContext.Scope(
+                RequestContext.CurrentUserEmail,
+                RequestContext.CurrentUserRole,
+                RequestContext.CurrentSessionId,
+                history
+            );
+
+            http.Response.Headers.ContentType = "text/event-stream";
+            http.Response.Headers.CacheControl = "no-cache";
+            http.Response.Headers["X-Accel-Buffering"] = "no";
+
+            try
+            {
+                await foreach (var chunk in RunAgentWithHistoryStreamingAsync(services, payload.Message, http.RequestAborted))
+                {
+                    // Same per-line "data:" framing as ChatRoutes.StreamAsync, for the
+                    // same reason: a chunk that is itself a lone "\n" must not be sent
+                    // as a raw embedded newline, or it prematurely closes the SSE event.
+                    var frame = new StringBuilder();
+                    foreach (var line in chunk.Split('\n'))
+                    {
+                        frame.Append("data: ").Append(line).Append('\n');
+                    }
+                    frame.Append('\n');
+                    await http.Response.WriteAsync(frame.ToString(), Encoding.UTF8);
+                    await http.Response.Body.FlushAsync();
+                }
+                await http.Response.WriteAsync("data: [DONE]\n\n", Encoding.UTF8);
+                await http.Response.Body.FlushAsync();
+            }
+            catch (Exception ex)
+            {
+                logger.LogException(ex, "agent.stream_handler_failure service={Service}", name);
+                span?.SetTag("error", true);
+                span?.SetTag("error.type", ex.GetType().Name);
+                // Headers are already sent by this point (text/event-stream was set
+                // before the first await) — a status-code change isn't possible; the
+                // client instead sees the stream end without a [DONE] marker.
+            }
+        });
+
         return app;
     }
 
@@ -159,6 +224,42 @@ public static class AgentHost
 
         var response = await agent.RunAsync(messages);
         return response.Text;
+    }
+
+    /// <summary>
+    /// Streaming twin of <see cref="RunAgentWithHistoryAsync"/>, backing
+    /// <c>POST /message:stream</c> (issue #14). Yields non-empty text deltas
+    /// only — tool-call-only updates (<c>AgentResponseUpdate.Text</c> empty,
+    /// content carried in <c>Contents</c> instead) are skipped, matching
+    /// <c>ChatRoutes.StreamAsync</c>'s own filter; a specialist has no step
+    /// recorder to surface those through yet (tracked separately as #16).
+    /// </summary>
+    public static async IAsyncEnumerable<string> RunAgentWithHistoryStreamingAsync(
+        IServiceProvider services,
+        string message,
+        [EnumeratorCancellation] CancellationToken ct = default
+    )
+    {
+        var agent = services.GetRequiredService<AIAgent>();
+        var pool = services.GetRequiredService<DatabasePool>();
+
+        var history = RequestContext.CurrentHistory.Count > 0
+            ? RequestContext.CurrentHistory.ToList()
+            : await HistoryRehydrator.RehydrateAsync(pool, RequestContext.CurrentSessionId) ?? new List<HistoryEntry>();
+
+        var messages = history
+            .Where(h => h.Role is "user" or "assistant")
+            .Select(h => new ChatMessage(h.Role == "assistant" ? ChatRole.Assistant : ChatRole.User, h.Content))
+            .ToList();
+        messages.Add(new ChatMessage(ChatRole.User, message));
+
+        await foreach (var update in agent.RunStreamingAsync(messages, cancellationToken: ct))
+        {
+            if (!string.IsNullOrEmpty(update.Text))
+            {
+                yield return update.Text;
+            }
+        }
     }
 }
 

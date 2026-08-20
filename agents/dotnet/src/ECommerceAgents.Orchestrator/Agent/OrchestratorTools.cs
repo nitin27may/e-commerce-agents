@@ -43,6 +43,23 @@ public sealed class OrchestratorTools(A2AClient client, AgentSettings settings, 
         // a RequestContext.Scope, so this is safe outside a chat request too.
         RequestContext.RecordInvokedAgent(agentName);
 
-        return await _client.SendAsync(agentName, url, message, RequestContext.CurrentHistory);
+        // A stream writer is only present inside ChatRoutes.StreamAsync (issue
+        // #14) — the .NET analog of Python's call_specialist_agent forwarding
+        // into current_stream_queue. Outside a streaming turn (blocking
+        // /api/chat, or this tool exercised directly in a test) this is null and
+        // we fall back to the plain blocking call, same as before this change.
+        var streamWriter = RequestContext.CurrentStreamWriter;
+        if (streamWriter is null)
+        {
+            return await _client.SendAsync(agentName, url, message, RequestContext.CurrentHistory);
+        }
+
+        var full = new System.Text.StringBuilder();
+        await foreach (var delta in _client.StreamAsync(agentName, url, message, RequestContext.CurrentHistory))
+        {
+            full.Append(delta);
+            await streamWriter.WriteAsync(delta);
+        }
+        return full.ToString();
     }
 }
