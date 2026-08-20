@@ -471,6 +471,15 @@ export default function ChatPage() {
 
     const assistantId = crypto.randomUUID();
     let assistantCreated = false;
+    // Set once the orchestrator's own final text (onChunk) starts arriving
+    // for this turn. Before that, any content shown is a specialist's live
+    // `delta` preview (onDeltaChunk) — the first real-text chunk *replaces*
+    // it rather than appending, since the backend no longer persists the
+    // preview into the saved message either (Phase 8.1): the specialist's
+    // preview and the orchestrator's own final answer restate the same
+    // content in independently-generated wording, so showing both was a
+    // visible duplication, not two genuinely different things.
+    let receivedFinalText = false;
     // Snapshot now — orchestrationMode may change before this turn resolves
     // (e.g. the user picks a different mode for their next message while
     // this one is still streaming), but this message ran through whatever
@@ -487,6 +496,8 @@ export default function ChatPage() {
         trimmed,
         activeConversationId ?? undefined,
         (chunk) => {
+          const isFirstFinalChunk = !receivedFinalText;
+          receivedFinalText = true;
           if (!assistantCreated) {
             assistantCreated = true;
             setMessages((prev) => [
@@ -503,7 +514,7 @@ export default function ChatPage() {
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === assistantId
-                  ? { ...m, content: m.content + chunk }
+                  ? { ...m, content: isFirstFinalChunk ? chunk : m.content + chunk }
                   : m,
               ),
             );
@@ -511,6 +522,34 @@ export default function ChatPage() {
         },
         controller.signal,
         {
+          onDeltaChunk: (chunk) => {
+            // Guard only — MAF's own execution order means a specialist's
+            // delta block completes and closes before the orchestrator's
+            // final block starts (verified: they never interleave), so
+            // this should never actually fire once receivedFinalText is
+            // true. If it somehow did, dropping it is strictly safer than
+            // re-appending a stale preview onto the real answer.
+            if (receivedFinalText) return;
+            if (!assistantCreated) {
+              assistantCreated = true;
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: assistantId,
+                  role: "assistant",
+                  content: chunk,
+                  streaming: true,
+                  mode: messageMode,
+                },
+              ]);
+            } else {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId ? { ...m, content: m.content + chunk } : m,
+                ),
+              );
+            }
+          },
           onStep: (step) => {
             // Update thinking label with the active agent
             const agent = step.agent ?? "orchestrator";

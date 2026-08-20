@@ -7,8 +7,10 @@ import { api } from "./api";
  * orchestration mode emits — see `orchestrator/routes/chat.py`) to
  * `onOrchestrationEvent`, not `onChunk` — falling through to `onChunk`
  * would render their raw JSON payload as if it were part of the assistant's
- * visible reply. `step`/`metadata`/plain-text/`delta` behavior must stay
- * exactly as before.
+ * visible reply. `step`/`metadata`/plain-text behavior must stay exactly as
+ * before. `delta` frames (a specialist's own live-streamed preview) route
+ * to their own `onDeltaChunk` callback, not `onChunk` (Phase 8.1) — see the
+ * second test below.
  */
 
 function fakeStreamResponse(rawBody: string) {
@@ -84,7 +86,7 @@ describe("chatStream SSE parsing", () => {
     expect(metadata).toEqual({ conversation_id: "c1", agents_involved: ["orchestrator", "math"] });
   });
 
-  it("still treats a `delta` frame as display text", async () => {
+  it("routes a `delta` frame to onDeltaChunk, not onChunk (Phase 8.1 — no longer double-persisted)", async () => {
     const raw = ["event: delta\ndata: specialist chunk", "", "data: [DONE]", ""].join("\n");
 
     vi.stubGlobal(
@@ -93,8 +95,17 @@ describe("chatStream SSE parsing", () => {
     );
 
     const chunks: string[] = [];
-    await api.chatStream("hi", undefined, (chunk) => chunks.push(chunk));
+    const deltaChunks: string[] = [];
+    await api.chatStream("hi", undefined, (chunk) => chunks.push(chunk), undefined, {
+      onDeltaChunk: (chunk) => deltaChunks.push(chunk),
+    });
 
-    expect(chunks).toEqual(["specialist chunk"]);
+    // A `delta` frame is a specialist's live preview, not the final answer —
+    // it must never reach the same buffer onChunk writes to (that's what
+    // caused every tool-mode answer that called a specialist to render
+    // twice, in independently-worded restatements, with a duplicated card
+    // fence). See orchestrator/routes/chat.py's streaming consumer loop.
+    expect(chunks).toEqual([]);
+    expect(deltaChunks).toEqual(["specialist chunk"]);
   });
 });

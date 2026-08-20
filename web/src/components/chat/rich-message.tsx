@@ -187,14 +187,25 @@ function parseCodeBlocks(content: string): Segment[] | null {
         if (validated) {
           segments.push({ type: kind, text: "", data: validated });
         } else {
-          // Schema rejected the payload — render the original fenced
-          // block as plain text so the user still sees something
-          // rather than a missing card.
-          segments.push({ type: "text", text: match[0] });
+          // Schema rejected the payload — drop the fence rather than
+          // showing the raw JSON, matching the "products" array branch's
+          // existing silent-drop convention above (an item that fails
+          // validateCard there is dropped too, not shown raw). The
+          // surrounding conversational text is unaffected — it was
+          // already captured as its own segment by the lastIndex
+          // bookkeeping around this match. Logged so a bad LLM response
+          // is still debuggable without being user-visible.
+          if (process.env.NODE_ENV !== "production") {
+            console.warn(`[rich-message] dropped a \`${kind}\` fence that failed schema validation`, data);
+          }
         }
       }
-    } catch {
-      segments.push({ type: "text", text: match[0] });
+    } catch (err) {
+      // Malformed JSON inside a recognized fence tag — same treatment:
+      // drop it, don't show the raw (broken) JSON to the user.
+      if (process.env.NODE_ENV !== "production") {
+        console.warn(`[rich-message] dropped a \`${match[1]}\` fence with malformed JSON`, err);
+      }
     }
     lastIndex = match.index + match[0].length;
   }
@@ -555,9 +566,36 @@ function tryParseProductParagraph(
   };
 }
 
+// ─── Guard: strip any JSON-shaped fence this parser doesn't know about ──
+//
+// parseCodeBlocks only recognizes the 5 known card tags. Every real
+// backend-emitted fence tag matches one of those today (verified against
+// every prompt YAML that emits a fence), so this is defense against a
+// tag this parser was never taught — an LLM hallucinating a wrong tag
+// name, or a future card type added to the backend before this file is
+// updated for it — not a currently-reachable path. Without this, an
+// unrecognized tag falls through untouched to ReactMarkdown, which
+// treats any ``` fence as a generic code block and renders the raw JSON
+// verbatim: exactly the "never show raw JSON" failure this component
+// exists to prevent for the 5 known tags.
+const KNOWN_CARD_TAGS = new Set(["products", "product", "order", "checkout", "return"]);
+const ANY_FENCE_RE = /```([a-zA-Z0-9_-]*)\s*([[{][\s\S]*?)```/g;
+
+function stripUnrecognizedJsonFences(content: string): string {
+  return content.replace(ANY_FENCE_RE, (full, tag: string) => {
+    if (KNOWN_CARD_TAGS.has(tag)) return full; // parseCodeBlocks handles these
+    if (process.env.NODE_ENV !== "production") {
+      console.warn(`[rich-message] dropped an unrecognized \`${tag || "(untagged)"}\` JSON-shaped fence`);
+    }
+    return "";
+  });
+}
+
 // ─── Main Parser ──────────────────────────────────────────────────────
 
-export function parseContent(content: string): Segment[] {
+export function parseContent(rawContent: string): Segment[] {
+  const content = stripUnrecognizedJsonFences(rawContent);
+
   // 1. Fenced code blocks (highest priority, most reliable)
   const codeBlockResult = parseCodeBlocks(content);
   if (codeBlockResult) return codeBlockResult;

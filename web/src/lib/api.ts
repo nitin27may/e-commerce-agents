@@ -309,6 +309,21 @@ class ApiClient {
        */
       onGrounding?: (report: GroundingReport) => void;
       /**
+       * Fired for `event: delta` frames — a specialist's own live-streamed
+       * text, forwarded in real time during a "tool" mode turn's
+       * `call_specialist_agent` tool call, so the user sees a continuous
+       * stream instead of silence during the tool-call gap. This is a
+       * *preview*, not the final answer: the orchestrator's own separately-
+       * composed final text (delivered via `onChunk`) restates the same
+       * content afterward, and the backend never persists delta text into
+       * the saved message (Phase 8.1) — kept as a distinct callback rather
+       * than folded into `onChunk` so callers can render it as a
+       * replaceable preview instead of accumulating it into the same
+       * buffer the final answer also writes to, which is what caused the
+       * visible duplication this callback's separation fixes.
+       */
+      onDeltaChunk?: (text: string) => void;
+      /**
        * Orchestration mode to run this turn through — a `name` from
        * `GET /api/orchestration/modes`. Omitted (or `undefined`) lets the
        * backend fall back to `settings.ORCHESTRATION_MODE` (default `"tool"`).
@@ -429,10 +444,17 @@ class ApiClient {
             continue;
           }
 
-          // "" (plain `data:` frame) and "delta" (specialist streamed token)
-          // are the only event types carrying real display text.
-          if (currentEventType === "" || currentEventType === "delta") {
+          // "" (plain `data:` frame) is the orchestrator's own final text —
+          // the persisted answer. "delta" (a specialist's live-streamed
+          // token) is a preview only, routed to its own callback so callers
+          // can treat it as replaceable rather than accumulating it into
+          // the same buffer as the final answer (see onDeltaChunk's doc).
+          if (currentEventType === "") {
             onChunk(data);
+            continue;
+          }
+          if (currentEventType === "delta") {
+            options.onDeltaChunk?.(data);
             continue;
           }
 

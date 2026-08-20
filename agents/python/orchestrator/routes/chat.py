@@ -522,12 +522,21 @@ async def chat_stream(
                             yield f"data: {chunk}\n\n"
 
                 elif item[0] == "delta":
-                    # Specialist token — forward immediately to the browser.
-                    # These appear during the "tool call gap" so the user sees
-                    # a continuous stream rather than silence.
+                    # Specialist token — forward immediately to the browser as
+                    # a live preview. These appear during the "tool call gap"
+                    # so the user sees a continuous stream rather than
+                    # silence. Deliberately NOT appended to full_response
+                    # (Phase 8.1): the orchestrator's own "text" stream,
+                    # produced once call_specialist_agent's tool call
+                    # resolves, restates the same content — orchestrator.yaml
+                    # explicitly instructs it to re-emit the specialist's
+                    # card fence verbatim on top of its own framing prose —
+                    # so persisting both here duplicated every tool-mode
+                    # answer. The client mirrors this: it replaces, not
+                    # appends to, the visible preview once "text" starts
+                    # arriving (see web/src/lib/api.ts's onDeltaChunk).
                     _agent_src: str = item[1]
                     delta_chunk: str = item[2]
-                    full_response.append(delta_chunk)
                     yield f"event: delta\ndata: {delta_chunk}\n\n"
 
                 elif item[0] == "frame":

@@ -15,17 +15,26 @@ import { OrderStatusBadge } from "@/components/status-badge";
 import { formatPrice, formatDate } from "@/lib/format";
 
 interface OrderItem {
-  name: string;
-  quantity: number;
-  unit_price: number;
+  name?: string;
+  quantity?: number;
+  unit_price?: number;
   total?: number;
   category?: string;
   brand?: string;
 }
 
 interface TimelineEvent {
-  status: string;
-  date: string;
+  label?: string;
+  status?: string;
+  date?: string;
+}
+
+interface ShippingAddressObj {
+  street?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  country?: string;
 }
 
 interface OrderData {
@@ -38,13 +47,20 @@ interface OrderData {
   items?: OrderItem[];
   tracking?: string;
   carrier?: string;
-  shipping_address?: string;
+  shipping_address?: string | ShippingAddressObj;
   timeline?: TimelineEvent[];
 }
 
 interface ChatOrderCardProps {
   data: OrderData;
   onAction?: (message: string) => void;
+}
+
+function formatAddress(addr: OrderData["shipping_address"]): string | null {
+  if (!addr) return null;
+  if (typeof addr === "string") return addr;
+  const parts = [addr.street, addr.city, addr.state, addr.zip, addr.country].filter(Boolean);
+  return parts.length ? parts.join(", ") : null;
 }
 
 export function ChatOrderCard({ data, onAction }: ChatOrderCardProps) {
@@ -145,9 +161,9 @@ export function ChatOrderCard({ data, onAction }: ChatOrderCardProps) {
                     {item.quantity}
                   </td>
                   <td className="px-4 py-2 text-right text-foreground font-medium whitespace-nowrap">
-                    {formatPrice(
-                      item.total ?? item.unit_price * item.quantity
-                    )}
+                    {item.total != null || (item.unit_price != null && item.quantity != null)
+                      ? formatPrice(item.total ?? item.unit_price! * item.quantity!)
+                      : null}
                   </td>
                 </tr>
               ))}
@@ -192,10 +208,10 @@ export function ChatOrderCard({ data, onAction }: ChatOrderCardProps) {
         )}
 
         {/* Address */}
-        {data.shipping_address && (
+        {formatAddress(data.shipping_address) && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <MapPin className="size-3.5 shrink-0" />
-            <span className="line-clamp-1">{data.shipping_address}</span>
+            <span className="line-clamp-1">{formatAddress(data.shipping_address)}</span>
           </div>
         )}
 
@@ -206,8 +222,8 @@ export function ChatOrderCard({ data, onAction }: ChatOrderCardProps) {
             {timeline.map((event, i) => (
               <span key={i} className="flex items-center gap-1">
                 {i > 0 && <span className="text-muted-foreground">&rarr;</span>}
-                <span className="text-muted-foreground">{event.status}</span>
-                <span>({formatDate(event.date)})</span>
+                <span className="text-muted-foreground">{event.status ?? event.label}</span>
+                {event.date && <span>({formatDate(event.date)})</span>}
               </span>
             ))}
           </div>
