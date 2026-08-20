@@ -8,6 +8,13 @@ This folder contains the full technical documentation for E-Commerce Agents.
 
 ## Reading order by audience
 
+### "I don't know what an agent is yet"
+
+1. [Concepts](concepts/) — 14 pages, What/Why/When/How, starting from "what is an agent" and
+   building up to production concerns. No prior AI/agent knowledge assumed.
+2. [Tutorials](../tutorials/) — build a tiny version of each concept yourself, chapter by chapter.
+3. Then come back here — the rest of this page assumes the vocabulary those two build.
+
 ### "I just want to run it"
 
 1. [Project README → Quick Start](../README.md#quick-start)
@@ -40,6 +47,7 @@ This folder contains the full technical documentation for E-Commerce Agents.
 
 | Document | What it covers |
 |----------|---------------|
+| [concepts/](concepts/) | Foundations layer for readers new to AI/agents — 14 pages, What/Why/When/How, each pointing at the live code |
 | [architecture.md](architecture.md) | System overview, agent architecture, A2A protocol, auth flow, data flow, technology decisions |
 | [adding-an-agent.md](adding-an-agent.md) | Step-by-step checklist to add a new specialist agent |
 | [api-reference.md](api-reference.md) | All 20 REST endpoints (auth, chat, products, orders, admin, marketplace) |

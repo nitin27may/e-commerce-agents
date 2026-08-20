@@ -24,6 +24,7 @@ Companion demo repo for the AI article series on [nitinksingh.com](https://nitin
 
 | I want to... | Go here |
 |---|---|
+| Learn what an agent even is — new to AI/agents | [docs/concepts/](docs/concepts/) — start at page 01 |
 | Run the Python backend locally | [Quick Start → Python](#run-the-python-backend) below |
 | Run the .NET backend locally | [Quick Start → .NET](#run-the-net-backend) below |
 | Understand how the agents work / add a new one | [Architecture](docs/architecture.md) · [Adding an Agent](docs/adding-an-agent.md) |
