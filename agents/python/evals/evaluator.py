@@ -1,7 +1,13 @@
 """Agent evaluation framework — scores agent responses on groundedness, correctness, and completeness.
 
-Loads golden datasets, runs each input through the agent's tool-calling loop,
-and produces a scored summary report.
+Loads golden datasets, runs each input through the real production execution
+path (``evals/harness.py::ProductionRunner``), and produces a scored summary
+report.
+
+Historical note: this used to hand-roll its own OpenAI tool-calling loop and
+call raw undecorated tool functions directly, bypassing every guardrail/HITL/
+grounding middleware a real request goes through. ``ProductionRunner`` fixed
+that — see its module docstring.
 """
 
 from __future__ import annotations
@@ -13,7 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from agent_framework import Agent
+from evals.harness import ProductionRunner
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +53,8 @@ class EvalResult:
     latency_ms: int = 0
     tokens_in: int = 0
     tokens_out: int = 0
+    grounding: dict[str, Any] | None = None
+    judge_reasoning: str | None = None
     error: str | None = None
     passed: bool = False
 
@@ -99,6 +107,8 @@ class EvalSummary:
                     "latency_ms": r.latency_ms,
                     "tokens_in": r.tokens_in,
                     "tokens_out": r.tokens_out,
+                    "grounding": r.grounding,
+                    "judge_reasoning": r.judge_reasoning,
                     "error": r.error,
                     "passed": r.passed,
                 }
@@ -137,30 +147,40 @@ def load_dataset(path: str | Path) -> list[EvalCase]:
 
 
 class AgentEvaluator:
-    """Runs evaluation cases against a MAF Agent and scores results.
+    """Runs evaluation cases against an agent (via ``ProductionRunner``) and scores results.
 
     Scoring dimensions:
-      - Groundedness (0-1): Did the agent call tools instead of fabricating answers?
-      - Correctness (0-1): Did it call the right tools for the query?
-      - Completeness (0-1): Does the response contain all expected fields?
+      - Groundedness (0-1): does the response's claims check out against the
+        database (``shared/grounding/verifier.py``), not just "was a tool called".
+      - Correctness (0-1): did it call the right tools / route to the right specialist?
+      - Completeness (0-1): does the response cover what was expected? Keyword-alias
+        matching by default (fast, free, deterministic — the smoke suite's mode);
+        set ``use_llm_judge=True`` for a real judge call (the full suite's mode).
     """
 
     # Approximate token pricing for cost estimation (GPT-4.1)
     COST_PER_1K_INPUT = 0.002
     COST_PER_1K_OUTPUT = 0.008
 
-    def __init__(self, agent: Agent, agent_name: str, pass_threshold: float = 0.7) -> None:
-        self.agent = agent
+    def __init__(self, agent_name: str, pass_threshold: float = 0.7, *, use_llm_judge: bool = False) -> None:
         self.agent_name = agent_name
         self.pass_threshold = pass_threshold
-        self._tool_calls: list[str] = []
-        self._routes: list[str] = []
+        self.use_llm_judge = use_llm_judge
+        self._runner = ProductionRunner(agent_name)
 
     async def run_once(self, user_input: str) -> dict[str, Any]:
-        """Run a single input through the agent's tool loop (used by the safety suite)."""
-        self._tool_calls = []
-        self._routes = []
-        return await self._run_agent(user_input)
+        """Run a single input through the production path (used by the safety suite)."""
+        outcome = await self._runner.run(user_input)
+        return {
+            "text": outcome.text,
+            "tokens_in": outcome.tokens_in,
+            "tokens_out": outcome.tokens_out,
+            "tools_called": outcome.tools_called,
+            "routes": outcome.routes,
+            "grounding": outcome.grounding,
+            "guardrail_flags": outcome.guardrail_flags,
+            "error": outcome.error,
+        }
 
     async def evaluate_dataset(self, dataset_path: str | Path) -> EvalSummary:
         """Run all cases in a dataset and return aggregate scores."""
@@ -171,8 +191,9 @@ class AgentEvaluator:
             total_cases=len(cases),
         )
 
-        for case in cases:
-            result = await self._evaluate_case(case)
+        for i, case in enumerate(cases):
+            case_id = f"{self.agent_name}:{Path(dataset_path).stem}:{i}"
+            result = await self._evaluate_case(case, case_id)
             summary.results.append(result)
 
             if result.passed:
@@ -204,47 +225,58 @@ class AgentEvaluator:
 
         return summary
 
-    async def _evaluate_case(self, case: EvalCase) -> EvalResult:
+    async def _evaluate_case(self, case: EvalCase, case_id: str) -> EvalResult:
         """Evaluate a single test case against the agent."""
         result = EvalResult(input=case.input)
-        self._tool_calls = []
-        self._routes = []
 
         start = time.monotonic()
-        try:
-            response = await self._run_agent(case.input)
-            result.latency_ms = int((time.monotonic() - start) * 1000)
-        except Exception as e:
-            result.latency_ms = int((time.monotonic() - start) * 1000)
-            result.error = str(e)
-            logger.error("Eval case failed: %s — %s", case.input[:60], e)
+        outcome = await self._runner.run(case.input)
+        result.latency_ms = int((time.monotonic() - start) * 1000)
+
+        if outcome.error:
+            result.error = outcome.error
+            logger.error("Eval case failed: %s — %s", case.input[:60], outcome.error)
             return result
 
-        # Extract tool calls and response text from the agent run
-        tools_called = self._tool_calls
-        response_text = response.get("text", "") if isinstance(response, dict) else str(response)
+        response_text = outcome.text
+        result.tools_called = outcome.tools_called
+        result.tokens_in = outcome.tokens_in
+        result.tokens_out = outcome.tokens_out
+        result.grounding = outcome.grounding
 
-        result.tools_called = tools_called
-        result.tokens_in = response.get("tokens_in", 0) if isinstance(response, dict) else 0
-        result.tokens_out = response.get("tokens_out", 0) if isinstance(response, dict) else 0
+        # Groundedness: reuse the report GroundingVerificationMiddleware
+        # already computed during the production run when available (free);
+        # fall back to a from-scratch DB check otherwise (e.g. GROUNDING_MODE=off).
+        if outcome.grounding is not None:
+            from evals.scorers.db_groundedness import score_from_report
 
-        # Score groundedness: did the agent call at least one tool?
-        result.groundedness_score = self._score_groundedness(tools_called, case.criteria)
+            result.groundedness_score = score_from_report(outcome.grounding)
+        else:
+            result.groundedness_score = await self._score_groundedness_fallback(response_text, case.criteria)
 
-        # Score correctness: did it call the expected tools?
-        result.correctness_score = self._score_correctness(tools_called, case.expected_tools)
+        # Correctness: did it call the expected tools?
+        result.correctness_score = self._score_correctness(outcome.tools_called, case.expected_tools)
 
         # Routing override: for orchestrator cases the meaningful signal is
         # whether it handed off to the *correct* specialist, not merely that it
         # invoked the routing tool.
         if case.expected_route:
-            result.route_called = self._routes[0] if self._routes else None
-            result.correctness_score = self._score_routing(self._routes, case.expected_route)
+            result.route_called = outcome.routes[0] if outcome.routes else None
+            result.correctness_score = self._score_routing(outcome.routes, case.expected_route)
 
-        # Score completeness: are expected fields present in the response?
-        result.completeness_score, result.fields_found, result.fields_missing = (
-            self._score_completeness(response_text, case.expected_fields)
-        )
+        # Completeness
+        if self.use_llm_judge:
+            from evals.scorers.llm_judge import judge_response
+
+            verdict = await judge_response(case_id, case.input, response_text, case.expected_fields)
+            result.completeness_score = verdict.score
+            result.judge_reasoning = verdict.reasoning
+            result.fields_found = list(case.expected_fields) if verdict.score >= 1.0 else []
+            result.fields_missing = [] if verdict.score >= 1.0 else list(case.expected_fields)
+        else:
+            result.completeness_score, result.fields_found, result.fields_missing = (
+                self._score_completeness_keyword(response_text, case.expected_fields)
+            )
 
         # Weighted overall score
         result.overall_score = (
@@ -256,128 +288,28 @@ class AgentEvaluator:
 
         return result
 
-    async def _run_agent(self, user_input: str) -> dict[str, Any]:
-        """Run the agent through a chat-completions tool-call loop.
-
-        The evaluator keeps its own OpenAI chat-completions loop here —
-        rather than calling ``agent.run()`` — so it can observe each
-        tool call and record it in the step trace. The production host
-        (``shared.agent_host``) uses MAF's native path.
-        """
-        import openai
-
-        from shared.config import settings
-
-        # Pull instructions + tools from the MAF Agent's default options.
-        opts = getattr(self.agent, "default_options", {}) or {}
-        system_prompt = opts.get("instructions") or ""
-        tools = list(opts.get("tools") or [])
-
-        # Build OpenAI client matching the production provider.
-        if settings.LLM_PROVIDER == "azure":
-            client = openai.AsyncAzureOpenAI(
-                azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
-                api_key=settings.AZURE_OPENAI_KEY,
-                api_version=settings.AZURE_OPENAI_API_VERSION,
-            )
-            model = settings.AZURE_OPENAI_DEPLOYMENT
-        else:
-            client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-            model = settings.LLM_MODEL
-
-        # Build OpenAI tool defs from MAF FunctionTool objects.
-        tool_defs: list[dict[str, Any]] = []
-        tool_map: dict[str, Any] = {}
-        for t in tools:
-            name = getattr(t, "name", None) or getattr(t, "__name__", str(t))
-            desc = getattr(t, "description", None) or getattr(t, "__doc__", "") or ""
-            try:
-                schema = t.to_json_schema_spec()
-                func_schema = schema.get("function", schema)
-                params = func_schema.get("parameters", {"type": "object", "properties": {}})
-            except Exception:
-                params = {"type": "object", "properties": {}}
-            tool_defs.append({
-                "type": "function",
-                "function": {"name": name, "description": desc[:1024], "parameters": params},
-            })
-            tool_map[name] = t
-
-        messages: list[dict[str, Any]] = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_input},
-        ]
-
-        response_text = ""
-        tokens_in = 0
-        tokens_out = 0
-
-        # Tool-calling loop — eval harness owns this to capture each call
-        for _ in range(5):
-            kwargs: dict[str, Any] = {"model": model, "messages": messages, "temperature": 0.1}
-            if tool_defs:
-                kwargs["tools"] = tool_defs
-                kwargs["tool_choice"] = "auto"
-
-            response = await client.chat.completions.create(**kwargs)
-            if getattr(response, "usage", None):
-                tokens_in += getattr(response.usage, "prompt_tokens", 0) or 0
-                tokens_out += getattr(response.usage, "completion_tokens", 0) or 0
-
-            choice = response.choices[0]
-            msg = choice.message
-
-            if choice.finish_reason == "tool_calls" and msg.tool_calls:
-                messages.append(msg.model_dump())
-                for tc in msg.tool_calls:
-                    fn_name = tc.function.name
-                    self._tool_calls.append(fn_name)
-                    fn_args = json.loads(tc.function.arguments) if tc.function.arguments else {}
-                    if fn_name == "call_specialist_agent":
-                        route = fn_args.get("agent_name")
-                        if route:
-                            self._routes.append(route)
-                    tool_fn = tool_map.get(fn_name)
-                    if tool_fn:
-                        try:
-                            raw_fn = getattr(tool_fn, "func", tool_fn)
-                            if callable(raw_fn):
-                                result = await raw_fn(**fn_args)
-                            else:
-                                result = await tool_fn.invoke(**fn_args)
-                            result_str = json.dumps(result, default=str) if not isinstance(result, str) else result
-                        except Exception as e:
-                            result_str = json.dumps({"error": str(e)})
-                    else:
-                        result_str = json.dumps({"error": f"Unknown tool: {fn_name}"})
-                    messages.append({"role": "tool", "tool_call_id": tc.id, "content": result_str})
-                continue
-
-            response_text = msg.content or ""
-            return {"text": response_text, "tokens_in": tokens_in, "tokens_out": tokens_out}
-
-        return {"text": response_text or "(max tool-call iterations reached)", "tokens_in": tokens_in, "tokens_out": tokens_out}
-
     @staticmethod
-    def _score_groundedness(tools_called: list[str], criteria: dict[str, bool]) -> float:
-        """Score whether the agent grounded its response in tool calls.
-
-        Returns 1.0 if tools were called when expected, 0.0 if the agent
-        hallucinated a response without calling any tools.
+    async def _score_groundedness_fallback(response_text: str, criteria: dict[str, bool]) -> float:
+        """No production grounding report available (GROUNDING_MODE=off) —
+        try a from-scratch DB check; if no DB pool is initialized either,
+        fall back to the old "was grounding expected at all" heuristic
+        rather than crashing a suite that never asked for DB access.
         """
-        expects_tool = criteria.get("tool_called", True)
         expects_grounded = criteria.get("grounded", True)
-
         if not expects_grounded:
-            return 1.0  # No grounding requirement
+            return 1.0
 
-        if expects_tool and not tools_called:
-            return 0.0  # Expected a tool call but got none
+        try:
+            from shared.db import get_pool
 
-        if expects_tool and tools_called:
-            return 1.0  # Tool was called as expected
+            pool = get_pool()
+        except RuntimeError:
+            pool = None
 
-        return 0.5  # Ambiguous case
+        from evals.scorers.db_groundedness import score_groundedness
+
+        score, _ = await score_groundedness(response_text, pool)
+        return score
 
     @staticmethod
     def _score_correctness(tools_called: list[str], expected_tools: list[str]) -> float:
@@ -400,13 +332,13 @@ class AgentEvaluator:
         return 1.0 if expected_route in routes else 0.5
 
     @staticmethod
-    def _score_completeness(
+    def _score_completeness_keyword(
         response_text: str, expected_fields: list[str]
     ) -> tuple[float, list[str], list[str]]:
-        """Score whether the response contains expected fields.
+        """Fast, free, deterministic completeness check via field-name aliases.
 
-        Checks for field names and related terms in the response text.
-        Returns (score, fields_found, fields_missing).
+        Coarser than the LLM judge (a bare "$" counts as satisfying a "price"
+        field), but zero-cost and replay-compatible — the smoke suite's mode.
         """
         if not expected_fields:
             return 1.0, [], []
@@ -415,7 +347,6 @@ class AgentEvaluator:
         found: list[str] = []
         missing: list[str] = []
 
-        # Field aliases for flexible matching
         field_aliases: dict[str, list[str]] = {
             "name": ["name", "product", "title"],
             "price": ["price", "$", "cost", "usd"],
@@ -480,6 +411,8 @@ def format_summary_report(summary: EvalSummary, verbose: bool = False) -> str:
             lines.append(f"    Tools called: {', '.join(r.tools_called) or '(none)'}")
             if r.fields_missing:
                 lines.append(f"    Missing fields: {', '.join(r.fields_missing)}")
+            if r.judge_reasoning:
+                lines.append(f"    Judge: {r.judge_reasoning}")
             if r.error:
                 lines.append(f"    Error: {r.error}")
             lines.append(f"    Latency: {r.latency_ms}ms")

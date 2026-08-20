@@ -68,13 +68,19 @@ async def _run_agent_native(
 
     ``metadata_box``, if given, is filled in place with the response's
     ``additional_properties`` (e.g. the grounding report
-    ``GroundingVerificationMiddleware`` attaches) — a plain ``str`` return
-    can't carry that side-channel data.
+    ``GroundingVerificationMiddleware`` attaches) plus its ``usage_details``
+    under the reserved ``_maf_usage`` key (``UsageDetails`` is a TypedDict
+    with ``input_token_count``/``output_token_count`` — see
+    ``evals/harness.py::ProductionRunner`` for the first real consumer). A
+    plain ``str`` return can't carry that side-channel data.
     """
     messages = _history_as_maf_messages(history, user_message)
     response = await agent.run(messages, options=_run_options())
     if metadata_box is not None:
         metadata_box.update(getattr(response, "additional_properties", None) or {})
+        usage = getattr(response, "usage_details", None)
+        if usage:
+            metadata_box["_maf_usage"] = dict(usage)
     return response.text or ""
 
 
@@ -104,6 +110,9 @@ async def _run_agent_native_stream(
     if metadata_box is not None and hasattr(stream, "get_final_response"):
         final = await stream.get_final_response()
         metadata_box.update(getattr(final, "additional_properties", None) or {})
+        usage = getattr(final, "usage_details", None)
+        if usage:
+            metadata_box["_maf_usage"] = dict(usage)
 
 
 # ─────────────────────── Session rehydration ──────────────────────

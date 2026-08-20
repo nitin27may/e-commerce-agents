@@ -1,12 +1,23 @@
 """CLI entry point for running agent evaluations.
 
 Usage:
-    # Quality suite (golden datasets)
+    # Quality suite (golden datasets) — fast/free by default (keyword completeness)
     python -m evals.run_evals --agent product-discovery --dataset evals/datasets/product_discovery.json
     python -m evals.run_evals --agent orchestrator --dataset evals/datasets/orchestrator_routing.json
 
+    # Full suite: real LLM-judge completeness scoring
+    python -m evals.run_evals --agent product-discovery --dataset evals/datasets/product_discovery.json --use-llm-judge
+
     # Safety / red-team suite (defaults to evals/datasets/red_team.json)
     python -m evals.run_evals --suite safety --pass-threshold 0.8 --verbose
+
+    # Compare against a stored baseline; fail if any suite regresses more than --max-regression
+    python -m evals.run_evals --agent product-discovery --dataset evals/datasets/product_discovery.json \\
+        --baseline evals/baselines/product_discovery.json --max-regression 0.05
+
+    # Update the stored baseline after a deliberate, reviewed change
+    python -m evals.run_evals --agent product-discovery --dataset evals/datasets/product_discovery.json \\
+        --update-baseline evals/baselines/product_discovery.json
 """
 
 from __future__ import annotations
@@ -18,39 +29,11 @@ import logging
 import sys
 from pathlib import Path
 
+from evals.baselines import check_regression, load_baseline, write_baseline
 from evals.evaluator import AgentEvaluator, format_summary_report
+from evals.harness import AGENT_FACTORIES
 
 logger = logging.getLogger(__name__)
-
-# Agent factory registry — maps CLI agent names to their creation functions
-AGENT_FACTORIES: dict[str, tuple[str, str]] = {
-    "product-discovery": ("product_discovery.agent", "create_product_discovery_agent"),
-    "order-management": ("order_management.agent", "create_order_management_agent"),
-    "pricing-promotions": ("pricing_promotions.agent", "create_pricing_promotions_agent"),
-    "review-sentiment": ("review_sentiment.agent", "create_review_sentiment_agent"),
-    "inventory-fulfillment": ("inventory_fulfillment.agent", "create_inventory_fulfillment_agent"),
-    "orchestrator": ("orchestrator.agent", "create_orchestrator_agent"),
-}
-
-
-def _create_agent(agent_name: str):
-    """Dynamically import and create an agent by name."""
-    if agent_name not in AGENT_FACTORIES:
-        available = ", ".join(sorted(AGENT_FACTORIES.keys()))
-        print(f"Unknown agent: '{agent_name}'. Available agents: {available}", file=sys.stderr)
-        sys.exit(1)
-
-    module_path, factory_name = AGENT_FACTORIES[agent_name]
-
-    try:
-        import importlib
-
-        module = importlib.import_module(module_path)
-        factory = getattr(module, factory_name)
-        return factory()
-    except Exception as e:
-        print(f"Failed to create agent '{agent_name}': {e}", file=sys.stderr)
-        sys.exit(1)
 
 
 async def _init_infrastructure() -> None:
@@ -73,6 +56,10 @@ async def run_evaluation(
     verbose: bool = False,
     output_json: str | None = None,
     pass_threshold: float = 0.7,
+    use_llm_judge: bool = False,
+    baseline_path: str | None = None,
+    max_regression: float = 0.05,
+    update_baseline_path: str | None = None,
 ) -> int:
     """Run a quality evaluation and return an exit code (0 = passed)."""
     dataset = Path(dataset_path)
@@ -84,16 +71,13 @@ async def run_evaluation(
     await _init_infrastructure()
 
     try:
-        print(f"Creating agent: {agent_name}")
-        agent = _create_agent(agent_name)
-
         print(f"Running evaluation: {dataset.name} ({agent_name})")
         print(f"Pass threshold: {pass_threshold:.0%}\n")
 
         evaluator = AgentEvaluator(
-            agent=agent,
             agent_name=agent_name,
             pass_threshold=pass_threshold,
+            use_llm_judge=use_llm_judge,
         )
         summary = await evaluator.evaluate_dataset(dataset)
 
@@ -105,11 +89,26 @@ async def run_evaluation(
                 json.dump(summary.to_dict(), f, indent=2)
             print(f"\nResults written to: {output_path}")
 
-        if summary.overall_score >= pass_threshold:
+        exit_code = 0 if summary.overall_score >= pass_threshold else 1
+        if exit_code == 0:
             print(f"\nEvaluation PASSED ({summary.overall_score:.1%} >= {pass_threshold:.0%})")
-            return 0
-        print(f"\nEvaluation FAILED ({summary.overall_score:.1%} < {pass_threshold:.0%})")
-        return 1
+        else:
+            print(f"\nEvaluation FAILED ({summary.overall_score:.1%} < {pass_threshold:.0%})")
+
+        if update_baseline_path:
+            write_baseline(update_baseline_path, summary)
+            print(f"Baseline updated: {update_baseline_path}")
+        elif baseline_path:
+            baseline = load_baseline(baseline_path)
+            if baseline is None:
+                print(f"No baseline found at {baseline_path} — nothing to compare against.", file=sys.stderr)
+            else:
+                regressed, message = check_regression(baseline, summary, max_regression)
+                print(message)
+                if regressed:
+                    exit_code = 1
+
+        return exit_code
 
     finally:
         await _cleanup_infrastructure()
@@ -134,7 +133,7 @@ async def run_safety(
     try:
         print(f"Running safety / red-team suite: {dataset.name}")
         print(f"Pass threshold: {pass_threshold:.0%}\n")
-        evaluator = SafetyEvaluator(agent_provider=_create_agent, pass_threshold=pass_threshold)
+        evaluator = SafetyEvaluator(pass_threshold=pass_threshold)
         summary = await evaluator.evaluate_dataset(dataset)
         print(format_safety_report(summary, verbose=verbose))
 
@@ -194,6 +193,29 @@ Examples:
         default=0.7,
         help="Minimum score to pass (default: 0.7)",
     )
+    parser.add_argument(
+        "--use-llm-judge",
+        action="store_true",
+        help="Score completeness with an LLM judge instead of the free keyword-alias check "
+        "(quality suite only — spends real judge tokens; the 'full' CI job uses this, "
+        "the PR-blocking 'smoke' job does not)",
+    )
+    parser.add_argument(
+        "--baseline",
+        help="Compare this run's scores against a stored baseline JSON; fail if any suite "
+        "score drops by more than --max-regression (quality suite only)",
+    )
+    parser.add_argument(
+        "--max-regression",
+        type=float,
+        default=0.05,
+        help="Maximum allowed score drop vs. --baseline before the run is considered failed (default: 0.05)",
+    )
+    parser.add_argument(
+        "--update-baseline",
+        help="Write this run's scores as the new baseline at this path, instead of comparing "
+        "against one (quality suite only)",
+    )
 
     args = parser.parse_args()
 
@@ -222,6 +244,10 @@ Examples:
                 verbose=args.verbose,
                 output_json=args.output_json,
                 pass_threshold=args.pass_threshold,
+                use_llm_judge=args.use_llm_judge,
+                baseline_path=args.baseline,
+                max_regression=args.max_regression,
+                update_baseline_path=args.update_baseline,
             )
         )
     sys.exit(exit_code)

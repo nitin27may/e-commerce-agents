@@ -11,8 +11,11 @@ When ``GUARDRAILS_BLOCK_ON_INJECTION`` is set, detection escalates from
 observability to a hard block: the middleware short-circuits the chat pipeline
 with a refusal response instead of calling ``call_next()``, so the flagged
 message never reaches the LLM. ``context.metadata["guardrail_injection_detected"]``
-is set in both modes — the eval phase depends on that side effect regardless
-of whether blocking is enabled.
+is set in both modes, but that dict is ``ChatContext``-local and invisible
+outside this one completion call (MAF constructs it fresh per chat call —
+see ``shared/guardrails/flags.py``). The same flag is also written to
+``current_guardrail_flags`` (a request-scoped ContextVar), which is what
+survives the call and is what the eval phase actually asserts on.
 """
 
 from __future__ import annotations
@@ -24,6 +27,7 @@ from agent_framework import ChatResponse, ChatResponseUpdate, Content, Message, 
 from agent_framework._middleware import ChatContext, ChatMiddleware
 
 from shared.config import settings
+from shared.guardrails.flags import current_guardrail_flags
 from shared.guardrails.sanitize import contains_injection_markers
 
 logger = logging.getLogger(__name__)
@@ -51,9 +55,14 @@ class InjectionDetectionChatMiddleware(ChatMiddleware):
             meta = getattr(context, "metadata", None)
             if isinstance(meta, dict):
                 meta["guardrail_injection_detected"] = True
+            flags = current_guardrail_flags.get()
+            if flags is not None:
+                flags["injection_detected"] = True
 
             if settings.GUARDRAILS_BLOCK_ON_INJECTION:
                 logger.warning("guardrails.injection_blocked blocking=True")
+                if flags is not None:
+                    flags["injection_blocked"] = True
                 context.result = self._refusal_result(context)
                 # Short-circuit: do NOT call call_next() — the flagged message
                 # never reaches the chat client / LLM.

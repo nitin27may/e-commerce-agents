@@ -58,6 +58,7 @@ class ToolRouterMode:
                 "agents_involved": agents_involved,
                 "steps": steps,
                 "grounding": run_metadata.get("grounding"),
+                "usage": run_metadata.get("_maf_usage"),
             },
         )
 
