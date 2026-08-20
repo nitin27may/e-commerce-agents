@@ -308,6 +308,27 @@ async def seed_users(conn: asyncpg.Connection) -> dict[str, uuid.UUID]:
     return user_ids
 
 
+_PRODUCT_ID_NAMESPACE = uuid.UUID("6f2f7f0e-6b0b-4f0e-9f0e-6b0b4f0e9f0e")
+
+
+def product_id_for(name: str) -> uuid.UUID:
+    """Deterministic product id, derived from its (unique) name.
+
+    ``gen_random_uuid()`` (the products table's PK default) assigns a fresh
+    random id on every seed run, including CI's — which always starts from
+    an empty database. That silently breaks eval replay fixtures: a
+    recorded response references the exact id the model saw *when recorded*
+    (e.g. the Sony WH-1000XM5's card), and grounding verification checks
+    that id against whatever's live in the database at replay time. If a
+    reseed hands the same product a different id, a real, correct claim
+    starts scoring as "not_found" for no reason but seed-order luck. uuid5
+    against a fixed namespace + the product name makes every seed run —
+    local, CI, anyone's laptop — assign the exact same id to "Sony
+    WH-1000XM5", forever, as long as the name doesn't change.
+    """
+    return uuid.uuid5(_PRODUCT_ID_NAMESPACE, name)
+
+
 async def seed_products(conn: asyncpg.Connection, user_ids: dict[str, uuid.UUID]) -> list[dict]:
     """Insert products and return list with ids. Assigns seller ownership."""
     seller1_id = user_ids["seller.demo@gmail.com"]
@@ -317,12 +338,13 @@ async def seed_products(conn: asyncpg.Connection, user_ids: dict[str, uuid.UUID]
     for i, p in enumerate(PRODUCTS):
         # First 25 products -> seller.demo@gmail.com, remaining 25 -> seller2.demo@gmail.com
         seller_id = seller1_id if i < 25 else seller2_id
+        product_id = product_id_for(p["name"])
         row = await conn.fetchrow(
-            """INSERT INTO products (name, description, category, brand, price, original_price, image_url, rating, review_count, specs, seller_id)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11)
-               ON CONFLICT DO NOTHING
+            """INSERT INTO products (id, name, description, category, brand, price, original_price, image_url, rating, review_count, specs, seller_id)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12)
+               ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
                RETURNING id""",
-            p["name"], p["description"], p["category"], p["brand"],
+            product_id, p["name"], p["description"], p["category"], p["brand"],
             Decimal(str(p["price"])), Decimal(str(p.get("original_price", p["price"]))),
             p.get("image_url"),
             Decimal(str(p["rating"])), p["review_count"],

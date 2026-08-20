@@ -1,0 +1,8 @@
+{
+  "avg_groundedness": 1.0,
+  "avg_correctness": 0.2,
+  "avg_completeness": 0.0,
+  "overall_score": 0.48,
+  "agent_name": "review-sentiment",
+  "dataset_path": "evals/datasets/review_sentiment.json"
+}

@@ -1,27 +1,65 @@
 name: Evals
 
-# Agent-quality + safety/red-team evaluations. These call a real LLM and a
-# seeded database, so they are deliberately kept OUT of the PR-blocking
-# `tests.yml` and are NOT auto-triggered on any schedule — that would spend
-# real OpenAI budget on every run with no one watching. Run manually
-# (workflow_dispatch) whenever an OPENAI_API_KEY repository secret is
-# available. No tests were removed; only the automatic trigger was.
+# Two jobs, split by cost:
+#
+# - `smoke` runs on every PR: every dataset (including orchestrator_routing.json
+#   and red_team.json), all against LLM_PROVIDER=replay with deterministic
+#   scorers only, compared against evals/baselines/. Zero cost, zero
+#   credentials — see agents/python/evals/fixtures/README.md for how the
+#   cassettes were recorded and why the five specialist services still need
+#   to be booted (in replay mode, no key) before the orchestrator/safety
+#   suites run: call_specialist_agent makes a real HTTP call independent of
+#   LLM_PROVIDER, so those two suites need the services *up*, just not
+#   making any real LLM calls.
+# - `full` runs on workflow_dispatch + a weekly schedule: every suite again
+#   with a real key and --use-llm-judge, so completeness is judged rather
+#   than keyword-matched. This is the one that spends real OpenAI budget.
 
 on:
+  pull_request:
+    paths:
+      - "agents/python/evals/**"
+      - "agents/python/shared/**"
+      - "agents/python/orchestrator/**"
+      - "agents/python/*_discovery/**"
+      - "agents/python/*_management/**"
+      - "agents/python/*_promotions/**"
+      - "agents/python/*_sentiment/**"
+      - "agents/python/*_fulfillment/**"
+  push:
+    branches: [main]
+    paths:
+      - "agents/python/evals/**"
   workflow_dispatch:
     inputs:
       pass_threshold:
         description: "Minimum overall score for the quality suites"
         default: "0.7"
+  schedule:
+    - cron: "0 6 * * 1" # weekly, Monday 06:00 UTC
 
 permissions:
   contents: read
 
+env:
+  DATABASE_URL: postgresql://ecommerce:ecommerce_secret@localhost:5432/ecommerce_agents
+  REDIS_URL: redis://localhost:6379
+  # 'test' keeps the settings validator in warn-mode for placeholder secrets.
+  ENVIRONMENT: test
+  JWT_SECRET: ci-eval-jwt-secret-please-rotate-32bytes
+  AGENT_SHARED_SECRET: ci-eval-agent-secret-please-rotate-32b
+  AGENT_REGISTRY: >-
+    {"product-discovery":"http://localhost:8081","order-management":"http://localhost:8082",
+    "pricing-promotions":"http://localhost:8083","review-sentiment":"http://localhost:8084",
+    "inventory-fulfillment":"http://localhost:8085"}
+  THRESH: ${{ github.event.inputs.pass_threshold || '0.7' }}
+
 jobs:
-  evals:
-    name: Agent quality + red-team
+  smoke:
+    name: Smoke (replay, deterministic, free)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
+    if: github.event_name != 'schedule'
 
     services:
       postgres:
@@ -39,17 +77,118 @@ jobs:
         ports: ["6379:6379"]
 
     env:
-      DATABASE_URL: postgresql://ecommerce:ecommerce_secret@localhost:5432/ecommerce_agents
-      REDIS_URL: redis://localhost:6379
+      LLM_PROVIDER: replay
+      REPLAY_FIXTURES_DIR: evals/fixtures/replay
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: agents/python/uv.lock
+
+      - name: Install Python 3.12
+        run: uv python install 3.12
+
+      - name: Sync dependencies
+        working-directory: agents/python
+        run: uv sync --extra dev
+
+      - name: Load database schema
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f docker/postgres/init.sql
+
+      # scripts.seed / scripts.generate_embeddings live at the repo root, not
+      # inside agents/python/ — docker-compose's seeder service resolves this
+      # via a volume mount (./scripts:/app/scripts:ro) that isn't available
+      # here, so these two steps run from the repo root and point uv at the
+      # agents/python project explicitly instead.
+      - name: Seed deterministic demo data
+        run: uv run --project agents/python python -m scripts.seed
+
+      - name: Generate embeddings
+        run: uv run --project agents/python python -m scripts.generate_embeddings
+
+      - name: Start specialist services (replay mode — no key, no cost)
+        working-directory: agents/python
+        run: |
+          for svc in product_discovery:8081 order_management:8082 pricing_promotions:8083 review_sentiment:8084 inventory_fulfillment:8085; do
+            name="${svc%%:*}"; port="${svc##*:}"
+            AGENT_NAME="$name" AGENT_PORT="$port" \
+              nohup uv run --no-project uvicorn "${name}.main:app" --host 0.0.0.0 --port "$port" \
+              > "/tmp/${name}.log" 2>&1 &
+          done
+          for port in 8081 8082 8083 8084 8085; do
+            for _ in $(seq 1 30); do
+              curl -sf "http://localhost:$port/health" > /dev/null && break
+              sleep 1
+            done
+            curl -sf "http://localhost:$port/health" > /dev/null || {
+              echo "::error::specialist on port $port never became healthy"
+              cat /tmp/*.log
+              exit 1
+            }
+          done
+
+      - name: Run every suite against replay fixtures + committed baselines
+        working-directory: agents/python
+        run: |
+          fail=0
+          for a in product-discovery order-management pricing-promotions review-sentiment inventory-fulfillment; do
+            ds="evals/datasets/${a//-/_}.json"
+            base="evals/baselines/${a//-/_}.json"
+            echo "::group::quality eval — $a"
+            uv run python -m evals.run_evals --agent "$a" --dataset "$ds" \
+              --pass-threshold "$THRESH" --baseline "$base" --max-regression 0.05 \
+              --output-json "eval-$a.json" || fail=1
+            echo "::endgroup::"
+          done
+          echo "::group::routing eval — orchestrator"
+          uv run python -m evals.run_evals --agent orchestrator \
+            --dataset evals/datasets/orchestrator_routing.json \
+            --pass-threshold "$THRESH" --baseline evals/baselines/orchestrator_routing.json --max-regression 0.05 \
+            --output-json eval-orchestrator.json || fail=1
+          echo "::endgroup::"
+          echo "::group::safety / red-team"
+          uv run python -m evals.run_evals --suite safety \
+            --pass-threshold 0.8 --output-json eval-safety.json || fail=1
+          echo "::endgroup::"
+          exit $fail
+
+      - name: Upload eval results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results-smoke
+          path: agents/python/eval-*.json
+          retention-days: 30
+
+  full:
+    name: Full (real LLM + judge, scheduled)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ecommerce
+          POSTGRES_PASSWORD: ecommerce_secret
+          POSTGRES_DB: ecommerce_agents
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ecommerce"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+
+    env:
       LLM_PROVIDER: openai
       LLM_MODEL: gpt-4.1
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      # 'test' keeps the settings validator in warn-mode for placeholder secrets.
-      ENVIRONMENT: test
-      JWT_SECRET: ci-eval-jwt-secret-please-rotate-32bytes
-      AGENT_SHARED_SECRET: ci-eval-agent-secret-please-rotate-32b
-      AGENT_REGISTRY: "{}"
-      THRESH: ${{ github.event.inputs.pass_threshold || '0.7' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -57,7 +196,7 @@ jobs:
       - name: Require OPENAI_API_KEY
         run: |
           if [ -z "${OPENAI_API_KEY}" ]; then
-            echo "::error::OPENAI_API_KEY secret is not set — add it in repo settings to run evals."
+            echo "::error::OPENAI_API_KEY secret is not set — add it in repo settings to run the full eval suite."
             exit 1
           fi
 
@@ -77,29 +216,58 @@ jobs:
       - name: Load database schema
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f docker/postgres/init.sql
 
+      # scripts.seed / scripts.generate_embeddings live at the repo root, not
+      # inside agents/python/ — docker-compose's seeder service resolves this
+      # via a volume mount (./scripts:/app/scripts:ro) that isn't available
+      # here, so these two steps run from the repo root and point uv at the
+      # agents/python project explicitly instead.
       - name: Seed deterministic demo data
-        working-directory: agents/python
-        run: uv run python -m scripts.seed
+        run: uv run --project agents/python python -m scripts.seed
 
       - name: Generate embeddings
-        working-directory: agents/python
-        run: uv run python -m scripts.generate_embeddings
+        run: uv run --project agents/python python -m scripts.generate_embeddings
 
-      - name: Run quality + safety evals
+      - name: Start specialist services (real key)
+        working-directory: agents/python
+        run: |
+          for svc in product_discovery:8081 order_management:8082 pricing_promotions:8083 review_sentiment:8084 inventory_fulfillment:8085; do
+            name="${svc%%:*}"; port="${svc##*:}"
+            AGENT_NAME="$name" AGENT_PORT="$port" \
+              nohup uv run --no-project uvicorn "${name}.main:app" --host 0.0.0.0 --port "$port" \
+              > "/tmp/${name}.log" 2>&1 &
+          done
+          for port in 8081 8082 8083 8084 8085; do
+            for _ in $(seq 1 30); do
+              curl -sf "http://localhost:$port/health" > /dev/null && break
+              sleep 1
+            done
+            curl -sf "http://localhost:$port/health" > /dev/null || {
+              echo "::error::specialist on port $port never became healthy"
+              cat /tmp/*.log
+              exit 1
+            }
+          done
+
+      - name: Run quality + safety evals (real judge, real key)
         working-directory: agents/python
         run: |
           fail=0
           for a in product-discovery order-management pricing-promotions review-sentiment inventory-fulfillment; do
             ds="evals/datasets/${a//-/_}.json"
+            base="evals/baselines/${a//-/_}.json"
             echo "::group::quality eval — $a"
             uv run python -m evals.run_evals --agent "$a" --dataset "$ds" \
-              --pass-threshold "$THRESH" --output-json "eval-$a.json" || fail=1
+              --pass-threshold "$THRESH" --use-llm-judge \
+              --baseline "$base" --max-regression 0.05 \
+              --output-json "eval-$a.json" || fail=1
             echo "::endgroup::"
           done
           echo "::group::routing eval — orchestrator"
           uv run python -m evals.run_evals --agent orchestrator \
             --dataset evals/datasets/orchestrator_routing.json \
-            --pass-threshold "$THRESH" --output-json eval-orchestrator.json || fail=1
+            --pass-threshold "$THRESH" --use-llm-judge \
+            --baseline evals/baselines/orchestrator_routing.json --max-regression 0.05 \
+            --output-json eval-orchestrator.json || fail=1
           echo "::endgroup::"
           echo "::group::safety / red-team"
           uv run python -m evals.run_evals --suite safety \
@@ -111,6 +279,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: eval-results
+          name: eval-results-full
           path: agents/python/eval-*.json
           retention-days: 30
