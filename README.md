@@ -12,6 +12,8 @@
 
 A **multi-agent e-commerce platform** built with [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) (MAF). Ships as **two complete, feature-parity backends — Python and .NET / C#** — both fully working implementations, not samples. Six specialized AI agents collaborate via **A2A protocol** to handle product discovery, orders, pricing, reviews, inventory, and customer support.
 
+**Generative UI, not raw JSON.** The chat surface never dumps a tool result as text or a code block. Every agent response is inspected by shape and rendered as the right interactive component: a single detailed result becomes a card, a list becomes a table, a distribution or trend becomes a chart, a status becomes a tone-coded badge — see it live in the [Screens](#screens) gallery below (review sentiment: rating distribution + 6-month trend, rendered from the same data an LLM would otherwise only describe in prose).
+
 **Pick your stack:** [`agents/python/`](./agents/python/) (see [Quick Start → Python](#run-the-python-backend) below) or [`agents/dotnet/`](./agents/dotnet/) (see [Quick Start → .NET](#run-the-net-backend) below, or [`agents/dotnet/README.md`](./agents/dotnet/README.md)) — same database schema, same prompts, same Next.js frontend for either (toggle with `NEXT_PUBLIC_BACKEND_STACK`).
 
 Companion demo repo for the AI article series on [nitinksingh.com](https://nitinksingh.com/posts/maf-v1-21-putting-it-all-together/).
@@ -30,6 +32,7 @@ Companion demo repo for the AI article series on [nitinksingh.com](https://nitin
 | Understand how the agents work / add a new one | [Architecture](docs/architecture.md) · [Adding an Agent](docs/adding-an-agent.md) |
 | Use the MCP server | [MCP Integration](docs/mcp-integration.md) |
 | Follow the step-by-step tutorial series | [tutorials/README.md](./tutorials/README.md) |
+| See the generative UI in action (cards, tables, charts — never raw JSON) | [Screens](#screens) below |
 
 ---
 
@@ -256,7 +259,7 @@ Anyone can browse the catalog, use the AI shopping assistant, and explore produc
 
 ### AI shopping flow (signed in)
 
-Sign in as any seeded user to access cart, checkout, order tracking, and returns — all driven by natural language in the chat interface.
+Sign in as any seeded user to access cart, checkout, order tracking, and returns — all driven by natural language in the chat interface. Every response renders as generative UI, not raw text: the component (card, table, chart, badge) is chosen by the shape of the data an agent returns.
 
 <table>
 <tr><td><img src="docs/images/flow-product-search.png" alt="AI chat — product search with cards" width="820"/></td></tr>
@@ -269,6 +272,8 @@ Sign in as any seeded user to access cart, checkout, order tracking, and returns
 <tr><td align="center"><em>Track an order — Order Management agent returns live status and shipment detail</em></td></tr>
 <tr><td><img src="docs/images/flow-refund.png" alt="AI chat — return / refund request" width="820"/></td></tr>
 <tr><td align="center"><em>Return / refund — agent initiates the return flow and issues a return label</em></td></tr>
+<tr><td><img src="docs/images/flow-review-sentiment.png" alt="AI chat — review sentiment analysis with generative UI charts" width="820"/></td></tr>
+<tr><td align="center"><em>Generative UI — the Review & Sentiment agent's data renders as an interactive card: a rating-distribution bar chart, a 6-month trend line chart, and tone-coded pros/cons, all picked from the shape of the data itself, not a fixed template</em></td></tr>
 </table>
 
 ### Platform
