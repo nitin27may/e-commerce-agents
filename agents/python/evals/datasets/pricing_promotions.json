@@ -1,6 +1,6 @@
 [
   {
-    "input": "Is coupon SAVE20 valid for my current cart?",
+    "input": "Is coupon WELCOME10 valid for my current cart?",
     "expected_tools": ["validate_coupon"],
     "expected_fields": ["total"],
     "criteria": {
@@ -29,7 +29,7 @@
     }
   },
   {
-    "input": "Help me optimize my cart to get the lowest total price",
+    "input": "If I buy the Sony WH-1000XM5 and the Logitech MX Master 3S together, what's the best discount combination and lowest total price?",
     "expected_tools": ["optimize_cart"],
     "expected_fields": ["total", "price"],
     "criteria": {
@@ -39,7 +39,7 @@
     }
   },
   {
-    "input": "Has the price of product abc-123 dropped recently?",
+    "input": "Has the price of the Sony WH-1000XM5 dropped recently?",
     "expected_tools": ["get_price_history"],
     "expected_fields": ["price"],
     "criteria": {

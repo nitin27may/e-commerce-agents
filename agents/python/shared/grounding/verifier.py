@@ -94,17 +94,12 @@ async def verify_claims(
         verdicts.extend(await _verify_bare_ids_via_db(bare_ids, pool))
     else:
         verdicts.extend(
-            ClaimVerdict("product", c.id, "unverifiable", "no database connection")
-            for c in unresolved_products
+            ClaimVerdict("product", c.id, "unverifiable", "no database connection") for c in unresolved_products
         )
         verdicts.extend(
-            ClaimVerdict("order", c.id, "unverifiable", "no database connection")
-            for c in unresolved_orders
+            ClaimVerdict("order", c.id, "unverifiable", "no database connection") for c in unresolved_orders
         )
-        verdicts.extend(
-            ClaimVerdict("bare_id", c.id, "unverifiable", "no database connection")
-            for c in bare_ids
-        )
+        verdicts.extend(ClaimVerdict("bare_id", c.id, "unverifiable", "no database connection") for c in bare_ids)
 
     verdicts.extend(_verify_amounts_against_ledger(claims, ledger))
     verdicts.extend(_verify_trackings_against_ledger(claims, ledger))
@@ -118,9 +113,12 @@ def _verify_product_against_ledger(claim: ProductClaim, ledger: GroundingLedger)
         return None
     if claim.price is not None and fact.price is not None and abs(claim.price - fact.price) >= _PRICE_TOLERANCE:
         return ClaimVerdict(
-            "product", claim.id, "price_mismatch",
+            "product",
+            claim.id,
+            "price_mismatch",
             f"card shows ${claim.price:.2f}, tool result said ${fact.price:.2f}",
-            source="ledger", corrected_value=fact.price,
+            source="ledger",
+            corrected_value=fact.price,
         )
     return ClaimVerdict("product", claim.id, "verified", source="ledger")
 
@@ -131,9 +129,12 @@ def _verify_order_against_ledger(claim: OrderClaim, ledger: GroundingLedger) -> 
         return None
     if claim.total is not None and fact.total is not None and abs(claim.total - fact.total) >= _PRICE_TOLERANCE:
         return ClaimVerdict(
-            "order", claim.id, "price_mismatch",
+            "order",
+            claim.id,
+            "price_mismatch",
             f"card shows ${claim.total:.2f}, tool result said ${fact.total:.2f}",
-            source="ledger", corrected_value=fact.total,
+            source="ledger",
+            corrected_value=fact.total,
         )
     return ClaimVerdict("order", claim.id, "verified", source="ledger")
 
@@ -143,8 +144,7 @@ async def _verify_products_via_db(claims: list[ProductClaim], pool: asyncpg.Pool
         return []
     valid = [c for c in claims if _is_uuid(c.id)]
     verdicts = [
-        ClaimVerdict("product", c.id, "not_found", "id is not a valid UUID")
-        for c in claims if not _is_uuid(c.id)
+        ClaimVerdict("product", c.id, "not_found", "id is not a valid UUID") for c in claims if not _is_uuid(c.id)
     ]
     if not valid:
         return verdicts
@@ -158,15 +158,26 @@ async def _verify_products_via_db(claims: list[ProductClaim], pool: asyncpg.Pool
     for claim in valid:
         row = by_id.get(claim.id)
         if row is None:
-            verdicts.append(ClaimVerdict(
-                "product", claim.id, "not_found", "no product with this id exists", source="db",
-            ))
+            verdicts.append(
+                ClaimVerdict(
+                    "product",
+                    claim.id,
+                    "not_found",
+                    "no product with this id exists",
+                    source="db",
+                )
+            )
         elif claim.price is not None and abs(claim.price - float(row["price"])) >= _PRICE_TOLERANCE:
-            verdicts.append(ClaimVerdict(
-                "product", claim.id, "price_mismatch",
-                f"card shows ${claim.price:.2f}, database has ${float(row['price']):.2f}",
-                source="db", corrected_value=float(row["price"]),
-            ))
+            verdicts.append(
+                ClaimVerdict(
+                    "product",
+                    claim.id,
+                    "price_mismatch",
+                    f"card shows ${claim.price:.2f}, database has ${float(row['price']):.2f}",
+                    source="db",
+                    corrected_value=float(row["price"]),
+                )
+            )
         else:
             verdicts.append(ClaimVerdict("product", claim.id, "verified", source="db"))
     return verdicts
@@ -177,8 +188,7 @@ async def _verify_orders_via_db(claims: list[OrderClaim], pool: asyncpg.Pool) ->
         return []
     valid = [c for c in claims if _is_uuid(c.id)]
     verdicts = [
-        ClaimVerdict("order", c.id, "not_found", "id is not a valid UUID")
-        for c in claims if not _is_uuid(c.id)
+        ClaimVerdict("order", c.id, "not_found", "id is not a valid UUID") for c in claims if not _is_uuid(c.id)
     ]
     if not valid:
         return verdicts
@@ -194,11 +204,16 @@ async def _verify_orders_via_db(claims: list[OrderClaim], pool: asyncpg.Pool) ->
         if row is None:
             verdicts.append(ClaimVerdict("order", claim.id, "not_found", "no order with this id exists", source="db"))
         elif claim.total is not None and abs(claim.total - float(row["total"])) >= _PRICE_TOLERANCE:
-            verdicts.append(ClaimVerdict(
-                "order", claim.id, "price_mismatch",
-                f"card shows ${claim.total:.2f}, database has ${float(row['total']):.2f}",
-                source="db", corrected_value=float(row["total"]),
-            ))
+            verdicts.append(
+                ClaimVerdict(
+                    "order",
+                    claim.id,
+                    "price_mismatch",
+                    f"card shows ${claim.total:.2f}, database has ${float(row['total']):.2f}",
+                    source="db",
+                    corrected_value=float(row["total"]),
+                )
+            )
         else:
             verdicts.append(ClaimVerdict("order", claim.id, "verified", source="db"))
     return verdicts
@@ -209,8 +224,7 @@ async def _verify_bare_ids_via_db(claims: list, pool: asyncpg.Pool) -> list[Clai
         return []
     valid = [c for c in claims if _is_uuid(c.id)]
     verdicts = [
-        ClaimVerdict("bare_id", c.id, "not_found", "id is not a valid UUID")
-        for c in claims if not _is_uuid(c.id)
+        ClaimVerdict("bare_id", c.id, "not_found", "id is not a valid UUID") for c in claims if not _is_uuid(c.id)
     ]
     if not valid:
         return verdicts
@@ -224,9 +238,15 @@ async def _verify_bare_ids_via_db(claims: list, pool: asyncpg.Pool) -> list[Clai
         if claim.id in found:
             verdicts.append(ClaimVerdict("bare_id", claim.id, "verified", source="db"))
         else:
-            verdicts.append(ClaimVerdict(
-                "bare_id", claim.id, "not_found", "id does not exist in products or orders", source="db",
-            ))
+            verdicts.append(
+                ClaimVerdict(
+                    "bare_id",
+                    claim.id,
+                    "not_found",
+                    "id does not exist in products or orders",
+                    source="db",
+                )
+            )
     return verdicts
 
 
@@ -234,15 +254,19 @@ def _verify_amounts_against_ledger(claims: ExtractedClaims, ledger: GroundingLed
     known = {p.price for p in ledger.products.values() if p.price is not None}
     known |= {o.total for o in ledger.orders.values() if o.total is not None}
     known |= {p.discount_amount for p in ledger.promos.values() if p.discount_amount is not None}
+    known |= ledger.known_amounts
     verdicts = []
     for claim in claims.amounts:
         matched = any(abs(claim.value - k) < _PRICE_TOLERANCE for k in known)
-        verdicts.append(ClaimVerdict(
-            "amount", f"${claim.value:.2f}",
-            "verified" if matched else "unverifiable",
-            None if matched else "no matching price/total in this turn's tool results",
-            source="ledger" if matched else None,
-        ))
+        verdicts.append(
+            ClaimVerdict(
+                "amount",
+                f"${claim.value:.2f}",
+                "verified" if matched else "unverifiable",
+                None if matched else "no matching price/total in this turn's tool results",
+                source="ledger" if matched else None,
+            )
+        )
     return verdicts
 
 
@@ -251,12 +275,15 @@ def _verify_trackings_against_ledger(claims: ExtractedClaims, ledger: GroundingL
     verdicts = []
     for claim in claims.trackings:
         matched = claim.value in known
-        verdicts.append(ClaimVerdict(
-            "tracking", claim.value,
-            "verified" if matched else "unverifiable",
-            None if matched else "no matching tracking number in this turn's tool results",
-            source="ledger" if matched else None,
-        ))
+        verdicts.append(
+            ClaimVerdict(
+                "tracking",
+                claim.value,
+                "verified" if matched else "unverifiable",
+                None if matched else "no matching tracking number in this turn's tool results",
+                source="ledger" if matched else None,
+            )
+        )
     return verdicts
 
 

@@ -1,8 +1,8 @@
 {
   "avg_groundedness": 0.6,
-  "avg_correctness": 0.4,
-  "avg_completeness": 0.2,
-  "overall_score": 0.44,
+  "avg_correctness": 0.6,
+  "avg_completeness": 0.8,
+  "overall_score": 0.64,
   "agent_name": "pricing-promotions",
   "dataset_path": "evals/datasets/pricing_promotions.json"
 }

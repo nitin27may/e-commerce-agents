@@ -10,8 +10,8 @@
     }
   },
   {
-    "input": "Show me the details for product abc-123",
-    "expected_tools": ["get_product_details"],
+    "input": "Show me the full details for the Sony WH-1000XM5",
+    "expected_tools": ["search_products", "get_product_details"],
     "expected_fields": ["name", "description", "price", "rating", "specs"],
     "criteria": {
       "grounded": true,

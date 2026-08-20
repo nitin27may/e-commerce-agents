@@ -25,6 +25,8 @@ from typing import Any
 # the agent-framework v1.0 beta ships an empty top-level __init__.
 from agent_framework._middleware import FunctionInvocationContext, FunctionMiddleware
 
+from shared.function_results import unwrap_function_result
+
 
 @dataclass(frozen=True)
 class ProductFact:
@@ -56,10 +58,39 @@ class GroundingLedger:
     products: dict[str, ProductFact] = field(default_factory=dict)
     orders: dict[str, OrderFact] = field(default_factory=dict)
     promos: dict[str, PromoFact] = field(default_factory=dict)
+    # Catch-all for amounts that don't fit the product/order/promo shapes above
+    # — e.g. get_price_history's nested `history: [{"price": ..., ...}, ...]`
+    # array, or any other tool that reports a bare `price`/`amount` inside a
+    # nested list rather than at the top level. Verified live: without this,
+    # get_price_history's own historical price points scored "unverifiable"
+    # even though they're real data straight from the same tool call.
+    known_amounts: set[float] = field(default_factory=set)
 
     def record(self, result: Any) -> None:
         for item in _iter_dicts(result):
             self._record_one(item)
+            for value in item.values():
+                if isinstance(value, list):
+                    for nested in value:
+                        if isinstance(nested, dict):
+                            self._record_one(nested)
+                            self._record_bare_amount(nested)
+            self._record_bare_amount(item)
+
+    def _record_bare_amount(self, item: dict[str, Any]) -> None:
+        for key in (
+            "price",
+            "current_price",
+            "average_price",
+            "min_price",
+            "max_price",
+            "amount",
+            "total",
+            "discount_amount",
+        ):
+            value = _as_float(item.get(key))
+            if value is not None:
+                self.known_amounts.add(value)
 
     def _record_one(self, item: dict[str, Any]) -> None:
         if _looks_like_product(item):
@@ -126,9 +157,7 @@ def _as_float(value: Any) -> float | None:
 
 # None outside a request that opted into grounding capture, so the recording
 # middleware below is always safe to attach.
-current_grounding_ledger: ContextVar[GroundingLedger | None] = ContextVar(
-    "current_grounding_ledger", default=None
-)
+current_grounding_ledger: ContextVar[GroundingLedger | None] = ContextVar("current_grounding_ledger", default=None)
 
 
 class GroundingLedgerMiddleware(FunctionMiddleware):
@@ -143,7 +172,7 @@ class GroundingLedgerMiddleware(FunctionMiddleware):
         ledger = current_grounding_ledger.get()
         if ledger is None:
             return
-        ledger.record(getattr(context, "result", None))
+        ledger.record(unwrap_function_result(getattr(context, "result", None)))
 
 
 # Stateless — shared across every agent, same idiom as STEP_MIDDLEWARE.

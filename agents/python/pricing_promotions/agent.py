@@ -19,9 +19,11 @@ from shared.tools.loyalty_tools import (
     get_loyalty_tier,
 )
 from shared.tools.pricing_tools import get_price_history
+from shared.tools.product_lookup_tools import find_product_by_name
 from shared.tools.user_tools import get_purchase_history, get_user_profile
 
 AGENT_TOOLS = [
+    find_product_by_name,
     validate_coupon,
     optimize_cart,
     get_active_deals,

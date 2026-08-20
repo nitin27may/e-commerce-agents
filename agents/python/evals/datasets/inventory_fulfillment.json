@@ -10,7 +10,7 @@
     }
   },
   {
-    "input": "When will product abc-123 be back in stock?",
+    "input": "When will the Sony WH-1000XM5 be back in stock?",
     "expected_tools": ["get_restock_schedule"],
     "expected_fields": ["status"],
     "criteria": {
@@ -20,7 +20,7 @@
     }
   },
   {
-    "input": "How long will shipping take to ZIP code 90210?",
+    "input": "How long will shipping take for the Sony WH-1000XM5 to ZIP code 90210?",
     "expected_tools": ["estimate_shipping"],
     "expected_fields": ["tracking_number"],
     "criteria": {
@@ -30,7 +30,7 @@
     }
   },
   {
-    "input": "Compare the available shipping carriers and their delivery times",
+    "input": "Compare shipping carriers and delivery times from the east region to the west region",
     "expected_tools": ["compare_carriers"],
     "expected_fields": ["tracking_number"],
     "criteria": {

@@ -1,8 +1,8 @@
 {
-  "avg_groundedness": 0.3333,
+  "avg_groundedness": 0.5,
   "avg_correctness": 1.0,
   "avg_completeness": 1.0,
-  "overall_score": 0.7333,
+  "overall_score": 0.8,
   "agent_name": "orchestrator",
   "dataset_path": "evals/datasets/orchestrator_routing.json"
 }

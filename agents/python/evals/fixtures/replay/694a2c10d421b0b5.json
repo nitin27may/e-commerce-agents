@@ -490,7 +490,7 @@
     ]
   },
   "response": {
-    "created_at": "2026-08-20T20:19:26.000000Z",
+    "created_at": "2026-08-20T21:24:21.000000Z",
     "finish_reason": "tool_calls",
     "messages": [
       {
@@ -499,7 +499,7 @@
           {
             "additional_properties": {},
             "arguments": "{\"limit\":5}",
-            "call_id": "call_VN6zOfbO7VpaTrDLaa7S5z7c",
+            "call_id": "call_KFhUmjtk4qCwp2T2HgennRhx",
             "name": "get_user_orders",
             "type": "function_call"
           }
@@ -509,7 +509,7 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-EF3WQjsFXFr9s2HUPelnfp0Jp7wHo",
+    "response_id": "chatcmpl-EF4XF6k7jQLQDdYvKiE8AszfMo5MX",
     "type": "chat_response",
     "usage_details": {
       "cache_read_input_token_count": 4736,

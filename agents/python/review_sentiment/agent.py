@@ -18,9 +18,11 @@ from shared.context import current_user_role
 from shared.context_providers import ECommerceContextProvider
 from shared.middleware import build_specialist_middleware
 from shared.tools.memory_tools import recall_memories, store_memory
+from shared.tools.product_lookup_tools import find_product_by_name
 from shared.tools.user_tools import get_purchase_history, get_user_profile
 
 AGENT_TOOLS = [
+    find_product_by_name,
     get_product_reviews,
     analyze_sentiment,
     get_sentiment_by_topic,

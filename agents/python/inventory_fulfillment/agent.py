@@ -24,9 +24,11 @@ from shared.context_providers import ECommerceContextProvider
 from shared.middleware import build_specialist_middleware
 from shared.oauth.service_client import acquire_service_token, build_mcp_http_client, set_mcp_auth_header
 from shared.tools.inventory_tools import check_stock, get_warehouse_availability
+from shared.tools.product_lookup_tools import find_product_by_name
 from shared.tools.user_tools import get_user_profile
 
 AGENT_TOOLS = [
+    find_product_by_name,
     check_stock,
     get_warehouse_availability,
     get_restock_schedule,
@@ -65,6 +67,7 @@ def create_inventory_fulfillment_agent() -> Agent:
         )
         tools: list = [
             mcp_inventory,
+            find_product_by_name,
             get_tracking_status,
             calculate_fulfillment_plan,
             place_backorder,

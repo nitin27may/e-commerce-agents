@@ -46,7 +46,7 @@
     ]
   },
   "response": {
-    "created_at": "2026-08-20T20:21:03.000000Z",
+    "created_at": "2026-08-20T21:26:09.000000Z",
     "finish_reason": "tool_calls",
     "messages": [
       {
@@ -55,7 +55,7 @@
           {
             "additional_properties": {},
             "arguments": "{\"agent_name\":\"review-sentiment\",\"message\":\"Show me a summary of customer reviews and overall sentiment for the Dyson V15.\"}",
-            "call_id": "call_aiaE6Wv5lyqw5JKxOCmem2of",
+            "call_id": "call_79KhHeSeWrAGvKmlrvyU9Qfj",
             "name": "call_specialist_agent",
             "type": "function_call"
           }
@@ -65,7 +65,7 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-EF3XzgxoMazMpnADViqaJFgPd5ycA",
+    "response_id": "chatcmpl-EF4YzoJF9zMqll9XxqWAGz9qsiUFp",
     "type": "chat_response",
     "usage_details": {
       "cache_read_input_token_count": 2816,
