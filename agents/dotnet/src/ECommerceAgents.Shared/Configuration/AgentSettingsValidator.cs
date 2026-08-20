@@ -22,6 +22,11 @@ public static class AgentSettingsValidator
         "dev-oauth-seed-change-me",
     };
 
+    private static readonly HashSet<string> SupportedOutputModerationModes = new(StringComparer.Ordinal)
+    {
+        "off", "observe", "enforce",
+    };
+
     public static void Validate(AgentSettings settings, ILogger logger)
     {
         var isProd = !IsDevelopmentEnv(settings.Environment);
@@ -31,6 +36,14 @@ public static class AgentSettingsValidator
         if (settings.AuthMode == "oauth")
         {
             Check("OAUTH_SEED_KEY", settings.OAuthSeedKey, isProd, logger);
+        }
+
+        if (!SupportedOutputModerationModes.Contains(settings.OutputModerationMode))
+        {
+            throw new InvalidOperationException(
+                $"OUTPUT_MODERATION_MODE='{settings.OutputModerationMode}' is not a recognized value. " +
+                "Supported values: off, observe, enforce."
+            );
         }
     }
 

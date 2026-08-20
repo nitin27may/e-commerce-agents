@@ -21,6 +21,7 @@ public static class RequestContext
     private static readonly AsyncLocal<IReadOnlyList<HistoryEntry>?> _history = new();
     private static readonly AsyncLocal<List<string>?> _invokedAgents = new();
     private static readonly AsyncLocal<ChannelWriter<string>?> _streamWriter = new();
+    private static readonly AsyncLocal<Dictionary<string, bool>?> _guardrailFlags = new();
 
     public static string CurrentUserEmail
     {
@@ -82,6 +83,24 @@ public static class RequestContext
         return new Disposable(() => _streamWriter.Value = previous);
     }
 
+    /// <summary>
+    /// Guardrail detections recorded during the current request — the .NET
+    /// analog of Python's <c>current_guardrail_flags</c> ContextVar
+    /// (<c>shared/guardrails/flags.py</c>). Written by the injection-
+    /// detection and output-moderation pipeline stages
+    /// (<c>Shared/Agents/SpecialistPipeline.cs</c>); read by anything that
+    /// needs to know whether this request's turn tripped a guardrail
+    /// (currently: this repo's own tests — .NET has no eval harness yet to
+    /// assert on this the way Python's does).
+    /// </summary>
+    public static IReadOnlyDictionary<string, bool> CurrentGuardrailFlags =>
+        (IReadOnlyDictionary<string, bool>?)_guardrailFlags.Value ?? EmptyGuardrailFlags;
+
+    private static readonly IReadOnlyDictionary<string, bool> EmptyGuardrailFlags = new Dictionary<string, bool>();
+
+    /// <summary>Records a guardrail flag for the current request. No-op outside a <see cref="Scope"/>.</summary>
+    public static void SetGuardrailFlag(string key, bool value) => (_guardrailFlags.Value ??= new())[key] = value;
+
     public static IDisposable Scope(string email, string role, string sessionId, IReadOnlyList<HistoryEntry>? history = null)
     {
         var previous = (
@@ -89,13 +108,15 @@ public static class RequestContext
             Role: _userRole.Value,
             Session: _sessionId.Value,
             History: _history.Value,
-            InvokedAgents: _invokedAgents.Value
+            InvokedAgents: _invokedAgents.Value,
+            GuardrailFlags: _guardrailFlags.Value
         );
         _userEmail.Value = email;
         _userRole.Value = role;
         _sessionId.Value = sessionId;
         _history.Value = history ?? Array.Empty<HistoryEntry>();
         _invokedAgents.Value = new List<string>();
+        _guardrailFlags.Value = new Dictionary<string, bool>();
         return new Disposable(() =>
         {
             _userEmail.Value = previous.Email;
@@ -103,6 +124,7 @@ public static class RequestContext
             _sessionId.Value = previous.Session;
             _history.Value = previous.History;
             _invokedAgents.Value = previous.InvokedAgents;
+            _guardrailFlags.Value = previous.GuardrailFlags;
         });
     }
 

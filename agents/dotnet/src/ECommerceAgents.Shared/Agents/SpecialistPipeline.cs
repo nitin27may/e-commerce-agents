@@ -1,5 +1,8 @@
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using ECommerceAgents.Shared.Configuration;
+using ECommerceAgents.Shared.Context;
+using ECommerceAgents.Shared.Guardrails;
 using ECommerceAgents.Shared.Middleware;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -19,19 +22,20 @@ namespace ECommerceAgents.Shared.Agents;
 /// running <see cref="AIAgent"/> (see issue #12).
 /// </summary>
 /// <remarks>
-/// Python's stack has several additional gated layers (injection detection,
-/// output sanitization, grounding, cost budget, output moderation) that have
-/// no .NET port yet — this composes only the four building blocks that exist
-/// in this codebase today. None of the four are behind a feature flag in
-/// Python either (only HITL and the not-yet-ported guardrail layers are), so
-/// none are gated here.
+/// Issue #15 adds the three guardrail layers Python has that .NET didn't:
+/// inbound prompt-injection detection (with an optional hard-block escalation),
+/// stored-injection output sanitization on allowlisted tool results, and
+/// outbound content moderation of the model's own generated text. Python's
+/// grounding and cost-budget layers still have no .NET port — out of scope
+/// for #15, tracked separately.
 /// </remarks>
 public static class SpecialistPipeline
 {
     /// <summary>
-    /// Wraps <paramref name="inner"/> in, in order: agent-run logging (outermost,
-    /// so it times the whole run including every layer below it), PII
-    /// redaction of inbound messages, and per-tool-call audit logging.
+    /// Wraps <paramref name="inner"/> in, outermost to innermost: agent-run
+    /// logging, inbound injection detection + outbound content moderation,
+    /// PII redaction of inbound messages, per-tool-call audit logging, and
+    /// stored-injection sanitization of allowlisted tool results.
     /// </summary>
     public static AIAgent Apply(AIAgent inner, AgentSettings settings, IServiceProvider services)
     {
@@ -39,11 +43,25 @@ public static class SpecialistPipeline
         var redactor = services.GetRequiredService<PiiRedactor>();
         var toolAudit = services.GetRequiredService<ToolAuditMiddleware>();
         var logger = services.GetRequiredService<ILogger<AgentRunLoggerAdapter>>();
+        var guardrailLogger = services.GetRequiredService<ILogger<GuardrailGateAdapter>>();
 
-        return inner
+        var builder = inner
             .AsBuilder()
-            .Use(WrapAgentRun(logger))
-            .Use(RedactInboundMessages(redactor))
+            .Use(WrapAgentRun(logger));
+
+        if (settings.GuardrailsEnabled)
+        {
+            builder = builder.Use(GuardrailGateRun(settings, guardrailLogger), GuardrailGateStreaming(settings, guardrailLogger));
+        }
+
+        builder = builder.Use(RedactInboundMessages(redactor));
+
+        if (settings.GuardrailsEnabled && settings.GuardrailsOutputSanitization)
+        {
+            builder = builder.Use(SanitizeToolOutput(guardrailLogger));
+        }
+
+        return builder
             .Use(AuditToolCalls(toolAudit))
             .Build(services);
     }
@@ -146,6 +164,188 @@ public static class SpecialistPipeline
         (agent, context, next, ct) =>
             new ValueTask<object?>(audit.RecordAsync(context.Function.Name, () => next(context, ct).AsTask()));
 
+    /// <summary>
+    /// Defangs stored-injection markers in allowlisted tool results (issue
+    /// #15) — the .NET twin of Python's <c>OutputSanitizationMiddleware</c>.
+    /// Runs the tool via <paramref name="next"/> first, then rewrites the
+    /// returned object in place via <see cref="OutputSanitizer"/> if its
+    /// name is in <see cref="SanitizeToolsConfig.SanitizeTools"/> — unlisted
+    /// tools (structured/numeric results) pass through untouched.
+    /// </summary>
+    private static Func<
+        AIAgent,
+        FunctionInvocationContext,
+        Func<FunctionInvocationContext, CancellationToken, ValueTask<object?>>,
+        CancellationToken,
+        ValueTask<object?>
+    > SanitizeToolOutput(ILogger logger) =>
+        async (agent, context, next, ct) =>
+        {
+            var result = await next(context, ct);
+            if (!SanitizeToolsConfig.SanitizeTools.TryGetValue(context.Function.Name, out var fields))
+            {
+                return result;
+            }
+
+            var sanitized = OutputSanitizer.Sanitize(result, fields);
+            if (!Equals(sanitized, result))
+            {
+                logger.LogInformation("guardrails.output_sanitized tool={Tool}", context.Function.Name);
+            }
+            return sanitized;
+        };
+
+    private const string InjectionRefusalMessage =
+        "I can't process that request — it looks like it contains an attempt to override " +
+        "my instructions. If you have a genuine question, please rephrase it without the " +
+        "embedded commands.";
+
+    private const string ModerationRefusalMessage =
+        "I'm not able to share that response — it was flagged by content moderation. " +
+        "If this seems like a mistake, please rephrase your question.";
+
+    /// <summary>
+    /// Non-streaming half of the combined injection-detection +
+    /// output-moderation gate (issue #15) — the .NET twin of Python's
+    /// <c>InjectionDetectionChatMiddleware</c> and
+    /// <c>OutputModerationMiddleware</c>, combined into one stage because
+    /// both need full control over whether/what gets returned (block before
+    /// calling the inner agent; replace after), which is exactly what the
+    /// <c>Use(runFunc, streamingFunc)</c> overload — as opposed to the
+    /// call-and-continue shared-func overload the other stages use — is for.
+    /// </summary>
+    private static Func<
+        IEnumerable<ChatMessage>,
+        AgentSession?,
+        AgentRunOptions?,
+        AIAgent,
+        CancellationToken,
+        Task<AgentResponse>
+    > GuardrailGateRun(AgentSettings settings, ILogger logger) =>
+        async (messages, session, options, innerAgent, ct) =>
+        {
+            if (InboundInjectionDetected(messages, settings, logger, out var refusal) && refusal is not null)
+            {
+                return new AgentResponse(new ChatMessage(ChatRole.Assistant, refusal));
+            }
+
+            var response = await innerAgent.RunAsync(messages, session, options, cancellationToken: ct);
+            return CheckOutputModeration(response, settings, logger);
+        };
+
+    /// <summary>
+    /// Streaming half of the same gate. Injection blocking works identically
+    /// (a single refusal update instead of draining the inner stream at
+    /// all). Output moderation on a stream can only ever log+flag, never
+    /// un-send chunks already forwarded to the caller — same documented
+    /// trade-off as Python's <c>OUTPUT_MODERATION_MODE=enforce</c> on a
+    /// streamed response.
+    /// </summary>
+    private static Func<
+        IEnumerable<ChatMessage>,
+        AgentSession?,
+        AgentRunOptions?,
+        AIAgent,
+        CancellationToken,
+        IAsyncEnumerable<AgentResponseUpdate>
+    > GuardrailGateStreaming(AgentSettings settings, ILogger logger) =>
+        (messages, session, options, innerAgent, ct) => RunGuardedStream(messages, session, options, innerAgent, settings, logger, ct);
+
+    private static async IAsyncEnumerable<AgentResponseUpdate> RunGuardedStream(
+        IEnumerable<ChatMessage> messages,
+        AgentSession? session,
+        AgentRunOptions? options,
+        AIAgent innerAgent,
+        AgentSettings settings,
+        ILogger logger,
+        [EnumeratorCancellation] CancellationToken ct
+    )
+    {
+        if (InboundInjectionDetected(messages, settings, logger, out var refusal) && refusal is not null)
+        {
+            yield return new AgentResponseUpdate(ChatRole.Assistant, refusal);
+            yield break;
+        }
+
+        var accumulated = new System.Text.StringBuilder();
+        await foreach (var update in innerAgent.RunStreamingAsync(messages, session, options, cancellationToken: ct))
+        {
+            accumulated.Append(update.Text);
+            yield return update;
+        }
+
+        CheckTextModeration(accumulated.ToString(), settings, logger, streaming: true);
+    }
+
+    private static bool InboundInjectionDetected(
+        IEnumerable<ChatMessage> messages,
+        AgentSettings settings,
+        ILogger logger,
+        out string? refusal
+    )
+    {
+        refusal = null;
+        var flagged = messages.Any(m => Sanitize.ContainsInjectionMarkers(m.Text));
+        if (!flagged)
+        {
+            return false;
+        }
+
+        RequestContext.SetGuardrailFlag("injection_detected", true);
+        if (settings.GuardrailsBlockOnInjection)
+        {
+            logger.LogWarning("guardrails.injection_blocked blocking=True");
+            RequestContext.SetGuardrailFlag("injection_blocked", true);
+            refusal = InjectionRefusalMessage;
+            return true;
+        }
+
+        logger.LogInformation("guardrails.injection_detected blocking=False");
+        return false;
+    }
+
+    private static AgentResponse CheckOutputModeration(AgentResponse response, AgentSettings settings, ILogger logger)
+    {
+        if (settings.OutputModerationMode == "off")
+        {
+            return response;
+        }
+
+        var flagged = CheckTextModeration(response.Text, settings, logger, streaming: false);
+        if (!flagged || settings.OutputModerationMode != "enforce")
+        {
+            return response;
+        }
+
+        return new AgentResponse(new ChatMessage(ChatRole.Assistant, ModerationRefusalMessage));
+    }
+
+    private static bool CheckTextModeration(string? text, AgentSettings settings, ILogger logger, bool streaming)
+    {
+        if (settings.OutputModerationMode == "off" || string.IsNullOrEmpty(text))
+        {
+            return false;
+        }
+
+        var categories = Moderation.Classify(text);
+        if (categories.Count == 0)
+        {
+            return false;
+        }
+
+        RequestContext.SetGuardrailFlag("output_moderation_flagged", true);
+        logger.LogWarning(
+            "guardrails.output_moderation_flagged categories={Categories} mode={Mode} streaming={Streaming}",
+            string.Join(",", categories.Select(c => c.ToString())),
+            settings.OutputModerationMode,
+            streaming
+        );
+        return true;
+    }
+
     /// <summary>Marker type purely so <see cref="WrapAgentRun"/> can resolve a category-scoped logger.</summary>
     private sealed class AgentRunLoggerAdapter { }
+
+    /// <summary>Marker type purely so the guardrail gate can resolve its own category-scoped logger.</summary>
+    private sealed class GuardrailGateAdapter { }
 }
