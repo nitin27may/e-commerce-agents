@@ -2,7 +2,8 @@
 
 How this repo uses Microsoft Agent Framework (MAF v1.0) for agents and workflows,
 which orchestration pattern fits which problem, and the conventions that keep the
-code testable and portable across OpenAI / Azure OpenAI.
+code testable and portable across OpenAI / Azure OpenAI — and, via `LLM_BASE_URL`,
+any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, OpenRouter).
 
 ## Agent execution
 

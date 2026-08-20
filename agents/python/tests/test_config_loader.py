@@ -19,7 +19,7 @@ import pytest
 def _reload_with_env(monkeypatch, **env) -> object:
     """Reload config + factory with a scripted env snapshot."""
     for key in (
-        "LLM_PROVIDER", "OPENAI_API_KEY", "LLM_MODEL",
+        "LLM_PROVIDER", "OPENAI_API_KEY", "LLM_MODEL", "LLM_BASE_URL",
         "AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_KEY", "AZURE_OPENAI_DEPLOYMENT",
         "AZURE_OPENAI_API_VERSION",
         "AGENT_REGISTRY",
@@ -52,6 +52,39 @@ def test_get_chat_client_uses_openai_when_provider_is_openai(monkeypatch) -> Non
     client = factory.get_chat_client()
     from agent_framework.openai import OpenAIChatClient
     assert isinstance(client, OpenAIChatClient)
+
+
+def test_get_chat_client_honors_llm_base_url_override(monkeypatch) -> None:
+    """LLM_BASE_URL (Phase 9) is what lets LLM_PROVIDER=openai point at any
+    OpenAI-compatible endpoint — GitHub Models, OpenRouter, vLLM, LM Studio,
+    Ollama — instead of api.openai.com. No provider-specific branching
+    exists for any of those; this is the one mechanism all of them ride."""
+    factory = _reload_with_env(
+        monkeypatch,
+        LLM_PROVIDER="openai",
+        OPENAI_API_KEY="ollama",
+        LLM_MODEL="llama3.1:8b",
+        LLM_BASE_URL="http://localhost:11434/v1",
+    )
+    client = factory.get_chat_client()
+    from agent_framework.openai import OpenAIChatClient
+
+    assert isinstance(client, OpenAIChatClient)
+    assert client.base_url == "http://localhost:11434/v1"
+
+
+def test_get_chat_client_defaults_to_no_base_url_override(monkeypatch) -> None:
+    """Unset LLM_BASE_URL must not accidentally point OpenAIChatClient at an
+    empty-string host — confirms the `settings.LLM_BASE_URL or None` guard
+    in shared/factory.py actually falls through to the SDK's own default."""
+    factory = _reload_with_env(
+        monkeypatch,
+        LLM_PROVIDER="openai",
+        OPENAI_API_KEY="sk-test",
+        LLM_MODEL="gpt-4.1",
+    )
+    client = factory.get_chat_client()
+    assert not client.base_url
 
 
 def test_get_chat_client_uses_azure_when_provider_is_azure(monkeypatch) -> None:

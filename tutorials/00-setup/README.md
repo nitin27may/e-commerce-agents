@@ -146,7 +146,7 @@ work as aliases.)
 Keep `JWT_SECRET` and `AGENT_SHARED_SECRET` at their `.env.example` defaults for
 local dev; they're only rotated in production.
 
-### Don't have a paid API key? Two options
+### Don't have a paid API key? Three options
 
 **Option 1 — GitHub Models (free, real model, `LLM_PROVIDER=openai`).** GitHub
 Models exposes an OpenAI-compatible endpoint, free with a GitHub personal access
@@ -160,9 +160,42 @@ LLM_MODEL=gpt-4o
 ```
 
 `LLM_BASE_URL` works with any OpenAI-compatible endpoint the same way —
-OpenRouter, a local vLLM/LM Studio server, etc. — not just GitHub Models.
+OpenRouter, a local vLLM/LM Studio server, Ollama, etc. — not just GitHub
+Models, which Option 2 below spells out.
 
-**Option 2 — Replay (free, no network, no key at all).** Every tutorial chapter's
+**Option 2 — Ollama / LM Studio (free, real model, fully local, zero
+network).** Same `LLM_PROVIDER=openai` + `LLM_BASE_URL` mechanism as Option 1,
+pointed at a model server running on your own machine instead of a hosted one:
+
+```dotenv
+# Ollama — `ollama pull` a model first, then:
+LLM_PROVIDER=openai
+LLM_BASE_URL=http://localhost:11434/v1
+OPENAI_API_KEY=ollama          # any non-empty string — Ollama doesn't check it
+LLM_MODEL=llama3.1:8b          # or whatever tag you pulled
+```
+
+```dotenv
+# LM Studio — load a model in LM Studio's local server first, then:
+LLM_PROVIDER=openai
+LLM_BASE_URL=http://localhost:1234/v1
+OPENAI_API_KEY=lm-studio       # any non-empty string
+LLM_MODEL=<the model identifier shown in LM Studio's server tab>
+```
+
+**Gotcha:** every chapter from Ch02 onward calls at least one tool
+(`@tool`-decorated function), and the capstone's specialist agents are
+tool-calling-heavy by design. Many small or quantized local models expose an
+OpenAI-compatible chat-completions endpoint but have unreliable or absent
+function-calling support — the agent won't raise an error, it will just
+silently stop calling tools and answer from its own (often fabricated)
+knowledge instead. Prefer a model explicitly tagged for tool use (Llama
+3.1+, Qwen2.5, Mistral "instruct"/"tool-use" variants) over a generic small
+chat model. If a tutorial chapter's tool-calling test passes but the printed
+answer doesn't reflect the tool's canned data, that's the model's
+tool-calling support, not a bug in the chapter.
+
+**Option 3 — Replay (free, no network, no key at all).** Every tutorial chapter's
 `tests/` directory ships committed fixtures recorded against a real model. Set
 `LLM_PROVIDER=replay` and the chapter's own client construction plays them back
 with zero credentials:

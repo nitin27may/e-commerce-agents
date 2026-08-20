@@ -30,7 +30,7 @@ maf_bootstrap.bootstrap()
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from agent_framework import Agent, BaseChatClient, Message  # noqa: E402
 from agent_framework._types import ChatResponse, ChatResponseUpdate, ResponseStream  # noqa: E402
-from main import FIXTURES_DIR, INSTRUCTIONS, ask, build_agent  # noqa: E402
+from main import FIXTURES_DIR, INSTRUCTIONS, _default_client, ask, build_agent  # noqa: E402
 
 
 class CannedChatClient(BaseChatClient):
@@ -71,6 +71,36 @@ def test_build_agent_uses_instructions() -> None:
     # MAF stores system instructions inside default_options, not as a top-level attribute.
     assert agent.default_options["instructions"] == INSTRUCTIONS
     assert agent.name == "first-agent"
+
+
+def test_default_client_honors_llm_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Phase 9: LLM_BASE_URL is what lets LLM_PROVIDER=openai point at any
+    OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, OpenRouter, GitHub
+    Models) instead of api.openai.com. Every tutorial chapter shares this
+    exact _default_client() shape — this is the representative test; the
+    other 22 chapters' main.py files use the identical construction.
+    """
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "ollama")
+    monkeypatch.setenv("LLM_MODEL", "qwen2.5:14b")
+    monkeypatch.setenv("LLM_BASE_URL", "http://localhost:11434/v1")
+
+    client = _default_client()
+
+    from agent_framework.openai import OpenAIChatClient
+
+    assert isinstance(client, OpenAIChatClient)
+    assert client.base_url == "http://localhost:11434/v1"
+
+
+def test_default_client_defaults_to_no_base_url_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.delenv("LLM_BASE_URL", raising=False)
+
+    client = _default_client()
+
+    assert not client.base_url
 
 
 @pytest.mark.asyncio

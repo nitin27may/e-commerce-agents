@@ -123,7 +123,7 @@ Separately, the orchestrator's own read of *its* conversation's history (for `Ru
 |-------|-----------|
 | Agent Framework | `agent-framework` v1.0 (MAF Python SDK, beta) |
 | Agent Communication | A2A Protocol (HTTP POST to `/message:send`) |
-| LLM | OpenAI / Azure OpenAI (gpt-4.1), configurable via `LLM_PROVIDER` env var |
+| LLM | OpenAI / Azure OpenAI (gpt-4.1), configurable via `LLM_PROVIDER` env var — plus any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, OpenRouter, GitHub Models) via `LLM_PROVIDER=openai` + `LLM_BASE_URL` |
 | Backend | Python 3.12, FastAPI (orchestrator), Starlette (specialist agents via agent_host) |
 | Database | PostgreSQL 16 + pgvector (1536-dim embeddings for text-embedding-3-small) |
 | Cache | Redis 7 |
@@ -195,7 +195,6 @@ AZURE_OPENAI_API_VERSION=2024-12-01-preview
 
 ## Do Not
 
-- Use Ollama or local models — this demo targets OpenAI / Azure OpenAI only
 - Create custom tool registries — use MAF's built-in `@tool`
 - Write raw OpenAI function-calling loops — use the existing `agent_host.py` pattern
 - Use `pip` or `poetry` — use `uv` for Python

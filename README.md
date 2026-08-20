@@ -338,7 +338,7 @@ Try these in the chat after logging in:
 |-------|-----------|
 | Agent Framework | [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) v1.0 — Python SDK **and** .NET SDK (both backends fully implemented) |
 | Agent Communication | A2A Protocol (HTTP) |
-| LLM | OpenAI / Azure OpenAI (gpt-4.1) |
+| LLM | OpenAI / Azure OpenAI (gpt-4.1) — plus any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, OpenRouter, GitHub Models) via `LLM_PROVIDER=openai` + `LLM_BASE_URL`, see [Setup](./tutorials/00-setup/) |
 | Orchestrator | FastAPI (Python 3.12) · ASP.NET Core minimal APIs (.NET 10, C#) |
 | Database | PostgreSQL 16 + pgvector (1536-dim embeddings) |
 | Cache | Redis 7 |
@@ -430,9 +430,17 @@ LLM_PROVIDER=azure
 AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
 AZURE_OPENAI_KEY=...
 AZURE_OPENAI_DEPLOYMENT=gpt-4.1
+
+# Local / self-hosted / free (Ollama, LM Studio, OpenRouter, vLLM, GitHub Models)
+LLM_PROVIDER=openai
+LLM_BASE_URL=http://localhost:11434/v1   # any OpenAI-compatible endpoint
+OPENAI_API_KEY=ollama                    # any non-empty string for local servers
+LLM_MODEL=qwen2.5:14b                    # a tool-calling-capable model
 ```
 
-See [Deployment Guide](docs/deployment.md) for all configuration options.
+See [Setup — Chapter 00](tutorials/00-setup/README.md) for the full walkthrough (including a
+tool-calling gotcha worth reading before picking a local model) and
+[Deployment Guide](docs/deployment.md) for all configuration options.
 
 ---
 
