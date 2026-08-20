@@ -182,12 +182,53 @@ def test_discover_chapters_excludes_underscore_and_dot_dirs() -> None:
     assert ".pytest_cache" not in chapters
 
 
-def test_check_chapter_on_real_stub_readme_fails_multiple_checks() -> None:
-    # Today's real 01-first-agent/README.md is a launcher stub — this pins
-    # the linter actually catching that, not just running without error.
-    result = check_chapter("01-first-agent")
+def test_check_chapter_fails_multiple_checks_on_a_launcher_stub() -> None:
+    # A synthetic minimal stub (title + one-line summary + a bash run block,
+    # no concept/diagram/walkthrough/capstone/gotchas) — this is the shape
+    # every tutorials/<chapter>/README.md was in before Phase 4c restored
+    # them from git history. Deliberately not tied to any real chapter's
+    # current (post-restoration) content, which changes over time.
+    result = ChapterResult(chapter="stub")
+    stub_text = (
+        "# Chapter NN — Something\n\n"
+        "A one-line summary.\n\n"
+        "## Run the demo\n\n"
+        "```bash\nuv run --project tutorials python tutorials/01-first-agent/python/main.py\n```\n"
+    )
+    check_concept(stub_text, result)
+    check_diagram(stub_text, result)
+    check_walkthrough(stub_text, result)
+    check_capstone_pointer(stub_text, result)
+    check_gotchas(stub_text, result)
     assert not result.passed
     assert len(result.failures) >= 3
+
+
+def test_every_real_chapter_except_capstone_tour_passes(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Phase 4c restored all 24 chapters except 21-capstone-tour (deliberately
+    # deferred to Phase 4d, since it needs the other 23 restored first). This
+    # is the regression check for that milestone: every chapter but that one
+    # genuinely passes the full linter, not just "doesn't crash".
+    chapters = [c for c in discover_chapters() if c != "21-capstone-tour"]
+    assert chapters, "expected to find restored chapters"
+    failing = [c for c in chapters if not check_chapter(c).passed]
+    assert failing == []
+
+
+def test_cli_check_mode_returns_zero_when_capstone_tour_excluded(monkeypatch: pytest.MonkeyPatch) -> None:
+    # tutorials.yml's CI gate runs exactly this: --check --exclude 21-capstone-tour.
+    # main() returns an exit code; sys.exit(main()) only happens in the
+    # __main__ guard, so calling it directly here doesn't raise SystemExit.
+    monkeypatch.setattr(sys, "argv", ["check_tutorial_readmes.py", "--check", "--exclude", "21-capstone-tour"])
+    assert _module.main() == 0
+
+
+def test_cli_check_mode_returns_nonzero_without_the_exclude(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Same run, but without excluding the one chapter still mid-restoration
+    # (Phase 4d) — must fail, proving --exclude is load-bearing above, not
+    # a no-op that happened to pass anyway.
+    monkeypatch.setattr(sys, "argv", ["check_tutorial_readmes.py", "--check"])
+    assert _module.main() == 1
 
 
 def test_00_setup_is_exempted_from_walkthrough_and_run_command_checks() -> None:

@@ -216,9 +216,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("chapters", nargs="*", help="Specific chapter dirs to check (default: all)")
     parser.add_argument("--check", action="store_true", help="CI mode: exit 1 if any chapter fails")
+    parser.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        help="Chapter dir to skip (repeatable) — e.g. a chapter still being restored",
+    )
     args = parser.parse_args()
 
-    chapters = args.chapters or discover_chapters()
+    chapters = [c for c in (args.chapters or discover_chapters()) if c not in args.exclude]
     results = [check_chapter(c) for c in chapters]
 
     passed = sum(1 for r in results if r.passed)

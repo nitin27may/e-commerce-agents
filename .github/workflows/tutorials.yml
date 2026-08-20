@@ -100,18 +100,15 @@ jobs:
         run: uv run --project tutorials ruff check tutorials/
 
   tutorials-contract:
-    name: Tutorials · chapter contract (report only)
+    name: Tutorials · chapter contract
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
 
-      # Report-only, not --check: as of Phase 4a every chapter fails this
-      # (the READMEs are still pre-Phase-4b/4c launcher stubs — see
-      # scripts/check_tutorial_readmes.py's own docstring for the contract).
-      # This step exists so compliance is visible in every PR's log while
-      # Phase 4c restores chapters one at a time, without blocking merges
-      # on work still in progress. Flip to `--check` once 4c is done and
-      # every chapter genuinely passes.
-      - name: Chapter contract report
-        run: python3 scripts/check_tutorial_readmes.py
+      # Phase 4c restored all 24 chapters except 21-capstone-tour (which
+      # needs the other 23 restored first — deliberately deferred to
+      # Phase 4d) from a report-only launcher-stub state to a real,
+      # merge-blocking gate. --exclude drops once 4d lands.
+      - name: Chapter contract check
+        run: python3 scripts/check_tutorial_readmes.py --check --exclude 21-capstone-tour
