@@ -18,7 +18,7 @@ var app = AgentHost.Build(
         {
             var prompts = sp.GetRequiredService<PromptLoader>();
             var tools = sp.GetRequiredService<OrderTools>();
-            return SpecialistAgentFactory.Create(settings, prompts, "order-management", tools.All());
+            return SpecialistAgentFactory.Create(settings, prompts, "order-management", tools.All(), services: sp);
         });
     }
 );

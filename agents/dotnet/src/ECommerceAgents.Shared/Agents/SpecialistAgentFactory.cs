@@ -1,7 +1,9 @@
+using ECommerceAgents.Shared.ContextProviders;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Prompts;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DependencyInjection;
 using OpenAI.Chat;
 
 namespace ECommerceAgents.Shared.Agents;
@@ -13,18 +15,34 @@ namespace ECommerceAgents.Shared.Agents;
 /// </summary>
 public static class SpecialistAgentFactory
 {
+    /// <param name="services">
+    /// When provided, attaches the <see cref="EcommerceContextProvider"/> and
+    /// wraps the agent in <see cref="SpecialistPipeline"/>'s middleware stack
+    /// (issue #12) — resolving <see cref="ContextEnricher"/>,
+    /// <c>AgentRunLogger</c>, <c>PiiRedactor</c> and <c>ToolAuditMiddleware</c>
+    /// from it. Omit only for tests that construct a bare agent with no DI
+    /// container (existing unit tests, e.g. <c>SpecialistAgentFactoryTests</c>,
+    /// keep working unchanged).
+    /// </param>
     public static AIAgent Create(
         AgentSettings settings,
         PromptLoader prompts,
         string agentName,
         IEnumerable<AITool>? tools = null,
-        string? userRole = null
+        string? userRole = null,
+        IServiceProvider? services = null
     )
     {
         var instructions = prompts.Load(agentName, userRole);
         var chatClient = ChatClientFactory.CreateChatClient(settings);
         var options = BuildOptions(settings, instructions, agentName, tools);
-        return chatClient.AsAIAgent(options);
+        if (services is not null)
+        {
+            options.AIContextProviders = [new EcommerceContextProvider(services.GetRequiredService<ContextEnricher>())];
+        }
+
+        var agent = chatClient.AsAIAgent(options);
+        return services is not null ? SpecialistPipeline.Apply(agent, settings, services) : agent;
     }
 
     /// <summary>

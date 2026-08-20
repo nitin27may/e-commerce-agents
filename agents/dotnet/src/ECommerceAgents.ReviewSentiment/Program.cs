@@ -18,7 +18,7 @@ var app = AgentHost.Build(
         {
             var prompts = sp.GetRequiredService<PromptLoader>();
             var tools = sp.GetRequiredService<ReviewTools>();
-            return SpecialistAgentFactory.Create(settings, prompts, "review-sentiment", tools.All());
+            return SpecialistAgentFactory.Create(settings, prompts, "review-sentiment", tools.All(), services: sp);
         });
     }
 );

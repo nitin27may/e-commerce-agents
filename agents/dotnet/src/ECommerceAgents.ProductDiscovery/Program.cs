@@ -19,7 +19,7 @@ var app = AgentHost.Build(
         {
             var prompts = sp.GetRequiredService<PromptLoader>();
             var tools = sp.GetRequiredService<ProductTools>();
-            return SpecialistAgentFactory.Create(settings, prompts, "product-discovery", tools.All());
+            return SpecialistAgentFactory.Create(settings, prompts, "product-discovery", tools.All(), services: sp);
         });
     }
 );

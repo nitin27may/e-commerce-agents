@@ -1,6 +1,7 @@
 using ECommerceAgents.Shared.Auth;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
+using ECommerceAgents.Shared.ContextProviders;
 using ECommerceAgents.Shared.Data;
 using ECommerceAgents.Shared.Middleware;
 using ECommerceAgents.Shared.Telemetry;
@@ -65,6 +66,14 @@ public static class AgentHost
         builder.Services.AddHttpClient<JwksKeyProvider>();
         builder.Services.AddAgentTelemetry(settings);
         builder.Services.AddSingleton<HitlApprovalMiddleware>();
+
+        // Cross-cutting agent pipeline (issue #12) — resolved by
+        // Agents.SpecialistPipeline / SpecialistAgentFactory.Create when
+        // callers pass their IServiceProvider.
+        builder.Services.AddSingleton<AgentRunLogger>();
+        builder.Services.AddSingleton<ToolAuditMiddleware>();
+        builder.Services.AddSingleton<PiiRedactor>();
+        builder.Services.AddSingleton<ContextEnricher>();
 
         configureServices?.Invoke(builder, settings);
 

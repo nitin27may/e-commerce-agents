@@ -11,11 +11,16 @@ namespace ECommerceAgents.Shared.Middleware;
 /// Tool-level human-in-the-loop approval queue. .NET parity port of Python's
 /// <c>HITLFunctionMiddleware</c> (<c>shared/hitl.py</c>) — but structured as
 /// a call-site wrapper, not a framework-level function-invocation
-/// interceptor: unlike Python's <c>agent-framework</c>, .NET's tool
-/// invocation pipeline here has no equivalent interception hook (confirmed:
-/// no <c>FunctionMiddleware</c>/<c>IFunctionInvocationFilter</c> pattern
-/// exists anywhere in this codebase). Follows the same established
-/// call-site-wraps-itself pattern as <see cref="ToolAuditMiddleware"/>.
+/// interceptor. MAF .NET 1.18+ does have a real function-invocation
+/// interception hook (<c>FunctionInvocationDelegatingAgentBuilderExtensions.Use</c>
+/// on <c>AIAgentBuilder</c> — see <see cref="Agents.SpecialistPipeline"/>,
+/// which uses it for <see cref="ToolAuditMiddleware"/>), so this class stays
+/// a call-site wrapper by choice, not necessity: it needs to short-circuit
+/// with a caller-supplied <c>pendingResult</c> shape specific to each gated
+/// tool's return type, which a generic pipeline stage can't express as
+/// cleanly as the tool body calling <see cref="GuardAsync{T}"/> itself.
+/// Follows the same established call-site-wraps-itself pattern as
+/// <see cref="ToolAuditMiddleware"/>'s own <c>RecordAsync</c>.
 /// </summary>
 /// <remarks>
 /// When <see cref="AgentSettings.HitlEnabled"/> is on and a gated tool is

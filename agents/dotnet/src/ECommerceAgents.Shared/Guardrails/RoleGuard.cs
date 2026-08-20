@@ -8,12 +8,18 @@ namespace ECommerceAgents.Shared.Guardrails;
 /// <c>shared/guardrails/roles.py::requires_role</c>.
 /// </summary>
 /// <remarks>
-/// Python wraps a <c>@tool</c> function with a decorator; MAF's .NET tool
-/// pipeline has no equivalent interceptor seam, so this is a guard-clause
-/// helper instead — called as the first line of a guarded tool method,
-/// mirroring the same source file's own <c>ensure_role</c> retrofit style
-/// (used where a decorator can't wrap the call site). Reads
-/// <see cref="RequestContext.CurrentUserRole"/> (the .NET analog of
+/// Python wraps a <c>@tool</c> function with a decorator; this is a
+/// guard-clause helper instead — called as the first line of a guarded tool
+/// method, mirroring the same source file's own <c>ensure_role</c> retrofit
+/// style (used where a decorator can't wrap the call site). MAF .NET 1.18+
+/// does have a function-invocation interceptor seam now (see
+/// <see cref="Agents.SpecialistPipeline"/>'s use of
+/// <c>FunctionInvocationDelegatingAgentBuilderExtensions.Use</c> for
+/// <c>ToolAuditMiddleware</c>), but role checks stay call-site: per-tool
+/// role requirements vary by argument (e.g. whose order is being
+/// cancelled), which a single agent-wide pipeline stage can't express
+/// without re-deriving per-call context the tool body already has directly.
+/// Reads <see cref="RequestContext.CurrentUserRole"/> (the .NET analog of
 /// Python's <c>current_user_role</c> ContextVar) rather than accepting the
 /// role as a parameter, for the same "identity via ambient context, not
 /// threaded arguments" reason.
