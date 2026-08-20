@@ -10,7 +10,7 @@ MAF's **Workflow** is a deterministic DAG of **Executors** (units of work) conne
 
 - Completed [Chapter 08 — MCP Tools](../08-mcp-tools/)
 - Python 3.12+ via `uv`; .NET SDK (9 or 10)
-- No environment variables needed — this chapter runs pure string-transformation executors, no LLM calls
+- No environment variables needed — this chapter runs pure order-id transformation executors, no LLM calls
 
 ## The concept
 
@@ -21,7 +21,7 @@ MAF's **Workflow** is a deterministic DAG of **Executors** (units of work) conne
 | **WorkflowBuilder** | Wires executors and edges into a `Workflow`. Declares the start executor. |
 | **WorkflowContext** | Passed to each handler. Key methods: `send_message(...)` (forward to the next executor along an outbound edge) and `yield_output(...)` (emit a final, workflow-terminating result — no downstream edge fires for that message after this call). |
 
-The demo wires three executors in a line — `Uppercase → Validate → Log` — where `Validate` can short-circuit: an empty or whitespace-only input yields a terminal output immediately and `Log` never runs.
+The demo wires three executors in a line — `NormalizeOrder → ValidateOrder → LogOrder` — where `ValidateOrder` can short-circuit: an empty or whitespace-only order id yields a terminal output immediately and `LogOrder` never runs.
 
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': {
@@ -33,27 +33,27 @@ flowchart LR
   classDef success  fill:#10b981,stroke:#047857,color:#ffffff
   classDef error    fill:#ef4444,stroke:#b91c1c,color:#ffffff
 
-  input([Input string])
-  up[UppercaseExecutor]
-  validate[ValidateExecutor]
-  log[LogExecutor]
-  skipped([Output: skipped])
-  logged([Output: LOGGED text])
+  input([Input order id])
+  norm[NormalizeOrderExecutor]
+  validate[ValidateOrderExecutor]
+  log[LogOrderExecutor]
+  skipped([Output: rejected])
+  logged([Output: ORDER LOGGED text])
 
-  input --> up
-  up -- "send_message" --> validate
-  validate -- "blank input: yield_output" --> skipped
+  input --> norm
+  norm -- "send_message" --> validate
+  validate -- "blank order id: yield_output" --> skipped
   validate -- "non-blank: send_message" --> log
   log -- "yield_output" --> logged
 
-  class up core
+  class norm core
   class validate core
   class log core
   class logged success
   class skipped error
 ```
 
-`ValidateExecutor` is the only branch point: a blank string takes the error/skip path and yields immediately; anything else flows through `LogExecutor` to the success output.
+`ValidateOrderExecutor` is the only branch point: a blank order id takes the error/skip path and yields immediately; anything else flows through `LogOrderExecutor` to the success output.
 
 ## Python
 
@@ -61,47 +61,47 @@ Run from the repo root using the shared `tutorials/` uv project (one `uv sync` c
 
 ```bash
 uv sync --project tutorials
-uv run --project tutorials python tutorials/09-workflow-executors-and-edges/python/main.py "hello world"
+uv run --project tutorials python tutorials/09-workflow-executors-and-edges/python/main.py "ord-8842"
 uv run --project tutorials python tutorials/09-workflow-executors-and-edges/python/main.py ""   # empty -> short-circuit
 ```
 
 Source: [`python/main.py`](./python/main.py). The three executors and the build function:
 
 ```python
-class ValidateExecutor(Executor):
-    """Routes valid inputs downstream; short-circuits empty inputs to a terminal output."""
+class ValidateOrderExecutor(Executor):
+    """Routes valid order ids downstream; short-circuits empty ids to a terminal output."""
 
     def __init__(self) -> None:
-        super().__init__(id="validate")
+        super().__init__(id="validate-order")
 
     @handler
-    async def run(self, message: str, ctx: WorkflowContext[str, str]) -> None:
-        if not message.strip():
+    async def run(self, order_id: str, ctx: WorkflowContext[str, str]) -> None:
+        if not order_id:
             # Yield a workflow-terminating output; no downstream executor will run.
-            await ctx.yield_output("[skipped: empty input]")
+            await ctx.yield_output("[rejected: empty order id]")
             return
-        await ctx.send_message(message)
+        await ctx.send_message(order_id)
 
 
 def build_workflow():
-    up = UppercaseExecutor()
-    validate = ValidateExecutor()
-    log = LogExecutor()
+    normalize = NormalizeOrderExecutor()
+    validate = ValidateOrderExecutor()
+    log = LogOrderExecutor()
     return (
-        WorkflowBuilder(start_executor=up)
-        .add_edge(up, validate)
+        WorkflowBuilder(start_executor=normalize)
+        .add_edge(normalize, validate)
         .add_edge(validate, log)
         .build()
     )
 ```
 
-`run()` drives the workflow with `workflow.run(text, stream=True)` and collects every event whose `type` is `"output"` — that's how both the happy-path `LOGGED: ...` result and the short-circuit `[skipped: empty input]` result surface to the caller; `main.py` bootstraps via `tutorials/_shared/maf_bootstrap.py` before importing `agent_framework`.
+`run()` drives the workflow with `workflow.run(order_id, stream=True)` and collects every event whose `type` is `"output"` — that's how both the happy-path `ORDER LOGGED: ...` result and the short-circuit `[rejected: empty order id]` result surface to the caller; `main.py` bootstraps via `tutorials/_shared/maf_bootstrap.py` before importing `agent_framework`.
 
 ## .NET
 
 ```bash
 cd tutorials/09-workflow-executors-and-edges/dotnet
-dotnet run -- "hello world"
+dotnet run -- "ord-8842"
 dotnet test
 ```
 
@@ -110,26 +110,26 @@ Source: [`dotnet/Program.cs`](./dotnet/Program.cs). This is a fully working, bui
 ```csharp
 [SendsMessage(typeof(string))]
 [YieldsOutput(typeof(string))]
-internal sealed partial class ValidateExecutor() : Executor("validate")
+internal sealed partial class ValidateOrderExecutor() : Executor("validate-order")
 {
     [MessageHandler]
     public async ValueTask HandleAsync(
-        string message,
+        string orderId,
         IWorkflowContext context,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(message))
+        if (string.IsNullOrWhiteSpace(orderId))
         {
-            await context.YieldOutputAsync("[skipped: empty input]", cancellationToken);
+            await context.YieldOutputAsync("[rejected: empty order id]", cancellationToken);
             return;
         }
 
-        await context.SendMessageAsync(message, cancellationToken);
+        await context.SendMessageAsync(orderId, cancellationToken);
     }
 }
 ```
 
-`WorkflowFactory.Build()` wires the three executors with `new WorkflowBuilder(uppercase).AddEdge(uppercase, validate).AddEdge(validate, log).WithOutputFrom(validate, log).Build()` — note `WithOutputFrom` names *both* `validate` and `log` as legitimate output sources, since either can be the last one to fire depending on whether the run short-circuits. `WorkflowRunner.RunAsync` drives it with `InProcessExecution.RunStreamingAsync(workflow, input)` and filters `WorkflowOutputEvent`s off the stream, mirroring the Python `run()` helper.
+`WorkflowFactory.Build()` wires the three executors with `new WorkflowBuilder(normalize).AddEdge(normalize, validate).AddEdge(validate, log).WithOutputFrom(validate, log).Build()` — note `WithOutputFrom` names *both* `validate` and `log` as legitimate output sources, since either can be the last one to fire depending on whether the run short-circuits. `WorkflowRunner.RunAsync` drives it with `InProcessExecution.RunStreamingAsync(workflow, input)` and filters `WorkflowOutputEvent`s off the stream, mirroring the Python `run()` helper.
 
 ## Side-by-side differences
 
@@ -148,8 +148,8 @@ Python's pure-runtime model is easier to iterate on in a tutorial. .NET's source
 - **Python — don't forget `start_executor=`** on `WorkflowBuilder`. Without it, `.build()` has no entry point.
 - **Python — `yield_output` is terminal for that message.** It emits a workflow-level output; whatever edges normally follow that executor don't fire for the value that was yielded.
 - **.NET — the executor class must be `partial`.** The source generator emits a second partial file with the protocol registration based on your `[MessageHandler]` methods; forgetting `partial` is a compile error, not a silent bug.
-- **.NET — `WithOutputFrom(...)` must list every executor that can legitimately yield.** This demo lists both `validate` and `log` because the short-circuit path ends at `validate`. Miss one and that output is silently dropped from the stream.
-- **Conditional routing**: Python's `add_edge(...)` takes an optional `condition: (data) -> bool | Awaitable[bool]` (confirmed in the installed `agent_framework._workflows._workflow_builder` module) for routing without a full short-circuit. This chapter's demo doesn't need it — the short-circuit is expressed inside `ValidateExecutor` instead — but Chapter 13's concurrent workflow (see below) uses `add_fan_out_edges` / `add_fan_in_edges`, a related but different mechanism for parallel branches.
+- **.NET — `WithOutputFrom(...)` must list every executor that can legitimately yield.** This demo lists both `validate-order` and `log-order` because the short-circuit path ends at `validate-order`. Miss one and that output is silently dropped from the stream.
+- **Conditional routing**: Python's `add_edge(...)` takes an optional `condition: (data) -> bool | Awaitable[bool]` (confirmed in the installed `agent_framework._workflows._workflow_builder` module) for routing without a full short-circuit. This chapter's demo doesn't need it — the short-circuit is expressed inside `ValidateOrderExecutor` instead — but Chapter 13's concurrent workflow (see below) uses `add_fan_out_edges` / `add_fan_in_edges`, a related but different mechanism for parallel branches.
 - **The old MAF v1.0 packaging bug is not relevant to current installs.** An earlier version of this repo worked around an `agent_framework` wheel that shipped an empty `__init__.py`; `agents/python/patch_maf.py` still exists but is now a documented no-op against the pinned `agent-framework` 1.14.0+, which fixed it upstream. The bootstrap tutorials actually rely on is `tutorials/_shared/maf_bootstrap.py::bootstrap()`, which patches only if the installed `__init__.py` is still empty or carries an older patch marker — on a current install neither is true, so it just loads `.env` and returns.
 
 ## Tests

@@ -6,7 +6,7 @@ based on the previous executor's output. No LLM — workflows are deterministic
 coordinators; the agents come back in Ch11.
 
 Run:
-    python tutorials/09-workflow-executors-and-edges/python/main.py "hello"
+    python tutorials/09-workflow-executors-and-edges/python/main.py "ord-8842"
     python tutorials/09-workflow-executors-and-edges/python/main.py ""   # empty → short-circuit
 """
 
@@ -27,58 +27,58 @@ from agent_framework._workflows._workflow_context import WorkflowContext  # noqa
 
 # ─────────────── Executors ───────────────
 
-class UppercaseExecutor(Executor):
+class NormalizeOrderExecutor(Executor):
     def __init__(self) -> None:
-        super().__init__(id="uppercase")
+        super().__init__(id="normalize-order")
 
     @handler
-    async def run(self, message: str, ctx: WorkflowContext[str]) -> None:
-        await ctx.send_message(message.upper())
+    async def run(self, order_id: str, ctx: WorkflowContext[str]) -> None:
+        await ctx.send_message(order_id.strip().upper())
 
 
-class ValidateExecutor(Executor):
-    """Routes valid inputs downstream; short-circuits empty inputs to a terminal output."""
+class ValidateOrderExecutor(Executor):
+    """Routes valid order ids downstream; short-circuits empty ids to a terminal output."""
 
     def __init__(self) -> None:
-        super().__init__(id="validate")
+        super().__init__(id="validate-order")
 
     @handler
-    async def run(self, message: str, ctx: WorkflowContext[str, str]) -> None:
-        if not message.strip():
+    async def run(self, order_id: str, ctx: WorkflowContext[str, str]) -> None:
+        if not order_id:
             # Yield a workflow-terminating output; no downstream executor will run.
-            await ctx.yield_output("[skipped: empty input]")
+            await ctx.yield_output("[rejected: empty order id]")
             return
-        await ctx.send_message(message)
+        await ctx.send_message(order_id)
 
 
-class LogExecutor(Executor):
+class LogOrderExecutor(Executor):
     def __init__(self) -> None:
-        super().__init__(id="log")
+        super().__init__(id="log-order")
 
     @handler
-    async def run(self, message: str, ctx: WorkflowContext[None, str]) -> None:
-        await ctx.yield_output(f"LOGGED: {message}")
+    async def run(self, order_id: str, ctx: WorkflowContext[None, str]) -> None:
+        await ctx.yield_output(f"ORDER LOGGED: {order_id}")
 
 
 # ─────────────── Build + run ───────────────
 
 def build_workflow():
-    up = UppercaseExecutor()
-    validate = ValidateExecutor()
-    log = LogExecutor()
+    normalize = NormalizeOrderExecutor()
+    validate = ValidateOrderExecutor()
+    log = LogOrderExecutor()
     return (
-        WorkflowBuilder(start_executor=up)
-        .add_edge(up, validate)
+        WorkflowBuilder(start_executor=normalize)
+        .add_edge(normalize, validate)
         .add_edge(validate, log)
         .build()
     )
 
 
-async def run(text: str) -> list[object]:
+async def run(order_id: str) -> list[object]:
     """Run the workflow and return the list of yielded workflow outputs."""
     workflow = build_workflow()
     outputs: list[object] = []
-    async for event in workflow.run(text, stream=True):
+    async for event in workflow.run(order_id, stream=True):
         # WorkflowEvent is a tagged union; filter by its `type` field.
         if getattr(event, "type", None) == "output":
             outputs.append(getattr(event, "data", None))
@@ -86,9 +86,9 @@ async def run(text: str) -> list[object]:
 
 
 async def main() -> None:
-    text = sys.argv[1] if len(sys.argv) > 1 else "hello world"
-    print(f"input: {text!r}")
-    for output in await run(text):
+    order_id = sys.argv[1] if len(sys.argv) > 1 else "ord-8842"
+    print(f"input: {order_id!r}")
+    for output in await run(order_id):
         print(f"output: {output!r}")
 
 

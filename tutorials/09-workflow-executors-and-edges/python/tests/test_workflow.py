@@ -22,21 +22,21 @@ from main import build_workflow, run  # noqa: E402
 
 
 @pytest.mark.asyncio
-async def test_happy_path_pipeline_returns_uppercased_logged_output() -> None:
-    outputs = await run("hello world")
-    assert outputs == ["LOGGED: HELLO WORLD"]
+async def test_happy_path_pipeline_returns_normalized_logged_output() -> None:
+    outputs = await run(" ord-8842 ")
+    assert outputs == ["ORDER LOGGED: ORD-8842"]
 
 
 @pytest.mark.asyncio
-async def test_empty_input_short_circuits_at_validate_executor() -> None:
+async def test_empty_order_id_short_circuits_at_validate_executor() -> None:
     outputs = await run("")
-    assert outputs == ["[skipped: empty input]"]
+    assert outputs == ["[rejected: empty order id]"]
 
 
 @pytest.mark.asyncio
-async def test_whitespace_only_input_treated_as_empty() -> None:
+async def test_whitespace_only_order_id_treated_as_empty() -> None:
     outputs = await run("   ")
-    assert outputs == ["[skipped: empty input]"]
+    assert outputs == ["[rejected: empty order id]"]
 
 
 @pytest.mark.asyncio
@@ -44,7 +44,7 @@ async def test_workflow_wires_executors_and_edges() -> None:
     workflow = build_workflow()
     executors = workflow.get_executors_list()
     ids = {getattr(e, "id", None) for e in executors}
-    assert {"uppercase", "validate", "log"} <= ids
+    assert {"normalize-order", "validate-order", "log-order"} <= ids
 
 
 @pytest.mark.asyncio
@@ -52,12 +52,12 @@ async def test_event_stream_reports_executor_invocations_in_order() -> None:
     workflow = build_workflow()
     # Materialise every event via get_final_response-compatible API by
     # exhausting the async generator.
-    stream = workflow.run("pipeline-test", stream=True)
+    stream = workflow.run("ord-1234", stream=True)
     events = [event async for event in stream]
     invoked = [
         getattr(e, "executor_id", "")
         for e in events
         if getattr(e, "type", None) == "executor_invoked"
     ]
-    assert invoked.index("uppercase") < invoked.index("validate")
-    assert invoked.index("validate") < invoked.index("log")
+    assert invoked.index("normalize-order") < invoked.index("validate-order")
+    assert invoked.index("validate-order") < invoked.index("log-order")
