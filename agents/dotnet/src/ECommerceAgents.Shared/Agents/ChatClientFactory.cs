@@ -49,7 +49,18 @@ public static class ChatClientFactory
             // No network, no credentials, no nondeterminism. Answers come from recorded
             // fixtures keyed on the request, which is what lets an eval suite attribute a
             // score change to a code change.
-            return new ReplayChatClient(settings.ReplayFixturesDir);
+            //
+            // A recorder is attached only when RECORD=true, so the default replay path
+            // still cannot reach the network by accident — a fixture miss stays fatal
+            // rather than quietly becoming a paid API call.
+            IChatClient? recorder = null;
+            if (settings.Record)
+            {
+                recorder = CreateChatClient(settings with { LlmProvider = settings.ReplayRecordProvider })
+                    .AsIChatClient();
+            }
+
+            return new ReplayChatClient(settings.ReplayFixturesDir, recorder);
         }
 
         return CreateChatClient(settings).AsIChatClient();

@@ -157,6 +157,61 @@ public sealed class ReplayChatClientTests : IDisposable
     }
 
     [Fact]
+    public async Task WithARecorder_AMissIsRecordedInsteadOfThrowing()
+    {
+        // The .NET twin of Python's RECORD=true. Without it the datasets could
+        // be ported but never populated — there was no way to create a fixture
+        // outside a hand-written test.
+        var recorder = new StubClient("recorded answer");
+        var client = new ReplayChatClient(_dir, recorder);
+        var messages = new[] { new ChatMessage(ChatRole.User, "never seen before") };
+
+        var first = await client.GetResponseAsync(messages);
+
+        first.Text.Should().Be("recorded answer");
+        recorder.Calls.Should().Be(1);
+
+        // Second call must come off disk, not the recorder — record on *miss*,
+        // not on every call.
+        var second = await client.GetResponseAsync(messages);
+        second.Text.Should().Be("recorded answer");
+        recorder.Calls.Should().Be(1, "a hit must not reach the recorder");
+    }
+
+    [Fact]
+    public async Task WithoutARecorder_AMissStaysFatal()
+    {
+        // The property that makes replay mode trustworthy: a normal run cannot
+        // reach the network, so a missing fixture fails loudly rather than
+        // quietly becoming a paid API call.
+        var client = new ReplayChatClient(_dir);
+
+        var act = async () => await client.GetResponseAsync([new ChatMessage(ChatRole.User, "nope")]);
+
+        await act.Should().ThrowAsync<ReplayChatClient.FixtureMissingException>();
+    }
+
+    private sealed class StubClient(string reply) : IChatClient
+    {
+        public int Calls { get; private set; }
+
+        public Task<ChatResponse> GetResponseAsync(
+            IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken ct = default)
+        {
+            Calls++;
+            return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, reply)));
+        }
+
+        public IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken ct = default) =>
+            throw new NotSupportedException();
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+        public void Dispose() { }
+    }
+
+    [Fact]
     public void TheFactoryBuildsAReplayClient_AndRejectsAnUnknownProvider()
     {
         ChatClientFactory.Create(new AgentSettings { LlmProvider = "replay", ReplayFixturesDir = _dir })

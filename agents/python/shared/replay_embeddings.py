@@ -55,8 +55,17 @@ def _bucket(token: str) -> tuple[int, float]:
     vectors written by the seeding script would not match vectors computed in
     an agent process. That failure would be silent and intermittent — the exact
     shape of the ``PYTHONHASHSEED`` bug this repo already hit in chapter 14.
+
+    **SHA-256 specifically, and this matters across stacks.** The .NET stack
+    reads the same ``product_embeddings`` rows this scheme writes, so
+    ``ReplayEmbeddingProvider`` in ``agents/dotnet`` must bucket tokens
+    identically or .NET semantic search returns noise against Python-written
+    vectors — silently, since nothing errors. SHA-256 is in both standard
+    libraries; BLAKE2b, which this used first, is not available in .NET without
+    a third-party package. Changing this function means re-recording any
+    fixture whose trajectory includes a semantic search.
     """
-    digest = hashlib.blake2b(token.encode("utf-8"), digest_size=8).digest()
+    digest = hashlib.sha256(token.encode("utf-8")).digest()
     index = int.from_bytes(digest[:4], "big") % EMBEDDING_DIMENSIONS
     sign = 1.0 if digest[4] & 1 else -1.0
     return index, sign

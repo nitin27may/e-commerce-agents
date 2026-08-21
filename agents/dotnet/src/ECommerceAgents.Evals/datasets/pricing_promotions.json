@@ -1,0 +1,51 @@
+[
+  {
+    "input": "Is coupon WELCOME10 valid for my current cart?",
+    "expected_tools": ["validate_coupon"],
+    "expected_fields": ["total"],
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "coupon_validated": true
+    }
+  },
+  {
+    "input": "What deals and promotions are active right now?",
+    "expected_tools": ["get_active_deals"],
+    "expected_fields": ["name", "price"],
+    "criteria": {
+      "grounded": true,
+      "tool_called": true
+    }
+  },
+  {
+    "input": "What's my loyalty tier and how much discount do I get?",
+    "expected_tools": ["get_loyalty_tier"],
+    "expected_fields": ["status"],
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "loyalty_checked": true
+    }
+  },
+  {
+    "input": "If I buy the Sony WH-1000XM5 and the Logitech MX Master 3S together, what's the best discount combination and lowest total price?",
+    "expected_tools": ["optimize_cart"],
+    "expected_fields": ["total", "price"],
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "cart_optimized": true
+    }
+  },
+  {
+    "input": "Has the price of the Sony WH-1000XM5 dropped recently?",
+    "expected_tools": ["get_price_history"],
+    "expected_fields": ["price"],
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "price_history_checked": true
+    }
+  }
+]

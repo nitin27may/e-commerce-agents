@@ -94,6 +94,8 @@ public static class AgentSettingsLoader
 
             LlmProvider = Get("LLM_PROVIDER", "openai").ToLowerInvariant(),
             ReplayFixturesDir = Get("REPLAY_FIXTURES_DIR", "evals/fixtures/replay"),
+            Record = Get("RECORD", "false").Equals("true", StringComparison.OrdinalIgnoreCase),
+            ReplayRecordProvider = Get("REPLAY_RECORD_PROVIDER", "azure").ToLowerInvariant(),
             LlmModel = Get("LLM_MODEL", "gpt-4.1"),
             EmbeddingModel = Get("EMBEDDING_MODEL", "text-embedding-3-small"),
             OpenAiApiKey = Get("OPENAI_API_KEY"),

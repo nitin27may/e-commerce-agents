@@ -32,6 +32,22 @@ public sealed record AgentSettings
 
     /// <summary>Where <c>LLM_PROVIDER=replay</c> reads and writes fixtures.</summary>
     public string ReplayFixturesDir { get; init; } = "evals/fixtures/replay";
+
+    /// <summary>
+    /// When true, a replay fixture miss calls a real provider and records the
+    /// answer instead of failing. Mirrors Python's <c>RECORD=true</c>.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately opt-in and separate from <see cref="LlmProvider"/>: the
+    /// whole value of replay mode is that a normal run cannot reach the
+    /// network, so recording has to be something you ask for explicitly rather
+    /// than a fallback that quietly starts spending money when a fixture is
+    /// missing.
+    /// </remarks>
+    public bool Record { get; init; }
+
+    /// <summary>Provider used for recording — <c>azure</c> or <c>openai</c>.</summary>
+    public string ReplayRecordProvider { get; init; } = "azure";
     public string LlmModel { get; init; } = "gpt-4.1";
 
     /// <summary>
