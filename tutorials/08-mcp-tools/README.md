@@ -127,7 +127,10 @@ dotnet run
 public static async Task<McpClient> BuildMcpClientAsync()
 {
     var pythonBin = Environment.GetEnvironmentVariable("PYTHON_BIN")
-                    ?? Path.Combine(FindRepoRoot(), "agents", ".venv", "bin", "python");
+                    ?? FirstExisting(
+                        Path.Combine(FindRepoRoot(), "tutorials", ".venv", "bin", "python"),
+                        Path.Combine(FindRepoRoot(), "agents", "python", ".venv", "bin", "python"))
+                    ?? "python3";
 
     var transport = new StdioClientTransport(new StdioClientTransportOptions
     {
@@ -155,7 +158,7 @@ var agent = chatClient.AsAIAgent(
 var response = await agent.RunAsync(question);
 ```
 
-`ServerScript` walks up from the running binary to find `tutorials/08-mcp-tools/python/weather_mcp_server.py` and `PYTHON_BIN` defaults to the repo's shared `agents/.venv` — set it explicitly if you keep the tutorials venv somewhere else.
+`ServerScript` walks up from the running binary to find `tutorials/08-mcp-tools/python/weather_mcp_server.py`, and `PYTHON_BIN` defaults to the tutorials venv (`tutorials/.venv`, what `uv sync --project tutorials` creates), falling back to `agents/python/.venv` — set it explicitly if you keep yours somewhere else.
 
 ## Side-by-side differences
 
@@ -171,7 +174,7 @@ Both honor the same MCP spec, so either client works against either-language ser
 
 ## Gotchas
 
-- **The subprocess needs a Python interpreter that has `mcp` installed.** The .NET test's `PYTHON_BIN` env var controls which interpreter gets spawned; it defaults to `agents/.venv/bin/python`, not whatever `python3` resolves to on your `PATH`.
+- **The subprocess needs a Python interpreter that has `mcp` installed.** The .NET test's `PYTHON_BIN` env var controls which interpreter gets spawned; it defaults to the tutorials venv, not whatever `python3` resolves to on your `PATH`. This default was wrong for a long time — it pointed at `agents/.venv`, a path that stopped existing when the Python packages moved under `agents/python/`, so all three .NET tests here failed with a bare "No such file or directory". No CI job built or ran any tutorial .NET project until #20, so nothing noticed.
 - **Long-running MCP servers stay alive between calls.** Always scope them with `async with` (Python) or `await using` (.NET) so a crashed or forgotten test doesn't leave an orphan subprocess.
 - **Tool name collisions** across multiple MCP servers attached to one agent are a real failure mode in this repo, not a hypothetical: `agents/python/product_discovery/agent.py` explicitly does *not* register a local `get_price_history` tool alongside the MCP server's version of it, because MAF raises "Duplicate tool name" at agent-construction time if it does.
 - **`tutorials/_shared/maf_bootstrap.py` still carries an `agent_framework/__init__.py` patch step** for a packaging bug in `agent-framework-core==1.0.0` (empty `__init__.py`). Both `tutorials/pyproject.toml` and `agents/python/pyproject.toml` now pin `agent-framework-core==1.14.0`, where the bug is fixed upstream, so `bootstrap()`'s patch is a no-op on a current install — it only writes when the installed `__init__.py` is empty. It's left in defensively rather than removed.
