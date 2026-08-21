@@ -1,6 +1,7 @@
 using Dapper;
 using ECommerceAgents.Orchestrator.Routes;
 using ECommerceAgents.Shared.Configuration;
+using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Data;
 using ECommerceAgents.Shared.Telemetry;
 using ECommerceAgents.TestFixtures;
@@ -170,6 +171,46 @@ public sealed class ChatRoutesTests : IAsyncLifetime
             (ChatRole.Assistant, "first reply"),
             (ChatRole.User, "follow up")
         );
+    }
+
+    [Fact]
+    public async Task SendAsync_BindsTheSessionIdToTheConversation()
+    {
+        // #9. CurrentSessionId is otherwise only ever set from an inbound
+        // X-Session-Id header, and the browser never sends one — so every A2A
+        // call forwarded an empty session id and HistoryRehydrator could never
+        // find anything. Harmless on this stack today only because
+        // OrchestratorTools still passes history in the body; the fallback was
+        // dead code, and the matching bug on Python broke every follow-up.
+        var chatClient = new FakeChatClient().EnqueueResponse("reply");
+        string? seen = null;
+        chatClient.OnCall = () => seen = RequestContext.CurrentSessionId;
+        using var client = ClientFor(chatClient);
+
+        var resp = await client.PostAsJsonAsync("/api/chat", new { message = "hello" });
+        var payload = await resp.Content.ReadFromJsonAsync<JsonElement>();
+
+        seen.Should().Be(payload.GetProperty("conversation_id").GetString());
+        seen.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task SendAsync_Anonymous_DoesNotBindAClientSuppliedConversationId()
+    {
+        // The anonymous branch takes conversation_id straight from the request
+        // body with no ownership check, so binding it would let anyone read any
+        // conversation by UUID via the specialist's rehydration path.
+        var chatClient = new FakeChatClient().EnqueueResponse("anonymous reply");
+        string? seen = null;
+        chatClient.OnCall = () => seen = RequestContext.CurrentSessionId;
+        using var client = ClientFor(chatClient, authenticated: false);
+
+        await client.PostAsJsonAsync(
+            "/api/chat",
+            new { message = "what did we discuss?", conversation_id = Guid.NewGuid().ToString() }
+        );
+
+        seen.Should().BeEmpty();
     }
 
     [Fact]

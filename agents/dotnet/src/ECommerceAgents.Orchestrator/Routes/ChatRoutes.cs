@@ -128,8 +128,14 @@ public static class ChatRoutes
         using var scope = RequestContext.Scope(
             RequestContext.CurrentUserEmail,
             RequestContext.CurrentUserRole,
-            RequestContext.CurrentSessionId,
-            ctx!.History
+            // The conversation this turn belongs to, not the inbound header (#9).
+            // CurrentSessionId is only ever set from an X-Session-Id header and
+            // the browser never sends one, so specialists received "" and could
+            // not rehydrate anything. Empty for anonymous callers on purpose:
+            // their ConversationId is an unvalidated client-supplied string, and
+            // forwarding it would let anyone read any conversation by UUID.
+            ctx!.IsAnon ? "" : ctx.ConversationId,
+            ctx.History
         );
 
         // Python's blocking handler never actually grows agents_involved beyond
@@ -212,8 +218,14 @@ public static class ChatRoutes
         using var scope = RequestContext.Scope(
             RequestContext.CurrentUserEmail,
             RequestContext.CurrentUserRole,
-            RequestContext.CurrentSessionId,
-            ctx!.History
+            // The conversation this turn belongs to, not the inbound header (#9).
+            // CurrentSessionId is only ever set from an X-Session-Id header and
+            // the browser never sends one, so specialists received "" and could
+            // not rehydrate anything. Empty for anonymous callers on purpose:
+            // their ConversationId is an unvalidated client-supplied string, and
+            // forwarding it would let anyone read any conversation by UUID.
+            ctx!.IsAnon ? "" : ctx.ConversationId,
+            ctx.History
         );
 
         // Both the main loop below (plain-text frames, the orchestrator's own
@@ -685,8 +697,19 @@ public static class ChatRoutes
             new { cid = convId, content = message }
         );
 
+        // Newest 50, restored to chronological order (#9). ORDER BY ASC LIMIT 50
+        // took the *oldest* 50 — and because this read happens after the current
+        // turn's INSERT above, on a conversation past the limit the orchestrator
+        // stopped seeing even the message it was being asked to answer.
         var history = (await conn.QueryAsync(
-            "SELECT role, content FROM messages WHERE conversation_id = @cid ORDER BY created_at ASC LIMIT 50",
+            @"SELECT role, content FROM (
+                  SELECT role, content, created_at
+                    FROM messages
+                   WHERE conversation_id = @cid
+                   ORDER BY created_at DESC
+                   LIMIT 50
+              ) recent
+              ORDER BY created_at ASC",
             new { cid = convId }
         )).Select(r => new HistoryEntry((string)r.role, (string)r.content)).ToList();
 

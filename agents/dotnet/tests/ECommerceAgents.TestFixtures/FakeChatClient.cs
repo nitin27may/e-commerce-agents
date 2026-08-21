@@ -29,6 +29,14 @@ public sealed class FakeChatClient : IChatClient
     public IReadOnlyList<IEnumerable<ChatMessage>> ReceivedMessages => _receivedMessages;
 
     /// <summary>
+    /// Runs on every call, inside whatever ambient scope the route set up.
+    /// Lets a test observe request-scoped state (e.g.
+    /// <c>RequestContext.CurrentSessionId</c>) as the agent actually saw it,
+    /// rather than after the scope has been disposed.
+    /// </summary>
+    public Action? OnCall { get; set; }
+
+    /// <summary>
     /// The <see cref="ChatOptions"/> each call arrived with — this is where
     /// tools and instructions live, so it is the only way a test can prove an
     /// <c>AIContextProvider</c> enriched the request instead of replacing it.
@@ -75,6 +83,7 @@ public sealed class FakeChatClient : IChatClient
     private string NextResponse()
     {
         CallCount++;
+        OnCall?.Invoke();
         if (_responses.Count == 0)
         {
             throw new InvalidOperationException(
