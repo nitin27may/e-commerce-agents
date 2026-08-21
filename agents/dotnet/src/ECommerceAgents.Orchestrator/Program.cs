@@ -1,5 +1,7 @@
 using ECommerceAgents.Orchestrator.Agent;
 using ECommerceAgents.Orchestrator.Routes;
+using ECommerceAgents.Shared.Orchestration;
+using ECommerceAgents.Orchestrator.Modes;
 using ECommerceAgents.Shared.A2A;
 using ECommerceAgents.Shared.Auth;
 using ECommerceAgents.Shared.Checkpoints;
@@ -71,6 +73,13 @@ builder.Services.AddSingleton<ISessionHistoryProvider>(sp =>
 builder.Services.AddSingleton<ICheckpointStorage>(sp =>
     CheckpointStorageFactory.Build(settings, sp.GetRequiredService<DatabasePool>()));
 
+// Orchestration modes. Two registered: tool and workflow:pre-purchase.
+// The rest are honestly absent rather than registered-and-broken — see
+// ModeRegistry's remarks.
+builder.Services.AddSingleton<IOrchestrationMode>(sp => new ToolRouterMode(sp.GetRequiredService<AIAgent>()));
+builder.Services.AddSingleton<IOrchestrationMode>(sp => new PrePurchaseMode(sp.GetRequiredService<DatabasePool>()));
+builder.Services.AddSingleton<ModeRegistry>();
+
 builder.Services.AddSingleton<SlidingWindowRateLimiter>();
 builder.Services.AddSingleton<OrchestratorTools>();
 builder.Services.AddSingleton<AIAgent>(sp =>
@@ -104,6 +113,7 @@ app.MapGet("/health", () => Results.Ok(new { healthy = true }));
 
 app.MapAuthRoutes();
 app.MapChatRoutes();
+app.MapOrchestrationRoutes();
 app.MapConversationRoutes();
 app.MapProductRoutes();
 app.MapOrderRoutes();
