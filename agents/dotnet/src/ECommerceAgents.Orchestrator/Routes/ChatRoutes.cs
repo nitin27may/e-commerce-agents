@@ -138,6 +138,13 @@ public static class ChatRoutes
             ctx.History
         );
 
+        // The orchestrator's own agent-invocation span (#19). Python opens one
+        // per turn (chat.py's `with agent_run_span("orchestrator")`); .NET
+        // opened none, so every specialist span was parented to a bare
+        // ASP.NET Core request span and the orchestrator never appeared in
+        // Aspire's GenAI view as an agent at all.
+        using var runSpan = TelemetrySetup.AgentRunSpan("orchestrator", settings.LlmModel);
+
         // Python's blocking handler never actually grows agents_involved beyond
         // ["orchestrator"] either (routes.py:423-461) — no mutation between init
         // and return — so this stays static rather than wiring up the dynamic
@@ -227,6 +234,9 @@ public static class ChatRoutes
             ctx!.IsAnon ? "" : ctx.ConversationId,
             ctx.History
         );
+
+        // See the blocking handler above for why this span exists (#19).
+        using var runSpan = TelemetrySetup.AgentRunSpan("orchestrator", settings.LlmModel);
 
         // Both the main loop below (plain-text frames, the orchestrator's own
         // recomposed answer) and the forwarder task (event: delta frames, a live

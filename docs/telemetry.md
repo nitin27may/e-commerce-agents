@@ -207,7 +207,7 @@ Python log records are automatically enriched with `trace_id` and `span_id` from
 
 1. **LoggingInstrumentor** -- Injects `otelTraceID` and `otelSpanID` into Python `LogRecord` attributes. This allows log statements made during a traced request to be correlated back to the specific trace.
 
-2. **OTel LoggerProvider + LoggingHandler** -- A `LoggingHandler` is attached to the Python root logger, which bridges all log records into the OTel log pipeline. These are exported via `OTLPLogExporter` to Aspire using `SimpleLogRecordProcessor` (immediate export, not batched) so logs appear in the dashboard in real-time.
+2. **OTel LoggerProvider + LoggingHandler** -- A `LoggingHandler` is attached to the Python root logger, which bridges all log records into the OTel log pipeline. These are exported via `OTLPLogExporter` to Aspire using `BatchLogRecordProcessor`.
 
 The `trace_id` is also extracted and stored in the `usage_logs` table via `get_current_trace_id()`, creating a link between the application's audit log and the distributed trace:
 
@@ -233,7 +233,7 @@ Auth mode is set to `Unsecured` for local development (`DASHBOARD__FRONTEND__AUT
 |------|----------|
 | **Traces** | See the full request lifecycle from HTTP entry through LLM calls, A2A delegation, tool execution, and DB queries. Filter by service name to isolate a specific agent. |
 | **Structured Logs** | View correlated logs for a trace. Click any trace to see all log statements emitted during that request across all agents. |
-| **Metrics** | Request counts, latencies, and error rates per service. Metrics are exported every 15 seconds (`export_interval_millis=15000`). |
+| **Metrics** | Request counts, latencies, and error rates per service. Metrics are exported every 5 seconds (`export_interval_millis=5000`). |
 | **Resources** | See all registered services with their `service.name`, `service.version`, and `deployment.environment` attributes. |
 
 ### Typical Investigation Flow
@@ -297,11 +297,50 @@ Every span, metric, and log record includes these resource attributes:
 
 | Signal | Exporter | Processor | Export Behavior |
 |--------|----------|-----------|-----------------|
-| **Traces** | `OTLPSpanExporter` (HTTP) | `BatchSpanProcessor` | Batched export (SDK default: 5s interval, 512 span batch) |
-| **Metrics** | `OTLPMetricExporter` (HTTP) | `PeriodicExportingMetricReader` | Every 15 seconds |
-| **Logs** | `OTLPLogExporter` (HTTP) | `SimpleLogRecordProcessor` | Immediate (synchronous) export for real-time Aspire correlation |
+| **Traces** | `OTLPSpanExporter` (gRPC, HTTP fallback) | `BatchSpanProcessor` | Batched export (SDK default: 5s interval, 512 span batch) |
+| **Metrics** | `OTLPMetricExporter` (gRPC, HTTP fallback) | `PeriodicExportingMetricReader` | Every 5 seconds (`export_interval_millis=5000`) |
+| **Logs** | `OTLPLogExporter` | `BatchLogRecordProcessor` | Batched |
 
-Logs use `SimpleLogRecordProcessor` instead of batch processing because immediate export is critical for trace-log correlation in the Aspire Dashboard. The trade-off is slightly higher overhead per log statement, but this is acceptable for a demo/development setup.
+`setup_telemetry()` tries the gRPC exporters first — gRPC is Aspire's default OTLP transport — and falls back to HTTP (appending `/v1/traces` and `/v1/metrics` to the endpoint) if the gRPC packages are not installed. Which one is in use is logged at startup.
+
+The metrics interval is 5 seconds rather than the SDK's 60, so the Aspire dashboard updates responsively while developing.
+
+---
+
+## The .NET Stack
+
+Everything above describes `agents/python`. The .NET stack (`agents/dotnet`) exports to the same Aspire dashboard through `Shared/Telemetry/TelemetrySetup.cs`, wired once per process by `AddAgentTelemetry(settings)` in each `Program.cs`.
+
+| Signal | Python | .NET |
+|---|---|---|
+| Traces | `BatchSpanProcessor` → OTLP | OTel SDK default batching → OTLP |
+| Auto-instrumentation | ASP.NET-equivalent (FastAPI), httpx, asyncpg, OpenAI | ASP.NET Core, `HttpClient`, Npgsql |
+| Metrics | auto-instrumentation only — **no custom metrics** | auto-instrumentation only |
+| Logs | `LoggingHandler` bridge → OTLP | `ILogger` → `AddOpenTelemetry()` → OTLP |
+| Langfuse sink | optional, additive | not implemented |
+
+### Span naming is load-bearing
+
+Both stacks name agent-invocation spans `invoke_agent <agent-name>` and tag them `gen_ai.operation.name = invoke_agent`. This is not cosmetic. Aspire's **GenAI** view selects on that convention, so a span named anything else still appears in the raw trace list but is invisible in the view built for reading agent runs.
+
+.NET emitted `agent.run <name>` with `gen_ai.operation.name = chat` until #19, which is why the GenAI view looked empty when running the .NET backend while working normally on Python.
+
+The resulting hierarchy is the same on both stacks:
+
+```
+invoke_agent orchestrator          INTERNAL, orchestrator process
+  chat gpt-4.1                     LLM call (auto-instrumented)
+  invoke_agent product-discovery   CLIENT, the A2A call
+    invoke_agent product-discovery INTERNAL, in the specialist process
+      chat gpt-4.1
+      SELECT ...                   database query
+```
+
+### Grouping a conversation
+
+Spans carry `enduser.id`, `enduser.role`, `session.id` and `gen_ai.conversation.id`. The last is what Aspire groups a conversation's LLM calls by, and it is set from the same value as `session.id`.
+
+Worth knowing when reading older traces: that value was empty for all browser traffic on both stacks until #9, because the session id was only ever populated from an inbound header the web client never sent. Conversation grouping therefore never worked in practice before that fix, regardless of these attributes being present.
 
 ---
 
