@@ -1,4 +1,4 @@
-# AgentBazaar Evaluation Framework
+# Evaluation Framework
 
 Automated evaluation pipeline for testing agent quality across tool calling, response correctness, and grounding.
 

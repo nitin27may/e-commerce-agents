@@ -33,7 +33,7 @@ async function loginAndGoToChat(page: Page, email: string, password: string) {
 }
 
 async function sendMessageAndWaitForResponse(page: Page, message: string): Promise<string> {
-  const input = page.getByPlaceholder(/message|type/i).first();
+  const input = page.locator("textarea").first();
   await input.fill(message);
   await input.press("Enter");
 
@@ -87,7 +87,7 @@ for (const user of USERS) {
       await sendMessageAndWaitForResponse(page, "What categories do you have?");
 
       // Second message in same conversation
-      const input = page.getByPlaceholder(/message|type/i).first();
+      const input = page.locator("textarea").first();
       await input.fill("Tell me more about Electronics");
       await input.press("Enter");
 

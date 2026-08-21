@@ -72,11 +72,31 @@ test.describe("Generative UI — review-sentiment, inventory-fulfillment, pricin
     expect(text).not.toContain("```inventory");
     expect(text).not.toContain("total_quantity");
 
-    // DataTable's real <th> column headers, not just prose mentioning them
-    await expect(page.getByRole("columnheader", { name: "Warehouse" })).toBeVisible();
+    // DataTable's real <th> column headers, not just prose mentioning them.
+    // Scoped with .first() deliberately: a stock question often also pulls the
+    // restock schedule, which renders a second, legitimate table whose first
+    // column is likewise "Warehouse". Asserting a unique match would make this
+    // test fail for the agent doing *more* of its job, which is the wrong
+    // signal — the claim here is that a real DataTable rendered, not that
+    // exactly one did. "Region" is unique to the stock table and keeps the
+    // assertion specific.
+    await expect(page.getByRole("columnheader", { name: "Warehouse" }).first()).toBeVisible();
     await expect(page.getByRole("columnheader", { name: "Region" })).toBeVisible();
-    // In Stock / Out of Stock StatusBadge
-    await expect(page.getByText(/^(In Stock|Out of Stock)$/)).toBeVisible();
+    // The warehouse-breakdown section label, which the card renders whenever
+    // it has warehouse rows — the thing this test actually asks for.
+    //
+    // Two nearby assertions were tried and rejected, both because they test
+    // model whim rather than the app. The In Stock / Out of Stock StatusBadge
+    // needs an `in_stock` field, and this question is answerable by either of
+    // two registered tools: `check_stock` returns `in_stock`, while
+    // `get_warehouse_availability` — an equally correct pick, and the one that
+    // supplies the restock table — does not, on *either* stack. And the card
+    // heading is `product_name || "Stock & Fulfillment"`, so asserting either
+    // string fails whenever the model omits or includes that optional field.
+    // Both were observed failing on a different backend each.
+    // Exact match: the user's own turn ("…breakdown by warehouse") and the
+    // conversation title in the sidebar both contain the phrase otherwise.
+    await expect(page.getByText("By warehouse", { exact: true })).toBeVisible();
   });
 
   test("pricing-promotions renders a real deals table with column headers", async ({ page }) => {

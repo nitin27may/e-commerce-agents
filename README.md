@@ -10,11 +10,13 @@
 [![PostgreSQL + pgvector](https://img.shields.io/badge/PostgreSQL-pgvector-336791.svg)](https://github.com/pgvector/pgvector)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED.svg)](https://docs.docker.com/compose/)
 
-A **multi-agent e-commerce platform** built with [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) (MAF). Ships as **two complete, working backends — Python and .NET / C#** — real implementations, not samples, developed Python-first with .NET following on a published, prioritized backlog (see [`docs/parity-matrix.md`](./docs/parity-matrix.md) for exactly where the two stand today, not an implied parity claim). Six specialized AI agents collaborate via **A2A protocol** to handle product discovery, orders, pricing, reviews, inventory, and customer support.
+A **multi-agent e-commerce platform** built with [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) (MAF). Ships as **two complete, working backends — Python and .NET / C#** — real implementations, not samples, developed Python-first, with .NET now at parity across the shipped surface — tools, guardrails, grounding, evaluator-facing endpoints, SSE, orchestration modes and workflows — verified by a dual-backend Playwright gate that drives the *same* frontend against both. Where the two still differ (handoff and group-chat modes, the evals harness), [`docs/parity-matrix.md`](./docs/parity-matrix.md) says so row by row rather than implying more than exists. Six specialized AI agents collaborate via **A2A protocol** to handle product discovery, orders, pricing, reviews, inventory, and customer support.
 
 **Generative UI, not raw JSON.** The chat surface never dumps a tool result as text or a code block. Every agent response is inspected by shape and rendered as the right interactive component: a single detailed result becomes a card, a list becomes a table, a distribution or trend becomes a chart, a status becomes a tone-coded badge — see it live in the [Screens](#screens) gallery below (review sentiment: rating distribution + 6-month trend, rendered from the same data an LLM would otherwise only describe in prose).
 
 **Pick your stack:** [`agents/python/`](./agents/python/) (see [Quick Start → Python](#run-the-python-backend) below) or [`agents/dotnet/`](./agents/dotnet/) (see [Quick Start → .NET](#run-the-net-backend) below, or [`agents/dotnet/README.md`](./agents/dotnet/README.md)) — same database schema, same prompts, same Next.js frontend for either (toggle with `NEXT_PUBLIC_BACKEND_STACK`).
+
+**Full documentation:** **[nitinksingh.com/e-commerce-agents](https://nitinksingh.com/e-commerce-agents/)** — the concepts library, all 34 tutorial chapters, and the architecture reference, with every diagram rendered.
 
 Companion demo repo for the AI article series on [nitinksingh.com](https://nitinksingh.com/posts/maf-v1-21-putting-it-all-together/).
 
@@ -26,7 +28,8 @@ Companion demo repo for the AI article series on [nitinksingh.com](https://nitin
 
 | I want to... | Go here |
 |---|---|
-| Learn what an agent even is — new to AI/agents | [docs/concepts/](docs/concepts/) — start at page 01 |
+| Read the documentation | **[nitinksingh.com/e-commerce-agents](https://nitinksingh.com/e-commerce-agents/)** — everything below, rendered and searchable |
+| Learn what an agent even is — new to AI/agents | [Concepts](https://nitinksingh.com/e-commerce-agents/concepts/) — start at page 01 |
 | Run the Python backend locally | [Quick Start → Python](#run-the-python-backend) below |
 | Run the .NET backend locally | [Quick Start → .NET](#run-the-net-backend) below |
 | Understand how the agents work / add a new one | [Architecture](docs/architecture.md) · [Adding an Agent](docs/adding-an-agent.md) |
@@ -100,31 +103,24 @@ Open in your browser (either stack):
 
 ## Table of Contents
 
-- [Project Status](#project-status)
-- [Learning Path](#learning-path--maf-v1-python-and-net)
-- [Architecture](#architecture)
-- [Screens](#screens)
-- [Test Users](#test-users)
-- [Agent Catalog](#agent-catalog)
-- [Demo Scenarios](#demo-scenarios)
-- [Tech Stack](#tech-stack)
-- [Project Structure](#project-structure)
-- [Configuration](#configuration)
-- [Documentation](#documentation)
-- [Port Map](#port-map)
-- [Roadmap](#roadmap)
-- [Contributing](#contributing)
-- [License](#license)
+The [documentation site](https://nitinksingh.com/e-commerce-agents/) has a full searchable nav
+across the concepts library, the tutorial series and the architecture reference. What follows
+here is the repository tour.
+
+- [Project Status](#project-status) · [Learning Path](#learning-path--maf-v1-python-and-net) · [Architecture](#architecture) · [Screens](#screens)
+- [Test Users](#test-users) · [Agent Catalog](#agent-catalog) · [Demo Scenarios](#demo-scenarios) · [Tech Stack](#tech-stack)
+- [Project Structure](#project-structure) · [Configuration](#configuration) · [Documentation](#documentation) · [Port Map](#port-map)
+- [Roadmap](#roadmap) · [Contributing](#contributing) · [License](#license)
 
 ---
 
 ## Project Status
 
-**This is v1 — the Python version is live today.** It runs end-to-end: six specialist agents, orchestrator, auth, telemetry, and a full Next.js frontend.
+**This is v1, and both backends are live.** Each runs end-to-end: an orchestrator plus five specialist agents, auth, telemetry, and a full Next.js frontend that either backend can serve.
 
 The frontend is a **public, agentic e-commerce storefront**: anyone can browse the catalog, search, and use the AI shopping assistant (`/shop`) without an account — product discovery is served anonymously — while account flows (cart checkout, orders, tracking, returns) require sign-in. A built-in **agent-activity timeline** surfaces the multi-agent routing (orchestrator → specialist → tool) live in chat, backed by OpenTelemetry → .NET Aspire. Light/dark theming throughout.
 
-The **.NET / C# port** for teams building in the Microsoft ecosystem lives at [`agents/dotnet/`](./agents/dotnet/) alongside the Python backend at [`agents/python/`](./agents/python/). Enhancement plans and the phased roadmap are tracked in [`.claude/plans/enhancements/`](./.claude/plans/enhancements/).
+The **.NET / C# backend** at [`agents/dotnet/`](./agents/dotnet/) is a real implementation, not a demonstration slice: it serves the same frontend, the same database and the same prompts as [`agents/python/`](./agents/python/). Parity is enforced rather than asserted — `web/e2e/orchestration-parity.spec.ts` drives one frontend against both backends and asserts *presence* of each capability, because the earlier suite went green against a .NET stack that was missing four whole features. Remaining differences are listed in [`docs/parity-matrix.md`](./docs/parity-matrix.md).
 
 ---
 
@@ -134,16 +130,22 @@ A new step-by-step tutorial series walks through **every Microsoft Agent Framewo
 
 **Start here:** [`tutorials/README.md`](./tutorials/README.md)
 
+**34 chapters**, browsable on the [documentation site](https://nitinksingh.com/e-commerce-agents/tutorials/).
+
 | Tier | Chapters | Topics |
 |------|----------|--------|
 | 1 · Core Agent | [01–04](./tutorials/) | First agent · tools · streaming · sessions |
 | 2 · Agent Internals | 05–08 | Context providers · middleware · OpenTelemetry · MCP |
 | 3 · Workflow Foundations | 09–11 | Executors · edges · events · builder · agents in workflows |
 | 4 · Orchestrations | 12–16 | Sequential · Concurrent · Handoff · Group Chat · Magentic |
-| 5 · Advanced | 17–20 | HITL · checkpoints · declarative YAML · visualization |
+| 5 · Advanced | 17–20, 20b | HITL · checkpoints · declarative YAML · visualization · DevUI |
 | Capstone | 21 | Guided tour of this repo |
+| Bonus pattern | 22 | Round-table group-chat debate |
+| 6 · Missing Concepts | 23–27 | A2A protocol · RAG/grounding · guardrails · evals · agent-as-tool |
+| 7 · Patterns Without Production Wiring | 28–31 | Reflection · planner-executor · subworkflows · saga/compensation |
+| — | 32 | Cost control and budgets |
 
-Each chapter has `python/`, `dotnet/`, `tests/`, and a Hugo-ready article draft (`README.md`). (`tutorials/_template/PLAN.md` is a template for authoring new chapters — individual chapters don't ship their own `PLAN.md`.) Chapters cross-post to [nitinksingh.com](https://nitinksingh.com) under the *MAF v1: Python and .NET* series, complementing the [original Python-only series](https://nitinksingh.com/posts/building-a-multi-agent-e-commerce-platform-the-complete-guide/).
+Every chapter ships a runnable `python/` example with its own tests under `python/tests/`. Chapters **00–21 and 20b also ship `dotnet/`**; chapters 22–32 are Python-only so far, tracked as [#20](https://github.com/nitin27may/e-commerce-agents/issues/20). Each chapter's `README.md` is the canonical teaching artifact — concept, diagram, runnable example, a `file:line` pointer into the capstone, and gotchas — enforced by `scripts/check_tutorial_readmes.py` in CI. (`tutorials/_template/PLAN.md` is a template for authoring new chapters; individual chapters don't ship their own `PLAN.md`.) Companion posts cross-post to [nitinksingh.com](https://nitinksingh.com) when published; a chapter with no post is still complete.
 
 ---
 
@@ -341,14 +343,14 @@ Try these in the chat after logging in:
 
 | Layer | Technology |
 |-------|-----------|
-| Agent Framework | [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) v1.0 — Python SDK **and** .NET SDK (both backends fully implemented) |
+| Agent Framework | [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) v1 — Python SDK (`agent-framework-core` 1.14.0) **and** .NET SDK (`Microsoft.Agents.AI` 1.18.0), both backends fully implemented |
 | Agent Communication | A2A Protocol (HTTP) |
 | LLM | OpenAI / Azure OpenAI (gpt-4.1) — plus any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, OpenRouter, GitHub Models) via `LLM_PROVIDER=openai` + `LLM_BASE_URL`, see [Setup](./tutorials/00-setup/) |
 | Orchestrator | FastAPI (Python 3.12) · ASP.NET Core minimal APIs (.NET 10, C#) |
 | Database | PostgreSQL 16 + pgvector (1536-dim embeddings) |
 | Cache | Redis 7 |
 | Frontend | Next.js 16, React 19, Tailwind CSS, shadcn/ui |
-| Auth | Self-contained JWT (PyJWT + bcrypt) |
+| Auth | Self-contained JWT by default (PyJWT + bcrypt on Python; BCrypt.Net + `System.IdentityModel.Tokens.Jwt` on .NET), or the bundled OAuth2 server with RS256 + JWKS via `AUTH_MODE=oauth` |
 | Telemetry | OpenTelemetry → .NET Aspire Dashboard |
 | Package Managers | uv (Python), pnpm (Node) |
 | Containerization | Docker Compose |
@@ -359,7 +361,7 @@ Try these in the chat after logging in:
 
 ```
 e-commerce-agents/
-├── docker-compose.yml               # 11 services with profiles
+├── docker-compose.yml               # 14 services with profiles
 ├── .env.example                     # Environment template
 ├── agents/                          # Both backends live here
 │   ├── python/                      # Python backend
@@ -369,15 +371,20 @@ e-commerce-agents/
 │   │   ├── packages/                # Standalone publishable MCP server packages
 │   │   │   ├── mcp-product/         # ecommerce-mcp-product (:9000)
 │   │   │   └── mcp-inventory/       # ecommerce-mcp-inventory (:9001)
-│   │   ├── shared/                  # Shared library (config, auth, DB, prompts, telemetry)
+│   │   ├── shared/                  # Shared library (config, auth, DB, prompts, telemetry,
+│   │   │                            #   guardrails, grounding, idempotency, rate limiting)
 │   │   ├── config/prompts/          # YAML prompt configs (shared with .NET)
+│   │   ├── auth_server/             # Self-hosted OAuth2 authorization server (:8090)
+│   │   ├── evals/                   # Eval harness, scorers, datasets, replay fixtures
+│   │   ├── workflows/               # MAF WorkflowBuilder graphs (pre-purchase, return-replace)
+│   │   ├── tests/                   # Test suite (~700 tests)
 │   │   ├── orchestrator/            # Customer Support (:8080)
 │   │   ├── product_discovery/       # Product Discovery (:8081)
 │   │   ├── order_management/        # Order Management (:8082)
 │   │   ├── pricing_promotions/      # Pricing & Promotions (:8083)
 │   │   ├── review_sentiment/        # Review & Sentiment (:8084)
 │   │   └── inventory_fulfillment/   # Inventory & Fulfillment (:8085)
-│   └── dotnet/                      # .NET backend — see docs/parity-matrix.md for current gaps
+│   └── dotnet/                      # .NET backend — parity tracked in docs/parity-matrix.md
 │       ├── ECommerceAgents.sln
 │       ├── Directory.Packages.props # Central package versions
 │       └── src/
@@ -387,26 +394,27 @@ e-commerce-agents/
 │           ├── ECommerceAgents.OrderManagement/
 │           ├── ECommerceAgents.PricingPromotions/
 │           ├── ECommerceAgents.ReviewSentiment/
-│           └── ECommerceAgents.InventoryFulfillment/
+│           ├── ECommerceAgents.InventoryFulfillment/
+│           └── ECommerceAgents.Mcp/            # MCP host (:9001, both domains)
 ├── docker/postgres/
-│   └── init.sql                    # 24-table schema + pgvector
+│   └── init.sql                    # 34-table schema + pgvector
 ├── scripts/
 │   ├── dev.sh                      # One-command dev setup
 │   ├── seed.py                     # Database seeder
 │   └── generate_embeddings.py      # Product embedding generation
 ├── web/                            # Next.js 16 frontend
 │   └── src/
-│       ├── app/                    # 16 routes (App Router)
+│       ├── app/                    # 25 routes (App Router)
 │       ├── components/             # UI components (shadcn/ui)
 │       └── lib/                    # API client, auth context
-├── tutorials/                      # 22-chapter MAF v1 tutorial series (Python + .NET)
-└── docs/                           # Full documentation — see docs/README.md
+├── tutorials/                      # 34-chapter MAF v1 tutorial series (Python + .NET)
+└── docs/                           # Published at nitinksingh.com/e-commerce-agents/
     ├── README.md                   # Docs index and reading order
     ├── architecture.md             # System design, agent patterns, A2A protocol
     ├── adding-an-agent.md          # Step-by-step guide to adding a specialist
     ├── api-reference.md            # All REST endpoints with examples
     ├── agent-flows.md              # Multi-agent collaboration sequence diagrams
-    ├── database-schema.md          # 24 tables with ER diagram
+    ├── database-schema.md          # 34 tables with ER diagram
     ├── deployment.md               # Docker Compose, dev.sh, environment config
     ├── frontend.md                 # Routes, theming, SSE/timeline, auth model
     ├── telemetry.md                # OpenTelemetry setup and Aspire Dashboard
@@ -451,23 +459,24 @@ tool-calling gotcha worth reading before picking a local model) and
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| [Architecture](docs/architecture.md) | System design, agent patterns, A2A protocol, auth flow |
-| [Adding an Agent](docs/adding-an-agent.md) | Step-by-step guide to adding a specialist agent |
-| [API Reference](docs/api-reference.md) | All REST endpoints with examples |
-| [Database Schema](docs/database-schema.md) | 24 tables with ER diagram |
-| [Telemetry](docs/telemetry.md) | OpenTelemetry setup and Aspire Dashboard |
-| [Agent Flows](docs/agent-flows.md) | Multi-agent collaboration diagrams |
-| [Deployment](docs/deployment.md) | Docker Compose, dev.sh, environment configuration |
-| [Frontend](docs/frontend.md) | Routes, theming, SSE/timeline, public-vs-auth model |
-| [Troubleshooting](docs/troubleshooting.md) | Common local-stack issues and fixes |
-| [Contributing](CONTRIBUTING.md) | Setup, conventions, testing policy, PR checklist |
-| [Security Guide](docs/security-guide.md) | Threat model, guardrails stack, auth, SQL controls |
-| [Agent Quality & Evals](docs/agent-quality.md) | Eval methodology, datasets, red-team suite, CI gate |
-| [Agent Audit Matrix](docs/agent-audit-matrix.md) | Per-agent security posture and open hardening items |
-| [MAF Best Practices](docs/maf-best-practices.md) | MAF idioms: @tool, middleware, prompt YAML, ContextVars |
-| [MCP Integration](docs/mcp-integration.md) | MCP servers (FastMCP), MCPStreamableHTTPTool wiring, enable/disable |
+Everything below is published, searchable and cross-linked at
+**[nitinksingh.com/e-commerce-agents](https://nitinksingh.com/e-commerce-agents/)** — with all
+71 Mermaid diagrams rendered as diagrams. The site is generated from this repository by
+`scripts/build_docs_site.py`, so the files here are always the source of truth; nothing lives
+only on the site.
+
+| Section | What's in it |
+|---------|--------------|
+| **[Concepts](https://nitinksingh.com/e-commerce-agents/concepts/)** | 14 pages for readers new to agents — what an agent is, the agentic loop, tools, harnesses, why multi-agent, orchestration patterns, graphs, state and memory, grounding, guardrails, HITL, evaluation, observability and cost, production concerns |
+| **[Tutorials](https://nitinksingh.com/e-commerce-agents/tutorials/)** | 34 chapters, Python and .NET, each runnable without an API key |
+| **[Architecture](https://nitinksingh.com/e-commerce-agents/architecture/)** | [System design](docs/architecture.md) · [agent flows](docs/agent-flows.md) · [database schema](docs/database-schema.md) · [API reference](docs/api-reference.md) · [frontend](docs/frontend.md) · [workflows](docs/workflows/README.md) |
+| **[Guides](https://nitinksingh.com/e-commerce-agents/guides/)** | [Adding an agent](docs/adding-an-agent.md) · [MCP integration](docs/mcp-integration.md) · [telemetry](docs/telemetry.md) · [security](docs/security-guide.md) · [agent quality and evals](docs/agent-quality.md) · [MAF best practices](docs/maf-best-practices.md) |
+| **[Getting Started](https://nitinksingh.com/e-commerce-agents/getting-started/)** | [Deployment](docs/deployment.md) · [troubleshooting](docs/troubleshooting.md) |
+| **[Reference](https://nitinksingh.com/e-commerce-agents/reference/)** | [Python vs .NET parity matrix](docs/parity-matrix.md) · [agent audit matrix](docs/agent-audit-matrix.md) · [glossary](tutorials/_shared/jargon-glossary.md) · [Mermaid style guide](tutorials/_shared/mermaid-style-guide.md) |
+
+Contributor-facing docs stay in the repo rather than on the site:
+[CONTRIBUTING.md](CONTRIBUTING.md) (setup, conventions, testing policy, PR checklist) and
+[CLAUDE.md](CLAUDE.md).
 
 ---
 
@@ -485,42 +494,53 @@ tool-calling gotcha worth reading before picking a local model) and
 | Aspire Dashboard | 18888 | http://localhost:18888 |
 | PostgreSQL | 5432 | |
 | Redis | 6379 | |
-| MCP Product | 9000 | http://localhost:9000/mcp (when `--profile mcp`) |
+| Auth Server | 8090 | http://localhost:8090 (when `AUTH_MODE=oauth`) |
+| MCP Product | 9000 | http://localhost:9000/mcp — **Python stack only** (when `--profile mcp`) |
 | MCP Inventory | 9001 | http://localhost:9001/mcp (when `--profile mcp`) |
+
+Ports are identical across both stacks, with one exception: the .NET stack serves
+product *and* inventory tools from a single MCP host on **:9001**, so there is no
+:9000 service in `docker-compose.dotnet.yml`. Because the two compose files bind the
+same ports, only one stack can run at a time.
 
 ---
 
 ## Roadmap
 
-This is v1. The Python platform is live and stable. The .NET port is also available.
+This is v1. Both backends are live and stable.
 
 Legend: `- [x]` shipped · `- [ ]` planned or in progress.
 
 ### Shipped in v1
 
-- [x] **Agent evaluators** — scripted eval sets (precision@k, recall@k, answer faithfulness, tool-call correctness) across all six specialists, run against the seeded catalog. `.github/workflows/evals.yml` is `workflow_dispatch`-only today — run it manually from the Actions tab (or `gh workflow run evals.yml`) whenever an `OPENAI_API_KEY` secret is available; there is no automatic schedule yet, and it deliberately isn't a PR gate (LLM calls are slow and non-deterministic). A PR-blocking smoke gate (a fast subset of the suite) is planned but not yet implemented.
+- [x] **Agent evaluators** — scripted eval sets (precision@k, recall@k, answer faithfulness, tool-call correctness) across all six specialists, run against the seeded catalog. `.github/workflows/evals.yml` runs two jobs. **`smoke` gates every pull request**: deterministic scorers only, driven by committed replay fixtures under `LLM_PROVIDER=replay`, so it needs no API key, costs nothing, and fails the PR when a suite regresses more than 5% against its committed baseline. **`full`** runs weekly on a schedule (and on demand) with a real key and the LLM judge. The harness drives the *production* path — `evals/harness.py` runs the same orchestration modes a real request does, so guardrails, sanitization and HITL gates are exercised rather than bypassed.
 - [x] **Prompt injection prevention** — `shared/guardrails/` wired into the middleware stack for all agents. Enabled by default (`GUARDRAILS_ENABLED=true`); runs in observe-first mode (`GUARDRAILS_FAIL_OPEN=true`) — flags and logs injections. Set `GUARDRAILS_BLOCK_ON_INJECTION=true` to enable hard blocking once false-positive rates are measured in your environment.
 - [x] **Session memory & context persistence** — `store_memory` / `recall_memories` tools in `shared/tools/memory_tools.py`, surfaced to the orchestrator via `shared/context_providers.py`. Per-user preferences, recent intents, and history make follow-ups feel continuous.
-- [x] **Full .NET / C# port** — same six specialist agents plus an MCP server, same A2A protocol and PostgreSQL schema, idiomatic .NET throughout. Nine test projects, ~191 tests. See [`agents/dotnet/`](./agents/dotnet/).
-- [x] **Observability dashboards** — pre-built Aspire Dashboard views for agent latency, tool error rates, and LLM token spend per specialist.
+- [x] **Full .NET / C# backend** — the same orchestrator and five specialists plus an MCP host, the same A2A protocol and PostgreSQL schema, idiomatic .NET throughout. Eight test projects, 450 test methods (~500 cases counting `[Theory]` data). Reached parity on the shipped surface through a nine-PR effort covering the shared tool library, orchestration modes, normalized SSE events, server-side grounding, rate limiting, cost estimation and a HITL claim-before-execute fix — gated by a dual-backend Playwright suite rather than a checklist. See [`agents/dotnet/`](./agents/dotnet/) and [`docs/parity-matrix.md`](./docs/parity-matrix.md).
+- [x] **Distributed tracing across every agent** — OpenTelemetry throughout (`shared/telemetry.py`), GenAI semantic conventions, a Langfuse sink, and `trace_id` correlated into `usage_logs` so a row in the admin usage table links back to its trace. Spans nest correctly across A2A hops, so one chat turn reads as a single tree in the [Aspire Dashboard](http://localhost:18888). The dashboard itself runs stock — this repo ships no pre-built views.
 - [x] **MCP data-access layer (2 servers)** — `mcp-product` (:9000) and `mcp-inventory` (:9001) are standalone, independently publishable Python packages (`packages/mcp-product`, `packages/mcp-inventory`) in a uv workspace. They expose product and inventory data over the MCP streamable HTTP transport (FastMCP). Flag-gated via `MCP_ENABLED`; `product-discovery` and `inventory-fulfillment` swap their direct-asyncpg `@tool` set for `MCPStreamableHTTPTool` with no behavior change. Any MCP-compatible client — Claude Desktop, Cursor, LangGraph — can use them without this codebase. See [MCP Integration](docs/mcp-integration.md).
 - [x] **Self-hosted OAuth2 Authorization Server** — opt-in `AUTH_MODE=oauth` path with the token issuer living *inside* this repo (`agents/python/auth_server/`, built on `authlib`), so login and every service call are genuinely OAuth2-compliant with no external identity provider or cloud dependency. RS256 signing with an AS-generated keypair and a JWKS endpoint; user login via the resource-owner-password grant brokered by the orchestrator (the browser keeps its email/password form); client-credentials service tokens replacing the static A2A shared secret; and both MCP servers hardened into OAuth 2.1 resource servers (audience/scope validation, `.well-known/oauth-protected-resource`, `WWW-Authenticate` challenge) — Python and .NET parity throughout. Fully additive — `AUTH_MODE=local` (self-issued JWT + shared secret) stays the zero-config default, so the OpenAI-key-only quick-start is unaffected. Verified end to end against a live stack: real browser login and chat session on AS-issued tokens, role-gated routes, inter-agent and MCP calls authenticated purely on OAuth scopes (no shared secrets), and cross-scope/cross-resource token rejection — both stacks, including the .NET MCP host validated against the real running auth-server. See [`.claude/plans/enhancements/10-oauth-authorization.md`](.claude/plans/enhancements/10-oauth-authorization.md).
 
+- [x] **Server-side grounding** — the model's claims are checked against Postgres before the answer leaves. Product and order ids in card blocks are verified to exist and to carry the quoted price; a fact-check badge reports how many claims were verified. `GROUNDING_MODE` is `annotate` by default (`shared/grounding/`, `Shared/Grounding/`).
+- [x] **Orchestration modes, live** — the same question can be answered by a tool router, a handoff mesh, two workflow graphs or a group-chat round table, selected per request from the composer. The graph animates node-by-node from real SSE events, and "compare modes" runs one prompt through several and reports latency side by side.
+- [x] **Idempotency on money-moving actions** — an `idempotency_keys` table plus an `@idempotent` decorator on returns, refunds and checkout, so a resubmitted approval cannot double-execute. Approval writes fail *closed*.
+- [x] **Resilience and rate limiting** — bounded retries with jittered backoff and a per-endpoint circuit breaker on every A2A call (`shared/http_resilience.py`, mirroring the .NET Polly pipeline that led here), and a Redis sliding-window limiter on both chat routes, keyed by user and by IP for anonymous traffic.
+- [x] **Generative UI** — every agent response is rendered by the shape of its data: cards, tables, charts, badges. An unrecognized or malformed payload renders nothing rather than falling back to raw JSON.
+
 ### In Progress
 
-- [ ] **Human-in-the-loop approval flows** — backend approval endpoints and admin review UI are complete (`/api/admin/hitl/requests`). The remaining piece is the in-chat agent-pause card: the agent suspends mid-task, renders an approval prompt in the UI, and resumes once an operator confirms. High-stakes actions (refunds over threshold, inventory writes, bulk price changes) are the first targets.
-- [ ] **Per-agent cost tracking** — per-specialist token counts are persisted in the database (`shared/usage_db.py`) and surfaced on the admin usage page. The remaining piece is first-class OpenTelemetry metrics (token + dollar cost per specialist as OTLP counters), so the Aspire Dashboard and any OTLP sink can alert on spend anomalies.
+- [ ] **In-chat approval card** — the full pause-and-resume loop already works: a workflow suspends on its in-workflow HITL gate, the run shows a pending badge on `/runs`, and Approve/Reject resumes it from a real Postgres checkpoint (`POST /api/orchestration/{run_id}/resume`, both stacks). Destructive tools are separately gated by approval middleware with an atomic claim-before-execute so a double click cannot double-refund. The remaining piece is rendering that same control *inside the chat thread* rather than only on `/runs`.
+- [ ] **Cost metrics as first-class counters** — token counts are persisted (`shared/usage_db.py`), surfaced on the admin usage page, and already exported as OTel GenAI metrics by the OpenAI instrumentor. Dollar estimation (`shared/cost.py`, `Shared/Cost/CostEstimator.cs`) and a per-run budget ceiling (`COST_BUDGET_MODE`, default `observe`) both ship. The remaining piece is a dedicated cost counter instrument owned by this repo, so an OTLP sink can alert on spend anomalies directly.
 - [ ] **Streaming tool calls end-to-end** — text-delta streaming is live and product/order cards render progressively as the LLM generates the response. The remaining piece is propagating raw tool-result payloads as separate SSE frames so cards can appear before the text completes.
 
 ---
 
 ### Planned — Search & Retrieval
 
-The product catalog has 1536-dim pgvector embeddings but `search_products` still uses `ILIKE` matching. Planned:
+`semantic_search` and `find_similar_products` are real pgvector cosine queries and the prompt already routes vague descriptive queries to them. But `search_products` — the workhorse — still uses `ILIKE` matching, with no lexical index behind it. Planned:
 
 - [ ] **Postgres full-text search** — `tsvector` column + GIN index, `plainto_tsquery` + `ts_rank` to replace the `ILIKE` loop.
 - [ ] **Hybrid retrieval (FTS + vector)** — combine lexical and semantic scores via Reciprocal Rank Fusion in a single CTE.
-- [ ] **Smarter tool routing** — update `product-discovery.yaml` so the LLM routes vague descriptive queries to `semantic_search` and attribute-driven queries to `search_products`.
 - [ ] **Typed filter DSL** — replace the flat parameter list on `search_products` with a structured `ProductFilters` Pydantic model (category, price, brand, sort). Keeps SQL parameterized and safe.
 
 Text-to-SQL was considered and rejected: `user_email`/`user_role` scoping via ContextVars means dynamic SQL would bypass that contract. The typed filter DSL gives the model flexibility at the boundary while keeping SQL generation server-side and auditable.
@@ -533,6 +553,8 @@ Text-to-SQL was considered and rejected: `user_email`/`user_role` scoping via Co
 |--------|------|--------|
 | `mcp-product` | 9000 | Product search, details, comparison, trending, price history |
 | `mcp-inventory` | 9001 | Stock levels, warehouses, shipping, carriers |
+
+Those two are the **Python** stack. The .NET stack serves both domains from a single host (`ECommerceAgents.Mcp`) on **:9001** — there is no :9000 in `docker-compose.dotnet.yml`.
 
 Both are standalone publishable packages in a uv workspace (`packages/mcp-product`, `packages/mcp-inventory`). Start them with:
 
