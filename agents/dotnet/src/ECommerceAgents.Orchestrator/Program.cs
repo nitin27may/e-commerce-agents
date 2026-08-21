@@ -78,6 +78,8 @@ builder.Services.AddSingleton<ICheckpointStorage>(sp =>
 // ModeRegistry's remarks.
 builder.Services.AddSingleton<IOrchestrationMode>(sp => new ToolRouterMode(sp.GetRequiredService<AIAgent>()));
 builder.Services.AddSingleton<IOrchestrationMode>(sp => new PrePurchaseMode(sp.GetRequiredService<DatabasePool>()));
+builder.Services.AddSingleton<IOrchestrationMode>(sp =>
+    new ReturnReplaceMode(sp.GetRequiredService<DatabasePool>(), settings));
 builder.Services.AddSingleton<ModeRegistry>();
 
 builder.Services.AddSingleton<SlidingWindowRateLimiter>();

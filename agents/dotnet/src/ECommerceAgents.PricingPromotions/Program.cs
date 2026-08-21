@@ -15,6 +15,7 @@ var app = AgentHost.Build(
     {
         builder.Services.AddSingleton(new PromptLoader(PromptsRoot()));
         builder.Services.AddSingleton<PricingTools>();
+        builder.Services.AddSingleton<LoyaltyTools>();
         builder.Services.AddSingleton<UserProfileTools>();
         builder.Services.AddSingleton<PriceHistoryTools>();
         builder.Services.AddSingleton<ProductLookupTools>();
@@ -22,12 +23,13 @@ var app = AgentHost.Build(
         {
             var prompts = sp.GetRequiredService<PromptLoader>();
             var tools = sp.GetRequiredService<PricingTools>();
+            var loyaltyTools = sp.GetRequiredService<LoyaltyTools>();
             var userProfileTools = sp.GetRequiredService<UserProfileTools>();
             var priceHistoryTools = sp.GetRequiredService<PriceHistoryTools>();
             // Shared lookup so a product *name* can reach the id-keyed tools below
             // (issue #18) — matches which agents Python attaches it to.
             var lookup = sp.GetRequiredService<ProductLookupTools>();
-            return SpecialistAgentFactory.Create(settings, prompts, "pricing-promotions", tools.All().Concat(lookup.All()).Concat(userProfileTools.All()).Concat(priceHistoryTools.All()), services: sp);
+            return SpecialistAgentFactory.Create(settings, prompts, "pricing-promotions", tools.All().Concat(lookup.All()).Concat(userProfileTools.All()).Concat(priceHistoryTools.All()).Concat(loyaltyTools.All()), services: sp);
         });
     }
 );

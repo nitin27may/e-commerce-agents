@@ -39,15 +39,24 @@ namespace ECommerceAgents.Shared.Middleware;
 /// </remarks>
 public sealed class HitlGate
 {
-    /// <summary>Matches Python's <c>HITL_GATED_TOOLS</c> — the same 3 the
-    /// .NET tool surface actually has; Python's other two
-    /// (<c>process_refund</c>, <c>initiate_return</c>) have no .NET tool at
-    /// all (no returns specialist), so there's nothing to gate for them here.</summary>
+    /// <summary>
+    /// Matches Python's <c>HITL_GATED_TOOLS</c>, now all five.
+    /// </summary>
+    /// <remarks>
+    /// This used to list three and explain that <c>initiate_return</c> and
+    /// <c>process_refund</c> "have no .NET tool at all, so there's nothing to
+    /// gate". <see cref="Tools.ReturnTools"/> gives them one, so they are
+    /// gated in the same change that introduces them — a refund tool reaching
+    /// production ahead of its approval gate is the one ordering mistake this
+    /// parity work must not make.
+    /// </remarks>
     public static readonly IReadOnlySet<string> GatedTools = new HashSet<string>
     {
         "CancelOrder",
         "ModifyOrder",
         "PlaceBackorder",
+        "InitiateReturn",
+        "ProcessRefund",
     };
 
     private static readonly IReadOnlyDictionary<string, string> ToolLabels = new Dictionary<string, string>
@@ -55,6 +64,8 @@ public sealed class HitlGate
         ["CancelOrder"] = "cancel order",
         ["ModifyOrder"] = "modify order",
         ["PlaceBackorder"] = "place backorder",
+        ["InitiateReturn"] = "initiate return",
+        ["ProcessRefund"] = "process refund",
     };
 
     private readonly DatabasePool _pool;

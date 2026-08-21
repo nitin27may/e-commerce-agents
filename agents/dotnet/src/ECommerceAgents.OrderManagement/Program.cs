@@ -15,13 +15,15 @@ var app = AgentHost.Build(
     {
         builder.Services.AddSingleton(new PromptLoader(PromptsRoot()));
         builder.Services.AddSingleton<OrderTools>();
+        builder.Services.AddSingleton<ReturnTools>();
         builder.Services.AddSingleton<UserProfileTools>();
         builder.Services.AddSingleton<AIAgent>(sp =>
         {
             var prompts = sp.GetRequiredService<PromptLoader>();
             var tools = sp.GetRequiredService<OrderTools>();
+            var returnTools = sp.GetRequiredService<ReturnTools>();
             var userProfileTools = sp.GetRequiredService<UserProfileTools>();
-            return SpecialistAgentFactory.Create(settings, prompts, "order-management", tools.All().Concat(userProfileTools.All()), services: sp);
+            return SpecialistAgentFactory.Create(settings, prompts, "order-management", tools.All().Concat(userProfileTools.All()).Concat(returnTools.All()), services: sp);
         });
     }
 );
