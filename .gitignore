@@ -44,6 +44,10 @@ x86/
 # Node
 node_modules/
 .next/
+# Alternate build dirs used by the dual-backend parity run: NEXT_PUBLIC_* is
+# inlined at build time, so a frontend pointed at .NET needs its own (see
+# web/next.config.ts's NEXT_DIST_DIR note).
+.next-*/
 out/
 articles/
 

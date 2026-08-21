@@ -10,6 +10,33 @@ namespace ECommerceAgents.Shared.Configuration;
 /// </summary>
 public static class AgentSettingsLoader
 {
+    /// <summary>
+    /// Accepts only the grounding modes .NET actually implements.
+    /// </summary>
+    /// <remarks>
+    /// Python's "enforce" is deliberately refused rather than quietly treated
+    /// as "annotate". Operators set that value expecting unverified cards to
+    /// be stripped; accepting it would mean the strongest setting is the one
+    /// that lies. Same posture as the config rejection for the unimplemented
+    /// azure_content_safety guardrail provider on the Python side.
+    /// </remarks>
+    private static string ValidatedGroundingMode(string raw)
+    {
+        var mode = raw.Trim().ToLowerInvariant();
+        if (mode is "off" or "observe" or "annotate")
+        {
+            return mode;
+        }
+
+        throw new InvalidOperationException(
+            $"GROUNDING_MODE='{raw}' is not supported. Use off, observe or annotate. "
+                + (mode == "enforce"
+                    ? "enforce (strip unverified cards, correct prices) exists in the Python "
+                        + "stack only — see docs/parity-matrix.md."
+                    : "")
+        );
+    }
+
     public static AgentSettings Load(IConfiguration config)
     {
         string Get(string key, string fallback = "") =>
@@ -73,6 +100,7 @@ public static class AgentSettingsLoader
             RateLimitEnabled = GetBool("RATE_LIMIT_ENABLED", true),
             RateLimitMaxRequests = GetInt("RATE_LIMIT_MAX_REQUESTS", 30),
             RateLimitWindowSeconds = GetDouble("RATE_LIMIT_WINDOW_SECONDS", 60.0),
+            GroundingMode = ValidatedGroundingMode(Get("GROUNDING_MODE", "annotate")),
             CostBudgetMode = Get("COST_BUDGET_MODE", "observe"),
             CostBudgetUsdPerRun = GetNullableDouble("COST_BUDGET_USD_PER_RUN"),
             Temperature = GetDouble("LLM_TEMPERATURE", 0.2),

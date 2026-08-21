@@ -56,7 +56,11 @@ public sealed class ChatRoutesTests : IAsyncLifetime
 
     public async Task DisposeAsync() => await _pool.DisposeAsync();
 
-    private HttpClient ClientFor(FakeChatClient chatClient, bool authenticated = true)
+    private HttpClient ClientFor(
+        FakeChatClient chatClient,
+        bool authenticated = true,
+        AgentSettings? settings = null
+    )
     {
         var server = OrchestratorTestHost.Create(
             _pool,
@@ -65,6 +69,7 @@ public sealed class ChatRoutesTests : IAsyncLifetime
                 r.MapChatRoutes();
                 r.MapConversationRoutes();
             },
+            settingsOverride: settings,
             configureServices: services =>
             {
                 services.AddSingleton<IChatClient>(chatClient);
@@ -414,5 +419,143 @@ public sealed class ChatRoutesTests : IAsyncLifetime
 
         response.EnsureSuccessStatusCode();
         chatClient.CallCount.Should().Be(1);
+    }
+
+    // ─────────────────────── grounding (#33 PR 7) ───────────────────
+
+    /// <summary>
+    /// Seeds one real product and returns an answer whose card cites it, so a
+    /// grounding run has something genuinely verifiable to check.
+    /// </summary>
+    private async Task<Guid> SeedProductAsync(decimal price = 100.00m)
+    {
+        await using var conn = await _pool.OpenAsync();
+        return await conn.ExecuteScalarAsync<Guid>(
+            @"INSERT INTO products (name, description, category, brand, price)
+              VALUES ('Grounded Product', 'd', 'Electronics', 'Acme', @price) RETURNING id",
+            new { price }
+        );
+    }
+
+    private static string CardAnswer(Guid id, decimal price) =>
+        $$"""
+        Here you go:
+
+        ```product
+        {"id": "{{id}}", "name": "Grounded Product", "price": {{price}}}
+        ```
+        """;
+
+    [Fact]
+    public async Task SendAsync_AnnotateMode_AttachesTheGroundingReport()
+    {
+        var id = await SeedProductAsync();
+        using var client = ClientFor(
+            new FakeChatClient().EnqueueResponse(CardAnswer(id, 100.00m)),
+            settings: new AgentSettings { GroundingMode = "annotate" }
+        );
+
+        var response = await client.PostAsJsonAsync("/api/chat", new { message = "find a product" });
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        var grounding = payload.GetProperty("grounding");
+        grounding.GetProperty("verified").GetInt32().Should().Be(1);
+        grounding.GetProperty("unverified").GetInt32().Should().Be(0);
+    }
+
+    /// <summary>
+    /// A card citing a product id that does not exist is the failure grounding
+    /// exists to surface — it renders perfectly and 404s downstream.
+    /// </summary>
+    [Fact]
+    public async Task SendAsync_ReportsAFabricatedProductAsUnverified()
+    {
+        using var client = ClientFor(
+            new FakeChatClient().EnqueueResponse(CardAnswer(Guid.NewGuid(), 100.00m)),
+            settings: new AgentSettings { GroundingMode = "annotate" }
+        );
+
+        var response = await client.PostAsJsonAsync("/api/chat", new { message = "find a product" });
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        var grounding = payload.GetProperty("grounding");
+        grounding.GetProperty("verified").GetInt32().Should().Be(0);
+        grounding.GetProperty("claims")[0].GetProperty("status").GetString().Should().Be("not_found");
+    }
+
+    /// <summary>
+    /// observe verifies but attaches nothing, so a deployment can measure
+    /// grounding before showing it to users — matching Python, where only
+    /// annotate/enforce attach the report.
+    /// </summary>
+    [Fact]
+    public async Task SendAsync_ObserveMode_VerifiesButAttachesNothing()
+    {
+        var id = await SeedProductAsync();
+        using var client = ClientFor(
+            new FakeChatClient().EnqueueResponse(CardAnswer(id, 100.00m)),
+            settings: new AgentSettings { GroundingMode = "observe" }
+        );
+
+        var response = await client.PostAsJsonAsync("/api/chat", new { message = "find a product" });
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        payload.TryGetProperty("grounding", out var grounding).Should().BeTrue();
+        grounding.ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task SendAsync_OffMode_SkipsGroundingEntirely()
+    {
+        var id = await SeedProductAsync();
+        using var client = ClientFor(
+            new FakeChatClient().EnqueueResponse(CardAnswer(id, 100.00m)),
+            settings: new AgentSettings { GroundingMode = "off" }
+        );
+
+        var response = await client.PostAsJsonAsync("/api/chat", new { message = "find a product" });
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        payload.GetProperty("grounding").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    /// <summary>
+    /// A chat turn that claims nothing checkable must carry no report at all —
+    /// a badge reading "0 facts verified" on a greeting reads as a failure.
+    /// </summary>
+    [Fact]
+    public async Task SendAsync_AnAnswerWithNoClaims_CarriesNoReport()
+    {
+        using var client = ClientFor(
+            new FakeChatClient().EnqueueResponse("Hi! How can I help?"),
+            settings: new AgentSettings { GroundingMode = "annotate" }
+        );
+
+        var response = await client.PostAsJsonAsync("/api/chat", new { message = "hello" });
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        payload.GetProperty("grounding").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task StreamAsync_EmitsAGroundingFrame_ForAGroundedAnswer()
+    {
+        var id = await SeedProductAsync();
+        using var client = ClientFor(
+            new FakeChatClient().EnqueueResponse(CardAnswer(id, 100.00m)),
+            settings: new AgentSettings { GroundingMode = "annotate" }
+        );
+
+        var response = await client.PostAsJsonAsync("/api/chat/stream", new { message = "find a product" });
+        var body = await response.Content.ReadAsStringAsync();
+
+        // The client renders the badge off this frame; without it the badge
+        // never appears on a streamed turn, which is every turn in the UI.
+        body.Should().Contain("event: grounding");
+        var frame = body
+            .Split('\n')
+            .SkipWhile(l => !l.StartsWith("event: grounding"))
+            .First(l => l.StartsWith("data: "))["data: ".Length..];
+        JsonDocument.Parse(frame).RootElement.GetProperty("verified").GetInt32().Should().Be(1);
     }
 }
