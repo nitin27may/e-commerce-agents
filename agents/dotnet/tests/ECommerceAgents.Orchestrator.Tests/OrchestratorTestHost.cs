@@ -3,6 +3,7 @@ using ECommerceAgents.Shared.Auth;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Data;
+using ECommerceAgents.Shared.RateLimiting;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -45,6 +46,12 @@ public static class OrchestratorTestHost
                     services.AddSingleton(pool);
                     services.AddSingleton(settings);
                     services.AddSingleton(new JwtTokenService(settings));
+                    // Chat routes carry a rate-limit endpoint filter (#30), so the
+                    // test host has to supply the same dependency the app does.
+                    // Redis is unreachable in most test runs and the limiter fails
+                    // open, so this stays a no-op unless a test opts in.
+                    services.AddSingleton<SlidingWindowRateLimiter>();
+                    services.AddLogging();
                     services.AddSingleton(new AuthServerClient(
                         new HttpClient(authServerHandler ?? new HttpClientHandler()),
                         settings

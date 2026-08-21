@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 
 namespace ECommerceAgents.Shared.Context;
@@ -23,6 +24,9 @@ public static class RequestContext
     private static readonly AsyncLocal<ChannelWriter<string>?> _streamWriter = new();
     private static readonly AsyncLocal<Dictionary<string, bool>?> _guardrailFlags = new();
     private static readonly AsyncLocal<List<ExecutionStep>?> _steps = new();
+    // Running LLM spend for the current agent run, in USD. The .NET twin of
+    // Python's current_run_cost_usd ContextVar (issue #30).
+    private static readonly AsyncLocal<StrongBox<double>?> _runCostUsd = new();
 
     public static string CurrentUserEmail
     {
@@ -40,6 +44,30 @@ public static class RequestContext
     {
         get => _sessionId.Value ?? string.Empty;
         set => _sessionId.Value = value;
+    }
+
+    /// <summary>Running estimated LLM spend for this agent run, in USD.</summary>
+    public static double CurrentRunCostUsd => _runCostUsd.Value?.Value ?? 0.0;
+
+    /// <summary>Starts a fresh spend tally. Called once per agent run.</summary>
+    public static void ResetRunCost() => _runCostUsd.Value = new StrongBox<double>(0.0);
+
+    /// <summary>
+    /// Adds to the run's spend and returns the new total. Mutates a boxed
+    /// value rather than reassigning the AsyncLocal, so an increment made
+    /// deeper in the call tree is visible to the caller that started the run —
+    /// reassignment would only be seen by that branch and below.
+    /// </summary>
+    public static double AddRunCost(double usd)
+    {
+        var box = _runCostUsd.Value;
+        if (box is null)
+        {
+            box = new StrongBox<double>(0.0);
+            _runCostUsd.Value = box;
+        }
+        box.Value += usd;
+        return box.Value;
     }
 
     public static IReadOnlyList<HistoryEntry> CurrentHistory

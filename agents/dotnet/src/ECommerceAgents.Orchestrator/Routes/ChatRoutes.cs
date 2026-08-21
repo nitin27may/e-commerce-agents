@@ -1,6 +1,7 @@
 using Dapper;
 using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Data;
+using ECommerceAgents.Shared.RateLimiting;
 using ECommerceAgents.Shared.Telemetry;
 using Microsoft.Agents.AI;
 using Microsoft.AspNetCore.Builder;
@@ -31,8 +32,13 @@ public static class ChatRoutes
 
     public static IEndpointRouteBuilder MapChatRoutes(this IEndpointRouteBuilder routes)
     {
-        routes.MapPost("/api/chat", SendAsync);
-        routes.MapPost("/api/chat/stream", StreamAsync);
+        // Both chat endpoints serve anonymous storefront traffic and each turn
+        // can trigger several LLM calls, so they are the two routes that most
+        // need a limit. Applied as an endpoint filter rather than inside the
+        // handlers so it cannot be forgotten when a handler is refactored.
+        // See issue #30.
+        routes.MapPost("/api/chat", SendAsync).AddEndpointFilter<ChatRateLimitFilter>();
+        routes.MapPost("/api/chat/stream", StreamAsync).AddEndpointFilter<ChatRateLimitFilter>();
         return routes;
     }
 
@@ -241,6 +247,40 @@ public static class ChatRoutes
     /// <summary>Resolved once per request: whether the caller is anonymous, the
     /// (possibly newly created) conversation id, their resolved user id, and the
     /// history to feed into <see cref="RequestContext.Scope"/>.</summary>
+    /// <summary>
+    /// Rate-limits the chat endpoints per user, or per IP for anonymous
+    /// callers — the .NET twin of Python's <c>rate_limit_chat</c> FastAPI
+    /// dependency (<c>orchestrator/routes/chat.py</c>).
+    /// </summary>
+    private sealed class ChatRateLimitFilter(SlidingWindowRateLimiter limiter) : IEndpointFilter
+    {
+        public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+        {
+            var http = context.HttpContext;
+
+            // X-Forwarded-For is trusted only because every deployment of this
+            // repo puts the orchestrator behind its own proxy or is reached
+            // directly; a production deployment behind an untrusted proxy chain
+            // would need a configured trusted-proxy list. Same caveat Python's
+            // _client_ip carries.
+            var forwarded = http.Request.Headers["X-Forwarded-For"].FirstOrDefault();
+            var ip = string.IsNullOrWhiteSpace(forwarded)
+                ? http.Connection.RemoteIpAddress?.ToString()
+                : forwarded.Split(',')[0].Trim();
+
+            var key = SlidingWindowRateLimiter.KeyFor(RequestContext.CurrentUserEmail, ip);
+            if (!await limiter.TryAcquireAsync(key, http.RequestAborted))
+            {
+                return Results.Json(
+                    new { detail = "Too many requests. Please slow down and try again shortly." },
+                    statusCode: StatusCodes.Status429TooManyRequests
+                );
+            }
+
+            return await next(context);
+        }
+    }
+
     private sealed record ConversationContext(bool IsAnon, string ConversationId, Guid? UserId, List<HistoryEntry> History);
 
     private static bool IsAnonymousCaller() =>
