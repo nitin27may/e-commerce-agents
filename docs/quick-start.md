@@ -177,25 +177,60 @@ Nothing above requires an OpenAI subscription. Any OpenAI-compatible endpoint wo
 same code path — set `LLM_BASE_URL` and leave `LLM_PROVIDER=openai`:
 
 ```dotenv
-# GitHub Models — free with a GitHub PAT
-LLM_PROVIDER=openai
-LLM_BASE_URL=https://models.inference.ai.azure.com
-OPENAI_API_KEY=<a GitHub PAT with the models:read scope>
-LLM_MODEL=gpt-4o
-
-# Ollama — fully local, no account, no key
+# Ollama — fully local, no account, no key, no rate limit
 LLM_PROVIDER=openai
 LLM_BASE_URL=http://localhost:11434/v1
 OPENAI_API_KEY=ollama          # any non-empty string — Ollama doesn't check it
-LLM_MODEL=llama3.1:8b          # must be a tool-calling-capable model
+LLM_MODEL=qwen2.5:14b          # must be a tool-calling-capable model — see below
 ```
+
+Start the model first, and **raise the context window** — this is the single most common cause of
+a local run behaving worse than a hosted one:
+
+```bash
+ollama pull qwen2.5:14b
+OLLAMA_CONTEXT_LENGTH=64000 ollama serve
+```
+
+Ollama defaults to a 4K context on machines with under 24 GiB of VRAM. An agent loop accumulating
+tool results passes 4K within a few turns, and Ollama then **silently discards the oldest messages
+— starting with the system prompt** — with no error and nothing in the response to tell you. The
+symptom is a confident, well-formed, wrong answer. Ollama's own documentation recommends at least
+64000 tokens for agent workloads.
+
 
 {: .warning }
 > **Check that your local model can actually call tools.** Every specialist here depends on
 > tool-calling, and the failure is quiet: a model with unreliable function-calling stops calling
-> tools and starts inventing product names and prices instead of erroring. Llama 3.1+, Qwen2.5 and
-> tool-tagged Mistral builds are known to work. If answers look plausible but the agent timeline
-> shows no tool calls, that is the symptom.
+> tools and starts inventing product names and prices instead of erroring.
+>
+> Measured 2026-08-21 on a 2-tool, multi-turn loop (check stock, compute the shortfall, restock to
+> the reorder point): **`qwen2.5:14b`**, **`gemma4:12b`** and **`qwen3.5:9b`** all passed — correct
+> tool sequence, correct arithmetic, clean termination. That is one scenario, not a benchmark:
+> treat it as evidence that the 9B-and-up class is viable here, not as a ranking.
+>
+> If answers look plausible but the agent timeline shows no tool calls, that is the symptom of a
+> model that cannot hold up.
+
+{: .warning }
+> **The second silent failure: reasoning models can answer with nothing at all.**
+> `qwen2.5:14b` is the recommended default because it emits no thinking trace. Reasoning models
+> interleave a long internal monologue *before* the answer, and it is billed against the same
+> output budget — so a small `max_tokens` gets spent on thinking and the reply comes back **empty**,
+> with `finish_reason: "length"` rather than an error.
+>
+> Measured on the same prompt and the same 1,024-token cap:
+>
+> | Model | Thinking trace | finish_reason | Latency | Answer |
+> |---|---|---|---|---|
+> | `qwen2.5:14b` | none | `stop` | ~10 s | present |
+> | `gemma4:12b` | ~1,000 chars | `stop` | ~39 s | present |
+> | `qwen3.5:9b` | ~3,957 chars | **`length`** | ~65 s | **empty** |
+>
+> Note that smaller is not faster here — `qwen3.5:9b` is the smallest of the three and 6.5x slower
+> than the largest, because it spends the time thinking. If a model returns blank content, check
+> `finish_reason` before concluding it cannot do tool calls; raise `max_tokens` (4096 is a safe
+> floor) or pick a non-reasoning model.
 
 On Ollama, the endpoint must be reachable *from inside the container*: use
 `http://host.docker.internal:11434/v1` on Docker Desktop (macOS/Windows) rather than

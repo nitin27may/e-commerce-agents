@@ -1,15 +1,18 @@
 # MAF v1: Python and .NET — A Complete Tutorial Series
 
-A chapter-by-chapter walkthrough of **Microsoft Agent Framework** with runnable examples in **both Python and .NET**. The series builds up from a single agent to the full multi-agent capstone application you see in this repo.
+A chapter-by-chapter walkthrough of **Microsoft Agent Framework** with runnable examples in **Python throughout and .NET through chapter 21**. The series builds up from a single agent to the full multi-agent capstone application you see in this repo.
 
 Each chapter is self-contained and in a separate folder under `tutorials/`. Every chapter ships with:
 
 - `python/` — a minimal runnable example
-- `dotnet/` — the same example in C#
-- `tests/` — unit tests for both
-- `README.md` — the article (canonical; cross-posted to [nitinksingh.com](https://nitinksingh.com))
+- `tests/` — unit tests
+- `README.md` — the chapter walkthrough
 - `PLAN.md` — the chapter's implementation plan
 - `compare.md` (where useful) — side-by-side notes on API differences
+
+Chapters **00-21 additionally ship `dotnet/`** — the same example in C#. Chapters **22-32 are
+Python-only** for now; the status table below marks them, and the `.NET` column is the source of
+truth if this paragraph ever drifts.
 
 > **Companion to an earlier series.** The original Python-only e-commerce series lives at [Building a Multi-Agent E-Commerce Platform — the complete guide](https://nitinksingh.com/posts/building-a-multi-agent-e-commerce-platform-the-complete-guide/). This *MAF v1* series re-tells the same ground in both languages, adds the pieces we never covered (workflows, orchestrations, HITL, checkpoints, declarative, visualization), and ends at the refactored capstone.
 

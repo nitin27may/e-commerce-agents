@@ -28,7 +28,7 @@ public sealed record AgentSettings
     /// Optional base-URL override for the OpenAI-compatible <c>openai</c>
     /// provider — the .NET twin of Python's <c>LLM_BASE_URL</c>
     /// (<c>shared/config.py</c>). Points the client at any OpenAI-compatible
-    /// endpoint instead of api.openai.com: GitHub Models, OpenRouter, Ollama,
+    /// endpoint instead of api.openai.com: Ollama, OpenRouter,
     /// LM Studio, llama.cpp's server, vLLM, Azure AI Foundry's OpenAI-compatible
     /// route. Unset by default; only takes effect when <c>LLM_PROVIDER=openai</c>
     /// (<c>azure</c> keeps its own endpoint setting).
