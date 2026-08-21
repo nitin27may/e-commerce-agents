@@ -443,8 +443,22 @@ CREATE TABLE IF NOT EXISTS workflow_checkpoints (
     workflow_name  TEXT NOT NULL,
     payload        JSONB NOT NULL,           -- encoded WorkflowCheckpoint dict
     usage_log_id   UUID REFERENCES usage_logs(id) ON DELETE SET NULL,
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- The three columns below exist for MAF .NET's checkpoint store, which keys on
+    -- (session_id, checkpoint_id) rather than an id alone. Without session_id a .NET
+    -- resume cannot even construct the lookup key. All three are nullable/defaulted, so
+    -- the Python stack — which INSERTs an explicit column list — is unaffected and the
+    -- two stacks keep sharing this table.
+    session_id            TEXT,
+    parent_checkpoint_id  UUID REFERENCES workflow_checkpoints(checkpoint_id) ON DELETE SET NULL,
+    -- Ordering is load-bearing, not cosmetic: MAF resumes the checkpoint its index
+    -- returns first, so a store that answers out of order silently resumes the wrong
+    -- superstep. created_at can tie at this resolution; a sequence cannot.
+    seq                   BIGSERIAL
 );
+
+CREATE INDEX IF NOT EXISTS idx_workflow_checkpoints_session
+    ON workflow_checkpoints(session_id, seq);
 CREATE INDEX IF NOT EXISTS idx_checkpoints_workflow_created
     ON workflow_checkpoints(workflow_name, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_checkpoints_usage_log

@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The first non-web executable in this solution. An eval harness needs a CLI with
+    flags and a meaningful exit code, which `dotnet test` cannot give: a regression
+    against a committed baseline is not a test failure, it is a number that moved.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>ECommerceAgents.Evals</RootNamespace>
+    <!-- Arguments are parsed by hand: adding System.CommandLine for four flags would
+         mean a new central package version for a single consumer. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ECommerceAgents.Shared\ECommerceAgents.Shared.csproj" />
+    <ProjectReference Include="..\ECommerceAgents.Orchestrator\ECommerceAgents.Orchestrator.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="datasets\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

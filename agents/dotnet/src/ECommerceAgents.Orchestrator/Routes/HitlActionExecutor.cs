@@ -1,5 +1,6 @@
 using Dapper;
 using ECommerceAgents.Shared.Data;
+using ECommerceAgents.Shared.Idempotency;
 using System.Text.Json;
 
 namespace ECommerceAgents.Orchestrator.Routes;
@@ -13,7 +14,46 @@ namespace ECommerceAgents.Orchestrator.Routes;
 /// </summary>
 internal static class HitlActionExecutor
 {
+    /// <summary>
+    /// Runs an approved destructive action, once.
+    /// </summary>
+    /// <remarks>
+    /// Guarded because approval is exactly where a double-execution is most expensive:
+    /// two admins clicking Approve on the same queued refund, or one admin retrying after
+    /// a timeout. The key is scoped to <paramref name="userEmail"/> — the *target
+    /// customer*, not the acting admin — because keying on the approver would let two
+    /// different admins each release the same refund. Python's port found that one the
+    /// hard way (<c>shared/hitl.py:323</c>).
+    /// </remarks>
     public static async Task<Dictionary<string, object?>> ExecuteAsync(
+        DatabasePool pool,
+        string toolName,
+        JsonElement toolInput,
+        string userEmail
+    )
+    {
+        var result = await new IdempotencyGuard(pool).ExecuteAsync(
+            "hitl_execute",
+            userEmail,
+            new { toolName, toolInput = toolInput.GetRawText() },
+            async () => (object)await ExecuteCoreAsync(pool, toolName, toolInput, userEmail));
+
+        return Unwrap(result);
+    }
+
+    /// <summary>
+    /// A replayed result comes back as the cached JSON rather than the original
+    /// dictionary, so it is converted back to the shape callers expect.
+    /// </summary>
+    private static Dictionary<string, object?> Unwrap(object result) => result switch
+    {
+        Dictionary<string, object?> d => d,
+        JsonElement e when e.ValueKind == JsonValueKind.Object =>
+            e.EnumerateObject().ToDictionary(p => p.Name, p => (object?)p.Value.ToString()),
+        _ => new Dictionary<string, object?> { ["status"] = "completed" },
+    };
+
+    private static async Task<Dictionary<string, object?>> ExecuteCoreAsync(
         DatabasePool pool,
         string toolName,
         JsonElement toolInput,

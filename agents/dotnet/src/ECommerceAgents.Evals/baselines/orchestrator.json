@@ -1,0 +1,8 @@
+{
+  "agent_name": "orchestrator",
+  "dataset_path": "datasets/orchestrator_routing.json",
+  "avg_groundedness": 0.5,
+  "avg_correctness": 1,
+  "avg_completeness": 1,
+  "overall_score": 0.8000000000000002
+}

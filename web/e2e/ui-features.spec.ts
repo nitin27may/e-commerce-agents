@@ -36,11 +36,15 @@ test.describe("Product Images", () => {
     await login(page, USERS.customer.email, USERS.customer.password);
   });
 
-  test("product list shows images with picsum", async ({ page }) => {
+  test("product list shows product images", async ({ page }) => {
     await page.goto("/products");
     await page.waitForLoadState("networkidle");
-    // Product cards should have images from picsum.photos
-    const images = page.locator('img[src*="picsum.photos"]');
+
+    // Asserts an image renders, not which CDN it came from. This used to require
+    // picsum.photos; the seed data moved to images.unsplash.com long ago
+    // (scripts/seed.py), so the test had been failing on both backends for a
+    // provider change that was never a product change.
+    const images = page.locator('main img[src^="http"]');
     await expect(images.first()).toBeVisible({ timeout: 10000 });
     expect(await images.count()).toBeGreaterThan(0);
   });
@@ -59,11 +63,11 @@ test.describe("Product Images", () => {
     await page.goto("/products");
     await page.waitForLoadState("networkidle");
     // Click first product
-    const firstProduct = page.locator('img[src*="picsum.photos"]').first();
+    const firstProduct = page.locator('main img[src^="http"]').first();
     await firstProduct.click();
     await page.waitForURL(/\/products\//);
     // Detail page should have a large hero image
-    const heroImg = page.locator('img[src*="picsum.photos"]').first();
+    const heroImg = page.locator('main img[src^="http"]').first();
     await expect(heroImg).toBeVisible({ timeout: 5000 });
   });
 
@@ -76,7 +80,7 @@ test.describe("Product Images", () => {
       await firstOrder.click();
       await page.waitForURL(/\/orders\//);
       // Items table should have thumbnails
-      const thumbs = page.locator('img[src*="picsum.photos"]');
+      const thumbs = page.locator('main img[src^="http"]');
       await expect(thumbs.first()).toBeVisible({ timeout: 5000 });
     }
   });
@@ -138,7 +142,7 @@ test.describe("Seller Dashboard", () => {
     // Should show products
     await expect(page.getByText(/product|manage/i).first()).toBeVisible({ timeout: 10000 });
     // Should have product images
-    const images = page.locator('img[src*="picsum.photos"]');
+    const images = page.locator('main img[src^="http"]');
     const imgCount = await images.count();
     expect(imgCount).toBeGreaterThanOrEqual(0); // May take time to load
   });
@@ -232,11 +236,14 @@ test.describe("Admin Pages Fixed", () => {
     await expect(page.getByText(/dashboard|usage|admin/i).first()).toBeVisible({ timeout: 10000 });
   });
 
-  test("marketplace loads without TypeError", async ({ page }) => {
-    await page.goto("/marketplace");
+  test("agent catalog loads without TypeError", async ({ page }) => {
+    // Was /marketplace, which 404s: the marketplace was removed and the catalog
+    // now lives at /agents. ui-smoke.spec.ts already recorded that removal; this
+    // test and shopping-flow.spec.ts kept asserting against the deleted route, so
+    // both were failing for a rename rather than a defect.
+    await page.goto("/agents");
     await page.waitForLoadState("networkidle");
-    const typeError = page.getByText("Runtime TypeError");
-    await expect(typeError).not.toBeVisible();
-    await expect(page.getByText(/Product Discovery|Marketplace|agent/i).first()).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText("Runtime TypeError")).not.toBeVisible();
+    await expect(page.getByText(/Product Discovery|agent/i).first()).toBeVisible({ timeout: 10000 });
   });
 });

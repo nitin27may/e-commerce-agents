@@ -5,6 +5,7 @@ using ECommerceAgents.Orchestrator.Modes;
 using ECommerceAgents.Shared.A2A;
 using ECommerceAgents.Shared.Auth;
 using ECommerceAgents.Shared.Checkpoints;
+using Microsoft.Agents.AI.Workflows;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.RateLimiting;
 using ECommerceAgents.Shared.Sessions;
@@ -61,17 +62,21 @@ builder.Services.AddSingleton<PiiRedactor>();
 builder.Services.AddSingleton<ContextEnricher>();
 builder.Services.AddSingleton<HitlGate>();
 
-// Session history + checkpoint storage. These factories and their three
-// backends each (memory/file/postgres) existed and were unit-tested, but
-// nothing in src/ ever called them — every call site was a test. That made
-// MAF_SESSION_BACKEND and MAF_CHECKPOINT_BACKEND settings that read from the
-// environment, validated, and then affected nothing, so checkpointing was
-// silently non-functional in production. Registering them here is what makes
-// those settings mean what they say; see issue #29.
+// Session history + checkpoint storage. Both factories and their three backends
+// each (memory/file/postgres) existed and were unit-tested while nothing in src/
+// called them, so MAF_SESSION_BACKEND and MAF_CHECKPOINT_BACKEND read from the
+// environment, validated, and then affected nothing (issue #29).
+//
+// Registering them was necessary and, for checkpoints, not sufficient: the DI
+// entry existed for a while afterwards with still no consumer, so
+// workflow_checkpoints stayed empty and GET /api/runs/{id}/checkpoints kept
+// answering with an empty list. What closes it is that the workflow modes now
+// take this CheckpointManager and MAF writes through it during a run (#33).
 builder.Services.AddSingleton<ISessionHistoryProvider>(sp =>
     SessionProviderFactory.Build(settings, sp.GetRequiredService<DatabasePool>()));
-builder.Services.AddSingleton<ICheckpointStorage>(sp =>
-    CheckpointStorageFactory.Build(settings, sp.GetRequiredService<DatabasePool>()));
+builder.Services.AddSingleton(sp =>
+    CheckpointStorageFactory.Build(
+        settings, sp.GetRequiredService<DatabasePool>(), workflowName: "return-replace"));
 
 // Orchestration modes. Two registered: tool and workflow:pre-purchase.
 // The rest are honestly absent rather than registered-and-broken — see
@@ -79,7 +84,14 @@ builder.Services.AddSingleton<ICheckpointStorage>(sp =>
 builder.Services.AddSingleton<IOrchestrationMode>(sp => new ToolRouterMode(sp.GetRequiredService<AIAgent>()));
 builder.Services.AddSingleton<IOrchestrationMode>(sp => new PrePurchaseMode(sp.GetRequiredService<DatabasePool>()));
 builder.Services.AddSingleton<IOrchestrationMode>(sp =>
-    new ReturnReplaceMode(sp.GetRequiredService<DatabasePool>(), settings));
+    new ReturnReplaceMode(
+        sp.GetRequiredService<DatabasePool>(),
+        settings,
+        sp.GetRequiredService<CheckpointManager>()));
+builder.Services.AddSingleton<IOrchestrationMode>(sp =>
+    new HandoffMode(settings, sp.GetRequiredService<A2AClient>()));
+builder.Services.AddSingleton<IOrchestrationMode>(sp =>
+    new GroupChatMode(settings, sp.GetRequiredService<PromptLoader>()));
 builder.Services.AddSingleton<ModeRegistry>();
 
 builder.Services.AddSingleton<SlidingWindowRateLimiter>();

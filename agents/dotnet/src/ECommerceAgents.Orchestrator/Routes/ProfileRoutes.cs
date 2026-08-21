@@ -82,9 +82,12 @@ public static class ProfileRoutes
     /// an instruction that can never come true. The client swallows the 404,
     /// so nothing signals that the card is broken rather than empty. See #33.
     ///
-    /// Note this is the read side only. .NET has no agent-callable
-    /// <c>store_memory</c> tool yet, so memories here are ones the Python
-    /// stack wrote against the same database (tracked separately under #19).
+    /// The read side. Writes come from the agent-callable <c>StoreMemory</c> tool
+    /// (<c>Shared/Tools/MemoryTools.cs</c>), registered on product-discovery and
+    /// review-sentiment. Until that landed .NET could only read, so every memory shown
+    /// here had been written by the Python stack against the shared database — which
+    /// made this card's own instruction to chat in order to build a profile untrue on
+    /// this backend (#19).
     /// </remarks>
     private static async Task<IResult> GetUserMemories(DatabasePool pool, string? category = null, int limit = 20)
     {

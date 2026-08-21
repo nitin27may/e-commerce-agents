@@ -59,8 +59,32 @@ namespace ECommerceAgents.Shared.Workflows;
 /// rest of the chain — nothing is lost on resume.
 /// </para>
 /// </remarks>
+/// <summary>
+/// What one run of the workflow produced, including whether it stopped on a human.
+/// </summary>
+/// <param name="State">The state as of the last output the run emitted.</param>
+/// <param name="PendingRequestId">MAF's resume token when the run paused; null otherwise.</param>
+/// <param name="SessionId">Keys the checkpoints this run wrote.</param>
+/// <param name="LastCheckpointId">The checkpoint a later process resumes from.</param>
+/// <remarks>
+/// This record exists so a pause can leave the workflow at all. Previously the run
+/// returned a bare <c>WorkflowState</c> and the RequestId surfaced only as a progress
+/// report, so no caller could persist it — which is the root of .NET having a pause the
+/// UI could see and nothing could resume.
+/// </remarks>
+public sealed record WorkflowRunOutcome(
+    WorkflowState State,
+    string? PendingRequestId,
+    string SessionId,
+    string? LastCheckpointId
+);
+
 public sealed class ReturnAndReplaceWorkflow
 {
+    /// <summary>Scope and key the paused state is parked under. Checkpointed with the run.</summary>
+    private const string ScopeName = "return-replace";
+    private const string StateKey = "state";
+
     private readonly IReturnReplaceTools _tools;
     private readonly decimal _threshold;
     private readonly Dictionary<string, (StreamingRun Run, ExternalRequest Request)> _pausedRuns = [];
@@ -73,24 +97,27 @@ public sealed class ReturnAndReplaceWorkflow
 
     // ─────────────────────── execute ─────────────────────────
 
-    public async Task<WorkflowState> ExecuteAsync(
-        WorkflowState state,
-        CancellationToken ct = default,
-        IProgress<OrchestrationEvent>? events = null
-    )
+    /// <summary>
+    /// The graph, built in exactly one place.
+    /// </summary>
+    /// <remarks>
+    /// A run restored from a checkpoint must be given a graph identical to the one that
+    /// wrote it — same executor ids, same port id, same edges. Two copies of this builder
+    /// would drift, and drift here does not fail loudly: it surfaces as a restore that
+    /// half-works.
+    /// </remarks>
+    private Workflow BuildWorkflow()
     {
-        ArgumentNullException.ThrowIfNull(state);
-
         var check = new CheckEligibilityExecutor(_tools);
         var initiate = new InitiateReturnExecutor(_tools);
         var search = new SearchReplacementsExecutor(_tools);
         var port = RequestPort.Create<ReturnApprovalRequest, bool>("ReturnApproval");
         var gate = new GateDecisionExecutor(_threshold, port.Id);
-        var resume = new HitlResumeExecutor(state);
+        var resume = new HitlResumeExecutor();
         var discount = new ApplyDiscountExecutor(_tools);
         var finalize = new FinalizeExecutor();
 
-        var workflow = new WorkflowBuilder(check)
+        return new WorkflowBuilder(check)
             .AddEdge(check, initiate)
             .AddEdge(initiate, search)
             .AddEdge(search, gate)
@@ -101,8 +128,43 @@ public sealed class ReturnAndReplaceWorkflow
             .AddEdge(discount, finalize)
             .WithOutputFrom(new ExecutorBinding[] { check, initiate, gate, resume, finalize })
             .Build();
+    }
 
-        var run = await InProcessExecution.RunStreamingAsync(workflow, state, cancellationToken: ct);
+    public async Task<WorkflowState> ExecuteAsync(
+        WorkflowState state,
+        CancellationToken ct = default,
+        IProgress<OrchestrationEvent>? events = null
+    ) => (await RunAsync(state, ct, events)).State;
+
+    /// <summary>
+    /// Runs the graph, optionally checkpointing, and reports what it was waiting on if it
+    /// paused — the <c>RequestId</c> and the checkpoint to resume from.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="ExecuteAsync"/> could only ever return the state, so a pause was
+    /// unreachable by the caller: the RequestId existed but escaped only as a progress
+    /// report. Nothing could persist it, which is why .NET had no resumable pause.
+    /// </remarks>
+    public async Task<WorkflowRunOutcome> RunAsync(
+        WorkflowState state,
+        CancellationToken ct = default,
+        IProgress<OrchestrationEvent>? events = null,
+        CheckpointManager? checkpoints = null,
+        string? sessionId = null
+    )
+    {
+        ArgumentNullException.ThrowIfNull(state);
+
+        var workflow = BuildWorkflow();
+        sessionId ??= Guid.NewGuid().ToString();
+
+        var run = checkpoints is null
+            ? await InProcessExecution.RunStreamingAsync(workflow, state, cancellationToken: ct)
+            : await InProcessExecution.RunStreamingAsync(workflow, state, checkpoints, sessionId, ct);
+
+        string? pendingRequestId = null;
+        string? lastCheckpointId = null;
+        ExternalRequest? pendingRequest = null;
 
         var finalState = state;
         await foreach (var evt in run.WatchStreamAsync(ct))
@@ -132,18 +194,119 @@ public sealed class ReturnAndReplaceWorkflow
                 // The pause is a first-class outcome, not an absence of one —
                 // the UI needs to know a human is now the blocker, which is
                 // exactly what /runs renders an approval prompt from.
-                events?.Report(OrchestrationEvent.RequestInfo("hitl-gate", requestInfo.Request.RequestId));
+                pendingRequest = requestInfo.Request;
+                pendingRequestId = pendingRequest.RequestId;
+                events?.Report(OrchestrationEvent.RequestInfo("hitl-gate", pendingRequestId));
+            }
 
-                // Pause: keep the run alive (do NOT dispose) and cache it —
-                // ResumeAsync retrieves it by OrderId later, possibly in an
-                // entirely separate request.
-                _pausedRuns[state.OrderId] = (run, requestInfo.Request);
-                return finalState;
+            // The checkpoint worth resuming from is the one taken on the superstep that
+            // *ends* holding an outstanding request — it arrives after the
+            // RequestInfoEvent, not with it, so the pause cannot be recorded from that
+            // event alone.
+            if (evt is SuperStepCompletedEvent step && step.CompletionInfo is { } info)
+            {
+                if (info.Checkpoint is not null)
+                {
+                    lastCheckpointId = info.Checkpoint.CheckpointId;
+                }
+                if (info.HasPendingRequests && pendingRequestId is not null)
+                {
+                    // Stop draining, but leave the run undisposed only in the
+                    // no-checkpoint case; with checkpointing the durable record is
+                    // enough and holding the object would just leak it.
+                    if (checkpoints is null && pendingRequest is not null)
+                    {
+                        // No checkpoint to resume from, so the live run is the only
+                        // record of the pause. Kept for the in-process path until every
+                        // caller runs with checkpointing.
+                        _pausedRuns[state.OrderId] = (run, pendingRequest);
+                    }
+                    return new WorkflowRunOutcome(finalState, pendingRequestId, sessionId, lastCheckpointId);
+                }
             }
         }
 
         await run.DisposeAsync();
-        return finalState;
+        return new WorkflowRunOutcome(finalState, pendingRequestId, sessionId, lastCheckpointId);
+    }
+
+    /// <summary>
+    /// Resumes a paused run from a checkpoint, in a process that never saw the original.
+    /// </summary>
+    /// <remarks>
+    /// The parity-correct counterpart to <see cref="ResumeAsync"/>: that one needs the
+    /// live <c>StreamingRun</c> and so dies with the request that created it; this one
+    /// needs only what is in storage. It rebuilds the graph, restores, waits for MAF to
+    /// re-raise the request it was blocked on, and answers it.
+    ///
+    /// MAF re-surfaces the outstanding request on the restored stream rather than
+    /// accepting a hand-built response, which is why the request is read back here
+    /// instead of being reconstructed from <paramref name="requestId"/> — that argument
+    /// is a correlation check, not the source of the response.
+    /// </remarks>
+    public async Task<WorkflowState> ResumeFromCheckpointAsync(
+        CheckpointManager checkpoints,
+        string sessionId,
+        string checkpointId,
+        string requestId,
+        bool approved,
+        CancellationToken ct = default,
+        IProgress<OrchestrationEvent>? events = null
+    )
+    {
+        ArgumentNullException.ThrowIfNull(checkpoints);
+
+        var run = await InProcessExecution.ResumeStreamingAsync(
+            BuildWorkflow(), new CheckpointInfo(sessionId, checkpointId), checkpoints, ct);
+
+        ExternalRequest? pending = null;
+        await foreach (var evt in run.WatchStreamAsync(ct))
+        {
+            if (evt is RequestInfoEvent info)
+            {
+                pending = info.Request;
+                break;
+            }
+        }
+
+        if (pending is null)
+        {
+            await run.DisposeAsync();
+            throw new InvalidOperationException(
+                $"Checkpoint {checkpointId} is not waiting on an approval — it may already have been resumed.");
+        }
+
+        if (!string.Equals(pending.RequestId, requestId, StringComparison.Ordinal))
+        {
+            await run.DisposeAsync();
+            throw new InvalidOperationException(
+                $"Checkpoint {checkpointId} is waiting on request {pending.RequestId}, not {requestId}.");
+        }
+
+        await run.SendResponseAsync(pending.CreateResponse(approved));
+
+        WorkflowState? finalState = null;
+        await foreach (var evt in run.WatchStreamAsync(ct))
+        {
+            switch (evt)
+            {
+                case ExecutorInvokedEvent invoked:
+                    events?.Report(OrchestrationEvent.NodeEnter(invoked.ExecutorId));
+                    break;
+                case ExecutorCompletedEvent completed:
+                    events?.Report(OrchestrationEvent.NodeExit(completed.ExecutorId));
+                    break;
+            }
+
+            if (evt is WorkflowOutputEvent { Data: WorkflowState s })
+            {
+                finalState = s;
+            }
+        }
+
+        await run.DisposeAsync();
+        return finalState
+            ?? throw new InvalidOperationException("Resume produced no terminal state.");
     }
 
     // ─────────────────────── resume ──────────────────────────
@@ -287,6 +450,14 @@ public sealed class ReturnAndReplaceWorkflow
                 // Snapshot so a caller observing the stream sees the pause
                 // state before the RequestInfoEvent actually pauses the run.
                 await context.YieldOutputAsync(state, ct);
+
+                // Park the state in the workflow's own scope, because the port
+                // carries a ReturnApprovalRequest in and a bool out — the state
+                // itself does not cross it. Checkpointing captures this scope, so
+                // it is what lets a rebuilt graph pick up where this one stopped;
+                // a field on an executor would not survive the restore.
+                await context.QueueStateUpdateAsync(StateKey, state, ScopeName, ct);
+
                 var request = new ReturnApprovalRequest(state.OrderId, state.OrderTotal, state.RefundAmount, state.ReplacementProducts.Count);
                 await context.SendMessageAsync(request, approvalPortId, ct);
                 return;
@@ -299,16 +470,25 @@ public sealed class ReturnAndReplaceWorkflow
 
     /// <summary>
     /// Fed by the <see cref="RequestPort"/> once a response arrives.
-    /// Constructed holding a reference to the same <see cref="WorkflowState"/>
-    /// threaded through the rest of the chain (see the class-level remarks
-    /// for why this improves on Python's lossy rehydration here).
     /// </summary>
+    /// <remarks>
+    /// Reads the state back out of the workflow's scope rather than closing over
+    /// it. The closure version worked only while the paused run stayed in memory;
+    /// a graph rebuilt from a checkpoint gets freshly constructed executors, so a
+    /// captured reference would point at an empty state and the workflow would
+    /// finalize a return it had no record of opening. The scope is checkpointed;
+    /// executor fields are not.
+    /// </remarks>
     [SendsMessage(typeof(WorkflowState))]
     [YieldsOutput(typeof(WorkflowState))]
-    private sealed class HitlResumeExecutor(WorkflowState state) : Executor<bool>("hitl-resume")
+    private sealed class HitlResumeExecutor() : Executor<bool>("hitl-resume")
     {
         public override async ValueTask HandleAsync(bool approved, IWorkflowContext context, CancellationToken ct = default)
         {
+            var state = await context.ReadStateAsync<WorkflowState>(StateKey, ScopeName, ct)
+                ?? throw new InvalidOperationException(
+                    $"No '{StateKey}' in scope '{ScopeName}' — the gate must park the state before the port pauses.");
+
             state.HitlApproved = approved;
             if (!approved)
             {

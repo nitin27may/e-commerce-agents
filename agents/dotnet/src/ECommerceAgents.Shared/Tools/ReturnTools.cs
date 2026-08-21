@@ -3,6 +3,7 @@ using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Data;
 using ECommerceAgents.Shared.Guardrails;
+using ECommerceAgents.Shared.Idempotency;
 using Microsoft.Extensions.AI;
 using System.ComponentModel;
 
@@ -23,9 +24,10 @@ namespace ECommerceAgents.Shared.Tools;
 /// Every query is scoped by the caller's own email, so one user cannot return
 /// or refund another's order regardless of what id the model passes.
 /// </remarks>
-public sealed class ReturnTools(DatabasePool pool, AgentSettings settings)
+public sealed class ReturnTools(DatabasePool pool, AgentSettings settings, IdempotencyGuard? idempotency = null)
 {
     private readonly DatabasePool _pool = pool;
+    private readonly IdempotencyGuard _idempotency = idempotency ?? new IdempotencyGuard(pool);
     private readonly AgentSettings _settings = settings;
 
     private const int ReturnWindowDays = 30;
@@ -127,17 +129,29 @@ public sealed class ReturnTools(DatabasePool pool, AgentSettings settings)
     }
 
     [Description("Initiate a return for a delivered order. Generates a return shipping label.")]
-    public async Task<object> InitiateReturn(
+    public Task<object> InitiateReturn(
         [Description("UUID of the order to return")] string orderId,
         [Description("Reason for the return")] string reason,
         [Description("Refund method: 'original_payment' or 'store_credit'")] string refundMethod = "original_payment"
     )
     {
+        // Checked before reserving an idempotency key: a caller who is going to be
+        // refused should not consume one, and DestructiveToolRoleGatingTests reflects
+        // over the registered tool method, so the guard has to live where it can see it.
         if (RoleGuard.Ensure(_settings, "customer", "seller") is { } denied)
         {
-            return new { error = denied };
+            return Task.FromResult<object>(new { error = denied });
         }
 
+        return _idempotency.ExecuteAsync(
+            "initiate_return",
+            RequestContext.CurrentUserEmail,
+            new { orderId, reason, refundMethod },
+            () => InitiateReturnCore(orderId, reason, refundMethod));
+    }
+
+    private async Task<object> InitiateReturnCore(string orderId, string reason, string refundMethod)
+    {
         var email = RequestContext.CurrentUserEmail;
         if (string.IsNullOrEmpty(email))
         {
@@ -199,15 +213,24 @@ public sealed class ReturnTools(DatabasePool pool, AgentSettings settings)
     }
 
     [Description("Process the refund for an approved return.")]
-    public async Task<object> ProcessRefund(
+    public Task<object> ProcessRefund(
         [Description("UUID of the return to refund")] string returnId
     )
     {
         if (RoleGuard.Ensure(_settings, "customer", "seller") is { } denied)
         {
-            return new { error = denied };
+            return Task.FromResult<object>(new { error = denied });
         }
 
+        return _idempotency.ExecuteAsync(
+            "process_refund",
+            RequestContext.CurrentUserEmail,
+            new { returnId },
+            () => ProcessRefundCore(returnId));
+    }
+
+    private async Task<object> ProcessRefundCore(string returnId)
+    {
         var email = RequestContext.CurrentUserEmail;
         if (string.IsNullOrEmpty(email))
         {

@@ -1,0 +1,148 @@
+# Evaluates the .NET agents against the same datasets the Python suite uses.
+#
+# Manual only, deliberately. The job seeds a database, starts five specialist
+# services and drives real orchestration turns, so it is minutes rather than
+# seconds — too slow to sit on every pull request, and the Python `smoke` job
+# already gives PRs a fast deterministic signal. Run this from the Actions tab
+# when the .NET agents change, or before a release.
+#
+# With LLM_PROVIDER=replay it needs no credentials and costs nothing; with a real
+# key it measures actual model behaviour. The provider is an input rather than a
+# guess, because those two runs answer different questions.
+name: Evals (.NET)
+
+on:
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: "LLM provider — replay (free, deterministic) or azure (real model)"
+        type: choice
+        options: [replay, azure]
+        default: replay
+      pass_threshold:
+        description: "Overall score required to pass"
+        default: "0.7"
+      update_baseline:
+        description: "Write this run's scores as the new committed baseline"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ecommerce
+          POSTGRES_PASSWORD: ecommerce_secret
+          POSTGRES_DB: ecommerce_agents
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ecommerce"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+
+    env:
+      ConnectionStrings__Postgres: "Host=localhost;Port=5432;Database=ecommerce_agents;Username=ecommerce;Password=ecommerce_secret"
+      ConnectionStrings__Redis: "localhost:6379"
+      LLM_PROVIDER: ${{ inputs.provider }}
+      REPLAY_FIXTURES_DIR: ${{ github.workspace }}/agents/dotnet/src/ECommerceAgents.Evals/fixtures
+      OTEL_ENABLED: "false"
+      AUTH_MODE: local
+      AGENT_REGISTRY: >-
+        {"product-discovery":"http://localhost:8081","order-management":"http://localhost:8082",
+         "pricing-promotions":"http://localhost:8083","review-sentiment":"http://localhost:8084",
+         "inventory-fulfillment":"http://localhost:8085"}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The seeder is Python's and is the only one there is; both stacks share the
+      # schema and the same deterministic seed, so .NET evaluates against exactly
+      # the data Python does.
+      - name: Apply schema and seed
+        run: |
+          PGPASSWORD=ecommerce_secret psql -h localhost -U ecommerce -d ecommerce_agents \
+            -f docker/postgres/init.sql
+          uv sync --project agents/python --extra dev
+          uv run --project agents/python python -m scripts.seed
+
+      - name: Build
+        run: dotnet build agents/dotnet/ECommerceAgents.sln -c Release -p:NuGetAudit=false
+
+      # The orchestrator reaches specialists over real HTTP regardless of provider,
+      # so they have to be up even under replay — a missing specialist surfaces as a
+      # routing failure and would be misread as an agent regression.
+      - name: Start specialists
+        env:
+          AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+          AZURE_OPENAI_KEY: ${{ secrets.AZURE_OPENAI_KEY }}
+          AZURE_OPENAI_DEPLOYMENT: ${{ secrets.AZURE_OPENAI_DEPLOYMENT }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          for svc in ProductDiscovery:8081 OrderManagement:8082 PricingPromotions:8083 \
+                     ReviewSentiment:8084 InventoryFulfillment:8085; do
+            name="${svc%%:*}"; port="${svc##*:}"
+            AGENT_PORT="$port" ASPNETCORE_URLS="http://127.0.0.1:$port" \
+              nohup dotnet run --no-build -c Release \
+                --project "agents/dotnet/src/ECommerceAgents.$name" > "/tmp/$name.log" 2>&1 &
+          done
+          for port in 8081 8082 8083 8084 8085; do
+            for _ in $(seq 1 40); do
+              curl -sf "http://localhost:$port/health" >/dev/null && break
+              sleep 2
+            done
+          done
+
+      - name: Run evals
+        env:
+          AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+          AZURE_OPENAI_KEY: ${{ secrets.AZURE_OPENAI_KEY }}
+          AZURE_OPENAI_DEPLOYMENT: ${{ secrets.AZURE_OPENAI_DEPLOYMENT }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        working-directory: agents/dotnet/src/ECommerceAgents.Evals
+        run: |
+          BASELINE_FLAG="--baseline baselines/orchestrator.json --max-regression 0.05"
+          if [ "${{ inputs.update_baseline }}" = "true" ]; then
+            BASELINE_FLAG="--update-baseline baselines/orchestrator.json"
+          fi
+          dotnet run --no-build -c Release -- \
+            --agent orchestrator \
+            --dataset datasets/orchestrator_routing.json \
+            --pass-threshold "${{ inputs.pass_threshold }}" \
+            --output-json /tmp/evals-orchestrator.json \
+            $BASELINE_FLAG
+
+      # Started with nohup, so nothing else stops them. A job that leaves processes
+      # holding a cache is how the Python evals job learned this: its post-step hung
+      # for a clean 300 seconds pruning a cache five uvicorns still had open.
+      - name: Stop specialists
+        if: always()
+        run: pkill -f "ECommerceAgents" || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dotnet-eval-results
+          path: |
+            /tmp/evals-*.json
+            /tmp/*.log
+          if-no-files-found: ignore

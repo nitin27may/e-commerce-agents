@@ -1,3 +1,4 @@
+using Microsoft.Agents.AI.Workflows;
 using ECommerceAgents.Orchestrator.Modes;
 using ECommerceAgents.Shared.Orchestration;
 using ECommerceAgents.Shared.Configuration;
@@ -108,7 +109,7 @@ public sealed class ModeRegistryTests
     {
         var mermaid = modeName == "workflow:pre-purchase"
             ? new PrePurchaseMode(null!).GraphMermaid()
-            : new ReturnReplaceMode(null!, new AgentSettings()).GraphMermaid();
+            : new ReturnReplaceMode(null!, new AgentSettings(), CheckpointManager.CreateInMemory()).GraphMermaid();
 
         mermaid.Should().NotBeNull();
 

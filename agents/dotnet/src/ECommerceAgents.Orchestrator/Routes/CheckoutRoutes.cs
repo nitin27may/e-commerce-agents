@@ -1,3 +1,4 @@
+using ECommerceAgents.Shared.Idempotency;
 using Dapper;
 using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Data;
@@ -30,6 +31,23 @@ public static class CheckoutRoutes
         return routes;
     }
 
+    /// <summary>
+    /// Places an order from the caller's cart — once, however many times it is submitted.
+    /// </summary>
+    /// <remarks>
+    /// The fourth of Python's four <c>@idempotent</c> sites
+    /// (<c>orchestrator/routes/legacy.py:2151</c>). A double-submitted checkout is the
+    /// most ordinary duplicate there is: the customer taps Place Order, nothing visibly
+    /// happens because the request is still in flight, and they tap again. Without a key
+    /// that is two orders and two charges.
+    ///
+    /// Keyed on the cart's current contents, not the request body alone. Keying on the
+    /// body was tried and is wrong: the address and payment method are identical between
+    /// a duplicate submit and a genuine second order placed later, so a customer who
+    /// re-ordered the same items would silently receive their first order replayed
+    /// instead of a new one. The existing checkout tests caught it — an empty-cart case
+    /// started returning 200 because it replayed an earlier test's order.
+    /// </remarks>
     private static async Task<IResult> Checkout(
         [FromBody] CheckoutRequest body,
         DatabasePool pool
@@ -42,6 +60,64 @@ public static class CheckoutRoutes
             return Results.BadRequest(new { detail = "shipping_address is required" });
         }
 
+        // What is in the cart right now is what makes this checkout distinct. Read before
+        // the guard so it can key on it; CheckoutCoreAsync re-reads inside its own
+        // transaction, which is what actually enforces consistency.
+        var cartFingerprint = await CartFingerprintAsync(pool, userId.Value);
+
+        try
+        {
+            var outcome = await new IdempotencyGuard(pool).ExecuteAsync(
+                "checkout",
+                RequestContext.CurrentUserEmail,
+                new { body.ShippingAddress, body.BillingAddress, body.PaymentMethod, cart = cartFingerprint },
+                async () => await CheckoutCoreAsync(body, pool, userId.Value));
+
+            // A replayed order arrives as the cached JSON rather than the original object,
+            // which is the point: the customer sees the order they already placed.
+            return outcome is JsonElement cached ? Results.Json(cached) : Results.Ok(outcome);
+        }
+        catch (CheckoutRefused refused)
+        {
+            // Not an error to cache. An empty cart or an out-of-stock item is a state the
+            // customer can fix and retry, so the key is released by the guard's own
+            // failure path and the retry is treated as a fresh attempt.
+            return refused.Result;
+        }
+    }
+
+    /// <summary>
+    /// A stable summary of the cart: its id plus every product and quantity in it. Two
+    /// submits of the same cart share one; a refilled cart does not, because checkout
+    /// clears the cart and the new rows differ.
+    /// </summary>
+    private static async Task<string> CartFingerprintAsync(DatabasePool pool, Guid userId)
+    {
+        await using var conn = await pool.OpenAsync();
+        var rows = await conn.QueryAsync(
+            @"SELECT ci.product_id, ci.quantity, ci.cart_id
+                FROM cart_items ci JOIN carts c ON ci.cart_id = c.id
+               WHERE c.user_id = @userId
+               ORDER BY ci.product_id",
+            new { userId });
+
+        var parts = rows.Select(r => $"{(Guid)r.cart_id}:{(Guid)r.product_id}x{(int)r.quantity}");
+        return string.Join("|", parts);
+    }
+
+    /// <summary>Carries a refusal out of the guarded operation without caching it.</summary>
+    private sealed class CheckoutRefused(IResult result) : Exception
+    {
+        public IResult Result { get; } = result;
+    }
+
+    private static async Task<object> CheckoutCoreAsync(
+        CheckoutRequest body,
+        DatabasePool pool,
+        Guid userId
+    )
+    {
+
         await using var conn = await pool.OpenAsync();
         await using var tx = await conn.BeginTransactionAsync();
 
@@ -53,7 +129,7 @@ public static class CheckoutRoutes
         );
         if (cart is null)
         {
-            return Results.BadRequest(new { detail = "No cart found" });
+            throw new CheckoutRefused(Results.BadRequest(new { detail = "No cart found" }));
         }
         Guid cartId = (Guid)cart.id;
 
@@ -69,7 +145,7 @@ public static class CheckoutRoutes
         )).ToList();
         if (itemRows.Count == 0)
         {
-            return Results.BadRequest(new { detail = "Cart is empty" });
+            throw new CheckoutRefused(Results.BadRequest(new { detail = "Cart is empty" }));
         }
 
         // 3. Validate active
@@ -79,10 +155,10 @@ public static class CheckoutRoutes
             .ToList();
         if (inactive.Count > 0)
         {
-            return Results.BadRequest(new
+            throw new CheckoutRefused(Results.BadRequest(new
             {
                 detail = $"The following products are no longer available: {string.Join(", ", inactive)}",
-            });
+            }));
         }
 
         // 4. Check stock
@@ -96,10 +172,10 @@ public static class CheckoutRoutes
             int wanted = (int)item.quantity;
             if (stock < wanted)
             {
-                return Results.BadRequest(new
+                throw new CheckoutRefused(Results.BadRequest(new
                 {
                     detail = $"Insufficient stock for '{(string)item.name}'. Available: {stock}, requested: {wanted}",
-                });
+                }));
             }
         }
 
@@ -300,7 +376,7 @@ public static class CheckoutRoutes
 
         await tx.CommitAsync();
 
-        return Results.Ok(new
+        return new
         {
             order_id = orderId.ToString(),
             total,
@@ -308,6 +384,6 @@ public static class CheckoutRoutes
             status = "placed",
             tracking_number = tracking,
             carrier = carrierName,
-        });
+        };
     }
 }

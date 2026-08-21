@@ -7,6 +7,17 @@ namespace ECommerceAgents.Shared.Workflows;
 /// <c>WorkflowState</c> in
 /// <c>agents/python/workflows/return_replace.py</c>.
 /// </summary>
+/// <remarks>
+/// The three collections below have public setters for a load-bearing reason, not
+/// tidiness. Checkpoint-based resume (#33) round-trips this object through storage, and
+/// System.Text.Json cannot fill a get-only collection on a type with a parameterized
+/// constructor — it builds the state and leaves them <b>empty, with no error</b>. A
+/// resumed workflow would look entirely plausible while having lost the steps it had
+/// already run and the return it had already opened.
+/// (<c>JsonObjectCreationHandling.Populate</c> is the tidier fix and throws
+/// <c>NotSupportedException</c> here, for exactly that constructor reason.)
+/// Covered by <c>WorkflowStateRoundTripTests</c>.
+/// </remarks>
 public sealed class WorkflowState
 {
     public WorkflowState(string userEmail, string orderId)
@@ -24,7 +35,7 @@ public sealed class WorkflowState
     public bool ReturnEligible { get; set; }
     public string? ReturnId { get; set; }
     public decimal RefundAmount { get; set; }
-    public List<JsonElement> ReplacementProducts { get; } = new();
+    public List<JsonElement> ReplacementProducts { get; set; } = new();
     public LoyaltyDiscount? AppliedDiscount { get; set; }
 
     // HITL
@@ -32,8 +43,8 @@ public sealed class WorkflowState
     public bool? HitlApproved { get; set; }
 
     // Tracking
-    public List<string> CompletedSteps { get; } = new();
-    public List<string> Errors { get; } = new();
+    public List<string> CompletedSteps { get; set; } = new();
+    public List<string> Errors { get; set; } = new();
 
     public sealed record LoyaltyDiscount(string? Tier, decimal DiscountPct);
 }

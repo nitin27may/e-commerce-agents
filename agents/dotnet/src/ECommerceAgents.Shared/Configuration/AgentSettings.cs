@@ -21,14 +21,24 @@ public sealed record AgentSettings
     public string RedisUrl { get; init; } = "redis://localhost:6379";
 
     // ── LLM ─────────────────────────────────────────────────────
-    public string LlmProvider { get; init; } = "openai"; // "openai" | "azure"
+    /// <summary>"openai" | "azure" | "replay".</summary>
+    /// <remarks>
+    /// <c>replay</c> serves recorded fixtures instead of calling a model, so an eval run
+    /// is deterministic and costs nothing. Unknown values are rejected by
+    /// <c>ChatClientFactory</c> rather than falling through to OpenAI, which used to turn
+    /// a typo into a confusing "OPENAI_API_KEY is required".
+    /// </remarks>
+    public string LlmProvider { get; init; } = "openai";
+
+    /// <summary>Where <c>LLM_PROVIDER=replay</c> reads and writes fixtures.</summary>
+    public string ReplayFixturesDir { get; init; } = "evals/fixtures/replay";
     public string LlmModel { get; init; } = "gpt-4.1";
 
     /// <summary>
     /// Optional base-URL override for the OpenAI-compatible <c>openai</c>
     /// provider — the .NET twin of Python's <c>LLM_BASE_URL</c>
     /// (<c>shared/config.py</c>). Points the client at any OpenAI-compatible
-    /// endpoint instead of api.openai.com: Ollama, OpenRouter,
+    /// endpoint instead of api.openai.com: GitHub Models, OpenRouter, Ollama,
     /// LM Studio, llama.cpp's server, vLLM, Azure AI Foundry's OpenAI-compatible
     /// route. Unset by default; only takes effect when <c>LLM_PROVIDER=openai</c>
     /// (<c>azure</c> keeps its own endpoint setting).

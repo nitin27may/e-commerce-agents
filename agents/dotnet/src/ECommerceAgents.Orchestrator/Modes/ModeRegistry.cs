@@ -20,13 +20,15 @@ public sealed class UnknownModeException(string name, IEnumerable<string> availa
 /// modes here is what makes <c>GET /api/orchestration/modes</c>, the mode
 /// switcher, the graph panel and mode comparison possible at all.
 ///
-/// Python registers five. This registers two, and that gap is deliberate
-/// rather than unfinished: <c>workflow:return-replace</c> needs returns and
-/// loyalty tools that .NET does not have yet, and <c>handoff</c> and
-/// <c>group-chat</c> need orchestration engines that were never ported. A
-/// mode registered but unable to run is worse than one honestly absent —
-/// <c>ChatRoutes</c> rejects an unregistered mode with a 400 naming what is
-/// available.
+/// Both stacks now register the same five: <c>tool</c>,
+/// <c>workflow:pre-purchase</c>, <c>workflow:return-replace</c>,
+/// <c>handoff</c> and <c>group-chat</c>. The rule that shaped the earlier gap
+/// still holds — a mode registered but unable to run is worse than one
+/// honestly absent, and <c>ChatRoutes</c> rejects an unregistered mode with a
+/// 400 naming what is available.
+///
+/// Magentic is in neither stack. It is unbuilt rather than a .NET gap, so it
+/// is not tracked as one.
 /// </remarks>
 public sealed class ModeRegistry
 {

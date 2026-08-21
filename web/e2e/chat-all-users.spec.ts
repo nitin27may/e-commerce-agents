@@ -37,21 +37,30 @@ async function sendMessageAndWaitForResponse(page: Page, message: string): Promi
   await input.fill(message);
   await input.press("Enter");
 
-  // Wait for the user message to appear
   await expect(page.getByText(message).last()).toBeVisible({ timeout: 5000 });
 
-  // Wait for the assistant response (look for the typing indicator to disappear
-  // or for new content to appear after the user message)
-  // The response will either be a real LLM response or a fallback error
-  await page.waitForTimeout(2000); // Give time for the API call to start
+  // Wait for the turn to actually finish. The composer's submit button shows a stop
+  // icon while isResponding is true and swaps back when the turn completes — the only
+  // reliable signal, and the same one orchestration-parity.spec.ts relies on. Waiting
+  // on text instead raced the stream.
+  await page
+    .waitForSelector('button[aria-label="Stop"], button:has(svg.lucide-square)', {
+      timeout: 20000,
+      state: "attached",
+    })
+    .catch(() => {});
+  await page.waitForSelector('button[aria-label="Stop"], button:has(svg.lucide-square)', {
+    timeout: 120000,
+    state: "detached",
+  });
 
-  // Wait until we see a response that isn't just the user message
-  // Look for either a real response or the error fallback
-  const responseLocator = page.locator("text=/help|assist|apologize|error|order|product|discover|welcome|hello|hi there|here.*to help|can.*help|support|unfortunately/i").last();
-  await expect(responseLocator).toBeVisible({ timeout: 60000 });
-
-  const responseText = await responseLocator.textContent();
-  return responseText || "";
+  // Read the rendered assistant message, not the smallest element that happens to
+  // contain a keyword. The previous locator matched on /help|assist|.../ and returned
+  // whichever tiny node won — routinely a single six-character word — so a
+  // "response.length > 20" assertion failed against a perfectly good answer.
+  const rendered = page.locator('[class*="prose"]').last();
+  await expect(rendered).toBeVisible({ timeout: 10000 });
+  return (await rendered.textContent()) ?? "";
 }
 
 // ---------------------------------------------------------------------------

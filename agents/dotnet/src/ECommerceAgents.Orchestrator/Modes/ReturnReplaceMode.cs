@@ -4,6 +4,7 @@ using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Data;
 using ECommerceAgents.Shared.Orchestration;
 using ECommerceAgents.Shared.Workflows;
+using Microsoft.Agents.AI.Workflows;
 using System.Text.RegularExpressions;
 
 namespace ECommerceAgents.Orchestrator.Modes;
@@ -22,9 +23,10 @@ namespace ECommerceAgents.Orchestrator.Modes;
 /// rather than guessing is deliberate: a return is destructive, and picking
 /// an arbitrary matching order would be the worst possible kind of helpful.
 /// </remarks>
-public sealed partial class ReturnReplaceMode(DatabasePool pool, AgentSettings settings) : IOrchestrationMode
+public sealed partial class ReturnReplaceMode(DatabasePool pool, AgentSettings settings, CheckpointManager checkpoints) : IOrchestrationMode, IResumableMode
 {
     private readonly DatabasePool _pool = pool;
+    private readonly CheckpointManager _checkpoints = checkpoints;
     private readonly AgentSettings _settings = settings;
 
     public string Name => "workflow:return-replace";
@@ -58,6 +60,33 @@ public sealed partial class ReturnReplaceMode(DatabasePool pool, AgentSettings s
     [GeneratedRegex(@"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")]
     private static partial Regex UuidPattern();
 
+    /// <inheritdoc />
+    public async Task<ModeRunResult> ResumeAsync(
+        string sessionId,
+        string checkpointId,
+        string requestId,
+        bool approved,
+        CancellationToken ct = default
+    )
+    {
+        // A fresh workflow object, exactly as a later process would get: the run that
+        // paused lived in a previous request and is long gone. Everything it knew comes
+        // back from the checkpoint.
+        var workflow = new ReturnAndReplaceWorkflow(
+            new ReturnReplaceTools(_pool, _settings),
+            (decimal)_settings.ReturnHitlThreshold
+        );
+
+        var state = await workflow.ResumeFromCheckpointAsync(
+            _checkpoints, sessionId, checkpointId, requestId, approved, ct);
+
+        return new ModeRunResult(
+            Summarise(state),
+            ["order-management", "product-discovery", "pricing-promotions"],
+            state.CompletedSteps.Count
+        );
+    }
+
     public async Task<ModeRunResult> RunAsync(string message, RunContext ctx, CancellationToken ct = default)
     {
         var email = RequestContext.CurrentUserEmail;
@@ -86,16 +115,21 @@ public sealed partial class ReturnReplaceMode(DatabasePool pool, AgentSettings s
         // approval threshold. Leaving it at its default of 0 meant a $603
         // refund sailed past a $500 gate — caught only by running it, since
         // every workflow test supplies the total itself.
-        var state = await workflow.ExecuteAsync(
+        var outcome = await workflow.RunAsync(
             new WorkflowState(email, order.Value.Id) { Reason = message, OrderTotal = order.Value.Total },
             ct,
-            ctx.Events
+            ctx.Events,
+            _checkpoints
         );
 
         return new ModeRunResult(
-            Summarise(state),
+            Summarise(outcome.State),
             ["order-management", "product-discovery", "pricing-promotions"],
-            state.CompletedSteps.Count
+            outcome.State.CompletedSteps.Count,
+            PendingApproval: outcome.PendingRequestId is not null,
+            RequestId: outcome.PendingRequestId,
+            LatestCheckpointId: outcome.LastCheckpointId,
+            SessionId: outcome.SessionId
         );
     }
 

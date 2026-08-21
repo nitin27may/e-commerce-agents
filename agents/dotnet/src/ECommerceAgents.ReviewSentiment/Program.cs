@@ -17,6 +17,7 @@ var app = AgentHost.Build(
         builder.Services.AddSingleton<ReviewTools>();
         builder.Services.AddSingleton<UserProfileTools>();
         builder.Services.AddSingleton<ProductLookupTools>();
+        builder.Services.AddSingleton<MemoryTools>();
         builder.Services.AddSingleton<AIAgent>(sp =>
         {
             var prompts = sp.GetRequiredService<PromptLoader>();
@@ -25,7 +26,8 @@ var app = AgentHost.Build(
             // Shared lookup so a product *name* can reach the id-keyed tools below
             // (issue #18) — matches which agents Python attaches it to.
             var lookup = sp.GetRequiredService<ProductLookupTools>();
-            return SpecialistAgentFactory.Create(settings, prompts, "review-sentiment", tools.All().Concat(lookup.All()).Concat(userProfileTools.All()), services: sp);
+            var memoryTools = sp.GetRequiredService<MemoryTools>();
+            return SpecialistAgentFactory.Create(settings, prompts, "review-sentiment", tools.All().Concat(lookup.All()).Concat(userProfileTools.All()).Concat(memoryTools.All()), services: sp);
         });
     }
 );
