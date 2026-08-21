@@ -65,6 +65,55 @@ five specialist services (in replay mode, no cost) as a setup step before
 running those two, which the five pure-specialist datasets don't require
 at all.
 
+## Two traps when re-recording (learned the hard way, #9)
+
+**`RECORD=true` records on a *miss*, not on every call.** `_load_or_record`
+returns an existing fixture before it considers recording
+(`shared/replay_client.py`, the `if path.exists()` branch). So re-running with
+`RECORD=true` against a populated directory **replays** — it does not
+re-record. If you want a genuinely fresh recording of a suite, delete its
+fixtures first or record into an empty directory. Symptom if you miss this: a
+suite scores identically no matter what you change, and the fixture count never
+moves.
+
+**A prompt change invalidates the entire corpus, silently and completely.** The
+cache key is `(messages, tools, instructions)`, and `instructions` is the
+composed system prompt — which includes every shared fragment from
+`config/prompts/_shared/`. Adding one section to `grounding-rules.yaml` changed
+the prompt for *every* agent, so all 103 fixtures became unreachable in one
+commit. This is worth knowing before you edit a shared prompt fragment: the
+cost is a full re-record, and CI will tell you in the form of ~100
+`ReplayFixtureMissingError`s rather than anything that names the cause.
+
+To confirm nothing survived, the cheapest check is the one used here: delete
+every fixture tracked at `HEAD`, run all seven suites in pure replay, and
+confirm zero misses. Anything genuinely still reachable shows up immediately as
+a miss.
+
+## Scores vary between recording sessions — do not chase it as a regression
+
+Recording the same suite, with the same prompt, against the same database, four
+times gave `inventory-fulfillment` **74%, 82%, 82%, 82%**. The 74% run was an
+ordinary unlucky roll: one case's correctness flipped. Nothing had changed.
+
+That is an 8-point spread, well beyond `--max-regression 0.05`, so a single
+recording can put a suite "in regression" with no code change behind it. This
+is the same reason the CI gate is a baseline comparison rather than an absolute
+score floor — **the score is a property of the recording session**, not only of
+the system under test.
+
+Practical guidance:
+
+- If a re-recorded suite lands below baseline, re-record it two or three more
+  times *into empty directories* before concluding anything. Cheap, and it
+  distinguishes a real regression from a roll.
+- Do not keep re-rolling until you beat the baseline. Take the modal result and
+  say which one you took.
+- Baselines are deliberately **not** raised every time scores improve. After the
+  #9 re-record, `order-management` came in at 51% against a 44.3% baseline; the
+  baseline stayed, because pinning it to a good roll would make the gate fail on
+  an ordinary one later.
+
 ## A real bug this surfaced: non-deterministic product ids broke grounding on replay
 
 `scripts/seed.py`'s `products` table relied on `id UUID ... DEFAULT
