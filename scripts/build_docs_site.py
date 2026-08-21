@@ -203,20 +203,28 @@ def chapter_sort_key(slug: str) -> tuple[int, str]:
 
 
 def read_title_and_body(path: Path) -> tuple[str, str]:
-    """Split a page's H1 off its body.
+    """Read a page's title from its H1, leaving the body intact.
 
-    just-the-docs renders ``title:`` as the page heading, so leaving the H1 in
-    place shows every title twice. The H1 stays in the repo copy — it is what
-    makes the file readable on GitHub — and is stripped only here.
+    This used to strip the H1, on the theory that just-the-docs renders
+    ``title:`` as the page heading and leaving it in would show every title
+    twice. It does not. just-the-docs emits no ``<h1>`` of its own — the
+    heading you see on any of these pages comes from the markdown — so
+    stripping it published all 85 pages with **no ``<h1>`` at all**, which a
+    live crawl confirmed against every URL in the sitemap.
+
+    That is why the sibling sites were fine: mean-docker and
+    clean-architecture keep their markdown H1 and render one heading each.
+    Only the generated site had the problem, and only because of this function.
+
+    The title is still parsed out of the H1 for front matter, so ``title:`` and
+    the visible heading stay in agreement.
     """
     text = path.read_text(encoding="utf-8")
-    lines = text.splitlines()
     title = path.stem.replace("-", " ").title()
-    for i, line in enumerate(lines):
+    for line in text.splitlines():
         if line.startswith("# "):
             title = line[2:].strip()
-            body = "\n".join(lines[:i] + lines[i + 1 :]).lstrip("\n")
-            return title, body
+            break
     return title, text
 
 
@@ -791,6 +799,24 @@ def check_diagram_labels(out_path: Path, body: str) -> list[str]:
     return problems
 
 
+def ensure_h1(body: str, title: str) -> str:
+    """Guarantee the page opens with an H1.
+
+    Pages read from a source file already carry one. Generated section indexes
+    do not — their body is a hardcoded summary string — so without this they
+    would keep publishing headingless even after the strip was removed.
+
+    Only a *leading* H1 counts. A page whose first heading is an H2 has no
+    top-level heading, and prepending one is the fix, not a duplicate.
+    """
+    for line in body.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        return body if stripped.startswith("# ") else f"# {title}\n\n{body}"
+    return f"# {title}\n\n{body}"
+
+
 def build(check_only: bool) -> int:
     pages = collect_pages()
     by_source = {p.source: p for p in pages if not p.generated}
@@ -801,6 +827,7 @@ def build(check_only: bool) -> int:
         body = rewriter.rewrite(page) if not page.generated else page.body
         # Order matters: label before protect_liquid, so an injected accTitle
         # is inside any {% raw %} wrapper rather than dangling outside it.
+        body = ensure_h1(body, page.title)
         body = label_mermaid_diagrams(body, page.title)
         body = protect_liquid(body)
         rendered[page.out_path] = f"{front_matter(page, body)}\n\n{body}{source_link(page)}"
