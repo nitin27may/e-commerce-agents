@@ -66,7 +66,7 @@ def get_chat_client() -> OpenAIChatClient | OpenAIChatCompletionClient | Any:
 
     * ``openai``  → ``OpenAIChatClient`` (Responses API — public OpenAI
       supports it on every model). Honors ``LLM_BASE_URL`` for any
-      OpenAI-compatible endpoint (Ollama, OpenRouter, vLLM, LM
+      OpenAI-compatible endpoint (GitHub Models, OpenRouter, vLLM, LM
       Studio) instead of api.openai.com.
     * ``azure``   → ``OpenAIChatCompletionClient`` (Chat Completions API —
       universally supported across Azure OpenAI deployments; the

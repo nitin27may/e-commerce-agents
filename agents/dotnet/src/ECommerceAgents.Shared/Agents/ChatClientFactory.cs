@@ -52,7 +52,7 @@ public static class ChatClientFactory
         }
 
         // LLM_BASE_URL points this at any OpenAI-compatible server — Ollama,
-        // LM Studio, llama.cpp, vLLM, OpenRouter — matching
+        // LM Studio, llama.cpp, vLLM, OpenRouter, GitHub Models — matching
         // Python's shared/factory.py. Local servers usually ignore the API key
         // but the SDK still requires a non-empty one, hence the check above
         // applying either way.

@@ -126,7 +126,7 @@ Separately, the orchestrator's own read of *its* conversation's history (for `Ru
 |-------|-----------|
 | Agent Framework | `agent-framework` v1.0 (MAF Python SDK, beta) |
 | Agent Communication | A2A Protocol (HTTP POST to `/message:send`) |
-| LLM | OpenAI / Azure OpenAI — model set by `LLM_MODEL` (use a current one; the pinned default is a floor, not a recommendation), provider set by `LLM_PROVIDER` — plus any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, OpenRouter) via `LLM_PROVIDER=openai` + `LLM_BASE_URL` |
+| LLM | OpenAI / Azure OpenAI (gpt-4.1), configurable via `LLM_PROVIDER` env var — plus any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, OpenRouter, GitHub Models) via `LLM_PROVIDER=openai` + `LLM_BASE_URL` |
 | Backend | Python 3.12, FastAPI (orchestrator), Starlette (specialist agents via agent_host) |
 | Database | PostgreSQL 16 + pgvector (1536-dim embeddings for text-embedding-3-small) |
 | Cache | Redis 7 |

@@ -91,13 +91,9 @@ class Settings(BaseSettings):
 
     # ── LLM ─────────────────────────────────────────────────────────
     LLM_PROVIDER: str = "openai"  # openai | azure | replay
-    # A known-working floor, not a recommendation. Model names date quickly —
-    # set LLM_MODEL to a current model from your provider's live list rather
-    # than inheriting this. Note CostEstimator prices unknown models at this
-    # model's rate, so update the pricing table when you move off it.
     LLM_MODEL: str = "gpt-4.1"
     # Optional base_url override for the OpenAI-compatible `openai` provider —
-    # points OpenAIChatClient at any OpenAI-compatible endpoint (Ollama,
+    # points OpenAIChatClient at any OpenAI-compatible endpoint (GitHub Models,
     # OpenRouter, vLLM, LM Studio, Azure AI Foundry's OpenAI-compatible route)
     # instead of api.openai.com. Unset by default; only takes effect when
     # LLM_PROVIDER=openai. See tutorials/00-setup/README.md for the GitHub

@@ -146,7 +146,7 @@ def _default_client() -> OpenAIChatClient | OpenAIChatCompletionClient | ReplayC
     return OpenAIChatClient(
         model=os.environ.get("LLM_MODEL", "gpt-4.1"),
         api_key=os.environ["OPENAI_API_KEY"],
-        # Phase 9: any OpenAI-compatible endpoint (Ollama, OpenRouter,
+        # Phase 9: any OpenAI-compatible endpoint (GitHub Models, OpenRouter,
         # vLLM, LM Studio, Ollama) instead of api.openai.com — see
         # tutorials/00-setup/README.md's "Don't have a paid API key?" section.
         base_url=os.environ.get("LLM_BASE_URL") or None,
