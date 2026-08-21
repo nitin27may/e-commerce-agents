@@ -23,7 +23,7 @@ namespace ECommerceAgents.Orchestrator.Modes;
 /// rather than guessing is deliberate: a return is destructive, and picking
 /// an arbitrary matching order would be the worst possible kind of helpful.
 /// </remarks>
-public sealed partial class ReturnReplaceMode(DatabasePool pool, AgentSettings settings, CheckpointManager checkpoints) : IOrchestrationMode
+public sealed partial class ReturnReplaceMode(DatabasePool pool, AgentSettings settings, CheckpointManager checkpoints) : IOrchestrationMode, IResumableMode
 {
     private readonly DatabasePool _pool = pool;
     private readonly CheckpointManager _checkpoints = checkpoints;
@@ -59,6 +59,33 @@ public sealed partial class ReturnReplaceMode(DatabasePool pool, AgentSettings s
 
     [GeneratedRegex(@"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")]
     private static partial Regex UuidPattern();
+
+    /// <inheritdoc />
+    public async Task<ModeRunResult> ResumeAsync(
+        string sessionId,
+        string checkpointId,
+        string requestId,
+        bool approved,
+        CancellationToken ct = default
+    )
+    {
+        // A fresh workflow object, exactly as a later process would get: the run that
+        // paused lived in a previous request and is long gone. Everything it knew comes
+        // back from the checkpoint.
+        var workflow = new ReturnAndReplaceWorkflow(
+            new ReturnReplaceTools(_pool, _settings),
+            (decimal)_settings.ReturnHitlThreshold
+        );
+
+        var state = await workflow.ResumeFromCheckpointAsync(
+            _checkpoints, sessionId, checkpointId, requestId, approved, ct);
+
+        return new ModeRunResult(
+            Summarise(state),
+            ["order-management", "product-discovery", "pricing-promotions"],
+            state.CompletedSteps.Count
+        );
+    }
 
     public async Task<ModeRunResult> RunAsync(string message, RunContext ctx, CancellationToken ct = default)
     {
