@@ -507,7 +507,9 @@ same ports, only one stack can run at a time.
 
 ## Roadmap
 
-This is v1. Both backends are live and stable.
+This is v1. Both backends are live and stable. Remaining work is consolidated in
+[`.claude/plans/remaining-work.md`](.claude/plans/remaining-work.md) — including the gaps
+this section does not claim to cover.
 
 Legend: `- [x]` shipped · `- [ ]` planned or in progress.
 
