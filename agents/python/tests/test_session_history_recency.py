@@ -22,6 +22,7 @@ import uuid
 import pytest
 
 from shared.agent_host import _rehydrate_history_from_session
+from shared.context import current_user_email
 from shared.session import PostgresSessionHistoryProvider
 
 
@@ -33,6 +34,7 @@ async def _seed_conversation(clean_db, *, total_messages: int) -> tuple[str, str
         user_id,
         f"recency-{user_id}@example.com",
     )
+    email = f"recency-{user_id}@example.com"
     conv_row = await clean_db.fetchrow(
         "INSERT INTO conversations (user_id, title) VALUES ($1, 'test') RETURNING id",
         user_id,
@@ -47,7 +49,7 @@ async def _seed_conversation(clean_db, *, total_messages: int) -> tuple[str, str
             role,
             f"message {i}",
         )
-    return conversation_id, user_id.hex
+    return conversation_id, email
 
 
 @pytest.mark.asyncio
@@ -70,7 +72,10 @@ async def test_rehydrate_history_keeps_most_recent_messages_when_over_limit(
     monkeypatch.setattr("shared.db.get_pool", lambda: clean_db)
     monkeypatch.setattr("shared.agent_host._SESSION_HISTORY_LIMIT", 4)
 
-    conversation_id, _ = await _seed_conversation(clean_db, total_messages=10)
+    conversation_id, email = await _seed_conversation(clean_db, total_messages=10)
+    # Rehydration is scoped to the caller's own conversation (#9); on a
+    # specialist this ContextVar is set from the forwarded x-user-email header.
+    current_user_email.set(email)
 
     history = await _rehydrate_history_from_session(conversation_id)
 

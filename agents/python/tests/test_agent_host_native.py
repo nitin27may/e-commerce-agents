@@ -29,6 +29,7 @@ from tutorials._shared import maf_bootstrap  # noqa: E402
 
 maf_bootstrap.bootstrap()
 
+from shared.context import current_user_email  # noqa: E402
 from shared.agent_host import (  # noqa: E402
     _history_as_maf_messages,
     _rehydrate_history_from_session,
@@ -93,12 +94,46 @@ async def test_rehydrate_returns_none_when_session_id_missing() -> None:
 
 
 @pytest.mark.asyncio
+async def test_rehydrate_returns_none_without_a_caller_identity(monkeypatch, caplog) -> None:
+    """No identity means no scoped read — and it must be logged, not silent.
+
+    Rehydration is scoped to the caller's own conversation (#9), so an absent
+    ``x-user-email`` can no longer produce a full history. The original bug was
+    a silent short-circuit in this same function; this asserts the replacement
+    one announces itself.
+    """
+    fake_pool = _FakePool(rows=[{"role": "user", "content": "hello"}])
+    monkeypatch.setattr("shared.db.get_pool", lambda: fake_pool)
+    current_user_email.set("")
+
+    with caplog.at_level("INFO"):
+        assert await _rehydrate_history_from_session("11111111-1111-1111-1111-111111111111") is None
+
+    assert fake_pool.last_query is None, "it must not even reach the database"
+    assert "rehydrate_skipped" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_rehydrate_scopes_the_query_to_the_caller(monkeypatch) -> None:
+    """The session id arrives in a header, so the query must not trust it alone."""
+    fake_pool = _FakePool(rows=[])
+    monkeypatch.setattr("shared.db.get_pool", lambda: fake_pool)
+    current_user_email.set("owner@example.com")
+
+    await _rehydrate_history_from_session("11111111-1111-1111-1111-111111111111")
+
+    assert "EXISTS" in (fake_pool.last_query or ""), "no ownership predicate in the query"
+    assert fake_pool.last_args[-1] == "owner@example.com"
+
+
+@pytest.mark.asyncio
 async def test_rehydrate_reads_messages_by_conversation_id(monkeypatch) -> None:
+    current_user_email.set("owner@example.com")
     rows = [
         {"role": "user", "content": "hello"},
         {"role": "assistant", "content": "hi back"},
-        {"role": "tool", "content": "ignored"},       # non-user/assistant filtered
-        {"role": "user", "content": ""},              # empty content filtered
+        {"role": "tool", "content": "ignored"},  # non-user/assistant filtered
+        {"role": "user", "content": ""},  # empty content filtered
         {"role": "user", "content": "still here"},
     ]
     fake_pool = _FakePool(rows=rows)
@@ -113,13 +148,17 @@ async def test_rehydrate_reads_messages_by_conversation_id(monkeypatch) -> None:
     ]
     # uses the $2 LIMIT parameter — no string interpolation.
     assert "LIMIT $2" in (fake_pool.last_query or "")
-    assert fake_pool.last_args == ("11111111-1111-1111-1111-111111111111", 50)
+    assert fake_pool.last_args == ("11111111-1111-1111-1111-111111111111", 50, "owner@example.com")
 
 
 @pytest.mark.asyncio
 async def test_rehydrate_swallows_db_errors(monkeypatch) -> None:
     fake_pool = _FakePool(raise_on_fetch=RuntimeError("db down"))
     monkeypatch.setattr("shared.db.get_pool", lambda: fake_pool)
+    # Identity set on purpose: without it the new #9 guard would return None
+    # before the query ran, and this test would pass without ever reaching the
+    # error path it exists to cover.
+    current_user_email.set("owner@example.com")
     assert await _rehydrate_history_from_session("any-id") is None
 
 
@@ -129,6 +168,7 @@ async def test_rehydrate_swallows_missing_pool(monkeypatch) -> None:
         raise RuntimeError("pool not initialised")
 
     monkeypatch.setattr("shared.db.get_pool", _boom)
+    current_user_email.set("owner@example.com")
     assert await _rehydrate_history_from_session("any-id") is None
 
 
@@ -161,14 +201,17 @@ class _FakeAgent:
         self.last_options = options
 
         if stream:
+
             async def _gen():
                 # Two chunks so tests can see incremental yielding.
                 for piece in [self._text[: len(self._text) // 2], self._text[len(self._text) // 2 :]]:
                     yield _FakeStreamingUpdate(piece)
+
             return _gen()
 
         async def _return():
             return _FakeResponse(self._text)
+
         return _return()
 
 
@@ -210,6 +253,7 @@ async def test_run_agent_native_fills_metadata_box_from_additional_properties() 
         def run(self, messages=None, *, stream: bool = False, options=None, **_kwargs):
             async def _return():
                 return _FakeResponse("ok", additional_properties={"grounding": {"verified": 1}})
+
             return _return()
 
     box: dict = {}
@@ -243,6 +287,7 @@ async def test_run_agent_native_stream_skips_empty_updates() -> None:
                 yield _FakeStreamingUpdate("")
                 yield _FakeStreamingUpdate("real")
                 yield _FakeStreamingUpdate(None)  # type: ignore[arg-type]
+
             return _gen()
 
     chunks = [c async for c in _run_agent_native_stream(_AgentWithEmptyDeltas(), "hi")]
@@ -272,7 +317,8 @@ async def test_run_agent_native_stream_fills_metadata_box_after_exhaustion() -> 
     class _AgentWithStreamingMetadata:
         def run(self, messages=None, *, stream: bool = False, options=None, **_kwargs):
             return _FakeResponseStream(
-                ["hi"], _FakeResponse("hi", additional_properties={"grounding": {"verified": 2}}),
+                ["hi"],
+                _FakeResponse("hi", additional_properties={"grounding": {"verified": 2}}),
             )
 
     box: dict = {}

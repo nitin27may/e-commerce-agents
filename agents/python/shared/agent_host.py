@@ -133,13 +133,32 @@ async def _rehydrate_history_from_session(session_id: str) -> list[dict] | None:
     Audit fix #14: replaces the ``conv_history[-10:]`` + ``[:500]`` truncation
     that lived in ``orchestrator.agent.call_specialist_agent``. The orchestrator
     now forwards only the session id header; specialists rehydrate here.
+
+    Scoped to the caller's own identity (#9). The session id arrives in a
+    header and this query trusts it, so without an ownership predicate anyone
+    who knows a conversation UUID could read that conversation — and the id is
+    client-supplied on the anonymous path. Every other user-facing query in
+    this repo filters by ``user_email``/``user_id``; this one did not.
+
+    Every failure path returns ``None`` and *logs*. The bug this function is
+    named for was a silent short-circuit exactly like the one below, so a
+    no-history result must never again be indistinguishable from a normal run.
     """
     if not session_id:
         return None
 
     try:
+        from shared.context import current_user_email
         from shared.db import get_pool
     except Exception:
+        return None
+
+    caller = current_user_email.get("")
+    if not caller:
+        # Anonymous callers legitimately land here; so would a future call site
+        # that forgot to forward identity. Log either way rather than returning
+        # an empty context that reads like "this conversation had no history".
+        logger.info("session.rehydrate_skipped reason=no_identity session_id=%s", session_id)
         return None
 
     try:
@@ -159,6 +178,11 @@ async def _rehydrate_history_from_session(session_id: str) -> list[dict] | None:
                 SELECT role, content, created_at
                 FROM messages
                 WHERE conversation_id = $1::uuid
+                  AND EXISTS (
+                      SELECT 1 FROM conversations c
+                        JOIN users u ON u.id = c.user_id
+                       WHERE c.id = $1::uuid AND u.email = $3
+                  )
                 ORDER BY created_at DESC
                 LIMIT $2
             ) recent
@@ -166,6 +190,7 @@ async def _rehydrate_history_from_session(session_id: str) -> list[dict] | None:
             """,
             session_id,
             _SESSION_HISTORY_LIMIT,
+            caller,
         )
     except Exception:
         logger.exception("session.rehydrate_failed session_id=%s", session_id)

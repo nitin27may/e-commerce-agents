@@ -206,8 +206,12 @@ async def test_specialist_rehydrates_the_prior_turn_from_that_session_id(
     from shared.agent_host import _rehydrate_history_from_session
 
     user_id, conversation_id = uuid.uuid4(), uuid.uuid4()
-    await _seed_prior_turn(clean_db, user_id, conversation_id, "issue9-rehydrate@example.com")
+    email = "issue9-rehydrate@example.com"
+    await _seed_prior_turn(clean_db, user_id, conversation_id, email)
     monkeypatch.setattr("shared.db._pool", clean_db, raising=False)
+    monkeypatch.setattr("shared.db.get_pool", lambda: clean_db)
+    # On a specialist this is set from the forwarded x-user-email header.
+    current_user_email.set(email)
 
     history = await _rehydrate_history_from_session(str(conversation_id))
 
@@ -371,3 +375,86 @@ async def test_assistant_turn_is_persisted_before_done_is_yielded(
         conversation_id,
     )
     assert [r["content"] for r in rows][-1] == "About 30 hours on a full charge."
+
+
+@pytest.mark.asyncio
+async def test_anonymous_caller_cannot_bind_someone_elses_conversation(
+    clean_db, monkeypatch: pytest.MonkeyPatch, sample_env: dict
+) -> None:
+    """An anonymous request must not turn a guessed UUID into a session id.
+
+    Caught while writing the .NET half of this fix, against my own first
+    version of the Python one. ``body.conversation_id`` is client-supplied and
+    is only ownership-checked on the authed path — the anonymous branch passes
+    it straight through. Binding it unconditionally meant an anonymous caller
+    could name any conversation UUID and have the specialist rehydrate that
+    conversation, which the rehydration query had no ownership predicate to
+    stop. Both halves are fixed; this covers the outer one.
+    """
+    victim_id, victim_conversation = uuid.uuid4(), uuid.uuid4()
+    await _seed_prior_turn(clean_db, victim_id, victim_conversation, "victim@example.com")
+
+    monkeypatch.setattr("shared.db._pool", clean_db, raising=False)
+    monkeypatch.setattr(orch_mod, "AGENT_REGISTRY", {"product-discovery": "http://pd:8081"})
+
+    client = _RoutingClient("product-discovery", "anything")
+    agent = Agent(client=client, instructions="test", name="orchestrator", tools=ORCHESTRATOR_TOOLS)
+    monkeypatch.setattr("orchestrator.agent.create_orchestrator_agent", lambda: agent)
+
+    async def _anon_auth():
+        current_user_email.set("")
+        current_user_role.set("customer")
+        return {"sub": "", "role": "customer", "user_id": "", "anonymous": True}
+
+    app = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[optional_auth] = _anon_auth
+
+    mock_class, captured = _capture_a2a()
+    monkeypatch.setattr("orchestrator.agent.httpx.AsyncClient", mock_class)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
+        resp = await http.post(
+            "/api/chat",
+            json={"message": "what did we discuss?", "conversation_id": str(victim_conversation)},
+        )
+
+    assert resp.status_code == 200
+    assert captured, "the orchestrator never called a specialist"
+    assert captured["headers"].get("x-session-id", "") == "", (
+        "an anonymous caller had a conversation id they do not own forwarded to a specialist as a session id"
+    )
+
+
+@pytest.mark.asyncio
+async def test_rehydration_refuses_a_conversation_the_caller_does_not_own(
+    clean_db, monkeypatch: pytest.MonkeyPatch, sample_env: dict
+) -> None:
+    """The inner half: the query itself must not trust the session id alone.
+
+    Defence in depth for the test above. The session id reaches a specialist in
+    a header, so any call site that ever forwards an unvalidated one must not
+    be able to read another user's conversation.
+    """
+    from shared.agent_host import _rehydrate_history_from_session
+
+    victim_id, victim_conversation = uuid.uuid4(), uuid.uuid4()
+    await _seed_prior_turn(clean_db, victim_id, victim_conversation, "victim2@example.com")
+
+    other_id = uuid.uuid4()
+    await clean_db.execute(
+        """INSERT INTO users (id, email, password_hash, name, role)
+           VALUES ($1, 'attacker@example.com', 'hash', 'Attacker', 'customer')""",
+        other_id,
+    )
+
+    monkeypatch.setattr("shared.db._pool", clean_db, raising=False)
+    monkeypatch.setattr("shared.db.get_pool", lambda: clean_db)
+    current_user_email.set("attacker@example.com")
+
+    leaked = await _rehydrate_history_from_session(str(victim_conversation))
+
+    # Empty rather than None: the query runs and matches nothing, which is the
+    # security property. Both are falsy, so the caller falls back to a
+    # no-history run either way (shared/agent_host.py::_history_as_maf_messages).
+    assert not leaked, f"another user's conversation leaked: {leaked}"
