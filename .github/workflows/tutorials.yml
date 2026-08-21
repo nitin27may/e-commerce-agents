@@ -99,6 +99,60 @@ jobs:
       - name: ruff check
         run: uv run --project tutorials ruff check tutorials/
 
+  tutorials-dotnet-build:
+    name: Tutorials · dotnet build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      # 31 tutorial .csproj files across 20 chapters, and until #20 *no CI job
+      # built any of them* — the .NET half of the series was shipped unverified
+      # while the Python half had three gates. A chapter whose C# stopped
+      # compiling would have gone unnoticed indefinitely.
+      #
+      # NuGetAudit is off for the same repo-wide reason it is off elsewhere:
+      # a pre-existing transitive advisory is escalated to an error by default
+      # and is unrelated to whether a chapter's code is correct.
+      - name: Build every tutorial project
+        run: |
+          fail=0
+          for proj in $(find tutorials -name '*.csproj' | sort); do
+            echo "::group::$proj"
+            dotnet build "$proj" --nologo -v minimal -p:NuGetAudit=false || fail=1
+            echo "::endgroup::"
+          done
+          exit $fail
+
+  tutorials-dotnet-test:
+    name: Tutorials · dotnet test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      # Only chapters with a test project. Kept separate from the build job so
+      # a compile break and a test failure are distinguishable at a glance.
+      # Chapters with .NET code but no tests are listed in tutorials/README.md
+      # rather than silently absent.
+      - name: Run every tutorial test project
+        run: |
+          fail=0
+          for proj in $(find tutorials -iname '*.Tests.csproj' | sort); do
+            echo "::group::$proj"
+            dotnet test "$proj" --nologo -v minimal -p:NuGetAudit=false || fail=1
+            echo "::endgroup::"
+          done
+          exit $fail
+
   tutorials-contract:
     name: Tutorials · chapter contract
     runs-on: ubuntu-latest

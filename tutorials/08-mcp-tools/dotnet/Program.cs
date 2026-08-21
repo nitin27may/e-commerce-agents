@@ -52,8 +52,18 @@ public static class Program
 
     public static async Task<McpClient> BuildMcpClientAsync()
     {
+        // Default to the tutorials venv, which is what `uv sync --project tutorials`
+        // creates and where this chapter's own weather_mcp_server.py gets its `mcp`
+        // dependency. The previous default was `agents/.venv`, a path that has not
+        // existed since the Python packages moved under `agents/python/` — so all
+        // three of this chapter's .NET tests failed with "No such file or directory".
+        // Nothing caught it because no CI job built or ran any tutorial .NET project
+        // until #20 added one.
         var pythonBin = Environment.GetEnvironmentVariable("PYTHON_BIN")
-                        ?? Path.Combine(FindRepoRoot(), "agents", ".venv", "bin", "python");
+                        ?? FirstExisting(
+                            Path.Combine(FindRepoRoot(), "tutorials", ".venv", "bin", "python"),
+                            Path.Combine(FindRepoRoot(), "agents", "python", ".venv", "bin", "python"))
+                        ?? "python3";
 
         var transport = new StdioClientTransport(new StdioClientTransportOptions
         {
@@ -85,6 +95,11 @@ public static class Program
     private static string Required(string name) =>
         Environment.GetEnvironmentVariable(name)
             ?? throw new InvalidOperationException($"{name} must be set (see repo-root .env).");
+
+    /// <summary>First path that exists, or null — so a missing venv falls back to
+    /// PATH's python3 with a comprehensible error instead of a Win32Exception.</summary>
+    private static string? FirstExisting(params string[] paths) =>
+        Array.Find(paths, File.Exists);
 
     private static string FindRepoRoot()
     {
