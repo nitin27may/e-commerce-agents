@@ -215,10 +215,15 @@ public sealed class ReturnAndLoyaltyToolsTests : IAsyncLifetime
         var first = Json(await Returns().ProcessRefund(returnId));
         first.GetProperty("status").GetString().Should().Be("refunded");
 
-        // Guarded inside the UPDATE, so a repeat can't refund again — the same
-        // claim-before-acting shape #28 established for HITL approvals.
+        // A repeat replays the first result rather than refunding again. This used to
+        // answer "already refunded" — correct in that it did not move money twice, but
+        // it turned a client's timeout-and-retry into an error for an operation that had
+        // in fact succeeded. The idempotency key now caches the original outcome, so the
+        // retry is indistinguishable from the first call. The UPDATE is still guarded on
+        // status underneath; this is the layer above it.
         var second = Json(await Returns().ProcessRefund(returnId));
-        second.GetProperty("error").GetString().Should().Contain("already refunded");
+        second.GetProperty("status").GetString().Should().Be("refunded");
+        second.TryGetProperty("error", out _).Should().BeFalse();
     }
 
     /// <summary>
