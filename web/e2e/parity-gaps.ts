@@ -45,15 +45,11 @@ export const PARITY_GAPS: Record<BackendStack, Record<string, string>> = {
     "mode switcher offers more than one orchestration mode":
       "#33 PR 5 — no mode registry; GET /api/orchestration/modes returns 404 and the switcher renders null",
     "selecting a workflow mode is honoured, not silently downgraded":
-      "#33 PR 3 — ChatRequest has no Mode property, so System.Text.Json discards it and the run executes as tool mode",
+      "#33 PR 5 — no mode registry, so only 'tool' is executable. As of PR 3 an unsupported mode is an explicit 400 rather than a silent downgrade — honest, but still not parity",
     "the orchestration graph renders for a workflow mode":
       "#33 PR 5 — GET /api/orchestration/modes/{name}/graph does not exist",
     "mode comparison can be run with two modes selected":
       "#33 PR 5 — POST /api/orchestration/compare does not exist",
-    "a run's checkpoints are listed on /runs":
-      "#33 PR 3 — GET /api/runs/{run_id}/checkpoints does not exist",
-    "the profile shows a stored memory":
-      "#33 PR 3 — GET /api/user/memories does not exist; the card currently tells users to chat to populate it, which cannot work",
     "a grounded answer renders the grounding badge":
       "#33 PR 7 — no grounding subsystem, so no grounding SSE frame and no grounding field on ChatResponse",
   },

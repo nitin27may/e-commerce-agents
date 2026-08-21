@@ -27,7 +27,36 @@ namespace ECommerceAgents.Orchestrator.Routes;
 /// </summary>
 public static class ChatRoutes
 {
-    public sealed record ChatRequest(string Message, string? ConversationId, List<HistoryEntry>? History);
+    public sealed record ChatRequest(
+        string Message,
+        string? ConversationId,
+        List<HistoryEntry>? History,
+        string? Mode = null
+    );
+
+    /// <summary>
+    /// Orchestration modes this backend can actually execute.
+    /// </summary>
+    /// <remarks>
+    /// The frontend sends <c>mode</c> on every chat request. Until this record
+    /// had a <c>Mode</c> property, System.Text.Json discarded it silently: a
+    /// user selected "Pre-Purchase Research", got a plain tool-router run, and
+    /// nothing said so. Answering a question the user did not ask, with no
+    /// signal, is worse than refusing.
+    ///
+    /// Only "tool" is registered today. The rest arrive with the mode registry
+    /// (#33 PR 5), at which point this set grows rather than the check being
+    /// removed.
+    /// </remarks>
+    private static readonly HashSet<string> SupportedModes =
+        new(StringComparer.OrdinalIgnoreCase) { "tool" };
+
+    private static bool IsSupportedMode(string? mode) =>
+        string.IsNullOrWhiteSpace(mode) || SupportedModes.Contains(mode);
+
+    private static string UnsupportedModeDetail(string? mode) =>
+        $"Orchestration mode '{mode}' is not supported by the .NET backend. "
+        + $"Supported: {string.Join(", ", SupportedModes.Order(StringComparer.Ordinal))}.";
     public sealed record ChatResponse(string Response, string ConversationId, List<string> AgentsInvolved);
 
     public static IEndpointRouteBuilder MapChatRoutes(this IEndpointRouteBuilder routes)
@@ -52,6 +81,16 @@ public static class ChatRoutes
         if (string.IsNullOrWhiteSpace(request?.Message))
         {
             return Results.BadRequest(new { detail = "message is required" });
+        }
+
+        if (!IsSupportedMode(request.Mode))
+        {
+            return Results.BadRequest(new
+            {
+                detail = UnsupportedModeDetail(request.Mode),
+                supported_modes = SupportedModes.Order(StringComparer.Ordinal).ToArray(),
+                requested_mode = request.Mode,
+            });
         }
 
         var (ctx, error) = await PrepareConversationAsync(pool, request.Message, request.ConversationId);
@@ -96,6 +135,18 @@ public static class ChatRoutes
         {
             context.Response.StatusCode = 400;
             await context.Response.WriteAsync("missing message");
+            return;
+        }
+
+        if (!IsSupportedMode(request.Mode))
+        {
+            context.Response.StatusCode = 400;
+            await context.Response.WriteAsJsonAsync(new
+            {
+                detail = UnsupportedModeDetail(request.Mode),
+                supported_modes = SupportedModes.Order(StringComparer.Ordinal).ToArray(),
+                requested_mode = request.Mode,
+            });
             return;
         }
 

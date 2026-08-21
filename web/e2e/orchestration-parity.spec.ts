@@ -25,6 +25,15 @@ import { BACKEND, skipIfKnownGap } from "./parity-gaps";
 
 const CUSTOMER = { email: "alice.johnson@gmail.com", password: "customer123" };
 
+/**
+ * The orchestrator the API-level assertions talk to. Defaults to the port the
+ * compose stacks publish, and is overridable so a backend can be exercised
+ * out-of-band — running .NET on another port while the frontend still points
+ * at Python would otherwise make those assertions silently verify the wrong
+ * backend and report a false pass.
+ */
+const ORCH_URL = process.env.ORCH_URL ?? "http://localhost:8080";
+
 async function login(page: Page) {
   await page.goto("/login");
   await page.fill('input[type="email"]', CUSTOMER.email);
@@ -161,38 +170,33 @@ test.describe(`orchestration parity [${BACKEND}]`, () => {
   test("a run's checkpoints are listed on /runs", async ({ page }) => {
     skipIfKnownGap("a run's checkpoints are listed on /runs");
     await login(page);
-    await page.goto("/chat");
 
-    const switcher = page.locator('[aria-label="Orchestration mode"]').first();
-    await switcher.click();
-    await page.locator('[data-slot="select-content"]').getByText(/Return & Replace/i).first().click();
-    await sendMessageAndWaitForTurn(page, "I want to return my most recent order");
-
+    // Deliberately does NOT create a workflow run first. Doing so would
+    // require selecting a workflow mode, which couples this test to the mode
+    // registry and makes it untestable on a backend that has the checkpoints
+    // endpoint but not modes yet — two independent capabilities failing as
+    // one. Any existing run is enough to prove the endpoint is served.
     await page.goto("/runs");
-    const row = page.getByText("I want to return my most recent order").first();
-    await expect(row, "the run must appear in the list").toBeVisible({ timeout: 20000 });
+    await expect(page.getByText(/Agent Runs/i).first()).toBeVisible({ timeout: 20000 });
 
-    // Asserted at the API for the same reason as the memories test: /runs
-    // absorbs a 404 in `.catch(() => {})`, so the page renders perfectly with
-    // permanently empty panels. From the DOM alone, "no checkpoints endpoint"
-    // and "this run has no checkpoints" look identical — and that
-    // indistinguishability is the silent failure being guarded against.
+    // Asserted at the API because /runs absorbs a 404 in `.catch(() => {})`:
+    // the page renders perfectly and the checkpoint panel is simply empty, so
+    // from the DOM alone "no endpoint" and "no checkpoints" are identical.
+    // That indistinguishability is the silent failure being guarded against.
     const token = await page.evaluate(() =>
       localStorage.getItem("ecommerce_access_token") ?? "",
     );
-    const runs = await page.request.get("http://localhost:8080/api/runs", {
+    const runs = await page.request.get(`${ORCH_URL}/api/runs`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(runs.status()).toBe(200);
 
-    const body = await runs.json();
-    const runId = body.entries?.[0]?.id;
+    const runId = (await runs.json()).entries?.[0]?.id;
     expect(runId, "there must be at least one run to inspect").toBeTruthy();
 
-    const checkpoints = await page.request.get(
-      `http://localhost:8080/api/runs/${runId}/checkpoints`,
-      { headers: { Authorization: `Bearer ${token}` } },
-    );
+    const checkpoints = await page.request.get(`${ORCH_URL}/api/runs/${runId}/checkpoints`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
     expect(
       checkpoints.status(),
       "the checkpoints endpoint must be served; a 404 is what leaves /runs silently empty",
@@ -220,7 +224,7 @@ test.describe(`orchestration parity [${BACKEND}]`, () => {
     );
     expect(token, "the session token must be readable for the API assertion").not.toBe("");
 
-    const response = await page.request.get("http://localhost:8080/api/user/memories", {
+    const response = await page.request.get(`${ORCH_URL}/api/user/memories`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(
