@@ -144,7 +144,11 @@ public static class OrchestrationRoutes
                     Results.Conflict(new { detail = "This backend cannot resume workflow runs" }));
             }
 
-            var sessionId = SessionIdFrom(claimed.payload);
+            // Explicitly typed: `claimed` is Dapper's dynamic, so letting sessionId infer
+            // from it makes every downstream call dynamically dispatched — including
+            // mode.ResumeAsync, whose result then comes back as object and fails at
+            // runtime on .AgentsInvolved rather than at compile time.
+            string? sessionId = SessionIdFrom((object?)claimed.payload);
             if (sessionId is null)
             {
                 return await ReleaseAsync(conn, claimId,
