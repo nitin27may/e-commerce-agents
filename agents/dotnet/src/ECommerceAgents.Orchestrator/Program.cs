@@ -88,6 +88,10 @@ builder.Services.AddSingleton<IOrchestrationMode>(sp =>
         sp.GetRequiredService<DatabasePool>(),
         settings,
         sp.GetRequiredService<CheckpointManager>()));
+builder.Services.AddSingleton<IOrchestrationMode>(sp =>
+    new HandoffMode(settings, sp.GetRequiredService<A2AClient>()));
+builder.Services.AddSingleton<IOrchestrationMode>(sp =>
+    new GroupChatMode(settings, sp.GetRequiredService<PromptLoader>()));
 builder.Services.AddSingleton<ModeRegistry>();
 
 builder.Services.AddSingleton<SlidingWindowRateLimiter>();
