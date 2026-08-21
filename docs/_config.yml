@@ -93,4 +93,21 @@ back_to_top_text: "Back to top"
 collapse_inactive_chapters: true
 enable_copy_code_button: true
 
+# Same Google Analytics property as nitinksingh.com and the AI Knowledge Hub.
+# All three sites share one domain, so they share one data stream -- a reader
+# going from a blog post to a tutorial here is one session with a journey,
+# not two. Separate per-site reporting is a path filter on /e-commerce-agents/,
+# not a second property.
+#
+# This key was missing while ga_tracking_anonymize_ip was already set, and
+# just-the-docs only emits the gtag block `{% if site.ga_tracking != nil %}`,
+# so the site was live looking configured and collecting nothing.
+ga_tracking: G-5Z8HS51RCP
 ga_tracking_anonymize_ip: true
+
+# The site had no sitemap.xml at all, which left all 85 generated pages
+# undiscoverable -- nothing for Search Console to submit and nothing for a
+# crawler to walk. jekyll-sitemap is on the GitHub Pages plugin whitelist, so
+# it runs under actions/jekyll-build-pages without a Gemfile.
+plugins:
+  - jekyll-sitemap
