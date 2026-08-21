@@ -38,7 +38,7 @@ dotnet test
 
 ```bash
 # From repo root — one-command helper (builds, seeds, and starts everything):
-./scripts/dev.sh --dotnet
+./scripts/dev.sh --dotnet      # PowerShell: ./scripts/dev.ps1 -Dotnet
 
 # Or plain Docker Compose. Every app service (seeder, agents, MCP host,
 # frontend) is gated behind a profile — only db/redis/aspire start

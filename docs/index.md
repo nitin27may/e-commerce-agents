@@ -20,13 +20,12 @@ cp .env.example .env          # add your OPENAI_API_KEY (or Azure OpenAI credent
 
 Then open **<http://localhost:3000>** and sign in as `alice.johnson@gmail.com` / `customer123`.
 
-**On Windows**, `scripts/dev.sh` is a bash script and will not run in PowerShell — use Docker
-Compose directly instead:
+**On Windows**, `scripts/dev.sh` is a bash script and will not run in PowerShell — use the
+PowerShell twin instead, which takes the same flags:
 
 ```powershell
-docker compose up -d db redis aspire
-docker compose --profile seed run --rm seeder
-docker compose --profile agents --profile frontend up -d --build
+Copy-Item .env.example .env    # then set OPENAI_API_KEY in .env
+./scripts/dev.ps1
 ```
 
 → **[Full Quick Start]({{ site.baseurl }}/getting-started/quick-start.html)** — the .NET stack,

@@ -105,6 +105,12 @@ docker compose --profile seed run --rm seeder
 
 The `scripts/dev.sh` script is the recommended way to start the development environment. It handles build ordering, health checks, seeding, and prints a summary when ready.
 
+**On Windows, use `scripts/dev.ps1`** — a PowerShell script with identical behaviour: same profiles,
+same ordering, same health gates, and the same flags in PowerShell form (`--clean` → `-Clean`,
+`--seed-only` → `-SeedOnly`, `--infra-only` → `-InfraOnly`, `--dotnet` → `-Dotnet`). It also runs on
+macOS and Linux under PowerShell 7, though `dev.sh` is the more idiomatic choice there. Everything
+documented in this section applies to both.
+
 ### Flags
 
 | Flag | Description |

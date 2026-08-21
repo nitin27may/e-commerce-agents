@@ -1,6 +1,8 @@
 # Troubleshooting
 
 Common issues running the stack locally. Start everything with `./scripts/dev.sh`
+(or `./scripts/dev.ps1` on Windows — every `dev.sh --flag` below has a `dev.ps1 -Flag`
+equivalent: `--clean` → `-Clean`, `--seed-only` → `-SeedOnly`, `--infra-only` → `-InfraOnly`)
 (see [deployment.md](./deployment.md)).
 
 ## Docker build fails on the Python agents (`agent-framework` resolution)

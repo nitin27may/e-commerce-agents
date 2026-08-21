@@ -260,6 +260,10 @@ cd tutorials/01-first-agent/dotnet && dotnet run
 ```bash
 ./scripts/dev.sh            # Python backend
 ./scripts/dev.sh --dotnet   # .NET backend
+
+# On Windows (PowerShell), or anywhere with pwsh 7:
+./scripts/dev.ps1
+./scripts/dev.ps1 -Dotnet
 ```
 
 - Frontend: http://localhost:3000

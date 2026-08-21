@@ -40,11 +40,57 @@ job, then starts the agents and the frontend. It also prints a summary of every 
 
 ### Windows
 
-`scripts/dev.sh` is a bash script and will not run in PowerShell or `cmd`. Two options, both fully
-supported:
+`scripts/dev.sh` is a bash script and will not run in PowerShell or `cmd`. You have two paths, and
+they are not equal — pick based on whether you want WSL2 on your machine.
 
-**Option A — Docker Compose directly (recommended, no extra setup).** This is exactly what the
-script does, minus the health-check polling and the summary:
+#### Recommended: WSL2
+
+**[WSL2](https://learn.microsoft.com/windows/wsl/install) gives the best experience**, and if you
+already run Docker Desktop you are most likely using its WSL2 backend anyway, so this adds no new
+moving parts. Everything works exactly as documented for macOS and Linux — the helper script, the
+`--clean`/`--seed-only` flags, all of it:
+
+```bash
+wsl                                   # drop into your Linux distro
+git clone https://github.com/nitin27may/e-commerce-agents.git
+cd e-commerce-agents
+cp .env.example .env
+./scripts/dev.sh
+```
+
+Two things to get right:
+
+- **Clone inside the Linux filesystem** (`~/e-commerce-agents`), not under `/mnt/c/`. Bind-mounting
+  across the Windows filesystem boundary is dramatically slower and is the usual answer to "why is
+  my container so slow on WSL2".
+- **Enable WSL integration in Docker Desktop** — *Settings → Resources → WSL Integration* — for the
+  distro you are using, or `docker` will not be found inside WSL.
+
+Git Bash (bundled with [Git for Windows](https://git-scm.com/download/win)) also runs the script,
+but only WSL2 gives you a real Linux filesystem, so container startup is much faster there.
+
+#### Not using WSL2? PowerShell works fine
+
+There is a PowerShell script that does everything `dev.sh` does — same profiles, same ordering,
+same health checks, same flags:
+
+```powershell
+git clone https://github.com/nitin27may/e-commerce-agents.git
+cd e-commerce-agents
+Copy-Item .env.example .env
+notepad .env                  # set OPENAI_API_KEY, then save and close
+
+./scripts/dev.ps1
+```
+
+If PowerShell refuses to run it (`running scripts is disabled on this system`), that is the
+execution policy, not the script. Either allow local scripts once —
+`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` — or bypass it for this run alone with
+`powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1`.
+
+**Or skip the script entirely.** Nothing here needs one; `docker compose` is the same command on
+every platform, and these three lines are what the script does, minus the health polling and the
+closing summary:
 
 ```powershell
 docker compose up -d db redis aspire
@@ -52,15 +98,38 @@ docker compose --profile seed run --rm seeder
 docker compose --profile agents --profile frontend up -d --build
 ```
 
-You do not need to wait between these: the seeder declares
-`depends_on: db: {condition: service_healthy}`, so Compose blocks it until Postgres passes its
-health check. The first run also builds images, so expect a few minutes before anything responds.
+Then open <http://localhost:3000>.
 
-**Option B — WSL2 or Git Bash.** If you have [WSL2](https://learn.microsoft.com/windows/wsl/install)
-(or Git Bash, which ships with [Git for Windows](https://git-scm.com/download/win)), clone the repo
-*inside* the Linux filesystem and use the macOS/Linux instructions unchanged. Keep the clone under
-`~/` rather than `/mnt/c/` — bind-mounting across the Windows filesystem boundary is markedly
-slower and is the usual cause of "why is my container so slow" on WSL2.
+You do not need to wait between those commands: the seeder declares
+`depends_on: db: {condition: service_healthy}`, so Compose blocks it until Postgres passes its
+health check. The first run builds images, so expect a few minutes before anything responds.
+
+**PowerShell differences worth knowing:**
+
+| Instead of | Use |
+|---|---|
+| `cp .env.example .env` | `Copy-Item .env.example .env` |
+| `\` at end of line (continuation) | a backtick `` ` ``, or put it all on one line |
+| `./scripts/dev.sh --clean` | `./scripts/dev.ps1 -Clean` — or `docker compose down -v`, then re-run |
+| `./scripts/dev.sh --seed-only` | `./scripts/dev.ps1 -SeedOnly` — or `docker compose --profile seed run --rm seeder` |
+| `./scripts/dev.sh --infra-only` | `./scripts/dev.ps1 -InfraOnly` — or `docker compose up -d db redis aspire` |
+| `./scripts/dev.sh --dotnet` | `./scripts/dev.ps1 -Dotnet` |
+| `lsof -i :3000` (port conflicts) | `netstat -ano \| findstr :3000` |
+| `docker compose logs -f orchestrator` | identical — Compose commands don't change |
+
+`dev.ps1` needs **PowerShell 7+** on macOS and Linux
+([install docs](https://learn.microsoft.com/powershell/scripting/install/installing-powershell));
+on Windows the built-in Windows PowerShell 5.1 is enough. On macOS and Linux `dev.sh` remains the
+more idiomatic choice — the two are interchangeable.
+
+To stop everything: `docker compose down`. To stop and wipe the database as well:
+`docker compose down -v`.
+
+{: .note }
+> If you use Git Bash rather than PowerShell and `./scripts/dev.sh` fails with
+> `bad interpreter: /bin/bash^M`, that is Git's `core.autocrlf` rewriting the script to CRLF on
+> checkout, not a broken script. The repo ships a `.gitattributes` pinning `*.sh` to LF, so a fresh
+> clone is fine; an older clone needs `git rm --cached -r . && git reset --hard` to pick it up.
 
 ### One-liner, any platform
 

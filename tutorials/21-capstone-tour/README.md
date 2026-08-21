@@ -121,7 +121,7 @@ yourself instead of trusting a claimed number.
 
 ```bash
 # from the repo root
-./scripts/dev.sh
+./scripts/dev.sh                     # PowerShell: ./scripts/dev.ps1
 open http://localhost:3000
 ```
 

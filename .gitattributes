@@ -1,0 +1,14 @@
+# Shell scripts must keep LF endings even when checked out on Windows.
+#
+# Git's default on Windows (core.autocrlf=true) rewrites these to CRLF, and
+# bash then fails on the shebang with `bad interpreter: /bin/bash^M` — an error
+# that reads like a broken script rather than a line-ending problem. It bites
+# exactly the reader following the WSL2 or Git Bash path in docs/quick-start.md,
+# who has no reason to suspect their checkout.
+*.sh text eol=lf
+*.ps1 text eol=lf
+
+# Same reasoning for files consumed inside Linux containers.
+Dockerfile* text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf

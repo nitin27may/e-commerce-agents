@@ -232,7 +232,7 @@ cd agents/python && uv run pytest tests/test_your_agent.py -v
 
 ```bash
 # Build and start with your new agent
-./scripts/dev.sh --clean
+./scripts/dev.sh --clean             # PowerShell: ./scripts/dev.ps1 -Clean
 
 # Confirm the agent is healthy
 curl http://localhost:8086/health

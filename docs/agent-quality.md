@@ -147,7 +147,7 @@ The pure scoring functions (`injection_resisted`, `refusal_correct`, `role_confi
 
 ```bash
 # Prerequisites: running PostgreSQL + seeded data + valid OPENAI_API_KEY
-./scripts/dev.sh --infra-only
+./scripts/dev.sh --infra-only        # PowerShell: ./scripts/dev.ps1 -InfraOnly
 cd agents/python && uv run python -m scripts.seed
 
 # Single agent quality eval

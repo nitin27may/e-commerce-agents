@@ -82,7 +82,7 @@ uv run python -m evals.run_evals --agent product-discovery --dataset evals/datas
 
 ## Requirements
 
-- Running PostgreSQL instance with seeded data (use `./scripts/dev.sh --infra-only` then `./scripts/dev.sh --seed-only`)
+- Running PostgreSQL instance with seeded data (use `./scripts/dev.sh --infra-only` then `./scripts/dev.sh --seed-only`; on PowerShell, `./scripts/dev.ps1 -InfraOnly` then `-SeedOnly`)
 - For a real-LLM run: valid `OPENAI_API_KEY` or Azure OpenAI credentials in `.env`.
   For a replay run: none — see above.
 - Python dependencies installed via `uv sync`
