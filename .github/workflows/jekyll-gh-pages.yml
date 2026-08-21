@@ -1,0 +1,88 @@
+# Build and deploy the documentation site to GitHub Pages.
+#
+# Adapted from the sibling repos (clean-architecture-docker-dotnet-angular,
+# mean-docker), which both publish `docs/` directly with just-the-docs. This one
+# differs in a single way that matters: the site is *generated* first.
+#
+# `scripts/build_docs_site.py` assembles `_site_src/` from three separate trees
+# — docs/, docs/concepts/ and the 34 tutorial chapters — injecting Jekyll front
+# matter and rewriting every cross-tree link. That keeps the repository free of
+# front matter, which would otherwise render as a metadata table on top of every
+# file when read on GitHub. The repo stays the source of truth; the site is a
+# rendering of it.
+name: Deploy docs site to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "tutorials/**"
+      - "scripts/build_docs_site.py"
+      - ".github/workflows/jekyll-gh-pages.yml"
+  pull_request:
+    paths:
+      - "docs/**"
+      - "tutorials/**"
+      - "scripts/build_docs_site.py"
+      - ".github/workflows/jekyll-gh-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never cancel an in-progress production deploy.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Runs on pull requests too, where the deploy job does not. A site whose
+      # links rot is worse than no site, and a broken cross-tree link is exactly
+      # the kind of thing that only shows up once the trees are merged into one
+      # URL space — so it has to fail the PR, not the deploy.
+      - name: Check the generated site (front matter, nav parents, links)
+        run: python scripts/build_docs_site.py --check
+
+      - name: Generate the site sources
+        run: python scripts/build_docs_site.py
+
+      - name: Build with Jekyll
+        uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./_site_src
+          destination: ./_site
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./_site
+
+  deploy:
+    # Pull requests build and link-check but never publish.
+    if: github.event_name != 'pull_request'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

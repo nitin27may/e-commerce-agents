@@ -1,7 +1,7 @@
 # Workflow diagrams
 
 Auto-generated from the YAML specs in
-[`agents/config/workflows/`](../../agents/config/workflows/). Do not edit
+[`agents/python/config/workflows/`](../../agents/python/config/workflows/). Do not edit
 files in this directory by hand — they're overwritten on every run of
 the generator.
 
@@ -33,7 +33,7 @@ message prints the exact command to run to fix it.
 
 | Name | Description | Source spec |
 |------|-------------|-------------|
-| `text-pipeline` | Canonical 3-stage demo: uppercase → non-empty gate → logged prefix | [`text-pipeline.yaml`](../../agents/config/workflows/text-pipeline.yaml) |
+| `text-pipeline` | Canonical 3-stage demo: uppercase → non-empty gate → logged prefix | [`text-pipeline.yaml`](../../agents/python/config/workflows/text-pipeline.yaml) |
 
 Production workflows (`return-replace`, `pre-purchase`) land alongside
 Phase 7 steps 08 and 09.

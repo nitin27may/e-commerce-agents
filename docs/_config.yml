@@ -1,0 +1,91 @@
+# Site configuration for https://nitinksingh.com/e-commerce-agents/
+#
+# Kept deliberately close to the sibling repos (clean-architecture-docker-dotnet-angular,
+# mean-docker) so the three sites read as one family. Two keys differ, and both
+# are load-bearing here in a way they are not there — see `mermaid` and the note
+# on generated sources below.
+#
+# NOTE: the published site is NOT this folder. `scripts/build_docs_site.py`
+# assembles `_site_src/` from docs/, docs/concepts/ and tutorials/, and the
+# workflow builds that. This file is copied in verbatim as its config. The repo
+# tree stays free of Jekyll front matter, which is the whole point: front matter
+# renders as a metadata table when the same file is read on GitHub, and every
+# page here already carries its title as an H1.
+
+title: E-Commerce Agents
+description: Multi-agent orchestration with Microsoft Agent Framework — concepts, 34 tutorial chapters, and a running reference implementation in Python and .NET.
+remote_theme: just-the-docs/just-the-docs
+
+url: https://nitinksingh.com/e-commerce-agents
+
+# Set explicitly, unlike the sibling repos, so the site can be built locally.
+# In CI `actions/configure-pages` injects this; without it jekyll-github-metadata
+# aborts with `"" is invalid as a repository identifier`, which is a confusing
+# way to be told "you are not running inside Actions".
+repository: nitin27may/e-commerce-agents
+
+# Mermaid. Neither sibling repo needs this key; this one has 71 diagrams (37 in
+# docs/, 34 across the tutorials), so getting it wrong silently turns the most
+# distinctive thing about these docs into 71 raw code blocks. Setting the
+# version here is what makes fenced ```mermaid blocks render — no per-page front
+# matter required. Pinned rather than floating: a major Mermaid release can
+# change diagram syntax under a site nobody is watching.
+mermaid:
+  version: "10.9.1"
+
+# Search
+search_enabled: true
+search_tokenizer_separator: /[\s/]+/
+search:
+  # Chapters are long and heavily sub-headed, so index down to h3 and show a
+  # few previews — a hit on "checkpoint" is only useful if the result says
+  # which section of which chapter it landed in.
+  heading_level: 3
+  previews: 3
+
+# Aux links for the upper right navigation
+aux_links:
+  "View on GitHub":
+    - "//github.com/nitin27may/e-commerce-agents"
+
+footer_content: "Copyright &copy; 2026 Nitin Singh. Distributed under the MIT License."
+
+color_scheme: light
+heading_anchors: true
+
+callouts_level: quiet
+callouts:
+  highlight:
+    color: yellow
+  important:
+    color: blue
+  new:
+    color: green
+  note:
+    color: purple
+  warning:
+    color: red
+
+kramdown:
+  syntax_highlighter_opts:
+    block:
+      line_numbers: false
+
+# "Edit this page on GitHub" is deliberately OFF. The site is generated, so the
+# theme's edit link would point at a path that does not exist in the repo.
+# Every page instead carries a generated "View source" line pointing at the real
+# file, which build_docs_site.py emits.
+gh_edit_link: false
+
+nav_external_links:
+  - title: E-Commerce Agents on GitHub
+    url: https://github.com/nitin27may/e-commerce-agents
+    hide_icon: false
+
+back_to_top: true
+back_to_top_text: "Back to top"
+
+collapse_inactive_chapters: true
+enable_copy_code_button: true
+
+ga_tracking_anonymize_ip: true
