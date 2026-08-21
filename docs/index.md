@@ -62,3 +62,24 @@ Each explains the same ideas at a different depth, and each says where to go nex
 - **[Tutorials]({{ site.baseurl }}/tutorials/)** — build it yourself, small, one mechanism at a time.
 - **[Architecture]({{ site.baseurl }}/architecture/)** — how the whole system fits together.
 - **The code** — [on GitHub](https://github.com/nitin27may/e-commerce-agents), doing it at full scale.
+
+## Where the project is
+
+**v1.1.** Both backends are live and stable; the pause-and-resume approval loop, server-side grounding, idempotency on money-moving actions, rate limiting and the five orchestration modes all ship on Python and .NET.
+
+### Recently shipped
+
+- Follow-up questions keep their context. Specialists had been receiving *no* conversation history on any browser-originated turn — deterministically, while every test passed.
+- .NET runs now appear in the Aspire GenAI view; they were invisible there because the span naming didn't match the convention Aspire selects on.
+- Semantic search works. It was dead under replay mode, and beneath that sat a production bug: an IVFFlat index built on an empty table, returning unrelated products.
+- Promotions apply. The seeder and the reader disagreed about `promotions.rules` key names, so no promotion had ever applied correctly.
+- This site is indexable — per-page metadata, and an accessible title on every one of the 71 diagrams.
+
+### Coming next
+
+- **.NET eval suite** — 6 of 7 datasets ported; the recording run, baselines and CI gate remain.
+- **.NET tutorial coverage** — chapters 12–19 have code but no tests, and 22–32 have no `dotnet/` yet.
+- **Composer UX** — contextual prompt suggestions, and a collapsed mode selector.
+- **Search** — `search_products` is still `ILIKE`; full-text and hybrid retrieval are planned.
+
+The full list, including gaps this page doesn't claim to cover, is in [`.claude/plans/remaining-work.md`](https://github.com/nitin27may/e-commerce-agents/blob/main/.claude/plans/remaining-work.md).

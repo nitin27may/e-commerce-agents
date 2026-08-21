@@ -7,222 +7,84 @@
 > decisions that are now shipped — is not repeated here; where a past decision still constrains
 > future work, it is restated inline under [Constraints that still bite](#constraints-that-still-bite).
 
-## Where this stands (2026-08-21)
+## Where this stands (2026-08-21, after v1.1.0)
 
-Everything through **Phase 14 (.NET parity)** and **Phase 12 (documentation site)** is merged to
-`main`. Two things are worth stating precisely, because both were overstated at some point and
-the correction is the useful part:
+Everything through **Phase 14 (.NET parity)** and **Phase 12 (documentation site)** is merged, plus
+a further round covering conversation context, telemetry, tutorial CI, SEO, and three defects that
+turned out to be larger than their issue titles.
 
-**The documentation site is live** at <https://nitinksingh.com/e-commerce-agents/> — 84 pages, 71
-Mermaid diagrams, generated from the repo by `scripts/build_docs_site.py` and deployed by
-`.github/workflows/jekyll-gh-pages.yml`. Verified against the deployed site, not just the build:
-sibling-chapter links and GitHub source links resolve, the Mermaid 10.9.1 ESM loader is injected
-against `.language-mermaid` blocks, all seven nav sections render, the search index builds, and no
-front matter leaked into rendered output.
+**The documentation site is live** at <https://nitinksingh.com/e-commerce-agents/> — 85 pages, 71
+Mermaid diagrams, generated from the repo by `scripts/build_docs_site.py`. Every page now carries
+its own meta description, keywords and `TechArticle` JSON-LD, and every diagram carries an
+accessible title.
 
-**.NET is at parity across the surface the gate covers — which is not the whole surface.**
-`web/e2e/parity-gaps.ts` is empty and all seven parity tests pass against both backends, and the
-full 130-test suite run against both found no .NET capability gap (Python 91/41, .NET 90/39, 38
-failures shared and backend-independent). But the gate has a known hole, found while rebuilding the
-matrix rather than by the gate itself — see [1. Workflow resume](#1-workflow-resume-on-net) below.
-The defensible claim is *"parity minus workflow resume, with a documented backlog"*, not *"at
-parity"*.
+**Workflow resume works on both stacks**, so the pause → badge → Approve → resume loop is real on
+.NET as well as Python, and `web/e2e/parity-gaps.ts` is empty.
+
+### The pattern worth carrying forward
+
+Five separate times in the most recent round, **the reported problem was smaller than the actual
+one**, and in every case the difference was found by running something rather than reading it:
+
+| Filed as | Actually |
+|---|---|
+| "follow-ups *occasionally* lose context" (#9) | Deterministic: specialists received **zero** history on every browser turn |
+| "telemetry depth: no metrics provider" (#19) | Metrics were never the gap; .NET spans were **invisible in Aspire's GenAI view** |
+| ".NET tests only for ch01-11" (#20) | **No CI job built any** of the 31 tutorial projects; ch08 was fully broken |
+| "`semantic_search` dead under replay" (#52) | Also a **production** IVFFlat bug returning unrelated products |
+| "`optimize_cart` divides by zero" (#51) | **No promotion had ever applied correctly**, in any environment |
+
+Two of those were found only because a gate was switched on. That is the argument for finishing the
+gates below before the content work.
 
 ## Remaining work, in order
 
-### 1. Workflow resume on .NET
+### 1. Finish the .NET eval suite
 
-**The top item, because it is a silent failure in shipped code.**
+**Groundwork is merged; the recording run is not.** `ECommerceAgents.Evals` now has 6 of 7 datasets,
+record-on-miss (`RECORD=true` + `REPLAY_RECORD_PROVIDER`), and an `IEmbeddingProvider` seam without
+which product-discovery could not even start in replay mode.
 
-`POST /api/orchestration/{run_id}/resume` exists in Python (`orchestrator/routes/orchestration.py:174`)
-and does not exist on .NET. So on the .NET backend `/runs` lists checkpoints and shows the
-pending-approval badge, and clicking **Approve/Reject 404s**. A paused `workflow:return-replace`
-run cannot be resumed.
+- [ ] Record fixtures for all 6 datasets against real Azure OpenAI
+- [ ] Generate .NET baselines — **re-record, never copy Python's**; .NET has a different mode set,
+      so its absolute scores legitimately differ
+- [ ] Add the CI job, gating on baseline regression rather than an absolute floor (the score is a
+      property of the recording session — measured spread on one suite was 8 points across four
+      identical recordings)
+- [ ] `red_team` / safety: needs its own schema and evaluator, so it is a separate piece
 
-`OrchestrationRoutes.cs:22` explains the omission as *"it drives `ReturnAndReplaceWorkflow`, which
-has no runnable tool implementation on .NET yet."* **That reason is stale** —
-`Shared/Workflows/ReturnReplaceTools.cs` exists and `ReturnReplaceMode` is registered. What is
-missing is a `Resume` method on the mode and the route itself.
+### 2. Tutorial .NET coverage (#20)
 
-The gate does not catch this: `orchestration-parity.spec.ts`'s checkpoint test deliberately asserts
-only that the endpoint is *served*, to avoid coupling itself to the mode registry. That decoupling
-was reasonable and it left resume untested on both stacks.
+The CI gate is in and immediately found chapter 08 completely broken. What it now protects is
+incomplete:
 
-- [ ] `ReturnReplaceMode.Resume(runId, approved)` — rebuild the workflow from `checkpoint_id` +
-      `SendResponseAsync`, mirroring Python's fresh-graph-from-checkpoint contract. The .NET
-      workflow already caches a long-lived `StreamingRun` across the pause (see
-      [Constraints](#constraints-that-still-bite)), so this is wiring, not a port.
-- [ ] `POST /api/orchestration/{run_id}/resume` in `OrchestrationRoutes.cs`, and delete the stale
-      remark at `:22`.
-- [ ] Extend the parity spec to **click Approve and assert the run resumes**, then confirm it fails
-      against .NET before the fix and passes after. A test that only passes after is not evidence.
+- [ ] Tests for **ch12–19** (7 chapters; ch16 and ch20 stay documented stubs — magentic is a
+      genuine SDK blocker, not a repo gap)
+- [ ] `dotnet/` for **ch22–32** (11 chapters) — the largest single piece of work left in the repo
 
-### 2. Rebuild `docs/parity-matrix.md` (#11)
+### 3. Composer UX (#4)
 
-Urgent because `README.md` now points readers at this file as the source of truth, and it is wrong
-in ways a reader can check in minutes. Every correction below is verified against the tree, not
-inferred:
+- [ ] Collapse the always-visible `AGENT_MODES` chip row behind a control
+- [ ] Derive suggested prompts from the reply on screen instead of a static
+      `DEMO_SCENARIOS.slice(0, 4)`
 
-| Row | Says | Actually |
-|---|---|---|
-| 8 | "Neither stack's version of either workflow is wired to a live route (both are test-only)" | Both stacks have live workflow modes; .NET registers `PrePurchaseMode` and `ReturnReplaceMode` in `ModeRegistry` |
-| 10 | "No `Shared/Tools/` directory … none shared", status `Partial`, P3 | `Shared/Tools/` has six modules (`ProductLookupTools`, `UserProfileTools`, `StockLookupTools`, `PriceHistoryTools`, `LoyaltyTools`, `ReturnTools`) |
-| 13 | Cites `orchestrator/modes/magentic_mode.py` | **Exists in neither stack.** Python's `orchestrator/modes/` holds `base`, `tool_router`, `handoff_mode`, `workflow_mode`, `group_chat_mode` |
-| 16 | "All 32 chapters have Python tests" | 34 chapters |
+**Frontend-only by constraint**: no new endpoint, no changed request shape, no fence-contract
+change. Both backends must be byte-identically unaffected, verified by the dual-backend gate.
 
-Rows the matrix has **no entry for at all**, each of which now has a real answer:
+### 4. Smaller items, unscheduled
 
-- [ ] **Grounding** — `Shared/Grounding/` (`ClaimExtractor`, `GroundingVerifier`), `GROUNDING_MODE`
-      `off`/`observe`/`annotate`. Python's `enforce` is refused at startup. Ledger tier absent:
-      Python resolves prose figures against per-request tool results recorded *inside the
-      specialist processes*, so an orchestrator-side port needs those facts carried over A2A.
-- [ ] **Idempotency** — Python has `shared/idempotency.py` + `idempotency_keys`. **.NET has none**
-      (verified: zero matches for `Idempot` under `agents/dotnet/src/`). The database constraint is
-      currently the only thing between a double click and two refunds on .NET.
-- [ ] **Rate limiting** — `Shared/RateLimiting/SlidingWindowRateLimiter.cs`, Python's Lua script
-      ported byte-for-byte, applied to both chat routes.
-- [ ] **Cost** — `Shared/Cost/CostEstimator.cs` plus a budget ceiling in `SpecialistPipeline`.
-- [ ] **Telemetry depth** — 214 lines on .NET against Python's 441. Missing: Langfuse sink, log
-      bridge, httpx/asyncpg instrumentation.
-- [ ] **Orchestration modes and routes** — .NET has 3 modes to Python's 5, and 3 of the 4
-      `/api/orchestration/*` routes (see item 1).
-- [ ] **MCP client consumption** — .NET has an MCP *server* but no specialist wires an MCP
-      *client*; there is no analogue of Python's `MCPStreamableHTTPTool` path.
-- [ ] **Session/checkpoint wiring** — registered in `Orchestrator/Program.cs`, so
-      `MAF_CHECKPOINT_BACKEND` is no longer a silent no-op.
-
-`agents/dotnet/README.md` is stale in the same direction ("no shared tool library", "418 tests" —
-now 500 passing) and must be fixed in the same change, or the contradiction just moves.
-
-### 3. .NET evals harness (#19)
-
-Harness, scorers, baselines, datasets, replay fixtures. Deliberately last of the .NET work: running
-an eval suite against an agent that was missing 22 tools would only have measured a gap already
-written down. That reason has now expired — the tools exist — so this is simply the largest
-remaining piece.
-
-The Python harness's own lesson is the thing to copy: `evals/evaluator.py` originally hand-rolled a
-chat-completions loop and called raw undecorated functions, bypassing every guardrail it claimed to
-measure. `evals/harness.py::ProductionRunner` drives the real orchestration modes instead. A .NET
-harness that does not go through `ModeRegistry` would repeat the exact mistake.
-
-### 4. Test-suite cleanup — 15 pre-existing failures
-
-Backend-independent, none caused by recent work, all found by running the full suite against both
-stacks. With these gone the suite is a real gate rather than 15 permanent reds:
-
-- [ ] `ui-features.spec.ts` asserts `img[src*="picsum.photos"]`; seed data moved to
-      `images.unsplash.com` long ago (`scripts/seed.py:84`). **Related trap:** `next.config.ts`
-      still whitelists only `picsum.photos` in `remotePatterns`. Harmless today because product
-      images use plain `<img>`, but it breaks the moment anyone switches to `next/image`.
-- [ ] Five `chat-all-users` tests assert response length > 20 and receive 6.
-- [ ] `ui-features` admin marketplace TypeError check.
-- [ ] `all-roles` auth/navigation `waitForURL` timeouts.
-
-### 5. Attached to the umbrella, smaller
-
-- [ ] Handoff and group-chat modes on .NET (#19)
-- [ ] Memory **write** tools on .NET — `ProfileRoutes` serves `GET`/`DELETE /api/user/memories`, but
-      no agent-callable tool writes one, so a .NET agent can read memories the Python stack wrote
-      and never add one. The Profile "AI Memory" card's instruction to "chat to build your profile"
-      is untrue on .NET.
-- [ ] Telemetry depth (#19)
-- [ ] Tutorial .NET coverage for ch22–32 (#20) — eleven Python-only chapters
-- [ ] **Not a parity item:** magentic. It exists in neither stack; the matrix asserting otherwise is
-      simply wrong.
-
-### 6. Open issues not owned by any of the above
-
-**Corrected 2026-08-21:** an earlier version of this list said `#5`, `#6`, `#7`, `#8`, `#10` and
-`#22` were open. **All six are closed.** Genuinely open: `#4` (composer UX), `#9` (follow-up
-questions lose context), `#11` (parity matrix — item 2 above), `#18` (closeable with item 2, since
-`Shared/Tools/` now exists), `#19`, `#20`, `#33` (umbrella).
-
-### 7. Bugs and findings logged while working
-
-Each was found by running something rather than reading it. Open unless marked.
-
-- [ ] **Checkout is not idempotent on .NET.** Three of Python's four `@idempotent` sites are ported
-      (`InitiateReturn`, `ProcessRefund`, the HITL approval executor); checkout is not. Python
-      guards it at `orchestrator/routes/legacy.py:2151`; the .NET twin is
-      `Orchestrator/Routes/CheckoutRoutes.cs`. A double-submitted checkout still places two orders.
-- [ ] **`StreamAsync_EmitsAGroundingFrame` failed once and has not reproduced.** A
-      `NullReferenceException` in one full-solution run, then green alone, in its class, in a
-      three-class run and in two subsequent full runs. Nothing was changed to "fix" it, so it is
-      unexplained rather than resolved — possibly contention now that a concurrent test shares
-      Postgres across projects. Do not treat the green runs as evidence it is gone.
-- [ ] **`test_record_against_real_provider_then_replay_offline` is order-dependent.** Passes alone,
-      fails inside a larger run, independent of any recent change. `_available_provider()` is
-      evaluated once in `@pytest.mark.skipif` at collection time and again in the body, and the
-      environment has changed by then, so `assert provider is not None` fires. The fix is
-      `pytest.skip()` in the body rather than an assert. Found by another session.
-- [ ] **`docs/concepts/**` `file:line` pointers have drifted.** `01-what-is-an-agent.md` cites
-      `orchestrator/agent.py:147-162` for `create_orchestrator_agent`, which is at 156. Some
-      pointers are still correct, which is worse than all of them being wrong — a reader cannot tell
-      which to trust. Symbols or permalinked SHAs instead of bare line numbers. Owned by another
-      session, spans a directory, announced before it starts.
-- [ ] **Twelve stale feature branches.** Not to be pruned unilaterally.
-- [x] **The documented free-tier path pointed at a retired service.** GitHub Models was retired at
-      the end of July 2026 and its endpoint 404s. It was written into `docs/quick-start.md` and
-      `README.md` as *the* no-API-key option and shipped to the live docs site — the endpoint was
-      copied out of `tutorials/00-setup` without being curled once. Fixed in #46, along with a
-      second finding worth keeping: `qwen3.5:9b` is the *smallest* of the three suggested local
-      models and the **slowest by 6.5x**, because it is a reasoning model whose thinking trace eats
-      the output budget — under a 1024-token cap it returns `finish_reason: length` with empty
-      content. Smaller is not faster.
-- [x] **`WorkflowState` could not survive JSON.** Get-only `List<T>` on a type with a parameterized
-      constructor: System.Text.Json returns the object with those collections **empty and no error**,
-      so a resumed workflow would have forgotten every step it ran and re-opened a return it had
-      already opened. Fixed with settable collections; `JsonObjectCreationHandling.Populate` is the
-      tidier fix and throws `NotSupportedException` for exactly that constructor reason.
-- [x] **Dapper `dynamic` silently makes downstream calls dynamic.** In the resume route, inferring
-      `sessionId` from `claimed.payload` made `mode.ResumeAsync` dynamically dispatched; its result
-      came back as `object` and failed at runtime on `.AgentsInvolved`. It compiled cleanly and
-      500'd. Type anything derived from a Dapper row explicitly.
-
-### 8. SEO audit of the published site — final pass, after everything else
-
-Requested explicitly, and deliberately scheduled last: the site is generated by
-`scripts/build_docs_site.py`, so anything that changes what pages exist changes what has to be
-audited. Doing it before the content settles means doing it twice.
-
-**Measured against the deployed site, not assumed.** What is already right, so the audit does not
-redo it: per-page `<title>`, one `og:` block, `twitter:` card tags, `rel="canonical"`, JSON-LD
-(`application/ld+json`), `robots.txt` (200), `sitemap.xml` (200, 85 `<loc>` entries matching the 85
-generated pages), Google Analytics (`G-5Z8HS51RCP`, verified in rendered HTML on the home page and
-on deep pages, sharing the main domain's property), and `<img>` tags that all carry `alt`.
-
-**The real finding, and the reason this is worth a pass at all:** every page ships the *same* meta
-description. just-the-docs falls back to `site.description` unless a page sets its own, and the
-generator emits no `description:` front matter — so all 85 pages, plus their `og:description`,
-carry one identical sentence about the repo. Duplicate descriptions across a whole site are a
-genuine ranking and click-through problem, and search engines will usually discard them and
-synthesise their own snippet. Fixable where it was caused: `build_docs_site.py` already extracts
-each page's H1 and body, so it can derive a real per-page description.
-
-- [ ] **Per-page `description`** — derive from the page's first substantive paragraph, trimmed to
-      roughly 155 characters at a word boundary, falling back to the section summary. Assert
-      uniqueness in `--check`: a duplicate description should fail the build the same way a broken
-      link does.
-- [ ] **Per-page `og:title` / `og:description`**, and a default `og:image` so a shared link renders
-      as a card rather than bare text. The repo already has usable images under `docs/images/`.
-- [ ] **Headings** — the generator strips the H1 because just-the-docs renders `title:` as the
-      heading. Confirm the rendered page still has exactly one `h1` and no skipped levels; a page
-      whose body starts at `###` reads as broken structure to a crawler.
-- [ ] **Diagrams.** 71 Mermaid diagrams render client-side into inline SVG, so their content is
-      invisible to a crawler that does not execute JavaScript, and they have no accessible name.
-      Emit a `<figure>`/`<figcaption>` or an `aria-label` per diagram. This is an accessibility fix
-      first and an SEO one second — a screen reader currently announces nothing for them.
-- [ ] **Internal linking.** The generator already rewrites 297 cross-tree links, so the graph is
-      dense; what is missing is deliberate hub linking — concepts → the tutorial that builds the
-      thing, tutorials → the capstone `file:line`. Worth checking no page is orphaned (reachable
-      only from the nav) once `docs/concepts/**` link drift is fixed, since that work touches the
-      same edges.
-- [ ] **`keywords`** — absent, and should stay absent. Google has ignored the meta keywords tag
-      since 2009; adding it would be cargo cult. Recorded here so the question is not reopened.
-- [ ] **Verify against the deployed site, not the generator's output.** The gtag and the sitemap
-      were both unverifiable locally because there is no Ruby toolchain on this machine, and both
-      were only confirmed by `curl` after deploy. The same applies to anything added here.
+- [ ] **Cost counter instrument** — dollar estimation and a budget ceiling both ship; what is
+      missing is a counter this repo owns, so an OTLP sink can alert on spend anomalies
+- [ ] **In-chat approval card** — the resume loop is real on both stacks but the control renders
+      only on `/runs`, not inside the chat thread
+- [ ] **Streaming tool calls** — text deltas stream; raw tool-result payloads do not yet travel as
+      their own SSE frames
+- [ ] **Search & retrieval** — `search_products` is still `ILIKE` with no lexical index; full-text
+      search, hybrid retrieval and a typed filter DSL are all planned
+- [ ] **Langfuse sink on .NET** — deliberately skipped as an additive second exporter
+- [ ] **Anonymous multi-turn memory** — neither stack persists anonymous storefront conversations,
+      so follow-ups there have no context at any tier. A product decision, not a bug, but currently
+      undocumented as such
 
 ## Constraints that still bite
 
