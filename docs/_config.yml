@@ -144,14 +144,27 @@ ga_tracking_anonymize_ip: true
 # Default social-preview image. jekyll-seo-tag emits og:image and
 # twitter:image from this, and upgrades the card to a banner rather than a
 # thumbnail — so a link shared to Slack, LinkedIn or X shows the agent
-# timeline instead of a bare grey box. Verified against the deployed site
-# beforehand: there was no og:image on any of the 85 pages.
+# timeline instead of a bare grey box.
+#
+# This MUST go through `defaults`, not a bare top-level `image:` key. It was
+# written as a top-level key first, and that silently did nothing: all 85 pages
+# still shipped with no og:image. jekyll-seo-tag's ImageDrop reads
+# `page["image"]` and has no `site["image"]` fallback, so a site-level key is
+# never consulted. `defaults` is what injects the value into every page's front
+# matter, which is the thing ImageDrop actually reads — and it is exactly what
+# the sibling sites (mean-docker, clean-architecture) already do.
 #
 # Must be an absolute URL. jekyll-seo-tag does not prepend `baseurl` to a
 # root-relative image path, so a bare `/docs/images/...` would resolve
 # against the domain root and 404 — the same drop-vs-double trap that made
-# every sitemap URL wrong before it was fixed.
-image: https://nitinksingh.com/e-commerce-agents/docs/images/agent-timeline.png
+# every sitemap URL wrong before it was fixed. The `docs/` segment is real:
+# build_docs_site.py copies docs/images to _site_src/docs/images, preserving
+# the prefix.
+defaults:
+  - scope:
+      path: ""
+    values:
+      image: https://nitinksingh.com/e-commerce-agents/docs/images/agent-timeline.png
 
 twitter:
   card: summary_large_image
