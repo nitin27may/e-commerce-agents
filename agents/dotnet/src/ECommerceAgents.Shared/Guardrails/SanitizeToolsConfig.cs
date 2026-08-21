@@ -28,11 +28,17 @@ public static class SanitizeToolsConfig
         ["GetProductReviews"] = ["Title", "Body", "Reviewer"],
         ["SearchReviews"] = ["Title", "Body", "Reviewer"],
         ["DetectFakeReviews"] = ["Title", "BodyPreview", "Reviewer", "Reason"],
+        // Quotes/themes are lifted verbatim out of review bodies, so this carries
+        // the same stored-injection risk as the raw reviews (Python: analyze_sentiment).
+        ["AnalyzeSentiment"] = ["Title", "Body", "Summary", "Quote", "Quotes", "Theme", "Themes", "Comment", "Pros", "Cons"],
+        ["GetSentimentByTopic"] = ["Title", "Body", "Summary", "Quote", "Quotes", "Comment"],
+        ["GetSentimentTrend"] = ["Title", "Body", "Summary"],
+        ["CompareProductReviews"] = ["Title", "Body", "Summary", "Comment"],
         ["DraftSellerResponse"] = ["ReviewTitle", "ReviewBody", "Reviewer", "ResponseTemplate"],
 
         // product-discovery: descriptions/specs are seller-editable free text
-        ["SearchProducts"] = ["Name", "Description"],
-        ["GetProductDetails"] = ["Name", "Description"],
+        ["SearchProducts"] = ["Name", "Description", "Specs", "Features"],
+        ["GetProductDetails"] = ["Name", "Description", "Specs", "Features"],
         ["FindSimilarProducts"] = ["Name", "Description"],
         ["SemanticSearch"] = ["Name", "Description"],
         ["GetTrendingProducts"] = ["Name", "Description"],

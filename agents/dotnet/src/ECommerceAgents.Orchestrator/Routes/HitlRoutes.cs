@@ -96,36 +96,57 @@ public static class HitlRoutes
         }
 
         await using var conn = await pool.OpenAsync();
-        var req = await conn.QueryFirstOrDefaultAsync(
-            "SELECT id, user_email, tool_name, tool_input, status FROM tool_approval_requests WHERE id = @id",
+
+        // Claim the row BEFORE executing, not after. The previous shape here
+        // was: read status, check it's pending, execute, then UPDATE ... WHERE
+        // status = 'pending' — and that leaves a real window where two
+        // concurrent approvals both pass the pre-check and both execute the
+        // underlying action. Only the loser's UPDATE failed, by which point a
+        // duplicate refund has already been issued. Python hit exactly this and
+        // fixed it the same way; see shared/hitl.py::claim_hitl_request, whose
+        // docstring documents the duplicate-refund case as the motivation.
+        //
+        // A single atomic pending -> processing transition means only one
+        // caller ever reaches the executor.
+        var claimed = await conn.QueryFirstOrDefaultAsync(
+            @"UPDATE tool_approval_requests
+              SET status = 'processing'
+              WHERE id = @id AND status = 'pending'
+              RETURNING id, user_email, tool_name, tool_input",
             new { id = reqId }
         );
-        if (req is null)
+
+        if (claimed is null)
         {
-            return Results.NotFound(new { detail = "HITL request not found" });
-        }
-        var currentStatus = (string)req.status;
-        if (currentStatus != "pending")
-        {
-            return Results.BadRequest(new { detail = $"Request is already {currentStatus}" });
+            // Either it doesn't exist, or someone else claimed it first. Tell
+            // those apart with a follow-up read purely for the error message —
+            // the claim above is what actually guards execution.
+            var existing = await conn.QueryFirstOrDefaultAsync(
+                "SELECT status FROM tool_approval_requests WHERE id = @id",
+                new { id = reqId }
+            );
+            return existing is null
+                ? Results.NotFound(new { detail = "HITL request not found" })
+                : Results.BadRequest(new { detail = $"Request is already {(string)existing.status}" });
         }
 
-        var toolInput = ParseJson(req.tool_input);
-        var result = await HitlActionExecutor.ExecuteAsync(pool, (string)req.tool_name, toolInput, (string)req.user_email);
+        var toolInput = ParseJson(claimed.tool_input);
+        var result = await HitlActionExecutor.ExecuteAsync(pool, (string)claimed.tool_name, toolInput, (string)claimed.user_email);
 
         var adminEmail = RequestContext.CurrentUserEmail;
         // Mirrors Python's resolve_hitl_request: execute_approved_action always
         // returns a non-empty dict (even on failure), so "decision == approved
         // and execution_result" is always true here — final DB status is
         // "executed" regardless of whether the underlying action succeeded;
-        // that nuance lives only in execution_result.success. The WHERE
-        // status='pending' guard is the atomic race check — a concurrent
-        // approve/deny between our read above and this UPDATE loses here.
-        var updated = await conn.ExecuteAsync(
+        // that nuance lives only in execution_result.success.
+        //
+        // Guarded on 'processing' (the state we just claimed) rather than
+        // 'pending', so this closes out our own claim and nothing else's.
+        await conn.ExecuteAsync(
             @"UPDATE tool_approval_requests
               SET status = 'executed', admin_note = @note, approved_by = @admin,
                   execution_result = @result::jsonb, resolved_at = NOW()
-              WHERE id = @id AND status = 'pending'",
+              WHERE id = @id AND status = 'processing'",
             new
             {
                 note = body?.Note,
@@ -134,10 +155,6 @@ public static class HitlRoutes
                 id = reqId,
             }
         );
-        if (updated == 0)
-        {
-            return Results.Conflict(new { detail = "Request was already resolved by another admin" });
-        }
 
         return Results.Ok(new { status = "approved", execution_result = result });
     }
