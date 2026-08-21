@@ -23,6 +23,17 @@ public sealed record AgentSettings
     // ── LLM ─────────────────────────────────────────────────────
     public string LlmProvider { get; init; } = "openai"; // "openai" | "azure"
     public string LlmModel { get; init; } = "gpt-4.1";
+
+    /// <summary>
+    /// Optional base-URL override for the OpenAI-compatible <c>openai</c>
+    /// provider — the .NET twin of Python's <c>LLM_BASE_URL</c>
+    /// (<c>shared/config.py</c>). Points the client at any OpenAI-compatible
+    /// endpoint instead of api.openai.com: GitHub Models, OpenRouter, Ollama,
+    /// LM Studio, llama.cpp's server, vLLM, Azure AI Foundry's OpenAI-compatible
+    /// route. Unset by default; only takes effect when <c>LLM_PROVIDER=openai</c>
+    /// (<c>azure</c> keeps its own endpoint setting).
+    /// </summary>
+    public string LlmBaseUrl { get; init; } = "";
     public string EmbeddingModel { get; init; } = "text-embedding-3-small";
     public string OpenAiApiKey { get; init; } = "";
 
