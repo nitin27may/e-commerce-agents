@@ -24,17 +24,15 @@ cp .env.example .env          # add your OPENAI_API_KEY (or Azure OpenAI credent
 Then open **http://localhost:3000** and sign in as `alice.johnson@gmail.com` / `customer123`.
 Docker is the only requirement — no Python, .NET or Node needed.
 
-**On Windows**, `scripts/dev.sh` is a bash script and won't run in PowerShell.
-[WSL2](https://learn.microsoft.com/windows/wsl/install) gives the best experience — everything
-above works unchanged inside it. Not using WSL2? PowerShell is fine, `docker compose` is the same
-command on every platform:
+**On Windows**, use `scripts/dev.ps1` — the PowerShell twin of the bash script, same flags:
 
 ```powershell
 Copy-Item .env.example .env    # then set OPENAI_API_KEY in .env
-docker compose up -d db redis aspire
-docker compose --profile seed run --rm seeder
-docker compose --profile agents --profile frontend up -d --build
+./scripts/dev.ps1
 ```
+
+[WSL2](https://learn.microsoft.com/windows/wsl/install) still gives the best experience, and
+everything above works unchanged inside it.
 
 Full detail — the .NET stack, WSL2 notes, running with no API key, and what to do when something
 breaks: **[Quick Start](#quick-start)** below, or the
@@ -64,7 +62,7 @@ Companion demo repo for the AI article series on [nitinksingh.com](https://nitin
 |---|---|
 | **Just run it** | [Quick Start](#quick-start) — Docker, one command |
 | Run the .NET backend instead | [Quick Start → .NET](#run-the-net-backend) |
-| Run it on **Windows** | [Quick Start → Windows](#run-the-python-backend) — Compose directly, or WSL2 |
+| Run it on **Windows** | [Quick Start → Windows](#run-the-python-backend) — `scripts/dev.ps1`, or WSL2 |
 | Run it without an API key | [Quick Start → free and local options](#run-without-a-paid-api-key) |
 | Read the documentation | **[nitinksingh.com/e-commerce-agents](https://nitinksingh.com/e-commerce-agents/)** — rendered and searchable |
 | Learn what an agent even is — new to AI/agents | [Concepts](https://nitinksingh.com/e-commerce-agents/concepts/) — start at page 01 |
@@ -116,21 +114,34 @@ instructions above work unchanged. Two things to get right: clone inside the Lin
 (`~/`, **not** `/mnt/c/`, which is dramatically slower), and enable *Settings → Resources → WSL
 Integration* in Docker Desktop for your distro.
 
-**Windows — not using WSL2?** PowerShell works fine; nothing here needs a Linux shell, and
-`docker compose` is identical across platforms. These three lines are what `dev.sh` does, minus the
-health-check polling and the summary:
+**Windows — not using WSL2?** Use `scripts/dev.ps1`, which does everything `dev.sh` does — same
+profiles, same ordering, same health checks, same flags (`-Clean`, `-SeedOnly`, `-InfraOnly`,
+`-Dotnet`):
 
 ```powershell
 Copy-Item .env.example .env    # then set OPENAI_API_KEY in .env
+./scripts/dev.ps1
+```
+
+If PowerShell blocks it with `running scripts is disabled on this system`, that is the execution
+policy rather than the script: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, or
+`powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1` for one run.
+
+Prefer no script at all? `docker compose` is identical across platforms:
+
+```powershell
 docker compose up -d db redis aspire
 docker compose --profile seed run --rm seeder
 docker compose --profile agents --profile frontend up -d --build
 ```
 
 No waiting between those: the seeder declares `depends_on: db: {condition: service_healthy}`, so
-Compose blocks it until Postgres is ready. PowerShell equivalents for the script's other flags —
-`--clean`, `--seed-only`, `--infra-only` — and the port-conflict command are tabulated in the
+Compose blocks it until Postgres is ready. The full PowerShell reference — every flag translated,
+plus the port-conflict command — is on the
 [Quick Start page](https://nitinksingh.com/e-commerce-agents/getting-started/quick-start.html#not-using-wsl2-powershell-works-fine).
+
+`dev.ps1` also runs on macOS and Linux under PowerShell 7, though `dev.sh` is the more idiomatic
+choice there.
 
 The single-command form works on every platform too:
 

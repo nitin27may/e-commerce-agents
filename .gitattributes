@@ -6,6 +6,7 @@
 # exactly the reader following the WSL2 or Git Bash path in docs/quick-start.md,
 # who has no reason to suspect their checkout.
 *.sh text eol=lf
+*.ps1 text eol=lf
 
 # Same reasoning for files consumed inside Linux containers.
 Dockerfile* text eol=lf

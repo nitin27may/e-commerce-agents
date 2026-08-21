@@ -71,18 +71,28 @@ but only WSL2 gives you a real Linux filesystem, so container startup is much fa
 
 #### Not using WSL2? PowerShell works fine
 
-Nothing here needs a Linux shell — `docker compose` is the same command on every platform. These
-three lines are exactly what `dev.sh` does, minus the health-check polling and the closing summary.
-Run them from the repo root in **PowerShell**:
+There is a PowerShell script that does everything `dev.sh` does — same profiles, same ordering,
+same health checks, same flags:
 
 ```powershell
-# 1. Get the code and configure it
 git clone https://github.com/nitin27may/e-commerce-agents.git
 cd e-commerce-agents
 Copy-Item .env.example .env
 notepad .env                  # set OPENAI_API_KEY, then save and close
 
-# 2. Start infrastructure, seed, then start the app
+./scripts/dev.ps1
+```
+
+If PowerShell refuses to run it (`running scripts is disabled on this system`), that is the
+execution policy, not the script. Either allow local scripts once —
+`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` — or bypass it for this run alone with
+`powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1`.
+
+**Or skip the script entirely.** Nothing here needs one; `docker compose` is the same command on
+every platform, and these three lines are what the script does, minus the health polling and the
+closing summary:
+
+```powershell
 docker compose up -d db redis aspire
 docker compose --profile seed run --rm seeder
 docker compose --profile agents --profile frontend up -d --build
@@ -100,11 +110,17 @@ health check. The first run builds images, so expect a few minutes before anythi
 |---|---|
 | `cp .env.example .env` | `Copy-Item .env.example .env` |
 | `\` at end of line (continuation) | a backtick `` ` ``, or put it all on one line |
-| `./scripts/dev.sh --clean` | `docker compose down -v` then re-run the three commands |
-| `./scripts/dev.sh --seed-only` | `docker compose --profile seed run --rm seeder` |
-| `./scripts/dev.sh --infra-only` | `docker compose up -d db redis aspire` |
+| `./scripts/dev.sh --clean` | `./scripts/dev.ps1 -Clean` — or `docker compose down -v`, then re-run |
+| `./scripts/dev.sh --seed-only` | `./scripts/dev.ps1 -SeedOnly` — or `docker compose --profile seed run --rm seeder` |
+| `./scripts/dev.sh --infra-only` | `./scripts/dev.ps1 -InfraOnly` — or `docker compose up -d db redis aspire` |
+| `./scripts/dev.sh --dotnet` | `./scripts/dev.ps1 -Dotnet` |
 | `lsof -i :3000` (port conflicts) | `netstat -ano \| findstr :3000` |
 | `docker compose logs -f orchestrator` | identical — Compose commands don't change |
+
+`dev.ps1` needs **PowerShell 7+** on macOS and Linux
+([install docs](https://learn.microsoft.com/powershell/scripting/install/installing-powershell));
+on Windows the built-in Windows PowerShell 5.1 is enough. On macOS and Linux `dev.sh` remains the
+more idiomatic choice — the two are interchangeable.
 
 To stop everything: `docker compose down`. To stop and wipe the database as well:
 `docker compose down -v`.
