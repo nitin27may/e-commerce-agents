@@ -109,10 +109,30 @@ Practical guidance:
   distinguishes a real regression from a roll.
 - Do not keep re-rolling until you beat the baseline. Take the modal result and
   say which one you took.
-- Baselines are deliberately **not** raised every time scores improve. After the
-  #9 re-record, `order-management` came in at 51% against a 44.3% baseline; the
-  baseline stayed, because pinning it to a good roll would make the gate fail on
-  an ordinary one later.
+- Baselines are deliberately **not** raised every time an *overall* score
+  improves. Pinning one to a good roll makes the gate fail on an ordinary one
+  later.
+
+  Two were refreshed after the #9 re-record, for a narrower reason: the gate
+  compares **every metric**, not just the overall score, and both suites'
+  `avg_completeness` fell while their overall score rose. Refreshing was the
+  right call in each case, but not for the same reason:
+
+  - `order-management` — the prompt change genuinely shifts behaviour here.
+    Recorded without it, the suite reproduces the old baseline *exactly*
+    (0.417 / 0.443); with it, completeness drops to 0.350 while overall rises
+    to 0.510. Completeness is keyword matching, so a better answer that words
+    things differently scores worse on it. The overall gain is the more
+    trustworthy signal.
+  - `pricing-promotions` — nothing to do with #9. Completeness records at
+    0.600 **with or without** the prompt change, against a 0.800 baseline that
+    no longer reproduces at all. That baseline was already stale; the gate
+    surfaced it while looking at something else.
+
+  The lesson worth keeping: a sub-metric regression under a rising overall
+  score is worth *investigating*, not waving through — one of these two was a
+  real behavioural change and the other was a stale number, and they looked
+  identical in the CI log.
 
 ## A real bug this surfaced: non-deterministic product ids broke grounding on replay
 

@@ -1,8 +1,8 @@
 {
-  "avg_groundedness": 0.2,
+  "avg_groundedness": 0.4,
   "avg_correctness": 0.7,
-  "avg_completeness": 0.4167,
-  "overall_score": 0.4433,
+  "avg_completeness": 0.35,
+  "overall_score": 0.51,
   "agent_name": "order-management",
   "dataset_path": "evals/datasets/order_management.json"
 }
