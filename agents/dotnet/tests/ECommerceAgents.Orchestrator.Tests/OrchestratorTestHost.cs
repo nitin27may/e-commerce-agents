@@ -4,6 +4,9 @@ using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Data;
 using ECommerceAgents.Shared.RateLimiting;
+using ECommerceAgents.Shared.Orchestration;
+using ECommerceAgents.Orchestrator.Modes;
+using Microsoft.Agents.AI;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -51,6 +54,12 @@ public static class OrchestratorTestHost
                     // Redis is unreachable in most test runs and the limiter fails
                     // open, so this stays a no-op unless a test opts in.
                     services.AddSingleton<SlidingWindowRateLimiter>();
+                    // ChatRoutes resolves the mode registry now (#33 PR 5).
+                    // Registered with the tool router only: a test host has no
+                    // database pool wired for the workflow modes, and every
+                    // existing chat test exercises the default path anyway.
+                    services.AddSingleton<IOrchestrationMode>(sp => new ToolRouterMode(sp.GetRequiredService<AIAgent>()));
+                    services.AddSingleton<ModeRegistry>();
                     services.AddLogging();
                     services.AddSingleton(new AuthServerClient(
                         new HttpClient(authServerHandler ?? new HttpClientHandler()),

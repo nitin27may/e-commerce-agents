@@ -1,4 +1,6 @@
 using Dapper;
+using ECommerceAgents.Orchestrator.Modes;
+using ECommerceAgents.Shared.Orchestration;
 using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Data;
 using ECommerceAgents.Shared.RateLimiting;
@@ -48,15 +50,28 @@ public static class ChatRoutes
     /// (#33 PR 5), at which point this set grows rather than the check being
     /// removed.
     /// </remarks>
-    private static readonly HashSet<string> SupportedModes =
-        new(StringComparer.OrdinalIgnoreCase) { "tool" };
+    private static bool IsSupportedMode(ModeRegistry registry, string? mode) =>
+        string.IsNullOrWhiteSpace(mode) || registry.Contains(mode);
 
-    private static bool IsSupportedMode(string? mode) =>
-        string.IsNullOrWhiteSpace(mode) || SupportedModes.Contains(mode);
+    private static string[] SupportedModeNames(ModeRegistry registry) =>
+        registry.All.Select(m => m.Name).Order(StringComparer.Ordinal).ToArray();
 
-    private static string UnsupportedModeDetail(string? mode) =>
+    private static string UnsupportedModeDetail(ModeRegistry registry, string? mode) =>
         $"Orchestration mode '{mode}' is not supported by the .NET backend. "
-        + $"Supported: {string.Join(", ", SupportedModes.Order(StringComparer.Ordinal))}.";
+        + $"Supported: {string.Join(", ", SupportedModeNames(registry))}.";
+
+    /// <summary>
+    /// True when a mode needs the registry rather than the direct agent path.
+    /// </summary>
+    /// <remarks>
+    /// The tool router deliberately stays on the direct call so it keeps
+    /// token-level streaming — routing it through the registry would flatten a
+    /// streamed answer into one chunk for no gain. Every other mode is a
+    /// workflow, which produces its result in one piece anyway.
+    /// </remarks>
+    private static bool NeedsRegistry(string? mode) =>
+        !string.IsNullOrWhiteSpace(mode)
+        && !string.Equals(mode, ModeRegistry.DefaultMode, StringComparison.OrdinalIgnoreCase);
     public sealed record ChatResponse(string Response, string ConversationId, List<string> AgentsInvolved);
 
     public static IEndpointRouteBuilder MapChatRoutes(this IEndpointRouteBuilder routes)
@@ -75,7 +90,8 @@ public static class ChatRoutes
         [FromBody] ChatRequest request,
         AIAgent agent,
         DatabasePool pool,
-        UsageRecorder usage
+        UsageRecorder usage,
+        ModeRegistry registry
     )
     {
         if (string.IsNullOrWhiteSpace(request?.Message))
@@ -83,12 +99,12 @@ public static class ChatRoutes
             return Results.BadRequest(new { detail = "message is required" });
         }
 
-        if (!IsSupportedMode(request.Mode))
+        if (!IsSupportedMode(registry, request.Mode))
         {
             return Results.BadRequest(new
             {
-                detail = UnsupportedModeDetail(request.Mode),
-                supported_modes = SupportedModes.Order(StringComparer.Ordinal).ToArray(),
+                detail = UnsupportedModeDetail(registry, request.Mode),
+                supported_modes = SupportedModeNames(registry),
                 requested_mode = request.Mode,
             });
         }
@@ -110,24 +126,38 @@ public static class ChatRoutes
         // ["orchestrator"] either (routes.py:423-461) — no mutation between init
         // and return — so this stays static rather than wiring up the dynamic
         // capture used by the streaming endpoint below.
-        var agentsInvolved = new List<string> { "orchestrator" };
+        List<string> agentsInvolved = ["orchestrator"];
 
         var sw = Stopwatch.StartNew();
-        var response = await agent.RunAsync(BuildMessages(ctx.History));
+        string responseText;
+        if (NeedsRegistry(request.Mode))
+        {
+            var modeResult = await registry
+                .Get(request.Mode)
+                .RunAsync(request.Message, new RunContext(ctx.History, ctx.ConversationId));
+            responseText = modeResult.Text;
+            agentsInvolved = modeResult.AgentsInvolved.ToList();
+        }
+        else
+        {
+            var response = await agent.RunAsync(BuildMessages(ctx.History));
+            responseText = response.Text;
+        }
         sw.Stop();
 
         await PersistAssistantMessageAsync(
-            pool, usage, ctx, request.Message, response.Text, agentsInvolved, (int)sw.ElapsedMilliseconds
+            pool, usage, ctx, request.Message, responseText, agentsInvolved, (int)sw.ElapsedMilliseconds
         );
 
-        return Results.Ok(new ChatResponse(response.Text, ctx.ConversationId, agentsInvolved));
+        return Results.Ok(new ChatResponse(responseText, ctx.ConversationId, agentsInvolved));
     }
 
     private static async Task StreamAsync(
         HttpContext context,
         AIAgent agent,
         DatabasePool pool,
-        UsageRecorder usage
+        UsageRecorder usage,
+        ModeRegistry registry
     )
     {
         var request = await context.Request.ReadFromJsonAsync<ChatRequest>();
@@ -138,13 +168,13 @@ public static class ChatRoutes
             return;
         }
 
-        if (!IsSupportedMode(request.Mode))
+        if (!IsSupportedMode(registry, request.Mode))
         {
             context.Response.StatusCode = 400;
             await context.Response.WriteAsJsonAsync(new
             {
-                detail = UnsupportedModeDetail(request.Mode),
-                supported_modes = SupportedModes.Order(StringComparer.Ordinal).ToArray(),
+                detail = UnsupportedModeDetail(registry, request.Mode),
+                supported_modes = SupportedModeNames(registry),
                 requested_mode = request.Mode,
             });
             return;
@@ -233,15 +263,36 @@ public static class ChatRoutes
 
         var sw = Stopwatch.StartNew();
         var responseText = new StringBuilder();
-        await foreach (var update in agent.RunStreamingAsync(BuildMessages(ctx.History), cancellationToken: context.RequestAborted))
-        {
-            if (string.IsNullOrEmpty(update.Text))
-            {
-                continue;
-            }
+        List<string>? modeAgents = null;
 
-            responseText.Append(update.Text);
-            await WriteFrameAsync(null, update.Text);
+        if (NeedsRegistry(request.Mode))
+        {
+            // A workflow produces its answer in one piece — its executors send
+            // messages between themselves rather than emitting model deltas —
+            // so there is nothing to stream incrementally. The whole text goes
+            // out as a single frame, which is what Python's workflow modes fall
+            // back to as well. Real per-node progress needs the normalized SSE
+            // event protocol (#33 PR 6).
+            var modeResult = await registry
+                .Get(request.Mode)
+                .RunAsync(request.Message, new RunContext(ctx.History, ctx.ConversationId), context.RequestAborted);
+
+            responseText.Append(modeResult.Text);
+            modeAgents = modeResult.AgentsInvolved.ToList();
+            await WriteFrameAsync(null, modeResult.Text);
+        }
+        else
+        {
+            await foreach (var update in agent.RunStreamingAsync(BuildMessages(ctx.History), cancellationToken: context.RequestAborted))
+            {
+                if (string.IsNullOrEmpty(update.Text))
+                {
+                    continue;
+                }
+
+                responseText.Append(update.Text);
+                await WriteFrameAsync(null, update.Text);
+            }
         }
         sw.Stop();
 
@@ -252,9 +303,13 @@ public static class ChatRoutes
         // (routes.py:651-655). RequestContext.CurrentInvokedAgents is populated by
         // OrchestratorTools.CallSpecialistAgent for every A2A call made during this
         // request (RequestContext.Scope above gave this request a fresh list).
+        // A workflow mode reports the specialists its graph covered; the tool
+        // router reports whoever CallSpecialistAgent actually reached.
         var agentsInvolved = new List<string> { "orchestrator" };
         agentsInvolved.AddRange(
-            RequestContext.CurrentInvokedAgents.Distinct().Where(a => a != "orchestrator")
+            (modeAgents ?? RequestContext.CurrentInvokedAgents.ToList())
+                .Distinct()
+                .Where(a => a != "orchestrator")
         );
 
         // Issue #16: one event: step frame per captured tool call, matching
