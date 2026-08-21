@@ -51,7 +51,18 @@ public static class ChatClientFactory
             throw new InvalidOperationException("OPENAI_API_KEY is required when LLM_PROVIDER=openai");
         }
 
-        var openAi = new OpenAIClient(new ApiKeyCredential(settings.OpenAiApiKey));
+        // LLM_BASE_URL points this at any OpenAI-compatible server — Ollama,
+        // LM Studio, llama.cpp, vLLM, OpenRouter, GitHub Models — matching
+        // Python's shared/factory.py. Local servers usually ignore the API key
+        // but the SDK still requires a non-empty one, hence the check above
+        // applying either way.
+        var openAiOptions = new OpenAIClientOptions();
+        if (!string.IsNullOrWhiteSpace(settings.LlmBaseUrl))
+        {
+            openAiOptions.Endpoint = new Uri(settings.LlmBaseUrl);
+        }
+
+        var openAi = new OpenAIClient(new ApiKeyCredential(settings.OpenAiApiKey), openAiOptions);
         return openAi.GetChatClient(settings.LlmModel);
     }
 }

@@ -1,4 +1,5 @@
 using ECommerceAgents.PricingPromotions.Tools;
+using ECommerceAgents.Shared.Tools;
 using ECommerceAgents.Shared.A2A;
 using ECommerceAgents.Shared.Agents;
 using ECommerceAgents.Shared.Prompts;
@@ -14,11 +15,15 @@ var app = AgentHost.Build(
     {
         builder.Services.AddSingleton(new PromptLoader(PromptsRoot()));
         builder.Services.AddSingleton<PricingTools>();
+        builder.Services.AddSingleton<ProductLookupTools>();
         builder.Services.AddSingleton<AIAgent>(sp =>
         {
             var prompts = sp.GetRequiredService<PromptLoader>();
             var tools = sp.GetRequiredService<PricingTools>();
-            return SpecialistAgentFactory.Create(settings, prompts, "pricing-promotions", tools.All(), services: sp);
+            // Shared lookup so a product *name* can reach the id-keyed tools below
+            // (issue #18) — matches which agents Python attaches it to.
+            var lookup = sp.GetRequiredService<ProductLookupTools>();
+            return SpecialistAgentFactory.Create(settings, prompts, "pricing-promotions", tools.All().Concat(lookup.All()), services: sp);
         });
     }
 );

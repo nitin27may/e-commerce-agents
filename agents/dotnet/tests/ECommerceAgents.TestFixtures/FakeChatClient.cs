@@ -23,9 +23,17 @@ public sealed class FakeChatClient : IChatClient
 {
     private readonly Queue<string> _responses = new();
     private readonly List<IEnumerable<ChatMessage>> _receivedMessages = new();
+    private readonly List<ChatOptions?> _receivedOptions = new();
 
     public int CallCount { get; private set; }
     public IReadOnlyList<IEnumerable<ChatMessage>> ReceivedMessages => _receivedMessages;
+
+    /// <summary>
+    /// The <see cref="ChatOptions"/> each call arrived with — this is where
+    /// tools and instructions live, so it is the only way a test can prove an
+    /// <c>AIContextProvider</c> enriched the request instead of replacing it.
+    /// </summary>
+    public IReadOnlyList<ChatOptions?> ReceivedOptions => _receivedOptions;
 
     public FakeChatClient EnqueueResponse(string response)
     {
@@ -40,6 +48,7 @@ public sealed class FakeChatClient : IChatClient
     )
     {
         _receivedMessages.Add(messages);
+        _receivedOptions.Add(options);
         var text = NextResponse();
         return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, text)));
     }
@@ -51,6 +60,7 @@ public sealed class FakeChatClient : IChatClient
     )
     {
         _receivedMessages.Add(messages);
+        _receivedOptions.Add(options);
         var text = NextResponse();
         yield return new ChatResponseUpdate(ChatRole.Assistant, text);
         await Task.CompletedTask;

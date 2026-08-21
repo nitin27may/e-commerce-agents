@@ -61,6 +61,7 @@ public static class AgentSettingsLoader
             LlmModel = Get("LLM_MODEL", "gpt-4.1"),
             EmbeddingModel = Get("EMBEDDING_MODEL", "text-embedding-3-small"),
             OpenAiApiKey = Get("OPENAI_API_KEY"),
+            LlmBaseUrl = Get("LLM_BASE_URL"),
             Temperature = GetDouble("LLM_TEMPERATURE", 0.2),
 
             AzureOpenAiEndpoint = Get("AZURE_OPENAI_ENDPOINT"),

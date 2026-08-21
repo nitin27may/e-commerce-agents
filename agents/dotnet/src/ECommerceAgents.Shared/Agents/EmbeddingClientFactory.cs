@@ -43,7 +43,16 @@ public static class EmbeddingClientFactory
             throw new InvalidOperationException("OPENAI_API_KEY is required when LLM_PROVIDER=openai");
         }
 
-        var openAi = new OpenAIClient(new ApiKeyCredential(settings.OpenAiApiKey));
+        // Same LLM_BASE_URL override as ChatClientFactory, so a self-hosted
+        // OpenAI-compatible server (Ollama's nomic-embed-text, LM Studio, vLLM)
+        // can serve embeddings too rather than forcing api.openai.com.
+        var openAiOptions = new OpenAIClientOptions();
+        if (!string.IsNullOrWhiteSpace(settings.LlmBaseUrl))
+        {
+            openAiOptions.Endpoint = new Uri(settings.LlmBaseUrl);
+        }
+
+        var openAi = new OpenAIClient(new ApiKeyCredential(settings.OpenAiApiKey), openAiOptions);
         return openAi.GetEmbeddingClient(settings.EmbeddingModel);
     }
 
