@@ -121,7 +121,20 @@ def get_chat_client() -> OpenAIChatClient | OpenAIChatCompletionClient | Any:
 
 
 def get_embeddings_client() -> openai.AsyncOpenAI | openai.AsyncAzureOpenAI:
-    """Return an async OpenAI/Azure client configured for embeddings."""
+    """Return an async client configured for embeddings.
+
+    The ``replay`` branch is the whole point of #52. Without it this fell
+    through to the OpenAI path and raised "OPENAI_API_KEY is required", MAF
+    caught that and handed the model an error result, and the agent quietly
+    answered from ``search_products`` instead. CI's eval smoke job runs
+    entirely in replay mode, so pgvector semantic search was exercised by no
+    CI run at all while product-discovery still scored 92%.
+    """
+    if settings.LLM_PROVIDER.lower() == "replay":
+        from shared.replay_embeddings import ReplayEmbeddingsClient
+
+        return ReplayEmbeddingsClient()  # type: ignore[return-value]
+
     if settings.LLM_PROVIDER.lower() == "azure":
         _validate_azure()
         return openai.AsyncAzureOpenAI(

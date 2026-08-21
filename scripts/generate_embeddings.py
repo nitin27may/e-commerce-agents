@@ -40,10 +40,21 @@ EMBEDDING_DIMENSIONS = 1536
 BATCH_SIZE = 20  # OpenAI supports up to 2048 inputs per request
 
 
-def _fake_embedding(seed: str) -> list[float]:
-    """Deterministic pseudo-random unit-ish vector for LLM_PROVIDER=replay."""
-    rng = random.Random(seed)
-    return [rng.uniform(-1.0, 1.0) for _ in range(EMBEDDING_DIMENSIONS)]
+def _fake_embedding(text: str) -> list[float]:
+    """Deterministic offline vector for LLM_PROVIDER=replay.
+
+    Delegates to `shared.replay_embeddings.embed_text`, which is also what
+    `semantic_search` uses for the *query* side. Both sides must use one
+    scheme or similarity is meaningless — and nothing would fail to say so.
+
+    This used to be pseudo-random noise seeded by product **id**, which made
+    every nearest-neighbour result arbitrary. Seeding from the product's text
+    instead means a query sharing words with a product actually ranks near it,
+    so the pgvector path is genuinely exercised rather than merely executed.
+    """
+    from shared.replay_embeddings import embed_text
+
+    return embed_text(text)
 
 
 def create_client() -> openai.AsyncOpenAI:
@@ -106,7 +117,9 @@ async def main() -> None:
         if LLM_PROVIDER == "replay":
             logger.info("Using LLM_PROVIDER=replay — generating deterministic fake embeddings, no API call")
             for product in products:
-                embedding = _fake_embedding(str(product["id"]))
+                # The same text the real provider would embed, so replay and
+                # live runs index the same content.
+                embedding = _fake_embedding(build_embedding_text(dict(product)))
                 await conn.execute(
                     "INSERT INTO product_embeddings (product_id, embedding) VALUES ($1, $2)",
                     product["id"], json.dumps(embedding),
@@ -134,6 +147,23 @@ async def main() -> None:
                         "INSERT INTO product_embeddings (product_id, embedding) VALUES ($1, $2)",
                         product_id, json.dumps(embedding),
                     )
+
+        # Rebuild the ivfflat index. Not housekeeping — without it semantic
+        # search returns near-garbage, in production as well as in replay.
+        #
+        # docker/postgres/init.sql creates `idx_product_embedding` on an EMPTY
+        # table, so ivfflat has no data to derive centroids from. Every vector
+        # then lands in a degenerate partition, and with the default
+        # `ivfflat.probes = 1` a query probes one list and returns whatever is
+        # in it. Measured directly on this schema: "wireless noise cancelling
+        # headphones" returned "Patagonia Better Sweater" at similarity 0.000
+        # through the index, and "Sony WH-1000XM5" at 0.420 with an exact scan.
+        # Same data, same query — the index alone was the difference.
+        #
+        # The same applies after any wholesale re-embedding: centroids computed
+        # for the previous vectors do not describe the new ones.
+        await conn.execute("REINDEX INDEX idx_product_embedding")
+        logger.info("Rebuilt idx_product_embedding so ivfflat centroids match the stored vectors")
 
         total = await conn.fetchval("SELECT COUNT(*) FROM product_embeddings")
         logger.info("Generated and stored %d product embeddings (dimension: 1536)", total)
