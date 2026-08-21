@@ -6,6 +6,34 @@ Six specialist agents collaborate over the A2A protocol to handle product discov
 
 This site is generated from the repository. Every page here is a file you can read in the repo, and every code pointer resolves to real source.
 
+## Run it
+
+Docker is the only requirement — no Python, .NET or Node needed, and
+[no paid API key either]({{ site.baseurl }}/getting-started/quick-start.html#run-without-a-paid-api-key).
+
+```bash
+git clone https://github.com/nitin27may/e-commerce-agents.git
+cd e-commerce-agents
+cp .env.example .env          # add your OPENAI_API_KEY (or Azure OpenAI credentials)
+./scripts/dev.sh              # builds, seeds, and starts everything
+```
+
+Then open **<http://localhost:3000>** and sign in as `alice.johnson@gmail.com` / `customer123`.
+
+**On Windows**, `scripts/dev.sh` is a bash script and will not run in PowerShell — use Docker
+Compose directly instead:
+
+```powershell
+docker compose up -d db redis aspire
+docker compose --profile seed run --rm seeder
+docker compose --profile agents --profile frontend up -d --build
+```
+
+→ **[Full Quick Start]({{ site.baseurl }}/getting-started/quick-start.html)** — the .NET stack,
+running without an API key, WSL2 notes, and what to do when something breaks.
+
+---
+
 ## Where to start
 
 | If you are… | Start here |

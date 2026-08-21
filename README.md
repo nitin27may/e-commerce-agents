@@ -22,7 +22,20 @@ cp .env.example .env          # add your OPENAI_API_KEY (or Azure OpenAI credent
 ```
 
 Then open **http://localhost:3000** and sign in as `alice.johnson@gmail.com` / `customer123`.
-Needs Docker. Full detail, the .NET stack, and a no-API-key option: **[Quick Start](#quick-start)**.
+Docker is the only requirement — no Python, .NET or Node needed.
+
+**On Windows**, `scripts/dev.sh` is a bash script and won't run in PowerShell. Use Compose directly:
+
+```powershell
+docker compose up -d db redis aspire
+docker compose --profile seed run --rm seeder
+docker compose --profile agents --profile frontend up -d --build
+```
+
+Full detail — the .NET stack, WSL2 notes, running with no API key, and what to do when something
+breaks: **[Quick Start](#quick-start)** below, or the
+**[Quick Start page](https://nitinksingh.com/e-commerce-agents/getting-started/quick-start.html)**
+on the docs site.
 
 **Generative UI, not raw JSON.** The chat surface never dumps a tool result as text or a code block. Every agent response is inspected by shape and rendered as the right interactive component: a single detailed result becomes a card, a list becomes a table, a distribution or trend becomes a chart, a status becomes a tone-coded badge — see it live in the [Screens](#screens) gallery below (review sentiment: rating distribution + 6-month trend, rendered from the same data an LLM would otherwise only describe in prose).
 
@@ -47,6 +60,7 @@ Companion demo repo for the AI article series on [nitinksingh.com](https://nitin
 |---|---|
 | **Just run it** | [Quick Start](#quick-start) — Docker, one command |
 | Run the .NET backend instead | [Quick Start → .NET](#run-the-net-backend) |
+| Run it on **Windows** | [Quick Start → Windows](#run-the-python-backend) — Compose directly, or WSL2 |
 | Run it without an API key | [Quick Start → free and local options](#run-without-a-paid-api-key) |
 | Read the documentation | **[nitinksingh.com/e-commerce-agents](https://nitinksingh.com/e-commerce-agents/)** — rendered and searchable |
 | Learn what an agent even is — new to AI/agents | [Concepts](https://nitinksingh.com/e-commerce-agents/concepts/) — start at page 01 |
@@ -81,11 +95,34 @@ cp .env.example .env
 
 ### Run the Python backend
 
+**macOS / Linux:**
+
 ```bash
 # Option A — helper script (builds, seeds, and starts everything):
 ./scripts/dev.sh
 
 # Option B — plain Docker Compose (equivalent, no script):
+docker compose --profile seed --profile agents --profile frontend up --build
+```
+
+**Windows:** `scripts/dev.sh` is a bash script and will not run in PowerShell or `cmd`. Either use
+Docker Compose directly — the same three steps the script performs — or run the script under
+[WSL2](https://learn.microsoft.com/windows/wsl/install) or Git Bash:
+
+```powershell
+docker compose up -d db redis aspire
+docker compose --profile seed run --rm seeder
+docker compose --profile agents --profile frontend up -d --build
+```
+
+No waiting between those: the seeder declares `depends_on: db: {condition: service_healthy}`, so
+Compose blocks it until Postgres is ready. Under WSL2, keep the clone inside the Linux filesystem
+(`~/`, not `/mnt/c/`) — bind-mounting across the Windows boundary is the usual cause of a very slow
+container start.
+
+The single-command form works on every platform too:
+
+```bash
 docker compose --profile seed --profile agents --profile frontend up --build
 ```
 

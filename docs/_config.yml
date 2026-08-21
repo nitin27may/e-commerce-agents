@@ -44,7 +44,12 @@ search:
   previews: 3
 
 # Aux links for the upper right navigation
+# Top-right on every page. "Run it" is first on purpose: the most common
+# reason someone opens these docs is to get the thing running, and burying
+# that behind a section click is the difference between trying it and not.
 aux_links:
+  "Run it":
+    - "/e-commerce-agents/getting-started/quick-start.html"
   "View on GitHub":
     - "//github.com/nitin27may/e-commerce-agents"
 

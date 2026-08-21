@@ -74,7 +74,7 @@ SECTIONS: tuple[Section, ...] = (
         "Getting Started",
         2,
         "Run the stack, deploy it, and fix the things that commonly break first.",
-        ("docs/deployment.md", "docs/troubleshooting.md"),
+        ("docs/quick-start.md", "docs/deployment.md", "docs/troubleshooting.md"),
     ),
     Section(
         "Concepts",
