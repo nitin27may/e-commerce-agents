@@ -24,9 +24,13 @@ cp .env.example .env          # add your OPENAI_API_KEY (or Azure OpenAI credent
 Then open **http://localhost:3000** and sign in as `alice.johnson@gmail.com` / `customer123`.
 Docker is the only requirement — no Python, .NET or Node needed.
 
-**On Windows**, `scripts/dev.sh` is a bash script and won't run in PowerShell. Use Compose directly:
+**On Windows**, `scripts/dev.sh` is a bash script and won't run in PowerShell.
+[WSL2](https://learn.microsoft.com/windows/wsl/install) gives the best experience — everything
+above works unchanged inside it. Not using WSL2? PowerShell is fine, `docker compose` is the same
+command on every platform:
 
 ```powershell
+Copy-Item .env.example .env    # then set OPENAI_API_KEY in .env
 docker compose up -d db redis aspire
 docker compose --profile seed run --rm seeder
 docker compose --profile agents --profile frontend up -d --build
@@ -105,20 +109,28 @@ cp .env.example .env
 docker compose --profile seed --profile agents --profile frontend up --build
 ```
 
-**Windows:** `scripts/dev.sh` is a bash script and will not run in PowerShell or `cmd`. Either use
-Docker Compose directly — the same three steps the script performs — or run the script under
-[WSL2](https://learn.microsoft.com/windows/wsl/install) or Git Bash:
+**Windows — recommended: WSL2.** `scripts/dev.sh` is a bash script and will not run in PowerShell
+or `cmd`. [WSL2](https://learn.microsoft.com/windows/wsl/install) gives the best experience, and if
+you already run Docker Desktop you are probably on its WSL2 backend anyway — so the macOS/Linux
+instructions above work unchanged. Two things to get right: clone inside the Linux filesystem
+(`~/`, **not** `/mnt/c/`, which is dramatically slower), and enable *Settings → Resources → WSL
+Integration* in Docker Desktop for your distro.
+
+**Windows — not using WSL2?** PowerShell works fine; nothing here needs a Linux shell, and
+`docker compose` is identical across platforms. These three lines are what `dev.sh` does, minus the
+health-check polling and the summary:
 
 ```powershell
+Copy-Item .env.example .env    # then set OPENAI_API_KEY in .env
 docker compose up -d db redis aspire
 docker compose --profile seed run --rm seeder
 docker compose --profile agents --profile frontend up -d --build
 ```
 
 No waiting between those: the seeder declares `depends_on: db: {condition: service_healthy}`, so
-Compose blocks it until Postgres is ready. Under WSL2, keep the clone inside the Linux filesystem
-(`~/`, not `/mnt/c/`) — bind-mounting across the Windows boundary is the usual cause of a very slow
-container start.
+Compose blocks it until Postgres is ready. PowerShell equivalents for the script's other flags —
+`--clean`, `--seed-only`, `--infra-only` — and the port-conflict command are tabulated in the
+[Quick Start page](https://nitinksingh.com/e-commerce-agents/getting-started/quick-start.html#not-using-wsl2-powershell-works-fine).
 
 The single-command form works on every platform too:
 
