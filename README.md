@@ -10,15 +10,32 @@
 [![PostgreSQL + pgvector](https://img.shields.io/badge/PostgreSQL-pgvector-336791.svg)](https://github.com/pgvector/pgvector)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED.svg)](https://docs.docker.com/compose/)
 
-A **multi-agent e-commerce platform** built with [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) (MAF). Ships as **two complete, working backends — Python and .NET / C#** — real implementations, not samples, developed Python-first, with .NET now at parity across the shipped surface — tools, guardrails, grounding, evaluator-facing endpoints, SSE, orchestration modes and workflows — verified by a dual-backend Playwright gate that drives the *same* frontend against both. Where the two still differ (handoff and group-chat modes, the evals harness), [`docs/parity-matrix.md`](./docs/parity-matrix.md) says so row by row rather than implying more than exists. Six specialized AI agents collaborate via **A2A protocol** to handle product discovery, orders, pricing, reviews, inventory, and customer support.
+A **multi-agent e-commerce platform** built with [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) (MAF). Six specialized AI agents collaborate over the **A2A protocol** to handle product discovery, orders, pricing, reviews, inventory and support — with **two complete, working backends, Python and .NET / C#**, behind one Next.js frontend.
+
+### Run it
+
+```bash
+git clone https://github.com/nitin27may/e-commerce-agents.git
+cd e-commerce-agents
+cp .env.example .env          # add your OPENAI_API_KEY (or Azure OpenAI credentials)
+./scripts/dev.sh              # builds, seeds, and starts everything
+```
+
+Then open **http://localhost:3000** and sign in as `alice.johnson@gmail.com` / `customer123`.
+Needs Docker. Full detail, the .NET stack, and a no-API-key option: **[Quick Start](#quick-start)**.
 
 **Generative UI, not raw JSON.** The chat surface never dumps a tool result as text or a code block. Every agent response is inspected by shape and rendered as the right interactive component: a single detailed result becomes a card, a list becomes a table, a distribution or trend becomes a chart, a status becomes a tone-coded badge — see it live in the [Screens](#screens) gallery below (review sentiment: rating distribution + 6-month trend, rendered from the same data an LLM would otherwise only describe in prose).
 
-**Pick your stack:** [`agents/python/`](./agents/python/) (see [Quick Start → Python](#run-the-python-backend) below) or [`agents/dotnet/`](./agents/dotnet/) (see [Quick Start → .NET](#run-the-net-backend) below, or [`agents/dotnet/README.md`](./agents/dotnet/README.md)) — same database schema, same prompts, same Next.js frontend for either (toggle with `NEXT_PUBLIC_BACKEND_STACK`).
+**Pick your stack:** [`agents/python/`](./agents/python/) or [`agents/dotnet/`](./agents/dotnet/) — same schema, same prompts, same frontend for either (toggle with `NEXT_PUBLIC_BACKEND_STACK`). Parity is enforced by a dual-backend test gate, and [`docs/parity-matrix.md`](./docs/parity-matrix.md) lists the remaining differences row by row.
 
 **Full documentation:** **[nitinksingh.com/e-commerce-agents](https://nitinksingh.com/e-commerce-agents/)** — the concepts library, all 34 tutorial chapters, and the architecture reference, with every diagram rendered.
 
-Companion demo repo for the AI article series on [nitinksingh.com](https://nitinksingh.com/posts/maf-v1-21-putting-it-all-together/).
+Companion demo repo for the AI article series on [nitinksingh.com](https://nitinksingh.com):
+**[MAF v1: Putting It All Together](https://nitinksingh.com/posts/maf-v1-21-putting-it-all-together/)**
+(the current Python + .NET series) and
+**[Building a Multi-Agent E-Commerce Platform — The Complete Guide](https://nitinksingh.com/posts/building-a-multi-agent-e-commerce-platform-the-complete-guide/)**
+(the original Python-only walkthrough). The articles are optional background — this repo and its
+[documentation site](https://nitinksingh.com/e-commerce-agents/) are the canonical, always-current source.
 
 ![AI shopping assistant with product cards](docs/images/shop-ai-assistant.png)
 
@@ -28,10 +45,11 @@ Companion demo repo for the AI article series on [nitinksingh.com](https://nitin
 
 | I want to... | Go here |
 |---|---|
-| Read the documentation | **[nitinksingh.com/e-commerce-agents](https://nitinksingh.com/e-commerce-agents/)** — everything below, rendered and searchable |
+| **Just run it** | [Quick Start](#quick-start) — Docker, one command |
+| Run the .NET backend instead | [Quick Start → .NET](#run-the-net-backend) |
+| Run it without an API key | [Quick Start → free and local options](#run-without-a-paid-api-key) |
+| Read the documentation | **[nitinksingh.com/e-commerce-agents](https://nitinksingh.com/e-commerce-agents/)** — rendered and searchable |
 | Learn what an agent even is — new to AI/agents | [Concepts](https://nitinksingh.com/e-commerce-agents/concepts/) — start at page 01 |
-| Run the Python backend locally | [Quick Start → Python](#run-the-python-backend) below |
-| Run the .NET backend locally | [Quick Start → .NET](#run-the-net-backend) below |
 | Understand how the agents work / add a new one | [Architecture](docs/architecture.md) · [Adding an Agent](docs/adding-an-agent.md) |
 | Use the MCP server | [MCP Integration](docs/mcp-integration.md) |
 | Follow the step-by-step tutorial series | [tutorials/README.md](./tutorials/README.md) |
@@ -70,6 +88,31 @@ cp .env.example .env
 # Option B — plain Docker Compose (equivalent, no script):
 docker compose --profile seed --profile agents --profile frontend up --build
 ```
+
+### Run without a paid API key
+
+Nothing above requires an OpenAI subscription. Any OpenAI-compatible endpoint works through the
+same code path — set `LLM_BASE_URL` in `.env` and leave `LLM_PROVIDER=openai`:
+
+```dotenv
+# GitHub Models — free with a GitHub PAT
+LLM_PROVIDER=openai
+LLM_BASE_URL=https://models.inference.ai.azure.com
+OPENAI_API_KEY=<a GitHub PAT with the models:read scope>
+LLM_MODEL=gpt-4o
+
+# Ollama — fully local, no account, no key
+LLM_PROVIDER=openai
+LLM_BASE_URL=http://localhost:11434/v1
+OPENAI_API_KEY=ollama          # any non-empty string — Ollama doesn't check it
+LLM_MODEL=llama3.1:8b          # must be a tool-calling-capable model
+```
+
+**Gotcha worth knowing before you pick a local model:** every specialist here depends on
+tool-calling. Many small or heavily-quantized models advertise an OpenAI-compatible chat API but
+have unreliable function-calling, and the failure is quiet — the agent simply stops calling tools
+and starts inventing answers instead of erroring. Llama 3.1+, Qwen2.5 and tool-tagged Mistral
+builds are known to work. See [Setup](./tutorials/00-setup/) for the full guidance.
 
 ### Run the .NET backend
 
