@@ -105,8 +105,11 @@ def _bind_session_to_conversation(conversation_id: str | None) -> None:
     in the request *body*, and is often created a few lines above rather than
     supplied at all.
 
-    Anonymous callers keep an empty id on purpose — no conversation row is
-    created for them, so there is nothing to rehydrate.
+    Callers must pass ``None`` for anonymous requests. ``body.conversation_id``
+    is client-supplied and is only ownership-checked on the authed path, so
+    binding it for an anonymous caller would let anyone rehydrate any
+    conversation by its UUID — the specialist's rehydration query trusts this
+    id. Anonymous chat has no conversation row of its own anyway.
     """
     if conversation_id:
         current_session_id.set(conversation_id)
@@ -306,7 +309,7 @@ async def chat(
             )
             _ = recent_orders  # context injected via ContextProvider
 
-    _bind_session_to_conversation(conversation_id)
+    _bind_session_to_conversation(None if is_anon else conversation_id)
 
     from orchestrator.modes import RunContext, UnknownModeError, get_mode
     from shared.config import settings
@@ -451,7 +454,7 @@ async def chat_stream(
             _ = recent_orders
 
     agents_involved: list[str] = ["orchestrator"]
-    _bind_session_to_conversation(conversation_id)
+    _bind_session_to_conversation(None if is_anon else conversation_id)
     ctx = RunContext(history=history, conversation_id=conversation_id)
 
     async def event_generator() -> AsyncGenerator[str, None]:
