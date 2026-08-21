@@ -37,7 +37,7 @@ public sealed class ProductToolsTests : IAsyncLifetime
     {
         var settings = new AgentSettings { DatabaseUrl = _pg.ConnectionString, OpenAiApiKey = "test-key" };
         _pool = new DatabasePool(settings);
-        _tools = new ProductTools(_pool, EmbeddingClientFactory.CreateEmbeddingClient(settings));
+        _tools = new ProductTools(_pool, EmbeddingClientFactory.CreateProvider(settings));
         await SeedProductsAsync();
 
         // ivfflat is an approximate-nearest-neighbor index; with only a handful of

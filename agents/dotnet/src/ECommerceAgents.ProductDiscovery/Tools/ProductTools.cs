@@ -1,4 +1,5 @@
 using Dapper;
+using ECommerceAgents.Shared.Agents;
 using ECommerceAgents.Shared.Data;
 using Microsoft.Extensions.AI;
 using OpenAI.Embeddings;
@@ -14,10 +15,10 @@ namespace ECommerceAgents.ProductDiscovery.Tools;
 /// same so both stacks answer equivalent queries against the same
 /// schema.
 /// </summary>
-public sealed class ProductTools(DatabasePool pool, EmbeddingClient embeddingClient)
+public sealed class ProductTools(DatabasePool pool, IEmbeddingProvider embeddingProvider)
 {
     private readonly DatabasePool _pool = pool;
-    private readonly EmbeddingClient _embeddingClient = embeddingClient;
+    private readonly IEmbeddingProvider _embeddingProvider = embeddingProvider;
 
     /// <summary>
     /// Whitelist of allowed <c>ORDER BY</c> clauses. Keys come from the
@@ -319,9 +320,7 @@ public sealed class ProductTools(DatabasePool pool, EmbeddingClient embeddingCli
     /// Avoids needing a native Npgsql vector type mapping.</summary>
     private async Task<string> EmbedAsync(string text)
     {
-        var response = await _embeddingClient.GenerateEmbeddingAsync(text);
-        var values = response.Value.ToFloats().ToArray();
-        return "[" + string.Join(",", values.Select(v => v.ToString(CultureInfo.InvariantCulture))) + "]";
+        return await _embeddingProvider.EmbedAsVectorLiteralAsync(text);
     }
 
     private static string Truncate(string value, int max) =>

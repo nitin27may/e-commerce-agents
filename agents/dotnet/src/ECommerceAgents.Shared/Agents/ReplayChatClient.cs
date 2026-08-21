@@ -33,10 +33,18 @@ namespace ECommerceAgents.Shared.Agents;
 public sealed class ReplayChatClient : IChatClient
 {
     private readonly string _fixturesDir;
+    private readonly IChatClient? _recorder;
 
-    public ReplayChatClient(string fixturesDir)
+    /// <param name="recorder">
+    /// When supplied, a fixture miss calls this real provider and records the
+    /// answer instead of throwing — the twin of Python's <c>RECORD=true</c>.
+    /// Null means a miss is fatal, which is the normal mode: a run that can
+    /// quietly reach the network is not a deterministic run.
+    /// </param>
+    public ReplayChatClient(string fixturesDir, IChatClient? recorder = null)
     {
         _fixturesDir = fixturesDir;
+        _recorder = recorder;
         Directory.CreateDirectory(_fixturesDir);
     }
 
@@ -65,7 +73,18 @@ public sealed class ReplayChatClient : IChatClient
 
         if (!File.Exists(path))
         {
-            throw new FixtureMissingException(key, _fixturesDir);
+            if (_recorder is null)
+            {
+                throw new FixtureMissingException(key, _fixturesDir);
+            }
+
+            // Record on miss, not on every call. Re-running a recording pass
+            // against a populated directory therefore *replays* rather than
+            // re-recording — the same semantics as Python, and the same trap:
+            // to genuinely re-record a suite, delete its fixtures first.
+            var recorded = await _recorder.GetResponseAsync(messages, options, cancellationToken);
+            await RecordAsync(messages, options, recorded, cancellationToken);
+            return recorded;
         }
 
         using var doc = JsonDocument.Parse(await File.ReadAllTextAsync(path, cancellationToken));

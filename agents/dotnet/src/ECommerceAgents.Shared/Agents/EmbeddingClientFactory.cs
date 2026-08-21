@@ -15,6 +15,23 @@ namespace ECommerceAgents.Shared.Agents;
 /// </summary>
 public static class EmbeddingClientFactory
 {
+    /// <summary>
+    /// The embedding provider for the configured LLM provider.
+    /// </summary>
+    /// <remarks>
+    /// Prefer this over <see cref="CreateEmbeddingClient"/>: it is the only
+    /// entry point that honours <c>LLM_PROVIDER=replay</c>. Resolving the
+    /// concrete client directly is what made product-discovery fail to start
+    /// under replay, since a sealed SDK type has no offline implementation.
+    /// </remarks>
+    public static IEmbeddingProvider CreateProvider(AgentSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        return string.Equals(settings.LlmProvider, "replay", StringComparison.OrdinalIgnoreCase)
+            ? new ReplayEmbeddingProvider()
+            : new OpenAIEmbeddingProvider(CreateEmbeddingClient(settings));
+    }
+
     public static EmbeddingClient CreateEmbeddingClient(AgentSettings settings)
     {
         if (string.Equals(settings.LlmProvider, "azure", StringComparison.OrdinalIgnoreCase))
