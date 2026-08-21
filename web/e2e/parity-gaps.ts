@@ -42,8 +42,15 @@ export const PARITY_GAPS: Record<BackendStack, Record<string, string>> = {
   },
 
   dotnet: {
-    "a grounded answer renders the grounding badge":
-      "#33 PR 7 — no grounding subsystem, so no grounding SSE frame and no grounding field on ChatResponse",
+    // Empty. Every surface this gate checks is served by both backends.
+    //
+    // This is the exit criterion Phase 14 was written around: not a test
+    // count and not a row in docs/parity-matrix.md, but this object being
+    // empty while every test above still asserts presence. Items that are
+    // still python-first (handoff and group-chat modes, magentic, the
+    // evals harness) are tracked on the umbrella issue — they are absent
+    // from this gate because no test here exercises them, which is an
+    // honest gap in coverage, not a claim that they exist.
   },
 };
 

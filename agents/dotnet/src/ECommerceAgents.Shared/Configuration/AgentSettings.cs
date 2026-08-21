@@ -40,6 +40,20 @@ public sealed record AgentSettings
     public int RateLimitMaxRequests { get; init; } = 30;
     public double RateLimitWindowSeconds { get; init; } = 60.0;
 
+    // ── Grounding (issue #33 PR 7) — .NET twin of Python's GROUNDING_MODE ──
+    /// <summary>
+    /// "off" | "observe" | "annotate". Defaults to annotate, matching Python.
+    /// </summary>
+    /// <remarks>
+    /// Python also has "enforce", which strips unverified card blocks and
+    /// corrects prices from the database row before the response leaves. Not
+    /// implemented here yet, and <see cref="AgentSettingsLoader"/> rejects it
+    /// at startup rather than accepting it: a mode that is advertised but
+    /// silently behaves like "annotate" is the exact failure this repo already
+    /// fixed once, when GUARDRAILS_BLOCK_ON_INJECTION did not block.
+    /// </remarks>
+    public string GroundingMode { get; init; } = "annotate";
+
     // ── Cost budget (issue #30) — .NET twin of Python's COST_BUDGET_* ──
     /// <summary>"off" | "observe" | "enforce". Defaults to observe, matching Python.</summary>
     public string CostBudgetMode { get; init; } = "observe";

@@ -40,6 +40,39 @@ async function login(page: Page) {
   await page.fill('input[type="password"]', CUSTOMER.password);
   await page.click('button[type="submit"]');
   await page.waitForURL(/\/(chat|products)/, { timeout: 15000 });
+  await assertFrontendTalksToOrchUrl(page);
+}
+
+/**
+ * Fails loudly when the frontend under test is pointed at a *different*
+ * orchestrator than `ORCH_URL`.
+ *
+ * This is not hypothetical. `NEXT_PUBLIC_API_URL` is inlined at build time, so
+ * a second dev server started while a first one's build directory is warm
+ * boots in milliseconds off that cache and serves the first one's backend URL.
+ * The run then logs in against backend A while every API-level assertion here
+ * queries backend B — and because the DOM-level tests only need *a* working
+ * backend, the suite reports a green .NET run that never touched .NET.
+ *
+ * That exact false pass happened twice while building this gate. The token is
+ * the cheapest discriminator: it is signed by whichever backend served the
+ * login, so a 401 from `ORCH_URL` means the two are not the same process.
+ */
+async function assertFrontendTalksToOrchUrl(page: Page) {
+  const token = await page.evaluate(
+    () => localStorage.getItem("ecommerce_access_token") ?? "",
+  );
+  const probe = await page.request.get(`${ORCH_URL}/api/runs`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(
+    probe.status(),
+    `the frontend at ${test.info().project.use.baseURL} issued a token that ` +
+      `ORCH_URL (${ORCH_URL}) rejects, so they are different backends. ` +
+      `This run would test one backend while claiming to test the other — ` +
+      `set E2E_BASE_URL (not PLAYWRIGHT_BASE_URL) to the frontend built for ` +
+      `BACKEND_STACK=${BACKEND}.`,
+  ).not.toBe(401);
 }
 
 /**

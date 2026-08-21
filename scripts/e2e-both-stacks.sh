@@ -20,6 +20,14 @@
 # issued by one backend is presented to the other. Each stack has to build its
 # own frontend image, which is what `up --build` here does.
 #
+# The same trap has a second form worth naming, because it produced a green
+# .NET run that never touched .NET: starting a second `next dev` out of band
+# reuses the first one's warm build directory and serves the first one's baked
+# API URL, and the base-URL override is `E2E_BASE_URL` — a run that sets some
+# other variable silently drives whichever frontend is on :3000. Both are now
+# caught at login by `assertFrontendTalksToOrchUrl` in the parity spec, and a
+# side-by-side dev setup needs `NEXT_DIST_DIR` (see web/next.config.ts).
+#
 # Usage:
 #   scripts/e2e-both-stacks.sh                  # both backends, whole suite
 #   scripts/e2e-both-stacks.sh --only dotnet    # one backend

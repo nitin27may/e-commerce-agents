@@ -1,11 +1,14 @@
 using Dapper;
 using ECommerceAgents.Orchestrator.Modes;
-using ECommerceAgents.Shared.Orchestration;
+using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Data;
+using ECommerceAgents.Shared.Grounding;
+using ECommerceAgents.Shared.Orchestration;
 using ECommerceAgents.Shared.RateLimiting;
 using ECommerceAgents.Shared.Telemetry;
 using Microsoft.Agents.AI;
+using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -72,7 +75,12 @@ public static class ChatRoutes
     private static bool NeedsRegistry(string? mode) =>
         !string.IsNullOrWhiteSpace(mode)
         && !string.Equals(mode, ModeRegistry.DefaultMode, StringComparison.OrdinalIgnoreCase);
-    public sealed record ChatResponse(string Response, string ConversationId, List<string> AgentsInvolved);
+    public sealed record ChatResponse(
+        string Response,
+        string ConversationId,
+        List<string> AgentsInvolved,
+        object? Grounding = null
+    );
 
     public static IEndpointRouteBuilder MapChatRoutes(this IEndpointRouteBuilder routes)
     {
@@ -91,7 +99,9 @@ public static class ChatRoutes
         AIAgent agent,
         DatabasePool pool,
         UsageRecorder usage,
-        ModeRegistry registry
+        ModeRegistry registry,
+        AgentSettings settings,
+        ILoggerFactory loggers
     )
     {
         if (string.IsNullOrWhiteSpace(request?.Message))
@@ -145,11 +155,15 @@ public static class ChatRoutes
         }
         sw.Stop();
 
+        var grounding = await VerifyGroundingAsync(responseText, settings, pool, loggers);
+
         await PersistAssistantMessageAsync(
             pool, usage, ctx, request.Message, responseText, agentsInvolved, (int)sw.ElapsedMilliseconds
         );
 
-        return Results.Ok(new ChatResponse(responseText, ctx.ConversationId, agentsInvolved));
+        return Results.Ok(new ChatResponse(
+            responseText, ctx.ConversationId, agentsInvolved, grounding?.ToWire()
+        ));
     }
 
     private static async Task StreamAsync(
@@ -157,7 +171,9 @@ public static class ChatRoutes
         AIAgent agent,
         DatabasePool pool,
         UsageRecorder usage,
-        ModeRegistry registry
+        ModeRegistry registry,
+        AgentSettings settings,
+        ILoggerFactory loggers
     )
     {
         var request = await context.Request.ReadFromJsonAsync<ChatRequest>();
@@ -313,6 +329,12 @@ public static class ChatRoutes
         }
         sw.Stop();
 
+        var groundingReport = await VerifyGroundingAsync(responseText.ToString(), settings, pool, loggers);
+        if (groundingReport is not null)
+        {
+            await WriteFrameAsync("grounding", JsonSerializer.Serialize(groundingReport.ToWire()));
+        }
+
         deltaChannel.Writer.Complete();
         await forwardDeltasTask;
 
@@ -451,6 +473,63 @@ public static class ChatRoutes
     private sealed class SynchronousProgress<T>(Action<T> handler) : IProgress<T>
     {
         public void Report(T value) => handler(value);
+    }
+
+    /// <summary>
+    /// Checks an answer's product/order claims against the database, returning
+    /// the report only when the configured mode surfaces it to the client.
+    /// </summary>
+    /// <remarks>
+    /// Three modes, matching <c>shared/grounding/middleware.py</c>:
+    /// <c>off</c> skips the work entirely, <c>observe</c> verifies and logs but
+    /// attaches nothing (so a deployment can measure grounding before showing
+    /// it to users), and <c>annotate</c> — the default — attaches the report.
+    /// Python's <c>enforce</c> is refused at startup; see
+    /// <see cref="AgentSettings.GroundingMode"/>.
+    ///
+    /// Returns null when the answer makes no checkable claim, so the client
+    /// renders no badge rather than a misleading "0 facts verified" on a
+    /// message that never claimed anything.
+    /// </remarks>
+    private static async Task<GroundingReport?> VerifyGroundingAsync(
+        string? text,
+        AgentSettings settings,
+        DatabasePool pool,
+        ILoggerFactory loggers
+    )
+    {
+        var mode = settings.GroundingMode;
+        if (string.Equals(mode, "off", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var claims = ClaimExtractor.Extract(text);
+        if (claims.Total == 0)
+        {
+            return null;
+        }
+
+        GroundingReport report;
+        try
+        {
+            report = await new GroundingVerifier(pool).VerifyAsync(claims);
+        }
+        catch (Exception)
+        {
+            // Grounding is a report about an answer, not part of producing it —
+            // a failure here must not take down a response the user is already
+            // reading.
+            return null;
+        }
+
+        loggers.CreateLogger("grounding").LogInformation(
+            "grounding.verified total={Total} verified={Verified} unverified={Unverified} mode={Mode}",
+            report.Total, report.Verified, report.Unverified, mode
+        );
+
+        // observe measures without showing: verified above, withheld here.
+        return string.Equals(mode, "observe", StringComparison.OrdinalIgnoreCase) ? null : report;
     }
 
     private sealed record ConversationContext(bool IsAnon, string ConversationId, Guid? UserId, List<HistoryEntry> History);
