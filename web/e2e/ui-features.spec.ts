@@ -93,7 +93,7 @@ test.describe("Rich Chat", () => {
 
   test("chat renders formatted response with markdown", async ({ page }) => {
     await page.goto("/chat");
-    const input = page.getByPlaceholder(/message|type/i).first();
+    const input = page.locator("textarea").first();
     await input.fill("What categories of products do you sell?");
     await input.press("Enter");
 

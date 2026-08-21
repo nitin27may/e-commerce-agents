@@ -94,12 +94,12 @@ test.describe("Customer Role (Alice)", () => {
   test("chat page loads with conversation panel", async ({ page }) => {
     await page.goto("/chat");
     await expect(page.getByText(/conversations|new chat/i).first()).toBeVisible();
-    await expect(page.getByPlaceholder(/message|type/i).first()).toBeVisible();
+    await expect(page.locator("textarea").first()).toBeVisible();
   });
 
   test("can send a chat message", async ({ page }) => {
     await page.goto("/chat");
-    const input = page.getByPlaceholder(/message|type/i).first();
+    const input = page.locator("textarea").first();
     await input.fill("Hello, what can you help me with?");
     await input.press("Enter");
     // User message should appear in the chat area
@@ -255,7 +255,7 @@ test.describe("Power User Role", () => {
 
   test("power user can access chat", async ({ page }) => {
     await page.goto("/chat");
-    await expect(page.getByPlaceholder(/message|type/i).first()).toBeVisible();
+    await expect(page.locator("textarea").first()).toBeVisible();
   });
 
   test("power user can browse marketplace", async ({ page }) => {
@@ -283,7 +283,7 @@ test.describe("Seller Role", () => {
 
   test("seller can access chat", async ({ page }) => {
     await page.goto("/chat");
-    await expect(page.getByPlaceholder(/message|type/i).first()).toBeVisible();
+    await expect(page.locator("textarea").first()).toBeVisible();
   });
 
   test("seller can browse products", async ({ page }) => {
