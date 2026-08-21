@@ -1,5 +1,7 @@
 using Microsoft.Agents.AI.Workflows;
 
+using ECommerceAgents.Shared.Orchestration;
+
 namespace ECommerceAgents.Shared.Workflows;
 
 /// <summary>
@@ -71,7 +73,11 @@ public sealed class ReturnAndReplaceWorkflow
 
     // ─────────────────────── execute ─────────────────────────
 
-    public async Task<WorkflowState> ExecuteAsync(WorkflowState state, CancellationToken ct = default)
+    public async Task<WorkflowState> ExecuteAsync(
+        WorkflowState state,
+        CancellationToken ct = default,
+        IProgress<OrchestrationEvent>? events = null
+    )
     {
         ArgumentNullException.ThrowIfNull(state);
 
@@ -101,12 +107,33 @@ public sealed class ReturnAndReplaceWorkflow
         var finalState = state;
         await foreach (var evt in run.WatchStreamAsync(ct))
         {
+            switch (evt)
+            {
+                case ExecutorInvokedEvent invoked:
+                    events?.Report(OrchestrationEvent.NodeEnter(invoked.ExecutorId));
+                    break;
+                case ExecutorCompletedEvent completed:
+                    events?.Report(OrchestrationEvent.NodeExit(completed.ExecutorId));
+                    break;
+                case ExecutorFailedEvent failed:
+                    events?.Report(OrchestrationEvent.NodeError(
+                        failed.ExecutorId,
+                        failed.Data?.Message ?? "executor failed"
+                    ));
+                    break;
+            }
+
             if (evt is WorkflowOutputEvent output && output.Data is WorkflowState s)
             {
                 finalState = s;
             }
             if (evt is RequestInfoEvent requestInfo)
             {
+                // The pause is a first-class outcome, not an absence of one —
+                // the UI needs to know a human is now the blocker, which is
+                // exactly what /runs renders an approval prompt from.
+                events?.Report(OrchestrationEvent.RequestInfo("hitl-gate", requestInfo.Request.RequestId));
+
                 // Pause: keep the run alive (do NOT dispose) and cache it —
                 // ResumeAsync retrieves it by OrderId later, possibly in an
                 // entirely separate request.

@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Microsoft.Agents.AI.Workflows;
 
+using ECommerceAgents.Shared.Orchestration;
+
 namespace ECommerceAgents.Shared.Workflows;
 
 /// <summary>
@@ -37,7 +39,11 @@ public sealed class PrePurchaseWorkflow
         _tools = tools ?? throw new ArgumentNullException(nameof(tools));
     }
 
-    public async Task<ResearchState> ExecuteAsync(ResearchState state, CancellationToken ct = default)
+    public async Task<ResearchState> ExecuteAsync(
+        ResearchState state,
+        CancellationToken ct = default,
+        IProgress<OrchestrationEvent>? events = null
+    )
     {
         ArgumentNullException.ThrowIfNull(state);
 
@@ -60,6 +66,25 @@ public sealed class PrePurchaseWorkflow
         var finalState = state;
         await foreach (var evt in run.WatchStreamAsync(ct))
         {
+            switch (evt)
+            {
+                case ExecutorInvokedEvent invoked:
+                    events?.Report(OrchestrationEvent.NodeEnter(invoked.ExecutorId));
+                    break;
+                case ExecutorCompletedEvent completed:
+                    events?.Report(OrchestrationEvent.NodeExit(completed.ExecutorId));
+                    break;
+                case ExecutorFailedEvent failed:
+                    // Reported rather than thrown: one failed node in a fan-out
+                    // shouldn't blank the whole graph, and the workflow already
+                    // records the error into its own state.
+                    events?.Report(OrchestrationEvent.NodeError(
+                        failed.ExecutorId,
+                        failed.Data?.Message ?? "executor failed"
+                    ));
+                    break;
+            }
+
             if (evt is WorkflowOutputEvent output && output.Data is ResearchState s)
             {
                 finalState = s;
