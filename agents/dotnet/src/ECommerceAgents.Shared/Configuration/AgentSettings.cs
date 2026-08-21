@@ -34,6 +34,18 @@ public sealed record AgentSettings
     /// (<c>azure</c> keeps its own endpoint setting).
     /// </summary>
     public string LlmBaseUrl { get; init; } = "";
+
+    // ── Rate limiting (issue #30) — .NET twin of Python's RATE_LIMIT_* ──
+    public bool RateLimitEnabled { get; init; } = true;
+    public int RateLimitMaxRequests { get; init; } = 30;
+    public double RateLimitWindowSeconds { get; init; } = 60.0;
+
+    // ── Cost budget (issue #30) — .NET twin of Python's COST_BUDGET_* ──
+    /// <summary>"off" | "observe" | "enforce". Defaults to observe, matching Python.</summary>
+    public string CostBudgetMode { get; init; } = "observe";
+
+    /// <summary>USD ceiling for a single agent run; null disables the ceiling.</summary>
+    public double? CostBudgetUsdPerRun { get; init; }
     public string EmbeddingModel { get; init; } = "text-embedding-3-small";
     public string OpenAiApiKey { get; init; } = "";
 

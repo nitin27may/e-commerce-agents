@@ -39,6 +39,14 @@ public static class AgentSettingsLoader
             return double.TryParse(raw, out var parsed) ? parsed : fallback;
         }
 
+        double? GetNullableDouble(string key)
+        {
+            var raw = Get(key);
+            return string.IsNullOrWhiteSpace(raw) ? null
+                : double.TryParse(raw, out var parsed) ? parsed
+                : null;
+        }
+
         int GetInt(string key, int fallback)
         {
             var raw = Get(key);
@@ -62,6 +70,11 @@ public static class AgentSettingsLoader
             EmbeddingModel = Get("EMBEDDING_MODEL", "text-embedding-3-small"),
             OpenAiApiKey = Get("OPENAI_API_KEY"),
             LlmBaseUrl = Get("LLM_BASE_URL"),
+            RateLimitEnabled = GetBool("RATE_LIMIT_ENABLED", true),
+            RateLimitMaxRequests = GetInt("RATE_LIMIT_MAX_REQUESTS", 30),
+            RateLimitWindowSeconds = GetDouble("RATE_LIMIT_WINDOW_SECONDS", 60.0),
+            CostBudgetMode = Get("COST_BUDGET_MODE", "observe"),
+            CostBudgetUsdPerRun = GetNullableDouble("COST_BUDGET_USD_PER_RUN"),
             Temperature = GetDouble("LLM_TEMPERATURE", 0.2),
 
             AzureOpenAiEndpoint = Get("AZURE_OPENAI_ENDPOINT"),

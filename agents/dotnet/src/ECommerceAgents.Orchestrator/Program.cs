@@ -4,6 +4,7 @@ using ECommerceAgents.Shared.A2A;
 using ECommerceAgents.Shared.Auth;
 using ECommerceAgents.Shared.Checkpoints;
 using ECommerceAgents.Shared.Configuration;
+using ECommerceAgents.Shared.RateLimiting;
 using ECommerceAgents.Shared.Sessions;
 using ECommerceAgents.Shared.ContextProviders;
 using ECommerceAgents.Shared.Data;
@@ -70,6 +71,7 @@ builder.Services.AddSingleton<ISessionHistoryProvider>(sp =>
 builder.Services.AddSingleton<ICheckpointStorage>(sp =>
     CheckpointStorageFactory.Build(settings, sp.GetRequiredService<DatabasePool>()));
 
+builder.Services.AddSingleton<SlidingWindowRateLimiter>();
 builder.Services.AddSingleton<OrchestratorTools>();
 builder.Services.AddSingleton<AIAgent>(sp =>
 {

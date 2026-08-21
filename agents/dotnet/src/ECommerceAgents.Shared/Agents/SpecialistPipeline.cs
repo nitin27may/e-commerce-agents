@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
+using ECommerceAgents.Shared.Cost;
 using ECommerceAgents.Shared.Guardrails;
 using ECommerceAgents.Shared.Middleware;
 using Microsoft.Agents.AI;
@@ -72,6 +73,11 @@ public static class SpecialistPipeline
             builder = builder.Use(GuardrailGateRun(settings, guardrailLogger), GuardrailGateStreaming(settings, guardrailLogger));
         }
 
+        if (!string.Equals(settings.CostBudgetMode, "off", StringComparison.OrdinalIgnoreCase))
+        {
+            builder = builder.Use(CostBudgetGate(settings, guardrailLogger), CostBudgetGateStreaming(settings, guardrailLogger));
+        }
+
         builder = builder.Use(RedactInboundMessages(redactor));
 
         if (settings.GuardrailsEnabled && settings.GuardrailsOutputSanitization)
@@ -84,6 +90,121 @@ public static class SpecialistPipeline
             .Use(HitlCheck(hitlGate, agentName))
             .Use(RecordSteps())
             .Build(services);
+    }
+
+    /// <summary>
+    /// Per-run LLM spend ceiling — the .NET twin of Python's
+    /// <c>shared/guardrails/cost_budget_middleware.py</c> (issue #30).
+    /// </summary>
+    /// <remarks>
+    /// Tallies estimated cost per model call into
+    /// <see cref="RequestContext.AddRunCost"/>. In <c>observe</c> it only logs;
+    /// in <c>enforce</c> it refuses the *next* call once the running total has
+    /// passed <see cref="AgentSettings.CostBudgetUsdPerRun"/>.
+    ///
+    /// Note the ceiling is checked before a call and charged after it, so a
+    /// single run can overshoot by at most one call — you cannot know a call's
+    /// cost until it returns. Same behaviour as Python's, and worth stating
+    /// because "budget" implies a hard cap it cannot literally provide.
+    /// </remarks>
+    private static Func<
+        IEnumerable<ChatMessage>,
+        AgentSession?,
+        AgentRunOptions?,
+        AIAgent,
+        CancellationToken,
+        Task<AgentResponse>
+    > CostBudgetGate(AgentSettings settings, ILogger logger) =>
+        async (messages, session, options, innerAgent, ct) =>
+        {
+            var ceiling = settings.CostBudgetUsdPerRun;
+            var enforcing = string.Equals(settings.CostBudgetMode, "enforce", StringComparison.OrdinalIgnoreCase);
+
+            if (enforcing && ceiling is { } limit && RequestContext.CurrentRunCostUsd >= limit)
+            {
+                logger.LogWarning(
+                    "cost_budget.refused spent_usd={Spent:F4} ceiling_usd={Ceiling:F4}",
+                    RequestContext.CurrentRunCostUsd, limit
+                );
+                RequestContext.SetGuardrailFlag("cost_budget_exceeded", true);
+                return new AgentResponse(new ChatMessage(
+                    ChatRole.Assistant,
+                    "I've reached the cost limit for this request and can't continue. Please try a narrower question."
+                ));
+            }
+
+            var response = await innerAgent.RunAsync(messages, session, options, cancellationToken: ct);
+
+            var usage = response.Usage;
+            if (usage is not null)
+            {
+                var spent = RequestContext.AddRunCost(CostEstimator.Estimate(
+                    settings.LlmModel,
+                    (int)(usage.InputTokenCount ?? 0),
+                    (int)(usage.OutputTokenCount ?? 0)
+                ));
+
+                if (ceiling is { } cap && spent >= cap)
+                {
+                    logger.LogWarning(
+                        "cost_budget.exceeded spent_usd={Spent:F4} ceiling_usd={Ceiling:F4} mode={Mode}",
+                        spent, cap, settings.CostBudgetMode
+                    );
+                    RequestContext.SetGuardrailFlag("cost_budget_exceeded", true);
+                }
+            }
+
+            return response;
+        };
+
+    /// <summary>
+    /// Streaming half of the cost gate. Refusal before the call works the same
+    /// way; the tally afterwards is best-effort, since usage arrives on the
+    /// final update and a stream already on the wire cannot be un-sent — the
+    /// same trade-off output moderation documents for streamed responses.
+    /// </summary>
+    private static Func<
+        IEnumerable<ChatMessage>,
+        AgentSession?,
+        AgentRunOptions?,
+        AIAgent,
+        CancellationToken,
+        IAsyncEnumerable<AgentResponseUpdate>
+    > CostBudgetGateStreaming(AgentSettings settings, ILogger logger) =>
+        (messages, session, options, innerAgent, ct) =>
+            RunCostGuardedStream(messages, session, options, innerAgent, settings, logger, ct);
+
+    private static async IAsyncEnumerable<AgentResponseUpdate> RunCostGuardedStream(
+        IEnumerable<ChatMessage> messages,
+        AgentSession? session,
+        AgentRunOptions? options,
+        AIAgent innerAgent,
+        AgentSettings settings,
+        ILogger logger,
+        [EnumeratorCancellation] CancellationToken ct
+    )
+    {
+        var ceiling = settings.CostBudgetUsdPerRun;
+        var enforcing = string.Equals(settings.CostBudgetMode, "enforce", StringComparison.OrdinalIgnoreCase);
+
+        if (enforcing && ceiling is { } limit && RequestContext.CurrentRunCostUsd >= limit)
+        {
+            logger.LogWarning(
+                "cost_budget.refused spent_usd={Spent:F4} ceiling_usd={Ceiling:F4}",
+                RequestContext.CurrentRunCostUsd, limit
+            );
+            RequestContext.SetGuardrailFlag("cost_budget_exceeded", true);
+            yield return new AgentResponseUpdate(
+                ChatRole.Assistant,
+                "I've reached the cost limit for this request and can't continue. Please try a narrower question."
+            );
+            yield break;
+        }
+
+        await foreach (var update in innerAgent.RunStreamingAsync(messages, session, options, cancellationToken: ct))
+        {
+            yield return update;
+        }
     }
 
     /// <summary>
