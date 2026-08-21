@@ -345,4 +345,74 @@ public sealed class ChatRoutesTests : IAsyncLifetime
         var messageCount = await conn.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM messages");
         messageCount.Should().Be(0);
     }
+
+    // ─────────────── orchestration mode (#33 PR 3) ───────────────
+
+    /// <summary>
+    /// The frontend sends `mode` on every request. Before ChatRequest had a
+    /// Mode property, System.Text.Json dropped it: selecting a workflow mode
+    /// produced a plain tool-router run with no signal that anything had been
+    /// ignored. Refusing is strictly better than answering a different
+    /// question silently.
+    /// </summary>
+    [Fact]
+    public async Task SendAsync_UnsupportedMode_IsRejectedRatherThanSilentlyDowngraded()
+    {
+        var chatClient = new FakeChatClient().EnqueueResponse("should never be reached");
+        using var client = ClientFor(chatClient);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/chat",
+            new { message = "Should I buy this?", mode = "workflow:pre-purchase" }
+        );
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        payload.GetProperty("requested_mode").GetString().Should().Be("workflow:pre-purchase");
+        payload.GetProperty("supported_modes").EnumerateArray()
+            .Select(e => e.GetString()).Should().Contain("tool");
+
+        chatClient.CallCount.Should().Be(0, "an unsupported mode must not reach the model");
+    }
+
+    [Fact]
+    public async Task StreamAsync_UnsupportedMode_IsRejectedRatherThanSilentlyDowngraded()
+    {
+        var chatClient = new FakeChatClient().EnqueueResponse("should never be reached");
+        using var client = ClientFor(chatClient);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/chat/stream",
+            new { message = "Should I buy this?", mode = "group-chat" }
+        );
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        chatClient.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task SendAsync_SupportedMode_IsAccepted()
+    {
+        var chatClient = new FakeChatClient().EnqueueResponse("routed");
+        using var client = ClientFor(chatClient);
+
+        var response = await client.PostAsJsonAsync("/api/chat", new { message = "hi", mode = "tool" });
+
+        response.EnsureSuccessStatusCode();
+        chatClient.CallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task SendAsync_NoMode_StillWorks()
+    {
+        // Omitting mode must stay valid — the storefront assistant and every
+        // existing client send no mode at all.
+        var chatClient = new FakeChatClient().EnqueueResponse("default");
+        using var client = ClientFor(chatClient);
+
+        var response = await client.PostAsJsonAsync("/api/chat", new { message = "hi" });
+
+        response.EnsureSuccessStatusCode();
+        chatClient.CallCount.Should().Be(1);
+    }
 }

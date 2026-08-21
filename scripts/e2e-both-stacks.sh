@@ -12,6 +12,14 @@
 # same ports as docker-compose.yml (3000, 5432, 6379, 8080-8085, 8090, 9001),
 # so both cannot be up at once.
 #
+# Why this has to go through compose rather than pointing a running frontend at
+# the other orchestrator: NEXT_PUBLIC_* variables are inlined by Next at BUILD
+# time, so the API URL is baked into the JS chunks. Starting the existing build
+# with a different NEXT_PUBLIC_API_URL changes nothing — it still calls the
+# origin it was built against, which shows up as a confusing 401 when a token
+# issued by one backend is presented to the other. Each stack has to build its
+# own frontend image, which is what `up --build` here does.
+#
 # Usage:
 #   scripts/e2e-both-stacks.sh                  # both backends, whole suite
 #   scripts/e2e-both-stacks.sh --only dotnet    # one backend

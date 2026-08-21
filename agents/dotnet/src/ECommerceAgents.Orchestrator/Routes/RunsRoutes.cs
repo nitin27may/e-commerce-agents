@@ -1,4 +1,5 @@
 using Dapper;
+using System.Text.Json;
 using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Data;
 using Microsoft.AspNetCore.Builder;
@@ -22,7 +23,115 @@ public static class RunsRoutes
     public static IEndpointRouteBuilder MapRunsRoutes(this IEndpointRouteBuilder routes)
     {
         routes.MapGet("/api/runs", ListRuns);
+        routes.MapGet("/api/runs/{runId}/checkpoints", GetRunCheckpoints);
         return routes;
+    }
+
+    /// <summary>
+    /// <c>GET /api/runs/{runId}/checkpoints</c> — checkpoints saved during a
+    /// run, plus its latest HITL request. Mirrors Python's
+    /// <c>get_run_checkpoints</c>.
+    /// </summary>
+    /// <remarks>
+    /// Without this route <c>/runs</c> renders perfectly and its checkpoint and
+    /// approval panels stay permanently empty, because the client absorbs the
+    /// 404 in a <c>.catch(() =&gt; {})</c> — the page looks healthy and is
+    /// quietly incomplete. See issue #33.
+    ///
+    /// Ownership is checked against <c>usage_logs.user_id</c> rather than just
+    /// "does this checkpoint exist", the same way Python scopes it: a
+    /// checkpoint payload can carry order and refund details, so who is asking
+    /// matters.
+    /// </remarks>
+    private static async Task<IResult> GetRunCheckpoints(string runId, DatabasePool pool)
+    {
+        var email = RequestContext.CurrentUserEmail;
+        if (string.IsNullOrEmpty(email))
+        {
+            return Results.Unauthorized();
+        }
+
+        if (!Guid.TryParse(runId, out var runGuid))
+        {
+            return Results.NotFound(new { detail = "Run not found" });
+        }
+
+        var isAdmin = string.Equals(RequestContext.CurrentUserRole, "admin", StringComparison.OrdinalIgnoreCase);
+
+        await using var conn = await pool.OpenAsync();
+
+        var exists = isAdmin
+            ? await conn.ExecuteScalarAsync<Guid?>(
+                "SELECT id FROM usage_logs WHERE id = @id", new { id = runGuid })
+            : await conn.ExecuteScalarAsync<Guid?>(
+                @"SELECT ul.id FROM usage_logs ul
+                  JOIN users u ON ul.user_id = u.id
+                  WHERE ul.id = @id AND u.email = @email",
+                new { id = runGuid, email });
+
+        if (exists is null)
+        {
+            return Results.NotFound(new { detail = "Run not found" });
+        }
+
+        var checkpoints = (await conn.QueryAsync(
+            @"SELECT checkpoint_id, workflow_name, created_at
+              FROM workflow_checkpoints
+              WHERE usage_log_id = @id
+              ORDER BY created_at ASC",
+            new { id = runGuid }
+        )).Select(r => new
+        {
+            checkpoint_id = ((Guid)r.checkpoint_id).ToString(),
+            workflow_name = (string)r.workflow_name,
+            created_at = ((DateTime)r.created_at).ToString("o"),
+        }).ToList();
+
+        var hitl = await conn.QueryFirstOrDefaultAsync(
+            @"SELECT id, status, payload, response, created_at, responded_at
+              FROM hitl_requests WHERE workflow_run_id = @id
+              ORDER BY created_at DESC LIMIT 1",
+            new { id = runGuid }
+        );
+
+        return Results.Ok(new
+        {
+            run_id = runId,
+            checkpoints,
+            hitl_request = hitl is null
+                ? null
+                : (object)new
+                {
+                    id = ((Guid)hitl.id).ToString(),
+                    status = (string)hitl.status,
+                    // Npgsql hands JSONB back as a raw string with no codec
+                    // registered, so these are re-parsed rather than passed
+                    // through — the same guard every other JSONB read here uses.
+                    payload = ParseJsonOrNull(hitl.payload),
+                    response = ParseJsonOrNull(hitl.response),
+                    created_at = ((DateTime)hitl.created_at).ToString("o"),
+                    responded_at = hitl.responded_at is null
+                        ? null
+                        : ((DateTime)hitl.responded_at).ToString("o"),
+                },
+        });
+    }
+
+    private static JsonElement? ParseJsonOrNull(object? raw)
+    {
+        var text = raw as string ?? raw?.ToString();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+        try
+        {
+            return JsonDocument.Parse(text).RootElement.Clone();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private static async Task<IResult> ListRuns(DatabasePool pool, int limit = 20, int offset = 0)
