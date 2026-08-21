@@ -26,7 +26,6 @@ from typing import Any
 
 from shared.agent_observability import get_steps, reset_steps
 from shared.context import (
-    current_conversation_history,
     current_session_id,
     current_user_email,
     current_user_role,
@@ -117,7 +116,6 @@ class ProductionRunner:
         current_user_email.set(self.user_email)
         current_user_role.set(self.user_role)
         current_session_id.set("")
-        current_conversation_history.set([])
         reset_steps()
         reset_grounding_ledger()
         reset_guardrail_flags()

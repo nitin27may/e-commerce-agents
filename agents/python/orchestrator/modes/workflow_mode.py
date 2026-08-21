@@ -39,7 +39,6 @@ from typing import Any
 
 from orchestrator.events import OrchestrationEvent, adapt_workflow_event
 from shared.checkpoint_storage import RecordingCheckpointStorage, drain_new_checkpoint_ids
-from shared.context import current_conversation_history
 from shared.factory import get_checkpoint_storage
 
 from .base import ModeCapabilities, RunContext
@@ -117,8 +116,6 @@ class PrePurchaseMode:
 
     async def run(self, message: str, ctx: RunContext) -> AsyncIterator[OrchestrationEvent]:
         from workflows.pre_purchase import PrePurchaseWorkflow, ResearchState
-
-        current_conversation_history.set(ctx.history)
 
         product_id, error = await _resolve_product_id(message)
         if error:
@@ -213,8 +210,6 @@ class ReturnReplaceMode:
     async def run(self, message: str, ctx: RunContext) -> AsyncIterator[OrchestrationEvent]:
         from shared.context import current_user_email
         from workflows.return_replace import ReturnAndReplaceWorkflow, WorkflowState
-
-        current_conversation_history.set(ctx.history)
 
         email = current_user_email.get()
         if not email:
