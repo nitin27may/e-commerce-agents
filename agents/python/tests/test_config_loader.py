@@ -56,7 +56,7 @@ def test_get_chat_client_uses_openai_when_provider_is_openai(monkeypatch) -> Non
 
 def test_get_chat_client_honors_llm_base_url_override(monkeypatch) -> None:
     """LLM_BASE_URL (Phase 9) is what lets LLM_PROVIDER=openai point at any
-    OpenAI-compatible endpoint — GitHub Models, OpenRouter, vLLM, LM Studio,
+    OpenAI-compatible endpoint — Ollama, OpenRouter, vLLM, LM Studio,
     Ollama — instead of api.openai.com. No provider-specific branching
     exists for any of those; this is the one mechanism all of them ride."""
     factory = _reload_with_env(

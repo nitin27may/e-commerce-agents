@@ -146,33 +146,23 @@ work as aliases.)
 Keep `JWT_SECRET` and `AGENT_SHARED_SECRET` at their `.env.example` defaults for
 local dev; they're only rotated in production.
 
-### Don't have a paid API key? Three options
+### Don't have a paid API key? Two options
 
-**Option 1 — GitHub Models (free, real model, `LLM_PROVIDER=openai`).** GitHub
-Models exposes an OpenAI-compatible endpoint, free with a GitHub personal access
-token:
+> **Note (2026-08):** earlier versions of this guide recommended GitHub Models as
+> the free option. GitHub Models was retired at the end of July 2026 and its
+> endpoint no longer resolves. Ollama is now the free path.
 
-```dotenv
-LLM_PROVIDER=openai
-OPENAI_API_KEY=<a GitHub PAT with the models:read scope>
-LLM_BASE_URL=https://models.inference.ai.azure.com
-LLM_MODEL=gpt-4o
-```
-
-`LLM_BASE_URL` works with any OpenAI-compatible endpoint the same way —
-OpenRouter, a local vLLM/LM Studio server, Ollama, etc. — not just GitHub
-Models, which Option 2 below spells out.
-
-**Option 2 — Ollama / LM Studio (free, real model, fully local, zero
-network).** Same `LLM_PROVIDER=openai` + `LLM_BASE_URL` mechanism as Option 1,
-pointed at a model server running on your own machine instead of a hosted one:
+**Option 1 — Ollama / LM Studio (free, real model, fully local, zero network).**
+`LLM_PROVIDER=openai` plus `LLM_BASE_URL` points `OpenAIChatClient` at any
+OpenAI-compatible endpoint — including a model server on your own machine:
 
 ```dotenv
-# Ollama — `ollama pull` a model first, then:
+# Ollama — `ollama pull qwen2.5:14b` first, and start the server with a raised
+# context window: OLLAMA_CONTEXT_LENGTH=64000 ollama serve
 LLM_PROVIDER=openai
 LLM_BASE_URL=http://localhost:11434/v1
 OPENAI_API_KEY=ollama          # any non-empty string — Ollama doesn't check it
-LLM_MODEL=llama3.1:8b          # or whatever tag you pulled
+LLM_MODEL=qwen2.5:14b           # or whatever tag you pulled
 ```
 
 ```dotenv
@@ -195,7 +185,7 @@ chat model. If a tutorial chapter's tool-calling test passes but the printed
 answer doesn't reflect the tool's canned data, that's the model's
 tool-calling support, not a bug in the chapter.
 
-**Option 3 — Replay (free, no network, no key at all).** Every tutorial chapter's
+**Option 2 — Replay (free, no network, no key at all).** Every tutorial chapter's
 `tests/` directory ships committed fixtures recorded against a real model. Set
 `LLM_PROVIDER=replay` and the chapter's own client construction plays them back
 with zero credentials:

@@ -155,24 +155,20 @@ Nothing above requires an OpenAI subscription. Any OpenAI-compatible endpoint wo
 same code path — set `LLM_BASE_URL` in `.env` and leave `LLM_PROVIDER=openai`:
 
 ```dotenv
-# GitHub Models — free with a GitHub PAT
-LLM_PROVIDER=openai
-LLM_BASE_URL=https://models.inference.ai.azure.com
-OPENAI_API_KEY=<a GitHub PAT with the models:read scope>
-LLM_MODEL=gpt-4o
-
-# Ollama — fully local, no account, no key
+# Ollama — fully local, free, no account, no rate limit
 LLM_PROVIDER=openai
 LLM_BASE_URL=http://localhost:11434/v1
 OPENAI_API_KEY=ollama          # any non-empty string — Ollama doesn't check it
-LLM_MODEL=llama3.1:8b          # must be a tool-calling-capable model
+LLM_MODEL=qwen2.5:14b           # must be a tool-calling-capable model
 ```
 
 **Gotcha worth knowing before you pick a local model:** every specialist here depends on
 tool-calling. Many small or heavily-quantized models advertise an OpenAI-compatible chat API but
 have unreliable function-calling, and the failure is quiet — the agent simply stops calling tools
-and starts inventing answers instead of erroring. Llama 3.1+, Qwen2.5 and tool-tagged Mistral
-builds are known to work. See [Setup](./tutorials/00-setup/) for the full guidance.
+and starts inventing answers instead of erroring. Measured 2026-08-21 on a 2-tool multi-turn loop,
+`qwen2.5:14b`, `gemma4:12b` and `qwen3.5:9b` all pass. Start Ollama with
+`OLLAMA_CONTEXT_LENGTH=64000` — the 4K default silently drops your system prompt mid-loop. See
+[Setup](./tutorials/00-setup/) for the full guidance.
 
 ### Run the .NET backend
 
@@ -288,7 +284,7 @@ graph TB
     end
 
     subgraph LLM["LLM Provider"]
-        OAI["OpenAI API<br/>gpt-4.1"]
+        OAI["OpenAI API<br/>(configurable model)"]
         AZ["Azure OpenAI<br/>(configurable)"]
     end
 
@@ -448,7 +444,7 @@ Try these in the chat after logging in:
 |-------|-----------|
 | Agent Framework | [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) v1 — Python SDK (`agent-framework-core` 1.14.0) **and** .NET SDK (`Microsoft.Agents.AI` 1.18.0), both backends fully implemented |
 | Agent Communication | A2A Protocol (HTTP) |
-| LLM | OpenAI / Azure OpenAI (gpt-4.1) — plus any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, OpenRouter, GitHub Models) via `LLM_PROVIDER=openai` + `LLM_BASE_URL`, see [Setup](./tutorials/00-setup/) |
+| LLM | OpenAI / Azure OpenAI — model set by `LLM_MODEL`, use any current chat model ([list](https://developers.openai.com/api/docs/models)) — plus any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, OpenRouter) via `LLM_PROVIDER=openai` + `LLM_BASE_URL`, see [Setup](./tutorials/00-setup/) |
 | Orchestrator | FastAPI (Python 3.12) · ASP.NET Core minimal APIs (.NET 10, C#) |
 | Database | PostgreSQL 16 + pgvector (1536-dim embeddings) |
 | Cache | Redis 7 |
@@ -547,7 +543,7 @@ AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
 AZURE_OPENAI_KEY=...
 AZURE_OPENAI_DEPLOYMENT=gpt-4.1
 
-# Local / self-hosted / free (Ollama, LM Studio, OpenRouter, vLLM, GitHub Models)
+# Local / self-hosted / free (Ollama, LM Studio, OpenRouter, vLLM)
 LLM_PROVIDER=openai
 LLM_BASE_URL=http://localhost:11434/v1   # any OpenAI-compatible endpoint
 OPENAI_API_KEY=ollama                    # any non-empty string for local servers
