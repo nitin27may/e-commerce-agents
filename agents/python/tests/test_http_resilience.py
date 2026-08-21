@@ -246,6 +246,37 @@ async def test_breaker_per_host_is_independent(monkeypatch: pytest.MonkeyPatch) 
     assert resp.status_code == 200
 
 
+async def test_breaker_is_per_port_not_just_per_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression for the cascade seen while diagnosing issue #25.
+
+    All five specialists share ``localhost`` in local dev, CI and the eval
+    harness, differing only by port. Keying the breaker on hostname alone let
+    one failing specialist refuse calls to the other four — which turned three
+    missing eval fixtures into five failed orchestrator cases and masked the
+    real cause in the CI log.
+    """
+    bad_req = _request("http://localhost:8084/message:send")
+    good_req = _request("http://localhost:8085/message:send")
+
+    async def _router(_self: object, request: httpx.Request, **_kw: object) -> httpx.Response:
+        if request.url.port == 8084:
+            raise httpx.ConnectError("down", request=request)
+        return _response(200, request)
+
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", _router)
+    transport = ResilientAsyncTransport(max_attempts=1, min_throughput=5, failure_ratio_threshold=0.5)
+
+    for _ in range(5):
+        with pytest.raises(httpx.ConnectError):
+            await transport.handle_async_request(bad_req)
+    with pytest.raises(CircuitBreakerOpenError):
+        await transport.handle_async_request(bad_req)
+
+    # Same host, different port — must still be reachable.
+    resp = await transport.handle_async_request(good_req)
+    assert resp.status_code == 200
+
+
 async def test_breaker_half_open_probe_succeeds_and_closes(monkeypatch: pytest.MonkeyPatch) -> None:
     req = _request()
     mock = _patch_parent(monkeypatch, [httpx.ConnectError("down", request=req) for _ in range(5)])

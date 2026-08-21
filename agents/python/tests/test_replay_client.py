@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import uuid
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -232,3 +234,153 @@ async def test_record_against_real_provider_then_replay_offline(tmp_path) -> Non
             os.environ["AZURE_OPENAI_ENDPOINT"] = saved_endpoint
         if saved_openai_key is not None:
             os.environ["OPENAI_API_KEY"] = saved_openai_key
+
+
+# ─────────────────── hash normalization (issue #25) ────────────────────
+
+
+def _tool_msg(payload: str) -> dict[str, Any]:
+    return {
+        "role": "tool",
+        "contents": [{"type": "function_result", "call_id": "call_1", "result": payload}],
+    }
+
+
+def _user_msg(text: str) -> dict[str, Any]:
+    return {"role": "user", "contents": [{"type": "text", "text": text}]}
+
+
+def _canonical(messages: list[dict[str, Any]]) -> dict[str, Any]:
+    return {"messages": messages, "tools": [], "instructions": "be helpful"}
+
+
+def test_tool_results_hash_the_same_across_a_reseed():
+    """The bug this fixes: a fresh DB reseed hands the same tool a payload with
+    new random UUIDs and new seed-time timestamps, which changed the fixture
+    key and made every affected fixture unreachable."""
+    session_a = _canonical([
+        _user_msg("What do reviews say about the Sony WH-1000XM5?"),
+        _tool_msg('{"review_id": "e9418342-8843-4b1b-ab01-e63fe2e8b8f0", '
+                  '"rating": 5, "date": "2026-05-18T21:27:13.100156+00:00"}'),
+    ])
+    session_b = _canonical([
+        _user_msg("What do reviews say about the Sony WH-1000XM5?"),
+        _tool_msg('{"review_id": "bf88ec9f-1137-4de9-b0ef-d2a50a29513d", '
+                  '"rating": 5, "date": "2026-05-19T09:02:44.881003+00:00"}'),
+    ])
+
+    assert _request_hash(session_a) == _request_hash(session_b)
+
+
+def test_different_questions_still_hash_differently():
+    """Normalization must not blur genuinely different requests together."""
+    a = _canonical([_user_msg("Reviews for the Sony WH-1000XM5?")])
+    b = _canonical([_user_msg("Reviews for the Dyson V15?")])
+
+    assert _request_hash(a) != _request_hash(b)
+
+
+def test_tool_call_arguments_are_not_normalized():
+    """A tool *call*'s arguments live in the assistant message and are hashed
+    verbatim, so two different lookups can never collide on one fixture."""
+    def assistant_call(order_id: str) -> dict[str, Any]:
+        return {
+            "role": "assistant",
+            "contents": [{
+                "type": "function_call",
+                "call_id": "call_1",
+                "name": "get_order",
+                "arguments": {"order_id": order_id},
+            }],
+        }
+
+    a = _canonical([_user_msg("track it"), assistant_call("550e8400-e29b-41d4-a716-446655440001")])
+    b = _canonical([_user_msg("track it"), assistant_call("550e8400-e29b-41d4-a716-446655440002")])
+
+    assert _request_hash(a) != _request_hash(b)
+
+
+def test_non_volatile_tool_payload_differences_still_matter():
+    """Only UUIDs and timestamps are stripped — real data differences remain."""
+    a = _canonical([_user_msg("stock?"), _tool_msg('{"in_stock": true, "quantity": 12}')])
+    b = _canonical([_user_msg("stock?"), _tool_msg('{"in_stock": false, "quantity": 0}')])
+
+    assert _request_hash(a) != _request_hash(b)
+
+
+def test_every_committed_fixture_rehashes_to_its_own_filename():
+    """The guard for this whole bug class.
+
+    Each fixture stores the raw request it was recorded from, so its filename
+    must always be reproducible from its contents. This fails the moment
+    anyone changes the hashing scheme without running
+    ``evals.rehash_fixtures``, instead of the failure surfacing much later as
+    an unexplained CI eval regression.
+    """
+    fixtures_dir = Path(__file__).resolve().parents[1] / "evals" / "fixtures" / "replay"
+    fixtures = sorted(fixtures_dir.glob("*.json"))
+    assert fixtures, f"no fixtures found in {fixtures_dir}"
+
+    mismatched = [
+        f.name for f in fixtures if _request_hash(json.loads(f.read_text())["request"]) != f.stem
+    ]
+    assert not mismatched, (
+        f"{len(mismatched)} fixture(s) no longer hash to their own filename "
+        f"(first few: {mismatched[:5]}). Run: uv run python -m evals.rehash_fixtures"
+    )
+
+
+def test_normalization_does_not_merge_distinct_committed_requests():
+    """Over-normalization is the silent failure: it serves the wrong recorded
+    response, and the resulting scores land somewhere plausible instead of
+    failing. Every committed fixture must still hash to a distinct key.
+    """
+    fixtures_dir = Path(__file__).resolve().parents[1] / "evals" / "fixtures" / "replay"
+    by_hash: dict[str, list[str]] = {}
+    for f in sorted(fixtures_dir.glob("*.json")):
+        by_hash.setdefault(_request_hash(json.loads(f.read_text())["request"]), []).append(f.name)
+
+    collisions = {h: names for h, names in by_hash.items() if len(names) > 1}
+    assert not collisions, f"normalization merged distinct fixtures: {collisions}"
+
+
+def test_deterministic_product_ids_are_load_bearing_for_this_design():
+    """Guards the assumption that makes tool-results-only normalization safe.
+
+    A tool *call*'s arguments sit in an assistant message and are hashed
+    verbatim — which is fine only because every id the model copies out of a
+    tool result and back into a later call is deterministic
+    (``scripts/seed.py::product_id_for``, a uuid5). If a dataset case ever
+    passes a *randomly* generated id (a real ``orders.id`` or ``reviews.id``)
+    as a tool argument, that volatile value lands in an un-normalized message
+    and fixtures start missing again.
+    """
+    fixtures_dir = Path(__file__).resolve().parents[1] / "evals" / "fixtures" / "replay"
+    uuid_re = re.compile(
+        r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-([0-9a-fA-F])[0-9a-fA-F]{3}"
+        r"-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
+    )
+    # The synthetic ids the datasets use to exercise "not found" paths are
+    # hardcoded literals, so they are stable despite being v4-shaped.
+    synthetic = "550e8400-e29b-41d4-a716-"
+
+    offenders: list[str] = []
+    for f in sorted(fixtures_dir.glob("*.json")):
+        for message in json.loads(f.read_text())["request"]["messages"]:
+            if message.get("role") == "tool":
+                continue
+            blob = json.dumps(message)
+            if any(
+                version != "5"
+                for match, version in (
+                    (m.group(0), m.group(1)) for m in uuid_re.finditer(blob)
+                )
+                if not match.startswith(synthetic)
+            ):
+                offenders.append(f.name)
+                break
+
+    assert not offenders, (
+        "non-deterministic UUIDs found outside tool-result messages in "
+        f"{offenders[:5]} — see _normalize_for_hash's docstring"
+    )

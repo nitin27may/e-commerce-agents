@@ -969,6 +969,22 @@ async def main() -> None:
         await seed_workflow_checkpoints(conn)
         await seed_hitl_requests(conn, user_ids)
 
+        # Collect planner statistics before anyone queries this data.
+        #
+        # Without it the planner runs blind on freshly-loaded tables, and it
+        # picks different plans than it will once autovacuum catches up —
+        # which reorders rows that tie on the ORDER BY column, since SQL
+        # leaves the order of tied rows undefined. Nothing is *wrong* either
+        # way, but eval replay fixtures key on the exact tool payload, so a
+        # reordered tie means a fixture miss on a database that was seeded
+        # seconds ago and never analyzed. That is exactly the shape CI runs
+        # in, and it is why the product-discovery smoke suite was failing.
+        #
+        # Analyzing after a bulk load is standard practice regardless; this
+        # just makes it explicit instead of waiting on autovacuum.
+        logger.info("Analyzing tables to collect planner statistics...")
+        await conn.execute("ANALYZE")
+
         logger.info("Seeding complete!")
 
     finally:

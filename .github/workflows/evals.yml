@@ -53,6 +53,12 @@ env:
     "pricing-promotions":"http://localhost:8083","review-sentiment":"http://localhost:8084",
     "inventory-fulfillment":"http://localhost:8085"}
   THRESH: ${{ github.event.inputs.pass_threshold || '0.7' }}
+  # The smoke job replays frozen model output, so its absolute score is a
+  # property of the recording session, not of the pull request under test.
+  # What a PR *can* change is measured by --baseline/--max-regression (and by
+  # the missing-fixture check, which always fails the run). The 0.7 quality
+  # floor is asserted by the `full` job, which drives real models.
+  SMOKE_THRESH: ${{ github.event.inputs.pass_threshold || '0' }}
 
 jobs:
   smoke:
@@ -140,14 +146,14 @@ jobs:
             base="evals/baselines/${a//-/_}.json"
             echo "::group::quality eval — $a"
             uv run python -m evals.run_evals --agent "$a" --dataset "$ds" \
-              --pass-threshold "$THRESH" --baseline "$base" --max-regression 0.05 \
+              --pass-threshold "$SMOKE_THRESH" --baseline "$base" --max-regression 0.05 \
               --output-json "eval-$a.json" || fail=1
             echo "::endgroup::"
           done
           echo "::group::routing eval — orchestrator"
           uv run python -m evals.run_evals --agent orchestrator \
             --dataset evals/datasets/orchestrator_routing.json \
-            --pass-threshold "$THRESH" --baseline evals/baselines/orchestrator_routing.json --max-regression 0.05 \
+            --pass-threshold "$SMOKE_THRESH" --baseline evals/baselines/orchestrator_routing.json --max-regression 0.05 \
             --output-json eval-orchestrator.json || fail=1
           echo "::endgroup::"
           echo "::group::safety / red-team"
@@ -155,6 +161,18 @@ jobs:
             --pass-threshold 0.8 --output-json eval-safety.json || fail=1
           echo "::endgroup::"
           exit $fail
+
+      # The specialists are started with `nohup ... &` and would otherwise
+      # still be running when the job's post steps execute. `setup-uv`'s
+      # cache-prune step then hangs on the uv cache those processes hold open
+      # and is killed at its 300s timeout, failing the job after all the real
+      # work has already succeeded. A job should stop what it starts.
+      - name: Stop specialist services
+        if: always()
+        run: |
+          pkill -f "uvicorn .*\.main:app" || true
+          sleep 2
+          pkill -9 -f "uvicorn .*\.main:app" || true
 
       - name: Upload eval results
         if: always()
@@ -274,6 +292,18 @@ jobs:
             --pass-threshold 0.8 --output-json eval-safety.json || fail=1
           echo "::endgroup::"
           exit $fail
+
+      # The specialists are started with `nohup ... &` and would otherwise
+      # still be running when the job's post steps execute. `setup-uv`'s
+      # cache-prune step then hangs on the uv cache those processes hold open
+      # and is killed at its 300s timeout, failing the job after all the real
+      # work has already succeeded. A job should stop what it starts.
+      - name: Stop specialist services
+        if: always()
+        run: |
+          pkill -f "uvicorn .*\.main:app" || true
+          sleep 2
+          pkill -9 -f "uvicorn .*\.main:app" || true
 
       - name: Upload eval results
         if: always()
