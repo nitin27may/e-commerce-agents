@@ -607,9 +607,15 @@ same ports, only one stack can run at a time.
 
 ## Roadmap
 
-This is v1. Both backends are live and stable. Remaining work is consolidated in
+This is v1.1. Both backends are live and stable. Remaining work is consolidated in
 [`.claude/plans/remaining-work.md`](.claude/plans/remaining-work.md) — including the gaps
 this section does not claim to cover.
+
+One pattern is worth stating, because it shaped most of v1.1: **five times running, the reported
+problem was smaller than the actual one**, and each time the difference was found by running
+something rather than reading it. "Follow-ups occasionally lose context" was deterministic and total.
+"`optimize_cart` divides by zero" was *no promotion had ever worked*. Two were found only because a
+gate had just been switched on — which is why the gates below come before the content work.
 
 Legend: `- [x]` shipped · `- [ ]` planned or in progress.
 
@@ -629,8 +635,20 @@ Legend: `- [x]` shipped · `- [ ]` planned or in progress.
 - [x] **Resilience and rate limiting** — bounded retries with jittered backoff and a per-endpoint circuit breaker on every A2A call (`shared/http_resilience.py`, mirroring the .NET Polly pipeline that led here), and a Redis sliding-window limiter on both chat routes, keyed by user and by IP for anonymous traffic.
 - [x] **Generative UI** — every agent response is rendered by the shape of its data: cards, tables, charts, badges. An unrecognized or malformed payload renders nothing rather than falling back to raw JSON.
 
+### Shipped in v1.1
+
+- [x] **Follow-up questions keep their context** — specialists received *no* conversation history on any browser-originated turn, on the Python stack, deterministically. The web client never sent `x-session-id`, so rehydration short-circuited before the database and without logging. It read as model nondeterminism for weeks because the orchestrator sometimes inlined context into the specialist message and sometimes didn't. Fixed on both stacks, with the rehydration query now scoped to the caller's own conversation.
+- [x] **.NET runs appear in Aspire's GenAI view** — .NET emitted `agent.run`/`chat` where the convention Aspire selects on is `invoke_agent`, so the dashboard looked empty on that backend while working normally on Python. Npgsql instrumentation, a meter provider, a log bridge and session/conversation enrichment landed with it.
+- [x] **The .NET tutorials have a CI gate** — no job had ever built any of the 31 tutorial `.csproj` files. Turning the gate on immediately found chapter 08 entirely broken.
+- [x] **Semantic search actually works** — it was dead under `LLM_PROVIDER=replay` (so no CI run ever exercised pgvector), and underneath that sat a production bug: the IVFFlat index is created on an empty table, so it had no centroids and returned unrelated products at similarity 0.000 where an exact scan returned the right one at 0.420.
+- [x] **Promotions apply** — `promotions.rules` is untyped JSONB and the seeder wrote different key names than the reader read, so bundles contributed £0 on every cart, buy-X-get-Y crashed, and flash sales silently never matched. No promotion had ever applied correctly.
+- [x] **The docs site is indexable** — all 85 pages shared one meta description. Now per-page descriptions, keywords, `TechArticle` JSON-LD, `lastmod`, a social image, and an accessible title on every one of the 71 diagrams.
+
 ### In Progress
 
+- [ ] **.NET eval suite** — 6 of 7 datasets are ported and the enabling work is done (record-on-miss, and an embedding seam without which product-discovery could not start in replay mode at all). What remains is the recording run, the baselines, and the CI job. `red_team` needs its own evaluator and is tracked separately.
+- [ ] **Tutorial .NET coverage** ([#20](https://github.com/nitin27may/e-commerce-agents/issues/20)) — chapters 12–19 have .NET code but no tests; chapters 22–32 have no `dotnet/` at all. The largest single piece of work left.
+- [ ] **Composer UX** ([#4](https://github.com/nitin27may/e-commerce-agents/issues/4)) — collapse the always-visible mode chips, and derive suggested prompts from the reply on screen rather than a static list.
 - [ ] **In-chat approval card** — the full pause-and-resume loop works on both stacks: a workflow suspends on its HITL gate, the run shows a pending badge on `/runs`, and Approve/Reject resumes it from a real Postgres checkpoint (`POST /api/orchestration/{run_id}/resume`). On .NET the resume rebuilds the workflow from that checkpoint rather than holding the paused run in memory, so it survives an orchestrator restart, and the pending row is claimed before the workflow executes so a double-click cannot release two refunds. Destructive tools are separately gated by approval middleware with an atomic claim-before-execute so a double click cannot double-refund. The remaining piece is rendering that same control *inside the chat thread* rather than only on `/runs`.
 - [ ] **Cost metrics as first-class counters** — token counts are persisted (`shared/usage_db.py`), surfaced on the admin usage page, and already exported as OTel GenAI metrics by the OpenAI instrumentor. Dollar estimation (`shared/cost.py`, `Shared/Cost/CostEstimator.cs`) and a per-run budget ceiling (`COST_BUDGET_MODE`, default `observe`) both ship. The remaining piece is a dedicated cost counter instrument owned by this repo, so an OTLP sink can alert on spend anomalies directly.
 - [ ] **Streaming tool calls end-to-end** — text-delta streaming is live and product/order cards render progressively as the LLM generates the response. The remaining piece is propagating raw tool-result payloads as separate SSE frames so cards can appear before the text completes.
