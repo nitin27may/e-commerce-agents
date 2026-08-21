@@ -1,0 +1,91 @@
+import { test } from "@playwright/test";
+
+/**
+ * Dual-backend parity gate.
+ *
+ * There is one frontend, and `NEXT_PUBLIC_BACKEND_STACK` points it at either
+ * the Python or the .NET orchestrator. So the honest definition of "is .NET
+ * done?" is not a test count or a row in a matrix — it is *this suite passing
+ * against both backends*.
+ *
+ * Why this file exists rather than scattered `test.skip()` calls: a skipped
+ * test with no recorded reason is indistinguishable from a test nobody ever
+ * wrote. Every entry below names the issue that will delete it. The list is
+ * the parity checklist, executable — **when `dotnet` is empty, .NET parity is
+ * done**.
+ *
+ * The failure mode this guards against is specific and already observed: the
+ * existing 109-test e2e suite passes green against a .NET backend that is
+ * missing four whole features, because it never exercises them. Assertions
+ * here must therefore check for *presence* — a test that only confirms "no
+ * error" would go green against a blank page.
+ */
+
+export type BackendStack = "python" | "dotnet";
+
+export const BACKEND: BackendStack =
+  process.env.BACKEND_STACK === "dotnet" ? "dotnet" : "python";
+
+/**
+ * Known gaps, keyed by backend then by test title. The value is the reason,
+ * and must reference a tracking issue — "not implemented" alone is how a gap
+ * becomes permanent.
+ *
+ * Delete a line here as part of the PR that closes it. Nothing else needs to
+ * change; the test simply starts running.
+ */
+export const PARITY_GAPS: Record<BackendStack, Record<string, string>> = {
+  python: {
+    // Python is the reference implementation. An entry appearing here means
+    // the *frontend* expects something neither backend provides, which is a
+    // different bug — treat it as a red flag rather than a normal gap.
+  },
+
+  dotnet: {
+    "mode switcher offers more than one orchestration mode":
+      "#33 PR 5 — no mode registry; GET /api/orchestration/modes returns 404 and the switcher renders null",
+    "selecting a workflow mode is honoured, not silently downgraded":
+      "#33 PR 3 — ChatRequest has no Mode property, so System.Text.Json discards it and the run executes as tool mode",
+    "the orchestration graph renders for a workflow mode":
+      "#33 PR 5 — GET /api/orchestration/modes/{name}/graph does not exist",
+    "mode comparison can be run with two modes selected":
+      "#33 PR 5 — POST /api/orchestration/compare does not exist",
+    "a run's checkpoints are listed on /runs":
+      "#33 PR 3 — GET /api/runs/{run_id}/checkpoints does not exist",
+    "the profile shows a stored memory":
+      "#33 PR 3 — GET /api/user/memories does not exist; the card currently tells users to chat to populate it, which cannot work",
+    "a grounded answer renders the grounding badge":
+      "#33 PR 7 — no grounding subsystem, so no grounding SSE frame and no grounding field on ChatResponse",
+  },
+};
+
+/**
+ * Skips the current test when its title has a recorded gap for this backend,
+ * with the reason attached — the run summary reads
+ * `known dotnet gap → #33 PR 5 — …` rather than a silent dash.
+ *
+ * Called as the first line of a test body rather than wrapping `test()`,
+ * because Playwright statically requires a test's first argument to use the
+ * object-destructuring pattern and so cannot accept a forwarded fixtures
+ * object from a helper.
+ */
+export function skipIfKnownGap(title: string) {
+  const gap = PARITY_GAPS[BACKEND][title];
+  test.skip(Boolean(gap), `known ${BACKEND} gap → ${gap}`);
+}
+
+/**
+ * Fails if a gap is recorded for a test title that no longer exists — a
+ * renamed or deleted test would otherwise leave a stale entry that silently
+ * suppresses nothing while still counting as an open gap.
+ */
+export function assertGapsAreLive(declaredTitles: string[]) {
+  const declared = new Set(declaredTitles);
+  const stale = Object.keys(PARITY_GAPS[BACKEND]).filter((t) => !declared.has(t));
+  if (stale.length > 0) {
+    throw new Error(
+      `PARITY_GAPS[${BACKEND}] references tests that no longer exist: ${stale.join(", ")}. ` +
+        `Remove the stale entries.`,
+    );
+  }
+}
