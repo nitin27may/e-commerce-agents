@@ -19,6 +19,7 @@ var app = AgentHost.Build(
         builder.Services.AddSingleton<UserProfileTools>();
         builder.Services.AddSingleton<StockLookupTools>();
         builder.Services.AddSingleton<PriceHistoryTools>();
+        builder.Services.AddSingleton<MemoryTools>();
         builder.Services.AddSingleton<AIAgent>(sp =>
         {
             var prompts = sp.GetRequiredService<PromptLoader>();
@@ -26,7 +27,8 @@ var app = AgentHost.Build(
             var userProfileTools = sp.GetRequiredService<UserProfileTools>();
             var stockLookupTools = sp.GetRequiredService<StockLookupTools>();
             var priceHistoryTools = sp.GetRequiredService<PriceHistoryTools>();
-            return SpecialistAgentFactory.Create(settings, prompts, "product-discovery", tools.All().Concat(userProfileTools.All()).Concat(stockLookupTools.All()).Concat(priceHistoryTools.All()), services: sp);
+            var memoryTools = sp.GetRequiredService<MemoryTools>();
+            return SpecialistAgentFactory.Create(settings, prompts, "product-discovery", tools.All().Concat(userProfileTools.All()).Concat(stockLookupTools.All()).Concat(priceHistoryTools.All()).Concat(memoryTools.All()), services: sp);
         });
     }
 );
