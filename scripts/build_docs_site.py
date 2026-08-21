@@ -34,14 +34,24 @@ from __future__ import annotations
 import argparse
 import re
 import shutil
+import subprocess
 import sys
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = REPO_ROOT / "_site_src"
 GITHUB_BASE = "https://github.com/nitin27may/e-commerce-agents"
 GITHUB_BRANCH = "main"
+
+# Must stay in sync with `description:` in docs/_config.yml. Used as the
+# last-resort meta description and, more importantly, as the sentinel the
+# build checks for: a page still carrying it has no description of its own.
+SITE_DESCRIPTION = (
+    "Multi-agent orchestration with Microsoft Agent Framework — concepts, 34 tutorial "
+    "chapters, and a running reference implementation in Python and .NET."
+)
 
 # ── section taxonomy ──────────────────────────────────────────────────────
 #
@@ -426,7 +436,227 @@ class Rewriter:
         return HTML_IMG_RE.sub(replace_html_img, LINK_RE.sub(replace, page.body))
 
 
-def front_matter(page: Page) -> str:
+# ─────────────────────────── SEO metadata ───────────────────────────────
+#
+# Every one of the 85 pages shipped with the same meta description — the
+# site-level fallback from _config.yml — because the generator emitted no
+# per-page `description`. Verified against the deployed site, not assumed:
+# the home page, a guide, a concept page and a tutorial chapter all served
+# byte-identical <meta name="description">, <meta property="og:description">
+# and JSON-LD `description`. To a search engine that is 85 near-duplicate
+# pages, which is the single worst thing a docs site can do to itself.
+#
+# Canonicals, og:title, twitter:card and the sitemap were already correct
+# (jekyll-seo-tag + jekyll-sitemap), so this fills the gaps rather than
+# rebuilding what works.
+
+# Prose that is not a description: badge rows, blockquote callouts, tables,
+# fences, headings, list bullets, and the "This page is generated" footer.
+_SKIP_PREFIXES = ("#", ">", "|", "```", "~~~", "-", "*", "1.", "<!--", "{:", "!", "---")
+
+_MD_LINK_RE = re.compile(r"\[([^\]]+)\]\([^)]*\)")
+_MD_CODE_RE = re.compile(r"`([^`]*)`")
+_MD_EMPH_RE = re.compile(r"[*_]{1,3}([^*_]+)[*_]{1,3}")
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_WS_RE = re.compile(r"\s+")
+
+
+def extract_description(body: str, fallback: str) -> str:
+    """First real paragraph of a page, flattened to a meta description.
+
+    Deliberately taken from the page's own opening prose rather than
+    synthesised: the first paragraph of every page here already answers "what
+    is this page", because the chapter contract and the concepts template both
+    require it. Anything generated would be worse and would drift.
+    """
+    para: list[str] = []
+    for raw in body.splitlines():
+        line = raw.strip()
+        if not line:
+            if para:
+                break
+            continue
+        if line.startswith(_SKIP_PREFIXES):
+            if para:
+                break
+            continue
+        para.append(line)
+
+    text = " ".join(para)
+    text = _MD_LINK_RE.sub(r"\1", text)
+    text = _MD_CODE_RE.sub(r"\1", text)
+    text = _MD_EMPH_RE.sub(r"\1", text)
+    text = _HTML_TAG_RE.sub("", text)
+    text = _WS_RE.sub(" ", text).strip()
+
+    if not text:
+        return fallback
+
+    # ~155 chars is where Google truncates. Cut on a sentence if one lands in
+    # range, else on a word — never mid-word, and never with a dangling comma.
+    if len(text) <= 155:
+        return text
+    cut = text[:155]
+    for stop in (". ", "? ", "! "):
+        idx = cut.rfind(stop)
+        if idx > 80:
+            return cut[: idx + 1].strip()
+    return cut[: cut.rfind(" ")].rstrip(" ,;:—-") + "…"
+
+
+# Terms worth surfacing as keywords when a page actually discusses them.
+# Matched case-insensitively against the body, so a page only claims a keyword
+# it genuinely covers — a static per-section list would attach "guardrails" to
+# 85 pages and mean nothing.
+_KEYWORD_TERMS = {
+    "Microsoft Agent Framework": ("microsoft agent framework", "maf"),
+    "multi-agent": ("multi-agent", "multi agent"),
+    "AI agents": ("agent",),
+    "A2A protocol": ("a2a",),
+    "MCP": ("mcp", "model context protocol"),
+    "orchestration": ("orchestration", "orchestrator"),
+    "workflows": ("workflow",),
+    "human-in-the-loop": ("human-in-the-loop", "hitl"),
+    "guardrails": ("guardrail",),
+    "RAG": ("rag", "retrieval-augmented"),
+    "grounding": ("grounding",),
+    "evaluation": ("eval", "evaluator"),
+    "observability": ("opentelemetry", "observability", "telemetry"),
+    "checkpoints": ("checkpoint",),
+    "Python": ("python",),
+    ".NET": (".net", "c#"),
+    "Azure OpenAI": ("azure openai",),
+    "FastAPI": ("fastapi",),
+    "PostgreSQL": ("postgres",),
+    "Next.js": ("next.js",),
+}
+
+
+def extract_keywords(title: str, body: str, section: str | None) -> list[str]:
+    """Keywords a page can actually support, in a stable order."""
+    haystack = f"{title}\n{body}".lower()
+    found = [kw for kw, needles in _KEYWORD_TERMS.items() if any(n in haystack for n in needles)]
+    if section and section not in found:
+        found.insert(0, section)
+    return found[:12]
+
+
+def seo_type(page: Page) -> str:
+    """schema.org type for jekyll-seo-tag's JSON-LD.
+
+    Everything was `WebPage`, including 34 tutorial chapters and 14 concept
+    pages. `TechArticle` is the accurate type for both and is the one Google
+    documents for developer documentation.
+    """
+    top = page.out_path.parts[0] if page.out_path.parts else ""
+    return "TechArticle" if top in {"tutorials", "concepts", "guides", "architecture"} else "WebPage"
+
+
+_MERMAID_FENCE_RE = re.compile(r"(^```mermaid[^\n]*\n)(.*?)(^```\s*$)", re.M | re.S)
+_HEADING_RE = re.compile(r"^#{2,6}\s+(.*?)\s*$", re.M)
+
+
+def label_mermaid_diagrams(body: str, page_title: str) -> str:
+    """Give every diagram an accessible title.
+
+    The 71 Mermaid diagrams are the most distinctive thing in these docs and
+    were also the least accessible: they ship as ``<pre class="language-mermaid">``
+    and are rendered to SVG client-side, so a screen reader reaching the
+    finished graphic finds an unlabelled ``<svg>``.
+
+    Mermaid's own ``accTitle`` directive is the fix — it emits ``<title>`` into
+    the generated SVG and sets ``role="img"``, which is the standards-based
+    answer rather than an ARIA attribute bolted onto the wrapper. The label is
+    the nearest preceding heading, so it is real page structure rather than
+    anything invented; a diagram with no heading above it falls back to the
+    page title.
+
+    Only ``accTitle`` is injected, not ``accDescr``. A generated long
+    description would be guesswork, and a wrong one is worse for a screen
+    reader user than none.
+    """
+
+    def label_for(offset: int) -> str:
+        headings = [m.group(1) for m in _HEADING_RE.finditer(body, 0, offset)]
+        raw = headings[-1] if headings else page_title
+        # Directive values are terminated by the newline, so strip markup that
+        # would otherwise leak into the SVG title verbatim.
+        clean = _MD_CODE_RE.sub(r"\1", raw)
+        clean = _MD_LINK_RE.sub(r"\1", clean)
+        clean = _MD_EMPH_RE.sub(r"\1", clean)
+        return _WS_RE.sub(" ", clean).strip()
+
+    def repl(match: re.Match) -> str:
+        opening, inner, closing = match.group(1), match.group(2), match.group(3)
+        if "accTitle" in inner:
+            return match.group(0)
+        lines = inner.split("\n")
+        # accTitle must follow the *diagram-type* line. 47 of the 71 diagrams
+        # here open with a `%%{init: ...}%%` theme directive, and inserting
+        # after that instead put accTitle ahead of the diagram type, where
+        # Mermaid silently ignores it — the diagram still rendered, just with
+        # no title. Caught only by rendering all 71 in a real browser at the
+        # pinned version and counting <title> elements: 24 of 71.
+        in_directive = False
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            # `%%{init: ...}%%` theme blocks span *several* lines here, and only
+            # the first starts with `%%`. Skipping on that prefix alone dropped
+            # accTitle into the middle of the themeVariables object — which
+            # Mermaid tolerated well enough to still draw the diagram, so the
+            # only symptom was a missing <title>.
+            if stripped.startswith("%%{"):
+                in_directive = not stripped.endswith("}%%")
+                continue
+            if in_directive:
+                if stripped.endswith("}%%"):
+                    in_directive = False
+                continue
+            if not stripped or stripped.startswith("%%"):
+                continue
+            indent = line[: len(line) - len(line.lstrip())]
+            # A colon terminates the directive value, so it cannot appear in it.
+            label = label_for(match.start()).replace(":", " -")
+            lines.insert(i + 1, f"{indent}    accTitle: {label}")
+            break
+        return opening + "\n".join(lines) + closing
+
+    return _MERMAID_FENCE_RE.sub(repl, body)
+
+
+@lru_cache(maxsize=None)
+def git_last_modified(source: str) -> str | None:
+    """Commit date of a page's source file, ISO-8601.
+
+    jekyll-sitemap emits ``<lastmod>`` from ``page.last_modified_at``, and
+    without it every ``<url>`` in the sitemap carries a location and nothing
+    else — a crawler is given no way to tell a chapter rewritten yesterday
+    from one untouched for a year, so recrawls are scheduled blind. Taken
+    from git rather than the filesystem because a fresh clone (CI) has
+    checkout time as mtime on every file, which would claim all 85 pages
+    changed simultaneously on every build.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "log", "-1", "--format=%cI", "--", source],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    stamp = out.stdout.strip()
+    return stamp or None
+
+
+def yaml_quote(value: str) -> str:
+    """Double-quoted YAML scalar. Descriptions are prose and routinely contain
+    colons, quotes and em dashes, any one of which breaks an unquoted scalar."""
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def front_matter(page: Page, body: str = "") -> str:
     lines = ["---", "layout: default", f'title: "{page.title}"', f"nav_order: {page.nav_order}"]
     if page.parent:
         lines.append(f'parent: "{page.parent}"')
@@ -434,6 +664,26 @@ def front_matter(page: Page) -> str:
         lines.append(f'grand_parent: "{page.grand_parent}"')
     if page.has_children:
         lines.append("has_children: true")
+
+    # jekyll-seo-tag reads `description` for <meta name="description">,
+    # og:description and the JSON-LD description in one go, so this single key
+    # fixes all three at once.
+    description = extract_description(body, SITE_DESCRIPTION)
+    lines.append(f"description: {yaml_quote(description)}")
+
+    keywords = extract_keywords(page.title, body, page.parent)
+    if keywords:
+        lines.append(f"keywords: {yaml_quote(', '.join(keywords))}")
+
+    lines.append(f"seo:\n  type: {seo_type(page)}")
+
+    # Generated section indexes have no source file, so they legitimately have
+    # no modification date; jekyll-sitemap simply omits <lastmod> for those.
+    if not page.generated:
+        stamp = git_last_modified(page.source.as_posix())
+        if stamp:
+            lines.append(f"last_modified_at: {stamp}")
+
     lines.append("---")
     return "\n".join(lines)
 
@@ -493,6 +743,54 @@ def protect_liquid(body: str) -> str:
     return "\n".join(out)
 
 
+def check_diagram_labels(out_path: Path, body: str) -> list[str]:
+    """Every diagram must carry an ``accTitle``, and it must be in the right place.
+
+    Worth a dedicated check because the failure is invisible: an ``accTitle``
+    placed before the diagram-type line — or, as happened here, *inside* a
+    multi-line ``%%{init: ...}%%`` theme block — still renders a perfectly
+    normal-looking diagram, and simply produces no ``<title>``. Nothing about
+    the page looks wrong; the diagram is just unlabelled for anyone using a
+    screen reader.
+
+    That is exactly the bug this function exists to catch: the first version of
+    ``label_mermaid_diagrams`` labelled 24 of 71 diagrams and looked correct in
+    every rendered page. It was found by rendering all 71 in a real browser at
+    the pinned Mermaid version and counting ``<title>`` elements.
+    """
+    problems: list[str] = []
+    for match in _MERMAID_FENCE_RE.finditer(body):
+        inner = match.group(2)
+        lines = inner.split("\n")
+        if "accTitle:" not in inner:
+            problems.append(f"{out_path}: a mermaid diagram has no accTitle")
+            continue
+        # Find the diagram-type line the same way the injector does, then
+        # require accTitle to come after it.
+        in_directive = False
+        type_index = None
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("%%{"):
+                in_directive = not stripped.endswith("}%%")
+                continue
+            if in_directive:
+                if stripped.endswith("}%%"):
+                    in_directive = False
+                continue
+            if not stripped or stripped.startswith("%%"):
+                continue
+            type_index = i
+            break
+        acc_index = next((i for i, line in enumerate(lines) if line.strip().startswith("accTitle:")), None)
+        if type_index is None or acc_index is None or acc_index <= type_index:
+            problems.append(
+                f"{out_path}: accTitle is not after the diagram-type line, so Mermaid "
+                f"ignores it and the diagram renders with no accessible title"
+            )
+    return problems
+
+
 def build(check_only: bool) -> int:
     pages = collect_pages()
     by_source = {p.source: p for p in pages if not p.generated}
@@ -501,8 +799,22 @@ def build(check_only: bool) -> int:
     rendered: dict[Path, str] = {}
     for page in pages:
         body = rewriter.rewrite(page) if not page.generated else page.body
+        # Order matters: label before protect_liquid, so an injected accTitle
+        # is inside any {% raw %} wrapper rather than dangling outside it.
+        body = label_mermaid_diagrams(body, page.title)
         body = protect_liquid(body)
-        rendered[page.out_path] = f"{front_matter(page)}\n\n{body}{source_link(page)}"
+        rendered[page.out_path] = f"{front_matter(page, body)}\n\n{body}{source_link(page)}"
+
+        # A page whose description falls back to the site default is a page
+        # that will look like a duplicate of the other 84 to a search engine.
+        # This is the check that stops the original bug recurring silently.
+        if SITE_DESCRIPTION in rendered[page.out_path].split("---", 2)[1]:
+            rewriter.problems.append(
+                f"{page.out_path}: no usable opening paragraph, so its meta description "
+                f"falls back to the site default (which all 85 pages shared before the SEO pass)"
+            )
+
+        rewriter.problems.extend(check_diagram_labels(page.out_path, body))
 
     duplicate_titles: dict[tuple[str | None, str], list[str]] = {}
     for page in pages:
