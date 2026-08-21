@@ -10,11 +10,18 @@ Every page follows the same shape:
 - **What it is** — plain language, one honest analogy, no jargon in the definition itself.
 - **Why it matters** — the concrete problem it solves, and what breaks if you skip it.
 - **When to use it — and when not to.** Explicit non-use cases.
-- **How it works here** — the pattern running in *this* application, with a `file:line` pointer
-  into the real code and a diagram of the real path.
+- **How it works here** — the pattern running in *this* application, with a link to the real
+  source file and the symbol named in prose, plus a diagram of the real path.
 
 The repository is the source of truth for these ideas. Nothing here depends on an external
 article — read this, then read the file it points at, and you have the whole picture.
+
+> **Not sure you are ready for this layer?** The
+> [AI Knowledge Hub](https://nitinksingh.com/ai-resources/) sits below it: eleven modules and ten
+> labs taking you from a model running on your laptop to an agent in production, free and local.
+> These pages assume you can read code and want to know why a pattern exists; the hub assumes
+> less and has you build each idea yourself first. Individual pages here link to the matching hub
+> module where one exists.
 
 ## Two reading paths
 

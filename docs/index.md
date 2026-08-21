@@ -6,6 +6,11 @@ Six specialist agents collaborate over the A2A protocol to handle product discov
 
 This site is generated from the repository. Every page here is a file you can read in the repo, and every code pointer resolves to real source.
 
+> **Newer than this?** The [AI Knowledge Hub](https://nitinksingh.com/ai-resources/) is the layer
+> below: eleven modules and ten labs that go from running a model on your laptop to an agent in
+> production, all free and local. Start there if "agent", "tool call" or "orchestration" are not
+> yet familiar words — then come back here to see them doing real work at scale.
+
 ## Run it
 
 Docker is the only requirement — no Python, .NET or Node needed, and
