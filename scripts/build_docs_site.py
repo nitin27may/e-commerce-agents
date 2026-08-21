@@ -340,6 +340,12 @@ def collect_pages() -> list[Page]:
 # ── link rewriting ────────────────────────────────────────────────────────
 
 LINK_RE = re.compile(r"(!?)\[([^\]]*)\]\(([^)\s]+)(\s+\"[^\"]*\")?\)")
+# Raw HTML images. docs/frontend.md uses a <table> to put two screenshots side
+# by side, which markdown cannot express, so its <img src> never went through
+# LINK_RE. The page publishes at architecture/frontend.html while the images
+# copy to docs/images/, so a relative src resolved to architecture/images/ and
+# 404'd on the live site.
+HTML_IMG_RE = re.compile(r'(<img\b[^>]*?\bsrc=")([^"]+)(")', re.IGNORECASE)
 
 
 @dataclass
@@ -407,7 +413,17 @@ class Rewriter:
                 return match.group(0)
             return f"[{text}]({self.github_url(rel)}{anchor}{title})"
 
-        return LINK_RE.sub(replace, page.body)
+        def replace_html_img(match: re.Match[str]) -> str:
+            head, target, tail = match.groups()
+            rel = self.resolve(page.source, target)
+            if rel is None:
+                return match.group(0)
+            if not (REPO_ROOT / rel).exists():
+                self.problems.append(f"{page.source}: image does not exist: {target}")
+                return match.group(0)
+            return f"{head}{{{{ site.baseurl }}}}/{rel.as_posix()}{tail}"
+
+        return HTML_IMG_RE.sub(replace_html_img, LINK_RE.sub(replace, page.body))
 
 
 def front_matter(page: Page) -> str:
@@ -438,6 +454,45 @@ def source_link(page: Page) -> str:
     )
 
 
+FENCE_RE = re.compile(r"^\s*(```|~~~)")
+
+
+def protect_liquid(body: str) -> str:
+    """Wrap fenced blocks that Liquid would otherwise chew on in ``{% raw %}``.
+
+    Jekyll runs Liquid over the whole page before kramdown decides anything is
+    code, so ``{{ ... }}`` inside a fence is interpolated and silently replaced
+    with nothing. Mermaid spells a hexagon node ``id{{label}}``, which means
+    ``guard{{ReviewInjectionGuard}}`` published as a bare ``guard`` with no
+    label at all. Four diagrams were losing nodes this way.
+
+    Only fences that actually contain a Liquid-looking construct are wrapped,
+    and link rewriting never emits ``{{ site.baseurl }}`` inside a fence, so
+    there is nothing here that still needs evaluating.
+    """
+    lines = body.split("\n")
+    out: list[str] = []
+    block: list[str] | None = None
+    for line in lines:
+        if FENCE_RE.match(line):
+            if block is None:
+                block = [line]
+                continue
+            block.append(line)
+            joined = "\n".join(block)
+            if "{{" in joined or "{%" in joined:
+                out.extend(["{% raw %}", joined, "{% endraw %}"])
+            else:
+                out.append(joined)
+            block = None
+            continue
+        (block if block is not None else out).append(line)
+    if block is not None:
+        # Unterminated fence: emit it as-is rather than silently dropping it.
+        out.append("\n".join(block))
+    return "\n".join(out)
+
+
 def build(check_only: bool) -> int:
     pages = collect_pages()
     by_source = {p.source: p for p in pages if not p.generated}
@@ -446,6 +501,7 @@ def build(check_only: bool) -> int:
     rendered: dict[Path, str] = {}
     for page in pages:
         body = rewriter.rewrite(page) if not page.generated else page.body
+        body = protect_liquid(body)
         rendered[page.out_path] = f"{front_matter(page)}\n\n{body}{source_link(page)}"
 
     duplicate_titles: dict[tuple[str | None, str], list[str]] = {}
