@@ -1,5 +1,9 @@
 # The agentic loop
 
+> **New to this?** [The agent loop](https://nitinksingh.com/ai-resources/02-agents/the-agent-loop/) on the AI Knowledge Hub covers the
+> same ground from scratch, vendor-neutral, with a lab you can run locally for free.
+> This page assumes the concept and shows how it is built *here*.
+
 ## What it is
 
 The agentic loop is the cycle that runs every time you call `agent.run(...)`: the model **thinks**
@@ -49,10 +53,10 @@ including streaming and Azure. The loop itself lives inside the `agent_framework
 this repo — what you can see here is the boundary: where the loop is invoked, and where its
 result lands.
 
-That boundary is `agents/python/shared/agent_host.py`. Non-streaming:
+That boundary is [`agents/python/shared/agent_host.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/agent_host.py). Non-streaming:
 
 ```python
-# agents/python/shared/agent_host.py:78
+# agents/python/shared/agent_host.py
 response = await agent.run(messages, options=_run_options())
 ```
 
@@ -60,18 +64,18 @@ Streaming — same loop, but you get to watch each step arrive instead of waitin
 thing:
 
 ```python
-# agents/python/shared/agent_host.py:105-106
+# agents/python/shared/agent_host.py
 stream = agent.run(messages, stream=True, options=_run_options())
 async for update in stream:
 ```
 
 Every tool call the loop makes along the way is recorded by `StepRecorderMiddleware`
-(`agents/python/shared/agent_observability.py`) into that request's step list. The proof that the
+([`agents/python/shared/agent_observability.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/agent_observability.py)) into that request's step list. The proof that the
 loop actually ran more than once for a given query is visible in the browser: open the chat UI,
 ask something that needs two facts (like the stock-and-shipping example above), and watch
-`web/src/components/chat/agent-timeline.tsx` render one row per tool call — `search_products`,
+[`web/src/components/chat/agent-timeline.tsx`](https://github.com/nitin27may/e-commerce-agents/blob/main/web/src/components/chat/agent-timeline.tsx) render one row per tool call — `search_products`,
 then `check_stock`, then the final answer — each expandable to show exactly what arguments went
-in and what came back (`agent-timeline.tsx:48-99`). That timeline *is* the agentic loop, made
+in and what came back ([`agent-timeline.tsx`](https://github.com/nitin27may/e-commerce-agents/blob/main/web/src/components/chat/agent-timeline.tsx)). That timeline *is* the agentic loop, made
 visible.
 
 ```mermaid

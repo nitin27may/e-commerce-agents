@@ -1,5 +1,9 @@
 # Why multi-agent
 
+> **New to this?** [The harness](https://nitinksingh.com/ai-resources/02-agents/the-harness/) on the AI Knowledge Hub covers the
+> same ground from scratch, vendor-neutral, with a lab you can run locally for free.
+> This page assumes the concept and shows how it is built *here*.
+
 ## What it is
 
 A multi-agent system is more than one agent, each with its own narrower instructions and tool
@@ -55,9 +59,9 @@ This repo runs six agents: one orchestrator plus five specialists, each scoped t
 with its own `agent.py`/`tools.py`/`prompts.py`.
 
 The orchestrator doesn't have domain tools at all — its only tool is
-`call_specialist_agent`, defined at `agents/python/orchestrator/agent.py:32-43`. It looks up
+`call_specialist_agent`, defined at [`agents/python/orchestrator/agent.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/orchestrator/agent.py). It looks up
 where a named specialist actually lives via `AGENT_REGISTRY`
-(`agents/python/orchestrator/agent.py:29`), a flat `name -> base URL` map — parsed from
+(`agents/python/orchestrator/agent.py`), a flat `name -> base URL` map — parsed from
 `shared.config.settings.AGENT_REGISTRY`, a JSON string set in the environment
 (`.env.example:165`):
 
@@ -75,7 +79,7 @@ Calling a specialist means a real HTTP request to that URL's `/message:send` or 
 (the same endpoints from [the agent harness](04-agent-harness.md)) — this is genuinely
 inter-process, not a function call dressed up to look like one. That's the actual cost this page
 warned about: every specialist call is a network round trip, with its own latency and its own
-chance to fail (`orchestrator/agent.py:116-138` catches timeouts and HTTP errors around this call
+chance to fail ([`orchestrator/agent.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/orchestrator/agent.py) catches timeouts and HTTP errors around this call
 and returns a plain-language error rather than crashing — see
 [production concerns](14-production-concerns.md) for how far that error handling does and doesn't
 go).

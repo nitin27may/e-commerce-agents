@@ -1,5 +1,9 @@
 # What is an agent
 
+> **New to this?** [Tool calling](https://nitinksingh.com/ai-resources/02-agents/tool-calling/) on the AI Knowledge Hub covers the
+> same ground from scratch, vendor-neutral, with a lab you can run locally for free.
+> This page assumes the concept and shows how it is built *here*.
+
 ## What it is
 
 An agent is a language model given three things it doesn't have on its own: **instructions**
@@ -58,7 +62,7 @@ a real example of this in the codebase.
 ## How it works here
 
 Every specialist agent in this repo is built the same way. Here's `product-discovery`'s
-constructor, in full, at `agents/python/product_discovery/agent.py:86-94`:
+constructor, in full, at [`agents/python/product_discovery/agent.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/product_discovery/agent.py):
 
 ```python
 return Agent(
@@ -78,7 +82,7 @@ Map that straight onto the three ingredients:
   customer get different instructions from the same agent — see
   `agents/python/config/prompts/product-discovery.yaml`).
 - **Tools** — the `tools` list, built a few lines earlier from this agent's own `AGENT_TOOLS`
-  (`agents/python/product_discovery/agent.py:37-51`) — functions like `search_products`,
+  (`agents/python/product_discovery/agent.py`) — functions like `search_products`,
   `check_stock`, `get_price_history`.
 - **The loop** — not visible in this constructor at all. It's implicit: whatever calls
   `agent.run(...)` on this object gets the full think → call-tool → observe → think cycle for
@@ -88,11 +92,11 @@ Map that straight onto the three ingredients:
 All six agents in this repo — the orchestrator plus five specialists — follow this exact shape:
 `create_chat_client()`, role-aware `instructions`, a domain-specific `tools` list, and the same
 `build_specialist_middleware()` call. You can confirm this yourself:
-`agents/python/order_management/agent.py:59-67`,
-`agents/python/pricing_promotions/agent.py:40-50`,
-`agents/python/review_sentiment/agent.py:41-52`,
-`agents/python/inventory_fulfillment/agent.py:76-84`, and the orchestrator's own agent at
-`agents/python/orchestrator/agent.py:147-162` (whose only tool is `call_specialist_agent` — see
+[`agents/python/order_management/agent.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/order_management/agent.py),
+[`agents/python/pricing_promotions/agent.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/pricing_promotions/agent.py),
+[`agents/python/review_sentiment/agent.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/review_sentiment/agent.py),
+[`agents/python/inventory_fulfillment/agent.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/inventory_fulfillment/agent.py), and the orchestrator's own agent at
+[`agents/python/orchestrator/agent.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/orchestrator/agent.py) (whose only tool is `call_specialist_agent` — see
 [why multi-agent](05-why-multi-agent.md)).
 
 ```mermaid

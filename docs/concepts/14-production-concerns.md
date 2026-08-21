@@ -1,5 +1,9 @@
 # Production concerns
 
+> **New to this?** [Production](https://nitinksingh.com/ai-resources/02-agents/production/) on the AI Knowledge Hub covers the
+> same ground from scratch, vendor-neutral, with a lab you can run locally for free.
+> This page assumes the concept and shows how it is built *here*.
+
 ## What it is
 
 Three specific things that separate a demo from a system that survives contact with real,
@@ -46,7 +50,7 @@ no rate-limiting middleware on any FastAPI route. This isn't a case of the mecha
 a different name — there's no retry library in the Python dependencies, and a repo-wide search for
 retry logic turns up exactly one hit that isn't this page: a string in the chat UI telling the
 *user* to manually retry after a stream times out
-(`agents/python/orchestrator/routes/chat.py:486`), not any automated mechanism.
+([`agents/python/orchestrator/routes/chat.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/orchestrator/routes/chat.py)), not any automated mechanism.
 
 What *does* exist today, and is worth naming honestly as a partial mitigation rather than nothing:
 `orchestrator/agent.py::call_specialist_agent` (lines 116-137) wraps every A2A call in error
@@ -54,7 +58,7 @@ handling that catches `httpx.TimeoutException`, `httpx.HTTPStatusError`, and any
 returning a plain-language message to the model instead of crashing the whole request:
 
 ```python
-# agents/python/orchestrator/agent.py:129-131
+# agents/python/orchestrator/agent.py
 except httpx.TimeoutException:
     logger.error("a2a.timeout target=%s", agent_name)
     return f"The {agent_name} agent took too long to respond. Please try again."
