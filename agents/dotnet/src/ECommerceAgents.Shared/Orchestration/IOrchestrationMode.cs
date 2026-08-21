@@ -25,7 +25,13 @@ public sealed record ModeCapabilities(
 /// </remarks>
 public sealed record RunContext(
     IReadOnlyList<HistoryEntry> History,
-    string? ConversationId = null
+    string? ConversationId = null,
+    /// <summary>
+    /// Where a mode reports progress as it happens. Null when nobody is
+    /// listening — the non-streaming chat endpoint and mode comparison both
+    /// want only the final result, and a mode must not have to care which.
+    /// </summary>
+    IProgress<OrchestrationEvent>? Events = null
 );
 
 /// <summary>A mode's answer for one turn.</summary>

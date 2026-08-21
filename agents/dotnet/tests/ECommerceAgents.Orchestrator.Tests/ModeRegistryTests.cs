@@ -1,6 +1,8 @@
 using ECommerceAgents.Orchestrator.Modes;
 using ECommerceAgents.Shared.Orchestration;
+using ECommerceAgents.Shared.Configuration;
 using FluentAssertions;
+using System.Text.RegularExpressions;
 using Xunit;
 
 namespace ECommerceAgents.Orchestrator.Tests;
@@ -83,5 +85,49 @@ public sealed class ModeRegistryTests
         // chip; camelCase here would silently render no chips at all.
         mode.GetProperty("capabilities").GetProperty("is_graph").GetBoolean().Should().BeTrue();
         mode.GetProperty("capabilities").GetProperty("supports_hitl").GetBoolean().Should().BeFalse();
+    }
+
+    // ─────────────── graph ↔ executor id drift (#33 PR 6) ───────────────
+
+    /// <summary>
+    /// Every node in a mode's Mermaid must use the underscored form of a real
+    /// executor id.
+    /// </summary>
+    /// <remarks>
+    /// The UI lights up a diagram node by matching a live event's node_id to a
+    /// node id in the graph, so an id that doesn't correspond to an executor
+    /// is a node that can never animate — and nothing fails, it just sits
+    /// dark. This shipped in PR 5a: the pre-purchase diagram said "merge"
+    /// while the executor is "merge-and-ship", found only by reading the
+    /// frames off the wire.
+    /// </remarks>
+    [Theory]
+    [InlineData("workflow:pre-purchase", new[] { "fan-out", "reviews", "stock", "price-history", "merge-and-ship", "synthesis" })]
+    [InlineData("workflow:return-replace", new[] { "check-eligibility", "initiate-return", "search-replacements", "hitl-gate", "hitl-resume", "apply-discount", "finalize" })]
+    public void EveryGraphNodeId_MatchesARealExecutorId(string modeName, string[] executorIds)
+    {
+        var mermaid = modeName == "workflow:pre-purchase"
+            ? new PrePurchaseMode(null!).GraphMermaid()
+            : new ReturnReplaceMode(null!, new AgentSettings()).GraphMermaid();
+
+        mermaid.Should().NotBeNull();
+
+        var expected = executorIds.Select(OrchestrationEvent.ToNodeId).ToHashSet();
+
+        // Strip edge labels (|like this|) and node labels ([Like this],
+        // {Like this}) first — both contain prose that would otherwise be
+        // mistaken for ids.
+        var skeleton = Regex.Replace(mermaid!, @"\|[^|]*\||\[[^\]]*\]|\{[^}]*\}", " ");
+
+        var found = Regex.Matches(skeleton, @"[a-z_]+")
+            .Select(m => m.Value)
+            .Where(v => v is not ("graph" or "td"))
+            .ToHashSet();
+
+        var unknown = found.Except(expected).ToList();
+        unknown.Should().BeEmpty(
+            $"every node in {modeName}'s graph must correspond to an executor; " +
+            $"known ids are {string.Join(", ", expected)}"
+        );
     }
 }

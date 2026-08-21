@@ -47,10 +47,10 @@ public sealed partial class PrePurchaseMode(DatabasePool pool) : IOrchestrationM
             fan_out[Fan out] --> reviews[Reviews]
             fan_out --> stock[Stock]
             fan_out --> price_history[Price history]
-            reviews --> merge[Merge]
-            stock --> merge
-            price_history --> merge
-            merge --> synthesis[Synthesis]
+            reviews --> merge_and_ship[Merge + shipping]
+            stock --> merge_and_ship
+            price_history --> merge_and_ship
+            merge_and_ship --> synthesis[Synthesis]
         """;
 
     [GeneratedRegex(@"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")]
@@ -69,7 +69,7 @@ public sealed partial class PrePurchaseMode(DatabasePool pool) : IOrchestrationM
         }
 
         var workflow = new PrePurchaseWorkflow(new PrePurchaseTools(_pool));
-        var state = await workflow.ExecuteAsync(new ResearchState(productId), ct);
+        var state = await workflow.ExecuteAsync(new ResearchState(productId), ct, ctx.Events);
 
         return new ModeRunResult(
             Summarise(state),

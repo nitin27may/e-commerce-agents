@@ -48,11 +48,11 @@ public sealed partial class ReturnReplaceMode(DatabasePool pool, AgentSettings s
         graph TD
             check_eligibility[Check eligibility] --> initiate_return[Initiate return]
             initiate_return --> search_replacements[Search replacements]
-            search_replacements --> gate_decision{High value?}
-            gate_decision -->|yes| hitl_gate[Await approval]
-            gate_decision -->|no| discount[Apply loyalty discount]
-            hitl_gate --> discount
-            discount --> finalize[Finalize]
+            search_replacements --> hitl_gate{High value?}
+            hitl_gate -->|approval needed| hitl_resume[Await approval]
+            hitl_gate -->|under threshold| apply_discount[Apply loyalty discount]
+            hitl_resume --> apply_discount
+            apply_discount --> finalize[Finalize]
         """;
 
     [GeneratedRegex(@"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")]
@@ -88,7 +88,8 @@ public sealed partial class ReturnReplaceMode(DatabasePool pool, AgentSettings s
         // every workflow test supplies the total itself.
         var state = await workflow.ExecuteAsync(
             new WorkflowState(email, order.Value.Id) { Reason = message, OrderTotal = order.Value.Total },
-            ct
+            ct,
+            ctx.Events
         );
 
         return new ModeRunResult(

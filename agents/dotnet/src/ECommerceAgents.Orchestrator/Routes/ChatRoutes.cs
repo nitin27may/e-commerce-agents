@@ -273,9 +273,26 @@ public static class ChatRoutes
             // out as a single frame, which is what Python's workflow modes fall
             // back to as well. Real per-node progress needs the normalized SSE
             // event protocol (#33 PR 6).
+            // Forward each node event as its own SSE frame as it happens,
+            // reusing the same writer (and lock) the delta path uses so
+            // framing and ordering stay consistent.
+            //
+            // Reported synchronously rather than through Progress<T>, which
+            // queues each callback to the thread pool: for a graph animation
+            // order is the whole point, and an exit arriving before its enter
+            // leaves a node stuck lit.
+            var sink = new SynchronousProgress<OrchestrationEvent>(evt =>
+                WriteFrameAsync(OrchestrationFrameName(evt), OrchestrationFrameData(evt))
+                    .GetAwaiter()
+                    .GetResult());
+
             var modeResult = await registry
                 .Get(request.Mode)
-                .RunAsync(request.Message, new RunContext(ctx.History, ctx.ConversationId), context.RequestAborted);
+                .RunAsync(
+                    request.Message,
+                    new RunContext(ctx.History, ctx.ConversationId, sink),
+                    context.RequestAborted
+                );
 
             responseText.Append(modeResult.Text);
             modeAgents = modeResult.AgentsInvolved.ToList();
@@ -385,6 +402,55 @@ public static class ChatRoutes
 
             return await next(context);
         }
+    }
+
+    /// <summary>
+    /// The SSE event name for an orchestration event. Names match Python's,
+    /// because <c>web/src/lib/api.ts</c>'s onOrchestrationEvent hook has been
+    /// fed by Python since Phase 1 — this is that contract, not a new one.
+    /// </summary>
+    private static string OrchestrationFrameName(OrchestrationEvent evt) => evt.Kind switch
+    {
+        // enter and exit share one frame name and are told apart by phase,
+        // the same way Python emits them.
+        "node_enter" or "node_exit" => "node",
+        _ => evt.Kind,
+    };
+
+    private static string OrchestrationFrameData(OrchestrationEvent evt)
+    {
+        var payload = new Dictionary<string, object?>
+        {
+            ["kind"] = evt.Kind,
+            ["node_id"] = evt.NodeId,
+            ["agent"] = evt.Agent,
+            ["phase"] = evt.Kind switch
+            {
+                "node_enter" => "enter",
+                "node_exit" => "exit",
+                _ => null,
+            },
+        };
+
+        if (evt.Payload is not null)
+        {
+            foreach (var (key, value) in evt.Payload)
+            {
+                payload[key] = value;
+            }
+        }
+
+        return JsonSerializer.Serialize(payload);
+    }
+
+    /// <summary>
+    /// An <see cref="IProgress{T}"/> that invokes its callback on the
+    /// reporting thread instead of posting to a synchronization context, so
+    /// events keep the order the workflow produced them in.
+    /// </summary>
+    private sealed class SynchronousProgress<T>(Action<T> handler) : IProgress<T>
+    {
+        public void Report(T value) => handler(value);
     }
 
     private sealed record ConversationContext(bool IsAnon, string ConversationId, Guid? UserId, List<HistoryEntry> History);
