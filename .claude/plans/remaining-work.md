@@ -133,10 +133,52 @@ stacks. With these gone the suite is a real gate rather than 15 permanent reds:
 
 ### 6. Open issues not owned by any of the above
 
-`#4` (composer UX), `#5`/`#6` (packaging fragility, undocumented `uv sync --all-packages`), `#7`
-(pnpm ignored-builds gate), `#8` (order-card Return button ignores eligibility), `#9` (follow-up
-context non-sequitur), `#10` (navigating away mid-stream drops the assistant turn), `#22` (specialist
-eval reliability).
+**Corrected 2026-08-21:** an earlier version of this list said `#5`, `#6`, `#7`, `#8`, `#10` and
+`#22` were open. **All six are closed.** Genuinely open: `#4` (composer UX), `#9` (follow-up
+questions lose context), `#11` (parity matrix — item 2 above), `#18` (closeable with item 2, since
+`Shared/Tools/` now exists), `#19`, `#20`, `#33` (umbrella).
+
+### 7. Bugs and findings logged while working
+
+Each was found by running something rather than reading it. Open unless marked.
+
+- [ ] **Checkout is not idempotent on .NET.** Three of Python's four `@idempotent` sites are ported
+      (`InitiateReturn`, `ProcessRefund`, the HITL approval executor); checkout is not. Python
+      guards it at `orchestrator/routes/legacy.py:2151`; the .NET twin is
+      `Orchestrator/Routes/CheckoutRoutes.cs`. A double-submitted checkout still places two orders.
+- [ ] **`StreamAsync_EmitsAGroundingFrame` failed once and has not reproduced.** A
+      `NullReferenceException` in one full-solution run, then green alone, in its class, in a
+      three-class run and in two subsequent full runs. Nothing was changed to "fix" it, so it is
+      unexplained rather than resolved — possibly contention now that a concurrent test shares
+      Postgres across projects. Do not treat the green runs as evidence it is gone.
+- [ ] **`test_record_against_real_provider_then_replay_offline` is order-dependent.** Passes alone,
+      fails inside a larger run, independent of any recent change. `_available_provider()` is
+      evaluated once in `@pytest.mark.skipif` at collection time and again in the body, and the
+      environment has changed by then, so `assert provider is not None` fires. The fix is
+      `pytest.skip()` in the body rather than an assert. Found by another session.
+- [ ] **`docs/concepts/**` `file:line` pointers have drifted.** `01-what-is-an-agent.md` cites
+      `orchestrator/agent.py:147-162` for `create_orchestrator_agent`, which is at 156. Some
+      pointers are still correct, which is worse than all of them being wrong — a reader cannot tell
+      which to trust. Symbols or permalinked SHAs instead of bare line numbers. Owned by another
+      session, spans a directory, announced before it starts.
+- [ ] **Twelve stale feature branches.** Not to be pruned unilaterally.
+- [x] **The documented free-tier path pointed at a retired service.** GitHub Models was retired at
+      the end of July 2026 and its endpoint 404s. It was written into `docs/quick-start.md` and
+      `README.md` as *the* no-API-key option and shipped to the live docs site — the endpoint was
+      copied out of `tutorials/00-setup` without being curled once. Fixed in #46, along with a
+      second finding worth keeping: `qwen3.5:9b` is the *smallest* of the three suggested local
+      models and the **slowest by 6.5x**, because it is a reasoning model whose thinking trace eats
+      the output budget — under a 1024-token cap it returns `finish_reason: length` with empty
+      content. Smaller is not faster.
+- [x] **`WorkflowState` could not survive JSON.** Get-only `List<T>` on a type with a parameterized
+      constructor: System.Text.Json returns the object with those collections **empty and no error**,
+      so a resumed workflow would have forgotten every step it ran and re-opened a return it had
+      already opened. Fixed with settable collections; `JsonObjectCreationHandling.Populate` is the
+      tidier fix and throws `NotSupportedException` for exactly that constructor reason.
+- [x] **Dapper `dynamic` silently makes downstream calls dynamic.** In the resume route, inferring
+      `sessionId` from `claimed.payload` made `mode.ResumeAsync` dynamically dispatched; its result
+      came back as `object` and failed at runtime on `.AgentsInvolved`. It compiled cleanly and
+      500'd. Type anything derived from a Dapper row explicitly.
 
 ## Constraints that still bite
 
@@ -171,6 +213,19 @@ empirically: break out of the event stream on `RequestInfoEvent` *without dispos
 **In-workflow HITL resume needs the first stream drained.** Breaking out at the first `request_info`
 — the obvious move for an HTTP handler — leaves the workflow with `_is_running=True`, and the
 resuming `run()` raises `RuntimeError: Workflow is already running`.
+
+**More than one agent can share this working tree.** Another Claude session works in this repo
+concurrently. A `git add -A` while its uncommitted work was present swept 35 of its files into a
+.NET commit; the branch it thought it had was empty, so from its side the work had simply vanished.
+Stage explicit paths, never `-A`, and commit or stash before switching branches — `git checkout`
+drags uncommitted work across and that is the actual failure mode, not file overlap. The two
+branches shared zero files.
+
+Ownership as agreed: `agents/dotnet/**` and `docker/postgres/init.sql` here; `tutorials/**`,
+`.env.example`, `CLAUDE.md`, `agents/python/shared/*` there. `docs/quick-start.md` and `README.md`
+are shared and split by section — model selection and the free-tier path there, Windows/WSL2,
+PowerShell and `dev.ps1` here. The `ChatClientFactory` → `IChatClient` refactor spans
+`agents/dotnet/src/` and six `Program.cs` files, so it wants one uninterrupted window; announce it.
 
 **The repository is the source of truth; the site is a rendering.** `scripts/build_docs_site.py` is
 strictly one-directional. Nothing may live only on the site, and no Jekyll front matter may be
