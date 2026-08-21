@@ -16,7 +16,18 @@ title: E-Commerce Agents
 description: Multi-agent orchestration with Microsoft Agent Framework — concepts, 34 tutorial chapters, and a running reference implementation in Python and .NET.
 remote_theme: just-the-docs/just-the-docs
 
-url: https://nitinksingh.com/e-commerce-agents
+# `url` is the origin ONLY. The project path lives in `baseurl`.
+# Putting the path in `url` doubles it into everything absolute: jekyll-seo-tag
+# canonicals, og:url, and every <loc> jekyll-sitemap emits. All 85 sitemap URLs
+# were coming out as /e-commerce-agents/e-commerce-agents/... and 404ing, which
+# made the sitemap added below worse than useless.
+#
+# `baseurl` is set explicitly for the same reason as `repository` below: in CI
+# actions/configure-pages injects it, but the generator rewrites every internal
+# link to `{{ site.baseurl }}/...`, so a local build without it produces a site
+# whose links all point at the domain root.
+url: https://nitinksingh.com
+baseurl: /e-commerce-agents
 
 # Set explicitly, unlike the sibling repos, so the site can be built locally.
 # In CI `actions/configure-pages` injects this; without it jekyll-github-metadata
