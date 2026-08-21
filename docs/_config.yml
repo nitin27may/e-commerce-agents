@@ -116,6 +116,21 @@ enable_copy_code_button: true
 ga_tracking: G-5Z8HS51RCP
 ga_tracking_anonymize_ip: true
 
+# Default social-preview image. jekyll-seo-tag emits og:image and
+# twitter:image from this, and upgrades the card to a banner rather than a
+# thumbnail — so a link shared to Slack, LinkedIn or X shows the agent
+# timeline instead of a bare grey box. Verified against the deployed site
+# beforehand: there was no og:image on any of the 85 pages.
+#
+# Must be an absolute URL. jekyll-seo-tag does not prepend `baseurl` to a
+# root-relative image path, so a bare `/docs/images/...` would resolve
+# against the domain root and 404 — the same drop-vs-double trap that made
+# every sitemap URL wrong before it was fixed.
+image: https://nitinksingh.com/e-commerce-agents/docs/images/agent-timeline.png
+
+twitter:
+  card: summary_large_image
+
 # The site had no sitemap.xml at all, which left all 85 generated pages
 # undiscoverable -- nothing for Search Console to submit and nothing for a
 # crawler to walk. jekyll-sitemap is on the GitHub Pages plugin whitelist, so
