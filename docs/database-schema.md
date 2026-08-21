@@ -333,6 +333,35 @@ erDiagram
 - `idx_products_rating` on `products(rating DESC)`
 - `idx_product_embedding` on `product_embeddings(embedding)` using IVFFlat with `vector_cosine_ops`
 
+
+### `promotions.rules` schema
+
+`rules` is untyped JSONB, which for a long time meant *undocumented* rather than
+flexible: `scripts/seed.py` wrote one set of key names and
+`pricing_promotions/tools.py::optimize_cart` read another, so **no promotion had
+ever applied correctly** (#51). Only one of the three failed loudly.
+
+| type | Accepted keys | Meaning |
+|---|---|---|
+| `bundle` | `products` (names) **or** `product_ids` (UUIDs), `discount_pct` | Percentage off the listed items, only when **all** of them are in the cart |
+| `buy_x_get_y` | `buy_quantity` + `free_quantity`, optional `category`/`categories` | Genuine buy-X-get-Y-free |
+| `buy_x_get_y` | `min_quantity` + `discount_pct`, optional `category`/`categories` | Percentage off once a minimum quantity is reached — what "Buy 2 Books Get 10% Off" actually means |
+| `flash_sale` | `categories` **and/or** `product_ids`, `discount_pct` | Percentage off matching items |
+
+Both singular (`category`) and plural (`categories`) are accepted, because the
+seeded rows use both.
+
+Two rules the reader enforces, each closing a defect that shipped:
+
+- **An empty requirement list never matches.** A `bundle` with no `products` and
+  no `product_ids` used to match *every* cart, because `all([])` is `True`. It
+  then contributed £0 — silent noise on every cart-optimisation call.
+- **Unparseable rules are skipped, not guessed at.** A `buy_x_get_y` row
+  describing neither shape used to leave `buy_quantity` and `free_quantity` at
+  `0`, making `quantity >= 0 + 0` always true and dividing by zero on the next
+  line. A discount outside 0–100% is treated as a data error and ignored rather
+  than applied.
+
 > **Gotcha — an IVFFlat index must be built *after* the vectors exist.**
 > IVFFlat partitions the vector space into `lists` clusters using whatever data
 > is present when the index is built. `init.sql` creates this index on an empty
@@ -399,7 +428,7 @@ erDiagram
 | Table | Key Columns | Notes |
 |-------|-------------|-------|
 | **coupons** | `id` (PK), `code` (unique), `discount_type`, `discount_value`, `min_spend`, `max_discount`, `applicable_categories` (TEXT[]), `user_specific_email` | Types: `percentage`, `fixed`. `applicable_categories` is NULL for all-category coupons. `user_specific_email` is NULL for universal coupons. |
-| **promotions** | `id` (PK), `name`, `type`, `rules` (JSONB), `start_date`, `end_date` | Types: `bundle`, `buy_x_get_y`, `flash_sale`. Rules are flexible JSONB for promotion-specific logic. |
+| **promotions** | `id` (PK), `name`, `type`, `rules` (JSONB), `start_date`, `end_date` | Types: `bundle`, `buy_x_get_y`, `flash_sale`. See the rules schema below — "flexible JSONB" is what let the seed and the reader drift apart. |
 | **loyalty_tiers** | `id` (PK), `name` (unique), `min_spend`, `discount_pct`, `free_shipping_threshold`, `priority_support` | 3 tiers: bronze ($0, 0%), silver ($1000, 5%), gold ($3000, 10%). |
 
 ### Marketplace

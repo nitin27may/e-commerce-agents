@@ -92,6 +92,33 @@ async def validate_coupon(
         }
 
 
+def _as_list(value: object) -> list[str]:
+    """Normalise a rules field that may be a scalar or a list.
+
+    `promotions.rules` is untyped JSONB and the seeded rows are inconsistent:
+    `buy_x_get_y` uses a singular `category`, `flash_sale` a plural
+    `categories`. Reading only one spelling is what made both promotions
+    silently match nothing.
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, (list, tuple)):
+        return [str(v) for v in value]
+    return []
+
+
+def _pct(value: object) -> float:
+    """A percentage from untyped JSONB, or 0.0 if it isn't one."""
+    try:
+        pct = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0.0
+    # A negative or >100% discount is a data error, not a bigger discount.
+    return pct if 0.0 <= pct <= 100.0 else 0.0
+
+
 @tool(name="optimize_cart", description="Find the best combination of coupons, promotions, and loyalty discounts for a cart. Returns the optimal savings breakdown.")
 async def optimize_cart(
     product_ids_with_quantities: Annotated[
@@ -125,6 +152,7 @@ async def optimize_cart(
         original_total = sum(i["subtotal"] for i in cart_items)
         categories = list({i["category"] for i in cart_items})
         product_ids = [i["product_id"] for i in cart_items]
+        product_names = [i["name"] for i in cart_items]
         savings = []
 
         # 1. Find applicable coupons
@@ -184,13 +212,33 @@ async def optimize_cart(
             promo_type = promo["type"]
 
             if promo_type == "bundle":
-                required_ids = rules.get("product_ids", [])
-                if all(pid in product_ids for pid in required_ids):
-                    discount_pct = rules.get("discount_pct", 0)
-                    bundle_total = sum(
-                        i["subtotal"] for i in cart_items if i["product_id"] in required_ids
-                    )
-                    amount = bundle_total * (discount_pct / 100)
+                # Accept ids or names. `scripts/seed.py` writes product *names*
+                # under `products`; this only ever read `product_ids`, so
+                # `required` was always empty — and `all()` over an empty list
+                # is True, so every bundle promotion "matched" every cart and
+                # then contributed £0, because the sum below found no items
+                # whose id was in that same empty list. Silent noise on every
+                # cart-optimisation call since the promotions were seeded.
+                required_ids = [str(x) for x in rules.get("product_ids", [])]
+                required_names = [str(x) for x in rules.get("products", [])]
+                if not required_ids and not required_names:
+                    continue  # never vacuously match
+
+                in_cart = (
+                    all(pid in product_ids for pid in required_ids)
+                    if required_ids
+                    else all(name in product_names for name in required_names)
+                )
+                if not in_cart:
+                    continue
+
+                bundle_total = sum(
+                    i["subtotal"]
+                    for i in cart_items
+                    if i["product_id"] in required_ids or i["name"] in required_names
+                )
+                amount = bundle_total * (_pct(rules.get("discount_pct")) / 100)
+                if amount > 0:
                     savings.append({
                         "type": "bundle_promotion",
                         "name": promo["name"],
@@ -198,15 +246,40 @@ async def optimize_cart(
                     })
 
             elif promo_type == "buy_x_get_y":
-                buy_qty = rules.get("buy_quantity", 0)
-                free_qty = rules.get("free_quantity", 0)
-                applicable_cats = rules.get("categories", [])
+                # Two rule shapes, because the seeded data uses the second and
+                # this only understood the first. "Buy 2 Books Get 10% Off" is
+                # a percentage discount above a minimum quantity, not a
+                # free-units BOGO — and reading it as one meant
+                # `buy_quantity`/`free_quantity` both defaulted to 0, so
+                # `quantity >= 0 + 0` was always true and the next line divided
+                # by zero. That crashed the whole tool (#51).
+                cats = _as_list(rules.get("categories") or rules.get("category"))
+                buy_qty = int(rules.get("buy_quantity") or 0)
+                free_qty = int(rules.get("free_quantity") or 0)
+                min_qty = int(rules.get("min_quantity") or 0)
+                discount_pct = _pct(rules.get("discount_pct"))
+
                 for item in cart_items:
-                    if applicable_cats and item["category"] not in applicable_cats:
+                    if cats and item["category"] not in cats:
                         continue
-                    if item["quantity"] >= buy_qty + free_qty:
-                        free_units = item["quantity"] // (buy_qty + free_qty) * free_qty
+
+                    if buy_qty > 0 and free_qty > 0:
+                        # Genuine buy-X-get-Y-free.
+                        group = buy_qty + free_qty
+                        if item["quantity"] < group:
+                            continue
+                        free_units = item["quantity"] // group * free_qty
                         amount = item["price"] * free_units
+                    elif min_qty > 0 and discount_pct > 0:
+                        # Percentage off once a minimum quantity is reached.
+                        if item["quantity"] < min_qty:
+                            continue
+                        amount = item["subtotal"] * (discount_pct / 100)
+                    else:
+                        # Rules describe neither shape — skip rather than guess.
+                        continue
+
+                    if amount > 0:
                         savings.append({
                             "type": "buy_x_get_y",
                             "name": promo["name"],
@@ -215,17 +288,28 @@ async def optimize_cart(
                         })
 
             elif promo_type == "flash_sale":
-                flash_ids = rules.get("product_ids", [])
-                discount_pct = rules.get("discount_pct", 0)
+                # Same mismatch again: the seed scopes flash sales by
+                # `categories`, this only read `product_ids`, so no item ever
+                # matched and the promotion was a silent no-op.
+                flash_ids = [str(x) for x in rules.get("product_ids", [])]
+                flash_cats = _as_list(rules.get("categories") or rules.get("category"))
+                if not flash_ids and not flash_cats:
+                    continue
+
+                discount_pct = _pct(rules.get("discount_pct"))
                 for item in cart_items:
-                    if item["product_id"] in flash_ids:
-                        amount = item["subtotal"] * (discount_pct / 100)
+                    matches = item["product_id"] in flash_ids or item["category"] in flash_cats
+                    if not matches:
+                        continue
+                    amount = item["subtotal"] * (discount_pct / 100)
+                    if amount > 0:
                         savings.append({
                             "type": "flash_sale",
                             "name": promo["name"],
                             "product": item["name"],
                             "amount": round(amount, 2),
                         })
+
 
         # 3. Calculate loyalty discount
         if email:
