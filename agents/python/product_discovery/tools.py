@@ -169,16 +169,41 @@ async def semantic_search(
     embedding = response.data[0].embedding
 
     async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            """SELECT p.id, p.name, p.description, p.category, p.brand, p.price, p.rating, p.image_url,
-                      1 - (pe.embedding <=> $1::vector) as similarity
-               FROM product_embeddings pe
-               JOIN products p ON pe.product_id = p.id
-               WHERE p.is_active = TRUE
-               ORDER BY pe.embedding <=> $1::vector
-               LIMIT $2""",
-            json.dumps(embedding), limit,
-        )
+        # Raise ivfflat's probe count for this query (#52).
+        #
+        # `idx_product_embedding` is created by init.sql on an EMPTY table, so
+        # ivfflat has no data to derive centroids from and every vector lands
+        # in a degenerate partition. At the default `probes = 1` a query probes
+        # one list and returns whatever is in it — or nothing at all. Measured
+        # on a seeded database: "wireless noise cancelling headphones" returned
+        # "Patagonia Better Sweater" at similarity 0.000 through the index, and
+        # "Sony WH-1000XM5" at 0.420 with an exact scan. Same data, same query.
+        #
+        # generate_embeddings.py now REINDEXes after writing, which fixes the
+        # normal path, but any other insert (a test, one new product) leaves
+        # the index stale again. Probing every list makes correctness
+        # independent of whether someone remembered to reindex. It costs
+        # nothing at this catalogue size — with `lists = 10` this is an exact
+        # search over 50 rows — and degrades to an ordinary recall/latency
+        # trade-off if the catalogue ever grows enough for the index to earn
+        # its keep.
+        #
+        # SET LOCAL only applies inside a transaction; outside one it is a
+        # no-op that warns rather than errors, which is its own quiet trap.
+        async with conn.transaction():
+            await conn.execute("SET LOCAL ivfflat.probes = 10")
+            rows = await conn.fetch(
+                """SELECT p.id, p.name, p.description, p.category, p.brand, p.price, p.rating, p.image_url,
+                          1 - (pe.embedding <=> $1::vector) as similarity
+                   FROM product_embeddings pe
+                   JOIN products p ON pe.product_id = p.id
+                   WHERE p.is_active = TRUE
+                   ORDER BY pe.embedding <=> $1::vector
+                   LIMIT $2""",
+                json.dumps(embedding),
+                limit,
+            )
+
         return [
             {
                 "id": str(r["id"]),
@@ -209,16 +234,23 @@ async def find_similar_products(
         if not ref:
             return [{"error": f"No embedding found for product {product_id}"}]
 
-        rows = await conn.fetch(
-            """SELECT p.id, p.name, p.category, p.brand, p.price, p.rating,
-                      1 - (pe.embedding <=> $1) as similarity
-               FROM product_embeddings pe
-               JOIN products p ON pe.product_id = p.id
-               WHERE pe.product_id != $2 AND p.is_active = TRUE
-               ORDER BY pe.embedding <=> $1
-               LIMIT $3""",
-            ref["embedding"], product_id, limit,
-        )
+        # Same stale-ivfflat exposure as semantic_search — see the long note
+        # there. This query hits the same index, so it needs the same probe
+        # count or it returns unrelated products (or none) just as readily.
+        async with conn.transaction():
+            await conn.execute("SET LOCAL ivfflat.probes = 10")
+            rows = await conn.fetch(
+                """SELECT p.id, p.name, p.category, p.brand, p.price, p.rating,
+                          1 - (pe.embedding <=> $1) as similarity
+                   FROM product_embeddings pe
+                   JOIN products p ON pe.product_id = p.id
+                   WHERE pe.product_id != $2 AND p.is_active = TRUE
+                   ORDER BY pe.embedding <=> $1
+                   LIMIT $3""",
+                ref["embedding"],
+                product_id,
+                limit,
+            )
         return [
             {
                 "id": str(r["id"]),

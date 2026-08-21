@@ -332,6 +332,30 @@ erDiagram
 - `idx_products_price` on `products(price)`
 - `idx_products_rating` on `products(rating DESC)`
 - `idx_product_embedding` on `product_embeddings(embedding)` using IVFFlat with `vector_cosine_ops`
+
+> **Gotcha — an IVFFlat index must be built *after* the vectors exist.**
+> IVFFlat partitions the vector space into `lists` clusters using whatever data
+> is present when the index is built. `init.sql` creates this index on an empty
+> table, so it has nothing to derive centroids from, and at the default
+> `ivfflat.probes = 1` a query probes one degenerate partition and returns
+> whatever happens to be in it — or nothing.
+>
+> Measured on a seeded database, same data and same query, index alone being
+> the difference:
+>
+> | | Top result | Similarity |
+> |---|---|---|
+> | through the index | Patagonia Better Sweater | 0.000 |
+> | exact scan | Sony WH-1000XM5 | 0.420 |
+>
+> Nothing errors. Semantic search simply returns unrelated products, which is
+> why this survived: it looks like a weak embedding model rather than a broken
+> index. Two defences are in place — `scripts/generate_embeddings.py` runs
+> `REINDEX INDEX idx_product_embedding` after writing, and `semantic_search` /
+> `find_similar_products` raise `ivfflat.probes` for their own query so
+> correctness does not depend on someone having remembered to reindex. The
+> same applies after any wholesale re-embedding: centroids computed for the
+> previous vectors do not describe the new ones.
 - `idx_price_history` on `price_history(product_id, recorded_at DESC)`
 
 ### Orders & Returns
