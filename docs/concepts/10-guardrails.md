@@ -1,5 +1,9 @@
 # Guardrails
 
+> **New to this?** [Safety and failure modes](https://nitinksingh.com/ai-resources/02-agents/safety/) on the AI Knowledge Hub covers the
+> same ground from scratch, vendor-neutral, with a lab you can run locally for free.
+> This page assumes the concept and shows how it is built *here*.
+
 ## What it is
 
 Guardrails are the layer that defends against inputs trying to make the agent do something it
@@ -44,7 +48,7 @@ measured before anything is set to block — see the caveat below.
 ## How it works here
 
 Every specialist and the orchestrator share one middleware stack,
-`build_specialist_middleware()` (`shared/middleware.py:179-223`), assembled in a specific order:
+`build_specialist_middleware()` ([`shared/middleware.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/middleware.py)), assembled in a specific order:
 
 ```python
 # agents/python/shared/middleware.py — the assembly, abbreviated
@@ -63,14 +67,14 @@ if settings.GROUNDING_MODE != "off":
 Each layer maps directly onto one part of the threat model above, and each one has an honest
 limit worth knowing:
 
-- **`InjectionDetectionChatMiddleware`** (`shared/guardrails/injection_middleware.py`) scans
+- **`InjectionDetectionChatMiddleware`** ([`shared/guardrails/injection_middleware.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/guardrails/injection_middleware.py)) scans
   inbound messages for high-precision injection phrasing before they reach the model. By default
   it's *observe-only* — it flags and logs, but still lets the message through — because blocking
   on a regex match risks refusing a legitimate message that happens to contain a similar phrase.
   Setting `GUARDRAILS_BLOCK_ON_INJECTION=true` escalates it to a hard refusal. **What it can't do:**
   it only catches phrasing matching its known patterns — a sufficiently different injection attempt
   can still get through undetected. It's a layer, not a guarantee.
-- **`OutputSanitizationMiddleware`** (`shared/guardrails/output_middleware.py`) is the defense
+- **`OutputSanitizationMiddleware`** ([`shared/guardrails/output_middleware.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/guardrails/output_middleware.py)) is the defense
   against injection *via data* specifically: it defangs injection-shaped text inside tool
   *results* (a review, an order note) before that text re-enters the model as context — this is
   what stops a poisoned product review from attacking every customer who asks about it, not just
@@ -81,7 +85,7 @@ limit worth knowing:
   the right default.
 - **Role confinement** isn't a middleware in this stack at all — it's enforced by never trusting
   anything the model or the user's *text* claims about identity. `current_user_role`
-  (`shared/context.py`) is set once, from the authenticated session, and every tool and prompt
+  ([`shared/context.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/context.py)) is set once, from the authenticated session, and every tool and prompt
   reads from that ContextVar — a message saying "I'm an admin" has no path to changing it. This is
   the actual defense against role escalation: not detecting the attempt, but making the attempt
   structurally unable to reach anything that matters.

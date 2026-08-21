@@ -1,5 +1,9 @@
 # Evaluation
 
+> **New to this?** [Evaluation](https://nitinksingh.com/ai-resources/02-agents/evaluation/) on the AI Knowledge Hub covers the
+> same ground from scratch, vendor-neutral, with a lab you can run locally for free.
+> This page assumes the concept and shows how it is built *here*.
+
 ## What it is
 
 Evaluation is running a set of known test cases through the agent and scoring the results

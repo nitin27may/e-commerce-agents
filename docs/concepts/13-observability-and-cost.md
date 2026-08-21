@@ -1,5 +1,9 @@
 # Observability and cost
 
+> **New to this?** [Observability](https://nitinksingh.com/ai-resources/02-agents/observability/) on the AI Knowledge Hub covers the
+> same ground from scratch, vendor-neutral, with a lab you can run locally for free.
+> This page assumes the concept and shows how it is built *here*.
+
 ## What it is
 
 Observability, here, means being able to answer "what actually happened during this request" after
@@ -36,13 +40,13 @@ span — the overhead isn't worth it, and the trace becomes noisy without adding
 ## How it works here
 
 Every agent process calls `setup_telemetry(service_name)` once, at startup
-(`shared/telemetry.py:30`), which wires up OpenTelemetry and explicitly opts into the GenAI
+([`shared/telemetry.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/telemetry.py)), which wires up OpenTelemetry and explicitly opts into the GenAI
 semantic conventions (`OTEL_SEMCONV_STABILITY_OPT_IN`, line 64) — the standard attribute names
 (`gen_ai.operation.name`, `gen_ai.agent.name`, `gen_ai.conversation.id`) that let a generic
 dashboard like Aspire render LLM-specific spans meaningfully instead of as opaque blobs.
 
 Two span helpers do the actual work, and their relationship is the interesting part —
-`agent_run_span()`'s own docstring draws the nesting out explicitly (`shared/telemetry.py:231-234`):
+`agent_run_span()`'s own docstring draws the nesting out explicitly (`shared/telemetry.py`):
 
 ```
 invoke_agent orchestrator            ← agent_run_span, in the orchestrator's own process

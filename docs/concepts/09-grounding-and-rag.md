@@ -1,5 +1,9 @@
 # Grounding and RAG
 
+> **New to this?** [Retrieval](https://nitinksingh.com/ai-resources/02-agents/retrieval/) on the AI Knowledge Hub covers the
+> same ground from scratch, vendor-neutral, with a lab you can run locally for free.
+> This page assumes the concept and shows how it is built *here*.
+
 ## What it is
 
 A language model produces the most statistically plausible next words given everything it's seen
@@ -44,7 +48,7 @@ descriptive queries a plain keyword search would miss ("something cozy for winte
 The verification half is `shared/grounding/verifier.py::verify_claims()`:
 
 ```python
-# agents/python/shared/grounding/verifier.py:65-69
+# agents/python/shared/grounding/verifier.py
 async def verify_claims(
     claims: ExtractedClaims,
     ledger: GroundingLedger | None,
@@ -62,7 +66,7 @@ closes the gap the paragraph above described: it isn't asking "did retrieval hap
 
 This runs on every real request via `GroundingVerificationMiddleware`, wired into
 `build_specialist_middleware()` (see [guardrails](10-guardrails.md) for the full middleware
-stack), and the result is visible in the product UI: `web/src/components/chat/grounding-badge.tsx`
+stack), and the result is visible in the product UI: [`web/src/components/chat/grounding-badge.tsx`](https://github.com/nitin27may/e-commerce-agents/blob/main/web/src/components/chat/grounding-badge.tsx)
 renders "N facts verified against the database, M unverified" under any message that made a
 checkable claim, expandable to see exactly which claim and why.
 

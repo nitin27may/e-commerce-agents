@@ -1,5 +1,9 @@
 # Tools
 
+> **New to this?** [Tool calling](https://nitinksingh.com/ai-resources/02-agents/tool-calling/) on the AI Knowledge Hub covers the
+> same ground from scratch, vendor-neutral, with a lab you can run locally for free.
+> This page assumes the concept and shows how it is built *here*.
+
 ## What it is
 
 A tool is a normal function that the model has been told about — its name, a description of what
@@ -49,7 +53,7 @@ trigger it.
 
 Every tool in this repo follows the same pattern: the Microsoft Agent Framework's `@tool` decorator,
 plus Python's `Annotated[type, Field(description=...)]` on every parameter. Here's a real one, in
-full, from `agents/python/product_discovery/tools.py:159-163`:
+full, from [`agents/python/product_discovery/tools.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/product_discovery/tools.py):
 
 ```python
 @tool(name="semantic_search", description="Search products using semantic similarity via pgvector embeddings. Best for vague or descriptive queries like 'something cozy for winter' or 'gift for a tech enthusiast'.")
@@ -70,10 +74,10 @@ Four things happen here at once:
 4. `limit: ... = 5` is a real Python default — the model can omit it and get sensible behavior.
 
 This exact pattern repeats for every tool in the repo — `store_memory`/`recall_memories`
-(`agents/python/shared/tools/memory_tools.py:16-20`), the orchestrator's own routing tool
-(`agents/python/orchestrator/agent.py:40-43`), and every tool in every specialist's `tools.py`.
+([`agents/python/shared/tools/memory_tools.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/tools/memory_tools.py)), the orchestrator's own routing tool
+([`agents/python/orchestrator/agent.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/orchestrator/agent.py)), and every tool in every specialist's `tools.py`.
 
-One more layer worth knowing about: `agents/python/shared/tool_inputs.py` adds a second line of
+One more layer worth knowing about: [`agents/python/shared/tool_inputs.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/tool_inputs.py) adds a second line of
 defense *underneath* the tools that touch money or destructive actions (canceling an order,
 issuing a refund) — Pydantic models like `CancelOrderInput`/`ProcessRefundInput` that re-validate
 arguments inside the tool body itself, plus small shared helpers like `clamp_limit()` (used across

@@ -1,5 +1,9 @@
 # Human-in-the-loop
 
+> **New to this?** [The harness](https://nitinksingh.com/ai-resources/02-agents/the-harness/) on the AI Knowledge Hub covers the
+> same ground from scratch, vendor-neutral, with a lab you can run locally for free.
+> This page assumes the concept and shows how it is built *here*.
+
 ## What it is
 
 Human-in-the-loop (HITL) means a specific action requires an explicit human approval before it's
@@ -33,7 +37,7 @@ it's rare enough to get real attention.
 This repo has two HITL implementations, and they are not interchangeable — knowing which one a
 given mode uses matters for understanding what actually happens when a gate fires.
 
-**Middleware-based approval** — `shared/hitl.py`. A fixed set of high-stakes tools —
+**Middleware-based approval** — [`shared/hitl.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/hitl.py). A fixed set of high-stakes tools —
 `HITL_GATED_TOOLS` (line 38): `cancel_order`, `process_refund`, `initiate_return`, `modify_order`,
 `place_backorder` — are intercepted by `HITLFunctionMiddleware` *before* they execute. The
 docstring is explicit about what happens next: "the tool does NOT execute" (line 55). A
@@ -44,7 +48,7 @@ action is awaiting approval. When an admin later approves it, a *separate* code 
 original LLM loop is never resumed.** The approval doesn't continue the conversation — it just
 performs the action the model asked for, outside the conversation entirely.
 
-**In-workflow suspend/resume** — `workflows/return_replace.py`'s `_HitlGateExecutor` (line 157).
+**In-workflow suspend/resume** — [`workflows/return_replace.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/workflows/return_replace.py)'s `_HitlGateExecutor` (line 157).
 For return workflows above a value threshold (`settings.RETURN_HITL_THRESHOLD`), the executor
 calls `await ctx.request_info(ReturnApprovalRequest(...), response_type=bool)` (line 172) — and
 this doesn't short-circuit a single tool call, it **pauses the entire workflow graph**. Everything

@@ -1,5 +1,9 @@
 # The agent harness
 
+> **New to this?** [The harness](https://nitinksingh.com/ai-resources/02-agents/the-harness/) on the AI Knowledge Hub covers the
+> same ground from scratch, vendor-neutral, with a lab you can run locally for free.
+> This page assumes the concept and shows how it is built *here*.
+
 ## What it is
 
 The harness is everything that turns "an `Agent` object in a Python process" into a real,
@@ -33,7 +37,7 @@ need any of this; building it anyway is pure overhead for something with no call
 ## How it works here
 
 Every specialist in this repo is hosted the same way, by the same shared module:
-`agents/python/shared/agent_host.py`. `create_agent_app()` (line 178) builds one FastAPI app per
+[`agents/python/shared/agent_host.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/agent_host.py). `create_agent_app()` (line 178) builds one FastAPI app per
 agent with:
 
 - **Transport** — `POST /message:send` (line 225, request/response) and `POST /message:stream`
@@ -59,7 +63,7 @@ concern from hosting it: `agents/python/shared/factory.py::get_chat_client()` (l
 picks the concrete client — `OpenAIChatClient`, Azure's `OpenAIChatCompletionClient`, or a
 recorded-fixture `ReplayChatClient` for keyless testing — based on `LLM_PROVIDER`. Every
 `create_*_agent()` factory calls this (via a thin re-export, `create_chat_client()`, in
-`agents/python/shared/agent_factory.py`) rather than constructing a client inline, so swapping
+[`agents/python/shared/agent_factory.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/agent_factory.py)) rather than constructing a client inline, so swapping
 providers is a config change, not a code change, across all six agents at once.
 
 ```mermaid

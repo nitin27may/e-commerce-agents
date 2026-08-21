@@ -212,6 +212,47 @@ def check_chapter(chapter: str) -> ChapterResult:
     return result
 
 
+
+# ---------------------------------------------------------------------------
+# docs/concepts/** source pointers
+#
+# The concept pages point into real source. They used to do that with
+# `file.py:123` line citations, which drift silently: the file changes, the
+# number does not, and the pointer then aims confidently at unrelated code.
+# Two were already past end-of-file when this check was written, and several
+# others were off by single-digit amounts -- which is worse, because a reader
+# cannot tell the wrong ones from the right ones.
+#
+# They now cite a file and name the symbol in prose. This guards the fix from
+# regressing.
+#
+# Note on scope: an earlier version of this check also tried to verify that
+# each named symbol still exists in its cited file, which would additionally
+# catch deletions. A regex cannot reliably tell "symbol cited for this file"
+# from "identifier that happens to appear near a filename" -- the attempt
+# matched 6 of ~45 links and two of those were false pairs. Verifying symbols
+# properly needs an explicit machine-readable annotation in the pages, not a
+# heuristic. Deleted symbols therefore remain a known gap.
+# ---------------------------------------------------------------------------
+
+CONCEPTS_DIR = REPO_ROOT / "docs" / "concepts"
+_LINE_CITATION = re.compile(r"`?[A-Za-z0-9_/.-]+\.(?:py|tsx|ts|sql|cs):[0-9]+")
+
+
+def check_concept_pointers() -> list[str]:
+    """Fail if a line-number source citation reappears in docs/concepts/."""
+    failures: list[str] = []
+    if not CONCEPTS_DIR.exists():
+        return failures
+    for page in sorted(CONCEPTS_DIR.glob("*.md")):
+        for m in _LINE_CITATION.finditer(page.read_text(encoding="utf-8")):
+            failures.append(
+                f"{page.name}: line-number citation {m.group(0)!r} — cite the file and "
+                f"name the symbol in prose instead; line numbers drift silently"
+            )
+    return failures
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("chapters", nargs="*", help="Specific chapter dirs to check (default: all)")
@@ -238,7 +279,15 @@ def main() -> int:
         for w in r.warnings:
             print(f"    ! {w}")
 
-    any_failed = any(not r.passed for r in results)
+    pointer_failures = check_concept_pointers()
+    if pointer_failures:
+        print("\nConcept source pointers")
+        for f in pointer_failures:
+            print(f"    x {f}")
+    else:
+        print("\nConcept source pointers — no line-number citations")
+
+    any_failed = any(not r.passed for r in results) or bool(pointer_failures)
     if args.check and any_failed:
         return 1
     return 0
