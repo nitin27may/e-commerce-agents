@@ -1,4 +1,5 @@
 using ECommerceAgents.ProductDiscovery.Tools;
+using ECommerceAgents.Shared.Tools;
 using ECommerceAgents.Shared.A2A;
 using ECommerceAgents.Shared.Agents;
 using ECommerceAgents.Shared.Prompts;
@@ -15,11 +16,17 @@ var app = AgentHost.Build(
         builder.Services.AddSingleton(new PromptLoader(PromptsRoot()));
         builder.Services.AddSingleton(EmbeddingClientFactory.CreateEmbeddingClient(settings));
         builder.Services.AddSingleton<ProductTools>();
+        builder.Services.AddSingleton<UserProfileTools>();
+        builder.Services.AddSingleton<StockLookupTools>();
+        builder.Services.AddSingleton<PriceHistoryTools>();
         builder.Services.AddSingleton<AIAgent>(sp =>
         {
             var prompts = sp.GetRequiredService<PromptLoader>();
             var tools = sp.GetRequiredService<ProductTools>();
-            return SpecialistAgentFactory.Create(settings, prompts, "product-discovery", tools.All(), services: sp);
+            var userProfileTools = sp.GetRequiredService<UserProfileTools>();
+            var stockLookupTools = sp.GetRequiredService<StockLookupTools>();
+            var priceHistoryTools = sp.GetRequiredService<PriceHistoryTools>();
+            return SpecialistAgentFactory.Create(settings, prompts, "product-discovery", tools.All().Concat(userProfileTools.All()).Concat(stockLookupTools.All()).Concat(priceHistoryTools.All()), services: sp);
         });
     }
 );
