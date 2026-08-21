@@ -26,15 +26,39 @@ public sealed class EcommerceContextProvider(ContextEnricher enricher) : AIConte
         CancellationToken cancellationToken
     )
     {
+        // Always build on the context MAF hands in, never return a fresh one.
+        //
+        // Per AIContextProvider's contract, "the first AIContextProvider in the
+        // invocation pipeline will receive an instance that already contains the
+        // caller provided messages that will be used by the agent", and
+        // AIContext.Tools "may modify or replace the existing tools" — meaning a
+        // null Tools on the returned context clears them. So returning
+        // `new AIContext { Instructions = ... }` silently threw away the user's
+        // message, the agent's own system prompt, and every registered tool,
+        // leaving the model with nothing but this provider's text and no way to
+        // call call_specialist_agent. Mutate and return the same instance.
+        var aiContext = context.AIContext;
+
         var email = RequestContext.CurrentUserEmail;
         if (string.IsNullOrEmpty(email))
         {
-            return new AIContext();
+            return aiContext;
         }
 
         var enriched = await enricher.EnrichAsync(email, cancellationToken);
-        return string.IsNullOrEmpty(enriched.UserContext)
-            ? new AIContext()
-            : new AIContext { Instructions = enriched.UserContext };
+        if (string.IsNullOrEmpty(enriched.UserContext))
+        {
+            return aiContext;
+        }
+
+        // Append rather than assign: a later provider (or MAF itself) may have
+        // already put instructions here, and this block is additive context,
+        // not a replacement persona — the same semantics as Python's
+        // `context.extend_instructions(...)`.
+        aiContext.Instructions = string.IsNullOrEmpty(aiContext.Instructions)
+            ? enriched.UserContext
+            : $"{aiContext.Instructions}\n\n{enriched.UserContext}";
+
+        return aiContext;
     }
 }

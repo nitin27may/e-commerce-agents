@@ -238,4 +238,54 @@ public sealed class EcommerceContextProviderTests
 
         response.Text.Should().Be("ok");
     }
+
+    /// <summary>
+    /// Regression for a production-only bug that all 418 tests missed.
+    ///
+    /// <see cref="EcommerceContextProvider"/> used to return a fresh
+    /// <c>new AIContext { Instructions = ... }</c>. But MAF hands the first
+    /// provider a context that *already contains the caller's messages*, and
+    /// a null <c>Tools</c> on the returned context clears the agent's tools.
+    /// So returning a new instance silently dropped the user's message, the
+    /// agent's own system prompt, and every registered tool — the live .NET
+    /// orchestrator reached the model with nothing but this provider's text
+    /// and no way to call <c>call_specialist_agent</c>, so it greeted the user
+    /// instead of routing, on every single turn.
+    ///
+    /// The old test below only covered the *unauthenticated* path, and only
+    /// asserted the response text, which a fake client returns regardless —
+    /// so it passed either way. This asserts what actually matters: whatever
+    /// the caller sent still reaches the chat client.
+    /// </summary>
+    [Fact]
+    public async Task InvokingAsync_PreservesCallerMessagesAndTools()
+    {
+        Context.RequestContext.CurrentUserEmail = string.Empty;
+        var provider = new EcommerceContextProvider(new ContextEnricher(null!));
+
+        var tool = AIFunctionFactory.Create(() => "pong", "Ping");
+        var fakeChatClient = new FakeChatClient().EnqueueResponse("ok");
+        var inner = fakeChatClient.AsAIAgent(
+            new ChatClientAgentOptions
+            {
+                Name = "test-agent",
+                ChatOptions = new ChatOptions { Instructions = "be helpful", Tools = [tool] },
+                AIContextProviders = [provider],
+            }
+        );
+
+        await inner.RunAsync("find me headphones");
+
+        fakeChatClient.ReceivedMessages.Should().HaveCount(1);
+        fakeChatClient.ReceivedMessages[0]
+            .Should()
+            .Contain(m => m.Role == ChatRole.User && m.Text.Contains("find me headphones"),
+                "the caller's message must survive the context-provider pipeline");
+
+        fakeChatClient.ReceivedOptions[0].Should().NotBeNull();
+        fakeChatClient.ReceivedOptions[0]!.Tools
+            .Should()
+            .NotBeNullOrEmpty("a provider returning a context without Tools would clear them")
+            .And.Contain(t => t.Name == "Ping");
+    }
 }
