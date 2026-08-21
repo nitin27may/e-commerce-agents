@@ -8,6 +8,7 @@ demo experience are welcome.
 
 ```bash
 ./scripts/dev.sh            # full stack (Postgres + Redis + Aspire + agents + web)
+./scripts/dev.ps1           # same, for PowerShell (Windows, or pwsh 7 on macOS/Linux)
 # or piecemeal:
 cd agents/python && uv sync --extra dev      # Python (uv, not pip/poetry)
 cd web && pnpm install                        # frontend (pnpm, not npm/yarn)

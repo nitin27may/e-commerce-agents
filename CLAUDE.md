@@ -26,6 +26,8 @@ with it.
 ```bash
 # Start everything from scratch (one command)
 ./scripts/dev.sh
+./scripts/dev.ps1              # PowerShell equivalent — same flags, PascalCase
+                               # (-Clean / -SeedOnly / -InfraOnly / -Dotnet)
 
 # Clean rebuild (nuke volumes, rebuild images)
 ./scripts/dev.sh --clean
