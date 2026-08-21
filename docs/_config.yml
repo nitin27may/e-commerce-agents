@@ -93,7 +93,16 @@ kramdown:
 # file, which build_docs_site.py emits.
 gh_edit_link: false
 
+# Both sit under nitinksingh.com, so these are same-domain internal links —
+# they carry real ranking signal, not just navigation. The hub is the layer
+# *below* this site: it teaches the ideas from first principles with local,
+# free labs, and its modules already link into this repo for "the same idea in
+# production". This is the return half of that pair, which was missing
+# everywhere except the 14 concept pages.
 nav_external_links:
+  - title: AI Knowledge Hub — learn the fundamentals
+    url: https://nitinksingh.com/ai-resources/
+    hide_icon: false
   - title: E-Commerce Agents on GitHub
     url: https://github.com/nitin27may/e-commerce-agents
     hide_icon: false

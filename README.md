@@ -65,6 +65,7 @@ Companion demo repo for the AI article series on [nitinksingh.com](https://nitin
 | Run it on **Windows** | [Quick Start → Windows](#run-the-python-backend) — `scripts/dev.ps1`, or WSL2 |
 | Run it without an API key | [Quick Start → free and local options](#run-without-a-paid-api-key) |
 | Read the documentation | **[nitinksingh.com/e-commerce-agents](https://nitinksingh.com/e-commerce-agents/)** — rendered and searchable |
+| **Brand new to AI — never run a model or written an agent** | [AI Knowledge Hub](https://nitinksingh.com/ai-resources/) — eleven modules, ten labs, free and local |
 | Learn what an agent even is — new to AI/agents | [Concepts](https://nitinksingh.com/e-commerce-agents/concepts/) — start at page 01 |
 | Understand how the agents work / add a new one | [Architecture](docs/architecture.md) · [Adding an Agent](docs/adding-an-agent.md) |
 | Use the MCP server | [MCP Integration](docs/mcp-integration.md) |
