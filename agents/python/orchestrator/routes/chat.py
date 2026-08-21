@@ -55,7 +55,7 @@ from pydantic import BaseModel
 from starlette.responses import StreamingResponse
 
 from shared.agent_observability import get_steps, reset_steps
-from shared.context import current_conversation_history
+from shared.context import current_session_id
 from shared.db import get_pool
 from shared.grounding.ledger import reset_grounding_ledger
 from shared.rate_limit import rate_limit_chat
@@ -85,7 +85,34 @@ class ChatResponse(BaseModel):
 _PENDING_PERSIST_TASKS: set[_asyncio.Task] = set()
 
 
-def _spawn_persist_task(coro: Any) -> None:
+def _bind_session_to_conversation(conversation_id: str | None) -> None:
+    """Point ``current_session_id`` at the conversation this turn belongs to (#9).
+
+    Every A2A call reads this ContextVar — ``build_a2a_headers()`` in
+    shared/oauth/service_client.py sends it as ``x-session-id``, and it is the
+    only thing that tells a specialist which conversation to rehydrate from
+    (``shared/agent_host.py::_rehydrate_history_from_session``).
+
+    It is otherwise set in exactly four places, and every one of them reads an
+    inbound ``x-session-id`` *header*. The browser never sends that header, so
+    the value forwarded to specialists was always ``""`` — and rehydration
+    short-circuits on empty before it touches the database, without logging.
+    Specialists therefore answered every browser-originated follow-up from a
+    blank slate.
+
+    This belongs here rather than in ``optional_auth``/``require_auth``
+    because this is the only layer that knows the conversation id: it arrives
+    in the request *body*, and is often created a few lines above rather than
+    supplied at all.
+
+    Anonymous callers keep an empty id on purpose — no conversation row is
+    created for them, so there is nothing to rehydrate.
+    """
+    if conversation_id:
+        current_session_id.set(conversation_id)
+
+
+def _spawn_persist_task(coro: Any) -> _asyncio.Task:
     """Fire-and-forget a persistence coroutine, immune to the parent
     request/generator's own cancellation.
 
@@ -101,6 +128,7 @@ def _spawn_persist_task(coro: Any) -> None:
     task = _asyncio.create_task(coro)
     _PENDING_PERSIST_TASKS.add(task)
     task.add_done_callback(_PENDING_PERSIST_TASKS.discard)
+    return task
 
 
 async def _persist_assistant_turn(
@@ -278,6 +306,8 @@ async def chat(
             )
             _ = recent_orders  # context injected via ContextProvider
 
+    _bind_session_to_conversation(conversation_id)
+
     from orchestrator.modes import RunContext, UnknownModeError, get_mode
     from shared.config import settings
     from shared.telemetry import agent_run_span
@@ -421,7 +451,7 @@ async def chat_stream(
             _ = recent_orders
 
     agents_involved: list[str] = ["orchestrator"]
-    current_conversation_history.set(history)
+    _bind_session_to_conversation(conversation_id)
     ctx = RunContext(history=history, conversation_id=conversation_id)
 
     async def event_generator() -> AsyncGenerator[str, None]:
@@ -696,15 +726,23 @@ async def chat_stream(
             stream_usage = {}
 
         yield f"event: metadata\ndata: {json.dumps({'conversation_id': conversation_id, 'agents_involved': agents_involved})}\n\n"
-        yield "data: [DONE]\n\n"
 
         # Persist assistant message + timeline — authed only (anonymous
-        # storefront chat has no conversation to write to). Detached task
-        # (see _spawn_persist_task) so a disconnect racing the very tail of
-        # a normal completion can't drop it either.
+        # storefront chat has no conversation to write to).
+        #
+        # Still a detached task (see _spawn_persist_task) so a disconnect
+        # racing the very tail of a normal completion can't drop it — but
+        # *awaited* before [DONE] rather than fired after it (#9). [DONE] is
+        # the client's cue that the turn is over, and the composer re-enables
+        # on it; a follow-up sent immediately would otherwise read history
+        # before this INSERT landed and lose the turn it is following up on.
+        # Awaiting a shielded detached task keeps both properties: the row is
+        # durable before the client is told to proceed, and a cancellation
+        # here still cannot kill the write.
         if is_anon:
+            yield "data: [DONE]\n\n"
             return
-        _spawn_persist_task(
+        persist_task = _spawn_persist_task(
             _persist_assistant_turn(
                 pool=pool,
                 conversation_id=conversation_id,
@@ -720,6 +758,14 @@ async def chat_stream(
                 disconnected=False,
             )
         )
+        try:
+            await _asyncio.shield(persist_task)
+        except _asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("chat.persist_failed conversation=%s", conversation_id)
+
+        yield "data: [DONE]\n\n"
 
     return StreamingResponse(
         event_generator(),

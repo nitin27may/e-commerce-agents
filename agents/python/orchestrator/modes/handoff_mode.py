@@ -20,7 +20,6 @@ from collections.abc import AsyncIterator
 
 from orchestrator import handoff as handoff_module
 from orchestrator.events import OrchestrationEvent, adapt_workflow_event
-from shared.context import current_conversation_history
 
 from .base import ModeCapabilities, RunContext
 
@@ -45,7 +44,6 @@ class HandoffMode:
         # ContextVar (they flatten only the current turn's prompt, see
         # shared/remote_agent.py), but setting it costs nothing and keeps
         # both modes' request setup identical.
-        current_conversation_history.set(ctx.history)
 
         # Module-qualified access (not `from orchestrator.handoff import ...`)
         # deliberately — tests monkeypatch orchestrator.handoff._load_registry

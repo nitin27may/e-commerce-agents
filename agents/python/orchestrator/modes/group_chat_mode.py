@@ -24,7 +24,6 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Awaitable, Callable
 
 from orchestrator.events import OrchestrationEvent, adapt_workflow_event
-from shared.context import current_conversation_history
 from shared.grounding.ledger import reset_grounding_ledger
 
 from .base import ModeCapabilities, RunContext
@@ -97,7 +96,6 @@ class GroupChatMode:
     async def run(self, message: str, ctx: RunContext) -> AsyncIterator[OrchestrationEvent]:
         from workflows.group_chat import GroupChatState, GroupChatWorkflow
 
-        current_conversation_history.set(ctx.history)
         reset_grounding_ledger()
 
         panelists = self._resolve_panelists()

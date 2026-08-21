@@ -177,9 +177,16 @@ async def test_tool_router_yields_tool_call_events_for_captured_steps(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_tool_router_forwards_history_via_contextvar(monkeypatch: pytest.MonkeyPatch) -> None:
-    from shared.context import current_conversation_history
+async def test_tool_router_forwards_history_into_the_model_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    """History must reach the LLM's messages, not merely a ContextVar.
 
+    This used to assert that ``ToolRouterMode`` set a ``current_conversation_history``
+    ContextVar. That var was written by all five modes and read by nothing in
+    production — so the assertion held while proving nothing about whether the
+    prior turn influenced the answer. It was also an active red herring while
+    diagnosing #9, where the real question was exactly "does context reach the
+    model?". The var is gone; this asserts the thing it appeared to.
+    """
     fake = _ScriptedClient(_text_response("ok"))
     fake_agent = Agent(client=fake, instructions="test", name="orchestrator")
     monkeypatch.setattr("orchestrator.agent.create_orchestrator_agent", lambda: fake_agent)
@@ -187,9 +194,12 @@ async def test_tool_router_forwards_history_via_contextvar(monkeypatch: pytest.M
     history = [{"role": "user", "content": "earlier message"}]
     mode = ToolRouterMode()
     async for _ in mode.run("follow-up", RunContext(history=history)):
-        # Assert mid-run so we see the ContextVar as the mode itself left it,
-        # not a value some other test happened to set.
-        assert current_conversation_history.get() == history
+        pass
+
+    assert fake.calls, "the model was never called"
+    texts = [m.text for m in fake.calls[-1] if m.text]
+    assert "earlier message" in texts
+    assert "follow-up" in texts
 
 
 def test_tool_router_graph_mermaid_is_none() -> None:
