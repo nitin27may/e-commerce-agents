@@ -1,4 +1,4 @@
-"""Bounded retries + a per-host circuit breaker for outbound A2A calls.
+"""Bounded retries + a per-host:port circuit breaker for outbound A2A calls.
 
 Every A2A call in this repo's Python side (``orchestrator/agent.py``'s
 ``call_specialist_agent``, ``shared/remote_agent.py``'s
@@ -158,7 +158,7 @@ class _HostBreaker:
 
 
 class ResilientAsyncTransport(httpx.AsyncHTTPTransport):
-    """An ``httpx`` transport adding bounded retries and a per-host circuit breaker.
+    """An ``httpx`` transport adding bounded retries and a per-host:port circuit breaker.
 
     See the module docstring for the full rationale and the .NET analog this
     mirrors. Every config knob has a Polly-matching default; override via
@@ -191,11 +191,20 @@ class ResilientAsyncTransport(httpx.AsyncHTTPTransport):
             "break_duration_s": break_duration_s,
         }
 
-    def _breaker_for(self, host: str) -> _HostBreaker:
-        breaker = self._breakers.get(host)
+    def _breaker_for(self, authority: str) -> _HostBreaker:
+        """One breaker per host *and port*.
+
+        Keying on hostname alone conflates services that merely share a host:
+        every specialist runs on ``localhost:8081``-``8085`` in local dev, CI
+        and the eval harness, so one failing specialist would trip the breaker
+        for all five and turn a single agent's outage into a total one. Under
+        Docker each specialist has its own hostname, which is why this only
+        ever bit outside production — including while diagnosing issue #25.
+        """
+        breaker = self._breakers.get(authority)
         if breaker is None:
             breaker = _HostBreaker(**self._breaker_kwargs)
-            self._breakers[host] = breaker
+            self._breakers[authority] = breaker
         return breaker
 
     def _delay_for_attempt(self, attempt: int) -> float:
@@ -205,7 +214,7 @@ class ResilientAsyncTransport(httpx.AsyncHTTPTransport):
         return max(0.0, base + random.uniform(-jitter, jitter))
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        host = request.url.host
+        host = request.url.netloc.decode("ascii", "replace")
         breaker = self._breaker_for(host)
 
         if not breaker.allow_request():

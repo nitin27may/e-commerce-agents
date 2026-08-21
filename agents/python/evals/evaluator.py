@@ -65,6 +65,7 @@ class EvalResult:
     grounding: dict[str, Any] | None = None
     judge_reasoning: str | None = None
     error: str | None = None
+    fixture_missing: bool = False
     passed: bool = False
 
 
@@ -87,6 +88,16 @@ class EvalSummary:
     estimated_cost_usd: float = 0.0
     results: list[EvalResult] = field(default_factory=list)
 
+    @property
+    def missing_fixtures(self) -> int:
+        """Cases that failed because their replay fixture was absent.
+
+        Distinct from a low score: the agent never ran, so nothing about its
+        quality was measured. Reported separately by ``run_evals`` so a broken
+        fixture corpus can't masquerade as a quality regression.
+        """
+        return sum(1 for r in self.results if r.fixture_missing)
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "agent_name": self.agent_name,
@@ -102,6 +113,7 @@ class EvalSummary:
             "total_tokens_in": self.total_tokens_in,
             "total_tokens_out": self.total_tokens_out,
             "estimated_cost_usd": round(self.estimated_cost_usd, 4),
+            "missing_fixtures": self.missing_fixtures,
             "results": [
                 {
                     "input": r.input,
@@ -119,6 +131,7 @@ class EvalSummary:
                     "grounding": r.grounding,
                     "judge_reasoning": r.judge_reasoning,
                     "error": r.error,
+                    "fixture_missing": r.fixture_missing,
                     "passed": r.passed,
                 }
                 for r in self.results
@@ -236,6 +249,7 @@ class AgentEvaluator:
 
         if outcome.error:
             result.error = outcome.error
+            result.fixture_missing = outcome.fixture_missing
             logger.error("Eval case failed: %s — %s", case.input[:60], outcome.error)
             return result
 

@@ -33,6 +33,7 @@ from shared.context import (
 )
 from shared.grounding.ledger import reset_grounding_ledger
 from shared.guardrails.flags import get_guardrail_flags, reset_guardrail_flags
+from shared.replay_client import ReplayFixtureMissingError
 
 # Agent factory registry — maps eval agent names to their creation functions.
 # Lives here (not in run_evals.py) because ProductionRunner needs it to build
@@ -60,6 +61,11 @@ class RunOutcome:
     grounding: dict[str, Any] | None = None
     guardrail_flags: dict[str, bool] = field(default_factory=dict)
     error: str | None = None
+    # A missing replay fixture is an infrastructure failure, not a bad answer.
+    # Tracked separately so CI can say "3 fixtures are missing" instead of
+    # reporting an agent that scored 0 — the ambiguity that let issue #25 sit
+    # open across two PRs.
+    fixture_missing: bool = False
 
 
 def _create_agent(agent_name: str) -> Any:
@@ -121,8 +127,23 @@ class ProductionRunner:
                 outcome = await self._run_orchestrator(user_input)
             else:
                 outcome = await self._run_specialist(user_input)
+        except ReplayFixtureMissingError as exc:
+            return RunOutcome(
+                text="",
+                error=str(exc),
+                fixture_missing=True,
+                guardrail_flags=get_guardrail_flags(),
+            )
         except Exception as exc:
-            return RunOutcome(text="", error=str(exc), guardrail_flags=get_guardrail_flags())
+            # A specialist's missing fixture reaches the orchestrator as an A2A
+            # failure rather than the original exception type, so fall back to
+            # recognising it by message.
+            return RunOutcome(
+                text="",
+                error=str(exc),
+                fixture_missing="No replay fixture" in str(exc),
+                guardrail_flags=get_guardrail_flags(),
+            )
 
         outcome.guardrail_flags = get_guardrail_flags()
         return outcome

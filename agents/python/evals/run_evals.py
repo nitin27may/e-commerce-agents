@@ -89,11 +89,35 @@ async def run_evaluation(
                 json.dump(summary.to_dict(), f, indent=2)
             print(f"\nResults written to: {output_path}")
 
-        exit_code = 0 if summary.overall_score >= pass_threshold else 1
-        if exit_code == 0:
+        if summary.missing_fixtures:
+            print(
+                f"\n{'=' * 70}\n"
+                f"  {summary.missing_fixtures} of {summary.total_cases} case(s) never ran: "
+                f"no replay fixture matched the request.\n"
+                f"  These score 0 without measuring anything about the agent — treat the\n"
+                f"  scores above as incomplete, not as a quality regression.\n"
+                f"  Record the missing fixtures (RECORD=true, real credentials), or if the\n"
+                f"  hashing scheme changed, run: uv run python -m evals.rehash_fixtures\n"
+                f"{'=' * 70}",
+                file=sys.stderr,
+            )
+
+        met_threshold = summary.overall_score >= pass_threshold
+        if met_threshold:
             print(f"\nEvaluation PASSED ({summary.overall_score:.1%} >= {pass_threshold:.0%})")
         else:
             print(f"\nEvaluation FAILED ({summary.overall_score:.1%} < {pass_threshold:.0%})")
+
+        exit_code = 0 if met_threshold else 1
+
+        # A missing fixture always fails the run, whatever the threshold is —
+        # the agent never ran, so a passing score would be meaningless.
+        if summary.missing_fixtures:
+            print(
+                f"Evaluation FAILED — {summary.missing_fixtures} case(s) had no replay fixture.",
+                file=sys.stderr,
+            )
+            exit_code = 1
 
         if update_baseline_path:
             write_baseline(update_baseline_path, summary)
