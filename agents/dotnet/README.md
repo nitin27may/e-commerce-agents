@@ -72,10 +72,16 @@ captured into a live agentic timeline (`/runs`, `event: step` SSE frames) across
 orchestrator and specialist processes, both `PrePurchaseWorkflow` and `ReturnAndReplaceWorkflow`
 (including its pause/resume HITL gate, on a real `RequestPort`) run on real MAF `WorkflowBuilder`
 graphs, and human-in-the-loop tool approval is a real function-invocation pipeline stage rather
-than a call-site wrapper each gated tool had to invoke itself. The remaining gaps are smaller:
-no shared tool library (each specialist duplicates common logic), and no handoff/group-chat/
-magentic orchestration modes — both explicitly python-first, not scheduled.
+than a call-site wrapper each gated tool had to invoke itself. A shared tool library now lives in `Shared/Tools/`, so cross-cutting
+tools are registered by whichever specialists need them rather than duplicated per agent.
+Workflow pause and resume is durable: a run checkpoints through MAF's own store and is rebuilt
+from that checkpoint on resume, so a pending approval survives an orchestrator restart. The
+money paths — returns, refunds, approved actions and checkout — are idempotent.
 
-Eight test projects mirror the source structure — one per agent plus Shared and MCP — with 418 test methods covering tools, middleware, guardrails, timeline capture, workflows, auth, streaming, and A2A protocol behavior (verified directly: `dotnet test ECommerceAgents.sln`). The same PostgreSQL schema and A2A wire format are used across both stacks; you can point the frontend at either backend by setting `NEXT_PUBLIC_BACKEND_STACK=dotnet`.
+The remaining gaps are handoff and group-chat modes, MCP client consumption, telemetry depth,
+and the evals harness; all python-first. Magentic is in neither stack, so it is not a gap.
+See [`docs/parity-matrix.md`](../../docs/parity-matrix.md) for the row-by-row breakdown.
+
+Eight test projects mirror the source structure — one per agent plus Shared and MCP — with 515 test methods covering tools, middleware, guardrails, timeline capture, workflows, auth, streaming, and A2A protocol behavior (verified directly: `dotnet test ECommerceAgents.sln`). The same PostgreSQL schema and A2A wire format are used across both stacks; you can point the frontend at either backend by setting `NEXT_PUBLIC_BACKEND_STACK=dotnet`.
 
 Enhancement plans are tracked in [`.claude/plans/enhancements/`](../../.claude/plans/enhancements/).
