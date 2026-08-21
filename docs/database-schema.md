@@ -1,6 +1,6 @@
 # Database Schema
 
-E-Commerce Agents uses PostgreSQL 16 with the **pgvector** extension for embedding-based semantic search and **pgcrypto** for UUID generation. The schema contains 24 tables organized into 8 logical groups.
+E-Commerce Agents uses PostgreSQL 16 with the **pgvector** extension for embedding-based semantic search and **pgcrypto** for UUID generation. The schema contains 34 tables organized into 12 logical groups.
 
 ## Entity-Relationship Diagram
 
@@ -403,6 +403,40 @@ erDiagram
 - `idx_usage_logs_agent` on `usage_logs(agent_name, created_at DESC)`
 - `idx_usage_logs_trace` on `usage_logs(trace_id)`
 - `idx_messages_conversation` on `messages(conversation_id, created_at)`
+
+### Cart & Checkout
+
+| Table | Key Columns | Notes |
+|-------|-------------|-------|
+| **carts** | `id` (PK), `user_id` (FK -> users, **UNIQUE**), `shipping_address` (JSONB), `billing_address` (JSONB), `billing_same_as_shipping`, `coupon_code`, `discount_amount` | One cart per user, enforced by the unique constraint — a second cart is impossible rather than merely unlikely. Addresses are JSONB (`{name, street, city, state, zip, country, phone}`), which is why the UI has to handle both string and object shapes when rendering one. |
+| **cart_items** | `id` (PK), `cart_id` (FK -> carts, `ON DELETE CASCADE`), `product_id` (FK -> products), `quantity` (`CHECK > 0`) | `UNIQUE(cart_id, product_id)` — adding the same product twice increments the quantity instead of inserting a second row. |
+
+### Agent Memory
+
+| Table | Key Columns | Notes |
+|-------|-------------|-------|
+| **agent_memories** | `id` (PK), `user_id` (FK -> users), `category`, `content`, `importance` (SMALLINT), `embedding` (`vector(1536)`), `expires_at`, `is_active` | Long-term per-user memory, distinct from conversation history: written by `store_memory` and read by `recall_memories`. Embedded, so recall is semantic rather than keyword. Soft-deleted via `is_active`; `expires_at` lets a memory age out. |
+
+### Human-in-the-Loop & Durability
+
+| Table | Key Columns | Notes |
+|-------|-------------|-------|
+| **tool_approval_requests** | `id` (PK), `session_id`, `user_email`, `agent_name`, `tool_name`, `tool_input` (JSONB), `status`, `approved_by`, `execution_result` (JSONB) | The *middleware* HITL path: a gated tool is intercepted before it runs, a row is written, and the tool returns `pending_approval` without calling through. Approval re-executes the operation directly — the LLM loop is never resumed. Writes fail **closed**: if the row cannot be written the tool does not execute. |
+| **hitl_requests** | `id` (PK), `workflow_run_id` (FK -> usage_logs, `ON DELETE CASCADE`), `request_id`, `checkpoint_id` (FK -> workflow_checkpoints), `kind`, `payload` (JSONB), `status`, `response` (JSONB) | The *in-workflow* HITL path, and a genuinely different mechanism: `request_id` is MAF's own resume token and `checkpoint_id` points at the paused graph, so approving one resumes the real workflow from where it stopped. Status: `pending`, `approved`, `rejected`, `timeout`. |
+| **workflow_checkpoints** | `checkpoint_id` (PK), `workflow_name`, `payload` (JSONB), `usage_log_id` (FK -> usage_logs) | Encoded MAF `WorkflowCheckpoint`. A workflow that pauses does not survive as a live object across requests — resume rebuilds a fresh graph from this row plus the response. |
+| **idempotency_keys** | `key` (PK, VARCHAR(600)), `scope`, `status` (`in_progress` \| `completed`), `result` (JSONB), `completed_at` | Reserved with `INSERT ... ON CONFLICT DO NOTHING`, so a duplicate is refused rather than racing. A completed reservation replays its cached `result`; one older than 60s is reclaimed, which is how a crashed process recovers. This is what stops an approved refund from executing twice. |
+
+**Note on the FK between them:** `hitl_requests.checkpoint_id` references `workflow_checkpoints`, so a bare `TRUNCATE workflow_checkpoints` fails regardless of the FK's `ON DELETE` action — truncate both together or use `CASCADE`.
+
+### OAuth2 Authorization Server
+
+Present only when `AUTH_MODE=oauth`; the default `local` mode never touches these.
+
+| Table | Key Columns | Notes |
+|-------|-------------|-------|
+| **oauth_clients** | `client_id` (PK), `client_secret_hash`, `client_name`, `is_confidential`, `allowed_grant_types` (TEXT[]), `allowed_scopes` (TEXT[]), `allowed_audiences` (TEXT[]), `token_endpoint_auth_method` | Secrets are hashed, never stored raw. The three array columns are what make cross-scope and cross-audience token requests refusable. |
+| **oauth_signing_keys** | `kid` (PK), `alg` (default RS256), `public_jwk` (JSONB), `private_pem_enc` (BYTEA), `is_active`, `retired_at` | The private key is Fernet-encrypted at rest; only `public_jwk` is served from the JWKS endpoint. `retired_at` supports rotation without invalidating tokens still in flight. |
+| **oauth_tokens** | `id` (PK), `client_id` (FK -> oauth_clients), `subject`, `token_type`, `token_hash`, `scope`, `audience`, `expires_at`, `revoked` | Only refresh tokens are persisted, and only as a SHA-256 digest — the raw token is never stored. `subject` is the user's email for password-grant tokens and NULL for client-credentials service tokens. |
 
 ---
 
