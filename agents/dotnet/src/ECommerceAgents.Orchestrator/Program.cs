@@ -5,6 +5,7 @@ using ECommerceAgents.Orchestrator.Modes;
 using ECommerceAgents.Shared.A2A;
 using ECommerceAgents.Shared.Auth;
 using ECommerceAgents.Shared.Checkpoints;
+using Microsoft.Agents.AI.Workflows;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.RateLimiting;
 using ECommerceAgents.Shared.Sessions;
@@ -83,7 +84,10 @@ builder.Services.AddSingleton(sp =>
 builder.Services.AddSingleton<IOrchestrationMode>(sp => new ToolRouterMode(sp.GetRequiredService<AIAgent>()));
 builder.Services.AddSingleton<IOrchestrationMode>(sp => new PrePurchaseMode(sp.GetRequiredService<DatabasePool>()));
 builder.Services.AddSingleton<IOrchestrationMode>(sp =>
-    new ReturnReplaceMode(sp.GetRequiredService<DatabasePool>(), settings));
+    new ReturnReplaceMode(
+        sp.GetRequiredService<DatabasePool>(),
+        settings,
+        sp.GetRequiredService<CheckpointManager>()));
 builder.Services.AddSingleton<ModeRegistry>();
 
 builder.Services.AddSingleton<SlidingWindowRateLimiter>();

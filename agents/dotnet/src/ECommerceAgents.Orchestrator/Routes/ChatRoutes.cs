@@ -139,10 +139,11 @@ public static class ChatRoutes
         List<string> agentsInvolved = ["orchestrator"];
 
         var sw = Stopwatch.StartNew();
+        ModeRunResult? modeResult = null;
         string responseText;
         if (NeedsRegistry(request.Mode))
         {
-            var modeResult = await registry
+            modeResult = await registry
                 .Get(request.Mode)
                 .RunAsync(request.Message, new RunContext(ctx.History, ctx.ConversationId));
             responseText = modeResult.Text;
@@ -158,7 +159,8 @@ public static class ChatRoutes
         var grounding = await VerifyGroundingAsync(responseText, settings, pool, loggers);
 
         await PersistAssistantMessageAsync(
-            pool, usage, ctx, request.Message, responseText, agentsInvolved, (int)sw.ElapsedMilliseconds
+            pool, usage, ctx, request.Message, responseText, agentsInvolved, (int)sw.ElapsedMilliseconds,
+            loggers, modeResult: modeResult
         );
 
         return Results.Ok(new ChatResponse(
@@ -278,6 +280,7 @@ public static class ChatRoutes
         });
 
         var sw = Stopwatch.StartNew();
+        ModeRunResult? modeResult = null;
         var responseText = new StringBuilder();
         List<string>? modeAgents = null;
 
@@ -302,7 +305,7 @@ public static class ChatRoutes
                     .GetAwaiter()
                     .GetResult());
 
-            var modeResult = await registry
+            modeResult = await registry
                 .Get(request.Mode)
                 .RunAsync(
                     request.Message,
@@ -383,8 +386,76 @@ public static class ChatRoutes
 
         await PersistAssistantMessageAsync(
             pool, usage, ctx, request.Message, responseText.ToString(), agentsInvolved, (int)sw.ElapsedMilliseconds,
-            metadata: new Dictionary<string, object> { ["agents_involved"] = agentsInvolved }
+            loggers,
+            metadata: new Dictionary<string, object> { ["agents_involved"] = agentsInvolved },
+            modeResult: modeResult
         );
+    }
+
+    /// <summary>
+    /// Ties a finished run to what it left behind: its checkpoints, and — when it stopped
+    /// on a human — a pending approval row.
+    /// </summary>
+    /// <remarks>
+    /// The twin of Python's <c>_link_run_artifacts</c> (<c>routes/chat.py:176</c>), and it
+    /// runs here for the same reason: <c>hitl_requests.workflow_run_id</c> is a NOT NULL
+    /// foreign key to <c>usage_logs(id)</c>, and that row does not exist until the mode
+    /// has returned. So the insert cannot live inside the mode, however natural that
+    /// would read.
+    ///
+    /// Order matters. The checkpoint rows were written by the store *during* the run, so
+    /// back-linking them first is what makes <c>hitl_requests.checkpoint_id</c>'s own
+    /// foreign key satisfiable — and what stops
+    /// <c>GET /api/runs/{id}/checkpoints</c> from answering with an empty list.
+    /// </remarks>
+    private static async Task LinkRunArtifactsAsync(
+        DatabasePool pool,
+        Guid usageLogId,
+        ConversationContext ctx,
+        ModeRunResult? modeResult,
+        ILoggerFactory loggers
+    )
+    {
+        if (modeResult?.LatestCheckpointId is null && modeResult?.PendingApproval != true)
+        {
+            return;
+        }
+
+        try
+        {
+            await using var conn = await pool.OpenAsync();
+
+            if (modeResult!.LatestCheckpointId is { } checkpointId && Guid.TryParse(checkpointId, out var cid))
+            {
+                await conn.ExecuteAsync(
+                    "UPDATE workflow_checkpoints SET usage_log_id = @usageLogId WHERE checkpoint_id = @cid",
+                    new { usageLogId, cid });
+            }
+
+            if (modeResult.PendingApproval && modeResult.RequestId is not null)
+            {
+                await conn.ExecuteAsync(
+                    @"INSERT INTO hitl_requests
+                          (workflow_run_id, request_id, checkpoint_id, user_email, kind, payload, status)
+                      VALUES (@usageLogId, @requestId, @checkpointId, @email, 'return_approval', @payload::jsonb, 'pending')",
+                    new
+                    {
+                        usageLogId,
+                        requestId = modeResult.RequestId,
+                        checkpointId = Guid.TryParse(modeResult.LatestCheckpointId, out var pid) ? pid : (Guid?)null,
+                        email = RequestContext.CurrentUserEmail ?? "",
+                        payload = JsonSerializer.Serialize(new { session_id = modeResult.SessionId }),
+                    });
+            }
+        }
+        catch (Exception ex)
+        {
+            // A streamed response has already written `event: done`; throwing here would
+            // tear a finished reply. But a swallowed failure means a paused refund with
+            // no way to approve it, so it is logged loudly rather than absorbed.
+            loggers.CreateLogger("hitl").LogError(ex,
+                "hitl.link_failed run={UsageLogId} session={SessionId}", usageLogId, modeResult?.SessionId);
+        }
     }
 
     // ─────────────────────── shared persistence helpers ──────────────────────
@@ -636,7 +707,9 @@ public static class ChatRoutes
         string responseText,
         List<string> agentsInvolved,
         int durationMs,
-        Dictionary<string, object>? metadata = null
+        ILoggerFactory loggers,
+        Dictionary<string, object>? metadata = null,
+        ModeRunResult? modeResult = null
     )
     {
         if (ctx.IsAnon)
@@ -687,6 +760,20 @@ public static class ChatRoutes
                 var step = steps[i];
                 await usage.LogExecutionStepAsync(id, i, step.ToolName, step.ToolInput, step.ToolOutput, step.Status, step.DurationMs);
             }
+
+            await LinkRunArtifactsAsync(pool, id, ctx, modeResult, loggers);
+        }
+        else if (modeResult?.PendingApproval == true)
+        {
+            // The workflow is paused with a durable checkpoint that no UI can now reach:
+            // hitl_requests.workflow_run_id is NOT NULL against usage_logs, and
+            // LogAgentUsageAsync swallows its own failures and returns null. Naming the
+            // orphaned session is the difference between a debuggable gap and a refund
+            // that silently waits forever.
+            loggers.CreateLogger("hitl").LogError(
+                "hitl.orphaned_pause session={SessionId} checkpoint={CheckpointId} request={RequestId} — "
+                    + "no usage_logs row, so no approval can be surfaced for it",
+                modeResult.SessionId, modeResult.LatestCheckpointId, modeResult.RequestId);
         }
     }
 }
