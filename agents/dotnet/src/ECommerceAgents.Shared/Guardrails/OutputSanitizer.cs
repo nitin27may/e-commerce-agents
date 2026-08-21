@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace ECommerceAgents.Shared.Guardrails;
 
@@ -36,11 +37,14 @@ public static class OutputSanitizer
                 return (fields is null || (key is not null && fields.Contains(key)))
                     ? Guardrails.Sanitize.NeutralizeText(s)
                     : s;
-            case JsonElement:
-                // Specs/free-form JSON payloads are left opaque — JsonElement is a readonly
-                // struct with no in-place mutation path, and the top-level Name/Description
-                // fields already covered by the tool's own allowlist are the primary vector.
-                return value;
+            case JsonElement json:
+                // JSON payloads must be walked, not skipped. products.specs is JSONB and
+                // seller-editable, so leaving it opaque made it an unsanitized route for
+                // injection text to reach the model — one Python's neutralize_value closes,
+                // since it recurses through dicts and lists without exception. JsonElement
+                // being an immutable struct is not a reason to skip it, only a reason to
+                // rebuild rather than mutate in place. See issue #31.
+                return SanitizeJson(json, fields, key);
         }
 
         var type = value.GetType();
@@ -53,7 +57,16 @@ public static class OutputSanitizer
         {
             foreach (var k in dict.Keys.Cast<object>().ToList())
             {
-                dict[k] = SanitizeValue(dict[k], fields, k as string);
+                // Scope is sticky: once a key matches the allowlist, everything
+                // beneath it stays in scope. Python matches on the *immediate*
+                // key only (shared/guardrails/sanitize.py::neutralize_value), which
+                // means an entry like "specs" there only covers specs-as-a-string,
+                // not the nested dict products.specs actually is. Deliberate
+                // divergence, in the safer direction — a container listed as
+                // untrusted should have an untrusted interior.
+                var name = k as string;
+                var scope = fields is not null && name is not null && fields.Contains(name) ? name : key;
+                dict[k] = SanitizeValue(dict[k], fields, scope);
             }
             return value;
         }
@@ -84,6 +97,79 @@ public static class OutputSanitizer
         }
 
         return value;
+    }
+
+    /// <summary>
+    /// Rebuilds a <see cref="JsonElement"/> with every in-scope string neutralized.
+    /// Returns the original instance when nothing changed, so the caller's
+    /// <c>ReferenceEquals</c> write-back check stays meaningful.
+    /// </summary>
+    private static object SanitizeJson(JsonElement json, HashSet<string>? fields, string? key)
+    {
+        var node = SanitizeJsonNode(JsonNode.Parse(json.GetRawText()), fields, key, out var changed);
+        if (!changed)
+        {
+            return json;
+        }
+
+        // Round-trip back to JsonElement so the value's runtime type is unchanged
+        // from the tool's perspective — callers serialize these straight into the
+        // model's context and should not have to care that we rewrote one.
+        return JsonSerializer.Deserialize<JsonElement>(node?.ToJsonString() ?? "null");
+    }
+
+    private static JsonNode? SanitizeJsonNode(JsonNode? node, HashSet<string>? fields, string? key, out bool changed)
+    {
+        changed = false;
+        switch (node)
+        {
+            case JsonObject obj:
+            {
+                foreach (var name in obj.Select(kv => kv.Key).ToList())
+                {
+                    // A nested object's own property names take over as the scope key,
+                    // so an allowlist entry like "specs" covers the whole subtree while
+                    // a specific entry like "description" still matches by name.
+                    var scope = fields is not null && fields.Contains(name) ? name : key;
+                    var replacement = SanitizeJsonNode(obj[name], fields, scope, out var childChanged);
+                    if (childChanged)
+                    {
+                        obj[name] = replacement;
+                        changed = true;
+                    }
+                }
+                return obj;
+            }
+            case JsonArray arr:
+            {
+                for (var i = 0; i < arr.Count; i++)
+                {
+                    var replacement = SanitizeJsonNode(arr[i], fields, key, out var childChanged);
+                    if (childChanged)
+                    {
+                        arr[i] = replacement;
+                        changed = true;
+                    }
+                }
+                return arr;
+            }
+            case JsonValue value when value.TryGetValue<string>(out var text):
+            {
+                if (fields is not null && (key is null || !fields.Contains(key)))
+                {
+                    return node;
+                }
+                var cleaned = Guardrails.Sanitize.NeutralizeText(text);
+                if (cleaned == text)
+                {
+                    return node;
+                }
+                changed = true;
+                return JsonValue.Create(cleaned);
+            }
+            default:
+                return node;
+        }
     }
 
     private static bool IsOpaqueScalar(Type type)

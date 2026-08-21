@@ -2,7 +2,9 @@ using ECommerceAgents.Orchestrator.Agent;
 using ECommerceAgents.Orchestrator.Routes;
 using ECommerceAgents.Shared.A2A;
 using ECommerceAgents.Shared.Auth;
+using ECommerceAgents.Shared.Checkpoints;
 using ECommerceAgents.Shared.Configuration;
+using ECommerceAgents.Shared.Sessions;
 using ECommerceAgents.Shared.ContextProviders;
 using ECommerceAgents.Shared.Data;
 using ECommerceAgents.Shared.Middleware;
@@ -55,6 +57,18 @@ builder.Services.AddSingleton<ToolAuditMiddleware>();
 builder.Services.AddSingleton<PiiRedactor>();
 builder.Services.AddSingleton<ContextEnricher>();
 builder.Services.AddSingleton<HitlGate>();
+
+// Session history + checkpoint storage. These factories and their three
+// backends each (memory/file/postgres) existed and were unit-tested, but
+// nothing in src/ ever called them — every call site was a test. That made
+// MAF_SESSION_BACKEND and MAF_CHECKPOINT_BACKEND settings that read from the
+// environment, validated, and then affected nothing, so checkpointing was
+// silently non-functional in production. Registering them here is what makes
+// those settings mean what they say; see issue #29.
+builder.Services.AddSingleton<ISessionHistoryProvider>(sp =>
+    SessionProviderFactory.Build(settings, sp.GetRequiredService<DatabasePool>()));
+builder.Services.AddSingleton<ICheckpointStorage>(sp =>
+    CheckpointStorageFactory.Build(settings, sp.GetRequiredService<DatabasePool>()));
 
 builder.Services.AddSingleton<OrchestratorTools>();
 builder.Services.AddSingleton<AIAgent>(sp =>

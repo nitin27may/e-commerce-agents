@@ -15,10 +15,16 @@ namespace ECommerceAgents.Shared.Guardrails;
 /// does have a function-invocation interceptor seam now (see
 /// <see cref="Agents.SpecialistPipeline"/>'s use of
 /// <c>FunctionInvocationDelegatingAgentBuilderExtensions.Use</c> for
-/// <c>ToolAuditMiddleware</c>), but role checks stay call-site: per-tool
-/// role requirements vary by argument (e.g. whose order is being
-/// cancelled), which a single agent-wide pipeline stage can't express
-/// without re-deriving per-call context the tool body already has directly.
+/// <c>ToolAuditMiddleware</c>), but role checks stay call-site for a
+/// different reason than this comment used to give: every guarded tool
+/// returns its own typed result record built through a private
+/// <c>Failure(string)</c> factory, and a single interceptor has no way to
+/// construct the right denial shape for an arbitrary tool without weakening
+/// those return types. (The earlier claim — that role requirements vary by
+/// argument — is not borne out: all five call sites use static role lists.)
+/// Because a guard clause is opt-in and easy to forget, the policy is
+/// enforced instead by <c>DestructiveToolRoleGatingTests</c>, which fails the
+/// build if a mutating tool ships without one. See issue #32.
 /// Reads <see cref="RequestContext.CurrentUserRole"/> (the .NET analog of
 /// Python's <c>current_user_role</c> ContextVar) rather than accepting the
 /// role as a parameter, for the same "identity via ambient context, not

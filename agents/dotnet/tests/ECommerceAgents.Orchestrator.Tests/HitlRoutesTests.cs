@@ -146,6 +146,61 @@ public sealed class HitlRoutesTests : IAsyncLifetime
         approvedBy.Should().Be(AdminEmail);
     }
 
+    /// <summary>
+    /// Regression for the duplicate-refund window (#28).
+    ///
+    /// Approve used to read the status, check it was pending, **execute the
+    /// destructive action**, and only then UPDATE ... WHERE status = 'pending'.
+    /// Two concurrent approvals both passed the pre-check and both executed;
+    /// only the loser's UPDATE failed, by which point the action had already
+    /// happened twice. Python fixed this by claiming the row atomically first
+    /// (shared/hitl.py::claim_hitl_request); this asserts .NET does too.
+    ///
+    /// The assertion is on the *side effect*, not the row status — a status
+    /// check alone passed even with the bug present.
+    /// </summary>
+    [Fact]
+    public async Task Approve_ConcurrentApprovals_ExecuteTheActionExactlyOnce()
+    {
+        // initiate_return, not cancel_order: cancel_order's UPDATE is
+        // self-guarding (WHERE status IN ('placed','confirmed')), so a second
+        // execution is a no-op and the bug leaves no trace. initiate_return is
+        // a bare INSERT INTO returns with no duplicate guard, so a second
+        // execution leaves a second row — which is exactly the shape of the
+        // duplicate refund Python's fix was written to prevent.
+        var requestId = await SeedPendingRequestAsync(
+            "initiate_return",
+            new { order_id = _placedOrderId.ToString(), reason = "double-click" }
+        );
+
+        using var adminA = AdminClient();
+        using var adminB = AdminClient();
+
+        // Fire both approvals at the same instant against the same row.
+        var responses = await Task.WhenAll(
+            adminA.PostAsJsonAsync($"/api/admin/hitl/requests/{requestId}/approve", new { note = "A" }),
+            adminB.PostAsJsonAsync($"/api/admin/hitl/requests/{requestId}/approve", new { note = "B" })
+        );
+
+        // Exactly one wins; the other is refused rather than silently executing.
+        responses.Count(r => r.IsSuccessStatusCode).Should().Be(1,
+            "only one approval may reach the executor");
+
+        await using var conn = await _pool.OpenAsync();
+
+        // The real proof, and the assertion that fails against the old
+        // check-then-execute-then-claim ordering.
+        var returns = await conn.ExecuteScalarAsync<long>(
+            "SELECT COUNT(*) FROM returns WHERE order_id = @id", new { id = _placedOrderId }
+        );
+        returns.Should().Be(1, "the destructive action must run exactly once");
+
+        var reqStatus = await conn.ExecuteScalarAsync<string>(
+            "SELECT status FROM tool_approval_requests WHERE id = @id", new { id = requestId }
+        );
+        reqStatus.Should().Be("executed");
+    }
+
     [Fact]
     public async Task Approve_UnknownOrder_StillMarksExecutedWithFailureInResult()
     {
