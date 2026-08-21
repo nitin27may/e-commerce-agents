@@ -93,6 +93,7 @@ public static class AgentSettingsLoader
             RedisUrl = redisUrl,
 
             LlmProvider = Get("LLM_PROVIDER", "openai").ToLowerInvariant(),
+            ReplayFixturesDir = Get("REPLAY_FIXTURES_DIR", "evals/fixtures/replay"),
             LlmModel = Get("LLM_MODEL", "gpt-4.1"),
             EmbeddingModel = Get("EMBEDDING_MODEL", "text-embedding-3-small"),
             OpenAiApiKey = Get("OPENAI_API_KEY"),

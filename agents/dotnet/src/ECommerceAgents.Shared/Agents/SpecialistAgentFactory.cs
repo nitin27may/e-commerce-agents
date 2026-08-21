@@ -34,7 +34,7 @@ public static class SpecialistAgentFactory
     )
     {
         var instructions = prompts.Load(agentName, userRole);
-        var chatClient = ChatClientFactory.CreateChatClient(settings);
+        var chatClient = ChatClientFactory.Create(settings);
         var options = BuildOptions(settings, instructions, agentName, tools);
         if (services is not null)
         {
