@@ -162,6 +162,18 @@ jobs:
           echo "::endgroup::"
           exit $fail
 
+      # The specialists are started with `nohup ... &` and would otherwise
+      # still be running when the job's post steps execute. `setup-uv`'s
+      # cache-prune step then hangs on the uv cache those processes hold open
+      # and is killed at its 300s timeout, failing the job after all the real
+      # work has already succeeded. A job should stop what it starts.
+      - name: Stop specialist services
+        if: always()
+        run: |
+          pkill -f "uvicorn .*\.main:app" || true
+          sleep 2
+          pkill -9 -f "uvicorn .*\.main:app" || true
+
       - name: Upload eval results
         if: always()
         uses: actions/upload-artifact@v4
@@ -280,6 +292,18 @@ jobs:
             --pass-threshold 0.8 --output-json eval-safety.json || fail=1
           echo "::endgroup::"
           exit $fail
+
+      # The specialists are started with `nohup ... &` and would otherwise
+      # still be running when the job's post steps execute. `setup-uv`'s
+      # cache-prune step then hangs on the uv cache those processes hold open
+      # and is killed at its 300s timeout, failing the job after all the real
+      # work has already succeeded. A job should stop what it starts.
+      - name: Stop specialist services
+        if: always()
+        run: |
+          pkill -f "uvicorn .*\.main:app" || true
+          sleep 2
+          pkill -9 -f "uvicorn .*\.main:app" || true
 
       - name: Upload eval results
         if: always()
