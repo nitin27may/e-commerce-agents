@@ -69,7 +69,19 @@ aux_links:
   "nitinksingh.com":
     - "/"
 
-footer_content: "Copyright &copy; 2026 Nitin Singh. Distributed under the MIT License."
+# Site-wide footer. The blog back-link lives here rather than only in aux_links
+# because footer_content renders on EVERY page (all 85 generated ones), while
+# aux_links reads as chrome. Raw HTML is safe: just-the-docs interpolates
+# footer_content without escaping (verified against live output).
+#
+# The second link is topical rather than another homepage link. The blog runs a
+# 12-part series built on this exact repo, which makes it the most relevant
+# destination on the whole domain -- and the anchor text names it, so the link
+# is descriptive rather than a bare "click here".
+footer_content: >-
+  Copyright &copy; 2026 Nitin Singh. Distributed under the MIT License.
+  &middot; Part of <a href="https://nitinksingh.com/">nitinksingh.com</a>
+  &middot; <a href="https://nitinksingh.com/series/building-multi-agent-ai-systems/">Multi-Agent AI series on the blog</a>
 
 color_scheme: light
 heading_anchors: true
