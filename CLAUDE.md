@@ -178,7 +178,7 @@ AZURE_OPENAI_API_VERSION=2024-12-01-preview
 
 ## Database
 
-- Schema in `docker/postgres/init.sql` (24 tables)
+- Schema in `docker/postgres/init.sql` (34 tables)
 - All queries use parameterized `$1, $2` syntax (asyncpg)
 - All user-facing queries filter by `user_email` or `user_id`
 - Embeddings stored as `vector(1536)` with ivfflat cosine index
