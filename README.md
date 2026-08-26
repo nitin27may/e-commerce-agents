@@ -17,18 +17,29 @@ A **multi-agent e-commerce platform** built with [Microsoft Agent Framework](htt
 ```bash
 git clone https://github.com/nitin27may/e-commerce-agents.git
 cd e-commerce-agents
-cp .env.example .env          # add your OPENAI_API_KEY (or Azure OpenAI credentials)
-./scripts/dev.sh              # builds, seeds, and starts everything
+cp .env.minimal .env          # set OPENAI_API_KEY — the only variable a first run needs
+./scripts/dev.sh --demo       # pulls prebuilt images, seeds, and starts everything
 ```
 
 Then open **http://localhost:3000** and sign in as `alice.johnson@gmail.com` / `customer123`.
 Docker is the only requirement — no Python, .NET or Node needed.
 
+`--demo` pulls the ten released images from GitHub Container Registry instead of building them,
+which is the difference between roughly **one minute and roughly twelve**. Images are published for
+`linux/amd64` and `linux/arm64`, so Apple Silicon runs natively.
+
+**Building from source instead** — drop the flag. This is the contributor path, and the one to use
+if you have changed any code:
+
+```bash
+./scripts/dev.sh              # builds all ten images locally, then seeds and starts
+```
+
 **On Windows**, use `scripts/dev.ps1` — the PowerShell twin of the bash script, same flags:
 
 ```powershell
-Copy-Item .env.example .env    # then set OPENAI_API_KEY in .env
-./scripts/dev.ps1
+Copy-Item .env.minimal .env    # then set OPENAI_API_KEY in .env
+./scripts/dev.ps1 -Demo
 ```
 
 [WSL2](https://learn.microsoft.com/windows/wsl/install) still gives the best experience, and

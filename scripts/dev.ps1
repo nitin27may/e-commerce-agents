@@ -28,17 +28,23 @@
 .PARAMETER Dotnet
     Target the .NET backend (docker-compose.dotnet.yml) instead of Python.
 
+.PARAMETER Demo
+    Pull prebuilt images from GHCR instead of building. The fast path: no local
+    build, one command. Override the tag with $env:IMAGE_TAG (default: latest).
+
 .EXAMPLE
     ./scripts/dev.ps1
     ./scripts/dev.ps1 -Clean
     ./scripts/dev.ps1 -Dotnet
+    ./scripts/dev.ps1 -Demo
 #>
 [CmdletBinding()]
 param(
     [switch]$Clean,
     [switch]$SeedOnly,
     [switch]$InfraOnly,
-    [switch]$Dotnet
+    [switch]$Dotnet,
+    [switch]$Demo
 )
 
 # Stop on the first unhandled error. Native commands don't trip this on their
@@ -214,6 +220,46 @@ try {
         # Aspire holds telemetry in memory only; removing the container clears it.
         Invoke-Compose -Arguments @('rm', '-f', 'aspire') -AllowFailure -Quiet
         Write-Ok 'Clean complete — containers, volumes and Aspire telemetry cleared'
+    }
+
+    # ── Demo mode ────────────────────────────────────────────
+    # Mirrors dev.sh's --demo: a self-contained fast path with its own exit
+    # rather than conditionals threaded through the build/seed/up flow. There
+    # is no build step, docker-compose.demo.yml carries no profiles, and its
+    # depends_on: service_completed_successfully lets compose sequence the
+    # seeder itself.
+    if ($Demo) {
+        $tag = if ($env:IMAGE_TAG) { $env:IMAGE_TAG } else { 'latest' }
+        $env:IMAGE_TAG = $tag
+        Write-Step "Demo mode — pulling prebuilt images (tag: $tag)"
+        Write-Info 'No local build. Images come from ghcr.io/nitin27may/e-commerce-agents'
+
+        & docker compose -f docker-compose.demo.yml pull
+        if ($LASTEXITCODE -ne 0) {
+            Write-Err 'Could not pull one or more images.'
+            Write-Host ''
+            Write-Host '  Most likely causes:'
+            Write-Host '    - The tag does not exist yet.'
+            Write-Host '    - A package is still private. Anonymous pulls fail with an auth'
+            Write-Host '      error that reads like a network problem — see docs/releasing.md.'
+            Write-Host ''
+            Write-Host '  To build from source instead, drop the -Demo switch:'
+            Write-Host '    ./scripts/dev.ps1'
+            exit 1
+        }
+        Write-Ok 'Images pulled'
+
+        Write-Step 'Starting the stack'
+        & docker compose -f docker-compose.demo.yml up -d
+        if ($LASTEXITCODE -ne 0) { Write-Err 'Stack failed to start'; exit 1 }
+
+        Wait-ForHttp -Name 'Orchestrator' -Url 'http://localhost:8080/health' -TimeoutSeconds 120
+        Wait-ForHttp -Name 'Frontend' -Url 'http://localhost:3000' -TimeoutSeconds 120
+
+        Show-Summary
+        Write-Host '  Sign in as alice.johnson@gmail.com / customer123' -ForegroundColor White
+        Write-Host ''
+        exit 0
     }
 
     # ── Seed only ────────────────────────────────────────────
