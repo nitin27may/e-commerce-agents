@@ -1,4 +1,7 @@
+using System.ComponentModel;
+using System.Text.Json;
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.AI;
 using ECommerceAgents.Shared.Tools;
 using FluentAssertions;
 using Xunit;
@@ -224,4 +227,77 @@ public sealed class ToolNamingTests
         source.Should().Contain("string agent_name");
         source.Should().NotContain("string agentName,");
     }
+
+    // ─────────────── Casing tolerance at the binder ───────────────
+    //
+    // Registering under snake_case fixed the common case and still bet on the
+    // model being consistent. It is not: with the schema declaring agent_name,
+    // the model intermittently sent agentName and MAF rejected the call —
+    // "The arguments dictionary is missing a value for the required parameter
+    // 'agent_name'". The user saw "there was an issue accessing the inventory
+    // details" and every container stayed healthy.
+    //
+    // It surfaced only under a browser run; API spot-checks had hit the lucky
+    // casing every time. These pin both directions.
+
+    [Description("Route a request to a specialist agent.")]
+    private static string Route(
+        [Description("Name of the specialist")] string agent_name,
+        [Description("The message")] string message) => $"{agent_name}|{message}";
+
+    [Theory]
+    [InlineData("agent_name")]
+    [InlineData("agentName")]
+    [InlineData("AgentName")]
+    public async Task A_Required_Argument_Binds_Whatever_Casing_The_Model_Sends(string key)
+    {
+        AIFunction fn = AgentTool.Create(Route, nameof(Route));
+
+        object? result = await fn.InvokeAsync(new AIFunctionArguments(new Dictionary<string, object?>
+        {
+            [key] = "product-discovery",
+            ["message"] = "hello",
+        }));
+
+        Text(result).Should().Contain("product-discovery");
+    }
+
+    [Fact]
+    public async Task An_Argument_That_Is_Genuinely_Missing_Still_Fails()
+    {
+        // The tolerance must not become "accept anything". A truly absent
+        // required argument is a real error and has to stay one, or a
+        // misbehaving model gets a silent empty string instead of a failure.
+        AIFunction fn = AgentTool.Create(Route, nameof(Route));
+
+        var act = async () => await fn.InvokeAsync(new AIFunctionArguments(new Dictionary<string, object?>
+        {
+            ["message"] = "hello",
+        }));
+
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
+    public async Task An_Exact_Match_Is_Left_Alone()
+    {
+        // The common path. Remapping when nothing needs remapping is how a
+        // defensive layer becomes its own source of bugs.
+        AIFunction fn = AgentTool.Create(Route, nameof(Route));
+
+        object? result = await fn.InvokeAsync(new AIFunctionArguments(new Dictionary<string, object?>
+        {
+            ["agent_name"] = "order-management",
+            ["message"] = "where is my order",
+        }));
+
+        Text(result).Should().Be("order-management|where is my order");
+    }
+
+    private static string Text(object? result) => result switch
+    {
+        string s => s,
+        JsonElement { ValueKind: JsonValueKind.String } json => json.GetString() ?? string.Empty,
+        _ => result?.ToString() ?? string.Empty,
+    };
 }

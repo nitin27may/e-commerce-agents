@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.AI;
 
 namespace ECommerceAgents.Shared.Tools;
@@ -57,7 +58,97 @@ public static class AgentTool
     /// to snake_case before registration.
     /// </param>
     public static AIFunction Create(Delegate method, string pascalName) =>
-        AIFunctionFactory.Create(method, ToSnakeCase(pascalName));
+        new NamingTolerantAIFunction(AIFunctionFactory.Create(method, ToSnakeCase(pascalName)));
+
+    /// <summary>
+    /// Accepts an argument whose name differs from the schema only in casing.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Registering tools under their snake_case names fixed the common case but
+    /// bet on the model being consistent, and it is not. With the schema
+    /// declaring <c>agent_name</c>, the model still intermittently sent
+    /// <c>agentName</c> — and MAF's binder rejects the call outright:
+    /// </para>
+    /// <code>
+    /// tool.invoked name=call_specialist_agent
+    ///   error=ArgumentException: The arguments dictionary is missing a value
+    ///   for the required parameter 'agent_name'.
+    /// </code>
+    /// <para>
+    /// The user sees "there was an issue accessing the inventory details" and
+    /// the stack looks healthy — the same friendly lie as every other defect in
+    /// this class. It surfaced only under a browser run; API spot-checks had hit
+    /// the lucky casing every time.
+    /// </para>
+    /// <para>
+    /// Argument casing is not something this repo controls, so the fix is to
+    /// stop depending on it. This normalises inbound keys to whatever the schema
+    /// actually declares, in both directions, and does nothing when they already
+    /// agree. It is applied to every tool rather than the one that failed,
+    /// because the next model update will pick a different tool to be
+    /// inconsistent about.
+    /// </para>
+    /// </remarks>
+    private sealed class NamingTolerantAIFunction(AIFunction inner) : DelegatingAIFunction(inner)
+    {
+        protected override ValueTask<object?> InvokeCoreAsync(
+            AIFunctionArguments arguments,
+            CancellationToken cancellationToken)
+        {
+            IReadOnlyList<string> expected = SchemaParameterNames();
+
+            // Nothing declared, or every expected name already present: the
+            // overwhelmingly common path, and it allocates nothing.
+            if (expected.Count == 0 || expected.All(arguments.ContainsKey))
+            {
+                return base.InvokeCoreAsync(arguments, cancellationToken);
+            }
+
+            var remapped = new AIFunctionArguments(arguments)
+            {
+                Context = arguments.Context,
+                Services = arguments.Services,
+            };
+
+            foreach (string name in expected)
+            {
+                if (remapped.ContainsKey(name))
+                {
+                    continue;
+                }
+
+                // Find an inbound key that matches ignoring underscores and case:
+                // agentName <-> agent_name, productId <-> product_id.
+                string? actual = arguments.Keys.FirstOrDefault(
+                    k => Canonical(k) == Canonical(name) && !expected.Contains(k));
+
+                if (actual is not null)
+                {
+                    remapped[name] = arguments[actual];
+                    remapped.Remove(actual);
+                }
+            }
+
+            return base.InvokeCoreAsync(remapped, cancellationToken);
+        }
+
+        /// <summary>The parameter names this function's JSON schema declares.</summary>
+        private IReadOnlyList<string> SchemaParameterNames()
+        {
+            if (JsonSchema.ValueKind != JsonValueKind.Object
+                || !JsonSchema.TryGetProperty("properties", out JsonElement properties)
+                || properties.ValueKind != JsonValueKind.Object)
+            {
+                return Array.Empty<string>();
+            }
+
+            return properties.EnumerateObject().Select(p => p.Name).ToList();
+        }
+
+        private static string Canonical(string name) =>
+            name.Replace("_", string.Empty).ToLowerInvariant();
+    }
 
     /// <summary>
     /// Converts a PascalCase member name to the snake_case name Python declares.
