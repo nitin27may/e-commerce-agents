@@ -69,13 +69,15 @@ Legend: `- [x]` shipped · `- [ ]` planned or in progress.
 
 ---
 
-### Planned — Search & Retrieval
+### Search & Retrieval
 
-`semantic_search` and `find_similar_products` are real pgvector cosine queries and the prompt already routes vague descriptive queries to them. But `search_products` — the workhorse — still uses `ILIKE` matching, with no lexical index behind it. Planned:
+`search_products` is now Postgres full-text search over a weighted `tsvector`, and `semantic_search` fuses that lexical arm with the pgvector cosine arm — see *Hybrid product search* under Shipped in v1.1. What is left here is the shape of the filter surface, not the retrieval itself:
 
-- [ ] **Postgres full-text search** — `tsvector` column + GIN index, `plainto_tsquery` + `ts_rank` to replace the `ILIKE` loop.
-- [ ] **Hybrid retrieval (FTS + vector)** — combine lexical and semantic scores via Reciprocal Rank Fusion in a single CTE.
 - [ ] **Typed filter DSL** — replace the flat parameter list on `search_products` with a structured `ProductFilters` Pydantic model (category, price, brand, sort). Keeps SQL parameterized and safe.
+
+> **Upgrading an existing database.** The `tsvector` column ships in `docker/postgres/init.sql`,
+> which Postgres only runs on an empty data directory. Either `./scripts/dev.sh --clean` (drops all
+> local data) or apply it in place — see [Troubleshooting](troubleshooting.md#products-search_vector-does-not-exist).
 
 Text-to-SQL was considered and rejected: `user_email`/`user_role` scoping via ContextVars means dynamic SQL would bypass that contract. The typed filter DSL gives the model flexibility at the boundary while keeping SQL generation server-side and auditable.
 

@@ -55,8 +55,9 @@ product_tools: |
   Side-by-side comparison of 2-3 products. Pass a list of UUIDs.
 
   ### semantic_search(query, limit?)
-  AI-powered search for vague/descriptive queries. Best for: "something cozy for winter", "gift for a tech enthusiast", "workout gear for beginners"
-  -> Returns: [{"id": "...", "name": "...", "similarity": 0.89, ...}]
+  Hybrid search (embeddings + full-text, fused) for vague/descriptive queries. Best for: "something cozy for winter", "gift for a tech enthusiast", "workout gear for beginners"
+  -> Returns: [{"id": "...", "name": "...", "similarity": 0.89, "score": 0.03252, ...}]
+  -> `similarity` is null when a product was surfaced by the text half only; rank by `score`, which is already the sort order.
 
   ### find_similar_products(product_id, limit?)
   Find products similar to a given product using embeddings.

@@ -68,6 +68,41 @@ Postgres not ready or not seeded. `docker compose ps` (db healthy?), then
 cd agents/python && uv run python -m scripts.generate_embeddings
 ```
 
+## `products.search_vector does not exist`
+
+Symptom: every product search fails and the agent replies "there was an error
+retrieving results from the database". The agent logs show
+`UndefinedColumnError: column p.search_vector does not exist`.
+
+Cause: full-text search added a generated `tsvector` column to `products`.
+`docker/postgres/init.sql` only runs on an **empty** data directory, so a
+database created before that change never got the column.
+
+Fix, without losing your data:
+
+```bash
+docker compose exec -T db psql -U ecommerce -d ecommerce_agents <<'SQL'
+ALTER TABLE products ADD COLUMN IF NOT EXISTS search_vector tsvector
+    GENERATED ALWAYS AS (
+        setweight(to_tsvector('english', coalesce(name, '')), 'A') ||
+        setweight(to_tsvector('english', coalesce(brand, '')), 'B') ||
+        setweight(to_tsvector('english', coalesce(description, '')), 'C')
+    ) STORED;
+CREATE INDEX IF NOT EXISTS idx_products_search ON products USING GIN (search_vector);
+SQL
+```
+
+Postgres backfills the column for every existing row, so no re-seed is needed.
+Verify with:
+
+```bash
+docker compose exec -T db psql -U ecommerce -d ecommerce_agents \
+  -c "SELECT count(*) AS products, count(search_vector) AS indexed FROM products;"
+```
+
+Alternatively `./scripts/dev.sh --clean` rebuilds from `init.sql` — simpler, but
+it drops all local data.
+
 ## UI changes not showing in the running stack
 
 The frontend is a built container. Rebuild it:

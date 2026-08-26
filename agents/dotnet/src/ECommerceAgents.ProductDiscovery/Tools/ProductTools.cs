@@ -38,6 +38,25 @@ public sealed class ProductTools(DatabasePool pool, IEmbeddingProvider embedding
 
     private const string DefaultSortClause = "p.rating DESC, p.review_count DESC";
 
+    /// <summary>
+    /// SQL expression turning a text parameter into an OR-joined tsquery.
+    /// <c>plainto_tsquery</c> ANDs its lexemes, so "noise cancelling headphones"
+    /// would match only products carrying all three terms — the same
+    /// all-terms-required behavior as the per-word ILIKE loop this replaced,
+    /// which is why those queries returned nothing. Rewriting the operators to
+    /// <c>|</c> makes any term a match and leaves <c>ts_rank</c> to sort full
+    /// matches above partial ones. Mirrors Python's <c>shared/search.py</c>.
+    /// </summary>
+    private static string OrJoinedTsQuery(string parameter) =>
+        $"replace(plainto_tsquery('english', {parameter})::text, '&', '|')::tsquery";
+
+    /// <summary>
+    /// Reciprocal Rank Fusion constant (Cormack et al. 2009). Large enough that
+    /// the top few ranks score close together, so a product both arms surface
+    /// beats one that merely ranks first in a single arm.
+    /// </summary>
+    private const int RrfK = 60;
+
     /// <summary>Hard ceiling so an LLM-supplied LIMIT can't scan the whole table.</summary>
     private const int MaxLimit = 100;
 
@@ -68,14 +87,17 @@ public sealed class ProductTools(DatabasePool pool, IEmbeddingProvider embedding
         var parameters = new DynamicParameters();
         var idx = 1;
 
+        // Postgres full-text search over the weighted search_vector column.
+        string? tsQuery = null;
         if (!string.IsNullOrWhiteSpace(query))
         {
-            foreach (var word in query.Split(' ', StringSplitOptions.RemoveEmptyEntries).Where(w => w.Length >= 2))
-            {
-                conditions.Add($"(p.name ILIKE @p{idx} OR p.description ILIKE @p{idx})");
-                parameters.Add($"p{idx}", $"%{word}%");
-                idx++;
-            }
+            tsQuery = OrJoinedTsQuery($"@p{idx}");
+            // A stopword- or punctuation-only query reduces to an empty tsquery,
+            // which matches nothing. Treat that as "no text query" and let the
+            // remaining filters stand on their own.
+            conditions.Add($"({tsQuery} = ''::tsquery OR p.search_vector @@ {tsQuery})");
+            parameters.Add($"p{idx}", query);
+            idx++;
         }
 
         void Add<T>(string column, T? value, string op = "=")
@@ -100,9 +122,22 @@ public sealed class ProductTools(DatabasePool pool, IEmbeddingProvider embedding
         Add("p.price", maxPrice, "<=");
         Add("p.rating", minRating, ">=");
 
-        var order = sortBy is not null && SortClauses.TryGetValue(sortBy, out var clause)
-            ? clause
-            : DefaultSortClause;
+        // An explicit sortBy always wins. Otherwise rank by text relevance when
+        // there is a query (the old code ordered by rating regardless, so a weak
+        // match with good reviews outranked an exact one), else by rating.
+        string order;
+        if (sortBy is not null && SortClauses.TryGetValue(sortBy, out var clause))
+        {
+            order = clause;
+        }
+        else if (tsQuery is not null)
+        {
+            order = $"ts_rank(p.search_vector, {tsQuery}) DESC, {DefaultSortClause}";
+        }
+        else
+        {
+            order = DefaultSortClause;
+        }
 
         var clampedLimit = ClampLimit(limit);
         parameters.Add("limit", clampedLimit);
@@ -247,17 +282,50 @@ public sealed class ProductTools(DatabasePool pool, IEmbeddingProvider embedding
     {
         var vectorText = await EmbedAsync(query);
 
+        // Pull a wider candidate set from each arm than we return — fusion only has
+        // something to work with if a product can appear in one list but not the other.
+        var candidates = Math.Max(limit * 4, 20);
+        var tsQuery = OrJoinedTsQuery("@query");
+
+        // Hybrid retrieval: rank by vector cosine and by full-text relevance
+        // independently, then fuse with Reciprocal Rank Fusion. RRF sums
+        // 1/(k+rank) across arms, so a product both arms like outranks one that
+        // tops a single arm, and neither arm's raw scores need a comparable scale.
+        var sql = $@"
+            WITH vec AS (
+                SELECT pe.product_id,
+                       1 - (pe.embedding <=> @vector::vector) AS similarity,
+                       ROW_NUMBER() OVER (ORDER BY pe.embedding <=> @vector::vector) AS rank
+                FROM product_embeddings pe
+                JOIN products p ON pe.product_id = p.id
+                WHERE p.is_active = TRUE
+                LIMIT @candidates
+            ),
+            fts AS (
+                SELECT p.id AS product_id,
+                       ROW_NUMBER() OVER (ORDER BY ts_rank(p.search_vector, {tsQuery}) DESC) AS rank
+                FROM products p
+                WHERE p.is_active = TRUE
+                  AND {tsQuery} <> ''::tsquery
+                  AND p.search_vector @@ {tsQuery}
+                LIMIT @candidates
+            ),
+            fused AS (
+                SELECT COALESCE(v.product_id, f.product_id) AS product_id,
+                       v.similarity,
+                       COALESCE(1.0 / ({RrfK} + v.rank), 0) + COALESCE(1.0 / ({RrfK} + f.rank), 0) AS score
+                FROM vec v
+                FULL OUTER JOIN fts f ON v.product_id = f.product_id
+            )
+            SELECT p.id, p.name, p.description, p.category, p.brand, p.price, p.rating, p.image_url,
+                   fu.similarity, fu.score
+            FROM fused fu
+            JOIN products p ON p.id = fu.product_id
+            ORDER BY fu.score DESC, p.rating DESC
+            LIMIT @limit";
+
         await using var conn = await _pool.OpenAsync();
-        var rows = await conn.QueryAsync(
-            @"SELECT p.id, p.name, p.description, p.category, p.brand, p.price, p.rating, p.image_url,
-                     1 - (pe.embedding <=> @vector::vector) AS similarity
-              FROM product_embeddings pe
-              JOIN products p ON pe.product_id = p.id
-              WHERE p.is_active = TRUE
-              ORDER BY pe.embedding <=> @vector::vector
-              LIMIT @limit",
-            new { vector = vectorText, limit }
-        );
+        var rows = await conn.QueryAsync(sql, new { vector = vectorText, query, candidates, limit });
         return rows.Select(r => new SemanticSearchResult(
             Id: ((Guid)r.id).ToString(),
             Name: (string)r.name,
@@ -266,7 +334,10 @@ public sealed class ProductTools(DatabasePool pool, IEmbeddingProvider embedding
             Brand: (string?)r.brand ?? "",
             Price: (decimal)r.price,
             Rating: (decimal)r.rating,
-            Similarity: Math.Round((double)r.similarity, 3),
+            // Null when only the text arm matched — the product has no embedding
+            // row, or ranked outside the vector candidate window.
+            Similarity: r.similarity is null ? null : Math.Round((double)r.similarity, 3),
+            Score: Math.Round((double)r.score, 5),
             ImageUrl: (string?)r.image_url
         )).ToList();
     }
@@ -375,7 +446,11 @@ public sealed record SemanticSearchResult(
     string Brand,
     decimal Price,
     decimal Rating,
-    double Similarity,
+    // Null when only the full-text arm surfaced this product, so it carries no
+    // cosine similarity. Mirrors Python's `"similarity": None`.
+    double? Similarity,
+    // Fused Reciprocal Rank Fusion score across the vector and text arms.
+    double Score,
     string? ImageUrl
 );
 
