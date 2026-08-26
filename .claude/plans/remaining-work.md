@@ -7,7 +7,77 @@
 > decisions that are now shipped — is not repeated here; where a past decision still constrains
 > future work, it is restated inline under [Constraints that still bite](#constraints-that-still-bite).
 
-## Where this stands (2026-08-21, after v1.1.0)
+## Where this stands (2026-08-26, after v1.2.0)
+
+v1.2.0 shipped: hybrid FTS+vector search, the orchestration-mode fix, prebuilt images with a
+one-command demo, and a release pipeline that gates publishing on the test suite. Ten images are
+published for `linux/amd64` and `linux/arm64`; `./scripts/dev.sh --demo` reaches a working stack in
+about a minute.
+
+Plans **13–18** now carry most of the detail; this file is the index.
+
+| Plan | Subject | Status |
+|---|---|---|
+| [13](enhancements/13-azure-deployment-and-foundry.md) | Azure Container Apps + Microsoft Foundry | proposed |
+| [14](enhancements/14-pre-azure.md) | Adoption/conversion work before Azure | 6 of 8 done |
+| [15](enhancements/15-build-and-release.md) | Build gating and release process | **shipped in v1.2.0** |
+| [16](enhancements/16-dotnet-local-parity.md) | Make `--dotnet` actually work | proposed, **P0 inside** |
+| [17](enhancements/17-tutorial-dotnet-coverage.md) | Tutorial .NET coverage (#20) | proposed |
+| [18](enhancements/18-composer-ux.md) | Composer UX (#4) | proposed |
+
+### The one thing to read first
+
+**Plan 16 F1: the .NET orchestrator cannot reach any specialist.** `CallSpecialistAgent` is rejected
+with "arguments dictionary is missing a value for the required parameter 'agentName'", so
+`agents_involved` is `['orchestrator']` on every turn and no specialist is ever invoked. The stack
+builds, all 12 containers report healthy, the UI serves, login works — and every question fails.
+
+While that stands, "two complete, working backends" is not true of `main`. Either fix it before the
+next release repeating the claim, or qualify the claim.
+
+### Found by running v1.2.0, not yet planned
+
+Measured against a live stack during the v1.2.0 work. None of these has an owner yet.
+
+- [ ] **`handoff` mode is an outlier on both cost and latency.** Measured 100–200 s per turn and
+      19,000–25,000 characters of response, against ~11 s and ~1,000 characters for `tool` on the
+      same prompt. An order of magnitude beyond every other mode; it looks like intermediate content
+      is being flushed into the reply. Worth understanding before the mode benchmark is published,
+      since it will dominate the table.
+- [ ] **`workflow:pre-purchase` discards most of its own work.** Four executors run — `reviews`,
+      `stock`, `price_history`, `shipping` — and the reply is 48 characters:
+      `"Stock: 348 units available | Price trend: stable"`. The fan-out is real; the synthesis
+      throws away reviews and shipping entirely.
+- [ ] **The orchestration-mode benchmark has a harness but no published result.**
+      `evals/benchmark_modes.py` ships in v1.2.0 and is verified working. The first full run
+      measured a broken build through a tripped rate limiter and was discarded rather than
+      published. Needs a re-run against v1.2.0 images (~60 calls, ~$1, ~25 min with pacing) and a
+      `docs/orchestration-benchmark.md` page. **This is the highest value-per-day item in the
+      [adoption audit](audit-2026-08-25-adoption-and-azure.md)** — an LLM answering "which
+      orchestration pattern should I use?" has nothing to cite today.
+- [ ] **The demo clip has a recording spec but no recording.**
+      `web/e2e/demo-recording.spec.ts` ships and typechecks. Nothing has been recorded, so the
+      README still opens with a static PNG. Re-check the prompts against the post-FTS catalogue
+      before recording.
+- [ ] **No .NET images are published** — accepted, deliberately. The demo path stays Python-only;
+      a visitor is there for the features, not the backend language. `--dotnet` remains a
+      build-from-source path. Recorded here so it is not rediscovered as a gap.
+
+### Still open from the adoption audit
+
+- [ ] **Chapter 21, Capstone Tour** — two `.gitkeep` files. The bridge from 34 tutorials to the
+      running application, and the one missing rung on the ladder.
+- [ ] **`docs/adr/`** — five decisions already argued in prose (A2A over direct calls, no
+      text-to-SQL, YAML prompt composition, MAF-native execution, dual-stack parity) and recorded
+      nowhere a reader would look.
+- [ ] **Promote the "reported vs actual" table** below onto the docs site. It is the most credible
+      artifact in the repository and it lives in `.claude/`.
+
+---
+
+## Where this stood (2026-08-21, after v1.1.0)
+
+*Kept for the record; superseded by the section above.*
 
 Everything through **Phase 14 (.NET parity)** and **Phase 12 (documentation site)** is merged, plus
 a further round covering conversation context, telemetry, tutorial CI, SEO, and three defects that
@@ -53,7 +123,7 @@ which product-discovery could not even start in replay mode.
       identical recordings)
 - [ ] `red_team` / safety: needs its own schema and evaluator, so it is a separate piece
 
-### 2. Tutorial .NET coverage (#20)
+### 2. Tutorial .NET coverage (#20) — see [plan 17](enhancements/17-tutorial-dotnet-coverage.md)
 
 The CI gate is in and immediately found chapter 08 completely broken. What it now protects is
 incomplete:
@@ -62,7 +132,7 @@ incomplete:
       genuine SDK blocker, not a repo gap)
 - [ ] `dotnet/` for **ch22–32** (11 chapters) — the largest single piece of work left in the repo
 
-### 3. Composer UX (#4)
+### 3. Composer UX (#4) — see [plan 18](enhancements/18-composer-ux.md)
 
 - [ ] Collapse the always-visible `AGENT_MODES` chip row behind a control
 - [ ] Derive suggested prompts from the reply on screen instead of a static
@@ -79,8 +149,9 @@ change. Both backends must be byte-identically unaffected, verified by the dual-
       only on `/runs`, not inside the chat thread
 - [ ] **Streaming tool calls** — text deltas stream; raw tool-result payloads do not yet travel as
       their own SSE frames
-- [ ] **Search & retrieval** — `search_products` is still `ILIKE` with no lexical index; full-text
-      search, hybrid retrieval and a typed filter DSL are all planned
+- [x] **Search & retrieval** — shipped in v1.2.0: `search_products` is a weighted `tsvector` behind
+      a GIN index, and `semantic_search` fuses lexical and vector arms via RRF. Only the typed
+      filter DSL remains planned
 - [ ] **Langfuse sink on .NET** — deliberately skipped as an additive second exporter
 - [ ] **Anonymous multi-turn memory** — neither stack persists anonymous storefront conversations,
       so follow-ups there have no context at any tier. A product decision, not a bug, but currently
