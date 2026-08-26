@@ -211,6 +211,49 @@ records why one legitimately does not.
 
 ---
 
+## Waves 1–2 — DONE, with three corrections to this plan
+
+**Wave 1 (items 1–5):** all five plan-16 findings closed and live-verified.
+**Wave 2 (items 6–7):** both mode defects closed on both stacks.
+
+Three things this plan predicted turned out wrong, and the corrections matter more than the
+completions:
+
+| Predicted | Actual |
+|---|---|
+| F1 is one bad parameter | **39 of 46 tools** were registered under a name the shared prompt corpus does not use. The orchestrator's was fatal; the other 38 degraded silently. |
+| F4 is a port collision | Ports were the symptom. No compose file set `name:`, so all three shared **one project** — `down` on one orphaned the other's containers. |
+| `handoff`'s 23k output is quadratic accumulation | Refuted by measurement: genuine deltas, max 16 chars. The start agent was the tool-router orchestrator, so it **never handed off**, and autonomous mode looped it to MAF's 50-turn default. |
+
+Plus one correction to a claim I had written into `remaining-work.md`: `workflow:pre-purchase`'s
+synthesis does **not** discard reviews and shipping. Every line is guard-claused on data being
+present — the fan-out was real and the synthesis faithful, and the *inputs* were missing. Chasing
+the synthesis would have wasted a day.
+
+### The one that only a browser could find
+
+After F1 was fixed and verified — five modes answering, `agents_involved` correct, 570 tests green —
+the Playwright suite failed two inventory tests. The cause:
+
+```
+tool.invoked name=call_specialist_agent
+  error=ArgumentException: The arguments dictionary is missing a value
+  for the required parameter 'agent_name'.
+```
+
+The model **intermittently** sends `agentName` even when the schema says `agent_name`. Every API
+spot-check had hit the lucky casing; running the same two-turn conversation by hand worked. Only a
+suite that exercises the path repeatedly surfaced it.
+
+`NamingTolerantAIFunction` now normalises inbound argument keys to whatever the schema declares, in
+both directions, for every tool — while still throwing on a genuinely absent argument, because
+tolerating *that* is how a misbehaving model becomes a silent empty string.
+
+**Lesson for the rest of this plan: an intermittent failure cannot be closed by running something
+once.** Where a wave's exit criterion is "it works", the evidence has to be a suite, not a spot-check.
+
+---
+
 ## Wave 3 — The paid measurements (items 8–9, 14)
 
 Needs the live Azure OpenAI key already configured in `.env`.
