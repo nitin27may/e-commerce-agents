@@ -49,8 +49,9 @@ public sealed record ToolError([property: JsonPropertyName("error")] string Erro
 
     /// <summary>An identifier that is not a UUID.</summary>
     public static ToolError NotAnId(string tool, string parameter, string value, string listingTool) =>
-        new($"{tool}: '{value}' is not a valid {parameter}. Call {listingTool} first to get one, "
-            + "and do not guess or invent an identifier.");
+        new($"{tool}: '{value}' is not a valid {parameter}. Call {listingTool} NOW to get the real "
+            + $"identifier, then call {tool} again with it. Do not guess an identifier, and do not "
+            + "ask the customer for it — they do not know it and you can look it up yourself.");
 
     /// <summary>A row that does not exist, or that this caller may not see.</summary>
     /// <remarks>
@@ -59,5 +60,7 @@ public sealed record ToolError([property: JsonPropertyName("error")] string Erro
     /// Python's message conflates them for the same reason.
     /// </remarks>
     public static ToolError NotFound(string tool, string what, string id) =>
-        new($"{tool}: no {what} found with id {id}, or it is not accessible to this user.");
+        new($"{tool}: no {what} found with id {id}, or it is not accessible to this user. "
+            + $"If that identifier came from earlier in the conversation it may be stale or "
+            + $"truncated — look it up again rather than asking the customer to supply it.");
 }
