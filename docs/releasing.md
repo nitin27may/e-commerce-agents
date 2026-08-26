@@ -94,29 +94,22 @@ Without it, `environment: release` in `release.yml` is a no-op. The approval job
 immediately and the release publishes with no human in the loop, with nothing in the log to
 indicate a gate was expected.
 
-### Package visibility — four packages, not ten
+### Package visibility — nothing to do
 
-GHCR packages are created **private**, and anonymous `docker compose pull` then fails with an
-authentication error that reads like a network problem.
+Packages published by a workflow in a **public** repository inherit that repository's visibility,
+so they are created public and are anonymously pullable straight away. Nothing to click.
 
-Six packages already exist and are **already public** — the old tag-triggered workflow published
-them at `v1.0.0`. Verified by an anonymous `docker manifest inspect` with no stored credentials:
+This was verified rather than assumed: `auth-server`, `mcp-product` and `mcp-inventory` had never
+been built by CI before the ten-image matrix landed, and on their very first publish an anonymous
+`docker manifest inspect` — with `docker logout ghcr.io` first, no stored credentials — succeeded
+for all three.
 
-```
-orchestrator  product-discovery  order-management
-pricing-promotions  review-sentiment  inventory-fulfillment
-```
+The advice you will find elsewhere, that GHCR packages start private and each needs flipping by
+hand, applies to packages published from a **private** repo or with a personal access token. It
+does not apply here.
 
-The four the image matrix added have never been built by CI, so the first publish creates them
-private and each needs flipping:
-
-```
-auth-server  mcp-product  mcp-inventory  frontend
-```
-
-Packages → *package* → Package settings → Change visibility → Public. There is no REST endpoint
-for container package visibility, so this cannot be scripted.
-
+It is still worth checking after the first publish of any *new* image, because the failure is
+quiet — a private package fails with an authentication error that reads like a network problem.
 Check it the way a visitor would:
 
 ```bash
