@@ -24,6 +24,7 @@ Plans **13–18** now carry most of the detail; this file is the index.
 | [16](enhancements/16-dotnet-local-parity.md) | Make `--dotnet` actually work | plan merged (#69), **no code yet — P0 inside** |
 | [17](enhancements/17-tutorial-dotnet-coverage.md) | Tutorial .NET coverage (#20) | **done** — PR #70, unmerged |
 | [18](enhancements/18-composer-ux.md) | Composer UX (#4) | proposed |
+| [19](enhancements/19-closing-out.md) | Sequencing the five remaining workstreams | proposed |
 
 ### Two different ".NET" workstreams — do not conflate them
 
@@ -51,10 +52,13 @@ Measured against a live stack during the v1.2.0 work. None of these has an owner
       same prompt. An order of magnitude beyond every other mode; it looks like intermediate content
       is being flushed into the reply. Worth understanding before the mode benchmark is published,
       since it will dominate the table.
-- [ ] **`workflow:pre-purchase` discards most of its own work.** Four executors run — `reviews`,
-      `stock`, `price_history`, `shipping` — and the reply is 48 characters:
-      `"Stock: 348 units available | Price trend: stable"`. The fan-out is real; the synthesis
-      throws away reviews and shipping entirely.
+- [ ] **`workflow:pre-purchase` answers from half its inputs, silently.** Four executors run —
+      `reviews`, `stock`, `price_history`, `shipping` — and the reply is 48 characters:
+      `"Stock: 348 units available | Price trend: stable"`. An earlier note here said the synthesis
+      throws reviews and shipping away; that was wrong. `_build_recommendation` guard-clauses every
+      line on data being present, so the fan-out is real and the synthesis is faithful — the
+      *inputs* are missing, and every failure path in that workflow is silent. See
+      [plan 19 §2b](enhancements/19-closing-out.md).
 - [ ] **The orchestration-mode benchmark has a harness but no published result.**
       `evals/benchmark_modes.py` ships in v1.2.0 and is verified working. The first full run
       measured a broken build through a tripped rate limiter and was discarded rather than
