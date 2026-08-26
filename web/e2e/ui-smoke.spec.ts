@@ -74,7 +74,16 @@ async function mockApi(page: Page) {
     if (url.includes("/api/cart"))
       return route.fulfill({ json: { items: [], item_count: 2, subtotal: 174.9 } });
     if (url.includes("/api/conversations")) return route.fulfill({ json: [] });
-    return route.fulfill({ json: {} });
+    // The chat page reads the mode registry on mount. Returning {} here sent it
+    // to an error boundary ("This page couldn't load"), which is why the admin
+    // sidebar assertions failed against a page that never rendered — nothing to
+    // do with the backend under test.
+    if (url.includes("/api/orchestration/modes"))
+      return route.fulfill({ json: { modes: [{ name: "tool", label: "Tool Router", description: "", is_graph: false }] } });
+    // Anything unmatched gets an empty ARRAY rather than an empty object: most
+    // of this app's endpoints return collections, and {} is the shape most
+    // likely to throw in a .map().
+    return route.fulfill({ json: [] });
   });
 }
 
@@ -105,8 +114,11 @@ test.describe("authenticated shell", () => {
     await mockApi(page);
     await page.goto("/home");
     await expect(page.getByText(/Good (morning|afternoon|evening), Alice/)).toBeVisible();
+    // Quick prompts are derived from DEMO_SCENARIOS (web/src/lib/scenarios.ts),
+    // so assert a label that actually exists rather than a hardcoded sentence
+    // that drifted the moment the scenario list was edited.
     await expect(
-      page.getByRole("link", { name: "Find wireless headphones" }),
+      page.getByRole("link", { name: "Product Search" }).first(),
     ).toBeVisible();
     await expect(page.getByText("Recent Orders")).toBeVisible();
     await expect(page.getByText("Specialist Agents")).toBeVisible();
@@ -115,10 +127,24 @@ test.describe("authenticated shell", () => {
   test("grouped sidebar shows admin nav (Usage, Audit) for admins", async ({ page }) => {
     await seedAuth(page, "admin");
     await mockApi(page);
-    await page.goto("/chat");
-    await expect(page.getByRole("link", { name: "Chat" })).toBeVisible();
+    // /home, not /chat. This test is about the SIDEBAR, and the sidebar renders
+    // on every authenticated page — while /chat needs enough live data that a
+    // mocked API sends it to an error boundary ("This page couldn't load"),
+    // which then fails every assertion here for a reason that has nothing to do
+    // with navigation.
+    //
+    // Worth noting separately: that the chat page hard-crashes rather than
+    // degrading when an API returns an unexpected shape is a real robustness
+    // gap, not a test artefact. Recorded in plan 20; not fixed here, because
+    // widening an error boundary is not a navigation change.
+    await page.goto("/home");
+    await expect(page.getByRole("link", { name: "Chat" }).first()).toBeVisible();
     await expect(page.getByRole("link", { name: "Usage" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Audit" })).toBeVisible();
+    // No "Audit": /admin/audit duplicated /runs and its nav entry was removed
+    // deliberately. src/lib/nav.test.ts asserts its absence, so expecting it
+    // here made the two suites contradict each other — this e2e test simply
+    // never caught up. The page itself still exists; only the link went.
+    await expect(page.getByRole("link", { name: "Audit" })).toHaveCount(0);
     // The agent marketplace was removed entirely.
     await expect(page.getByRole("link", { name: "Marketplace" })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "Requests" })).toHaveCount(0);
@@ -144,7 +170,7 @@ test.describe("authenticated shell", () => {
     await page.goto("/home");
     // Open via the top-bar search button (also covers the ⌘K integration).
     await page.getByRole("button", { name: /search/i }).click();
-    const search = page.getByPlaceholder("Search pages…");
+    const search = page.getByPlaceholder(/Search pages/);
     await expect(search).toBeVisible();
     await search.fill("products");
     await page.keyboard.press("Enter");
