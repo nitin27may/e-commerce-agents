@@ -89,7 +89,7 @@ builder.Services.AddSingleton<IOrchestrationMode>(sp =>
         settings,
         sp.GetRequiredService<CheckpointManager>()));
 builder.Services.AddSingleton<IOrchestrationMode>(sp =>
-    new HandoffMode(settings, sp.GetRequiredService<A2AClient>()));
+    new HandoffMode(settings, sp.GetRequiredService<A2AClient>(), sp.GetRequiredService<PromptLoader>()));
 builder.Services.AddSingleton<IOrchestrationMode>(sp =>
     new GroupChatMode(settings, sp.GetRequiredService<PromptLoader>()));
 builder.Services.AddSingleton<ModeRegistry>();

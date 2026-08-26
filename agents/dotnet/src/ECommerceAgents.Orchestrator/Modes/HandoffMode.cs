@@ -3,6 +3,8 @@ using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Orchestration;
 using Microsoft.Agents.AI;
+using ECommerceAgents.Shared.Prompts;
+using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
 using System.Text.Json;
 
@@ -17,28 +19,42 @@ namespace ECommerceAgents.Orchestrator.Modes;
 /// The contrast this mode exists to show sits against <see cref="ToolRouterMode"/>. Tool
 /// routing keeps the orchestrator in charge for the whole turn: it calls
 /// <c>call_specialist_agent</c>, gets a string back, and composes the final answer
-/// itself. Handoff transfers the turn — the specialist's answer <b>is</b> the answer, and
-/// the orchestrator's job ends at choosing who takes it. A reader comparing the two in
-/// the mode switcher should see the same question answered in a recognisably different
-/// voice, which is the teaching point.
+/// itself. Handoff <b>transfers ownership</b> — the specialist's answer is the answer, and
+/// the triage agent's job ends at choosing who takes it.
 ///
-/// The transfer target is chosen by a single routing call with no tools attached, rather
-/// than by the orchestrator's full tool-calling agent. Reusing that agent would let it
-/// answer the question itself, and then nothing would ever be handed off — the mode would
-/// silently degrade into tool routing while still being labelled handoff.
+/// This is a real <c>AgentWorkflowBuilder.CreateHandoffBuilderWith</c> mesh. It used to be
+/// a hand-rolled router — one routing call, one A2A call, return the reply — which
+/// produced the right-looking output while being a different pattern entirely. By
+/// Microsoft's own taxonomy that was agent-as-tool wearing handoff's name: control
+/// returned to the caller rather than transferring, so the two modes differed in label
+/// more than in behaviour.
 ///
-/// MAF .NET ships <c>HandoffWorkflowBuilder</c>, which is the natural fit once specialists
-/// are in-process <c>AIAgent</c>s. Here they are separate services reached over A2A, so a
-/// remote-agent adapter would have to exist first — Python has one
-/// (<c>shared/remote_agent.py::RemoteSpecialistChatClient</c>) and .NET does not. This
-/// implements the same observable behaviour over the existing A2A client and is honest
-/// about the difference rather than claiming a builder it does not use; the adapter is
-/// worth building when a second mode needs it.
+/// What unblocked the real thing is <see cref="RemoteSpecialistChatClient"/>. MAF's
+/// handoff orchestration takes <see cref="AIAgent"/> participants, and this repo's
+/// specialists are separate services behind A2A; without an adapter there was no way to
+/// put them in a mesh at all. The previous implementation said so explicitly and deferred
+/// the adapter until a second mode needed it.
+///
+/// <para><b>The triage agent carries no tools, and that is load-bearing.</b></para>
+///
+/// Handoffs happen through tool calls, so an agent that answers instead of calling a
+/// handoff tool leaves the workflow with nowhere to go. Microsoft's guidance is explicit:
+/// "if an agent does not call a handoff tool but generates a response instead, the
+/// workflow won't know what to do next but to delegate back to the user for further
+/// input." With autonomous mode on, that becomes a self-continuation loop.
+///
+/// Python learned this the expensive way. Its handoff mode used the tool-router
+/// orchestrator as the start agent — carrying <c>call_specialist_agent</c> and a prompt
+/// naming it — so it never handed off. Measured: 5,403 streamed updates, 23,637
+/// characters, 100-200 seconds, no specialist reached. Both stacks now use the same
+/// tool-free triage agent, loaded from the same shared prompt corpus
+/// (<c>config/prompts/handoff-triage.yaml</c>).
 /// </remarks>
-public sealed class HandoffMode(AgentSettings settings, A2AClient a2a) : IOrchestrationMode
+public sealed class HandoffMode(AgentSettings settings, A2AClient a2a, PromptLoader prompts) : IOrchestrationMode
 {
     private readonly AgentSettings _settings = settings;
     private readonly A2AClient _a2a = a2a;
+    private readonly PromptLoader _prompts = prompts;
 
     public string Name => "handoff";
     public string Label => "Handoff Mesh";
@@ -48,7 +64,7 @@ public sealed class HandoffMode(AgentSettings settings, A2AClient a2a) : IOrches
         + "per-turn via a tool call. The specialist's answer is the answer.";
 
     public ModeCapabilities Capabilities => new(
-        Streams: false,
+        Streams: true,
         // Neither the approval middleware nor an in-workflow gate is wired into this
         // path, and saying so is better than implying a gate that is not there.
         SupportsHitl: false,
@@ -75,53 +91,104 @@ public sealed class HandoffMode(AgentSettings settings, A2AClient a2a) : IOrches
                 0);
         }
 
-        ctx.Events?.Report(OrchestrationEvent.NodeEnter("orchestrator"));
-        var target = await ChooseTargetAsync(message, registry.Keys.ToList(), ct);
-        ctx.Events?.Report(OrchestrationEvent.NodeExit("orchestrator"));
+        AIAgent triage = BuildTriageAgent();
+        List<AIAgent> specialists = registry
+            .Select(kv => BuildRemoteSpecialist(kv.Key, kv.Value))
+            .ToList();
 
-        ctx.Events?.Report(OrchestrationEvent.NodeEnter(target));
-        var answer = await _a2a.SendAsync(target, registry[target], message, ctx.History, ct);
-        ctx.Events?.Report(OrchestrationEvent.NodeExit(target));
+        Workflow workflow = AgentWorkflowBuilder.CreateHandoffBuilderWith(triage)
+            .WithHandoffs(triage, specialists)
+            // Specialists hand back to triage rather than to each other. That path
+            // already exists via a triage round-trip, and a full cross-mesh makes the
+            // routing graph much harder to reason about from a support-ops view.
+            .WithHandoffs(specialists, triage, "Return to triage for further routing.")
+            // Bounded. Autonomous mode's contract is "if the agent does not hand off,
+            // feed it a continuation prompt and run it again" — so the ceiling is the
+            // only thing standing between a non-handing-off agent and a long monologue.
+            // MAF's default is 50.
+            .WithAutonomousMode(turnLimit: _settings.HandoffMaxTurns, agents: [triage])
+            .Build();
 
-        // Returned as the specialist wrote it. Re-composing it here would put the
-        // orchestrator back in charge of the turn and erase the only difference between
-        // this mode and tool routing.
-        return new ModeRunResult(answer, ["orchestrator", target], 1);
+        var messages = new List<ChatMessage> { new(ChatRole.User, message) };
+
+        await using StreamingRun run = await InProcessExecution
+            .RunStreamingAsync(workflow, messages, cancellationToken: ct);
+
+        // Wrapped agents are lazy: without a TurnToken they cache their input and never
+        // call anything. A run missing this completes normally having done nothing.
+        await run.TrySendMessageAsync(new TurnToken(emitEvents: true));
+
+        var spoke = new List<string>();
+        List<ChatMessage>? conversation = null;
+
+        await foreach (WorkflowEvent evt in run.WatchStreamAsync().WithCancellation(ct))
+        {
+            switch (evt)
+            {
+                case AgentResponseUpdateEvent update when update.Update is { } chunk:
+                    if (!string.IsNullOrEmpty(chunk.AuthorName) && !spoke.Contains(chunk.AuthorName))
+                    {
+                        spoke.Add(chunk.AuthorName);
+                        ctx.Events?.Report(OrchestrationEvent.NodeEnter(chunk.AuthorName));
+                    }
+
+                    break;
+
+                case WorkflowOutputEvent output when output.Data is List<ChatMessage> final:
+                    conversation = final;
+                    break;
+            }
+        }
+
+        // The specialist's answer IS the answer — recomposing it here would put the
+        // triage agent back in charge of the turn and erase the difference between this
+        // mode and tool routing.
+        string answer = conversation?
+            .LastOrDefault(m => m.Role == ChatRole.Assistant && !string.IsNullOrWhiteSpace(m.Text))?
+            .Text.Trim() ?? string.Empty;
+
+        // Who actually spoke, in order. Triage usually will not appear: a clean handoff
+        // is a tool call with no text, which is the correct outcome rather than a gap.
+        List<string> involved = conversation?
+            .Where(m => m.Role == ChatRole.Assistant && !string.IsNullOrWhiteSpace(m.AuthorName))
+            .Select(m => m.AuthorName!)
+            .Distinct()
+            .ToList() ?? [];
+
+        if (involved.Count == 0)
+        {
+            involved = spoke.Count > 0 ? spoke : ["orchestrator"];
+        }
+
+        return new ModeRunResult(answer, involved, involved.Count);
     }
 
     /// <summary>
-    /// Picks who takes the turn. One call, no tools, name-only answer.
+    /// The start agent: no tools, no context provider, one instruction — hand off.
     /// </summary>
-    private async Task<string> ChooseTargetAsync(string message, List<string> names, CancellationToken ct)
-    {
-        var agent = ECommerceAgents.Shared.Agents.ChatClientFactory.Create(_settings).AsAIAgent(
-            instructions:
-                "You route a customer message to exactly one specialist. Reply with the "
-                + "specialist's name and nothing else. Available specialists:\n"
-                + string.Join("\n", names.Select(n => $"- {n}")),
-            name: "handoff-router");
+    /// <remarks>
+    /// Uses <c>handoff-triage.yaml</c> from the shared corpus, deliberately NOT
+    /// <c>orchestrator.yaml</c>. That file names <c>call_specialist_agent</c>, which is
+    /// the tool router's mechanism; telling this agent to use it would point it at a tool
+    /// it does not have and it would answer directly instead of handing off.
+    /// </remarks>
+    private AIAgent BuildTriageAgent() =>
+        ECommerceAgents.Shared.Agents.ChatClientFactory.Create(_settings).AsAIAgent(
+            instructions: _prompts.Load("handoff-triage"),
+            name: "orchestrator",
+            description: "Triage agent that routes the conversation to a specialist.");
 
-        try
-        {
-            var reply = await agent.RunAsync(message, cancellationToken: ct);
-            var choice = reply.Text.Trim().Trim('.', '"', '\'');
-
-            // Substring match both ways: models answer "order-management" but also
-            // "the order-management specialist", and refusing the second would fall back
-            // for a correct answer that was merely wordier than asked.
-            var matched = names.FirstOrDefault(n =>
-                choice.Contains(n, StringComparison.OrdinalIgnoreCase)
-                || n.Contains(choice, StringComparison.OrdinalIgnoreCase));
-
-            return matched ?? names[0];
-        }
-        catch (Exception)
-        {
-            // A routing failure should not lose the customer's question. Handing it to
-            // the first specialist gets a real answer; failing the turn gets none.
-            return names[0];
-        }
-    }
+    /// <summary>
+    /// Wraps a remote specialist so the mesh can treat it as an ordinary participant.
+    /// </summary>
+    private AIAgent BuildRemoteSpecialist(string name, string url) =>
+        new RemoteSpecialistChatClient(name, url, _a2a).AsAIAgent(
+            // Minimal by design — the specialist on the far side of the A2A hop enforces
+            // its own system prompt, tools and grounding. Anything set here would be a
+            // second opinion competing with the real agent's.
+            instructions: $"You are the remote {name} specialist. Reply directly with the user's request.",
+            name: name,
+            description: $"Remote specialist {name} reached over A2A.");
 
     private Dictionary<string, string> Registry()
     {
