@@ -875,6 +875,12 @@ def build(check_only: bool) -> int:
     OUT_DIR.mkdir(parents=True)
 
     shutil.copy(REPO_ROOT / "docs/_config.yml", OUT_DIR / "_config.yml")
+
+    # `_includes/` has to land at the SITE ROOT, not under `docs/`. That is why this
+    # is its own copy instead of another entry in the asset loop below: that loop
+    # preserves the `docs/` prefix, and Jekyll only ever looks for `_includes/` at
+    # the top level -- it would silently render nothing.
+    shutil.copytree(REPO_ROOT / "docs/_includes", OUT_DIR / "_includes")
     for asset in ("docs/images", "docs/architecture.png"):
         src = REPO_ROOT / asset
         if not src.exists():
