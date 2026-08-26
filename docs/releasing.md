@@ -105,10 +105,23 @@ Ten packages: `orchestrator`, `product-discovery`, `order-management`, `pricing-
 `review-sentiment`, `inventory-fulfillment`, `auth-server`, `mcp-product`, `mcp-inventory`,
 `frontend`.
 
-### Retention
+### Retention — already automated
 
-Without a retention policy the `:sha-*` tags accumulate without limit. Set one to keep the most
-recent N untagged versions.
+GHCR has no built-in retention setting, so `.github/workflows/package-cleanup.yml` is the policy.
+It runs weekly across all ten packages, keeps the most recent 20 versions, and never touches
+`:latest`, `:main`, or any `:vX.Y.Z` tag.
+
+Two things would otherwise accumulate without limit: one `:sha-<7>` tag per commit on `main`, and
+untagged versions — a multi-arch build pushes a manifest list plus one image manifest per platform,
+and the platform manifests are orphaned when the tag moves. The second is the larger source by
+volume and is invisible in the packages UI unless you go looking.
+
+Run it once by hand before trusting it. The default for a manual run is a dry run:
+
+```bash
+gh workflow run package-cleanup.yml -f dry_run=true
+gh run watch
+```
 
 ## Versioning
 
