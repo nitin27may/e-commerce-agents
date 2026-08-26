@@ -87,8 +87,10 @@ SECTIONS: tuple[Section, ...] = (
         (
             "docs/quick-start.md",
             "docs/configuration.md",
+            "docs/demo-guide.md",
             "docs/deployment.md",
             "docs/troubleshooting.md",
+            "docs/roadmap.md",
         ),
     ),
     Section(
