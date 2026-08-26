@@ -87,9 +87,84 @@ That is this bug's second occurrence in the same component, found the same way: 
 Whatever the fix turns out to be, **it needs a test that goes through the real tool-invocation path**,
 or this will recur a third time.
 
+### Diagnosis — 2026-08-26, two candidates refuted, one confirmed by mechanism
+
+Reproduced statically, with no stack and no API key. Recreating the tool exactly as
+`OrchestratorTools.All()` does, against `Microsoft.Agents.AI` **1.18.0** (the pinned version):
+
+```
+NAME: CallSpecialistAgent
+SCHEMA ADVERTISED TO THE MODEL:
+{ "type": "object",
+  "properties": {
+    "agentName": { "description": "Name of the specialist agent to call", "type": "string" },
+    "message":   { "description": "The message to send to the specialist agent", "type": "string" } },
+  "required": [ "agentName", "message" ] }
+
+BIND 'agentName'  -> OK: called product-discovery with 'hello'
+BIND 'agent_name' -> ArgumentException: The arguments dictionary is missing a value for
+                     the required parameter 'agentName'. (Parameter 'arguments')
+```
+
+**Candidates 1 and 2 are refuted.** The generated schema advertises `agentName` and the binder
+expects `agentName` — they agree exactly, so there is no naming-policy mismatch between schema
+generation and argument binding, and `AIFunctionFactory` in 1.18.0 derives the name correctly.
+
+**Candidate 3 is confirmed as the mechanism.** Binding `agent_name` reproduces the *exact* error
+text seen in production, character for character. The model is emitting snake_case.
+
+**Why it emits snake_case — the part that makes this a design bug, not a typo.** The .NET
+Dockerfiles ship the Python prompt corpus verbatim:
+
+```dockerfile
+# Runtime — ship the shared YAML prompts alongside the binary so
+# PromptLoader finds them without any volume mount.
+COPY --chown=dotnet:dotnet agents/python/config ./agents/python/config
+```
+
+And `config/prompts/orchestrator.yaml` — the .NET orchestrator's own system prompt — says:
+
+> You have access to these specialists via the `call_specialist_agent` tool:
+
+So the .NET orchestrator is told, in its system prompt, that its tool is named
+`call_specialist_agent`, which is **Python's** name for it (`orchestrator/agent.py:51`, parameters
+`agent_name` / `message`). The tool actually registered is `CallSpecialistAgent(agentName, message)`.
+
+The prompt and the tool contract disagree, and the prompt is the shared one. A model primed
+throughout its system prompt with Python's snake_case idiom emits snake_case arguments. Nothing in
+.NET's own code is wrong in isolation — which is exactly why the C# unit tests are green.
+
+| | Python | .NET | Shared prompt says |
+|---|---|---|---|
+| Tool name | `call_specialist_agent` | `CallSpecialistAgent` | `call_specialist_agent` |
+| Parameter | `agent_name` | `agentName` | — |
+
+**Still unproven:** that the live model emits `agent_name` specifically, rather than failing some
+other way. That is now a one-line confirmation rather than an open investigation — the first Work
+item below still stands, but it is now confirming a single hypothesis instead of choosing between
+three.
+
+**Fix at the shared-contract layer, not in C#.** The prompt corpus is deliberately shared — it is
+the single source of truth for both stacks — so the .NET side should conform to it rather than the
+corpus growing per-stack variants, which would defeat the sharing. That means registering the tool
+as `call_specialist_agent` and exposing the parameter as `agent_name`:
+
+```csharp
+AIFunctionFactory.Create(CallSpecialistAgent, "call_specialist_agent")
+```
+
+with the parameter renamed or JSON-named to match. Renaming the *prompt* to PascalCase would be the
+wrong direction: it would break the Python stack, which is the one that currently works.
+
+**This also predicts a second latent bug.** If a shared prompt naming a Python symbol can silently
+break the .NET stack, every other Python-idiom name in that corpus is a candidate. Worth grepping
+the corpus for tool and parameter names as part of the fix, rather than fixing this one and
+waiting for the next.
+
 ### Work
 
-- [ ] Log the raw tool-call arguments the model emits on the .NET path
+- [ ] Confirm the model emits `agent_name` on the live .NET path (one log line; the three-way
+      investigation is already resolved above)
 - [ ] Identify which of the three candidates above is actually responsible
 - [ ] Fix at the correct layer — schema generation, binding, or the declaration
 - [ ] Add a test that exercises schema generation and argument binding, not the C# method directly
