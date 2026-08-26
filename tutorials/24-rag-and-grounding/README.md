@@ -167,6 +167,32 @@ report — `0/0 claims verified`, not a failure. Change a price in `CATALOG` aft
 reply and rerunning verification against the new catalog reproduces a `price_mismatch` verdict —
 that's the exact failure mode retrieval alone cannot catch.
 
+## .NET
+
+Source: [`dotnet/Program.cs`](./dotnet/Program.cs).
+
+```bash
+cd tutorials/24-rag-and-grounding/dotnet
+dotnet run
+dotnet test tests/Rag.Tests.csproj
+```
+
+Same two mechanisms, same deliberate separation:
+
+```csharp
+// 1. Retrieval — a tool, so the model reads real data instead of remembering.
+[Description("Search the product catalog by keyword. Returns matching products with id, name, and price.")]
+public static string SearchProducts(string query) { /* ... */ }
+
+// 2. Grounding verification — runs AFTER the answer, against the same catalogue.
+public static GroundingReport VerifyAnswer(string answer, IReadOnlyList<CatalogProduct>? catalog = null) =>
+    VerifyClaims(ExtractClaims(answer), catalog);
+```
+
+The chapter's argument — that retrieval alone does not give you grounding — is awkward to demonstrate against a live model, because a good model usually copies the price correctly and the interesting case is rare. A scripted `IChatClient` makes it reproducible on demand: hand the agent the correct price, have it answer with a rounded one, and `Retrieval_Succeeding_Does_Not_Make_The_Answer_Grounded` shows a run that is correct at every step except the one the customer cares about.
+
+The tests also pin a limitation rather than papering over it. The extractor regex is `\bP0\d{2}\b`, so a hallucinated `P999` is never extracted and therefore never verified — the answer comes back *vacuously grounded*, the worst possible verdict for that input. Right trade-off at toy scale (a looser pattern matches order numbers and postcodes), and exactly why production parses structured card payloads instead of prose.
+
 ## Gotchas
 
 - **Retrieval is not verification.** `search_products` being called proves the model *saw* the

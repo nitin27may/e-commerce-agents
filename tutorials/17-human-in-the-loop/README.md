@@ -145,6 +145,7 @@ await foreach (WorkflowEvent evt in run.WatchStreamAsync())
 
 ## Tests
 
+
 ```bash
 uv sync --project tutorials
 uv run --project tutorials pytest tutorials/17-human-in-the-loop/python/tests -v
@@ -156,7 +157,17 @@ uv run --project tutorials pytest tutorials/17-human-in-the-loop/python/tests -v
 2. **Workflow construction** — `test_workflow_builds` asserts `build_workflow()` returns a workflow.
 3. **The concept assertion** — `test_workflow_pauses_for_human_before_first_response` drains the first `workflow.run(..., stream=True)` and asserts it emits a `request_info` event but *no* `output` event, proving the pause actually happens rather than the workflow completing immediately.
 
-No `dotnet test` project exists for this chapter — verify the .NET side with `dotnet build` plus the scripted `dotnet run -- y` / `dotnet run -- n` runs shown above.
+The scripted `dotnet run -- y` / `dotnet run -- n` runs shown above are still the quickest manual check; the test project below is what CI gates on.
+
+The .NET side ships [`dotnet/tests/HitlTests.cs`](./dotnet/tests/HitlTests.cs) — seven tests, no LLM involved at all, since HITL is framework plumbing rather than model behaviour:
+
+```bash
+cd tutorials/17-human-in-the-loop/dotnet && dotnet test tests/Hitl.Tests.csproj
+```
+
+`Program.RunAsync` takes the approval decision as a `Func<RequestInfoEvent, bool>` — a console prompt in the app, a lambda in the tests. Without that seam the test hangs on `Console.ReadLine`.
+
+The sharpest assertion is `Nothing_Downstream_Runs_Before_The_Decision_Arrives`, which checks the event ordering rather than the final answer. A gate that could be overtaken by its own downstream executor would still produce the right message.
 
 ## How this shows up in the capstone
 

@@ -188,6 +188,7 @@ what gets replaced with a real example.
 
 ## Tests
 
+
 ```bash
 uv run --project tutorials pytest tutorials/16-magentic-orchestration/python/tests -v
 ```
@@ -204,6 +205,16 @@ Structurally, the suite covers:
 
 Magentic's manager loop is non-deterministic in how many rounds it takes, so the tests assert on
 outcome (a real, substantive answer) rather than an exact call count or turn sequence.
+
+The .NET side ships [`dotnet/tests/MagenticTests.cs`](./dotnet/tests/MagenticTests.cs), and they are unusual: there is no behaviour to test, because the .NET project is a status stub.
+
+```bash
+cd tutorials/16-magentic-orchestration/dotnet && dotnet test tests/Magentic.Tests.csproj
+```
+
+What they test is the claim's shelf life. A stub that says "not supported yet" is only honest while it stays true, and left alone it decays silently — the package gets bumped, Magentic lands, and this chapter goes on telling .NET readers to go use Python. Nothing fails, so nobody notices.
+
+So the tests reflect over the shipped `Microsoft.Agents.AI.Workflows` assembly and assert `Magentic` types are still absent, with a control test asserting the sibling builders (`BuildSequential`, `BuildConcurrent`, and the handoff/group-chat builders) *are* present — without which a failed assembly load would look identical to "still missing". **A failure here is good news:** it means the chapter needs rewriting.
 
 ## How this shows up in the capstone
 

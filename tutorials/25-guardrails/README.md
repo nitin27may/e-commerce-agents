@@ -121,6 +121,49 @@ def build_agent(client: object | None = None) -> Agent:
     )
 ```
 
+## .NET
+
+Source: [`dotnet/Program.cs`](./dotnet/Program.cs).
+
+```bash
+cd tutorials/25-guardrails/dotnet
+dotnet run -- "Summarize the review for product P-666"
+dotnet test tests/Guardrails.Tests.csproj
+```
+
+**The seam differs from Python's.** There is no .NET function-middleware hook in the same place, so the guard is a `DelegatingAIFunction` that wraps the tool itself:
+
+```csharp
+public sealed class ReviewInjectionGuard(AIFunction inner, GuardrailStats stats) : DelegatingAIFunction(inner)
+{
+    protected override async ValueTask<object?> InvokeCoreAsync(
+        AIFunctionArguments arguments, CancellationToken cancellationToken)
+    {
+        object? result = await base.InvokeCoreAsync(arguments, cancellationToken);
+        // ... inspect and rewrite before it re-enters the model's context
+    }
+}
+```
+
+Same layer, same guarantee, and one property Python's shape does not have: because the guard **is** the tool from the agent's point of view, it cannot be forgotten at the call site. Middleware registered separately from the tool it protects can be, and the failure is silent.
+
+### The type trap
+
+`AIFunctionFactory` serializes a tool's return value, so what reaches the wrapper is a **`JsonElement`**, not the `string` the method declared. A guard checking `result is string` compiles, runs, matches nothing, and reports zero neutralizations — which reads exactly like "no attacks were attempted".
+
+```csharp
+string? text = result switch
+{
+    string s => s,
+    JsonElement { ValueKind: JsonValueKind.String } json => json.GetString(),
+    _ => null,
+};
+```
+
+Python's version handles the mirror-image problem for the mirror-image reason: a live run wraps the return in MAF `Content` items while its own unit tests set a bare string.
+
+The tests come in matched pairs — the poisoned review must be neutralized, and both clean reviews must pass through byte-for-byte. A guard that rewrites clean data is worse than none. They also pin what the single regex **misses** (`"disregard the above"`, `"you are now a pirate"`), because one pattern is a teaching example rather than a defence, and the instructions treating review text as data do the rest of the work.
+
 ## Side-by-side differences
 
 | Aspect | This chapter | Production (`agents/python/shared/guardrails/`) |

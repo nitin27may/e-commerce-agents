@@ -175,6 +175,30 @@ A stricter word limit or a product with no listed features reliably produces a `
 iteration and a visible revision on the second — the loop only prints one iteration in the example
 above because `gpt-4.1` gets this particular rubric right on the first try most of the time.
 
+## .NET
+
+Source: [`dotnet/Program.cs`](./dotnet/Program.cs).
+
+```bash
+cd tutorials/28-reflection-and-critique/dotnet
+dotnet run
+dotnet test tests/Reflection.Tests.csproj
+```
+
+Same loop, same hard cap, same parsing posture — any criterion the critic does not clearly mark `PASS` is treated as `FAIL`:
+
+```csharp
+return new CritiqueResult(
+    PriceOk: verdicts.GetValueOrDefault("PRICE"),
+    FeatureOk: verdicts.GetValueOrDefault("FEATURE"),
+    LengthOk: verdicts.GetValueOrDefault("LENGTH"),
+    Feedback: feedback.Success ? feedback.Groups[1].Value.Trim() : string.Empty);
+```
+
+That default has a real cost — a critic whose output drifts causes extra revisions — and the alternative is much worse: a parser defaulting to `PASS` turns an unreadable critique into a silent approval, and the loop stops enforcing anything while still looking like it works.
+
+The tests are shaped around the two ways an unbounded loop goes wrong: it never stops, or it stops for the wrong reason. One is an off-by-one worth calling out — `Hitting_The_Cap_Does_Not_Spend_A_Revision_Nobody_Grades` asserts exactly six calls for a three-iteration run (1 draft + 3 critiques + 2 revisions). A seventh revision after the final critique is invisible in the output and shows up only on the invoice.
+
 ## Gotchas
 
 - **The `MAX_ITERATIONS` cap is load-bearing, not decorative.** A critic loop has no

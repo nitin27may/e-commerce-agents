@@ -118,10 +118,8 @@ dotnet run
 ```
 
 ```csharp
-public static Workflow BuildWorkflow()
+public static Workflow BuildWorkflow(IChatClient chatClient)
 {
-    var chatClient = BuildChatClient();
-
     AIAgent writer = chatClient.AsAIAgent(instructions: WriterInstructions, name: "writer");
     AIAgent reviewer = chatClient.AsAIAgent(instructions: ReviewerInstructions, name: "reviewer");
     AIAgent finalizer = chatClient.AsAIAgent(instructions: FinalizerInstructions, name: "finalizer");
@@ -130,18 +128,34 @@ public static Workflow BuildWorkflow()
 }
 ```
 
-Reading results back is simpler than Python — `RunStreamingAsync` + `WatchStreamAsync` yield a strongly-typed `AgentResponseEvent` per agent turn, no list-unpacking required:
+Running it is where this chapter is easy to get wrong, and the wrong version does not fail — it exits 0 having called no model at all. Three things must all be true:
 
 ```csharp
-await using var run = await InProcessExecution.RunStreamingAsync(workflow, topic);
-await foreach (var evt in run.WatchStreamAsync())
+// 1. The input type is List<ChatMessage>, not a topic string.
+var messages = new List<ChatMessage> { new(ChatRole.User, topic) };
+
+await using StreamingRun run = await InProcessExecution.RunStreamingAsync(workflow, messages);
+
+// 2. The wrapped agents are lazy — without a TurnToken they cache their input
+//    and never call the model.
+await run.TrySendMessageAsync(new TurnToken(emitEvents: true));
+
+// 3. BuildSequential emits AgentResponseUpdateEvent, never AgentResponseEvent.
+//    The terminal WorkflowOutputEvent carries the whole conversation with
+//    AuthorName set per agent, which is the reliable place to read turns from.
+await foreach (WorkflowEvent evt in run.WatchStreamAsync())
 {
-    if (evt is AgentResponseEvent r)
+    if (evt is WorkflowOutputEvent { Data: List<ChatMessage> conversation })
     {
-        Console.WriteLine($"{r.ExecutorId,-9}: {r.Response.Text}");
+        foreach (ChatMessage m in conversation.Where(m => m.Role == ChatRole.Assistant))
+        {
+            Console.WriteLine($"{m.AuthorName,-9}: {m.Text}");
+        }
     }
 }
 ```
+
+This chapter shipped for a while with all three wrong at once. It built, it ran, it printed the topic and exited 0 — and nothing in CI could see it, because `dotnet build` was the only .NET gate. That is what the test project added in this pass is for.
 
 `Program.cs` loads the repo-root `.env` itself (`LoadDotEnv()` walks up from `AppContext.BaseDirectory`) the same way Chapter 01's example does — no `dotnet user-secrets` needed.
 
@@ -150,13 +164,14 @@ await foreach (var evt in run.WatchStreamAsync())
 | Aspect | Python | .NET |
 |--------|--------|------|
 | Builder | `SequentialBuilder(participants=[...]).build()` | `AgentWorkflowBuilder.BuildSequential(new[]{...})` |
-| Run call | `workflow.run(topic, stream=True)` | `InProcessExecution.RunStreamingAsync(workflow, topic)` |
-| Per-agent event | `executor_completed` event, `data: list[AgentExecutorResponse]` | Strongly-typed `AgentResponseEvent` with `.ExecutorId` / `.Response.Text` |
+| Run call | `workflow.run(topic, stream=True)` | `InProcessExecution.RunStreamingAsync(workflow, messages)` + `run.TrySendMessageAsync(new TurnToken(...))` |
+| Per-agent output | `executor_completed` event, `data: list[AgentExecutorResponse]` | Terminal `WorkflowOutputEvent` carrying `List<ChatMessage>`, each tagged with `AuthorName`. `AgentResponseEvent` is *not* emitted on this path — matching on it compiles and yields nothing. |
 | Checkpointing | `SequentialBuilder(..., checkpoint_storage=...)` constructor arg | Configure a checkpoint store when building the workflow (see MAF docs) |
 
 ## Gotchas
 
-- **Python's per-agent output isn't a dedicated event type.** Sequential emits each turn inside `executor_completed`'s `data` field as a `list[AgentExecutorResponse]` — filtering on `event.type == "data"` finds nothing. .NET's `AgentResponseEvent` is more direct.
+- **Neither runtime gives you a dedicated per-agent event.** Python emits each turn inside `executor_completed`'s `data` field as a `list[AgentExecutorResponse]`, so filtering on `event.type == "data"` finds nothing. .NET emits `AgentResponseUpdateEvent` while streaming and never `AgentResponseEvent`, so matching on the latter compiles, runs and prints nothing. Read the terminal conversation on both sides.
+- **.NET's wrapped agents will not start without a `TurnToken`.** `AgentExecutor` caches its input and waits. A run missing the token completes normally, having made no LLM call — the most expensive kind of silent failure, because it looks like a fast success.
 - **Instructions matter more than ever.** Every downstream agent sees the entire prior conversation, so each system prompt has to say explicitly what NOT to do — "do not rewrite the draft" on the Reviewer, "output ONLY the final sentence" on the Finalizer — or the pipeline drifts.
 - **Sequential isn't checkpointed by default.** Pass `checkpoint_storage=` to the `SequentialBuilder(...)` constructor (not to `.run()`) for durable pipelines; this chapter's demo doesn't configure one.
 - **The old "MAF v1.0 wheel ships an empty `__init__.py`" packaging bug is fixed upstream** — this repo now pins `agent-framework` 1.14.0, so it's no longer active. `tutorials/_shared/maf_bootstrap.py` still runs its patch step defensively (every chapter's `main.py` calls `maf_bootstrap.bootstrap()` first), but it's a no-op on a current install; the capstone app's equivalent, `agents/python/patch_maf.py`, is the same documented no-op.
@@ -173,7 +188,13 @@ await foreach (var evt in run.WatchStreamAsync())
 uv run --project tutorials pytest tutorials/12-sequential-orchestration/python/tests -v
 ```
 
-The .NET side (`dotnet/Program.cs`) doesn't ship a test project for this chapter yet — verify it by running `dotnet run` against a configured `.env`.
+The .NET side ships [`dotnet/tests/SequentialTests.cs`](./dotnet/tests/SequentialTests.cs) — seven tests, no key, no network, driven by the shared scripted `IChatClient`:
+
+```bash
+cd tutorials/12-sequential-orchestration/dotnet && dotnet test tests/Sequential.Tests.csproj
+```
+
+Two of them are worth reading, because they assert things the source cannot show you: that each agent's prompt contains its predecessors' output (the actual claim of sequential orchestration, and it happens inside `BuildSequential`), and that the three calls do **not** overlap in time — the same assertion Chapter 13 makes with the opposite expected answer.
 
 ## How this shows up in the capstone
 
