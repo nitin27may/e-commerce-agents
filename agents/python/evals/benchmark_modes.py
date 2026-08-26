@@ -163,6 +163,7 @@ def summarise(results: list[RunResult]) -> list[dict[str, object]]:
                 "p95_ms": round(lat[int(len(lat) * 0.95)] if len(lat) > 1 else lat[0]) if lat else None,
                 "mean_tokens": round(statistics.mean(toks)) if toks else None,
                 "mean_cost_usd": round(statistics.mean(costs), 5) if costs else None,
+                "rate_limited": sum(1 for r in runs if not r.ok and "429" in r.error),
                 "agents_seen": agents,
             }
         )
@@ -216,6 +217,8 @@ async def main_async(args: argparse.Namespace) -> int:
         for mode in modes:
             for prompt in PROMPTS:
                 for rep in range(1, args.reps + 1):
+                    if results:
+                        await asyncio.sleep(args.delay)
                     res = await run_once(client, pool, token, mode, prompt, rep)
                     results.append(res)
                     mark = "ok " if res.ok else "ERR"
@@ -256,6 +259,14 @@ def main() -> int:
     parser.add_argument("--reps", type=int, default=3, help="Repetitions per mode/prompt (default: 3)")
     parser.add_argument("--modes", help=f"Comma-separated subset of: {','.join(ALL_MODES)}")
     parser.add_argument("--dry-run", action="store_true", help="List what would run; spend nothing")
+    parser.add_argument(
+        "--delay",
+        type=float,
+        default=8.0,
+        help="Seconds to wait between requests (default: 8). The chat routes are behind a Redis "
+        "sliding-window limiter keyed by user; firing back-to-back trips it and the run then "
+        "measures 429s instead of orchestration.",
+    )
     args = parser.parse_args()
 
     if os.environ.get("LLM_PROVIDER") == "replay" and not args.dry_run:
