@@ -13,5 +13,24 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Agents.AI.Workflows" Version="1.1.0" />
+    <!-- The source generator turns [MessageHandler] into the ConfigureProtocol
+         override Executor declares abstract. Without it every executor in this
+         file fails to compile with CS0534, which reads like a missing method
+         rather than a missing package. -->
+    <PackageReference Include="Microsoft.Agents.AI.Workflows.Generators" Version="1.1.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <!-- Exclude the test project's sources from the main build; the test project owns them. -->
+  <ItemGroup>
+    <Compile Remove="tests/**/*.cs" />
+    <None Remove="tests/**/*.cs" />
+    <None Remove="tests/**/*.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Visualization.Tests" />
   </ItemGroup>
 </Project>

@@ -139,6 +139,39 @@ async def run_plan(request: str) -> tuple[Plan, list[str]]:
 the results in order — the plan is visible as a distinct artifact, not folded silently into the
 final answer.
 
+## .NET
+
+Source: [`dotnet/Program.cs`](./dotnet/Program.cs).
+
+```bash
+cd tutorials/29-planner-executor/dotnet
+dotnet run
+dotnet test tests/PlannerExecutor.Tests.csproj
+```
+
+Structured output uses the generic `RunAsync<T>` overload rather than Python's `response_format=`:
+
+```csharp
+var response = await planner.RunAsync<Plan>(request, serializerOptions: AIJsonUtilities.DefaultOptions);
+```
+
+`AgentResponse<T>.Result` deserializes lazily and throws on bad JSON, so `MakePlanAsync` catches it and rethrows with the raw text quoted — turning "the model ignored the schema" into one actionable message instead of a `JsonException` from somewhere inside the framework. Executing a half-parsed plan is worse than not executing one.
+
+The session is `AgentSession`, created once and reused across every step:
+
+```csharp
+AgentSession session = await executor.CreateSessionAsync();
+foreach (PlanStep step in plan.Steps)
+{
+    results.Add(await RunStepAsync(executor, session, step));
+}
+```
+
+Two properties carry the pattern and neither is visible from the API:
+
+- **The planner has no tools.** `The_Planner_Is_Given_No_Tools` asserts it. Give it any and it will search instead of planning, and you get a reactive agent that also emits a plan it has already stopped following.
+- **Every step shares one session.** The failure mode without this is not an error: step 3 sees an empty conversation, has nothing to pick from, and invents a plausible recommendation. `All_Steps_Share_One_Session_So_Later_Steps_See_Earlier_Results` asserts the conversation grows, which is the only way to catch it.
+
 ## Gotchas
 
 - **`response_format` goes on `run()`, not on `Agent()`.** `Agent(client, response_format=Plan, ...)` is not a

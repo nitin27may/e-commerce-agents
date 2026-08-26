@@ -1,6 +1,6 @@
 # Plan 17 — .NET Tutorial Coverage (#20)
 
-**Status:** proposed · **Date:** 2026-08-26 · **Issue:** [#20](https://github.com/nitin27may/e-commerce-agents/issues/20)
+**Status:** DONE · **Date:** 2026-08-26 · **Issue:** [#20](https://github.com/nitin27may/e-commerce-agents/issues/20)
 **Parent:** [`../audit-2026-08-25-adoption-and-azure.md`](../audit-2026-08-25-adoption-and-azure.md) (finding: deprioritised for adoption, kept for parity integrity)
 **Sibling:** [`18-composer-ux.md`](18-composer-ux.md) — independent, no shared code, separate PR stream.
 
@@ -8,7 +8,71 @@ Closes #20. The issue text is out of date in two places and is corrected below.
 
 ---
 
-## 1. Measured state, 2026-08-26
+## 0. Outcome — executed 2026-08-26
+
+Done in one pass rather than the five phases below. Final state: **every chapter that ships code
+ships both languages, both gated in CI** — 334 .NET tests across 31 projects (was 47 across 11),
+plus 15 new Python tests for chapter 22.
+
+The estimate below (§10) was 12–15 days, on the assumption that porting was the expensive part.
+It was not. Writing the tests was — and writing them is what surfaced the defects, which turned
+out to be the actual return on the exercise.
+
+### What the tests found
+
+Three defects, all invisible to `dotnet build`, which was the only .NET gate at the time:
+
+- **Chapter 12 never ran.** It handed a bare string to a workflow whose input type is
+  `List<ChatMessage>`, never sent the `TurnToken` the wrapped agents wait on, and matched on an
+  `AgentResponseEvent` that `BuildSequential` does not emit. Three independent silent failures
+  stacked: `dotnet run` printed the topic, called no model, exited 0.
+- **Chapter 15 could loop forever.** `PromptDrivenManager` overrode `ShouldTerminateAsync` —
+  where the base class enforces `MaximumIterationCount` — without chaining to it, so the cap its
+  own comment called "the safety net" did not exist. Its regression test asserts against a clock,
+  because the failure mode is a hang rather than a wrong value.
+- **Chapter 20 was a stub for no reason.** `WorkflowVisualizer` has shipped since 1.1.0, so unlike
+  chapter 16 there was no SDK gap. The usage its stub *printed* did not compile either —
+  `ToMermaidString` is a static method, not an extension — and printed sample code is never
+  compiled.
+
+Two SDK behaviours are pinned as tests rather than fixed, because they are Microsoft's: MAF names
+synthesised handoff tools **positionally** (`handoff_to_1`), so an agent's name never reaches the
+model and only `description:` distinguishes targets; and `FileSystemJsonCheckpointStore` takes an
+exclusive directory lock it never releases.
+
+### Where the execution diverged from the phases below
+
+| Plan said | What happened | Why |
+|---|---|---|
+| Phase 3: ch16 and ch20 are "re-verify blocker" | ch20 became a **real runnable example**; ch16 stayed a stub | There was never a blocker for ch20 — `WorkflowVisualizer` shipped in 1.1.0. Magentic genuinely is Python-only. |
+| Phase 3: stubs get no tests | ch16 got **tripwire tests** | A stub saying "not supported yet" is only honest while it stays true. Its tests reflect over the shipped assembly and fail the day `MagenticBuilder` appears, with a control test so a failed assembly load cannot masquerade as "still missing". |
+| §7 non-goal: 20b stays unported | Still unported, **corrected reason** | Its README said no `Microsoft.Agents.AI.DevUI` package ships. One does now — 46 versions on NuGet — but all prerelease, and this repo pins `Microsoft.Agents.AI` 1.1.0 stable. |
+| Phase 4: port ch22 like the rest | Ported, with the **asymmetry documented** | Python imports the production `workflows/group_chat.py` and tours real shipped code; .NET has no equivalent standalone type, so it reimplements the shape self-contained. One chapter is a tour, the other a faithful model. |
+| Phase 1: `MafV1.TestSupport` shared project | Shipped as `tutorials/_shared/dotnet/ScriptedChatClient.cs`, **linked** into each test project | Matches the existing `_shared/replay_client.py` precedent rather than introducing a second convention. Same effect: one copy, fixed once. |
+| Not planned | Chapter 22's **Python** tests | It was the only Python chapter with code and no tests. The recorded reasoning was that the production module's tests covered it — those cover the *module*, not the chapter's own panelists, synthesizer, or its central claim. |
+| Not planned | `scripts/check_tutorial_coverage.py` | `tutorials/README.md` claimed its status table was generated from disk. It was maintained by hand and had drifted. Now generated, and CI fails when it is stale. |
+
+### Verification at the point of completion
+
+| Gate | Result |
+|---|---|
+| `dotnet build` (62 projects) | pass |
+| `dotnet test` (31 projects) | **334 passed** |
+| `pytest -m "not integration"` | **207 passed**, 49 deselected |
+| `ruff check tutorials/` | pass |
+| `check_tutorial_readmes.py --check` | pass |
+| `check_tutorial_coverage.py --check` | pass |
+
+No test needs an API key or a network call.
+
+Everything below is the plan as written before execution. Kept for the reasoning — particularly
+§2 (the three gate defects) and §3 (why the .NET test pattern beats Python's) — not for the
+schedule.
+
+
+---
+
+## 1. Measured state, 2026-08-26 (before execution)
 
 Generated from disk, not from the README. `tests` counts `*.Tests.csproj` under the chapter.
 

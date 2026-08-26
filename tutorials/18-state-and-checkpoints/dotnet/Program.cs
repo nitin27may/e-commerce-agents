@@ -27,6 +27,15 @@ using Microsoft.Agents.AI.Workflows.Checkpointing;
 
 namespace MafV1.Ch18.Checkpoints;
 
+/// <summary>The result of running once and then resuming from a checkpoint.</summary>
+/// <param name="FirstRun">Output of the original run.</param>
+/// <param name="Resumed">Output of the run rebuilt from disk. Equal, if state round-tripped.</param>
+/// <param name="CheckpointIds">Checkpoint ids written for the session, in order.</param>
+internal sealed record CheckpointRoundTrip(
+    double? FirstRun,
+    double? Resumed,
+    IReadOnlyList<string> CheckpointIds);
+
 public static class Program
 {
     public static async Task<int> Main(string[] args)
@@ -39,16 +48,67 @@ public static class Program
         if (checkpointDir.Exists) checkpointDir.Delete(recursive: true);
         checkpointDir.Create();
 
+        Console.WriteLine($"Phase 1: initialRefund={initialRefund}, itemRefund={itemRefund}");
+
+        CheckpointRoundTrip result = await RunAsync(checkpointDir, initialRefund, itemRefund);
+
+        foreach (string id in result.CheckpointIds)
+        {
+            Console.WriteLine($"  superstep complete — checkpoint {id[..8]}");
+        }
+
+        Console.WriteLine($"Phase 1 result: refund_amount = {result.FirstRun}");
+        Console.WriteLine();
+        Console.WriteLine($"{result.CheckpointIds.Count} checkpoint(s) on disk.");
+
+        if (result.CheckpointIds.Count == 0)
+        {
+            Console.Error.WriteLine("No checkpoints produced — nothing to resume.");
+            return 1;
+        }
+
+        Console.WriteLine($"Resuming from {result.CheckpointIds[0][..8]} into a fresh Workflow...");
+        Console.WriteLine($"Phase 2 result: refund_amount = {result.Resumed} (expected {result.FirstRun})");
+
+        return result.Resumed == result.FirstRun ? 0 : 2;
+    }
+
+    /// <summary>
+    /// Runs the workflow end to end, then rebuilds it from scratch and resumes
+    /// it from the first checkpoint on disk.
+    /// </summary>
+    /// <remarks>
+    /// The moment that matters is phase 2: a brand-new Workflow object and a
+    /// brand-new ReturnRequestExecutor whose _refundAmount is back to
+    /// <paramref name="initialRefund"/>. If OnCheckpointRestoredAsync does its
+    /// job, the resumed run still produces initialRefund + itemRefund — and if
+    /// it silently does nothing, the resumed run produces initialRefund alone.
+    /// Both are plausible-looking numbers, which is why this needs a test
+    /// rather than an eyeball.
+    /// </remarks>
+    internal static async Task<CheckpointRoundTrip> RunAsync(
+        DirectoryInfo checkpointDir,
+        double initialRefund,
+        double itemRefund)
+    {
         // CheckpointManager wraps a backing store + JSON marshaller.
         // FileSystemJsonCheckpointStore writes one JSON file per checkpoint
         // under {dir}/{sessionId}_{checkpointId}.json plus an index.jsonl.
+        //
+        // Gotcha: the store takes an EXCLUSIVE lock on the directory, and the
+        // lock outlives the run — constructing a second store over the same
+        // directory throws "already in use by another process" even from the
+        // same process, even after the first run has finished. So a directory
+        // is effectively one-store-for-the-lifetime-of-the-process. Give each
+        // run its own directory, or hold one store and reuse it across
+        // sessions. The exception message names a *process*, which sends
+        // people looking for a stale lockfile that does not exist.
         var store = new FileSystemJsonCheckpointStore(checkpointDir);
         CheckpointManager checkpointManager = CheckpointManager.CreateJson(store);
 
         string sessionId = Guid.NewGuid().ToString("N");
 
-        // ─── Phase 1: run the workflow end-to-end, capturing every checkpoint ─────
-        Console.WriteLine($"Phase 1: initialRefund={initialRefund}, itemRefund={itemRefund}");
+        // ─── Phase 1: run end-to-end, capturing every checkpoint ─────────────
         Workflow workflow1 = BuildWorkflow(initialRefund);
         await using StreamingRun run = await InProcessExecution
             .RunStreamingAsync(workflow1, input: itemRefund, checkpointManager, sessionId);
@@ -56,38 +116,22 @@ public static class Program
         double? finalOutput = null;
         await foreach (WorkflowEvent evt in run.WatchStreamAsync())
         {
-            switch (evt)
+            if (evt is WorkflowOutputEvent output && output.Data is double value)
             {
-                case SuperStepCompletedEvent step when step.CompletionInfo?.Checkpoint is { } cp:
-                    Console.WriteLine($"  superstep complete — checkpoint {cp.CheckpointId[..8]}");
-                    break;
-                case WorkflowOutputEvent output when output.Data is double value:
-                    finalOutput = value;
-                    break;
+                finalOutput = value;
             }
         }
-        Console.WriteLine($"Phase 1 result: refund_amount = {finalOutput}");
-        Console.WriteLine();
 
-        // ─── Phase 2: rehydrate into a fresh workflow from the FIRST checkpoint ──
-        // This is the moment that matters: a brand-new process, new Workflow
-        // object, new ReturnRequestExecutor instance with _refundAmount =
-        // initialRefund. Resuming from the checkpoint taken *after superstep 1*
-        // must restore _refundAmount to (initialRefund + itemRefund) and let
-        // FinalizeReturnExecutor yield it.
+        // ─── Phase 2: rehydrate into a fresh workflow from the FIRST checkpoint
         var checkpoints = (await store.RetrieveIndexAsync(sessionId)).ToList();
-        Console.WriteLine($"{checkpoints.Count} checkpoint(s) on disk for session {sessionId[..8]}.");
-
         if (checkpoints.Count == 0)
         {
-            Console.Error.WriteLine("No checkpoints produced — nothing to resume.");
-            return 1;
+            return new CheckpointRoundTrip(finalOutput, null, Array.Empty<string>());
         }
 
         CheckpointInfo firstCheckpoint = checkpoints[0];
-        Console.WriteLine($"Resuming from {firstCheckpoint.CheckpointId[..8]} into a fresh Workflow...");
 
-        // Build a completely new Workflow instance with a fresh
+        // A completely new Workflow instance with a fresh
         // ReturnRequestExecutor (seeded the same way — the initial refund
         // is part of the executor's identity, not its checkpointable state).
         Workflow workflow2 = BuildWorkflow(initialRefund);
@@ -102,12 +146,14 @@ public static class Program
                 replayed = value;
             }
         }
-        Console.WriteLine($"Phase 2 result: refund_amount = {replayed} (expected {finalOutput})");
 
-        return replayed == finalOutput ? 0 : 2;
+        return new CheckpointRoundTrip(
+            finalOutput,
+            replayed,
+            checkpoints.Select(c => c.CheckpointId).ToList());
     }
 
-    private static Workflow BuildWorkflow(double initialRefund)
+    internal static Workflow BuildWorkflow(double initialRefund)
     {
         var returnRequest = new ReturnRequestExecutor(initialRefund);
         var finalizeReturn = new FinalizeReturnExecutor();

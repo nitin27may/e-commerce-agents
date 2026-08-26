@@ -165,12 +165,21 @@ dotnet run -- "maf rocks"  # happy path
 
 ## Tests
 
+
 Python ships a full suite covering the op registry, the loader, and end-to-end YAML runs: [`python/tests/test_declarative.py`](./python/tests/test_declarative.py) exercises every built-in op (`upper`, `lower`, `reverse`, `non_empty`, `prefix`), the unknown-op error path, `load_workflow()` wiring the correct executor ids, and the YAML-driven pipeline matching the code-built equivalent for both the happy path and the empty-input short-circuit.
 
 ```bash
 uv sync --project tutorials
 uv run --project tutorials pytest tutorials/19-declarative-workflows/python/tests -v
 ```
+
+The .NET side ships [`dotnet/tests/DeclarativeTests.cs`](./dotnet/tests/DeclarativeTests.cs) — twenty-two tests, no LLM:
+
+```bash
+cd tutorials/19-declarative-workflows/dotnet && dotnet test tests/Declarative.Tests.csproj
+```
+
+Most of them are validation, because the whole premise of a declarative loader is that a config file can be wrong — and a loader whose errors are unhelpful is worse than no loader, since the failure surfaces at runtime in a file the compiler never checked. Each error test asserts the message names the thing that is actually wrong; "workflow spec invalid" would technically satisfy all of them.
 
 ## How this shows up in the capstone
 

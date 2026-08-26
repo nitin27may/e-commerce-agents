@@ -139,6 +139,7 @@ Resuming builds a fresh `Workflow` (`BuildWorkflow(initialRefund)` again, same i
 
 ## Tests
 
+
 `tutorials/18-state-and-checkpoints/python/tests/test_checkpoints.py` has 8 tests exercising the hooks and the file-backed round trip directly (no LLM, deterministic):
 
 - `on_checkpoint_save` / `on_checkpoint_restore` round-trip `refund_amount` correctly, including that restore overwrites whatever initial refund the constructor set and defaults sanely when the key is missing
@@ -152,6 +153,16 @@ Resuming builds a fresh `Workflow` (`BuildWorkflow(initialRefund)` again, same i
 uv run --project tutorials pytest tutorials/18-state-and-checkpoints/python/tests -v
 cd tutorials/18-state-and-checkpoints/dotnet && dotnet test
 ```
+
+The .NET side ships [`dotnet/tests/CheckpointsTests.cs`](./dotnet/tests/CheckpointsTests.cs) — ten tests, no LLM:
+
+```bash
+cd tutorials/18-state-and-checkpoints/dotnet && dotnet test tests/Checkpoints.Tests.csproj
+```
+
+`The_Restored_Total_Is_Not_Merely_The_Constructor_Seed` is the one doing real work. The resumed run builds a fresh executor seeded with the initial refund, so a no-op `OnCheckpointRestoredAsync` produces exactly `10.0` — a plausible number that passes any assertion looser than this one, with no exception and no warning.
+
+A second test pins a constraint that reads like a bug when you hit it: `FileSystemJsonCheckpointStore` takes an exclusive lock on its directory and does not release it when the run ends, so constructing a second store over the same directory throws "already in use by another process" — from the *same* process, after the first run finished.
 
 ## How this shows up in the capstone
 

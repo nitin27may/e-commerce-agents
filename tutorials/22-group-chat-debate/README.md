@@ -83,22 +83,69 @@ for turn in state.transcript:
 ```
 
 `workflows/group_chat.py` lives inside the `agents/python` package (it's the real
-production module, not a copy), so the runnable demo script and its tests import it
-as `workflows.group_chat` and need to run with `agents/python` on the path — this
-chapter is not part of the `tutorials/` uv project:
+production module, not a copy), so the runnable demo script imports it as
+`workflows.group_chat` and needs `agents/python` on the path:
 
 ```bash
 cd agents/python
 uv run python ../../tutorials/22-group-chat-debate/python/main.py
-uv run pytest tests/test_workflow_group_chat.py -v
 ```
+
+The chapter's own tests put `agents/python` on `sys.path` themselves, so they collect
+under the `tutorials/` project like every other chapter:
+
+```bash
+uv run --project tutorials pytest tutorials/22-group-chat-debate/python/tests -v
+```
+
+Those tests are separate from `agents/python/tests/test_workflow_group_chat.py`, and
+the distinction is worth being clear about. That file tests the **module**. This
+chapter previously had none of its own on the reasoning that it was therefore covered
+— it was not. The demo's own panelists, its synthesizer, and the claim the chapter is
+built on (a later panelist sees earlier turns) were untested, and that claim is
+invisible from the demo's output: two panelists who happen not to reference each other
+produce the same transcript whether the state was shared or not.
 
 In production, wire each panelist to a specialist agent (e.g. `pricing-promotions`
 and `review-sentiment`) by passing an agent-backed responder.
 
-See `tutorials/22-group-chat-debate/python/main.py` in this chapter for a runnable
-script and `agents/python/tests/test_workflow_group_chat.py` for the deterministic
-tests.
+## .NET
+
+Source: [`dotnet/Program.cs`](./dotnet/Program.cs).
+
+```bash
+cd tutorials/22-group-chat-debate/dotnet
+dotnet run
+dotnet test tests/GroupChatDebate.Tests.csproj
+```
+
+**This is the one chapter where the two language sides differ on purpose.** Python
+imports the production module above and tours real shipped code. There is no
+equivalent standalone .NET type — production's round-table lives inside
+`ECommerceAgents.Orchestrator.Modes.GroupChatMode` as an LLM-backed sequential loop,
+not a reusable workflow class — so the .NET side reimplements the same shape
+standalone, keeping the chapter self-contained like every other one in the series.
+
+The behaviour matches exactly. What differs is that one chapter is a tour and the
+other is a faithful model; worth knowing before treating them as interchangeable.
+
+```csharp
+public sealed record GroupChatWorkflow(
+    IReadOnlyList<(string Name, Responder Responder)> Panelists,
+    Func<GroupChatState, string>? Synthesizer = null);
+```
+
+`GroupChatState` is a **class, not a record**, and deliberately so: it is passed by
+reference from executor to executor, and that shared mutable instance *is* the
+transcript. A record with value semantics would hand each panelist a private copy and
+quietly turn the round-table into a fan-out — every panelist would see an empty
+transcript, every take would become a monologue, and nothing would error.
+
+`Responder` returns `ValueTask<string>` so a real agent-backed panelist fits without
+changing the signature, which is the path production takes.
+
+The tests on both sides hand panelists a responder that *reports what it could see*,
+because that is the only way to distinguish a round-table from a fan-out.
 
 ## Gotchas
 

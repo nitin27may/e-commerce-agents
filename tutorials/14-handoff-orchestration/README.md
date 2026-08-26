@@ -140,6 +140,7 @@ The run loop watches `AgentResponseUpdateEvent` for streamed text (printing the 
 
 ## Tests
 
+
 `python/tests/test_handoff.py` is integration-focused — the mesh needs a real LLM to make routing decisions, so most of it is skipped without credentials:
 
 - A wiring test (`test_workflow_builds`) that always runs.
@@ -151,6 +152,14 @@ uv run --project tutorials pytest tutorials/14-handoff-orchestration/python/test
 # Deterministic replay run (matches how CI runs it):
 PYTHONHASHSEED=0 uv run --project tutorials pytest tutorials/14-handoff-orchestration/python/tests -v
 ```
+
+The .NET side ships [`dotnet/tests/HandoffTests.cs`](./dotnet/tests/HandoffTests.cs) — nine tests, no key, no network:
+
+```bash
+cd tutorials/14-handoff-orchestration/dotnet && dotnet test tests/Handoff.Tests.csproj
+```
+
+They pin the naming surprise described above: `Handoff_Tools_Are_Named_Positionally_Not_By_Agent` fails the day MAF starts emitting `handoff_to_<name>`, which is exactly when this chapter's prose would need rewriting.
 
 ## How this shows up in the capstone
 

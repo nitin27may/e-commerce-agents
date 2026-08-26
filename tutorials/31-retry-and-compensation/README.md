@@ -150,6 +150,41 @@ Running `main.py` plays out three scenarios back to back:
 
 Scenario 2 shows a transient error retried into a success. Scenario 3 shows a genuine failure (`PaymentDeclinedError`) skip retries entirely and unwind the one step that had already completed.
 
+## .NET
+
+Source: [`dotnet/Program.cs`](./dotnet/Program.cs).
+
+```bash
+cd tutorials/31-retry-and-compensation/dotnet
+dotnet run
+dotnet test tests/Saga.Tests.csproj
+```
+
+No LLM and no MAF packages — the saga pattern is plain orchestration logic. The transient/genuine split is expressed as an exception filter, which reads more directly than Python's nested `try`:
+
+```csharp
+catch (TransientException ex) when (step.Retryable && attempt < maxAttempts)
+{
+    // exponential backoff, then retry
+}
+catch (TransientException ex)  { return Unwind(...); }   // budget spent
+catch (Exception ex)           { return Unwind(...); }   // genuine failure
+```
+
+The `when` clause is load-bearing: a `TransientException` on a step that did not opt into retries, or after the budget is spent, falls through to compensation rather than looping.
+
+Being LLM-free makes this the one chapter whose tests can assert **the state of the world** after a failure rather than a return value:
+
+```csharp
+backends.Stock["widget"].Should().Be(before);
+backends.Reservations.GetValueOrDefault("widget").Should().Be(0);
+backends.Payments.Should().NotContainKey("order-3");
+```
+
+A result object reporting `compensated` while stock stays decremented is the exact bug the pattern exists to prevent, and it is invisible from the return value alone.
+
+Two edge cases get their own tests because they are the ones written wrong: failing at step one means the unwind loop runs zero times (an implementation assuming at least one completed step throws instead of returning cleanly), and an out-of-stock failure must not be retried — retrying will not conjure inventory, and getting it wrong turns an instant correct "no" into three round trips and the same "no".
+
 ## This chapter vs a real production saga
 
 This demo simplifies several things a production saga implementation would need to take seriously:

@@ -5,6 +5,24 @@
 // far and appends its turn. Runnable counterpart to the Python chapter:
 // Writer -> Reviewer -> Finalizer.
 //
+// Two things about this builder are easy to get wrong, and getting either
+// wrong produces a run that exits 0 having done nothing at all:
+//
+//   1. The workflow's input type is List<ChatMessage>, not string. Handing it
+//      a bare topic string starts the run but never reaches an agent.
+//   2. The wrapped agents are lazy. AgentExecutor caches inbound messages and
+//      only calls the LLM once a TurnToken arrives, so the run must send one
+//      with run.TrySendMessageAsync(new TurnToken(emitEvents: true)).
+//
+// Both are the same trap Chapter 11 flagged for the manual builder; they do
+// not go away just because BuildSequential hides the adapters.
+//
+// A third: BuildSequential emits AgentResponseUpdateEvent, never
+// AgentResponseEvent. Matching on the latter compiles, runs, and silently
+// prints nothing. The terminal WorkflowOutputEvent carries the whole
+// conversation with ChatMessage.AuthorName set per agent, which is the
+// reliable place to read each turn from — that is what RunAsync returns.
+//
 // Run:
 //   dotnet run                          # uses default topic
 //   dotnet run -- "Why sleep matters"   # custom topic
@@ -13,10 +31,18 @@ using System.ClientModel;
 using Azure.AI.OpenAI;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
+using Microsoft.Extensions.AI;
 using OpenAI;
 using OpenAI.Chat;
 
+// Both Microsoft.Extensions.AI and OpenAI.Chat define a ChatMessage; the MAF
+// workflow surface wants the former, BuildChatClient returns the latter's client.
+using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
+
 namespace MafV1.Ch12.Sequential;
+
+/// <summary>One agent's contribution to the pipeline, in the order it ran.</summary>
+public sealed record Turn(string ExecutorId, string Text);
 
 public static class Program
 {
@@ -39,21 +65,60 @@ public static class Program
         Console.WriteLine($"Topic: {topic}");
         Console.WriteLine();
 
-        var workflow = BuildWorkflow();
+        IReadOnlyList<Turn> turns = await RunAsync(BuildChatClient().AsIChatClient(), topic);
 
-        // RunStreamingAsync yields lifecycle events as the workflow progresses.
-        // We match on AgentResponseEvent to print each agent's turn in order.
-        await using var run = await InProcessExecution.RunStreamingAsync(workflow, topic);
-        await foreach (var evt in run.WatchStreamAsync())
+        foreach (Turn turn in turns)
         {
-            if (evt is AgentResponseEvent r)
-            {
-                Console.WriteLine($"{r.ExecutorId,-9}: {r.Response.Text}");
-                Console.WriteLine();
-            }
+            Console.WriteLine($"{turn.ExecutorId,-9}: {turn.Text}");
+            Console.WriteLine();
         }
 
         return 0;
+    }
+
+    /// <summary>
+    /// Runs the Writer -> Reviewer -> Finalizer pipeline and returns each
+    /// agent's turn in order.
+    /// </summary>
+    /// <remarks>
+    /// Taking an <see cref="IChatClient"/> rather than reaching for the
+    /// environment is what makes this chapter testable: the test project
+    /// passes a scripted client and asserts the ordering and the shared
+    /// conversation without a key, a network call, or a fixture.
+    /// </remarks>
+    public static async Task<IReadOnlyList<Turn>> RunAsync(IChatClient chatClient, string topic)
+    {
+        Workflow workflow = BuildWorkflow(chatClient);
+
+        // BuildSequential's adapters expect a conversation, not a topic.
+        var messages = new List<ChatMessage> { new(ChatRole.User, topic) };
+
+        await using StreamingRun run = await InProcessExecution.RunStreamingAsync(workflow, messages);
+
+        // Without this, every wrapped agent sits on its cached input forever
+        // and the stream completes with no agent output at all.
+        await run.TrySendMessageAsync(new TurnToken(emitEvents: true));
+
+        List<ChatMessage>? conversation = null;
+        await foreach (WorkflowEvent evt in run.WatchStreamAsync())
+        {
+            if (evt is WorkflowOutputEvent output && output.Data is List<ChatMessage> final)
+            {
+                conversation = final;
+            }
+        }
+
+        if (conversation is null)
+        {
+            return Array.Empty<Turn>();
+        }
+
+        // The first message is the topic we put in; every assistant message
+        // after it is one agent's turn, tagged with the agent's name.
+        return conversation
+            .Where(m => m.Role == ChatRole.Assistant)
+            .Select(m => new Turn(m.AuthorName ?? "(unnamed)", m.Text.Trim()))
+            .ToList();
     }
 
     /// <summary>
@@ -61,10 +126,11 @@ public static class Program
     /// builder. BuildSequential wires input/output adapters and the shared
     /// conversation forwarding — no manual AgentExecutor scaffolding required.
     /// </summary>
-    public static Workflow BuildWorkflow()
-    {
-        var chatClient = BuildChatClient();
+    public static Workflow BuildWorkflow() => BuildWorkflow(BuildChatClient().AsIChatClient());
 
+    /// <summary>The same pipeline over any <see cref="IChatClient"/>.</summary>
+    public static Workflow BuildWorkflow(IChatClient chatClient)
+    {
         AIAgent writer = chatClient.AsAIAgent(instructions: WriterInstructions, name: "writer");
         AIAgent reviewer = chatClient.AsAIAgent(instructions: ReviewerInstructions, name: "reviewer");
         AIAgent finalizer = chatClient.AsAIAgent(instructions: FinalizerInstructions, name: "finalizer");

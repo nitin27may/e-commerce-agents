@@ -167,6 +167,34 @@ one answer: `"The Wireless Headphones are priced at $149.99. After applying a 20
 price comes to $119.99."` Nothing about the coordinator's follow-up decision required the
 product-lookup agent to "hand back" anything — it never had control to begin with.
 
+## .NET
+
+Source: [`dotnet/Program.cs`](./dotnet/Program.cs).
+
+```bash
+cd tutorials/27-agent-as-tool/dotnet
+dotnet run
+dotnet test tests/AgentAsTool.Tests.csproj
+```
+
+`AIAgentExtensions.AsAIFunction(...)` is the .NET counterpart to Python's `Agent.as_tool(...)`:
+
+```csharp
+AIFunction productLookupTool = productLookup.AsAIFunction(new AIFunctionFactoryOptions
+{
+    Name = "product_lookup",
+    Description = "Delegate a product question to the product-lookup specialist agent.",
+});
+```
+
+The coordinator sees an `AIFunction` like any other and has no idea there is an agent — and a second model call — behind it.
+
+Set this against [Chapter 14](../14-handoff-orchestration/): a handoff **transfers control**, so the specialist answers the user directly. A wrapped agent **keeps control**, so the coordinator gets a string back and carries on, free to call other tools and compose the results. The user never learns a second agent existed.
+
+`The_Wrapped_Agents_Own_Tools_Are_Not_Exposed_To_The_Coordinator` is the assertion that matters: if `search_catalog` leaked upward, the coordinator could bypass the specialist entirely — and would, eventually, on some prompt nobody tested.
+
+Both agents share one chat client, so the demo needs one provider and one credential. That also means the specialist's turns are billed to the same budget: agent-as-tool is not free, it just hides the second agent from the user rather than from the invoice.
+
 ## Gotchas
 
 - **`.as_tool()` returns a `FunctionTool`, not a live handle to the agent.** Calling it doesn't

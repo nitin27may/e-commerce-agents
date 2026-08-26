@@ -129,6 +129,33 @@ charger-price-and-stock   1.00           1.00    Response covers every expected 
 5/5 cases fully grounded (deterministic score == 1.0)
 ```
 
+## .NET
+
+Source: [`dotnet/Program.cs`](./dotnet/Program.cs).
+
+```bash
+cd tutorials/26-evals/dotnet
+dotnet run
+dotnet test tests/Evals.Tests.csproj
+```
+
+Same two tiers, same structured `JudgeVerdict` shape, so the stub judge and a real one are drop-in replacements:
+
+```csharp
+public sealed record JudgeVerdict(double Score, string Reasoning, string? FailureMode = null);
+```
+
+`Main` returns non-zero when any case fails, so it is usable as a CI gate rather than a report nobody reads.
+
+Testing an eval harness means scoring the scorer, which is worth doing precisely because a broken scorer does not look broken — it reports numbers, the numbers look reasonable, and the suite goes green while measuring nothing. So the tests target the ways a scorer lies:
+
+- a case with no expected facts scores `1.0` (defensible, and a trap — a suite of empty cases reports a perfect pass rate)
+- the deterministic tier passes an answer that is rude and off-topic as long as the number appears in it
+- `"15"` matches inside `"150"`
+- the stub judge agrees with the deterministic tier *by construction*, which is exactly what a real judge must not do — two scorers that always agree are one scorer costing twice as much
+
+Two guard the suite against itself: every case must have at least one checkable fact, and case ids must be unique.
+
 ## Gotchas
 
 - **A scorer that doesn't check the thing it claims to check is worse than no scorer.** The

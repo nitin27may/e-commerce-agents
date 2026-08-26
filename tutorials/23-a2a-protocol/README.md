@@ -101,6 +101,41 @@ This is `orchestrator/agent.py`'s blocking path, minus the streaming branch and 
 
 Run it and ask an order question — the LLM calls `call_order_specialist`, which does a real A2A round trip to the specialist app, and the answer folds the order's status into a sentence. `main()` also prints the raw agent-card fetch and a raw streamed call afterward, so you can see both transport shapes outside of the LLM's tool-calling loop.
 
+## .NET
+
+Source: [`dotnet/Program.cs`](./dotnet/Program.cs).
+
+```bash
+cd tutorials/23-a2a-protocol/dotnet
+dotnet run
+dotnet test tests/A2AProtocol.Tests.csproj
+```
+
+**No A2A SDK is involved, and that is the point.** A2A is a protocol — three endpoints and an SSE frame format — so the .NET specialist is ordinary ASP.NET Core minimal APIs:
+
+```csharp
+app.MapGet("/.well-known/agent-card.json", () => Results.Json(Card));
+
+app.MapPost("/message:send", (A2ARequest request) =>
+    string.IsNullOrWhiteSpace(request.Message)
+        ? Results.Json(new { error = "No message provided" }, statusCode: 400)
+        : Results.Json(new A2AResponse(LookupOrder(request.Message), Array.Empty<string>())));
+```
+
+A `A2A` NuGet package does exist, but only as `1.0.0-preview2`. Depending on a preview to demonstrate plain HTTP would teach the wrong lesson: any language with an HTTP client can be an A2A caller, and any web framework can host an A2A agent.
+
+The in-process transport is `Microsoft.AspNetCore.TestHost` — the direct counterpart to Python's `httpx.ASGITransport`. Real routing, real model binding, real SSE writing, no socket. Same trade-off, same reason: spawning a server and polling a port makes the chapter's setup longer than its subject.
+
+### The asymmetry between the two transports
+
+`/message:send` can reject an empty message with a `400`. `/message:stream` **cannot** — `200 OK` went out before anything went wrong, so the failure has to travel in-band as a frame:
+
+```csharp
+await context.Response.WriteAsync("data: [ERROR: no message]\n\n");
+```
+
+A caller that only checks the status code sees a successful, empty answer. That is why the SSE reader treats an `[ERROR` prefix as a failure and the `[DONE]` sentinel as termination, and why both are asserted.
+
 ## Side-by-side differences
 
 | Aspect | This chapter | Real capstone (`agents/python/`) |

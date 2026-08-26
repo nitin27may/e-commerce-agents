@@ -165,6 +165,7 @@ No LLM call inside the aggregator — it's a deterministic reduction, so it does
 
 ## Tests
 
+
 `tutorials/13-concurrent-orchestration/python/tests/` holds `test_concurrent.py`, structured around a `ReplayChatClient` fixture pattern (`tests/fixtures/replay/`) so most of the suite runs without live credentials:
 
 - a wiring check that `build_workflow()` constructs without error
@@ -174,6 +175,14 @@ No LLM call inside the aggregator — it's a deterministic reduction, so it does
 ```bash
 uv run --project tutorials pytest tutorials/13-concurrent-orchestration/python/tests -v
 ```
+
+The .NET side ships [`dotnet/tests/ConcurrentTests.cs`](./dotnet/tests/ConcurrentTests.cs) — eight tests, no key, no network:
+
+```bash
+cd tutorials/13-concurrent-orchestration/dotnet && dotnet test tests/Concurrent.Tests.csproj
+```
+
+The one that matters is `The_Three_Calls_Overlap_In_Time`. It asserts concurrency from recorded per-call start/end timestamps rather than from total elapsed time — a wall-clock threshold would flake the first time CI got busy, and "it finished quickly" is not the same claim as "they ran at once". Chapter 12 makes the same assertion and expects the opposite answer.
 
 ## How this shows up in the capstone
 

@@ -16,4 +16,15 @@
     not yet supported in C# (package 1.1.0). This project is an informational
     stub; add the workflow packages when MagenticBuilder lands for .NET.
   -->
+
+  <!-- Exclude the test project's sources from the main build; the test project owns them. -->
+  <ItemGroup>
+    <Compile Remove="tests/**/*.cs" />
+    <None Remove="tests/**/*.cs" />
+    <None Remove="tests/**/*.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Magentic.Tests" />
+  </ItemGroup>
 </Project>

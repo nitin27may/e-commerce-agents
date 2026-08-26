@@ -52,24 +52,53 @@ public static class Program
         Console.WriteLine($"spec:   {Path.GetFileName(specPath)}");
         Console.WriteLine($"input:  '{text}'");
 
-        await using StreamingRun run = await InProcessExecution.RunStreamingAsync(workflow, text);
+        try
+        {
+            foreach (string output in await RunAsync(workflow, text))
+            {
+                Console.WriteLine($"output: '{output}'");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"  [err]  {ex.Message}");
+            return 1;
+        }
+
+        return 0;
+    }
+
+    /// <summary>
+    /// Runs a loaded workflow and collects every terminal output it produced.
+    /// </summary>
+    /// <remarks>
+    /// A list, not a single value: the loader calls WithOutputFrom on EVERY
+    /// declarative executor, so any of them can short-circuit the pipeline —
+    /// that is how <c>non_empty</c> stops a blank input from reaching the
+    /// logger. Collapsing this to "the" output would hide exactly the
+    /// behaviour that makes the spec worth writing.
+    /// </remarks>
+    public static async Task<IReadOnlyList<string>> RunAsync(Workflow workflow, string input)
+    {
+        var outputs = new List<string>();
+
+        await using StreamingRun run = await InProcessExecution.RunStreamingAsync(workflow, input);
         await foreach (WorkflowEvent evt in run.WatchStreamAsync())
         {
             switch (evt)
             {
                 case WorkflowOutputEvent output when output.Data is string s:
-                    Console.WriteLine($"output: '{s}'");
+                    outputs.Add(s);
                     break;
                 case ExecutorFailedEvent failed:
-                    Console.Error.WriteLine($"  [fail] executor '{failed.ExecutorId}' failed: {failed.Data}");
-                    return 1;
+                    throw new InvalidOperationException(
+                        $"executor '{failed.ExecutorId}' failed: {failed.Data}");
                 case WorkflowErrorEvent werr:
-                    Console.Error.WriteLine($"  [err]  {werr.Exception?.Message}");
-                    return 1;
+                    throw werr.Exception ?? new InvalidOperationException("workflow failed");
             }
         }
 
-        return 0;
+        return outputs;
     }
 }
 

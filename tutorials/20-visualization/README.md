@@ -119,17 +119,21 @@ cd tutorials/20-visualization/dotnet
 dotnet run
 ```
 
-[`dotnet/Program.cs`](./dotnet/Program.cs) is a reference scaffold, not a runnable equivalent — it prints the .NET API surface rather than building and rendering a workflow itself, since Python is the canonical runnable example for this chapter. The equivalent .NET calls:
+[`dotnet/Program.cs`](./dotnet/Program.cs) builds the same three-executor pipeline as the Python side and renders it both ways:
 
 ```csharp
 using Microsoft.Agents.AI.Workflows;
 
-string mermaid = workflow.ToMermaidString();
-string dot     = workflow.ToDotString();
+string mermaid = WorkflowVisualizer.ToMermaidString(workflow);
+string dot     = WorkflowVisualizer.ToDotString(workflow);
 
 File.WriteAllText("workflow.mmd", mermaid);
 File.WriteAllText("workflow.dot", dot);
 ```
+
+Note the shape: these are **static methods on `WorkflowVisualizer`**, not extension methods on `Workflow`. `workflow.ToMermaidString()` does not compile, which matters because it is what most people try first — Python wraps the workflow in a `WorkflowViz` object, and the .NET name reads like an extension.
+
+This chapter previously shipped a .NET *stub* that printed API usage instead of running any, and the usage it printed was the extension-method form that does not compile. Printed sample code is never compiled, so nothing caught it. Unlike Chapter 16, there was no SDK gap to be blocked on: `WorkflowVisualizer` has been in `Microsoft.Agents.AI.Workflows` since 1.1.0.
 
 ## Side-by-side differences
 
@@ -149,6 +153,7 @@ File.WriteAllText("workflow.dot", dot);
 
 ## Tests
 
+
 [`python/tests/test_visualization.py`](./python/tests/test_visualization.py) covers, without any LLM call:
 
 - Mermaid output is non-empty and starts with the `flowchart` directive
@@ -161,6 +166,14 @@ File.WriteAllText("workflow.dot", dot);
 ```bash
 uv run --project tutorials pytest tutorials/20-visualization/python/tests -v
 ```
+
+The .NET side ships [`dotnet/tests/VisualizationTests.cs`](./dotnet/tests/VisualizationTests.cs) — eleven tests, no LLM:
+
+```bash
+cd tutorials/20-visualization/dotnet && dotnet test tests/Visualization.Tests.csproj
+```
+
+They compare rendered output against the actual graph topology rather than checking a non-empty string came back: a diagram listing the right nodes and the wrong arrows is worse than no diagram, because it is confidently wrong. `Rendering_Is_Deterministic` guards the stated use case — committing diagrams and diffing them in PRs only works if identical graphs render byte-identically.
 
 ## How this shows up in the capstone
 

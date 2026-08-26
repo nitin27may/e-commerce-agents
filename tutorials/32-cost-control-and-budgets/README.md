@@ -137,6 +137,36 @@ running total:  $0.0016 (budget $0.0015)
 
 The first two questions each cost two turns (tool call, then answer) and both complete normally. By the third question the running total ($0.0016) already exceeds the budget ($0.0015) from the second question's turns — so the third question's very first turn is refused before it's made, and the agent's "answer" is the canned refusal text instead of a real price lookup.
 
+## .NET
+
+Source: [`dotnet/Program.cs`](./dotnet/Program.cs).
+
+```bash
+cd tutorials/32-cost-control-and-budgets/dotnet
+dotnet run
+dotnet test tests/CostControl.Tests.csproj
+```
+
+**This is the chapter where .NET can test what Python cannot.** Python's `ReplayChatClient` composes `FunctionInvocationLayer` directly and skips `ChatMiddlewareLayer`, so `CostBudgetChatMiddleware.process()` never runs under `LLM_PROVIDER=replay` and the enforcement path is live-LLM-only. A `DelegatingChatClient` has no such gap — it wraps whatever it is handed — so all of it is gated on every PR, for free.
+
+```csharp
+IChatClient pipeline = inner
+    .AsBuilder()
+    .Use(next => new CostBudgetChatClient(next, budget, log))
+    .Build();
+```
+
+Order matters: the budget client sits **outside** function invocation, so each model round trip in a tool-calling loop is one budgeted turn. `A_Tool_Calling_Loop_Costs_One_Budgeted_Turn_Per_Model_Round_Trip` asserts it — if a two-turn tool call only counted once, an agent looping through ten tool calls would look as cheap as one.
+
+### Two behaviours that read like bugs
+
+- **Enforcement is one turn behind.** Cost is only knowable *after* a turn completes, from its `Usage`, so the turn that crosses the ceiling always runs to completion and the one after it is refused. A budget promising a hard cap would be lying. `The_Turn_That_Crosses_The_Ceiling_Still_Completes` asserts the honest version.
+- **A refusal is a response, not an exception**, with `FinishReason.Length` — so a caller cannot forget to handle it, and does not have to.
+
+Streaming needs its own path: usage arrives as a `UsageContent` item on the stream rather than on a response object, and missing it gives a streaming agent a budget that never accumulates and therefore never trips.
+
+A provider that omits usage entirely gets its own counter (`TurnsUnpriced`) rather than being treated as free — silently disabling the budget is how a run goes unbounded without anything looking wrong.
+
 ## Gotchas
 
 - **`enforce` checks *before* `call_next()`, records *after* it.** Reversing that — checking after recording the current turn's own cost — would mean a turn could push the total over budget and still complete; the ceiling only ever blocks the *next* turn, never the one currently running. This is deliberate, not a bug: see "The concept" above.

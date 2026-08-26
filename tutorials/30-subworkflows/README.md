@@ -112,6 +112,37 @@ def build_process_return_workflow() -> Workflow:
 
 `build_find_replacement_workflow()` is called fresh inside `build_process_return_workflow()` rather than shared as a module-level instance — `WorkflowExecutor`'s own docstring warns that sharing one `Workflow` instance across more than one wrapper "may lead to incorrect behavior." Running the script drives three scenarios through the outer workflow (in catalog + in stock → approved; in catalog + no stock → rejected; not in the catalog at all → rejected), each one exercising the full nested round trip: outer receives the request, hands it to the inner workflow, inner workflow runs its own three-step graph to a `yield_output`, `WorkflowExecutor` forwards that as a message back into the outer graph, and `finalize_return` turns it into the final text.
 
+## .NET
+
+Source: [`dotnet/Program.cs`](./dotnet/Program.cs).
+
+```bash
+cd tutorials/30-subworkflows/dotnet
+dotnet run
+dotnet test tests/Subworkflows.Tests.csproj
+```
+
+The .NET nesting primitive is `SubworkflowBinding` — Python calls the same thing `WorkflowExecutor`. Both mean: a `Workflow` satisfies the executor contract, so it can go anywhere a single executor can.
+
+```csharp
+var findReplacement = new SubworkflowBinding(
+    BuildFindReplacementWorkflow(),
+    "find_replacement",
+    ExecutorOptions.Default);
+
+return new WorkflowBuilder(receive)
+    .AddEdge(receive, findReplacement)
+    .AddEdge(findReplacement, finalize)
+    .WithOutputFrom(finalize)
+    .Build();
+```
+
+The outer graph has three nodes; one of them happens to be three more.
+
+`BuildFindReplacementWorkflow()` is a **factory, not a singleton**, on both sides. Sharing one `Workflow` across wrappers shares its executor instances, whose state is not designed for concurrent use — and the resulting corruption is silent.
+
+The tests exercise the inner workflow both standalone and nested, because if it only worked in one shape it would not be a subworkflow, just a set of executors that happen to be grouped. `The_Subworkflows_Output_Is_Reshaped_Rather_Than_Yielded_Directly` pins the property that makes nesting worth anything: the inner workflow yields a `ReplacementResult` and the outer one yields a `string`. If the inner output became the outer terminal output, `finalize_return` would be skipped and the nesting would buy nothing over inlining.
+
 ## Gotchas
 
 - **`WorkflowExecutor` is a real primitive — don't hand-roll a wrapper.** It's tempting to write a custom `Executor` subclass whose handler calls `await inner_workflow.run(...)` itself; that's redundant work here since MAF already ships `WorkflowExecutor` with output-forwarding, request/response coordination, and checkpoint integration built in. Reach for a custom wrapper only if you need behavior `WorkflowExecutor` genuinely doesn't offer.

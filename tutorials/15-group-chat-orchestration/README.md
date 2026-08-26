@@ -152,6 +152,7 @@ Workflow workflow = strategy == "prompt"
 
 ## Tests
 
+
 [`python/tests/test_group_chat.py`](./python/tests/test_group_chat.py) covers:
 
 1. `test_workflow_builds` — the round-robin workflow constructs without a network call.
@@ -163,6 +164,16 @@ uv sync --project tutorials
 uv run --project tutorials pytest tutorials/15-group-chat-orchestration/python/tests -v
 cd tutorials/15-group-chat-orchestration/dotnet && dotnet test
 ```
+
+The .NET side ships [`dotnet/tests/GroupChatTests.cs`](./dotnet/tests/GroupChatTests.cs) — twelve tests, no key, no network:
+
+```bash
+cd tutorials/15-group-chat-orchestration/dotnet && dotnet test tests/GroupChat.Tests.csproj
+```
+
+Most of them are about `PromptDrivenManager`'s failure paths — unknown agent named, unparseable JSON, selector call throws — because those three fallbacks are the difference between a demo and something you would run, and none is reachable from a `dotnet build`.
+
+One is a regression test with a deliberate timeout: `PromptDriven_Respects_MaximumIterationCount_When_Its_Own_Condition_Never_Fires`. This chapter shipped with an override of `ShouldTerminateAsync` that did not chain to `base`, which is where `MaximumIterationCount` is enforced — so a selector that never picked the Editor ran forever, one provider call per turn. The failure mode is a hang rather than a wrong value, so the test asserts against a clock.
 
 ## How this shows up in the capstone
 
