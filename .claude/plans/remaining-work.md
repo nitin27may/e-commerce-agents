@@ -21,9 +21,16 @@ Plans **13–18** now carry most of the detail; this file is the index.
 | [13](enhancements/13-azure-deployment-and-foundry.md) | Azure Container Apps + Microsoft Foundry | proposed |
 | [14](enhancements/14-pre-azure.md) | Adoption/conversion work before Azure | 6 of 8 done |
 | [15](enhancements/15-build-and-release.md) | Build gating and release process | **shipped in v1.2.0** |
-| [16](enhancements/16-dotnet-local-parity.md) | Make `--dotnet` actually work | proposed, **P0 inside** |
-| [17](enhancements/17-tutorial-dotnet-coverage.md) | Tutorial .NET coverage (#20) | proposed |
+| [16](enhancements/16-dotnet-local-parity.md) | Make `--dotnet` actually work | proposed, **P0 inside** — PR #69 is the plan only, no code |
+| [17](enhancements/17-tutorial-dotnet-coverage.md) | Tutorial .NET coverage (#20) | **done** — PR #70, unmerged |
 | [18](enhancements/18-composer-ux.md) | Composer UX (#4) | proposed |
+
+### Two different ".NET" workstreams — do not conflate them
+
+- **Tutorial .NET (plan 17, #20) is done.** Every chapter that ships code ships both languages,
+  both gated in CI: 334 .NET tests across 31 projects. This says nothing about the app.
+- **Production .NET (plan 16) is broken.** `agents/dotnet` builds and starts and cannot answer a
+  single question. Finishing the tutorials did not touch it.
 
 ### The one thing to read first
 
