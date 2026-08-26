@@ -34,10 +34,10 @@ public sealed class ReturnTools(DatabasePool pool, AgentSettings settings, Idemp
 
     public IEnumerable<AITool> All() => new AITool[]
     {
-        AIFunctionFactory.Create(CheckReturnEligibility, nameof(CheckReturnEligibility)),
-        AIFunctionFactory.Create(InitiateReturn, nameof(InitiateReturn)),
-        AIFunctionFactory.Create(ProcessRefund, nameof(ProcessRefund)),
-        AIFunctionFactory.Create(GetReturnStatus, nameof(GetReturnStatus)),
+        AgentTool.Create(CheckReturnEligibility, nameof(CheckReturnEligibility)),
+        AgentTool.Create(InitiateReturn, nameof(InitiateReturn)),
+        AgentTool.Create(ProcessRefund, nameof(ProcessRefund)),
+        AgentTool.Create(GetReturnStatus, nameof(GetReturnStatus)),
     };
 
     [Description("Check if an order is eligible for return. Orders must be delivered within the last 30 days.")]

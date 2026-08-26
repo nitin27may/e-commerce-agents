@@ -1,3 +1,4 @@
+using ECommerceAgents.Shared.Tools;
 using Dapper;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
@@ -49,11 +50,11 @@ public sealed class OrderTools(DatabasePool pool, AgentSettings settings)
 
     public IEnumerable<AITool> All() => new AITool[]
     {
-        AIFunctionFactory.Create(GetUserOrders, nameof(GetUserOrders)),
-        AIFunctionFactory.Create(GetOrderDetails, nameof(GetOrderDetails)),
-        AIFunctionFactory.Create(GetOrderTracking, nameof(GetOrderTracking)),
-        AIFunctionFactory.Create(CancelOrder, nameof(CancelOrder)),
-        AIFunctionFactory.Create(ModifyOrder, nameof(ModifyOrder)),
+        AgentTool.Create(GetUserOrders, nameof(GetUserOrders)),
+        AgentTool.Create(GetOrderDetails, nameof(GetOrderDetails)),
+        AgentTool.Create(GetOrderTracking, nameof(GetOrderTracking)),
+        AgentTool.Create(CancelOrder, nameof(CancelOrder)),
+        AgentTool.Create(ModifyOrder, nameof(ModifyOrder)),
     };
 
     // ─────────────────────── Read-only ───────────────────────

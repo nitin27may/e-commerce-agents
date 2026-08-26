@@ -1,3 +1,4 @@
+using ECommerceAgents.Shared.Tools;
 using Dapper;
 using ECommerceAgents.Shared.Agents;
 using ECommerceAgents.Shared.Data;
@@ -64,12 +65,12 @@ public sealed class ProductTools(DatabasePool pool, IEmbeddingProvider embedding
 
     public IEnumerable<AITool> All() => new AITool[]
     {
-        AIFunctionFactory.Create(SearchProducts, nameof(SearchProducts)),
-        AIFunctionFactory.Create(GetProductDetails, nameof(GetProductDetails)),
-        AIFunctionFactory.Create(CompareProducts, nameof(CompareProducts)),
-        AIFunctionFactory.Create(GetTrendingProducts, nameof(GetTrendingProducts)),
-        AIFunctionFactory.Create(SemanticSearch, nameof(SemanticSearch)),
-        AIFunctionFactory.Create(FindSimilarProducts, nameof(FindSimilarProducts)),
+        AgentTool.Create(SearchProducts, nameof(SearchProducts)),
+        AgentTool.Create(GetProductDetails, nameof(GetProductDetails)),
+        AgentTool.Create(CompareProducts, nameof(CompareProducts)),
+        AgentTool.Create(GetTrendingProducts, nameof(GetTrendingProducts)),
+        AgentTool.Create(SemanticSearch, nameof(SemanticSearch)),
+        AgentTool.Create(FindSimilarProducts, nameof(FindSimilarProducts)),
     };
 
     [Description("Search the product catalog using natural language. Supports filtering by category, price range and rating.")]
