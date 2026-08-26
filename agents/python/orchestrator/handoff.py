@@ -24,7 +24,6 @@ from typing import Any
 from agent_framework import Agent
 from agent_framework_orchestrations import HandoffBuilder
 
-
 from shared.agent_factory import create_chat_client
 from shared.config import settings
 from shared.context import current_user_role
