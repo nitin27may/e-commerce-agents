@@ -14,10 +14,15 @@ Identical everywhere:
 ```bash
 git clone https://github.com/nitin27may/e-commerce-agents.git
 cd e-commerce-agents
-cp .env.example .env
+cp .env.minimal .env
 ```
 
-On Windows PowerShell, the last line is `copy .env.example .env`.
+On Windows PowerShell, the last line is `copy .env.minimal .env`.
+
+`.env.minimal` is one variable. `.env.example` is the complete surface — every auth mode, MCP,
+OAuth, telemetry and guardrail setting — and is reference material rather than a starting point.
+[Configuration](configuration.md) explains how that one file reaches containers, host-run Python,
+the frontend and the .NET stack, which do not all read it the same way.
 
 Then open `.env` and set a model provider. Any one of these works — see
 [Run without a paid API key](#run-without-a-paid-api-key) if you would rather not use a paid one:
@@ -29,10 +34,45 @@ OPENAI_API_KEY=sk-...
 
 ## 2. Run it
 
-### macOS and Linux
+There are two paths, and the difference is roughly a minute versus twelve.
+
+| | `--demo` | from source |
+|---|---|---|
+| Where the images come from | Pulled from GHCR | Built on your machine |
+| First run | ~1 minute | ~12 minutes |
+| Architectures | `linux/amd64` and `linux/arm64` | whatever you are on |
+| Use it when | You want to see the thing work | You have changed code |
+
+### The fast path — pull prebuilt images
 
 ```bash
-./scripts/dev.sh
+./scripts/dev.sh --demo          # macOS and Linux
+./scripts/dev.ps1 -Demo          # Windows PowerShell
+```
+
+This pulls the ten released images, seeds the database, starts everything, and waits until the
+orchestrator and frontend actually answer before printing the summary. Nothing is compiled.
+
+`--demo` uses `docker-compose.demo.yml`, which pins `:latest` — the newest tagged release, gated by
+the full test suite. To run the tip of `main` instead:
+
+```bash
+IMAGE_TAG=main ./scripts/dev.sh --demo
+```
+
+Plain `docker compose` works too, if you would rather not use the script:
+
+```bash
+docker compose -f docker-compose.demo.yml up
+```
+
+See [Releasing](releasing.md) for what each image tag means.
+
+### From source
+
+```bash
+./scripts/dev.sh                 # macOS and Linux
+./scripts/dev.ps1                # Windows PowerShell
 ```
 
 The script builds the images, waits for Postgres to become healthy, runs the seeder as a one-shot

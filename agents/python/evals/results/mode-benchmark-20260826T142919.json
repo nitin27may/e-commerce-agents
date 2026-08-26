@@ -1,0 +1,93 @@
+{
+  "meta": {
+    "model": "gpt-4.1",
+    "provider": "openai",
+    "reps": 1,
+    "prompts": 4,
+    "timestamp": "2026-08-26T14:29:19+00:00",
+    "commit": "616b0da"
+  },
+  "summary": [
+    {
+      "mode": "tool",
+      "runs": 4,
+      "ok": 4,
+      "p50_ms": 11042,
+      "p95_ms": 15477,
+      "mean_tokens": 7299,
+      "mean_cost_usd": 0.01629,
+      "agents_seen": [
+        "orchestrator",
+        "order-management",
+        "product-discovery",
+        "review-sentiment"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "mode": "tool",
+      "prompt_id": "product-search",
+      "rep": 1,
+      "ok": true,
+      "latency_ms": 8263.660384924151,
+      "response_chars": 637,
+      "agents_involved": [
+        "orchestrator",
+        "product-discovery"
+      ],
+      "tokens_in": 6929,
+      "tokens_out": 233,
+      "cost_usd": 0.015722,
+      "error": ""
+    },
+    {
+      "mode": "tool",
+      "prompt_id": "order-status",
+      "rep": 1,
+      "ok": true,
+      "latency_ms": 13819.666852941737,
+      "response_chars": 949,
+      "agents_involved": [
+        "orchestrator",
+        "order-management"
+      ],
+      "tokens_in": 7097,
+      "tokens_out": 325,
+      "cost_usd": 0.016794000000000003,
+      "error": ""
+    },
+    {
+      "mode": "tool",
+      "prompt_id": "pre-purchase",
+      "rep": 1,
+      "ok": true,
+      "latency_ms": 15477.346753934398,
+      "response_chars": 1094,
+      "agents_involved": [
+        "orchestrator",
+        "review-sentiment"
+      ],
+      "tokens_in": 7163,
+      "tokens_out": 411,
+      "cost_usd": 0.017614,
+      "error": ""
+    },
+    {
+      "mode": "tool",
+      "prompt_id": "return",
+      "rep": 1,
+      "ok": true,
+      "latency_ms": 7251.473070937209,
+      "response_chars": 355,
+      "agents_involved": [
+        "orchestrator",
+        "order-management"
+      ],
+      "tokens_in": 6882,
+      "tokens_out": 156,
+      "cost_usd": 0.015012000000000001,
+      "error": ""
+    }
+  ]
+}

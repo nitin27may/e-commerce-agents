@@ -1,0 +1,321 @@
+# ============================================================
+# E-Commerce Agents — Demo stack (pulls prebuilt images)
+#
+#   cp .env.minimal .env       then set OPENAI_API_KEY
+#   docker compose -f docker-compose.demo.yml up
+#
+# Then open http://localhost:3000 and sign in as
+# alice.johnson@gmail.com / customer123.
+#
+# ── How this differs from docker-compose.yml ────────────────────────────────
+#
+# 1. Every application service uses `image:` from GHCR instead of `build:`.
+#    Nothing is compiled locally, so a first run is a pull rather than a build
+#    of ten images.
+# 2. No profiles on the core path. docker-compose.yml gates services behind
+#    agents / frontend / seed profiles, which is right for development and
+#    wrong for a demo -- this file starts everything a first-time visitor
+#    needs from one command with no flags. The two MCP servers keep their
+#    `mcp` profile, because MCP_ENABLED is false by default and starting them
+#    would be two containers nothing talks to.
+# 3. The seeder is ordered explicitly. Every service that reads the database
+#    waits for it to finish, rather than dev.sh sequencing it.
+#
+# ── Which images you get ────────────────────────────────────────────────────
+#
+#   :latest  (default)  the newest tagged RELEASE -- gated by the full test
+#                       suite and a human approval. This is what a visitor
+#                       should land on.
+#   :main               tip of main, tests green but not released
+#   :v1.1.0             a specific release
+#
+# Override without editing this file:
+#
+#   IMAGE_TAG=main docker compose -f docker-compose.demo.yml up
+#
+# Contributors building from source want docker-compose.yml and ./scripts/dev.sh.
+# See docs/releasing.md for the tag policy and docs/configuration.md for how
+# .env reaches these containers.
+# ============================================================
+
+x-image-tag: &image-tag ${IMAGE_TAG:-latest}
+
+services:
+  # ── Infrastructure (public images, unchanged from docker-compose.yml) ──────
+
+  db:
+    image: pgvector/pgvector:pg16
+    ports: ["5432:5432"]
+    environment:
+      POSTGRES_DB: ecommerce_agents
+      POSTGRES_USER: ecommerce
+      POSTGRES_PASSWORD: ecommerce_secret
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ecommerce -d ecommerce_agents"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  aspire:
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:latest
+    ports:
+      - "18888:18888" # Dashboard UI
+      - "18890:18889" # OTLP receiver
+    environment:
+      DASHBOARD__FRONTEND__AUTHMODE: Unsecured
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/127.0.0.1/18888' && echo ok || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+
+  # ── Seed (runs once, exits) ───────────────────────────────────────────────
+  #
+  # Runs from the orchestrator image -- it is the same Python environment, and
+  # scripts/ is mounted from the clone rather than baked in.
+  #
+  # Everything that reads the database waits on this. Order matters beyond
+  # "the tables exist": the IVFFlat index has to be built against a populated
+  # table. Created on an empty one it has no centroids and semantic search
+  # returns unrelated products at similarity 0.000 -- a real production bug
+  # this repo already hit once.
+  seeder:
+    image: ghcr.io/nitin27may/e-commerce-agents/orchestrator:${IMAGE_TAG:-latest}
+    working_dir: /app
+    command: uv run --no-project python -m scripts.seed
+    volumes:
+      - ./scripts:/app/scripts:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://ecommerce:ecommerce_secret@db:5432/ecommerce_agents
+      OAUTH_SEED_KEY: ${OAUTH_SEED_KEY:-dev-oauth-seed-change-me}
+    restart: "no"
+
+  # ── OAuth2 Authorization Server ───────────────────────────────────────────
+  #
+  # Idle unless AUTH_MODE=oauth. Started anyway so flipping that one variable
+  # works without also learning which profile to add.
+  auth-server:
+    image: ghcr.io/nitin27may/e-commerce-agents/auth-server:${IMAGE_TAG:-latest}
+    ports: ["8090:8090"]
+    depends_on:
+      db: { condition: service_healthy }
+      seeder: { condition: service_completed_successfully }
+    environment:
+      DATABASE_URL: postgresql://ecommerce:ecommerce_secret@db:5432/ecommerce_agents
+      AUTH_SERVER_ISSUER: http://auth-server:8090
+      AUTH_RSA_KEY_SIZE: ${AUTH_RSA_KEY_SIZE:-2048}
+      AUTH_SIGNING_KEY_ENCRYPTION_KEY: ${AUTH_SIGNING_KEY_ENCRYPTION_KEY:-}
+      AUTH_ACCESS_TOKEN_TTL: ${AUTH_ACCESS_TOKEN_TTL:-3600}
+      AUTH_REFRESH_TOKEN_TTL: ${AUTH_REFRESH_TOKEN_TTL:-604800}
+      OAUTH_SEED_KEY: ${OAUTH_SEED_KEY:-dev-oauth-seed-change-me}
+      AUTH_SERVER_AUDIENCE: ${AUTH_SERVER_AUDIENCE:-ecommerce-auth-server}
+      AUTH_ALLOW_DYNAMIC_REGISTRATION: ${AUTH_ALLOW_DYNAMIC_REGISTRATION:-false}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+
+  # ── Orchestrator ──────────────────────────────────────────────────────────
+
+  orchestrator:
+    image: ghcr.io/nitin27may/e-commerce-agents/orchestrator:${IMAGE_TAG:-latest}
+    ports: ["8080:8080"]
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      seeder: { condition: service_completed_successfully }
+
+    environment: &agent-env
+      DATABASE_URL: postgresql://ecommerce:ecommerce_secret@db:5432/ecommerce_agents
+      REDIS_URL: redis://redis:6379
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4.1}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_KEY: ${AZURE_OPENAI_KEY:-}
+      AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2025-03-01-preview}
+      AZURE_EMBEDDING_DEPLOYMENT: ${AZURE_EMBEDDING_DEPLOYMENT:-}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production-use-random-256-bit-key}
+      AGENT_SHARED_SECRET: ${AGENT_SHARED_SECRET:-agent-internal-shared-secret}
+      AUTH_MODE: ${AUTH_MODE:-local}
+      AUTH_SERVER_ISSUER: http://auth-server:8090
+      AUTH_SERVER_JWKS_URL: http://auth-server:8090/.well-known/jwks.json
+      AUTH_SERVER_TOKEN_URL: http://auth-server:8090/oauth/token
+      AUTH_JWKS_CACHE_TTL: ${AUTH_JWKS_CACHE_TTL:-900}
+      AUTH_ORCH_AUDIENCE: ${AUTH_ORCH_AUDIENCE:-ecommerce-orchestrator}
+      AUTH_AGENT_AUDIENCE: ${AUTH_AGENT_AUDIENCE:-ecommerce-agents}
+      OAUTH_CLIENT_ID: orchestrator
+      OAUTH_CLIENT_SECRET: ${OAUTH_CLIENT_SECRET:-}
+      OAUTH_SEED_KEY: ${OAUTH_SEED_KEY:-dev-oauth-seed-change-me}
+      OTEL_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://aspire:18889
+      OTEL_SERVICE_NAME: ecommerce.orchestrator
+      OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: ${OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT:-true}
+      MAF_SESSION_BACKEND: ${MAF_SESSION_BACKEND:-postgres}
+      MAF_CHECKPOINT_BACKEND: ${MAF_CHECKPOINT_BACKEND:-postgres}
+      ORCHESTRATION_MODE: ${ORCHESTRATION_MODE:-tool}
+      RETURN_HITL_THRESHOLD: ${RETURN_HITL_THRESHOLD:-500}
+      HANDOFF_AUTONOMOUS_MODE: ${HANDOFF_AUTONOMOUS_MODE:-true}
+      AGENT_REGISTRY: >-
+        {
+          "product-discovery": "http://product-discovery:8081",
+          "order-management": "http://order-management:8082",
+          "pricing-promotions": "http://pricing-promotions:8083",
+          "review-sentiment": "http://review-sentiment:8084",
+          "inventory-fulfillment": "http://inventory-fulfillment:8085"
+        }
+
+  # ── Specialist agents ─────────────────────────────────────────────────────
+
+  product-discovery:
+    image: ghcr.io/nitin27may/e-commerce-agents/product-discovery:${IMAGE_TAG:-latest}
+    ports: ["8081:8081"]
+    depends_on:
+      db: { condition: service_healthy }
+      seeder: { condition: service_completed_successfully }
+    environment:
+      <<: *agent-env
+      OTEL_SERVICE_NAME: ecommerce.product-discovery
+      OAUTH_CLIENT_ID: product-discovery
+      MCP_ENABLED: ${MCP_ENABLED:-false}
+      MCP_AUTH_ENABLED: ${MCP_AUTH_ENABLED:-false}
+      MCP_PRODUCT_SERVER_URL: http://mcp-product:9000/mcp
+      MCP_PRODUCT_AUDIENCE: ${MCP_PRODUCT_AUDIENCE:-mcp-product}
+      MCP_PRODUCT_REQUIRED_SCOPE: ${MCP_PRODUCT_REQUIRED_SCOPE:-mcp:product}
+
+  order-management:
+    image: ghcr.io/nitin27may/e-commerce-agents/order-management:${IMAGE_TAG:-latest}
+    ports: ["8082:8082"]
+    depends_on:
+      db: { condition: service_healthy }
+      seeder: { condition: service_completed_successfully }
+    environment:
+      <<: *agent-env
+      OTEL_SERVICE_NAME: ecommerce.order-management
+      OAUTH_CLIENT_ID: order-management
+
+  pricing-promotions:
+    image: ghcr.io/nitin27may/e-commerce-agents/pricing-promotions:${IMAGE_TAG:-latest}
+    ports: ["8083:8083"]
+    depends_on:
+      db: { condition: service_healthy }
+      seeder: { condition: service_completed_successfully }
+    environment:
+      <<: *agent-env
+      OTEL_SERVICE_NAME: ecommerce.pricing-promotions
+      OAUTH_CLIENT_ID: pricing-promotions
+
+  review-sentiment:
+    image: ghcr.io/nitin27may/e-commerce-agents/review-sentiment:${IMAGE_TAG:-latest}
+    ports: ["8084:8084"]
+    depends_on:
+      db: { condition: service_healthy }
+      seeder: { condition: service_completed_successfully }
+    environment:
+      <<: *agent-env
+      OTEL_SERVICE_NAME: ecommerce.review-sentiment
+      OAUTH_CLIENT_ID: review-sentiment
+
+  inventory-fulfillment:
+    image: ghcr.io/nitin27may/e-commerce-agents/inventory-fulfillment:${IMAGE_TAG:-latest}
+    ports: ["8085:8085"]
+    depends_on:
+      db: { condition: service_healthy }
+      seeder: { condition: service_completed_successfully }
+    environment:
+      <<: *agent-env
+      OTEL_SERVICE_NAME: ecommerce.inventory-fulfillment
+      OAUTH_CLIENT_ID: inventory-fulfillment
+      MCP_ENABLED: ${MCP_ENABLED:-false}
+      MCP_AUTH_ENABLED: ${MCP_AUTH_ENABLED:-false}
+      MCP_INVENTORY_SERVER_URL: http://mcp-inventory:9001/mcp
+      MCP_INVENTORY_AUDIENCE: ${MCP_INVENTORY_AUDIENCE:-mcp-inventory}
+      MCP_INVENTORY_REQUIRED_SCOPE: ${MCP_INVENTORY_REQUIRED_SCOPE:-mcp:inventory}
+
+  # ── MCP servers (opt-in) ──────────────────────────────────────────────────
+  #
+  # Kept behind a profile because MCP_ENABLED is false by default, so on the
+  # default path these would be two containers nothing talks to. To use them:
+  #
+  #   MCP_ENABLED=true docker compose -f docker-compose.demo.yml --profile mcp up
+
+  mcp-product:
+    image: ghcr.io/nitin27may/e-commerce-agents/mcp-product:${IMAGE_TAG:-latest}
+    ports: ["9000:9000"]
+    depends_on:
+      db: { condition: service_healthy }
+      seeder: { condition: service_completed_successfully }
+    environment:
+      DATABASE_URL: postgresql://ecommerce:ecommerce_secret@db:5432/ecommerce_agents
+      MCP_AUTH_ENABLED: ${MCP_AUTH_ENABLED:-false}
+      AUTH_SERVER_ISSUER: http://auth-server:8090
+      AUTH_SERVER_JWKS_URL: http://auth-server:8090/.well-known/jwks.json
+      MCP_PRODUCT_AUDIENCE: ${MCP_PRODUCT_AUDIENCE:-mcp-product}
+      MCP_PRODUCT_REQUIRED_SCOPE: ${MCP_PRODUCT_REQUIRED_SCOPE:-mcp:product}
+      MCP_PRODUCT_RESOURCE_URL: http://localhost:9000/mcp
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "if [ \"$$MCP_AUTH_ENABLED\" = \"true\" ]; then curl -sf http://localhost:9000/.well-known/oauth-protected-resource/mcp; else curl -sf http://localhost:9000/mcp; fi",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    profiles: ["mcp"]
+
+  mcp-inventory:
+    image: ghcr.io/nitin27may/e-commerce-agents/mcp-inventory:${IMAGE_TAG:-latest}
+    ports: ["9001:9001"]
+    depends_on:
+      db: { condition: service_healthy }
+      seeder: { condition: service_completed_successfully }
+    environment:
+      DATABASE_URL: postgresql://ecommerce:ecommerce_secret@db:5432/ecommerce_agents
+      MCP_AUTH_ENABLED: ${MCP_AUTH_ENABLED:-false}
+      AUTH_SERVER_ISSUER: http://auth-server:8090
+      AUTH_SERVER_JWKS_URL: http://auth-server:8090/.well-known/jwks.json
+      MCP_INVENTORY_AUDIENCE: ${MCP_INVENTORY_AUDIENCE:-mcp-inventory}
+      MCP_INVENTORY_REQUIRED_SCOPE: ${MCP_INVENTORY_REQUIRED_SCOPE:-mcp:inventory}
+      MCP_INVENTORY_RESOURCE_URL: http://localhost:9001/mcp
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "if [ \"$$MCP_AUTH_ENABLED\" = \"true\" ]; then curl -sf http://localhost:9001/.well-known/oauth-protected-resource/mcp; else curl -sf http://localhost:9001/mcp; fi",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    profiles: ["mcp"]
+
+  # ── Frontend ──────────────────────────────────────────────────────────────
+  #
+  # NEXT_PUBLIC_API_URL is inlined at build time, so this image is fixed to
+  # http://localhost:8080 -- correct for this file, and the reason a cloud
+  # deployment cannot reuse it unchanged. See docs/configuration.md.
+  frontend:
+    image: ghcr.io/nitin27may/e-commerce-agents/frontend:${IMAGE_TAG:-latest}
+    ports: ["3000:3000"]
+    depends_on:
+      orchestrator: { condition: service_started }
+
+volumes:
+  pgdata:

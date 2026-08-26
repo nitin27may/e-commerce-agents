@@ -1,0 +1,78 @@
+name: Package Cleanup
+
+# GHCR has no built-in retention setting, so this is the retention policy.
+#
+# Two things accumulate without limit once build-images.yml starts publishing:
+#
+#   1. `:sha-<7>` tags -- one per commit on main, forever.
+#   2. Untagged versions -- a multi-arch build pushes a manifest list plus one
+#      image manifest per platform. When the tag moves to a newer build, the
+#      previous platform manifests are left behind untagged. This is the larger
+#      source by volume, and it is invisible in the packages UI unless you go
+#      looking for it.
+#
+# What is never deleted, enforced by `ignore-versions` below:
+#   :latest              the newest release, which docker-compose.demo.yml pins
+#   :main                the rolling tip of main
+#   :vX.Y.Z              every release tag, including pre-releases
+#
+# Runs weekly. Also dispatchable with a dry_run input, which is worth using the
+# first time -- the action reports what it would remove without removing it.
+#
+# See docs/releasing.md and .claude/plans/enhancements/15-build-and-release.md.
+
+on:
+  schedule:
+    - cron: "0 4 * * 0" # Sundays 04:00 UTC
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Report what would be deleted, delete nothing"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Prune ${{ matrix.package }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      packages: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - orchestrator
+          - product-discovery
+          - order-management
+          - pricing-promotions
+          - review-sentiment
+          - inventory-fulfillment
+          - auth-server
+          - mcp-product
+          - mcp-inventory
+          - frontend
+
+    steps:
+      - name: Prune old versions of ${{ matrix.package }}
+        uses: actions/delete-package-versions@v5
+        with:
+          owner: nitin27may
+          package-name: e-commerce-agents/${{ matrix.package }}
+          package-type: container
+          # Keep a generous window. Twenty versions is roughly a month of
+          # commits on main, which is long enough to bisect a regression back
+          # to a specific image.
+          min-versions-to-keep: 20
+          # Anything matching this is never a candidate, regardless of age.
+          ignore-versions: '^(latest|main|v\d+\.\d+\.\d+.*)$'
+          dry-run: ${{ inputs.dry_run || false }}
