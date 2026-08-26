@@ -33,6 +33,14 @@ image for as long as the image has had its current shape.
   those packages are on `sys.path` regardless of image contents, and the image smoke-test imports
   `<agent>.main` only — every one of these imports is lazy, inside the mode, so the module imports
   cleanly and fails at request time.
+- **A flaky .NET test could block image publishing.**
+  `ChatRoutesTests.StreamAsync_SecondTurn_ForwardsFullPriorHistoryToAgent` intermittently threw
+  `NullReferenceException` from `DefaultHttpContext.get_RequestAborted()`. `PostAsJsonAsync`
+  returns on response headers and that endpoint streams, so the follow-up request's handler was
+  still running when the test disposed the TestServer, and it then read a recycled pooled context.
+  The response is now drained, and the handler captures its cancellation token once at entry rather
+  than dereferencing a pooled context four times late in a stream. It matters beyond a red X:
+  `publish-main` gates on the .NET suite, so the flake blocked releases.
 - **A pull-request push could cancel an in-flight image publish.** `workflow_dispatch` defines no
   `tag_mode` input, so the concurrency-group fallback collapsed a manual publish into the same
   bucket as a pull-request build. A push then cancelled a publish that had already pushed several

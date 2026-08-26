@@ -365,10 +365,20 @@ public sealed class ChatRoutesTests : IAsyncLifetime
         var firstData = firstMetaLine.Split('\n').First(l => l.StartsWith("data: "))["data: ".Length..];
         var conversationId = JsonSerializer.Deserialize<JsonElement>(firstData).GetProperty("conversation_id").GetString();
 
-        await client.PostAsJsonAsync(
+        var second = await client.PostAsJsonAsync(
             "/api/chat/stream",
             new { message = "follow up", conversation_id = conversationId }
         );
+        // Drain it. PostAsJsonAsync returns as soon as response headers are
+        // available, and this endpoint streams — so without reading the body the
+        // handler is still running when the assertions below execute and when
+        // `using var client` tears the TestServer down. The handler then touches
+        // context.RequestAborted on a recycled DefaultHttpContext and throws
+        // NullReferenceException, failing the run intermittently.
+        //
+        // The first call above already drains via ReadAsStringAsync; this one
+        // was the only streaming request in the file that did not.
+        await second.Content.ReadAsStringAsync();
 
         chatClient.ReceivedMessages.Should().HaveCount(2);
         var secondCallMessages = chatClient.ReceivedMessages[1].ToList();
