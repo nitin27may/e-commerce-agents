@@ -1,8 +1,8 @@
 {
-  "avg_groundedness": 0.9333,
-  "avg_correctness": 0.9,
-  "avg_completeness": 0.8933,
-  "overall_score": 0.912,
+  "avg_groundedness": 1.0,
+  "avg_correctness": 0.9167,
+  "avg_completeness": 1.0,
+  "overall_score": 0.9667,
   "agent_name": "product-discovery",
   "dataset_path": "evals/datasets/product_discovery.json"
 }
