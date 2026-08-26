@@ -1,11 +1,61 @@
 # Plan 17 — Tutorial .NET coverage
 
-**Status:** proposed · **Date:** 2026-08-26 · **Issue:** [#20](https://github.com/nitin27may/e-commerce-agents/issues/20)
-**Effort:** 3–5 weeks part-time · **Target:** incremental, no single release
+**Status:** DONE · **Date:** 2026-08-26 · **Issue:** [#20](https://github.com/nitin27may/e-commerce-agents/issues/20)
 
-The largest single piece of work left in the repo, and the one with the worst effort-to-adoption
-ratio. That is not an argument against doing it — it is an argument for doing it in a shape that
-delivers value continuously rather than in one multi-week block that blocks everything else.
+Executed in a single pass rather than the incremental shape planned below. Final state: every
+chapter that ships code ships both languages, and both are gated in CI — **334 .NET tests across
+31 projects**, up from 47 across 11, plus 15 new Python tests for chapter 22.
+
+The plan's estimate was 3–5 weeks part-time, on the assumption that porting was the expensive
+part. It was not. Writing the tests was, because writing them is what surfaced the bugs — and
+the bugs were the actual value of the exercise.
+
+### What the tests found
+
+Three defects that had been sitting in the series unnoticed, all invisible to a `dotnet build`
+gate, which was the only .NET gate that existed:
+
+- **Chapter 12 never ran.** It handed a bare string to a workflow whose input type is
+  `List<ChatMessage>`, never sent the `TurnToken` the wrapped agents wait on, and matched on an
+  `AgentResponseEvent` that `BuildSequential` does not emit. Three independent silent failures
+  stacked: `dotnet run` printed the topic, called no model, exited 0.
+- **Chapter 15 could loop forever.** `PromptDrivenManager` overrode `ShouldTerminateAsync`, which
+  is where the base class enforces `MaximumIterationCount`, and did not chain to it — so the cap
+  the comment called "the safety net" did not exist. A selector that never picked the Editor ran
+  unbounded, one provider call per turn.
+- **Chapter 20 was a stub for no reason.** `WorkflowVisualizer` has shipped since 1.1.0, so unlike
+  chapter 16 there was no SDK gap. Worse, the usage its stub *printed* did not compile —
+  `ToMermaidString` is a static method, not an extension. Printed sample code is never compiled.
+
+Two SDK behaviours are pinned as tests rather than fixed, because they are Microsoft's and not
+ours: MAF names synthesised handoff tools positionally (`handoff_to_1`), so an agent's name never
+reaches the model and only `description:` distinguishes targets; and
+`FileSystemJsonCheckpointStore` takes an exclusive directory lock it never releases.
+
+### Deviations from the plan below
+
+- **Chapters 16 and 20 were not excluded.** Ch20 became a real runnable example (see above).
+  Ch16 stayed a stub — correctly, Magentic really is Python-only — but gained *tripwire* tests
+  that reflect over the shipped assembly and fail the day `MagenticBuilder` appears. A stub
+  claiming "not supported yet" is only honest while it stays true, and left alone it decays
+  silently.
+- **20b stayed unported, for a corrected reason.** Its README said no `Microsoft.Agents.AI.DevUI`
+  package ships. One does now — 46 versions on NuGet — but all prerelease, and this repo pins
+  `Microsoft.Agents.AI` 1.1.0 stable.
+- **Chapter 22's asymmetry was accepted and documented** rather than resolved. Python imports the
+  production `workflows/group_chat.py`; .NET has no equivalent standalone type, so it reimplements
+  the shape self-contained. One chapter is a tour, the other a faithful model.
+- **A shared test double was added**, `tutorials/_shared/dotnet/ScriptedChatClient.cs`, the .NET
+  counterpart to `replay_client.py`. It records what actually reaches the model — instructions
+  arrive on `ChatOptions.Instructions`, not as a system message — and timestamps calls, which is
+  how ch13 proves its agents genuinely overlap and ch12 proves its genuinely do not.
+- **The status table is now generated**, by `scripts/check_tutorial_coverage.py`, and gated in CI.
+  The README had claimed it was generated for a long time while being maintained by hand, which is
+  how it came to describe chapters as ported that were not.
+
+Everything below is the original plan, kept for the reasoning rather than the schedule.
+
+---
 
 ---
 
