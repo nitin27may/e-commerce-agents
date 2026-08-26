@@ -244,7 +244,7 @@ async def test_handoff_mode_routes_to_specialist_and_reports_its_answer(
         "orchestrator.handoff._load_registry",
         lambda: {"math": "http://math-specialist:9999/a2a"},
     )
-    monkeypatch.setattr("orchestrator.handoff.create_orchestrator_agent", lambda: fake_orchestrator)
+    monkeypatch.setattr("orchestrator.handoff.create_handoff_triage_agent", lambda: fake_orchestrator)
 
     mode = HandoffMode()
     events = [e async for e in mode.run("What is 37 * 42?", RunContext(history=[]))]
@@ -269,3 +269,81 @@ def test_handoff_mode_capabilities_marks_is_graph() -> None:
     caps = HandoffMode().capabilities
     assert caps.is_graph is True
     assert caps.supports_hitl is False
+
+
+# ─────────────── Handoff triage agent contract ───────────────
+#
+# These pin the fix for the defect where `handoff` mode produced a
+# 23,637-character monologue over 100-200 seconds and never reached a
+# specialist. The cause was not the accumulation code — updates were genuine
+# deltas — but the start agent: it was `create_orchestrator_agent()`, which
+# carries `call_specialist_agent` and a prompt telling it to use that tool.
+#
+# Microsoft's guidance is explicit about why that is fatal in a handoff mesh:
+# handoffs happen through tool calls, so an agent that answers instead of
+# handing off leaves the workflow nowhere to go but back to the user. With
+# autonomous mode on, that becomes an unbounded self-continuation loop.
+
+
+def test_handoff_triage_agent_has_no_tools(monkeypatch) -> None:
+    """The invariant. Every tool it carries is one more thing it can do
+    instead of handing off, and the failure is a monologue rather than an
+    error.
+
+    The chat client is stubbed because constructing a real one needs provider
+    credentials, and this assertion is about the agent's tool surface — not
+    about being able to reach a model.
+    """
+    import orchestrator.handoff as handoff_module
+
+    captured: dict[str, object] = {}
+
+    class _FakeAgent:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr(handoff_module, "create_chat_client", lambda: object())
+    monkeypatch.setattr(handoff_module, "Agent", _FakeAgent)
+
+    handoff_module.create_handoff_triage_agent()
+
+    assert "tools" not in captured or not captured["tools"], (
+        "the handoff triage agent must carry no tools of its own — it routes by "
+        "calling MAF's synthesised handoff tools, and anything else it can call "
+        "is an escape hatch from doing that"
+    )
+    assert "context_providers" not in captured or not captured["context_providers"], (
+        "context providers exist to help an agent answer; this one only chooses"
+    )
+
+
+def test_handoff_triage_prompt_does_not_reuse_the_tool_router_prompt() -> None:
+    """orchestrator.yaml names `call_specialist_agent`, which is the *tool*
+    mode's mechanism. Reusing it here tells the model to route by a tool it
+    does not have.
+
+    Asserted against the composed prompt rather than the Agent object, because
+    MAF's Agent does not expose its instructions — and the prompt file is the
+    thing that actually has to be right.
+    """
+    from shared.prompt_loader import load_prompt
+
+    triage = load_prompt("handoff-triage")
+    orchestrator = load_prompt("orchestrator")
+
+    assert triage, "handoff-triage.yaml must exist and compose to a non-empty prompt"
+    assert triage != orchestrator, "the two modes route by opposite mechanisms"
+    assert "call_specialist_agent" not in triage
+    assert "hand off" in triage.lower() or "handoff" in triage.lower()
+
+
+def test_handoff_autonomous_mode_is_bounded() -> None:
+    """MAF's default autonomous ceiling is 50 turns. At roughly 450 characters
+    a turn that is the 23,000-character monologue this mode used to produce, so
+    the limit is a safety net rather than a tuning knob."""
+    from shared.config import settings
+
+    assert settings.HANDOFF_MAX_TURNS <= 5, (
+        "a high autonomous turn limit turns 'the agent cannot hand off' from a "
+        "short wrong answer into a very expensive one"
+    )

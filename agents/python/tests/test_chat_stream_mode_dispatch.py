@@ -92,7 +92,7 @@ async def test_chat_stream_handoff_mode_emits_structured_frames_and_real_text(
         "orchestrator.handoff._load_registry",
         lambda: {"math": "http://math-specialist:9999/a2a"},
     )
-    monkeypatch.setattr("orchestrator.handoff.create_orchestrator_agent", lambda: fake_orchestrator)
+    monkeypatch.setattr("orchestrator.handoff.create_handoff_triage_agent", lambda: fake_orchestrator)
 
     response = await chat_stream(
         ChatRequest(message="What is 37 * 42?", mode="handoff"),
