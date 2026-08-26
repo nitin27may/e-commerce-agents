@@ -84,7 +84,12 @@ SECTIONS: tuple[Section, ...] = (
         "Getting Started",
         2,
         "Run the stack, deploy it, and fix the things that commonly break first.",
-        ("docs/quick-start.md", "docs/deployment.md", "docs/troubleshooting.md"),
+        (
+            "docs/quick-start.md",
+            "docs/configuration.md",
+            "docs/deployment.md",
+            "docs/troubleshooting.md",
+        ),
     ),
     Section(
         "Concepts",
@@ -126,6 +131,7 @@ SECTIONS: tuple[Section, ...] = (
             "docs/security-guide.md",
             "docs/agent-quality.md",
             "docs/maf-best-practices.md",
+            "docs/releasing.md",
         ),
     ),
     Section(

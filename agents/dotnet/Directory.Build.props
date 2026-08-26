@@ -15,6 +15,12 @@
     -->
     <WarningsNotAsErrors>NU5104;NU1901;NU1902</WarningsNotAsErrors>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <!--
+      Kept in sync with agents/python/pyproject.toml and web/package.json by
+      scripts/bump_version.py. release.yml's version-check job fails the release
+      if the git tag and these disagree.
+    -->
+    <VersionPrefix>1.1.0</VersionPrefix>
     <Authors>Nitin Kumar Singh</Authors>
     <Copyright>Copyright (c) $([System.DateTime]::Now.Year)</Copyright>
     <RepositoryUrl>https://github.com/nitin27may/e-commerce-agents</RepositoryUrl>

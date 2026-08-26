@@ -1,40 +1,66 @@
 name: Build Images
 
-# Build (and optionally push) the multi-target agent Docker image.
+# Builds the ten container images this stack runs on, in three build shapes:
 #
-# Two modes, selected by context:
+#   agent   -> agents/python/Dockerfile      (ARG AGENT_NAME + AGENT_PORT)
+#   mcp     -> agents/python/Dockerfile.mcp  (ARG MCP_PACKAGE/MCP_DIR/MCP_MODULE/MCP_PORT)
+#   web     -> web/Dockerfile                (no build args)
 #
-# ── Smoke build (default) ──────────────────────────────────────────────────
-# Runs on every push to main and every pull request. Builds all six agent
-# images from the single Dockerfile (ARG AGENT_NAME) to verify the image
-# compiles. Images are NOT pushed — no credentials required.
+# ── This workflow never decides to publish on its own ────────────────────────
 #
-# ── Build + push to GHCR ──────────────────────────────────────────────────
-# Triggered on a semver tag (v*.*.*) or manual dispatch with publish=true.
-# Pushes to ghcr.io/nitin27may/e-commerce-agents/{agent}:{tag} and adds a
-# :latest alias. Requires the repo to grant the workflow "packages: write"
-# (automatic for GITHUB_TOKEN in the same repo).
+# It used to push on a semver tag with no dependency on the test suite. GitHub
+# Actions has no cross-workflow `needs:`, so `tests.yml` and this file ran in
+# parallel and never saw each other -- a tag pushed onto a red commit published
+# images, and the tag path ran no tests at all.
+#
+# Publishing is now caller-driven via `workflow_call`, so the gate lives with
+# whoever calls it:
+#
+#   pull_request  -> this file's own trigger. Build, load, smoke-test, discard.
+#                    Never pushes. Fork PRs have no packages:write, so this path
+#                    must stay push-free regardless.
+#   push to main  -> tests.yml's `publish-main` job, which `needs:` all four
+#                    test jobs. Publishes :main and :sha-<7>.
+#   version tag   -> release.yml, after a full test re-run AND a human approval
+#                    on the `release` environment. Publishes :vX.Y.Z and :latest.
+#
+# See .claude/plans/enhancements/15-build-and-release.md.
 
 on:
-  push:
-    branches: [main]
-    tags: ["v*.*.*"]
   pull_request:
     branches: [main]
+
+  workflow_call:
+    inputs:
+      publish:
+        description: "Push images to GHCR"
+        type: boolean
+        default: false
+      tag_mode:
+        description: "Which tag set to produce: 'main' or 'release'"
+        type: string
+        default: main
+      version:
+        description: "Version tag for tag_mode=release, e.g. v1.1.0"
+        type: string
+        default: ""
+
   workflow_dispatch:
     inputs:
       publish:
-        description: "Push images to GHCR (requires packages: write)"
+        description: "Push images to GHCR (escape hatch)"
         type: boolean
         default: false
 
 permissions:
   contents: read
-  packages: write
 
 concurrency:
-  group: build-images-${{ github.ref }}
-  cancel-in-progress: true
+  group: build-images-${{ github.ref }}-${{ inputs.tag_mode || 'pr' }}
+  # A superseded PR or main build is fine to cancel. A release publish is not —
+  # cancelling it mid-matrix leaves some of the ten images pushed at the new
+  # version and the rest not, which is worse than a slow queue.
+  cancel-in-progress: ${{ inputs.tag_mode != 'release' }}
 
 env:
   REGISTRY: ghcr.io
@@ -42,90 +68,210 @@ env:
 
 jobs:
   build:
-    name: Build ${{ matrix.agent }}
+    name: Build ${{ matrix.image }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+      packages: write
 
     strategy:
-      fail-fast: false    # build all agents even if one fails
+      fail-fast: false # build every image even if one fails
       matrix:
         include:
-          - agent: orchestrator
-            port: 8080
-          - agent: product_discovery
-            port: 8081
-          - agent: order_management
-            port: 8082
-          - agent: pricing_promotions
-            port: 8083
-          - agent: review_sentiment
-            port: 8084
-          - agent: inventory_fulfillment
-            port: 8085
+          # ── Agents: one Dockerfile, ARG AGENT_NAME selects the module ──
+          - image: orchestrator
+            context: ./agents/python
+            dockerfile: ./agents/python/Dockerfile
+            build_args: |
+              AGENT_NAME=orchestrator
+              AGENT_PORT=8080
+            smoke_module: orchestrator.main
+          - image: product-discovery
+            context: ./agents/python
+            dockerfile: ./agents/python/Dockerfile
+            build_args: |
+              AGENT_NAME=product_discovery
+              AGENT_PORT=8081
+            smoke_module: product_discovery.main
+          - image: order-management
+            context: ./agents/python
+            dockerfile: ./agents/python/Dockerfile
+            build_args: |
+              AGENT_NAME=order_management
+              AGENT_PORT=8082
+            smoke_module: order_management.main
+          - image: pricing-promotions
+            context: ./agents/python
+            dockerfile: ./agents/python/Dockerfile
+            build_args: |
+              AGENT_NAME=pricing_promotions
+              AGENT_PORT=8083
+            smoke_module: pricing_promotions.main
+          - image: review-sentiment
+            context: ./agents/python
+            dockerfile: ./agents/python/Dockerfile
+            build_args: |
+              AGENT_NAME=review_sentiment
+              AGENT_PORT=8084
+            smoke_module: review_sentiment.main
+          - image: inventory-fulfillment
+            context: ./agents/python
+            dockerfile: ./agents/python/Dockerfile
+            build_args: |
+              AGENT_NAME=inventory_fulfillment
+              AGENT_PORT=8085
+            smoke_module: inventory_fulfillment.main
+          # auth-server is an agent-shaped image too (AUTH_MODE=oauth path).
+          # docker-compose.yml builds it from the same Dockerfile.
+          - image: auth-server
+            context: ./agents/python
+            dockerfile: ./agents/python/Dockerfile
+            build_args: |
+              AGENT_NAME=auth_server
+              AGENT_PORT=8090
+            smoke_module: auth_server.main
+
+          # ── MCP servers: separate Dockerfile, uv workspace packages ──
+          - image: mcp-product
+            context: ./agents/python
+            dockerfile: ./agents/python/Dockerfile.mcp
+            build_args: |
+              MCP_PACKAGE=ecommerce-mcp-product
+              MCP_DIR=packages/mcp-product
+              MCP_MODULE=ecommerce_mcp_product.server:app
+              MCP_PORT=9000
+            smoke_module: ecommerce_mcp_product.server
+          - image: mcp-inventory
+            context: ./agents/python
+            dockerfile: ./agents/python/Dockerfile.mcp
+            build_args: |
+              MCP_PACKAGE=ecommerce-mcp-inventory
+              MCP_DIR=packages/mcp-inventory
+              MCP_MODULE=ecommerce_mcp_inventory.server:app
+              MCP_PORT=9001
+            smoke_module: ecommerce_mcp_inventory.server
+
+          # ── Frontend: Node multi-stage, no build args ──
+          # NEXT_PUBLIC_API_URL is inlined at build time and defaults to
+          # http://localhost:8080 in web/Dockerfile, which is correct for the
+          # local demo compose file. It is NOT correct on Azure -- see blocker
+          # B1 in plan 13, which is out of scope here.
+          - image: frontend
+            context: ./web
+            dockerfile: ./web/Dockerfile
+            build_args: ""
+            smoke_module: ""
 
     steps:
       - uses: actions/checkout@v4
 
-      # ── Decide whether to push ───────────────────────────────────────────
-      - name: Resolve push flag
-        id: push
+      # ── Resolve publish intent ───────────────────────────────────────────
+      #
+      # `pull_request` has no `inputs` context at all, so `inputs.publish` is
+      # empty there and this correctly resolves to false. Fork PRs cannot be
+      # granted packages:write, so the PR path must never attempt a push.
+      - name: Resolve publish flag
+        id: publish
         run: |
-          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref_type }}" == "tag" ]]; then
-            echo "should_push=true" >> "$GITHUB_OUTPUT"
-          elif [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.publish }}" == "true" ]]; then
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "should_push=false" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ inputs.publish }}" == "true" ]]; then
             echo "should_push=true" >> "$GITHUB_OUTPUT"
           else
             echo "should_push=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # ── GHCR login (only when pushing) ──────────────────────────────────
+      # ── Derive image tags ────────────────────────────────────────────────
+      #
+      # :sha-<7>  immutable, one per commit  (main)
+      # :main     rolling tip of main, tests green
+      # :vX.Y.Z   immutable release
+      # :latest   newest RELEASE -- deliberately not tip of main, because
+      #           docker-compose.demo.yml pins it and a first-time visitor
+      #           should land on something that passed the full gate.
+      #
+      # A pre-release tag (any version containing a hyphen, e.g. v1.2.0-rc.1)
+      # publishes its own version tag and does NOT move :latest.
+      - name: Derive image tags
+        id: meta
+        run: |
+          IMAGE_NAME="${{ env.IMAGE_BASE }}/${{ matrix.image }}"
+          echo "image=${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
+
+          if [[ "${{ inputs.tag_mode }}" == "release" ]]; then
+            VERSION="${{ inputs.version }}"
+            if [[ -z "$VERSION" ]]; then
+              echo "::error::tag_mode=release requires a non-empty version input"
+              exit 1
+            fi
+            if [[ "$VERSION" == *-* ]]; then
+              echo "Pre-release ${VERSION}: publishing version tag only, not moving :latest"
+              echo "tags=${IMAGE_NAME}:${VERSION}" >> "$GITHUB_OUTPUT"
+            else
+              echo "tags=${IMAGE_NAME}:${VERSION},${IMAGE_NAME}:latest" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            SHA="${GITHUB_SHA::7}"
+            if [[ "${{ steps.publish.outputs.should_push }}" == "true" ]]; then
+              echo "tags=${IMAGE_NAME}:main,${IMAGE_NAME}:sha-${SHA}" >> "$GITHUB_OUTPUT"
+            else
+              # PR builds are loaded locally and discarded; the tag is only a
+              # handle for the smoke-test step below.
+              echo "tags=${IMAGE_NAME}:pr-${SHA}" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      # ── Multi-arch only on the publish path ──────────────────────────────
+      #
+      # `load: true` cannot load a multi-platform image, and the import
+      # smoke-test below depends on `load`. So PRs stay amd64-only. Readers on
+      # Apple Silicon otherwise get QEMU emulation on a published image, which
+      # is why the publish path builds arm64 too -- at roughly 3x build time,
+      # acceptable on main, not on every PR.
+      - name: Set up QEMU
+        if: steps.publish.outputs.should_push == 'true'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Log in to GHCR
-        if: steps.push.outputs.should_push == 'true'
+        if: steps.publish.outputs.should_push == 'true'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── Derive image tag ─────────────────────────────────────────────────
-      - name: Derive image tags
-        id: meta
-        run: |
-          AGENT_SLUG="${{ matrix.agent }}"
-          # Convert underscores to hyphens for image names (convention)
-          IMAGE_NAME="${{ env.IMAGE_BASE }}/${AGENT_SLUG//_/-}"
-          echo "image=${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
-
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            VERSION="${GITHUB_REF_NAME}"           # e.g. v1.2.3
-            echo "tags=${IMAGE_NAME}:${VERSION},${IMAGE_NAME}:latest" >> "$GITHUB_OUTPUT"
-          else
-            SHA="${GITHUB_SHA::7}"
-            echo "tags=${IMAGE_NAME}:sha-${SHA}" >> "$GITHUB_OUTPUT"
-          fi
-
-      # ── Docker Buildx ────────────────────────────────────────────────────
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      # ── Build (smoke: load=true keeps it local; push: push=true sends it) ─
-      - name: Build ${{ matrix.agent }}
+      - name: Build ${{ matrix.image }}
         uses: docker/build-push-action@v6
         with:
-          context: ./agents/python
-          file: ./agents/python/Dockerfile
-          build-args: |
-            AGENT_NAME=${{ matrix.agent }}
-            AGENT_PORT=${{ matrix.port }}
-          push: ${{ steps.push.outputs.should_push == 'true' }}
-          load: ${{ steps.push.outputs.should_push != 'true' }}
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          build-args: ${{ matrix.build_args }}
+          platforms: ${{ steps.publish.outputs.should_push == 'true' && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
+          push: ${{ steps.publish.outputs.should_push == 'true' }}
+          load: ${{ steps.publish.outputs.should_push != 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
-          cache-from: type=gha,scope=${{ matrix.agent }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.agent }}
+          # Without these, each GHCR package page renders empty instead of
+          # showing the repository README and the MIT licence.
+          labels: |
+            org.opencontainers.image.source=https://github.com/nitin27may/e-commerce-agents
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.title=${{ matrix.image }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
-      # ── Smoke-test the image (only when not pushing, i.e. local load) ────
-      - name: Smoke-test ${{ matrix.agent }} image
-        if: steps.push.outputs.should_push != 'true'
+      # ── Import smoke-test (PR path only -- needs a locally loaded image) ──
+      #
+      # Catches the class of break that a unit test never sees: a module that
+      # imports fine in the repo but not inside the image, because a dependency
+      # was declared in the wrong extra or a path assumption differs.
+      - name: Smoke-test ${{ matrix.image }} image
+        if: steps.publish.outputs.should_push != 'true' && matrix.smoke_module != ''
         run: |
           IMAGE_TAG=$(echo "${{ steps.meta.outputs.tags }}" | cut -d',' -f1)
           echo "Testing image: ${IMAGE_TAG}"
@@ -141,8 +287,44 @@ jobs:
             "${IMAGE_TAG}" \
             run --no-project python -c "
           import importlib, sys
-          agent_name = '${{ matrix.agent }}'
-          mod = importlib.import_module(f'{agent_name}.main')
-          print(f'[OK] {agent_name}: module imports cleanly')
+          mod = importlib.import_module('${{ matrix.smoke_module }}')
+          print('[OK] ${{ matrix.image }}: ${{ matrix.smoke_module }} imports cleanly')
           sys.exit(0)
           "
+
+      # The frontend image has no Python module to import. `node server.js` is
+      # the standalone Next.js entry point; starting it and getting a listening
+      # socket is the equivalent check.
+      - name: Smoke-test frontend image
+        if: steps.publish.outputs.should_push != 'true' && matrix.image == 'frontend'
+        run: |
+          IMAGE_TAG=$(echo "${{ steps.meta.outputs.tags }}" | cut -d',' -f1)
+          CID=$(docker run -d -p 3000:3000 "${IMAGE_TAG}")
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3000 > /dev/null; then
+              echo "[OK] frontend: server responded"
+              docker rm -f "$CID" > /dev/null
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::frontend image did not respond on :3000 within 60s"
+          docker logs "$CID"
+          docker rm -f "$CID" > /dev/null
+          exit 1
+
+  # A single job the branch protection rule can require, instead of listing ten
+  # matrix legs by name (which breaks every time the matrix changes).
+  build-images-ok:
+    name: Build images · all green
+    runs-on: ubuntu-latest
+    needs: build
+    if: always()
+    steps:
+      - name: Check matrix result
+        run: |
+          if [[ "${{ needs.build.result }}" != "success" ]]; then
+            echo "::error::one or more image builds failed"
+            exit 1
+          fi
+          echo "all ten images built"

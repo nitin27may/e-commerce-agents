@@ -1,0 +1,147 @@
+name: Release
+
+# Cutting a release. Triggered by pushing a semver tag.
+#
+#   git tag v1.1.0 && git push origin v1.1.0
+#
+# Five jobs, in sequence. The ordering is the whole point:
+#
+#   gate           re-run the FULL test suite against the tagged commit. Before
+#                  this workflow existed, the tag path ran no tests at all --
+#                  build-images.yml pushed on a tag with no `needs:` on anything,
+#                  so a tag on a red commit published images.
+#   version-check  the tag and agents/python/pyproject.toml must agree. This is
+#                  what stops the drift that left the repo with pyproject saying
+#                  0.1.0, the only tag saying v1.0.0, and the README saying v1.1.
+#   approve        blocks on the `release` GitHub environment's required
+#                  reviewer. You see the gate results, then click.
+#   publish        build and push :vX.Y.Z (+ :latest for a final release).
+#   release        create the GitHub release, with notes read out of CHANGELOG.md.
+#
+# SETUP REQUIRED, and it fails silently without it: the `release` environment
+# must exist with required reviewers configured. If it does not, `environment:`
+# is a no-op, the approval gate does not exist, and releases proceed
+# automatically with no error and nothing to indicate anything is missing.
+#
+# See .claude/plans/enhancements/15-build-and-release.md.
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false # never cancel a release mid-publish
+
+jobs:
+  # ── 1. The full test suite, re-run against the tagged commit ───────────────
+  gate:
+    name: Gate
+    uses: ./.github/workflows/tests.yml
+    secrets: inherit
+
+  # ── 2. The tag and the committed version must agree ───────────────────────
+  version-check:
+    name: Version check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tag must match pyproject.toml
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          FILE_VERSION=$(grep -m1 '^version = ' agents/python/pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+
+          echo "tag:        ${TAG}"
+          echo "pyproject:  ${FILE_VERSION}"
+
+          if [[ "$TAG" != "$FILE_VERSION" ]]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match pyproject.toml version ${FILE_VERSION}."
+            echo "::error::Run 'python scripts/bump_version.py ${TAG}', commit, then re-tag."
+            exit 1
+          fi
+
+      - name: CHANGELOG must have a section for this version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          if ! grep -q "^## \[${TAG}\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## [${TAG}]' section."
+            echo "::error::A release must not ship with empty notes."
+            exit 1
+          fi
+
+  # ── 3. Human approval ─────────────────────────────────────────────────────
+  approve:
+    name: Approve release
+    needs: [gate, version-check]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: release
+    steps:
+      - name: Approved
+        run: echo "Release ${GITHUB_REF_NAME} approved — publishing images."
+
+  # ── 4. Build and push the versioned images ────────────────────────────────
+  publish:
+    name: Publish images
+    needs: approve
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/build-images.yml
+    with:
+      publish: true
+      tag_mode: release
+      version: ${{ github.ref_name }}
+    secrets: inherit
+
+  # ── 5. The GitHub release itself ──────────────────────────────────────────
+  release:
+    name: Create GitHub release
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pull just this version's section out of CHANGELOG.md: everything
+      # between this version's heading and the next one. Curated notes beat
+      # --generate-notes here; the repo's voice is a differentiator and an
+      # auto-generated commit dump would throw it away.
+      - name: Extract release notes from CHANGELOG.md
+        id: notes
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          awk -v ver="$TAG" '
+            $0 ~ "^## \\[" ver "\\]" { collecting = 1; next }
+            collecting && /^## \[/    { exit }
+            collecting                { print }
+          ' CHANGELOG.md > release-notes.md
+
+          if [[ ! -s release-notes.md ]]; then
+            echo "::error::extracted release notes are empty for ${TAG}"
+            exit 1
+          fi
+
+          echo "--- notes ---"
+          cat release-notes.md
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PRERELEASE=""
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+            PRERELEASE="--prerelease"
+          fi
+
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --notes-file release-notes.md \
+            $PRERELEASE

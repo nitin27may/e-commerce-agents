@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+  # Called by release.yml so a version tag re-runs this whole suite against the
+  # tagged commit before anything is published. GitHub Actions has no
+  # cross-workflow `needs:`, so `workflow_call` is the only way to express it.
+  workflow_call:
 
 permissions:
   contents: read
@@ -202,3 +206,28 @@ jobs:
             git diff docs/workflows/
             exit 1
           fi
+
+  # ── Publish rolling images, only after the suite is green ──────────────────
+  #
+  # This is the gate. build-images.yml no longer decides to publish anything on
+  # its own; it exposes `workflow_call` and this job is what grants it, after
+  # `needs:` on every test job above.
+  #
+  # Deliberately NOT in `needs`:
+  #   workflow-visualization-drift  — gated behind vars.WORKFLOW_VISUALIZATION_ON_BUILD,
+  #     so it is skipped on most runs, and a skipped dependency would skip this job too.
+  #   evals.yml / tutorials.yml     — they gate the pull request, not the image. Tutorial
+  #     CI has nothing to do with the contents of these images, and coupling them means a
+  #     broken tutorial chapter blocks a security fix from shipping.
+  publish-main:
+    name: Publish :main images
+    needs: [python-tests, mcp-package-tests, dotnet-tests, web-tests]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/build-images.yml
+    with:
+      publish: true
+      tag_mode: main
+    secrets: inherit

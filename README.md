@@ -92,9 +92,14 @@ git clone https://github.com/nitin27may/e-commerce-agents.git
 cd e-commerce-agents
 
 # 2. Configure environment
-cp .env.example .env
-# Edit .env — add your OPENAI_API_KEY (or Azure OpenAI credentials)
+cp .env.minimal .env
+# Edit .env — add your OPENAI_API_KEY (that is the only variable a first run needs)
 ```
+
+`.env.minimal` is one variable. `.env.example` is the full surface — every auth mode, MCP, OAuth,
+telemetry and guardrail setting — and is reference material rather than a starting point. How that
+one file reaches containers, host-run Python, the frontend and the .NET stack (they do not all read
+it the same way) is written up in **[Configuration](docs/configuration.md)**.
 
 ### Run the Python backend
 
@@ -570,13 +575,13 @@ only on the site.
 | **[Concepts](https://nitinksingh.com/e-commerce-agents/concepts/)** | 14 pages for readers new to agents — what an agent is, the agentic loop, tools, harnesses, why multi-agent, orchestration patterns, graphs, state and memory, grounding, guardrails, HITL, evaluation, observability and cost, production concerns |
 | **[Tutorials](https://nitinksingh.com/e-commerce-agents/tutorials/)** | 34 chapters, Python and .NET, each runnable without an API key |
 | **[Architecture](https://nitinksingh.com/e-commerce-agents/architecture/)** | [System design](docs/architecture.md) · [agent flows](docs/agent-flows.md) · [database schema](docs/database-schema.md) · [API reference](docs/api-reference.md) · [frontend](docs/frontend.md) · [workflows](docs/workflows/README.md) |
-| **[Guides](https://nitinksingh.com/e-commerce-agents/guides/)** | [Adding an agent](docs/adding-an-agent.md) · [MCP integration](docs/mcp-integration.md) · [telemetry](docs/telemetry.md) · [security](docs/security-guide.md) · [agent quality and evals](docs/agent-quality.md) · [MAF best practices](docs/maf-best-practices.md) |
-| **[Getting Started](https://nitinksingh.com/e-commerce-agents/getting-started/)** | [Deployment](docs/deployment.md) · [troubleshooting](docs/troubleshooting.md) |
+| **[Guides](https://nitinksingh.com/e-commerce-agents/guides/)** | [Adding an agent](docs/adding-an-agent.md) · [MCP integration](docs/mcp-integration.md) · [telemetry](docs/telemetry.md) · [security](docs/security-guide.md) · [agent quality and evals](docs/agent-quality.md) · [MAF best practices](docs/maf-best-practices.md) · [releasing](docs/releasing.md) |
+| **[Getting Started](https://nitinksingh.com/e-commerce-agents/getting-started/)** | [Quick start](docs/quick-start.md) · [configuration](docs/configuration.md) · [deployment](docs/deployment.md) · [troubleshooting](docs/troubleshooting.md) |
 | **[Reference](https://nitinksingh.com/e-commerce-agents/reference/)** | [Python vs .NET parity matrix](docs/parity-matrix.md) · [agent audit matrix](docs/agent-audit-matrix.md) · [glossary](tutorials/_shared/jargon-glossary.md) · [Mermaid style guide](tutorials/_shared/mermaid-style-guide.md) |
 
 Contributor-facing docs stay in the repo rather than on the site:
-[CONTRIBUTING.md](CONTRIBUTING.md) (setup, conventions, testing policy, PR checklist) and
-[CLAUDE.md](CLAUDE.md).
+[CONTRIBUTING.md](CONTRIBUTING.md) (setup, conventions, testing policy, PR checklist),
+[CHANGELOG.md](CHANGELOG.md) (what changed in each release) and [CLAUDE.md](CLAUDE.md).
 
 ---
 
