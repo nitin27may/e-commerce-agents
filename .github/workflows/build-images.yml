@@ -56,11 +56,24 @@ permissions:
   contents: read
 
 concurrency:
-  group: build-images-${{ github.ref }}-${{ inputs.tag_mode || 'pr' }}
-  # A superseded PR or main build is fine to cancel. A release publish is not —
-  # cancelling it mid-matrix leaves some of the ten images pushed at the new
-  # version and the rest not, which is worse than a slow queue.
-  cancel-in-progress: ${{ inputs.tag_mode != 'release' }}
+  # The group must distinguish *why* the workflow is running, not just the ref.
+  #
+  # An earlier version collapsed both a manual publish and a pull-request build
+  # into the same "-pr" group, because workflow_dispatch defines no `tag_mode`
+  # input and the fallback was a constant. Pushing to the PR then cancelled an
+  # in-flight publish that had already pushed several of the ten images —
+  # observed, not theoretical.
+  #
+  #   pull_request      -> ...-pull_request
+  #   workflow_dispatch -> ...-workflow_dispatch
+  #   workflow_call     -> ...-main / ...-release  (tag_mode wins)
+  group: build-images-${{ github.ref }}-${{ inputs.tag_mode || github.event_name }}
+  # Only a pull-request build is safe to cancel — a newer push supersedes it and
+  # nothing was published. Every publishing path runs to completion, because
+  # cancelling mid-matrix leaves some images pushed at the new tag and the rest
+  # stale, which is worse than a slow queue. For workflow_call this evaluates
+  # against the caller's event (push), so it is false there too.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   REGISTRY: ghcr.io
