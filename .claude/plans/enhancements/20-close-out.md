@@ -144,6 +144,29 @@ modes return real answers; `scripts/e2e-both-stacks.sh` passes against both stac
 
 Must precede Wave 3: these two modes would dominate a benchmark table measured today.
 
+### Narrowed by Wave 1's live run — both defects are Python-only
+
+Verifying the .NET fix incidentally measured the same two modes on the .NET stack, and **neither
+misbehaves there**:
+
+| Mode | Python (measured v1.2.0) | .NET (measured after Wave 1) |
+|---|---|---|
+| `handoff` | 19,000–25,000 chars, 100–200 s | **1,417 chars**, normal latency |
+| `workflow:pre-purchase` | 48 chars, 2 of 4 contributions | **113 chars, all 4**: `Reviews: positive (8 reviews) \| Stock: 317 units available \| Price trend: stable \| Shipping: from $5.99, 5-7 days` |
+
+Two consequences:
+
+1. **Both are Python-side defects**, not framework or design problems. The cumulative-vs-delta
+   hypothesis for `handoff` is now much stronger: .NET reads the same MAF event stream through
+   different accumulation code and does not blow up.
+2. **.NET is the reference implementation for both.** Rather than reasoning from first principles,
+   diff the Python accumulation against `HandoffMode.cs`, and the Python pre-purchase tool wiring
+   against the .NET specialists' — which return all four contributions, so the tools exist and work.
+
+The stack that could not answer a question at the start of this plan now behaves better than the
+one that could, on both of these. Worth stating plainly in the changelog.
+
+
 ### 2a. `handoff` — 19–25k characters in 100–200 s
 
 Against ~11 s / ~1,000 chars for `tool` on the same prompt.

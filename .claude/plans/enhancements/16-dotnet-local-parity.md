@@ -1,6 +1,6 @@
 # Plan 16 — Make the local Docker Compose work for both stacks
 
-**Status:** proposed · **Date:** 2026-08-26 · **Target:** v1.2.1
+**Status:** F1 FIXED and live-verified 2026-08-26 · F2–F5 in progress · **Target:** v1.3.0
 **Parent:** [`../audit-2026-08-25-adoption-and-azure.md`](../audit-2026-08-25-adoption-and-azure.md)
 
 ## Scope, agreed up front
@@ -30,7 +30,12 @@ serves, and login works. **Then every question fails.**
 
 ## F1 — The .NET orchestrator cannot reach any specialist
 
-**This is the whole problem. Everything else on this page is secondary.**
+**FIXED 2026-08-26.** Verified against a live stack: `tool.invoked name=call_specialist_agent
+error=-`, `agents_involved: ["orchestrator","order-management"]`, and all five orchestration modes
+returning real answers. The root cause was broader than this finding described — see the diagnosis
+below and `20-close-out.md` Wave 1a.
+
+**This was the whole problem. Everything else on this page is secondary.**
 
 Every routed question comes back apologetic:
 
