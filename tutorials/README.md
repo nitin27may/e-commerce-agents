@@ -1,18 +1,22 @@
 # MAF v1: Python and .NET — A Complete Tutorial Series
 
-A chapter-by-chapter walkthrough of **Microsoft Agent Framework** with runnable examples in **Python throughout and .NET through chapter 21**. The series builds up from a single agent to the full multi-agent capstone application you see in this repo.
+A chapter-by-chapter walkthrough of **Microsoft Agent Framework** with runnable examples in
+**Python throughout and .NET through chapter 20**. The series builds up from a single agent to the
+full multi-agent capstone application you see in this repo.
 
-Each chapter is self-contained and in a separate folder under `tutorials/`. Every chapter ships with:
+Each chapter is self-contained, in its own folder under `tutorials/`, and ships:
 
-- `python/` — a minimal runnable example
-- `tests/` — unit tests
-- `README.md` — the chapter walkthrough
-- `PLAN.md` — the chapter's implementation plan
-- `compare.md` (where useful) — side-by-side notes on API differences
+- `README.md` — the chapter walkthrough. This is the canonical artifact; its shape is enforced in
+  CI by `scripts/check_tutorial_readmes.py`.
+- `python/` — a minimal runnable example, with tests in `python/tests/` for 31 of the 34 chapters.
+- `dotnet/` — the same example in C#, through chapter 20.
 
-Chapters **00-21 additionally ship `dotnet/`** — the same example in C#. Chapters **22-32 are
-Python-only** for now; the status table below marks them, and the `.NET` column is the source of
-truth if this paragraph ever drifts.
+**The status table is the source of truth.** It is generated from what is actually on disk, so if
+this paragraph ever drifts, believe the table. Chapters 22–32 are Python-only today, tracked in
+[#20](https://github.com/nitin27may/e-commerce-agents/issues/20).
+
+`tutorials/_template/PLAN.md` is a template for authoring new chapters; individual chapters do not
+ship their own.
 
 > **Companion to an earlier series.** The original Python-only e-commerce series lives at [Building a Multi-Agent E-Commerce Platform — the complete guide](https://nitinksingh.com/posts/building-a-multi-agent-e-commerce-platform-the-complete-guide/). This *MAF v1* series re-tells the same ground in both languages, adds the pieces we never covered (workflows, orchestrations, HITL, checkpoints, declarative, visualization), and ends at the refactored capstone.
 
@@ -20,47 +24,60 @@ truth if this paragraph ever drifts.
 
 ## Learning Path
 
-The **Companion post** column links to the cross-posted write-up on nitinksingh.com when
-one is live. It's optional background reading, not a prerequisite — every chapter's own
-`README.md` here is the canonical, always-current source; posts that aren't published yet
-are marked accordingly instead of linking to a page that 404s.
+**Every chapter below is complete and its code is gated in CI.** The status columns describe the
+runnable examples, not the write-ups.
 
-| # | Chapter | Status | Companion post |
-|---|---------|--------|---------|
-| 00 | [Setup your dev environment](./00-setup/) | Code done · draft | not yet published |
-| 01 | [Your First Agent](./01-first-agent/) | Code done · draft | not yet published |
-| 02 | [Adding Tools](./02-add-tools/) | Code done · draft | not yet published |
-| 03 | [Streaming and Multi-turn](./03-streaming-and-multiturn/) | Code done · draft | not yet published |
-| 04 | [Sessions and Memory](./04-sessions/) | Draft | not yet published |
-| 05 | [Context Providers](./05-context-providers/) | Draft | not yet published |
-| 06 | [Middleware](./06-middleware/) | Draft | not yet published |
-| 07 | [Observability with OpenTelemetry](./07-observability-otel/) | Draft | not yet published |
-| 08 | [MCP Tools](./08-mcp-tools/) | Draft | not yet published |
-| 09 | [Workflow Executors and Edges](./09-workflow-executors-and-edges/) | Draft | not yet published |
-| 10 | [Workflow Events and Builder](./10-workflow-events-and-builder/) | Draft | not yet published |
-| 11 | [Agents in Workflows](./11-agents-in-workflows/) | Draft | not yet published |
-| 12 | [Sequential Orchestration](./12-sequential-orchestration/) | Draft | not yet published |
-| 13 | [Concurrent Orchestration](./13-concurrent-orchestration/) | Draft | not yet published |
-| 14 | [Handoff Orchestration](./14-handoff-orchestration/) | Draft | not yet published |
-| 15 | [Group Chat Orchestration](./15-group-chat-orchestration/) | Draft | not yet published |
-| 16 | [Magentic Orchestration](./16-magentic-orchestration/) | Draft | not yet published |
-| 17 | [Human-in-the-Loop](./17-human-in-the-loop/) | Draft | not yet published |
-| 18 | [State and Checkpoints](./18-state-and-checkpoints/) | Draft | not yet published |
-| 19 | [Declarative Workflows](./19-declarative-workflows/) | Draft | not yet published |
-| 20 | [Workflow Visualization](./20-visualization/) | Draft | not yet published |
-| 20b | [DevUI (interactive dashboard)](./20b-devui/) | Draft | not yet published |
-| 21 | [Capstone Tour](./21-capstone-tour/) | Planned — folder scaffolded, no runnable code yet | not yet published |
-| 22 | [Group-Chat Debate (Round-Table Orchestration)](./22-group-chat-debate/) | Code done · draft | not yet published |
-| 23 | [A2A Protocol](./23-a2a-protocol/) | Code done · draft | not yet published |
-| 24 | [RAG and Grounding](./24-rag-and-grounding/) | Code done · draft | not yet published |
-| 25 | [Guardrails](./25-guardrails/) | Code done · draft | not yet published |
-| 26 | [Evals](./26-evals/) | Code done · draft | not yet published |
-| 27 | [Agent-as-tool](./27-agent-as-tool/) | Code done · draft | not yet published |
-| 28 | [Reflection and Critique](./28-reflection-and-critique/) | Code done · draft | not yet published |
-| 29 | [Planner-Executor](./29-planner-executor/) | Code done · draft | not yet published |
-| 30 | [Subworkflows](./30-subworkflows/) | Code done · draft | not yet published |
-| 31 | [Retry and Compensation (Saga Pattern)](./31-retry-and-compensation/) | Code done · draft | not yet published |
-| 32 | [Cost Control and Budgets](./32-cost-control-and-budgets/) | Code done · draft | not yet published |
+- **Runnable · tested in CI** — a working example with tests that run on every pull request
+  (`.github/workflows/tutorials.yml`).
+- **Runnable · tests pending** — working code, tests not written yet. Tracked in
+  [#20](https://github.com/nitin27may/e-commerce-agents/issues/20).
+- **Not ported** — no equivalent in that language yet. Also [#20](https://github.com/nitin27may/e-commerce-agents/issues/20).
+- **Guide only** / **Planned** — no code by design, or not started.
+
+The **Companion post** column tracks optional cross-posts on nitinksingh.com. An em dash means
+there is no post yet — the chapter is unaffected either way. Each chapter's own `README.md` is the
+canonical, always-current source, and a chapter never depends on a post existing.
+
+| # | Chapter | Python | .NET | Companion post |
+|---|---------|--------|------|----------------|
+| 00 | [Setup your dev environment](./00-setup/) | Guide only | Guide only | — |
+| 01 | [Your First Agent](./01-first-agent/) | Runnable · tested in CI | Runnable · tested in CI | — |
+| 02 | [Adding Tools](./02-add-tools/) | Runnable · tested in CI | Runnable · tested in CI | — |
+| 03 | [Streaming and Multi-turn](./03-streaming-and-multiturn/) | Runnable · tested in CI | Runnable · tested in CI | — |
+| 04 | [Sessions and Memory](./04-sessions/) | Runnable · tested in CI | Runnable · tested in CI | — |
+| 05 | [Context Providers](./05-context-providers/) | Runnable · tested in CI | Runnable · tested in CI | — |
+| 06 | [Middleware](./06-middleware/) | Runnable · tested in CI | Runnable · tested in CI | — |
+| 07 | [Observability with OpenTelemetry](./07-observability-otel/) | Runnable · tested in CI | Runnable · tested in CI | — |
+| 08 | [MCP Tools](./08-mcp-tools/) | Runnable · tested in CI | Runnable · tested in CI | — |
+| 09 | [Workflow Executors and Edges](./09-workflow-executors-and-edges/) | Runnable · tested in CI | Runnable · tested in CI | — |
+| 10 | [Workflow Events and Builder](./10-workflow-events-and-builder/) | Runnable · tested in CI | Runnable · tested in CI | — |
+| 11 | [Agents in Workflows](./11-agents-in-workflows/) | Runnable · tested in CI | Runnable · tested in CI | — |
+| 12 | [Sequential Orchestration](./12-sequential-orchestration/) | Runnable · tested in CI | Runnable · tests pending | — |
+| 13 | [Concurrent Orchestration](./13-concurrent-orchestration/) | Runnable · tested in CI | Runnable · tests pending | — |
+| 14 | [Handoff Orchestration](./14-handoff-orchestration/) | Runnable · tested in CI | Runnable · tests pending | — |
+| 15 | [Group Chat Orchestration](./15-group-chat-orchestration/) | Runnable · tested in CI | Runnable · tests pending | — |
+| 16 | [Magentic Orchestration](./16-magentic-orchestration/) | Runnable · tested in CI | Runnable · stub [^stub] | — |
+| 17 | [Human-in-the-Loop](./17-human-in-the-loop/) | Runnable · tested in CI | Runnable · tests pending | — |
+| 18 | [State and Checkpoints](./18-state-and-checkpoints/) | Runnable · tested in CI | Runnable · tests pending | — |
+| 19 | [Declarative Workflows](./19-declarative-workflows/) | Runnable · tested in CI | Runnable · tests pending | — |
+| 20 | [Workflow Visualization](./20-visualization/) | Runnable · tested in CI | Runnable · stub [^stub] | — |
+| 20b | [DevUI (interactive dashboard)](./20b-devui/) | Runnable · tested in CI | Not ported | — |
+| 21 | [Capstone Tour](./21-capstone-tour/) | Planned | Planned | — |
+| 22 | [Group-Chat Debate (Round-Table Orchestration)](./22-group-chat-debate/) | Runnable · tests pending | Not ported | — |
+| 23 | [A2A Protocol](./23-a2a-protocol/) | Runnable · tested in CI | Not ported | — |
+| 24 | [RAG and Grounding](./24-rag-and-grounding/) | Runnable · tested in CI | Not ported | — |
+| 25 | [Guardrails](./25-guardrails/) | Runnable · tested in CI | Not ported | — |
+| 26 | [Evals](./26-evals/) | Runnable · tested in CI | Not ported | — |
+| 27 | [Agent-as-tool](./27-agent-as-tool/) | Runnable · tested in CI | Not ported | — |
+| 28 | [Reflection and Critique](./28-reflection-and-critique/) | Runnable · tested in CI | Not ported | — |
+| 29 | [Planner-Executor](./29-planner-executor/) | Runnable · tested in CI | Not ported | — |
+| 30 | [Subworkflows](./30-subworkflows/) | Runnable · tested in CI | Not ported | — |
+| 31 | [Retry and Compensation (Saga Pattern)](./31-retry-and-compensation/) | Runnable · tested in CI | Not ported | — |
+| 32 | [Cost Control and Budgets](./32-cost-control-and-budgets/) | Runnable · tested in CI | Not ported | — |
+
+[^stub]: Chapters 16 (magentic) and 20 (visualization) ship .NET code as documented
+    stubs with no test project. Magentic is a genuine SDK gap rather than a repo gap —
+    see `.claude/plans/remaining-work.md`.
 
 ---
 
