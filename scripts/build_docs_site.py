@@ -823,6 +823,126 @@ def ensure_h1(body: str, title: str) -> str:
     return f"# {title}\n\n{body}"
 
 
+# ── llms.txt ──────────────────────────────────────────────────────────────
+#
+# Written because the measured evidence says to. Over a 14-day window,
+# chatgpt.com sent 114 views to this repository -- more than Google (58) or
+# Bing (61) individually. Discovery is happening through model answers, and
+# the site published nothing shaped for that.
+#
+# Two files, per the llmstxt.org convention:
+#   llms.txt       an index: every page, its URL, and one line of description
+#   llms-full.txt  every page body concatenated, so one fetch gives a model
+#                  the whole corpus rather than 87 round trips
+#
+# Both are written after the OUT_DIR wipe in build(), or they would be
+# deleted before they are ever served.
+
+SITE_ORIGIN = "https://nitinksingh.com"
+SITE_BASEURL = "/e-commerce-agents"
+
+
+def page_url(page: Page) -> str:
+    """Public URL for a page, matching Jekyll's .md -> .html mapping."""
+    path = page.out_path.as_posix()
+    if path.endswith("index.md"):
+        path = path[: -len("index.md")]
+    elif path.endswith(".md"):
+        path = path[: -len(".md")] + ".html"
+    return f"{SITE_ORIGIN}{SITE_BASEURL}/{path}"
+
+
+def strip_for_plaintext(body: str) -> str:
+    """Remove Liquid scaffolding that is noise to a model reading the corpus."""
+    body = re.sub(r"\{%\s*raw\s*%\}|\{%\s*endraw\s*%\}", "", body)
+    # {{ site.baseurl }}/foo -> the real URL, so links in the corpus resolve.
+    body = re.sub(r"\{\{\s*site\.baseurl\s*\}\}", SITE_BASEURL, body)
+    body = re.sub(r"\n\{:\s*\.[^}]*\}", "", body)  # just-the-docs callout markers
+    return body.strip()
+
+
+def write_llms_files(pages: list[Page], rendered: dict[Path, str]) -> None:
+    ordered = sorted(pages, key=lambda p: (p.parent or "", p.nav_order, p.title))
+
+    by_section: dict[str, list[Page]] = {}
+    for page in ordered:
+        by_section.setdefault(page.parent or page.title, []).append(page)
+
+    index = [
+        "# E-Commerce Agents",
+        "",
+        f"> {SITE_DESCRIPTION}",
+        "",
+        "A multi-agent e-commerce platform built on Microsoft Agent Framework, implemented twice —",
+        "Python and .NET — behind one Next.js frontend. Five orchestration patterns are selectable",
+        "at runtime. This documentation is generated from the repository, so every page corresponds",
+        "to a file in it.",
+        "",
+        f"Repository: https://github.com/nitin27may/e-commerce-agents",
+        f"Full text of every page: {SITE_ORIGIN}{SITE_BASEURL}/llms-full.txt",
+        "",
+    ]
+    for section, section_pages in by_section.items():
+        index.append(f"## {section}")
+        index.append("")
+        for page in section_pages:
+            body = rendered.get(page.out_path, "")
+            parts = body.split("---", 2)
+            desc = ""
+            if len(parts) > 2:
+                match = re.search(r'^description:\s*"?(.*?)"?\s*$', parts[1], re.MULTILINE)
+                desc = match.group(1) if match else ""
+            index.append(f"- [{page.title}]({page_url(page)}){': ' + desc if desc else ''}")
+        index.append("")
+
+    (OUT_DIR / "llms.txt").write_text("\n".join(index) + "\n", encoding="utf-8")
+
+    full = [
+        "# E-Commerce Agents — complete documentation",
+        "",
+        f"Generated from https://github.com/nitin27may/e-commerce-agents",
+        f"Index: {SITE_ORIGIN}{SITE_BASEURL}/llms.txt",
+        "",
+        "---",
+        "",
+    ]
+    for page in ordered:
+        body = rendered.get(page.out_path, "")
+        # Drop the YAML front matter; it is Jekyll's, not content.
+        parts = body.split("---", 2)
+        content = parts[2] if len(parts) > 2 else body
+        full.append(f"# {page.title}")
+        full.append("")
+        full.append(f"Source: {page_url(page)}")
+        full.append("")
+        full.append(strip_for_plaintext(content))
+        full.append("")
+        full.append("---")
+        full.append("")
+
+    (OUT_DIR / "llms-full.txt").write_text("\n".join(full) + "\n", encoding="utf-8")
+
+    (OUT_DIR / "robots.txt").write_text(
+        "\n".join(
+            [
+                "User-agent: *",
+                "Allow: /",
+                "",
+                f"Sitemap: {SITE_ORIGIN}{SITE_BASEURL}/sitemap.xml",
+                "",
+                "# Structured for language models — see https://llmstxt.org",
+                f"# Index:     {SITE_ORIGIN}{SITE_BASEURL}/llms.txt",
+                f"# Full text: {SITE_ORIGIN}{SITE_BASEURL}/llms-full.txt",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    size_kb = (OUT_DIR / "llms-full.txt").stat().st_size / 1024
+    print(f"wrote llms.txt ({len(ordered)} pages), llms-full.txt ({size_kb:.0f} KB), robots.txt")
+
+
 def build(check_only: bool) -> int:
     pages = collect_pages()
     by_source = {p.source: p for p in pages if not p.generated}
@@ -902,6 +1022,8 @@ def build(check_only: bool) -> int:
         target = OUT_DIR / out_path
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text, encoding="utf-8")
+
+    write_llms_files(pages, rendered)
 
     mermaid = sum(text.count("```mermaid") for text in rendered.values())
     print(f"built {len(rendered)} pages into {OUT_DIR.relative_to(REPO_ROOT)}/ ({mermaid} mermaid diagrams)")

@@ -1,0 +1,81 @@
+name: Bug report
+description: Something does not work the way the docs say it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Most reports against this repo turn out to hinge on **which stack** and
+        **which model provider** — so those two questions are required. Answering
+        them up front is usually the difference between one reply and four.
+
+  - type: dropdown
+    id: stack
+    attributes:
+      label: Which backend?
+      options:
+        - Python (docker-compose.yml — the default)
+        - .NET (docker-compose.dotnet.yml)
+        - Both
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: howrun
+    attributes:
+      label: How did you start it?
+      options:
+        - ./scripts/dev.sh --demo (prebuilt images from GHCR)
+        - ./scripts/dev.sh (built from source)
+        - ./scripts/dev.ps1 (Windows)
+        - docker compose directly
+        - Running a service outside Docker
+    validations:
+      required: true
+
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Which model provider?
+      description: A local model that cannot reliably call tools is the single most common cause of "the agent makes things up".
+      options:
+        - OpenAI
+        - Azure OpenAI
+        - Ollama or another OpenAI-compatible endpoint (LLM_BASE_URL)
+        - LLM_PROVIDER=replay (recorded fixtures)
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect, and what happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. cp .env.minimal .env, set OPENAI_API_KEY
+        2. ./scripts/dev.sh --demo
+        3. Ask "..." in the chat
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        `docker compose logs orchestrator --tail 100`, plus the specialist involved.
+        Redact your API key before pasting.
+      render: shell
+
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: "v1.1.0, or the output of: git rev-parse --short HEAD"

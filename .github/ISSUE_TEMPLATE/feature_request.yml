@@ -1,0 +1,35 @@
+name: Feature request
+description: Propose something this project should do
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: The situation you hit, not the solution you have in mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to see?
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: stacks
+    attributes:
+      label: Which stacks would it need to land on?
+      description: Parity between Python and .NET is enforced by a dual-backend test gate, so this affects the size of the work considerably.
+      options:
+        - label: Python
+        - label: .NET
+        - label: Frontend
+        - label: Docs or tutorials only
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Anything you already considered and rejected?
+      description: Optional, but the rejected options are often the most useful part.
