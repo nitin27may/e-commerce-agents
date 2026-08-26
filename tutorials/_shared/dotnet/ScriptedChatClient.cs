@@ -128,6 +128,15 @@ public sealed class ScriptedChatClient : IChatClient
     /// <summary>Artificial latency per call. Chapter 13 uses it to prove overlap.</summary>
     public TimeSpan Delay { get; init; } = TimeSpan.Zero;
 
+    /// <summary>
+    /// Token usage to report per call, as (input, output). Chapter 32 needs it:
+    /// a cost-budget middleware prices a turn from response.Usage, so without
+    /// usage on the fake there is nothing to accumulate and the budget never
+    /// trips. Default is no usage at all, which is also worth testing — a real
+    /// provider can omit it.
+    /// </summary>
+    public Func<int, (int Input, int Output)>? Usage { get; init; }
+
     /// <summary>Every call, in completion order.</summary>
     public IReadOnlyList<ScriptedCall> Calls
     {
@@ -159,6 +168,26 @@ public sealed class ScriptedChatClient : IChatClient
         return false;
     }
 
+    /// <summary>
+    /// Flattens one message to text, INCLUDING tool calls and tool results.
+    /// </summary>
+    /// <remarks>
+    /// ChatMessage.Text only concatenates TextContent, so a tool-result message
+    /// renders as an empty string. A fake that keys its next answer off "did I
+    /// already see the tool result?" then never sees it, re-issues the same tool
+    /// call, and loops until the agent's iteration limit — which looks like a
+    /// hang, not a bug in the test double. Chapters 27 and 32 both hit this.
+    /// </remarks>
+    private static string Render(ChatMessage message) =>
+        string.Join(" ", message.Contents.Select(c => c switch
+        {
+            TextContent text => text.Text,
+            FunctionCallContent fc =>
+                $"call:{fc.Name}({string.Join(", ", fc.Arguments?.Select(kv => $"{kv.Key}={kv.Value}") ?? Array.Empty<string>())})",
+            FunctionResultContent fr => $"result:{fr.Result}",
+            _ => string.Empty,
+        }).Where(t => !string.IsNullOrEmpty(t)));
+
     private async Task<IList<AIContent>> AnswerAsync(
         IEnumerable<ChatMessage> messages,
         ChatOptions? options,
@@ -174,7 +203,7 @@ public sealed class ScriptedChatClient : IChatClient
 
         var call = new ScriptedCall(
             Instructions: options?.Instructions ?? string.Empty,
-            Messages: inbound.Select(m => $"[{m.Role}] {m.Text}").ToList(),
+            Messages: inbound.Select(m => $"[{m.Role}] {Render(m)}").ToList(),
             Tools: options?.Tools?.Select(t => t.Name).ToList() ?? new List<string>(),
             ToolDescriptions: options?.Tools?.Select(t => t.Description ?? string.Empty).ToList() ?? new List<string>(),
             StartedAt: started,
@@ -209,7 +238,20 @@ public sealed class ScriptedChatClient : IChatClient
         CancellationToken cancellationToken = default)
     {
         IList<AIContent> content = await AnswerAsync(messages, options, cancellationToken).ConfigureAwait(false);
-        return new ChatResponse(new ChatMessage(ChatRole.Assistant, content));
+        var response = new ChatResponse(new ChatMessage(ChatRole.Assistant, content));
+
+        if (Usage is not null)
+        {
+            (int input, int output) = Usage(Calls.Count);
+            response.Usage = new UsageDetails
+            {
+                InputTokenCount = input,
+                OutputTokenCount = output,
+                TotalTokenCount = input + output,
+            };
+        }
+
+        return response;
     }
 
     public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
@@ -219,6 +261,23 @@ public sealed class ScriptedChatClient : IChatClient
     {
         IList<AIContent> content = await AnswerAsync(messages, options, cancellationToken).ConfigureAwait(false);
         yield return new ChatResponseUpdate(ChatRole.Assistant, content);
+
+        if (Usage is not null)
+        {
+            (int input, int output) = Usage(Calls.Count);
+            yield return new ChatResponseUpdate
+            {
+                Contents = new List<AIContent>
+                {
+                    new UsageContent(new UsageDetails
+                    {
+                        InputTokenCount = input,
+                        OutputTokenCount = output,
+                        TotalTokenCount = input + output,
+                    }),
+                },
+            };
+        }
     }
 
     public object? GetService(Type serviceType, object? serviceKey = null) => null;
