@@ -107,6 +107,7 @@ CLEAN=false
 SEED_ONLY=false
 INFRA_ONLY=false
 DOTNET=false
+DEMO=false
 
 for arg in "$@"; do
     case $arg in
@@ -114,15 +115,21 @@ for arg in "$@"; do
         --seed-only)  SEED_ONLY=true ;;
         --infra-only) INFRA_ONLY=true ;;
         --dotnet)     DOTNET=true ;;
+        --demo)       DEMO=true ;;
         --help|-h)
             echo "Usage: ./scripts/dev.sh [OPTIONS]"
             echo ""
             echo "Options:"
+            echo "  --demo        Pull prebuilt images from GHCR instead of building"
             echo "  --clean       Remove volumes and rebuild from scratch"
             echo "  --seed-only   Re-run seeder against existing DB"
             echo "  --infra-only  Start db + redis + aspire only"
             echo "  --dotnet      Target the .NET backend instead of Python"
             echo "  --help        Show this help"
+            echo ""
+            echo "  --demo is the fast path: no local build, one command, ~2 minutes."
+            echo "  Override the image tag with IMAGE_TAG (default: latest):"
+            echo "    IMAGE_TAG=main ./scripts/dev.sh --demo"
             exit 0
             ;;
         *)
@@ -131,6 +138,13 @@ for arg in "$@"; do
             ;;
     esac
 done
+
+# --demo pulls release images; --dotnet targets a stack built from source. There
+# is no .NET demo image set, so the combination has no meaning.
+if [ "$DEMO" = true ] && [ "$DOTNET" = true ]; then
+    error "--demo and --dotnet cannot be combined (no prebuilt .NET images are published)"
+    exit 1
+fi
 
 # ── Stack selection ──────────────────────────────────────────
 # Both compose files gate agents/seeder/frontend behind profiles; only
@@ -194,6 +208,48 @@ if [ "$CLEAN" = true ]; then
     # telemetry (traces, structured logs, metrics). Explicitly remove it to be certain.
     "${COMPOSE[@]}" rm -f aspire 2>/dev/null || true
     success "Clean complete — containers, volumes, and Aspire telemetry data cleared"
+fi
+
+# ── Demo mode ─────────────────────────────────────────────────
+#
+# Deliberately a self-contained fast path with its own exit, rather than a set
+# of conditionals threaded through the build/seed/up flow below. Almost nothing
+# in that flow applies here: there is no build step, docker-compose.demo.yml
+# carries no agents/frontend/seed profiles, and its `depends_on:
+# service_completed_successfully` means compose sequences the seeder itself.
+# Keeping it separate means --demo cannot destabilise the from-source path.
+
+if [ "$DEMO" = true ]; then
+    DEMO_COMPOSE=(docker compose -f docker-compose.demo.yml)
+    TAG="${IMAGE_TAG:-latest}"
+
+    step "Demo mode — pulling prebuilt images (tag: ${TAG})"
+    info "No local build. Images come from ghcr.io/nitin27may/e-commerce-agents"
+
+    if ! IMAGE_TAG="$TAG" "${DEMO_COMPOSE[@]}" pull; then
+        error "Could not pull one or more images."
+        echo ""
+        echo "  Most likely causes:"
+        echo "    - The tag does not exist yet. Check https://github.com/nitin27may/e-commerce-agents/pkgs/container/e-commerce-agents%2Forchestrator"
+        echo "    - A package is still private. Anonymous pulls fail with an auth error"
+        echo "      that reads like a network problem — see docs/releasing.md."
+        echo ""
+        echo "  To build from source instead, drop the --demo flag:"
+        echo "    ./scripts/dev.sh"
+        exit 1
+    fi
+    success "Images pulled"
+
+    step "Starting the stack"
+    IMAGE_TAG="$TAG" "${DEMO_COMPOSE[@]}" up -d
+
+    wait_for_http "Orchestrator" "http://localhost:8080/health" 120
+    wait_for_http "Frontend" "http://localhost:3000" 120
+
+    print_summary
+    echo -e "  Sign in as ${BOLD}alice.johnson@gmail.com${NC} / ${BOLD}customer123${NC}"
+    echo ""
+    exit 0
 fi
 
 # ── Seed Only ─────────────────────────────────────────────────
