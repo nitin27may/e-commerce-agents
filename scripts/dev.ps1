@@ -170,6 +170,48 @@ function Repair-StaleDatabaseVolume {
     Write-Ok 'Database reinitialized with correct credentials'
 }
 
+function Assert-DatabaseSchema {
+    <#
+        .SYNOPSIS
+        Verifies the SCHEMA matches, not just the credentials.
+
+        .DESCRIPTION
+        A volume can authenticate perfectly and still carry a schema from before
+        the last init.sql change. That is the more common way to land here —
+        pulling new commits and restarting the same stack, rather than switching
+        stacks — and it is nastier than an auth failure, because nothing errors.
+        Search quietly returns nothing and the agent says "I couldn't find any",
+        which reads like an empty catalogue rather than a broken index.
+
+        products.search_vector is the canary: it arrived with the v1.2.0
+        full-text search work, so any volume predating that lacks it. Hardcoded
+        on purpose — deriving the check from init.sql would be clever and would
+        drift.
+    #>
+    $query = "SELECT 1 FROM information_schema.columns WHERE table_name = 'products' AND column_name = 'search_vector'"
+    $probe = @('exec', '-T', 'db', 'sh', '-c',
+               "PGPASSWORD=ecommerce_secret psql -h 127.0.0.1 -U ecommerce -d ecommerce_agents -tAc `"$query`"")
+    $result = & docker @($ComposeArgs + $probe) 2>$null
+    if ($result -match '1') { return }
+
+    Write-Host ''
+    Write-Warn 'Database schema is out of date — products.search_vector is missing.'
+    Write-Host ''
+    Write-Host '  Your Postgres volume predates the full-text search change. The stack will'
+    Write-Host '  start and look healthy, and every product search will silently return'
+    Write-Host '  nothing. Refusing to start into that.'
+    Write-Host ''
+    Write-Host '  Two ways forward:'
+    Write-Host ''
+    Write-Host '    Recreate the volume (loses local data, reseeds from scratch):'
+    Write-Host '      ./scripts/dev.ps1 -Clean'
+    Write-Host ''
+    Write-Host '    Or apply the schema in place, keeping your data:'
+    Write-Host '      docker compose exec -T db psql -U ecommerce -d ecommerce_agents < docker/postgres/init.sql'
+    Write-Host ''
+    exit 1
+}
+
 function Show-Summary {
     Write-Host ''
     Write-Host '============================================================' -ForegroundColor Cyan
@@ -270,6 +312,7 @@ try {
             'exec', 'db', 'pg_isready', '-h', '127.0.0.1', '-U', 'ecommerce', '-d', 'ecommerce_agents')
         Wait-ForHealth -Name 'Redis' -Probe @('exec', 'redis', 'redis-cli', 'ping')
         Repair-StaleDatabaseVolume
+        Assert-DatabaseSchema
         Invoke-Compose -Arguments @('--profile', 'seed', 'run', '--rm', 'seeder')
         Write-Ok 'Seeder complete'
         exit 0
@@ -294,6 +337,7 @@ try {
         'exec', 'db', 'pg_isready', '-h', '127.0.0.1', '-U', 'ecommerce', '-d', 'ecommerce_agents')
     Wait-ForHealth -Name 'Redis' -Probe @('exec', 'redis', 'redis-cli', 'ping')
     Repair-StaleDatabaseVolume
+    Assert-DatabaseSchema
     Write-Ok 'Infrastructure is ready'
 
     # ── Seed ─────────────────────────────────────────────────
