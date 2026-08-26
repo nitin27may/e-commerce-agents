@@ -360,3 +360,48 @@ Branch `ci/build-gating-and-release`.
 - [ ] **Manual, and each fails silently:** create the `release` environment with required
       reviewers; set the ten GHCR packages public after first publish; add a retention policy
 - [ ] Tag `v1.1.0` — only after this branch merges, since `version-check` reads `main`
+
+---
+
+## Addendum — `docker-compose.demo.yml`, and what the registry actually contains
+
+Written and validated against Docker rather than assumed. `docker compose config` parses it, and
+its ten GHCR references were diffed programmatically against the ten images `build-images.yml`
+publishes — exact match, no missing or unused refs.
+
+Image path: `ghcr.io/nitin27may/e-commerce-agents/<image>:${IMAGE_TAG:-latest}`. The GHCR package
+name is therefore `e-commerce-agents/<image>`, which is what `package-cleanup.yml` already uses.
+`IMAGE_TAG` is overridable, so `IMAGE_TAG=main docker compose -f docker-compose.demo.yml up` tests
+the tip of main without editing the file.
+
+### Correcting the record
+
+Two earlier claims in this plan were wrong, and the registry was checked rather than assumed:
+
+- **Six of the ten images already exist and are already public.** The old tag-triggered workflow
+  published them at `v1.0.0` on 2026-08-20. Anonymous `docker manifest inspect` succeeds with no
+  stored credentials. So the manual visibility step covers **four** packages, not ten —
+  `auth-server`, `mcp-product`, `mcp-inventory`, `frontend`, none of which CI had ever built.
+- **`:latest` currently resolves to `v1.0.0`**, so the demo file pulls 6 of 10 today and fails on
+  the rest. It works fully once this branch merges and `v1.1.0` is tagged.
+
+Also confirmed empirically: the existing `:latest` manifest lists `linux/amd64` only. The Apple
+Silicon emulation problem is real and observable right now, not a theoretical one.
+
+### Deliberate departures from the main compose file
+
+- **No profiles on the core path** (12 services), so a visitor needs no flags. The two MCP servers
+  keep their `mcp` profile — `MCP_ENABLED` is false by default, so on the default path they would
+  be two containers nothing talks to.
+- **`auth-server` starts by default** even though it idles unless `AUTH_MODE=oauth`, so flipping
+  that one variable works without also learning which profile to add.
+- **Everything that reads the database waits on `seeder`** via
+  `condition: service_completed_successfully`. Ordering matters beyond "the tables exist": the
+  IVFFlat index has to be built against a populated table, or semantic search returns unrelated
+  products at similarity 0.000.
+
+### Still to do
+
+- [ ] README quick-start section for the demo path — **deliberately held back**. It would be a
+      broken instruction until `v1.1.0` is tagged and the four new packages are public.
+- [ ] `./scripts/dev.sh --demo` / `dev.ps1 -Demo`

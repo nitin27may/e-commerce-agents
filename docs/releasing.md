@@ -94,16 +94,40 @@ Without it, `environment: release` in `release.yml` is a no-op. The approval job
 immediately and the release publishes with no human in the loop, with nothing in the log to
 indicate a gate was expected.
 
-### Package visibility
+### Package visibility — four packages, not ten
 
-GHCR packages are created **private**. The first publish creates ten of them, and anonymous
-`docker compose pull` then fails with an authentication error that reads like a network problem.
+GHCR packages are created **private**, and anonymous `docker compose pull` then fails with an
+authentication error that reads like a network problem.
 
-For each package: Packages → *package* → Package settings → Change visibility → Public.
+Six packages already exist and are **already public** — the old tag-triggered workflow published
+them at `v1.0.0`. Verified by an anonymous `docker manifest inspect` with no stored credentials:
 
-Ten packages: `orchestrator`, `product-discovery`, `order-management`, `pricing-promotions`,
-`review-sentiment`, `inventory-fulfillment`, `auth-server`, `mcp-product`, `mcp-inventory`,
-`frontend`.
+```
+orchestrator  product-discovery  order-management
+pricing-promotions  review-sentiment  inventory-fulfillment
+```
+
+The four the image matrix added have never been built by CI, so the first publish creates them
+private and each needs flipping:
+
+```
+auth-server  mcp-product  mcp-inventory  frontend
+```
+
+Packages → *package* → Package settings → Change visibility → Public. There is no REST endpoint
+for container package visibility, so this cannot be scripted.
+
+Check it the way a visitor would:
+
+```bash
+docker logout ghcr.io
+for i in orchestrator product-discovery order-management pricing-promotions \
+         review-sentiment inventory-fulfillment auth-server mcp-product \
+         mcp-inventory frontend; do
+  docker manifest inspect ghcr.io/nitin27may/e-commerce-agents/$i:latest >/dev/null 2>&1 \
+    && echo "  public   $i" || echo "  PRIVATE  $i"
+done
+```
 
 ### Retention — already automated
 
