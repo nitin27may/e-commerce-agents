@@ -78,9 +78,10 @@ Measured against a live stack during the v1.2.0 work. None of these has an owner
 
 - [ ] **Chapter 21, Capstone Tour** — two `.gitkeep` files. The bridge from 34 tutorials to the
       running application, and the one missing rung on the ladder.
-- [ ] **`docs/adr/`** — five decisions already argued in prose (A2A over direct calls, no
-      text-to-SQL, YAML prompt composition, MAF-native execution, dual-stack parity) and recorded
-      nowhere a reader would look.
+- [x] **`docs/adr/`** — done. Five records in `docs/adr/`, registered under Reference on the docs
+      site. Each states what would make it wrong, because a decision with no reversal condition is
+      dogma. Writing them surfaced that ADR 0005's honest weakness is that the parity gate is not
+      in CI — recorded there rather than smoothed over.
 - [ ] **Promote the "reported vs actual" table** below onto the docs site. It is the most credible
       artifact in the repository and it lives in `.claude/`.
 
