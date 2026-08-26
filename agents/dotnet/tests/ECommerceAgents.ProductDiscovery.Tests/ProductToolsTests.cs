@@ -121,6 +121,138 @@ public sealed class ProductToolsTests : IAsyncLifetime
         results.Count.Should().BeLessThanOrEqualTo(100);
     }
 
+    // ─────────────────────── SearchProducts (full-text) ──────
+    // Mirrors Python's tests/test_product_search.py so both stacks are pinned
+    // to identical behavior. SearchProducts needs no embedding API call.
+    //
+    // These replaced a per-word ILIKE-AND matcher that failed two ways: it did
+    // no stemming ("noise cancellation" never substring-matched "noise
+    // cancelling"), and one absent term emptied the whole result set. Ordering
+    // was rating-only, so match quality never influenced the ranking.
+
+    [Fact]
+    public async Task SearchProducts_MatchesStemmedTerms()
+    {
+        var (anc, exact, _, _) = await SeedFtsCatalogAsync();
+
+        var results = await _tools.SearchProducts(query: "noise cancellation headphones");
+
+        var ids = results.Select(r => r.Id).ToList();
+        ids.Should().Contain(anc.ToString());
+        ids.Should().Contain(exact.ToString());
+    }
+
+    [Fact]
+    public async Task SearchProducts_DoesNotRequireEveryTerm()
+    {
+        var (anc, _, _, _) = await SeedFtsCatalogAsync();
+
+        // No product in the catalog mentions bluetooth.
+        var results = await _tools.SearchProducts(query: "wireless bluetooth headphones");
+
+        results.Select(r => r.Id).Should().Contain(anc.ToString());
+    }
+
+    [Fact]
+    public async Task SearchProducts_RanksRelevanceAboveRating()
+    {
+        var (anc, exact, decoy, _) = await SeedFtsCatalogAsync();
+
+        var results = await _tools.SearchProducts(query: "noise cancellation headphones");
+
+        var ids = results.Select(r => r.Id).ToList();
+        ids.Should().Contain(decoy.ToString(), "the decoy still matches on 'headphones'");
+        ids.IndexOf(decoy.ToString()).Should().BeGreaterThan(ids.IndexOf(anc.ToString()));
+        ids.IndexOf(decoy.ToString()).Should().BeGreaterThan(ids.IndexOf(exact.ToString()));
+    }
+
+    [Fact]
+    public async Task SearchProducts_WeightsNameAboveDescription()
+    {
+        var (anc, exact, _, _) = await SeedFtsCatalogAsync();
+
+        var results = await _tools.SearchProducts(query: "noise cancellation headphones");
+
+        var ids = results.Select(r => r.Id).ToList();
+        ids.IndexOf(exact.ToString()).Should().BeLessThan(ids.IndexOf(anc.ToString()));
+    }
+
+    [Fact]
+    public async Task SearchProducts_ComposesFiltersWithQuery()
+    {
+        var (anc, exact, _, kettle) = await SeedFtsCatalogAsync();
+
+        var results = await _tools.SearchProducts(
+            query: "headphones", category: "Electronics", maxPrice: 300m);
+
+        var ids = results.Select(r => r.Id).ToList();
+        ids.Should().Contain(anc.ToString());
+        ids.Should().NotContain(exact.ToString());   // 349.99 is over the cap
+        ids.Should().NotContain(kettle.ToString());  // wrong category
+    }
+
+    [Fact]
+    public async Task SearchProducts_StopwordOnlyQueryFallsBackToFilters()
+    {
+        // plainto_tsquery('the ???') is an empty tsquery matching no rows —
+        // that must not turn a filtered browse into zero results.
+        var (_, _, _, kettle) = await SeedFtsCatalogAsync();
+
+        var results = await _tools.SearchProducts(query: "the ???", category: "Home");
+
+        results.Select(r => r.Id).Should().Equal(kettle.ToString());
+    }
+
+    [Fact]
+    public async Task SearchProducts_ExplicitSortOverridesRelevance()
+    {
+        await SeedFtsCatalogAsync();
+
+        var results = await _tools.SearchProducts(query: "headphones", sortBy: "price_asc");
+
+        results.Select(r => r.Price).Should().BeInAscendingOrder();
+    }
+
+    /// <summary>
+    /// Catalog whose terms differ morphologically from the test queries: no row
+    /// anywhere contains the literal substring "cancellation" or "bluetooth".
+    /// The decoy is rated highest so relevance and rating disagree.
+    /// </summary>
+    private async Task<(Guid Anc, Guid Exact, Guid Decoy, Guid Kettle)> SeedFtsCatalogAsync()
+    {
+        await using var conn = await _pool.OpenAsync();
+        await conn.ExecuteAsync("TRUNCATE products RESTART IDENTITY CASCADE");
+
+        async Task<Guid> InsertAsync(
+            string name, string description, string category, decimal price, decimal rating) =>
+            await conn.ExecuteScalarAsync<Guid>(
+                @"INSERT INTO products
+                    (name, description, category, brand, price, rating, review_count, is_active)
+                  VALUES (@name, @description, @category, 'BrandX', @price, @rating, 10, TRUE)
+                  RETURNING id",
+                new { name, description, category, price, rating }
+            );
+
+        var anc = await InsertAsync(
+            "Wireless Headphones with ANC",
+            "Over-ear wireless headphones with active noise cancelling for travel.",
+            "Electronics", 279.99m, 4.5m);
+        var exact = await InsertAsync(
+            "Noise Cancelling Headphones Pro",
+            "Studio-grade over-ear headphones.",
+            "Electronics", 349.99m, 4.1m);
+        var decoy = await InsertAsync(
+            "Phone Case",
+            "Slim protective case. Works fine with headphones plugged in.",
+            "Electronics", 12.99m, 5.0m);
+        var kettle = await InsertAsync(
+            "Electric Kettle",
+            "1.7L stainless steel kettle with rapid boil.",
+            "Home", 59.99m, 4.8m);
+
+        return (anc, exact, decoy, kettle);
+    }
+
     // ─────────────────────── FindSimilarProducts ─────────────
     // No live embedding API call needed — the tool only reads pre-stored
     // pgvector rows, so tests seed product_embeddings directly with

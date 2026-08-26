@@ -642,6 +642,7 @@ Legend: `- [x]` shipped · `- [ ]` planned or in progress.
 - [x] **The .NET tutorials have a CI gate** — no job had ever built any of the 31 tutorial `.csproj` files. Turning the gate on immediately found chapter 08 entirely broken.
 - [x] **Semantic search actually works** — it was dead under `LLM_PROVIDER=replay` (so no CI run ever exercised pgvector), and underneath that sat a production bug: the IVFFlat index is created on an empty table, so it had no centroids and returned unrelated products at similarity 0.000 where an exact scan returned the right one at 0.420.
 - [x] **Promotions apply** — `promotions.rules` is untyped JSONB and the seeder wrote different key names than the reader read, so bundles contributed £0 on every cart, buy-X-get-Y crashed, and flash sales silently never matched. No promotion had ever applied correctly.
+- [x] **Hybrid product search** — `search_products` split the query into words and ANDed a `%word%` `ILIKE` per word, then ordered by rating alone, so "noise cancellation" never matched "noise cancelling" and a single absent word emptied the result set. It is now a weighted generated `tsvector` (name=A / brand=B / description=C) behind a GIN index, OR-joined and ordered by `ts_rank`. `semantic_search` became hybrid with it: the vector and full-text arms run as separate ranked CTEs fused by Reciprocal Rank Fusion. Applied to all three implementations — the native tool, `mcp-product` and .NET — which closed a real `MCP_ENABLED` divergence, since `mcp-product` had been `LIKE`ing the whole query as one substring.
 - [x] **The docs site is indexable** — all 85 pages shared one meta description. Now per-page descriptions, keywords, `TechArticle` JSON-LD, `lastmod`, a social image, and an accessible title on every one of the 71 diagrams.
 
 ### In Progress
@@ -655,13 +656,15 @@ Legend: `- [x]` shipped · `- [ ]` planned or in progress.
 
 ---
 
-### Planned — Search & Retrieval
+### Search & Retrieval
 
-`semantic_search` and `find_similar_products` are real pgvector cosine queries and the prompt already routes vague descriptive queries to them. But `search_products` — the workhorse — still uses `ILIKE` matching, with no lexical index behind it. Planned:
+`search_products` is now Postgres full-text search over a weighted `tsvector`, and `semantic_search` fuses that lexical arm with the pgvector cosine arm — see *Hybrid product search* under Shipped in v1.1. What is left here is the shape of the filter surface, not the retrieval itself:
 
-- [ ] **Postgres full-text search** — `tsvector` column + GIN index, `plainto_tsquery` + `ts_rank` to replace the `ILIKE` loop.
-- [ ] **Hybrid retrieval (FTS + vector)** — combine lexical and semantic scores via Reciprocal Rank Fusion in a single CTE.
 - [ ] **Typed filter DSL** — replace the flat parameter list on `search_products` with a structured `ProductFilters` Pydantic model (category, price, brand, sort). Keeps SQL parameterized and safe.
+
+> **Upgrading an existing database.** The `tsvector` column ships in `docker/postgres/init.sql`,
+> which Postgres only runs on an empty data directory. Either `./scripts/dev.sh --clean` (drops all
+> local data) or apply it in place — see [Troubleshooting](docs/troubleshooting.md#products-search_vector-does-not-exist).
 
 Text-to-SQL was considered and rejected: `user_email`/`user_role` scoping via ContextVars means dynamic SQL would bypass that contract. The typed filter DSL gives the model flexibility at the boundary while keeping SQL generation server-side and auditable.
 

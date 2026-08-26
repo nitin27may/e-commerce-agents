@@ -38,6 +38,21 @@ MCP_AUTH_ENABLED = os.environ.get("MCP_AUTH_ENABLED", "false").lower() == "true"
 _pool: asyncpg.Pool | None = None
 
 
+def _or_joined_tsquery(param: str) -> str:
+    """SQL expression turning a text parameter into an OR-joined tsquery.
+
+    ``plainto_tsquery`` ANDs its lexemes, so "noise cancelling headphones"
+    would match only products carrying all three terms. Rewriting the
+    operators to ``|`` makes any term a match and leaves ``ts_rank`` to sort
+    full matches above partial ones.
+
+    Vendored from ``shared/search.py`` — this package is an isolated uv
+    workspace member and must stay installable without the shared library.
+    Keep the two in sync.
+    """
+    return f"replace(plainto_tsquery('english', {param})::text, '&', '|')::tsquery"
+
+
 @asynccontextmanager
 async def _lifespan(server: FastMCP):
     global _pool
@@ -113,9 +128,18 @@ async def search_products(
     args: list = []
     idx = 1
 
-    if query:
-        conditions.append(f"(p.name ILIKE ${idx} OR p.description ILIKE ${idx} OR p.brand ILIKE ${idx})")
-        args.append(f"%{query}%")
+    tsquery: str | None = None
+    if query and query.strip():
+        # Postgres full-text search over the weighted products.search_vector
+        # column (name=A, brand=B, description=C). Mirrors the native
+        # product_discovery tool so MCP_ENABLED does not change results —
+        # this used to LIKE the whole query as one %phrase%, which required an
+        # exact substring and diverged badly from the native path.
+        tsquery = _or_joined_tsquery(f"${idx}")
+        # Stopword- or punctuation-only queries reduce to an empty tsquery,
+        # which matches nothing; fall back to the filters alone.
+        conditions.append(f"({tsquery} = ''::tsquery OR p.search_vector @@ {tsquery})")
+        args.append(query)
         idx += 1
     if category:
         conditions.append(f"p.category = ${idx}")
@@ -139,7 +163,10 @@ async def search_products(
         "price_desc": "p.price DESC",
         "rating": "p.rating DESC",
         "newest": "p.created_at DESC",
-    }.get(sort_by or "", "p.rating DESC")
+    }.get(sort_by or "", None)
+    if order is None:
+        # Rank by text relevance when there is a query, else by rating.
+        order = f"ts_rank(p.search_vector, {tsquery}) DESC, p.rating DESC" if tsquery else "p.rating DESC"
 
     where = " AND ".join(conditions)
     sql = f"""
