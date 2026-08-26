@@ -21,7 +21,7 @@ Plans **13–18** now carry most of the detail; this file is the index.
 | [13](enhancements/13-azure-deployment-and-foundry.md) | Azure Container Apps + Microsoft Foundry | proposed |
 | [14](enhancements/14-pre-azure.md) | Adoption/conversion work before Azure | 6 of 8 done |
 | [15](enhancements/15-build-and-release.md) | Build gating and release process | **shipped in v1.2.0** |
-| [16](enhancements/16-dotnet-local-parity.md) | Make `--dotnet` actually work | proposed, **P0 inside** — PR #69 is the plan only, no code |
+| [16](enhancements/16-dotnet-local-parity.md) | Make `--dotnet` actually work | plan merged (#69), **no code yet — P0 inside** |
 | [17](enhancements/17-tutorial-dotnet-coverage.md) | Tutorial .NET coverage (#20) | **done** — PR #70, unmerged |
 | [18](enhancements/18-composer-ux.md) | Composer UX (#4) | proposed |
 
