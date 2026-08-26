@@ -128,6 +128,9 @@ than a surprise. What makes it worth fixing is the failure mode:
       than starting into a stack that will fail every query
 - [ ] Decide whether the probe is a hardcoded column or derived from `init.sql`. Hardcoded is
       honest and one line; derived is clever and will drift
+- [ ] Note: with the F4 decision (switching stacks recreates volumes), a correctly-performed switch
+      never hits this. The probe is for the case where someone pulls new commits and restarts the
+      *same* stack without recreating — which is the more common way to land here anyway
 - [ ] Same check in `docker-compose.demo.yml`'s path, since demo users are the least equipped to
       diagnose it
 
@@ -185,38 +188,70 @@ at two orchestrators), and would double local resource use for a case that arise
 What is worth doing instead is failing clearly. Today, starting the second stack produces a raw
 Docker port-binding error.
 
+**Decided:** no simultaneous runs. Switching stacks means bringing the current one down first, and
+recreating volumes to start fresh is an accepted part of that workflow — which also sidesteps F2
+whenever the switch is done properly.
+
+That makes the switch itself the thing worth smoothing, since it is now the normal path rather than
+an edge case.
+
 ### Work
 
-- [ ] Detect the other stack's containers at startup and exit with a plain message naming the
-      conflict and the command to stop it
+- [ ] Detect the other stack's containers at startup and stop with a plain message naming the
+      conflict and the exact command to clear it — not a raw Docker port-binding error
+- [ ] Add `--switch` (or make `--dotnet` / no-flag do it automatically): bring the other stack down,
+      drop its volumes, start this one clean. This is the workflow anyway; scripting it removes the
+      chance of half-doing it and landing in F2
 - [ ] Document the "one at a time" constraint in `docs/configuration.md`, next to the port table
-- [ ] Explicitly out of scope: a simultaneous-run mode. Revisit only if a real need appears
+- [ ] **Not doing:** a simultaneous-run mode. It would need a second published port set and a second
+      frontend build (`NEXT_PUBLIC_API_URL` is inlined at build time, so one image cannot address
+      two orchestrators), for a case that does not arise in normal use
 
 ---
 
-## F5 — The .NET stack is not entirely a .NET stack
+## F5 — The .NET stack is not entirely a .NET stack — **decided: keep, and say so**
 
-`docker-compose.dotnet.yml` builds `seeder` and `auth-server` from **`./agents/python`**, using the
-Python Dockerfile. Only the six agents and the MCP host are .NET.
+`docker-compose.dotnet.yml` builds `seeder` and `auth-server` from **`./agents/python`**. There is
+no .NET seeder or auth-server project at all — `agents/dotnet/src/` contains the orchestrator, five
+specialists, the MCP host, `Shared` and `Evals`, and nothing else.
 
-This is defensible — the seeder is a data-loading script and the auth server is protocol-standard —
-but it means:
+This is deliberate, and the compose file already records why:
 
-- The .NET stack cannot be brought up without the Python image building successfully.
-- Changes to the Python Dockerfile affect the .NET stack. The v1.2.0 fix that added `workflows/`
-  and five specialist packages made the .NET stack's `seeder` and `auth-server` images larger for
-  no benefit.
-- "Two complete backends" is true of the agents and not of the supporting services.
+> `# ── Seeder (reuses the Python script; single source of truth) ──`
+
+> `# Same Python auth_server image used by docker-compose.yml — this stack doesn't share a network`
+> `# with the Python compose project, so it gets its own co-located instance (own Postgres, own`
+> `# signing key). Seeded client_ids/secrets are identical across both stacks since both derive`
+> `# from the same OAUTH_SEED_KEY.`
+
+Expanded, the reasoning holds up:
+
+- **The seeder is the single source of demo data.** `scripts/seed.py` is deterministic
+  (`random.seed(42)`). A second implementation would have to produce byte-identical rows or the two
+  stacks would diverge in catalogue content — and the dual-backend Playwright suite asserts against
+  seeded data, so divergence there quietly destroys the parity gate that is the point of having two
+  backends.
+- **OAuth2 is protocol-standard, not stack-specific.** Both stacks validate tokens against a JWKS
+  endpoint; the issuer's implementation language is invisible to the consumer. That is the whole
+  argument for using a standard.
+- **Neither is an agent.** The "two complete backends" claim is about the agent layer — orchestrator,
+  five specialists, MCP host — and every one of those *is* .NET. A data-loading script and a token
+  issuer demonstrate nothing about Microsoft Agent Framework, which is what a reader is here for.
+
+The honest cost, which is why it belongs in the parity matrix rather than being left implicit:
+
+- The .NET stack cannot start unless the Python image builds.
+- Python Dockerfile changes affect it. The v1.2.0 fix that added `workflows/` and five specialist
+  packages made the .NET stack's `seeder` and `auth-server` images larger for no benefit.
 
 ### Work
 
-- [ ] Decide deliberately: keep the reuse (and document it plainly in `docs/parity-matrix.md`), or
-      port the seeder and auth-server to .NET
-- [ ] **Recommendation: keep the reuse and document it.** Porting a deterministic seeder to a second
-      language buys nothing a reader cares about, and the parity matrix exists precisely to record
-      differences like this honestly
-- [ ] If kept: make the Python Dockerfile's extra `COPY` lines conditional, or accept the size cost
-      and say so in a comment
+- [ ] Add a row to `docs/parity-matrix.md` stating that `seeder` and `auth-server` are shared Python
+      images on both stacks, with the reasoning above compressed to two lines
+- [ ] Optional: scope the Python Dockerfile's extra `COPY` lines so non-orchestrator targets do not
+      carry `workflows/` and the specialist packages. Small win, only worth doing if that Dockerfile
+      is being touched anyway
+- [ ] **Not doing:** porting either service to .NET
 
 ---
 
