@@ -15,7 +15,6 @@ import pytest
 
 from workflows.pre_purchase import PrePurchaseWorkflow, ResearchState
 
-
 # ─────────────────────── Tool stubs ───────────────────────
 
 
@@ -172,3 +171,114 @@ def test_workflow_builder_wires_every_executor() -> None:
     wf = PrePurchaseWorkflow(tools={})._build_maf_workflow()
     ids = {getattr(e, "id", None) for e in wf.get_executors_list()}
     assert {"fan-out", "reviews", "stock", "price-history", "merge-and-ship", "synthesis"} <= ids
+
+# ─────────────── Partial results must look partial (plan 19 §2b) ───────────────
+#
+# This workflow shipped returning 48 characters from a four-executor fan-out:
+# "Stock: 348 units available | Price trend: stable". The synthesis was not at
+# fault — every line is guard-claused on its data being present, so the fan-out
+# was real and faithful. The *inputs* were missing, and nothing said so.
+#
+# Three silent paths caused it: a missing tool was a no-op with no error and no
+# completed_steps entry, state.errors was collected and never read, and the
+# recommendation could not distinguish "checked and found nothing" from "never
+# ran". These pin all three.
+
+
+async def test_a_missing_tool_is_recorded_rather_than_skipped_silently() -> None:
+    """A tool absent from the registry used to produce no error, no log and no
+    completed_steps entry — indistinguishable from one that ran and found
+    nothing."""
+    # Only stock is wired; the other three are absent.
+    async def _stock(product_id: str) -> dict:
+        return {"in_stock": True, "total_quantity": 5}
+
+    workflow = PrePurchaseWorkflow({"check_stock": _stock})
+    state = await workflow.execute(ResearchState(product_id="p1"))
+
+    assert "stock" in state.completed_steps
+    joined = " ".join(state.errors)
+    assert "analyze_sentiment" in joined
+    assert "get_price_history" in joined
+    assert "estimate_shipping" in joined
+
+
+async def test_the_recommendation_names_what_it_could_not_check() -> None:
+    """A short answer that admits what is missing is honest. One that quietly
+    omits it reads as a complete picture, which is the actual harm."""
+    async def _stock(product_id: str) -> dict:
+        return {"in_stock": True, "total_quantity": 348}
+
+    async def _price(product_id: str, days: int) -> dict:
+        return {"trend": "stable"}
+
+    workflow = PrePurchaseWorkflow({"check_stock": _stock, "get_price_history": _price})
+    state = await workflow.execute(ResearchState(product_id="p1"))
+
+    # The exact shape of the original defect, now self-describing.
+    assert "Stock: 348 units available" in state.recommendation
+    assert "could not check" in state.recommendation
+    assert "reviews" in state.recommendation
+    assert "shipping" in state.recommendation
+
+
+async def test_a_failing_tool_is_recorded_and_does_not_take_the_run_down() -> None:
+    async def _boom(product_id: str) -> dict:
+        raise RuntimeError("sentiment service unavailable")
+
+    async def _stock(product_id: str) -> dict:
+        return {"in_stock": True, "total_quantity": 1}
+
+    workflow = PrePurchaseWorkflow({"analyze_sentiment": _boom, "check_stock": _stock})
+    state = await workflow.execute(ResearchState(product_id="p1"))
+
+    assert any("sentiment service unavailable" in e for e in state.errors)
+    assert "reviews" not in state.completed_steps
+    assert state.recommendation, "one dead probe must not lose the whole answer"
+
+
+async def test_all_four_contributions_produce_no_caveat() -> None:
+    """The control. With every probe answering, the recommendation must not
+    carry a 'could not check' clause — otherwise the caveat is noise rather
+    than signal."""
+    async def _reviews(product_id: str) -> dict:
+        return {"sentiment": "positive", "total_reviews": 8}
+
+    async def _stock(product_id: str) -> dict:
+        return {"in_stock": True, "total_quantity": 317}
+
+    async def _price(product_id: str, days: int) -> dict:
+        return {"trend": "stable"}
+
+    async def _shipping(product_id: str, destination_region: str) -> dict:
+        return {"options": [{"price": 5.99, "days": "5-7"}]}
+
+    workflow = PrePurchaseWorkflow({
+        "analyze_sentiment": _reviews,
+        "check_stock": _stock,
+        "get_price_history": _price,
+        "estimate_shipping": _shipping,
+    })
+    state = await workflow.execute(ResearchState(product_id="p1"))
+
+    assert "could not check" not in state.recommendation
+    assert state.errors == []
+    for step in ("reviews", "stock", "price_history", "shipping"):
+        assert step in state.completed_steps
+
+
+async def test_out_of_stock_records_why_shipping_was_skipped() -> None:
+    """Not an error — shipping an out-of-stock item has nothing to estimate.
+    Recorded so "we did not check" is distinguishable from "we checked and
+    found nothing"."""
+    async def _stock(product_id: str) -> dict:
+        return {"in_stock": False, "total_quantity": 0}
+
+    async def _shipping(product_id: str, destination_region: str) -> dict:
+        raise AssertionError("shipping must not be called for an out-of-stock product")
+
+    workflow = PrePurchaseWorkflow({"check_stock": _stock, "estimate_shipping": _shipping})
+    state = await workflow.execute(ResearchState(product_id="p1"))
+
+    assert any("out of stock" in e for e in state.errors)
+    assert "Currently out of stock" in state.recommendation
