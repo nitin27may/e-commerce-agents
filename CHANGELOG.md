@@ -14,26 +14,86 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-08-26
+
+Two things in here were found by running the software rather than reading it, which is becoming
+the pattern for this project. The orchestration-mode failure had been shipping in every container
+image for as long as the image has had its current shape.
+
+### Fixed
+
+- **Three of the five orchestration modes were dead in every Docker image.**
+  `workflow:pre-purchase`, `workflow:return-replace` and `group-chat` returned "I apologize, but I
+  encountered an issue processing your request" — the same 82 characters regardless of the prompt,
+  in under 10ms. The Dockerfile copied `shared/`, `config/` and `${AGENT_NAME}/` and nothing else,
+  so `workflows/` was absent, as were the four specialist packages the orchestrator's workflow
+  modes import in-process. Every containerised deployment was affected, including plain
+  `docker compose up`, not only the published images.
+  Nothing caught it: E2E is deliberately not run in CI, the eval harness runs in-process where
+  those packages are on `sys.path` regardless of image contents, and the image smoke-test imports
+  `<agent>.main` only — every one of these imports is lazy, inside the mode, so the module imports
+  cleanly and fails at request time.
+- **A pull-request push could cancel an in-flight image publish.** `workflow_dispatch` defines no
+  `tag_mode` input, so the concurrency-group fallback collapsed a manual publish into the same
+  bucket as a pull-request build. A push then cancelled a publish that had already pushed several
+  of the ten images, leaving the tag half-updated.
+
 ### Added
 
-- Container images published to GHCR for all ten services, gated on the test suite. A push to
-  `main` publishes `:main` and `:sha-<7>`; a version tag publishes `:vX.Y.Z` and `:latest`, after
-  a full test re-run and a manual approval.
-- `.github/workflows/release.yml` — the release pipeline. Before it, a semver tag published images
-  with no dependency on any test job, so a tag on a red commit shipped.
-- `scripts/bump_version.py` — one command to set the version in `pyproject.toml`,
-  `package.json` and `Directory.Build.props`, with a `--check` mode that CI uses to block drift.
-- [`docs/releasing.md`](docs/releasing.md) and [`docs/configuration.md`](docs/configuration.md).
+- **Hybrid product search.** `search_products` split the query into words and ANDed a `%word%`
+  `ILIKE` per word, then ordered by rating alone, so "noise cancellation" never matched "noise
+  cancelling" and a single absent word emptied the result set. It is now a weighted generated
+  `tsvector` (name=A / brand=B / description=C) behind a GIN index, OR-joined and ordered by
+  `ts_rank`. `semantic_search` became hybrid with it: the vector and full-text arms run as separate
+  ranked CTEs fused by Reciprocal Rank Fusion. Applied to the native tool, `mcp-product` and .NET,
+  which closed a real `MCP_ENABLED` divergence.
+  **Upgrading an existing database:** the `tsvector` column ships in `docker/postgres/init.sql`,
+  which Postgres only runs on an empty data directory — either `./scripts/dev.sh --clean` or apply
+  it in place, see [Troubleshooting](docs/troubleshooting.md#products-search_vector-does-not-exist).
+- **A one-command demo that pulls instead of building.** `docker-compose.demo.yml` plus
+  `./scripts/dev.sh --demo` (`-Demo` on PowerShell) take a first run from roughly twelve minutes to
+  roughly one. Measured on a clean machine: 37s to pull all ten images, 24s to a healthy stack.
+  `IMAGE_TAG` overrides the tag for testing `:main` or a pinned version.
+- **Container images published to GHCR for all ten services, gated on the test suite.** A push to
+  `main` publishes `:main` and `:sha-<7>`; a version tag publishes `:vX.Y.Z` and `:latest` after a
+  full test re-run and a manual approval. Images are `linux/amd64` and `linux/arm64`, so Apple
+  Silicon runs natively rather than under QEMU.
+- **A release pipeline.** `.github/workflows/release.yml`, `scripts/bump_version.py` (with a
+  `--check` mode CI uses to block version drift), `CHANGELOG.md`, and
+  [`docs/releasing.md`](docs/releasing.md). Before this, a semver tag published images with no
+  dependency on any test job, so a tag on a red commit shipped.
+- **A retention policy for the registry.** `package-cleanup.yml` runs weekly, keeps the most recent
+  20 versions per package and never touches `:latest`, `:main` or any `:vX.Y.Z`.
+- **`llms.txt`, `llms-full.txt` and `robots.txt`**, generated from the same page set the site is
+  built from. Over a 14-day window chatgpt.com sent more traffic to this repository than Google or
+  Bing individually, and the site published nothing shaped for that.
+- **`.env.minimal`** — one variable, now the quick-start default, with `.env.example` (210 lines)
+  demoted to reference material. [`docs/configuration.md`](docs/configuration.md) documents how one
+  `.env` reaches containers, host-run Python, the frontend and the .NET stack, which do not all read
+  it the same way — notably, containers do not read it at all.
+- **Community surface** — `SECURITY.md`, a code of conduct, issue and pull-request templates, and
+  Discussions.
+- **An orchestration-mode benchmark harness** (`evals/benchmark_modes.py`). It drives the HTTP API
+  rather than calling modes in-process, so a run exercises auth, guardrails, grounding and usage
+  logging rather than a copy of them. Not wired into CI: it costs real tokens and cannot run under
+  `LLM_PROVIDER=replay`.
+- **A Playwright recording spec** for the demo clip (`web/e2e/demo-recording.spec.ts`), so the clip
+  can be re-recorded after a UI change instead of decaying.
 
 ### Changed
 
-- `build-images.yml` can no longer publish on its own initiative. Its `push` and tag triggers are
-  gone; publishing is caller-driven through `workflow_call`, so the gate lives with the caller.
-- The image matrix covers ten images rather than six — `auth-server`, `mcp-product`,
-  `mcp-inventory` and `frontend` were never built by CI.
-- Published images are multi-architecture (`linux/amd64` and `linux/arm64`). Readers on Apple
-  Silicon previously got QEMU emulation. Pull-request builds stay amd64-only, because `load: true`
-  cannot load a multi-platform image and the import smoke-test depends on it.
+- **`build-images.yml` can no longer publish on its own initiative.** Its `push` and tag triggers
+  are gone; publishing is caller-driven through `workflow_call`, so the gate lives with the caller.
+  The image matrix covers ten images rather than six — `auth-server`, `mcp-product`,
+  `mcp-inventory` and `frontend` had never been built by CI at all.
+- **The README is 247 lines rather than 740.** The material a senior reader wants — grounding,
+  idempotency, HITL, rate limiting, tracing — was in a section starting at line 624. Nothing was
+  removed without a destination: [`docs/roadmap.md`](docs/roadmap.md) and
+  [`docs/demo-guide.md`](docs/demo-guide.md) are new.
+- **The tutorial index no longer describes finished chapters as drafts.** Thirty-four rows read
+  "Draft" while the chapters were complete and gated in CI; that vocabulary described the blog
+  posts. The table is now generated from what is on disk, which also exposed four false claims in
+  the surrounding prose.
 
 ## [1.1.0] - 2026-08-25
 
@@ -115,6 +175,7 @@ First release. A multi-agent e-commerce platform with two complete backends behi
 - **Session memory and context persistence** — `store_memory` / `recall_memories` surfaced to the
   orchestrator via context providers.
 
-[Unreleased]: https://github.com/nitin27may/e-commerce-agents/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/nitin27may/e-commerce-agents/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/nitin27may/e-commerce-agents/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/nitin27may/e-commerce-agents/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/nitin27may/e-commerce-agents/releases/tag/v1.0.0

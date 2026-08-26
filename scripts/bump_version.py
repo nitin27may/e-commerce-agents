@@ -140,8 +140,16 @@ def open_changelog_section(version: str, *, check: bool) -> bool:
         print(f"  [MISS] CHANGELOG.md has no {anchor!r} heading to insert below", file=sys.stderr)
         return False
 
-    skeleton = f"{anchor}\n\n{heading} - {date.today().isoformat()}\n\n### Added\n\n### Fixed\n\n### Changed\n"
-    path.write_text(text.replace(anchor, skeleton, 1), encoding="utf-8")
+    # Move whatever is already under Unreleased into the new section rather
+    # than pushing an empty skeleton above it -- otherwise the release notes
+    # come out empty while the content that belongs in them sits orphaned
+    # underneath, which is exactly what happened cutting 1.2.0.
+    before, _, rest = text.partition(anchor)
+    carried, sep, remainder = rest.partition("\n## [")
+    carried = carried.strip("\n")
+    body = carried if carried else "### Added\n\n### Fixed\n\n### Changed"
+    skeleton = f"{anchor}\n\n{heading} - {date.today().isoformat()}\n\n{body}\n\n"
+    path.write_text(before + skeleton + (sep + remainder if sep else ""), encoding="utf-8")
     print(f"  [SET]  changelog         opened {heading} — fill it in before tagging")
     return True
 
