@@ -14,6 +14,20 @@
 # mcp-inventory; there's no .NET equivalent of mcp-product yet).
 # ============================================================
 
+# Compose project name, set explicitly.
+#
+# Without it, every compose file in this directory resolves to the same
+# project (`e-commerce-agents`, from the folder name) — so the Python and .NET
+# stacks shared container names, and `docker compose down` with one file would
+# leave the other's containers running as orphans. That is not a hypothetical:
+# it is what happens, and the recovery is `docker rm -f`.
+#
+# Distinct names make each stack independently addressable. They still cannot
+# run simultaneously — both publish the same host ports, deliberately — but now
+# the failure is a clear port conflict rather than two stacks quietly wearing
+# each other's container names. See plan 16 F4.
+name: e-commerce-agents-dotnet
+
 services:
   # ── Infrastructure ─────────────────────────────────────────
 

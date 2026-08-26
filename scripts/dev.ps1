@@ -44,7 +44,13 @@ param(
     [switch]$SeedOnly,
     [switch]$InfraOnly,
     [switch]$Dotnet,
-    [switch]$Demo
+    [switch]$Demo,
+    # The VARIABLE cannot be $Switch — that is a reserved automatic variable in
+    # PowerShell (the switch-statement enumerator), and shadowing it is a real
+    # bug waiting. The alias keeps the user-facing flag matching dev.sh's
+    # --switch, which is what the repo convention promises.
+    [Alias('Switch')]
+    [switch]$SwitchStack
 )
 
 # Stop on the first unhandled error. Native commands don't trip this on their
@@ -71,12 +77,64 @@ if ($Dotnet) {
     $RunProfiles        = @('--profile', 'agents', '--profile', 'mcp', '--profile', 'frontend')
     $PgDataVolumeRegex  = 'pgdata-dotnet$'
     $StackName          = '.NET'
+    $OtherStackProject  = 'e-commerce-agents'
+    $OtherStackName     = 'Python'
+    $OtherStackFile     = 'docker-compose.yml'
 } else {
     $ComposeArgs        = @('compose')
     $AppProfiles        = @('--profile', 'seed', '--profile', 'agents', '--profile', 'frontend')
     $RunProfiles        = @('--profile', 'agents', '--profile', 'frontend')
     $PgDataVolumeRegex  = '_pgdata$'
     $StackName          = 'Python'
+    $OtherStackProject  = 'e-commerce-agents-dotnet'
+    $OtherStackName     = '.NET'
+    $OtherStackFile     = 'docker-compose.dotnet.yml'
+}
+
+function Assert-SingleStack {
+    <#
+        .SYNOPSIS
+        Refuses to start while the other stack is running.
+
+        .DESCRIPTION
+        The Python and .NET stacks publish the same host ports, so they cannot
+        run at once. That is deliberate: running both would need a second
+        published port set AND a second frontend build, because
+        NEXT_PUBLIC_API_URL is inlined at build time and one image cannot
+        address two orchestrators.
+
+        What is worth fixing is the failure mode. Without this check the second
+        stack fails partway through on a raw Docker port-binding error, after
+        some containers have already started — a half-up mess that neither
+        stack's `down` fully cleans.
+
+        Compares compose project labels rather than probing ports: a busy port
+        says nothing about what is holding it.
+    #>
+    $running = @(& docker ps --filter "label=com.docker.compose.project=$OtherStackProject" --format '{{.Names}}' 2>$null | Where-Object { $_ })
+    if ($running.Count -eq 0) { return }
+
+    if ($SwitchStack) {
+        Write-Step "Switching stacks — tearing down the $OtherStackName stack"
+        & docker compose -f $OtherStackFile --profile seed --profile agents --profile mcp --profile frontend down -v --remove-orphans *> $null
+        Write-Ok "$OtherStackName stack removed, volumes included"
+        return
+    }
+
+    Write-Host ''
+    Write-Err "The $OtherStackName stack is already running ($($running.Count) containers)."
+    Write-Host ''
+    Write-Host '  Both stacks publish the same ports, so only one runs at a time.'
+    Write-Host ''
+    Write-Host '  Switch cleanly — brings the other down, volumes and all:'
+    Write-Host ''
+    Write-Host "    ./scripts/dev.ps1 -SwitchStack"
+    Write-Host ''
+    Write-Host '  Or do it by hand:'
+    Write-Host ''
+    Write-Host "    docker compose -f $OtherStackFile --profile agents --profile frontend down -v"
+    Write-Host ''
+    exit 1
 }
 
 function Invoke-Compose {
@@ -307,6 +365,7 @@ try {
     # ── Seed only ────────────────────────────────────────────
     if ($SeedOnly) {
         Write-Step 'Running seeder'
+        Assert-SingleStack
         Invoke-Compose -Arguments @('up', '-d', 'db', 'redis', 'aspire')
         Wait-ForHealth -Name 'PostgreSQL' -TimeoutSeconds 60 -Probe @(
             'exec', 'db', 'pg_isready', '-h', '127.0.0.1', '-U', 'ecommerce', '-d', 'ecommerce_agents')
@@ -317,6 +376,8 @@ try {
         Write-Ok 'Seeder complete'
         exit 0
     }
+
+    Assert-SingleStack
 
     # ── Stop existing ────────────────────────────────────────
     Write-Step 'Stopping existing containers'

@@ -146,6 +146,32 @@ set -a && source .env && set +a      # bash/zsh
 dotnet run --project agents/dotnet/src/ECommerceAgents.Orchestrator
 ```
 
+## One stack at a time
+
+The Python and .NET stacks publish the same host ports — 3000, 5432, 6379, 8080–8085, 8090, 18888 —
+so **only one runs at a time**. This is deliberate rather than a limitation waiting to be fixed.
+
+Running both simultaneously would need a second published port set *and* a second frontend build,
+because `NEXT_PUBLIC_API_URL` is inlined at build time: one frontend image cannot address two
+orchestrators. That is a lot of machinery for a case that does not arise in normal use — you
+compare the stacks by switching, not by running both.
+
+Each stack is its own Compose project (`e-commerce-agents`, `e-commerce-agents-dotnet`,
+`e-commerce-agents-demo`), set explicitly with `name:` at the top of each file. Without that they
+all inherit the directory name, share container names, and `docker compose down` with one file
+leaves the other's containers running as orphans that only `docker rm -f` clears.
+
+`dev.sh` / `dev.ps1` detect the other stack at startup and stop with the command to fix it:
+
+```bash
+./scripts/dev.sh --dotnet --switch      # tear the other stack down, volumes included, then start
+./scripts/dev.ps1 -Dotnet -Switch       # PowerShell equivalent
+```
+
+`--switch` drops the other stack's volumes as part of the change. That is intentional: a switch
+that leaves the old volume behind is how you end up running against a database seeded for the other
+stack, which is the stale-schema failure the startup probe exists to catch.
+
 ## Adding a new variable
 
 A new setting has to be declared in more than one place. This is the actual reason `.env.example`
