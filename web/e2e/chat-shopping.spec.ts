@@ -142,7 +142,13 @@ test.describe("Chat Shopping Experience", () => {
 
 // Test that UI shopping actions work alongside chat
 test.describe("UI Shopping Actions", () => {
-  test.setTimeout(30000);
+  // 30 s was not enough. These tests are LLM-free — pure REST and navigation —
+  // but they spend ~7 s in fixed waitForTimeout calls and load three pages, one
+  // of which renders fifty products with images. That fits in 30 s on an idle
+  // machine and does not when the rest of the suite is running, which made this
+  // look like a backend failure it never was: the cart API returns 200 and the
+  // cart populates correctly when driven directly.
+  test.setTimeout(90000);
 
   test("full add-to-cart flow from product page", async ({ page }) => {
     await login(page, "bob.smith@gmail.com", "customer123");
