@@ -124,9 +124,8 @@ nav_external_links:
     hide_icon: false
   # The sibling doc sites, all published under the same domain. Trailing slashes
   # are required: GitHub Pages 301s the unslashed form of a directory index.
-  - title: AI Knowledge Hub
-    url: https://nitinksingh.com/ai-resources/
-    hide_icon: false
+  # AI Knowledge Hub is deliberately absent here -- it is already the first entry
+  # above, with a fuller label. It was listed twice, pointing at the same URL.
   - title: Clean Architecture Starter
     url: https://nitinksingh.com/clean-architecture-docker-dotnet-angular/
     hide_icon: false
