@@ -87,6 +87,13 @@ class GroundingLedger:
             "amount",
             "total",
             "discount_amount",
+            # `original_price` is a real column that get_product_details and
+            # compare_products both return, so a reply saying "$299.99, down
+            # from $349.99" was citing the tool's own data — and scoring it
+            # "unverifiable" anyway. Full-text search made this visible by
+            # surfacing discounted products reliably enough that the model
+            # started mentioning the strikethrough price in most answers.
+            "original_price",
         ):
             value = _as_float(item.get(key))
             if value is not None:
