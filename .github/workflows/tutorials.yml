@@ -30,12 +30,17 @@ name: Tutorials
 # through anything hash-order-sensitive.
 #
 # Chapter 20b (DevUI) ships its own pyproject.toml and chapter 22
-# (Group-Chat Debate) runs against agents/python instead of tutorials/ — see
-# tutorials/README.md's "Running a chapter" section. Both are still covered
-# here: 20b's tests are collected because agent-framework-devui is also a
-# dependency of tutorials/pyproject.toml, and 22 has no tests/ directory of
-# its own (it exercises agents/python/tests/test_workflow_group_chat.py,
-# which is covered by the tests.yml workflow, not this one).
+# (Group-Chat Debate) imports the production workflows.group_chat module out of
+# agents/python — see tutorials/README.md's "Running a chapter" section. Both are
+# covered here: 20b's tests are collected because agent-framework-devui is also a
+# dependency of tutorials/pyproject.toml, and 22's tests put agents/python on
+# sys.path themselves so they collect under this project like any other chapter.
+#
+# Chapter 22 previously had no tests of its own, on the reasoning that
+# agents/python/tests/test_workflow_group_chat.py covered it. That covered the
+# MODULE, not the chapter: the demo's own panelists, its synthesizer, and the
+# claim the chapter is built on — that a later panelist sees earlier turns —
+# were untested, and that claim is invisible from the demo's output.
 
 on:
   push:
@@ -110,10 +115,10 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      # 31 tutorial .csproj files across 20 chapters, and until #20 *no CI job
-      # built any of them* — the .NET half of the series was shipped unverified
-      # while the Python half had three gates. A chapter whose C# stopped
-      # compiling would have gone unnoticed indefinitely.
+      # 62 tutorial .csproj files across 31 chapters. Until #20 *no CI job built
+      # any of them* — the .NET half of the series shipped unverified while the
+      # Python half had three gates, so a chapter whose C# stopped compiling
+      # would have gone unnoticed indefinitely.
       #
       # NuGetAudit is off for the same repo-wide reason it is off elsewhere:
       # a pre-existing transitive advisory is escalated to an error by default
@@ -139,10 +144,16 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      # Only chapters with a test project. Kept separate from the build job so
-      # a compile break and a test failure are distinguishable at a glance.
-      # Chapters with .NET code but no tests are listed in tutorials/README.md
-      # rather than silently absent.
+      # Kept separate from the build job so a compile break and a test failure
+      # are distinguishable at a glance.
+      #
+      # Every chapter that ships .NET code now has a test project, and the
+      # coverage job below fails if that ever stops being true — the status
+      # table is derived from disk, so a chapter cannot quietly regress to
+      # "code, no tests" while still claiming otherwise.
+      #
+      # These need no API key: each chapter's tests drive a scripted IChatClient
+      # (tutorials/_shared/dotnet/ScriptedChatClient.cs).
       - name: Run every tutorial test project
         run: |
           fail=0
@@ -164,3 +175,11 @@ jobs:
       # launcher-stub state to a real, merge-blocking gate on every chapter.
       - name: Chapter contract check
         run: python3 scripts/check_tutorial_readmes.py --check
+
+      # The language-coverage table in tutorials/README.md is generated from
+      # what is on disk. It claimed to be generated long before it was, and
+      # drifted — describing chapters as ported that were not. This check is
+      # what makes the claim true: add or remove a test project and the table
+      # must be regenerated, or the build fails.
+      - name: Coverage table is not stale
+        run: python3 scripts/check_tutorial_coverage.py --check
