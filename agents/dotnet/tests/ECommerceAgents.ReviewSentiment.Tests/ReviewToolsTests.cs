@@ -50,12 +50,12 @@ public sealed class ReviewToolsTests : IAsyncLifetime
     [Fact]
     public async Task GetProductReviews_PaginatesAndSorts()
     {
-        var first = await _tools.GetProductReviews(_productAId.ToString(), sortBy: "newest", limit: 2);
+        var first = await _tools.GetProductReviews(_productAId.ToString(), sortBy: "newest", limit: 2) as ProductReviewsResult;
         first.Should().NotBeNull();
         first!.TotalReviews.Should().Be(5);
         first.Showing.Should().Be(2);
 
-        var second = await _tools.GetProductReviews(_productAId.ToString(), sortBy: "newest", limit: 2, offset: 2);
+        var second = await _tools.GetProductReviews(_productAId.ToString(), sortBy: "newest", limit: 2, offset: 2) as ProductReviewsResult;
         second!.Showing.Should().Be(2);
         second.Reviews[0].Id.Should().NotBe(first.Reviews[0].Id);
     }
@@ -63,14 +63,14 @@ public sealed class ReviewToolsTests : IAsyncLifetime
     [Fact]
     public async Task GetProductReviews_HelpfulSortPutsHighestFirst()
     {
-        var rows = await _tools.GetProductReviews(_productAId.ToString(), sortBy: "helpful", limit: 5);
+        var rows = await _tools.GetProductReviews(_productAId.ToString(), sortBy: "helpful", limit: 5) as ProductReviewsResult;
         rows!.Reviews[0].HelpfulCount.Should().BeGreaterThanOrEqualTo(rows.Reviews[1].HelpfulCount);
     }
 
     [Fact]
     public async Task GetProductReviews_RejectsBadGuid()
     {
-        var rows = await _tools.GetProductReviews("not-a-uuid");
+        var rows = await _tools.GetProductReviews("not-a-uuid") as ProductReviewsResult;
         rows.Should().BeNull();
     }
 
@@ -80,8 +80,8 @@ public sealed class ReviewToolsTests : IAsyncLifetime
         var rows = await _tools.GetProductReviews(
             _productAId.ToString(),
             sortBy: "1; DROP TABLE reviews; --"
-        );
-        rows.Should().NotBeNull();
+        ) as ProductReviewsResult;
+        rows.Should().NotBeNull("a rejected sort must fall back, not become a ToolError");
         rows!.Showing.Should().BeGreaterThan(0);
     }
 

@@ -103,14 +103,19 @@ public sealed class OrderTools(DatabasePool pool, AgentSettings settings)
     }
 
     [Description("Get full order details including line items, status history, and tracking info.")]
-    public async Task<OrderDetails?> GetOrderDetails(
+    public async Task<object> GetOrderDetails(
         [Description("UUID of the order")] string orderId
     )
     {
         var email = RequestContext.CurrentUserEmail;
-        if (string.IsNullOrEmpty(email) || !Guid.TryParse(orderId, out var orderGuid))
+        if (string.IsNullOrEmpty(email))
         {
-            return null;
+            return ToolError.NoUserContext("get_order_details");
+        }
+
+        if (!Guid.TryParse(orderId, out var orderGuid))
+        {
+            return ToolError.NotAnId("get_order_details", "order id", orderId, "get_user_orders");
         }
 
         await using var conn = await _pool.OpenAsync();
@@ -125,7 +130,7 @@ public sealed class OrderTools(DatabasePool pool, AgentSettings settings)
         );
         if (order is null)
         {
-            return null;
+            return ToolError.NotFound("get_order_details", "order", orderId);
         }
 
         var items = (await conn.QueryAsync(
@@ -184,14 +189,19 @@ public sealed class OrderTools(DatabasePool pool, AgentSettings settings)
     }
 
     [Description("Get latest tracking status and location for an order.")]
-    public async Task<OrderTracking?> GetOrderTracking(
+    public async Task<object> GetOrderTracking(
         [Description("UUID of the order")] string orderId
     )
     {
         var email = RequestContext.CurrentUserEmail;
-        if (string.IsNullOrEmpty(email) || !Guid.TryParse(orderId, out var orderGuid))
+        if (string.IsNullOrEmpty(email))
         {
-            return null;
+            return ToolError.NoUserContext("get_order_tracking");
+        }
+
+        if (!Guid.TryParse(orderId, out var orderGuid))
+        {
+            return ToolError.NotAnId("get_order_tracking", "order id", orderId, "get_user_orders");
         }
 
         await using var conn = await _pool.OpenAsync();
@@ -204,7 +214,7 @@ public sealed class OrderTools(DatabasePool pool, AgentSettings settings)
         );
         if (order is null)
         {
-            return null;
+            return ToolError.NotFound("get_order_tracking", "order", orderId);
         }
 
         var status = (string)order.status;

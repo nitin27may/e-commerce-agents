@@ -4,6 +4,7 @@ using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Data;
 using ECommerceAgents.TestFixtures;
+using ECommerceAgents.Shared.Tools;
 using FluentAssertions;
 using Xunit;
 
@@ -121,7 +122,7 @@ public sealed class OrderToolsTests : IAsyncLifetime
     {
         EnsureUserScope();
         var (orderId, _) = await SeedOtherUserOrderAsync();
-        var details = await _tools.GetOrderDetails(orderId.ToString());
+        var details = await _tools.GetOrderDetails(orderId.ToString()) as OrderDetails;
         details.Should().BeNull();
     }
 
@@ -129,7 +130,7 @@ public sealed class OrderToolsTests : IAsyncLifetime
     public async Task GetOrderDetails_ReturnsNullForBadGuid()
     {
         EnsureUserScope();
-        var details = await _tools.GetOrderDetails("not-a-uuid");
+        var details = await _tools.GetOrderDetails("not-a-uuid") as OrderDetails;
         details.Should().BeNull();
     }
 
@@ -138,7 +139,7 @@ public sealed class OrderToolsTests : IAsyncLifetime
     {
         EnsureUserScope();
         var orderId = await GetFirstOrderIdByStatus("placed");
-        var tracking = await _tools.GetOrderTracking(orderId.ToString());
+        var tracking = await _tools.GetOrderTracking(orderId.ToString()) as OrderTracking;
         tracking.Should().NotBeNull();
         tracking!.Message.Should().Contain("not shipped");
         tracking.LatestUpdate.Should().BeNull();
@@ -159,7 +160,7 @@ public sealed class OrderToolsTests : IAsyncLifetime
             );
         }
 
-        var tracking = await _tools.GetOrderTracking(orderId.ToString());
+        var tracking = await _tools.GetOrderTracking(orderId.ToString()) as OrderTracking;
         tracking.Should().NotBeNull();
         tracking!.Timeline.Should().HaveCount(2);
         // Timeline ascending; latest_update was queried separately by DESC.
@@ -363,5 +364,68 @@ public sealed class OrderToolsTests : IAsyncLifetime
             "SELECT id FROM orders WHERE user_id = @uid AND status = @status LIMIT 1",
             new { uid = _userId, status }
         );
+    }
+
+    // ─────────────── Failures must be legible to a model ───────────────
+    //
+    // These tools returned bare null on a bad id or a missing user context.
+    // Correct C#, useless to a model: it learns something did not happen but
+    // not what or why, so it cannot recover. Observed end to end — the agent
+    // called get_order_details without a UUID, got null, and told a customer
+    // with eleven orders "there may be a temporary issue accessing your order
+    // data".
+    //
+    // Python has returned {"error": ...} here all along; this is the parity fix.
+
+    [Fact]
+    public async Task GetOrderDetails_ExplainsABadIdAndNamesTheRecoveryTool()
+    {
+        EnsureUserScope();
+
+        var result = await _tools.GetOrderDetails("most recent");
+
+        var error = result.Should().BeOfType<ToolError>().Subject;
+        error.Error.Should().Contain("most recent", "the message must quote what was actually sent");
+        error.Error.Should().Contain("get_user_orders", "a dead end is not a recovery — name the tool that yields valid ids");
+    }
+
+    [Fact]
+    public async Task GetOrderTracking_ExplainsABadIdRatherThanReturningNothing()
+    {
+        EnsureUserScope();
+
+        var result = await _tools.GetOrderTracking("the one from Tuesday");
+
+        result.Should().BeOfType<ToolError>()
+            .Subject.Error.Should().Contain("get_user_orders");
+    }
+
+    [Fact]
+    public async Task GetOrderDetails_DoesNotDistinguishMissingFromForbidden()
+    {
+        // Telling a caller that a record exists but belongs to someone else is
+        // an enumeration oracle. Python conflates the two for the same reason.
+        EnsureUserScope();
+
+        var result = await _tools.GetOrderDetails(Guid.NewGuid().ToString());
+
+        var error = result.Should().BeOfType<ToolError>().Subject;
+        error.Error.Should().Contain("not accessible");
+        error.Error.Should().NotContain("belongs to");
+    }
+
+    [Fact]
+    public async Task A_Legitimately_Empty_Result_Is_Still_Not_An_Error()
+    {
+        // The line this fix must not cross. A freshly-placed order genuinely has
+        // no tracking events yet, and that is an answer rather than a failure —
+        // turning it into a ToolError would be a different lie.
+        EnsureUserScope();
+        var orderId = await GetFirstOrderIdByStatus("placed");
+
+        var result = await _tools.GetOrderTracking(orderId.ToString());
+
+        result.Should().BeOfType<OrderTracking>()
+            .Subject.Message.Should().Contain("not shipped");
     }
 }

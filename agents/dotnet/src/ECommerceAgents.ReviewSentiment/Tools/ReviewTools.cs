@@ -81,7 +81,7 @@ public sealed class ReviewTools(DatabasePool pool, AgentSettings settings)
     // ─────────────────────── get_product_reviews ─────────────
 
     [Description("Get paginated reviews for a product with sorting options.")]
-    public async Task<ProductReviewsResult?> GetProductReviews(
+    public async Task<object> GetProductReviews(
         [Description("UUID of the product")] string productId,
         [Description("Sort: newest, helpful, rating_high, rating_low")] string? sortBy = "newest",
         [Description("Max reviews to return (capped at 100)")] int limit = 10,
@@ -90,7 +90,7 @@ public sealed class ReviewTools(DatabasePool pool, AgentSettings settings)
     {
         if (!Guid.TryParse(productId, out var pid))
         {
-            return null;
+            return ToolError.NotAnId("get_product_reviews", "product id", productId, "search_products");
         }
 
         var clamped = Math.Clamp(limit, 1, MaxLimit);

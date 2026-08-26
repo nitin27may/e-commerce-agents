@@ -169,13 +169,13 @@ public sealed class ProductTools(DatabasePool pool, IEmbeddingProvider embedding
     }
 
     [Description("Get complete details for a specific product including full specs.")]
-    public async Task<ProductDetails?> GetProductDetails(
+    public async Task<object> GetProductDetails(
         [Description("UUID of the product")] string productId
     )
     {
         if (!Guid.TryParse(productId, out var id))
         {
-            return null;
+            return ToolError.NotAnId("get_product_details", "product id", productId, "search_products");
         }
 
         await using var conn = await _pool.OpenAsync();
@@ -187,7 +187,7 @@ public sealed class ProductTools(DatabasePool pool, IEmbeddingProvider embedding
         );
         if (row is null)
         {
-            return null;
+            return ToolError.NotFound("get_product_details", "product", productId);
         }
 
         Dictionary<string, JsonElement>? specs = null;
@@ -229,8 +229,10 @@ public sealed class ProductTools(DatabasePool pool, IEmbeddingProvider embedding
         var results = new List<ProductDetails>(productIds.Count);
         foreach (var pid in productIds)
         {
-            var details = await GetProductDetails(pid);
-            if (details is not null)
+            // A ToolError here means that one id was bad or inaccessible. Skip it
+            // rather than failing the whole comparison — the caller asked about
+            // several products and the others are still answerable.
+            if (await GetProductDetails(pid) is ProductDetails details)
             {
                 results.Add(details);
             }
