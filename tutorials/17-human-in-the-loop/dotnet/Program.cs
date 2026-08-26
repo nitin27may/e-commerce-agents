@@ -56,18 +56,6 @@ public static class Program
     {
         RefundRequest refund = new("ord-482", 245.50);
 
-        // Build the workflow. The request port is BOTH the starting executor
-        // (it emits a RequestInfoEvent as soon as we kick the run off with
-        // the refund) and the upstream source of the decision executor, so
-        // the run pauses exactly once, then resolves.
-        RequestPort approvalPort = RequestPort.Create<RefundRequest, bool>("ApproveRefund");
-        RefundDecisionExecutor decision = new(refund);
-
-        Workflow workflow = new WorkflowBuilder(approvalPort)
-            .AddEdge(approvalPort, decision)
-            .WithOutputFrom(decision)
-            .Build();
-
         // Optional scripted mode: `dotnet run -- y` / `dotnet run -- n`
         // answers the approval automatically, which is useful for CI and for
         // readers who just want to see a deterministic pass.
@@ -78,41 +66,96 @@ public static class Program
         Console.WriteLine("Chapter 17 — Human-in-the-Loop (refund approval)");
         Console.WriteLine();
 
+        try
+        {
+            string outcome = await RunAsync(
+                refund,
+                approve: request =>
+                {
+                    bool approved = scriptedApproval ?? ReadApprovalFrom(request);
+                    if (scriptedApproval is not null)
+                    {
+                        Console.WriteLine($"  -> sending scripted decision: {(approved ? "approve" : "deny")}");
+                    }
+                    return approved;
+                });
+
+            Console.WriteLine();
+            Console.WriteLine(outcome);
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"  [err]  {ex}");
+            return 1;
+        }
+    }
+
+    /// <summary>
+    /// Builds the pause/resume workflow for one refund.
+    /// </summary>
+    /// <remarks>
+    /// The request port is BOTH the starting executor — it emits a
+    /// RequestInfoEvent as soon as the run is kicked off with the refund — and
+    /// the upstream source of the decision executor, so the run pauses exactly
+    /// once, then resolves.
+    /// </remarks>
+    internal static Workflow BuildWorkflow(RefundRequest refund)
+    {
+        RequestPort approvalPort = RequestPort.Create<RefundRequest, bool>("ApproveRefund");
+        RefundDecisionExecutor decision = new(refund);
+
+        return new WorkflowBuilder(approvalPort)
+            .AddEdge(approvalPort, decision)
+            .WithOutputFrom(decision)
+            .Build();
+    }
+
+    /// <summary>
+    /// Runs the workflow to completion, resolving the approval gate with
+    /// <paramref name="approve"/>.
+    /// </summary>
+    /// <param name="approve">
+    /// Called once, when the run pauses. Console prompt in the app; a lambda in
+    /// the tests. Injecting the decision rather than reading Console.In is what
+    /// makes this chapter testable — the alternative is a test that hangs
+    /// waiting on stdin.
+    /// </param>
+    /// <returns>The decision executor's message.</returns>
+    internal static async Task<string> RunAsync(
+        RefundRequest refund,
+        Func<RequestInfoEvent, bool> approve,
+        CancellationToken cancellationToken = default)
+    {
+        Workflow workflow = BuildWorkflow(refund);
+
         await using StreamingRun run = await InProcessExecution.RunStreamingAsync(workflow, refund);
 
         // Single StreamingRun, single foreach. The pause is handled inline
         // with run.SendResponseAsync(...); the framework routes the response
         // to the decision executor. Contrast with Python where you make two
         // separate workflow.run(...) calls.
-        await foreach (WorkflowEvent evt in run.WatchStreamAsync())
+        await foreach (WorkflowEvent evt in run.WatchStreamAsync().WithCancellation(cancellationToken))
         {
             switch (evt)
             {
                 case RequestInfoEvent request:
-                    bool approved = scriptedApproval ?? ReadApprovalFrom(request);
-                    if (scriptedApproval is not null)
-                    {
-                        Console.WriteLine($"  -> sending scripted decision: {(approved ? "approve" : "deny")}");
-                    }
-                    await run.SendResponseAsync(request.Request.CreateResponse(approved));
+                    await run.SendResponseAsync(request.Request.CreateResponse(approve(request)));
                     break;
 
                 case WorkflowOutputEvent output:
-                    Console.WriteLine();
-                    Console.WriteLine(output.Data);
-                    return 0;
+                    return output.Data?.ToString() ?? string.Empty;
 
                 case ExecutorFailedEvent failed:
-                    Console.Error.WriteLine($"  [fail] executor '{failed.ExecutorId}' failed: {failed.Data}");
-                    return 1;
+                    throw new InvalidOperationException(
+                        $"executor '{failed.ExecutorId}' failed: {failed.Data}");
 
                 case WorkflowErrorEvent error:
-                    Console.Error.WriteLine($"  [err]  {error.Exception}");
-                    return 1;
+                    throw error.Exception ?? new InvalidOperationException("workflow failed");
             }
         }
 
-        return 0;
+        throw new InvalidOperationException("the workflow completed without producing an output");
     }
 
     private static bool ReadApprovalFrom(RequestInfoEvent evt)

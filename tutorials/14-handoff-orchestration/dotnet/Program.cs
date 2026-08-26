@@ -25,19 +25,28 @@ using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
 
 namespace MafV1.Ch14.Handoff;
 
+/// <summary>What one trip through the handoff mesh produced.</summary>
+/// <param name="Routing">Executor ids in the order they first spoke.</param>
+/// <param name="Final">The last non-empty assistant message.</param>
+/// <param name="Conversation">Everything the run accumulated.</param>
+public sealed record HandoffResult(
+    IReadOnlyList<string> Routing,
+    string Final,
+    IReadOnlyList<ChatMessage> Conversation);
+
 public static class Program
 {
-    private const string TriageInstructions =
+    internal const string TriageInstructions =
         "You are a Triage agent. Read the user's question and hand off to the right "
         + "specialist via the provided handoff tool: math questions go to math_tutor, "
         + "historical questions go to history_tutor. ALWAYS handoff; do not answer directly.";
 
-    private const string MathInstructions =
+    internal const string MathInstructions =
         "You are a Math expert. Answer arithmetic and math questions directly in ONE "
         + "short sentence containing the numerical answer. Do not hand off back unless "
         + "the question is clearly not about math.";
 
-    private const string HistoryInstructions =
+    internal const string HistoryInstructions =
         "You are a History expert. Answer historical questions in ONE short sentence "
         + "with the specific date or year. Do not hand off back unless the question is "
         + "clearly not about history.";
@@ -53,11 +62,45 @@ public static class Program
         Console.WriteLine($"Q: {question}");
         Console.WriteLine();
 
-        ChatClient chatClient = BuildChatClient();
+        HandoffResult result = await RunAsync(BuildChatClient().AsIChatClient(), question);
 
-        // AsAIAgent(instructions, name, description). The `description` shows up
-        // as the default handoff reason that the builder stamps into each
-        // synthesised `handoff_to_<name>` tool's JSON schema.
+        foreach (ChatMessage message in result.Conversation)
+        {
+            if (message.Role == ChatRole.Assistant && !string.IsNullOrWhiteSpace(message.Text))
+            {
+                Console.WriteLine($"[{message.AuthorName ?? "agent"}] {message.Text.Trim()}");
+            }
+        }
+
+        Console.WriteLine();
+        Console.WriteLine($"Routing: {string.Join(" -> ", result.Routing)}");
+        Console.WriteLine($"Final  : {result.Final}");
+
+        return 0;
+    }
+
+    /// <summary>
+    /// Builds the triage/math/history mesh over any <see cref="IChatClient"/>.
+    /// </summary>
+    /// <remarks>
+    /// Every source needs an explicit WithHandoffs edge list; an agent without
+    /// one is handed no handoff tools at all and can only answer directly.
+    /// That failure is silent — the agent just stops routing — which is why
+    /// the test project asserts on the tool names each agent is offered.
+    ///   triage -> { math_tutor, history_tutor }
+    ///   math_tutor -> { triage }
+    ///   history_tutor -> { triage }
+    /// </remarks>
+    public static Workflow BuildWorkflow(IChatClient chatClient)
+    {
+        // AsAIAgent(instructions, name, description). `description` is load-
+        // bearing, not documentation. Microsoft.Agents.AI.Workflows 1.1.0 names
+        // the synthesised handoff tools POSITIONALLY — handoff_to_1,
+        // handoff_to_2 — so the agent's own name never reaches the model. The
+        // description is the only thing distinguishing one handoff target from
+        // another in the tool schema. Omit it and the model is choosing between
+        // two identically-nameless tools; it will still pick one, which is why
+        // this misroutes rather than erroring.
         AIAgent triage = chatClient.AsAIAgent(
             instructions: TriageInstructions,
             name: "triage_agent",
@@ -71,15 +114,18 @@ public static class Program
             name: "history_tutor",
             description: "Specialist agent for historical questions, dates, and events.");
 
-        // Build the mesh. Every source needs an explicit WithHandoffs edge list;
-        // agents without one cannot invoke any handoff tool.
-        //   triage -> { math_tutor, history_tutor }
-        //   math_tutor -> { triage }
-        //   history_tutor -> { triage }
-        Workflow workflow = AgentWorkflowBuilder.CreateHandoffBuilderWith(triage)
+        return AgentWorkflowBuilder.CreateHandoffBuilderWith(triage)
             .WithHandoffs(triage, new[] { mathTutor, historyTutor })
             .WithHandoffs(new[] { mathTutor, historyTutor }, triage)
             .Build();
+    }
+
+    /// <summary>
+    /// Runs one question through the mesh and reports where it went.
+    /// </summary>
+    public static async Task<HandoffResult> RunAsync(IChatClient chatClient, string question)
+    {
+        Workflow workflow = BuildWorkflow(chatClient);
 
         var messages = new List<ChatMessage> { new(ChatRole.User, question) };
         var routing = new List<string>();
@@ -94,17 +140,14 @@ public static class Program
             switch (evt)
             {
                 case AgentResponseUpdateEvent update:
-                    // Streaming deltas — one event per token. Print the agent
-                    // label the first time each executor speaks so the routing
-                    // is visible on the console.
+                    // Streaming deltas. Record the executor the first time it
+                    // speaks — that sequence IS the routing decision, and it is
+                    // the only place the handoff is observable.
                     if (update.ExecutorId != lastExecutorId)
                     {
                         lastExecutorId = update.ExecutorId;
                         routing.Add(update.ExecutorId ?? "agent");
-                        Console.WriteLine();
-                        Console.WriteLine($"[{update.ExecutorId}]");
                     }
-                    Console.Write(update.Update.Text);
                     break;
 
                 case WorkflowOutputEvent output when output.Data is List<ChatMessage> list:
@@ -117,18 +160,14 @@ public static class Program
             }
         }
 
-        Console.WriteLine();
-        Console.WriteLine();
-        Console.WriteLine($"Routing: {string.Join(" -> ", routing)}");
+        List<ChatMessage> conversation = newMessages ?? new List<ChatMessage>();
+        string final = conversation
+            .LastOrDefault(m => m.Role == ChatRole.Assistant && !string.IsNullOrWhiteSpace(m.Text))
+            ?.Text.Trim() ?? string.Empty;
 
-        if (newMessages is { Count: > 0 })
-        {
-            ChatMessage last = newMessages[^1];
-            Console.WriteLine($"Final : {last.Text.Trim()}");
-        }
-
-        return 0;
+        return new HandoffResult(routing, final, conversation);
     }
+
 
     private static ChatClient BuildChatClient()
     {

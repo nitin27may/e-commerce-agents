@@ -33,15 +33,15 @@ namespace MafV1.Ch15.GroupChat;
 
 public static class Program
 {
-    private const string WriterInstructions =
+    internal const string WriterInstructions =
         "You are a Writer. Draft or revise copy the user asks for. "
         + "Output exactly one short line — no preamble.";
 
-    private const string CriticInstructions =
+    internal const string CriticInstructions =
         "You are a Critic. Read the Writer's latest draft and respond in one "
         + "sentence pointing out one concrete improvement. Do not rewrite.";
 
-    private const string EditorInstructions =
+    internal const string EditorInstructions =
         "You are an Editor. Given the Writer's draft and the Critic's feedback, "
         + "produce the final polished line. Output exactly one short line — no preamble.";
 
@@ -56,37 +56,70 @@ public static class Program
         Console.WriteLine($"Manager: {strategy}");
         Console.WriteLine();
 
-        ChatClient chatClient = BuildChatClient();
+        IReadOnlyList<ChatMessage> conversation =
+            await RunAsync(BuildChatClient().AsIChatClient(), topic, strategy);
 
+        Console.WriteLine("===== Final conversation =====");
+        foreach (ChatMessage message in conversation)
+        {
+            string author = message.AuthorName ?? message.Role.Value;
+            Console.WriteLine($"{author}: {message.Text.Trim()}");
+        }
+
+        return 0;
+    }
+
+    /// <summary>
+    /// Builds the Writer/Critic/Editor group chat under one of two managers.
+    /// </summary>
+    /// <param name="chatClient">
+    /// Used both to back the three agents and, under the "prompt" strategy, to
+    /// drive <see cref="PromptDrivenManager"/>'s speaker selection. Taking it
+    /// as a parameter is what makes the chapter testable.
+    /// </param>
+    /// <param name="strategy">"prompt" for LLM-selected speakers, anything else for round-robin.</param>
+    /// <param name="maximumIterations">
+    /// Speaker-turn cap. This is the safety net that stops a bad selector
+    /// looping forever, so it is deliberately settable and deliberately tested.
+    /// </param>
+    public static Workflow BuildWorkflow(
+        IChatClient chatClient,
+        string strategy = "round-robin",
+        int maximumIterations = 3)
+    {
         AIAgent writer = chatClient.AsAIAgent(instructions: WriterInstructions, name: "writer");
         AIAgent critic = chatClient.AsAIAgent(instructions: CriticInstructions, name: "critic");
         AIAgent editor = chatClient.AsAIAgent(instructions: EditorInstructions, name: "editor");
 
-        // CreateGroupChatBuilderWith takes a factory: (IReadOnlyList<AIAgent>) => GroupChatManager.
-        // The framework hands the participant list to the factory so the manager
-        // can see exactly who it's coordinating. MaximumIterationCount caps the
-        // number of speaker turns so a bad selector can't loop forever.
-        // Reuse the same ChatClient surface as an IChatClient so the custom
-        // prompt-driven manager can call GetResponseAsync without coupling to
-        // OpenAI.Chat binary shapes. IChatClient is the MAF-provider-agnostic
-        // abstraction every agent ultimately wraps.
-        IChatClient selectorClient = chatClient.AsIChatClient();
-
-        Workflow workflow = strategy == "prompt"
+        // CreateGroupChatBuilderWith takes a factory:
+        //   (IReadOnlyList<AIAgent>) => GroupChatManager
+        // The framework hands the participant list to the factory so the
+        // manager can see exactly who it is coordinating.
+        return strategy == "prompt"
             ? AgentWorkflowBuilder
-                .CreateGroupChatBuilderWith(agents => new PromptDrivenManager(agents, selectorClient)
+                .CreateGroupChatBuilderWith(agents => new PromptDrivenManager(agents, chatClient)
                 {
-                    MaximumIterationCount = 3,
+                    MaximumIterationCount = maximumIterations,
                 })
                 .AddParticipants(writer, critic, editor)
                 .Build()
             : AgentWorkflowBuilder
                 .CreateGroupChatBuilderWith(agents => new RoundRobinGroupChatManager(agents)
                 {
-                    MaximumIterationCount = 3,
+                    MaximumIterationCount = maximumIterations,
                 })
                 .AddParticipants(writer, critic, editor)
                 .Build();
+    }
+
+    /// <summary>Runs the group chat and returns the full conversation.</summary>
+    public static async Task<IReadOnlyList<ChatMessage>> RunAsync(
+        IChatClient chatClient,
+        string topic,
+        string strategy = "round-robin",
+        int maximumIterations = 3)
+    {
+        Workflow workflow = BuildWorkflow(chatClient, strategy, maximumIterations);
 
         // Group chat workflows wait for a TurnToken before they dispatch the
         // first speaker — same pattern as Ch13's concurrent builder.
@@ -123,17 +156,7 @@ public static class Program
 
         FlushTurn(currentSpeaker, turnBuffer);
 
-        if (finalConversation is not null)
-        {
-            Console.WriteLine("===== Final conversation =====");
-            foreach (ChatMessage message in finalConversation)
-            {
-                string author = message.AuthorName ?? message.Role.Value;
-                Console.WriteLine($"{author}: {message.Text.Trim()}");
-            }
-        }
-
-        return 0;
+        return finalConversation ?? new List<ChatMessage>();
     }
 
     private static void FlushTurn(string? speaker, StringBuilder buffer)
@@ -161,10 +184,12 @@ public static class Program
     /// Production notes:
     /// - Keep the selector prompt cheap: short context, deterministic output.
     /// - Always fall back to a safe default if the LLM returns an unknown name.
-    /// - Terminate explicitly when the Editor has spoken; otherwise the
-    ///   MaximumIterationCount cap prevents runaway loops.
+    /// - Terminate explicitly when the Editor has spoken.
+    /// - ALWAYS chain to base.ShouldTerminateAsync. MaximumIterationCount is
+    ///   enforced there, so an override that does not call it silently removes
+    ///   the only bound on the conversation.
     /// </remarks>
-    private sealed class PromptDrivenManager : GroupChatManager
+    internal sealed class PromptDrivenManager : GroupChatManager
     {
         private readonly IReadOnlyList<AIAgent> _agents;
         private readonly IChatClient _selectorClient;
@@ -222,15 +247,27 @@ public static class Program
             }
         }
 
-        protected override ValueTask<bool> ShouldTerminateAsync(
+        protected override async ValueTask<bool> ShouldTerminateAsync(
             IReadOnlyList<ChatMessage> history,
             CancellationToken cancellationToken = default)
         {
-            // Stop once the Editor has produced a final line. The base
-            // MaximumIterationCount cap (set on the instance) is the safety net.
-            bool editorSpoke = history.Any(m =>
+            // The base implementation is where MaximumIterationCount is
+            // enforced. Overriding without chaining to it throws the cap away
+            // — and the failure is not an error, it is an infinite loop:
+            // a selector that never picks the Editor keeps the chat running
+            // forever, burning a real provider call every turn.
+            //
+            // This is the single easiest mistake to make in a custom manager,
+            // because the override compiles, reads correctly, and works fine
+            // in every run where the model happens to pick the Editor.
+            if (await base.ShouldTerminateAsync(history, cancellationToken).ConfigureAwait(false))
+            {
+                return true;
+            }
+
+            // Our own condition: stop once the Editor has produced a final line.
+            return history.Any(m =>
                 string.Equals(m.AuthorName, "editor", StringComparison.OrdinalIgnoreCase));
-            return ValueTask.FromResult(editorSpoke);
         }
 
         private static string? ExtractName(string raw)
