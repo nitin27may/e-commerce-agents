@@ -191,6 +191,14 @@ public static class ChatRoutes
         ILoggerFactory loggers
     )
     {
+        // Capture the cancellation token once, at entry, instead of reading
+        // context.RequestAborted at each of the four use sites further down.
+        // Those reads happen late in a streaming response, and HttpContext is
+        // pooled — if the context is recycled before the handler unwinds, the
+        // property dereferences a reset context and throws
+        // NullReferenceException rather than simply reporting cancellation.
+        var abort = context.RequestAborted;
+
         var request = await context.Request.ReadFromJsonAsync<ChatRequest>();
         if (string.IsNullOrWhiteSpace(request?.Message))
         {
@@ -289,7 +297,7 @@ public static class ChatRoutes
         {
             try
             {
-                await foreach (var delta in deltaChannel.Reader.ReadAllAsync(context.RequestAborted))
+                await foreach (var delta in deltaChannel.Reader.ReadAllAsync(abort))
                 {
                     await WriteFrameAsync("delta", delta);
                 }
@@ -332,7 +340,7 @@ public static class ChatRoutes
                 .RunAsync(
                     request.Message,
                     new RunContext(ctx.History, ctx.ConversationId, sink),
-                    context.RequestAborted
+                    abort
                 );
 
             responseText.Append(modeResult.Text);
@@ -341,7 +349,7 @@ public static class ChatRoutes
         }
         else
         {
-            await foreach (var update in agent.RunStreamingAsync(BuildMessages(ctx.History), cancellationToken: context.RequestAborted))
+            await foreach (var update in agent.RunStreamingAsync(BuildMessages(ctx.History), cancellationToken: abort))
             {
                 if (string.IsNullOrEmpty(update.Text))
                 {
