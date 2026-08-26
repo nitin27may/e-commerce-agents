@@ -103,6 +103,7 @@ public static class AgentSettingsLoader
             RateLimitEnabled = GetBool("RATE_LIMIT_ENABLED", true),
             RateLimitMaxRequests = GetInt("RATE_LIMIT_MAX_REQUESTS", 30),
             RateLimitWindowSeconds = GetDouble("RATE_LIMIT_WINDOW_SECONDS", 60.0),
+            HandoffMaxTurns = GetInt("HANDOFF_MAX_TURNS", 3),
             GroundingMode = ValidatedGroundingMode(Get("GROUNDING_MODE", "annotate")),
             CostBudgetMode = Get("COST_BUDGET_MODE", "observe"),
             CostBudgetUsdPerRun = GetNullableDouble("COST_BUDGET_USD_PER_RUN"),
