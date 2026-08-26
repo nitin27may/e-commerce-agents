@@ -40,6 +40,20 @@ jobs:
   # ── 1. The full test suite, re-run against the tagged commit ───────────────
   gate:
     name: Gate
+    # A called workflow cannot request more permission than its caller grants,
+    # and the failure mode is `startup_failure` with no log and no annotation —
+    # nothing points at permissions. tests.yml declares `pull-requests: write`
+    # (its coverage comment step), which exceeds this workflow's top-level
+    # `contents: read`, so the gate has to grant at least that superset here.
+    #
+    # `packages: write` is included because tests.yml's own publish-main job
+    # calls build-images.yml. That job is skipped on a tag (it is gated on a
+    # push to main), but the permission set is validated at startup regardless
+    # of whether the job ends up running.
+    permissions:
+      contents: read
+      pull-requests: write
+      packages: write
     uses: ./.github/workflows/tests.yml
     secrets: inherit
 
