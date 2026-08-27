@@ -64,6 +64,19 @@ public sealed record AgentSettings
     // ── Rate limiting (issue #30) — .NET twin of Python's RATE_LIMIT_* ──
     public bool RateLimitEnabled { get; init; } = true;
     public int RateLimitMaxRequests { get; init; } = 30;
+
+    /// <summary>
+    /// Autonomous-mode turn ceiling for the handoff mesh's triage agent.
+    /// </summary>
+    /// <remarks>
+    /// Mirrors Python's <c>HANDOFF_MAX_TURNS</c>. Autonomous mode's contract is "if the
+    /// agent does not hand off, feed it a continuation prompt and run it again", so this
+    /// is the only bound on an agent that cannot hand off. MAF defaults to 50, which is
+    /// how Python's handoff mode produced a 23,637-character monologue over 100-200
+    /// seconds before its triage agent was made tool-free. Three covers hand-off,
+    /// hand-back and wrap-up.
+    /// </remarks>
+    public int HandoffMaxTurns { get; init; } = 3;
     public double RateLimitWindowSeconds { get; init; } = 60.0;
 
     // ── Grounding (issue #33 PR 7) — .NET twin of Python's GROUNDING_MODE ──

@@ -15,7 +15,9 @@ only**:
 
 - `.claude/memory/` — project memory and notes
 - `.claude/rules/` — repo-specific rules
-- `.claude/plans/` — implementation plans (master + sub-plans, e.g. `.claude/plans/enhancements/`)
+- `.claude/plans/` — **one** consolidated plan (`remaining-work.md`). Finished plans are deleted
+  rather than archived: git keeps them, and a directory of stale plans makes "what is left?" a
+  research question every time it is asked
 
 Do not put these in the repo root (no top-level `plans/` folder) or rely on global `~/.claude`.
 Keeping them under the repo-local `.claude/` means they are committed with the project and travel

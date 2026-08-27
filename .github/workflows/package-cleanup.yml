@@ -19,7 +19,7 @@ name: Package Cleanup
 # Runs weekly. Also dispatchable with a dry_run input, which is worth using the
 # first time -- the action reports what it would remove without removing it.
 #
-# See docs/releasing.md and .claude/plans/enhancements/15-build-and-release.md.
+# See docs/releasing.md.
 
 on:
   schedule:

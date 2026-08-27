@@ -20,7 +20,6 @@ at import time; stringified annotations break that resolution.
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any
 
 from agent_framework._workflows._executor import Executor, handler
 from agent_framework._workflows._request_info_mixin import response_handler

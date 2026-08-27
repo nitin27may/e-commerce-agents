@@ -1,172 +1,228 @@
-# Remaining Work — Master Plan
+# PLAN — the one plan file
 
-> Repo-committed index, per the "Working Artifacts Location" rule in the project `CLAUDE.md`.
+> Repo-committed working artifact, per the "Working Artifacts Location" rule in the project
+> `CLAUDE.md`. **This is the only plan file.** It used to be twenty, then nine; the rest are in
+> git history, which is where finished plans belong.
 >
-> This folds the long-running teaching-asset plan down to **what is actually left**. The
-> historical record of Phases 0–14 — the audit that started it, and the reasoning behind
-> decisions that are now shipped — is not repeated here; where a past decision still constrains
-> future work, it is restated inline under [Constraints that still bite](#constraints-that-still-bite).
+> The published, reader-facing version of the forward work is
+> [`docs/roadmap.md`](../../docs/roadmap.md). This file is the working detail behind it: blockers,
+> acceptance criteria, and the constraints that have already cost us time.
 
-## Where this stands (2026-08-26, after v1.2.0)
-
-v1.2.0 shipped: hybrid FTS+vector search, the orchestration-mode fix, prebuilt images with a
-one-command demo, and a release pipeline that gates publishing on the test suite. Ten images are
-published for `linux/amd64` and `linux/arm64`; `./scripts/dev.sh --demo` reaches a working stack in
-about a minute.
-
-Plans **13–18** now carry most of the detail; this file is the index.
-
-| Plan | Subject | Status |
-|---|---|---|
-| [13](enhancements/13-azure-deployment-and-foundry.md) | Azure Container Apps + Microsoft Foundry | proposed |
-| [14](enhancements/14-pre-azure.md) | Adoption/conversion work before Azure | 6 of 8 done |
-| [15](enhancements/15-build-and-release.md) | Build gating and release process | **shipped in v1.2.0** |
-| [16](enhancements/16-dotnet-local-parity.md) | Make `--dotnet` actually work | plan merged (#69), **no code yet — P0 inside** |
-| [17](enhancements/17-tutorial-dotnet-coverage.md) | Tutorial .NET coverage (#20) | **done** — PR #70, unmerged |
-| [18](enhancements/18-composer-ux.md) | Composer UX (#4) | proposed |
-| [19](enhancements/19-closing-out.md) | Sequencing the five remaining workstreams | proposed |
-
-### Two different ".NET" workstreams — do not conflate them
-
-- **Tutorial .NET (plan 17, #20) is done.** Every chapter that ships code ships both languages,
-  both gated in CI: 334 .NET tests across 31 projects. This says nothing about the app.
-- **Production .NET (plan 16) is broken.** `agents/dotnet` builds and starts and cannot answer a
-  single question. Finishing the tutorials did not touch it.
-
-### The one thing to read first
-
-**Plan 16 F1: the .NET orchestrator cannot reach any specialist.** `CallSpecialistAgent` is rejected
-with "arguments dictionary is missing a value for the required parameter 'agentName'", so
-`agents_involved` is `['orchestrator']` on every turn and no specialist is ever invoked. The stack
-builds, all 12 containers report healthy, the UI serves, login works — and every question fails.
-
-While that stands, "two complete, working backends" is not true of `main`. Either fix it before the
-next release repeating the claim, or qualify the claim.
-
-### Found by running v1.2.0, not yet planned
-
-Measured against a live stack during the v1.2.0 work. None of these has an owner yet.
-
-- [ ] **`handoff` mode is an outlier on both cost and latency.** Measured 100–200 s per turn and
-      19,000–25,000 characters of response, against ~11 s and ~1,000 characters for `tool` on the
-      same prompt. An order of magnitude beyond every other mode; it looks like intermediate content
-      is being flushed into the reply. Worth understanding before the mode benchmark is published,
-      since it will dominate the table.
-- [ ] **`workflow:pre-purchase` answers from half its inputs, silently.** Four executors run —
-      `reviews`, `stock`, `price_history`, `shipping` — and the reply is 48 characters:
-      `"Stock: 348 units available | Price trend: stable"`. An earlier note here said the synthesis
-      throws reviews and shipping away; that was wrong. `_build_recommendation` guard-clauses every
-      line on data being present, so the fan-out is real and the synthesis is faithful — the
-      *inputs* are missing, and every failure path in that workflow is silent. See
-      [plan 19 §2b](enhancements/19-closing-out.md).
-- [ ] **The orchestration-mode benchmark has a harness but no published result.**
-      `evals/benchmark_modes.py` ships in v1.2.0 and is verified working. The first full run
-      measured a broken build through a tripped rate limiter and was discarded rather than
-      published. Needs a re-run against v1.2.0 images (~60 calls, ~$1, ~25 min with pacing) and a
-      `docs/orchestration-benchmark.md` page. **This is the highest value-per-day item in the
-      [adoption audit](audit-2026-08-25-adoption-and-azure.md)** — an LLM answering "which
-      orchestration pattern should I use?" has nothing to cite today.
-- [ ] **The demo clip has a recording spec but no recording.**
-      `web/e2e/demo-recording.spec.ts` ships and typechecks. Nothing has been recorded, so the
-      README still opens with a static PNG. Re-check the prompts against the post-FTS catalogue
-      before recording.
-- [ ] **No .NET images are published** — accepted, deliberately. The demo path stays Python-only;
-      a visitor is there for the features, not the backend language. `--dotnet` remains a
-      build-from-source path. Recorded here so it is not rediscovered as a gap.
-
-### Still open from the adoption audit
-
-- [ ] **Chapter 21, Capstone Tour** — two `.gitkeep` files. The bridge from 34 tutorials to the
-      running application, and the one missing rung on the ladder.
-- [ ] **`docs/adr/`** — five decisions already argued in prose (A2A over direct calls, no
-      text-to-SQL, YAML prompt composition, MAF-native execution, dual-stack parity) and recorded
-      nowhere a reader would look.
-- [ ] **Promote the "reported vs actual" table** below onto the docs site. It is the most credible
-      artifact in the repository and it lives in `.claude/`.
+**Status: 2026-08-27.** Plan 20 (close-out) is complete — the .NET stack works, both broken
+orchestration modes are fixed, the benchmark is published, the ADRs exist, four features shipped,
+and every document has been reconciled against what the code actually does. v1.3.0 is ready to cut
+and is deliberately held until the roadmap work lands.
 
 ---
 
-## Where this stood (2026-08-21, after v1.1.0)
+## 1. Next objective — Azure and Microsoft Foundry
 
-*Kept for the record; superseded by the section above.*
+**The largest gap in the repository.** No Bicep, no `azure.yaml`, no Terraform, no Kubernetes
+manifest, no Foundry integration. `docs/deployment.md` is 428 lines of local Docker Compose, and
+most readers arrive asking how they would run this at work.
 
-Everything through **Phase 14 (.NET parity)** and **Phase 12 (documentation site)** is merged, plus
-a further round covering conversation context, telemetry, tutorial CI, SEO, and three defects that
-turned out to be larger than their issue titles.
+The goal is not "this app runs on Azure". It is a **reference for taking a multi-agent MAF system
+to Azure**, with this app as the worked example and the trade-offs written down. That means three
+topologies, because *the difference between them is the content*: one deployment is a tutorial;
+the same six agents in three topologies, with what each costs you, is a reference.
 
-**The documentation site is live** at <https://nitinksingh.com/e-commerce-agents/> — 85 pages, 71
-Mermaid diagrams, generated from the repo by `scripts/build_docs_site.py`. Every page now carries
-its own meta description, keywords and `TechArticle` JSON-LD, and every diagram carries an
-accessible title.
+| Topology | Who owns the runtime | Who owns the model |
+|---|---|---|
+| 0 — Docker Compose | you | you | 
+| 1 — Azure Container Apps | you | you |
+| 2 — Foundry as model provider | you | Foundry (model + hosted tools) |
+| 3 — Foundry Hosted Agents | Foundry | Foundry |
 
-**Workflow resume works on both stacks**, so the pause → badge → Approve → resume loop is real on
-.NET as well as Python, and `web/e2e/parity-gaps.ts` is empty.
+### 1.1 Blockers found in the code before writing any `az` command
 
-### The pattern worth carrying forward
+Each of these will stop a deployment. Finding them by reading was the point of planning first.
 
-Five separate times in the most recent round, **the reported problem was smaller than the actual
-one**, and in every case the difference was found by running something rather than reading it:
+- [ ] **B1 — `NEXT_PUBLIC_API_URL` is inlined at build time**, and the ACA FQDN does not exist
+      until provisioning. Three ways out: two-phase deploy (works, makes `azd up` a lie), a custom
+      domain pinned up front (adds DNS and certificates to a quick start), or **proxy `/api/*`
+      through the Next.js server to the orchestrator's internal FQDN**. Take the third: the browser
+      only ever talks to its own origin, the variable becomes a relative path, the orchestrator
+      needs no external ingress at all, and CORS disappears. Smallest change, and it *removes* a
+      public surface rather than adding one.
+- [ ] **B2 — no managed-identity path to Azure OpenAI.** Both stacks authenticate with a key.
+      `AZURE_OPENAI_AUTH=key|identity` on both.
+- [ ] **B3 — `AGENT_REGISTRY` is hardcoded host:port.** Must be assembled from Bicep outputs, and
+      the A2A client verified against `https` with no port.
+- [ ] **B4/B5 — database ordering.** pgvector must be enabled before `init.sql` runs, and the
+      seeder job must be ordered before index creation.
+- [ ] **B6 — telemetry has no Azure sink documented.** Application Insights section in the
+      deployment doc.
 
-| Filed as | Actually |
-|---|---|
-| "follow-ups *occasionally* lose context" (#9) | Deterministic: specialists received **zero** history on every browser turn |
-| "telemetry depth: no metrics provider" (#19) | Metrics were never the gap; .NET spans were **invisible in Aspire's GenAI view** |
-| ".NET tests only for ch01-11" (#20) | **No CI job built any** of the 31 tutorial projects; ch08 was fully broken |
-| "`semantic_search` dead under replay" (#52) | Also a **production** IVFFlat bug returning unrelated products |
-| "`optimize_cart` divides by zero" (#51) | **No promotion had ever applied correctly**, in any environment |
+### 1.2 Phases and acceptance
 
-Two of those were found only because a gate was switched on. That is the argument for finishing the
-gates below before the content work.
+Acceptance is written as something that either happened or did not. "Deployed successfully" is not
+acceptance; a signed-in user completing a chat turn is.
 
-## Remaining work, in order
+- [ ] **Phase A — unblock (~2 d).** B1, B2, B3. *Acceptance:* the existing Playwright suite passes
+      unchanged through the proxy, **and SSE streaming and the live mode graph are verified through
+      it rather than assumed**; a live chat turn against Azure OpenAI with no key in the environment.
+- [ ] **Phase B — Azure Container Apps (~4 d).** `infra/` Bicep, `azure.yaml` and `azure-down.sh`
+      written and tested **first**. *Acceptance:* from a clean subscription, `azure-up.sh` produces
+      a working public URL where a signed-in user completes a chat turn with product cards and one
+      approval gate; Playwright passes against that URL via `E2E_BASE_URL`; `azure-down.sh` leaves
+      zero resources **and no soft-deleted vault**.
+- [ ] **Phase C — Foundry as model provider (~2 d).** `LLM_PROVIDER=foundry` on both stacks,
+      embeddings endpoint resolved, one hosted web-search tool on `review-sentiment` as the
+      demonstration. *Acceptance:* the eval smoke suite passes under the Foundry provider, and a
+      live turn shows the hosted tool called in the Application Insights trace.
+- [ ] **Phase D — Foundry Hosted Agents (~3–5 d).** Orchestrator packaged for Invocations,
+      specialists reached via hosted MCP, a Responses variant built alongside with the graph loss
+      documented. *Acceptance:* both variants deployed and callable; the Invocations variant drives
+      the existing frontend unchanged; one A2A call to an ACA specialist either proven to work or
+      **explicitly recorded as not working, with the reason**.
+- [ ] **Phase E — publish (~2 d).** `docs/azure-deployment.md` on the site with verified cost
+      numbers, not estimates.
 
-### 1. Finish the .NET eval suite
+**Cost and teardown are part of the deliverable, not an afterthought.** A reader who cannot cheaply
+undo it will not try it, so `azure-down.sh` is written in Phase B alongside the provisioning, not
+after it.
 
-**Groundwork is merged; the recording run is not.** `ECommerceAgents.Evals` now has 6 of 7 datasets,
-record-on-miss (`RECORD=true` + `REPLAY_RECORD_PROVIDER`), and an `IEmbeddingProvider` seam without
-which product-discovery could not even start in replay mode.
+---
 
-- [ ] Record fixtures for all 6 datasets against real Azure OpenAI
-- [ ] Generate .NET baselines — **re-record, never copy Python's**; .NET has a different mode set,
-      so its absolute scores legitimately differ
-- [ ] Add the CI job, gating on baseline regression rather than an absolute floor (the score is a
-      property of the recording session — measured spread on one suite was 8 points across four
-      identical recordings)
-- [ ] `red_team` / safety: needs its own schema and evaluator, so it is a separate piece
+## 2. Open items from plan 20
 
-### 2. Tutorial .NET coverage (#20) — see [plan 17](enhancements/17-tutorial-dotnet-coverage.md)
+- [ ] **The .NET eval suite.** 6 of 7 datasets ported; record-on-miss and the `IEmbeddingProvider`
+      seam are merged. Needs a live key: record fixtures for all six, generate .NET baselines —
+      **re-recorded, never copied from Python**, since .NET has a different mode set and its
+      absolute scores legitimately differ — and add a CI job gating on *baseline regression* rather
+      than an absolute floor, because the score is a property of the recording session (measured
+      spread: 8 points across four identical recordings). `red_team` needs its own schema and
+      evaluator and stays separate. **Deferred for budget (~$1.50), not difficulty.**
+- [ ] **The demo clip.** Eight attempts found five defects that each let the run exit 0 while
+      silently dropping the approval and resume beats: wrong mode for the gate, a regex that cannot
+      span `" & "`, locators keyed off button text that changes after the first switch, four
+      simultaneous data constraints, and a return that can only be initiated once per order. All
+      five are fixed and the spec now **throws** instead of logging. *Still open:* the return turn
+      does not reach the HITL gate and the run hits its 600 s cap with no `hitl_requests` row.
+      The prompts are fine — FTS ranks `Allbirds Wool Runners` at 0.67.
 
-The CI gate is in and immediately found chapter 08 completely broken. What it now protects is
-incomplete:
+---
 
-- [ ] Tests for **ch12–19** (7 chapters; ch16 and ch20 stay documented stubs — magentic is a
-      genuine SDK blocker, not a repo gap)
-- [ ] `dotnet/` for **ch22–32** (11 chapters) — the largest single piece of work left in the repo
+## 3. Eval and gate completeness
 
-### 3. Composer UX (#4) — see [plan 18](enhancements/18-composer-ux.md)
+- [ ] **Get the dual-backend Playwright gate into CI.** It is the definition of done for parity and
+      it runs only locally, because it needs both stacks up against a seeded database.
+      [ADR 0005](../../docs/adr/0005-dual-stack-parity.md) records this as its own honest weakness.
+      Every parity claim in the repo currently rests on a gate nobody runs automatically.
+- [ ] **An eval gate for the MCP path** — run each dataset twice, native tools versus MCP, and fail
+      CI if the MCP run scores below the native baseline. MCP is offered as an alternative
+      data-access layer with nothing measuring whether it is as good.
+- [ ] **A red-team evaluator.** `red_team.json` is scored by keyword matching, which means very
+      little; it needs its own schema and judge.
 
-- [ ] Collapse the always-visible `AGENT_MODES` chip row behind a control
-- [ ] Derive suggested prompts from the reply on screen instead of a static
-      `DEMO_SCENARIOS.slice(0, 4)`
+---
 
-**Frontend-only by constraint**: no new endpoint, no changed request shape, no fence-contract
-change. Both backends must be byte-identically unaffected, verified by the dual-backend gate.
+## 4. Retrieval and the tool surface
 
-### 4. Smaller items, unscheduled
+- [ ] **Typed filter DSL** — replace `search_products`' flat parameter list with a structured
+      `ProductFilters` model. Text-to-SQL was considered and rejected
+      ([ADR 0002](../../docs/adr/0002-no-text-to-sql.md)): `user_email`/`user_role` scoping lives in
+      ContextVars and dynamic SQL would bypass that contract. A typed DSL gives the model
+      flexibility at the boundary while keeping SQL generation server-side and auditable.
+- [ ] **Publish the two MCP servers to PyPI**, so any MCP client can run them against any
+      PostgreSQL database without this codebase. That is the honest test of whether they are a real
+      integration surface or internal plumbing with a protocol on top.
+- [ ] **Prompt caching** — cache system prompts and tool schemas per agent. Worth doing *now*
+      rather than earlier because the cost counter that shipped in v1.3 can measure it.
 
-- [ ] **Cost counter instrument** — dollar estimation and a budget ceiling both ship; what is
-      missing is a counter this repo owns, so an OTLP sink can alert on spend anomalies
-- [ ] **In-chat approval card** — the resume loop is real on both stacks but the control renders
-      only on `/runs`, not inside the chat thread
-- [ ] **Streaming tool calls** — text deltas stream; raw tool-result payloads do not yet travel as
-      their own SSE frames
-- [x] **Search & retrieval** — shipped in v1.2.0: `search_products` is a weighted `tsvector` behind
-      a GIN index, and `semantic_search` fuses lexical and vector arms via RRF. Only the typed
-      filter DSL remains planned
-- [ ] **Langfuse sink on .NET** — deliberately skipped as an additive second exporter
-- [ ] **Anonymous multi-turn memory** — neither stack persists anonymous storefront conversations,
-      so follow-ups there have no context at any tier. A product decision, not a bug, but currently
-      undocumented as such
+---
+
+## 5. Cross-framework comparison — needs a decision before any code
+
+The repo already runs the same six agents, the same database and the same prompt corpus through two
+implementations of one framework. The question a reader asks next is how that compares to the
+alternatives they are actually choosing between. Three separable options, increasing in scope:
+
+- [ ] **Claude and other providers as a third model backend.** One chat client per stack behind the
+      existing `LLM_PROVIDER` switch. Both backends keep their orchestration; only the model
+      changes. Mostly answers "is this locked to OpenAI?".
+- [ ] **A third backend on a different agent SDK** — Claude Agent SDK or LangGraph — serving the
+      same frontend, database and prompts. Turns a two-way comparison into a three-way one and
+      produces something genuinely hard to find: the same non-trivial system built three ways, with
+      the differences attributable to the framework rather than to the problem.
+- [ ] **Agentic workflows on the repository itself** — coding agents for eval recording,
+      documentation-drift checks, review. Ships nothing in the product; improves the rate at which
+      everything else gets done.
+
+**Sequencing:** the middle option does not start until Azure lands. A third backend multiplies the
+deployment matrix, and building it before there is *one* good deployment story would produce three
+mediocre ones.
+
+---
+
+## 6. OAuth — later phases
+
+Phases A–D shipped and are live-verified: the authorization server, user login brokered by the
+orchestrator, client-credentials inter-agent auth, and the MCP servers as OAuth 2.1 resource
+servers — all on both stacks. The design and per-phase notes for what shipped are documented in
+[`docs/security-guide.md`](../../docs/security-guide.md).
+
+- [ ] **Key rotation.** A single active signing key per `kid`, with no automatic rotation, is the
+      known gap. `AUTH_SIGNING_KEY_ENCRYPTION_KEY` and per-service `OAUTH_CLIENT_SECRET` must come
+      from a secret store in any real deployment; the `OAUTH_SEED_KEY` dev default must never ship.
+- [ ] **RFC 7591 dynamic client registration** — scoped and gated, not open registration.
+- [ ] **Audit matrix** covering which routes accept which token type.
+
+---
+
+## 7. Blocked, waiting on upstream
+
+- [ ] **MCP 2.x migration** — blocked on `agent-framework-core`. Listed rather than deleted, because
+      an item that vanishes looks like a decision nobody made.
+
+---
+
+## 8. Known debt
+
+- [ ] **Frontend type/lint debt.** Two ESLint rules are downgraded to warnings in
+      `web/eslint.config.mjs` so the gate stays meaningful; the suppressions come off by fixing the
+      root causes, not by re-raising the rules. **Type the API layer** — replace `any` in
+      `web/src/lib/api.ts` and its consumers with real interfaces (consider extending the Zod types
+      in `web/src/lib/chat-schemas.ts`), then restore `@typescript-eslint/no-explicit-any` to
+      `error`. **Auth/cart store refactor** — move `lib/auth-context.tsx` and `lib/cart-context.tsx`
+      off mount-effect `setState` to a `useSyncExternalStore`-backed store, then restore
+      `react-hooks/set-state-in-effect` to `error`. Also clear the remaining `next/no-img-element`
+      warnings where `next/image` is practical.
+- [ ] **The chat page hard-crashes on an unexpected API shape.** Found during plan 20's UI
+      verification; unowned.
+- [ ] **`embeddings=0` in the default local stack**, so `semantic_search` is lexical-only until
+      `scripts/generate_embeddings` has run. Correct behaviour, surprising default.
+
+---
+
+## 9. Recorded decisions — not pending work
+
+Listed so they are not rediscovered as gaps.
+
+- **No .NET container images are published.** The demo path stays Python-only; a visitor is there
+  for the features, not the backend language. `--dotnet` remains build-from-source.
+- **No Langfuse sink on .NET.** OTel already carries GenAI spans to Aspire; a second exporter would
+  be additive only.
+- **Anonymous storefront conversations are not persisted** on either stack, so follow-ups there have
+  no context at any tier. A product decision, not a bug.
+- **The .NET stack seeds and authenticates with Python images.** `seeder` and `auth-server` are
+  shared rather than duplicated: the seeder is the single source of demo data, and a second
+  implementation would have to produce byte-identical rows or the dual-backend parity gate becomes
+  meaningless. Neither service is an agent, so neither demonstrates anything about MAF.
+- **Magentic orchestration exists in neither stack.** MAF .NET ships `MagenticWorkflowBuilder`, so
+  it is unbuilt rather than unavailable — and not a parity gap, because neither side has it.
+- **Text-to-SQL was considered and rejected.** See ADR 0002.
+
+---
+
+## 10. The pattern worth carrying forward
+
+**The reported problem has been smaller than the actual one every single time**, and every time the
+difference was found by running something rather than reading it. That table is now a published
+page — [`docs/reported-vs-actual.md`](../../docs/reported-vs-actual.md) — with eight rows. It is the
+most useful thing in this repo for anyone deciding how much to trust an issue title.
+
+---
 
 ## Constraints that still bite
 
@@ -229,16 +285,16 @@ local runs could not were both environment-specific by nature.
 
 ```bash
 # .NET
-cd agents/dotnet && dotnet test ECommerceAgents.sln          # 500 passing
+cd agents/dotnet && dotnet test ECommerceAgents.sln          # 585 passing
 
 # Python
-cd agents/python && uv run pytest && uv run ruff check .     # ~776 passing
+cd agents/python && uv run pytest                            # 833 passing
 
 # Web
 cd web && npx vitest run && npx tsc --noEmit && npx eslint .
 
 # Docs site
-uv run python scripts/build_docs_site.py --check             # 84 pages, 0 broken links
+uv run python scripts/build_docs_site.py --check             # 97 pages, 0 broken links
 uv run python scripts/check_tutorial_readmes.py --check      # 34/34 chapters
 
 # Dual-backend gate — the definition of done for .NET parity

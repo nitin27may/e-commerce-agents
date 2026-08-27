@@ -44,7 +44,13 @@ param(
     [switch]$SeedOnly,
     [switch]$InfraOnly,
     [switch]$Dotnet,
-    [switch]$Demo
+    [switch]$Demo,
+    # The VARIABLE cannot be $Switch — that is a reserved automatic variable in
+    # PowerShell (the switch-statement enumerator), and shadowing it is a real
+    # bug waiting. The alias keeps the user-facing flag matching dev.sh's
+    # --switch, which is what the repo convention promises.
+    [Alias('Switch')]
+    [switch]$SwitchStack
 )
 
 # Stop on the first unhandled error. Native commands don't trip this on their
@@ -71,12 +77,64 @@ if ($Dotnet) {
     $RunProfiles        = @('--profile', 'agents', '--profile', 'mcp', '--profile', 'frontend')
     $PgDataVolumeRegex  = 'pgdata-dotnet$'
     $StackName          = '.NET'
+    $OtherStackProject  = 'e-commerce-agents'
+    $OtherStackName     = 'Python'
+    $OtherStackFile     = 'docker-compose.yml'
 } else {
     $ComposeArgs        = @('compose')
     $AppProfiles        = @('--profile', 'seed', '--profile', 'agents', '--profile', 'frontend')
     $RunProfiles        = @('--profile', 'agents', '--profile', 'frontend')
     $PgDataVolumeRegex  = '_pgdata$'
     $StackName          = 'Python'
+    $OtherStackProject  = 'e-commerce-agents-dotnet'
+    $OtherStackName     = '.NET'
+    $OtherStackFile     = 'docker-compose.dotnet.yml'
+}
+
+function Assert-SingleStack {
+    <#
+        .SYNOPSIS
+        Refuses to start while the other stack is running.
+
+        .DESCRIPTION
+        The Python and .NET stacks publish the same host ports, so they cannot
+        run at once. That is deliberate: running both would need a second
+        published port set AND a second frontend build, because
+        NEXT_PUBLIC_API_URL is inlined at build time and one image cannot
+        address two orchestrators.
+
+        What is worth fixing is the failure mode. Without this check the second
+        stack fails partway through on a raw Docker port-binding error, after
+        some containers have already started — a half-up mess that neither
+        stack's `down` fully cleans.
+
+        Compares compose project labels rather than probing ports: a busy port
+        says nothing about what is holding it.
+    #>
+    $running = @(& docker ps --filter "label=com.docker.compose.project=$OtherStackProject" --format '{{.Names}}' 2>$null | Where-Object { $_ })
+    if ($running.Count -eq 0) { return }
+
+    if ($SwitchStack) {
+        Write-Step "Switching stacks — tearing down the $OtherStackName stack"
+        & docker compose -f $OtherStackFile --profile seed --profile agents --profile mcp --profile frontend down -v --remove-orphans *> $null
+        Write-Ok "$OtherStackName stack removed, volumes included"
+        return
+    }
+
+    Write-Host ''
+    Write-Err "The $OtherStackName stack is already running ($($running.Count) containers)."
+    Write-Host ''
+    Write-Host '  Both stacks publish the same ports, so only one runs at a time.'
+    Write-Host ''
+    Write-Host '  Switch cleanly — brings the other down, volumes and all:'
+    Write-Host ''
+    Write-Host "    ./scripts/dev.ps1 -SwitchStack"
+    Write-Host ''
+    Write-Host '  Or do it by hand:'
+    Write-Host ''
+    Write-Host "    docker compose -f $OtherStackFile --profile agents --profile frontend down -v"
+    Write-Host ''
+    exit 1
 }
 
 function Invoke-Compose {
@@ -168,6 +226,48 @@ function Repair-StaleDatabaseVolume {
     Wait-ForHealth -Name 'PostgreSQL' -TimeoutSeconds 60 -Probe @(
         'exec', 'db', 'pg_isready', '-h', '127.0.0.1', '-U', 'ecommerce', '-d', 'ecommerce_agents')
     Write-Ok 'Database reinitialized with correct credentials'
+}
+
+function Assert-DatabaseSchema {
+    <#
+        .SYNOPSIS
+        Verifies the SCHEMA matches, not just the credentials.
+
+        .DESCRIPTION
+        A volume can authenticate perfectly and still carry a schema from before
+        the last init.sql change. That is the more common way to land here —
+        pulling new commits and restarting the same stack, rather than switching
+        stacks — and it is nastier than an auth failure, because nothing errors.
+        Search quietly returns nothing and the agent says "I couldn't find any",
+        which reads like an empty catalogue rather than a broken index.
+
+        products.search_vector is the canary: it arrived with the v1.2.0
+        full-text search work, so any volume predating that lacks it. Hardcoded
+        on purpose — deriving the check from init.sql would be clever and would
+        drift.
+    #>
+    $query = "SELECT 1 FROM information_schema.columns WHERE table_name = 'products' AND column_name = 'search_vector'"
+    $probe = @('exec', '-T', 'db', 'sh', '-c',
+               "PGPASSWORD=ecommerce_secret psql -h 127.0.0.1 -U ecommerce -d ecommerce_agents -tAc `"$query`"")
+    $result = & docker @($ComposeArgs + $probe) 2>$null
+    if ($result -match '1') { return }
+
+    Write-Host ''
+    Write-Warn 'Database schema is out of date — products.search_vector is missing.'
+    Write-Host ''
+    Write-Host '  Your Postgres volume predates the full-text search change. The stack will'
+    Write-Host '  start and look healthy, and every product search will silently return'
+    Write-Host '  nothing. Refusing to start into that.'
+    Write-Host ''
+    Write-Host '  Two ways forward:'
+    Write-Host ''
+    Write-Host '    Recreate the volume (loses local data, reseeds from scratch):'
+    Write-Host '      ./scripts/dev.ps1 -Clean'
+    Write-Host ''
+    Write-Host '    Or apply the schema in place, keeping your data:'
+    Write-Host '      docker compose exec -T db psql -U ecommerce -d ecommerce_agents < docker/postgres/init.sql'
+    Write-Host ''
+    exit 1
 }
 
 function Show-Summary {
@@ -265,15 +365,19 @@ try {
     # ── Seed only ────────────────────────────────────────────
     if ($SeedOnly) {
         Write-Step 'Running seeder'
+        Assert-SingleStack
         Invoke-Compose -Arguments @('up', '-d', 'db', 'redis', 'aspire')
         Wait-ForHealth -Name 'PostgreSQL' -TimeoutSeconds 60 -Probe @(
             'exec', 'db', 'pg_isready', '-h', '127.0.0.1', '-U', 'ecommerce', '-d', 'ecommerce_agents')
         Wait-ForHealth -Name 'Redis' -Probe @('exec', 'redis', 'redis-cli', 'ping')
         Repair-StaleDatabaseVolume
+        Assert-DatabaseSchema
         Invoke-Compose -Arguments @('--profile', 'seed', 'run', '--rm', 'seeder')
         Write-Ok 'Seeder complete'
         exit 0
     }
+
+    Assert-SingleStack
 
     # ── Stop existing ────────────────────────────────────────
     Write-Step 'Stopping existing containers'
@@ -294,6 +398,7 @@ try {
         'exec', 'db', 'pg_isready', '-h', '127.0.0.1', '-U', 'ecommerce', '-d', 'ecommerce_agents')
     Wait-ForHealth -Name 'Redis' -Probe @('exec', 'redis', 'redis-cli', 'ping')
     Repair-StaleDatabaseVolume
+    Assert-DatabaseSchema
     Write-Ok 'Infrastructure is ready'
 
     # ── Seed ─────────────────────────────────────────────────

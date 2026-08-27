@@ -1,3 +1,4 @@
+using ECommerceAgents.Shared.Tools;
 using ECommerceAgents.Shared.A2A;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
@@ -22,15 +23,32 @@ public sealed class OrchestratorTools(A2AClient client, AgentSettings settings, 
 
     public IEnumerable<AITool> All() => new AITool[]
     {
-        AIFunctionFactory.Create(CallSpecialistAgent, nameof(CallSpecialistAgent)),
+        AgentTool.Create(CallSpecialistAgent, nameof(CallSpecialistAgent)),
     };
 
+    /// <remarks>
+    /// The parameter is <c>agent_name</c>, not <c>agentName</c>, and that is
+    /// deliberate despite being un-idiomatic C#. Parameter names are part of the
+    /// tool's JSON schema, so they are a wire contract with the model — and here
+    /// also with the shared prompt corpus, which is Python's and names this
+    /// parameter <c>agent_name</c>.
+    ///
+    /// With <c>agentName</c>, the model (primed by a snake_case corpus) emitted
+    /// <c>agent_name</c>, the binder rejected it, and <b>every routed request in
+    /// the .NET stack failed</b> with "The arguments dictionary is missing a
+    /// value for the required parameter 'agentName'". MAF offers no way to rename
+    /// a parameter in the schema — <c>[JsonPropertyName]</c> on a parameter is
+    /// ignored by <c>AIFunctionFactory</c> — so the C# name has to be the wire
+    /// name. See plan 16 F1.
+    /// </remarks>
     [Description("Route a request to a specialist agent via A2A. Available agents: product-discovery, order-management, pricing-promotions, review-sentiment, inventory-fulfillment")]
     public async Task<string> CallSpecialistAgent(
-        [Description("Name of the specialist agent to call")] string agentName,
+        [Description("Name of the specialist agent to call")] string agent_name,
         [Description("The message to send to the specialist agent")] string message
     )
     {
+        var agentName = agent_name;
+
         if (!_registry.TryGetValue(agentName, out var url))
         {
             var available = string.Join(", ", _registry.Keys);
@@ -58,7 +76,7 @@ public sealed class OrchestratorTools(A2AClient client, AgentSettings settings, 
         await foreach (var delta in _client.StreamAsync(agentName, url, message, RequestContext.CurrentHistory))
         {
             full.Append(delta);
-            await streamWriter.WriteAsync(delta);
+            await streamWriter.WriteAsync(new StreamFrame("delta", delta));
         }
         return full.ToString();
     }

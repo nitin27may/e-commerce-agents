@@ -123,7 +123,13 @@ test.describe("Generative UI — review-sentiment, inventory-fulfillment, pricin
     );
 
     const selectButtons = page.getByRole("button", { name: "Select" });
-    await expect(selectButtons.first()).toBeVisible();
+    // Longer than the default 10 s on purpose. The turn is complete by the time
+    // sendMessageAndWaitForTurn returns, but the shipping card is rendered from
+    // the fenced payload in the final message — under full-suite load that last
+    // render lands after the composer has already re-enabled. This test passes
+    // in isolation and failed only in a full run, which is the signature of a
+    // wait that is too tight rather than a card that never arrives.
+    await expect(selectButtons.first()).toBeVisible({ timeout: 30000 });
     const countBefore = await page.locator("textarea").count(); // sanity: composer present
     expect(countBefore).toBeGreaterThan(0);
 

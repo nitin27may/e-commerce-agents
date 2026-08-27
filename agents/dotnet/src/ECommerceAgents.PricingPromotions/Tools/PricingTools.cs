@@ -1,3 +1,4 @@
+using ECommerceAgents.Shared.Tools;
 using Dapper;
 using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Data;
@@ -18,10 +19,10 @@ public sealed class PricingTools(DatabasePool pool)
 
     public IEnumerable<AITool> All() => new AITool[]
     {
-        AIFunctionFactory.Create(ValidateCoupon, nameof(ValidateCoupon)),
-        AIFunctionFactory.Create(OptimizeCart, nameof(OptimizeCart)),
-        AIFunctionFactory.Create(GetActiveDeals, nameof(GetActiveDeals)),
-        AIFunctionFactory.Create(CheckBundleEligibility, nameof(CheckBundleEligibility)),
+        AgentTool.Create(ValidateCoupon, nameof(ValidateCoupon)),
+        AgentTool.Create(OptimizeCart, nameof(OptimizeCart)),
+        AgentTool.Create(GetActiveDeals, nameof(GetActiveDeals)),
+        AgentTool.Create(CheckBundleEligibility, nameof(CheckBundleEligibility)),
     };
 
     // ─────────────────────── validate_coupon ──────────────────

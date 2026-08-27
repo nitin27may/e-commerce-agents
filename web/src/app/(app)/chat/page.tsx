@@ -5,6 +5,7 @@ import {
   useEffect,
   useRef,
   useCallback,
+  useMemo,
 } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
@@ -45,7 +46,9 @@ import {
   Share2,
   Sparkles,
 } from "lucide-react";
+import { ApprovalCard } from "@/components/chat/approval-card";
 import { DEMO_SCENARIOS } from "@/lib/scenarios";
+import { deriveSuggestions } from "@/lib/suggestions";
 import { AGENT_MODES } from "@/components/ui/ai-prompt-box";
 
 // ---------------------------------------------------------------------------
@@ -64,6 +67,13 @@ interface Message {
    * message so OrchestrationGraph knows which mode's graph to render,
    * independent of whatever's currently selected in the switcher. */
   mode?: string;
+  /** The `usage_logs` id this turn was recorded under — from the `event: run` SSE
+   * frame, which arrives after persistence because the id does not exist before
+   * then. Needed to resume a run that paused on a human. */
+  runId?: string;
+  /** Set when the run stopped at an in-workflow HITL gate and is waiting on a
+   * decision. Drives the inline approval card. */
+  pendingApproval?: boolean;
   /** Executor ids (dashed, live form) currently mid-run / completed / errored — from `event: node`/`error` SSE frames. */
   activeNodeIds?: string[];
   doneNodeIds?: string[];
@@ -315,6 +325,31 @@ export default function ChatPage() {
   const pendingQueryRef = useRef<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Follow-up chips, derived from the assistant's last completed message.
+   *
+   * Was `DEMO_SCENARIOS.slice(0, 4)` — the same four canned prompts after every
+   * turn, including when the assistant had just asked a direct question the
+   * chips ignored (issue #4).
+   *
+   * Skips a message that is still streaming: deriving from a half-arrived
+   * answer makes the chips flicker and, worse, briefly show suggestions for a
+   * card that has not finished rendering.
+   *
+   * `deriveSuggestions` is a pure function over text the client already has —
+   * no request, no latency, and testable in isolation (`lib/suggestions.test.ts`).
+   */
+  const suggestions = useMemo(() => {
+    const lastAssistant = [...messages]
+      .reverse()
+      .find((m) => m.role === "assistant" && !m.streaming);
+
+    return deriveSuggestions(
+      lastAssistant?.content,
+      DEMO_SCENARIOS.slice(0, 4).map((s) => ({ label: s.label, prompt: s.prompt }))
+    );
+  }, [messages]);
   // Per-message abort controller. New send aborts any in-flight stream;
   // unmount aborts whatever's still running. Plugs the SSE-leak finding.
   const streamAbortRef = useRef<AbortController | null>(null);
@@ -586,6 +621,21 @@ export default function ChatPage() {
             });
           },
           onOrchestrationEvent: (eventName, data) => {
+            if (eventName === "run") {
+              const { run_id, pending_approval } = data as {
+                run_id?: string;
+                pending_approval?: boolean;
+              };
+              if (!run_id) return;
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId
+                    ? { ...m, runId: run_id, pendingApproval: pending_approval === true }
+                    : m,
+                ),
+              );
+              return;
+            }
             if (eventName !== "node" && eventName !== "error") return;
             const frame = data as { node_id?: string; phase?: "enter" | "exit" };
             const nodeId = frame.node_id;
@@ -832,6 +882,29 @@ export default function ChatPage() {
 
                     {msg.role === "assistant" && <GroundingBadge report={msg.grounding} />}
 
+                    {msg.role === "assistant" && msg.pendingApproval && msg.runId && (
+                      <ApprovalCard
+                        runId={msg.runId}
+                        onResolved={(outcome) => {
+                          // Clear the gate on this message and append the
+                          // resumed turn as its own assistant message, so the
+                          // thread reads as the conversation it actually was:
+                          // paused, decided, continued.
+                          setMessages((prev) => [
+                            ...prev.map((m) =>
+                              m.id === msg.id ? { ...m, pendingApproval: false } : m,
+                            ),
+                            {
+                              id: `${msg.id}-resumed`,
+                              role: "assistant" as const,
+                              content: outcome.text,
+                              agents_involved: outcome.agentsInvolved,
+                            },
+                          ]);
+                        }}
+                      />
+                    )}
+
                     {msg.role === "assistant" && msg.mode && (
                       <OrchestrationGraph
                         mode={msg.mode}
@@ -887,10 +960,7 @@ export default function ChatPage() {
             <PromptInputBox
               onSend={(message, agentMode) => sendMessage(message, agentMode)}
               isLoading={isResponding}
-              suggestions={DEMO_SCENARIOS.slice(0, 4).map((s) => ({
-                label: s.label,
-                prompt: s.prompt,
-              }))}
+              suggestions={suggestions}
             />
           </div>
         </div>

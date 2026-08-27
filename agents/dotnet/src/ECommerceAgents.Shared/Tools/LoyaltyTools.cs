@@ -23,9 +23,9 @@ public sealed class LoyaltyTools(DatabasePool pool)
 
     public IEnumerable<AITool> All() => new AITool[]
     {
-        AIFunctionFactory.Create(GetLoyaltyTier, nameof(GetLoyaltyTier)),
-        AIFunctionFactory.Create(CalculateLoyaltyDiscount, nameof(CalculateLoyaltyDiscount)),
-        AIFunctionFactory.Create(GetLoyaltyBenefits, nameof(GetLoyaltyBenefits)),
+        AgentTool.Create(GetLoyaltyTier, nameof(GetLoyaltyTier)),
+        AgentTool.Create(CalculateLoyaltyDiscount, nameof(CalculateLoyaltyDiscount)),
+        AgentTool.Create(GetLoyaltyBenefits, nameof(GetLoyaltyBenefits)),
     };
 
     [Description("Get the current user's loyalty tier and associated benefits.")]

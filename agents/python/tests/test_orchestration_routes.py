@@ -100,7 +100,7 @@ PRODUCT_UUID = "11111111-1111-1111-1111-111111111111"
 
 
 async def _sentiment_ok(product_id: str) -> dict[str, Any]:
-    return {"sentiment": "positive", "total_reviews": 42}
+    return {"overall_sentiment": "positive", "average_rating": 4.4}
 
 
 async def _stock_ok(product_id: str) -> dict[str, Any]:
@@ -112,7 +112,7 @@ async def _price_good(product_id: str, days: int) -> dict[str, Any]:
 
 
 async def _shipping_fast(product_id: str, destination_region: str) -> dict[str, Any]:
-    return {"options": [{"price": 4.99, "days": 2}]}
+    return {"shipping_options": [{"price": 4.99, "delivery_window": "2 business days"}]}
 
 
 PRE_PURCHASE_TOOLS = {

@@ -19,6 +19,141 @@ The **.NET / C# backend** at [`agents/dotnet/`](../agents/dotnet/) is a real imp
 ---
 
 
+## What's next
+
+Ordered, with the reason for the order. Everything below is sequenced against one
+constraint: **this repository's value is as a worked reference for building multi-agent
+systems on Microsoft Agent Framework**, not as an e-commerce product. When a choice is
+between "more features" and "the same features, explained by running them", it goes to
+the second.
+
+Nothing here is a commitment to a date. Items move when what is learned makes them move,
+and when that happens the reason is written down rather than the item quietly disappearing.
+
+| # | Theme | Why it is here, in this position |
+|---|---|---|
+| 1 | [**Azure and Microsoft Foundry**](#1-azure-and-microsoft-foundry) | The single largest gap. There is no Azure path of any kind today |
+| 2 | [**Close the two open items**](#2-close-the-two-open-items) | Small, known, and both block a claim the repo already makes |
+| 3 | [**Make the eval story complete**](#3-make-the-eval-story-complete) | The gates are what let everything above be trusted |
+| 4 | [**Retrieval and the tool surface**](#4-retrieval-and-the-tool-surface) | Real, bounded engineering; no external blockers |
+| 5 | [**Cross-framework comparison**](#5-cross-framework-comparison) | High value, largest scope, and needs a decision before any code |
+| — | [**Blocked, waiting on upstream**](#blocked-waiting-on-upstream) | Tracked so the blocker is visible rather than looking like neglect |
+
+---
+
+### 1. Azure and Microsoft Foundry
+
+Blockers, phases and acceptance criteria are in [the consolidated plan](https://github.com/nitin27may/e-commerce-agents/blob/main/.claude/plans/remaining-work.md).
+
+`docs/deployment.md` is 428 lines of local Docker Compose. There is no Bicep, no `azure.yaml`,
+no Terraform, no Kubernetes manifest, no Foundry integration. For a repository whose readers are
+mostly people asking "how would I actually run this at work", that is the biggest single thing
+missing.
+
+The goal is deliberately not "this app runs on Azure". It is a reference for taking a
+multi-agent MAF system to Azure, with this app as the worked example and the trade-offs written
+down. That means **three topologies, because the difference between them is the content**:
+
+- **Azure Container Apps** — you own the runtime. The closest thing to what runs locally today.
+- **Foundry as model provider** — you own the runtime, Foundry owns the model and hosted tools.
+- **Foundry Hosted Agents** — Foundry owns the runtime.
+
+One deployment is a tutorial. The same six agents in three topologies, with what each one costs
+you, is a reference. Cost and teardown are part of the deliverable, not an afterthought: a
+reader who cannot cheaply undo it will not try it.
+
+### 2. Close the two open items
+
+Both are known, both are small, and both undercut something the repo already says.
+
+- **The .NET eval suite.** Six of seven datasets are ported and the enabling work is merged. What
+  remains needs a real key: record the fixtures, generate .NET baselines (**re-recorded, never
+  copied from Python** — different mode set, so different absolute scores are legitimate), and
+  add a CI job gating on *baseline regression* rather than an absolute floor, because the score
+  is a property of the recording session. Deferred for budget, not difficulty.
+- **The demo clip.** The spec is honest now — eight attempts found five defects that each let the
+  run exit 0 while silently dropping the approval and resume beats, and it throws instead of
+  logging. Still open: the return turn does not reach the HITL gate, and the run hits its 600s
+  cap.
+
+### 3. Make the eval story complete
+
+The gates are what make every other claim on this page checkable.
+
+- [ ] **Get the dual-backend Playwright gate into CI.** It is the definition of done for parity and
+      it runs only locally, because it needs both stacks up against a seeded database.
+      [ADR 0005](adr/0005-dual-stack-parity.md) records this as its own honest weakness. Every
+      parity claim on this page rests on a gate nobody runs automatically.
+- [ ] **An eval gate for the MCP path** — run each dataset twice, native tools versus MCP, and fail
+      CI if the MCP run scores below the native baseline. Today MCP is offered as an alternative
+      data-access layer with nothing measuring whether it is as good.
+- [ ] **A red-team evaluator.** `red_team.json` is scored by keyword matching, which means very
+      little; it needs its own schema and judge.
+
+### 4. Retrieval and the tool surface
+
+- [ ] **Typed filter DSL** — replace `search_products`' flat parameter list with a structured
+      `ProductFilters` model. Text-to-SQL was considered and rejected ([ADR 0002](adr/0002-no-text-to-sql.md)):
+      `user_email`/`user_role` scoping lives in ContextVars, and dynamic SQL would bypass that
+      contract. A typed DSL gives the model flexibility at the boundary while keeping SQL generation
+      server-side and auditable.
+- [ ] **Publish the two MCP servers to PyPI** so any MCP client can run them against any PostgreSQL
+      database without this codebase. That is the honest test of whether they are a real integration
+      surface or just internal plumbing with a protocol on top.
+- [ ] **Prompt caching** — cache system prompts and tool schemas per agent. Measurable against the
+      cost counter that now ships, which is the reason it is worth doing rather than guessing at.
+
+### 5. Cross-framework comparison
+
+**This one needs a decision before any code, and it is the largest thing on the page.**
+
+The repository already runs the same six agents, the same database and the same prompt corpus
+through two implementations of one framework — MAF in Python and MAF in .NET. The natural
+question a reader asks next is how that compares to the alternatives they are actually choosing
+between.
+
+Three separable options, in increasing scope:
+
+- [ ] **Claude and other providers as a third LLM backend.** Smallest: one chat client per stack
+      behind the existing `LLM_PROVIDER` switch. Both backends keep their orchestration; only the
+      model changes. Mostly answers "is this locked to OpenAI?", which is a fair question to have a
+      crisp answer to.
+- [ ] **A third backend on a different agent SDK** — the Claude Agent SDK, or LangGraph — serving the
+      same frontend, database and prompts. This turns the repo from a two-way comparison into a
+      three-way one, and it is the version that produces something genuinely hard to find elsewhere:
+      the same non-trivial system, built three ways, with the differences attributable to the
+      framework rather than to the problem.
+- [ ] **Agentic workflows on the repository itself** — using coding agents for eval recording,
+      documentation-drift checks and review. Ships nothing in the product; improves the rate at
+      which everything else here gets done.
+
+The middle option is the interesting one and also the expensive one. It should not start until
+the Azure work lands, because a third backend multiplies the deployment matrix, and doing that
+before there is *one* good deployment story would produce three mediocre ones.
+
+### Blocked, waiting on upstream
+
+- [ ] **MCP 2.x migration** — blocked on `agent-framework-core`. Listed so the blocker stays visible;
+      an item that vanishes looks like a decision nobody made.
+- [ ] **OAuth later phases** — Phases A–D ship and are live-verified on both stacks. What remains is
+      key rotation, RFC 7591 dynamic client registration, and an audit matrix — real future work, not a gap.
+
+### What is deliberately not planned
+
+Recorded so these are not rediscovered as oversights:
+
+- **No .NET container images are published.** The demo path stays Python-only — a visitor is
+  there for the features, not the backend language. `--dotnet` remains build-from-source.
+- **No Langfuse sink on .NET.** OTel already carries GenAI spans to Aspire; a second exporter
+  would be additive only.
+- **Anonymous storefront conversations are not persisted** on either stack, so follow-ups there
+  have no context at any tier. A product decision, not a bug.
+- **Magentic orchestration exists in neither stack.** MAF .NET ships `MagenticWorkflowBuilder`,
+  so this is unbuilt rather than unavailable — and it is not a parity gap, because neither side
+  has it.
+
+---
+
 ## What has shipped
 
 This is v1.1. Both backends are live and stable. Remaining work is consolidated in
@@ -41,7 +176,7 @@ Legend: `- [x]` shipped · `- [ ]` planned or in progress.
 - [x] **Full .NET / C# backend** — the same orchestrator and five specialists plus an MCP host, the same A2A protocol and PostgreSQL schema, idiomatic .NET throughout. Eight test projects, 450 test methods (~500 cases counting `[Theory]` data). Reached parity on the shipped surface through a nine-PR effort covering the shared tool library, orchestration modes, normalized SSE events, server-side grounding, rate limiting, cost estimation and a HITL claim-before-execute fix — gated by a dual-backend Playwright suite rather than a checklist. See [`agents/dotnet/`](../agents/dotnet/) and [`docs/parity-matrix.md`](parity-matrix.md).
 - [x] **Distributed tracing across every agent** — OpenTelemetry throughout (`shared/telemetry.py`), GenAI semantic conventions, a Langfuse sink, and `trace_id` correlated into `usage_logs` so a row in the admin usage table links back to its trace. Spans nest correctly across A2A hops, so one chat turn reads as a single tree in the [Aspire Dashboard](http://localhost:18888). The dashboard itself runs stock — this repo ships no pre-built views.
 - [x] **MCP data-access layer (2 servers)** — `mcp-product` (:9000) and `mcp-inventory` (:9001) are standalone, independently publishable Python packages (`packages/mcp-product`, `packages/mcp-inventory`) in a uv workspace. They expose product and inventory data over the MCP streamable HTTP transport (FastMCP). Flag-gated via `MCP_ENABLED`; `product-discovery` and `inventory-fulfillment` swap their direct-asyncpg `@tool` set for `MCPStreamableHTTPTool` with no behavior change. Any MCP-compatible client — Claude Desktop, Cursor, LangGraph — can use them without this codebase. See [MCP Integration](mcp-integration.md).
-- [x] **Self-hosted OAuth2 Authorization Server** — opt-in `AUTH_MODE=oauth` path with the token issuer living *inside* this repo (`agents/python/auth_server/`, built on `authlib`), so login and every service call are genuinely OAuth2-compliant with no external identity provider or cloud dependency. RS256 signing with an AS-generated keypair and a JWKS endpoint; user login via the resource-owner-password grant brokered by the orchestrator (the browser keeps its email/password form); client-credentials service tokens replacing the static A2A shared secret; and both MCP servers hardened into OAuth 2.1 resource servers (audience/scope validation, `.well-known/oauth-protected-resource`, `WWW-Authenticate` challenge) — Python and .NET parity throughout. Fully additive — `AUTH_MODE=local` (self-issued JWT + shared secret) stays the zero-config default, so the OpenAI-key-only quick-start is unaffected. Verified end to end against a live stack: real browser login and chat session on AS-issued tokens, role-gated routes, inter-agent and MCP calls authenticated purely on OAuth scopes (no shared secrets), and cross-scope/cross-resource token rejection — both stacks, including the .NET MCP host validated against the real running auth-server. See [`.claude/plans/enhancements/10-oauth-authorization.md`](https://github.com/nitin27may/e-commerce-agents/blob/main/.claude/plans/enhancements/10-oauth-authorization.md).
+- [x] **Self-hosted OAuth2 Authorization Server** — opt-in `AUTH_MODE=oauth` path with the token issuer living *inside* this repo (`agents/python/auth_server/`, built on `authlib`), so login and every service call are genuinely OAuth2-compliant with no external identity provider or cloud dependency. RS256 signing with an AS-generated keypair and a JWKS endpoint; user login via the resource-owner-password grant brokered by the orchestrator (the browser keeps its email/password form); client-credentials service tokens replacing the static A2A shared secret; and both MCP servers hardened into OAuth 2.1 resource servers (audience/scope validation, `.well-known/oauth-protected-resource`, `WWW-Authenticate` challenge) — Python and .NET parity throughout. Fully additive — `AUTH_MODE=local` (self-issued JWT + shared secret) stays the zero-config default, so the OpenAI-key-only quick-start is unaffected. Verified end to end against a live stack: real browser login and chat session on AS-issued tokens, role-gated routes, inter-agent and MCP calls authenticated purely on OAuth scopes (no shared secrets), and cross-scope/cross-resource token rejection — both stacks, including the .NET MCP host validated against the real running auth-server. See [`docs/security-guide.md`](security-guide.md).
 
 - [x] **Server-side grounding** — the model's claims are checked against Postgres before the answer leaves. Product and order ids in card blocks are verified to exist and to carry the quoted price; a fact-check badge reports how many claims were verified. `GROUNDING_MODE` is `annotate` by default (`shared/grounding/`, `Shared/Grounding/`).
 - [x] **Orchestration modes, live** — the same question can be answered by a tool router, a handoff mesh, two workflow graphs or a group-chat round table, selected per request from the composer. The graph animates node-by-node from real SSE events, and "compare modes" runs one prompt through several and reports latency side by side.
@@ -58,14 +193,25 @@ Legend: `- [x]` shipped · `- [ ]` planned or in progress.
 - [x] **Promotions apply** — `promotions.rules` is untyped JSONB and the seeder wrote different key names than the reader read, so bundles contributed £0 on every cart, buy-X-get-Y crashed, and flash sales silently never matched. No promotion had ever applied correctly.
 - [x] **The docs site is indexable** — all 85 pages shared one meta description. Now per-page descriptions, keywords, `TechArticle` JSON-LD, `lastmod`, a social image, and an accessible title on every one of the 71 diagrams.
 
+### Shipped in v1.2
+
+- [x] **Three of the five orchestration modes were dead in every Docker image** — `workflow:pre-purchase`, `workflow:return-replace` and `group-chat` returned the same 82-character apology regardless of the prompt, in under 10ms. The Dockerfile copied `shared/`, `config/` and `${AGENT_NAME}/` and nothing else, so `workflows/` was simply absent. Every containerised deployment was affected. Nothing caught it: the eval harness runs in-process where those packages are on `sys.path` regardless of image contents, and the image smoke-test imports `<agent>.main` only — every one of the missing imports is lazy, inside the mode, so the module imports cleanly and fails at request time.
+- [x] **Hybrid product search** — `search_products` split the query into words and ANDed `%word%` patterns, so a natural phrase matched nothing. Replaced with Postgres full-text search plus reciprocal-rank fusion against the vector index.
+- [x] **A release pipeline, and images to publish with it** — container images for all ten services on GHCR gated on the test suite, `release.yml`, `scripts/bump_version.py`, and a weekly registry retention policy. Plus `docker-compose.demo.yml`, which pulls rather than builds.
+- [x] **The site is legible to machines** — `llms.txt`, `llms-full.txt` and `robots.txt`, generated from the same page set the site is built from, so they cannot drift from it.
+- [x] **An orchestration-mode benchmark harness** (`evals/benchmark_modes.py`) — drives the real HTTP API rather than calling modes in-process, so it exercises auth, guardrails, sanitization and grounding along the way.
+
+### Shipped in v1.3
+
+- [x] **Tutorial .NET coverage** ([#20](https://github.com/nitin27may/e-commerce-agents/issues/20)) — done. Every chapter that ships code now ships both languages, both tested in CI: 334 .NET tests across 31 projects (was 47 across 11). The one remaining gap is chapter 20b, and it is Microsoft's: `Microsoft.Agents.AI.DevUI` is prerelease-only. The status table in `tutorials/README.md` is now generated from disk by `scripts/check_tutorial_coverage.py` and gated in CI, so it cannot drift again.
+- [x] **Composer UX** ([#4](https://github.com/nitin27may/e-commerce-agents/issues/4)) — done. The six always-visible mode chips took the composer's top third to expose a control most turns never touch; they collapse into one toolbar picker. Suggested prompts are now derived from the assistant's last message rather than being the same four canned prompts after every turn — keyed off the message's typed card payload first (a ```product fence means the user is looking at products, whatever the prose says) and its closing question second, with the old static list as the fallback. No LLM call: it is a pure function over text the client already has.
+- [x] **In-chat approval card** — done. The pause-and-resume loop already worked on both stacks, but the only control that could release a pause lived on `/runs`, so the user who caused it had no way to act without knowing a separate page existed. The blocker was that no streaming client ever learned the run's id: it *is* the `usage_logs` row, created during persistence, after `event: metadata` has gone out. Both stacks now emit `event: run` (`{run_id, pending_approval}`) once persistence lands and before `[DONE]`, and the chat thread renders Approve/Reject inline. Fixing this also surfaced that .NET wrote `[DONE]` before persisting — the race Python fixed as #9 — so the two stacks disagreed on whether a finished turn was durable.
+- [x] **Cost metrics as first-class counters** — done. `shared/telemetry.py` had exposed `get_meter()` since telemetry was wired up and nothing had ever called it, so every metric on the dashboard came from MAF's or FastAPI's instrumentation and the one number this application knows — what a run costs — existed only as a log line. Both stacks already price every turn to enforce a budget ceiling; that estimate is now emitted as `ecommerce.llm.cost.usd`, with tokens split by direction beside it, because cost is derived from tokens through a hand-edited price table and only the raw counts say which of the two moved. Same instrument and meter names on Python and .NET, so one dashboard covers both. Nothing user-scoped is attached to the attributes.
+- [x] **Streaming tool calls end-to-end** — done. Both stacks batched their timeline steps until after the last text chunk, so the timeline snapped into place once the answer had finished writing — precisely when it stops being useful. In a MAF tool loop the tools resolve first and the prose narrating them comes second, so both specialist hosts now drain steps before each chunk and both orchestrators forward them live. Not done, deliberately: rendering cards from those payloads as well, since the answer text already carries ```product fences for the same data and a client drawing from both would show every card twice.
+
 ### In Progress
 
 - [ ] **.NET eval suite** — 6 of 7 datasets are ported and the enabling work is done (record-on-miss, and an embedding seam without which product-discovery could not start in replay mode at all). What remains is the recording run, the baselines, and the CI job. `red_team` needs its own evaluator and is tracked separately.
-- [x] **Tutorial .NET coverage** ([#20](https://github.com/nitin27may/e-commerce-agents/issues/20)) — done. Every chapter that ships code now ships both languages, both tested in CI: 334 .NET tests across 31 projects (was 47 across 11). The one remaining gap is chapter 20b, and it is Microsoft's: `Microsoft.Agents.AI.DevUI` is prerelease-only. The status table in `tutorials/README.md` is now generated from disk by `scripts/check_tutorial_coverage.py` and gated in CI, so it cannot drift again.
-- [ ] **Composer UX** ([#4](https://github.com/nitin27may/e-commerce-agents/issues/4)) — collapse the always-visible mode chips, and derive suggested prompts from the reply on screen rather than a static list.
-- [ ] **In-chat approval card** — the full pause-and-resume loop works on both stacks: a workflow suspends on its HITL gate, the run shows a pending badge on `/runs`, and Approve/Reject resumes it from a real Postgres checkpoint (`POST /api/orchestration/{run_id}/resume`). On .NET the resume rebuilds the workflow from that checkpoint rather than holding the paused run in memory, so it survives an orchestrator restart, and the pending row is claimed before the workflow executes so a double-click cannot release two refunds. Destructive tools are separately gated by approval middleware with an atomic claim-before-execute so a double click cannot double-refund. The remaining piece is rendering that same control *inside the chat thread* rather than only on `/runs`.
-- [ ] **Cost metrics as first-class counters** — token counts are persisted (`shared/usage_db.py`), surfaced on the admin usage page, and already exported as OTel GenAI metrics by the OpenAI instrumentor. Dollar estimation (`shared/cost.py`, `Shared/Cost/CostEstimator.cs`) and a per-run budget ceiling (`COST_BUDGET_MODE`, default `observe`) both ship. The remaining piece is a dedicated cost counter instrument owned by this repo, so an OTLP sink can alert on spend anomalies directly.
-- [ ] **Streaming tool calls end-to-end** — text-delta streaming is live and product/order cards render progressively as the LLM generates the response. The remaining piece is propagating raw tool-result payloads as separate SSE frames so cards can appear before the text completes.
 
 ---
 

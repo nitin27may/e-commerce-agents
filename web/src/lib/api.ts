@@ -299,7 +299,10 @@ class ApiClient {
       /**
        * Fired for any SSE frame that isn't `step`/`metadata`/display text —
        * currently `node`, `handoff`, `checkpoint`, `request_info`, `error`
-       * from a non-"tool" orchestration mode (see `orchestrator/routes/chat.py`).
+       * from a non-"tool" orchestration mode (see `orchestrator/routes/chat.py`),
+       * plus `run` — `{run_id, pending_approval}`, emitted by every mode after
+       * persistence, since the run's id is the `usage_logs` row created there
+       * and so cannot be known when `metadata` goes out. Both stacks emit it.
        */
       onOrchestrationEvent?: (eventName: string, data: unknown) => void;
       /**

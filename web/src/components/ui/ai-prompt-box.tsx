@@ -2,7 +2,7 @@
 
 import React from "react";
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
-import { ArrowUp, Paperclip, Square, X } from "lucide-react";
+import { ArrowUp, Check, ChevronDown, Paperclip, Square, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
@@ -85,6 +85,8 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
     const [attachedFile, setAttachedFile] = React.useState<File | null>(null);
     const [filePreview, setFilePreview] = React.useState<string | null>(null);
     const [selectedImage, setSelectedImage] = React.useState<string | null>(null);
+    const [modeMenuOpen, setModeMenuOpen] = React.useState(false);
+    const modeMenuRef = React.useRef<HTMLDivElement>(null);
     const textareaRef = React.useRef<HTMLTextAreaElement>(null);
     const fileInputRef = React.useRef<HTMLInputElement>(null);
     const MAX_HEIGHT = 240;
@@ -99,6 +101,25 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
       ta.style.height = "auto";
       ta.style.height = `${Math.min(ta.scrollHeight, MAX_HEIGHT)}px`;
     }, [input]);
+
+    // Close the mode menu on an outside click or Escape. A popover that only
+    // closes by re-clicking its trigger traps a user who opened it by accident,
+    // which is the most likely way anyone opens this one.
+    React.useEffect(() => {
+      if (!modeMenuOpen) return;
+      const onPointerDown = (e: PointerEvent) => {
+        if (!modeMenuRef.current?.contains(e.target as Node)) setModeMenuOpen(false);
+      };
+      const onKeyDown = (e: KeyboardEvent) => {
+        if (e.key === "Escape") setModeMenuOpen(false);
+      };
+      document.addEventListener("pointerdown", onPointerDown);
+      document.addEventListener("keydown", onKeyDown);
+      return () => {
+        document.removeEventListener("pointerdown", onPointerDown);
+        document.removeEventListener("keydown", onKeyDown);
+      };
+    }, [modeMenuOpen]);
 
     const isDisabled = disabled || isLoading;
     const hasContent = input.trim() !== "" || attachedFile !== null;
@@ -170,26 +191,6 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
             onDragOver={(e) => e.preventDefault()}
             onDrop={handleDrop}
           >
-            {/* Mode chips */}
-            <div className="flex gap-1 overflow-x-auto px-3 pt-2.5 pb-1 scrollbar-none">
-              {AGENT_MODES.map((mode) => (
-                <button
-                  key={String(mode.id)}
-                  type="button"
-                  onClick={() => setAgentMode(mode.id)}
-                  disabled={isDisabled}
-                  className={cn(
-                    "shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors",
-                    agentMode === mode.id
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground"
-                  )}
-                >
-                  {mode.label}
-                </button>
-              ))}
-            </div>
-
             {/* Attached image thumbnail */}
             <AnimatePresence>
               {filePreview && attachedFile && (
@@ -273,6 +274,91 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
               </Tooltip>
 
               <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+
+              {/*
+                Specialist picker, collapsed.
+
+                This was a six-chip row pinned above the textarea on every
+                message. `Auto` is the default and the one most people want —
+                it is what lets the orchestrator route for you — so the row spent
+                a full line of composer height advertising five options that are
+                rarely the right answer, on every viewport.
+
+                Collapsed to a single button that names the ACTIVE mode, so the
+                current state is still visible at a glance while costing a
+                button rather than a row. Only shown as "Auto" when nothing is
+                pinned; picking a specialist makes the button read that
+                specialist, which is the state worth surfacing.
+
+                NOT the orchestration-mode switcher. That is a different control
+                (`chat/mode-switcher.tsx`, fed by GET /api/orchestration/modes)
+                on the page toolbar, and issue #4 puts it explicitly out of
+                scope. Collapsing that one would hide the feature this repo is
+                built around.
+              */}
+              <div className="relative" ref={modeMenuRef}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => setModeMenuOpen((v) => !v)}
+                      disabled={isDisabled}
+                      aria-haspopup="listbox"
+                      aria-expanded={modeMenuOpen}
+                      aria-label="Specialist"
+                      className={cn(
+                        "flex h-8 items-center gap-1 rounded-full px-2.5 text-[11px] font-medium transition-colors disabled:pointer-events-none disabled:opacity-40",
+                        agentMode === null
+                          ? "text-muted-foreground hover:bg-muted hover:text-foreground"
+                          : "bg-primary text-primary-foreground hover:bg-primary/90"
+                      )}
+                    >
+                      {currentMode.label}
+                      <ChevronDown className={cn("h-3 w-3 transition-transform", modeMenuOpen && "rotate-180")} />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {agentMode === null ? "Route automatically" : `Pinned to ${currentMode.label}`}
+                  </TooltipContent>
+                </Tooltip>
+
+                <AnimatePresence>
+                  {modeMenuOpen && (
+                    <motion.div
+                      role="listbox"
+                      aria-label="Specialist"
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 4 }}
+                      transition={{ duration: 0.12 }}
+                      className="absolute bottom-full left-0 z-50 mb-2 min-w-44 overflow-hidden rounded-lg border bg-popover p-1 shadow-md"
+                    >
+                      {AGENT_MODES.map((mode) => (
+                        <button
+                          key={String(mode.id)}
+                          type="button"
+                          role="option"
+                          aria-selected={agentMode === mode.id}
+                          onClick={() => {
+                            setAgentMode(mode.id);
+                            setModeMenuOpen(false);
+                            textareaRef.current?.focus();
+                          }}
+                          className={cn(
+                            "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors",
+                            agentMode === mode.id
+                              ? "bg-accent text-accent-foreground"
+                              : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                          )}
+                        >
+                          {mode.label}
+                          {agentMode === mode.id && <Check className="h-3 w-3 shrink-0" />}
+                        </button>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
 
               {/* Keyboard hint */}
               <span className="hidden select-none text-[10px] text-muted-foreground/50 sm:block">

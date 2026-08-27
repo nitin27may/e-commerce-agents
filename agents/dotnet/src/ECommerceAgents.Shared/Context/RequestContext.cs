@@ -21,7 +21,8 @@ public static class RequestContext
     private static readonly AsyncLocal<string?> _sessionId = new();
     private static readonly AsyncLocal<IReadOnlyList<HistoryEntry>?> _history = new();
     private static readonly AsyncLocal<List<string>?> _invokedAgents = new();
-    private static readonly AsyncLocal<ChannelWriter<string>?> _streamWriter = new();
+    private static readonly AsyncLocal<ChannelWriter<StreamFrame>?> _streamWriter = new();
+    private static readonly AsyncLocal<HashSet<int>?> _deliveredSteps = new();
     private static readonly AsyncLocal<Dictionary<string, bool>?> _guardrailFlags = new();
     private static readonly AsyncLocal<List<ExecutionStep>?> _steps = new();
     // Running LLM spend for the current agent run, in USD. The .NET twin of
@@ -98,14 +99,20 @@ public static class RequestContext
     /// <c>A2AClient.StreamAsync</c>, so the outer HTTP response can forward a live
     /// preview of the specialist's answer (<c>event: delta</c>) while the
     /// orchestrator's own agent run is still blocked awaiting that tool call.
+    /// <para>
+    /// Carries a <see cref="StreamFrame"/> rather than a bare string because a
+    /// delta is no longer the only thing worth forwarding mid-turn: a specialist's
+    /// tool steps travel the same way, and a channel of plain strings could only
+    /// ever produce one kind of SSE frame.
+    /// </para>
     /// <c>null</c> outside a streaming turn (blocking <c>/api/chat</c>, or any
     /// caller that never opened a scope) — every write site must treat that as a
     /// safe no-op, matching <see cref="RecordInvokedAgent"/>'s own null-safety.
     /// </summary>
-    public static ChannelWriter<string>? CurrentStreamWriter => _streamWriter.Value;
+    public static ChannelWriter<StreamFrame>? CurrentStreamWriter => _streamWriter.Value;
 
     /// <summary>Opens a scope for the duration of one streaming chat turn; restores the previous writer (normally none) on dispose.</summary>
-    public static IDisposable StreamScope(ChannelWriter<string> writer)
+    public static IDisposable StreamScope(ChannelWriter<StreamFrame> writer)
     {
         var previous = _streamWriter.Value;
         _streamWriter.Value = writer;
@@ -149,6 +156,38 @@ public static class RequestContext
     /// <summary>Appends one step to the current request. No-op outside a <see cref="Scope"/>.</summary>
     public static void RecordStep(ExecutionStep step) => _steps.Value?.Add(step);
 
+    /// <summary>
+    /// Marks the most recently recorded step as already sent to the browser.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A specialist's steps are forwarded live by <c>A2AClient.MergeReturnedSteps</c>
+    /// as they arrive; the orchestrator's own steps are not. <c>ChatRoutes</c> then
+    /// emits whatever is left at the end of the run, and needs to know which is which
+    /// or it sends the specialist's rows twice.
+    /// </para>
+    /// <para>
+    /// Tracked by index rather than by a count of delivered steps, because delivered
+    /// steps are <em>not</em> a prefix of the list. Two specialist calls interleave as
+    /// [spec1 (sent), orchestrator (not), spec2 (sent), orchestrator (not)], so
+    /// "skip the first N" would drop the wrong rows. Tracked here rather than as a
+    /// field on <see cref="ExecutionStep"/> so a delivery detail never reaches the
+    /// persisted timeline — the equivalent of Python popping its <c>_live</c> marker
+    /// before the metadata is written.
+    /// </para>
+    /// </remarks>
+    public static void MarkLastStepDelivered()
+    {
+        var steps = _steps.Value;
+        if (steps is { Count: > 0 })
+        {
+            (_deliveredSteps.Value ??= new HashSet<int>()).Add(steps.Count - 1);
+        }
+    }
+
+    /// <summary>Whether the step at <paramref name="index"/> has already been streamed.</summary>
+    public static bool IsStepDelivered(int index) => _deliveredSteps.Value?.Contains(index) ?? false;
+
     public static IDisposable Scope(string email, string role, string sessionId, IReadOnlyList<HistoryEntry>? history = null)
     {
         var previous = (
@@ -158,7 +197,8 @@ public static class RequestContext
             History: _history.Value,
             InvokedAgents: _invokedAgents.Value,
             GuardrailFlags: _guardrailFlags.Value,
-            Steps: _steps.Value
+            Steps: _steps.Value,
+            DeliveredSteps: _deliveredSteps.Value
         );
         _userEmail.Value = email;
         _userRole.Value = role;
@@ -167,6 +207,7 @@ public static class RequestContext
         _invokedAgents.Value = new List<string>();
         _guardrailFlags.Value = new Dictionary<string, bool>();
         _steps.Value = new List<ExecutionStep>();
+        _deliveredSteps.Value = new HashSet<int>();
         return new Disposable(() =>
         {
             _userEmail.Value = previous.Email;
@@ -176,6 +217,7 @@ public static class RequestContext
             _invokedAgents.Value = previous.InvokedAgents;
             _guardrailFlags.Value = previous.GuardrailFlags;
             _steps.Value = previous.Steps;
+            _deliveredSteps.Value = previous.DeliveredSteps;
         });
     }
 

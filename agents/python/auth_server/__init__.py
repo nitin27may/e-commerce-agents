@@ -3,7 +3,8 @@
 Issues RS256 access/refresh tokens for user login (orchestrator-brokered
 Resource Owner Password Credentials), inter-agent A2A calls, and MCP
 resource access (client credentials) — no external identity provider.
-See ``.claude/plans/enhancements/10-oauth-authorization.md`` for the design.
+See ``docs/security-guide.md`` for the design; remaining OAuth work is in
+``.claude/plans/remaining-work.md``.
 """
 
 import os

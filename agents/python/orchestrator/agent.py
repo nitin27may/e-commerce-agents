@@ -101,12 +101,27 @@ async def call_specialist_agent(
                             payload = line[6:]
                             if current_event == "step":
                                 # Merge specialist tool-call step into the
-                                # shared current_steps for this request.
+                                # shared current_steps for this request, and
+                                # forward it to the browser now rather than
+                                # letting the post-stream drain report it.
+                                #
+                                # The specialist emits these as each tool
+                                # returns, so this is the point where a step is
+                                # freshest — holding it until the run ends made
+                                # the whole timeline appear at once, after the
+                                # answer had finished writing, which is exactly
+                                # when it is least useful.
                                 try:
                                     step_data = json.loads(payload)
                                     bucket = current_steps.get()
                                     if bucket is not None:
                                         bucket.append(step_data)
+                                    # `_live` marks this step as already sent.
+                                    # chat.py's drain pops it, so it neither
+                                    # goes out twice nor reaches the persisted
+                                    # metadata as a transport detail.
+                                    step_data["_live"] = True
+                                    await stream_queue.put(("frame", "step", step_data))
                                 except (json.JSONDecodeError, ValueError):
                                     pass
                                 current_event = "data"

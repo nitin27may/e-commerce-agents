@@ -1,3 +1,4 @@
+using ECommerceAgents.Shared.Tools;
 using Dapper;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
@@ -26,12 +27,12 @@ public sealed class InventoryTools(DatabasePool pool, AgentSettings settings)
 
     public IEnumerable<AITool> All() => new AITool[]
     {
-        AIFunctionFactory.Create(GetRestockSchedule, nameof(GetRestockSchedule)),
-        AIFunctionFactory.Create(EstimateShipping, nameof(EstimateShipping)),
-        AIFunctionFactory.Create(CompareCarriers, nameof(CompareCarriers)),
-        AIFunctionFactory.Create(GetTrackingStatus, nameof(GetTrackingStatus)),
-        AIFunctionFactory.Create(CalculateFulfillmentPlan, nameof(CalculateFulfillmentPlan)),
-        AIFunctionFactory.Create(PlaceBackorder, nameof(PlaceBackorder)),
+        AgentTool.Create(GetRestockSchedule, nameof(GetRestockSchedule)),
+        AgentTool.Create(EstimateShipping, nameof(EstimateShipping)),
+        AgentTool.Create(CompareCarriers, nameof(CompareCarriers)),
+        AgentTool.Create(GetTrackingStatus, nameof(GetTrackingStatus)),
+        AgentTool.Create(CalculateFulfillmentPlan, nameof(CalculateFulfillmentPlan)),
+        AgentTool.Create(PlaceBackorder, nameof(PlaceBackorder)),
     };
 
     // ─────────────────────── get_restock_schedule ────────────

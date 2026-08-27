@@ -35,8 +35,8 @@ public sealed class UserProfileTools(DatabasePool pool)
 
     public IEnumerable<AITool> All() => new AITool[]
     {
-        AIFunctionFactory.Create(GetUserProfile, nameof(GetUserProfile)),
-        AIFunctionFactory.Create(GetPurchaseHistory, nameof(GetPurchaseHistory)),
+        AgentTool.Create(GetUserProfile, nameof(GetUserProfile)),
+        AgentTool.Create(GetPurchaseHistory, nameof(GetPurchaseHistory)),
     };
 
     [Description("Get the current user's profile including loyalty tier and spending history.")]

@@ -1,3 +1,4 @@
+using ECommerceAgents.Shared.Tools;
 using Dapper;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Data;
@@ -51,14 +52,14 @@ public sealed class ReviewTools(DatabasePool pool, AgentSettings settings)
 
     public IEnumerable<AITool> All() => new AITool[]
     {
-        AIFunctionFactory.Create(GetProductReviews, nameof(GetProductReviews)),
-        AIFunctionFactory.Create(AnalyzeSentiment, nameof(AnalyzeSentiment)),
-        AIFunctionFactory.Create(SearchReviews, nameof(SearchReviews)),
-        AIFunctionFactory.Create(CompareProductReviews, nameof(CompareProductReviews)),
-        AIFunctionFactory.Create(GetSentimentByTopic, nameof(GetSentimentByTopic)),
-        AIFunctionFactory.Create(GetSentimentTrend, nameof(GetSentimentTrend)),
-        AIFunctionFactory.Create(DetectFakeReviews, nameof(DetectFakeReviews)),
-        AIFunctionFactory.Create(DraftSellerResponse, nameof(DraftSellerResponse)),
+        AgentTool.Create(GetProductReviews, nameof(GetProductReviews)),
+        AgentTool.Create(AnalyzeSentiment, nameof(AnalyzeSentiment)),
+        AgentTool.Create(SearchReviews, nameof(SearchReviews)),
+        AgentTool.Create(CompareProductReviews, nameof(CompareProductReviews)),
+        AgentTool.Create(GetSentimentByTopic, nameof(GetSentimentByTopic)),
+        AgentTool.Create(GetSentimentTrend, nameof(GetSentimentTrend)),
+        AgentTool.Create(DetectFakeReviews, nameof(DetectFakeReviews)),
+        AgentTool.Create(DraftSellerResponse, nameof(DraftSellerResponse)),
     };
 
     private static readonly IReadOnlyDictionary<string, string[]> TopicKeywords = new Dictionary<string, string[]>
@@ -80,7 +81,7 @@ public sealed class ReviewTools(DatabasePool pool, AgentSettings settings)
     // ─────────────────────── get_product_reviews ─────────────
 
     [Description("Get paginated reviews for a product with sorting options.")]
-    public async Task<ProductReviewsResult?> GetProductReviews(
+    public async Task<object> GetProductReviews(
         [Description("UUID of the product")] string productId,
         [Description("Sort: newest, helpful, rating_high, rating_low")] string? sortBy = "newest",
         [Description("Max reviews to return (capped at 100)")] int limit = 10,
@@ -89,7 +90,7 @@ public sealed class ReviewTools(DatabasePool pool, AgentSettings settings)
     {
         if (!Guid.TryParse(productId, out var pid))
         {
-            return null;
+            return ToolError.NotAnId("get_product_reviews", "product id", productId, "search_products");
         }
 
         var clamped = Math.Clamp(limit, 1, MaxLimit);

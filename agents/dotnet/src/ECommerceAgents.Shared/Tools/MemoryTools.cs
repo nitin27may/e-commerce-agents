@@ -30,8 +30,8 @@ public sealed class MemoryTools(DatabasePool pool)
 
     public IEnumerable<AITool> All() =>
     [
-        AIFunctionFactory.Create(StoreMemory, nameof(StoreMemory)),
-        AIFunctionFactory.Create(RecallMemories, nameof(RecallMemories)),
+        AgentTool.Create(StoreMemory, nameof(StoreMemory)),
+        AgentTool.Create(RecallMemories, nameof(RecallMemories)),
     ];
 
     [Description("Store a memory about the current user's preferences, behavior, or feedback for future reference.")]

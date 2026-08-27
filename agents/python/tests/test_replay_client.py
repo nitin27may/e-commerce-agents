@@ -300,6 +300,58 @@ def test_tool_call_arguments_are_not_normalized():
     assert _request_hash(a) != _request_hash(b)
 
 
+def test_calendar_month_buckets_hash_the_same_as_the_calendar_advances():
+    """The evals suite went red on a day nobody changed anything.
+
+    ``get_sentiment_trend`` groups by ``DATE_TRUNC('month', created_at)`` over a
+    ``NOW()``-relative window, and ``scripts/seed.py`` places each review at a
+    fixed day-offset from seed time. The *set* of reviews in the window is
+    invariant — same 15, every run — but which calendar month a fixed offset
+    falls in is not, so the same reviews partitioned into 7 buckets one week and
+    5 the next.
+
+    The month *labels* were already scrubbed. The bucket structure was not, and
+    it is made of plain numbers nothing can recognise as volatile, so the fixture
+    key silently became a function of the wall-clock date. Both payloads below
+    describe the same 15 reviews; only the calendar has moved.
+    """
+    seven_buckets = _canonical([
+        _user_msg("How has sentiment for the Sony WH-1000XM5 changed?"),
+        _tool_msg('{"product_name": "Sony WH-1000XM5", "period_months": 6, "trend": "declining", '
+                  '"monthly_data": [{"month": "2026-02", "average_rating": 5.0, "review_count": 1}, '
+                  '{"month": "2026-03", "average_rating": 4.0, "review_count": 2}, '
+                  '{"month": "2026-08", "average_rating": 4.67, "review_count": 3}]}'),
+    ])
+    five_buckets = _canonical([
+        _user_msg("How has sentiment for the Sony WH-1000XM5 changed?"),
+        _tool_msg('{"product_name": "Sony WH-1000XM5", "period_months": 6, "trend": "stable", '
+                  '"monthly_data": [{"month": "2026-03", "average_rating": 4.5, "review_count": 2}, '
+                  '{"month": "2026-08", "average_rating": 4.67, "review_count": 3}]}'),
+    ])
+
+    assert _request_hash(seven_buckets) == _request_hash(five_buckets)
+
+
+def test_the_bucket_scrub_does_not_blur_different_products():
+    """The scrub is narrow on purpose.
+
+    Replacing a whole aggregate is blunt enough that it could let two genuinely
+    different trend lookups collide on one fixture. Everything outside
+    ``monthly_data``/``trend`` still separates them — which is why this stays
+    keyed rather than blanket-scrubbing numbers.
+    """
+    sony = _canonical([
+        _user_msg("trend?"),
+        _tool_msg('{"product_name": "Sony WH-1000XM5", "trend": "declining", "monthly_data": []}'),
+    ])
+    dyson = _canonical([
+        _user_msg("trend?"),
+        _tool_msg('{"product_name": "Dyson V15", "trend": "declining", "monthly_data": []}'),
+    ])
+
+    assert _request_hash(sony) != _request_hash(dyson)
+
+
 def test_non_volatile_tool_payload_differences_still_matter():
     """Only UUIDs and timestamps are stripped — real data differences remain."""
     a = _canonical([_user_msg("stock?"), _tool_msg('{"in_stock": true, "quantity": 12}')])

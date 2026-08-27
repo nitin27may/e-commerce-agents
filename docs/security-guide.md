@@ -162,7 +162,7 @@ JWT signing uses `bcrypt` for passwords and `PyJWT` for token generation. Defaul
 - **Login** relays a `password` (ROPC) grant to the AS as a confidential first-party client — the AS re-verifies the bcrypt hash from the same `users` table, so this does not duplicate the password check. The AS returns an RS256 access token (`aud=ecommerce-orchestrator`, `scope=api:chat`, `role`/`user_id` custom claims) plus an opaque refresh token.
 - **Refresh** relays a `refresh_token` grant. The AS does not rotate refresh tokens (`INCLUDE_NEW_REFRESH_TOKEN=False`) — a deliberate choice, since the frontend never re-persists a rotated refresh token.
 - `AgentAuthMiddleware`'s Bearer branch validates the RS256 token against the AS's published JWKS (`RS256Verifier` / `.NET`'s `JwtTokenService.ValidateOAuth` + `JwksKeyProvider`): signature, issuer, audience, expiry, and required scope.
-- See [`10-oauth-authorization.md`](../.claude/plans/enhancements/10-oauth-authorization.md) for the full design and phase-by-phase implementation notes.
+- Phases A–D of the OAuth work all shipped and are live-verified on both stacks. What remains — key rotation, RFC 7591 dynamic client registration, and the audit matrix — is tracked in [`.claude/plans/remaining-work.md`](https://github.com/nitin27may/e-commerce-agents/blob/main/.claude/plans/remaining-work.md).
 
 ### Inter-agent requests (Orchestrator → Specialists)
 
@@ -285,7 +285,7 @@ else:
 | Enable HTTPS everywhere | TLS termination at the AKS ingress; no plain HTTP between pods |
 | Network policy | Restrict specialist ports (8081–8085) to orchestrator pod only |
 | Complete role enforcement | Add `@requires_role` on open items in the [audit matrix](agent-audit-matrix.md) |
-| Enable the self-hosted OAuth server | `AUTH_MODE=oauth` — user login via ROPC brokered by the orchestrator, client-credentials service tokens for A2A and MCP, RS256 signing via a JWKS (single active key per `kid`, no automatic rotation yet — see Known Issues); retires `JWT_SECRET` and `AGENT_SHARED_SECRET` (rejected outright, not just unused). Set `AUTH_SIGNING_KEY_ENCRYPTION_KEY` and per-service `OAUTH_CLIENT_SECRET` from your secret store; never ship the `OAUTH_SEED_KEY` dev default. See [`10-oauth-authorization.md`](../.claude/plans/enhancements/10-oauth-authorization.md) |
+| Enable the self-hosted OAuth server | `AUTH_MODE=oauth` — user login via ROPC brokered by the orchestrator, client-credentials service tokens for A2A and MCP, RS256 signing via a JWKS (single active key per `kid`, no automatic rotation yet — see Known Issues); retires `JWT_SECRET` and `AGENT_SHARED_SECRET` (rejected outright, not just unused). Set `AUTH_SIGNING_KEY_ENCRYPTION_KEY` and per-service `OAUTH_CLIENT_SECRET` from your secret store; never ship the `OAUTH_SEED_KEY` dev default. Remaining OAuth work is tracked in [`.claude/plans/remaining-work.md`](https://github.com/nitin27may/e-commerce-agents/blob/main/.claude/plans/remaining-work.md) |
 | Protect MCP servers | `MCP_AUTH_ENABLED=true` (requires `MCP_ENABLED=true`) — both Python MCP servers and the .NET MCP host validate the auth-server's RS256 bearer tokens (audience + scope, one resource-specific scope per server) against its JWKS, expose `.well-known/oauth-protected-resource`, and reject unauthenticated or wrong-scope calls with `401` + `WWW-Authenticate` |
 
 ---

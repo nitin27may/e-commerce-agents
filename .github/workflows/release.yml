@@ -23,7 +23,7 @@ name: Release
 # is a no-op, the approval gate does not exist, and releases proceed
 # automatically with no error and nothing to indicate anything is missing.
 #
-# See .claude/plans/enhancements/15-build-and-release.md.
+# See docs/releasing.md.
 
 on:
   push:

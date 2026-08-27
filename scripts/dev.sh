@@ -108,6 +108,7 @@ SEED_ONLY=false
 INFRA_ONLY=false
 DOTNET=false
 DEMO=false
+SWITCH=false
 
 for arg in "$@"; do
     case $arg in
@@ -116,6 +117,7 @@ for arg in "$@"; do
         --infra-only) INFRA_ONLY=true ;;
         --dotnet)     DOTNET=true ;;
         --demo)       DEMO=true ;;
+        --switch)     SWITCH=true ;;
         --help|-h)
             echo "Usage: ./scripts/dev.sh [OPTIONS]"
             echo ""
@@ -125,11 +127,15 @@ for arg in "$@"; do
             echo "  --seed-only   Re-run seeder against existing DB"
             echo "  --infra-only  Start db + redis + aspire only"
             echo "  --dotnet      Target the .NET backend instead of Python"
+            echo "  --switch      Tear the other stack down first, volumes and all"
             echo "  --help        Show this help"
             echo ""
             echo "  --demo is the fast path: no local build, one command, ~2 minutes."
             echo "  Override the image tag with IMAGE_TAG (default: latest):"
             echo "    IMAGE_TAG=main ./scripts/dev.sh --demo"
+            echo ""
+            echo "  Only one stack runs at a time — they publish the same ports."
+            echo "  --switch is the clean way to change: ./scripts/dev.sh --dotnet --switch"
             exit 0
             ;;
         *)
@@ -161,11 +167,19 @@ if [ "$DOTNET" = true ]; then
     APP_PROFILES=(--profile seed --profile agents --profile mcp --profile frontend)
     RUN_PROFILES=(--profile agents --profile mcp --profile frontend)
     PGDATA_VOLUME_PATTERN='pgdata-dotnet$'
+    THIS_STACK="e-commerce-agents-dotnet"
+    OTHER_STACK="e-commerce-agents"
+    OTHER_STACK_LABEL="Python"
+    OTHER_STACK_FILE="docker-compose.yml"
 else
     COMPOSE=(docker compose)
     APP_PROFILES=(--profile seed --profile agents --profile frontend)
     RUN_PROFILES=(--profile agents --profile frontend)
     PGDATA_VOLUME_PATTERN='_pgdata$'
+    THIS_STACK="e-commerce-agents"
+    OTHER_STACK="e-commerce-agents-dotnet"
+    OTHER_STACK_LABEL=".NET"
+    OTHER_STACK_FILE="docker-compose.dotnet.yml"
 fi
 
 # ── Navigate to project root ─────────────────────────────────
@@ -184,6 +198,48 @@ fi
 if ! docker compose version &> /dev/null; then
     error "Docker Compose v2 is required"
     exit 1
+fi
+
+# ── One stack at a time ──────────────────────────────────────
+#
+# The Python and .NET stacks publish the same host ports (3000, 5432, 6379,
+# 8080-8085, 8090, 18888), so they cannot run simultaneously. That is a
+# deliberate choice, not a limitation to work around: running both would need a
+# second published port set AND a second frontend build, because
+# NEXT_PUBLIC_API_URL is inlined at build time and one image cannot address two
+# orchestrators.
+#
+# What is worth fixing is the failure mode. Without this check, starting the
+# second stack fails partway through with a raw Docker port-binding error, after
+# some containers have already started — leaving a half-up mess that neither
+# stack's `down` fully cleans.
+#
+# Comparing compose project labels rather than probing ports, because a port
+# being busy says nothing about *what* is holding it.
+
+other_running=$(docker ps --filter "label=com.docker.compose.project=${OTHER_STACK}" --format '{{.Names}}' 2>/dev/null | wc -l | tr -d ' ')
+
+if [ "$other_running" -gt 0 ]; then
+    if [ "$SWITCH" = true ]; then
+        step "Switching stacks — tearing down the ${OTHER_STACK_LABEL} stack"
+        docker compose -f "$OTHER_STACK_FILE" --profile seed --profile agents --profile mcp --profile frontend down -v --remove-orphans 2>/dev/null || true
+        success "${OTHER_STACK_LABEL} stack removed, volumes included"
+    else
+        echo ""
+        error "The ${OTHER_STACK_LABEL} stack is already running (${other_running} containers)."
+        echo ""
+        echo "  Both stacks publish the same ports, so only one runs at a time."
+        echo ""
+        echo "  Switch cleanly — brings the other down, volumes and all:"
+        echo ""
+        echo "    $0 $* --switch"
+        echo ""
+        echo "  Or do it by hand:"
+        echo ""
+        echo "    docker compose -f ${OTHER_STACK_FILE} --profile agents --profile frontend down -v"
+        echo ""
+        exit 1
+    fi
 fi
 
 # ── Check for .env file ──────────────────────────────────────
@@ -309,6 +365,37 @@ if ! "${COMPOSE[@]}" exec -T db sh -c 'PGPASSWORD=ecommerce_secret psql -h 127.0
     "${COMPOSE[@]}" up -d db
     wait_for_health "PostgreSQL" "${COMPOSE[*]} exec db pg_isready -h 127.0.0.1 -U ecommerce -d ecommerce_agents" 60
     success "Database reinitialized with correct credentials"
+fi
+
+# Verify the SCHEMA matches, not just the credentials.
+#
+# A volume can authenticate perfectly and still carry a schema from before the
+# last init.sql change. That is the more common way to land here — pulling new
+# commits and restarting the same stack, rather than switching stacks — and it
+# is far nastier than an auth failure, because nothing errors. Search just
+# quietly returns nothing and the agent says "I couldn't find any", which reads
+# like an empty catalogue rather than a broken index.
+#
+# products.search_vector is the canary: it arrived with the v1.2.0 full-text
+# search work, so any volume predating that lacks it. Hardcoded on purpose —
+# deriving the check from init.sql would be clever and would drift.
+if ! "${COMPOSE[@]}" exec -T db sh -c 'PGPASSWORD=ecommerce_secret psql -h 127.0.0.1 -U ecommerce -d ecommerce_agents -tAc "SELECT 1 FROM information_schema.columns WHERE table_name = '"'"'products'"'"' AND column_name = '"'"'search_vector'"'"'"' 2>/dev/null | grep -q 1; then
+    echo ""
+    warn "Database schema is out of date — products.search_vector is missing."
+    echo ""
+    echo "  Your Postgres volume predates the full-text search change. The stack will"
+    echo "  start and look healthy, and every product search will silently return"
+    echo "  nothing. Refusing to start into that."
+    echo ""
+    echo "  Two ways forward:"
+    echo ""
+    echo "    Recreate the volume (loses local data, reseeds from scratch):"
+    echo "      ./scripts/dev.sh --clean"
+    echo ""
+    echo "    Or apply the schema in place, keeping your data:"
+    echo "      docker compose exec -T db psql -U ecommerce -d ecommerce_agents < docker/postgres/init.sql"
+    echo ""
+    exit 1
 fi
 
 success "Infrastructure is ready"

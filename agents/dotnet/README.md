@@ -84,4 +84,4 @@ See [`docs/parity-matrix.md`](../../docs/parity-matrix.md) for the row-by-row br
 
 Eight test projects mirror the source structure — one per agent plus Shared and MCP — with 515 test methods covering tools, middleware, guardrails, timeline capture, workflows, auth, streaming, and A2A protocol behavior (verified directly: `dotnet test ECommerceAgents.sln`). The same PostgreSQL schema and A2A wire format are used across both stacks; you can point the frontend at either backend by setting `NEXT_PUBLIC_BACKEND_STACK=dotnet`.
 
-Enhancement plans are tracked in [`.claude/plans/enhancements/`](../../.claude/plans/enhancements/).
+Remaining work is tracked in the one consolidated plan, [`.claude/plans/remaining-work.md`](../../.claude/plans/remaining-work.md).

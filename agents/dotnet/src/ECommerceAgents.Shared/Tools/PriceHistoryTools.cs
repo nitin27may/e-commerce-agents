@@ -22,7 +22,7 @@ public sealed class PriceHistoryTools(DatabasePool pool)
 
     public IEnumerable<AITool> All() => new AITool[]
     {
-        AIFunctionFactory.Create(GetPriceHistory, nameof(GetPriceHistory)),
+        AgentTool.Create(GetPriceHistory, nameof(GetPriceHistory)),
     };
 
     [Description(

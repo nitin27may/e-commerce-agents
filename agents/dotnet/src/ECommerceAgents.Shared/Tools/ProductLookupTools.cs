@@ -30,7 +30,7 @@ public sealed class ProductLookupTools(DatabasePool pool)
 
     public IEnumerable<AITool> All() => new AITool[]
     {
-        AIFunctionFactory.Create(FindProductByName, nameof(FindProductByName)),
+        AgentTool.Create(FindProductByName, nameof(FindProductByName)),
     };
 
     [Description(

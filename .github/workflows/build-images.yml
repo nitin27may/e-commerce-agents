@@ -24,7 +24,7 @@ name: Build Images
 #   version tag   -> release.yml, after a full test re-run AND a human approval
 #                    on the `release` environment. Publishes :vX.Y.Z and :latest.
 #
-# See .claude/plans/enhancements/15-build-and-release.md.
+# The design and the reason for each piece is in docs/releasing.md.
 
 on:
   pull_request:

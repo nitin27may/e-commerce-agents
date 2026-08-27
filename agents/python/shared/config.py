@@ -241,6 +241,14 @@ class Settings(BaseSettings):
     # for UI breadcrumbs / observability.
     HANDOFF_AUTONOMOUS_MODE: bool = True
 
+    # Autonomous mode's contract is "if the agent does not hand off, feed it a
+    # continuation prompt and run it again". MAF's default ceiling is 50 turns,
+    # which is a very expensive way to discover that an agent cannot hand off:
+    # this mode produced a 23,637-character monologue over 100-200 s before the
+    # triage agent was made tool-free. Three turns covers hand-off, hand-back
+    # and wrap-up; anything beyond that is the loop, not the conversation.
+    HANDOFF_MAX_TURNS: int = 3
+
     # Default orchestration mode when a request doesn't specify one — see
     # orchestrator/modes/. "tool" (LLM calls call_specialist_agent) is the
     # only mode with no other prerequisites; "handoff" requires AGENT_REGISTRY

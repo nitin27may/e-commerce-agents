@@ -133,10 +133,38 @@ _TIMESTAMP_RE = re.compile(
     r")?\b"
 )
 
+# Scrubbing the month *labels* above is not enough: the bucket structure drifts
+# too, and it is made of plain numbers no regex can recognise as volatile.
+#
+# `get_sentiment_trend` groups by DATE_TRUNC('month', created_at) over a
+# NOW()-relative window. `scripts/seed.py` places each review at a fixed
+# day-offset from seed time (random.seed(42) pins the offsets), so the *set* of
+# reviews in the window is genuinely invariant — 15 reviews, every run. What is
+# not invariant is which calendar month a fixed day-offset lands in: it changes
+# as the calendar advances, so the same 15 reviews partition into 7 buckets one
+# week and 5 the next, with different per-bucket counts and averages, and a
+# `trend` derived from them that can flip with the partitioning.
+#
+# That made the fixture key a function of the wall-clock date. It passed for
+# weeks, then failed the moment enough month boundaries had drifted — an eval
+# suite that goes red on its own, on a day nobody changed anything, and sends
+# whoever looks into it hunting a code change that does not exist.
+#
+# Only this one tool buckets by calendar period; every other NOW()-relative
+# query in the repo returns a set or a scalar over the window, both of which are
+# stable under a sliding anchor. So this stays narrow deliberately rather than
+# blanket-scrubbing numbers, which would let genuinely different requests
+# collide on one fixture.
+_MONTH_BUCKETS_RE = re.compile(r'"monthly_data"\s*:\s*\[[^\]]*\]')
+_TREND_RE = re.compile(r'"trend"\s*:\s*"(?:improving|declining|stable|insufficient_data)"')
+
 
 def _scrub(value: Any) -> Any:
-    """Recursively replace UUIDs and ISO-8601 timestamps with placeholders."""
+    """Recursively replace UUIDs, ISO-8601 timestamps and calendar-bucketed
+    aggregates with placeholders."""
     if isinstance(value, str):
+        value = _MONTH_BUCKETS_RE.sub('"monthly_data": "<buckets>"', value)
+        value = _TREND_RE.sub('"trend": "<trend>"', value)
         return _TIMESTAMP_RE.sub("<ts>", _UUID_RE.sub("<uuid>", value))
     if isinstance(value, list):
         return [_scrub(v) for v in value]

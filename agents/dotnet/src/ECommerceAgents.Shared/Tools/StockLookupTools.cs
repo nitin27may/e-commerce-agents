@@ -27,8 +27,8 @@ public sealed class StockLookupTools(DatabasePool pool)
 
     public IEnumerable<AITool> All() => new AITool[]
     {
-        AIFunctionFactory.Create(CheckStock, nameof(CheckStock)),
-        AIFunctionFactory.Create(GetWarehouseAvailability, nameof(GetWarehouseAvailability)),
+        AgentTool.Create(CheckStock, nameof(CheckStock)),
+        AgentTool.Create(GetWarehouseAvailability, nameof(GetWarehouseAvailability)),
     };
 
     private static string FormatDate(object? value) => value switch

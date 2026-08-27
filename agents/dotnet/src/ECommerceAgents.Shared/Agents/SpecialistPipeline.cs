@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Cost;
+using ECommerceAgents.Shared.Telemetry;
 using ECommerceAgents.Shared.Guardrails;
 using ECommerceAgents.Shared.Middleware;
 using Microsoft.Agents.AI;
@@ -138,11 +139,17 @@ public static class SpecialistPipeline
             var usage = response.Usage;
             if (usage is not null)
             {
-                var spent = RequestContext.AddRunCost(CostEstimator.Estimate(
-                    settings.LlmModel,
-                    (int)(usage.InputTokenCount ?? 0),
-                    (int)(usage.OutputTokenCount ?? 0)
-                ));
+                var tokensIn = usage.InputTokenCount ?? 0;
+                var tokensOut = usage.OutputTokenCount ?? 0;
+                var turnCost = CostEstimator.Estimate(settings.LlmModel, (int)tokensIn, (int)tokensOut);
+                var spent = RequestContext.AddRunCost(turnCost);
+
+                // The same estimate as a counter rather than only a log line, which
+                // cannot be alerted on without shipping and parsing logs. Emitted
+                // here because this is the only place that prices *every* turn.
+                CostMetrics.RecordTurn(
+                    turnCost, settings.LlmModel, tokensIn, tokensOut,
+                    agent: settings.OtelServiceName, mode: settings.CostBudgetMode);
 
                 if (ceiling is { } cap && spent >= cap)
                 {

@@ -264,3 +264,84 @@ async def test_no_leakage_between_consecutive_runs() -> None:
 
     assert run2_cost == pytest.approx(estimate_cost(_model(), 200, 200))
     assert run2_cost != pytest.approx(run1_cost)
+
+
+# ─────────────────────── The counter, through the real path ───────────────────────
+
+
+async def test_a_recorded_turn_emits_the_cost_counter(monkeypatch) -> None:
+    """The middleware is the only place that prices *every* LLM turn.
+
+    The orchestrator's usage_logs row sees one aggregate per run, so it cannot
+    say which agent spent what. Emitting here is what makes the counter usable
+    for finding where a spend anomaly actually came from — asserted through
+    ``process()`` rather than by calling the recorder directly, because the
+    wiring is the part that breaks.
+    """
+    from opentelemetry.sdk.metrics import MeterProvider
+    from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+
+    import shared.telemetry
+    from shared import metrics as cost_metrics
+
+    reader = InMemoryMetricReader()
+    provider = MeterProvider(metric_readers=[reader])
+    monkeypatch.setattr(shared.telemetry, "get_meter", provider.get_meter)
+    monkeypatch.setattr(settings, "OTEL_ENABLED", True)
+    cost_metrics._reset_for_tests()
+
+    try:
+        reset_run_cost()
+        await _run_one_turn(CostBudgetMiddleware(), _Ctx(), _FakeResponse(1000, 1000))
+
+        data = reader.get_metrics_data()
+        values = [
+            point.value
+            for rm in data.resource_metrics
+            for sm in rm.scope_metrics
+            for metric in sm.metrics
+            if metric.name == "ecommerce.llm.cost.usd"
+            for point in metric.data.data_points
+        ]
+        assert values == [pytest.approx(estimate_cost(_model(), 1000, 1000))]
+    finally:
+        cost_metrics._reset_for_tests()
+
+
+async def test_a_turn_with_no_usage_emits_nothing(monkeypatch) -> None:
+    """A replay fixture carries no token counts. Pricing that at zero would
+    quietly report a free run; emitting nothing keeps "no data" distinguishable
+    from "cost nothing", which is the same distinction ``_turn_cost`` already
+    preserves for the budget ceiling."""
+    from opentelemetry.sdk.metrics import MeterProvider
+    from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+
+    import shared.telemetry
+    from shared import metrics as cost_metrics
+
+    reader = InMemoryMetricReader()
+    provider = MeterProvider(metric_readers=[reader])
+    monkeypatch.setattr(shared.telemetry, "get_meter", provider.get_meter)
+    monkeypatch.setattr(settings, "OTEL_ENABLED", True)
+    cost_metrics._reset_for_tests()
+
+    class _NoUsage:
+        usage_details = None
+        text = "ok"
+
+    try:
+        reset_run_cost()
+        mw = CostBudgetMiddleware()
+        await _run_one_turn(mw, _Ctx(), _NoUsage())
+
+        assert mw.turns_recorded == 0
+        data = reader.get_metrics_data()
+        names = [
+            metric.name
+            for rm in (data.resource_metrics if data else [])
+            for sm in rm.scope_metrics
+            for metric in sm.metrics
+        ]
+        assert "ecommerce.llm.cost.usd" not in names
+    finally:
+        cost_metrics._reset_for_tests()

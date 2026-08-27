@@ -156,6 +156,13 @@ async def _persist_assistant_turn(
     generated.
     """
     try:
+        # `_live` is a transport marker set when a step was already streamed
+        # (orchestrator/agent.py). The normal path pops it while deciding what
+        # to re-send; the disconnect path never runs that drain, so strip it
+        # here too — persisted metadata should describe the run, not how its
+        # frames were delivered.
+        for step in steps:
+            step.pop("_live", None)
         metadata = {"steps": steps[:50], "agents_involved": agents_involved}
         await pool.execute(
             """INSERT INTO messages (conversation_id, role, content, agent_name, agents_involved, metadata)
@@ -193,6 +200,11 @@ async def _persist_assistant_turn(
                     status=s.get("status", "success"),
                     duration_ms=s.get("duration_ms", 0),
                 )
+        # The stream needs this id to tell the client which run it just watched
+        # — without it an in-chat approval has nothing to POST to. It cannot be
+        # sent any earlier: the usage_logs row is created here, several frames
+        # after `metadata` has already gone out.
+        run_payload_box["usage_log_id"] = usage_log_id
         await _link_run_artifacts(pool, usage_log_id, user_email, run_payload_box)
         if disconnected:
             logger.info(
@@ -719,6 +731,13 @@ async def chat_stream(
                 s.setdefault("agent", "orchestrator")
             agents_involved[:] = list(dict.fromkeys(["orchestrator", *[s.get("agent", "orchestrator") for s in steps]]))
             for s in steps:
+                # A specialist step already went out live from
+                # orchestrator/agent.py as the tool returned. Re-sending it
+                # here would duplicate every row in the timeline. Popping the
+                # marker also keeps it out of the persisted metadata, where a
+                # transport flag has no business.
+                if s.pop("_live", False):
+                    continue
                 yield f"event: step\ndata: {json.dumps(s, default=str)}\n\n"
             stream_usage = run_metadata.get("_maf_usage") or {}
         else:
@@ -767,6 +786,25 @@ async def chat_stream(
             raise
         except Exception:
             logger.exception("chat.persist_failed conversation=%s", conversation_id)
+
+        # Name the run, now that it has an id. `pending_approval` is what lets
+        # the chat thread render its own approval control instead of sending
+        # the user to /runs to find the pause they just caused — and it is
+        # deliberately read after persistence, because a pause that failed to
+        # write its hitl_requests row is not one any UI can act on.
+        run_id = run_payload_box.get("usage_log_id")
+        if run_id:
+            yield (
+                "event: run\ndata: "
+                + json.dumps(
+                    {
+                        "run_id": str(run_id),
+                        "pending_approval": bool(run_payload_box.get("pending_approval")),
+                    },
+                    default=str,
+                )
+                + "\n\n"
+            )
 
         yield "data: [DONE]\n\n"
 

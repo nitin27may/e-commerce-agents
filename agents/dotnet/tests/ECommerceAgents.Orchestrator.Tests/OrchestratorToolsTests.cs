@@ -133,20 +133,23 @@ public sealed class OrchestratorToolsTests
         var tools = BuildStreamingTools(handler);
         using var scope = RequestContext.Scope("alice@example.com", "customer", "sess-1");
 
-        var channel = Channel.CreateUnbounded<string>();
+        var channel = Channel.CreateUnbounded<StreamFrame>();
         using var streamScope = RequestContext.StreamScope(channel.Writer);
 
         var reply = await tools.CallSpecialistAgent("product-discovery", "find headphones");
         channel.Writer.Complete();
 
-        var forwarded = new List<string>();
-        await foreach (var delta in channel.Reader.ReadAllAsync())
+        var forwarded = new List<StreamFrame>();
+        await foreach (var frame in channel.Reader.ReadAllAsync())
         {
-            forwarded.Add(delta);
+            forwarded.Add(frame);
         }
 
         handler.RequestedPath.Should().Be("/message:stream");
-        forwarded.Should().Equal("Wire", "less headphones");
+        // The channel carries typed frames now, so a delta has to say it is one
+        // — everything on it used to be emitted as `event: delta` by position.
+        forwarded.Should().AllSatisfy(f => f.Event.Should().Be("delta"));
+        forwarded.Select(f => f.Data).Should().Equal("Wire", "less headphones");
         reply.Should().Be("Wireless headphones");
     }
 }

@@ -102,4 +102,60 @@ public sealed class AgentSettingsLoaderTests
     public void Load_RefusesAnUnknownGroundingMode() =>
         FluentActions.Invoking(() => LoadWithGroundingMode("strict"))
             .Should().Throw<InvalidOperationException>();
+
+    /// <summary>
+    /// A setting declared on <c>AgentSettings</c> but never read in
+    /// <c>AgentSettingsLoader</c> compiles, runs, and silently ignores its
+    /// environment variable — the property just keeps its C# default forever.
+    /// </summary>
+    /// <remarks>
+    /// This has now happened twice. <c>HandoffMaxTurns</c> shipped bound on the
+    /// Python side and unbound here, so <c>HANDOFF_MAX_TURNS</c> did nothing on
+    /// .NET while appearing to work. It is the same shape as the tool-naming
+    /// defect: a contract that exists in two places and is enforced in one.
+    ///
+    /// Reflection over the loader source rather than over the type, because the
+    /// question is "does the loader read this name?" — which is a property of
+    /// the wiring, not of the settings object.
+    /// </remarks>
+    [Fact]
+    public void EveryEnvBackedSettingIsActuallyReadByTheLoader()
+    {
+        string loaderPath = FindRepoFile(
+            Path.Combine("agents", "dotnet", "src", "ECommerceAgents.Shared", "Configuration", "AgentSettingsLoader.cs"));
+        string loader = File.ReadAllText(loaderPath);
+
+        // Settings whose value comes from the environment, paired with the
+        // variable the loader must read. Deliberately hand-maintained: the point
+        // is that adding a setting makes someone add a line here too.
+        var envBacked = new Dictionary<string, string>
+        {
+            ["HandoffMaxTurns"] = "HANDOFF_MAX_TURNS",
+            ["RateLimitMaxRequests"] = "RATE_LIMIT_MAX_REQUESTS",
+            ["RateLimitEnabled"] = "RATE_LIMIT_ENABLED",
+            ["CostBudgetMode"] = "COST_BUDGET_MODE",
+            ["GroundingMode"] = "GROUNDING_MODE",
+        };
+
+        var unbound = envBacked
+            .Where(kv => !loader.Contains($"{kv.Key} =") || !loader.Contains($"\"{kv.Value}\""))
+            .Select(kv => $"{kv.Key} <- {kv.Value}")
+            .ToList();
+
+        unbound.Should().BeEmpty(
+            "a setting the loader never reads keeps its C# default forever, and the "
+            + "environment variable silently does nothing");
+    }
+
+    private static string FindRepoFile(string relative)
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, relative)))
+        {
+            dir = dir.Parent;
+        }
+
+        dir.Should().NotBeNull($"could not locate {relative} from {AppContext.BaseDirectory}");
+        return Path.Combine(dir!.FullName, relative);
+    }
 }

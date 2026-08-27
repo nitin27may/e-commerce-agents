@@ -67,12 +67,20 @@ class _ReviewsExecutor(Executor):
     @handler
     async def run(self, state: ResearchState, ctx: WorkflowContext[ResearchState]) -> None:
         fn = self._tools.get("analyze_sentiment")
-        if fn:
+        if fn is None:
+            # A missing tool used to be a silent no-op: no error, no log, no entry
+            # in completed_steps — indistinguishable from a tool that ran and found
+            # nothing. That is how this workflow shipped answering from half its
+            # inputs while looking healthy.
+            state.errors.append("reviews: tool 'analyze_sentiment' is not registered")
+            logger.warning("pre_purchase.tool_missing name=analyze_sentiment")
+        else:
             try:
                 state.reviews = await fn(product_id=state.product_id)
                 state.completed_steps.append("reviews")
             except Exception as exc:
                 state.errors.append(f"reviews: {exc}")
+                logger.warning("pre_purchase.step_failed name=reviews error=%s", exc)
         await ctx.send_message(state)
 
 
@@ -86,12 +94,16 @@ class _StockExecutor(Executor):
     @handler
     async def run(self, state: ResearchState, ctx: WorkflowContext[ResearchState]) -> None:
         fn = self._tools.get("check_stock")
-        if fn:
+        if fn is None:
+            state.errors.append("stock: tool 'check_stock' is not registered")
+            logger.warning("pre_purchase.tool_missing name=check_stock")
+        else:
             try:
                 state.stock = await fn(product_id=state.product_id)
                 state.completed_steps.append("stock")
             except Exception as exc:
                 state.errors.append(f"stock: {exc}")
+                logger.warning("pre_purchase.step_failed name=stock error=%s", exc)
         await ctx.send_message(state)
 
 
@@ -105,12 +117,16 @@ class _PriceHistoryExecutor(Executor):
     @handler
     async def run(self, state: ResearchState, ctx: WorkflowContext[ResearchState]) -> None:
         fn = self._tools.get("get_price_history")
-        if fn:
+        if fn is None:
+            state.errors.append("price_history: tool 'get_price_history' is not registered")
+            logger.warning("pre_purchase.tool_missing name=get_price_history")
+        else:
             try:
                 state.price_history = await fn(product_id=state.product_id, days=90)
                 state.completed_steps.append("price_history")
             except Exception as exc:
                 state.errors.append(f"price_history: {exc}")
+                logger.warning("pre_purchase.step_failed name=price_history error=%s", exc)
         await ctx.send_message(state)
 
 
@@ -130,9 +146,17 @@ class _MergeAndShipExecutor(Executor):
     ) -> None:
         merged = _merge_states(inputs)
 
-        if merged.stock.get("in_stock"):
+        if not merged.stock.get("in_stock"):
+            # Not an error: shipping an out-of-stock item has nothing to estimate.
+            # Recorded so a reader can tell "we did not check" from "we checked and
+            # found nothing", which the recommendation text cannot distinguish.
+            merged.errors.append("shipping: skipped, product is out of stock")
+        else:
             fn = self._tools.get("estimate_shipping")
-            if fn:
+            if fn is None:
+                merged.errors.append("shipping: tool 'estimate_shipping' is not registered")
+                logger.warning("pre_purchase.tool_missing name=estimate_shipping")
+            else:
                 try:
                     merged.shipping = await fn(
                         product_id=merged.product_id,
@@ -141,6 +165,7 @@ class _MergeAndShipExecutor(Executor):
                     merged.completed_steps.append("shipping")
                 except Exception as exc:
                     merged.errors.append(f"shipping: {exc}")
+                    logger.warning("pre_purchase.step_failed name=shipping error=%s", exc)
 
         await ctx.send_message(merged)
 
@@ -184,11 +209,15 @@ def _merge_states(inputs: list[ResearchState]) -> ResearchState:
 def _build_recommendation(state: ResearchState) -> str:
     parts: list[str] = []
 
-    if state.reviews.get("sentiment"):
-        parts.append(
-            f"Reviews: {state.reviews['sentiment']} "
-            f"({state.reviews.get('total_reviews', 0)} reviews)"
-        )
+    # Key names come from the TOOLS, which are the contract. This block read
+    # `sentiment` and `total_reviews`; analyze_sentiment returns
+    # `overall_sentiment` and `average_rating`. Because every line here is
+    # guard-claused, the mismatch produced no error — just a permanently
+    # missing line, on every run, since the workflow was written.
+    if state.reviews.get("overall_sentiment"):
+        rating = state.reviews.get("average_rating")
+        detail = f" ({rating}/5 avg)" if rating else ""
+        parts.append(f"Reviews: {state.reviews['overall_sentiment']}{detail}")
 
     if state.stock.get("in_stock"):
         parts.append(f"Stock: {state.stock.get('total_quantity', 0)} units available")
@@ -202,14 +231,49 @@ def _build_recommendation(state: ResearchState) -> str:
     elif state.price_history.get("trend"):
         parts.append(f"Price trend: {state.price_history['trend']}")
 
-    if state.shipping.get("options"):
-        cheapest = state.shipping["options"][0]
-        parts.append(
-            f"Shipping: from ${cheapest.get('price', 0):.2f}, "
-            f"{cheapest.get('days', 'N/A')} days"
+    # Same again: estimate_shipping returns `shipping_options`, not `options`,
+    # and each entry carries `delivery_window` rather than `days`.
+    if state.shipping.get("shipping_options"):
+        cheapest = min(
+            state.shipping["shipping_options"],
+            key=lambda o: o.get("price", float("inf")),
         )
+        window = cheapest.get("delivery_window", "timing unknown")
+        parts.append(f"Shipping: from ${cheapest.get('price', 0):.2f}, {window}")
 
-    return " | ".join(parts) if parts else "Insufficient data for recommendation"
+    if not parts:
+        return "Insufficient data for recommendation"
+
+    recommendation = " | ".join(parts)
+
+    # Say what could not be checked.
+    #
+    # Every line above is guard-claused on its data being present, which is
+    # correct — but it means a probe that failed and a probe that found nothing
+    # produce the same output: silence. This workflow shipped returning
+    # "Stock: 348 units available | Price trend: stable" from a four-executor
+    # fan-out, and nothing in the answer said the other two had not run.
+    #
+    # A short answer that admits what is missing is honest. One that quietly
+    # omits it is the actual user-facing harm, because it reads as a complete
+    # picture.
+    # Checked against the DATA, not completed_steps. A probe can run to
+    # completion and still return nothing usable — an empty dict, or a payload
+    # without the one key the line above needs — and `completed_steps` records
+    # only that it ran. Keying the caveat off that produced the original defect
+    # in a subtler form: all four steps "completed", two contributed nothing,
+    # and the answer was still a confident 48 characters with no caveat.
+    contributed = {
+        "reviews": bool(state.reviews.get("overall_sentiment")),
+        "stock": bool(state.stock),
+        "price_history": bool(state.price_history.get("trend") or state.price_history.get("is_good_deal")),
+        "shipping": bool(state.shipping.get("shipping_options")),
+    }
+    missing = [name for name, ok in contributed.items() if not ok]
+    if missing:
+        recommendation += f" | (could not check: {', '.join(missing)})"
+
+    return recommendation
 
 
 # ─────────────────────── Public API ───────────────────────

@@ -1,6 +1,11 @@
 # Build + publish. Context = repo root (see docker-compose.dotnet.yml).
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
+# Directory.Build.props carries TreatWarningsAsErrors, LangVersion,
+# InvariantGlobalization and VersionPrefix. Omitting it did not break the build —
+# every .csproj happens to restate TargetFramework/Nullable/ImplicitUsings — so
+# images silently compiled under laxer rules than CI and shipped unversioned.
+COPY agents/dotnet/Directory.Build.props ./
 COPY agents/dotnet/Directory.Packages.props ./
 COPY agents/dotnet/ECommerceAgents.sln ./
 COPY agents/dotnet/src/ ./src/
