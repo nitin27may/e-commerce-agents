@@ -14,6 +14,8 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-08-27
+
 The .NET backend could not answer a single question in this window, and the README said the repo
 had "two complete, working backends". Every container reported healthy the entire time. That is
 the fourth defect in this project found by running the software rather than reading it, and the
@@ -124,6 +126,7 @@ first one where the health checks actively argued against looking.
 - **ESLint no longer lints `.next-dotnet/`.** One `dev.sh --dotnet` run put 455 generated files in
   scope and `pnpm lint` reported 2,072 errors no source change could fix. A gate that only fails is
   one people learn to skip.
+
 
 ## [1.2.0] - 2026-08-26
 

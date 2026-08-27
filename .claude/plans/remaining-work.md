@@ -10,8 +10,9 @@
 
 **Status: 2026-08-27.** Plan 20 (close-out) is complete — the .NET stack works, both broken
 orchestration modes are fixed, the benchmark is published, the ADRs exist, four features shipped,
-and every document has been reconciled against what the code actually does. v1.3.0 is ready to cut
-and is deliberately held until the roadmap work lands.
+and every document has been reconciled against what the code actually does. **v1.3.0 is cut** —
+the forward roadmap it was held for landed first, so the release ships with a published,
+checkbox-tracked statement of what comes next rather than pointing at an empty page.
 
 ---
 

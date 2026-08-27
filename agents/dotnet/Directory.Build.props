@@ -20,7 +20,7 @@
       scripts/bump_version.py. release.yml's version-check job fails the release
       if the git tag and these disagree.
     -->
-    <VersionPrefix>1.2.0</VersionPrefix>
+    <VersionPrefix>1.3.0</VersionPrefix>
     <Authors>Nitin Kumar Singh</Authors>
     <Copyright>Copyright (c) $([System.DateTime]::Now.Year)</Copyright>
     <RepositoryUrl>https://github.com/nitin27may/e-commerce-agents</RepositoryUrl>
