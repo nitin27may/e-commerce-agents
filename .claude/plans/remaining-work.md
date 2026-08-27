@@ -71,10 +71,16 @@ Measured against a live stack during the v1.2.0 work. None of these has an owner
       `docs/orchestration-benchmark.md` page. **This is the highest value-per-day item in the
       [adoption audit](audit-2026-08-25-adoption-and-azure.md)** — an LLM answering "which
       orchestration pattern should I use?" has nothing to cite today.
-- [ ] **The demo clip has a recording spec but no recording.**
-      `web/e2e/demo-recording.spec.ts` ships and typechecks. Nothing has been recorded, so the
-      README still opens with a static PNG. Re-check the prompts against the post-FTS catalogue
-      before recording.
+- [ ] **The demo clip: spec now honest, artifact still not produced.** Eight recording attempts.
+      The spec had five separate defects that each let it exit 0 while silently dropping the clip's
+      approval and resume beats — wrong mode for the gate, a regex that cannot span `" & "`,
+      locators keyed off button text that changes after the first switch, four simultaneous data
+      constraints, and a return that can only be initiated once per order. All fixed; it now looks
+      up a qualifying order and **throws** instead of logging.
+      **Still open:** with all five fixed and a qualifying order present, the return turn does not
+      reach the HITL gate and the run hits its 600 s cap with no `hitl_requests` row written.
+      The prompts themselves are fine — FTS ranks `Allbirds Wool Runners` at 0.67, so the
+      post-FTS concern in plan 20 is closed.
 - [ ] **No .NET images are published** — accepted, deliberately. The demo path stays Python-only;
       a visitor is there for the features, not the backend language. `--dotnet` remains a
       build-from-source path. Recorded here so it is not rediscovered as a gap.
