@@ -22,7 +22,7 @@ const eslintConfig = defineConfig([
   {
     // Pre-existing strictness debt, downgraded to warnings so the lint gate is
     // meaningful while the proper fixes are tracked in
-    // .claude/plans/enhancements/07-new-features.md:
+    // .claude/plans/remaining-work.md ("Frontend type/lint debt"):
     //  - no-explicit-any: lib/api.ts + a few consumers use `any` for
     //    loosely-typed JSON; typing that surface is its own task.
     //  - set-state-in-effect: the auth/cart providers read client-only

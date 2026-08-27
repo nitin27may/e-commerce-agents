@@ -1,6 +1,10 @@
 # Plan 18 — Composer UX (#4)
 
-**Status:** proposed · **Date:** 2026-08-26 · **Issue:** [#4](https://github.com/nitin27may/e-commerce-agents/issues/4)
+**Status:** DONE (2026-08-27) · **Date:** 2026-08-26 · **Issue:** [#4](https://github.com/nitin27may/e-commerce-agents/issues/4)
+> Executed as Wave 5 of [`20-close-out.md`](20-close-out.md). This plan's open question — which of the
+> two mode surfaces #4 meant — resolved from the issue body: `AGENT_MODES` in the composer, with the
+> orchestration `mode-switcher` explicitly out of scope. Part A went further than the issue asked,
+> keying suggestions off the message's typed card payload before its closing question.
 **Sibling:** [`17-tutorial-dotnet-coverage.md`](17-tutorial-dotnet-coverage.md) — independent, no shared code.
 **Scope:** `web/` only. Zero backend change, either stack.
 

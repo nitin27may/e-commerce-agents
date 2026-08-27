@@ -1,5 +1,10 @@
 # Plan 20 — Close out everything, then Azure
 
+**Status:** DONE (2026-08-27) — all six waves executed, except the demo clip (Wave 3b),
+which is tracked in [`../remaining-work.md`](../remaining-work.md), and the .NET eval suite
+(Wave 3c), deferred for budget rather than difficulty. The release itself is deliberately held
+until the roadmap work lands.
+
 **On execution, copy into the repo as** `.claude/plans/enhancements/20-close-out.md`
 (the repo `CLAUDE.md` requires working artifacts in repo-local `.claude/plans/`).
 

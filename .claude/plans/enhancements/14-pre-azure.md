@@ -1,6 +1,9 @@
 # Plan 14 — Pre-Azure Work
 
-**Status:** proposed · **Date:** 2026-08-25 · **Effort:** ~3 days
+**Status:** DONE (2026-08-27) · **Date:** 2026-08-25 · **Effort:** ~3 days
+> Six of its eight items shipped here; the last two — the published benchmark and the demo clip —
+> moved into [`20-close-out.md`](20-close-out.md). The benchmark is published; the clip is the one
+> item plan 20 did not land, and it is tracked in [`../remaining-work.md`](../remaining-work.md).
 **Parent:** [`../audit-2026-08-25-adoption-and-azure.md`](../audit-2026-08-25-adoption-and-azure.md)
 **Blocks:** [`13-azure-deployment-and-foundry.md`](13-azure-deployment-and-foundry.md)
 

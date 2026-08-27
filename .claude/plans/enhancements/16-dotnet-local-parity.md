@@ -1,6 +1,9 @@
 # Plan 16 — Make the local Docker Compose work for both stacks
 
-**Status:** F1 FIXED and live-verified 2026-08-26 · F2–F5 in progress · **Target:** v1.3.0
+**Status:** DONE (2026-08-27) — F1–F5 all fixed and live-verified · **Target:** v1.3.0
+> Executed as Wave 1 of [`20-close-out.md`](20-close-out.md). F1's root cause was broader than this
+> plan predicted: not one mis-registered tool but 39 of 46, all registered under C# names the shared
+> prompt corpus never uses. Two of this plan's three F1 candidates were refuted by measurement.
 **Parent:** [`../audit-2026-08-25-adoption-and-azure.md`](../audit-2026-08-25-adoption-and-azure.md)
 
 ## Scope, agreed up front

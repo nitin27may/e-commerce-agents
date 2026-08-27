@@ -70,6 +70,10 @@ public static class TelemetrySetup
             {
                 metrics.AddAspNetCoreInstrumentation();
                 metrics.AddHttpClientInstrumentation();
+                // Without this the CostMetrics instruments exist and record into
+                // nothing — the failure mode worth naming, because the code looks
+                // correct and the dashboard just stays empty.
+                metrics.AddMeter(CostMetrics.MeterName);
                 metrics.AddOtlpExporter(opts => opts.Endpoint = endpoint);
             });
 

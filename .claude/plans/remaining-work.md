@@ -2,185 +2,96 @@
 
 > Repo-committed index, per the "Working Artifacts Location" rule in the project `CLAUDE.md`.
 >
-> This folds the long-running teaching-asset plan down to **what is actually left**. The
-> historical record of Phases 0–14 — the audit that started it, and the reasoning behind
-> decisions that are now shipped — is not repeated here; where a past decision still constrains
-> future work, it is restated inline under [Constraints that still bite](#constraints-that-still-bite).
+> This is the index. Where a past decision still constrains future work it is restated inline
+> under [Constraints that still bite](#constraints-that-still-bite); the rest of the historical
+> record lives in git, not here.
 
-## Where this stands (2026-08-26, after v1.2.0)
+## Where this stands (2026-08-27, after plan 20)
 
-v1.2.0 shipped: hybrid FTS+vector search, the orchestration-mode fix, prebuilt images with a
-one-command demo, and a release pipeline that gates publishing on the test suite. Ten images are
-published for `linux/amd64` and `linux/arm64`; `./scripts/dev.sh --demo` reaches a working stack in
-about a minute.
+**Plan 20 is complete.** Six waves: the .NET stack made to work at all, both broken orchestration
+modes fixed, the paid measurements taken, the writing done, four features shipped, and the
+documents reconciled against reality. Nothing from the adoption audit is open outside plan 13.
 
-Plans **13–18** now carry most of the detail; this file is the index.
+The claim that most needed to become true has: **`--dotnet` answers questions.** It did not when
+plan 20 was written — 39 of 46 tools were registered under names the shared prompt corpus never
+uses, and all twelve containers reported healthy the entire time. README's "two complete, working
+backends" is now true of `main`.
+
+The plans directory went from twenty files to nine. The deleted ones were the original
+UI/teaching-asset plans (00–09), a fully-shipped hardening plan (11), and plan 19, which plan 20
+wholly supersedes. Git keeps them; they are only out of the way.
 
 | Plan | Subject | Status |
 |---|---|---|
-| [13](enhancements/13-azure-deployment-and-foundry.md) | Azure Container Apps + Microsoft Foundry | proposed |
-| [14](enhancements/14-pre-azure.md) | Adoption/conversion work before Azure | 6 of 8 done |
+| [10](enhancements/10-oauth-authorization.md) | OAuth authorization | Phase A shipped and live-verified; later phases are real future work |
+| [12](enhancements/12-mcp-2x-migration.md) | MCP 2.x migration | **blocked upstream** on `agent-framework-core` |
+| [13](enhancements/13-azure-deployment-and-foundry.md) | Azure Container Apps + Microsoft Foundry | **the next objective** |
+| [14](enhancements/14-pre-azure.md) | Adoption/conversion work before Azure | **done** — its last two items closed in plan 20 |
 | [15](enhancements/15-build-and-release.md) | Build gating and release process | **shipped in v1.2.0** |
-| [16](enhancements/16-dotnet-local-parity.md) | Make `--dotnet` actually work | plan merged (#69), **no code yet — P0 inside** |
-| [17](enhancements/17-tutorial-dotnet-coverage.md) | Tutorial .NET coverage (#20) | **done** — PR #70, unmerged |
-| [18](enhancements/18-composer-ux.md) | Composer UX (#4) | proposed |
-| [19](enhancements/19-closing-out.md) | Sequencing the five remaining workstreams | proposed |
+| [16](enhancements/16-dotnet-local-parity.md) | Make `--dotnet` actually work | **done** — plan 20 Wave 1 |
+| [17](enhancements/17-tutorial-dotnet-coverage.md) | Tutorial .NET coverage (#20) | **done** — PR #70 |
+| [18](enhancements/18-composer-ux.md) | Composer UX (#4) | **done** — plan 20 Wave 5 |
+| [20](enhancements/20-close-out.md) | Close out everything, then Azure | **done** |
 
-### Two different ".NET" workstreams — do not conflate them
+## What is actually left
 
-- **Tutorial .NET (plan 17, #20) is done.** Every chapter that ships code ships both languages,
-  both gated in CI: 334 .NET tests across 31 projects. This says nothing about the app.
-- **Production .NET (plan 16) is broken.** `agents/dotnet` builds and starts and cannot answer a
-  single question. Finishing the tutorials did not touch it.
+Two items, and one of them is a decision rather than work.
 
-### The one thing to read first
+- [ ] **The .NET eval suite.** 6 of 7 datasets are ported and the enabling work is merged
+      (record-on-miss, and an `IEmbeddingProvider` seam without which product-discovery could not
+      start in replay mode at all). What remains needs a real key: record fixtures for all six,
+      generate .NET baselines — **re-record, never copy Python's**, since .NET has a different mode
+      set and its absolute scores legitimately differ — and add a CI job gating on *baseline
+      regression*, not an absolute floor, because the score is a property of the recording session
+      (measured spread was 8 points across four identical recordings). `red_team` needs its own
+      schema and evaluator and stays separate. Deferred out of plan 20 for budget, not difficulty.
+- [ ] **The demo clip.** The spec is honest now and the artifact is not produced. Eight recording
+      attempts found five separate defects that each let the run exit 0 while silently dropping the
+      clip's approval and resume beats: the wrong mode for the gate, a regex that cannot span
+      `" & "`, locators keyed off button text that changes after the first switch, four
+      simultaneous data constraints, and a return that can only be initiated once per order. All
+      five are fixed and the spec now **throws** rather than logging. Still open: with all of them
+      fixed and a qualifying order present, the return turn does not reach the HITL gate and the run
+      hits its 600s cap with no `hitl_requests` row written. The prompts themselves are fine — FTS
+      ranks `Allbirds Wool Runners` at 0.67, so the post-FTS concern plan 20 raised is closed.
 
-**Plan 16 F1: the .NET orchestrator cannot reach any specialist.** `CallSpecialistAgent` is rejected
-with "arguments dictionary is missing a value for the required parameter 'agentName'", so
-`agents_involved` is `['orchestrator']` on every turn and no specialist is ever invoked. The stack
-builds, all 12 containers report healthy, the UI serves, login works — and every question fails.
+### Recorded decisions — not pending work
 
-While that stands, "two complete, working backends" is not true of `main`. Either fix it before the
-next release repeating the claim, or qualify the claim.
+Listed so they are not rediscovered as gaps.
 
-### Found by running v1.2.0, not yet planned
+- **No .NET images are published.** Deliberate. The demo path stays Python-only; a visitor is there
+  for the features, not the backend language. `--dotnet` remains a build-from-source path.
+- **No Langfuse sink on .NET.** Deliberately skipped as an additive second exporter.
+- **Anonymous storefront conversations are not persisted**, on either stack, so follow-ups there
+  have no context at any tier. A product decision, not a bug.
+- **The dual-backend Playwright gate is not in CI.** It needs both stacks running against a seeded
+  database, which is minutes rather than seconds. Run it locally; it is the definition of done for
+  parity. ADR 0005 records this as its own honest weakness.
+- **`.NET` seeds and authenticates with Python images.** `seeder` and `auth-server` are shared
+  rather than duplicated — recorded in the parity matrix so it is a stated choice, not an omission.
 
-Measured against a live stack during the v1.2.0 work. None of these has an owner yet.
+### Known debt
 
-- [ ] **`handoff` mode is an outlier on both cost and latency.** Measured 100–200 s per turn and
-      19,000–25,000 characters of response, against ~11 s and ~1,000 characters for `tool` on the
-      same prompt. An order of magnitude beyond every other mode; it looks like intermediate content
-      is being flushed into the reply. Worth understanding before the mode benchmark is published,
-      since it will dominate the table.
-- [ ] **`workflow:pre-purchase` answers from half its inputs, silently.** Four executors run —
-      `reviews`, `stock`, `price_history`, `shipping` — and the reply is 48 characters:
-      `"Stock: 348 units available | Price trend: stable"`. An earlier note here said the synthesis
-      throws reviews and shipping away; that was wrong. `_build_recommendation` guard-clauses every
-      line on data being present, so the fan-out is real and the synthesis is faithful — the
-      *inputs* are missing, and every failure path in that workflow is silent. See
-      [plan 19 §2b](enhancements/19-closing-out.md).
-- [x] **The orchestration-mode benchmark is published** — `docs/orchestration-benchmark.md`,
-      registered under Reference. Running it found two broken modes, so the first table would have
-      described defects as design characteristics. Tokens/cost are reported only for `tool`: the
-      other modes do not write `usage_logs` rows, and the harness says "not captured" rather than
-      "$0.00" because those are different claims. Closing that gap is its own item.
-- [ ] ~~**The orchestration-mode benchmark has a harness but no published result.**~~
-      `evals/benchmark_modes.py` ships in v1.2.0 and is verified working. The first full run
-      measured a broken build through a tripped rate limiter and was discarded rather than
-      published. Needs a re-run against v1.2.0 images (~60 calls, ~$1, ~25 min with pacing) and a
-      `docs/orchestration-benchmark.md` page. **This is the highest value-per-day item in the
-      [adoption audit](audit-2026-08-25-adoption-and-azure.md)** — an LLM answering "which
-      orchestration pattern should I use?" has nothing to cite today.
-- [ ] **The demo clip: spec now honest, artifact still not produced.** Eight recording attempts.
-      The spec had five separate defects that each let it exit 0 while silently dropping the clip's
-      approval and resume beats — wrong mode for the gate, a regex that cannot span `" & "`,
-      locators keyed off button text that changes after the first switch, four simultaneous data
-      constraints, and a return that can only be initiated once per order. All fixed; it now looks
-      up a qualifying order and **throws** instead of logging.
-      **Still open:** with all five fixed and a qualifying order present, the return turn does not
-      reach the HITL gate and the run hits its 600 s cap with no `hitl_requests` row written.
-      The prompts themselves are fine — FTS ranks `Allbirds Wool Runners` at 0.67, so the
-      post-FTS concern in plan 20 is closed.
-- [ ] **No .NET images are published** — accepted, deliberately. The demo path stays Python-only;
-      a visitor is there for the features, not the backend language. `--dotnet` remains a
-      build-from-source path. Recorded here so it is not rediscovered as a gap.
-
-### Still open from the adoption audit
-
-- [ ] **Chapter 21, Capstone Tour** — two `.gitkeep` files. The bridge from 34 tutorials to the
-      running application, and the one missing rung on the ladder.
-- [x] **`docs/adr/`** — done. Five records in `docs/adr/`, registered under Reference on the docs
-      site. Each states what would make it wrong, because a decision with no reversal condition is
-      dogma. Writing them surfaced that ADR 0005's honest weakness is that the parity gate is not
-      in CI — recorded there rather than smoothed over.
-- [x] **Promote the "reported vs actual" table** — done, as `docs/reported-vs-actual.md`, registered
-      under Reference. Grew from five rows to eight while being written: the three defects found in
-      this close-out (the .NET tool-naming mismatch, handoff never handing off, pre-purchase's
-      missing inputs) are the same pattern, so they belong in the same table.
-
----
-
-## Where this stood (2026-08-21, after v1.1.0)
-
-*Kept for the record; superseded by the section above.*
-
-Everything through **Phase 14 (.NET parity)** and **Phase 12 (documentation site)** is merged, plus
-a further round covering conversation context, telemetry, tutorial CI, SEO, and three defects that
-turned out to be larger than their issue titles.
-
-**The documentation site is live** at <https://nitinksingh.com/e-commerce-agents/> — 85 pages, 71
-Mermaid diagrams, generated from the repo by `scripts/build_docs_site.py`. Every page now carries
-its own meta description, keywords and `TechArticle` JSON-LD, and every diagram carries an
-accessible title.
-
-**Workflow resume works on both stacks**, so the pause → badge → Approve → resume loop is real on
-.NET as well as Python, and `web/e2e/parity-gaps.ts` is empty.
+- [ ] **Frontend type/lint debt.** Two ESLint rules are downgraded to warnings in
+      `web/eslint.config.mjs` so the gate stays meaningful; the suppressions come off by fixing the
+      root causes, not by re-raising the rules. **Type the API layer** — replace `any` in
+      `web/src/lib/api.ts` and its consumers with real interfaces (consider extending the Zod types
+      in `web/src/lib/chat-schemas.ts`), then restore `@typescript-eslint/no-explicit-any` to
+      `error`. **Auth/cart store refactor** — move `lib/auth-context.tsx` and `lib/cart-context.tsx`
+      off mount-effect `setState` to a `useSyncExternalStore`-backed store so localStorage
+      hydration is rule-clean, then restore `react-hooks/set-state-in-effect` to `error`. Also
+      clear the remaining `next/no-img-element` warnings where `next/image` is practical.
+- [ ] **The chat page hard-crashes on an unexpected API shape.** Recorded during plan 20's UI
+      verification; not yet owned.
+- [ ] **`embeddings=0` in the default local stack**, so `semantic_search` is lexical-only until
+      `scripts/generate_embeddings` has run. Correct behaviour, surprising default.
 
 ### The pattern worth carrying forward
 
-Five separate times in the most recent round, **the reported problem was smaller than the actual
-one**, and in every case the difference was found by running something rather than reading it:
-
-| Filed as | Actually |
-|---|---|
-| "follow-ups *occasionally* lose context" (#9) | Deterministic: specialists received **zero** history on every browser turn |
-| "telemetry depth: no metrics provider" (#19) | Metrics were never the gap; .NET spans were **invisible in Aspire's GenAI view** |
-| ".NET tests only for ch01-11" (#20) | **No CI job built any** of the 31 tutorial projects; ch08 was fully broken |
-| "`semantic_search` dead under replay" (#52) | Also a **production** IVFFlat bug returning unrelated products |
-| "`optimize_cart` divides by zero" (#51) | **No promotion had ever applied correctly**, in any environment |
-
-Two of those were found only because a gate was switched on. That is the argument for finishing the
-gates below before the content work.
-
-## Remaining work, in order
-
-### 1. Finish the .NET eval suite
-
-**Groundwork is merged; the recording run is not.** `ECommerceAgents.Evals` now has 6 of 7 datasets,
-record-on-miss (`RECORD=true` + `REPLAY_RECORD_PROVIDER`), and an `IEmbeddingProvider` seam without
-which product-discovery could not even start in replay mode.
-
-- [ ] Record fixtures for all 6 datasets against real Azure OpenAI
-- [ ] Generate .NET baselines — **re-record, never copy Python's**; .NET has a different mode set,
-      so its absolute scores legitimately differ
-- [ ] Add the CI job, gating on baseline regression rather than an absolute floor (the score is a
-      property of the recording session — measured spread on one suite was 8 points across four
-      identical recordings)
-- [ ] `red_team` / safety: needs its own schema and evaluator, so it is a separate piece
-
-### 2. Tutorial .NET coverage (#20) — see [plan 17](enhancements/17-tutorial-dotnet-coverage.md)
-
-The CI gate is in and immediately found chapter 08 completely broken. What it now protects is
-incomplete:
-
-- [ ] Tests for **ch12–19** (7 chapters; ch16 and ch20 stay documented stubs — magentic is a
-      genuine SDK blocker, not a repo gap)
-- [ ] `dotnet/` for **ch22–32** (11 chapters) — the largest single piece of work left in the repo
-
-### 3. Composer UX (#4) — see [plan 18](enhancements/18-composer-ux.md)
-
-- [ ] Collapse the always-visible `AGENT_MODES` chip row behind a control
-- [ ] Derive suggested prompts from the reply on screen instead of a static
-      `DEMO_SCENARIOS.slice(0, 4)`
-
-**Frontend-only by constraint**: no new endpoint, no changed request shape, no fence-contract
-change. Both backends must be byte-identically unaffected, verified by the dual-backend gate.
-
-### 4. Smaller items, unscheduled
-
-- [ ] **Cost counter instrument** — dollar estimation and a budget ceiling both ship; what is
-      missing is a counter this repo owns, so an OTLP sink can alert on spend anomalies
-- [ ] **In-chat approval card** — the resume loop is real on both stacks but the control renders
-      only on `/runs`, not inside the chat thread
-- [ ] **Streaming tool calls** — text deltas stream; raw tool-result payloads do not yet travel as
-      their own SSE frames
-- [x] **Search & retrieval** — shipped in v1.2.0: `search_products` is a weighted `tsvector` behind
-      a GIN index, and `semantic_search` fuses lexical and vector arms via RRF. Only the typed
-      filter DSL remains planned
-- [ ] **Langfuse sink on .NET** — deliberately skipped as an additive second exporter
-- [ ] **Anonymous multi-turn memory** — neither stack persists anonymous storefront conversations,
-      so follow-ups there have no context at any tier. A product decision, not a bug, but currently
-      undocumented as such
+**The reported problem has been smaller than the actual one every single time**, and every time the
+difference was found by running something rather than reading it. That table is now a published
+page — [`docs/reported-vs-actual.md`](../../docs/reported-vs-actual.md) — with eight rows. It is
+the most useful thing in this repo for anyone deciding how much to trust an issue title.
 
 ## Constraints that still bite
 
@@ -243,16 +154,16 @@ local runs could not were both environment-specific by nature.
 
 ```bash
 # .NET
-cd agents/dotnet && dotnet test ECommerceAgents.sln          # 500 passing
+cd agents/dotnet && dotnet test ECommerceAgents.sln          # 585 passing
 
 # Python
-cd agents/python && uv run pytest && uv run ruff check .     # ~776 passing
+cd agents/python && uv run pytest                            # 833 passing
 
 # Web
 cd web && npx vitest run && npx tsc --noEmit && npx eslint .
 
 # Docs site
-uv run python scripts/build_docs_site.py --check             # 84 pages, 0 broken links
+uv run python scripts/build_docs_site.py --check             # 97 pages, 0 broken links
 uv run python scripts/check_tutorial_readmes.py --check      # 34/34 chapters
 
 # Dual-backend gate — the definition of done for .NET parity

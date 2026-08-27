@@ -14,6 +14,117 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ## [Unreleased]
 
+The .NET backend could not answer a single question in this window, and the README said the repo
+had "two complete, working backends". Every container reported healthy the entire time. That is
+the fourth defect in this project found by running the software rather than reading it, and the
+first one where the health checks actively argued against looking.
+
+### Fixed
+
+- **The .NET orchestrator could not reach a single specialist.** 39 of 46 .NET tools were
+  registered under their C# PascalCase names while the shared prompt corpus — which the .NET
+  Dockerfiles copy verbatim out of `agents/python/config/` — names them in Python's snake_case. The
+  model was told about one name and offered another on every turn. On the orchestrator's routing
+  tool that was fatal (`The arguments dictionary is missing a value for the required parameter
+  'agentName'`); on the other 38 it degraded silently, which is worse to find. Tools are now
+  registered through one helper that owns the naming rule, and a test asserts no source file
+  bypasses it.
+- **…and the model does not send consistent argument casing anyway.** With the schema declaring
+  `agent_name`, the model still intermittently sent `agentName`, and MAF's binder rejects the call
+  outright. The user saw "there was an issue accessing the inventory details" and the stack looked
+  healthy. Only a browser run caught it — API spot-checks had hit the lucky casing every time.
+  Inbound argument names are now normalised to whatever the schema declares, for every tool rather
+  than the one that failed.
+- **`handoff` mode took 100–200s and returned 19–25k characters** where `tool` mode answered the
+  same prompt in ~11s and ~1,000. The plan's hypothesis — quadratic accumulation of cumulative
+  stream text — was measured and refuted: the deltas were genuine. The real cause was the start
+  agent. Handoff was seeded with the tool-calling orchestrator, so it routed *and* answered
+  instead of handing off; 5,403 updates and 23,637 characters all came from `orchestrator`, with no
+  specialist speaking at all. Python now starts from a tool-free triage agent (1,374 chars, ~8s),
+  and .NET's hand-rolled router was replaced with a real `AgentWorkflowBuilder` handoff mesh.
+- **`workflow:pre-purchase` answered from half its inputs, silently.** Four executors ran and the
+  reply was 48 characters. An earlier diagnosis in this repo blamed the synthesis step; that was
+  wrong, and is corrected here. The synthesis was faithful — it read `sentiment` and `options`
+  where its own tools return `overall_sentiment` and `shipping_options`, so two of the four
+  contributions were always absent. The test stubs encoded the same wrong contract, which is why
+  the tests passed. Now 127 characters carrying all four.
+- **`HANDOFF_MAX_TURNS` was never read from the environment.** It was added to the settings record
+  and to the mode, but not to the loader, so setting it did nothing at all. Guarded by a test that
+  fails if a setting exists in one place and not the other.
+- **.NET tools returned bare `null` on failure.** Correct C#, useless to a model: it learns
+  something did not happen but not what or why, so it cannot recover. Observed end to end — the
+  agent called `get_order_details` without a UUID, got `null`, and told a customer with eleven
+  orders there "may be a temporary issue accessing your order data". Failures now return a
+  structured error that names the recovery, matching Python's convention. Genuinely-empty results
+  are deliberately not errors.
+- **.NET wrote `[DONE]` before persisting the turn.** `[DONE]` is the client's cue that the turn is
+  over and the composer re-enables on it, so a follow-up sent immediately could read history before
+  the `INSERT` landed and lose the turn it was following up on. Python fixed this as #9; .NET kept
+  the old order, so the two stacks disagreed on whether a completed turn was durable.
+- **Docker builds compiled under laxer rules than CI.** All seven .NET Dockerfiles copied
+  `Directory.Packages.props` but not `Directory.Build.props`, so images silently lost
+  `TreatWarningsAsErrors`, `LangVersion` and `InvariantGlobalization` — and shipped unversioned.
+- **A stale database volume broke search with no error.** `scripts/dev.sh` probed for stale
+  credentials but not a stale *schema*, so a volume predating the full-text-search migration
+  started cleanly and then failed at query time.
+- **The two stacks collided on ports** with a raw Docker error. Each stack now gets its own Compose
+  project name, the second refuses to start with the command to fix it, and `--switch` does the
+  swap properly.
+- **The evals suite went red on a day nobody changed anything.** `get_sentiment_trend` buckets
+  reviews by calendar month over a `NOW()`-relative window, and the seeder places each review at a
+  fixed day-offset from seed time. The set of reviews in the window is invariant; which calendar
+  month a fixed offset lands in is not, so the same 15 reviews made 7 buckets on the recording date
+  and 5 later. The replay hash already scrubbed the month *labels* and stopped there, so the
+  fixture key had quietly become a function of the wall-clock date. Re-keyed offline — no API spend.
+- **Three E2E tests asserted against a mocked API** and one asserted a nav link whose removal was
+  deliberate. Repaired, and what they were hiding is recorded rather than quietly fixed.
+
+### Added
+
+- **Complete .NET tutorial coverage** ([#70](https://github.com/nitin27may/e-commerce-agents/pull/70)) —
+  every chapter that ships code now ships both languages, both gated in CI: 334 .NET tests across
+  31 projects, up from 47 across 11. Turning the gate on found chapter 12's sample had never run
+  (bare string input, no `TurnToken`, and a match on an event type that is never emitted) and
+  chapter 15 looping forever because a termination check never chained to its base.
+- **An approval control inside the chat thread.** The pause-and-resume loop was already real on
+  both stacks, but the only control that could release a pause lived on `/runs` — so the user who
+  caused it, looking at a message that stopped mid-return, had no way to act without knowing a
+  separate page existed. The blocker was that no streaming client ever learned the run's id; both
+  stacks now emit `event: run` after persistence and before `[DONE]`.
+- **Tool steps that arrive before the answer does.** Both stacks batched their timeline steps until
+  after the last text chunk, so the timeline appeared once the answer had finished writing —
+  exactly when it stops being useful. Both specialist hosts now drain steps before each chunk and
+  both orchestrators forward them live.
+- **A cost counter this repo owns, on both stacks.** Python's `get_meter()` had been exposed since
+  telemetry was wired up and never called, and .NET emitted no custom instrument either, so the one
+  number this application knows — what a run costs — existed only as a log line, which cannot be
+  alerted on. Now `ecommerce.llm.cost.usd` with tokens split by direction beside it, under the same
+  meter name on both backends so one dashboard covers them, and nothing user-scoped in the
+  attributes.
+- **A composer that responds to the conversation** ([#4](https://github.com/nitin27may/e-commerce-agents/issues/4)) —
+  six always-visible mode chips collapse into one picker, and the suggestion row is derived from the
+  assistant's last message (its typed card payload first, its closing question second) rather than
+  being the same four canned prompts after every turn. No LLM call.
+- **Published orchestration-mode benchmark** ([`docs/orchestration-benchmark.md`](docs/orchestration-benchmark.md)) —
+  latency, tokens, cost and response length per mode, with the prompt set, date, model and commit,
+  because a benchmark without its conditions is an anecdote.
+- **Five architecture decision records** ([`docs/adr/`](docs/adr/)) — A2A over direct calls, no
+  text-to-SQL, YAML prompt composition, MAF-native execution, dual-stack parity. Each states what
+  would make it wrong.
+- **[`docs/reported-vs-actual.md`](docs/reported-vs-actual.md)** — eight cases where the reported
+  problem turned out smaller than the actual one, every time, and each found by running rather than
+  reading. It was the most credible artifact in the repo and it was invisible in `.claude/`.
+
+### Changed
+
+- **The `full` eval job no longer runs on a schedule.** It spends a real API key, and a weekly cron
+  bills on a timer for a result nobody asked for — the 2026-08-24 scheduled run failed and sat
+  there unread. It is `workflow_dispatch` only now, matching the .NET eval job, and the rule is
+  written into the workflow so the next job added there inherits it.
+- **ESLint no longer lints `.next-dotnet/`.** One `dev.sh --dotnet` run put 455 generated files in
+  scope and `pnpm lint` reported 2,072 errors no source change could fix. A gate that only fails is
+  one people learn to skip.
+
 ## [1.2.0] - 2026-08-26
 
 Two things in here were found by running the software rather than reading it, which is becoming
