@@ -154,32 +154,63 @@ test("demo clip — chat, modes, graph, approval, resume", async ({ page }) => {
     await beat(page, 1_200);
   }
 
-  // The order id is in the message on purpose, and three things force it.
+  // The order is looked up, not hardcoded, and that is not fussiness.
   //
-  // 1. workflow:return-replace resolves an order from the message itself — a
-  //    UUID literal if present, otherwise the user's MOST RECENT order. Prose
-  //    like "my July 16th order" is not parsed, so it silently fell back.
-  // 2. Alice's most recent order is `shipped`, and returns require `delivered`,
-  //    so that fallback made the workflow refuse at its first gate.
-  // 3. The gate only pauses above RETURN_HITL_THRESHOLD ($500). A cheap return
-  //    passes straight through without stopping.
+  // FOUR constraints must hold at once for the approval gate to fire, and each
+  // one cost a recording to discover:
   //
-  // There is a FOURTH constraint that cost another recording to find: returns
-  // expire after 30 days. Alice's two largest delivered orders are 39 and 42
-  // days old, so both were refused with "Return window expired" — an entirely
-  // correct answer that still loses the beat.
+  //   workflow:return-replace selected  the gate lives in that graph, not the
+  //                                     platform — a return asked in any other
+  //                                     mode routes through a workflow with no gate
+  //   status 'delivered'                the mode falls back to the user's MOST
+  //                                     RECENT order, which is 'shipped'
+  //   within the 30-day return window   the two largest delivered orders are
+  //                                     39 and 42 days old
+  //   total above $500                  RETURN_HITL_THRESHOLD; a cheaper return
+  //                                     is auto-approved and never pauses
   //
-  // This order satisfies all four: delivered, $603.46, 18 days old, and stable
-  // because the seeder is deterministic (random.seed(42)). Four recordings
-  // passed while silently losing the clip's last two beats before this was
-  // pinned down — the spec logged "no pending approval on /runs" and exited 0
-  // every time, which is why the clip needs re-watching and not just re-running.
+  // And a fifth, which is why hardcoding failed even after the other four were
+  // right: a return can only be initiated ONCE per order. The first recording
+  // consumes it, and every rerun afterwards takes a different path and silently
+  // loses the beat. Alice has exactly one qualifying order at any moment, so a
+  // hardcoded id works precisely once.
   //
-  // A support conversation quoting an order number is realistic, so this reads
-  // fine on camera.
+  // Reading /api/orders and filtering makes the spec re-runnable, and it fails
+  // with a real explanation when the seed data cannot support the take.
+  // Absolute URL: the frontend is served from :3000 and the orchestrator lives
+  // on :8080, so a same-origin "/api/orders" reaches Next.js and comes back as
+  // HTML. Mirrors NEXT_PUBLIC_API_URL's default, which is what the app itself
+  // uses.
+  const apiBase = process.env.E2E_API_URL ?? "http://localhost:8080";
+
+  const orderId = await page.evaluate(async (base) => {
+    const token = localStorage.getItem("ecommerce_access_token");
+    const res = await fetch(`${base}/api/orders?limit=50`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const body = await res.json();
+    const orders = Array.isArray(body) ? body : (body.orders ?? body.entries ?? []);
+    // The orders endpoint returns `date`, not `created_at` — the shape differs
+    // from the DB column, which is easy to assume and wrong.
+    const cutoff = Date.now() - 25 * 24 * 60 * 60 * 1000; // inside the 30-day window, with margin
+    const match = orders.find(
+      (o: Record<string, unknown>) =>
+        o.status === "delivered" &&
+        Number(o.total) > 500 &&
+        new Date(String(o.date)).getTime() > cutoff
+    );
+    return match ? String((match as Record<string, unknown>).id) : "";
+  }, apiBase);
+
+  expect(
+    orderId,
+    "no delivered order over $500 inside the 30-day window — the seed data cannot " +
+      "produce an approval pause, so re-seed (./scripts/dev.sh --clean) before recording"
+  ).not.toBe("");
+
   await typeAndSend(
     page,
-    "I want to return order f1874d25-1f6b-4fd5-98dd-9157ed8c254f — it is not what I expected."
+    `I want to return order ${orderId} — it is not what I expected.`
   );
   await waitForTurn(page);
   await beat(page, 2_500);
