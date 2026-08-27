@@ -175,4 +175,4 @@ the next successful release; it is never moved backwards by hand.
 
 - [Configuration](configuration.md) — where settings come from
 - [Deployment](deployment.md) — running the stack
-- [`.claude/plans/enhancements/15-build-and-release.md`](https://github.com/nitin27may/e-commerce-agents/blob/main/.claude/plans/enhancements/15-build-and-release.md) — the design and why each piece exists
+- [`.claude/plans/remaining-work.md`](https://github.com/nitin27may/e-commerce-agents/blob/main/.claude/plans/remaining-work.md) — the consolidated plan; the build-and-release design that produced this pipeline shipped in v1.2.0 and lives in git history

@@ -43,7 +43,7 @@ and when that happens the reason is written down rather than the item quietly di
 
 ### 1. Azure and Microsoft Foundry
 
-Planned in detail in [`plan 13`](https://github.com/nitin27may/e-commerce-agents/blob/main/.claude/plans/enhancements/13-azure-deployment-and-foundry.md).
+Blockers, phases and acceptance criteria are in [the consolidated plan](https://github.com/nitin27may/e-commerce-agents/blob/main/.claude/plans/remaining-work.md).
 
 `docs/deployment.md` is 428 lines of local Docker Compose. There is no Bicep, no `azure.yaml`,
 no Terraform, no Kubernetes manifest, no Foundry integration. For a repository whose readers are
@@ -80,28 +80,28 @@ Both are known, both are small, and both undercut something the repo already say
 
 The gates are what make every other claim on this page checkable.
 
-- **An eval gate for the MCP path** — run each dataset twice, native tools versus MCP, and fail
-  CI if the MCP run scores below the native baseline. Today MCP is offered as an alternative
-  data-access layer with nothing measuring whether it is as good.
-- **Get the dual-backend Playwright gate into CI.** It is the definition of done for parity and
-  it runs only locally, because it needs both stacks up against a seeded database. ADR 0005
-  records this as its own honest weakness. Every parity claim rests on a gate nobody runs
-  automatically.
-- **A red-team evaluator.** `red_team.json` runs against keyword scoring; it needs its own schema
-  and judge to mean anything.
+- [ ] **Get the dual-backend Playwright gate into CI.** It is the definition of done for parity and
+      it runs only locally, because it needs both stacks up against a seeded database.
+      [ADR 0005](adr/0005-dual-stack-parity.md) records this as its own honest weakness. Every
+      parity claim on this page rests on a gate nobody runs automatically.
+- [ ] **An eval gate for the MCP path** — run each dataset twice, native tools versus MCP, and fail
+      CI if the MCP run scores below the native baseline. Today MCP is offered as an alternative
+      data-access layer with nothing measuring whether it is as good.
+- [ ] **A red-team evaluator.** `red_team.json` is scored by keyword matching, which means very
+      little; it needs its own schema and judge.
 
 ### 4. Retrieval and the tool surface
 
-- **Typed filter DSL** — replace `search_products`' flat parameter list with a structured
-  `ProductFilters` model. Text-to-SQL was considered and rejected ([ADR 0002](adr/0002-no-text-to-sql.md)):
-  `user_email`/`user_role` scoping lives in ContextVars, and dynamic SQL would bypass that
-  contract. A typed DSL gives the model flexibility at the boundary while keeping SQL generation
-  server-side and auditable.
-- **Publish the two MCP servers to PyPI** so any MCP client can run them against any PostgreSQL
-  database without this codebase. That is the honest test of whether they are a real integration
-  surface or just internal plumbing with a protocol on top.
-- **Prompt caching** — cache system prompts and tool schemas per agent. Measurable against the
-  cost counter that now ships, which is the reason it is worth doing rather than guessing at.
+- [ ] **Typed filter DSL** — replace `search_products`' flat parameter list with a structured
+      `ProductFilters` model. Text-to-SQL was considered and rejected ([ADR 0002](adr/0002-no-text-to-sql.md)):
+      `user_email`/`user_role` scoping lives in ContextVars, and dynamic SQL would bypass that
+      contract. A typed DSL gives the model flexibility at the boundary while keeping SQL generation
+      server-side and auditable.
+- [ ] **Publish the two MCP servers to PyPI** so any MCP client can run them against any PostgreSQL
+      database without this codebase. That is the honest test of whether they are a real integration
+      surface or just internal plumbing with a protocol on top.
+- [ ] **Prompt caching** — cache system prompts and tool schemas per agent. Measurable against the
+      cost counter that now ships, which is the reason it is worth doing rather than guessing at.
 
 ### 5. Cross-framework comparison
 
@@ -114,18 +114,18 @@ between.
 
 Three separable options, in increasing scope:
 
-- **Claude and other providers as a third LLM backend.** Smallest: one chat client per stack
-  behind the existing `LLM_PROVIDER` switch. Both backends keep their orchestration; only the
-  model changes. Mostly answers "is this locked to OpenAI?", which is a fair question to have a
-  crisp answer to.
-- **A third backend on a different agent SDK** — the Claude Agent SDK, or LangGraph — serving the
-  same frontend, database and prompts. This turns the repo from a two-way comparison into a
-  three-way one, and it is the version that produces something genuinely hard to find elsewhere:
-  the same non-trivial system, built three ways, with the differences attributable to the
-  framework rather than to the problem.
-- **Agentic workflows on the repository itself** — using coding agents for eval recording,
-  documentation-drift checks and review. Ships nothing in the product; improves the rate at
-  which everything else here gets done.
+- [ ] **Claude and other providers as a third LLM backend.** Smallest: one chat client per stack
+      behind the existing `LLM_PROVIDER` switch. Both backends keep their orchestration; only the
+      model changes. Mostly answers "is this locked to OpenAI?", which is a fair question to have a
+      crisp answer to.
+- [ ] **A third backend on a different agent SDK** — the Claude Agent SDK, or LangGraph — serving the
+      same frontend, database and prompts. This turns the repo from a two-way comparison into a
+      three-way one, and it is the version that produces something genuinely hard to find elsewhere:
+      the same non-trivial system, built three ways, with the differences attributable to the
+      framework rather than to the problem.
+- [ ] **Agentic workflows on the repository itself** — using coding agents for eval recording,
+      documentation-drift checks and review. Ships nothing in the product; improves the rate at
+      which everything else here gets done.
 
 The middle option is the interesting one and also the expensive one. It should not start until
 the Azure work lands, because a third backend multiplies the deployment matrix, and doing that
@@ -133,11 +133,10 @@ before there is *one* good deployment story would produce three mediocre ones.
 
 ### Blocked, waiting on upstream
 
-- **MCP 2.x migration** ([`plan 12`](https://github.com/nitin27may/e-commerce-agents/blob/main/.claude/plans/enhancements/12-mcp-2x-migration.md))
-  — blocked on `agent-framework-core`. Listed so the blocker stays visible; an item that vanishes
-  looks like a decision nobody made.
-- **OAuth later phases** ([`plan 10`](https://github.com/nitin27may/e-commerce-agents/blob/main/.claude/plans/enhancements/10-oauth-authorization.md))
-  — Phase A ships and is live-verified. The remaining phases are real future work, not a gap.
+- [ ] **MCP 2.x migration** — blocked on `agent-framework-core`. Listed so the blocker stays visible;
+      an item that vanishes looks like a decision nobody made.
+- [ ] **OAuth later phases** — Phases A–D ship and are live-verified on both stacks. What remains is
+      key rotation, RFC 7591 dynamic client registration, and an audit matrix — real future work, not a gap.
 
 ### What is deliberately not planned
 
@@ -177,7 +176,7 @@ Legend: `- [x]` shipped · `- [ ]` planned or in progress.
 - [x] **Full .NET / C# backend** — the same orchestrator and five specialists plus an MCP host, the same A2A protocol and PostgreSQL schema, idiomatic .NET throughout. Eight test projects, 450 test methods (~500 cases counting `[Theory]` data). Reached parity on the shipped surface through a nine-PR effort covering the shared tool library, orchestration modes, normalized SSE events, server-side grounding, rate limiting, cost estimation and a HITL claim-before-execute fix — gated by a dual-backend Playwright suite rather than a checklist. See [`agents/dotnet/`](../agents/dotnet/) and [`docs/parity-matrix.md`](parity-matrix.md).
 - [x] **Distributed tracing across every agent** — OpenTelemetry throughout (`shared/telemetry.py`), GenAI semantic conventions, a Langfuse sink, and `trace_id` correlated into `usage_logs` so a row in the admin usage table links back to its trace. Spans nest correctly across A2A hops, so one chat turn reads as a single tree in the [Aspire Dashboard](http://localhost:18888). The dashboard itself runs stock — this repo ships no pre-built views.
 - [x] **MCP data-access layer (2 servers)** — `mcp-product` (:9000) and `mcp-inventory` (:9001) are standalone, independently publishable Python packages (`packages/mcp-product`, `packages/mcp-inventory`) in a uv workspace. They expose product and inventory data over the MCP streamable HTTP transport (FastMCP). Flag-gated via `MCP_ENABLED`; `product-discovery` and `inventory-fulfillment` swap their direct-asyncpg `@tool` set for `MCPStreamableHTTPTool` with no behavior change. Any MCP-compatible client — Claude Desktop, Cursor, LangGraph — can use them without this codebase. See [MCP Integration](mcp-integration.md).
-- [x] **Self-hosted OAuth2 Authorization Server** — opt-in `AUTH_MODE=oauth` path with the token issuer living *inside* this repo (`agents/python/auth_server/`, built on `authlib`), so login and every service call are genuinely OAuth2-compliant with no external identity provider or cloud dependency. RS256 signing with an AS-generated keypair and a JWKS endpoint; user login via the resource-owner-password grant brokered by the orchestrator (the browser keeps its email/password form); client-credentials service tokens replacing the static A2A shared secret; and both MCP servers hardened into OAuth 2.1 resource servers (audience/scope validation, `.well-known/oauth-protected-resource`, `WWW-Authenticate` challenge) — Python and .NET parity throughout. Fully additive — `AUTH_MODE=local` (self-issued JWT + shared secret) stays the zero-config default, so the OpenAI-key-only quick-start is unaffected. Verified end to end against a live stack: real browser login and chat session on AS-issued tokens, role-gated routes, inter-agent and MCP calls authenticated purely on OAuth scopes (no shared secrets), and cross-scope/cross-resource token rejection — both stacks, including the .NET MCP host validated against the real running auth-server. See [`.claude/plans/enhancements/10-oauth-authorization.md`](https://github.com/nitin27may/e-commerce-agents/blob/main/.claude/plans/enhancements/10-oauth-authorization.md).
+- [x] **Self-hosted OAuth2 Authorization Server** — opt-in `AUTH_MODE=oauth` path with the token issuer living *inside* this repo (`agents/python/auth_server/`, built on `authlib`), so login and every service call are genuinely OAuth2-compliant with no external identity provider or cloud dependency. RS256 signing with an AS-generated keypair and a JWKS endpoint; user login via the resource-owner-password grant brokered by the orchestrator (the browser keeps its email/password form); client-credentials service tokens replacing the static A2A shared secret; and both MCP servers hardened into OAuth 2.1 resource servers (audience/scope validation, `.well-known/oauth-protected-resource`, `WWW-Authenticate` challenge) — Python and .NET parity throughout. Fully additive — `AUTH_MODE=local` (self-issued JWT + shared secret) stays the zero-config default, so the OpenAI-key-only quick-start is unaffected. Verified end to end against a live stack: real browser login and chat session on AS-issued tokens, role-gated routes, inter-agent and MCP calls authenticated purely on OAuth scopes (no shared secrets), and cross-scope/cross-resource token rejection — both stacks, including the .NET MCP host validated against the real running auth-server. See [`docs/security-guide.md`](security-guide.md).
 
 - [x] **Server-side grounding** — the model's claims are checked against Postgres before the answer leaves. Product and order ids in card blocks are verified to exist and to carry the quoted price; a fact-check badge reports how many claims were verified. `GROUNDING_MODE` is `annotate` by default (`shared/grounding/`, `Shared/Grounding/`).
 - [x] **Orchestration modes, live** — the same question can be answered by a tool router, a handoff mesh, two workflow graphs or a group-chat round table, selected per request from the composer. The graph animates node-by-node from real SSE events, and "compare modes" runs one prompt through several and reports latency side by side.

@@ -225,6 +225,29 @@ Versions, ports and every environment variable: **[Deployment](./docs/deployment
 
 ---
 
+## What's next
+
+This is an active project. The short version of where it goes from here — the full list, with
+checkboxes and the reasoning for the order, is on the
+**[Roadmap](https://nitinksingh.com/e-commerce-agents/getting-started/roadmap.html)**.
+
+| Next | What it is |
+|---|---|
+| **Azure and Microsoft Foundry** | The biggest gap today: there is no Azure path at all. Not one deployment — the same six agents in **three topologies** (Container Apps, Foundry as model provider, Foundry Hosted Agents), with what each one costs you. One deployment is a tutorial; three with trade-offs is a reference |
+| **Finish the gates** | The dual-backend parity suite runs locally but not in CI, and the .NET eval suite needs its baselines. Every parity claim this repo makes rests on a gate nobody runs automatically |
+| **Retrieval and tooling** | A typed filter DSL for `search_products`, the two MCP servers published to PyPI, and prompt caching — now measurable, because the cost counter ships |
+| **Cross-framework comparison** | The same non-trivial system built a third way — Claude Agent SDK or LangGraph — so the differences are attributable to the framework rather than to the problem. Gated on Azure landing first |
+
+The roadmap also records what is **deliberately not** planned, and why, so those are not mistaken
+for oversights.
+
+> **Watch this repository** to be notified when these land — use *Watch → Custom → Releases* for
+> release-only notifications, or *Watch → All Activity* to follow the work as it happens. Each
+> release is written up in the [CHANGELOG](CHANGELOG.md), which says plainly when something never
+> worked and for how long.
+
+---
+
 ## Contributing
 
 1. Fork the repository
