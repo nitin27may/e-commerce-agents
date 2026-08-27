@@ -11,9 +11,15 @@ name: Evals
 #   suites run: call_specialist_agent makes a real HTTP call independent of
 #   LLM_PROVIDER, so those two suites need the services *up*, just not
 #   making any real LLM calls.
-# - `full` runs on workflow_dispatch + a weekly schedule: every suite again
-#   with a real key and --use-llm-judge, so completeness is judged rather
-#   than keyword-matched. This is the one that spends real OpenAI budget.
+# - `full` runs on workflow_dispatch ONLY: every suite again with a real key
+#   and --use-llm-judge, so completeness is judged rather than keyword-matched.
+#   This is the one that spends real OpenAI budget.
+#
+#   It used to also run on a weekly cron. Nothing in this repo may spend a live
+#   LLM key on an automatic trigger — a scheduled job bills you on a timer, for
+#   a result nobody asked for and (as the 2026-08-24 run showed) nobody reads
+#   when it fails. Anything that costs money is started by a human who wants the
+#   answer. Keep it that way when adding jobs here.
 
 on:
   pull_request:
@@ -35,8 +41,6 @@ on:
       pass_threshold:
         description: "Minimum overall score for the quality suites"
         default: "0.7"
-  schedule:
-    - cron: "0 6 * * 1" # weekly, Monday 06:00 UTC
 
 permissions:
   contents: read
@@ -65,7 +69,6 @@ jobs:
     name: Smoke (replay, deterministic, free)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    if: github.event_name != 'schedule'
 
     services:
       postgres:
@@ -186,7 +189,7 @@ jobs:
     name: Full (real LLM + judge, scheduled)
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    if: github.event_name == 'workflow_dispatch'
 
     services:
       postgres:
