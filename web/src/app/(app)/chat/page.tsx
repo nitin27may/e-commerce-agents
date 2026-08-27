@@ -46,6 +46,7 @@ import {
   Share2,
   Sparkles,
 } from "lucide-react";
+import { ApprovalCard } from "@/components/chat/approval-card";
 import { DEMO_SCENARIOS } from "@/lib/scenarios";
 import { deriveSuggestions } from "@/lib/suggestions";
 import { AGENT_MODES } from "@/components/ui/ai-prompt-box";
@@ -66,6 +67,13 @@ interface Message {
    * message so OrchestrationGraph knows which mode's graph to render,
    * independent of whatever's currently selected in the switcher. */
   mode?: string;
+  /** The `usage_logs` id this turn was recorded under — from the `event: run` SSE
+   * frame, which arrives after persistence because the id does not exist before
+   * then. Needed to resume a run that paused on a human. */
+  runId?: string;
+  /** Set when the run stopped at an in-workflow HITL gate and is waiting on a
+   * decision. Drives the inline approval card. */
+  pendingApproval?: boolean;
   /** Executor ids (dashed, live form) currently mid-run / completed / errored — from `event: node`/`error` SSE frames. */
   activeNodeIds?: string[];
   doneNodeIds?: string[];
@@ -613,6 +621,21 @@ export default function ChatPage() {
             });
           },
           onOrchestrationEvent: (eventName, data) => {
+            if (eventName === "run") {
+              const { run_id, pending_approval } = data as {
+                run_id?: string;
+                pending_approval?: boolean;
+              };
+              if (!run_id) return;
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId
+                    ? { ...m, runId: run_id, pendingApproval: pending_approval === true }
+                    : m,
+                ),
+              );
+              return;
+            }
             if (eventName !== "node" && eventName !== "error") return;
             const frame = data as { node_id?: string; phase?: "enter" | "exit" };
             const nodeId = frame.node_id;
@@ -858,6 +881,29 @@ export default function ChatPage() {
                       msg.steps.length > 0 && <AgentTimeline steps={msg.steps} />}
 
                     {msg.role === "assistant" && <GroundingBadge report={msg.grounding} />}
+
+                    {msg.role === "assistant" && msg.pendingApproval && msg.runId && (
+                      <ApprovalCard
+                        runId={msg.runId}
+                        onResolved={(outcome) => {
+                          // Clear the gate on this message and append the
+                          // resumed turn as its own assistant message, so the
+                          // thread reads as the conversation it actually was:
+                          // paused, decided, continued.
+                          setMessages((prev) => [
+                            ...prev.map((m) =>
+                              m.id === msg.id ? { ...m, pendingApproval: false } : m,
+                            ),
+                            {
+                              id: `${msg.id}-resumed`,
+                              role: "assistant" as const,
+                              content: outcome.text,
+                              agents_involved: outcome.agentsInvolved,
+                            },
+                          ]);
+                        }}
+                      />
+                    )}
 
                     {msg.role === "assistant" && msg.mode && (
                       <OrchestrationGraph

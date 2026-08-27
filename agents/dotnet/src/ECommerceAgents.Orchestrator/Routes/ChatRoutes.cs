@@ -411,15 +411,39 @@ public static class ChatRoutes
             agents_involved = agentsInvolved,
         });
         await context.Response.WriteAsync($"event: metadata\ndata: {metadataPayload}\n\n", Encoding.UTF8);
-        await context.Response.WriteAsync("event: done\ndata: [DONE]\n\n");
-        await context.Response.Body.FlushAsync();
 
-        await PersistAssistantMessageAsync(
+        // Persist BEFORE [DONE], not after.
+        //
+        // [DONE] is the client's cue that the turn is over, and the composer
+        // re-enables on it. Writing it first meant a follow-up sent immediately
+        // could read the conversation's history before this INSERT landed and
+        // lose the turn it was following up on. Python fixed exactly this race
+        // (#9) and .NET kept the old order, so the two stacks disagreed on
+        // whether a completed turn was durable — which is the kind of
+        // difference that only shows up as a user's lost message.
+        var runId = await PersistAssistantMessageAsync(
             pool, usage, ctx, request.Message, responseText.ToString(), agentsInvolved, (int)sw.ElapsedMilliseconds,
             loggers,
             metadata: new Dictionary<string, object> { ["agents_involved"] = agentsInvolved },
             modeResult: modeResult
         );
+
+        // Name the run so the chat thread can act on it — an in-chat approval
+        // has nothing to POST to without this id, and the id does not exist
+        // until the usage_logs row above is written. Twin of Python's
+        // `event: run` frame in routes/chat.py.
+        if (runId is { } id)
+        {
+            var runPayload = JsonSerializer.Serialize(new
+            {
+                run_id = id.ToString(),
+                pending_approval = modeResult?.PendingApproval == true,
+            });
+            await context.Response.WriteAsync($"event: run\ndata: {runPayload}\n\n", Encoding.UTF8);
+        }
+
+        await context.Response.WriteAsync("event: done\ndata: [DONE]\n\n");
+        await context.Response.Body.FlushAsync();
     }
 
     /// <summary>
@@ -740,7 +764,11 @@ public static class ChatRoutes
     /// :662-678). No-op entirely for anonymous callers — there's no conversation
     /// to write to.
     /// </summary>
-    private static async Task PersistAssistantMessageAsync(
+    /// <returns>
+    /// The <c>usage_logs</c> id this turn was recorded under, or <c>null</c> for an
+    /// anonymous turn (nothing is persisted) or when usage logging itself failed.
+    /// </returns>
+    private static async Task<Guid?> PersistAssistantMessageAsync(
         DatabasePool pool,
         UsageRecorder usage,
         ConversationContext ctx,
@@ -755,7 +783,7 @@ public static class ChatRoutes
     {
         if (ctx.IsAnon)
         {
-            return;
+            return null;
         }
 
         var convId = Guid.Parse(ctx.ConversationId);
@@ -803,6 +831,7 @@ public static class ChatRoutes
             }
 
             await LinkRunArtifactsAsync(pool, id, ctx, modeResult, loggers);
+            return id;
         }
         else if (modeResult?.PendingApproval == true)
         {
@@ -816,5 +845,7 @@ public static class ChatRoutes
                     + "no usage_logs row, so no approval can be surfaced for it",
                 modeResult.SessionId, modeResult.LatestCheckpointId, modeResult.RequestId);
         }
+
+        return null;
     }
 }

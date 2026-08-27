@@ -193,6 +193,11 @@ async def _persist_assistant_turn(
                     status=s.get("status", "success"),
                     duration_ms=s.get("duration_ms", 0),
                 )
+        # The stream needs this id to tell the client which run it just watched
+        # — without it an in-chat approval has nothing to POST to. It cannot be
+        # sent any earlier: the usage_logs row is created here, several frames
+        # after `metadata` has already gone out.
+        run_payload_box["usage_log_id"] = usage_log_id
         await _link_run_artifacts(pool, usage_log_id, user_email, run_payload_box)
         if disconnected:
             logger.info(
@@ -767,6 +772,25 @@ async def chat_stream(
             raise
         except Exception:
             logger.exception("chat.persist_failed conversation=%s", conversation_id)
+
+        # Name the run, now that it has an id. `pending_approval` is what lets
+        # the chat thread render its own approval control instead of sending
+        # the user to /runs to find the pause they just caused — and it is
+        # deliberately read after persistence, because a pause that failed to
+        # write its hitl_requests row is not one any UI can act on.
+        run_id = run_payload_box.get("usage_log_id")
+        if run_id:
+            yield (
+                "event: run\ndata: "
+                + json.dumps(
+                    {
+                        "run_id": str(run_id),
+                        "pending_approval": bool(run_payload_box.get("pending_approval")),
+                    },
+                    default=str,
+                )
+                + "\n\n"
+            )
 
         yield "data: [DONE]\n\n"
 

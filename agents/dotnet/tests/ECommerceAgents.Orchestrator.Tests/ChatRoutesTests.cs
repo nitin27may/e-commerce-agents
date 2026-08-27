@@ -301,6 +301,78 @@ public sealed class ChatRoutesTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task StreamAsync_NamesTheRunBeforeDone()
+    {
+        // The chat thread cannot offer an in-chat approval without this id:
+        // resuming posts to /api/orchestration/{run_id}/resume, and until this
+        // frame existed the only id a streaming client ever learned was the
+        // conversation's. Twin of Python's `event: run` frame.
+        //
+        // It cannot ride along on `metadata`: the run id *is* the usage_logs
+        // row, written during persistence, after metadata has gone out. So the
+        // ordering assertion matters as much as the content one — [DONE] is
+        // when the client stops reading.
+        using var client = ClientFor(new FakeChatClient().EnqueueResponse("streamed reply"));
+
+        var response = await client.PostAsJsonAsync("/api/chat/stream", new { message = "stream this" });
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadAsStringAsync();
+
+        var runIndex = body.IndexOf("event: run", StringComparison.Ordinal);
+        runIndex.Should().BeGreaterThan(-1, "the stream must name the run it just produced");
+        runIndex.Should().BeLessThan(body.IndexOf("data: [DONE]", StringComparison.Ordinal));
+
+        var runFrame = body.Split("\n\n").First(e => e.Contains("event: run"));
+        var dataLine = runFrame.Split('\n').First(l => l.StartsWith("data: "))["data: ".Length..];
+        var payload = JsonSerializer.Deserialize<JsonElement>(dataLine);
+
+        Guid.TryParse(payload.GetProperty("run_id").GetString(), out _)
+            .Should().BeTrue("run_id must be the usage_logs id the resume route looks up");
+        payload.GetProperty("pending_approval").GetBoolean().Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task StreamAsync_PersistsBeforeAnnouncingTheTurnIsOver()
+    {
+        // [DONE] is the client's cue that the turn ended, and the composer
+        // re-enables on it. .NET used to write [DONE] and persist afterwards,
+        // so a follow-up sent immediately could read history before the INSERT
+        // landed and lose the turn it was following up on. Python fixed exactly
+        // this (#9); the two stacks disagreed on whether a finished turn was
+        // durable, which only ever shows up as a user's lost message.
+        //
+        // The run frame is the proxy: it is emitted from the persist call's
+        // return value, so its presence before [DONE] is proof the write
+        // completed first.
+        using var client = ClientFor(new FakeChatClient().EnqueueResponse("streamed reply"));
+
+        var response = await client.PostAsJsonAsync("/api/chat/stream", new { message = "stream this" });
+        var body = await response.Content.ReadAsStringAsync();
+
+        var frames = body.Split("\n\n").Where(f => f.Length > 0).ToList();
+        var runPos = frames.FindIndex(f => f.Contains("event: run"));
+        var donePos = frames.FindIndex(f => f.Contains("[DONE]"));
+
+        runPos.Should().BeGreaterThan(-1);
+        donePos.Should().BeGreaterThan(runPos, "persistence must complete before the client is told to proceed");
+    }
+
+    [Fact]
+    public async Task StreamAsync_Anonymous_EmitsNoRunFrame()
+    {
+        // Nothing is persisted for an anonymous turn, so there is no run to
+        // name. Emitting an id here would hand the client something that
+        // resolves to no row and fails only when it tries to use it.
+        using var client = ClientFor(new FakeChatClient().EnqueueResponse("hi"), authenticated: false);
+
+        var response = await client.PostAsJsonAsync("/api/chat/stream", new { message = "hello" });
+        var body = await response.Content.ReadAsStringAsync();
+
+        body.Should().Contain("data: [DONE]");
+        body.Should().NotContain("event: run");
+    }
+
+    [Fact]
     public async Task StreamAsync_PreservesEmbeddedNewlinesInSseFraming()
     {
         // Regression: a naive `data: {chunk}\n\n` line breaks once chunk itself
@@ -347,7 +419,15 @@ public sealed class ChatRoutesTests : IAsyncLifetime
             }
             if (dataParts.Count == 0) continue;
             var data = string.Join("\n", dataParts);
-            if (data == "[DONE]" || eventType is "step" or "metadata") continue;
+
+            // api.ts treats ONLY an unnamed frame as display text; every named
+            // frame is structured data routed to a callback. This used to
+            // exclude a hardcoded list ("step", "metadata", "[DONE]") instead,
+            // which is not the same rule — it silently mis-mirrors the client
+            // the moment a new named frame is added, and did exactly that when
+            // `event: run` arrived, folding its JSON into the reconstructed
+            // message. Matching the real predicate makes the mirror durable.
+            if (eventType.Length > 0 || data == "[DONE]") continue;
             text.Append(data);
         }
         return text.ToString();
