@@ -19,7 +19,7 @@ from workflows.pre_purchase import PrePurchaseWorkflow, ResearchState
 
 
 async def _sentiment_ok(product_id: str) -> dict[str, Any]:
-    return {"sentiment": "positive", "total_reviews": 42}
+    return {"overall_sentiment": "positive", "average_rating": 4.4}
 
 
 async def _stock_ok(product_id: str) -> dict[str, Any]:
@@ -35,7 +35,12 @@ async def _price_good(product_id: str, days: int) -> dict[str, Any]:
 
 
 async def _shipping_fast(product_id: str, destination_region: str) -> dict[str, Any]:
-    return {"options": [{"price": 4.99, "days": 2}, {"price": 12.99, "days": 1}]}
+    return {
+        "shipping_options": [
+            {"price": 4.99, "delivery_window": "2 business days"},
+            {"price": 12.99, "delivery_window": "1 business day"},
+        ]
+    }
 
 
 # ─────────────────────── Happy path ───────────────────────
@@ -51,10 +56,10 @@ async def test_all_three_parallel_branches_populate_state() -> None:
     }
     state = await PrePurchaseWorkflow(tools).execute(ResearchState(product_id="sku-1"))
 
-    assert state.reviews == {"sentiment": "positive", "total_reviews": 42}
+    assert state.reviews == {"overall_sentiment": "positive", "average_rating": 4.4}
     assert state.stock == {"in_stock": True, "total_quantity": 17}
     assert state.price_history["is_good_deal"] is True
-    assert state.shipping["options"]
+    assert state.shipping["shipping_options"]
     assert set(state.completed_steps) >= {"reviews", "stock", "price_history", "shipping"}
     assert state.errors == []
 
@@ -140,7 +145,7 @@ async def test_three_branches_actually_run_in_parallel() -> None:
 
     async def _slow_sentiment(product_id: str) -> dict[str, Any]:
         await asyncio.sleep(0.3)
-        return {"sentiment": "ok", "total_reviews": 1}
+        return {"overall_sentiment": "ok", "average_rating": 3.0}
 
     async def _slow_stock(product_id: str) -> dict[str, Any]:
         await asyncio.sleep(0.3)
@@ -242,7 +247,7 @@ async def test_all_four_contributions_produce_no_caveat() -> None:
     carry a 'could not check' clause — otherwise the caveat is noise rather
     than signal."""
     async def _reviews(product_id: str) -> dict:
-        return {"sentiment": "positive", "total_reviews": 8}
+        return {"overall_sentiment": "positive", "average_rating": 4.6}
 
     async def _stock(product_id: str) -> dict:
         return {"in_stock": True, "total_quantity": 317}
@@ -251,7 +256,7 @@ async def test_all_four_contributions_produce_no_caveat() -> None:
         return {"trend": "stable"}
 
     async def _shipping(product_id: str, destination_region: str) -> dict:
-        return {"options": [{"price": 5.99, "days": "5-7"}]}
+        return {"shipping_options": [{"price": 5.99, "delivery_window": "5-7 business days"}]}
 
     workflow = PrePurchaseWorkflow({
         "analyze_sentiment": _reviews,
@@ -282,3 +287,83 @@ async def test_out_of_stock_records_why_shipping_was_skipped() -> None:
 
     assert any("out of stock" in e for e in state.errors)
     assert "Currently out of stock" in state.recommendation
+
+
+async def test_a_probe_that_runs_but_returns_nothing_usable_is_still_reported() -> None:
+    """The subtler form of the original defect, found by the benchmark.
+
+    A probe can complete and contribute nothing — an empty dict, or a payload
+    missing the one key the recommendation needs. `completed_steps` records only
+    that it ran, so keying the caveat off that produced a confident 48-character
+    answer with all four steps "completed" and two contributing nothing.
+    """
+    from workflows.pre_purchase import PrePurchaseWorkflow, ResearchState
+
+    async def _stock(product_id: str) -> dict:
+        return {"in_stock": True, "total_quantity": 348}
+
+    async def _price(product_id: str, days: int) -> dict:
+        return {"trend": "stable"}
+
+    # Both run successfully and both return nothing the recommendation can use.
+    async def _reviews_empty(product_id: str) -> dict:
+        return {}
+
+    async def _shipping_empty(product_id: str, destination_region: str) -> dict:
+        return {"shipping_options": []}
+
+    workflow = PrePurchaseWorkflow({
+        "analyze_sentiment": _reviews_empty,
+        "check_stock": _stock,
+        "get_price_history": _price,
+        "estimate_shipping": _shipping_empty,
+    })
+    state = await workflow.execute(ResearchState(product_id="p1"))
+
+    # They ran, so completed_steps lists them — which is exactly why the caveat
+    # cannot be derived from it.
+    assert "reviews" in state.completed_steps
+    assert "shipping" in state.completed_steps
+
+    assert "could not check" in state.recommendation
+    assert "reviews" in state.recommendation
+    assert "shipping" in state.recommendation
+
+
+
+def test_the_recommendation_reads_the_keys_the_tools_actually_return() -> None:
+    """The bug that hid behind every guard clause in this file.
+
+    `_build_recommendation` read `reviews["sentiment"]` and
+    `shipping["options"]`. The real tools return `overall_sentiment` and
+    `shipping_options`. Because every line is guard-claused on its data being
+    present, the mismatch produced no error — just two lines that had never
+    appeared, on any run, since the workflow was written. The stubs in this file
+    encoded the same wrong contract, which is why the tests did not catch it
+    either.
+
+    Asserted against the tool sources so the two cannot drift apart again
+    silently: if a tool renames a field, this fails rather than the workflow
+    quietly dropping a line.
+    """
+    import pathlib
+    import re
+
+    root = pathlib.Path(__file__).resolve().parents[1]
+
+    def returned_keys(path: str, func: str) -> set[str]:
+        src = (root / path).read_text()
+        seg = src[src.index(f"async def {func}") :][:3000]
+        return set(re.findall(r'"([a-z_]+)":', seg[seg.rindex("return {") :][:800]))
+
+    sentiment_keys = returned_keys("review_sentiment/tools.py", "analyze_sentiment")
+    shipping_keys = returned_keys("inventory_fulfillment/tools.py", "estimate_shipping")
+
+    assert "overall_sentiment" in sentiment_keys, (
+        "analyze_sentiment renamed its sentiment field — _build_recommendation reads "
+        "overall_sentiment and will silently stop emitting the reviews line"
+    )
+    assert "shipping_options" in shipping_keys, (
+        "estimate_shipping renamed its options field — _build_recommendation reads "
+        "shipping_options and will silently stop emitting the shipping line"
+    )

@@ -1,0 +1,725 @@
+{
+  "meta": {
+    "model": "gpt-4.1",
+    "provider": "openai",
+    "reps": 2,
+    "prompts": 4,
+    "timestamp": "2026-08-27T00:03:58+00:00",
+    "commit": "f871a5b"
+  },
+  "summary": [
+    {
+      "mode": "tool",
+      "runs": 8,
+      "ok": 8,
+      "p50_ms": 10625,
+      "p95_ms": 21362,
+      "mean_tokens": 7404,
+      "mean_cost_usd": 0.01674,
+      "rate_limited": 0,
+      "agents_seen": [
+        "orchestrator",
+        "order-management",
+        "product-discovery"
+      ]
+    },
+    {
+      "mode": "handoff",
+      "runs": 8,
+      "ok": 8,
+      "p50_ms": 6393,
+      "p95_ms": 8866,
+      "mean_tokens": null,
+      "mean_cost_usd": null,
+      "rate_limited": 0,
+      "agents_seen": [
+        "order-management",
+        "product-discovery"
+      ]
+    },
+    {
+      "mode": "workflow:pre-purchase",
+      "runs": 8,
+      "ok": 8,
+      "p50_ms": 273,
+      "p95_ms": 304,
+      "mean_tokens": null,
+      "mean_cost_usd": null,
+      "rate_limited": 0,
+      "agents_seen": [
+        "price_history",
+        "reviews",
+        "shipping",
+        "stock"
+      ]
+    },
+    {
+      "mode": "workflow:return-replace",
+      "runs": 8,
+      "ok": 8,
+      "p50_ms": 99,
+      "p95_ms": 105,
+      "mean_tokens": null,
+      "mean_cost_usd": null,
+      "rate_limited": 0,
+      "agents_seen": [
+        "check_eligibility"
+      ]
+    },
+    {
+      "mode": "group-chat",
+      "runs": 8,
+      "ok": 8,
+      "p50_ms": 3224,
+      "p95_ms": 10793,
+      "mean_tokens": null,
+      "mean_cost_usd": null,
+      "rate_limited": 0,
+      "agents_seen": [
+        "moderator",
+        "quality",
+        "value"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "mode": "tool",
+      "prompt_id": "product-search",
+      "rep": 1,
+      "ok": true,
+      "latency_ms": 6873.951271059923,
+      "response_chars": 571,
+      "agents_involved": [
+        "orchestrator",
+        "product-discovery"
+      ],
+      "tokens_in": 6957,
+      "tokens_out": 219,
+      "cost_usd": 0.015666,
+      "error": ""
+    },
+    {
+      "mode": "tool",
+      "prompt_id": "product-search",
+      "rep": 2,
+      "ok": true,
+      "latency_ms": 7664.531794958748,
+      "response_chars": 598,
+      "agents_involved": [
+        "orchestrator",
+        "product-discovery"
+      ],
+      "tokens_in": 6985,
+      "tokens_out": 226,
+      "cost_usd": 0.015778,
+      "error": ""
+    },
+    {
+      "mode": "tool",
+      "prompt_id": "order-status",
+      "rep": 1,
+      "ok": true,
+      "latency_ms": 12969.064655946568,
+      "response_chars": 927,
+      "agents_involved": [
+        "orchestrator",
+        "order-management"
+      ],
+      "tokens_in": 7124,
+      "tokens_out": 328,
+      "cost_usd": 0.016872,
+      "error": ""
+    },
+    {
+      "mode": "tool",
+      "prompt_id": "order-status",
+      "rep": 2,
+      "ok": true,
+      "latency_ms": 11419.845830998383,
+      "response_chars": 898,
+      "agents_involved": [
+        "orchestrator",
+        "order-management"
+      ],
+      "tokens_in": 7081,
+      "tokens_out": 322,
+      "cost_usd": 0.016738000000000003,
+      "error": ""
+    },
+    {
+      "mode": "tool",
+      "prompt_id": "pre-purchase",
+      "rep": 1,
+      "ok": true,
+      "latency_ms": 9829.878165968694,
+      "response_chars": 857,
+      "agents_involved": [
+        "orchestrator",
+        "product-discovery"
+      ],
+      "tokens_in": 7095,
+      "tokens_out": 344,
+      "cost_usd": 0.016942,
+      "error": ""
+    },
+    {
+      "mode": "tool",
+      "prompt_id": "pre-purchase",
+      "rep": 2,
+      "ok": true,
+      "latency_ms": 9122.34995199833,
+      "response_chars": 834,
+      "agents_involved": [
+        "orchestrator",
+        "product-discovery"
+      ],
+      "tokens_in": 7118,
+      "tokens_out": 349,
+      "cost_usd": 0.017028,
+      "error": ""
+    },
+    {
+      "mode": "tool",
+      "prompt_id": "return",
+      "rep": 1,
+      "ok": true,
+      "latency_ms": 14359.888633014634,
+      "response_chars": 1176,
+      "agents_involved": [
+        "orchestrator",
+        "order-management"
+      ],
+      "tokens_in": 7143,
+      "tokens_out": 396,
+      "cost_usd": 0.017454,
+      "error": ""
+    },
+    {
+      "mode": "tool",
+      "prompt_id": "return",
+      "rep": 2,
+      "ok": true,
+      "latency_ms": 21362.206296995282,
+      "response_chars": 1190,
+      "agents_involved": [
+        "orchestrator",
+        "order-management"
+      ],
+      "tokens_in": 7151,
+      "tokens_out": 394,
+      "cost_usd": 0.017454,
+      "error": ""
+    },
+    {
+      "mode": "handoff",
+      "prompt_id": "product-search",
+      "rep": 1,
+      "ok": true,
+      "latency_ms": 4095.3949480317533,
+      "response_chars": 698,
+      "agents_involved": [
+        "product-discovery"
+      ],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    },
+    {
+      "mode": "handoff",
+      "prompt_id": "product-search",
+      "rep": 2,
+      "ok": true,
+      "latency_ms": 8091.786887962371,
+      "response_chars": 671,
+      "agents_involved": [
+        "product-discovery"
+      ],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    },
+    {
+      "mode": "handoff",
+      "prompt_id": "order-status",
+      "rep": 1,
+      "ok": true,
+      "latency_ms": 6950.080765062012,
+      "response_chars": 1004,
+      "agents_involved": [
+        "order-management"
+      ],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    },
+    {
+      "mode": "handoff",
+      "prompt_id": "order-status",
+      "rep": 2,
+      "ok": true,
+      "latency_ms": 6874.733523000032,
+      "response_chars": 954,
+      "agents_involved": [
+        "order-management"
+      ],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    },
+    {
+      "mode": "handoff",
+      "prompt_id": "pre-purchase",
+      "rep": 1,
+      "ok": true,
+      "latency_ms": 4890.7564339460805,
+      "response_chars": 986,
+      "agents_involved": [
+        "product-discovery"
+      ],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    },
+    {
+      "mode": "handoff",
+      "prompt_id": "pre-purchase",
+      "rep": 2,
+      "ok": true,
+      "latency_ms": 5910.505859996192,
+      "response_chars": 1103,
+      "agents_involved": [
+        "product-discovery"
+      ],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    },
+    {
+      "mode": "handoff",
+      "prompt_id": "return",
+      "rep": 1,
+      "ok": true,
+      "latency_ms": 8865.784809924662,
+      "response_chars": 1107,
+      "agents_involved": [
+        "order-management"
+      ],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    },
+    {
+      "mode": "handoff",
+      "prompt_id": "return",
+      "rep": 2,
+      "ok": true,
+      "latency_ms": 4026.463143993169,
+      "response_chars": 318,
+      "agents_involved": [
+        "order-management"
+      ],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    },
+    {
+      "mode": "workflow:pre-purchase",
+      "prompt_id": "product-search",
+      "rep": 1,
+      "ok": true,
+      "latency_ms": 303.657611948438,
+      "response_chars": 48,
+      "agents_involved": [
+        "stock",
+        "price_history",
+        "reviews",
+        "shipping"
+      ],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    },
+    {
+      "mode": "workflow:pre-purchase",
+      "prompt_id": "product-search",
+      "rep": 2,
+      "ok": true,
+      "latency_ms": 287.7507029334083,
+      "response_chars": 48,
+      "agents_involved": [
+        "stock",
+        "reviews",
+        "price_history",
+        "shipping"
+      ],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    },
+    {
+      "mode": "workflow:pre-purchase",
+      "prompt_id": "order-status",
+      "rep": 1,
+      "ok": true,
+      "latency_ms": 40.5925209634006,
+      "response_chars": 79,
+      "agents_involved": [],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    },
+    {
+      "mode": "workflow:pre-purchase",
+      "prompt_id": "order-status",
+      "rep": 2,
+      "ok": true,
+      "latency_ms": 24.854749906808138,
+      "response_chars": 79,
+      "agents_involved": [],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    },
+    {
+      "mode": "workflow:pre-purchase",
+      "prompt_id": "pre-purchase",
+      "rep": 1,
+      "ok": true,
+      "latency_ms": 258.5958120180294,
+      "response_chars": 48,
+      "agents_involved": [
+        "price_history",
+        "stock",
+        "reviews",
+        "shipping"
+      ],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    },
+    {
+      "mode": "workflow:pre-purchase",
+      "prompt_id": "pre-purchase",
+      "rep": 2,
+      "ok": true,
+      "latency_ms": 284.9734809715301,
+      "response_chars": 48,
+      "agents_involved": [
+        "stock",
+        "price_history",
+        "reviews",
+        "shipping"
+      ],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    },
+    {
+      "mode": "workflow:pre-purchase",
+      "prompt_id": "return",
+      "rep": 1,
+      "ok": true,
+      "latency_ms": 272.6808679290116,
+      "response_chars": 48,
+      "agents_involved": [
+        "stock",
+        "reviews",
+        "price_history",
+        "shipping"
+      ],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    },
+    {
+      "mode": "workflow:pre-purchase",
+      "prompt_id": "return",
+      "rep": 2,
+      "ok": true,
+      "latency_ms": 273.55665201321244,
+      "response_chars": 48,
+      "agents_involved": [
+        "stock",
+        "price_history",
+        "reviews",
+        "shipping"
+      ],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    },
+    {
+      "mode": "workflow:return-replace",
+      "prompt_id": "product-search",
+      "rep": 1,
+      "ok": true,
+      "latency_ms": 95.37401504348963,
+      "response_chars": 82,
+      "agents_involved": [
+        "check_eligibility"
+      ],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    },
+    {
+      "mode": "workflow:return-replace",
+      "prompt_id": "product-search",
+      "rep": 2,
+      "ok": true,
+      "latency_ms": 105.39383394643664,
+      "response_chars": 82,
+      "agents_involved": [
+        "check_eligibility"
+      ],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    },
+    {
+      "mode": "workflow:return-replace",
+      "prompt_id": "order-status",
+      "rep": 1,
+      "ok": true,
+      "latency_ms": 100.47044104430825,
+      "response_chars": 82,
+      "agents_involved": [
+        "check_eligibility"
+      ],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    },
+    {
+      "mode": "workflow:return-replace",
+      "prompt_id": "order-status",
+      "rep": 2,
+      "ok": true,
+      "latency_ms": 103.06965897325426,
+      "response_chars": 82,
+      "agents_involved": [
+        "check_eligibility"
+      ],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    },
+    {
+      "mode": "workflow:return-replace",
+      "prompt_id": "pre-purchase",
+      "rep": 1,
+      "ok": true,
+      "latency_ms": 96.2673940230161,
+      "response_chars": 82,
+      "agents_involved": [
+        "check_eligibility"
+      ],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    },
+    {
+      "mode": "workflow:return-replace",
+      "prompt_id": "pre-purchase",
+      "rep": 2,
+      "ok": true,
+      "latency_ms": 99.17649801354855,
+      "response_chars": 82,
+      "agents_involved": [
+        "check_eligibility"
+      ],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    },
+    {
+      "mode": "workflow:return-replace",
+      "prompt_id": "return",
+      "rep": 1,
+      "ok": true,
+      "latency_ms": 87.5084629515186,
+      "response_chars": 82,
+      "agents_involved": [
+        "check_eligibility"
+      ],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    },
+    {
+      "mode": "workflow:return-replace",
+      "prompt_id": "return",
+      "rep": 2,
+      "ok": true,
+      "latency_ms": 99.43760803434998,
+      "response_chars": 82,
+      "agents_involved": [
+        "check_eligibility"
+      ],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    },
+    {
+      "mode": "group-chat",
+      "prompt_id": "product-search",
+      "rep": 1,
+      "ok": true,
+      "latency_ms": 2976.008244091645,
+      "response_chars": 107,
+      "agents_involved": [
+        "value",
+        "quality",
+        "moderator"
+      ],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    },
+    {
+      "mode": "group-chat",
+      "prompt_id": "product-search",
+      "rep": 2,
+      "ok": true,
+      "latency_ms": 10770.512463990599,
+      "response_chars": 107,
+      "agents_involved": [
+        "value",
+        "quality",
+        "moderator"
+      ],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    },
+    {
+      "mode": "group-chat",
+      "prompt_id": "order-status",
+      "rep": 1,
+      "ok": true,
+      "latency_ms": 3102.080150973052,
+      "response_chars": 93,
+      "agents_involved": [
+        "value",
+        "quality",
+        "moderator"
+      ],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    },
+    {
+      "mode": "group-chat",
+      "prompt_id": "order-status",
+      "rep": 2,
+      "ok": true,
+      "latency_ms": 2884.2743039131165,
+      "response_chars": 93,
+      "agents_involved": [
+        "value",
+        "quality",
+        "moderator"
+      ],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    },
+    {
+      "mode": "group-chat",
+      "prompt_id": "pre-purchase",
+      "rep": 1,
+      "ok": true,
+      "latency_ms": 3495.6661799224094,
+      "response_chars": 115,
+      "agents_involved": [
+        "value",
+        "quality",
+        "moderator"
+      ],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    },
+    {
+      "mode": "group-chat",
+      "prompt_id": "pre-purchase",
+      "rep": 2,
+      "ok": true,
+      "latency_ms": 2928.933185059577,
+      "response_chars": 115,
+      "agents_involved": [
+        "value",
+        "quality",
+        "moderator"
+      ],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    },
+    {
+      "mode": "group-chat",
+      "prompt_id": "return",
+      "rep": 1,
+      "ok": true,
+      "latency_ms": 10792.502187076025,
+      "response_chars": 112,
+      "agents_involved": [
+        "value",
+        "quality",
+        "moderator"
+      ],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    },
+    {
+      "mode": "group-chat",
+      "prompt_id": "return",
+      "rep": 2,
+      "ok": true,
+      "latency_ms": 3344.975663931109,
+      "response_chars": 112,
+      "agents_involved": [
+        "value",
+        "quality",
+        "moderator"
+      ],
+      "tokens_in": null,
+      "tokens_out": null,
+      "cost_usd": null,
+      "error": ""
+    }
+  ]
+}

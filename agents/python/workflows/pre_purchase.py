@@ -209,11 +209,15 @@ def _merge_states(inputs: list[ResearchState]) -> ResearchState:
 def _build_recommendation(state: ResearchState) -> str:
     parts: list[str] = []
 
-    if state.reviews.get("sentiment"):
-        parts.append(
-            f"Reviews: {state.reviews['sentiment']} "
-            f"({state.reviews.get('total_reviews', 0)} reviews)"
-        )
+    # Key names come from the TOOLS, which are the contract. This block read
+    # `sentiment` and `total_reviews`; analyze_sentiment returns
+    # `overall_sentiment` and `average_rating`. Because every line here is
+    # guard-claused, the mismatch produced no error — just a permanently
+    # missing line, on every run, since the workflow was written.
+    if state.reviews.get("overall_sentiment"):
+        rating = state.reviews.get("average_rating")
+        detail = f" ({rating}/5 avg)" if rating else ""
+        parts.append(f"Reviews: {state.reviews['overall_sentiment']}{detail}")
 
     if state.stock.get("in_stock"):
         parts.append(f"Stock: {state.stock.get('total_quantity', 0)} units available")
@@ -227,12 +231,15 @@ def _build_recommendation(state: ResearchState) -> str:
     elif state.price_history.get("trend"):
         parts.append(f"Price trend: {state.price_history['trend']}")
 
-    if state.shipping.get("options"):
-        cheapest = state.shipping["options"][0]
-        parts.append(
-            f"Shipping: from ${cheapest.get('price', 0):.2f}, "
-            f"{cheapest.get('days', 'N/A')} days"
+    # Same again: estimate_shipping returns `shipping_options`, not `options`,
+    # and each entry carries `delivery_window` rather than `days`.
+    if state.shipping.get("shipping_options"):
+        cheapest = min(
+            state.shipping["shipping_options"],
+            key=lambda o: o.get("price", float("inf")),
         )
+        window = cheapest.get("delivery_window", "timing unknown")
+        parts.append(f"Shipping: from ${cheapest.get('price', 0):.2f}, {window}")
 
     if not parts:
         return "Insufficient data for recommendation"
@@ -250,8 +257,19 @@ def _build_recommendation(state: ResearchState) -> str:
     # A short answer that admits what is missing is honest. One that quietly
     # omits it is the actual user-facing harm, because it reads as a complete
     # picture.
-    missing = [step for step in ("reviews", "stock", "price_history", "shipping")
-               if step not in state.completed_steps]
+    # Checked against the DATA, not completed_steps. A probe can run to
+    # completion and still return nothing usable — an empty dict, or a payload
+    # without the one key the line above needs — and `completed_steps` records
+    # only that it ran. Keying the caveat off that produced the original defect
+    # in a subtler form: all four steps "completed", two contributed nothing,
+    # and the answer was still a confident 48 characters with no caveat.
+    contributed = {
+        "reviews": bool(state.reviews.get("overall_sentiment")),
+        "stock": bool(state.stock),
+        "price_history": bool(state.price_history.get("trend") or state.price_history.get("is_good_deal")),
+        "shipping": bool(state.shipping.get("shipping_options")),
+    }
+    missing = [name for name, ok in contributed.items() if not ok]
     if missing:
         recommendation += f" | (could not check: {', '.join(missing)})"
 

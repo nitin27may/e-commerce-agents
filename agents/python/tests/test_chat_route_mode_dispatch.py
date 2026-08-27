@@ -101,7 +101,7 @@ async def test_chat_route_reaches_a_workflow_mode(monkeypatch: pytest.MonkeyPatc
     from orchestrator.modes.workflow_mode import PrePurchaseMode
 
     async def _sentiment_ok(product_id: str) -> dict:
-        return {"sentiment": "positive", "total_reviews": 42}
+        return {"overall_sentiment": "positive", "average_rating": 4.4}
 
     async def _stock_ok(product_id: str) -> dict:
         return {"in_stock": True, "total_quantity": 17}
@@ -110,7 +110,7 @@ async def test_chat_route_reaches_a_workflow_mode(monkeypatch: pytest.MonkeyPatc
         return {"is_good_deal": True, "average_price": 120.5, "trend": "flat"}
 
     async def _shipping_fast(product_id: str, destination_region: str) -> dict:
-        return {"options": [{"price": 4.99, "days": 2}]}
+        return {"shipping_options": [{"price": 4.99, "delivery_window": "2 business days"}]}
 
     stub_tools = {
         "analyze_sentiment": _sentiment_ok,
