@@ -216,9 +216,32 @@ public sealed class A2AClient
             return;
         }
 
+        var writer = RequestContext.CurrentStreamWriter;
+
         foreach (var step in steps)
         {
-            RequestContext.RecordStep(step with { Agent = agentName });
+            var tagged = step with { Agent = agentName };
+            RequestContext.RecordStep(tagged);
+
+            // Forward to the browser now rather than leaving it to the
+            // post-run emission in ChatRoutes.StreamAsync. AgentHost drains
+            // these as each tool returns, so this is the freshest this step
+            // will ever be; holding it back made the whole timeline appear at
+            // once, after the answer had finished writing.
+            //
+            // `Live` marks it as already delivered so ChatRoutes does not send
+            // it a second time. Null writer = a blocking turn or a direct test
+            // call, where there is no browser stream to forward to.
+            writer?.TryWrite(new StreamFrame("step", JsonSerializer.Serialize(new
+            {
+                agent = tagged.Agent,
+                tool_name = tagged.ToolName,
+                tool_input = tagged.ToolInput,
+                tool_output = tagged.ToolOutput,
+                status = tagged.Status,
+                duration_ms = tagged.DurationMs,
+            })));
+            RequestContext.MarkLastStepDelivered();
         }
     }
 

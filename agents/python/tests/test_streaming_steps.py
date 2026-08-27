@@ -129,6 +129,67 @@ async def test_message_stream_emits_step_frames_before_done(
 
 
 @pytest.mark.asyncio
+async def test_message_stream_emits_a_step_before_the_text_that_follows_it(
+    monkeypatch: pytest.MonkeyPatch,
+    sample_env: dict,
+) -> None:
+    """A step must overtake the prose that describes it.
+
+    Every step used to be drained after the generator finished, so the timeline
+    appeared in one lump once the answer had already been written — precisely
+    when it has stopped being interesting. In a MAF tool loop the tool resolves
+    first and the narration comes second, so a step recorded mid-run has real
+    text still to come; this pins that it goes out ahead of that text rather
+    than behind all of it.
+    """
+
+    from httpx import ASGITransport, AsyncClient
+
+    from shared.agent_host import create_agent_app
+
+    async def _fake_stream(agent, message, history=None):
+        yield "Let me check. "
+        steps = current_steps.get()
+        if steps is not None:
+            steps.append(
+                {"tool_name": "search_products", "tool_input": {}, "tool_output": {},
+                 "status": "success", "duration_ms": 7}
+            )
+        yield "I found three pairs. "
+        yield "They are all in stock."
+
+    monkeypatch.setattr("shared.agent_host._run_agent_native_stream", _fake_stream)
+    monkeypatch.setattr(
+        "shared.telemetry.agent_run_span", lambda *a, **kw: contextlib.nullcontext()
+    )
+
+    app = create_agent_app(agent=MagicMock(), agent_name="product-discovery", port=9999)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.post(
+            "/message:stream",
+            json={"message": "find headphones"},
+            headers={
+                "x-agent-secret": sample_env["AGENT_SHARED_SECRET"],
+                "x-user-email": "u@example.com",
+                "x-user-role": "customer",
+                "x-session-id": "sess-1",
+            },
+        )
+
+    body = resp.text
+    step_pos = body.index("event: step")
+    assert step_pos < body.index("They are all in stock."), (
+        "the step arrived after the answer had finished writing"
+    )
+    assert step_pos > body.index("Let me check."), (
+        "the step was reported before the tool that produced it had run"
+    )
+    # Emitted exactly once — the end-of-run drain must not repeat what the
+    # in-loop drain already sent.
+    assert body.count("event: step") == 1
+
+
+@pytest.mark.asyncio
 async def test_message_stream_no_steps_skips_step_frames(
     monkeypatch: pytest.MonkeyPatch,
     sample_env: dict,
@@ -331,14 +392,23 @@ async def test_streaming_path_text_chunks_still_forwarded(
     assert len(steps_bucket) == 1
     assert steps_bucket[0]["tool_name"] == "check_stock"
 
-    # Queue received only the two text delta chunks
+    # Text chunks and the step frame all reach the queue, each on its own
+    # channel and in the order the specialist produced them. The step used to
+    # be merged into the bucket and go no further, which meant the browser only
+    # learned about it in the post-stream drain — the whole timeline arriving
+    # at once, after the answer had finished writing.
     queue_items = []
     while not queue.empty():
         queue_items.append(await queue.get())
-    assert len(queue_items) == 2
-    assert all(item[0] == "delta" for item in queue_items)
-    assert queue_items[0][2] == "chunk one"
-    assert queue_items[1][2] == "chunk two"
+
+    assert [item[0] for item in queue_items] == ["delta", "frame", "delta"]
+    assert [item[2] for item in queue_items if item[0] == "delta"] == ["chunk one", "chunk two"]
+
+    frame = next(item for item in queue_items if item[0] == "frame")
+    assert frame[1] == "step"
+    assert frame[2]["tool_name"] == "check_stock"
+    # Marked as already delivered so chat.py's drain does not send it twice.
+    assert frame[2]["_live"] is True
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -321,26 +321,52 @@ def create_agent_app(
                 media_type="text/event-stream",
             )
 
-        from shared.agent_observability import get_steps, reset_steps
+        from shared.agent_observability import reset_steps
         from shared.grounding.ledger import reset_grounding_ledger
         from shared.telemetry import agent_run_span
 
         async def _generate():
-            reset_steps()
+            steps = reset_steps()
             reset_grounding_ledger()
+            sent = 0
+
+            def _drain_new_steps() -> list[str]:
+                """Frames for every step recorded since the last drain.
+
+                ``current_steps`` is appended to by ``StepRecorderMiddleware``
+                as each tool returns, so its tail is the set of calls that have
+                completed but not yet been reported.
+                """
+                nonlocal sent
+                frames = []
+                for step in steps[sent:]:
+                    step["agent"] = agent_name
+                    frames.append(f"event: step\ndata: {json.dumps(step, default=str)}\n\n")
+                sent = len(steps)
+                return frames
+
             with agent_run_span(agent_name):
                 try:
                     async for chunk in _run_agent_native_stream(agent, message, history=history):
+                        # Flush before the chunk, not after: in a MAF tool loop
+                        # the tools resolve first and the prose that describes
+                        # them comes second, so a step drained here reaches the
+                        # browser ahead of the sentence about it. Draining after
+                        # would hold each step back by one chunk for no reason.
+                        for frame in _drain_new_steps():
+                            yield frame
                         yield f"data: {chunk}\n\n"
                 except Exception:
                     logger.exception("%s.message_stream_error", agent_name)
                     yield "data: [ERROR: agent processing failed]\n\n"
-            # Emit captured tool steps before [DONE] so the orchestrator can
-            # merge them into the live timeline while still in the same stream.
-            steps = get_steps()
-            for step in steps:
-                step["agent"] = agent_name
-                yield f"event: step\ndata: {json.dumps(step, default=str)}\n\n"
+
+            # Anything that completed after the final chunk — a tool whose
+            # result the model never got to narrate, or a run that produced no
+            # text at all. Previously *every* step went out here, which is why
+            # the timeline snapped into place only once the answer had finished
+            # writing itself.
+            for frame in _drain_new_steps():
+                yield frame
             yield "data: [DONE]\n\n"
 
         return StreamingResponse(_generate(), media_type="text/event-stream")

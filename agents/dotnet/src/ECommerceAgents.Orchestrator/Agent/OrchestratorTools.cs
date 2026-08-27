@@ -76,7 +76,7 @@ public sealed class OrchestratorTools(A2AClient client, AgentSettings settings, 
         await foreach (var delta in _client.StreamAsync(agentName, url, message, RequestContext.CurrentHistory))
         {
             full.Append(delta);
-            await streamWriter.WriteAsync(delta);
+            await streamWriter.WriteAsync(new StreamFrame("delta", delta));
         }
         return full.ToString();
     }

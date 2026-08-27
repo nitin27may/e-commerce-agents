@@ -156,6 +156,13 @@ async def _persist_assistant_turn(
     generated.
     """
     try:
+        # `_live` is a transport marker set when a step was already streamed
+        # (orchestrator/agent.py). The normal path pops it while deciding what
+        # to re-send; the disconnect path never runs that drain, so strip it
+        # here too — persisted metadata should describe the run, not how its
+        # frames were delivered.
+        for step in steps:
+            step.pop("_live", None)
         metadata = {"steps": steps[:50], "agents_involved": agents_involved}
         await pool.execute(
             """INSERT INTO messages (conversation_id, role, content, agent_name, agents_involved, metadata)
@@ -724,6 +731,13 @@ async def chat_stream(
                 s.setdefault("agent", "orchestrator")
             agents_involved[:] = list(dict.fromkeys(["orchestrator", *[s.get("agent", "orchestrator") for s in steps]]))
             for s in steps:
+                # A specialist step already went out live from
+                # orchestrator/agent.py as the tool returned. Re-sending it
+                # here would duplicate every row in the timeline. Popping the
+                # marker also keeps it out of the persisted metadata, where a
+                # transport flag has no business.
+                if s.pop("_live", False):
+                    continue
                 yield f"event: step\ndata: {json.dumps(s, default=str)}\n\n"
             stream_usage = run_metadata.get("_maf_usage") or {}
         else:

@@ -174,8 +174,39 @@ public static class AgentHost
 
             try
             {
+                var stepsSent = 0;
+
+                // Frames for every step recorded since the last drain.
+                //
+                // Issue #16 sent the specialist's steps as ONE bulk frame after the
+                // last chunk. That is the latest possible moment: by then the answer
+                // has finished writing and the timeline it describes has stopped
+                // being interesting. In a MAF tool loop the tools resolve first and
+                // the prose narrating them comes second, so draining before each
+                // chunk lets a step overtake the sentence about it.
+                //
+                // Still "event: steps" (plural) carrying a list, so A2AClient's
+                // MergeReturnedSteps — which appends — needs no change; it just
+                // receives several small batches instead of one large one.
+                async Task DrainStepsAsync()
+                {
+                    var steps = RequestContext.CurrentSteps;
+                    if (steps.Count <= stepsSent)
+                    {
+                        return;
+                    }
+
+                    var fresh = steps.Skip(stepsSent).ToList();
+                    stepsSent = steps.Count;
+                    await http.Response.WriteAsync(
+                        $"event: steps\ndata: {JsonSerializer.Serialize(fresh)}\n\n", Encoding.UTF8);
+                    await http.Response.Body.FlushAsync();
+                }
+
                 await foreach (var chunk in RunAgentWithHistoryStreamingAsync(services, payload.Message, http.RequestAborted))
                 {
+                    await DrainStepsAsync();
+
                     // Same per-line "data:" framing as ChatRoutes.StreamAsync, for the
                     // same reason: a chunk that is itself a lone "\n" must not be sent
                     // as a raw embedded newline, or it prematurely closes the SSE event.
@@ -189,13 +220,9 @@ public static class AgentHost
                     await http.Response.Body.FlushAsync();
                 }
 
-                // Issue #16: the specialist's own captured steps, as one bulk frame —
-                // an A2A-internal wire detail (unlike the per-step "event: step" frames
-                // ChatRoutes.StreamAsync emits to the frontend), consumed only by
-                // A2AClient.StreamAsync, which tags each entry with this agent's name
-                // and merges it into the orchestrator's own RequestContext.CurrentSteps.
-                var stepsPayload = JsonSerializer.Serialize(RequestContext.CurrentSteps);
-                await http.Response.WriteAsync($"event: steps\ndata: {stepsPayload}\n\n", Encoding.UTF8);
+                // Anything that completed after the final chunk — a tool the model
+                // never narrated, or a run that produced no text at all.
+                await DrainStepsAsync();
                 await http.Response.WriteAsync("data: [DONE]\n\n", Encoding.UTF8);
                 await http.Response.Body.FlushAsync();
             }

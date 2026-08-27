@@ -291,15 +291,15 @@ public static class ChatRoutes
             }
         }
 
-        var deltaChannel = Channel.CreateUnbounded<string>();
+        var deltaChannel = Channel.CreateUnbounded<StreamFrame>();
         using var streamScope = RequestContext.StreamScope(deltaChannel.Writer);
         var forwardDeltasTask = Task.Run(async () =>
         {
             try
             {
-                await foreach (var delta in deltaChannel.Reader.ReadAllAsync(abort))
+                await foreach (var frame in deltaChannel.Reader.ReadAllAsync(abort))
                 {
-                    await WriteFrameAsync("delta", delta);
+                    await WriteFrameAsync(frame.Event, frame.Data);
                 }
             }
             catch (OperationCanceledException)
@@ -388,11 +388,23 @@ public static class ChatRoutes
         // web/src/lib/api.ts::chatStream's AgentStep shape exactly (field
         // names are snake_case there, unlike the rest of this C# codebase,
         // because the frontend's SSE parser is shared with the Python
-        // backend). Emitted as a batch here rather than incrementally as
-        // each tool call finishes — same as Python's chat.py, which drains
-        // get_steps() once after the run loop completes.
-        foreach (var step in RequestContext.CurrentSteps)
+        // backend).
+        //
+        // Only the steps nobody has sent yet. A specialist's steps already
+        // went out live as its tools returned (A2AClient.MergeReturnedSteps),
+        // and re-sending them here would duplicate every row in the timeline;
+        // what is left is the orchestrator's own tool calls, which have no
+        // earlier moment to be reported at. Mirrors Python's `_live` marker in
+        // orchestrator/routes/chat.py.
+        var allSteps = RequestContext.CurrentSteps;
+        for (var i = 0; i < allSteps.Count; i++)
         {
+            if (RequestContext.IsStepDelivered(i))
+            {
+                continue;
+            }
+
+            var step = allSteps[i];
             var stepPayload = JsonSerializer.Serialize(new
             {
                 agent = step.Agent,

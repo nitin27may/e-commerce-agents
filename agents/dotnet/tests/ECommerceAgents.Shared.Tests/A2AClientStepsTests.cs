@@ -107,6 +107,75 @@ public sealed class A2AClientStepsTests
     }
 
     [Fact]
+    public async Task StreamAsync_ForwardsEachMergedStepToTheBrowserAndMarksItDelivered()
+    {
+        // Merging a step into CurrentSteps used to be all that happened: the
+        // browser only learned about it from ChatRoutes' end-of-run emission,
+        // so the whole timeline appeared at once after the answer had finished
+        // writing. Forwarding it here is what makes it live — and marking it
+        // delivered is what stops ChatRoutes sending the same row again.
+        var sse = string.Join(
+            "\n",
+            "event: steps",
+            "data: [{\"toolName\":\"SearchProducts\",\"toolInput\":null,\"toolOutput\":null,\"status\":\"success\",\"durationMs\":8}]",
+            "",
+            "data: Wireless headphones",
+            "",
+            "data: [DONE]",
+            ""
+        );
+        var handler = new StaticResponseHandler(sse, "text/event-stream");
+        var client = BuildClient(handler);
+        using var scope = RequestContext.Scope("u@example.com", "customer", "sess-1");
+
+        var channel = System.Threading.Channels.Channel.CreateUnbounded<StreamFrame>();
+        using var streamScope = RequestContext.StreamScope(channel.Writer);
+
+        await foreach (var _ in client.StreamAsync("product-discovery", "http://localhost", "hi"))
+        {
+            // drain
+        }
+        channel.Writer.Complete();
+
+        var frames = new List<StreamFrame>();
+        await foreach (var frame in channel.Reader.ReadAllAsync())
+        {
+            frames.Add(frame);
+        }
+
+        frames.Should().ContainSingle();
+        frames[0].Event.Should().Be("step");
+        frames[0].Data.Should().Contain("SearchProducts").And.Contain("product-discovery");
+        RequestContext.IsStepDelivered(0).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task StreamAsync_WithNoBrowserStream_StillMergesWithoutForwarding()
+    {
+        // A blocking /api/chat turn, or this client exercised directly. There
+        // is no stream to forward to, and a null writer must be a no-op rather
+        // than the reason a specialist call fails.
+        var sse = string.Join(
+            "\n",
+            "event: steps",
+            "data: [{\"toolName\":\"SearchProducts\",\"toolInput\":null,\"toolOutput\":null,\"status\":\"success\",\"durationMs\":8}]",
+            "",
+            "data: [DONE]",
+            ""
+        );
+        var handler = new StaticResponseHandler(sse, "text/event-stream");
+        var client = BuildClient(handler);
+        using var scope = RequestContext.Scope("u@example.com", "customer", "sess-1");
+
+        await foreach (var _ in client.StreamAsync("product-discovery", "http://localhost", "hi"))
+        {
+            // drain
+        }
+
+        RequestContext.CurrentSteps.Should().ContainSingle();
+    }
+
+    [Fact]
     public async Task StreamAsync_MultipleStepsInOneFrame_AllMergedInOrder()
     {
         var sse = string.Join(

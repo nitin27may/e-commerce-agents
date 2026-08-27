@@ -60,6 +60,7 @@ from agent_framework._middleware import ChatContext, ChatMiddleware
 
 from shared.config import settings
 from shared.cost import estimate_cost
+from shared.metrics import record_llm_turn_cost
 
 logger = logging.getLogger(__name__)
 
@@ -95,19 +96,24 @@ def _current_model() -> str:
     return settings.LLM_MODEL
 
 
-def _turn_cost(response: Any) -> float | None:
+def _turn_cost(response: Any) -> tuple[float, int, int] | None:
     """Estimate this turn's USD cost from a ``ChatResponse``'s ``usage_details``.
 
     Returns ``None`` when no usage is available (e.g. a replay fixture that
     doesn't carry token counts) rather than silently pricing at zero, so
     callers can distinguish "no data" from "a free call."
+
+    Returns the token counts alongside the price so the caller can emit both
+    without re-reading ``usage_details``: the metric records tokens as well,
+    because cost is derived from them via a hand-maintained price table and
+    only the raw counts can tell you which of the two moved.
     """
     usage = getattr(response, "usage_details", None)
     if not usage:
         return None
     tokens_in = usage.get("input_token_count") or 0
     tokens_out = usage.get("output_token_count") or 0
-    return estimate_cost(_current_model(), tokens_in, tokens_out)
+    return estimate_cost(_current_model(), tokens_in, tokens_out), tokens_in, tokens_out
 
 
 BUDGET_REFUSAL_MESSAGE = (
@@ -157,13 +163,28 @@ class CostBudgetMiddleware(ChatMiddleware):
             self._record_from_response(context.result)
 
     def _record_from_response(self, response: Any) -> Any:
-        cost = _turn_cost(response)
-        if cost is not None:
+        priced = _turn_cost(response)
+        if priced is not None:
+            cost, tokens_in, tokens_out = priced
             self.turns_recorded += 1
             total = _add_run_cost(cost)
             logger.info(
                 "cost_budget.turn_recorded turn_cost_usd=%.4f run_cost_usd=%.4f mode=%s",
                 cost, total, settings.COST_BUDGET_MODE,
+            )
+            # Same estimate, as a counter rather than only a log line — a log
+            # line cannot be alerted on without shipping and parsing logs.
+            # Emitted here because this is the only place that prices *every*
+            # LLM turn, including each specialist's; the orchestrator's
+            # usage_logs row sees one aggregate per run and would miss where
+            # the spend actually went.
+            record_llm_turn_cost(
+                cost,
+                model=_current_model(),
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+                agent=settings.OTEL_SERVICE_NAME,
+                mode=settings.COST_BUDGET_MODE,
             )
         return response
 
