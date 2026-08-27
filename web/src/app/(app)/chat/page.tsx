@@ -5,6 +5,7 @@ import {
   useEffect,
   useRef,
   useCallback,
+  useMemo,
 } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
@@ -46,6 +47,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { DEMO_SCENARIOS } from "@/lib/scenarios";
+import { deriveSuggestions } from "@/lib/suggestions";
 import { AGENT_MODES } from "@/components/ui/ai-prompt-box";
 
 // ---------------------------------------------------------------------------
@@ -315,6 +317,31 @@ export default function ChatPage() {
   const pendingQueryRef = useRef<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Follow-up chips, derived from the assistant's last completed message.
+   *
+   * Was `DEMO_SCENARIOS.slice(0, 4)` — the same four canned prompts after every
+   * turn, including when the assistant had just asked a direct question the
+   * chips ignored (issue #4).
+   *
+   * Skips a message that is still streaming: deriving from a half-arrived
+   * answer makes the chips flicker and, worse, briefly show suggestions for a
+   * card that has not finished rendering.
+   *
+   * `deriveSuggestions` is a pure function over text the client already has —
+   * no request, no latency, and testable in isolation (`lib/suggestions.test.ts`).
+   */
+  const suggestions = useMemo(() => {
+    const lastAssistant = [...messages]
+      .reverse()
+      .find((m) => m.role === "assistant" && !m.streaming);
+
+    return deriveSuggestions(
+      lastAssistant?.content,
+      DEMO_SCENARIOS.slice(0, 4).map((s) => ({ label: s.label, prompt: s.prompt }))
+    );
+  }, [messages]);
   // Per-message abort controller. New send aborts any in-flight stream;
   // unmount aborts whatever's still running. Plugs the SSE-leak finding.
   const streamAbortRef = useRef<AbortController | null>(null);
@@ -887,10 +914,7 @@ export default function ChatPage() {
             <PromptInputBox
               onSend={(message, agentMode) => sendMessage(message, agentMode)}
               isLoading={isResponding}
-              suggestions={DEMO_SCENARIOS.slice(0, 4).map((s) => ({
-                label: s.label,
-                prompt: s.prompt,
-              }))}
+              suggestions={suggestions}
             />
           </div>
         </div>
