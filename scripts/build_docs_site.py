@@ -144,6 +144,7 @@ SECTIONS: tuple[Section, ...] = (
         (
             "docs/parity-matrix.md",
             "docs/agent-audit-matrix.md",
+            "docs/orchestration-benchmark.md",
             "docs/reported-vs-actual.md",
             "docs/adr/README.md",
             "docs/adr/0001-a2a-over-direct-calls.md",

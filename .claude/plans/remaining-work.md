@@ -59,7 +59,12 @@ Measured against a live stack during the v1.2.0 work. None of these has an owner
       line on data being present, so the fan-out is real and the synthesis is faithful — the
       *inputs* are missing, and every failure path in that workflow is silent. See
       [plan 19 §2b](enhancements/19-closing-out.md).
-- [ ] **The orchestration-mode benchmark has a harness but no published result.**
+- [x] **The orchestration-mode benchmark is published** — `docs/orchestration-benchmark.md`,
+      registered under Reference. Running it found two broken modes, so the first table would have
+      described defects as design characteristics. Tokens/cost are reported only for `tool`: the
+      other modes do not write `usage_logs` rows, and the harness says "not captured" rather than
+      "$0.00" because those are different claims. Closing that gap is its own item.
+- [ ] ~~**The orchestration-mode benchmark has a harness but no published result.**~~
       `evals/benchmark_modes.py` ships in v1.2.0 and is verified working. The first full run
       measured a broken build through a tripped rate limiter and was discarded rather than
       published. Needs a re-run against v1.2.0 images (~60 calls, ~$1, ~25 min with pacing) and a
