@@ -82,8 +82,10 @@ Measured against a live stack during the v1.2.0 work. None of these has an owner
       site. Each states what would make it wrong, because a decision with no reversal condition is
       dogma. Writing them surfaced that ADR 0005's honest weakness is that the parity gate is not
       in CI — recorded there rather than smoothed over.
-- [ ] **Promote the "reported vs actual" table** below onto the docs site. It is the most credible
-      artifact in the repository and it lives in `.claude/`.
+- [x] **Promote the "reported vs actual" table** — done, as `docs/reported-vs-actual.md`, registered
+      under Reference. Grew from five rows to eight while being written: the three defects found in
+      this close-out (the .NET tool-naming mismatch, handoff never handing off, pre-purchase's
+      missing inputs) are the same pattern, so they belong in the same table.
 
 ---
 
