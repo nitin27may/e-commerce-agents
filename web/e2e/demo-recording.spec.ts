@@ -107,9 +107,11 @@ test("demo clip — chat, modes, graph, approval, resume", async ({ page }) => {
   // ── 3. Switch orchestration mode, then re-ask ────────────────────────────
   // The mode switcher is fed by GET /api/orchestration/modes. Opening it on
   // camera is the point: the same question, routed a different way.
-  const modeSwitcher = page
-    .locator('[data-testid="mode-switcher"], button:has-text("tool"), button:has-text("Tool")')
-    .first();
+  // Located by aria-label, not by button text. The trigger displays the CURRENT
+  // mode's label, so any text-based locator only works before the first switch
+  // and silently stops matching afterwards — which is exactly how the second
+  // switch below failed for five recordings while the spec exited 0 each time.
+  const modeSwitcher = page.getByLabel("Orchestration mode");
   if (await modeSwitcher.isVisible().catch(() => false)) {
     await modeSwitcher.click();
     await beat(page, 1_200);
@@ -127,7 +129,58 @@ test("demo clip — chat, modes, graph, approval, resume", async ({ page }) => {
   await beat(page, 3_000); // hold on the animated graph
 
   // ── 4. Trigger the HITL gate ─────────────────────────────────────────────
-  await typeAndSend(page, "I want to return my most recent order, it does not fit.");
+  //
+  // Switch to workflow:return-replace FIRST. The approval gate lives in that
+  // workflow's graph, not in the platform — asking a return question while
+  // still in pre-purchase mode routes it through a workflow with no gate, which
+  // is why the first two recordings logged "no pending approval on /runs" and
+  // passed anyway, losing the clip's last two beats.
+  const switcher2 = page.getByLabel("Orchestration mode");
+  if (await switcher2.isVisible().catch(() => false)) {
+    await switcher2.click();
+    await beat(page, 1_200);
+    // The label is "Return & Replace (sequential + in-workflow HITL)". A `.?`
+    // between the words cannot span " & ", so the previous pattern matched
+    // nothing, the `else` branch pressed Escape, and the clip asked its return
+    // question in pre-purchase mode — a workflow with no approval gate. That is
+    // the actual reason five recordings logged "no pending approval on /runs"
+    // and still exited 0.
+    const rr = page.getByRole("option", { name: /return\s*&\s*replace/i }).first();
+    if (await rr.isVisible().catch(() => false)) {
+      await rr.click();
+    } else {
+      await page.keyboard.press("Escape");
+    }
+    await beat(page, 1_200);
+  }
+
+  // The order id is in the message on purpose, and three things force it.
+  //
+  // 1. workflow:return-replace resolves an order from the message itself — a
+  //    UUID literal if present, otherwise the user's MOST RECENT order. Prose
+  //    like "my July 16th order" is not parsed, so it silently fell back.
+  // 2. Alice's most recent order is `shipped`, and returns require `delivered`,
+  //    so that fallback made the workflow refuse at its first gate.
+  // 3. The gate only pauses above RETURN_HITL_THRESHOLD ($500). A cheap return
+  //    passes straight through without stopping.
+  //
+  // There is a FOURTH constraint that cost another recording to find: returns
+  // expire after 30 days. Alice's two largest delivered orders are 39 and 42
+  // days old, so both were refused with "Return window expired" — an entirely
+  // correct answer that still loses the beat.
+  //
+  // This order satisfies all four: delivered, $603.46, 18 days old, and stable
+  // because the seeder is deterministic (random.seed(42)). Four recordings
+  // passed while silently losing the clip's last two beats before this was
+  // pinned down — the spec logged "no pending approval on /runs" and exited 0
+  // every time, which is why the clip needs re-watching and not just re-running.
+  //
+  // A support conversation quoting an order number is realistic, so this reads
+  // fine on camera.
+  await typeAndSend(
+    page,
+    "I want to return order f1874d25-1f6b-4fd5-98dd-9157ed8c254f — it is not what I expected."
+  );
   await waitForTurn(page);
   await beat(page, 2_500);
 
@@ -143,9 +196,26 @@ test("demo clip — chat, modes, graph, approval, resume", async ({ page }) => {
     await approve.click();
     await beat(page, 4_000); // the run resumes from its checkpoint
   } else {
-    // Not a failure of the recording — the return may not have crossed
-    // RETURN_HITL_THRESHOLD. Log it so the operator knows why the clip is short.
-    console.log("[demo] no pending approval on /runs — the return did not cross the HITL threshold");
+    // Fail, do not log.
+    //
+    // This branch used to console.log and let the test pass, which meant six
+    // consecutive recordings produced a clip missing its last two beats — the
+    // approval and the resume — while the spec exited 0 every time. A recording
+    // script that reports success for an incomplete take is the same failure
+    // this repo keeps finding elsewhere: healthy-looking, quietly wrong.
+    //
+    // Everything needed to diagnose it goes in the message, because the clip is
+    // the artifact and nobody re-watches a green run.
+    const modeLabel = await page.getByLabel("Orchestration mode").textContent().catch(() => "(not found)");
+    const bodyText = (await page.locator("main").textContent().catch(() => "")) ?? "";
+    throw new Error(
+      "No pending approval on /runs, so the clip is missing its approval and resume beats.\n" +
+        `Composer mode at the end of the run: ${modeLabel}\n` +
+        "The return must satisfy ALL FOUR of: workflow:return-replace selected, order " +
+        "status 'delivered', within the 30-day return window, and total above " +
+        "RETURN_HITL_THRESHOLD ($500).\n" +
+        `/runs page text (first 400 chars): ${bodyText.slice(0, 400)}`
+    );
   }
 
   await beat(page, 2_000);
