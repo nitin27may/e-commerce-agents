@@ -501,7 +501,7 @@ The seeder (`scripts/seed.py`) populates the database with deterministic data (`
 |-------|-------|---------|
 | users | 20 | 1 admin, 2 power users, 2 sellers, 15 customers |
 | products | 50 | 10 per category (Electronics, Clothing, Home, Sports, Books) |
-| product_embeddings | 50 | Generated separately via `scripts/generate_embeddings.py` |
+| product_embeddings | 0 | **Not seeded.** Run `scripts/generate_embeddings.py` separately to populate all 50 |
 | orders | 200 | Distributed across statuses (placed through delivered/cancelled) |
 | order_items | ~400 | 1-4 items per order |
 | order_status_history | ~600 | Full tracking timeline per order |
@@ -538,7 +538,8 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;   -- gen_random_uuid()
 
 ## Gotchas
 
-- **product_embeddings** uses an IVFFlat index (`lists = 10`). This index type requires the table to have existing data before creation, or it will be empty. The seeder runs `generate_embeddings.py` as a post-step.
+- **product_embeddings** is empty after a default `./scripts/dev.sh` run. The seeder does not populate it — `scripts/generate_embeddings.py` is a separate manual step, because embedding 50 products costs an API call per product. Until it runs, `semantic_search` is lexical-only: the vector arm of the hybrid query returns no rows and full-text search carries the result, which degrades quietly rather than erroring.
+- **product_embeddings** uses an IVFFlat index (`lists = 10`). This index type requires the table to have existing data before creation, or it will be empty, so `generate_embeddings.py` reindexes after writing.
 - **agent_catalog.name** is the FK target for `access_requests` and `agent_permissions`, not the `id` column. This simplifies lookups but means agent names cannot be renamed without cascading updates.
 - **warehouse_inventory** has a composite primary key `(warehouse_id, product_id)` rather than a surrogate UUID.
 - **usage_logs.user_id** is typed as `UUID REFERENCES users(id)`, but some queries cast it with `::uuid` defensively in the audit endpoint.
