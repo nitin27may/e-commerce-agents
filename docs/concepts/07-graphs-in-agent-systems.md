@@ -53,15 +53,15 @@ focused unit of work:
 
 ```python
 # agents/python/workflows/pre_purchase.py
-class _FanOutExecutor(Executor):        # line 49 — kicks off the three parallel checks
-class _ReviewsExecutor(Executor):       # line 60
-class _StockExecutor(Executor):         # line 79
-class _PriceHistoryExecutor(Executor):  # line 98
-class _MergeAndShipExecutor(Executor):  # line 117 — waits for all three, merges
-class _SynthesisExecutor(Executor):     # line 148 — final answer
+class _FanOutExecutor(Executor):        # kicks off the three parallel checks
+class _ReviewsExecutor(Executor):
+class _StockExecutor(Executor):
+class _PriceHistoryExecutor(Executor):
+class _MergeAndShipExecutor(Executor):  # waits for all three, merges
+class _SynthesisExecutor(Executor):     # final answer
 ```
 
-And the edges that connect them, `_build_maf_workflow()` at line 229:
+And the edges that connect them, `_build_maf_workflow()`:
 
 ```python
 # agents/python/workflows/pre_purchase.py

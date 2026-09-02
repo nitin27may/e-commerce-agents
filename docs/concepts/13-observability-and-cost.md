@@ -41,7 +41,7 @@ span — the overhead isn't worth it, and the trace becomes noisy without adding
 
 Every agent process calls `setup_telemetry(service_name)` once, at startup
 ([`shared/telemetry.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/telemetry.py)), which wires up OpenTelemetry and explicitly opts into the GenAI
-semantic conventions (`OTEL_SEMCONV_STABILITY_OPT_IN`, line 64) — the standard attribute names
+semantic conventions (`OTEL_SEMCONV_STABILITY_OPT_IN`) — the standard attribute names
 (`gen_ai.operation.name`, `gen_ai.agent.name`, `gen_ai.conversation.id`) that let a generic
 dashboard like Aspire render LLM-specific spans meaningfully instead of as opaque blobs.
 
@@ -54,13 +54,13 @@ invoke_agent orchestrator            ← agent_run_span, in the orchestrator's o
     invoke_agent product-discovery   ← agent_run_span again, inside the specialist's own process
 ```
 
-`agent_run_span(agent_name)` (line 224) wraps one agent's own run — `SpanKind.INTERNAL`, the work
-this process did. `a2a_call_span(source_agent, target_agent, target_url)` (line 261) wraps the
+`agent_run_span(agent_name)` wraps one agent's own run — `SpanKind.INTERNAL`, the work
+this process did. `a2a_call_span(source_agent, target_agent, target_url)` wraps the
 network call *between* two agents — `SpanKind.CLIENT`, deliberately so a distributed trace
 correctly shows "the orchestrator was waiting on a network call here," not just "the orchestrator
 was busy." Both use the same `invoke_agent {name}` naming convention (lines 245, 271), which is
 what lets Aspire nest them correctly instead of showing three unrelated-looking spans.
-`enrich_span_with_session()` (line 194) tags the active span with `gen_ai.conversation.id` so every
+`enrich_span_with_session()` tags the active span with `gen_ai.conversation.id` so every
 span from the same conversation — across every service it touched — can be grouped together in
 the dashboard, not just correlated by trace id.
 
