@@ -50,7 +50,7 @@ breaks: the **[Quick Start page](https://nitinksingh.com/e-commerce-agents/getti
 
 **Generative UI, not raw JSON.** The chat surface never dumps a tool result as text or a code block. Every agent response is inspected by shape and rendered as the right interactive component: a single detailed result becomes a card, a list becomes a table, a distribution or trend becomes a chart, a status becomes a tone-coded badge — see it live in the [screens gallery](https://nitinksingh.com/e-commerce-agents/getting-started/demo-guide.html) (review sentiment: rating distribution + 6-month trend, rendered from the same data an LLM would otherwise only describe in prose).
 
-**Pick your stack:** [`agents/python/`](./agents/python/) or [`agents/dotnet/`](./agents/dotnet/) — same schema, same prompts, same frontend for either (toggle with `NEXT_PUBLIC_BACKEND_STACK`). Parity is enforced by a dual-backend test gate, and [`docs/parity-matrix.md`](./docs/parity-matrix.md) lists the remaining differences row by row.
+**Pick your stack:** [`agents/python/`](./agents/python/) or [`agents/dotnet/`](./agents/dotnet/) — same schema, same prompts, same frontend for either (`./scripts/dev.sh --dotnet`, or `docker-compose.dotnet.yml` directly). Parity is enforced by a dual-backend test gate, and [`docs/parity-matrix.md`](./docs/parity-matrix.md) lists the remaining differences row by row.
 
 **Full documentation:** **[nitinksingh.com/e-commerce-agents](https://nitinksingh.com/e-commerce-agents/)** — the concepts library, all 34 tutorial chapters, and the architecture reference, with every diagram rendered.
 
@@ -174,7 +174,7 @@ same frontend for either backend. Full detail — request flow, agent internals,
 and the API surface — is in **[Architecture](https://nitinksingh.com/e-commerce-agents/architecture/)**.
 
 **Pick your stack:** [`agents/python/`](./agents/python/) or [`agents/dotnet/`](./agents/dotnet/) —
-toggle with `NEXT_PUBLIC_BACKEND_STACK`. Parity is enforced by a dual-backend test gate, and
+switch with `./scripts/dev.sh --dotnet`. Parity is enforced by a dual-backend test gate, and
 [`docs/parity-matrix.md`](./docs/parity-matrix.md) lists the remaining differences row by row.
 
 ---

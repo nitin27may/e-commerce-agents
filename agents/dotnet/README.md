@@ -9,7 +9,7 @@ Both stacks share:
 - Postgres schema at `../../docker/postgres/init.sql`
 - Prompt YAML at `../python/config/prompts/`
 - Seed data produced by `../../scripts/seed.py`
-- Next.js frontend at `../../web/` (selects backend via `NEXT_PUBLIC_BACKEND_STACK=python|dotnet`)
+- Next.js frontend at `../../web/` (selects backend via `ORCHESTRATOR_URL`, server-side)
 
 ## Projects
 
@@ -48,7 +48,7 @@ docker compose -f docker-compose.dotnet.yml \
   --profile seed --profile agents --profile mcp --profile frontend up --build
 ```
 
-The Next.js frontend at `http://localhost:3000` will talk to the .NET orchestrator at `:8080` when `NEXT_PUBLIC_BACKEND_STACK=dotnet`.
+The Next.js frontend at `http://localhost:3000` talks to whichever orchestrator `ORCHESTRATOR_URL` points at. `docker-compose.dotnet.yml` sets it to the .NET one.
 
 ## Central package management
 
@@ -82,6 +82,6 @@ The remaining gaps are handoff and group-chat modes, MCP client consumption, tel
 and the evals harness; all python-first. Magentic is in neither stack, so it is not a gap.
 See [`docs/parity-matrix.md`](../../docs/parity-matrix.md) for the row-by-row breakdown.
 
-Eight test projects mirror the source structure — one per agent plus Shared and MCP — with 515 test methods covering tools, middleware, guardrails, timeline capture, workflows, auth, streaming, and A2A protocol behavior (verified directly: `dotnet test ECommerceAgents.sln`). The same PostgreSQL schema and A2A wire format are used across both stacks; you can point the frontend at either backend by setting `NEXT_PUBLIC_BACKEND_STACK=dotnet`.
+Eight test projects mirror the source structure — one per agent plus Shared and MCP — with 533 test methods (584 cases once `[Theory]` data rows are expanded) covering tools, middleware, guardrails, timeline capture, workflows, auth, streaming, and A2A protocol behavior (verified directly: `dotnet test ECommerceAgents.sln`). The same PostgreSQL schema and A2A wire format are used across both stacks; you can point the frontend at either backend through `ORCHESTRATOR_URL`, which is read server-side per request rather than compiled into the bundle.
 
 Remaining work is tracked in the one consolidated plan, [`.claude/plans/remaining-work.md`](../../.claude/plans/remaining-work.md).

@@ -3,8 +3,9 @@ import { test } from "@playwright/test";
 /**
  * Dual-backend parity gate.
  *
- * There is one frontend, and `NEXT_PUBLIC_BACKEND_STACK` points it at either
- * the Python or the .NET orchestrator. So the honest definition of "is .NET
+ * There is one frontend, and `ORCHESTRATOR_URL` points it at either the Python
+ * or the .NET orchestrator, while `BACKEND_STACK` tells this suite which one it
+ * is looking at. So the honest definition of "is .NET
  * done?" is not a test count or a row in a matrix — it is *this suite passing
  * against both backends*.
  *

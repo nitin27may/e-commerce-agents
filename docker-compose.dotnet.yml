@@ -5,7 +5,8 @@
 # Mirrors docker-compose.yml but substitutes .NET agents for the Python
 # agents. Infrastructure (Postgres, Redis, Aspire, seeder, frontend) and
 # environment contract are identical so the Next.js frontend works against
-# either stack by toggling NEXT_PUBLIC_BACKEND_STACK.
+# either stack; each compose file points the frontend at its own
+# orchestrator through ORCHESTRATOR_URL.
 #
 # Dockerfiles now exist for the orchestrator, all 5 specialists, and the
 # MCP host (agents/dotnet/src/ECommerceAgents.*/Dockerfile) — the .NET stack

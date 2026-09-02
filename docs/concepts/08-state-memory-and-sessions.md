@@ -66,14 +66,13 @@ async def store_memory(
 ) -> dict:
 ```
 
-`recall_memories` (line 39) is the read side. Both are attached to `product-discovery` and
+`recall_memories` is the read side. Both are attached to `product-discovery` and
 `review-sentiment`'s tool lists — the model decides, mid-conversation, that something is worth
 remembering (or worth recalling before answering) by calling these tools, exactly like it decides
 to call `search_products`. This is the piece that survives past the conversation that created it —
 a fact stored today is available in a conversation next week.
 
-**Checkpoints** — [`shared/checkpoint_storage.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/checkpoint_storage.py) (175 lines), `PostgresCheckpointStorage` at
-line 34. Reads and writes a real `workflow_checkpoints` table, encoding each checkpoint with MAF's
+**Checkpoints** — [`shared/checkpoint_storage.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/checkpoint_storage.py) (175 lines), `PostgresCheckpointStorage`. Reads and writes a real `workflow_checkpoints` table, encoding each checkpoint with MAF's
 own `encode_checkpoint_value` so the wire format matches what MAF's file-based checkpoint storage
 would have written — this repo just keeps it in Postgres instead of on disk (module docstring,
 lines 1-10). This is what makes `workflow:return-replace`'s in-workflow approval pause (see

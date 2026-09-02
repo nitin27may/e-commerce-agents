@@ -40,7 +40,7 @@ making deliberately, not by default.
 ## How it works here
 
 The core design point in this repo's eval harness is that it runs cases through the **real**
-production code path, not a stand-in. `evals/harness.py::ProductionRunner.run()` (line 110) drives
+production code path, not a stand-in. `evals/harness.py::ProductionRunner.run()` drives
 requests through the exact same dispatch a live user's request would use — `orchestrator.modes`
 for the orchestrator, the real specialist entry point for each specialist — so the full guardrail,
 HITL, and grounding middleware stack from [guardrails](10-guardrails.md) actually runs during
@@ -53,12 +53,12 @@ wired in at all.
 
 The two scorer types, concretely:
 
-- **Deterministic** — `evals/scorers/db_groundedness.py::score_from_report()` (line 26) reads the
+- **Deterministic** — `evals/scorers/db_groundedness.py::score_from_report()` reads the
   same `GroundingReport` [grounding](09-grounding-and-rag.md)'s middleware already computed during
   the run — free, no extra database round trip, no LLM cost. Score is simply
   `verified_claims / total_claims`.
-- **LLM-as-judge** — `evals/scorers/llm_judge.py::judge_response()` (line 57) asks a second model
-  call to score relevance/completeness against a structured `JudgeVerdict` (line 41: `score`,
+- **LLM-as-judge** — `evals/scorers/llm_judge.py::judge_response()` asks a second model
+  call to score relevance/completeness against a structured `JudgeVerdict` (`score`,
   `reasoning`, `failure_mode`) — for exactly the part deterministic checks can't reach: whether
   the response actually answered what was asked, in substance, not just whether specific facts in
   it check out.

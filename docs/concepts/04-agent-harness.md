@@ -37,13 +37,13 @@ need any of this; building it anyway is pure overhead for something with no call
 ## How it works here
 
 Every specialist in this repo is hosted the same way, by the same shared module:
-[`agents/python/shared/agent_host.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/agent_host.py). `create_agent_app()` (line 178) builds one FastAPI app per
+[`agents/python/shared/agent_host.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/agent_host.py). `create_agent_app()` builds one FastAPI app per
 agent with:
 
-- **Transport** — `POST /message:send` (line 225, request/response) and `POST /message:stream`
-  (line 263, Server-Sent Events) — the two shapes any other agent or the orchestrator can call
+- **Transport** — `POST /message:send` (request/response) and `POST /message:stream`
+  (Server-Sent Events) — the two shapes any other agent or the orchestrator can call
   into this one.
-- **Identity** — `GET /.well-known/agent-card.json` (line 216), an A2A-convention discovery
+- **Identity** — `GET /.well-known/agent-card.json`, an A2A-convention discovery
   document any caller can fetch to confirm who they're talking to before sending real traffic.
 - **Lifecycle** — a `lifespan` async context manager (lines 201-208) running `on_startup`/
   `on_shutdown` callbacks, so a specialist doesn't accept traffic before it's actually ready and

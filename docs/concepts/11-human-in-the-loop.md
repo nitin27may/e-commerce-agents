@@ -38,24 +38,24 @@ This repo has two HITL implementations, and they are not interchangeable — kno
 given mode uses matters for understanding what actually happens when a gate fires.
 
 **Middleware-based approval** — [`shared/hitl.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/hitl.py). A fixed set of high-stakes tools —
-`HITL_GATED_TOOLS` (line 38): `cancel_order`, `process_refund`, `initiate_return`, `modify_order`,
+`HITL_GATED_TOOLS`: `cancel_order`, `process_refund`, `initiate_return`, `modify_order`,
 `place_backorder` — are intercepted by `HITLFunctionMiddleware` *before* they execute. The
-docstring is explicit about what happens next: "the tool does NOT execute" (line 55). A
+docstring is explicit about what happens next: "the tool does NOT execute". A
 `hitl_requests` row is written with `status="pending"`, and the agent's tool call returns
 immediately with a `pending_approval` result — the LLM's turn ends there, having been told the
 action is awaiting approval. When an admin later approves it, a *separate* code path,
-`execute_approved_action()` (line 254), runs the underlying database operation directly. **The
+`execute_approved_action()`, runs the underlying database operation directly. **The
 original LLM loop is never resumed.** The approval doesn't continue the conversation — it just
 performs the action the model asked for, outside the conversation entirely.
 
-**In-workflow suspend/resume** — [`workflows/return_replace.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/workflows/return_replace.py)'s `_HitlGateExecutor` (line 157).
+**In-workflow suspend/resume** — [`workflows/return_replace.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/workflows/return_replace.py)'s `_HitlGateExecutor`.
 For return workflows above a value threshold (`settings.RETURN_HITL_THRESHOLD`), the executor
-calls `await ctx.request_info(ReturnApprovalRequest(...), response_type=bool)` (line 172) — and
+calls `await ctx.request_info(ReturnApprovalRequest(...), response_type=bool)` — and
 this doesn't short-circuit a single tool call, it **pauses the entire workflow graph**. Everything
 the graph had already computed is written to a checkpoint (see
 [state, memory, and sessions](08-state-memory-and-sessions.md)) so the pause can outlive the
 current request. Resume happens via a handler MAF calls back into automatically —
-`@response_handler(request=ReturnApprovalRequest, response=bool)` on `on_approval()` (line 185) —
+`@response_handler(request=ReturnApprovalRequest, response=bool)` on `on_approval()` —
 which picks the workflow back up from exactly where it paused and keeps running the remaining
 steps (loyalty discount, finalize).
 
