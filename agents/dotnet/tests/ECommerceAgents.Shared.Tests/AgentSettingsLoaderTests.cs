@@ -147,6 +147,91 @@ public sealed class AgentSettingsLoaderTests
             + "environment variable silently does nothing");
     }
 
+    // ── ParseAgentRegistry ──────────────────────────────────────────────
+    //
+    // These pin the behaviour change that came with the Azure pre-work: the
+    // parser used to return an empty dictionary on any malformed input, which
+    // produced an orchestrator that started, passed health checks, and could
+    // not route. Mirrors the Python tests in
+    // agents/python/tests/test_config_loader.py, including which inputs are
+    // rejected — a stack that accepts what the other rejects is a parity gap.
+
+    [Fact]
+    public void ParseAgentRegistry_AcceptsAManagedEndpointWithNoPort()
+    {
+        var settings = new AgentSettings
+        {
+            AgentRegistry = """{"review-sentiment":"https://rs.internal.azurecontainerapps.io"}""",
+        };
+
+        AgentSettingsLoader.ParseAgentRegistry(settings)
+            .Should()
+            .ContainKey("review-sentiment")
+            .WhoseValue.Should()
+            .Be("https://rs.internal.azurecontainerapps.io");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("{}")]
+    public void ParseAgentRegistry_IsEmptyForBlankInput(string raw)
+    {
+        AgentSettingsLoader.ParseAgentRegistry(new AgentSettings { AgentRegistry = raw })
+            .Should()
+            .BeEmpty();
+    }
+
+    [Fact]
+    public void ParseAgentRegistry_ThrowsOnMalformedJson()
+    {
+        var settings = new AgentSettings { AgentRegistry = "{not json" };
+
+        FluentActions.Invoking(() => AgentSettingsLoader.ParseAgentRegistry(settings))
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*not valid JSON*");
+    }
+
+    [Fact]
+    public void ParseAgentRegistry_ThrowsOnAnEmptyUrl()
+    {
+        var settings = new AgentSettings { AgentRegistry = """{"product-discovery":""}""" };
+
+        FluentActions.Invoking(() => AgentSettingsLoader.ParseAgentRegistry(settings))
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*empty URL*");
+    }
+
+    [Fact]
+    public void ParseAgentRegistry_ThrowsOnAUrlWithNoScheme()
+    {
+        var settings = new AgentSettings
+        {
+            AgentRegistry = """{"product-discovery":"product-discovery:8081"}""",
+        };
+
+        FluentActions.Invoking(() => AgentSettingsLoader.ParseAgentRegistry(settings))
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*absolute http(s) URL*");
+    }
+
+    [Fact]
+    public void ParseAgentRegistry_NamesTheOffendingAgent()
+    {
+        var settings = new AgentSettings
+        {
+            AgentRegistry = """{"product-discovery":"http://pd:8081","order-management":""}""",
+        };
+
+        FluentActions.Invoking(() => AgentSettingsLoader.ParseAgentRegistry(settings))
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*order-management*");
+    }
+
     private static string FindRepoFile(string relative)
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

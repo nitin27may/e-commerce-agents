@@ -350,7 +350,12 @@ services:
       context: ./web
     ports: ["3000:3000"]
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8080
+      # Server-side, not NEXT_PUBLIC_*: the browser calls the frontend's own
+      # origin and Next forwards from there, so this is a container-network
+      # address rather than a host-published one.
+      ORCHESTRATOR_URL: http://orchestrator:8080
+    depends_on:
+      orchestrator: { condition: service_started }
     profiles: ["frontend"]
 
 volumes:

@@ -5,6 +5,7 @@ import { Download, RotateCcw, Package, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { apiUrl } from "@/lib/api";
 
 interface ReturnData {
   order_id?: string;
@@ -33,7 +34,7 @@ export function ChatReturnCard({ data }: { data: ReturnData }) {
 
       {data.return_label_url && (
         <a
-          href={data.return_label_url.startsWith("/api") ? `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}${data.return_label_url}` : data.return_label_url}
+          href={apiUrl(data.return_label_url)}
           target="_blank"
           rel="noopener noreferrer"
         >

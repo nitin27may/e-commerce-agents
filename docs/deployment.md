@@ -234,7 +234,7 @@ cp .env.example .env
 |----------|----------|---------|-------------|
 | `ENVIRONMENT` | No | `development` | Runtime environment identifier |
 | `AGENT_REGISTRY` | No | *(JSON map)* | JSON object mapping agent names to their internal Docker network URLs. Used by the orchestrator to discover specialist agents. |
-| `NEXT_PUBLIC_API_URL` | No | `http://localhost:8080` | Orchestrator URL as seen by the browser. The frontend uses this for API calls. |
+| `ORCHESTRATOR_URL` | No | `http://localhost:8080` | Where the frontend's server-side `/api/*` proxy forwards to. Read at runtime, so one image works in every environment. The browser never sees it. |
 
 ## 6. Dockerfile Architecture
 
@@ -268,7 +268,7 @@ The `web/Dockerfile` uses a 3-stage build for minimal production images:
 | Stage | Base | Purpose |
 |-------|------|---------|
 | `deps` | `node:22-alpine` | Install dependencies with `pnpm install --frozen-lockfile` |
-| `builder` | `node:22-alpine` | Build Next.js (`pnpm build`), inlines `NEXT_PUBLIC_API_URL` at build time |
+| `builder` | `node:22-alpine` | Build Next.js (`pnpm build`). No backend address is compiled in — see `ORCHESTRATOR_URL` above |
 | `runner` | `node:22-alpine` | Production runtime with standalone output only. Non-root `nextjs` user. |
 
 The final image contains only the standalone server, static assets, and public directory -- no `node_modules` or source code.
@@ -312,7 +312,7 @@ pnpm install
 pnpm dev
 ```
 
-The frontend starts on `http://localhost:3000` and expects the orchestrator at `http://localhost:8080` (configurable via `NEXT_PUBLIC_API_URL`).
+The frontend starts on `http://localhost:3000` and forwards its `/api/*` calls to `http://localhost:8080` (configurable via `ORCHESTRATOR_URL`).
 
 **Seed the database locally:**
 

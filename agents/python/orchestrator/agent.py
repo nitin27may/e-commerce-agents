@@ -20,6 +20,7 @@ from shared.context import (
     current_user_role,
 )
 from shared.context_providers import ECommerceContextProvider
+from shared.factory import parse_agent_registry
 from shared.http_resilience import ResilientAsyncTransport
 from shared.middleware import build_specialist_middleware
 from shared.oauth.service_client import build_a2a_headers
@@ -27,7 +28,10 @@ from shared.telemetry import a2a_call_span
 
 logger = logging.getLogger(__name__)
 
-AGENT_REGISTRY: dict[str, str] = json.loads(settings.AGENT_REGISTRY)
+# Validated, not just decoded: shared.factory.parse_agent_registry rejects a
+# blank or scheme-less endpoint at import instead of letting it surface as an
+# unroutable agent on the first request that needs it.
+AGENT_REGISTRY: dict[str, str] = parse_agent_registry(settings.AGENT_REGISTRY)
 
 # One shared transport (and therefore its per-host circuit breakers) reused
 # across every httpx.AsyncClient constructed below — a breaker only means

@@ -177,10 +177,10 @@ test("demo clip — chat, modes, graph, approval, resume", async ({ page }) => {
   //
   // Reading /api/orders and filtering makes the spec re-runnable, and it fails
   // with a real explanation when the seed data cannot support the take.
-  // Absolute URL: the frontend is served from :3000 and the orchestrator lives
-  // on :8080, so a same-origin "/api/orders" reaches Next.js and comes back as
-  // HTML. Mirrors NEXT_PUBLIC_API_URL's default, which is what the app itself
-  // uses.
+  // Absolute URL, deliberately. Same-origin "/api/orders" would now work too —
+  // the frontend proxies /api/* to the orchestrator — but going direct keeps
+  // this probe independent of the proxy, so a broken proxy fails as a broken
+  // proxy rather than as missing seed data.
   const apiBase = process.env.E2E_API_URL ?? "http://localhost:8080";
 
   const orderId = await page.evaluate(async (base) => {

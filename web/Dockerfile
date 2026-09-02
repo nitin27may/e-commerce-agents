@@ -22,9 +22,11 @@ COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV CI=true
-ARG NEXT_PUBLIC_API_URL=http://localhost:8080
-ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
+# No NEXT_PUBLIC_API_URL build arg. The browser calls this server's own origin
+# and src/app/api/[...path]/route.ts forwards to ORCHESTRATOR_URL at runtime,
+# so this image is not built against a particular backend. That is what lets
+# one image be promoted from compose to Azure without a rebuild.
 RUN pnpm build
 
 # ── Runtime ──────────────────────────────────────────────────
@@ -47,5 +49,9 @@ EXPOSE 3000
 
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
+
+# Where the server-side /api/* proxy forwards to. Override per environment:
+# a compose service name locally, an internal FQDN on Container Apps.
+ENV ORCHESTRATOR_URL="http://localhost:8080"
 
 CMD ["node", "server.js"]

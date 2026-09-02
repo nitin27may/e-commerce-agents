@@ -5,7 +5,8 @@ Verifies the factories in `shared.factory`:
 - get_chat_client branches correctly on LLM_PROVIDER and fails fast when
   required env vars are missing.
 - get_embeddings_client returns the right OpenAI vs AzureOpenAI class.
-- get_agent_registry parses JSON, reports malformed input cleanly.
+- parse_agent_registry validates JSON *and* endpoint shape, raising rather
+  than degrading, and get_agent_registry layers a cache over it.
 - get_checkpoint_storage respects MAF_CHECKPOINT_BACKEND.
 """
 
@@ -145,6 +146,51 @@ def test_get_agent_registry_raises_when_not_an_object(monkeypatch) -> None:
     factory = _reload_with_env(monkeypatch, AGENT_REGISTRY='["list", "not", "dict"]')
     with pytest.raises(ValueError, match="must decode to an object"):
         factory.get_agent_registry()
+
+
+# ── parse_agent_registry: endpoint validation ────────────────────────────────
+#
+# These matter because the registry stops being hand-written once it comes from
+# infrastructure outputs. An unresolved template output arrives as "", and a
+# hostname with no scheme arrives as "orchestrator:8080" — both used to be
+# accepted, and both fail later as "that agent isn't configured", which reads
+# as a routing bug rather than a deployment one.
+
+
+def test_parse_agent_registry_accepts_a_managed_endpoint_without_a_port() -> None:
+    from shared.factory import parse_agent_registry
+
+    registry = parse_agent_registry('{"review-sentiment": "https://rs.internal.azurecontainerapps.io"}')
+    assert registry == {"review-sentiment": "https://rs.internal.azurecontainerapps.io"}
+
+
+def test_parse_agent_registry_is_empty_for_none_and_blank() -> None:
+    from shared.factory import parse_agent_registry
+
+    assert parse_agent_registry(None) == {}
+    assert parse_agent_registry("") == {}
+    assert parse_agent_registry("{}") == {}
+
+
+def test_parse_agent_registry_rejects_an_empty_url() -> None:
+    from shared.factory import parse_agent_registry
+
+    with pytest.raises(ValueError, match="empty URL"):
+        parse_agent_registry('{"product-discovery": ""}')
+
+
+def test_parse_agent_registry_rejects_a_url_with_no_scheme() -> None:
+    from shared.factory import parse_agent_registry
+
+    with pytest.raises(ValueError, match="absolute http\\(s\\) URL"):
+        parse_agent_registry('{"product-discovery": "product-discovery:8081"}')
+
+
+def test_parse_agent_registry_names_the_offending_agent() -> None:
+    from shared.factory import parse_agent_registry
+
+    with pytest.raises(ValueError, match="order-management"):
+        parse_agent_registry('{"product-discovery": "http://pd:8081", "order-management": ""}')
 
 
 def test_get_checkpoint_storage_file_backend(monkeypatch, tmp_path) -> None:

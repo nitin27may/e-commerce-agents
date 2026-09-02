@@ -19,6 +19,7 @@ roadmap. It is kept because the pattern has not stopped repeating.
 | "`--dotnet` needs a look" (plan 16) | The .NET orchestrator **could not reach any specialist**; 39 of 46 tools were registered under a name the shared prompt corpus never uses |
 | "`handoff` mode is slow and verbose" | It **never handed off at all** — 5,403 streamed updates, 23,637 characters, no specialist invoked |
 | "`workflow:pre-purchase` discards its own work" | The synthesis was faithful; **two of its four inputs were silently missing** |
+| "`AGENT_REGISTRY` is hardcoded host:port" (Azure pre-work) | A **validating parser already existed and was tested** on both stacks, and **neither production call site used it** — all four sites re-parsed by hand and swallowed a malformed value into "no specialists configured" |
 
 ## What the pattern is
 

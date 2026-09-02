@@ -117,21 +117,28 @@ fixed bugs worth knowing about, both documented in the source:
 ### 3. The frontend — does not read `.env`
 
 Next.js reads `web/.env.local`, not the repository root, so `pnpm dev` outside Docker sees nothing
-from the root `.env`. It does not need to: `NEXT_PUBLIC_API_URL` has a hardcoded fallback that
-matches the compose default.
+from the root `.env`. It does not need to: `ORCHESTRATOR_URL` has a fallback that matches the
+compose default.
 
 ```ts
-// web/src/lib/api.ts
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+// web/src/app/api/[...path]/route.ts
+return (process.env.ORCHESTRATOR_URL ?? "http://localhost:8080").replace(/\/+$/, "");
 ```
 
 So `cd web && pnpm dev` works with no configuration at all, as long as the orchestrator is on
 `:8080`. Create `web/.env.local` only if you need it somewhere else.
 
-`NEXT_PUBLIC_*` is **inlined at build time**, not read at runtime. Changing it means rebuilding the
-image, not restarting the container. Two consequences already recorded elsewhere in this repo: a
-second `next dev` started against a warm build directory serves the *first* one's API URL, and a
-cloud deployment cannot know its own API URL before the infrastructure that assigns it exists.
+**The browser never calls the orchestrator directly.** It calls the frontend's own origin, and
+`web/src/app/api/[...path]/route.ts` forwards `/api/*` to `ORCHESTRATOR_URL`. That variable is
+server-side and read per request, so changing it means restarting the container, not rebuilding the
+image — and the orchestrator needs no public ingress and no CORS configuration.
+
+This used to be `NEXT_PUBLIC_API_URL`, which Next **inlines at build time**. Two consequences are
+recorded elsewhere in this repo and both are now gone: a second `next dev` started against a warm
+build directory served the *first* one's API URL, and a cloud deployment could not know its own API
+URL before the infrastructure that assigns it existed. `NEXT_PUBLIC_API_URL` is still honoured by
+`web/src/lib/api.ts` as an escape hatch for calling an orchestrator directly, which works and
+brings CORS back with it.
 
 ### 4. The .NET stack — containers yes, host no
 
@@ -151,10 +158,10 @@ dotnet run --project agents/dotnet/src/ECommerceAgents.Orchestrator
 The Python and .NET stacks publish the same host ports — 3000, 5432, 6379, 8080–8085, 8090, 18888 —
 so **only one runs at a time**. This is deliberate rather than a limitation waiting to be fixed.
 
-Running both simultaneously would need a second published port set *and* a second frontend build,
-because `NEXT_PUBLIC_API_URL` is inlined at build time: one frontend image cannot address two
-orchestrators. That is a lot of machinery for a case that does not arise in normal use — you
-compare the stacks by switching, not by running both.
+Running both simultaneously would need a second published port set. It no longer needs a second
+frontend build — one image addresses either orchestrator through `ORCHESTRATOR_URL` — but the port
+collision is reason enough for a case that does not arise in normal use: you compare the stacks by
+switching, not by running both.
 
 Each stack is its own Compose project (`e-commerce-agents`, `e-commerce-agents-dotnet`,
 `e-commerce-agents-demo`), set explicitly with `name:` at the top of each file. Without that they
