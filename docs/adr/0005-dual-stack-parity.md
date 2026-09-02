@@ -6,7 +6,7 @@
 
 Microsoft Agent Framework ships a Python SDK and a .NET SDK. Most samples pick one. This
 repo implements the same domain twice — `agents/python/` and `agents/dotnet/` — behind a
-single Next.js frontend that switches with `NEXT_PUBLIC_BACKEND_STACK`.
+single Next.js frontend that switches with `ORCHESTRATOR_URL`.
 
 Two implementations of one domain is the most expensive shape this project could have
 chosen, so the reason has to be worth it.
