@@ -456,8 +456,12 @@ Listed so they are not rediscovered as gaps.
   shared rather than duplicated: the seeder is the single source of demo data, and a second
   implementation would have to produce byte-identical rows or the dual-backend parity gate becomes
   meaningless. Neither service is an agent, so neither demonstrates anything about MAF.
-- **Magentic orchestration exists in neither stack.** MAF .NET ships `MagenticWorkflowBuilder`, so
-  it is unbuilt rather than unavailable — and not a parity gap, because neither side has it.
+- **Magentic orchestration exists in neither stack**, and on .NET it is unavailable rather than
+  unbuilt: Magentic is Python-only in MAF v1. Chapter 16's .NET tests reflect over
+  `Microsoft.Agents.AI.Workflows` and assert the gap still exists, with a control test so a failed
+  assembly load cannot masquerade as the same result. Not a parity gap, because neither side has it.
+  An earlier version of this line said .NET ships `MagenticWorkflowBuilder`; it does not, and that
+  error had propagated into `docs/parity-matrix.md` and `docs/roadmap.md`.
 - **Text-to-SQL was considered and rejected.** See ADR 0002.
 
 ## 19. The pattern worth carrying forward
