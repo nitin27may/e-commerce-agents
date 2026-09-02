@@ -205,9 +205,8 @@ fi
 # The Python and .NET stacks publish the same host ports (3000, 5432, 6379,
 # 8080-8085, 8090, 18888), so they cannot run simultaneously. That is a
 # deliberate choice, not a limitation to work around: running both would need a
-# second published port set AND a second frontend build, because
-# NEXT_PUBLIC_API_URL is inlined at build time and one image cannot address two
-# orchestrators.
+# second published port set, and every host-published port here is already
+# claimed by whichever stack came up first.
 #
 # What is worth fixing is the failure mode. Without this check, starting the
 # second stack fails partway through with a raw Docker port-binding error, after

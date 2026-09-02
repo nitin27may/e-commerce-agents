@@ -99,9 +99,8 @@ function Assert-SingleStack {
         .DESCRIPTION
         The Python and .NET stacks publish the same host ports, so they cannot
         run at once. That is deliberate: running both would need a second
-        published port set AND a second frontend build, because
-        NEXT_PUBLIC_API_URL is inlined at build time and one image cannot
-        address two orchestrators.
+        published port set, and every host-published port here is already
+        claimed by whichever stack came up first.
 
         What is worth fixing is the failure mode. Without this check the second
         stack fails partway through on a raw Docker port-binding error, after
