@@ -120,6 +120,11 @@ Each agent's `create_*_agent()` factory calls `get_system_prompt(current_user_ro
 
 The orchestrator no longer forwards a truncated copy of the conversation history on A2A calls (that "last 10 messages, 500 chars each" window was removed — see the comment in `orchestrator/agent.py::call_specialist_agent`). Instead only the session id travels, via the `x-session-id` header; each specialist rehydrates prior context itself by querying Postgres for the session's messages (`shared/agent_host.py::_rehydrate_history_from_session`) when it needs to handle a follow-up contextually.
 
+Two details this depends on, both of which were missing until #9 — and their absence broke every browser-originated follow-up while every test passed:
+
+- **The orchestrator binds the session id itself.** `current_session_id` is otherwise only ever set from an inbound `x-session-id` header, and the web client does not send one. `orchestrator/routes/chat.py::_bind_session_to_conversation` sets it from the conversation the route just resolved — the conversation id arrives in the request *body*, so this is the only layer that knows it. Anonymous callers are bound to an empty id on purpose: their `conversation_id` is client-supplied and never ownership-checked.
+- **Rehydration is scoped to the caller.** The query filters on the caller's own email as well as the conversation id, and refuses outright (with a log line) when no identity was forwarded. Without that, knowing a conversation UUID was enough to read it.
+
 Separately, the orchestrator's own read of *its* conversation's history (for `RunContext.history`, forwarded into every orchestration mode) goes through `shared/session.py::get_history_as_dicts` + `get_history_provider`, not a hand-rolled `SELECT`. Message *writes* stay as each route's own richer `INSERT` (carries `agent_name`/`agents_involved`/`metadata` a generic `HistoryProvider` write doesn't) — see `orchestrator/routes/chat.py`'s module docstring for why a `HistoryProvider` isn't attached as an automatic `context_providers=[...]` hook (verified it would double-write).
 
 ## Tech Stack

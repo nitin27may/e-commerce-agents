@@ -82,6 +82,6 @@ The remaining gaps are handoff and group-chat modes, MCP client consumption, tel
 and the evals harness; all python-first. Magentic is in neither stack, so it is not a gap.
 See [`docs/parity-matrix.md`](../../docs/parity-matrix.md) for the row-by-row breakdown.
 
-Eight test projects mirror the source structure — one per agent plus Shared and MCP — with 515 test methods covering tools, middleware, guardrails, timeline capture, workflows, auth, streaming, and A2A protocol behavior (verified directly: `dotnet test ECommerceAgents.sln`). The same PostgreSQL schema and A2A wire format are used across both stacks; you can point the frontend at either backend through `ORCHESTRATOR_URL`, which is read server-side per request rather than compiled into the bundle.
+Eight test projects mirror the source structure — one per agent plus Shared and MCP — with 533 test methods (584 cases once `[Theory]` data rows are expanded) covering tools, middleware, guardrails, timeline capture, workflows, auth, streaming, and A2A protocol behavior (verified directly: `dotnet test ECommerceAgents.sln`). The same PostgreSQL schema and A2A wire format are used across both stacks; you can point the frontend at either backend through `ORCHESTRATOR_URL`, which is read server-side per request rather than compiled into the bundle.
 
 Remaining work is tracked in the one consolidated plan, [`.claude/plans/remaining-work.md`](../../.claude/plans/remaining-work.md).
