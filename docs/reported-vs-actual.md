@@ -3,6 +3,22 @@
 Every entry below is a bug that turned out to be **bigger than the report said**, and in
 every case the difference was found by *running* something rather than reading it.
 
+## The short version
+
+Nine cases so far. Three that give the shape of it:
+
+- **418 tests passed while the .NET orchestrator could not route a single request.** Its
+  context provider returned a fresh `AIContext`, discarding the caller's messages and
+  clearing every tool. Found by pointing `AZURE_OPENAI_ENDPOINT` at a logging proxy and
+  reading what actually reached the model.
+- **"Handoff mode is slow and verbose" was handoff mode never handing off at all** — 5,403
+  streamed updates, 23,637 characters, and not one specialist invoked.
+- **"`optimize_cart` divides by zero" was that no promotion had ever applied correctly**, in
+  any environment.
+
+What connects all nine: **a healthy-looking system is the normal presentation of a broken
+one.** Twelve containers reported healthy throughout the first of those.
+
 This page exists because it is the most useful artifact this project produces and it has
 been invisible — it lived in `.claude/plans/remaining-work.md`, linked once, from the
 roadmap. It is kept because the pattern has not stopped repeating.

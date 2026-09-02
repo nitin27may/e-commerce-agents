@@ -2,6 +2,24 @@
 
 The same question, routed five ways, with numbers attached.
 
+## The short version
+
+| Mode | p50 | LLM calls |
+|---|---|---|
+| `tool` | 10.6 s | orchestrator + specialist |
+| `handoff` | 5.1 s | triage + specialist |
+| `group-chat` | 3.2 s | 2 panelists + moderator |
+| `workflow:pre-purchase` | 0.26 s | **none** |
+| `workflow:return-replace` | 0.10 s | **none** |
+
+`tool` mode is the only one that logged usage: **7,106 tokens and $0.0167 per run** at
+gpt-4.1 rates. Reproducing the whole table costs roughly **$0.50**.
+
+**The two workflow modes make no LLM call at all.** Reading 0.26 s against `tool`'s 10.6 s
+as "forty times faster" would therefore be wrong — they are doing different work, and one
+of them is doing less of it. That caveat matters more than any row above it, and reporting
+the other four modes as `$0.00` would have made this table look complete and been a lie.
+
 This repository's thesis is that one domain can be orchestrated five different ways and
 that the choice has real consequences. That claim has been asserted here for a long time
 and never measured. This page is the measurement.
