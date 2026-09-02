@@ -14,6 +14,54 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ## [Unreleased]
 
+Azure pre-work. Two application-code blockers that would each have stopped a deployment, neither of
+them about Azure services. Both are contract changes any additional backend inherits, which is why
+they landed before the infrastructure work rather than during it.
+
+### Changed
+
+- **The frontend no longer knows its backend's address.** `NEXT_PUBLIC_API_URL` was inlined into
+  the client bundle at build time, and a Container Apps FQDN does not exist until provisioning — so
+  the image would have had to be rebuilt after deploying, which is what makes a one-command deploy
+  impossible. The browser now calls its own origin and `web/src/app/api/[...path]/route.ts`
+  forwards `/api/*` to `ORCHESTRATOR_URL`, a server-side variable read per request. One image runs
+  in every environment, the orchestrator needs no public ingress, and CORS is gone.
+  `NEXT_PUBLIC_API_URL` remains as a direct-call escape hatch.
+
+  Two things only a running server caught. A `rewrites()` entry in `next.config.ts` cannot do this:
+  Next evaluates `rewrites()` during `next build` and bakes the destination into
+  `routes-manifest.json`, which is the same build-time problem in a new place. And *deleting* the
+  browser's `accept-encoding` before forwarding is not enough, because undici substitutes its own
+  default when the header is absent — it has to be pinned to `identity`, or the orchestrator stays
+  free to compress an SSE stream. The unit test passed while the real server sent `gzip, deflate`.
+
+  This also retires half of a documented constraint. `NEXT_DIST_DIR` existed because a second dev
+  server booting off a warm build directory served the first one's baked API URL — one of the two
+  ways a dual-backend run could report a green ".NET" pass without touching .NET. A build now
+  encodes nothing about the backend. The failure shape survives as a misconfigured
+  `ORCHESTRATOR_URL`, so `assertFrontendTalksToOrchUrl` stays.
+
+### Fixed
+
+- **`AGENT_REGISTRY` degraded silently instead of failing.** Filed as "hardcoded host:port"; the
+  actual problem was larger. A validating parser already existed on both stacks, was tested, and
+  **no production call site used it** — all four sites re-parsed the JSON by hand, and three
+  swallowed a malformed value into an empty registry, which builds, serves, passes a health check
+  and cannot route. There is now one validator per stack — `shared.factory.parse_agent_registry`
+  and `AgentSettingsLoader.ParseAgentRegistry` — both throwing on malformed JSON, a blank URL or a
+  scheme-less one, and both asserting the same accepted and rejected inputs, because a stack that
+  accepts what the other rejects is a parity gap. Scheme and host are checked; the port is not,
+  since a managed endpoint does not have one and requiring it would reject exactly the deployment
+  this validates for. Added as the ninth row of
+  [`docs/reported-vs-actual.md`](docs/reported-vs-actual.md).
+
+- **Three pre-existing test defects**, each confirmed against a control frontend built to bypass
+  the proxy, so none was caused by this work. `chat-generative-ui` and `chat-shopping` asserted
+  that exactly one card rendered where the app renders one per result; `chat-shopping`'s
+  add-to-cart flow selected product-grid anchors that stopped existing when those cards moved to
+  `onClick` + `router.push`, so it burned its full 90-second timeout on an element that cannot
+  exist. All three now assert presence, which is the criterion the parity gate already states.
+
 ## [1.3.0] - 2026-08-27
 
 The .NET backend could not answer a single question in this window, and the README said the repo
