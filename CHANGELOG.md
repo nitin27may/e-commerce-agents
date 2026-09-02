@@ -55,6 +55,19 @@ they landed before the infrastructure work rather than during it.
   this validates for. Added as the ninth row of
   [`docs/reported-vs-actual.md`](docs/reported-vs-actual.md).
 
+- **Four documentation claims that were false rather than merely stale.** Found while preparing
+  to link readers at these exact pages. `NEXT_PUBLIC_BACKEND_STACK` was documented in seven places
+  as the way to switch backends, including the README sentence telling people how to run the .NET
+  stack — nothing has ever read that variable, and the proxy change removed the last place it was
+  set. `docs/database-schema.md` claimed the seeder runs `generate_embeddings.py` as a post-step;
+  it does not, so `product_embeddings` is empty after the documented one-command start and
+  `semantic_search` is lexical-only until a separate command runs — silent, because full-text
+  still carries the result. Both launcher scripts justified the one-stack-at-a-time guard on
+  `NEXT_PUBLIC_API_URL` being inlined at build time, which the proxy retired. And 17 of the 27
+  `(line N)` citations in `docs/concepts/` pointed at the wrong line — all four in the agent-harness
+  page off by 33 — so the numbers are gone, keeping the file links and symbol names a reader
+  actually navigates by.
+
 - **Three pre-existing test defects**, each confirmed against a control frontend built to bypass
   the proxy, so none was caused by this work. `chat-generative-ui` and `chat-shopping` asserted
   that exactly one card rendered where the app renders one per result; `chat-shopping`'s
