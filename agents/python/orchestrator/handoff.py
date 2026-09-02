@@ -17,7 +17,6 @@ additive; nothing in the existing runtime changes unless a request or the
 deployment config selects ``handoff``.
 """
 
-import json
 import logging
 from typing import Any
 
@@ -27,6 +26,7 @@ from agent_framework_orchestrations import HandoffBuilder
 from shared.agent_factory import create_chat_client
 from shared.config import settings
 from shared.context import current_user_role
+from shared.factory import parse_agent_registry
 from shared.prompt_loader import load_prompt
 from shared.remote_agent import make_remote_specialist_agent
 
@@ -34,12 +34,18 @@ logger = logging.getLogger(__name__)
 
 
 def _load_registry() -> dict[str, str]:
-    try:
-        registry = json.loads(settings.AGENT_REGISTRY)
-    except json.JSONDecodeError:
-        logger.warning("AGENT_REGISTRY is not valid JSON; handoff workflow will have no specialists")
-        return {}
-    return {k: v for k, v in registry.items() if v}
+    """Specialists for the handoff mesh, from the validated registry.
+
+    This used to catch a JSON error, log a warning and return ``{}``. A
+    handoff workflow with no specialists still builds and still answers — the
+    triage agent has nowhere to hand off to, so it replies itself — which
+    turned a config typo into "the model stopped routing". Let it raise.
+
+    Not cached via ``get_agent_registry`` on purpose: tests and the mode
+    switcher both change ``settings.AGENT_REGISTRY`` at runtime, and an
+    lru_cache would serve the first value forever.
+    """
+    return parse_agent_registry(settings.AGENT_REGISTRY)
 
 
 def create_handoff_triage_agent() -> Agent:

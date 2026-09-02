@@ -91,7 +91,10 @@ test.describe("Chat Shopping Experience", () => {
 
     // order-card.tsx always renders a #<shortId> tracking chip for any
     // order it displays — a real structural marker, not a length check.
-    await expect(page.getByText(/^#[0-9a-f]{8}/)).toBeVisible();
+    // .first(): a status question legitimately renders a card per matching
+    // order, and this asserts that a real order card rendered, not that
+    // exactly one did.
+    await expect(page.getByText(/^#[0-9a-f]{8}/).first()).toBeVisible();
   });
 
   test("should ask to add product to cart", async ({ page }) => {
@@ -158,8 +161,14 @@ test.describe("UI Shopping Actions", () => {
     await page.waitForSelector('[class*="grid"]', { timeout: 10000 });
     await page.screenshot({ path: "e2e/screenshots/ui-products-grid.png" });
 
-    // 2. Click first product
-    const firstProduct = page.locator('[class*="grid"] > a').first();
+    // 2. Click first product.
+    // Not `> a`: the product grid stopped rendering anchors when the cards
+    // moved to an onClick + router.push (see (app)/products/page.tsx), so that
+    // selector matched nothing and this test spent its whole 90s budget
+    // waiting for an element that cannot exist. Verified against a frontend
+    // calling the orchestrator directly as well as through the /api proxy, so
+    // it is the selector, not the transport.
+    const firstProduct = page.locator('div.grid [data-slot="card"]').first();
     await firstProduct.click();
     await page.waitForURL(/\/products\//, { timeout: 10000 });
     await page.waitForTimeout(2000);

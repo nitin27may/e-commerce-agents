@@ -20,8 +20,13 @@ pnpm exec playwright test                        # E2E (needs the app running)
 pnpm exec playwright test e2e/ui-smoke.spec.ts   # backend-free UI smoke (mocked auth/API)
 ```
 
-`NEXT_PUBLIC_API_URL` (in `web/.env`) points at the orchestrator (default
-`http://localhost:8080`).
+`ORCHESTRATOR_URL` points at the orchestrator (default `http://localhost:8080`). It is
+**server-side**, not `NEXT_PUBLIC_*`: the browser only ever calls this app's own origin, and
+`src/app/api/[...path]/route.ts` forwards `/api/*` from there. So it is read per request rather
+than compiled into the bundle, which is what lets one image run against any backend.
+
+`NEXT_PUBLIC_API_URL` still works as an escape hatch for calling an orchestrator directly, and
+brings CORS back with it.
 
 ## Layout
 

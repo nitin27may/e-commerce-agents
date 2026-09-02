@@ -167,10 +167,10 @@ jobs:
             smoke_module: ecommerce_mcp_inventory.server
 
           # ── Frontend: Node multi-stage, no build args ──
-          # NEXT_PUBLIC_API_URL is inlined at build time and defaults to
-          # http://localhost:8080 in web/Dockerfile, which is correct for the
-          # local demo compose file. It is NOT correct on Azure -- see blocker
-          # B1 in plan 13, which is out of scope here.
+          # Deliberately no NEXT_PUBLIC_API_URL. The backend address is a
+          # runtime variable (ORCHESTRATOR_URL) read by the server-side
+          # /api/* proxy, so this image is environment-independent and the
+          # same digest runs locally and on Azure.
           - image: frontend
             context: ./web
             dockerfile: ./web/Dockerfile

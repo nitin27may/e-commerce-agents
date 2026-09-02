@@ -2,7 +2,7 @@
 #
 # Run the same Playwright suite against both backends, in turn.
 #
-# There is one frontend and `NEXT_PUBLIC_BACKEND_STACK` points it at either
+# There is one frontend and each compose file points it at its own
 # orchestrator, so "does the UI work on .NET?" is only answerable by actually
 # driving it. This is the gate for the .NET parity work (issue #33): every item
 # there closes by deleting a line from `web/e2e/parity-gaps.ts`, and when the
@@ -12,21 +12,21 @@
 # same ports as docker-compose.yml (3000, 5432, 6379, 8080-8085, 8090, 9001),
 # so both cannot be up at once.
 #
-# Why this has to go through compose rather than pointing a running frontend at
-# the other orchestrator: NEXT_PUBLIC_* variables are inlined by Next at BUILD
-# time, so the API URL is baked into the JS chunks. Starting the existing build
-# with a different NEXT_PUBLIC_API_URL changes nothing — it still calls the
-# origin it was built against, which shows up as a confusing 401 when a token
-# issued by one backend is presented to the other. Each stack has to build its
-# own frontend image, which is what `up --build` here does.
+# This used to require a frontend rebuild per stack, because the API URL was a
+# NEXT_PUBLIC_* variable inlined into the JS chunks at build time — starting an
+# existing build with a different value changed nothing, and the mismatch
+# surfaced as a confusing 401 when a token from one backend was presented to
+# the other. That is no longer true: the frontend proxies /api/* server-side
+# and reads `ORCHESTRATOR_URL` per request, so the same image serves either
+# backend and only the environment variable differs. `up --build` below is now
+# only for the backends.
 #
-# The same trap has a second form worth naming, because it produced a green
-# .NET run that never touched .NET: starting a second `next dev` out of band
-# reuses the first one's warm build directory and serves the first one's baked
-# API URL, and the base-URL override is `E2E_BASE_URL` — a run that sets some
-# other variable silently drives whichever frontend is on :3000. Both are now
-# caught at login by `assertFrontendTalksToOrchUrl` in the parity spec, and a
-# side-by-side dev setup needs `NEXT_DIST_DIR` (see web/next.config.ts).
+# The failure it caused has not gone away, it moved. A frontend started with
+# the wrong `ORCHESTRATOR_URL` still logs in against backend A while every
+# API-level assertion queries backend B, and the base-URL override is
+# `E2E_BASE_URL` — a run that sets some other variable silently drives
+# whichever frontend is on :3000. Both are caught at login by
+# `assertFrontendTalksToOrchUrl` in the parity spec.
 #
 # Usage:
 #   scripts/e2e-both-stacks.sh                  # both backends, whole suite

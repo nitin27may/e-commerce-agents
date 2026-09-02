@@ -163,9 +163,28 @@ public static class AgentSettingsLoader
 
     /// <summary>
     /// Parses <see cref="AgentSettings.AgentRegistry"/> into a
-    /// <c>name → A2A base URL</c> map. Returns an empty dictionary on
-    /// malformed JSON so callers don't have to try/catch themselves.
+    /// <c>name → A2A base URL</c> map.
     /// </summary>
+    /// <remarks>
+    /// This used to swallow malformed JSON and return an empty dictionary "so
+    /// callers don't have to try/catch themselves". The cost of that
+    /// convenience is that a config typo produces an orchestrator that starts
+    /// cleanly, passes its health check, and cannot route — which presents as
+    /// the model refusing to use its specialists. Every failure now throws.
+    ///
+    /// That matters more once the value is assembled from infrastructure
+    /// outputs rather than hand-written in a compose file: an unresolved
+    /// template output arrives as the empty string, and a bare hostname
+    /// arrives with no scheme. Scheme and host are checked; the port is not,
+    /// because a managed endpoint does not have one and requiring it would
+    /// reject exactly the deployment this validates for.
+    ///
+    /// Mirrors <c>shared/factory.py::parse_agent_registry</c> on the Python
+    /// stack, including which inputs are rejected.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// The value is not a JSON object of <c>name → absolute http(s) URL</c>.
+    /// </exception>
     public static IReadOnlyDictionary<string, string> ParseAgentRegistry(AgentSettings settings)
     {
         if (string.IsNullOrWhiteSpace(settings.AgentRegistry))
@@ -173,16 +192,51 @@ public static class AgentSettingsLoader
             return new Dictionary<string, string>();
         }
 
+        Dictionary<string, string>? map;
         try
         {
-            var map = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(
+            map = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(
                 settings.AgentRegistry
             );
-            return map ?? new Dictionary<string, string>();
         }
-        catch (System.Text.Json.JsonException)
+        catch (System.Text.Json.JsonException ex)
+        {
+            throw new InvalidOperationException(
+                $"AGENT_REGISTRY is not valid JSON ({ex.Message}). Got: {settings.AgentRegistry}",
+                ex
+            );
+        }
+
+        if (map is null)
         {
             return new Dictionary<string, string>();
         }
+
+        var parsed = new Dictionary<string, string>(map.Count);
+        foreach (var (name, rawUrl) in map)
+        {
+            var url = rawUrl?.Trim() ?? string.Empty;
+            if (url.Length == 0)
+            {
+                throw new InvalidOperationException(
+                    $"AGENT_REGISTRY entry '{name}' has an empty URL. An unresolved template "
+                        + "output or an unset variable usually looks like this."
+                );
+            }
+
+            if (
+                !Uri.TryCreate(url, UriKind.Absolute, out var uri)
+                || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+            )
+            {
+                throw new InvalidOperationException(
+                    $"AGENT_REGISTRY entry '{name}' must be an absolute http(s) URL, got '{url}'."
+                );
+            }
+
+            parsed[name] = url;
+        }
+
+        return parsed;
     }
 }

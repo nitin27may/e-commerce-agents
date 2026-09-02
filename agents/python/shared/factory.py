@@ -9,7 +9,8 @@ Exports:
     get_chat_client          — MAF chat client for OpenAI or Azure
     get_embeddings_client    — async OpenAI embeddings client
     get_embedding_model      — correct model/deployment name per provider
-    get_agent_registry       — parsed A2A endpoint map
+    parse_agent_registry     — validate an A2A endpoint map (raises, never degrades)
+    get_agent_registry       — parse_agent_registry over the environment, cached
     get_session_storage      — MAF AgentSession storage backend (lazy)
     get_checkpoint_storage   — MAF workflow checkpoint backend (lazy)
 
@@ -25,6 +26,7 @@ import logging
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import openai
 from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient
@@ -156,17 +158,25 @@ def get_embedding_model() -> str:
 # ─────────────────────── A2A registry ───────────────────────
 
 
-@lru_cache(maxsize=1)
-def get_agent_registry() -> dict[str, str]:
-    """Parse the AGENT_REGISTRY JSON env var into a name→URL dict.
+def parse_agent_registry(raw: str | None) -> dict[str, str]:
+    """Validate the AGENT_REGISTRY JSON blob into a name→URL dict.
 
-    Cached so specialists don't re-parse on every tool call. Errors are
-    raised eagerly with the offending value included so misconfigured env
-    vars fail fast instead of mid-request.
+    Every failure here raises rather than degrading, because each one is
+    silent otherwise: malformed JSON becomes "no specialists configured", and
+    a blank or scheme-less URL becomes a routing failure on the first request
+    that needs that agent. Both look like a model problem from the outside.
+
+    That matters more once the value is assembled from infrastructure outputs
+    rather than hand-written in a compose file — a template that resolves an
+    endpoint to the empty string produces a stack that starts cleanly, passes
+    a health check, and cannot route.
+
+    Scheme and host are checked; the port is not, because there isn't one on
+    a managed endpoint (``https://agent.internal.azurecontainerapps.io``) and
+    requiring it would reject exactly the deployment this validates for.
     """
-    raw = settings.AGENT_REGISTRY or "{}"
     try:
-        registry = json.loads(raw)
+        registry = json.loads(raw or "{}")
     except json.JSONDecodeError as exc:
         raise ValueError(f"AGENT_REGISTRY is not valid JSON ({exc.msg} at pos {exc.pos}). Got: {raw!r}") from exc
 
@@ -175,7 +185,30 @@ def get_agent_registry() -> dict[str, str]:
             f"AGENT_REGISTRY must decode to an object {{name: url}}, got {type(registry).__name__}: {registry!r}"
         )
 
-    return {str(k): str(v) for k, v in registry.items()}
+    parsed: dict[str, str] = {}
+    for name, url in registry.items():
+        name, url = str(name), str(url).strip()
+        if not url:
+            raise ValueError(
+                f"AGENT_REGISTRY entry {name!r} has an empty URL. An unresolved template output or "
+                f"an unset variable usually looks like this."
+            )
+        bits = urlparse(url)
+        if bits.scheme not in ("http", "https") or not bits.netloc:
+            raise ValueError(f"AGENT_REGISTRY entry {name!r} must be an absolute http(s) URL, got {url!r}.")
+        parsed[name] = url
+    return parsed
+
+
+@lru_cache(maxsize=1)
+def get_agent_registry() -> dict[str, str]:
+    """``parse_agent_registry`` over the current environment, cached.
+
+    Cached so specialists don't re-parse on every tool call. Callers that
+    need to see a monkeypatched ``settings.AGENT_REGISTRY`` should call
+    ``parse_agent_registry`` directly.
+    """
+    return parse_agent_registry(settings.AGENT_REGISTRY)
 
 
 # ─────────────────────── Session / checkpoint backends ─────

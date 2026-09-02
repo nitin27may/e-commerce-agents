@@ -278,8 +278,13 @@ services:
       context: ./web
     ports: ["3000:3000"]
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8080
-      NEXT_PUBLIC_BACKEND_STACK: dotnet
+      # Server-side, so this is the container-network address. NEXT_PUBLIC_*
+      # is gone: nothing about the backend is compiled into the bundle any
+      # more, which is why a dual-stack run no longer needs to rebuild this
+      # image to change backends.
+      ORCHESTRATOR_URL: http://orchestrator:8080
+    depends_on:
+      orchestrator: { condition: service_started }
     profiles: ["frontend"]
 
 volumes:

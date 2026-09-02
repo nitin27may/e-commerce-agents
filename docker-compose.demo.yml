@@ -322,12 +322,15 @@ services:
 
   # ── Frontend ──────────────────────────────────────────────────────────────
   #
-  # NEXT_PUBLIC_API_URL is inlined at build time, so this image is fixed to
-  # http://localhost:8080 -- correct for this file, and the reason a cloud
-  # deployment cannot reuse it unchanged. See docs/configuration.md.
+  # The published image is not built against any backend: the browser calls
+  # the frontend's own origin and Next forwards /api/* to ORCHESTRATOR_URL at
+  # runtime. The same image runs here and on Container Apps -- only this
+  # variable changes. See docs/configuration.md.
   frontend:
     image: ghcr.io/nitin27may/e-commerce-agents/frontend:${IMAGE_TAG:-latest}
     ports: ["3000:3000"]
+    environment:
+      ORCHESTRATOR_URL: http://orchestrator:8080
     depends_on:
       orchestrator: { condition: service_started }
 

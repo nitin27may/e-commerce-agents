@@ -2,11 +2,14 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  // NEXT_PUBLIC_* is inlined into the compiled bundle, so two dev servers
-  // pointed at different backends must not share a build directory — the
-  // second one starts in milliseconds off the first one's cache and silently
-  // serves the first one's API URL. That is how a dual-backend parity run
-  // ends up testing the same backend twice. Unset in normal use.
+  // Kept, but no longer load-bearing. This existed because the backend
+  // address was a NEXT_PUBLIC_* variable compiled into the bundle, so two dev
+  // servers pointed at different backends sharing a build directory would
+  // silently serve the same API URL — which is how a dual-backend parity run
+  // tested the same backend twice. The address is now ORCHESTRATOR_URL, read
+  // per request by src/app/api/[...path]/route.ts, so a build encodes nothing
+  // about the backend and two dev servers can share a cache safely. Still
+  // useful for keeping concurrent builds from fighting. Unset in normal use.
   ...(process.env.NEXT_DIST_DIR ? { distDir: process.env.NEXT_DIST_DIR } : {}),
   images: {
     // Must match the hosts scripts/seed.py actually uses. These are stale in a way

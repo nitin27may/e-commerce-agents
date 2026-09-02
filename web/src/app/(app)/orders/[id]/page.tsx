@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { api } from "@/lib/api";
+import { api, apiUrl } from "@/lib/api";
 import { toastOrderCancelled, toastReturnInitiated } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -818,10 +818,7 @@ export default function OrderDetailPage() {
                             className="w-full border-orange-200 text-orange-700 hover:bg-orange-50"
                             onClick={() => {
                               const url = (order["return"] as ReturnInfo).return_label_url || "";
-                              const resolved = url.startsWith("/api")
-                                ? `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}${url}`
-                                : url;
-                              window.open(resolved, "_blank");
+                              window.open(apiUrl(url), "_blank");
                             }}
                           >
                             <Download className="mr-2 size-4" />

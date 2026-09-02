@@ -1,4 +1,20 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+/**
+ * Base URL for API calls. Empty by default: the browser talks to its own
+ * origin and `src/app/api/[...path]/route.ts` forwards to the orchestrator, so
+ * nothing about the backend's address is compiled into this bundle. Set
+ * NEXT_PUBLIC_API_URL only to bypass that proxy and call an orchestrator
+ * directly — it works, and it brings CORS back with it.
+ */
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
+
+/**
+ * Absolutize a server-issued `/api/...` path for use outside `fetch` — an
+ * anchor href or `window.open`, where a relative path would resolve against
+ * the current route rather than the origin.
+ */
+export function apiUrl(path: string): string {
+  return path.startsWith("/api") ? `${API_URL}${path}` : path;
+}
 
 export interface Address {
   name?: string;

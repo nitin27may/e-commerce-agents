@@ -53,12 +53,18 @@ test.describe("Generative UI — review-sentiment, inventory-fulfillment, pricin
     expect(text).not.toContain("```sentiment");
     expect(text).not.toContain("overall_sentiment");
 
+    // All three scoped with .first(), for the reason spelled out in the
+    // warehouse test below: a two-turn conversation legitimately renders more
+    // than one card, and asserting a unique match fails the test for the agent
+    // doing *more* of its job. The claim is that the chart rendered, not that
+    // exactly one did. Observed failing both through the /api proxy and
+    // directly against the orchestrator, so it is the spec, not the transport.
     // Rating-distribution bar chart's x-axis labels (DistributionChart)
-    await expect(page.getByText("5★", { exact: true })).toBeVisible();
+    await expect(page.getByText("5★", { exact: true }).first()).toBeVisible();
     // Trend chart's section label (TrendChart)
-    await expect(page.getByText("Rating over time")).toBeVisible();
+    await expect(page.getByText("Rating over time").first()).toBeVisible();
     // Pros/cons lists
-    await expect(page.getByText("Pros", { exact: true })).toBeVisible();
+    await expect(page.getByText("Pros", { exact: true }).first()).toBeVisible();
   });
 
   test("inventory-fulfillment renders a real warehouse table with column headers", async ({ page }) => {
@@ -78,10 +84,13 @@ test.describe("Generative UI — review-sentiment, inventory-fulfillment, pricin
     // column is likewise "Warehouse". Asserting a unique match would make this
     // test fail for the agent doing *more* of its job, which is the wrong
     // signal — the claim here is that a real DataTable rendered, not that
-    // exactly one did. "Region" is unique to the stock table and keeps the
-    // assertion specific.
+    // exactly one did. "Region" was assumed unique to the stock table and to
+    // keep the assertion specific. It is not: on a live run it resolved to two
+    // column headers, so the restock table carries it too. Same reasoning,
+    // same fix. Verified against both the /api proxy and a frontend calling
+    // the orchestrator directly, so this is the spec, not the transport.
     await expect(page.getByRole("columnheader", { name: "Warehouse" }).first()).toBeVisible();
-    await expect(page.getByRole("columnheader", { name: "Region" })).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: "Region" }).first()).toBeVisible();
     // The warehouse-breakdown section label, which the card renders whenever
     // it has warehouse rows — the thing this test actually asks for.
     //
@@ -96,7 +105,7 @@ test.describe("Generative UI — review-sentiment, inventory-fulfillment, pricin
     // Both were observed failing on a different backend each.
     // Exact match: the user's own turn ("…breakdown by warehouse") and the
     // conversation title in the sidebar both contain the phrase otherwise.
-    await expect(page.getByText("By warehouse", { exact: true })).toBeVisible();
+    await expect(page.getByText("By warehouse", { exact: true }).first()).toBeVisible();
   });
 
   test("pricing-promotions renders a real deals table with column headers", async ({ page }) => {
@@ -109,8 +118,10 @@ test.describe("Generative UI — review-sentiment, inventory-fulfillment, pricin
     expect(text).not.toContain("```pricing");
     expect(text).not.toContain("discount_value");
 
-    await expect(page.getByRole("columnheader", { name: "Code" })).toBeVisible();
-    await expect(page.getByRole("columnheader", { name: "Discount" })).toBeVisible();
+    // .first() for the same reason as the warehouse table above: "what deals
+    // are active" is answerable with one deals table or several.
+    await expect(page.getByRole("columnheader", { name: "Code" }).first()).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: "Discount" }).first()).toBeVisible();
   });
 
   test("inventory-fulfillment's shipping-options picker is real and clickable", async ({ page }) => {

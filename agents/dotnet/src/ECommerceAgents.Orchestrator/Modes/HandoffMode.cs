@@ -6,7 +6,6 @@ using Microsoft.Agents.AI;
 using ECommerceAgents.Shared.Prompts;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
-using System.Text.Json;
 
 namespace ECommerceAgents.Orchestrator.Modes;
 
@@ -190,17 +189,12 @@ public sealed class HandoffMode(AgentSettings settings, A2AClient a2a, PromptLoa
             name: name,
             description: $"Remote specialist {name} reached over A2A.");
 
-    private Dictionary<string, string> Registry()
-    {
-        try
-        {
-            var parsed = JsonSerializer.Deserialize<Dictionary<string, string>>(_settings.AgentRegistry);
-            return parsed?.Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
-                .ToDictionary(kv => kv.Key, kv => kv.Value) ?? [];
-        }
-        catch (JsonException)
-        {
-            return [];
-        }
-    }
+    // Deliberately not its own parse. This used to deserialize the registry
+    // itself and swallow a JsonException into an empty mesh, which builds and
+    // answers — the triage agent has nowhere to hand off to, so it replies
+    // itself — turning a config typo into "the model stopped routing".
+    // AgentSettingsLoader.ParseAgentRegistry is the one validator, shared with
+    // OrchestratorTools and mirrored on the Python stack, and it throws.
+    private Dictionary<string, string> Registry() =>
+        AgentSettingsLoader.ParseAgentRegistry(_settings).ToDictionary(kv => kv.Key, kv => kv.Value);
 }
