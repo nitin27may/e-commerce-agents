@@ -1,0 +1,41 @@
+# Build context for web/Dockerfile.
+#
+# The builder stage does `COPY . .`, so anything not excluded here lands in the
+# image layer that `pnpm build` runs on — and busts its cache when it changes.
+# That is not hypothetical: editing a comment in e2e/parity-gaps.ts invalidated
+# the cached build and forced a full multi-arch rebuild, which is when the
+# arm64-under-QEMU leg fell over. None of the files below are inputs to
+# `next build`.
+
+# Installed fresh in the deps stage; copying the host's copy would overwrite it
+# with one built for the host's platform and architecture.
+node_modules
+
+# Build output. Copying a stale one in risks serving it.
+.next
+out
+
+# Playwright: specs, fixtures, committed screenshots, and run artifacts.
+e2e
+playwright-report
+test-results
+playwright.config.ts
+
+# Vitest and coverage
+coverage
+
+# Local env and editor state — .env* especially, which must never reach a layer.
+.env
+.env.*
+.vscode
+.idea
+
+# VCS and CI metadata
+.git
+.gitignore
+.github
+
+# Logs and OS noise
+*.log
+npm-debug.log*
+.DS_Store
