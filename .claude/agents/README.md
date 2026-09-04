@@ -40,9 +40,12 @@ correct mechanism.
   standard context window. For planning against very large contexts, prefer a manual
   `/model opus` session.
 - **Aliases vs pinned IDs.** The agents below use aliases (`opus`, `sonnet`,
-  `haiku`). To pin versions, swap an alias for a full ID (`claude-opus-4-8`,
-  `claude-sonnet-4-6`, `claude-haiku-4-5-20251001`). `opusplan` itself cannot be
-  pinned — pinning means managing the plan/code split manually.
+  `haiku`), which is the default here on purpose: an alias follows the current
+  generation without an edit, and a pinned ID silently keeps you on an old model
+  long after it stops being the right one. To pin anyway, swap the alias for a
+  full ID (`claude-opus-5`, `claude-sonnet-5`, `claude-haiku-4-5-20251001`) and
+  put a review date on it. `opusplan` itself cannot be pinned — pinning means
+  managing the plan/code split manually.
 
 ## Layer 2 — subagents (`.claude/agents/*.md`)
 
