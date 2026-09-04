@@ -10,14 +10,17 @@ Companion demo repo for the AI article series on nitinksingh.com.
 
 ## Working Artifacts Location
 
-All working artifacts — **memory, rules, and plans** — live in the **repo-local `.claude/` folder
-only**:
+All working artifacts live in the **repo-local `.claude/` folder only**:
 
-- `.claude/memory/` — project memory and notes
-- `.claude/rules/` — repo-specific rules
 - `.claude/plans/` — **one** consolidated plan (`remaining-work.md`). Finished plans are deleted
   rather than archived: git keeps them, and a directory of stale plans makes "what is left?" a
   research question every time it is asked
+- `.claude/agents/` — the subagent definitions and the model-strategy README
+- `.claude/settings.json` — the session model (`opusplan`)
+
+There is deliberately no `.claude/memory/` or `.claude/rules/`: durable facts belong in this file
+or in `AGENTS.md`, and anything short-lived belongs in the one plan. Earlier revisions of this
+section described both directories; neither has ever existed.
 
 Do not put these in the repo root (no top-level `plans/` folder) or rely on global `~/.claude`.
 Keeping them under the repo-local `.claude/` means they are committed with the project and travel
@@ -131,7 +134,7 @@ Separately, the orchestrator's own read of *its* conversation's history (for `Ru
 
 | Layer | Technology |
 |-------|-----------|
-| Agent Framework | `agent-framework` v1.0 (MAF Python SDK, beta) |
+| Agent Framework | MAF Python SDK — `agent-framework-core` 1.14.0, `-openai` 1.13.0, `-orchestrations` 1.1.0 (pinned in `agents/python/pyproject.toml`) |
 | Agent Communication | A2A Protocol (HTTP POST to `/message:send`) |
 | LLM | OpenAI / Azure OpenAI (gpt-4.1), configurable via `LLM_PROVIDER` env var — plus any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, OpenRouter, GitHub Models) via `LLM_PROVIDER=openai` + `LLM_BASE_URL` |
 | Backend | Python 3.12, FastAPI (orchestrator), Starlette (specialist agents via agent_host) |
@@ -190,6 +193,32 @@ AZURE_OPENAI_API_VERSION=2024-12-01-preview
 - All user-facing queries filter by `user_email` or `user_id`
 - Embeddings stored as `vector(1536)` with ivfflat cosine index
 - Seeder (`scripts/seed.py`) is deterministic (`random.seed(42)`) — reproducible demo data
+
+## Testing & Evals
+
+Three traps here cost more time than anything else in the repo.
+
+**Playwright: wait on the composer's stop icon, never on status text.** A streamed
+turn is finished when the submit button stops showing the stop icon — not when
+"Routing to specialists…" disappears, which happens mid-turn. Waiting on the text
+lets the next click land while the composer is still disabled, so it silently
+no-ops and the assertion fails somewhere unrelated. See the helpers in
+`web/e2e/chat-followup-context.spec.ts` and `web/e2e/chat-all-users.spec.ts`
+(the two currently use different selectors for the same button; prefer
+`button[aria-label="Stop"], button:has(svg.lucide-square)`).
+
+**Replay fixtures invalidate on tool-output changes, not just prompt edits.**
+`evals/fixtures/replay` is keyed by a hash of the exact request — every message
+plus the tool schemas (`shared/replay_client.py`). A tool message is part of that,
+so changing what a tool *returns* changes the key and the fixture misses, which the
+harness reports as an infrastructure failure rather than a bad answer. Re-record
+after any change to a dataset, a prompt, a tool schema, or a tool's output shape;
+the recipe is in `evals/fixtures/README.md`.
+
+**The `full` eval suite spends real money and is human-dispatch only.** It runs on
+`workflow_dispatch` alone, never a schedule. Nothing in this repo may put a live
+LLM key behind an automatic trigger — keep it that way when adding jobs to
+`.github/workflows/evals.yml`.
 
 ## Coding Conventions
 
