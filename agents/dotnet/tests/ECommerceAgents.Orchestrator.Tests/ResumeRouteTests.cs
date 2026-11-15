@@ -1,6 +1,7 @@
 using Dapper;
 using ECommerceAgents.Orchestrator.Routes;
 using ECommerceAgents.Shared.Configuration;
+using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Data;
 using ECommerceAgents.Shared.Orchestration;
 using ECommerceAgents.TestFixtures;
@@ -161,6 +162,31 @@ public sealed class ResumeRouteTests : IAsyncLifetime
         (await StatusOfAsync(runId)).Should().Be("approved");
     }
 
+    /// <summary>
+    /// #92 — the resumed workflow's loyalty step reads the caller from RequestContext,
+    /// which is the approving admin. It must see the customer who asked for the return,
+    /// and the reviewer must be recorded rather than lost.
+    /// </summary>
+    [Fact]
+    public async Task TheResumedWorkflowRunsAsTheRequester_AndTheReviewerIsRecorded()
+    {
+        var (runId, _) = await SeedPendingAsync();
+        var mode = new StubResumableMode();
+        using var client = ClientFor(mode);
+
+        (await client.PostAsJsonAsync($"/api/orchestration/{runId}/resume", new { approved = true }))
+            .EnsureSuccessStatusCode();
+
+        mode.SeenEmail.Should().Be(Owner);
+        mode.SeenRole.Should().Be("customer");
+        await using var conn = await _pool.OpenAsync();
+        var response = await conn.ExecuteScalarAsync<string>(
+            "SELECT response::text FROM hitl_requests WHERE workflow_run_id = @runId", new { runId });
+        using var doc = JsonDocument.Parse(response!);
+        doc.RootElement.GetProperty("decided_by").GetString().Should().Be(Approver);
+        doc.RootElement.GetProperty("approved").GetBoolean().Should().BeTrue();
+    }
+
     [Fact]
     public async Task RejectingIsRecordedAsRejected()
     {
@@ -298,6 +324,8 @@ public sealed class ResumeRouteTests : IAsyncLifetime
         private int _calls;
 
         public int Calls => Volatile.Read(ref _calls);
+        public string? SeenEmail { get; private set; }
+        public string? SeenRole { get; private set; }
         public bool? LastApproved { get; private set; }
         public string? LastCheckpointId { get; private set; }
 
@@ -314,6 +342,8 @@ public sealed class ResumeRouteTests : IAsyncLifetime
             string sessionId, string checkpointId, string requestId, bool approved, CancellationToken ct = default)
         {
             Interlocked.Increment(ref _calls);
+            SeenEmail = RequestContext.CurrentUserEmail;
+            SeenRole = RequestContext.CurrentUserRole;
             LastApproved = approved;
             LastCheckpointId = checkpointId;
             if (delay is { } d)

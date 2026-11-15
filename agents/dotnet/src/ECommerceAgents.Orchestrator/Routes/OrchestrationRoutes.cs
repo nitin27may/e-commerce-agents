@@ -104,7 +104,7 @@ public static class OrchestrationRoutes
                       WHERE workflow_run_id = @runGuid AND status = 'pending'
                       ORDER BY created_at DESC LIMIT 1)
                  AND status = 'pending'
-           RETURNING id, kind, request_id, checkpoint_id, payload",
+           RETURNING id, kind, request_id, checkpoint_id, payload, user_email",
             new { runGuid });
 
         if (claimed is null)
@@ -159,7 +159,27 @@ public static class OrchestrationRoutes
                     Results.Conflict(new { detail = "This pending request predates checkpoint-based resume" }));
             }
 
-            var result = await mode.ResumeAsync(sessionId, checkpointId.Value.ToString(), requestId, approved);
+            // The rest of the workflow (loyalty discount, finalize) reads the caller's
+            // identity from RequestContext, which is currently the approving admin. Run it
+            // as the customer who asked for the return so their tier is applied, and put
+            // the reviewer back afterwards. The reviewer is recorded as decided_by below.
+            string requesterEmail = (string)claimed.user_email;
+            string requesterRole = await conn.ExecuteScalarAsync<string?>(
+                "SELECT role FROM users WHERE email = @requesterEmail", new { requesterEmail }) ?? "customer";
+            var reviewerEmail = RequestContext.CurrentUserEmail;
+            var reviewerRole = RequestContext.CurrentUserRole;
+            ModeRunResult result;
+            RequestContext.CurrentUserEmail = requesterEmail;
+            RequestContext.CurrentUserRole = requesterRole;
+            try
+            {
+                result = await mode.ResumeAsync(sessionId, checkpointId.Value.ToString(), requestId, approved);
+            }
+            finally
+            {
+                RequestContext.CurrentUserEmail = reviewerEmail;
+                RequestContext.CurrentUserRole = reviewerRole;
+            }
 
             await conn.ExecuteAsync(
                 @"UPDATE hitl_requests
@@ -169,7 +189,7 @@ public static class OrchestrationRoutes
                 {
                     claimId,
                     status = approved ? "approved" : "rejected",
-                    response = JsonSerializer.Serialize(new { approved }),
+                    response = JsonSerializer.Serialize(new { approved, decided_by = reviewerEmail }),
                 });
 
             // Back-link whatever the resumed run checkpointed, so /runs keeps showing the

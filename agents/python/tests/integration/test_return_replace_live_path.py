@@ -164,7 +164,7 @@ async def test_return_replace_pauses_then_admin_resumes_with_no_model(
     row = await clean_db.fetchrow("SELECT status, responded_at, response FROM hitl_requests WHERE id = $1", hitl["id"])
     assert row["status"] == "approved"
     assert row["responded_at"] is not None
-    assert json.loads(row["response"]) == {"approved": True}
+    assert json.loads(row["response"]) == {"approved": True, "decided_by": ADMIN_EMAIL}
 
     # --- 3. Nothing touched a model. ---------------------------------------------------
     assert list(keyless_replay.iterdir()) == [], "a replay fixture was recorded — a model call was attempted"

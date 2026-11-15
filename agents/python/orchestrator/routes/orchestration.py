@@ -29,6 +29,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from shared.context import current_user_email, current_user_role
 from shared.db import get_pool
 
 from .legacy import require_admin, require_auth
@@ -226,6 +227,16 @@ async def resume_run(
 
     mode = ReturnReplaceMode()
     final_payload: dict[str, Any] = {}
+    # The workflow's remaining steps (loyalty discount, finalize) read the
+    # request identity from ContextVars, and that is currently the approving
+    # admin. They must act for the customer who asked for the return, so run
+    # them under the stored requester's identity and restore the reviewer's
+    # afterwards. The reviewer still authorised the call (require_admin) and is
+    # recorded as ``decided_by`` below.
+    requester_email = hitl["user_email"]
+    requester_role = await pool.fetchval("SELECT role FROM users WHERE email = $1", requester_email) or "customer"
+    email_token = current_user_email.set(requester_email)
+    role_token = current_user_role.set(requester_role)
     try:
         async for event in mode.resume(
             checkpoint_id=str(hitl["checkpoint_id"]), request_id=hitl["request_id"], approved=body.approved
@@ -235,13 +246,17 @@ async def resume_run(
     except Exception:
         await _release()
         raise
+    finally:
+        current_user_role.reset(role_token)
+        current_user_email.reset(email_token)
 
     await pool.execute(
         """UPDATE hitl_requests
            SET status = $1, responded_at = NOW(), response = $2::jsonb
            WHERE id = $3""",
         "approved" if body.approved else "rejected",
-        json.dumps({"approved": body.approved}),
+        # No responder column exists, so the reviewer is recorded in the response.
+        json.dumps({"approved": body.approved, "decided_by": admin.get("sub")}),
         hitl["id"],
     )
     new_checkpoint_id = final_payload.get("latest_checkpoint_id")
