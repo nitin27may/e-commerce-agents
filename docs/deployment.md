@@ -391,9 +391,9 @@ Deployment-specific issues are below.
 
 ### Database volume out of date after schema changes
 
-**Cause**: `init.sql` only runs on the first volume creation. Modifying the schema after the volume exists has no effect.
+**Cause**: `init.sql` only runs on the first volume creation, and it is a frozen baseline. Schema changes since then are numbered files in `docker/postgres/migrations/`, applied by `scripts/migrate.py` (the seeder runs it before seeding; `./scripts/dev.sh` runs it too). A volume that predates a migration is upgraded in place by running that script; `schema_migrations` records what has been applied, and an applied file that was edited afterwards fails the run.
 
-**Fix**: Destroy the volume and re-initialize:
+**Fix**: Run `./scripts/dev.sh --seed-only` (applies pending migrations, keeps your data). If the volume predates the *baseline* itself, destroy it and re-initialize:
 
 ```bash
 ./scripts/dev.sh --clean

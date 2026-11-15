@@ -258,7 +258,84 @@ public sealed class ResumeRouteTests : IAsyncLifetime
         (await StatusOfAsync(runId)).Should().Be("approved");
     }
 
+    // ─────────────── stale-claim takeover (#102, migration 0002) ───────────────
+
+    [Theory]
+    [InlineData("NOW() - interval '1 hour'")]
+    [InlineData("NULL")]
+    public async Task AStaleProcessingClaim_IsTakenOver(string claimedAtSql)
+    {
+        var (runId, _) = await SeedPendingAsync();
+        await ForceClaimAsync(runId, claimedAtSql);
+        var mode = new StubResumableMode();
+        using var client = ClientFor(mode);
+
+        var res = await client.PostAsJsonAsync($"/api/orchestration/{runId}/resume", new { approved = true });
+
+        res.EnsureSuccessStatusCode();
+        mode.Calls.Should().Be(1);
+        (await StatusOfAsync(runId)).Should().Be("approved");
+    }
+
+    [Fact]
+    public async Task AFreshProcessingClaim_IsNotTakenOver()
+    {
+        var (runId, _) = await SeedPendingAsync();
+        await ForceClaimAsync(runId, "NOW()");
+        var mode = new StubResumableMode();
+        using var client = ClientFor(mode);
+
+        var res = await client.PostAsJsonAsync($"/api/orchestration/{runId}/resume", new { approved = true });
+
+        res.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        mode.Calls.Should().Be(0);
+        (await StatusOfAsync(runId)).Should().Be("processing");
+    }
+
+    [Fact]
+    public async Task AClaimIsStampedWhileResuming_AndReleasingClearsIt()
+    {
+        // Released path: no request_id, so the claim is handed straight back.
+        var (released, _) = await SeedPendingAsync(withCheckpoint: false);
+        using (var client = ClientFor(new StubResumableMode()))
+        {
+            (await client.PostAsJsonAsync($"/api/orchestration/{released}/resume", new { approved = true }))
+                .StatusCode.Should().Be(HttpStatusCode.Conflict);
+        }
+        (await StatusOfAsync(released)).Should().Be("pending");
+        (await ClaimedAtAsync(released)).Should().BeNull("a released claim must not look held");
+
+        // Held path: the stamp is visible while the workflow is running.
+        var (held, _) = await SeedPendingAsync();
+        DateTime? seenDuringResume = null;
+        var mode = new StubResumableMode(delay: TimeSpan.FromMilliseconds(300));
+        using var c2 = ClientFor(mode);
+        var inFlight = c2.PostAsJsonAsync($"/api/orchestration/{held}/resume", new { approved = true });
+        for (var i = 0; i < 40 && seenDuringResume is null; i++)
+        {
+            await Task.Delay(25);
+            seenDuringResume = await ClaimedAtAsync(held);
+        }
+        (await inFlight).EnsureSuccessStatusCode();
+        seenDuringResume.Should().NotBeNull("the claim must stamp claimed_at before the workflow runs");
+    }
+
     // ─────────────────────── helpers ────────────────────────
+
+    private async Task ForceClaimAsync(Guid runId, string claimedAtSql)
+    {
+        await using var conn = await _pool.OpenAsync();
+        await conn.ExecuteAsync(
+            $"UPDATE hitl_requests SET status = 'processing', claimed_at = {claimedAtSql} WHERE workflow_run_id = @runId",
+            new { runId });
+    }
+
+    private async Task<DateTime?> ClaimedAtAsync(Guid runId)
+    {
+        await using var conn = await _pool.OpenAsync();
+        return await conn.ExecuteScalarAsync<DateTime?>(
+            "SELECT claimed_at FROM hitl_requests WHERE workflow_run_id = @runId", new { runId });
+    }
 
     private async Task<(Guid RunId, Guid? CheckpointId)> SeedPendingAsync(
         bool withCheckpoint = true,

@@ -32,6 +32,8 @@ on:
       - "agents/python/*_promotions/**"
       - "agents/python/*_sentiment/**"
       - "agents/python/*_fulfillment/**"
+      - "docker/postgres/**"
+      - "scripts/migrate.py"
   push:
     branches: [main]
     paths:
@@ -105,8 +107,9 @@ jobs:
         working-directory: agents/python
         run: uv sync --extra dev
 
+      # Baseline (docker/postgres/init.sql) + docker/postgres/migrations/*, in order.
       - name: Load database schema
-        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f docker/postgres/init.sql
+        run: uv run --project agents/python python -m scripts.migrate
 
       # scripts.seed / scripts.generate_embeddings live at the repo root, not
       # inside agents/python/ — docker-compose's seeder service resolves this
@@ -195,8 +198,9 @@ jobs:
         working-directory: agents/python
         run: uv sync --extra dev
 
+      # Baseline (docker/postgres/init.sql) + docker/postgres/migrations/*, in order.
       - name: Load database schema
-        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f docker/postgres/init.sql
+        run: uv run --project agents/python python -m scripts.migrate
 
       # scripts.seed / scripts.generate_embeddings live at the repo root, not
       # inside agents/python/ — docker-compose's seeder service resolves this

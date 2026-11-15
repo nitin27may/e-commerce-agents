@@ -28,7 +28,21 @@ from testcontainers.community.postgres import PostgresContainer
 from testcontainers.community.redis import RedisContainer
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-INIT_SQL = REPO_ROOT / "docker" / "postgres" / "init.sql"
+POSTGRES_DIR = REPO_ROOT / "docker" / "postgres"
+
+
+def _load_migrate():
+    """Import scripts/migrate.py by path (the repo root is not on sys.path here)."""
+    import importlib.util
+    import sys
+
+    name = "ecommerce_migrate"
+    if name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(name, REPO_ROOT / "scripts" / "migrate.py")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+    return sys.modules[name]
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -81,13 +95,8 @@ def database_url(postgres_container: PostgresContainer) -> str:
 
 @pytest_asyncio.fixture(scope="session")
 async def _schema_applied(database_url: str) -> None:
-    """Apply the production schema from docker/postgres/init.sql once per session."""
-    sql = INIT_SQL.read_text()
-    conn = await asyncpg.connect(database_url)
-    try:
-        await conn.execute(sql)
-    finally:
-        await conn.close()
+    """Apply the production schema once per session: init.sql baseline + migrations in order."""
+    await _load_migrate().migrate(database_url, POSTGRES_DIR)
 
 
 @pytest_asyncio.fixture
@@ -112,6 +121,7 @@ async def clean_db(postgres_pool: asyncpg.Pool) -> AsyncGenerator[asyncpg.Pool, 
             SELECT tablename FROM pg_tables
             WHERE schemaname = 'public'
               AND tablename NOT LIKE 'pg_%'
+              AND tablename <> 'schema_migrations'
             """
         )
         if tables:

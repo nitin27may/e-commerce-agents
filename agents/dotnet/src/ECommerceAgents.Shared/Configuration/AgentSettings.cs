@@ -237,4 +237,8 @@ public sealed record AgentSettings
     // return/replace workflow specifically — this flag gates the generic
     // cross-agent tool-interception queue (HitlApprovalMiddleware).
     public bool HitlEnabled { get; init; } = true;
+
+    // How long a resume claim ('processing' on hitl_requests) may be held before
+    // another approver can take it over. Mirrors Python's HITL_CLAIM_TTL_SECONDS.
+    public int HitlClaimTtlSeconds { get; init; } = 600;
 }

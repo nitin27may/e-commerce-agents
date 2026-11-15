@@ -110,9 +110,11 @@ services:
   seeder:
     image: ghcr.io/nitin27may/e-commerce-agents/orchestrator:${IMAGE_TAG:-latest}
     working_dir: /app
-    command: uv run --no-project python -m scripts.seed
+    # Schema first (scripts/migrate.py: baseline + docker/postgres/migrations), then data.
+    command: sh -c "uv run --no-project python -m scripts.migrate && uv run --no-project python -m scripts.seed"
     volumes:
       - ./scripts:/app/scripts:ro
+      - ./docker/postgres:/app/docker/postgres:ro
     depends_on:
       db:
         condition: service_healthy

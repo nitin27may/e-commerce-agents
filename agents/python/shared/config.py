@@ -205,6 +205,11 @@ class Settings(BaseSettings):
     # before executing. Requests queue in the hitl_requests DB table and are
     # reviewed at /admin/approvals.
     HITL_ENABLED: bool = True
+    # How long a resume claim ('processing' on hitl_requests) may be held before
+    # another approver can take it over. A crash between claim and release used to
+    # strand the row forever; claimed_at (migration 0002) makes that detectable.
+    # Must comfortably exceed the longest legitimate resume.
+    HITL_CLAIM_TTL_SECONDS: int = 600
 
     # ── MCP integration (optional, flag-gated) ──────────────────────
     # When enabled, specialist agents connect to MCP servers for their data

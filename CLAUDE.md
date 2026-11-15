@@ -188,7 +188,7 @@ AZURE_OPENAI_API_VERSION=2024-12-01-preview
 
 ## Database
 
-- Schema in `docker/postgres/init.sql` (34 tables)
+- Schema: `docker/postgres/init.sql` is the frozen baseline (34 tables); every change since is a numbered file in `docker/postgres/migrations/` applied by `scripts/migrate.py` (the seeder, `dev.sh`/`dev.ps1` and every test fixture run it). Never edit an applied migration — the checksum guard fails the run; add a new one.
 - All queries use parameterized `$1, $2` syntax (asyncpg)
 - All user-facing queries filter by `user_email` or `user_id`
 - Embeddings stored as `vector(1536)` with ivfflat cosine index

@@ -30,6 +30,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from shared.config import settings
 from shared.context import current_user_email, current_user_role
 from shared.db import get_pool
 
@@ -184,6 +185,9 @@ async def resume_run(
     workflow runs, so two concurrent clicks cannot both resume and both
     release a refund; the loser gets 409. The claim is handed back if the
     request cannot be resumed or the resume raises, so the button stays live.
+    A claim is stamped with ``claimed_at``; if the process dies mid-resume the
+    row would otherwise stay ``processing`` forever, so a ``processing`` row
+    claimed more than ``HITL_CLAIM_TTL_SECONDS`` ago can be taken over.
     Resumes via ``ReturnReplaceMode.resume()`` (currently the only mode with
     anything to resume) and then marks the request resolved. A request with no
     ``request_id``/``checkpoint_id`` predates Phase 1.5's checkpoint wiring and
@@ -193,17 +197,28 @@ async def resume_run(
     pool = get_pool()
     reviewer_email = str(admin.get("sub", ""))
 
+    # Claimable = pending, or 'processing' with a claim older than the TTL (a
+    # resume whose process died before releasing it; claimed_at is NULL for rows
+    # claimed before migration 0002, which are equally stale). The predicate is
+    # repeated on the outer UPDATE so two takeovers racing for the same stale row
+    # cannot both win: the loser re-evaluates it against the winner's fresh
+    # claimed_at and matches nothing.
+    claimable = (
+        "(status = 'pending' OR (status = 'processing' "
+        "AND (claimed_at IS NULL OR claimed_at < NOW() - make_interval(secs => $3))))"
+    )
     hitl = await pool.fetchrow(
-        """UPDATE hitl_requests SET status = 'processing'
+        f"""UPDATE hitl_requests SET status = 'processing', claimed_at = NOW()
            WHERE id = (
                  SELECT id FROM hitl_requests
-                  WHERE workflow_run_id = $1 AND status = 'pending'
+                  WHERE workflow_run_id = $1 AND {claimable}
                     AND lower(user_email) <> lower($2)
                   ORDER BY created_at DESC LIMIT 1)
-             AND status = 'pending'
+             AND {claimable}
            RETURNING *""",
         run_id,
         reviewer_email,
+        float(settings.HITL_CLAIM_TTL_SECONDS),
     )
     if not hitl:
         # Nothing claimable: "never existed" is a 404, "someone already took it" a
@@ -220,7 +235,8 @@ async def resume_run(
 
     async def _release() -> None:
         await pool.execute(
-            "UPDATE hitl_requests SET status = 'pending' WHERE id = $1 AND status = 'processing'", hitl["id"]
+            "UPDATE hitl_requests SET status = 'pending', claimed_at = NULL WHERE id = $1 AND status = 'processing'",
+            hitl["id"],
         )
 
     if hitl["kind"] != "return_approval":

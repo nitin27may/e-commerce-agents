@@ -3,6 +3,7 @@ using System.Text.Json;
 using ECommerceAgents.Shared.Data;
 using Dapper;
 using ECommerceAgents.Orchestrator.Modes;
+using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Orchestration;
 using Microsoft.AspNetCore.Builder;
@@ -69,6 +70,7 @@ public static class OrchestrationRoutes
         ResumeRequest? body,
         DatabasePool pool,
         ModeRegistry registry,
+        AgentSettings settings,
         ILoggerFactory loggers
     )
     {
@@ -98,15 +100,22 @@ public static class OrchestrationRoutes
         await using var conn = await pool.OpenAsync();
 
         var claimed = await conn.QueryFirstOrDefaultAsync(
-            @"UPDATE hitl_requests SET status = 'processing'
+            // Claimable = pending, or 'processing' with a claim older than the TTL (a resume
+            // whose process died before releasing it; claimed_at is NULL for rows claimed
+            // before migration 0002, which are equally stale). The predicate is repeated on
+            // the outer UPDATE so two takeovers racing for one stale row cannot both win.
+            @"UPDATE hitl_requests SET status = 'processing', claimed_at = NOW()
                WHERE id = (
                      SELECT id FROM hitl_requests
-                      WHERE workflow_run_id = @runGuid AND status = 'pending'
+                      WHERE workflow_run_id = @runGuid
+                        AND (status = 'pending' OR (status = 'processing'
+                              AND (claimed_at IS NULL OR claimed_at < NOW() - make_interval(secs => @ttl))))
                         AND lower(user_email) <> lower(@email)
                       ORDER BY created_at DESC LIMIT 1)
-                 AND status = 'pending'
+                 AND (status = 'pending' OR (status = 'processing'
+                      AND (claimed_at IS NULL OR claimed_at < NOW() - make_interval(secs => @ttl))))
            RETURNING id, kind, request_id, checkpoint_id, payload, user_email",
-            new { runGuid, email });
+            new { runGuid, email, ttl = (double)settings.HitlClaimTtlSeconds });
 
         if (claimed is null)
         {
@@ -219,7 +228,7 @@ public static class OrchestrationRoutes
         {
             loggers.CreateLogger("hitl").LogError(ex, "hitl.resume_failed run={RunId}", runId);
             await conn.ExecuteAsync(
-                "UPDATE hitl_requests SET status = 'pending' WHERE id = @claimId AND status = 'processing'",
+                "UPDATE hitl_requests SET status = 'pending', claimed_at = NULL WHERE id = @claimId AND status = 'processing'",
                 new { claimId });
             return Results.Problem("Resume failed; the approval is still pending.");
         }
@@ -231,7 +240,7 @@ public static class OrchestrationRoutes
     private static async Task<IResult> ReleaseAsync(System.Data.Common.DbConnection conn, Guid claimId, IResult result)
     {
         await conn.ExecuteAsync(
-            "UPDATE hitl_requests SET status = 'pending' WHERE id = @claimId AND status = 'processing'",
+            "UPDATE hitl_requests SET status = 'pending', claimed_at = NULL WHERE id = @claimId AND status = 'processing'",
             new { claimId });
         return result;
     }
