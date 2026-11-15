@@ -775,6 +775,19 @@ the plan text and both true of the code:
   under: the loyalty-discount step read the approving admin's tier. Resume now executes as the
   requester and records the reviewer.
 
+An independent diff review then found four more, all fixed before merge: an admin could still
+approve their *own* return (resume never compared approver to requester); a claimed approval stayed
+in `processing` forever if the request was cancelled mid-resume; the stream reader still dropped
+text after Unicode line separators that `httpx.aiter_lines()` splits on; and the sanitizer missed the
+`body_preview` field that carries review text.
+
+**Left open by this wave, needs a schema change (so it waits for A-10):** a process crash between
+claim and resume still strands the row in `processing`. `hitl_requests` has no column recording when
+a row was claimed, so a stale claim cannot be detected. Add `claimed_at` and a TTL takeover as the
+first migration after A-10; D-3's `approvals` table should carry it from the start. The resumed steps
+are side-effect free today (`get_loyalty_tier` reads, finalize edits in-memory state), which is what
+makes releasing the claim on failure safe — D-8 changes that and must make those steps idempotent.
+
 Six further corrections from the same review were to this plan and are applied in place: R1 timing
 (fixture-changing steps merge with their recordings, not before), B-4/B-5 ordering, B-11's key
 requirement, replay-miss propagation in C-4, new tables as migrations only, and specialist usage on
