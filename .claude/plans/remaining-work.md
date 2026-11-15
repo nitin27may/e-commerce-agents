@@ -463,6 +463,8 @@ Listed so they are not rediscovered as gaps.
   shared rather than duplicated: the seeder is the single source of demo data, and a second
   implementation would have to produce byte-identical rows or the dual-backend parity gate becomes
   meaningless. Neither service is an agent, so neither demonstrates anything about MAF.
+- **Superseded 2026-11-15:** .NET MAF 1.28.0 ships `MagenticWorkflowBuilder` (Part IV §7), so the
+  "unavailable on .NET" half of the next line is no longer true. The app still has no Magentic mode.
 - **Magentic orchestration exists in neither stack**, and on .NET it is unavailable rather than
   unbuilt: Magentic is Python-only in MAF v1. Chapter 16's .NET tests reflect over
   `Microsoft.Agents.AI.Workflows` and assert the gap still exists, with a control test so a failed
@@ -649,7 +651,7 @@ is recorded twice. Every session is a person running a script on a local stack.
 
 | Session | When | Key | Records | Unblocks | Estimate |
 |---|---|---|---|---|---|
-| **R0 — the tour** | After wave 1 and B-3 | OpenAI or Azure OpenAI (the existing one) | The ~10-prompt demo tour (C-6) and the catalog embeddings export (A-6b) | C-7 → C-11, C-18 | $1–3 |
+| **R0 — the tour** | After wave 1 and B-3 | OpenAI or Azure OpenAI (the existing one) | The ~10-prompt demo tour (C-6), the catalog embeddings export (A-6b), and the default-prompt fixtures for tutorial chapters 04, 05, 07, 12, 13, 14, 16 (found by C-16) | C-7 → C-11, C-18 | $1–3 |
 | **R1 — everything else, one sitting** | When B-6 has merged and B-16, D-5b, M-2 are *ready on their branches* — those three change what the model sees, so the replay gate fails until their fixtures are refreshed. Record against the ready branches and merge code and fixtures together | Same | New eval cases: multi-turn, role, approval, argument (E-3b); red-team v2 + judge verdicts (E-4); guardrail FP/FN (E-6); MCP-path suites (E-7); all six .NET datasets and baselines (E-8, closes §11); five-mode benchmark (E-10); re-record of cases touching gated tools (D-5b); `merchant_ops` dataset (M-2); group-chat fixtures (B-16); a tour re-check | E-9 and every row marked R1 | $5–9 |
 | **R2 — other vendors** | After P-3, P-4, P-5 | Anthropic, Google; optionally local Ollama at $0 | Wiring smoke for each provider; the model scorecard, one fixture directory per model (P-7) | P-3–P-5 sign-off, P-7 | $1–3 per provider |
 
@@ -792,6 +794,17 @@ Six further corrections from the same review were to this plan and are applied i
 (fixture-changing steps merge with their recordings, not before), B-4/B-5 ordering, B-11's key
 requirement, replay-miss propagation in C-4, new tables as migrations only, and specialist usage on
 the stream endpoint in E-2a.
+
+### Wave 1 — in progress
+
+| Step | Outcome |
+|---|---|
+| B-4 | .NET MAF 1.18.0 → **1.28.0**, nothing pinned short. Production needed **no source change**: none of the HITL, checkpoint or telemetry areas flagged in Part III forced a redesign. `global.json` at the repo root pins SDK 10.0.100 with `rollForward: latestFeature`. |
+| B-5 | All 62 tutorial projects on central package management at production's versions, no source fixes. |
+| — | **Magentic now exists in .NET.** `Microsoft.Agents.AI.Workflows` 1.28.0 exports `MagenticWorkflowBuilder` and its events; chapter 16's tripwire fired as designed and was inverted rather than deleted (it now asserts the types exist). §18's "Magentic exists in neither stack … unavailable on .NET" is **superseded**: the app still has no Magentic mode on either stack, but that is now a choice, not an upstream limit. Chapter 16's .NET side is "not yet ported" — a rewrite against the .NET API, not a transliteration. |
+| — | DevUI .NET is still prerelease-only (`1.28.0-preview`); chapter 20b stays not ported. |
+| C-16 | 24 of 32 chapter entry points run with no key, enforced by a `tutorials-keyless` CI job. **Seven need a recorded fixture for their default prompt** — 04, 05, 07, 12, 13, 14, 16 — and are on the runner's skip-list with that reason; record them in R0. 20b is a live-only server. Chapter 18 also calls no model (not listed in #104); chapter 23 is not a long-running server and runs keyless. `.env.example` sets `LLM_PROVIDER=openai`, which disables the fallback for anyone who copies it — documented, not changed. |
+| C-17 | As planned. No time estimates were invented; the paths carry none. |
 
 ---
 
@@ -950,8 +963,9 @@ JSON, so token-level prose streaming becomes partial JSON needing incremental pa
 stacks; specialist text passes through the orchestrator model, so cards would have to survive two
 schema hops; OpenAI-compatible endpoints vary in support; and it forces a full re-record on both
 stacks. Use it only where code consumes the output: `evals/scorers/llm_judge.py` and group-chat
-panelist stances after B-16. **Magentic — not built**: Python-only, so a permanent parity gap; B-9
-removes the advertising.
+panelist stances after B-16. **Magentic — not built.** The reason given at planning time (Python-only, so a permanent parity
+gap) stopped being true when B-4 landed: see §7. B-9 removed the advertising of a mode that does not
+exist.
 
 **Order:** B-1 → B-2 → B-3 → B-6 → B-7; B-4 → B-5 (the .NET upgrade is independent of the Python
 one and sits in wave 1); B-9 → B-11 → B-12 → B-13 → B-14 (B-12 also
@@ -969,7 +983,7 @@ needs B-3; B-11 needs A-1); B-6 → B-16, B-18.
 | B-d6 | Preview packages in the .NET app | Accept, pinned exactly, grouped in Dependabot |
 | B-d7 | Structured output | Not on the chat path; B-19 instead |
 | B-d8 | Group chat | Migrate (B-16) after the upgrade |
-| B-d9 | Magentic and the declarative mode | Do not build Magentic; delete the loader (B-10) |
+| B-d9 | Magentic and the declarative mode | Delete the loader (B-10). **Magentic: premise changed 2026-11-15** — .NET MAF 1.28.0 ships `MagenticWorkflowBuilder` (found by B-4), so it is no longer a permanent parity gap. Not scheduled; a maintainer decision (see §7) |
 
 ---
 
