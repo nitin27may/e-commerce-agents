@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use this repository in your work, please cite it using the metadata below."
+title: "E-Commerce Agents"
+abstract: >-
+  A multi-agent e-commerce platform built with the Microsoft Agent Framework.
+  Six specialist agents collaborate over an A2A-style HTTP protocol to handle
+  product discovery, orders, pricing, reviews, inventory and customer support,
+  with Python and .NET backends.
+type: software
+authors:
+  - family-names: Singh
+    given-names: Nitin
+repository-code: "https://github.com/nitin27may/e-commerce-agents"
+url: "https://nitinksingh.com/e-commerce-agents/"
+license: MIT
+version: 1.3.0
+date-released: "2026-08-27"
+keywords:
+  - multi-agent
+  - microsoft-agent-framework
+  - a2a
+  - e-commerce
+  - llm

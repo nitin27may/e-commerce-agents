@@ -52,6 +52,14 @@ cd agents/python && uv run ruff check . && uv run ruff format --check . && uv ru
 cd web && pnpm lint && pnpm exec tsc --noEmit && pnpm test && pnpm build
 ```
 
+## Good first issues
+
+New here? Start with the issues labelled
+[`good first issue`](https://github.com/nitin27may/e-commerce-agents/labels/good%20first%20issue).
+Each one is scoped to a single area, names the files to start from, and says how to
+check the result — all of it runs with no API key. Comment on the issue before you
+start so two people do not pick up the same one.
+
 ## PRs
 
 - Branch off `main`; keep PRs focused.

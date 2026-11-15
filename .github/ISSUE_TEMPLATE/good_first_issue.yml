@@ -1,0 +1,49 @@
+name: Good first issue (maintainers)
+description: Scope a small, self-contained task for a first-time contributor
+labels: ["good first issue"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For maintainers writing up a starter task. A good first issue can be finished in an afternoon, touches one area, and says exactly where to start. If you are not a maintainer, use the feature request or bug report form instead.
+
+  - type: textarea
+    id: task
+    attributes:
+      label: What needs doing?
+      description: One concrete change, written so someone new to the repo can tell when it is done.
+    validations:
+      required: true
+
+  - type: textarea
+    id: where
+    attributes:
+      label: Where to start
+      description: The files or directories involved, and a similar existing change to copy from.
+    validations:
+      required: true
+
+  - type: textarea
+    id: done
+    attributes:
+      label: How will we know it works?
+      description: The command to run and what it should print. This repo's tests run with no API key.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: stacks
+    attributes:
+      label: Which stacks does it touch?
+      description: Keep a first issue to one of these where you can.
+      options:
+        - label: Python
+        - label: .NET
+        - label: Frontend
+        - label: Docs or tutorials only
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Pitfalls
+      description: Optional. Anything that cost you time the last time you touched this area.
