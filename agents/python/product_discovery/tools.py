@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Annotated
 
 from agent_framework import tool
@@ -12,6 +13,8 @@ from shared.agent_factory import create_embedding_client, get_embedding_model
 from shared.db import get_pool
 from shared.search import RRF_K, or_joined_tsquery
 from shared.tool_inputs import clamp_limit
+
+logger = logging.getLogger(__name__)
 
 SORT_CLAUSES = {
     "price_asc": "p.price ASC",
@@ -177,10 +180,19 @@ async def semantic_search(
 ) -> list[dict]:
     pool = get_pool()
 
-    # Generate embedding via OpenAI / Azure OpenAI
-    client = create_embedding_client()
-    response = await client.embeddings.create(model=get_embedding_model(), input=[query])
-    embedding = response.data[0].embedding
+    # Generate embedding via OpenAI / Azure OpenAI. If that fails (no key, a
+    # provider outage, a rate limit) fall through to the full-text arm alone
+    # rather than failing the whole tool call -- the model would otherwise be
+    # handed an error and answer from nothing.
+    embedding: list[float] | None
+    try:
+        client = create_embedding_client()
+        response = await client.embeddings.create(model=get_embedding_model(), input=[query])
+        embedding = response.data[0].embedding
+    except Exception as exc:
+        logger.warning("semantic_search: embedding call failed (%s: %s) -- falling back to full-text only",
+                       type(exc).__name__, exc)
+        embedding = None
 
     # Pull a wider candidate set from each arm than we return — fusion only has
     # something to work with if a document can appear in one list but not the other.
@@ -224,6 +236,32 @@ async def semantic_search(
         LIMIT $4
     """
 
+    if embedding is None:
+        # Same output keys as the hybrid path: `similarity` is None, exactly as
+        # it is for a product only the text arm matched; `score` is that arm's
+        # 1/(k+rank), the value RRF would have given it with no vector arm.
+        fts_sql = f"""
+            WITH fts AS (
+                SELECT p.id AS product_id,
+                       ROW_NUMBER() OVER (ORDER BY ts_rank(p.search_vector, {or_joined_tsquery("$1")}) DESC) AS rank
+                FROM products p
+                WHERE p.is_active = TRUE
+                  AND {or_joined_tsquery("$1")} <> ''::tsquery
+                  AND p.search_vector @@ {or_joined_tsquery("$1")}
+                LIMIT $2
+            )
+            SELECT p.id, p.name, p.description, p.category, p.brand, p.price, p.rating, p.image_url,
+                   NULL::float8 AS similarity,
+                   1.0 / ({RRF_K} + f.rank) AS score
+            FROM fts f
+            JOIN products p ON p.id = f.product_id
+            ORDER BY score DESC, p.rating DESC
+            LIMIT $3
+        """
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(fts_sql, query, candidates, limit)
+        return _semantic_rows(rows)
+
     async with pool.acquire() as conn:
         # Raise ivfflat's probe count for this query (#52).
         #
@@ -254,23 +292,27 @@ async def semantic_search(
             await conn.execute("SET LOCAL ivfflat.probes = 10")
             rows = await conn.fetch(sql, json.dumps(embedding), query, candidates, limit)
 
-        return [
-            {
-                "id": str(r["id"]),
-                "name": r["name"],
-                "description": r["description"][:150],
-                "category": r["category"],
-                "brand": r["brand"],
-                "price": float(r["price"]),
-                "rating": float(r["rating"]),
-                # None when only the text arm matched — the product has no embedding
-                # row, or ranked outside the vector candidate window.
-                "similarity": round(float(r["similarity"]), 3) if r["similarity"] is not None else None,
-                "score": round(float(r["score"]), 5),
-                "image_url": r["image_url"],
-            }
-            for r in rows
-        ]
+        return _semantic_rows(rows)
+
+
+def _semantic_rows(rows: list) -> list[dict]:
+    return [
+        {
+            "id": str(r["id"]),
+            "name": r["name"],
+            "description": r["description"][:150],
+            "category": r["category"],
+            "brand": r["brand"],
+            "price": float(r["price"]),
+            "rating": float(r["rating"]),
+            # None when only the text arm matched -- the product has no embedding
+            # row, or ranked outside the vector candidate window.
+            "similarity": round(float(r["similarity"]), 3) if r["similarity"] is not None else None,
+            "score": round(float(r["score"]), 5),
+            "image_url": r["image_url"],
+        }
+        for r in rows
+    ]
 
 
 @tool(name="find_similar_products", description="Find products similar to a given product based on embedding similarity.")
@@ -285,7 +327,35 @@ async def find_similar_products(
             "SELECT embedding FROM product_embeddings WHERE product_id = $1", product_id,
         )
         if not ref:
-            return [{"error": f"No embedding found for product {product_id}"}]
+            # No vector for this product (embeddings not seeded, or a product
+            # added since). Degrade to "same category, best rated" rather than
+            # an error; only a product that does not exist at all still errors.
+            source = await conn.fetchrow("SELECT category FROM products WHERE id = $1", product_id)
+            if not source:
+                return [{"error": f"No embedding found for product {product_id}"}]
+            logger.info("find_similar_products: no embedding for %s -- same-category fallback", product_id)
+            rows = await conn.fetch(
+                """SELECT id, name, category, brand, price, rating
+                   FROM products
+                   WHERE category = $1 AND id != $2 AND is_active = TRUE
+                   ORDER BY rating DESC, review_count DESC, name
+                   LIMIT $3""",
+                source["category"],
+                product_id,
+                limit,
+            )
+            return [
+                {
+                    "id": str(r["id"]),
+                    "name": r["name"],
+                    "category": r["category"],
+                    "brand": r["brand"],
+                    "price": float(r["price"]),
+                    "rating": float(r["rating"]),
+                    "similarity": None,
+                }
+                for r in rows
+            ]
 
         # Same stale-ivfflat exposure as semantic_search — see the long note
         # there. This query hits the same index, so it needs the same probe

@@ -24,10 +24,12 @@ import random
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from pathlib import Path
 
 import asyncpg
 import bcrypt
 
+from scripts.embedding_text import EMBEDDINGS_FILE, build_embedding_text, read_embeddings_file, text_hash
 from shared.oauth.client_secrets import derive_client_secret
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -839,6 +841,84 @@ async def seed_workflow_checkpoints(conn: asyncpg.Connection) -> None:
     logger.info("Seeded %d workflow checkpoints", len(samples))
 
 
+async def seed_product_embeddings(
+    conn: asyncpg.Connection,
+    *,
+    provider: str | None = None,
+    embedding_model: str | None = None,
+    data_path: Path | None = None,
+) -> int:
+    """Populate ``product_embeddings`` so semantic search works on first run (#83).
+
+    * ``LLM_PROVIDER=replay`` -- vectors from ``shared.replay_embeddings`` (the
+      scheme the *query* side uses under replay; the two must agree or
+      similarity is noise).
+    * openai/azure -- load ``scripts/data/product_embeddings.v1.jsonl.gz`` if it
+      exists and was produced by ``EMBEDDING_MODEL``; rows whose text hash no
+      longer matches the product are skipped. Otherwise log and skip: no API call
+      is ever made from the seeder, and ``semantic_search`` degrades to its
+      full-text arm on an empty table.
+
+    Must not touch ``random`` -- it runs after every other step, but a draw here
+    would still shift anything seeded after it and every replay fixture keyed on
+    that data. Returns the number of rows inserted.
+    """
+    provider = (provider if provider is not None else os.environ.get("LLM_PROVIDER", "openai")).lower()
+    embedding_model = embedding_model or os.environ.get("EMBEDDING_MODEL", "text-embedding-3-small")
+    data_path = data_path or EMBEDDINGS_FILE
+
+    products = await conn.fetch(
+        "SELECT id, name, description, category, brand, price, specs FROM products ORDER BY name"
+    )
+    rows: list[tuple[uuid.UUID, str]] = []
+
+    if provider == "replay":
+        from shared.replay_embeddings import embed_text
+
+        for p in products:
+            rows.append((p["id"], json.dumps(embed_text(build_embedding_text(dict(p))))))
+        logger.info("Embeddings: LLM_PROVIDER=replay -- generated %d hashing-vectorizer vectors", len(rows))
+    elif not data_path.exists():
+        logger.info(
+            "Embeddings: %s not found -- skipping; semantic_search will use full-text only. "
+            "Generate it with `python -m scripts.generate_embeddings --export` (needs a real key).",
+            data_path.name,
+        )
+        return 0
+    else:
+        try:
+            precomputed = read_embeddings_file(data_path)
+        except (ValueError, KeyError, OSError) as exc:
+            logger.warning("Embeddings: could not read %s (%s) -- skipping", data_path.name, exc)
+            return 0
+        if precomputed.model != embedding_model:
+            logger.info(
+                "Embeddings: %s was produced by %s but EMBEDDING_MODEL=%s -- skipping (vectors from "
+                "different models are not comparable)",
+                data_path.name, precomputed.model, embedding_model,
+            )
+            return 0
+        stale = 0
+        for p in products:
+            entry = precomputed.vectors.get(str(p["id"]))
+            if entry is None or entry[0] != text_hash(build_embedding_text(dict(p))):
+                stale += 1
+                continue
+            rows.append((p["id"], json.dumps(entry[1])))
+        logger.info(
+            "Embeddings: loaded %d vectors from %s (%d products without a matching vector)",
+            len(rows), data_path.name, stale,
+        )
+
+    if not rows:
+        return 0
+    await conn.executemany("INSERT INTO product_embeddings (product_id, embedding) VALUES ($1, $2)", rows)
+    # idx_product_embedding was created by init.sql on an empty table, so its
+    # ivfflat centroids describe nothing; rebuild now that the vectors exist.
+    await conn.execute("REINDEX INDEX idx_product_embedding")
+    return len(rows)
+
+
 async def seed_hitl_requests(conn: asyncpg.Connection, user_ids: dict[str, uuid.UUID]) -> None:
     """Create one of each HITL state so the admin pending-approvals UI
     has something to show on first login.
@@ -968,6 +1048,8 @@ async def main() -> None:
         await seed_carts(conn, user_ids, products)
         await seed_workflow_checkpoints(conn)
         await seed_hitl_requests(conn, user_ids)
+
+        await seed_product_embeddings(conn)
 
         # Collect planner statistics before anyone queries this data.
         #

@@ -5,7 +5,13 @@ Reads all products from the database and generates embeddings
 using OpenAI / Azure OpenAI text-embedding-3-small (1536 dimensions).
 Stores results in the product_embeddings table.
 
-Usage: uv run python -m scripts.generate_embeddings
+Usage: uv run python -m scripts.generate_embeddings [--export [PATH]]
+
+--export also writes the vectors to scripts/data/product_embeddings.v1.jsonl.gz
+(or PATH). `scripts/seed.py` loads that file on first run under openai/azure,
+so a fresh checkout gets semantic search without an API key. Generating the
+file needs a real embedding provider (a human with a key, run once, committed);
+it is refused under LLM_PROVIDER=replay, whose hashing vectors are not a model.
 
 LLM_PROVIDER=replay skips any real embedding API call and generates
 deterministic pseudo-random vectors instead (seeded by product id, so
@@ -19,14 +25,18 @@ on embedding-similarity quality, only that the pipeline runs end to end.
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 import logging
 import os
-import random
+import sys
+from pathlib import Path
 
 import asyncpg
 import openai
+
+from scripts.embedding_text import EMBEDDINGS_FILE, build_embedding_text, write_embeddings_file
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -80,23 +90,7 @@ def create_client() -> openai.AsyncOpenAI:
     return openai.AsyncOpenAI(api_key=api_key)
 
 
-def build_embedding_text(product: dict) -> str:
-    """Build a rich text representation of a product for embedding."""
-    parts = [
-        product["name"],
-        product["description"],
-        f"Category: {product['category']}",
-        f"Brand: {product['brand']}" if product["brand"] else "",
-        f"Price: ${product['price']:.2f}",
-    ]
-    if product["specs"]:
-        specs = json.loads(product["specs"]) if isinstance(product["specs"], str) else product["specs"]
-        for k, v in specs.items():
-            parts.append(f"{k}: {v}")
-    return " | ".join(p for p in parts if p)
-
-
-async def main() -> None:
+async def main(export_path: Path | None = None) -> None:
     logger.info("Connecting to database...")
     conn = await asyncpg.connect(DATABASE_URL)
 
@@ -109,6 +103,11 @@ async def main() -> None:
         if not products:
             logger.warning("No products found — run seed.py first")
             return
+
+        if export_path is not None and LLM_PROVIDER == "replay":
+            raise SystemExit("--export needs a real embedding provider; LLM_PROVIDER=replay vectors are not a model")
+
+        exported: list[tuple[str, str, str, list[float]]] = []
 
         # Clear existing embeddings
         await conn.execute("DELETE FROM product_embeddings")
@@ -143,6 +142,7 @@ async def main() -> None:
                 for j, embedding_data in enumerate(response.data):
                     product_id = batch[j]["id"]
                     embedding = embedding_data.embedding
+                    exported.append((str(product_id), batch[j]["name"], texts[j], list(embedding)))
                     await conn.execute(
                         "INSERT INTO product_embeddings (product_id, embedding) VALUES ($1, $2)",
                         product_id, json.dumps(embedding),
@@ -168,9 +168,29 @@ async def main() -> None:
         total = await conn.fetchval("SELECT COUNT(*) FROM product_embeddings")
         logger.info("Generated and stored %d product embeddings (dimension: 1536)", total)
 
+        if export_path is not None:
+            count = write_embeddings_file(
+                export_path, model=EMBEDDING_MODEL, dimensions=EMBEDDING_DIMENSIONS, rows=exported
+            )
+            logger.info("Exported %d embeddings (model=%s) to %s", count, EMBEDDING_MODEL, export_path)
+
     finally:
         await conn.close()
 
 
+def _parse_args(argv: list[str]) -> Path | None:
+    parser = argparse.ArgumentParser(description="Generate product embeddings.")
+    parser.add_argument(
+        "--export",
+        nargs="?",
+        const=str(EMBEDDINGS_FILE),
+        default=None,
+        metavar="PATH",
+        help=f"also write the vectors to a precomputed file (default {EMBEDDINGS_FILE.name})",
+    )
+    args = parser.parse_args(argv)
+    return Path(args.export) if args.export else None
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(main(_parse_args(sys.argv[1:])))

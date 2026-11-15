@@ -113,11 +113,12 @@ jobs:
       # via a volume mount (./scripts:/app/scripts:ro) that isn't available
       # here, so these two steps run from the repo root and point uv at the
       # agents/python project explicitly instead.
+      # Under LLM_PROVIDER=replay the seeder also populates product_embeddings
+      # (replay vectors, then REINDEX) -- no separate generate_embeddings step.
+      # Keeping one would delete and reinsert 50 rows after ANALYZE and could
+      # trip autovacuum's analyze mid-run, changing semantic_search's plan.
       - name: Seed deterministic demo data
         run: uv run --project agents/python python -m scripts.seed
-
-      - name: Generate embeddings
-        run: uv run --project agents/python python -m scripts.generate_embeddings
 
       # Starts the five specialists (replay mode, no key, no cost), runs every
       # suite against the committed fixtures and baselines, and stops what it

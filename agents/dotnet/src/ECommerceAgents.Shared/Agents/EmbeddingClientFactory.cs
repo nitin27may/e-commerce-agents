@@ -27,9 +27,23 @@ public static class EmbeddingClientFactory
     public static IEmbeddingProvider CreateProvider(AgentSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        return string.Equals(settings.LlmProvider, "replay", StringComparison.OrdinalIgnoreCase)
-            ? new ReplayEmbeddingProvider()
-            : new OpenAIEmbeddingProvider(CreateEmbeddingClient(settings));
+        if (string.Equals(settings.LlmProvider, "replay", StringComparison.OrdinalIgnoreCase))
+        {
+            return new ReplayEmbeddingProvider();
+        }
+
+        try
+        {
+            return new OpenAIEmbeddingProvider(CreateEmbeddingClient(settings));
+        }
+        catch (InvalidOperationException ex)
+        {
+            // Missing key or endpoint. Degrade rather than refuse to start:
+            // semantic search falls back to full-text (ProductTools), which is
+            // what Python's semantic_search does when its embedding call raises.
+            Serilog.Log.Warning("Embeddings unavailable ({Reason}); semantic search will use full-text only", ex.Message);
+            return new UnavailableEmbeddingProvider(ex.Message);
+        }
     }
 
     public static EmbeddingClient CreateEmbeddingClient(AgentSettings settings)

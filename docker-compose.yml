@@ -82,6 +82,11 @@ services:
     environment:
       DATABASE_URL: postgresql://ecommerce:ecommerce_secret@db:5432/ecommerce_agents
       OAUTH_SEED_KEY: ${OAUTH_SEED_KEY:-dev-oauth-seed-change-me}
+      # The seeder fills product_embeddings: replay vectors under
+      # LLM_PROVIDER=replay, else scripts/data/product_embeddings.v1.jsonl.gz
+      # when its model matches EMBEDDING_MODEL. It never calls an embedding API.
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
     restart: "no"
     profiles: ["seed"]
 

@@ -501,7 +501,7 @@ The seeder (`scripts/seed.py`) populates the database with deterministic data (`
 |-------|-------|---------|
 | users | 20 | 1 admin, 2 power users, 2 sellers, 15 customers |
 | products | 50 | 10 per category (Electronics, Clothing, Home, Sports, Books) |
-| product_embeddings | 0 | **Not seeded.** Run `scripts/generate_embeddings.py` separately to populate all 50 |
+| product_embeddings | 50 under `LLM_PROVIDER=replay`; otherwise 0 until `scripts/data/product_embeddings.v1.jsonl.gz` exists | Filled by the seeder (replay vectors, or the precomputed file when its model matches `EMBEDDING_MODEL`); `scripts/generate_embeddings.py` regenerates, `--export` writes the file |
 | orders | 200 | Distributed across statuses (placed through delivered/cancelled) |
 | order_items | ~400 | 1-4 items per order |
 | order_status_history | ~600 | Full tracking timeline per order |
@@ -538,8 +538,8 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;   -- gen_random_uuid()
 
 ## Gotchas
 
-- **product_embeddings** is empty after a default `./scripts/dev.sh` run. The seeder does not populate it — `scripts/generate_embeddings.py` is a separate manual step, because embedding 50 products costs an API call per product. Until it runs, `semantic_search` is lexical-only: the vector arm of the hybrid query returns no rows and full-text search carries the result, which degrades quietly rather than erroring.
-- **product_embeddings** uses an IVFFlat index (`lists = 10`). This index type requires the table to have existing data before creation, or it will be empty, so `generate_embeddings.py` reindexes after writing.
+- **product_embeddings** is filled by the seeder: replay-scheme vectors under `LLM_PROVIDER=replay`, or the precomputed `scripts/data/product_embeddings.v1.jsonl.gz` under openai/azure when its model matches `EMBEDDING_MODEL` (the seeder never calls an embedding API; a human generates the file with `generate_embeddings --export`). With no file the table stays empty and `semantic_search` runs its full-text arm alone; it also does so whenever the query-time embedding call fails, and `find_similar_products` falls back to same-category-by-rating for a product with no vector.
+- **product_embeddings** uses an IVFFlat index (`lists = 10`). This index type requires the table to have existing data before creation, or it will be empty, so the seeder and `generate_embeddings.py` both reindex after writing.
 - **agent_catalog.name** is the FK target for `access_requests` and `agent_permissions`, not the `id` column. This simplifies lookups but means agent names cannot be renamed without cascading updates.
 - **warehouse_inventory** has a composite primary key `(warehouse_id, product_id)` rather than a surrogate UUID.
 - **usage_logs.user_id** is typed as `UUID REFERENCES users(id)`, but some queries cast it with `::uuid` defensively in the audit endpoint.

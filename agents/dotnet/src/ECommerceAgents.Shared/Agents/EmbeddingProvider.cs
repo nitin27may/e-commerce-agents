@@ -26,6 +26,21 @@ public interface IEmbeddingProvider
     Task<string> EmbedAsVectorLiteralAsync(string text, CancellationToken ct = default);
 }
 
+/// <summary>
+/// Stand-in used when no real embedding client could be built (no API key, no
+/// Azure endpoint). Every call throws, which <c>ProductTools</c> turns into the
+/// full-text-only fallback — the .NET twin of Python, where the same missing key
+/// raises inside <c>semantic_search</c> and is caught there. Without it the
+/// service refused to start at all, a worse outcome than degraded search.
+/// </summary>
+public sealed class UnavailableEmbeddingProvider(string reason) : IEmbeddingProvider
+{
+    public string Reason { get; } = reason;
+
+    public Task<string> EmbedAsVectorLiteralAsync(string text, CancellationToken ct = default) =>
+        throw new InvalidOperationException($"Embeddings are unavailable: {Reason}");
+}
+
 /// <summary>Real embeddings from OpenAI or Azure OpenAI.</summary>
 public sealed class OpenAIEmbeddingProvider(EmbeddingClient client) : IEmbeddingProvider
 {
