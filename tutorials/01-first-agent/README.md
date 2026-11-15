@@ -92,7 +92,7 @@ async def ask(agent: Agent, question: str) -> str:
     return response.text
 ```
 
-`build_agent()` accepts an optional pre-built client so the test suite can inject a canned one instead of hitting a real LLM. The third provider, `replay` — what the no-key fallback selects — is backed by `tutorials/_shared/replay_client.py` — it plays back a committed fixture from `tests/fixtures/replay/`, which is how the test suite gets a "real answer" assertion without network access or credentials.
+`build_agent()` accepts an optional pre-built client so the test suite can inject a canned one instead of hitting a real LLM. The third provider, `replay` — what the no-key fallback selects — is backed by `tutorials/_shared/replay_client.py`; it plays back a committed fixture from `tests/fixtures/replay/`, which is how the test suite gets a "real answer" assertion without network access or credentials.
 
 ## .NET
 
