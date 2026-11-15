@@ -94,10 +94,10 @@ async def test_failure_after_text_returns_partial_text_with_note(monkeypatch: py
 
 
 @pytest.mark.asyncio
-async def test_failure_before_first_frame_still_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_connect_error_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/message:stream":
-            return httpx.Response(200, stream=_BrokenStream(b""))
+            raise httpx.ConnectError("refused")
         return httpx.Response(200, json={"response": "blocking answer"})
 
     paths, _queue = _setup(monkeypatch, handler)
@@ -108,7 +108,56 @@ async def test_failure_before_first_frame_still_falls_back(monkeypatch: pytest.M
 
 
 @pytest.mark.asyncio
-async def test_http_error_status_still_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(
+    "exc",
+    [httpx.ReadTimeout("slow"), httpx.ReadError("dropped"), httpx.RemoteProtocolError("bad")],
+)
+async def test_ambiguous_failure_before_first_frame_never_reposts(
+    monkeypatch: pytest.MonkeyPatch, exc: Exception
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/message:stream":
+            raise exc
+        return httpx.Response(200, json={"response": "SHOULD NOT BE USED"})
+
+    paths, _queue = _setup(monkeypatch, handler)
+    result = await call_specialist_agent(agent_name="product-discovery", message="hi")
+
+    assert paths == ["/message:stream"]
+    assert "SHOULD NOT BE USED" not in result
+    assert "could not be confirmed" in result
+
+
+@pytest.mark.asyncio
+async def test_dropped_connection_before_first_frame_never_reposts(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/message:stream":
+            return httpx.Response(200, stream=_BrokenStream(b""))
+        return httpx.Response(200, json={"response": "SHOULD NOT BE USED"})
+
+    paths, _queue = _setup(monkeypatch, handler)
+    result = await call_specialist_agent(agent_name="product-discovery", message="hi")
+
+    assert paths == ["/message:stream"]
+    assert "could not be confirmed" in result
+
+
+@pytest.mark.asyncio
+async def test_gateway_timeout_status_never_reposts(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/message:stream":
+            return httpx.Response(504)
+        return httpx.Response(200, json={"response": "SHOULD NOT BE USED"})
+
+    paths, _queue = _setup(monkeypatch, handler)
+    result = await call_specialist_agent(agent_name="product-discovery", message="hi")
+
+    assert paths == ["/message:stream"]
+    assert "could not be confirmed" in result
+
+
+@pytest.mark.asyncio
+async def test_503_before_stream_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/message:stream":
             return httpx.Response(503)
