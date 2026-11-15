@@ -110,6 +110,39 @@ async def test_replay_never_calls_the_record_client_when_fixture_exists(tmp_path
     assert stub.calls == 1, "existing fixture must short-circuit before touching the record client"
 
 
+def test_response_format_changes_key() -> None:
+    """A structured-output call must not replay a prose fixture recorded without one."""
+    from pydantic import BaseModel
+
+    class Card(BaseModel):
+        title: str
+
+    class OtherCard(BaseModel):
+        title: str
+        price: float
+
+    messages = [Message(role="user", contents=["hello"])]
+    plain = _request_hash(_canonical_request(messages, {}))
+    with_card = _request_hash(_canonical_request(messages, {"response_format": Card}))
+    with_other = _request_hash(_canonical_request(messages, {"response_format": OtherCard}))
+    with_dict = _request_hash(_canonical_request(messages, {"response_format": {"type": "json_object"}}))
+
+    assert len({plain, with_card, with_other, with_dict}) == 4
+    # Same format -> same key.
+    assert with_card == _request_hash(_canonical_request(messages, {"response_format": Card}))
+
+
+def test_no_response_format_hash_unchanged() -> None:
+    """Without a response_format the canonical request has no such key, so every
+    fixture recorded before it existed keeps its hash."""
+    messages = [Message(role="user", contents=["hello"])]
+    for options in (None, {}, {"response_format": None}):
+        assert "response_format" not in _canonical_request(messages, options)
+
+    canonical = _canonical_request(messages, {})
+    assert set(canonical) == {"messages", "tools", "instructions"}
+
+
 @pytest.mark.asyncio
 async def test_streaming_replays_as_a_single_chunk_per_message(tmp_path) -> None:
     stub = _StubRecordClient(_text_response("streamed answer"))

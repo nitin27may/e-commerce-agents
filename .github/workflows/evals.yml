@@ -119,51 +119,11 @@ jobs:
       - name: Generate embeddings
         run: uv run --project agents/python python -m scripts.generate_embeddings
 
-      - name: Start specialist services (replay mode — no key, no cost)
-        working-directory: agents/python
-        run: |
-          for svc in product_discovery:8081 order_management:8082 pricing_promotions:8083 review_sentiment:8084 inventory_fulfillment:8085; do
-            name="${svc%%:*}"; port="${svc##*:}"
-            AGENT_NAME="$name" AGENT_PORT="$port" \
-              nohup uv run --no-project uvicorn "${name}.main:app" --host 0.0.0.0 --port "$port" \
-              > "/tmp/${name}.log" 2>&1 &
-          done
-          for port in 8081 8082 8083 8084 8085; do
-            for _ in $(seq 1 30); do
-              curl -sf "http://localhost:$port/health" > /dev/null && break
-              sleep 1
-            done
-            curl -sf "http://localhost:$port/health" > /dev/null || {
-              echo "::error::specialist on port $port never became healthy"
-              cat /tmp/*.log
-              exit 1
-            }
-          done
-
+      # Starts the five specialists (replay mode, no key, no cost), runs every
+      # suite against the committed fixtures and baselines, and stops what it
+      # started. The same script a human runs locally: scripts/replay-evals.sh.
       - name: Run every suite against replay fixtures + committed baselines
-        working-directory: agents/python
-        run: |
-          fail=0
-          for a in product-discovery order-management pricing-promotions review-sentiment inventory-fulfillment; do
-            ds="evals/datasets/${a//-/_}.json"
-            base="evals/baselines/${a//-/_}.json"
-            echo "::group::quality eval — $a"
-            uv run python -m evals.run_evals --agent "$a" --dataset "$ds" \
-              --pass-threshold "$SMOKE_THRESH" --baseline "$base" --max-regression 0.05 \
-              --output-json "eval-$a.json" || fail=1
-            echo "::endgroup::"
-          done
-          echo "::group::routing eval — orchestrator"
-          uv run python -m evals.run_evals --agent orchestrator \
-            --dataset evals/datasets/orchestrator_routing.json \
-            --pass-threshold "$SMOKE_THRESH" --baseline evals/baselines/orchestrator_routing.json --max-regression 0.05 \
-            --output-json eval-orchestrator.json || fail=1
-          echo "::endgroup::"
-          echo "::group::safety / red-team"
-          uv run python -m evals.run_evals --suite safety \
-            --pass-threshold 0.8 --output-json eval-safety.json || fail=1
-          echo "::endgroup::"
-          exit $fail
+        run: scripts/replay-evals.sh
 
       # The specialists are started with `nohup ... &` and would otherwise
       # still be running when the job's post steps execute. `setup-uv`'s

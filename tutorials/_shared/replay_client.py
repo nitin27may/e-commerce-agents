@@ -84,6 +84,19 @@ class ReplayFixtureMissingError(RuntimeError):
     """
 
 
+def _response_format_key(response_format: Any) -> Any:
+    """Stable, JSON-serializable form of an options ``response_format``.
+
+    A Pydantic model class becomes its name plus JSON schema; a mapping (a raw
+    JSON-schema format) is used as-is; anything else falls back to ``str``.
+    """
+    if isinstance(response_format, type) and hasattr(response_format, "model_json_schema"):
+        return {"name": response_format.__name__, "schema": response_format.model_json_schema()}
+    if isinstance(response_format, dict):
+        return response_format
+    return str(response_format)
+
+
 def _canonical_request(messages: Any, options: dict[str, Any] | None) -> dict[str, Any]:
     """JSON-serializable, hashable view of a request: every message plus tool schemas.
 
@@ -98,7 +111,7 @@ def _canonical_request(messages: Any, options: dict[str, Any] | None) -> dict[st
             tool_specs.append(t.to_json_schema_spec())
         except AttributeError:
             tool_specs.append({"name": getattr(t, "name", str(t))})
-    return {
+    canonical: dict[str, Any] = {
         "messages": [m.to_dict() for m in messages],
         "tools": tool_specs,
         # Agent-level system instructions travel in options, not as a message
@@ -106,6 +119,13 @@ def _canonical_request(messages: Any, options: dict[str, Any] | None) -> dict[st
         # collide on one fixture.
         "instructions": (options or {}).get("instructions"),
     }
+    # A structured-output call must not replay a prose fixture recorded without
+    # one (it would parse-fail: a wrong answer, not a reported miss). Added only
+    # when set, so every pre-existing fixture's key is unchanged.
+    response_format = (options or {}).get("response_format")
+    if response_format is not None:
+        canonical["response_format"] = _response_format_key(response_format)
+    return canonical
 
 
 def _request_hash(canonical: dict[str, Any]) -> str:

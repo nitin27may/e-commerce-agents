@@ -15,6 +15,67 @@
         "type": "message"
       }
     ],
+    "response_format": {
+      "name": "Plan",
+      "schema": {
+        "$defs": {
+          "PlanStep": {
+            "properties": {
+              "action": {
+                "description": "Short human-readable description of what this step accomplishes.",
+                "title": "Action",
+                "type": "string"
+              },
+              "query": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Catalog search text for this step, or null if the step only reasons over prior results.",
+                "title": "Query"
+              },
+              "step": {
+                "description": "1-based order of this step in the plan.",
+                "title": "Step",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "step",
+              "action"
+            ],
+            "title": "PlanStep",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "goal": {
+            "description": "One-sentence restatement of what the user wants overall.",
+            "title": "Goal",
+            "type": "string"
+          },
+          "steps": {
+            "description": "Ordered steps that together satisfy the goal.",
+            "items": {
+              "$ref": "#/$defs/PlanStep"
+            },
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "goal",
+          "steps"
+        ],
+        "title": "Plan",
+        "type": "object"
+      }
+    },
     "tools": []
   },
   "response": {
