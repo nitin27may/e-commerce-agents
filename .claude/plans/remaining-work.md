@@ -8,7 +8,8 @@
 > [`docs/roadmap.md`](../../docs/roadmap.md). This file is the working detail behind it: blockers,
 > acceptance criteria, and the constraints that have already cost us time.
 
-**Status: 2026-11-15.** [Part IV](#part-iv--the-november-2026-audit-everything-that-needs-no-azure) is new: a
+**Status: 2026-11-15.** **The LangGraph backend (LG1–LG3) is parked** by maintainer decision; the
+LG rows below are kept for the record only. [Part IV](#part-iv--the-november-2026-audit-everything-that-needs-no-azure) is new: a
 full audit produced issues #80–#104, and that part plans every one that needs no Azure resource.
 Parts I–III below are as of 2026-09-01. **Phase A is done** — see below. v1.3.0 is cut and both backends are live.
 This revision **resequences the forward work**. The previous plan ordered Azure (phases A–E) ahead
@@ -443,6 +444,8 @@ servers — all on both stacks. The design and per-phase notes for what shipped 
 
 Listed so they are not rediscovered as gaps.
 
+- **Superseded 2026-11-15: the LangGraph backend is parked** (Part IV §5, IV-4). The three lines
+  below record the earlier decision and no longer describe planned work.
 - **The third backend is LangGraph, Python only.** Not the Claude Agent SDK, and not a .NET
   equivalent. Python only keeps the comparison to one variable.
 - **The third backend ships as rungs, not as a release.** LG1 is a spike that must produce a number
@@ -704,9 +707,11 @@ Each workstream ends with its own table; defaults are assumed unless changed. Fo
       and the trust fixes, and *records rather than ports* the SLA worker, the return lifecycle beyond
       approval, merchant ops and event autonomy. That is a partial answer to D-3 in §0 and should be
       made on purpose. *Default assumed: as listed.*
-- [ ] **IV-4 — Reconsider LG2.** A single LangGraph specialist behind real A2A (LG1, after B-12)
-      delivers the cross-framework story without a third stack in every gate. Not decided here; §18
-      still stands until changed.
+- [x] **IV-4 — LangGraph is parked.** Decided by the maintainer 2026-11-15: no LangGraph backend.
+      LG1, LG2 and LG3 in Part I are parked, not scheduled, and nothing in this part depends on them.
+      This supersedes the LangGraph lines in §18 and the LG rows in Part I's table. The reader-facing
+      copies — `docs/roadmap.md` and README "What's next" — still describe it and are corrected in
+      A-5b.
 
 ## 6. Verification for this part
 
@@ -784,7 +789,7 @@ and .NET kept at parity.
 | **A-3** Generated secrets | #81 | `dev.sh`/`dev.ps1`: when `.env` is created or still holds a placeholder, replace `JWT_SECRET`, `AGENT_SHARED_SECRET`, `OAUTH_SEED_KEY` (`openssl rand -hex 32`, Python `secrets` fallback; `RandomNumberGenerator.Fill` on PowerShell). Logs existing users out, nothing else. Acceptance: a fresh clone produces no `settings.secret_unsafe` warning. | S | no |
 | **A-4** CORS, rate limiting, capture, pins | #81 | `CORS_ALLOWED_ORIGINS` (default `http://localhost:3000`), `allow_credentials=False`, both stacks. `_client_ip` takes the right-most `X-Forwarded-For` entry after `RATE_LIMIT_TRUSTED_PROXY_HOPS` (default 1) and the proxy appends the real client IP — **read `web/node_modules/next/dist/docs` first** for what Next 16 exposes; mirror in `ChatRoutes.cs:543`. `rate_limit_auth` (10/60 s, own bucket) on signup/login/refresh; `rate_limit_chat` on `/api/orchestration/compare` and `/resume`. Compose content capture defaults to `false`. Pin `uv` and `aspire-dashboard`. Tests: `tests/test_rate_limit*.py` on the existing `RedisContainer`. | M | no |
 | **A-5a** Code-side doc fixes | #82 | `hitl.py` docstring; `modes/__init__.py:57` message; `REPLAY_FIXTURES_DIR` default → `evals/fixtures/replay` (and `.env.example`); rename the `evals.yml` job "Full (real LLM + judge, manual dispatch)"; `group_chat.py` → public imports if `uv run python -c "from agent_framework import Executor, handler, WorkflowBuilder, WorkflowContext"` succeeds, else fix the comment. Run `uv run pytest` and the chapter 22 tests. | S | no |
-| **A-5b** Markdown fixes | #82 | Parity rows 14, 15, 16 (recount 16 from `check_tutorial_coverage.py`); SECURITY.md → 1.3.x; CONTRIBUTING lines 18 and 30 + the `tests.yml:176-180` comment; `tutorials.yml` header counts; quick-start line 307; README "What's next"; README wording "A2A-style HTTP (`/message:send`)" until #88 and "MCP optional, flag-gated"; a `docs/frontend.md` section from CLAUDE.md's Phase 1.6 text. Gate: `python scripts/build_docs_site.py --check && python3 scripts/check_tutorial_readmes.py --check && python3 scripts/check_tutorial_coverage.py --check`. | M | no |
+| **A-5b** Markdown fixes | #82 | Parity rows 14, 15, 16 (recount 16 from `check_tutorial_coverage.py`); SECURITY.md → 1.3.x; CONTRIBUTING lines 18 and 30 + the `tests.yml:176-180` comment; `tutorials.yml` header counts; quick-start line 307; README "What's next" and `docs/roadmap.md` (remove the LangGraph phases LG1–LG3 — parked, see IV-4); README wording "A2A-style HTTP (`/message:send`)" until #88 and "MCP optional, flag-gated"; a `docs/frontend.md` section from CLAUDE.md's Phase 1.6 text. Gate: `python scripts/build_docs_site.py --check && python3 scripts/check_tutorial_readmes.py --check && python3 scripts/check_tutorial_coverage.py --check`. | M | no |
 | **A-6a** Embeddings from the seeder + fallback | #83 | `scripts/embedding_text.py` (shared `build_embedding_text`). `seed_product_embeddings()` in `seed.py`, after other seed steps and before `ANALYZE`: under `replay`, use `shared.replay_embeddings.embed_text` (the query side uses the same scheme); under `openai`/`azure` with a matching `EMBEDDING_MODEL`, load `scripts/data/product_embeddings.v1.jsonl.gz` and insert rows whose text hash matches; otherwise skip and log. Then `REINDEX INDEX idx_product_embedding`. **Must not call `random`** (it would shift `random.seed(42)` data and miss every fixture). Pass `LLM_PROVIDER` into the seeder in all compose files. `semantic_search`: on an embedding-call failure run the existing full-text query alone and log; output keys unchanged. `find_similar_products`: no embedding → same-category by rating. **Do not edit any `@tool` description** (part of the fixture key). .NET: same fallbacks in `ProductTools.cs:302-373`, `EmbeddingProvider.cs`. Tests: `clean_db` per loader branch and fallback; .NET on `PostgresFixture`. Fixture check: the replay smoke recipe in `evals/fixtures/README.md` reports zero misses. | M | no |
 | **A-6b** Commit precomputed vectors | #83 | `generate_embeddings.py --export scripts/data/product_embeddings.v1.jsonl.gz` (one JSONL row per product: name, text hash, model, base64 float32; ~0.3 MB gzipped). Run by a human, never CI. | S | **yes**, < $0.01 |
 | **A-7a** `ruff format` | #85 | Mechanical only; add `.git-blame-ignore-revs`. Needs a quiet window. | L (mechanical) | no |
