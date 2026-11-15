@@ -18,9 +18,10 @@ SANITIZE_TOOLS: dict[str, set[str] | None] = {
     "search_reviews": {"title", "body", "reviewer", "reviewer_name"},
     "get_sentiment_by_topic": {"title", "body", "summary", "quote", "quotes", "comment"},
     "get_sentiment_trend": {"title", "body", "summary"},
-    "compare_product_reviews": {"title", "body", "summary", "comment"},
+    "compare_product_reviews": {"title", "body", "summary", "comment", "product_name"},
     "draft_seller_response": {"review_title", "review_body", "reviewer", "response_template"},
-    "detect_fake_reviews": {"title", "body", "comment", "reviewer", "reviewer_name"},
+    # body_preview is the first 100 chars of the review body, i.e. review text.
+    "detect_fake_reviews": {"title", "body", "body_preview", "comment", "reviewer", "reviewer_name"},
     # product-discovery: descriptions/specs are seller-editable free text
     "search_products": {"name", "description", "specs", "features"},
     "get_product_details": {"name", "description", "specs", "features"},
