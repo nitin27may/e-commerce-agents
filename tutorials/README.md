@@ -191,15 +191,17 @@ Each chapter's own `README.md` is the canonical, always-current source.
 | 32 | [Cost Control and Budgets](./32-cost-control-and-budgets/) | Runnable · tested in CI | Runnable · tested in CI |
 <!-- END GENERATED COVERAGE TABLE -->
 
-[^magentic]: Chapter 16's .NET side is a **status stub**, not a port. Magentic orchestration
-    is Python-only — Microsoft's docs say so outright, and there is no `MagenticBuilder` in
-    `Microsoft.Agents.AI.Workflows` 1.1.0. The stub's tests are a tripwire: they reflect over
-    the shipped assembly and fail the day the type appears, so the claim cannot rot quietly.
-    A failure there is good news.
+[^magentic]: Chapter 16's .NET side is still a **status stub**, not a port — but the reason has
+    changed. Magentic orchestration *does* exist in .NET now: `Microsoft.Agents.AI.Workflows`
+    1.28.0 exports `MagenticWorkflowBuilder` and its plan/ledger events (the Python names
+    `MagenticBuilder` / `StandardMagenticManager` still do not exist there). The stub's
+    tripwire tests fired when the tutorials moved from 1.1.0 to 1.28.0 and were inverted
+    rather than deleted: they now pin that the types exist. Porting the chapter is open work.
 
 [^devui]: DevUI is Python-only in the versions this repo pins. A `Microsoft.Agents.AI.DevUI`
-    package exists on NuGet but ships prerelease-only, and the .NET side of this repo is pinned
-    to `Microsoft.Agents.AI` 1.1.0 stable. See `20b-devui/dotnet/README.md`.
+    package exists on NuGet but is still prerelease-only (latest `1.28.0-preview.261106.1`
+    when last checked), and every .NET chapter is pinned to stable `Microsoft.Agents.AI`
+    1.28.0 through `tutorials/Directory.Packages.props`. See `20b-devui/dotnet/README.md`.
 
 ---
 

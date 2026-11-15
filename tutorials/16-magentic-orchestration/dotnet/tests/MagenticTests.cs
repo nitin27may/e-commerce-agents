@@ -1,18 +1,15 @@
 // MAF v1 — Chapter 16 tests (Magentic Orchestration)
 //
-// This chapter's .NET side is a status stub, and the stub is correct:
-// Magentic really is Python-only in Microsoft Agent Framework v1. So there is
-// no behaviour to test. What there IS is a claim with a shelf life.
+// History: this chapter's .NET side is a status stub, written when Magentic
+// was Python-only (Microsoft.Agents.AI.Workflows 1.1.0). These tests were a
+// tripwire for the day that stopped being true, and it did: Workflows 1.28.0
+// exports MagenticWorkflowBuilder and its event/ledger types (found when the
+// tutorials were unified onto the production MAF version, #84).
 //
-// A stub that says "not supported yet" is only honest while it stays true.
-// Left alone it decays silently — the package gets bumped, Magentic lands, and
-// the chapter goes on telling readers to go use Python. Nobody notices,
-// because nothing fails.
-//
-// These tests are the tripwire. They assert the SDK gap still exists by
-// looking in the assembly, so the day Microsoft ships MagenticBuilder this
-// chapter goes red and someone has to come rewrite it. That is the whole
-// point: a failure here is good news.
+// The tripwire is therefore INVERTED rather than deleted. It now pins the fact
+// that the types exist, so a rename or removal still makes someone look. The
+// stub itself is not yet replaced by a real port — that is a follow-up — and
+// its output says so honestly.
 
 using System.Reflection;
 using FluentAssertions;
@@ -30,21 +27,23 @@ public sealed class MagenticTests
         Workflows.GetExportedTypes().Select(t => t.Name);
 
     [Fact]
-    public void The_Workflows_Assembly_Still_Has_No_Magentic_Types()
+    public void The_Workflows_Assembly_Now_Ships_Magentic_Types()
     {
-        // If this fails, Magentic has shipped for .NET. Delete the stub, port
-        // the Python sample in ../../python/main.py, and update the status
-        // table in tutorials/README.md and its [^stub] footnote.
-        ExportedTypeNames.Should().NotContain(
-            name => name.Contains("Magentic", StringComparison.OrdinalIgnoreCase),
-            "the .NET stub for this chapter is only correct while Magentic is Python-only");
+        // The tripwire fired at 1.28.0. Pin what shipped so a rename or a
+        // removal in a later bump is noticed. When the real port lands, this
+        // test stays as the "the SDK still has it" control.
+        ExportedTypeNames.Should().Contain("MagenticWorkflowBuilder");
+        ExportedTypeNames.Should().Contain(
+            name => name.Contains("Magentic", StringComparison.OrdinalIgnoreCase) && name.EndsWith("Event"),
+            "Magentic emits orchestration events (plan created, replanned, progress ledger)");
     }
 
     [Fact]
-    public void The_Named_Types_The_Python_Chapter_Uses_Are_Absent()
+    public void The_Python_Names_Are_Still_Not_The_DotNet_Names()
     {
-        // Named explicitly, because "contains Magentic" would miss a rename.
-        // These are the two symbols the Python chapter is built on.
+        // The Python chapter is built on MagenticBuilder / StandardMagenticManager.
+        // The .NET API is named differently (MagenticWorkflowBuilder), so a port
+        // cannot be a transliteration of ../../python/main.py.
         Workflows.GetType("Microsoft.Agents.AI.Workflows.MagenticBuilder").Should().BeNull();
         Workflows.GetType("Microsoft.Agents.AI.Workflows.StandardMagenticManager").Should().BeNull();
     }
@@ -70,7 +69,7 @@ public sealed class MagenticTests
     public void The_Stub_Points_Readers_At_The_Python_Implementation()
     {
         // The stub's only job is to leave a runnable .NET project that tells
-        // the truth. Assert it actually says where to go instead.
+        // the truth: the SDK now has Magentic, this chapter has not ported it.
         using var captured = new StringWriter();
         TextWriter original = Console.Out;
         try
@@ -84,7 +83,7 @@ public sealed class MagenticTests
         }
 
         string output = captured.ToString();
-        output.Should().Contain("not yet supported in C#");
+        output.Should().Contain("not yet ported");
         output.Should().Contain("tutorials/16-magentic-orchestration/python/main.py");
     }
 }

@@ -142,19 +142,22 @@ Here's a concise launch brief for your AI meal planner:
 
 ## .NET
 
-Magentic orchestration is **Python-only** in Microsoft Agent Framework today. The official docs
-say so directly, and it's confirmed against `Microsoft.Agents.AI.Workflows` 1.1.0 — there is no
-`MagenticBuilder` / `StandardMagenticManager` symbol in the .NET assembly.
+Magentic orchestration was Python-only when this chapter was written, and the official docs said
+so directly. **That is no longer true:** `Microsoft.Agents.AI.Workflows` 1.28.0 exports
+`MagenticWorkflowBuilder` plus `MagenticPlanCreatedEvent`, `MagenticReplannedEvent`,
+`MagenticProgressLedgerUpdatedEvent` and the ledger/prompt-override types. The Python names
+(`MagenticBuilder` / `StandardMagenticManager`) still do not exist in the .NET assembly, so a
+port is a rewrite against the .NET API, not a transliteration. That port has not been done yet.
 
 ```bash
 cd tutorials/16-magentic-orchestration/dotnet
-dotnet run   # prints the "not yet supported in C#" status and points back at the Python example
+dotnet run   # prints the "not yet ported" status and points back at the Python example
 ```
 
 [`dotnet/Program.cs`](./dotnet/Program.cs) is a status stub, not a working sample — it exists so
 the chapter's dotnet project still builds and runs, and it links straight back to the Python
-walkthrough above. If a future `agent-framework` release adds C# Magentic support, this stub is
-what gets replaced with a real example.
+walkthrough above. Now that the SDK ships `MagenticWorkflowBuilder`, this stub is what gets
+replaced with a real example.
 
 ## Side-by-side differences
 
@@ -213,9 +216,7 @@ The .NET side ships [`dotnet/tests/MagenticTests.cs`](./dotnet/tests/MagenticTes
 cd tutorials/16-magentic-orchestration/dotnet && dotnet test tests/Magentic.Tests.csproj
 ```
 
-What they test is the claim's shelf life. A stub that says "not supported yet" is only honest while it stays true, and left alone it decays silently — the package gets bumped, Magentic lands, and this chapter goes on telling .NET readers to go use Python. Nothing fails, so nobody notices.
-
-So the tests reflect over the shipped `Microsoft.Agents.AI.Workflows` assembly and assert `Magentic` types are still absent, with a control test asserting the sibling builders (`BuildSequential`, `BuildConcurrent`, and the handoff/group-chat builders) *are* present — without which a failed assembly load would look identical to "still missing". **A failure here is good news:** it means the chapter needs rewriting.
+What they test is the claim's shelf life. They began as a tripwire asserting Magentic was *absent* from `Microsoft.Agents.AI.Workflows`, and the tripwire did fire: it went red when the tutorials moved from 1.1.0 to 1.28.0, because 1.28.0 ships `MagenticWorkflowBuilder`. Rather than delete it, the test was inverted. It now reflects over the assembly and asserts the Magentic types *are* present (so a rename or removal in a later bump is noticed), that the Python-only names are still absent, and — with a control test asserting the sibling builders (`BuildSequential`, `BuildConcurrent`, and the handoff/group-chat builders) are present, without which a failed assembly load would look identical to "missing" — that the stub still tells readers the truth.
 
 ## How this shows up in the capstone
 

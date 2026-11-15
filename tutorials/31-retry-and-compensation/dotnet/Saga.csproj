@@ -8,7 +8,6 @@
     <RootNamespace>MafV1.Ch31.Saga</RootNamespace>
     <AssemblyName>Saga</AssemblyName>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
   </PropertyGroup>
 
   <!-- No agent packages: this chapter is plain orchestration logic. -->
