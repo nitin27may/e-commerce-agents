@@ -65,11 +65,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # Registration/import smoke tests only — no testcontainer Postgres needed.
-    # Integration-marked tests are skipped here (`-m "not integration"`). They
-    # are NOT run by any other scheduled job today — evals.yml is
-    # workflow_dispatch-only and only runs `evals.run_evals`, not pytest, so it
-    # never exercises these packages' integration tests. A PR-blocking smoke
-    # gate that would cover this is planned but not yet implemented.
+    # Integration-marked tests are skipped here (`-m "not integration"`) and run
+    # by mcp-package-integration below.
     strategy:
       matrix:
         package:
@@ -93,6 +90,39 @@ jobs:
       - name: Run smoke tests (skip integration)
         working-directory: agents/python
         run: uv run pytest ${{ matrix.package.dir }}/tests -m "not integration" -v
+
+  mcp-package-integration:
+    name: MCP packages · integration (Postgres)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # One invocation per package, not `pytest packages/*/tests`: both packages
+    # have a `tests` package with its own conftest, and pytest refuses to load
+    # two of them in one run (ImportPathMismatchError). Testcontainers uses the
+    # runner's Docker daemon.
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - { name: ecommerce-mcp-product, dir: packages/mcp-product }
+          - { name: ecommerce-mcp-inventory, dir: packages/mcp-inventory }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install Python 3.12
+        run: uv python install 3.12
+
+      - name: Sync package deps
+        working-directory: agents/python
+        run: uv sync --frozen --all-packages --extra dev
+
+      - name: Run integration tests
+        working-directory: agents/python
+        run: uv run pytest ${{ matrix.package.dir }}/tests -m integration -v
 
   dotnet-tests:
     name: .NET · dotnet test + coverage
@@ -276,7 +306,7 @@ jobs:
   #     broken tutorial chapter blocks a security fix from shipping.
   publish-main:
     name: Publish :main images
-    needs: [python-tests, mcp-package-tests, dotnet-tests, web-tests]
+    needs: [python-tests, mcp-package-tests, mcp-package-integration, dotnet-tests, web-tests]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
