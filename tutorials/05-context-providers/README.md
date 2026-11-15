@@ -91,7 +91,7 @@ class UserProfileProvider(ContextProvider):
         state["user"] = {"email": self.email, "name": self.name, "loyalty_tier": self.loyalty_tier}
 ```
 
-`build_agent()` wires it in with `context_providers=[provider]`, and `main()` reads email/name/tier from `sys.argv` so you can run the same script for different users without touching code. `main.py` also supports `LLM_PROVIDER=replay` (a canned, no-network chat client the tests use for CI) alongside `openai` and `azure` — see `_default_client()` for the full provider switch.
+`build_agent()` wires it in with `context_providers=[provider]`, and `main()` reads email/name/tier from `sys.argv` so you can run the same script for different users without touching code. `main.py` follows the series key rule — an explicit `LLM_PROVIDER` (`openai`, `azure`, `replay`), else a key in the environment, else replay of the committed fixtures — see `tutorials/_shared/llm.py` for the switch. Note that its *default* prompt has no recorded fixture, so a keyless `python main.py` replays a miss; the tests' recorded prompt is the keyless path.
 
 The `source_id` argument to both `super().__init__(...)` and `extend_instructions(...)` lets MAF dedupe and debug which provider injected what when several are chained together (as the capstone does — see below).
 

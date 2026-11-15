@@ -64,6 +64,11 @@ class _PanelistExecutor(Executor):
 The forwarders are typed `WorkflowContext[State, State]`; the moderator (terminal)
 is `WorkflowContext[None, State]` and calls `ctx.yield_output(state)`.
 
+## Prerequisites
+
+- No chat client and no key: `main.py` imports none. Its panelists and synthesizer are plain callables, so the run below makes no model call.
+- It imports the production `workflows.group_chat` module from `agents/python`, which is why the run command starts there.
+
 ## Run it
 
 Panelist behavior is a plain `Responder` callable, so you can run it without an LLM:

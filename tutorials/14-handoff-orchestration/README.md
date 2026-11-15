@@ -10,6 +10,7 @@ Canonical example: **Triage agent routes to a Math or History specialist, which 
 
 - Completed [Chapter 13 — Concurrent Orchestration](../13-concurrent-orchestration/)
 - Repo-root `.env` with one LLM provider: `OPENAI_API_KEY` (+ optional `LLM_MODEL`, default `gpt-4.1`) or `AZURE_OPENAI_ENDPOINT` / `AZURE_OPENAI_KEY` / `AZURE_OPENAI_DEPLOYMENT` (+ optional `AZURE_OPENAI_API_VERSION`, default `2024-10-21`)
+- **Key:** `main.py`'s default prompt has no recorded fixture, so running it needs a key (live run). Without one, the chapter's tests replay their own recorded prompt: `uv run --project tutorials pytest tutorials/14-handoff-orchestration/python/tests -m "not integration"` (with `PYTHONHASHSEED=0`, which the recorded fixtures assume).
 
 ## The concept
 

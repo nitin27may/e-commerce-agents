@@ -24,6 +24,7 @@ twice if the first answer was thin, and it should decide that at run time, not h
 
 - **Budget matters here.** Magentic makes multiple manager LLM calls in addition to every worker
   call. Expect somewhere between 5 and 15 LLM calls for a single task on the default settings.
+- **Key:** `main.py`'s default prompt has no recorded fixture, so running it needs a key (live run). Without one, the chapter's tests replay their own recorded prompt: `uv run --project tutorials pytest tutorials/16-magentic-orchestration/python/tests -m "not integration"`.
 
 ## The concept
 
@@ -99,7 +100,7 @@ Source: [`python/main.py`](./python/main.py). The three workers and the manager 
 `Agent` instances — the manager's instructions are what make it a *planner*, not a special type:
 
 ```python
-# tutorials/16-magentic-orchestration/python/main.py:79-101
+# tutorials/16-magentic-orchestration/python/main.py:62-84
 def manager_agent() -> Agent:
     """A planning LLM the Magentic manager uses to decompose and delegate."""
     return Agent(
@@ -125,7 +126,7 @@ def build_workflow():
     ).build()
 ```
 
-`plan()` (`main.py:118-141`) drives the streamed run and separates two kinds of events: a
+`plan()` (`main.py:101-125`) drives the streamed run and separates two kinds of events: a
 `group_chat` event whose payload is a `GroupChatRequestSentEvent` (the manager dispatching to a
 named worker) and an `output` event carrying the final synthesized answer. Sample output:
 
@@ -184,7 +185,7 @@ what gets replaced with a real example.
   use a separate, still-active helper, `tutorials/_shared/maf_bootstrap.py`, which both patches
   `agent_framework`'s `__init__.py` defensively (same no-op-if-already-patched logic) and loads the
   repo-root `.env`; every chapter's `main.py` and tests call `maf_bootstrap.bootstrap()` before
-  importing `agent_framework`, including this one (`main.py:21-22`).
+  importing `agent_framework`, including this one (`main.py:20-22`).
 
 ## Tests
 
@@ -230,7 +231,7 @@ Until that lands, this chapter's own code is the standalone teaching example of 
 manager loop you'd wire in once Magentic gets a capstone mode:
 
 ```
-tutorials/16-magentic-orchestration/python/main.py:92-101
+tutorials/16-magentic-orchestration/python/main.py:75-84
 ```
 
 `build_workflow()` — a `StandardMagenticManager` wrapping three workers — is the shape a future

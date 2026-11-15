@@ -117,7 +117,12 @@ cp .env.example .env
 ```
 
 `.env` at the repo root is read by every tutorial chapter and by the capstone app
-alike. `LLM_PROVIDER` selects the block: `openai`, `azure`, or `replay`.
+alike. `LLM_PROVIDER` selects the block: `openai`, `azure`, or `replay`. The tutorials'
+rule for keys is the same in every chapter: an explicit `LLM_PROVIDER` wins; otherwise a
+key in the environment selects OpenAI or Azure; otherwise the chapter replays its
+committed fixture and says so (`tutorials/_shared/llm.py`). Note that `.env.example`
+sets `LLM_PROVIDER=openai`, so after `cp .env.example .env` a chapter tries a live
+call until you either add a key or comment that line out (or set `LLM_PROVIDER=replay`).
 
 ### Option A — OpenAI (or any OpenAI-compatible endpoint)
 
@@ -186,9 +191,9 @@ answer doesn't reflect the tool's canned data, that's the model's
 tool-calling support, not a bug in the chapter.
 
 **Option 2 — Replay (free, no network, no key at all).** Every tutorial chapter's
-`tests/` directory ships committed fixtures recorded against a real model. Set
-`LLM_PROVIDER=replay` and the chapter's own client construction plays them back
-with zero credentials:
+`tests/` directory ships committed fixtures recorded against a real model. With no
+key in the environment (and `LLM_PROVIDER` unset or `replay`) the chapter's own
+client construction plays them back with zero credentials:
 
 ```bash
 LLM_PROVIDER=replay uv run --project tutorials python tutorials/01-first-agent/python/main.py

@@ -10,13 +10,15 @@ We'll answer one question: **"What is the capital of France?"**
 
 ## Prerequisites
 
-- Completed [Chapter 00 — Setup](../00-setup/) (uv, .NET 9/10 SDK, Docker).
-- Repo-root `.env` with one LLM provider configured:
+- Completed [Chapter 00 — Setup](../00-setup/) (uv, the .NET 10 SDK — the projects target `net10.0` — and Docker).
+- **No key is needed to run this chapter.** With no key in the environment, Python replays the committed fixture, and the .NET test project (`dotnet test`) drives a scripted client; only `dotnet run` talks to a live model. A key is only for a live run; add one to the repo-root `.env`:
 
 | Provider | Required | Optional |
 |----------|----------|----------|
 | **OpenAI** | `OPENAI_API_KEY` | `LLM_MODEL` (default `gpt-4.1`) |
 | **Azure OpenAI** | `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_KEY`, `AZURE_OPENAI_DEPLOYMENT` | `AZURE_OPENAI_API_VERSION` (default `2024-10-21`) |
+
+The rule, for every chapter that builds a chat client: an explicit `LLM_PROVIDER` (`openai`, `azure` or `replay`) wins; otherwise a key in the environment selects OpenAI or Azure; otherwise the chapter replays its fixture and prints one line saying so. It lives in [`tutorials/_shared/llm.py`](../_shared/llm.py).
 
 ## The concept
 
@@ -72,26 +74,13 @@ uv sync --project tutorials
 uv run --project tutorials python tutorials/01-first-agent/python/main.py
 ```
 
-This needs a key in `.env` (live run). With no key, `LLM_PROVIDER=replay` plays back the committed fixture and prints the same answer; the tests always run that way.
+This needs no key: with none in the environment, the chapter plays back its committed fixture and prints the answer (and one line saying it is replaying). Put a key in `.env` for a live run, or set `LLM_PROVIDER` to choose explicitly.
 
-The provider switch and agent construction:
+The provider switch lives in one shared helper, `build_chat_client`, so every chapter picks its client the same way; the chapter code is just agent construction:
 
 ```python
-def _default_client() -> OpenAIChatClient | OpenAIChatCompletionClient | ReplayChatClient:
-    provider = os.environ.get("LLM_PROVIDER", "openai").lower()
-    if provider == "replay":
-        return ReplayChatClient(fixtures_dir=FIXTURES_DIR, ...)
-    if provider == "azure":
-        return OpenAIChatCompletionClient(
-            model=os.environ["AZURE_OPENAI_DEPLOYMENT"],
-            azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
-            api_key=os.environ.get("AZURE_OPENAI_KEY") or os.environ.get("AZURE_OPENAI_API_KEY"),
-            api_version=os.environ.get("AZURE_OPENAI_API_VERSION", "2024-10-21"),
-        )
-    return OpenAIChatClient(
-        model=os.environ.get("LLM_MODEL", "gpt-4.1"),
-        api_key=os.environ["OPENAI_API_KEY"],
-    )
+def _default_client() -> BaseChatClient:
+    return build_chat_client(FIXTURES_DIR)  # tutorials/_shared/llm.py: LLM_PROVIDER, else a key, else replay
 
 
 def build_agent(client: object | None = None) -> Agent:
@@ -103,7 +92,7 @@ async def ask(agent: Agent, question: str) -> str:
     return response.text
 ```
 
-`build_agent()` accepts an optional pre-built client so the test suite can inject a canned one instead of hitting a real LLM. There's also a third provider, `replay`, backed by `tutorials/_shared/replay_client.py` — it plays back a committed fixture from `tests/fixtures/replay/`, which is how the test suite gets a "real answer" assertion without network access or credentials.
+`build_agent()` accepts an optional pre-built client so the test suite can inject a canned one instead of hitting a real LLM. The third provider, `replay` — what the no-key fallback selects — is backed by `tutorials/_shared/replay_client.py` — it plays back a committed fixture from `tests/fixtures/replay/`, which is how the test suite gets a "real answer" assertion without network access or credentials.
 
 ## .NET
 

@@ -18,6 +18,8 @@ Every prior chapter drives an agent from a script or a test — you never actual
 | **OpenAI** | `OPENAI_API_KEY` | `LLM_MODEL` (default `gpt-4.1`) |
 | **Azure OpenAI** | `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_KEY`, `AZURE_OPENAI_DEPLOYMENT` | `AZURE_OPENAI_API_VERSION` (default `2024-10-21`) |
 
+This is the one Python chapter that does **not** follow the no-key rule: it is a long-running dev server that takes arbitrary prompts from a browser, and no recorded fixture can answer those, so `main.py` still needs a live key to start. It is on the skip-list in `scripts/run_tutorials_keyless.py` for that reason; its smoke tests skip when no credentials are present (see Gotchas).
+
 ## The concept
 
 DevUI ships as its own package (`agent-framework-devui`, pre-release) and exposes a single entry point: `serve(entities=[...])`. Hand it a list of MAF `Agent` or `Workflow` objects and it spins up a local web server that does three things at once — serves a browser dashboard for typing prompts and watching structured tool-call/response traces, exposes an OpenAI-compatible Responses API on the same port (so any HTTP client, including a test, can drive it the same way ChatGPT-style tooling would), and streams OpenTelemetry spans into a live tracing panel as the agent runs. There's a second mode — directory discovery — where DevUI scans a folder of agent modules and registers them automatically instead of you calling `serve()` yourself; this chapter uses the simpler programmatic form since it's a single demo agent.

@@ -16,6 +16,8 @@ Chapter 11 wrapped a single `ChatClientAgent` as a workflow executor and wired t
 | **OpenAI** | `OPENAI_API_KEY` | `LLM_MODEL` (default `gpt-4.1`) |
 | **Azure OpenAI** | `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_KEY`, `AZURE_OPENAI_DEPLOYMENT` | `AZURE_OPENAI_API_VERSION` (default `2024-10-21`) |
 
+- **Key:** `main.py`'s default prompt has no recorded fixture, so running it needs a key (live run). Without one, the chapter's tests replay their own recorded prompt: `uv run --project tutorials pytest tutorials/12-sequential-orchestration/python/tests -m "not integration"`.
+
 ## The concept
 
 Hand the builder an ordered list of agents; it returns a `Workflow` where participant 1 runs against the input message, participant 2 runs against the input plus participant 1's response, participant 3 runs against all of that, and so on. Each participant is still a normal MAF agent — same `Agent(...)` / `AsAIAgent(...)` construction as every prior chapter — the builder is what turns the list into a pipeline with shared conversation state.

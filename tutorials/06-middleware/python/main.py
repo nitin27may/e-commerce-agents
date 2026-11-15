@@ -14,7 +14,6 @@ Run:
 from __future__ import annotations
 
 import asyncio
-import os
 import pathlib
 import re
 import sys
@@ -26,7 +25,7 @@ from tutorials._shared import maf_bootstrap  # noqa: E402
 
 maf_bootstrap.bootstrap()
 
-from agent_framework import Agent, tool  # noqa: E402
+from agent_framework import Agent, BaseChatClient, tool  # noqa: E402
 from agent_framework._middleware import (  # noqa: E402
     AgentContext,
     AgentMiddleware,
@@ -35,9 +34,8 @@ from agent_framework._middleware import (  # noqa: E402
     FunctionInvocationContext,
     FunctionMiddleware,
 )
-from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient  # noqa: E402
 from pydantic import Field  # noqa: E402
-from tutorials._shared.replay_client import ReplayChatClient  # noqa: E402
+from tutorials._shared.llm import build_chat_client  # noqa: E402
 
 INSTRUCTIONS = (
     "You are a helpful assistant. "
@@ -128,29 +126,10 @@ class PiiRedactionChatMiddleware(ChatMiddleware):
 # ─────────────── Client + agent factories ───────────────
 
 
-def _default_client() -> OpenAIChatClient | OpenAIChatCompletionClient | ReplayChatClient:
-    provider = os.environ.get("LLM_PROVIDER", "openai").lower()
-    if provider == "replay":
-        return ReplayChatClient(
-            fixtures_dir=FIXTURES_DIR,
-            record=os.environ.get("RECORD", "").lower() in ("1", "true", "yes"),
-            record_provider=os.environ.get("REPLAY_RECORD_PROVIDER", "openai"),
-        )
-    if provider == "azure":
-        return OpenAIChatCompletionClient(
-            model=os.environ["AZURE_OPENAI_DEPLOYMENT"],
-            azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
-            api_key=os.environ.get("AZURE_OPENAI_KEY") or os.environ.get("AZURE_OPENAI_API_KEY"),
-            api_version=os.environ.get("AZURE_OPENAI_API_VERSION", "2024-10-21"),
-        )
-    return OpenAIChatClient(
-        model=os.environ.get("LLM_MODEL", "gpt-4.1"),
-        api_key=os.environ["OPENAI_API_KEY"],
-        # Phase 9: any OpenAI-compatible endpoint (GitHub Models, OpenRouter,
-        # vLLM, LM Studio, Ollama) instead of api.openai.com — see
-        # tutorials/00-setup/README.md's "Don't have a paid API key?" section.
-        base_url=os.environ.get("LLM_BASE_URL") or None,
-    )
+def _default_client() -> BaseChatClient:
+    """Chat client per the series key rule (tutorials/_shared/llm.py): an explicit
+    LLM_PROVIDER wins, else a key in the environment, else replay of the fixtures."""
+    return build_chat_client(FIXTURES_DIR)
 
 
 def build_agent(

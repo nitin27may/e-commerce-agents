@@ -18,6 +18,8 @@ This is not a toy pattern invented for the tutorial. The capstone app runs a rea
 | **OpenAI** | `OPENAI_API_KEY` | `LLM_MODEL` (default `gpt-4.1`) |
 | **Azure OpenAI** | `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_KEY`, `AZURE_OPENAI_DEPLOYMENT` | `AZURE_OPENAI_API_VERSION` (default `2024-10-21`) |
 
+- **Key:** `main.py`'s default prompt has no recorded fixture, so running it needs a key (live run). Without one, the chapter's tests replay their own recorded prompt: `uv run --project tutorials pytest tutorials/13-concurrent-orchestration/python/tests -m "not integration"`.
+
 ## The concept
 
 Concurrent orchestration fans one input out to a fixed set of participants, runs them in parallel, and fans the results back in. There's no coordination between branches while they run — each agent sees only the original input, not its siblings' output — so the pattern only fits problems that are genuinely independent per-branch. If branch B needs branch A's answer, that's Sequential (or a custom graph), not Concurrent.
