@@ -549,3 +549,64 @@ async def test_runs_endpoint_does_not_leak_other_users(
     summaries = {e["input_summary"] for e in entries}
     assert "alice run" in summaries
     assert "bob run" not in summaries, "alice must not see bob's runs"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. Newlines survive the specialist -> orchestrator hop (#80)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "chunks",
+    [
+        ["a\n\nb"],
+        ["item one", "\n", "item two"],
+        ["```product\n", '{"id": "p1"}', "\n```\n\nDone."],
+        ["x\ry"],
+    ],
+)
+async def test_newlines_survive_specialist_to_orchestrator_hop(
+    monkeypatch: pytest.MonkeyPatch,
+    sample_env: dict,
+    chunks: list[str],
+) -> None:
+    """A real specialist app, read by the real ``call_specialist_agent``.
+
+    Exact equality: before #80 a chunk containing a blank line closed the SSE
+    event early and the text after it vanished at the orchestrator's reader.
+    """
+    from httpx import ASGITransport
+
+    from shared.agent_host import create_agent_app
+
+    async def _fake_stream(agent, message, history=None):
+        for chunk in chunks:
+            yield chunk
+
+    monkeypatch.setattr("shared.agent_host._run_agent_native_stream", _fake_stream)
+    monkeypatch.setattr("shared.telemetry.agent_run_span", lambda *a, **kw: contextlib.nullcontext())
+    app = create_agent_app(agent=MagicMock(), agent_name="product-discovery", port=9999)
+
+    monkeypatch.setattr(orch_mod, "AGENT_REGISTRY", {"product-discovery": "http://pd:8081"})
+    monkeypatch.setattr(orch_mod, "_A2A_TRANSPORT", ASGITransport(app=app))
+    monkeypatch.setattr(settings, "AGENT_SHARED_SECRET", sample_env["AGENT_SHARED_SECRET"], raising=False)
+    _set_request_ctx(email="u@example.com")
+
+    queue: asyncio.Queue = asyncio.Queue()
+    current_stream_queue.set(queue)
+    current_steps.set([])
+
+    with patch.object(orch_mod, "a2a_call_span", _noop_span):
+        result = await call_specialist_agent(agent_name="product-discovery", message="hi")
+
+    # A lone "\r" is a line break on the wire, so it comes back as "\n".
+    expected = "".join(chunks).replace("\r\n", "\n").replace("\r", "\n")
+    assert result == expected
+
+    deltas = []
+    while not queue.empty():
+        kind, _agent, text = queue.get_nowait()
+        assert kind == "delta"
+        deltas.append(text)
+    assert "".join(deltas) == expected

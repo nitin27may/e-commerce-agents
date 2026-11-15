@@ -81,6 +81,30 @@ public sealed class A2AClientStreamingTests
         deltas.Should().Equal("line one\nline two");
     }
 
+    [Theory]
+    [InlineData("x\r\ny", "x\ny")]
+    [InlineData("x\ry", "x\ny")]
+    [InlineData("a\n\nb", "a\n\nb")]
+    [InlineData("\n", "\n")]
+    public async Task StreamAsync_RoundTripsSseFramingFrame_NormalisingCarriageReturns(string sent, string expected)
+    {
+        // #80: a "\r" inside a chunk must be split into data lines by the writer,
+        // not embedded raw, where a spec-compliant reader treats it as a line end.
+        var handler = new SseResponseHandler(SseFraming.Frame(sent) + SseFraming.Frame("[DONE]"));
+        var client = BuildClient(handler);
+
+        var deltas = await CollectAsync(client.StreamAsync("product-discovery", "http://localhost", "hi"));
+
+        deltas.Should().Equal(expected);
+    }
+
+    [Fact]
+    public void SseFraming_SplitsOnEveryLineBreakStyle()
+    {
+        SseFraming.Frame("x\r\ny\rz\nw", "delta").Should().Be("event: delta\ndata: x\ndata: y\ndata: z\ndata: w\n\n");
+        SseFraming.Frame("hello").Should().Be("data: hello\n\n");
+    }
+
     [Fact]
     public async Task StreamAsync_NonSuccessStatus_YieldsFallbackMessageAndStops()
     {

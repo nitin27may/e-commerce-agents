@@ -60,6 +60,7 @@ from shared.db import get_pool
 from shared.grounding.ledger import reset_grounding_ledger
 from shared.rate_limit import rate_limit_chat
 from shared.session import get_history_as_dicts, get_history_provider
+from shared.sse import sse_frame
 from shared.usage_db import UsageTimer, log_agent_usage, log_execution_step
 
 from .legacy import optional_auth
@@ -632,7 +633,7 @@ async def chat_stream(
                         )
                         timeout_msg = " [stream timed out — please retry]"
                         full_response.append(timeout_msg)
-                        yield f"data: {timeout_msg}\n\n"
+                        yield sse_frame(timeout_msg)
                         agent_task.cancel()
                         break
 
@@ -652,11 +653,11 @@ async def chat_stream(
                                 truncated = True
                                 marker = " [response truncated at limit]"
                                 full_response.append(marker)
-                                yield f"data: {marker}\n\n"
+                                yield sse_frame(marker)
                             else:
                                 full_bytes += chunk_bytes
                                 full_response.append(chunk)
-                                yield f"data: {chunk}\n\n"
+                                yield sse_frame(chunk)
 
                     elif item[0] == "delta":
                         # Specialist token — forward immediately to the browser as
@@ -674,7 +675,7 @@ async def chat_stream(
                         # arriving (see web/src/lib/api.ts's onDeltaChunk).
                         _agent_src: str = item[1]
                         delta_chunk: str = item[2]
-                        yield f"event: delta\ndata: {delta_chunk}\n\n"
+                        yield sse_frame(delta_chunk, event="delta")
 
                     elif item[0] == "frame":
                         # Structured event from a non-"tool" mode (node/handoff/
