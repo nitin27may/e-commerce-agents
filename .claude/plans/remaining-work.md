@@ -668,7 +668,7 @@ otherwise.
 
 | Wave | What | PRs | Key |
 |---|---|---|---|
-| **0 — stop the bleeding** | Small, independent, each fixes something that is wrong today | A-1 (streaming), A-2 (secrets, impersonation, loopback ports), D-1 (no self-approval), E-1 (sanitizer), B-9 (stream fallback re-runs tools), C-1 (keyless approval repro), A-5a, A-5b (stale claims), A-3 | none |
+| **0 — stop the bleeding** — **built 2026-11-15**, see §7 | Small, independent, each fixes something that is wrong today | A-1 (streaming), A-2 (secrets, impersonation, loopback ports), D-1 (no self-approval), E-1 (sanitizer), B-9 (stream fallback re-runs tools), C-1 (keyless approval repro), A-5a, A-5b (stale claims), A-3 | none |
 | **1 — gates and foundations** | What later waves stand on | A-7a → A-7b (ruff), A-8a/b/c, A-10 (migrations) → A-11 (`/ready`) → A-9, A-12, A-4, A-6a (embeddings), B-1 (fixture drift) → B-2, B-4 → B-5 (.NET MAF), C-2 → C-3 (tour determinism), C-12, C-14, C-16 → C-17 (tutorials), C-19, E-2a → E-2b, E-3a, E-3c, P-1, B-10, A-13 | none |
 | **2 — first upgrade, demo surface, approvals core** | | B-3 (core 1.22), C-4 → C-5, D-2 → D-3 → D-4 → D-5a, D-7, D-8, E-2c → E-2d, E-5, P-2, P-4, P-6, M-1, X-1 | none |
 | **R0** | Record the tour | C-6, A-6b | **yes** |
@@ -742,6 +742,27 @@ one approval that a customer cannot grant themselves; the official A2A client co
 task against a Python and a .NET specialist; `fixture_drift` exits 0 on current MAF; and every number
 on the eval scorecard was produced by a command in this file.
 
+
+## 7. Build log
+
+What building found, wave by wave. Plan rows above are left as written; this section is where they
+are corrected.
+
+### Wave 0 — built 2026-11-15
+
+All nine steps built by Sonnet builders, each required to confirm the problem in code first.
+
+| Step | Outcome |
+|---|---|
+| A-1 | As planned. Python-only bug confirmed; `shared/sse.py` adds `sse_frame` and an `aiter_sse_events` reader. .NET gained `SseFraming.Frame` for `\r` handling. |
+| A-2 | As planned. **The .NET impersonation path was real**: the shared-secret branch ran before Bearer handling and never checked `_isOrchestrator`. **Python was not affected** — its orchestrator uses Bearer-only `require_auth`. |
+| A-3 | As planned; `scripts/lib/env-secrets.sh` + `scripts/test-env-secrets.sh`. **`dev.ps1` was never executed** (no `pwsh` in the build environment) — hand-reviewed only. |
+| A-5a | As planned. `group_chat.py` moved to public imports; `pre_purchase.py` and `return_replace.py` still use private ones (B-2). |
+| A-5b | As planned, plus one unplanned correction: the roadmap claimed the .NET MCP host serves both domains; it serves inventory only. |
+| B-9 | (d) was partly wrong: .NET `A2AClient.StreamAsync` never re-posted. It now yields an interruption note after a mid-stream drop, matching Python. The `history` parameter stays on `A2AClient` because handoff mode's in-memory context may not be in Postgres. |
+| C-1 | **The suspicion was wrong.** The return flow pauses and resumes with no model call and `request_id` is extracted correctly; the test is kept as a regression guard. **The demo-clip stall (§11) is still unexplained** and is not this. |
+| D-1 | As planned, both stacks. Only `web/e2e/demo-recording.spec.ts` approved as the requesting customer; it now approves as admin but could not be run. |
+| E-1 | As planned. Allowlist went from 12 keys (2 phantom) to 17, equal to .NET. **Follow-up, not done:** `recall_memories` and `get_user_profile` return user-authored text and are unsanitised on both stacks. |
 
 ---
 
