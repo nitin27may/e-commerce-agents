@@ -108,12 +108,18 @@ public static class HitlRoutes
         //
         // A single atomic pending -> processing transition means only one
         // caller ever reaches the executor.
+        //
+        // The approver may not be the requester, even as admin (#92). That is part
+        // of the claim's WHERE clause rather than a read beforehand, so a refused
+        // self-approval never moves the row out of 'pending'.
+        var approver = RequestContext.CurrentUserEmail;
         var claimed = await conn.QueryFirstOrDefaultAsync(
             @"UPDATE tool_approval_requests
               SET status = 'processing'
               WHERE id = @id AND status = 'pending'
+                AND lower(user_email) <> lower(@approver)
               RETURNING id, user_email, tool_name, tool_input",
-            new { id = reqId }
+            new { id = reqId, approver }
         );
 
         if (claimed is null)
@@ -125,9 +131,17 @@ public static class HitlRoutes
                 "SELECT status FROM tool_approval_requests WHERE id = @id",
                 new { id = reqId }
             );
-            return existing is null
-                ? Results.NotFound(new { detail = "HITL request not found" })
-                : Results.BadRequest(new { detail = $"Request is already {(string)existing.status}" });
+            if (existing is null)
+            {
+                return Results.NotFound(new { detail = "HITL request not found" });
+            }
+            if ((string)existing.status == "pending")
+            {
+                // Still pending, so the only thing that kept the claim from matching
+                // is the requester check.
+                return Results.Json(new { detail = "You cannot approve your own request" }, statusCode: 403);
+            }
+            return Results.BadRequest(new { detail = $"Request is already {(string)existing.status}" });
         }
 
         var toolInput = ParseJson(claimed.tool_input);

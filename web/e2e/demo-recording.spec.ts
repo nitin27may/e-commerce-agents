@@ -9,7 +9,8 @@
  *   2. Switching orchestration mode from the composer
  *   3. The orchestration graph animating node-by-node from live SSE events
  *   4. A workflow pausing on its human-in-the-loop gate
- *   5. The pending approval on /runs
+ *   5. The pending approval on /runs, seen by a staff member (the customer who
+ *      asked for the return cannot approve it)
  *   6. Approve, and the run resuming from a real Postgres checkpoint
  *
  * Requires the full stack running with a live LLM key:
@@ -42,6 +43,8 @@
 import { test, expect, type Page } from "@playwright/test";
 
 const CUSTOMER = { email: "alice.johnson@gmail.com", password: "customer123" };
+// Approving is staff-only (#92): the customer who asked for the return cannot approve it.
+const ADMIN = { email: "admin.demo@gmail.com", password: "admin123" };
 
 // Recording only — no retries, one worker, generous budget for real LLM calls.
 test.use({
@@ -55,7 +58,7 @@ test.setTimeout(600_000);
  *  transitions read as glitches on video. */
 const beat = (page: Page, ms = 1_200) => page.waitForTimeout(ms);
 
-async function login(page: Page) {
+async function login(page: Page, user: { email: string; password: string } = CUSTOMER) {
   await page.goto("/login");
   await page.evaluate(() => {
     localStorage.removeItem("ecommerce_user");
@@ -63,8 +66,8 @@ async function login(page: Page) {
     localStorage.removeItem("ecommerce_refresh_token");
   });
   await page.goto("/login");
-  await page.fill('input[type="email"]', CUSTOMER.email);
-  await page.fill('input[type="password"]', CUSTOMER.password);
+  await page.fill('input[type="email"]', user.email);
+  await page.fill('input[type="password"]', user.password);
   await page.getByRole("button", { name: /log\s*in|sign\s*in/i }).click();
   await page.waitForURL(/\/chat/, { timeout: 20_000 });
   await page.waitForLoadState("networkidle").catch(() => {});
@@ -216,6 +219,9 @@ test("demo clip — chat, modes, graph, approval, resume", async ({ page }) => {
   await beat(page, 2_500);
 
   // ── 5-6. The pending approval on /runs, then resume ──────────────────────
+  // The customer sees "Awaiting staff review" and nothing to click, so a staff
+  // member takes over here. login() clears the stored session first.
+  await login(page, ADMIN);
   await page.goto("/runs");
   await page.waitForLoadState("networkidle").catch(() => {});
   await beat(page, 2_500);

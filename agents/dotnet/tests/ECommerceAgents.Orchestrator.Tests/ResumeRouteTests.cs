@@ -32,6 +32,7 @@ public sealed class ResumeRouteTests : IAsyncLifetime
     private DatabasePool _pool = null!;
     private const string Owner = "owner@example.com";
     private const string Stranger = "stranger@example.com";
+    private const string Approver = "approver@example.com";
 
     public ResumeRouteTests(PostgresFixture pg) => _pg = pg;
 
@@ -84,16 +85,32 @@ public sealed class ResumeRouteTests : IAsyncLifetime
         (await StatusOfAsync(runId)).Should().Be("pending", "a refused request must stay actionable");
     }
 
-    [Fact]
-    public async Task AnotherUsersPendingApproval_Is404()
+    /// <summary>
+    /// #92 — the requester used to be allowed to resume their own run, i.e. to approve
+    /// their own refund. Only an admin may now, and a refusal must not move the row.
+    /// </summary>
+    [Theory]
+    [InlineData(Owner)]
+    [InlineData(Stranger)]
+    public async Task ACustomer_IsRefused_EvenForTheirOwnRun(string email)
     {
         var (runId, _) = await SeedPendingAsync();
-        using var client = ClientFor(new StubResumableMode(), email: Stranger);
+        var mode = new StubResumableMode();
+        using var client = ClientFor(mode, email: email, role: "customer");
 
         var res = await client.PostAsJsonAsync($"/api/orchestration/{runId}/resume", new { approved = true });
 
-        res.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        res.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        mode.Calls.Should().Be(0);
         (await StatusOfAsync(runId)).Should().Be("pending");
+    }
+
+    [Fact]
+    public async Task AnAdminResumingARunThatDoesNotExist_Is404()
+    {
+        using var client = ClientFor(new StubResumableMode());
+        var res = await client.PostAsJsonAsync($"/api/orchestration/{Guid.NewGuid()}/resume", new { approved = true });
+        res.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [Fact]
@@ -249,7 +266,10 @@ public sealed class ResumeRouteTests : IAsyncLifetime
             "SELECT status FROM hitl_requests WHERE workflow_run_id = @runId", new { runId });
     }
 
-    private HttpClient ClientFor(IOrchestrationMode mode, bool authenticated = true, string email = Owner)
+    // Admin by default: since #92 only staff can resume, and the requester ("Owner")
+    // must not be the one approving.
+    private HttpClient ClientFor(
+        IOrchestrationMode mode, bool authenticated = true, string email = Approver, string role = "admin")
     {
         var server = OrchestratorTestHost.Create(
             _pool,
@@ -267,6 +287,7 @@ public sealed class ResumeRouteTests : IAsyncLifetime
         if (authenticated)
         {
             client.DefaultRequestHeaders.Add("X-Test-Email", email);
+            client.DefaultRequestHeaders.Add("X-Test-Role", role);
         }
         return client;
     }

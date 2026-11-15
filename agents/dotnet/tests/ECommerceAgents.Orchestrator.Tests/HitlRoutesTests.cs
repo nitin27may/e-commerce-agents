@@ -63,14 +63,14 @@ public sealed class HitlRoutesTests : IAsyncLifetime
         );
     }
 
-    private async Task<Guid> SeedPendingRequestAsync(string toolName, object toolInput)
+    private async Task<Guid> SeedPendingRequestAsync(string toolName, object toolInput, string? requester = null)
     {
         await using var conn = await _pool.OpenAsync();
         return await conn.ExecuteScalarAsync<Guid>(
             @"INSERT INTO tool_approval_requests (user_email, agent_name, tool_name, tool_input)
               VALUES (@email, 'order-management', @tool, @input::jsonb)
               RETURNING id",
-            new { email = CustomerEmail, tool = toolName, input = JsonSerializer.Serialize(toolInput) }
+            new { email = requester ?? CustomerEmail, tool = toolName, input = JsonSerializer.Serialize(toolInput) }
         );
     }
 
@@ -239,6 +239,33 @@ public sealed class HitlRoutesTests : IAsyncLifetime
 
         var second = await admin.PostAsJsonAsync($"/api/admin/hitl/requests/{requestId}/approve", new { });
         second.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    /// <summary>
+    /// #92 — an admin who raised the request must not be the one who approves it.
+    /// Asserts the side effect (no return row) and that the row stayed pending, so a
+    /// colleague can still pick it up.
+    /// </summary>
+    [Fact]
+    public async Task Approve_ByTheRequester_Returns403_AndLeavesTheRequestPending()
+    {
+        var requestId = await SeedPendingRequestAsync(
+            "initiate_return",
+            new { order_id = _placedOrderId.ToString(), reason = "self-serve" },
+            requester: AdminEmail
+        );
+        using var admin = AdminClient();
+
+        var response = await admin.PostAsJsonAsync($"/api/admin/hitl/requests/{requestId}/approve", new { });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        await using var conn = await _pool.OpenAsync();
+        (await conn.ExecuteScalarAsync<string>(
+            "SELECT status FROM tool_approval_requests WHERE id = @id", new { id = requestId }))
+            .Should().Be("pending");
+        (await conn.ExecuteScalarAsync<long>(
+            "SELECT COUNT(*) FROM returns WHERE order_id = @id", new { id = _placedOrderId }))
+            .Should().Be(0, "the refused approval must not have executed the action");
     }
 
     [Fact]

@@ -89,7 +89,12 @@ public static class OrchestrationRoutes
             return Results.BadRequest(new { detail = "approved is required" });
         }
 
-        var isAdmin = string.Equals(RequestContext.CurrentUserRole, "admin", StringComparison.OrdinalIgnoreCase);
+        // Admin only: whoever asked for the return must not be the one who approves it (#92).
+        if (!string.Equals(RequestContext.CurrentUserRole, "admin", StringComparison.OrdinalIgnoreCase))
+        {
+            return Results.Json(new { detail = "Admin access required" }, statusCode: 403);
+        }
+
         await using var conn = await pool.OpenAsync();
 
         var claimed = await conn.QueryFirstOrDefaultAsync(
@@ -97,11 +102,10 @@ public static class OrchestrationRoutes
                WHERE id = (
                      SELECT id FROM hitl_requests
                       WHERE workflow_run_id = @runGuid AND status = 'pending'
-                        AND (@isAdmin OR user_email = @email)
                       ORDER BY created_at DESC LIMIT 1)
                  AND status = 'pending'
            RETURNING id, kind, request_id, checkpoint_id, payload",
-            new { runGuid, email, isAdmin });
+            new { runGuid });
 
         if (claimed is null)
         {
@@ -109,9 +113,9 @@ public static class OrchestrationRoutes
             // already took it", because the second is a double-click and deserves to say so.
             var existing = await conn.ExecuteScalarAsync<string?>(
                 @"SELECT status FROM hitl_requests
-                   WHERE workflow_run_id = @runGuid AND (@isAdmin OR user_email = @email)
+                   WHERE workflow_run_id = @runGuid
                    ORDER BY created_at DESC LIMIT 1",
-                new { runGuid, email, isAdmin });
+                new { runGuid });
 
             return existing is null
                 ? Results.NotFound(new { detail = "No pending approval found for this run" })

@@ -29,10 +29,9 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from shared.context import current_user_email, current_user_role
 from shared.db import get_pool
 
-from .legacy import require_auth
+from .legacy import require_admin, require_auth
 
 logger = logging.getLogger(__name__)
 
@@ -172,53 +171,70 @@ class ResumeRequest(BaseModel):
 
 
 @router.post("/{run_id}/resume")
-async def resume_run(run_id: str, body: ResumeRequest, user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
+async def resume_run(
+    run_id: str, body: ResumeRequest, admin: dict[str, Any] = Depends(require_admin)
+) -> dict[str, Any]:
     """Resume a workflow paused on in-workflow HITL, from committed checkpoint state.
 
-    Looks up the most recent *pending* ``hitl_requests`` row for
-    ``run_id`` (scoped to the caller unless admin — the same ownership
-    check ``GET /api/runs/{id}/checkpoints`` uses), resumes via
-    ``ReturnReplaceMode.resume()`` (currently the only mode with anything
-    to resume), and marks the request resolved. A request with no
-    ``request_id``/``checkpoint_id`` predates Phase 1.5's checkpoint
-    wiring and can't be resumed this way — surfaced as 409, not silently
-    treated as "not found".
+    Admin only: the person who asked for a return must not be the one who
+    approves it (#92). Claims the most recent *pending* ``hitl_requests`` row
+    for ``run_id`` atomically (``pending`` -> ``processing``) *before* the
+    workflow runs, so two concurrent clicks cannot both resume and both
+    release a refund; the loser gets 409. The claim is handed back if the
+    request cannot be resumed or the resume raises, so the button stays live.
+    Resumes via ``ReturnReplaceMode.resume()`` (currently the only mode with
+    anything to resume) and then marks the request resolved. A request with no
+    ``request_id``/``checkpoint_id`` predates Phase 1.5's checkpoint wiring and
+    can't be resumed this way — surfaced as 409, not silently treated as "not
+    found".
     """
     pool = get_pool()
-    email = current_user_email.get()
-    role = current_user_role.get()
 
-    if role == "admin":
-        hitl = await pool.fetchrow(
-            """SELECT * FROM hitl_requests
-               WHERE workflow_run_id = $1 AND status = 'pending'
-               ORDER BY created_at DESC LIMIT 1""",
-            run_id,
-        )
-    else:
-        hitl = await pool.fetchrow(
-            """SELECT * FROM hitl_requests
-               WHERE workflow_run_id = $1 AND status = 'pending' AND user_email = $2
-               ORDER BY created_at DESC LIMIT 1""",
-            run_id,
-            email,
-        )
+    hitl = await pool.fetchrow(
+        """UPDATE hitl_requests SET status = 'processing'
+           WHERE id = (
+                 SELECT id FROM hitl_requests
+                  WHERE workflow_run_id = $1 AND status = 'pending'
+                  ORDER BY created_at DESC LIMIT 1)
+             AND status = 'pending'
+           RETURNING *""",
+        run_id,
+    )
     if not hitl:
-        raise HTTPException(status_code=404, detail="No pending approval found for this run")
+        # Nothing claimable: "never existed" is a 404, "someone already took it" a 409.
+        existing = await pool.fetchval(
+            "SELECT status FROM hitl_requests WHERE workflow_run_id = $1 ORDER BY created_at DESC LIMIT 1",
+            run_id,
+        )
+        if existing is None:
+            raise HTTPException(status_code=404, detail="No pending approval found for this run")
+        raise HTTPException(status_code=409, detail=f"Request is already {existing}")
+
+    async def _release() -> None:
+        await pool.execute(
+            "UPDATE hitl_requests SET status = 'pending' WHERE id = $1 AND status = 'processing'", hitl["id"]
+        )
+
     if hitl["kind"] != "return_approval":
+        await _release()
         raise HTTPException(status_code=400, detail=f"Resume not supported for request kind {hitl['kind']!r}")
     if not hitl["request_id"] or not hitl["checkpoint_id"]:
+        await _release()
         raise HTTPException(status_code=409, detail="This pending request predates checkpoint-based resume")
 
     from orchestrator.modes.workflow_mode import ReturnReplaceMode
 
     mode = ReturnReplaceMode()
     final_payload: dict[str, Any] = {}
-    async for event in mode.resume(
-        checkpoint_id=str(hitl["checkpoint_id"]), request_id=hitl["request_id"], approved=body.approved
-    ):
-        if event.kind == "run_completed":
-            final_payload = event.payload
+    try:
+        async for event in mode.resume(
+            checkpoint_id=str(hitl["checkpoint_id"]), request_id=hitl["request_id"], approved=body.approved
+        ):
+            if event.kind == "run_completed":
+                final_payload = event.payload
+    except Exception:
+        await _release()
+        raise
 
     await pool.execute(
         """UPDATE hitl_requests
