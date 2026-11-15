@@ -144,10 +144,10 @@ public sealed class A2AClient
     /// circuit breaker, timeout, non-2xx status) yields the same single
     /// user-facing fallback sentence <see cref="SendAsync"/> would have
     /// returned, then completes — callers don't need a separate error path.
-    /// A failure mid-stream (after the connection succeeded) instead
-    /// propagates as an exception; the Polly pipeline above only covers
-    /// establishing the connection, matching <see cref="SendAsync"/>'s own
-    /// scope (it reads the whole response body outside the pipeline too).
+    /// A failure mid-stream (after the connection succeeded) yields one final
+    /// "interrupted" note after whatever text already arrived, and never
+    /// re-posts to <c>/message:send</c>: the specialist's tools have already
+    /// run. The Polly pipeline above only covers establishing the connection.
     /// </summary>
     public async IAsyncEnumerable<string> StreamAsync(
         string agentName,
@@ -170,8 +170,50 @@ public sealed class A2AClient
         using var reader = new StreamReader(body);
         var dataLines = new List<string>();
         string? currentEvent = null;
-        while (await reader.ReadLineAsync(ct) is { } line)
+        var framesSeen = 0;
+        while (true)
         {
+            string? line = null;
+            Exception? failure = null;
+            try
+            {
+                line = await reader.ReadLineAsync(ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                failure = ex;
+            }
+
+            if (failure is not null)
+            {
+                // The connection dropped after the specialist had started
+                // answering. There is deliberately no fallback to /message:send
+                // here (nor anywhere else in this class): once the stream is open
+                // the specialist's tools may have run, so a re-post would run them
+                // again and repeat the text. The deltas already yielded stay with
+                // the caller; add a note so they are not read as complete. A
+                // failure before the stream opens never gets here — OpenAsync
+                // turns those into a fallback sentence.
+                _logger.LogError(
+                    failure,
+                    "a2a.stream_interrupted target={Agent} frames={Frames}",
+                    agentName,
+                    framesSeen
+                );
+                yield return $"[The {agentName} agent's response was interrupted and may be incomplete.]";
+                yield break;
+            }
+
+            if (line is null)
+            {
+                yield break;
+            }
+
+            if (line.Length != 0)
+            {
+                framesSeen++;
+            }
+
             if (line.StartsWith("event: ", StringComparison.Ordinal))
             {
                 currentEvent = line["event: ".Length..];

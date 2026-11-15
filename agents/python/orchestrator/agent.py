@@ -82,8 +82,13 @@ async def call_specialist_agent(
         # the browser as they arrive — eliminating the silent gap while the
         # specialist's LLM generates its response.
         if stream_queue is not None:
+            chunks: list[str] = []
+            # Frames received from the specialist so far. Once this is non-zero
+            # the specialist has run (possibly executing side-effecting tools)
+            # and the browser may have seen steps and text, so a failure must
+            # not be retried against /message:send: that would run it again.
+            frames_seen = 0
             try:
-                chunks: list[str] = []
                 async with httpx.AsyncClient(timeout=60, transport=_A2A_TRANSPORT) as client:
                     async with client.stream(
                         "POST",
@@ -93,6 +98,7 @@ async def call_specialist_agent(
                     ) as resp:
                         resp.raise_for_status()
                         async for current_event, payload in aiter_sse_events(resp.aiter_lines()):
+                            frames_seen += 1
                             if current_event == "step":
                                 # Merge specialist tool-call step into the
                                 # shared current_steps for this request, and
@@ -127,9 +133,23 @@ async def call_specialist_agent(
                             chunks.append(payload)
                             await stream_queue.put(("delta", agent_name, payload))
                 return "".join(chunks) or f"The {agent_name} agent returned an empty response."
-            except (httpx.TimeoutException, httpx.HTTPStatusError, Exception) as exc:
+            except Exception as exc:
+                if frames_seen:
+                    # Mid-stream failure: keep what the user already saw and say
+                    # it is incomplete. Never re-post — the specialist's tools
+                    # have already run.
+                    logger.error(
+                        "a2a.stream_interrupted target=%s frames=%d reason=%s",
+                        agent_name,
+                        frames_seen,
+                        type(exc).__name__,
+                    )
+                    note = f"[The {agent_name} agent's response was interrupted and may be incomplete.]"
+                    partial = "".join(chunks)
+                    return f"{partial}\n\n{note}" if partial else note
                 logger.warning("a2a.stream_fallback target=%s reason=%s", agent_name, type(exc).__name__)
-                # Fall through to blocking path
+                # Failed before the first frame: nothing ran, so the blocking
+                # path is a safe retry.
 
         # ── Blocking path (non-streaming or stream fallback) ───────────────
         try:

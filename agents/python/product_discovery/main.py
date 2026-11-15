@@ -1,6 +1,6 @@
 """Product Discovery agent — entry point."""
 
-from product_discovery.agent import AGENT_TOOLS, create_product_discovery_agent, refresh_mcp_auth
+from product_discovery.agent import create_product_discovery_agent, refresh_mcp_auth
 from shared.agent_host import create_agent_app
 from shared.auth import AgentAuthMiddleware
 from shared.config import settings
@@ -23,7 +23,6 @@ app = create_agent_app(
     agent_name="product-discovery",
     port=8081,
     description="Natural language product search with personalized recommendations.",
-    tools=AGENT_TOOLS,
     on_startup=on_startup,
     on_shutdown=close_db_pool,
 )

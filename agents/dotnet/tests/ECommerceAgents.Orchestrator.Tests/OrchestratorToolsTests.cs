@@ -152,4 +152,42 @@ public sealed class OrchestratorToolsTests
         forwarded.Select(f => f.Data).Should().Equal("Wire", "less headphones");
         reply.Should().Be("Wireless headphones");
     }
+
+    private sealed class BodyCapturingHandler : HttpMessageHandler
+    {
+        public string? Body { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            Body = await request.Content!.ReadAsStringAsync(ct);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"response":"ok"}""", Encoding.UTF8, "application/json"),
+            };
+        }
+    }
+
+    [Fact]
+    public async Task CallSpecialistAgent_DoesNotSendHistoryInTheRequestBody()
+    {
+        // #98: the specialist rehydrates from Postgres via X-Session-Id; the
+        // body must carry only the message (history there duplicated the turn).
+        var settings = new AgentSettings
+        {
+            AgentSharedSecret = new string('s', 48),
+            AuthMode = "local",
+            AgentRegistry = """{"product-discovery":"http://fake-product-discovery"}""",
+        };
+        var handler = new BodyCapturingHandler();
+        var a2a = new A2AClient(new HttpClient(handler), settings, new AuthServerClient(new HttpClient(), settings), NullLogger<A2AClient>.Instance);
+        var tools = new OrchestratorTools(a2a, settings, NullLogger<OrchestratorTools>.Instance);
+        using var scope = RequestContext.Scope(
+            "alice@example.com", "customer", "sess-1",
+            new List<HistoryEntry> { new("user", "earlier turn") });
+
+        await tools.CallSpecialistAgent("product-discovery", "find headphones");
+
+        handler.Body.Should().Contain("find headphones");
+        handler.Body.Should().NotContain("earlier turn");
+    }
 }

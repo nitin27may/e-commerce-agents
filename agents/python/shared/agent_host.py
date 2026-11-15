@@ -216,7 +216,6 @@ def create_agent_app(
     agent_name: str,
     port: int,
     description: str = "",
-    tools: list | None = None,
     on_startup: Callable | None = None,
     on_shutdown: Callable | None = None,
 ) -> FastAPI:
@@ -226,12 +225,8 @@ def create_agent_app(
         agent: The MAF Agent instance (owns its tools, instructions, providers).
         agent_name: Agent identifier matching the YAML config filename.
         port: Port number.
-        tools: Ignored — kept for signature parity with callers still passing
-            the tool list explicitly. The tools attached to ``agent`` are
-            the ones MAF executes.
         on_startup/on_shutdown: Lifecycle callbacks.
     """
-    del tools  # see docstring
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
