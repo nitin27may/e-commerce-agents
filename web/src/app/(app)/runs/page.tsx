@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, type RunEntry } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -188,6 +189,7 @@ function RunRow({
     }
   }
 
+  const { isAdmin } = useAuth();
   const hitl = checkpointData?.hitl_request;
   const pendingApproval = hitl?.status === "pending";
 
@@ -281,7 +283,10 @@ function RunRow({
                 Return approval — {hitl.status}
                 {hitl.payload?.order_id ? ` (order ${hitl.payload.order_id})` : ""}
               </p>
-              {pendingApproval ? (
+              {pendingApproval && !isAdmin ? (
+                // Only staff can decide (#92); the backend 403s anyone else.
+                <p className="text-muted-foreground">Awaiting staff review</p>
+              ) : pendingApproval ? (
                 <>
                   <div className="flex gap-2">
                     <Button

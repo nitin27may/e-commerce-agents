@@ -23,6 +23,8 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from shared.sse import sse_frame
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -214,7 +216,6 @@ def create_agent_app(
     agent_name: str,
     port: int,
     description: str = "",
-    tools: list | None = None,
     on_startup: Callable | None = None,
     on_shutdown: Callable | None = None,
 ) -> FastAPI:
@@ -224,12 +225,8 @@ def create_agent_app(
         agent: The MAF Agent instance (owns its tools, instructions, providers).
         agent_name: Agent identifier matching the YAML config filename.
         port: Port number.
-        tools: Ignored — kept for signature parity with callers still passing
-            the tool list explicitly. The tools attached to ``agent`` are
-            the ones MAF executes.
         on_startup/on_shutdown: Lifecycle callbacks.
     """
-    del tools  # see docstring
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -306,7 +303,7 @@ def create_agent_app(
             message = body.get("message", "")
             if not message:
                 return StreamingResponse(
-                    iter(["data: [ERROR: no message]\n\n"]),
+                    iter([sse_frame("[ERROR: no message]")]),
                     media_type="text/event-stream",
                 )
             history = body.get("history", None)
@@ -317,7 +314,7 @@ def create_agent_app(
         except Exception:
             logger.exception("%s.message_stream_parse_error", agent_name)
             return StreamingResponse(
-                iter(["data: [ERROR: bad request]\n\n"]),
+                iter([sse_frame("[ERROR: bad request]")]),
                 media_type="text/event-stream",
             )
 
@@ -341,7 +338,7 @@ def create_agent_app(
                 frames = []
                 for step in steps[sent:]:
                     step["agent"] = agent_name
-                    frames.append(f"event: step\ndata: {json.dumps(step, default=str)}\n\n")
+                    frames.append(sse_frame(json.dumps(step, default=str), event="step"))
                 sent = len(steps)
                 return frames
 
@@ -355,10 +352,10 @@ def create_agent_app(
                         # would hold each step back by one chunk for no reason.
                         for frame in _drain_new_steps():
                             yield frame
-                        yield f"data: {chunk}\n\n"
+                        yield sse_frame(chunk)
                 except Exception:
                     logger.exception("%s.message_stream_error", agent_name)
-                    yield "data: [ERROR: agent processing failed]\n\n"
+                    yield sse_frame("[ERROR: agent processing failed]")
 
             # Anything that completed after the final chunk — a tool whose
             # result the model never got to narrate, or a run that produced no
@@ -367,7 +364,7 @@ def create_agent_app(
             # writing itself.
             for frame in _drain_new_steps():
                 yield frame
-            yield "data: [DONE]\n\n"
+            yield sse_frame("[DONE]")
 
         return StreamingResponse(_generate(), media_type="text/event-stream")
 

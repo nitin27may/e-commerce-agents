@@ -112,7 +112,7 @@ Each chapter's own `README.md` is the canonical, always-current source.
 - Python 3.12+ and [`uv`](https://docs.astral.sh/uv/)
 - .NET 10 SDK (every project targets `net10.0`; CI installs `10.0.x`)
 - Docker + Docker Compose
-- An OpenAI or Azure OpenAI key (set in `.env` at the repo root)
+- An OpenAI or Azure OpenAI key (set in `.env` at the repo root) — **only for live runs**. Chapter tests run with no key on recorded replay fixtures (`LLM_PROVIDER=replay`), and chapter 01's `main.py` runs that way too
 
 See [Chapter 00 — Setup](./00-setup/) for step-by-step instructions.
 

@@ -210,13 +210,8 @@ public static class AgentHost
                     // Same per-line "data:" framing as ChatRoutes.StreamAsync, for the
                     // same reason: a chunk that is itself a lone "\n" must not be sent
                     // as a raw embedded newline, or it prematurely closes the SSE event.
-                    var frame = new StringBuilder();
-                    foreach (var line in chunk.Split('\n'))
-                    {
-                        frame.Append("data: ").Append(line).Append('\n');
-                    }
-                    frame.Append('\n');
-                    await http.Response.WriteAsync(frame.ToString(), Encoding.UTF8);
+                    var frame = SseFraming.Frame(chunk);
+                    await http.Response.WriteAsync(frame, Encoding.UTF8);
                     await http.Response.Body.FlushAsync();
                 }
 

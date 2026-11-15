@@ -33,7 +33,7 @@ public static class SanitizeToolsConfig
         ["AnalyzeSentiment"] = ["Title", "Body", "Summary", "Quote", "Quotes", "Theme", "Themes", "Comment", "Pros", "Cons"],
         ["GetSentimentByTopic"] = ["Title", "Body", "Summary", "Quote", "Quotes", "Comment"],
         ["GetSentimentTrend"] = ["Title", "Body", "Summary"],
-        ["CompareProductReviews"] = ["Title", "Body", "Summary", "Comment"],
+        ["CompareProductReviews"] = ["Title", "Body", "Summary", "Comment", "ProductName"],
         ["DraftSellerResponse"] = ["ReviewTitle", "ReviewBody", "Reviewer", "ResponseTemplate"],
 
         // product-discovery: descriptions/specs are seller-editable free text

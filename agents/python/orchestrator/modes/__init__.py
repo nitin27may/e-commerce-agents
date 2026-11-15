@@ -8,13 +8,12 @@ tool router, MAF's ``HandoffBuilder`` mesh, MAF ``WorkflowBuilder`` fan-out/
 fan-in and sequential+HITL graphs, and a round-table debate, side by side,
 from one endpoint.
 
-Six modes are registered as of this step — ``tool`` and ``handoff`` (Phase
-1.2), ``workflow:pre-purchase``/``workflow:return-replace`` (fixed MAF
-workflow graphs, previously tests-only) and ``group-chat`` (sequential
-shared-transcript debate, also previously tests-only). ``magentic`` and a
-declarative-YAML mode may land in later steps; ``get_mode()`` already
-raises a clear, named error for an unregistered mode rather than a bare
-``KeyError``, so requesting one of those early is diagnosable.
+Five modes are registered — ``tool`` and ``handoff``,
+``workflow:pre-purchase``/``workflow:return-replace`` (fixed MAF workflow
+graphs) and ``group-chat`` (sequential shared-transcript debate).
+``magentic`` and a declarative-YAML mode are not built; ``get_mode()``
+raises a clear, named error for any unregistered mode rather than a bare
+``KeyError``, so requesting one of those is diagnosable.
 """
 
 from __future__ import annotations
@@ -54,7 +53,7 @@ def get_mode(name: str | None) -> OrchestrationMode:
     except KeyError:
         raise UnknownModeError(
             f"Unknown orchestration mode {resolved!r}. Available: {sorted(MODES)}. "
-            "workflow:*, group-chat, and magentic are registered in later Phase 1 steps."
+            "magentic and declarative-YAML modes are not implemented."
         ) from None
 
 

@@ -59,7 +59,7 @@ services:
 
   db:
     image: pgvector/pgvector:pg16
-    ports: ["5432:5432"]
+    ports: ["127.0.0.1:5432:5432"]
     environment:
       POSTGRES_DB: ecommerce_agents
       POSTGRES_USER: ecommerce
@@ -76,7 +76,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]
+    ports: ["127.0.0.1:6379:6379"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -86,8 +86,8 @@ services:
   aspire:
     image: mcr.microsoft.com/dotnet/aspire-dashboard:latest
     ports:
-      - "18888:18888" # Dashboard UI
-      - "18890:18889" # OTLP receiver
+      - "127.0.0.1:18888:18888" # Dashboard UI
+      - "127.0.0.1:18890:18889" # OTLP receiver
     environment:
       DASHBOARD__FRONTEND__AUTHMODE: Unsecured
     healthcheck:
@@ -127,7 +127,7 @@ services:
   # works without also learning which profile to add.
   auth-server:
     image: ghcr.io/nitin27may/e-commerce-agents/auth-server:${IMAGE_TAG:-latest}
-    ports: ["8090:8090"]
+    ports: ["127.0.0.1:8090:8090"]
     depends_on:
       db: { condition: service_healthy }
       seeder: { condition: service_completed_successfully }
@@ -200,7 +200,7 @@ services:
 
   product-discovery:
     image: ghcr.io/nitin27may/e-commerce-agents/product-discovery:${IMAGE_TAG:-latest}
-    ports: ["8081:8081"]
+    ports: ["127.0.0.1:8081:8081"]
     depends_on:
       db: { condition: service_healthy }
       seeder: { condition: service_completed_successfully }
@@ -216,7 +216,7 @@ services:
 
   order-management:
     image: ghcr.io/nitin27may/e-commerce-agents/order-management:${IMAGE_TAG:-latest}
-    ports: ["8082:8082"]
+    ports: ["127.0.0.1:8082:8082"]
     depends_on:
       db: { condition: service_healthy }
       seeder: { condition: service_completed_successfully }
@@ -227,7 +227,7 @@ services:
 
   pricing-promotions:
     image: ghcr.io/nitin27may/e-commerce-agents/pricing-promotions:${IMAGE_TAG:-latest}
-    ports: ["8083:8083"]
+    ports: ["127.0.0.1:8083:8083"]
     depends_on:
       db: { condition: service_healthy }
       seeder: { condition: service_completed_successfully }
@@ -238,7 +238,7 @@ services:
 
   review-sentiment:
     image: ghcr.io/nitin27may/e-commerce-agents/review-sentiment:${IMAGE_TAG:-latest}
-    ports: ["8084:8084"]
+    ports: ["127.0.0.1:8084:8084"]
     depends_on:
       db: { condition: service_healthy }
       seeder: { condition: service_completed_successfully }
@@ -249,7 +249,7 @@ services:
 
   inventory-fulfillment:
     image: ghcr.io/nitin27may/e-commerce-agents/inventory-fulfillment:${IMAGE_TAG:-latest}
-    ports: ["8085:8085"]
+    ports: ["127.0.0.1:8085:8085"]
     depends_on:
       db: { condition: service_healthy }
       seeder: { condition: service_completed_successfully }
@@ -272,7 +272,7 @@ services:
 
   mcp-product:
     image: ghcr.io/nitin27may/e-commerce-agents/mcp-product:${IMAGE_TAG:-latest}
-    ports: ["9000:9000"]
+    ports: ["127.0.0.1:9000:9000"]
     depends_on:
       db: { condition: service_healthy }
       seeder: { condition: service_completed_successfully }
@@ -297,7 +297,7 @@ services:
 
   mcp-inventory:
     image: ghcr.io/nitin27may/e-commerce-agents/mcp-inventory:${IMAGE_TAG:-latest}
-    ports: ["9001:9001"]
+    ports: ["127.0.0.1:9001:9001"]
     depends_on:
       db: { condition: service_healthy }
       seeder: { condition: service_completed_successfully }

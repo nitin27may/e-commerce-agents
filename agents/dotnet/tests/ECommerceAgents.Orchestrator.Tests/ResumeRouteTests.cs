@@ -1,6 +1,7 @@
 using Dapper;
 using ECommerceAgents.Orchestrator.Routes;
 using ECommerceAgents.Shared.Configuration;
+using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Data;
 using ECommerceAgents.Shared.Orchestration;
 using ECommerceAgents.TestFixtures;
@@ -32,6 +33,7 @@ public sealed class ResumeRouteTests : IAsyncLifetime
     private DatabasePool _pool = null!;
     private const string Owner = "owner@example.com";
     private const string Stranger = "stranger@example.com";
+    private const string Approver = "approver@example.com";
 
     public ResumeRouteTests(PostgresFixture pg) => _pg = pg;
 
@@ -84,16 +86,47 @@ public sealed class ResumeRouteTests : IAsyncLifetime
         (await StatusOfAsync(runId)).Should().Be("pending", "a refused request must stay actionable");
     }
 
-    [Fact]
-    public async Task AnotherUsersPendingApproval_Is404()
+    /// <summary>
+    /// #92 — the requester used to be allowed to resume their own run, i.e. to approve
+    /// their own refund. Only an admin may now, and a refusal must not move the row.
+    /// </summary>
+    [Theory]
+    [InlineData(Owner)]
+    [InlineData(Stranger)]
+    public async Task ACustomer_IsRefused_EvenForTheirOwnRun(string email)
     {
         var (runId, _) = await SeedPendingAsync();
-        using var client = ClientFor(new StubResumableMode(), email: Stranger);
+        var mode = new StubResumableMode();
+        using var client = ClientFor(mode, email: email, role: "customer");
 
         var res = await client.PostAsJsonAsync($"/api/orchestration/{runId}/resume", new { approved = true });
 
-        res.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        res.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        mode.Calls.Should().Be(0);
         (await StatusOfAsync(runId)).Should().Be("pending");
+    }
+
+    /// <summary>#92 — being an admin is not enough: nobody approves the return they raised.</summary>
+    [Fact]
+    public async Task AnAdmin_CannotApproveAReturnTheyRaised_CaseInsensitively()
+    {
+        var (runId, _) = await SeedPendingAsync(requester: Approver.ToUpperInvariant());
+        var mode = new StubResumableMode();
+        using var client = ClientFor(mode);
+
+        var res = await client.PostAsJsonAsync($"/api/orchestration/{runId}/resume", new { approved = true });
+
+        res.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        mode.Calls.Should().Be(0);
+        (await StatusOfAsync(runId)).Should().Be("pending");
+    }
+
+    [Fact]
+    public async Task AnAdminResumingARunThatDoesNotExist_Is404()
+    {
+        using var client = ClientFor(new StubResumableMode());
+        var res = await client.PostAsJsonAsync($"/api/orchestration/{Guid.NewGuid()}/resume", new { approved = true });
+        res.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [Fact]
@@ -142,6 +175,31 @@ public sealed class ResumeRouteTests : IAsyncLifetime
         mode.LastApproved.Should().BeTrue();
         mode.LastCheckpointId.Should().Be(checkpointId.ToString());
         (await StatusOfAsync(runId)).Should().Be("approved");
+    }
+
+    /// <summary>
+    /// #92 — the resumed workflow's loyalty step reads the caller from RequestContext,
+    /// which is the approving admin. It must see the customer who asked for the return,
+    /// and the reviewer must be recorded rather than lost.
+    /// </summary>
+    [Fact]
+    public async Task TheResumedWorkflowRunsAsTheRequester_AndTheReviewerIsRecorded()
+    {
+        var (runId, _) = await SeedPendingAsync();
+        var mode = new StubResumableMode();
+        using var client = ClientFor(mode);
+
+        (await client.PostAsJsonAsync($"/api/orchestration/{runId}/resume", new { approved = true }))
+            .EnsureSuccessStatusCode();
+
+        mode.SeenEmail.Should().Be(Owner);
+        mode.SeenRole.Should().Be("customer");
+        await using var conn = await _pool.OpenAsync();
+        var response = await conn.ExecuteScalarAsync<string>(
+            "SELECT response::text FROM hitl_requests WHERE workflow_run_id = @runId", new { runId });
+        using var doc = JsonDocument.Parse(response!);
+        doc.RootElement.GetProperty("decided_by").GetString().Should().Be(Approver);
+        doc.RootElement.GetProperty("approved").GetBoolean().Should().BeTrue();
     }
 
     [Fact]
@@ -204,7 +262,8 @@ public sealed class ResumeRouteTests : IAsyncLifetime
 
     private async Task<(Guid RunId, Guid? CheckpointId)> SeedPendingAsync(
         bool withCheckpoint = true,
-        string kind = "return_approval"
+        string kind = "return_approval",
+        string requester = Owner
     )
     {
         await using var conn = await _pool.OpenAsync();
@@ -228,13 +287,13 @@ public sealed class ResumeRouteTests : IAsyncLifetime
         await conn.ExecuteAsync(
             @"INSERT INTO hitl_requests
                   (workflow_run_id, request_id, checkpoint_id, user_email, kind, payload, status)
-              VALUES (@runId, @requestId, @checkpointId, @Owner, @kind, @payload::jsonb, 'pending')",
+              VALUES (@runId, @requestId, @checkpointId, @requester, @kind, @payload::jsonb, 'pending')",
             new
             {
                 runId,
                 requestId = withCheckpoint ? "req-1" : null,
                 checkpointId,
-                Owner,
+                requester,
                 kind,
                 payload = JsonSerializer.Serialize(new { session_id = "sess-1" }),
             });
@@ -249,7 +308,10 @@ public sealed class ResumeRouteTests : IAsyncLifetime
             "SELECT status FROM hitl_requests WHERE workflow_run_id = @runId", new { runId });
     }
 
-    private HttpClient ClientFor(IOrchestrationMode mode, bool authenticated = true, string email = Owner)
+    // Admin by default: since #92 only staff can resume, and the requester ("Owner")
+    // must not be the one approving.
+    private HttpClient ClientFor(
+        IOrchestrationMode mode, bool authenticated = true, string email = Approver, string role = "admin")
     {
         var server = OrchestratorTestHost.Create(
             _pool,
@@ -267,6 +329,7 @@ public sealed class ResumeRouteTests : IAsyncLifetime
         if (authenticated)
         {
             client.DefaultRequestHeaders.Add("X-Test-Email", email);
+            client.DefaultRequestHeaders.Add("X-Test-Role", role);
         }
         return client;
     }
@@ -277,6 +340,8 @@ public sealed class ResumeRouteTests : IAsyncLifetime
         private int _calls;
 
         public int Calls => Volatile.Read(ref _calls);
+        public string? SeenEmail { get; private set; }
+        public string? SeenRole { get; private set; }
         public bool? LastApproved { get; private set; }
         public string? LastCheckpointId { get; private set; }
 
@@ -293,6 +358,8 @@ public sealed class ResumeRouteTests : IAsyncLifetime
             string sessionId, string checkpointId, string requestId, bool approved, CancellationToken ct = default)
         {
             Interlocked.Increment(ref _calls);
+            SeenEmail = RequestContext.CurrentUserEmail;
+            SeenRole = RequestContext.CurrentUserRole;
             LastApproved = approved;
             LastCheckpointId = checkpointId;
             if (delay is { } d)

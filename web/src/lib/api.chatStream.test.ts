@@ -108,4 +108,30 @@ describe("chatStream SSE parsing", () => {
     expect(chunks).toEqual([]);
     expect(deltaChunks).toEqual(["specialist chunk"]);
   });
+
+  it("keeps a lone-newline chunk and a blank-line chunk exactly as framed (#80)", async () => {
+    // The server frames "\n" as two empty data lines and "a\n\nb" as three
+    // data lines; the reader must rejoin them with "\n", not drop them.
+    const raw = [
+      "data: item one",
+      "",
+      "data: ",
+      "data: ",
+      "",
+      "data: a",
+      "data: ",
+      "data: b",
+      "",
+      "data: [DONE]",
+      "",
+      "",
+    ].join("\n");
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(fakeStreamResponse(raw)));
+
+    const chunks: string[] = [];
+    await api.chatStream("hi", undefined, (chunk) => chunks.push(chunk));
+
+    expect(chunks).toEqual(["item one", "\n", "a\n\nb"]);
+  });
 });

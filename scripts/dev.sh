@@ -254,6 +254,16 @@ if [ ! -f .env ]; then
     fi
 fi
 
+# A fresh .env carries the public placeholders from .env.example. Replace those
+# (and only those) with random values; secrets you already set are left alone.
+# shellcheck source=lib/env-secrets.sh
+source "$SCRIPT_DIR/lib/env-secrets.sh"
+GENERATED_SECRETS="$(ensure_local_secrets .env)"
+if [ -n "$GENERATED_SECRETS" ]; then
+    info "Generated local secrets in .env: $(echo "$GENERATED_SECRETS" | tr '\n' ' ')"
+    info "Tokens issued before this run are no longer valid; sign in again."
+fi
+
 # ── Clean (if requested) ─────────────────────────────────────
 
 if [ "$CLEAN" = true ]; then

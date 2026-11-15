@@ -851,6 +851,15 @@ async def approve_hitl_request(
     """Approve a pending HITL request and execute the underlying action."""
     from shared.hitl import claim_hitl_request, execute_approved_action, get_hitl_request, resolve_hitl_request
 
+    # An approver may not approve their own request, even as admin (#92). Checked
+    # before the claim: a claim-then-refuse would strand the row in 'processing'.
+    # user_email is immutable on the row, so a read-then-claim cannot be raced
+    # into a different requester.
+    pending = await get_hitl_request(request_id)
+    admin_email = admin.get("sub", "admin")
+    if pending and pending["status"] == "pending" and pending["user_email"].lower() == admin_email.lower():
+        raise HTTPException(status_code=403, detail="You cannot approve your own request")
+
     # Atomically claim the request (pending -> processing) BEFORE executing
     # the underlying action — this is what closes the race two concurrent
     # approve clicks used to hit (both would pass a pre-check read here,
@@ -863,7 +872,6 @@ async def approve_hitl_request(
             raise HTTPException(status_code=404, detail="HITL request not found")
         raise HTTPException(status_code=400, detail=f"Request is already {existing['status']}")
 
-    admin_email = admin.get("sub", "admin")
     try:
         result = await execute_approved_action(
             tool_name=req["tool_name"],

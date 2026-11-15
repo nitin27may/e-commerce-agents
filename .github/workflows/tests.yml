@@ -174,9 +174,9 @@ jobs:
         run: pnpm build
 
   # Playwright E2E is intentionally not run in CI. It needs the full live
-  # stack (docker compose: Postgres + Redis + all agents) plus a real
-  # OPENAI_API_KEY (the LLM is never mocked), which is impractical and costly
-  # for every push. The specs remain under web/e2e/ — run them locally against
+  # stack (docker compose: Postgres + Redis + all agents) and, unless the stack
+  # is started with LLM_PROVIDER=replay, a real OPENAI_API_KEY, which is
+  # impractical and costly for every push. The specs remain under web/e2e/ — run them locally against
   # a running app with: cd web && pnpm exec playwright test
 
   workflow-visualization-drift:

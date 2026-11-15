@@ -186,7 +186,7 @@ jobs:
           retention-days: 30
 
   full:
-    name: Full (real LLM + judge, scheduled)
+    name: Full (real LLM + judge, manual dispatch)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     if: github.event_name == 'workflow_dispatch'

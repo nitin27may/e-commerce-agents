@@ -268,21 +268,12 @@ public static class ChatRoutes
             // dataParts.join("\n") correctly reassemble the chunk exactly as authored,
             // including embedded blank lines (e.g. between a ```product fence and its
             // JSON body).
-            var frame = new StringBuilder();
-            if (eventName is not null)
-            {
-                frame.Append("event: ").Append(eventName).Append('\n');
-            }
-            foreach (var line in data.Split('\n'))
-            {
-                frame.Append("data: ").Append(line).Append('\n');
-            }
-            frame.Append('\n');
+            var frame = ECommerceAgents.Shared.A2A.SseFraming.Frame(data, eventName);
 
             await writeLock.WaitAsync();
             try
             {
-                await context.Response.WriteAsync(frame.ToString(), Encoding.UTF8);
+                await context.Response.WriteAsync(frame, Encoding.UTF8);
                 await context.Response.Body.FlushAsync();
             }
             finally

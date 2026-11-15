@@ -10,7 +10,7 @@
 [![PostgreSQL + pgvector](https://img.shields.io/badge/PostgreSQL-pgvector-336791.svg)](https://github.com/pgvector/pgvector)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED.svg)](https://docs.docker.com/compose/)
 
-A **multi-agent e-commerce platform** built with [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) (MAF). Six specialized AI agents collaborate over the **A2A protocol** to handle product discovery, orders, pricing, reviews, inventory and support — with **two complete, working backends, Python and .NET / C#**, behind one Next.js frontend.
+A **multi-agent e-commerce platform** built with [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) (MAF). Six specialized AI agents collaborate over **A2A-style HTTP** (`/message:send`; spec conformance is tracked in [#88](https://github.com/nitin27may/e-commerce-agents/issues/88)) to handle product discovery, orders, pricing, reviews, inventory and support — with **two complete backends, Python and .NET / C#** (differences documented in the [parity matrix](docs/parity-matrix.md)), behind one Next.js frontend.
 
 ### Run it
 
@@ -169,7 +169,7 @@ graph TB
     style AZ fill:#fbbf24,stroke:#f59e0b,color:#78350f
 ```
 
-Six agents — five specialists behind one orchestrator — over the A2A protocol, with the same schema and the
+Six agents — five specialists behind one orchestrator — over A2A-style HTTP, with the same schema and the
 same frontend for either backend. Full detail — request flow, agent internals, the database schema
 and the API surface — is in **[Architecture](https://nitinksingh.com/e-commerce-agents/architecture/)**.
 
@@ -209,7 +209,7 @@ Contributor-facing docs stay in the repo rather than on the site:
 | Layer | Technology |
 |-------|-----------|
 | Agent framework | [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) v1 — Python (`agent-framework-core`) **and** .NET (`Microsoft.Agents.AI`) |
-| Agent communication | A2A protocol, plus MCP for data access |
+| Agent communication | A2A-style HTTP (`/message:send`), plus optional MCP for product and inventory data (flag-gated, `MCP_ENABLED`) |
 | LLM | OpenAI / Azure OpenAI, or any OpenAI-compatible endpoint (Ollama, vLLM, OpenRouter) |
 | Backend | Python 3.12 + FastAPI · .NET 10 + ASP.NET Core |
 | Data | PostgreSQL 16 + pgvector · Redis 7 |
@@ -232,9 +232,8 @@ checkboxes and the reasoning for the order, is on the
 | **Azure and Microsoft Foundry** | The biggest gap today: there is no Azure path at all. Not one deployment — the same six agents in **three topologies** (Container Apps, Foundry as model provider, Foundry Hosted Agents), with what each one costs you. One deployment is a tutorial; three with trade-offs is a reference |
 | **Finish the gates** | The dual-backend parity suite runs locally but not in CI, and the .NET eval suite needs its baselines. Every parity claim this repo makes rests on a gate nobody runs automatically |
 | **Retrieval and tooling** | A typed filter DSL for `search_products`, the two MCP servers published to PyPI, and prompt caching — now measurable, because the cost counter ships |
-| **Cross-framework comparison** | The same non-trivial system built a third way — Claude Agent SDK or LangGraph — so the differences are attributable to the framework rather than to the problem. Gated on Azure landing first |
 
-The roadmap also records what is **deliberately not** planned, and why, so those are not mistaken
+No third backend is planned. The roadmap also records what is **deliberately not** planned, and why, so those are not mistaken
 for oversights.
 
 > **Watch this repository** to be notified when these land — use *Watch → Custom → Releases* for
@@ -261,6 +260,6 @@ This project is licensed under the [MIT License](LICENSE).
 
 ---
 
-Built with [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) and [A2A Protocol](https://google.github.io/A2A/).
+Built with [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) and the [A2A protocol](https://google.github.io/A2A/) as its wire-format reference (conformance: [#88](https://github.com/nitin27may/e-commerce-agents/issues/88)).
 
 **Built by [Nitin Singh](https://github.com/nitin27may)** &middot; [Documentation](https://nitinksingh.com/e-commerce-agents/) &middot; [More projects](https://nitinksingh.com/projects/)

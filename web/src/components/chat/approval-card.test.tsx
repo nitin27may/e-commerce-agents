@@ -1,8 +1,16 @@
-import { describe, expect, it, vi, afterEach } from "vitest";
+import { describe, expect, it, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ApprovalCard } from "./approval-card";
 import { api } from "@/lib/api";
+
+// Only staff may approve (#92); the card is role-gated, so each test sets the role.
+const auth = vi.hoisted(() => ({ isAdmin: true }));
+vi.mock("@/lib/auth-context", () => ({ useAuth: () => ({ isAdmin: auth.isAdmin }) }));
+
+beforeEach(() => {
+  auth.isAdmin = true;
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -16,7 +24,19 @@ const RESUMED = {
 };
 
 describe("ApprovalCard", () => {
-  it("offers both decisions while the run is paused", () => {
+  it("shows a customer a read-only awaiting-staff-review state, with no decision buttons", () => {
+    // The requester must not approve their own return; the backend 403s them anyway.
+    auth.isAdmin = false;
+    const resume = vi.spyOn(api, "resumeRun");
+    render(<ApprovalCard runId="run-1" onResolved={() => {}} />);
+
+    expect(screen.getByText(/awaiting staff review/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /approve/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /reject/i })).not.toBeInTheDocument();
+    expect(resume).not.toHaveBeenCalled();
+  });
+
+  it("offers an admin both decisions while the run is paused", () => {
     render(<ApprovalCard runId="run-1" onResolved={() => {}} />);
 
     expect(screen.getByRole("button", { name: /approve/i })).toBeEnabled();

@@ -31,48 +31,31 @@ and when that happens the reason is written down rather than the item quietly di
 
 | # | Phase | Size | Why it is here, in this position |
 |---|---|---|---|
-| **A** | Azure unblock | **done** | Two code-level blockers that *every* backend inherits. Cheaper before a third one exists than after |
+| **A** | Azure unblock | **done** | Two code-level blockers that *every* backend inherits |
 | **B** | Azure Container Apps | ~4 d | The single largest gap. There is no Azure path of any kind today. Managed identity lands here — the Bicep provisions the vault and the identity anyway |
 | **B2** | Dual-backend parity gate into CI | ~1 d | Runs beside B. Every parity claim on this page currently rests on a gate nobody runs automatically |
 | **C** | Foundry as model provider | ~2 d | Small, and the `LLM_PROVIDER` switch it needs already exists |
-| **LG1** | LangGraph — one specialist behind A2A | ~4 d | The cheapest thing that produces the cross-framework comparison, and the thing that sizes the full port |
 | **D** | Foundry Hosted Agents | 3–5 d | Most unknowns of any phase. Now hosts *both* frameworks, which is the point |
 | **E** | Publish the Azure reference | ~2 d | Three topologies with verified costs. The difference between them is the content |
-| **LG2** | LangGraph — full Python third backend | sized by LG1 | High value, largest scope. Does not start on momentum — it needs LG1's number and an explicit go |
-| **LG3** | Three-stack parity gate | ~2 d | Needs B2 first, for the reason B2 exists |
 | — | [Unsequenced backlog](#unsequenced-backlog) | — | Real work, no position claimed |
 | — | [Blocked, waiting on upstream](#blocked-waiting-on-upstream) | — | Tracked so the blocker is visible rather than looking like neglect |
 
 Blockers, acceptance criteria and the open decisions are in
 [the consolidated plan](https://github.com/nitin27may/e-commerce-agents/blob/main/.claude/plans/remaining-work.md).
 
-### Why this order changed
+The November 2026 audit produced issues #80–#104, tracked in
+[issue #103](https://github.com/nitin27may/e-commerce-agents/issues/103).
 
-The previous version of this page put the cross-framework comparison last and said it "should not
-start until the Azure work lands". That was right in direction and too conservative in degree, and
-one of its assumptions has since stopped being true.
+### Why this order
 
-**Foundry hosted agents became a framework-agnostic runtime.** Agents built with Microsoft Agent
-Framework, LangGraph or the Copilot SDK deploy to the same managed runtime without rewrites, and
-there is a first-party path (`langchain_azure_ai.agents.hosting`) for exposing a compiled LangGraph
-graph over the same Responses and Invocations protocols phase D targets for MAF. Microsoft also
-publishes the Foundry-to-LangGraph **A2A** interop pattern, which is the architecture
-[ADR 0001](adr/0001-a2a-over-direct-calls.md) already commits this repository to.
+Azure comes first because it is the single largest gap: there is no Azure path of any kind today,
+and a deployment story is what a worked reference needs before anything else. Two further reasons the
+Azure work is worth sequencing carefully:
 
-So Azure is not a competing priority with the third backend. It is the substrate the comparison runs
-on. Build Azure first and the LangGraph backend inherits a deployment target; build the third
-backend first and the deployment story gets written twice. But the dependency is on phase **B**, not
-on all of A–E — phase D carries the most unknowns and the LangGraph work does not depend on it. Hence
-LG1 starting in parallel with C and D rather than after E.
-
-Two other reasons the comparison waits for a deployment story at all:
-
-- **A comparison nobody can run is content, not a reference.** It is only credible if all three
-  backends run in the same place, on the same database, prompts and eval datasets. Today "the same
-  place" is Docker Compose on a laptop, which is the one comparison a reader can already do
-  themselves.
 - **Live runs catch what tests cannot** — the constraint that has governed every phase of this
-  project. A third backend with no deployment target can only ever be exercised locally.
+  project. Anything deployable should be exercised where it will actually run.
+- **Foundry hosted agents are a framework-agnostic runtime**, so the deployment topologies in B–E are
+  the content: the same six agents, deployed several ways, with what each one costs.
 
 ### A. Azure unblock — done
 
@@ -164,9 +147,8 @@ and no soft-deleted vault.
 
 ### B2. Dual-backend parity gate into CI
 
-**Moved ahead of the third backend.** It used to sit under eval completeness, after the
-cross-framework work. That was the wrong order: adding a third stack to a parity harness nobody runs
-automatically triples the number of claims resting on a gate run by hand.
+**Moved up from eval completeness.** Every parity claim this repository makes rests on a gate that
+is run by hand today, which is the wrong place for it to sit.
 
 - [ ] Get `scripts/e2e-both-stacks.sh` into CI. It runs only locally today because it needs both
       stacks up against a seeded database. [ADR 0005](adr/0005-dual-stack-parity.md) records this as
@@ -178,38 +160,10 @@ automatically triples the number of claims resting on a gate run by hand.
       tool on `review-sentiment` as the demonstration. Acceptance is the eval smoke suite passing
       under the Foundry provider and the hosted tool visible in an Application Insights trace.
 
-### LG1. LangGraph — one specialist behind A2A
-
-The cross-framework work is **not all-or-nothing**, and this is the discovery that makes the rest of
-the sequence affordable. Because [ADR 0001](adr/0001-a2a-over-direct-calls.md) put A2A between the
-orchestrator and every specialist, a single agent can be reimplemented on a different framework
-behind the identical contract, with the orchestrator unchanged.
-
-`review-sentiment` is the candidate: fewest tools, no money-moving actions, no approval gate, and it
-is already the agent carrying the hosted tool at phase C.
-
-- [ ] A LangGraph `review-sentiment` serving the same `/message:send` contract, the same
-      `config/prompts/review-sentiment.yaml`, the same database, registered through the
-      `AGENT_REGISTRY` seam built at phase A.
-- [ ] Its eval dataset scored and recorded beside the MAF Python and MAF .NET numbers —
-      **re-recorded, never copied**, the same rule that governs the .NET baselines.
-- [ ] A written note of what the port actually cost, per layer. That note is what sizes LG2.
-
-**The port is likely cheaper than previously assumed.** All ten files under `agents/python/shared/tools/`
-couple to the framework through exactly one line each — `from agent_framework import tool` — with
-bodies that are plain async Python over asyncpg and `Annotated[..., Field(...)]` parameters, a
-signature style LangChain's own `@tool` reads natively. Prompts are YAML and framework-neutral, and
-the database, auth, OAuth and search layers import no agent framework at all. What is genuinely
-expensive is the orchestration layer: the five modes, the approval gates, the context providers, the
-guardrail middleware chain and checkpointing. LG1 exists to turn that estimate into a measurement.
-
 ### D. Foundry Hosted Agents
 
 - [ ] The orchestrator packaged for Invocations, specialists reached via hosted MCP, and a Responses
       variant built alongside with the graph loss documented.
-- [ ] The LG1 LangGraph specialist deployed to the same hosted runtime. **This is the payoff for
-      sequencing Azure first** — one runtime, two frameworks, and the comparison becomes a property
-      of the deployment rather than an essay about it.
 
 Acceptance includes one A2A call to a Container Apps specialist either proven to work or
 **explicitly recorded as not working, with the reason**.
@@ -230,41 +184,14 @@ multi-agent system to Azure, with this app as the worked example and the trade-o
 One deployment is a tutorial. The same six agents in several topologies, with what each one costs, is
 a reference — **the difference between them is the content.**
 
-### LG2. LangGraph — full Python third backend
-
-Gated on LG1's findings and an explicit go decision. Python only: same frontend, same database, same
-prompt corpus, same eval datasets, so the differences are attributable to the framework rather than
-to the problem. That is the artifact that is genuinely hard to find elsewhere — the same non-trivial
-system built three ways.
-
-Human-in-the-loop is the part worth watching. Python MAF pauses with a two-call
-`execute()`/resume-via-`responses={...}`; .NET MAF has no equivalent and needs a dedicated
-`RequestPort` node with the run held open across the pause; LangGraph uses `interrupt()` plus a
-checkpointer. Three shapes for one requirement is a real asymmetry rather than a tie, and it is the
-most useful thing this comparison can produce.
-
-### LG3. Three-stack parity gate
-
-Extend the parity spec and the dual-stack runner to three backends. **Needs B2 first.** The exit
-criterion is the one already applied to .NET: `PARITY_GAPS.<stack>` empty *while every test in the
-spec asserts presence*, because the earlier suite went green against a stack missing four whole
-features.
-
 ### Open decisions
 
-Three questions gate the back half of the sequence. A, B and B2 are correct under every answer, so
+Questions gate the back half of the sequence. A, B and B2 are correct under every answer, so
 they are not waiting on these. Recorded here rather than left in conversation, because a plan that
 depends on an unwritten assumption gets relitigated.
 
-- [ ] **Azure spend ceiling.** Phases B–D cost money continuously; the LangGraph work costs only eval
-      tokens. The .NET eval suite is currently deferred over roughly $1.50, which is the strongest
-      available evidence that spend rather than time may be the binding constraint. If it is, LG1
-      moves ahead of B.
-- [ ] **Primary objective** — repository credibility as a worked Azure reference, or reach for the
-      article series. "MAF vs LangGraph" is the higher-traffic reader question; "MAF on Container
-      Apps" is the more useful artifact. This order optimises for the second and gets the first at LG1.
-- [ ] **Does .NET stay at full parity?** A third backend plus a parity-locked .NET stack means three
-      stacks in every gate, permanently. Freezing .NET at the v1.3 feature set is a defensible answer,
+- [ ] **Does .NET stay at full parity?** A parity-locked .NET stack means two stacks in every gate,
+      permanently. Freezing .NET at the v1.3 feature set is a defensible answer,
       and needs to become a recorded decision either way — including in
       [`docs/parity-matrix.md`](parity-matrix.md), which currently reads as an open commitment.
 
@@ -299,8 +226,7 @@ something the repo already says.
       `ProductFilters` model. Text-to-SQL was considered and rejected ([ADR 0002](adr/0002-no-text-to-sql.md)):
       `user_email`/`user_role` scoping lives in ContextVars, and dynamic SQL would bypass that
       contract. A typed DSL gives the model flexibility at the boundary while keeping SQL generation
-      server-side and auditable. **Cheaper before LG2 than after** — every tool signature ported is
-      one more copy to change.
+      server-side and auditable. 
 - [ ] **Publish the two MCP servers to PyPI** so any MCP-compatible client can run them against any
       PostgreSQL database without this codebase. That is the honest test of whether they are a real
       integration surface or just internal plumbing with a protocol on top.
@@ -308,14 +234,11 @@ something the repo already says.
       cost counter that shipped in v1.3, which is the reason it is worth doing now rather than
       guessing at.
 
-**The two cross-framework options not taken.** The rungs above are the middle of three options. The
-other two remain open and separable.
+**Other options, separable from everything above.**
 
 - [ ] **Claude and other providers as a third model backend.** One chat client per stack behind the
       existing `LLM_PROVIDER` switch — both backends keep their orchestration, only the model
-      changes. Mostly answers "is this locked to OpenAI?". **Worth doing before LG2 finishes:** a
-      three-framework comparison run on a single model family is confounded by nothing, and this is
-      the switch that proves it.
+      changes. Mostly answers "is this locked to OpenAI?".
 - [ ] **Agentic workflows on the repository itself** — coding agents for eval recording,
       documentation-drift checks and review. Ships nothing in the product; improves the rate at which
       everything else here gets done.
@@ -332,10 +255,8 @@ other two remain open and separable.
 
 Recorded so these are not rediscovered as oversights:
 
-- **The third backend is LangGraph, and Python only.** Not the Claude Agent SDK, and not a .NET
-  equivalent. One language keeps the comparison to one variable.
-- **The third backend ships as rungs, not as a release.** LG1 is a spike that has to produce a
-  number and a cost note. LG2 does not start on momentum.
+- **No third backend.** A third (LangGraph) backend was planned and parked by maintainer decision on
+  2026-11-15. Nothing is planned in that direction.
 - **No .NET container images are published.** The demo path stays Python-only — a visitor is
   there for the features, not the backend language. `--dotnet` remains build-from-source.
 - **No Langfuse sink on .NET.** OTel already carries GenAI spans to Aspire; a second exporter
@@ -367,7 +288,7 @@ Legend: `- [x]` shipped · `- [ ]` planned or in progress.
 
 ### Shipped in v1
 
-- [x] **Agent evaluators** — scripted eval sets (precision@k, recall@k, answer faithfulness, tool-call correctness) across all six specialists, run against the seeded catalog. `.github/workflows/evals.yml` runs two jobs. **`smoke` gates every pull request**: deterministic scorers only, driven by committed replay fixtures under `LLM_PROVIDER=replay`, so it needs no API key, costs nothing, and fails the PR when a suite regresses more than 5% against its committed baseline. **`full`** runs weekly on a schedule (and on demand) with a real key and the LLM judge. The harness drives the *production* path — `evals/harness.py` runs the same orchestration modes a real request does, so guardrails, sanitization and HITL gates are exercised rather than bypassed.
+- [x] **Agent evaluators** — scripted eval sets (precision@k, recall@k, answer faithfulness, tool-call correctness) across all six specialists, run against the seeded catalog. `.github/workflows/evals.yml` runs two jobs. **`smoke` gates every pull request**: deterministic scorers only, driven by committed replay fixtures under `LLM_PROVIDER=replay`, so it needs no API key, costs nothing, and fails the PR when a suite regresses more than 5% against its committed baseline. **`full`** runs on manual dispatch only (no schedule — it spends a live key) with a real key and the LLM judge. The harness drives the *production* path — `evals/harness.py` runs the same orchestration modes a real request does, so guardrails, sanitization and HITL gates are exercised rather than bypassed.
 - [x] **Prompt injection prevention** — `shared/guardrails/` wired into the middleware stack for all agents. Enabled by default (`GUARDRAILS_ENABLED=true`); runs in observe-first mode (`GUARDRAILS_FAIL_OPEN=true`) — flags and logs injections. Set `GUARDRAILS_BLOCK_ON_INJECTION=true` to enable hard blocking once false-positive rates are measured in your environment.
 - [x] **Session memory & context persistence** — `store_memory` / `recall_memories` tools in `shared/tools/memory_tools.py`, surfaced to the orchestrator via `shared/context_providers.py`. Per-user preferences, recent intents, and history make follow-ups feel continuous.
 - [x] **Full .NET / C# backend** — the same orchestrator and five specialists plus an MCP host, the same A2A protocol and PostgreSQL schema, idiomatic .NET throughout. Eight test projects, 450 test methods (~500 cases counting `[Theory]` data). Reached parity on the shipped surface through a nine-PR effort covering the shared tool library, orchestration modes, normalized SSE events, server-side grounding, rate limiting, cost estimation and a HITL claim-before-execute fix — gated by a dual-backend Playwright suite rather than a checklist. See [`agents/dotnet/`](../agents/dotnet/) and [`docs/parity-matrix.md`](parity-matrix.md).
@@ -435,7 +356,7 @@ Text-to-SQL was considered and rejected: `user_email`/`user_role` scoping via Co
 | `mcp-product` | 9000 | Product search, details, comparison, trending, price history |
 | `mcp-inventory` | 9001 | Stock levels, warehouses, shipping, carriers |
 
-Those two are the **Python** stack. The .NET stack serves both domains from a single host (`ECommerceAgents.Mcp`) on **:9001** — there is no :9000 in `docker-compose.dotnet.yml`.
+Those two are the **Python** stack. The .NET stack ships one host (`ECommerceAgents.Mcp`) on **:9001** covering the inventory domain only (`check_stock`, `get_warehouses`, `estimate_shipping`) — there is no .NET `mcp-product` and no :9000 in `docker-compose.dotnet.yml`.
 
 Both are standalone publishable packages in a uv workspace (`packages/mcp-product`, `packages/mcp-inventory`). Start them with:
 

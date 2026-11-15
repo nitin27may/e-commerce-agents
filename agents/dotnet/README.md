@@ -16,12 +16,14 @@ Both stacks share:
 | Project | Port | Description |
 |---------|------|-------------|
 | `src/ECommerceAgents.Shared` | library | Config, auth, telemetry, context providers, prompt loader, DB pool |
-| `src/ECommerceAgents.Orchestrator` | 8080 | ASP.NET Core minimal API; HandoffBuilder-based routing |
+| `src/ECommerceAgents.Orchestrator` | 8080 | ASP.NET Core minimal API; default mode is `tool` (LLM calls the specialists), with `handoff`, `group-chat` and both workflow modes registered in `Modes/ModeRegistry.cs` |
 | `src/ECommerceAgents.ProductDiscovery` | 8081 | Product catalog agent |
 | `src/ECommerceAgents.OrderManagement` | 8082 | Order lifecycle agent |
 | `src/ECommerceAgents.PricingPromotions` | 8083 | Pricing + coupon agent |
 | `src/ECommerceAgents.ReviewSentiment` | 8084 | Review summarization agent |
 | `src/ECommerceAgents.InventoryFulfillment` | 8085 | Inventory + shipping agent |
+| `src/ECommerceAgents.Mcp` | compose `mcp-inventory` | MCP server (official `ModelContextProtocol.AspNetCore` SDK, streamable HTTP); inventory only — no `mcp-product` equivalent |
+| `src/ECommerceAgents.Evals` | console | Eval runner over the same datasets as Python; drives `ModeRegistry`. Manual dispatch only (`.github/workflows/evals-dotnet.yml`) |
 
 Test projects mirror each under `tests/`.
 
@@ -62,7 +64,7 @@ MCP server (`ECommerceAgents.Mcp`, real JSON-RPC over streamable HTTP via the of
 client/host, JWT auth middleware, tool audit logging, PII redaction, checkpoint storage
 (in-memory, file, and Postgres backends), declarative workflow primitives, and config validation.
 
-It is **not** at full parity with the Python backend — see
+It is complete, with documented differences from the Python backend — see
 [`../../docs/parity-matrix.md`](../../docs/parity-matrix.md) for the honest, per-concept
 breakdown. Agent middleware/context providers are now wired into every live agent, specialist
 agents have a real `/message:stream` SSE endpoint (with live delta forwarding through the
@@ -78,8 +80,10 @@ Workflow pause and resume is durable: a run checkpoints through MAF's own store 
 from that checkpoint on resume, so a pending approval survives an orchestrator restart. The
 money paths — returns, refunds, approved actions and checkout — are idempotent.
 
-The remaining gaps are handoff and group-chat modes, MCP client consumption, telemetry depth,
-and the evals harness; all python-first. Magentic is in neither stack, so it is not a gap.
+Handoff and group-chat modes are implemented (`Modes/HandoffMode.cs`, `Modes/GroupChatMode.cs`) and
+an evals harness exists (`src/ECommerceAgents.Evals`, manual dispatch only; one baseline committed,
+no `red_team` dataset). The remaining gaps are MCP client consumption, the optional Langfuse sink
+and the evals gaps just named; all python-first. Magentic is in neither stack, so it is not a gap.
 See [`docs/parity-matrix.md`](../../docs/parity-matrix.md) for the row-by-row breakdown.
 
 Eight test projects mirror the source structure — one per agent plus Shared and MCP — with 533 test methods (584 cases once `[Theory]` data rows are expanded) covering tools, middleware, guardrails, timeline capture, workflows, auth, streaming, and A2A protocol behavior (verified directly: `dotnet test ECommerceAgents.sln`). The same PostgreSQL schema and A2A wire format are used across both stacks; you can point the frontend at either backend through `ORCHESTRATOR_URL`, which is read server-side per request rather than compiled into the bundle.

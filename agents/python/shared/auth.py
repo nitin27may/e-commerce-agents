@@ -14,6 +14,7 @@ Supports two modes:
 
 from __future__ import annotations
 
+import hmac
 import logging
 
 import jwt
@@ -107,7 +108,7 @@ class AgentAuthMiddleware(BaseHTTPMiddleware):
 
         # Inter-agent authentication (local mode): static shared secret.
         if agent_secret:
-            if agent_secret != settings.AGENT_SHARED_SECRET:
+            if not hmac.compare_digest(agent_secret.encode(), settings.AGENT_SHARED_SECRET.encode()):
                 logger.warning("auth.denied agent=%s reason=invalid_agent_secret", self.agent_name)
                 return JSONResponse({"error": "Invalid agent secret"}, status_code=401)
 

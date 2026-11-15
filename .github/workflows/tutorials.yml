@@ -8,10 +8,10 @@ name: Tutorials
 # so a chapter can't silently stop collecting or start failing without CI
 # going red.
 #
-# 14 of the 21 tutorial test files are marked `@pytest.mark.integration` and
+# 22 of the 32 tutorial test files are marked `@pytest.mark.integration` and
 # require a live OPENAI_API_KEY / AZURE_OPENAI_* key to run — this job
 # intentionally does NOT provide one, so those specific tests are collected
-# but skipped/deselected here, not deleted or unmarked. Every one of those 14
+# but skipped/deselected here, not deleted or unmarked. Every one of those 22
 # chapters ALSO ships a keyless replay-based test (unmarked, so it IS covered
 # by "not integration") that plays back a committed fixture via
 # `LLM_PROVIDER=replay` — see tutorials/_shared/replay_client.py and

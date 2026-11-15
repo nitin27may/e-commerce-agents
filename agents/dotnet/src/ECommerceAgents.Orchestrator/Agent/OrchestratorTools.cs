@@ -66,14 +66,18 @@ public sealed class OrchestratorTools(A2AClient client, AgentSettings settings, 
         // into current_stream_queue. Outside a streaming turn (blocking
         // /api/chat, or this tool exercised directly in a test) this is null and
         // we fall back to the plain blocking call, same as before this change.
+        //
+        // No history is sent in the request body: the specialist rehydrates the
+        // conversation from Postgres via the X-Session-Id header
+        // (HistoryRehydrator), exactly as the Python orchestrator relies on.
         var streamWriter = RequestContext.CurrentStreamWriter;
         if (streamWriter is null)
         {
-            return await _client.SendAsync(agentName, url, message, RequestContext.CurrentHistory);
+            return await _client.SendAsync(agentName, url, message);
         }
 
         var full = new System.Text.StringBuilder();
-        await foreach (var delta in _client.StreamAsync(agentName, url, message, RequestContext.CurrentHistory))
+        await foreach (var delta in _client.StreamAsync(agentName, url, message))
         {
             full.Append(delta);
             await streamWriter.WriteAsync(new StreamFrame("delta", delta));

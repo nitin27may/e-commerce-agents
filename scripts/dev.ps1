@@ -63,6 +63,54 @@ function Write-Ok      { param([string]$Message) Write-Host "[OK]    $Message" -
 function Write-Warn    { param([string]$Message) Write-Host "[WARN]  $Message" -ForegroundColor Yellow }
 function Write-Err     { param([string]$Message) Write-Host "[ERROR] $Message" -ForegroundColor Red }
 
+# ── Local secrets ────────────────────────────────────────────
+# Mirrors scripts/lib/env-secrets.sh. Keep the placeholder list in step with
+# _UNSAFE_SECRET_DEFAULTS (agents/python/shared/config.py) and UnsafeDefaults
+# (AgentSettingsValidator.cs), plus the empty string.
+$SecretVars = @('JWT_SECRET', 'AGENT_SHARED_SECRET', 'OAUTH_SEED_KEY')
+$SecretPlaceholders = @(
+    '',
+    'change-me-in-production',
+    'change-me-generate-a-random-256-bit-key',
+    'change-me-in-production-use-random-256-bit-key',
+    'agent-internal-secret',
+    'agent-internal-shared-secret',
+    'dev-oauth-seed-change-me'
+)
+
+# 64 hex chars (256 bits).
+function New-Secret {
+    $bytes = New-Object byte[] 32
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
+    return (($bytes | ForEach-Object { $_.ToString('x2') }) -join '')
+}
+
+# Replaces a missing, empty or known-placeholder JWT_SECRET / AGENT_SHARED_SECRET /
+# OAUTH_SEED_KEY in the env file. Anything the user already set is left alone.
+# Returns the names it generated.
+function Set-LocalSecrets {
+    param([string]$Path)
+    $text = [System.IO.File]::ReadAllText((Resolve-Path $Path).Path)
+    $generated = @()
+    foreach ($name in $SecretVars) {
+        $matches_ = [regex]::Matches($text, "(?m)^$name=(.*)$")
+        if ($matches_.Count -gt 0) {
+            $value = $matches_[$matches_.Count - 1].Groups[1].Value.Trim().Trim('"').Trim("'")
+            if ($SecretPlaceholders -notcontains $value) { continue }
+            $text = [regex]::Replace($text, "(?m)^$name=.*?(\r?)$", "$name=$(New-Secret)`$1")
+        } else {
+            if ($text.Length -gt 0 -and -not $text.EndsWith("`n")) { $text += "`n" }
+            $text += "$name=$(New-Secret)`n"
+        }
+        $generated += $name
+    }
+    if ($generated.Count -gt 0) {
+        [System.IO.File]::WriteAllText((Resolve-Path $Path).Path, $text, (New-Object System.Text.UTF8Encoding($false)))
+    }
+    return , $generated
+}
+
 # ── Stack selection ──────────────────────────────────────────
 # Mirrors dev.sh's COMPOSE / APP_PROFILES / RUN_PROFILES split. Both compose
 # files gate agents, seeder and frontend behind profiles; only db, redis and
@@ -310,6 +358,15 @@ try {
             Write-Err 'No .env or .env.example found. Create a .env file first.'
             exit 1
         }
+    }
+
+    # A fresh .env carries the public placeholders from .env.example. Replace
+    # those (and only those) with random values; secrets already set are left
+    # alone. Mirrors ensure_local_secrets in scripts/lib/env-secrets.sh.
+    $generated = Set-LocalSecrets -Path '.env'
+    if ($generated.Count -gt 0) {
+        Write-Info "Generated local secrets in .env: $($generated -join ' ')"
+        Write-Info 'Tokens issued before this run are no longer valid; sign in again.'
     }
 
     # ── Clean ────────────────────────────────────────────────

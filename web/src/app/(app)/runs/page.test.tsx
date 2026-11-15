@@ -1,7 +1,11 @@
-import { describe, expect, it, vi, afterEach } from "vitest";
+import { describe, expect, it, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import RunsPage from "./page";
 import { api, type RunEntry } from "@/lib/api";
+
+// Only staff may approve (#92), so the buttons are role-gated; each test sets the role.
+const auth = vi.hoisted(() => ({ isAdmin: true }));
+vi.mock("@/lib/auth-context", () => ({ useAuth: () => ({ isAdmin: auth.isAdmin }) }));
 
 const PENDING_RUN: RunEntry = {
   id: "run-1",
@@ -18,6 +22,10 @@ const PENDING_RUN: RunEntry = {
   created_at: new Date().toISOString(),
   steps: [], // workflow modes never produce agent_execution_steps rows
 };
+
+beforeEach(() => {
+  auth.isAdmin = true;
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -72,6 +80,33 @@ describe("RunsPage — checkpoint resume", () => {
     expect(screen.getByText(/order order-abc/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reject" })).toBeInTheDocument();
+  });
+
+  it("shows a customer 'Awaiting staff review' instead of Approve/Reject", async () => {
+    auth.isAdmin = false;
+    vi.spyOn(api, "getRuns").mockResolvedValue({ entries: [PENDING_RUN], total: 1, limit: 20, offset: 0 });
+    vi.spyOn(api, "getRunCheckpoints").mockResolvedValue({
+      run_id: "run-1",
+      checkpoints: [],
+      hitl_request: {
+        id: "hitl-1",
+        status: "pending",
+        payload: { order_id: "order-abc" },
+        response: null,
+        created_at: new Date().toISOString(),
+        responded_at: null,
+      },
+    });
+    const resume = vi.spyOn(api, "resumeRun");
+
+    render(<RunsPage />);
+    await waitFor(() => expect(screen.getByText("return order abc")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("return order abc"));
+
+    await waitFor(() => expect(screen.getByText("Awaiting staff review")).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reject" })).not.toBeInTheDocument();
+    expect(resume).not.toHaveBeenCalled();
   });
 
   it("approving calls resumeRun and refreshes to show the resolved state", async () => {

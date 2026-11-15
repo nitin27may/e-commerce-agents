@@ -145,7 +145,7 @@ Two jobs in `.github/workflows/evals.yml`:
   Verified end to end (`evals/fixtures/README.md`): total latency drops from
   tens of seconds to under one, proving zero network calls anywhere in the
   request graph. Zero cost, zero credentials, gates merges.
-- **`full`** — `workflow_dispatch` + a weekly `schedule:`. Every suite again,
+- **`full`** — `workflow_dispatch` only — deliberately no schedule, since it spends a live key. Every suite again,
   this time with `--use-llm-judge` and a real key, so completeness is judged
   rather than keyword-matched. Uploads per-suite JSON results as an artifact.
 

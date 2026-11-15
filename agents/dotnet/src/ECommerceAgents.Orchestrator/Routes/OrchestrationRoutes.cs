@@ -89,7 +89,12 @@ public static class OrchestrationRoutes
             return Results.BadRequest(new { detail = "approved is required" });
         }
 
-        var isAdmin = string.Equals(RequestContext.CurrentUserRole, "admin", StringComparison.OrdinalIgnoreCase);
+        // Admin only: whoever asked for the return must not be the one who approves it (#92).
+        if (!string.Equals(RequestContext.CurrentUserRole, "admin", StringComparison.OrdinalIgnoreCase))
+        {
+            return Results.Json(new { detail = "Admin access required" }, statusCode: 403);
+        }
+
         await using var conn = await pool.OpenAsync();
 
         var claimed = await conn.QueryFirstOrDefaultAsync(
@@ -97,25 +102,35 @@ public static class OrchestrationRoutes
                WHERE id = (
                      SELECT id FROM hitl_requests
                       WHERE workflow_run_id = @runGuid AND status = 'pending'
-                        AND (@isAdmin OR user_email = @email)
+                        AND lower(user_email) <> lower(@email)
                       ORDER BY created_at DESC LIMIT 1)
                  AND status = 'pending'
-           RETURNING id, kind, request_id, checkpoint_id, payload",
-            new { runGuid, email, isAdmin });
+           RETURNING id, kind, request_id, checkpoint_id, payload, user_email",
+            new { runGuid, email });
 
         if (claimed is null)
         {
-            // Nothing claimable. Distinguish "never existed / not yours" from "someone
-            // already took it", because the second is a double-click and deserves to say so.
-            var existing = await conn.ExecuteScalarAsync<string?>(
-                @"SELECT status FROM hitl_requests
-                   WHERE workflow_run_id = @runGuid AND (@isAdmin OR user_email = @email)
+            // Nothing claimable. Distinguish "never existed" from "someone already took
+            // it" (a double-click, which deserves to say so) and from "this is your own
+            // request" (#92: an admin may not approve a return they raised).
+            var latest = await conn.QueryFirstOrDefaultAsync(
+                @"SELECT status, user_email FROM hitl_requests
+                   WHERE workflow_run_id = @runGuid
                    ORDER BY created_at DESC LIMIT 1",
-                new { runGuid, email, isAdmin });
+                new { runGuid });
 
-            return existing is null
-                ? Results.NotFound(new { detail = "No pending approval found for this run" })
-                : Results.Conflict(new { detail = $"Request is already {existing}" });
+            if (latest is null)
+            {
+                return Results.NotFound(new { detail = "No pending approval found for this run" });
+            }
+
+            if ((string)latest.status == "pending"
+                && string.Equals((string)latest.user_email, email, StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.Json(new { detail = "You cannot approve your own request" }, statusCode: 403);
+            }
+
+            return Results.Conflict(new { detail = $"Request is already {(string)latest.status}" });
         }
 
         var claimId = (Guid)claimed.id;
@@ -155,7 +170,27 @@ public static class OrchestrationRoutes
                     Results.Conflict(new { detail = "This pending request predates checkpoint-based resume" }));
             }
 
-            var result = await mode.ResumeAsync(sessionId, checkpointId.Value.ToString(), requestId, approved);
+            // The rest of the workflow (loyalty discount, finalize) reads the caller's
+            // identity from RequestContext, which is currently the approving admin. Run it
+            // as the customer who asked for the return so their tier is applied, and put
+            // the reviewer back afterwards. The reviewer is recorded as decided_by below.
+            string requesterEmail = (string)claimed.user_email;
+            string requesterRole = await conn.ExecuteScalarAsync<string?>(
+                "SELECT role FROM users WHERE email = @requesterEmail", new { requesterEmail }) ?? "customer";
+            var reviewerEmail = RequestContext.CurrentUserEmail;
+            var reviewerRole = RequestContext.CurrentUserRole;
+            ModeRunResult result;
+            RequestContext.CurrentUserEmail = requesterEmail;
+            RequestContext.CurrentUserRole = requesterRole;
+            try
+            {
+                result = await mode.ResumeAsync(sessionId, checkpointId.Value.ToString(), requestId, approved);
+            }
+            finally
+            {
+                RequestContext.CurrentUserEmail = reviewerEmail;
+                RequestContext.CurrentUserRole = reviewerRole;
+            }
 
             await conn.ExecuteAsync(
                 @"UPDATE hitl_requests
@@ -165,7 +200,7 @@ public static class OrchestrationRoutes
                 {
                     claimId,
                     status = approved ? "approved" : "rejected",
-                    response = JsonSerializer.Serialize(new { approved }),
+                    response = JsonSerializer.Serialize(new { approved, decided_by = reviewerEmail }),
                 });
 
             // Back-link whatever the resumed run checkpointed, so /runs keeps showing the

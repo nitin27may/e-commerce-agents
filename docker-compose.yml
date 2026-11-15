@@ -22,7 +22,7 @@ services:
 
   db:
     image: pgvector/pgvector:pg16
-    ports: ["5432:5432"]
+    ports: ["127.0.0.1:5432:5432"]
     environment:
       POSTGRES_DB: ecommerce_agents
       POSTGRES_USER: ecommerce
@@ -39,7 +39,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]
+    ports: ["127.0.0.1:6379:6379"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -51,8 +51,8 @@ services:
   aspire:
     image: mcr.microsoft.com/dotnet/aspire-dashboard:latest
     ports:
-      - "18888:18888"   # Dashboard UI
-      - "18890:18889"   # OTLP receiver
+      - "127.0.0.1:18888:18888"   # Dashboard UI
+      - "127.0.0.1:18890:18889"   # OTLP receiver
     environment:
       DASHBOARD__FRONTEND__AUTHMODE: Unsecured
     # TCP-check the OTLP receiver. Aspire's dashboard image doesn't ship
@@ -100,7 +100,7 @@ services:
       args:
         AGENT_NAME: auth_server
         AGENT_PORT: 8090
-    ports: ["8090:8090"]
+    ports: ["127.0.0.1:8090:8090"]
     depends_on:
       db: { condition: service_healthy }
     environment:
@@ -187,7 +187,7 @@ services:
     build:
       context: ./agents/python
       args: { AGENT_NAME: product_discovery, AGENT_PORT: 8081 }
-    ports: ["8081:8081"]
+    ports: ["127.0.0.1:8081:8081"]
     depends_on:
       db: { condition: service_healthy }
 
@@ -208,7 +208,7 @@ services:
     build:
       context: ./agents/python
       args: { AGENT_NAME: order_management, AGENT_PORT: 8082 }
-    ports: ["8082:8082"]
+    ports: ["127.0.0.1:8082:8082"]
     depends_on:
       db: { condition: service_healthy }
 
@@ -222,7 +222,7 @@ services:
     build:
       context: ./agents/python
       args: { AGENT_NAME: pricing_promotions, AGENT_PORT: 8083 }
-    ports: ["8083:8083"]
+    ports: ["127.0.0.1:8083:8083"]
     depends_on:
       db: { condition: service_healthy }
 
@@ -236,7 +236,7 @@ services:
     build:
       context: ./agents/python
       args: { AGENT_NAME: review_sentiment, AGENT_PORT: 8084 }
-    ports: ["8084:8084"]
+    ports: ["127.0.0.1:8084:8084"]
     depends_on:
       db: { condition: service_healthy }
 
@@ -250,7 +250,7 @@ services:
     build:
       context: ./agents/python
       args: { AGENT_NAME: inventory_fulfillment, AGENT_PORT: 8085 }
-    ports: ["8085:8085"]
+    ports: ["127.0.0.1:8085:8085"]
     depends_on:
       db: { condition: service_healthy }
 
@@ -284,7 +284,7 @@ services:
         MCP_DIR: packages/mcp-product
         MCP_MODULE: ecommerce_mcp_product.server:app
         MCP_PORT: 9000
-    ports: ["9000:9000"]
+    ports: ["127.0.0.1:9000:9000"]
     depends_on:
       db: { condition: service_healthy }
     environment:
@@ -320,7 +320,7 @@ services:
         MCP_DIR: packages/mcp-inventory
         MCP_MODULE: ecommerce_mcp_inventory.server:app
         MCP_PORT: 9001
-    ports: ["9001:9001"]
+    ports: ["127.0.0.1:9001:9001"]
     depends_on:
       db: { condition: service_healthy }
     environment:

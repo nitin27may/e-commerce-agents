@@ -28,6 +28,7 @@ _MIN_SECRET_BYTES = 32
 _UNSAFE_SECRET_DEFAULTS = {
     "change-me-in-production",
     "change-me-generate-a-random-256-bit-key",
+    "change-me-in-production-use-random-256-bit-key",
     "agent-internal-secret",
     "agent-internal-shared-secret",
     "dev-oauth-seed-change-me",
@@ -103,7 +104,7 @@ class Settings(BaseSettings):
     # a missing fixture fall through to a real call (via REPLAY_RECORD_PROVIDER)
     # and persist the result instead of raising.
     REPLAY_RECORD_PROVIDER: str = "openai"  # openai | azure — used only when RECORD=true
-    REPLAY_FIXTURES_DIR: str = "tests/fixtures/replay"
+    REPLAY_FIXTURES_DIR: str = "evals/fixtures/replay"  # relative to the process cwd (agents/python)
     RECORD: bool = False
     # Sampling temperature for every agent run. Defaults LOW for consistent,
     # reproducible answers — at the provider default (~1.0) the same query can

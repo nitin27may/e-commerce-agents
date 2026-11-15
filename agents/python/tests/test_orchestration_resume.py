@@ -2,9 +2,10 @@
 GET /api/runs/{run_id}/checkpoints, end to end against real Postgres.
 
 Full lifecycle: pause a real workflow:return-replace run via /api/chat,
-resume it via the real endpoint, and confirm both the HTTP response and
-the DB bookkeeping (hitl_requests.status/responded_at/response) are
-correct — plus that ownership scoping actually blocks a different user.
+resume it via the real endpoint *as an admin* (a requester may not approve
+their own request, #92 — see test_resume_authz.py for the authz matrix), and
+confirm both the HTTP response and the DB bookkeeping
+(hitl_requests.status/responded_at/response) are correct.
 """
 
 from __future__ import annotations
@@ -56,16 +57,16 @@ async def _seed_user(clean_db, email: str) -> uuid.UUID:
     return user_id
 
 
-def _app_for(email: str, user_id: uuid.UUID) -> FastAPI:
+def _app_for(email: str, user_id: uuid.UUID, role: str = "customer") -> FastAPI:
     async def _fake_optional_auth():
         current_user_email.set(email)
-        current_user_role.set("customer")
-        return {"sub": email, "role": "customer", "user_id": str(user_id)}
+        current_user_role.set(role)
+        return {"sub": email, "role": role, "user_id": str(user_id)}
 
     async def _fake_require_auth():
         current_user_email.set(email)
-        current_user_role.set("customer")
-        return {"sub": email, "role": "customer"}
+        current_user_role.set(role)
+        return {"sub": email, "role": role}
 
     app = FastAPI()
     app.include_router(router)
@@ -110,7 +111,7 @@ async def test_resume_approves_and_finalizes(clean_db, monkeypatch: pytest.Monke
     user_id = await _seed_user(clean_db, email)
     _, run_id = await _pause_a_return(clean_db, monkeypatch, email, user_id)
 
-    app = _app_for(email, user_id)
+    app = _app_for("staff-approver@example.com", uuid.uuid4(), role="admin")
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
         resp = await http.post(
             f"/api/orchestration/{run_id}/resume",
@@ -137,7 +138,7 @@ async def test_resume_rejection_recorded(clean_db, monkeypatch: pytest.MonkeyPat
     user_id = await _seed_user(clean_db, email)
     _, run_id = await _pause_a_return(clean_db, monkeypatch, email, user_id)
 
-    app = _app_for(email, user_id)
+    app = _app_for("staff-approver@example.com", uuid.uuid4(), role="admin")
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
         resp = await http.post(
             f"/api/orchestration/{run_id}/resume",
@@ -155,31 +156,12 @@ async def test_resume_rejection_recorded(clean_db, monkeypatch: pytest.MonkeyPat
 
 
 @pytest.mark.asyncio
-async def test_resume_blocks_a_different_user(clean_db, monkeypatch: pytest.MonkeyPatch) -> None:
-    owner = "resume-owner@example.com"
-    intruder = "resume-intruder@example.com"
-    owner_id = await _seed_user(clean_db, owner)
-    intruder_id = await _seed_user(clean_db, intruder)
-    _, run_id = await _pause_a_return(clean_db, monkeypatch, owner, owner_id)
-
-    app = _app_for(intruder, intruder_id)
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
-        resp = await http.post(
-            f"/api/orchestration/{run_id}/resume",
-            json={"approved": True},
-            headers={"Authorization": "Bearer fake"},
-        )
-
-    assert resp.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_resume_twice_404s_the_second_time(clean_db, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_resume_twice_409s_the_second_time(clean_db, monkeypatch: pytest.MonkeyPatch) -> None:
     email = "resume-twice@example.com"
     user_id = await _seed_user(clean_db, email)
     _, run_id = await _pause_a_return(clean_db, monkeypatch, email, user_id)
 
-    app = _app_for(email, user_id)
+    app = _app_for("staff-approver@example.com", uuid.uuid4(), role="admin")
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
         first = await http.post(
             f"/api/orchestration/{run_id}/resume",
@@ -193,7 +175,7 @@ async def test_resume_twice_404s_the_second_time(clean_db, monkeypatch: pytest.M
         )
 
     assert first.status_code == 200
-    assert second.status_code == 404
+    assert second.status_code == 409
 
 
 @pytest.mark.asyncio

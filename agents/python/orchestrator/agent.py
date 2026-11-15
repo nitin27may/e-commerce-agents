@@ -24,6 +24,7 @@ from shared.factory import parse_agent_registry
 from shared.http_resilience import ResilientAsyncTransport
 from shared.middleware import build_specialist_middleware
 from shared.oauth.service_client import build_a2a_headers
+from shared.sse import aiter_sse_events
 from shared.telemetry import a2a_call_span
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,28 @@ AGENT_REGISTRY: dict[str, str] = parse_agent_registry(settings.AGENT_REGISTRY)
 # lazily on the next request rather than raising — verified directly
 # against httpx's current behavior before relying on it here.
 _A2A_TRANSPORT = ResilientAsyncTransport()
+
+
+# Statuses that can be produced by something in front of the specialist *after*
+# it started running (a gateway timing out on a long-lived upstream), so they
+# do not prove the request never ran.
+_AMBIGUOUS_STATUSES = frozenset({502, 504})
+
+
+def _request_never_ran(exc: BaseException) -> bool:
+    """True only when a failed stream call provably never reached agent execution.
+
+    ``/message:stream`` returns its response before the agent starts, so a
+    connection that was never established, or a non-2xx status from the
+    specialist itself, means nothing executed. A read timeout, a protocol
+    error or a dropped connection proves nothing, and neither does a gateway
+    502/504.
+    """
+    if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout)):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code not in _AMBIGUOUS_STATUSES
+    return False
 
 
 @tool(
@@ -81,9 +104,16 @@ async def call_specialist_agent(
         # the browser as they arrive — eliminating the silent gap while the
         # specialist's LLM generates its response.
         if stream_queue is not None:
+            chunks: list[str] = []
+            # Frames received from the specialist so far. Once this is non-zero
+            # the specialist has run (possibly executing side-effecting tools)
+            # and the browser may have seen steps and text, so a failure must
+            # not be retried against /message:send: that would run it again.
+            frames_seen = 0
+            # True once the specialist accepted the stream (2xx). From then on the
+            # agent may be running, so nothing here may fall back to /message:send.
+            stream_opened = False
             try:
-                chunks: list[str] = []
-                current_event: str = "data"
                 async with httpx.AsyncClient(timeout=60, transport=_A2A_TRANSPORT) as client:
                     async with client.stream(
                         "POST",
@@ -92,17 +122,9 @@ async def call_specialist_agent(
                         headers=headers,
                     ) as resp:
                         resp.raise_for_status()
-                        async for line in resp.aiter_lines():
-                            if line.startswith("event: "):
-                                current_event = line[7:].strip()
-                                continue
-                            if not line:
-                                # blank line = SSE frame boundary
-                                current_event = "data"
-                                continue
-                            if not line.startswith("data: "):
-                                continue
-                            payload = line[6:]
+                        stream_opened = True
+                        async for current_event, payload in aiter_sse_events(resp.aiter_text()):
+                            frames_seen += 1
                             if current_event == "step":
                                 # Merge specialist tool-call step into the
                                 # shared current_steps for this request, and
@@ -128,7 +150,6 @@ async def call_specialist_agent(
                                     await stream_queue.put(("frame", "step", step_data))
                                 except (json.JSONDecodeError, ValueError):
                                     pass
-                                current_event = "data"
                                 continue
                             if payload == "[DONE]":
                                 break
@@ -138,9 +159,37 @@ async def call_specialist_agent(
                             chunks.append(payload)
                             await stream_queue.put(("delta", agent_name, payload))
                 return "".join(chunks) or f"The {agent_name} agent returned an empty response."
-            except (httpx.TimeoutException, httpx.HTTPStatusError, Exception) as exc:
+            except Exception as exc:
+                if frames_seen:
+                    # Mid-stream failure: keep what the user already saw and say
+                    # it is incomplete. Never re-post — the specialist's tools
+                    # have already run.
+                    logger.error(
+                        "a2a.stream_interrupted target=%s frames=%d reason=%s",
+                        agent_name,
+                        frames_seen,
+                        type(exc).__name__,
+                    )
+                    note = f"[The {agent_name} agent's response was interrupted and may be incomplete.]"
+                    partial = "".join(chunks)
+                    return f"{partial}\n\n{note}" if partial else note
+                if stream_opened or not _request_never_ran(exc):
+                    # Zero frames does not prove the specialist did nothing: a
+                    # read timeout or dropped connection can land after a
+                    # side-effecting tool has already run but before any frame
+                    # was emitted. Re-posting would run it twice.
+                    logger.error(
+                        "a2a.stream_failed_unsafe_to_retry target=%s reason=%s",
+                        agent_name,
+                        type(exc).__name__,
+                    )
+                    return (
+                        f"[The {agent_name} agent could not be confirmed to have completed this request. "
+                        "It may or may not have acted on it; please check before trying again.]"
+                    )
                 logger.warning("a2a.stream_fallback target=%s reason=%s", agent_name, type(exc).__name__)
-                # Fall through to blocking path
+                # The request provably never ran (see _request_never_ran), so
+                # the blocking path is a safe retry.
 
         # ── Blocking path (non-streaming or stream fallback) ───────────────
         try:
