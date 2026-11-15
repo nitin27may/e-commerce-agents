@@ -102,24 +102,35 @@ public static class OrchestrationRoutes
                WHERE id = (
                      SELECT id FROM hitl_requests
                       WHERE workflow_run_id = @runGuid AND status = 'pending'
+                        AND lower(user_email) <> lower(@email)
                       ORDER BY created_at DESC LIMIT 1)
                  AND status = 'pending'
            RETURNING id, kind, request_id, checkpoint_id, payload, user_email",
-            new { runGuid });
+            new { runGuid, email });
 
         if (claimed is null)
         {
-            // Nothing claimable. Distinguish "never existed / not yours" from "someone
-            // already took it", because the second is a double-click and deserves to say so.
-            var existing = await conn.ExecuteScalarAsync<string?>(
-                @"SELECT status FROM hitl_requests
+            // Nothing claimable. Distinguish "never existed" from "someone already took
+            // it" (a double-click, which deserves to say so) and from "this is your own
+            // request" (#92: an admin may not approve a return they raised).
+            var latest = await conn.QueryFirstOrDefaultAsync(
+                @"SELECT status, user_email FROM hitl_requests
                    WHERE workflow_run_id = @runGuid
                    ORDER BY created_at DESC LIMIT 1",
                 new { runGuid });
 
-            return existing is null
-                ? Results.NotFound(new { detail = "No pending approval found for this run" })
-                : Results.Conflict(new { detail = $"Request is already {existing}" });
+            if (latest is null)
+            {
+                return Results.NotFound(new { detail = "No pending approval found for this run" });
+            }
+
+            if ((string)latest.status == "pending"
+                && string.Equals((string)latest.user_email, email, StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.Json(new { detail = "You cannot approve your own request" }, statusCode: 403);
+            }
+
+            return Results.Conflict(new { detail = $"Request is already {(string)latest.status}" });
         }
 
         var claimId = (Guid)claimed.id;

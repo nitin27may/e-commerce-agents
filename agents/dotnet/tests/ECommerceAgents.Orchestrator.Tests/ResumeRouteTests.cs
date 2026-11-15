@@ -106,6 +106,21 @@ public sealed class ResumeRouteTests : IAsyncLifetime
         (await StatusOfAsync(runId)).Should().Be("pending");
     }
 
+    /// <summary>#92 — being an admin is not enough: nobody approves the return they raised.</summary>
+    [Fact]
+    public async Task AnAdmin_CannotApproveAReturnTheyRaised_CaseInsensitively()
+    {
+        var (runId, _) = await SeedPendingAsync(requester: Approver.ToUpperInvariant());
+        var mode = new StubResumableMode();
+        using var client = ClientFor(mode);
+
+        var res = await client.PostAsJsonAsync($"/api/orchestration/{runId}/resume", new { approved = true });
+
+        res.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        mode.Calls.Should().Be(0);
+        (await StatusOfAsync(runId)).Should().Be("pending");
+    }
+
     [Fact]
     public async Task AnAdminResumingARunThatDoesNotExist_Is404()
     {
@@ -247,7 +262,8 @@ public sealed class ResumeRouteTests : IAsyncLifetime
 
     private async Task<(Guid RunId, Guid? CheckpointId)> SeedPendingAsync(
         bool withCheckpoint = true,
-        string kind = "return_approval"
+        string kind = "return_approval",
+        string requester = Owner
     )
     {
         await using var conn = await _pool.OpenAsync();
@@ -271,13 +287,13 @@ public sealed class ResumeRouteTests : IAsyncLifetime
         await conn.ExecuteAsync(
             @"INSERT INTO hitl_requests
                   (workflow_run_id, request_id, checkpoint_id, user_email, kind, payload, status)
-              VALUES (@runId, @requestId, @checkpointId, @Owner, @kind, @payload::jsonb, 'pending')",
+              VALUES (@runId, @requestId, @checkpointId, @requester, @kind, @payload::jsonb, 'pending')",
             new
             {
                 runId,
                 requestId = withCheckpoint ? "req-1" : null,
                 checkpointId,
-                Owner,
+                requester,
                 kind,
                 payload = JsonSerializer.Serialize(new { session_id = "sess-1" }),
             });

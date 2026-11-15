@@ -21,6 +21,7 @@ it resumes a paused ``workflow:return-replace`` run from the
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -190,26 +191,32 @@ async def resume_run(
     found".
     """
     pool = get_pool()
+    reviewer_email = str(admin.get("sub", ""))
 
     hitl = await pool.fetchrow(
         """UPDATE hitl_requests SET status = 'processing'
            WHERE id = (
                  SELECT id FROM hitl_requests
                   WHERE workflow_run_id = $1 AND status = 'pending'
+                    AND lower(user_email) <> lower($2)
                   ORDER BY created_at DESC LIMIT 1)
              AND status = 'pending'
            RETURNING *""",
         run_id,
+        reviewer_email,
     )
     if not hitl:
-        # Nothing claimable: "never existed" is a 404, "someone already took it" a 409.
-        existing = await pool.fetchval(
-            "SELECT status FROM hitl_requests WHERE workflow_run_id = $1 ORDER BY created_at DESC LIMIT 1",
+        # Nothing claimable: "never existed" is a 404, "someone already took it" a
+        # 409, and a pending request the caller raised themselves a 403 (#92).
+        latest = await pool.fetchrow(
+            "SELECT status, user_email FROM hitl_requests WHERE workflow_run_id = $1 ORDER BY created_at DESC LIMIT 1",
             run_id,
         )
-        if existing is None:
+        if latest is None:
             raise HTTPException(status_code=404, detail="No pending approval found for this run")
-        raise HTTPException(status_code=409, detail=f"Request is already {existing}")
+        if latest["status"] == "pending" and latest["user_email"].lower() == reviewer_email.lower():
+            raise HTTPException(status_code=403, detail="You cannot approve your own request")
+        raise HTTPException(status_code=409, detail=f"Request is already {latest['status']}")
 
     async def _release() -> None:
         await pool.execute(
@@ -234,21 +241,27 @@ async def resume_run(
     # afterwards. The reviewer still authorised the call (require_admin) and is
     # recorded as ``decided_by`` below.
     requester_email = hitl["user_email"]
-    requester_role = await pool.fetchval("SELECT role FROM users WHERE email = $1", requester_email) or "customer"
+    resumed = False
     email_token = current_user_email.set(requester_email)
-    role_token = current_user_role.set(requester_role)
+    role_token = current_user_role.set("customer")
     try:
+        requester_role = await pool.fetchval("SELECT role FROM users WHERE email = $1", requester_email) or "customer"
+        current_user_role.set(requester_role)
         async for event in mode.resume(
             checkpoint_id=str(hitl["checkpoint_id"]), request_id=hitl["request_id"], approved=body.approved
         ):
             if event.kind == "run_completed":
                 final_payload = event.payload
-    except Exception:
-        await _release()
-        raise
+        resumed = True
     finally:
         current_user_role.reset(role_token)
         current_user_email.reset(email_token)
+        if not resumed:
+            # Any way out without a completed resume, cancellation included
+            # (client disconnect, shutdown: CancelledError is not an Exception),
+            # hands the claim back so the row is not stuck in 'processing'.
+            # Shielded so a second cancel cannot interrupt the release itself.
+            await asyncio.shield(_release())
 
     await pool.execute(
         """UPDATE hitl_requests
