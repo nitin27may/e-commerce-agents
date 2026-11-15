@@ -28,6 +28,7 @@ _MIN_SECRET_BYTES = 32
 _UNSAFE_SECRET_DEFAULTS = {
     "change-me-in-production",
     "change-me-generate-a-random-256-bit-key",
+    "change-me-in-production-use-random-256-bit-key",
     "agent-internal-secret",
     "agent-internal-shared-secret",
     "dev-oauth-seed-change-me",

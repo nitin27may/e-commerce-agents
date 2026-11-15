@@ -101,3 +101,16 @@ def test_test_environment_also_permits_weak_defaults(monkeypatch: pytest.MonkeyP
     config_mod.Settings(_env_file=None)  # type: ignore[call-arg]  # must not raise
 
 
+def test_production_rejects_compose_jwt_placeholder(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The compose files fall back to this 47-char value, so the length check alone
+    # never catches it - only the unsafe-defaults list does.
+    placeholder = "change-me-in-production-use-random-256-bit-key"
+    assert len(placeholder) >= 32
+    config_mod = _prepare_env(
+        monkeypatch,
+        environment="production",
+        JWT_SECRET=placeholder,
+        AGENT_SHARED_SECRET=_STRONG_SECRET,
+    )
+    with pytest.raises(ValueError, match=r"JWT_SECRET is unsafe \(placeholder default\)"):
+        config_mod.Settings(_env_file=None)

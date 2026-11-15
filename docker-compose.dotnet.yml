@@ -34,7 +34,7 @@ services:
 
   db:
     image: pgvector/pgvector:pg16
-    ports: ["5432:5432"]
+    ports: ["127.0.0.1:5432:5432"]
     environment:
       POSTGRES_DB: ecommerce_agents
       POSTGRES_USER: ecommerce
@@ -51,7 +51,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]
+    ports: ["127.0.0.1:6379:6379"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -61,8 +61,8 @@ services:
   aspire:
     image: mcr.microsoft.com/dotnet/aspire-dashboard:latest
     ports:
-      - "18888:18888"
-      - "18890:18889"
+      - "127.0.0.1:18888:18888"
+      - "127.0.0.1:18890:18889"
     environment:
       DASHBOARD__FRONTEND__AUTHMODE: Unsecured
     healthcheck:
@@ -107,7 +107,7 @@ services:
       args:
         AGENT_NAME: auth_server
         AGENT_PORT: 8090
-    ports: ["8090:8090"]
+    ports: ["127.0.0.1:8090:8090"]
     depends_on:
       db: { condition: service_healthy }
     environment:
@@ -184,7 +184,7 @@ services:
     build:
       context: .
       dockerfile: agents/dotnet/src/ECommerceAgents.ProductDiscovery/Dockerfile
-    ports: ["8081:8081"]
+    ports: ["127.0.0.1:8081:8081"]
     depends_on:
       db: { condition: service_healthy }
       aspire: { condition: service_started }
@@ -198,7 +198,7 @@ services:
     build:
       context: .
       dockerfile: agents/dotnet/src/ECommerceAgents.OrderManagement/Dockerfile
-    ports: ["8082:8082"]
+    ports: ["127.0.0.1:8082:8082"]
     depends_on:
       db: { condition: service_healthy }
       aspire: { condition: service_started }
@@ -212,7 +212,7 @@ services:
     build:
       context: .
       dockerfile: agents/dotnet/src/ECommerceAgents.PricingPromotions/Dockerfile
-    ports: ["8083:8083"]
+    ports: ["127.0.0.1:8083:8083"]
     depends_on:
       db: { condition: service_healthy }
       aspire: { condition: service_started }
@@ -226,7 +226,7 @@ services:
     build:
       context: .
       dockerfile: agents/dotnet/src/ECommerceAgents.ReviewSentiment/Dockerfile
-    ports: ["8084:8084"]
+    ports: ["127.0.0.1:8084:8084"]
     depends_on:
       db: { condition: service_healthy }
       aspire: { condition: service_started }
@@ -240,7 +240,7 @@ services:
     build:
       context: .
       dockerfile: agents/dotnet/src/ECommerceAgents.InventoryFulfillment/Dockerfile
-    ports: ["8085:8085"]
+    ports: ["127.0.0.1:8085:8085"]
     depends_on:
       db: { condition: service_healthy }
       aspire: { condition: service_started }
@@ -258,7 +258,7 @@ services:
     build:
       context: .
       dockerfile: agents/dotnet/src/ECommerceAgents.Mcp/Dockerfile
-    ports: ["9001:9001"]
+    ports: ["127.0.0.1:9001:9001"]
     depends_on:
       db: { condition: service_healthy }
     environment:

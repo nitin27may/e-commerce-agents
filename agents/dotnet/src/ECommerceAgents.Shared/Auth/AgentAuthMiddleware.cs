@@ -125,10 +125,21 @@ public sealed class AgentAuthMiddleware
             return;
         }
 
+        // The orchestrator is the user-facing front door: it authenticates
+        // end users by Bearer token only. Nothing legitimate sends it an
+        // X-Agent-Secret, and honouring one would let anyone holding the
+        // shared secret act as any user via X-User-Email / X-User-Role.
+        if (_isOrchestrator && !string.IsNullOrEmpty(agentSecret))
+        {
+            _logger.LogWarning("auth.denied reason=agent_secret_not_accepted_on_orchestrator");
+            await Reject(context, 401, "Inter-agent shared secret is not accepted by the orchestrator");
+            return;
+        }
+
         // Inter-agent authentication (local mode): static shared secret.
         if (!string.IsNullOrEmpty(agentSecret))
         {
-            if (!string.Equals(agentSecret, _settings.AgentSharedSecret, StringComparison.Ordinal))
+            if (!SecretsMatch(agentSecret, _settings.AgentSharedSecret))
             {
                 await Reject(context, 401, "Invalid agent secret");
                 return;
@@ -320,6 +331,13 @@ public sealed class AgentAuthMiddleware
         }
         return null;
     }
+
+    /// <summary>Constant-time comparison; hashing first makes the inputs equal-length.</summary>
+    private static bool SecretsMatch(string provided, string expected) =>
+        CryptographicOperations.FixedTimeEquals(
+            SHA256.HashData(Encoding.UTF8.GetBytes(provided)),
+            SHA256.HashData(Encoding.UTF8.GetBytes(expected ?? string.Empty))
+        );
 
     private static async Task Reject(HttpContext context, int status, string detail)
     {

@@ -65,6 +65,27 @@ describe("api proxy", () => {
     expect(fetchSpy.mock.calls[0][1].method).toBe("GET");
   });
 
+  it("strips inter-agent credential headers sent by the browser", async () => {
+    const fetchSpy = stubFetch(async () => new Response("[]", { status: 200 }));
+
+    await GET(
+      makeRequest({
+        headers: {
+          authorization: "Bearer abc",
+          "X-Agent-Secret": "shared",
+          "x-user-email": "admin@example.com",
+          "X-User-Role": "admin",
+        },
+      }),
+    );
+
+    const sent = fetchSpy.mock.calls[0][1].headers as Headers;
+    expect(sent.get("x-agent-secret")).toBeNull();
+    expect(sent.get("x-user-email")).toBeNull();
+    expect(sent.get("x-user-role")).toBeNull();
+    expect(sent.get("authorization")).toBe("Bearer abc");
+  });
+
   it("tolerates a trailing slash on ORCHESTRATOR_URL", async () => {
     process.env.ORCHESTRATOR_URL = "http://orchestrator:8080/";
     const fetchSpy = stubFetch(async () => new Response("[]", { status: 200 }));

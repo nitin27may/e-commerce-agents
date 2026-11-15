@@ -36,6 +36,13 @@ const STRIP_REQUEST_HEADERS = new Set([
   "content-length",
   // See the `accept-encoding: identity` line in proxy() below.
   "accept-encoding",
+  // Inter-agent credentials. A browser has no business sending these, and the
+  // backend treats `x-agent-secret` + `x-user-*` as "a trusted agent is
+  // speaking for this user" — forwarding them from a browser would let any
+  // caller choose their own identity.
+  "x-agent-secret",
+  "x-user-email",
+  "x-user-role",
 ]);
 
 const STRIP_RESPONSE_HEADERS = new Set([
