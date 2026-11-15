@@ -123,7 +123,7 @@ async def call_specialist_agent(
                     ) as resp:
                         resp.raise_for_status()
                         stream_opened = True
-                        async for current_event, payload in aiter_sse_events(resp.aiter_lines()):
+                        async for current_event, payload in aiter_sse_events(resp.aiter_text()):
                             frames_seen += 1
                             if current_event == "step":
                                 # Merge specialist tool-call step into the

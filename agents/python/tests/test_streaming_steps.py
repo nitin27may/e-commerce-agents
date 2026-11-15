@@ -119,9 +119,7 @@ async def test_message_stream_emits_step_frames_before_done(
     assert step_pos < done_pos, "step frame must appear before [DONE]"
 
     # Step JSON carries the tool name and the agent tag added by agent_host
-    step_data_line = next(
-        l for l in body.splitlines() if l.startswith("data: ") and "search_products" in l
-    )
+    step_data_line = next(l for l in body.splitlines() if l.startswith("data: ") and "search_products" in l)
     step = json.loads(step_data_line[6:])
     assert step["tool_name"] == "search_products"
     assert step["agent"] == "product-discovery"
@@ -152,16 +150,19 @@ async def test_message_stream_emits_a_step_before_the_text_that_follows_it(
         steps = current_steps.get()
         if steps is not None:
             steps.append(
-                {"tool_name": "search_products", "tool_input": {}, "tool_output": {},
-                 "status": "success", "duration_ms": 7}
+                {
+                    "tool_name": "search_products",
+                    "tool_input": {},
+                    "tool_output": {},
+                    "status": "success",
+                    "duration_ms": 7,
+                }
             )
         yield "I found three pairs. "
         yield "They are all in stock."
 
     monkeypatch.setattr("shared.agent_host._run_agent_native_stream", _fake_stream)
-    monkeypatch.setattr(
-        "shared.telemetry.agent_run_span", lambda *a, **kw: contextlib.nullcontext()
-    )
+    monkeypatch.setattr("shared.telemetry.agent_run_span", lambda *a, **kw: contextlib.nullcontext())
 
     app = create_agent_app(agent=MagicMock(), agent_name="product-discovery", port=9999)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -178,12 +179,8 @@ async def test_message_stream_emits_a_step_before_the_text_that_follows_it(
 
     body = resp.text
     step_pos = body.index("event: step")
-    assert step_pos < body.index("They are all in stock."), (
-        "the step arrived after the answer had finished writing"
-    )
-    assert step_pos > body.index("Let me check."), (
-        "the step was reported before the tool that produced it had run"
-    )
+    assert step_pos < body.index("They are all in stock."), "the step arrived after the answer had finished writing"
+    assert step_pos > body.index("Let me check."), "the step was reported before the tool that produced it had run"
     # Emitted exactly once — the end-of-run drain must not repeat what the
     # in-loop drain already sent.
     assert body.count("event: step") == 1
@@ -237,11 +234,11 @@ def _build_streaming_mock(sse_lines: list[str]):
 
     async def _aiter():
         for line in sse_lines:
-            yield line
+            yield line + "\n"
 
     mock_resp = MagicMock()
     mock_resp.raise_for_status = MagicMock()
-    mock_resp.aiter_lines = _aiter
+    mock_resp.aiter_text = _aiter
 
     stream_ctx = MagicMock()
     stream_ctx.__aenter__ = AsyncMock(return_value=mock_resp)
@@ -441,9 +438,7 @@ async def test_runs_endpoint_returns_user_runs(
     )
 
     monkeypatch.setattr("shared.db._pool", clean_db, raising=False)
-    monkeypatch.setattr(
-        "shared.telemetry.get_current_trace_id", lambda: "trace-abc", raising=False
-    )
+    monkeypatch.setattr("shared.telemetry.get_current_trace_id", lambda: "trace-abc", raising=False)
 
     usage_log_id = await log_agent_usage(
         user_id=user_id,
@@ -525,9 +520,7 @@ async def test_runs_endpoint_does_not_leak_other_users(
     )
 
     monkeypatch.setattr("shared.db._pool", clean_db, raising=False)
-    monkeypatch.setattr(
-        "shared.telemetry.get_current_trace_id", lambda: None, raising=False
-    )
+    monkeypatch.setattr("shared.telemetry.get_current_trace_id", lambda: None, raising=False)
 
     await log_agent_usage(user_id=alice_id, agent_name="orchestrator", input_summary="alice run")
     await log_agent_usage(user_id=bob_id, agent_name="orchestrator", input_summary="bob run")
