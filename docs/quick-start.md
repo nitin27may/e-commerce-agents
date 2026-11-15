@@ -304,6 +304,6 @@ The two most common:
 ## Where to go next
 
 - [Concepts](./concepts/) — what an agent is, why more than one, what a graph means here
-- [Tutorials](../tutorials/) — 34 chapters, Python and .NET, each runnable without an API key
+- [Tutorials](../tutorials/) — 34 chapters, Python and .NET; every chapter's tests run with no key on recorded replay fixtures, and a key is only needed for live runs
 - [Architecture](./architecture.md) — how the whole system fits together
 - [Deployment](./deployment.md) — configuration reference, profiles, environment variables

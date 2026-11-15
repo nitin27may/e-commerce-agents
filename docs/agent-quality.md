@@ -15,7 +15,7 @@ Agent quality has two distinct failure modes:
 
 The eval suite covers both. Functional evals are scored continuously; safety evals run adversarially. Neither replaces the guardrails code (which is unit-tested deterministically without a live LLM), but both measure whether the code-layer and prompt-layer defenses are working together end-to-end.
 
-**Evals are not a substitute for unit tests.** They run against a live LLM and seeded database, so they cannot be PR-blocking. The PR gate is `tests.yml` (pytest, no network). Evals run nightly and on manual dispatch via `.github/workflows/evals.yml`.
+**Evals are not a substitute for unit tests.** The live-LLM run needs a real key and a seeded database, so it is human-dispatched and never gates a PR. A deterministic `smoke` job does gate PRs: it replays committed fixtures (`LLM_PROVIDER=replay`), needs no key, and fails on a regression against the committed baselines. The unit-test gate is `tests.yml` (pytest, no network). Both live in `.github/workflows/` — see `evals.yml`.
 
 ---
 
@@ -180,12 +180,12 @@ python -c "import json; r=json.load(open('eval-pd.json')); exit(0 if r['overall_
 
 ## CI Gate — `evals.yml`
 
-Evals call a real LLM and seeded database. They are **not** in the PR-blocking `tests.yml`. Instead, `.github/workflows/evals.yml` runs them:
+Evals are **not** in the unit-test workflow `tests.yml`. `.github/workflows/evals.yml` has two jobs:
 
-- **Nightly** at 07:00 UTC (cron `0 7 * * *`)
-- **On manual dispatch** with a configurable `pass_threshold` (default `0.7`)
+- **`smoke`** — on every PR and push to `main` touching agent or eval code. Replays committed fixtures with deterministic scorers only: no key, no cost, and it fails the PR on a regression against the committed baselines.
+- **`full`** — **manual dispatch only** (there is no schedule), with a real key, the LLM judge and a configurable `pass_threshold` (default `0.7`). It spends real money, so a human starts it.
 
-The workflow:
+The `full` job:
 
 1. Spins up PostgreSQL 16 (pgvector) and Redis 7 as GitHub Actions services.
 2. Loads the schema from `docker/postgres/init.sql` and seeds with `scripts/seed.py` (deterministic: `random.seed(42)`).
@@ -194,7 +194,7 @@ The workflow:
 5. Fails if any eval exits non-zero.
 6. Uploads all `eval-*.json` result files as artifacts (retained 30 days).
 
-**Required secret**: `OPENAI_API_KEY` in the repository settings. The workflow fails fast if the secret is absent rather than running with a dummy key.
+**Required secret (`full` job only)**: `OPENAI_API_KEY` in the repository settings. The workflow fails fast if the secret is absent rather than running with a dummy key.
 
 ### Score thresholds
 
@@ -212,7 +212,7 @@ The workflow:
 3. For quality cases: pick `expected_tools` from the agent's `AGENT_TOOLS` list; pick `expected_fields` from what the tool actually returns.
 4. For red-team cases: set `target_agent` to the agent's `name` (e.g. `"review-sentiment"`), choose an `attack_type`, and supply the `forbidden_substrings` that would indicate a failure.
 5. Run the suite locally to confirm the new case behaves as expected.
-6. Commit the updated dataset. The nightly CI will pick it up.
+6. Commit the updated dataset. The `smoke` job will pick it up once its replay fixtures are re-recorded (see `agents/python/evals/fixtures/README.md`).
 
 ---
 

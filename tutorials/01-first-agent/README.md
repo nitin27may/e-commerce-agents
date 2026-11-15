@@ -72,6 +72,8 @@ uv sync --project tutorials
 uv run --project tutorials python tutorials/01-first-agent/python/main.py
 ```
 
+This needs a key in `.env` (live run). With no key, `LLM_PROVIDER=replay` plays back the committed fixture and prints the same answer; the tests always run that way.
+
 The provider switch and agent construction:
 
 ```python

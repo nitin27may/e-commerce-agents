@@ -90,6 +90,33 @@ sequenceDiagram
     API->>UI: Stream closed
 ```
 
+## Orchestration modes, live graph and runs
+
+The chat page (`app/(app)/chat/page.tsx`) exposes the orchestrator's modes and what they did.
+
+- **Mode switcher** (`components/chat/mode-switcher.tsx`). A composer control fed by
+  `GET /api/orchestration/modes`. The selection travels as the `mode` option of
+  `api.chatStream()` and is remembered per conversation in `localStorage` (a failure to read or
+  write it is ignored). If the modes fetch fails or returns nothing, the control hides and chat
+  uses the server's default mode.
+- **Live orchestration graph** (`components/chat/orchestration-graph.tsx`). Renders a mode's
+  `graph_mermaid()` output client-side, applying the house palette in the browser (the backend's
+  source carries no styling), and lights nodes as `event: node` / `event: error` frames arrive
+  through the `onOrchestrationEvent` hook. Matching a live `node_id` to a diagram node relies on a
+  backend convention: every workflow mode uses the real executor id, dashes swapped for
+  underscores, as the Mermaid node id. SSE frames outside `step` / `metadata` / `delta` / plain
+  text go to that hook rather than into the chat bubble.
+- **Mode comparison** (`components/chat/mode-comparison.tsx`). A standalone dialog, not tied to the
+  active conversation. It calls `POST /api/orchestration/compare` to run one prompt through
+  several modes and shows a result card per mode, reusing the graph in a static rendering by
+  passing the mode's `agents_involved` as `doneNodeIds`.
+- **Runs and approvals** (`app/(app)/runs/page.tsx`). Lists past runs and fetches
+  `GET /api/runs/{id}/checkpoints` for every visible run up front, so a "Needs approval" badge
+  shows without first expanding the row. A run with a pending `hitl_request` gets Approve and
+  Reject buttons that call `POST /api/orchestration/{run_id}/resume`. Rows are always
+  expandable: workflow modes never populate `agent_execution_steps`, so gating on steps would hide
+  exactly the runs most likely to be waiting on approval.
+
 ## Testing
 
 - Unit/component: **vitest + React Testing Library** (`pnpm test`, jsdom).

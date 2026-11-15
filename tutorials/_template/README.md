@@ -14,7 +14,7 @@ author: "Nitin Kumar Singh"
 toc: true
 ---
 
-> **Series note** — This article is part of *MAF v1: Python and .NET*. If you read the original Python-only version, it lives at [Part N — &lt;title&gt;](<old-url>).
+> **Series note** — This article is part of *MAF v1: Python and .NET*. If you read the original Python-only version, it lives at Part N — &lt;title&gt; (`<old-url>`).
 
 ## Why this chapter
 
@@ -23,7 +23,7 @@ toc: true
 ## Prerequisites
 
 - Completed [Chapter 00 — Setup](../00-setup/)
-- Familiar with [Chapter N-1 — &lt;title&gt;](../NN-previous/)
+- Familiar with Chapter N-1 — &lt;title&gt; (`../NN-previous/`)
 - Environment variables set: `OPENAI_API_KEY` (or `AZURE_OPENAI_*`) and `LLM_MODEL`
 
 ## The concept
@@ -83,5 +83,5 @@ cd tutorials/<chapter>/dotnet && dotnet test
 
 ## What's next
 
-- Next chapter: [Chapter N+1 — &lt;title&gt;](../NN-next/)
+- Next chapter: Chapter N+1 — &lt;title&gt; (`../NN-next/`)
 - [Full source on GitHub](https://github.com/nitin27may/e-commerce-agents/tree/main/tutorials/<chapter>)
