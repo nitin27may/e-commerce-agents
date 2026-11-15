@@ -13,9 +13,10 @@ The panelist behavior is injected as a ``Responder`` callable so the workflow is
 deterministic and unit-testable without an LLM; production code can pass
 agent-backed responders.
 
-Imports use the ``agent_framework._workflows`` submodules (not the package root):
-the agent-framework v1.0 beta ships an empty top-level ``__init__`` in a plain
-checkout, so the stable submodule paths are what the other workflows use too.
+Imports come from the public ``agent_framework`` package root. (An earlier
+revision used the private ``agent_framework._workflows`` submodules because
+1.0.0 shipped an empty top-level ``__init__``; the pinned 1.14.0 re-exports
+these names, so that workaround is gone here.)
 """
 
 from __future__ import annotations
@@ -26,9 +27,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from agent_framework._workflows._executor import Executor, handler
-from agent_framework._workflows._workflow_builder import WorkflowBuilder
-from agent_framework._workflows._workflow_context import WorkflowContext
+from agent_framework import Executor, WorkflowBuilder, WorkflowContext, handler
 
 logger = logging.getLogger(__name__)
 

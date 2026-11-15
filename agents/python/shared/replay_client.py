@@ -11,7 +11,7 @@ Usage::
     LLM_PROVIDER=replay RECORD=true uv run python tutorials/01-first-agent/python/main.py
 
 The first form plays back whatever is already in ``REPLAY_FIXTURES_DIR``
-(default ``tests/fixtures/replay``, relative to the process's cwd — each
+(default ``evals/fixtures/replay``, relative to the process's cwd — each
 chapter/test module should pass its own directory so cassettes live next to
 the test that uses them, the same way VCR-style cassette libraries do).
 The second form additionally falls through to a real call — via

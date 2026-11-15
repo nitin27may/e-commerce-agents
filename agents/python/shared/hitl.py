@@ -10,7 +10,8 @@ An admin reviews pending requests at /admin/approvals and either:
 - Denies: the record is marked "denied" and the denial is recorded.
 
 The middleware uses the ``HITL_ENABLED`` config flag. When disabled it is a
-no-op and all tools execute normally (default-off).
+no-op and all tools execute normally. It defaults to ``True`` in
+``shared/config.py`` (default-on).
 
 DB setup:
     The ``hitl_requests`` table is in docker/postgres/init.sql.
