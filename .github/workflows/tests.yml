@@ -173,11 +173,66 @@ jobs:
       - name: Build
         run: pnpm build
 
-  # Playwright E2E is intentionally not run in CI. It needs the full live
-  # stack (docker compose: Postgres + Redis + all agents) and, unless the stack
-  # is started with LLM_PROVIDER=replay, a real OPENAI_API_KEY, which is
-  # impractical and costly for every push. The specs remain under web/e2e/ — run them locally against
-  # a running app with: cd web && pnpm exec playwright test
+  # The full Playwright suite (the other specs under web/e2e/) is intentionally
+  # not run in CI: it needs the live stack (docker compose: Postgres + Redis +
+  # all agents) and, unless that stack runs with LLM_PROVIDER=replay, a real
+  # OPENAI_API_KEY. Run it locally with: cd web && pnpm exec playwright test
+  #
+  # web-ui-smoke below is the exception. ui-smoke.spec.ts stubs `**/api/**` and
+  # seeds auth in localStorage, and not-found.spec.ts hits a public route, so
+  # both run against the production build alone. No model key, no backend.
+  web-ui-smoke:
+    name: Web · Playwright UI smoke (no backend)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Build
+        run: pnpm build
+
+      - name: Start the production server
+        run: |
+          nohup pnpm start > next-start.log 2>&1 &
+          for _ in $(seq 1 60); do
+            curl -fsS -o /dev/null http://localhost:3000/login && exit 0
+            sleep 1
+          done
+          cat next-start.log
+          exit 1
+
+      - name: Run UI smoke specs
+        run: pnpm exec playwright test e2e/ui-smoke.spec.ts e2e/not-found.spec.ts --trace off
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-ui-smoke-results
+          path: web/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
 
   workflow-visualization-drift:
     name: Workflow diagrams · drift check
