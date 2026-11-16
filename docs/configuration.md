@@ -219,6 +219,18 @@ stack always uses Chat Completions and has no such setting. All three compose fi
 `LLM_BASE_URL` to the agents, and the two that run the Python stack forward `LLM_API` as well, so
 the setting works the same in a container as it does for host-run Python.
 
+## Per-run cost ceiling (`COST_BUDGET_*`)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `COST_BUDGET_MODE` | `observe` | `off` attaches nothing; `observe` estimates and logs each run and counts a turn past the ceiling as `cost_budget.would_block`, never refusing; `enforce` refuses the next LLM turn once a run's estimated cost passes the ceiling |
+| `COST_BUDGET_USD_PER_RUN` | `0.50` in `.env.example` and the three compose files; unset in code | USD ceiling for one run. With no value, even `enforce` refuses nothing |
+
+`0.50` is a demo default, large enough for a normal turn and small enough to catch a runaway
+agent loop. The mode stays `observe`: watch `cost_budget.would_block` (see
+[telemetry.md](telemetry.md#cost-and-usage)) before choosing `enforce`. The figure is an
+estimate from a hand-maintained price table, not a bill.
+
 ## One stack at a time
 
 The Python and .NET stacks publish the same host ports — 3000, 5432, 6379, 8080–8085, 8090, 18888 —

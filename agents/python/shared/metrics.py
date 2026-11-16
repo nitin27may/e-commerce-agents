@@ -67,6 +67,11 @@ def _get_instruments() -> dict[str, Any] | None:
                 unit="{token}",
                 description="LLM tokens consumed, split by direction.",
             ),
+            "would_block": meter.create_counter(
+                "cost_budget.would_block",
+                unit="{turn}",
+                description="Turns enforce mode would have refused: observe mode, run already over its ceiling.",
+            ),
         }
     except Exception:
         # Telemetry must never be able to fail a request. A metrics backend
@@ -110,6 +115,20 @@ def record_llm_turn_cost(
         instruments["tokens"].add(tokens_out, {**attributes, "direction": "output"})
     except Exception:
         logger.warning("metrics.record_failed cost_usd=%.6f", cost_usd, exc_info=True)
+
+
+def record_would_block(*, agent: str = "") -> None:
+    """Count one turn that ``enforce`` mode would have refused (observe mode, run over its ceiling).
+
+    Low-cardinality on purpose: one optional ``agent`` attribute, nothing user-scoped.
+    """
+    instruments = _get_instruments()
+    if not instruments:
+        return
+    try:
+        instruments["would_block"].add(1, {"agent": agent} if agent else {})
+    except Exception:
+        logger.warning("metrics.would_block_record_failed", exc_info=True)
 
 
 def _reset_for_tests() -> None:

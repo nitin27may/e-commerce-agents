@@ -160,6 +160,10 @@ services:
       # /responses route. Python stack only; .NET always uses Chat Completions.
       LLM_API: ${LLM_API:-responses}
       LLM_MODEL: ${LLM_MODEL:-gpt-4.1}
+      # Per-run spend ceiling. COST_BUDGET_MODE stays observe: the ceiling is only counted
+      # (cost_budget.would_block), never enforced, until you set enforce yourself.
+      COST_BUDGET_MODE: ${COST_BUDGET_MODE:-observe}
+      COST_BUDGET_USD_PER_RUN: ${COST_BUDGET_USD_PER_RUN:-0.50}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
       AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
       AZURE_OPENAI_KEY: ${AZURE_OPENAI_KEY:-}

@@ -2,6 +2,7 @@ using Dapper;
 using ECommerceAgents.Orchestrator.Modes;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
+using ECommerceAgents.Shared.Cost;
 using ECommerceAgents.Shared.Data;
 using ECommerceAgents.Shared.Grounding;
 using ECommerceAgents.Shared.Orchestration;
@@ -815,6 +816,9 @@ public static class ChatRoutes
 
         // The orchestrator's own tokens plus every specialist's, as reported over A2A.
         var total = RequestContext.CurrentRunUsage.Total();
+        // Same for every mode: a mode that makes no LLM call writes an explicit 0 cost, one that
+        // reported nothing writes NULL (CostEstimator.SummarizeRun).
+        var columns = CostEstimator.SummarizeRun(RequestContext.CurrentRunUsage, modeResult?.NoLlmCalls == true);
         var usageLogId = await usage.LogAgentUsageAsync(
             ctx.UserId,
             "orchestrator",
@@ -822,7 +826,10 @@ public static class ChatRoutes
             tokensIn: (int)Math.Min(total?.InputTokenCount ?? 0, int.MaxValue),
             tokensOut: (int)Math.Min(total?.OutputTokenCount ?? 0, int.MaxValue),
             durationMs: durationMs,
-            toolCallsCount: agentsInvolved.Count - 1
+            toolCallsCount: agentsInvolved.Count - 1,
+            model: columns.Model,
+            tokensCachedIn: columns.TokensCachedIn,
+            costUsd: columns.CostUsd
         );
 
         // Issue #16: persist this turn's agentic-timeline steps —

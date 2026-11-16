@@ -45,7 +45,7 @@ class ToolRouterMode:
         run_metadata: dict = {}
         response_text = await _run_agent_native(agent, message, history=ctx.history, metadata_box=run_metadata)
 
-        run_usage.add(ORCHESTRATOR, run_metadata.get("_maf_usage"))
+        run_usage.add(ORCHESTRATOR, run_metadata.get("_maf_usage"), run_metadata.get("_maf_model"))
 
         steps = get_steps()
         for step in steps:

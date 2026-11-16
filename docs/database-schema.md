@@ -448,7 +448,7 @@ Two rules the reader enforces, each closing a defect that shipped:
 |-------|-------------|-------|
 | **conversations** | `id` (PK), `user_id` (FK -> users), `title`, `is_active`, `last_message_at` | Soft-delete via `is_active`. Title auto-set from first user message (first 100 chars). |
 | **messages** | `id` (PK), `conversation_id` (FK -> conversations), `role`, `content`, `agent_name`, `agents_involved` (TEXT[]), `metadata` (JSONB) | Roles: `user`, `assistant`, `system`. `agents_involved` tracks which specialist agents contributed. `metadata` stores tool call data and trace info. |
-| **usage_logs** | `id` (PK), `user_id` (FK -> users), `agent_name`, `trace_id`, `tokens_in`, `tokens_out`, `tool_calls_count`, `duration_ms`, `status` | `trace_id` correlates with OTel traces in the Aspire Dashboard. Status: `success` or `error`. |
+| **usage_logs** | `id` (PK), `user_id` (FK -> users), `agent_name`, `trace_id`, `tokens_in`, `tokens_out`, `tokens_cached_in`, `model`, `cost_usd`, `tool_calls_count`, `duration_ms`, `status` | `model`, `tokens_cached_in` and `cost_usd` (migration `0007`) are NULL when the run's usage was not captured; `cost_usd = 0` is a mode that makes no LLM call. `trace_id` correlates with OTel traces in the Aspire Dashboard. Status: `success` or `error`. |
 | **agent_execution_steps** | `id` (PK), `usage_log_id` (FK -> usage_logs), `step_index`, `tool_name`, `tool_input` (JSONB), `tool_output` (JSONB), `duration_ms` | Ordered by `step_index`. Records each tool invocation within an agent execution. |
 
 **Indexes**

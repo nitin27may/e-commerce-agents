@@ -21,6 +21,7 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   Clock,
+  Coins,
   Loader2,
   ShieldAlert,
   BarChart3,
@@ -45,6 +46,7 @@ interface AgentUsage {
   tokens_in: number;
   tokens_out: number;
   avg_duration_ms: number;
+  cost_usd: number;
 }
 
 interface DailyTrend {
@@ -58,6 +60,7 @@ interface UsageStats {
   total_invocations: number;
   total_tokens_in: number;
   total_tokens_out: number;
+  total_cost_usd: number;
   active_agents: number;
   pending_requests: number;
   avg_duration_ms: number;
@@ -74,6 +77,11 @@ function formatNumber(n: number | undefined | null): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return n.toLocaleString();
+}
+
+function formatCost(usd: number | undefined | null): string {
+  if (!usd) return "—";
+  return `$${usd.toFixed(usd < 1 ? 4 : 2)}`;
 }
 
 function formatDuration(ms: number | undefined | null): string {
@@ -153,6 +161,7 @@ export default function AdminUsagePage() {
         total_invocations: overall.total_requests ?? 0,
         total_tokens_in: overall.total_tokens_in ?? 0,
         total_tokens_out: overall.total_tokens_out ?? 0,
+        total_cost_usd: overall.total_cost_usd ?? 0,
         active_agents: raw.by_agent?.length ?? 0,
         pending_requests: overall.pending_requests ?? 0,
         avg_duration_ms: overall.avg_duration_ms ?? 0,
@@ -163,6 +172,7 @@ export default function AdminUsagePage() {
           tokens_in: (a.tokens_in ?? 0) as number,
           tokens_out: (a.tokens_out ?? 0) as number,
           avg_duration_ms: (a.avg_duration_ms ?? 0) as number,
+          cost_usd: (a.cost_usd ?? 0) as number,
         })),
         daily_trend: (raw.daily || []).map((d: Record<string, unknown>) => ({
           date: d.date as string,
@@ -235,7 +245,7 @@ export default function AdminUsagePage() {
       {!loading && !error && stats && (
         <div className="space-y-8">
           {/* Summary cards */}
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <StatCard
               label="Total Invocations"
               value={formatNumber(stats.total_invocations)}
@@ -251,6 +261,12 @@ export default function AdminUsagePage() {
               label="Tokens Out"
               value={formatNumber(stats.total_tokens_out)}
               icon={ArrowUpFromLine}
+            />
+            <StatCard
+              label="Est. Cost"
+              value={formatCost(stats.total_cost_usd)}
+              icon={Coins}
+              hint="Rows with a recorded cost"
             />
             <StatCard
               label="Avg Duration"
@@ -336,6 +352,7 @@ export default function AdminUsagePage() {
                     <TableHead className="text-right">Invocations</TableHead>
                     <TableHead className="text-right">Tokens In</TableHead>
                     <TableHead className="text-right">Tokens Out</TableHead>
+                    <TableHead className="text-right">Est. Cost</TableHead>
                     <TableHead className="text-right">Avg Duration</TableHead>
                     <TableHead className="w-[120px]">Volume</TableHead>
                   </TableRow>
@@ -359,6 +376,9 @@ export default function AdminUsagePage() {
                         </TableCell>
                         <TableCell className="text-right text-muted-foreground">
                           {formatNumber(agent.tokens_out)}
+                        </TableCell>
+                        <TableCell className="text-right text-muted-foreground">
+                          {formatCost(agent.cost_usd)}
                         </TableCell>
                         <TableCell className="text-right text-muted-foreground">
                           {formatDuration(agent.avg_duration_ms)}

@@ -134,35 +134,76 @@ public static class SpecialistPipeline
                 ));
             }
 
+            NoteWouldBlock(settings, logger);
+
             var response = await innerAgent.RunAsync(messages, session, options, cancellationToken: ct);
 
-            var usage = response.Usage;
-            if (usage is not null)
-            {
-                var tokensIn = usage.InputTokenCount ?? 0;
-                var tokensOut = usage.OutputTokenCount ?? 0;
-                var turnCost = CostEstimator.Estimate(settings.LlmModel, (int)tokensIn, (int)tokensOut);
-                var spent = RequestContext.AddRunCost(turnCost);
-
-                // The same estimate as a counter rather than only a log line, which
-                // cannot be alerted on without shipping and parsing logs. Emitted
-                // here because this is the only place that prices *every* turn.
-                CostMetrics.RecordTurn(
-                    turnCost, settings.LlmModel, tokensIn, tokensOut,
-                    agent: settings.OtelServiceName, mode: settings.CostBudgetMode);
-
-                if (ceiling is { } cap && spent >= cap)
-                {
-                    logger.LogWarning(
-                        "cost_budget.exceeded spent_usd={Spent:F4} ceiling_usd={Ceiling:F4} mode={Mode}",
-                        spent, cap, settings.CostBudgetMode
-                    );
-                    RequestContext.SetGuardrailFlag("cost_budget_exceeded", true);
-                }
-            }
+            TallyTurn(settings, logger, response.Usage, ServedModel(response.RawRepresentation, settings.LlmModel));
 
             return response;
         };
+
+    /// <summary>
+    /// In observe mode, counts a turn that enforce mode would have refused: the run is already
+    /// at or over its ceiling. This is how an operator learns, before switching to enforce, how
+    /// often the ceiling would have bitten. A no-op in any other mode.
+    /// </summary>
+    private static void NoteWouldBlock(AgentSettings settings, ILogger logger)
+    {
+        if (!string.Equals(settings.CostBudgetMode, "observe", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (settings.CostBudgetUsdPerRun is { } limit && RequestContext.CurrentRunCostUsd >= limit)
+        {
+            logger.LogInformation(
+                "cost_budget.would_block spent_usd={Spent:F4} ceiling_usd={Ceiling:F4}",
+                RequestContext.CurrentRunCostUsd, limit
+            );
+            CostMetrics.RecordWouldBlock(settings.OtelServiceName);
+        }
+    }
+
+    /// <summary>The model a provider reports having served, when the raw response says; else the configured one.</summary>
+    private static string ServedModel(object? raw, string fallback) =>
+        raw is ChatResponse { ModelId: { Length: > 0 } served } ? served : fallback;
+
+    /// <summary>
+    /// Prices one turn from its usage and adds it to the run's running total. Shared by the
+    /// blocking and streaming gates so both tally: the streaming one used to price nothing, which
+    /// left a streamed run's cost permanently zero and its ceiling unreachable.
+    /// </summary>
+    private static void TallyTurn(AgentSettings settings, ILogger logger, UsageDetails? usage, string model)
+    {
+        if (usage is null)
+        {
+            return;
+        }
+
+        var ceiling = settings.CostBudgetUsdPerRun;
+        var tokensIn = usage.InputTokenCount ?? 0;
+        var tokensOut = usage.OutputTokenCount ?? 0;
+        var turnCost = CostEstimator.Estimate(
+            model, (int)tokensIn, (int)tokensOut, (int)(usage.CachedInputTokenCount ?? 0), logger);
+        var spent = RequestContext.AddRunCost(turnCost);
+
+        // The same estimate as a counter rather than only a log line, which
+        // cannot be alerted on without shipping and parsing logs. Emitted
+        // here because this is the only place that prices *every* turn.
+        CostMetrics.RecordTurn(
+            turnCost, model, tokensIn, tokensOut,
+            agent: settings.OtelServiceName, mode: settings.CostBudgetMode);
+
+        if (ceiling is { } cap && spent >= cap)
+        {
+            logger.LogWarning(
+                "cost_budget.exceeded spent_usd={Spent:F4} ceiling_usd={Ceiling:F4} mode={Mode}",
+                spent, cap, settings.CostBudgetMode
+            );
+            RequestContext.SetGuardrailFlag("cost_budget_exceeded", true);
+        }
+    }
 
     /// <summary>
     /// Streaming half of the cost gate. Refusal before the call works the same
@@ -208,10 +249,24 @@ public static class SpecialistPipeline
             yield break;
         }
 
+        NoteWouldBlock(settings, logger);
+
+        // Usage arrives as a UsageContent on (normally) the final update. Summed as the updates
+        // pass and priced once the stream ends; a consumer that abandons the stream early leaves
+        // the turn untallied, the same best-effort trade-off the type's summary states.
+        UsageDetails? streamed = null;
         await foreach (var update in innerAgent.RunStreamingAsync(messages, session, options, cancellationToken: ct))
         {
+            foreach (var content in update.Contents.OfType<UsageContent>())
+            {
+                streamed ??= new UsageDetails();
+                streamed.Add(content.Details);
+            }
+
             yield return update;
         }
+
+        TallyTurn(settings, logger, streamed, settings.LlmModel);
     }
 
     /// <summary>

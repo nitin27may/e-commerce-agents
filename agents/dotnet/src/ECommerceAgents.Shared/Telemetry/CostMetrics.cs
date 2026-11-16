@@ -52,6 +52,23 @@ public static class CostMetrics
         unit: "{token}",
         description: "LLM tokens consumed, split by direction.");
 
+    private static readonly Counter<long> WouldBlock = Meter.CreateCounter<long>(
+        "cost_budget.would_block",
+        unit: "{turn}",
+        description: "Turns enforce mode would have refused: observe mode, run already over its ceiling.");
+
+    /// <summary>Counts one turn that enforce mode would have refused (observe mode, run over its ceiling).</summary>
+    public static void RecordWouldBlock(string agent = "")
+    {
+        var tags = new TagList();
+        if (!string.IsNullOrEmpty(agent))
+        {
+            tags.Add("agent", agent);
+        }
+
+        WouldBlock.Add(1, tags);
+    }
+
     /// <summary>Records one priced LLM turn.</summary>
     /// <remarks>
     /// Tokens are recorded beside the dollar figure because cost is <em>derived</em> from them

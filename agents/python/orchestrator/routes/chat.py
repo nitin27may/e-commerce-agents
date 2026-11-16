@@ -59,10 +59,10 @@ from shared.context import current_session_id
 from shared.db import get_pool
 from shared.grounding.ledger import reset_grounding_ledger
 from shared.rate_limit import rate_limit_chat
-from shared.run_usage import ORCHESTRATOR, begin_run_usage, tokens_from_usage
+from shared.run_usage import ORCHESTRATOR, begin_run_usage
 from shared.session import get_history_as_dicts, get_history_provider
 from shared.sse import sse_frame
-from shared.usage_db import UsageTimer, log_agent_usage, log_execution_step
+from shared.usage_db import UsageTimer, log_agent_usage, log_execution_step, usage_columns
 
 from .legacy import optional_auth
 
@@ -159,7 +159,7 @@ async def _persist_assistant_turn(
     """
     # `stream_usage` is the turn's {total, by_agent}: the orchestrator's own
     # calls plus every specialist's (shared/run_usage.py).
-    stream_tokens_in, stream_tokens_out = tokens_from_usage(stream_usage)
+    usage_cols = usage_columns(stream_usage)
     try:
         # `_live` is a transport marker set when a step was already streamed
         # (orchestrator/agent.py). The normal path pops it while deciding what
@@ -189,8 +189,7 @@ async def _persist_assistant_turn(
             input_summary=body_message,
             duration_ms=duration_ms,
             tool_calls_count=len(steps),
-            tokens_in=stream_tokens_in,
-            tokens_out=stream_tokens_out,
+            **usage_cols,
         )
         if usage_log_id:
             for idx, s in enumerate(steps):
@@ -372,15 +371,13 @@ async def chat(
             "UPDATE conversations SET last_message_at = NOW() WHERE id = $1",
             conversation_id,
         )
-        tokens_in, tokens_out = tokens_from_usage(run_payload.get("usage"))
         usage_log_id = await log_agent_usage(
             user_id=user_id,
             agent_name="orchestrator",
             input_summary=body.message,
             duration_ms=timer.duration_ms,
             tool_calls_count=len(steps) if steps else max(len(agents_involved) - 1, 0),
-            tokens_in=tokens_in,
-            tokens_out=tokens_out,
+            **usage_columns(run_payload.get("usage")),
         )
         await _link_run_artifacts(pool, usage_log_id, user_email, run_payload)
 
@@ -519,7 +516,9 @@ async def chat_stream(
             direct-streaming ``tool`` path) wins; otherwise the accumulator plus the
             orchestrator's own response usage. No mode is special-cased.
             """
-            return run_payload_box.get("usage") or run_usage.snapshot_with(ORCHESTRATOR, run_metadata.get("_maf_usage"))
+            return run_payload_box.get("usage") or run_usage.snapshot_with(
+                ORCHESTRATOR, run_metadata.get("_maf_usage"), run_metadata.get("_maf_model")
+            )
 
         # Mutable box for run_completed's full payload (checkpoint/HITL
         # linkage needs more than agents_involved) — stays empty for "tool"

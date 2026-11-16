@@ -162,7 +162,8 @@ async def compare_modes(
             logger.exception("compare.mode_error mode=%s", name)
             error = str(exc)
         latency_ms = int((time.monotonic() - start) * 1000)
-        tokens_in, tokens_out = tokens_from_usage(usage) if usage else (None, None)
+        est_cost = usage_cost(usage)
+        tokens_in, tokens_out = tokens_from_usage(usage) if est_cost is not None else (None, None)
 
         results.append(
             CompareModeResult(
@@ -178,7 +179,7 @@ async def compare_modes(
                 graph_mermaid=mode.graph_mermaid(),
                 tokens_in=tokens_in,
                 tokens_out=tokens_out,
-                est_cost_usd=usage_cost(usage),
+                est_cost_usd=est_cost,
                 error=error,
             )
         )

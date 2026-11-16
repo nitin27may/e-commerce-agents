@@ -848,7 +848,9 @@ async def get_usage_stats(admin: dict[str, Any] = Depends(require_admin)) -> dic
                SUM(tokens_in) as total_tokens_in,
                SUM(tokens_out) as total_tokens_out,
                AVG(duration_ms)::integer as avg_duration_ms,
-               SUM(tool_calls_count) as total_tool_calls
+               SUM(tool_calls_count) as total_tool_calls,
+               SUM(tokens_cached_in) as total_tokens_cached_in,
+               SUM(cost_usd) as total_cost_usd
            FROM usage_logs
            WHERE created_at >= NOW() - INTERVAL '30 days'""",
     )
@@ -862,7 +864,8 @@ async def get_usage_stats(admin: dict[str, Any] = Depends(require_admin)) -> dic
                SUM(tokens_in) as tokens_in,
                SUM(tokens_out) as tokens_out,
                AVG(duration_ms)::integer as avg_duration_ms,
-               COUNT(*) FILTER (WHERE status = 'error') as error_count
+               COUNT(*) FILTER (WHERE status = 'error') as error_count,
+               SUM(cost_usd) as cost_usd
            FROM usage_logs
            WHERE created_at >= NOW() - INTERVAL '30 days'
            GROUP BY agent_name
@@ -890,6 +893,10 @@ async def get_usage_stats(admin: dict[str, Any] = Depends(require_admin)) -> dic
             "total_tokens_out": overall["total_tokens_out"] or 0,
             "avg_duration_ms": overall["avg_duration_ms"] or 0,
             "total_tool_calls": overall["total_tool_calls"] or 0,
+            # Rows written before the cost columns, or by a mode that reported no usage,
+            # carry NULL and contribute nothing: this is the cost of the rows that have one.
+            "total_tokens_cached_in": overall["total_tokens_cached_in"] or 0,
+            "total_cost_usd": float(overall["total_cost_usd"] or 0),
         },
         "by_agent": [
             {
@@ -900,6 +907,7 @@ async def get_usage_stats(admin: dict[str, Any] = Depends(require_admin)) -> dic
                 "tokens_out": r["tokens_out"] or 0,
                 "avg_duration_ms": r["avg_duration_ms"] or 0,
                 "error_count": r["error_count"],
+                "cost_usd": float(r["cost_usd"] or 0),
             }
             for r in agent_rows
         ],
@@ -1080,7 +1088,7 @@ async def get_audit_log(
         f"""SELECT
                ul.id, ul.agent_name, ul.input_summary, ul.tokens_in, ul.tokens_out,
                ul.tool_calls_count, ul.duration_ms, ul.status, ul.error_message,
-               ul.trace_id, ul.created_at,
+               ul.trace_id, ul.created_at, ul.model, ul.tokens_cached_in, ul.cost_usd,
                u.email as user_email, u.name as user_name
            FROM usage_logs ul
            LEFT JOIN users u ON ul.user_id::uuid = u.id
@@ -1117,6 +1125,9 @@ async def get_audit_log(
                 "status": r["status"],
                 "error_message": r["error_message"],
                 "trace_id": r["trace_id"],
+                "model": r["model"],
+                "tokens_cached_in": r["tokens_cached_in"],
+                "cost_usd": float(r["cost_usd"]) if r["cost_usd"] is not None else None,
                 "created_at": r["created_at"].isoformat(),
                 "steps": [
                     {

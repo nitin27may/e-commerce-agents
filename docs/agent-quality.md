@@ -178,6 +178,16 @@ python -c "import json; r=json.load(open('eval-pd.json')); exit(0 if r['overall_
 
 ---
 
+## Cost numbers
+
+The eval report's `Est. cost` and the runtime `usage_logs.cost_usd` come from the same table
+(`shared/cost.py`). Both bill cached input tokens at the ordinary input price until a
+per-model cached rate is entered, so they overstate a cache-heavy run (in the sampled replay
+fixture about 97% of input was cached) and never understate it. See
+[telemetry.md](telemetry.md#cost-and-usage).
+
+---
+
 ## CI Gate — `evals.yml`
 
 Evals are **not** in the unit-test workflow `tests.yml`. `.github/workflows/evals.yml` has two jobs:

@@ -32,6 +32,10 @@ from typing import Any
 
 ORCHESTRATOR = "orchestrator"
 
+# Marks a snapshot as a measured zero (see zero_usage), as opposed to an empty accumulator
+# that simply captured nothing.
+NO_LLM_CALLS_KEY = "no_llm_calls"
+
 _COUNT_FIELDS = ("input_token_count", "output_token_count", "cached_input_token_count")
 
 
@@ -49,6 +53,21 @@ def configured_model_name() -> str:
     if settings.LLM_PROVIDER == "azure":
         return settings.AZURE_OPENAI_DEPLOYMENT or settings.LLM_MODEL
     return settings.LLM_MODEL
+
+
+def served_model(response: Any) -> str | None:
+    """The model a provider reports having served a response, if it says.
+
+    ``ChatResponse.model`` carries it; an ``AgentResponse`` does not, but keeps the
+    underlying response as ``raw_representation``. ``None`` when neither names one
+    (replay fixtures, some compatible endpoints) — the caller then uses the configured
+    model name.
+    """
+    for source in (response, getattr(response, "raw_representation", None)):
+        model = getattr(source, "model", None)
+        if isinstance(model, str) and model:
+            return model
+    return None
 
 
 def to_wire_usage(raw: Mapping[str, Any] | None, model: str | None = None) -> dict[str, Any] | None:
@@ -96,7 +115,7 @@ class RunUsage:
         """``{"total": {...}, "by_agent": {...}}`` — the shape ``run_completed.usage`` carries."""
         return {"total": self.total(), "by_agent": {name: dict(slot) for name, slot in self.by_agent.items()}}
 
-    def snapshot_with(self, agent: str, usage: Mapping[str, Any] | None) -> dict[str, Any]:
+    def snapshot_with(self, agent: str, usage: Mapping[str, Any] | None, model: str | None = None) -> dict[str, Any]:
         """:meth:`snapshot` plus one more agent's usage, without mutating this accumulator.
 
         For a reader that can be called twice for the same turn (a disconnect
@@ -104,7 +123,7 @@ class RunUsage:
         """
         other = RunUsage()
         other.by_agent = {name: dict(slot) for name, slot in self.by_agent.items()}
-        other.add(agent, usage)
+        other.add(agent, usage, model)
         return other.snapshot()
 
 
@@ -132,7 +151,7 @@ def zero_usage() -> dict[str, Any]:
     instead of leaving ``usage`` out, so a reader can tell *measured zero* from
     *not captured*.
     """
-    return RunUsage().snapshot()
+    return {**RunUsage().snapshot(), NO_LLM_CALLS_KEY: True}
 
 
 def usage_from_updates(update: Any) -> dict[str, Any] | None:

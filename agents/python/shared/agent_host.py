@@ -24,7 +24,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from shared.readiness import register_readiness
-from shared.run_usage import to_wire_usage
+from shared.run_usage import served_model, to_wire_usage
 from shared.sse import sse_frame
 
 logging.basicConfig(level=logging.INFO)
@@ -85,6 +85,8 @@ async def _run_agent_native(
         usage = getattr(response, "usage_details", None)
         if usage:
             metadata_box["_maf_usage"] = dict(usage)
+        if model := served_model(response):
+            metadata_box["_maf_model"] = model
     return response.text or ""
 
 
@@ -117,6 +119,8 @@ async def _run_agent_native_stream(
         usage = getattr(final, "usage_details", None)
         if usage:
             metadata_box["_maf_usage"] = dict(usage)
+        if model := served_model(final):
+            metadata_box["_maf_model"] = model
 
 
 # ─────────────────────── Session rehydration ──────────────────────
@@ -289,7 +293,7 @@ def create_agent_app(
             payload: dict[str, Any] = {"response": response_text, "steps": steps}
             # Token usage rides in its own field, never in `response`: the
             # orchestrator's model reads that text (see shared/run_usage.py).
-            usage = to_wire_usage(run_metadata.get("_maf_usage"))
+            usage = to_wire_usage(run_metadata.get("_maf_usage"), run_metadata.get("_maf_model"))
             if usage:
                 payload["usage"] = usage
             return payload
@@ -380,7 +384,7 @@ def create_agent_app(
                 yield frame
             # Terminal usage frame, ahead of [DONE]. A named event, so a reader
             # that only understands text frames can never mistake it for text.
-            usage = to_wire_usage(run_metadata.get("_maf_usage"))
+            usage = to_wire_usage(run_metadata.get("_maf_usage"), run_metadata.get("_maf_model"))
             if usage:
                 yield sse_frame(json.dumps(usage, separators=(",", ":")), event="usage")
             yield sse_frame("[DONE]")

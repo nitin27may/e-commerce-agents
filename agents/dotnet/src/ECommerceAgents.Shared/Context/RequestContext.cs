@@ -211,7 +211,8 @@ public static class RequestContext
             GuardrailFlags: _guardrailFlags.Value,
             Steps: _steps.Value,
             DeliveredSteps: _deliveredSteps.Value,
-            RunUsage: _runUsage.Value
+            RunUsage: _runUsage.Value,
+            RunCost: _runCostUsd.Value
         );
         _userEmail.Value = email;
         _userRole.Value = role;
@@ -222,6 +223,11 @@ public static class RequestContext
         _steps.Value = new List<ExecutionStep>();
         _deliveredSteps.Value = new HashSet<int>();
         _runUsage.Value = new RunUsage();
+        // A fresh spend tally per scope. Nothing ever called ResetRunCost, and AddRunCost's lazy
+        // creation happens inside whatever async frame first prices a turn — a change an
+        // AsyncLocal does not carry back to the caller — so the running total, and with it the
+        // per-run ceiling, was never visible to the code that checks it.
+        _runCostUsd.Value = new StrongBox<double>(0.0);
         return new Disposable(() =>
         {
             _userEmail.Value = previous.Email;
@@ -233,6 +239,7 @@ public static class RequestContext
             _steps.Value = previous.Steps;
             _deliveredSteps.Value = previous.DeliveredSteps;
             _runUsage.Value = previous.RunUsage;
+            _runCostUsd.Value = previous.RunCost;
         });
     }
 

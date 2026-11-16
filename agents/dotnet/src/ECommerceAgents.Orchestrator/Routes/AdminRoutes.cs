@@ -188,7 +188,9 @@ public static class AdminRoutes
                   SUM(tokens_in) AS total_tokens_in,
                   SUM(tokens_out) AS total_tokens_out,
                   AVG(duration_ms)::int AS avg_duration_ms,
-                  SUM(tool_calls_count) AS total_tool_calls
+                  SUM(tool_calls_count) AS total_tool_calls,
+                  SUM(tokens_cached_in) AS total_tokens_cached_in,
+                  SUM(cost_usd) AS total_cost_usd
               FROM usage_logs
               WHERE created_at >= NOW() - INTERVAL '30 days'"
         );
@@ -201,7 +203,8 @@ public static class AdminRoutes
                   SUM(tokens_in) AS tokens_in,
                   SUM(tokens_out) AS tokens_out,
                   AVG(duration_ms)::int AS avg_duration_ms,
-                  COUNT(*) FILTER (WHERE status = 'error') AS error_count
+                  COUNT(*) FILTER (WHERE status = 'error') AS error_count,
+                  SUM(cost_usd) AS cost_usd
               FROM usage_logs
               WHERE created_at >= NOW() - INTERVAL '30 days'
               GROUP BY agent_name
@@ -215,6 +218,7 @@ public static class AdminRoutes
             tokens_out = r.tokens_out is null ? 0L : Convert.ToInt64(r.tokens_out),
             avg_duration_ms = r.avg_duration_ms is null ? 0 : Convert.ToInt32(r.avg_duration_ms),
             error_count = Convert.ToInt64(r.error_count),
+            cost_usd = r.cost_usd is null ? 0.0 : Convert.ToDouble(r.cost_usd),
         }).ToList();
 
         var daily = (await conn.QueryAsync(
@@ -244,6 +248,9 @@ public static class AdminRoutes
                 total_tokens_out = overall?.total_tokens_out is null ? 0L : Convert.ToInt64(overall.total_tokens_out),
                 avg_duration_ms = overall?.avg_duration_ms is null ? 0 : Convert.ToInt32(overall.avg_duration_ms),
                 total_tool_calls = overall?.total_tool_calls is null ? 0L : Convert.ToInt64(overall.total_tool_calls),
+                // Rows with NULL cost (older, or from a mode that reported no usage) add nothing.
+                total_tokens_cached_in = overall?.total_tokens_cached_in is null ? 0L : Convert.ToInt64(overall.total_tokens_cached_in),
+                total_cost_usd = overall?.total_cost_usd is null ? 0.0 : Convert.ToDouble(overall.total_cost_usd),
             },
             by_agent = byAgent,
             daily_trend = daily,
@@ -298,7 +305,7 @@ public static class AdminRoutes
             $@"SELECT
                   ul.id, ul.agent_name, ul.input_summary, ul.tokens_in, ul.tokens_out,
                   ul.tool_calls_count, ul.duration_ms, ul.status, ul.error_message,
-                  ul.trace_id, ul.created_at,
+                  ul.trace_id, ul.created_at, ul.model, ul.tokens_cached_in, ul.cost_usd,
                   u.email AS user_email, u.name AS user_name
               FROM usage_logs ul
               LEFT JOIN users u ON ul.user_id = u.id
@@ -327,6 +334,9 @@ public static class AdminRoutes
                 status = (string?)r.status,
                 error_message = (string?)r.error_message,
                 trace_id = (string?)r.trace_id,
+                model = (string?)r.model,
+                tokens_cached_in = r.tokens_cached_in is null ? (int?)null : Convert.ToInt32(r.tokens_cached_in),
+                cost_usd = r.cost_usd is null ? (double?)null : Convert.ToDouble(r.cost_usd),
                 created_at = ((DateTime)r.created_at).ToString("o"),
                 steps,
             });
