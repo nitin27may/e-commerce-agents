@@ -260,8 +260,10 @@ def _a2a_request_never_ran(exc: BaseException) -> bool:
 
     The SDK wraps transport errors in ``A2AClientError`` and keeps the ``httpx`` one as ``__cause__``
     (:func:`shared.a2a_client.root_cause`). A failed agent-card fetch happens before any message is
-    sent, so it never ran either; a JSON-RPC error the specialist *returned* means it refused the call
-    before the executor started.
+    sent, so it never ran either. A JSON-RPC error the specialist *returned* is deliberately not counted:
+    it can be answered after the executor started (a failing task store, a handler fault), so it does not
+    prove nothing ran and the call is not retried. That includes the "too many active tasks" refusal, which
+    is safe to repeat later but is not distinguishable here from a fault that may have run.
     """
     if isinstance(exc, AgentCardResolutionError):
         return True
