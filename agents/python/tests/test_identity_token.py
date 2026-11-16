@@ -94,6 +94,57 @@ def test_the_golden_vectors_have_not_drifted() -> None:
         assert again == case["token"], name
 
 
+def sign_spec(spec: dict, derived_key_hex: str) -> str:
+    """Sign a negative vector's ``spec`` (alg, header, claims, key). Used by the drift test and the vector generator."""
+    key = {"vector": bytes.fromhex(derived_key_hex), "other": OTHER_KEY, "none": None}[spec["key"]]
+    headers = {"typ": None, **spec["header"]}  # PyJWT drops a falsy typ, so "no typ" really has none
+    return jwt.encode(spec["claims"], key, algorithm=spec["alg"], headers=headers)
+
+
+NEGATIVE = VECTORS["negative"]
+
+
+def test_there_are_negative_vectors_for_every_rule() -> None:
+    names = {case["name"] for case in NEGATIVE}
+    assert {
+        "expired",
+        "iat_in_the_future",
+        "nbf_in_the_future",
+        "missing_sub",
+        "iat_is_a_float",
+        "exp_is_a_float",
+        "wrong_typ",
+        "wrong_audience",
+        "alg_none",
+        "lifetime_over_15_minutes",
+        "bad_signature",
+    } <= names
+    assert all(case["expected"] == "refused" for case in NEGATIVE)
+
+
+@pytest.mark.parametrize("case", NEGATIVE, ids=[case["name"] for case in NEGATIVE])
+def test_every_negative_vector_is_refused_by_this_stack(case: dict) -> None:
+    """The .NET stack iterates the same list (UserContextTokenTests), so neither can accept what the other refuses."""
+    key = bytes.fromhex(VECTORS["derived_key_hex"])
+    with pytest.raises(IdentityTokenError):
+        verify(case["token"], audience=VECTORS["audience"], key=key, now=case.get("verify_at", VECTORS["verify_at"]))
+
+
+@pytest.mark.parametrize("case", NEGATIVE, ids=[case["name"] for case in NEGATIVE])
+def test_the_negative_vectors_have_not_drifted(case: dict) -> None:
+    assert sign_spec(case["spec"], VECTORS["derived_key_hex"]) == case["token"]
+
+
+def test_a_negative_vector_is_refused_for_its_own_reason_not_by_accident() -> None:
+    """Each negative case differs from a token that verifies by exactly the one thing it names."""
+    key = bytes.fromhex(VECTORS["derived_key_hex"])
+    baseline = VECTORS["negative"][0]["spec"]
+    good_claims = {**baseline["claims"], "iat": VECTORS["issued_at"], "exp": VECTORS["issued_at"] + 300}
+    token = sign_spec({**baseline, "claims": good_claims}, VECTORS["derived_key_hex"])
+
+    assert verify(token, audience=VECTORS["audience"], key=key, now=VECTORS["verify_at"]).email == "alice@example.com"
+
+
 # ─────────────────────── the token ───────────────────────
 
 

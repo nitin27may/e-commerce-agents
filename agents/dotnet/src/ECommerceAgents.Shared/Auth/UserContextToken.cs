@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Microsoft.IdentityModel.Tokens;
 
 namespace ECommerceAgents.Shared.Auth;
@@ -134,12 +135,10 @@ public static class UserContextToken
             IssuerSigningKey = new SymmetricSecurityKey(key),
             ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
             RequireSignedTokens = true,
-            RequireExpirationTime = true,
-            ValidateLifetime = true,
-            ClockSkew = TimeSpan.FromSeconds(LeewaySeconds),
-            // The same instant the caller asked about, so a test (and the shared vectors) can fix the clock.
-            LifetimeValidator = (_, expires, _, p) =>
-                expires is { } e && DateTimeOffset.FromUnixTimeSeconds(instant) <= new DateTimeOffset(e, TimeSpan.Zero) + p.ClockSkew,
+            // Every time rule is applied below against one instant (the caller's, so a test and the shared vectors can
+            // pin the clock) and the way Python applies it: exp, iat and nbf, whole numbers only.
+            ValidateLifetime = false,
+            RequireExpirationTime = false,
         };
 
         JwtSecurityToken validated;
@@ -147,10 +146,6 @@ public static class UserContextToken
         {
             Handler.ValidateToken(token, parameters, out var securityToken);
             validated = (JwtSecurityToken)securityToken;
-        }
-        catch (SecurityTokenExpiredException)
-        {
-            throw new IdentityTokenException("expired");
         }
         catch (SecurityTokenInvalidAudienceException)
         {
@@ -166,19 +161,51 @@ public static class UserContextToken
         }
         catch (Exception ex) when (ex is SecurityTokenException or ArgumentException)
         {
-            // SecurityTokenNoExpirationException, a lifetime validator that said no, anything else about the token.
-            throw new IdentityTokenException(
-                ex is SecurityTokenInvalidLifetimeException ? "expired" : "malformed");
+            throw new IdentityTokenException("malformed");
         }
 
-        var payload = validated.Payload;
-        long? Number(string name) => payload.TryGetValue(name, out var v)
-            ? v switch { long l => l, int i => i, double d when d == Math.Floor(d) => (long)d, _ => null }
-            : null;
-
-        if (Number("exp") is not { } exp || Number("iat") is not { } iat)
+        // The signature has been checked, so the payload is read as raw JSON: that is the only way to tell 1700000000
+        // from 1700000000.0, which Python refuses (a time claim must be a whole number on both stacks).
+        JsonElement claims;
+        try
+        {
+            claims = JsonDocument.Parse(Base64UrlEncoder.DecodeBytes(validated.RawPayload)).RootElement.Clone();
+        }
+        catch (Exception ex) when (ex is JsonException or FormatException or ArgumentException)
         {
             throw new IdentityTokenException("malformed");
+        }
+
+        if (claims.ValueKind != JsonValueKind.Object)
+        {
+            throw new IdentityTokenException("malformed");
+        }
+
+        static bool WholeNumber(JsonElement c, string name, out long value, out bool present)
+        {
+            value = 0;
+            present = c.TryGetProperty(name, out var element);
+            return present && element.ValueKind == JsonValueKind.Number && element.TryGetInt64(out value)
+                && !element.GetRawText().AsSpan().ContainsAny('.', 'e', 'E');
+        }
+
+        string? Text(string name) => claims.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+
+        var hasNbf = WholeNumber(claims, "nbf", out var nbf, out var nbfPresent);
+        if (!WholeNumber(claims, "exp", out var exp, out _) || !WholeNumber(claims, "iat", out var iat, out _)
+            || (nbfPresent && !hasNbf) || Text("sub") is null)
+        {
+            throw new IdentityTokenException("malformed");
+        }
+
+        if (exp + LeewaySeconds < instant)
+        {
+            throw new IdentityTokenException("expired");
+        }
+
+        if (iat > instant + LeewaySeconds || (nbfPresent && nbf > instant + LeewaySeconds))
+        {
+            throw new IdentityTokenException("not_yet_valid");
         }
 
         if (exp - iat > MaxLifetimeSeconds)
@@ -186,10 +213,9 @@ public static class UserContextToken
             throw new IdentityTokenException("lifetime");
         }
 
-        string? Text(string name) => payload.TryGetValue(name, out var v) && v is string s ? s : null;
         var email = Text("email");
         var role = Text("role");
-        var sid = payload.ContainsKey("sid") ? Text("sid") : string.Empty;
+        var sid = claims.TryGetProperty("sid", out _) ? Text("sid") : string.Empty;
         if (email is null || role is null || sid is null)
         {
             throw new IdentityTokenException("malformed");

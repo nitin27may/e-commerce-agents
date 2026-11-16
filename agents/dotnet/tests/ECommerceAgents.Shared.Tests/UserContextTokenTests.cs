@@ -104,6 +104,48 @@ public sealed class UserContextTokenTests
         verify.Should().Throw<IdentityTokenException>().Which.Reason.Should().Be("expired");
     }
 
+    public static TheoryData<string> NegativeVectorNames()
+    {
+        var names = new TheoryData<string>();
+        foreach (var entry in Vectors().GetProperty("negative").EnumerateArray())
+        {
+            names.Add(entry.GetProperty("name").GetString()!);
+        }
+
+        return names;
+    }
+
+    /// <summary>
+    /// Every entry of the shared file's <c>negative</c> list must be refused here exactly as Python refuses it
+    /// (<c>tests/test_identity_token.py</c> iterates the same list), so neither stack can accept what the other
+    /// refuses. The clock is the file's pinned <c>verify_at</c> (or the entry's own), never the wall clock.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(NegativeVectorNames))]
+    public void EveryNegativeVector_IsRefused(string name)
+    {
+        var vectors = Vectors();
+        var entry = vectors.GetProperty("negative").EnumerateArray().Single(e => e.GetProperty("name").GetString() == name);
+        entry.GetProperty("expected").GetString().Should().Be("refused");
+        var key = UserContextToken.DeriveKey(vectors.GetProperty("secret").GetString()!);
+        var at = entry.TryGetProperty("verify_at", out var own) ? own.GetInt64() : vectors.GetProperty("verify_at").GetInt64();
+
+        var verify = () => UserContextToken.Verify(entry.GetProperty("token").GetString()!, vectors.GetProperty("audience").GetString()!, key, at);
+
+        verify.Should().Throw<IdentityTokenException>(name);
+    }
+
+    [Fact]
+    public void TheNegativeVectors_CoverEveryRule()
+    {
+        var names = Vectors().GetProperty("negative").EnumerateArray().Select(e => e.GetProperty("name").GetString()).ToHashSet();
+
+        names.Should().Contain([
+            "expired", "iat_in_the_future", "nbf_in_the_future", "missing_sub", "iat_is_a_float", "exp_is_a_float",
+            "wrong_typ", "wrong_audience", "alg_none", "lifetime_over_15_minutes", "bad_signature",
+        ]);
+    }
+
     // ─────────────────────── the token ───────────────────────
 
     [Fact]

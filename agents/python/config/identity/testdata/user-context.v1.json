@@ -20,5 +20,650 @@
       "role": "anonymous",
       "session_id": ""
     }
-  }
+  },
+  "negative": [
+    {
+      "name": "expired",
+      "why": "verify_at is long after exp + leeway",
+      "expected": "refused",
+      "spec": {
+        "alg": "HS256",
+        "header": {
+          "typ": "a2a-user-context+jwt"
+        },
+        "claims": {
+          "iss": "ecommerce-agents/orchestrator",
+          "aud": "product-discovery",
+          "sub": "alice@example.com",
+          "email": "alice@example.com",
+          "role": "customer",
+          "sid": "6f1c0a5e-2d3b-4c7e-9a10-1b2c3d4e5f60",
+          "act": {
+            "client_id": "orchestrator"
+          },
+          "iat": 1700000000,
+          "exp": 1700000300,
+          "jti": "vector-jti-negative"
+        },
+        "key": "vector"
+      },
+      "verify_at": 1700003900,
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6ImEyYS11c2VyLWNvbnRleHQrand0In0.eyJpc3MiOiJlY29tbWVyY2UtYWdlbnRzL29yY2hlc3RyYXRvciIsImF1ZCI6InByb2R1Y3QtZGlzY292ZXJ5Iiwic3ViIjoiYWxpY2VAZXhhbXBsZS5jb20iLCJlbWFpbCI6ImFsaWNlQGV4YW1wbGUuY29tIiwicm9sZSI6ImN1c3RvbWVyIiwic2lkIjoiNmYxYzBhNWUtMmQzYi00YzdlLTlhMTAtMWIyYzNkNGU1ZjYwIiwiYWN0Ijp7ImNsaWVudF9pZCI6Im9yY2hlc3RyYXRvciJ9LCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMDMwMCwianRpIjoidmVjdG9yLWp0aS1uZWdhdGl2ZSJ9.EAdgzsfA4sHFluMJIUZlzfY74WiS3vGQm-UoHM_4klc"
+    },
+    {
+      "name": "iat_in_the_future",
+      "why": "iat far ahead with exp = iat + 900 passes the lifetime rule but must not be believed",
+      "expected": "refused",
+      "spec": {
+        "alg": "HS256",
+        "header": {
+          "typ": "a2a-user-context+jwt"
+        },
+        "claims": {
+          "iss": "ecommerce-agents/orchestrator",
+          "aud": "product-discovery",
+          "sub": "alice@example.com",
+          "email": "alice@example.com",
+          "role": "customer",
+          "sid": "6f1c0a5e-2d3b-4c7e-9a10-1b2c3d4e5f60",
+          "act": {
+            "client_id": "orchestrator"
+          },
+          "iat": 1700100100,
+          "exp": 1700101000,
+          "jti": "vector-jti-negative"
+        },
+        "key": "vector"
+      },
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6ImEyYS11c2VyLWNvbnRleHQrand0In0.eyJpc3MiOiJlY29tbWVyY2UtYWdlbnRzL29yY2hlc3RyYXRvciIsImF1ZCI6InByb2R1Y3QtZGlzY292ZXJ5Iiwic3ViIjoiYWxpY2VAZXhhbXBsZS5jb20iLCJlbWFpbCI6ImFsaWNlQGV4YW1wbGUuY29tIiwicm9sZSI6ImN1c3RvbWVyIiwic2lkIjoiNmYxYzBhNWUtMmQzYi00YzdlLTlhMTAtMWIyYzNkNGU1ZjYwIiwiYWN0Ijp7ImNsaWVudF9pZCI6Im9yY2hlc3RyYXRvciJ9LCJpYXQiOjE3MDAxMDAxMDAsImV4cCI6MTcwMDEwMTAwMCwianRpIjoidmVjdG9yLWp0aS1uZWdhdGl2ZSJ9.bcmyIqRxg3xUhoDBy1S4xGNE7PTsLtjlCliiVd7VgoM"
+    },
+    {
+      "name": "nbf_in_the_future",
+      "why": "nbf ahead of verify_at + leeway",
+      "expected": "refused",
+      "spec": {
+        "alg": "HS256",
+        "header": {
+          "typ": "a2a-user-context+jwt"
+        },
+        "claims": {
+          "iss": "ecommerce-agents/orchestrator",
+          "aud": "product-discovery",
+          "sub": "alice@example.com",
+          "email": "alice@example.com",
+          "role": "customer",
+          "sid": "6f1c0a5e-2d3b-4c7e-9a10-1b2c3d4e5f60",
+          "act": {
+            "client_id": "orchestrator"
+          },
+          "iat": 1700000000,
+          "exp": 1700000300,
+          "jti": "vector-jti-negative",
+          "nbf": 1700001100
+        },
+        "key": "vector"
+      },
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6ImEyYS11c2VyLWNvbnRleHQrand0In0.eyJpc3MiOiJlY29tbWVyY2UtYWdlbnRzL29yY2hlc3RyYXRvciIsImF1ZCI6InByb2R1Y3QtZGlzY292ZXJ5Iiwic3ViIjoiYWxpY2VAZXhhbXBsZS5jb20iLCJlbWFpbCI6ImFsaWNlQGV4YW1wbGUuY29tIiwicm9sZSI6ImN1c3RvbWVyIiwic2lkIjoiNmYxYzBhNWUtMmQzYi00YzdlLTlhMTAtMWIyYzNkNGU1ZjYwIiwiYWN0Ijp7ImNsaWVudF9pZCI6Im9yY2hlc3RyYXRvciJ9LCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMDMwMCwianRpIjoidmVjdG9yLWp0aS1uZWdhdGl2ZSIsIm5iZiI6MTcwMDAwMTEwMH0.0_OxP_WDnCYXM4hiAe-mE_FYqkGQGZH6CkZXPGEjx3Y"
+    },
+    {
+      "name": "missing_sub",
+      "why": "sub is a required claim",
+      "expected": "refused",
+      "spec": {
+        "alg": "HS256",
+        "header": {
+          "typ": "a2a-user-context+jwt"
+        },
+        "claims": {
+          "iss": "ecommerce-agents/orchestrator",
+          "aud": "product-discovery",
+          "email": "alice@example.com",
+          "role": "customer",
+          "sid": "6f1c0a5e-2d3b-4c7e-9a10-1b2c3d4e5f60",
+          "act": {
+            "client_id": "orchestrator"
+          },
+          "iat": 1700000000,
+          "exp": 1700000300,
+          "jti": "vector-jti-negative"
+        },
+        "key": "vector"
+      },
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6ImEyYS11c2VyLWNvbnRleHQrand0In0.eyJpc3MiOiJlY29tbWVyY2UtYWdlbnRzL29yY2hlc3RyYXRvciIsImF1ZCI6InByb2R1Y3QtZGlzY292ZXJ5IiwiZW1haWwiOiJhbGljZUBleGFtcGxlLmNvbSIsInJvbGUiOiJjdXN0b21lciIsInNpZCI6IjZmMWMwYTVlLTJkM2ItNGM3ZS05YTEwLTFiMmMzZDRlNWY2MCIsImFjdCI6eyJjbGllbnRfaWQiOiJvcmNoZXN0cmF0b3IifSwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjE3MDAwMDAzMDAsImp0aSI6InZlY3Rvci1qdGktbmVnYXRpdmUifQ.-cHvSLGc27nZV_nQCXzFluSp-73qGjPJC3XUts02eeU"
+    },
+    {
+      "name": "missing_iat",
+      "why": "iat is a required claim",
+      "expected": "refused",
+      "spec": {
+        "alg": "HS256",
+        "header": {
+          "typ": "a2a-user-context+jwt"
+        },
+        "claims": {
+          "iss": "ecommerce-agents/orchestrator",
+          "aud": "product-discovery",
+          "sub": "alice@example.com",
+          "email": "alice@example.com",
+          "role": "customer",
+          "sid": "6f1c0a5e-2d3b-4c7e-9a10-1b2c3d4e5f60",
+          "act": {
+            "client_id": "orchestrator"
+          },
+          "exp": 1700000300,
+          "jti": "vector-jti-negative"
+        },
+        "key": "vector"
+      },
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6ImEyYS11c2VyLWNvbnRleHQrand0In0.eyJpc3MiOiJlY29tbWVyY2UtYWdlbnRzL29yY2hlc3RyYXRvciIsImF1ZCI6InByb2R1Y3QtZGlzY292ZXJ5Iiwic3ViIjoiYWxpY2VAZXhhbXBsZS5jb20iLCJlbWFpbCI6ImFsaWNlQGV4YW1wbGUuY29tIiwicm9sZSI6ImN1c3RvbWVyIiwic2lkIjoiNmYxYzBhNWUtMmQzYi00YzdlLTlhMTAtMWIyYzNkNGU1ZjYwIiwiYWN0Ijp7ImNsaWVudF9pZCI6Im9yY2hlc3RyYXRvciJ9LCJleHAiOjE3MDAwMDAzMDAsImp0aSI6InZlY3Rvci1qdGktbmVnYXRpdmUifQ.cNXveLvTY34nj4QRd0EvBnD-yYCawGUqKJ8qDC2TfhE"
+    },
+    {
+      "name": "missing_exp",
+      "why": "exp is a required claim",
+      "expected": "refused",
+      "spec": {
+        "alg": "HS256",
+        "header": {
+          "typ": "a2a-user-context+jwt"
+        },
+        "claims": {
+          "iss": "ecommerce-agents/orchestrator",
+          "aud": "product-discovery",
+          "sub": "alice@example.com",
+          "email": "alice@example.com",
+          "role": "customer",
+          "sid": "6f1c0a5e-2d3b-4c7e-9a10-1b2c3d4e5f60",
+          "act": {
+            "client_id": "orchestrator"
+          },
+          "iat": 1700000000,
+          "jti": "vector-jti-negative"
+        },
+        "key": "vector"
+      },
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6ImEyYS11c2VyLWNvbnRleHQrand0In0.eyJpc3MiOiJlY29tbWVyY2UtYWdlbnRzL29yY2hlc3RyYXRvciIsImF1ZCI6InByb2R1Y3QtZGlzY292ZXJ5Iiwic3ViIjoiYWxpY2VAZXhhbXBsZS5jb20iLCJlbWFpbCI6ImFsaWNlQGV4YW1wbGUuY29tIiwicm9sZSI6ImN1c3RvbWVyIiwic2lkIjoiNmYxYzBhNWUtMmQzYi00YzdlLTlhMTAtMWIyYzNkNGU1ZjYwIiwiYWN0Ijp7ImNsaWVudF9pZCI6Im9yY2hlc3RyYXRvciJ9LCJpYXQiOjE3MDAwMDAwMDAsImp0aSI6InZlY3Rvci1qdGktbmVnYXRpdmUifQ.mZxcds9QJBxZVZzFpeiNinnSVTz1Rp3JDjA_I4VxhBU"
+    },
+    {
+      "name": "missing_iss",
+      "why": "iss is a required claim",
+      "expected": "refused",
+      "spec": {
+        "alg": "HS256",
+        "header": {
+          "typ": "a2a-user-context+jwt"
+        },
+        "claims": {
+          "aud": "product-discovery",
+          "sub": "alice@example.com",
+          "email": "alice@example.com",
+          "role": "customer",
+          "sid": "6f1c0a5e-2d3b-4c7e-9a10-1b2c3d4e5f60",
+          "act": {
+            "client_id": "orchestrator"
+          },
+          "iat": 1700000000,
+          "exp": 1700000300,
+          "jti": "vector-jti-negative"
+        },
+        "key": "vector"
+      },
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6ImEyYS11c2VyLWNvbnRleHQrand0In0.eyJhdWQiOiJwcm9kdWN0LWRpc2NvdmVyeSIsInN1YiI6ImFsaWNlQGV4YW1wbGUuY29tIiwiZW1haWwiOiJhbGljZUBleGFtcGxlLmNvbSIsInJvbGUiOiJjdXN0b21lciIsInNpZCI6IjZmMWMwYTVlLTJkM2ItNGM3ZS05YTEwLTFiMmMzZDRlNWY2MCIsImFjdCI6eyJjbGllbnRfaWQiOiJvcmNoZXN0cmF0b3IifSwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjE3MDAwMDAzMDAsImp0aSI6InZlY3Rvci1qdGktbmVnYXRpdmUifQ.HdrHhk4Tw8hpLnnWRvucuAYVojO4mHK4nVjOFdUc4Xk"
+    },
+    {
+      "name": "missing_aud",
+      "why": "aud is a required claim",
+      "expected": "refused",
+      "spec": {
+        "alg": "HS256",
+        "header": {
+          "typ": "a2a-user-context+jwt"
+        },
+        "claims": {
+          "iss": "ecommerce-agents/orchestrator",
+          "sub": "alice@example.com",
+          "email": "alice@example.com",
+          "role": "customer",
+          "sid": "6f1c0a5e-2d3b-4c7e-9a10-1b2c3d4e5f60",
+          "act": {
+            "client_id": "orchestrator"
+          },
+          "iat": 1700000000,
+          "exp": 1700000300,
+          "jti": "vector-jti-negative"
+        },
+        "key": "vector"
+      },
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6ImEyYS11c2VyLWNvbnRleHQrand0In0.eyJpc3MiOiJlY29tbWVyY2UtYWdlbnRzL29yY2hlc3RyYXRvciIsInN1YiI6ImFsaWNlQGV4YW1wbGUuY29tIiwiZW1haWwiOiJhbGljZUBleGFtcGxlLmNvbSIsInJvbGUiOiJjdXN0b21lciIsInNpZCI6IjZmMWMwYTVlLTJkM2ItNGM3ZS05YTEwLTFiMmMzZDRlNWY2MCIsImFjdCI6eyJjbGllbnRfaWQiOiJvcmNoZXN0cmF0b3IifSwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjE3MDAwMDAzMDAsImp0aSI6InZlY3Rvci1qdGktbmVnYXRpdmUifQ.wnw5sxohVUYgekM5KGNw-AgaCt0_TeeGDPrLbVnJS0Q"
+    },
+    {
+      "name": "missing_email",
+      "why": "email is required",
+      "expected": "refused",
+      "spec": {
+        "alg": "HS256",
+        "header": {
+          "typ": "a2a-user-context+jwt"
+        },
+        "claims": {
+          "iss": "ecommerce-agents/orchestrator",
+          "aud": "product-discovery",
+          "sub": "alice@example.com",
+          "role": "customer",
+          "sid": "6f1c0a5e-2d3b-4c7e-9a10-1b2c3d4e5f60",
+          "act": {
+            "client_id": "orchestrator"
+          },
+          "iat": 1700000000,
+          "exp": 1700000300,
+          "jti": "vector-jti-negative"
+        },
+        "key": "vector"
+      },
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6ImEyYS11c2VyLWNvbnRleHQrand0In0.eyJpc3MiOiJlY29tbWVyY2UtYWdlbnRzL29yY2hlc3RyYXRvciIsImF1ZCI6InByb2R1Y3QtZGlzY292ZXJ5Iiwic3ViIjoiYWxpY2VAZXhhbXBsZS5jb20iLCJyb2xlIjoiY3VzdG9tZXIiLCJzaWQiOiI2ZjFjMGE1ZS0yZDNiLTRjN2UtOWExMC0xYjJjM2Q0ZTVmNjAiLCJhY3QiOnsiY2xpZW50X2lkIjoib3JjaGVzdHJhdG9yIn0sImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAwMzAwLCJqdGkiOiJ2ZWN0b3ItanRpLW5lZ2F0aXZlIn0.Kh2wki-qiqio314p_AiYPgFAL4kNDprT1jUfRcVl5fY"
+    },
+    {
+      "name": "missing_role",
+      "why": "role is required",
+      "expected": "refused",
+      "spec": {
+        "alg": "HS256",
+        "header": {
+          "typ": "a2a-user-context+jwt"
+        },
+        "claims": {
+          "iss": "ecommerce-agents/orchestrator",
+          "aud": "product-discovery",
+          "sub": "alice@example.com",
+          "email": "alice@example.com",
+          "sid": "6f1c0a5e-2d3b-4c7e-9a10-1b2c3d4e5f60",
+          "act": {
+            "client_id": "orchestrator"
+          },
+          "iat": 1700000000,
+          "exp": 1700000300,
+          "jti": "vector-jti-negative"
+        },
+        "key": "vector"
+      },
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6ImEyYS11c2VyLWNvbnRleHQrand0In0.eyJpc3MiOiJlY29tbWVyY2UtYWdlbnRzL29yY2hlc3RyYXRvciIsImF1ZCI6InByb2R1Y3QtZGlzY292ZXJ5Iiwic3ViIjoiYWxpY2VAZXhhbXBsZS5jb20iLCJlbWFpbCI6ImFsaWNlQGV4YW1wbGUuY29tIiwic2lkIjoiNmYxYzBhNWUtMmQzYi00YzdlLTlhMTAtMWIyYzNkNGU1ZjYwIiwiYWN0Ijp7ImNsaWVudF9pZCI6Im9yY2hlc3RyYXRvciJ9LCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMDMwMCwianRpIjoidmVjdG9yLWp0aS1uZWdhdGl2ZSJ9.UxnVUNeybhtji9D2PE3FJ2bKO3Lzx4Mj2GzbF5YOhnk"
+    },
+    {
+      "name": "iat_is_a_float",
+      "why": "time claims must be whole numbers",
+      "expected": "refused",
+      "spec": {
+        "alg": "HS256",
+        "header": {
+          "typ": "a2a-user-context+jwt"
+        },
+        "claims": {
+          "iss": "ecommerce-agents/orchestrator",
+          "aud": "product-discovery",
+          "sub": "alice@example.com",
+          "email": "alice@example.com",
+          "role": "customer",
+          "sid": "6f1c0a5e-2d3b-4c7e-9a10-1b2c3d4e5f60",
+          "act": {
+            "client_id": "orchestrator"
+          },
+          "iat": 1700000000.0,
+          "exp": 1700000300,
+          "jti": "vector-jti-negative"
+        },
+        "key": "vector"
+      },
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6ImEyYS11c2VyLWNvbnRleHQrand0In0.eyJpc3MiOiJlY29tbWVyY2UtYWdlbnRzL29yY2hlc3RyYXRvciIsImF1ZCI6InByb2R1Y3QtZGlzY292ZXJ5Iiwic3ViIjoiYWxpY2VAZXhhbXBsZS5jb20iLCJlbWFpbCI6ImFsaWNlQGV4YW1wbGUuY29tIiwicm9sZSI6ImN1c3RvbWVyIiwic2lkIjoiNmYxYzBhNWUtMmQzYi00YzdlLTlhMTAtMWIyYzNkNGU1ZjYwIiwiYWN0Ijp7ImNsaWVudF9pZCI6Im9yY2hlc3RyYXRvciJ9LCJpYXQiOjE3MDAwMDAwMDAuMCwiZXhwIjoxNzAwMDAwMzAwLCJqdGkiOiJ2ZWN0b3ItanRpLW5lZ2F0aXZlIn0.aBIDd0Y9Mz7UZKIa6Tu9eXj7TU8uAU66ScUVnReNE7E"
+    },
+    {
+      "name": "exp_is_a_float",
+      "why": "time claims must be whole numbers",
+      "expected": "refused",
+      "spec": {
+        "alg": "HS256",
+        "header": {
+          "typ": "a2a-user-context+jwt"
+        },
+        "claims": {
+          "iss": "ecommerce-agents/orchestrator",
+          "aud": "product-discovery",
+          "sub": "alice@example.com",
+          "email": "alice@example.com",
+          "role": "customer",
+          "sid": "6f1c0a5e-2d3b-4c7e-9a10-1b2c3d4e5f60",
+          "act": {
+            "client_id": "orchestrator"
+          },
+          "iat": 1700000000,
+          "exp": 1700000300.0,
+          "jti": "vector-jti-negative"
+        },
+        "key": "vector"
+      },
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6ImEyYS11c2VyLWNvbnRleHQrand0In0.eyJpc3MiOiJlY29tbWVyY2UtYWdlbnRzL29yY2hlc3RyYXRvciIsImF1ZCI6InByb2R1Y3QtZGlzY292ZXJ5Iiwic3ViIjoiYWxpY2VAZXhhbXBsZS5jb20iLCJlbWFpbCI6ImFsaWNlQGV4YW1wbGUuY29tIiwicm9sZSI6ImN1c3RvbWVyIiwic2lkIjoiNmYxYzBhNWUtMmQzYi00YzdlLTlhMTAtMWIyYzNkNGU1ZjYwIiwiYWN0Ijp7ImNsaWVudF9pZCI6Im9yY2hlc3RyYXRvciJ9LCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMDMwMC4wLCJqdGkiOiJ2ZWN0b3ItanRpLW5lZ2F0aXZlIn0.q8zOgK425wxaYdhrc-uulfy-ZZJwl7S59pT-3j14DpA"
+    },
+    {
+      "name": "nbf_is_a_float",
+      "why": "time claims must be whole numbers",
+      "expected": "refused",
+      "spec": {
+        "alg": "HS256",
+        "header": {
+          "typ": "a2a-user-context+jwt"
+        },
+        "claims": {
+          "iss": "ecommerce-agents/orchestrator",
+          "aud": "product-discovery",
+          "sub": "alice@example.com",
+          "email": "alice@example.com",
+          "role": "customer",
+          "sid": "6f1c0a5e-2d3b-4c7e-9a10-1b2c3d4e5f60",
+          "act": {
+            "client_id": "orchestrator"
+          },
+          "iat": 1700000000,
+          "exp": 1700000300,
+          "jti": "vector-jti-negative",
+          "nbf": 1700000000.0
+        },
+        "key": "vector"
+      },
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6ImEyYS11c2VyLWNvbnRleHQrand0In0.eyJpc3MiOiJlY29tbWVyY2UtYWdlbnRzL29yY2hlc3RyYXRvciIsImF1ZCI6InByb2R1Y3QtZGlzY292ZXJ5Iiwic3ViIjoiYWxpY2VAZXhhbXBsZS5jb20iLCJlbWFpbCI6ImFsaWNlQGV4YW1wbGUuY29tIiwicm9sZSI6ImN1c3RvbWVyIiwic2lkIjoiNmYxYzBhNWUtMmQzYi00YzdlLTlhMTAtMWIyYzNkNGU1ZjYwIiwiYWN0Ijp7ImNsaWVudF9pZCI6Im9yY2hlc3RyYXRvciJ9LCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMDMwMCwianRpIjoidmVjdG9yLWp0aS1uZWdhdGl2ZSIsIm5iZiI6MTcwMDAwMDAwMC4wfQ.pyrY_q59HHIrjLvlJnOLx8OWx-o1vg2Fdq8JYjYX-04"
+    },
+    {
+      "name": "exp_is_a_string",
+      "why": "time claims must be numbers",
+      "expected": "refused",
+      "spec": {
+        "alg": "HS256",
+        "header": {
+          "typ": "a2a-user-context+jwt"
+        },
+        "claims": {
+          "iss": "ecommerce-agents/orchestrator",
+          "aud": "product-discovery",
+          "sub": "alice@example.com",
+          "email": "alice@example.com",
+          "role": "customer",
+          "sid": "6f1c0a5e-2d3b-4c7e-9a10-1b2c3d4e5f60",
+          "act": {
+            "client_id": "orchestrator"
+          },
+          "iat": 1700000000,
+          "exp": "1700000300",
+          "jti": "vector-jti-negative"
+        },
+        "key": "vector"
+      },
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6ImEyYS11c2VyLWNvbnRleHQrand0In0.eyJpc3MiOiJlY29tbWVyY2UtYWdlbnRzL29yY2hlc3RyYXRvciIsImF1ZCI6InByb2R1Y3QtZGlzY292ZXJ5Iiwic3ViIjoiYWxpY2VAZXhhbXBsZS5jb20iLCJlbWFpbCI6ImFsaWNlQGV4YW1wbGUuY29tIiwicm9sZSI6ImN1c3RvbWVyIiwic2lkIjoiNmYxYzBhNWUtMmQzYi00YzdlLTlhMTAtMWIyYzNkNGU1ZjYwIiwiYWN0Ijp7ImNsaWVudF9pZCI6Im9yY2hlc3RyYXRvciJ9LCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6IjE3MDAwMDAzMDAiLCJqdGkiOiJ2ZWN0b3ItanRpLW5lZ2F0aXZlIn0.OjFyeLRNhbJ6123S7b3IuVsz7teI_FBcnm4b17I3G70"
+    },
+    {
+      "name": "sub_is_a_number",
+      "why": "sub must be a string",
+      "expected": "refused",
+      "spec": {
+        "alg": "HS256",
+        "header": {
+          "typ": "a2a-user-context+jwt"
+        },
+        "claims": {
+          "iss": "ecommerce-agents/orchestrator",
+          "aud": "product-discovery",
+          "sub": 7,
+          "email": "alice@example.com",
+          "role": "customer",
+          "sid": "6f1c0a5e-2d3b-4c7e-9a10-1b2c3d4e5f60",
+          "act": {
+            "client_id": "orchestrator"
+          },
+          "iat": 1700000000,
+          "exp": 1700000300,
+          "jti": "vector-jti-negative"
+        },
+        "key": "vector"
+      },
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6ImEyYS11c2VyLWNvbnRleHQrand0In0.eyJpc3MiOiJlY29tbWVyY2UtYWdlbnRzL29yY2hlc3RyYXRvciIsImF1ZCI6InByb2R1Y3QtZGlzY292ZXJ5Iiwic3ViIjo3LCJlbWFpbCI6ImFsaWNlQGV4YW1wbGUuY29tIiwicm9sZSI6ImN1c3RvbWVyIiwic2lkIjoiNmYxYzBhNWUtMmQzYi00YzdlLTlhMTAtMWIyYzNkNGU1ZjYwIiwiYWN0Ijp7ImNsaWVudF9pZCI6Im9yY2hlc3RyYXRvciJ9LCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMDMwMCwianRpIjoidmVjdG9yLWp0aS1uZWdhdGl2ZSJ9.n6KLS3pOPHilf362EhX3YMZGAUNnmse9twvPUvGpgUc"
+    },
+    {
+      "name": "role_is_a_number",
+      "why": "role must be a string",
+      "expected": "refused",
+      "spec": {
+        "alg": "HS256",
+        "header": {
+          "typ": "a2a-user-context+jwt"
+        },
+        "claims": {
+          "iss": "ecommerce-agents/orchestrator",
+          "aud": "product-discovery",
+          "sub": "alice@example.com",
+          "email": "alice@example.com",
+          "role": 7,
+          "sid": "6f1c0a5e-2d3b-4c7e-9a10-1b2c3d4e5f60",
+          "act": {
+            "client_id": "orchestrator"
+          },
+          "iat": 1700000000,
+          "exp": 1700000300,
+          "jti": "vector-jti-negative"
+        },
+        "key": "vector"
+      },
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6ImEyYS11c2VyLWNvbnRleHQrand0In0.eyJpc3MiOiJlY29tbWVyY2UtYWdlbnRzL29yY2hlc3RyYXRvciIsImF1ZCI6InByb2R1Y3QtZGlzY292ZXJ5Iiwic3ViIjoiYWxpY2VAZXhhbXBsZS5jb20iLCJlbWFpbCI6ImFsaWNlQGV4YW1wbGUuY29tIiwicm9sZSI6Nywic2lkIjoiNmYxYzBhNWUtMmQzYi00YzdlLTlhMTAtMWIyYzNkNGU1ZjYwIiwiYWN0Ijp7ImNsaWVudF9pZCI6Im9yY2hlc3RyYXRvciJ9LCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMDMwMCwianRpIjoidmVjdG9yLWp0aS1uZWdhdGl2ZSJ9.TLNSiVomHpynBYIOD-kYNjkbpPwqpIidA-FhIIh-IA4"
+    },
+    {
+      "name": "wrong_typ",
+      "why": "a login-style JWT: typ is not a2a-user-context+jwt",
+      "expected": "refused",
+      "spec": {
+        "alg": "HS256",
+        "header": {
+          "typ": "JWT"
+        },
+        "claims": {
+          "iss": "ecommerce-agents/orchestrator",
+          "aud": "product-discovery",
+          "sub": "alice@example.com",
+          "email": "alice@example.com",
+          "role": "customer",
+          "sid": "6f1c0a5e-2d3b-4c7e-9a10-1b2c3d4e5f60",
+          "act": {
+            "client_id": "orchestrator"
+          },
+          "iat": 1700000000,
+          "exp": 1700000300,
+          "jti": "vector-jti-negative"
+        },
+        "key": "vector"
+      },
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJlY29tbWVyY2UtYWdlbnRzL29yY2hlc3RyYXRvciIsImF1ZCI6InByb2R1Y3QtZGlzY292ZXJ5Iiwic3ViIjoiYWxpY2VAZXhhbXBsZS5jb20iLCJlbWFpbCI6ImFsaWNlQGV4YW1wbGUuY29tIiwicm9sZSI6ImN1c3RvbWVyIiwic2lkIjoiNmYxYzBhNWUtMmQzYi00YzdlLTlhMTAtMWIyYzNkNGU1ZjYwIiwiYWN0Ijp7ImNsaWVudF9pZCI6Im9yY2hlc3RyYXRvciJ9LCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMDMwMCwianRpIjoidmVjdG9yLWp0aS1uZWdhdGl2ZSJ9.ZxJVrPwTTkLRDT_RZOmwsCaJJ7fFuXJgULiLCKFH7Bs"
+    },
+    {
+      "name": "no_typ",
+      "why": "typ header absent",
+      "expected": "refused",
+      "spec": {
+        "alg": "HS256",
+        "header": {},
+        "claims": {
+          "iss": "ecommerce-agents/orchestrator",
+          "aud": "product-discovery",
+          "sub": "alice@example.com",
+          "email": "alice@example.com",
+          "role": "customer",
+          "sid": "6f1c0a5e-2d3b-4c7e-9a10-1b2c3d4e5f60",
+          "act": {
+            "client_id": "orchestrator"
+          },
+          "iat": 1700000000,
+          "exp": 1700000300,
+          "jti": "vector-jti-negative"
+        },
+        "key": "vector"
+      },
+      "token": "eyJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJlY29tbWVyY2UtYWdlbnRzL29yY2hlc3RyYXRvciIsImF1ZCI6InByb2R1Y3QtZGlzY292ZXJ5Iiwic3ViIjoiYWxpY2VAZXhhbXBsZS5jb20iLCJlbWFpbCI6ImFsaWNlQGV4YW1wbGUuY29tIiwicm9sZSI6ImN1c3RvbWVyIiwic2lkIjoiNmYxYzBhNWUtMmQzYi00YzdlLTlhMTAtMWIyYzNkNGU1ZjYwIiwiYWN0Ijp7ImNsaWVudF9pZCI6Im9yY2hlc3RyYXRvciJ9LCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMDMwMCwianRpIjoidmVjdG9yLWp0aS1uZWdhdGl2ZSJ9.EBJ8h_Bd5H_K9E0YtGBb1PN6AHp4wMPZ2snIpk-MU5Y"
+    },
+    {
+      "name": "wrong_audience",
+      "why": "token is for another specialist",
+      "expected": "refused",
+      "spec": {
+        "alg": "HS256",
+        "header": {
+          "typ": "a2a-user-context+jwt"
+        },
+        "claims": {
+          "iss": "ecommerce-agents/orchestrator",
+          "aud": "order-management",
+          "sub": "alice@example.com",
+          "email": "alice@example.com",
+          "role": "customer",
+          "sid": "6f1c0a5e-2d3b-4c7e-9a10-1b2c3d4e5f60",
+          "act": {
+            "client_id": "orchestrator"
+          },
+          "iat": 1700000000,
+          "exp": 1700000300,
+          "jti": "vector-jti-negative"
+        },
+        "key": "vector"
+      },
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6ImEyYS11c2VyLWNvbnRleHQrand0In0.eyJpc3MiOiJlY29tbWVyY2UtYWdlbnRzL29yY2hlc3RyYXRvciIsImF1ZCI6Im9yZGVyLW1hbmFnZW1lbnQiLCJzdWIiOiJhbGljZUBleGFtcGxlLmNvbSIsImVtYWlsIjoiYWxpY2VAZXhhbXBsZS5jb20iLCJyb2xlIjoiY3VzdG9tZXIiLCJzaWQiOiI2ZjFjMGE1ZS0yZDNiLTRjN2UtOWExMC0xYjJjM2Q0ZTVmNjAiLCJhY3QiOnsiY2xpZW50X2lkIjoib3JjaGVzdHJhdG9yIn0sImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAwMzAwLCJqdGkiOiJ2ZWN0b3ItanRpLW5lZ2F0aXZlIn0.2XF2d2j-SQx80TYlY8zQqBZIDsZ2nNyia2oSDEWpV4Y"
+    },
+    {
+      "name": "wrong_issuer",
+      "why": "token is from another issuer",
+      "expected": "refused",
+      "spec": {
+        "alg": "HS256",
+        "header": {
+          "typ": "a2a-user-context+jwt"
+        },
+        "claims": {
+          "iss": "someone-else",
+          "aud": "product-discovery",
+          "sub": "alice@example.com",
+          "email": "alice@example.com",
+          "role": "customer",
+          "sid": "6f1c0a5e-2d3b-4c7e-9a10-1b2c3d4e5f60",
+          "act": {
+            "client_id": "orchestrator"
+          },
+          "iat": 1700000000,
+          "exp": 1700000300,
+          "jti": "vector-jti-negative"
+        },
+        "key": "vector"
+      },
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6ImEyYS11c2VyLWNvbnRleHQrand0In0.eyJpc3MiOiJzb21lb25lLWVsc2UiLCJhdWQiOiJwcm9kdWN0LWRpc2NvdmVyeSIsInN1YiI6ImFsaWNlQGV4YW1wbGUuY29tIiwiZW1haWwiOiJhbGljZUBleGFtcGxlLmNvbSIsInJvbGUiOiJjdXN0b21lciIsInNpZCI6IjZmMWMwYTVlLTJkM2ItNGM3ZS05YTEwLTFiMmMzZDRlNWY2MCIsImFjdCI6eyJjbGllbnRfaWQiOiJvcmNoZXN0cmF0b3IifSwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjE3MDAwMDAzMDAsImp0aSI6InZlY3Rvci1qdGktbmVnYXRpdmUifQ.ByKfmG8RC7DfiKlVdAZyQeqlpleSYD6WDKOqzh3q2y0"
+    },
+    {
+      "name": "alg_none",
+      "why": "unsigned token",
+      "expected": "refused",
+      "spec": {
+        "alg": "none",
+        "header": {
+          "typ": "a2a-user-context+jwt"
+        },
+        "claims": {
+          "iss": "ecommerce-agents/orchestrator",
+          "aud": "product-discovery",
+          "sub": "alice@example.com",
+          "email": "alice@example.com",
+          "role": "customer",
+          "sid": "6f1c0a5e-2d3b-4c7e-9a10-1b2c3d4e5f60",
+          "act": {
+            "client_id": "orchestrator"
+          },
+          "iat": 1700000000,
+          "exp": 1700000300,
+          "jti": "vector-jti-negative"
+        },
+        "key": "none"
+      },
+      "token": "eyJhbGciOiJub25lIiwidHlwIjoiYTJhLXVzZXItY29udGV4dCtqd3QifQ.eyJpc3MiOiJlY29tbWVyY2UtYWdlbnRzL29yY2hlc3RyYXRvciIsImF1ZCI6InByb2R1Y3QtZGlzY292ZXJ5Iiwic3ViIjoiYWxpY2VAZXhhbXBsZS5jb20iLCJlbWFpbCI6ImFsaWNlQGV4YW1wbGUuY29tIiwicm9sZSI6ImN1c3RvbWVyIiwic2lkIjoiNmYxYzBhNWUtMmQzYi00YzdlLTlhMTAtMWIyYzNkNGU1ZjYwIiwiYWN0Ijp7ImNsaWVudF9pZCI6Im9yY2hlc3RyYXRvciJ9LCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMDMwMCwianRpIjoidmVjdG9yLWp0aS1uZWdhdGl2ZSJ9."
+    },
+    {
+      "name": "alg_hs512",
+      "why": "only HS256 is accepted",
+      "expected": "refused",
+      "spec": {
+        "alg": "HS512",
+        "header": {
+          "typ": "a2a-user-context+jwt"
+        },
+        "claims": {
+          "iss": "ecommerce-agents/orchestrator",
+          "aud": "product-discovery",
+          "sub": "alice@example.com",
+          "email": "alice@example.com",
+          "role": "customer",
+          "sid": "6f1c0a5e-2d3b-4c7e-9a10-1b2c3d4e5f60",
+          "act": {
+            "client_id": "orchestrator"
+          },
+          "iat": 1700000000,
+          "exp": 1700000300,
+          "jti": "vector-jti-negative"
+        },
+        "key": "vector"
+      },
+      "token": "eyJhbGciOiJIUzUxMiIsInR5cCI6ImEyYS11c2VyLWNvbnRleHQrand0In0.eyJpc3MiOiJlY29tbWVyY2UtYWdlbnRzL29yY2hlc3RyYXRvciIsImF1ZCI6InByb2R1Y3QtZGlzY292ZXJ5Iiwic3ViIjoiYWxpY2VAZXhhbXBsZS5jb20iLCJlbWFpbCI6ImFsaWNlQGV4YW1wbGUuY29tIiwicm9sZSI6ImN1c3RvbWVyIiwic2lkIjoiNmYxYzBhNWUtMmQzYi00YzdlLTlhMTAtMWIyYzNkNGU1ZjYwIiwiYWN0Ijp7ImNsaWVudF9pZCI6Im9yY2hlc3RyYXRvciJ9LCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMDMwMCwianRpIjoidmVjdG9yLWp0aS1uZWdhdGl2ZSJ9.FdVLx2oKXXUJ2cYBYPGLNwkauQhghufci3YaEjh49JFJBQIMc2nYmkdlOTOG56zJ5vad9vlrSz6wgJq91ERzww"
+    },
+    {
+      "name": "lifetime_over_15_minutes",
+      "why": "exp - iat is 901 seconds",
+      "expected": "refused",
+      "spec": {
+        "alg": "HS256",
+        "header": {
+          "typ": "a2a-user-context+jwt"
+        },
+        "claims": {
+          "iss": "ecommerce-agents/orchestrator",
+          "aud": "product-discovery",
+          "sub": "alice@example.com",
+          "email": "alice@example.com",
+          "role": "customer",
+          "sid": "6f1c0a5e-2d3b-4c7e-9a10-1b2c3d4e5f60",
+          "act": {
+            "client_id": "orchestrator"
+          },
+          "iat": 1700000000,
+          "exp": 1700000901,
+          "jti": "vector-jti-negative"
+        },
+        "key": "vector"
+      },
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6ImEyYS11c2VyLWNvbnRleHQrand0In0.eyJpc3MiOiJlY29tbWVyY2UtYWdlbnRzL29yY2hlc3RyYXRvciIsImF1ZCI6InByb2R1Y3QtZGlzY292ZXJ5Iiwic3ViIjoiYWxpY2VAZXhhbXBsZS5jb20iLCJlbWFpbCI6ImFsaWNlQGV4YW1wbGUuY29tIiwicm9sZSI6ImN1c3RvbWVyIiwic2lkIjoiNmYxYzBhNWUtMmQzYi00YzdlLTlhMTAtMWIyYzNkNGU1ZjYwIiwiYWN0Ijp7ImNsaWVudF9pZCI6Im9yY2hlc3RyYXRvciJ9LCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMDkwMSwianRpIjoidmVjdG9yLWp0aS1uZWdhdGl2ZSJ9.J2gAjAqjF8ho-_edrBB7kOnqQ3LCWbznkQqz1jp-aH8"
+    },
+    {
+      "name": "bad_signature",
+      "why": "signed with a different key",
+      "expected": "refused",
+      "spec": {
+        "alg": "HS256",
+        "header": {
+          "typ": "a2a-user-context+jwt"
+        },
+        "claims": {
+          "iss": "ecommerce-agents/orchestrator",
+          "aud": "product-discovery",
+          "sub": "alice@example.com",
+          "email": "alice@example.com",
+          "role": "customer",
+          "sid": "6f1c0a5e-2d3b-4c7e-9a10-1b2c3d4e5f60",
+          "act": {
+            "client_id": "orchestrator"
+          },
+          "iat": 1700000000,
+          "exp": 1700000300,
+          "jti": "vector-jti-negative"
+        },
+        "key": "other"
+      },
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6ImEyYS11c2VyLWNvbnRleHQrand0In0.eyJpc3MiOiJlY29tbWVyY2UtYWdlbnRzL29yY2hlc3RyYXRvciIsImF1ZCI6InByb2R1Y3QtZGlzY292ZXJ5Iiwic3ViIjoiYWxpY2VAZXhhbXBsZS5jb20iLCJlbWFpbCI6ImFsaWNlQGV4YW1wbGUuY29tIiwicm9sZSI6ImN1c3RvbWVyIiwic2lkIjoiNmYxYzBhNWUtMmQzYi00YzdlLTlhMTAtMWIyYzNkNGU1ZjYwIiwiYWN0Ijp7ImNsaWVudF9pZCI6Im9yY2hlc3RyYXRvciJ9LCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMDMwMCwianRpIjoidmVjdG9yLWp0aS1uZWdhdGl2ZSJ9.vjD7Rdp71zvZD0O_DngnXsez1fPJ3n2H2hOAdSNduXQ"
+    }
+  ],
+  "_comment_negative": "Every entry in `negative` must be REFUSED by both stacks (verify_at overrides the top-level verify_at where present). Each carries the header/claims/key it was signed from (`spec`), and tests/test_identity_token.py re-signs the spec and fails on drift; the .NET test only reads `token`. Clock-dependent entries are expressed relative to the pinned verify_at, never the wall clock."
 }

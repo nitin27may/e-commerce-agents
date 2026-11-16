@@ -31,12 +31,15 @@ no new identity provider and no new secret to distribute in the default setup: e
 already holds the shared secret.
 
 **What this does and does not buy.** The key is symmetric, so a specialist can verify a token and could also mint
-one: a *compromised specialist* is not stopped by this. What it adds is: a request cannot be replayed at another
-specialist or after it expires; a header forged next to a valid token is rejected; and, with ``A2A_IDENTITY_KEY``
-set to a value different from the shared secret, a caller that holds only ``X-Agent-Secret`` (a leaked compose
-file, an SSRF) can no longer choose its own user. Asymmetric signing (the orchestrator alone holding the private
-key) is the follow-up that would close the compromised-specialist case; it needs key distribution this repo does
-not have outside ``AUTH_MODE=oauth``.
+one: a *compromised specialist* is not stopped by this. What it adds is: a request cannot be replayed at *another*
+specialist or after it expires (it can be replayed at the *same* specialist until then: ``jti`` is minted for audit
+correlation and nothing checks it); and a header forged next to a valid token is rejected. A caller that holds only
+``X-Agent-Secret`` (a leaked compose file, an SSRF) can no longer choose its own user **only when both** are true:
+``A2A_IDENTITY=token`` (the default, ``both``, still accepts a request with no token and believes its ``X-User-*``
+headers) **and** ``A2A_IDENTITY_KEY`` is set to a value different from the shared secret (with the key falling back
+to the shared secret, holding the secret is holding the key). A process in ``token`` mode with no distinct key logs
+a startup warning. Asymmetric signing (the orchestrator alone holding the private key) is the follow-up that would
+close the compromised-specialist case; it needs key distribution this repo does not have outside ``AUTH_MODE=oauth``.
 """
 
 from __future__ import annotations
@@ -140,7 +143,8 @@ def verify(token: str, *, audience: str, key: bytes | None = None, now: int | No
 
     Raises :class:`IdentityTokenError` with a fixed ``reason`` for anything that must not be believed: a
     malformed token, a wrong algorithm or type, a bad signature, expiry, the wrong audience or issuer, a
-    lifetime longer than :data:`MAX_LIFETIME_SECONDS`, or missing claims. Nothing of the token's content is in
+    lifetime longer than :data:`MAX_LIFETIME_SECONDS`, an ``iat`` or ``nbf`` in the future, a time claim that is
+    not a whole number, or a missing claim (``exp``, ``iat``, ``iss``, ``aud``, ``sub``, ``email``, ``role``). Nothing of the token's content is in
     the reason.
     """
     try:
@@ -150,6 +154,8 @@ def verify(token: str, *, audience: str, key: bytes | None = None, now: int | No
     if header.get("alg") != ALGORITHM or header.get("typ") != TOKEN_TYPE:
         raise IdentityTokenError("wrong_type")
 
+    # PyJWT's own time checks read the wall clock. Every time rule is applied below against one instant instead, so
+    # a caller (and the shared vectors) can pin "now" and both stacks judge the same token the same way.
     try:
         claims = jwt.decode(
             token,
@@ -157,11 +163,13 @@ def verify(token: str, *, audience: str, key: bytes | None = None, now: int | No
             algorithms=[ALGORITHM],
             audience=audience,
             issuer=ISSUER,
-            leeway=LEEWAY_SECONDS,
-            options={"require": ["exp", "iat", "iss", "aud", "sub"], "verify_exp": now is None},
+            options={
+                "require": ["exp", "iat", "iss", "aud", "sub"],
+                "verify_exp": False,
+                "verify_nbf": False,
+                "verify_iat": False,
+            },
         )
-    except jwt.ExpiredSignatureError as exc:
-        raise IdentityTokenError("expired") from exc
     except jwt.InvalidAudienceError as exc:
         raise IdentityTokenError("audience") from exc
     except jwt.InvalidIssuerError as exc:
@@ -171,11 +179,18 @@ def verify(token: str, *, audience: str, key: bytes | None = None, now: int | No
     except jwt.PyJWTError as exc:
         raise IdentityTokenError("malformed") from exc
 
-    exp, iat = claims["exp"], claims["iat"]
-    if not isinstance(exp, int) or not isinstance(iat, int):
+    def whole_number(name: str) -> int | None:
+        value = claims.get(name)
+        return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+    exp, iat, nbf = whole_number("exp"), whole_number("iat"), whole_number("nbf")
+    if exp is None or iat is None or ("nbf" in claims and nbf is None) or not isinstance(claims["sub"], str):
         raise IdentityTokenError("malformed")
-    if now is not None and exp + LEEWAY_SECONDS < now:
+    instant = int(time.time()) if now is None else now
+    if exp + LEEWAY_SECONDS < instant:
         raise IdentityTokenError("expired")
+    if iat > instant + LEEWAY_SECONDS or (nbf is not None and nbf > instant + LEEWAY_SECONDS):
+        raise IdentityTokenError("not_yet_valid")
     if exp - iat > MAX_LIFETIME_SECONDS:
         raise IdentityTokenError("lifetime")
 
