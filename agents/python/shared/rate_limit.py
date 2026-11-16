@@ -32,6 +32,7 @@ on a route::
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
 import logging
 import time
@@ -146,6 +147,17 @@ def _client_ip(request: Request) -> str:
         return peer
 
 
+def key_hash_for_log(key: str) -> str:
+    """A stable, non-reversible stand-in for a rate-limit key in log lines.
+
+    Keys embed the caller's email or IP address and part of them is caller-supplied,
+    so the raw key is neither safe to log (personal data) nor safe to interpolate
+    (log forging). Twelve hex characters of its SHA-256 are enough to correlate
+    repeated hits. The .NET limiter logs the same value (``KeyHashForLog``).
+    """
+    return hashlib.sha256(key.encode()).hexdigest()[:12].upper()
+
+
 async def _enforce(
     request: Request,
     *,
@@ -169,7 +181,7 @@ async def _enforce(
     except HTTPException:
         raise
     except Exception:
-        logger.exception("rate_limit.redis_unavailable key=%s — failing open", key)
+        logger.exception("rate_limit.redis_unavailable key_hash=%s — failing open", key_hash_for_log(key))
         return
 
 

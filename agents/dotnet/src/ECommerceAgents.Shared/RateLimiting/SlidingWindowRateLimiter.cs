@@ -122,18 +122,29 @@ public sealed class SlidingWindowRateLimiter
             if (!allowed)
             {
                 _logger.LogWarning(
-                    "rate_limit.exceeded key={Key} max={Max} window_s={Window}",
-                    key, _settings.RateLimitMaxRequests, _settings.RateLimitWindowSeconds
+                    "rate_limit.exceeded key_hash={KeyHash} max={Max} window_s={Window}",
+                    KeyHashForLog(key), maxRequests, windowSeconds
                 );
             }
             return allowed;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "rate_limit.check_failed key={Key} — failing open", key);
+            _logger.LogError(ex, "rate_limit.check_failed key_hash={KeyHash} — failing open", KeyHashForLog(key));
             return true;
         }
     }
+
+    /// <summary>
+    /// A stable, non-reversible stand-in for a rate-limit key in log lines. Keys embed the
+    /// caller's email or IP address, and part of them is caller-supplied, so the raw key is
+    /// neither safe to log (personal data) nor safe to interpolate (log forging). The first
+    /// 12 hex characters of its SHA-256 are enough to correlate repeated hits.
+    /// </summary>
+    internal static string KeyHashForLog(string key) =>
+        Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key))
+        )[..12];
 
     /// <summary>
     /// Per-user when we know who is calling, per-IP otherwise — anonymous
