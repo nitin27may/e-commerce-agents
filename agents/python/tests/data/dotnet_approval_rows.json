@@ -1,0 +1,114 @@
+{
+  "approval": {
+    "id": "1f1b0dab-c722-49f8-8449-515e2c669dab",
+    "kind": "cancel_order",
+    "route": "support",
+    "amount": null,
+    "due_at": "2026-11-16T18:41:44.931476\u002B00:00",
+    "source": "tool",
+    "status": "pending_review",
+    "decision": null,
+    "claimed_at": null,
+    "claimed_by": null,
+    "created_at": "2026-11-16T06:41:44.931945\u002B00:00",
+    "decided_at": null,
+    "decided_by": null,
+    "source_ref": "fdf57606-7cf6-451b-873c-03afcf19d2ca",
+    "updated_at": "2026-11-16T06:41:44.931945\u002B00:00",
+    "assigned_role": "support",
+    "subject_email": "xstack@example.com",
+    "policy_version": "2026-11-16.1",
+    "recommendation": {
+      "route": "support",
+      "reasons": [
+        "Needs a support review"
+      ],
+      "evidence": {
+        "rule": "default-support",
+        "facts": {
+          "amount": null,
+          "returns_90d": 0,
+          "loyalty_tier": "bronze",
+          "account_age_days": 0,
+          "days_since_delivery": null,
+          "refund_to_spend_ratio": null
+        },
+        "conditions": []
+      },
+      "policy_version": "2026-11-16.1"
+    },
+    "conversation_id": null,
+    "requester_email": "xstack@example.com",
+    "escalation_level": 0
+  },
+  "events": [
+    {
+      "id": 1,
+      "action": "created",
+      "payload": {
+        "kind": "cancel_order",
+        "source": "tool",
+        "status": "pending_review"
+      },
+      "actor_role": null,
+      "created_at": "2026-11-16T06:41:44.931945\u002B00:00",
+      "actor_email": null,
+      "approval_id": "1f1b0dab-c722-49f8-8449-515e2c669dab"
+    },
+    {
+      "id": 2,
+      "action": "routed",
+      "payload": {
+        "route": "support",
+        "reasons": [
+          "Needs a support review"
+        ],
+        "policy_version": "2026-11-16.1"
+      },
+      "actor_role": null,
+      "created_at": "2026-11-16T06:41:44.936912\u002B00:00",
+      "actor_email": null,
+      "approval_id": "1f1b0dab-c722-49f8-8449-515e2c669dab"
+    }
+  ],
+  "outbox": [
+    {
+      "id": 1,
+      "topic": "approval.reminder_due",
+      "payload": {
+        "level": 0,
+        "due_at": "2026-11-16T18:41:44.931476\u002B00:00",
+        "approval_id": "1f1b0dab-c722-49f8-8449-515e2c669dab"
+      },
+      "attempts": 0,
+      "failed_at": null,
+      "locked_by": null,
+      "created_at": "2026-11-16T06:41:44.931945\u002B00:00",
+      "dedupe_key": "approval.reminder_due:1f1b0dab-c722-49f8-8449-515e2c669dab:0:1794854504931",
+      "last_error": null,
+      "aggregate_id": "1f1b0dab-c722-49f8-8449-515e2c669dab",
+      "available_at": "2026-11-16T12:41:44.931495\u002B00:00",
+      "locked_until": null,
+      "processed_at": null
+    },
+    {
+      "id": 2,
+      "topic": "approval.sla_breached",
+      "payload": {
+        "level": 0,
+        "due_at": "2026-11-16T18:41:44.931476\u002B00:00",
+        "approval_id": "1f1b0dab-c722-49f8-8449-515e2c669dab"
+      },
+      "attempts": 0,
+      "failed_at": null,
+      "locked_by": null,
+      "created_at": "2026-11-16T06:41:44.931945\u002B00:00",
+      "dedupe_key": "approval.sla_breached:1f1b0dab-c722-49f8-8449-515e2c669dab:0:1794854504931",
+      "last_error": null,
+      "aggregate_id": "1f1b0dab-c722-49f8-8449-515e2c669dab",
+      "available_at": "2026-11-16T18:41:44.931476\u002B00:00",
+      "locked_until": null,
+      "processed_at": null
+    }
+  ]
+}
