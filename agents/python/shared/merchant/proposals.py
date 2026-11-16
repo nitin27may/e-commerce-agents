@@ -355,8 +355,9 @@ async def generate_proposal(
     A (product, field) that already has an undecided line in an open proposal is not proposed again, so running
     this twice in a row creates one batch, not two. The batch holds every actionable restock, the most urgent
     markdowns and a few blocked lines for context (:func:`select_lines`), cut to ``max_lines_per_batch``; the rest
-    is left for a later run. A batch with no line the seller could accept is not stored: there is nothing to decide. Everything (batch, lines, approval, its timers, the seller's notification) commits
-    together or not at all.
+    is left for a later run. A batch with no line the seller could accept is not stored: there is nothing to
+    decide. Everything (batch, lines, approval, its timers, the seller's notification) commits together or not
+    at all.
     """
     clock = now or datetime.now(UTC)
     active_limits = limits or get_limits()

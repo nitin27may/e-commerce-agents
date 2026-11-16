@@ -156,6 +156,17 @@ One inbox, one decide path, on both stacks over the same tables (Python: `orches
 - **Deadlines are outbox rows.** Entering `pending_review` schedules a reminder and an SLA timer in the same transaction (`shared/outbox.py`). `agents/python/worker/` (compose service `outbox-worker`; `uv run python -m worker.main`) claims rows with `FOR UPDATE SKIP LOCKED` under a lease, retries with capped backoff and parks a row after `OUTBOX_MAX_ATTEMPTS`. A breach escalates `support → manager` once; at the top it applies the kind's `on_timeout`, which for a paused return means resuming it as a rejection. The worker serves both stacks, since they share the database.
 - **Identity on execution:** whoever approves, the action runs as the original requester (tools read ContextVars), and the reviewer is recorded separately.
 
+### Merchant proposals (#93, Python only)
+
+Seller markdown/restock suggestions, `docs/merchant-proposals.md`. `shared/merchant/proposals.py` generates them
+deterministically (no model), `shared/merchant/execute.py` applies one line at most once (`run_once`, key
+`proposal_line:{id}`) after re-running the M-1 guards on live facts; `orchestrator/proposals_service.py` + `routes/proposals.py`
+decide a batch line by line. It is **one `approvals` row per batch** (kind `merchant_proposal`, source `proposal`), moved with the
+same `repo.claim`/`transition` as every other kind; the requester is the system actor `merchant-ops@system`, so the owning seller
+(or an admin) deciding never trips the reviewer-is-not-requester rule. Another seller's proposal is a 404. The M-2 agent and its
+eval dataset are not built (they need a key); no `@tool` exists for it, so no fixture is affected. The daily run
+(`merchant.daily_run_due`) is off unless `MERCHANT_OPS_SCHEDULE_ENABLED`.
+
 ### Auth & Identity Flow
 
 - **Roles**: `customer`, `power_user`, `seller`, `support`, `admin`. `require_staff` admits `support` and `admin`; signup always creates a `customer` on both stacks.
