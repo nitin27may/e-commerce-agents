@@ -5,7 +5,7 @@
 # CI calls it, and so can you. Zero LLM calls, no credentials.
 #
 #   scripts/replay-evals.sh            # services + all suites (DB already seeded)
-#   scripts/replay-evals.sh --setup    # first load the schema, seed, and embeddings
+#   scripts/replay-evals.sh --setup    # first migrate the schema and seed (incl. embeddings)
 #
 # Needs Postgres (pgvector) and Redis reachable at $DATABASE_URL / $REDIS_URL.
 # Defaults match docker-compose.yml, so `docker compose up -d db redis` is enough.
@@ -36,16 +36,18 @@ LOG_DIR="${REPLAY_LOG_DIR:-${TMPDIR:-/tmp}}"
 # The single place this script touches the database schema. Only used with
 # --setup (CI loads the schema in its own earlier step).
 load_schema() {
-  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$REPO_ROOT/docker/postgres/init.sql"
+  # The frozen baseline plus every numbered migration, in order — the same
+  # runner the seeder, dev.sh and CI use (scripts/migrate.py).
+  (cd "$REPO_ROOT" && uv run --project agents/python python -m scripts.migrate)
 }
 # ───────────────────────────────────────────────────────────────────────────
 
 setup_database() {
   load_schema || return 1
-  # scripts.seed / scripts.generate_embeddings live at the repo root, not in
+  # scripts.seed lives at the repo root, not in
   # agents/python/, so run from the root and point uv at the project.
+  # Under LLM_PROVIDER=replay the seeder populates product_embeddings itself.
   (cd "$REPO_ROOT" && uv run --project agents/python python -m scripts.seed) || return 1
-  (cd "$REPO_ROOT" && uv run --project agents/python python -m scripts.generate_embeddings) || return 1
 }
 
 SPECIALIST_PIDS=()
