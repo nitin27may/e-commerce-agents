@@ -74,6 +74,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
+from shared.guardrails.roles import available_to_least_privileged
 from shared.log_safe import log_safe
 from shared.replay_client import ReplayFixtureMissingError
 from shared.replay_miss import REPLAY_MISS_BODY
@@ -283,15 +284,22 @@ class ActiveTaskLimiter:
 
 
 def _skills(agent: Any, agent_name: str) -> list[AgentSkill]:
-    """One skill per ``FunctionTool`` the agent owns: its name and description, verbatim.
+    """One skill per ``FunctionTool`` the least-privileged role may call: its name and description, verbatim.
 
-    Built from the live tool list rather than written by hand so the card cannot drift from what the
-    agent can actually do. Non-function tools (an MCP toolset) have no static name and are skipped.
+    The card is public (discovery is the point, and ``AgentAuthMiddleware`` lets it through
+    unauthenticated), so it must not advertise tools a caller could not use: an admin-only tool's name and
+    description are internal. The source of truth for who may call a tool is ``requires_role``, which
+    records its roles on the function it wraps; a tool carrying no such restriction, or one whose roles
+    include ``customer``, is listed. Built from the live tool list rather than written by hand so the card
+    cannot drift from what the agent can actually do. Non-function tools (an MCP toolset) have no static
+    name and are skipped.
     """
     tools = (getattr(agent, "default_options", None) or {}).get("tools") or []
     skills: list[AgentSkill] = []
     for tool in tools:
         if not isinstance(tool, FunctionTool):
+            continue
+        if not available_to_least_privileged(getattr(tool, "func", None)):
             continue
         skills.append(
             AgentSkill(

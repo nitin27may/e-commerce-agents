@@ -34,6 +34,27 @@ logger = logging.getLogger(__name__)
 
 _ALWAYS_ALLOWED = {"admin"}
 
+#: Attribute :func:`requires_role` sets on the function it wraps: the roles allowed to call it (admin
+#: included). It is what lets other code (the public A2A agent card) ask which roles a tool serves
+#: without calling it.
+REQUIRED_ROLES_ATTR = "__required_roles__"
+
+#: The role with the fewest privileges. A tool it may call is one every signed-in user may call.
+LEAST_PRIVILEGED_ROLE = "customer"
+
+
+def required_roles(fn: Callable[..., Any] | None) -> frozenset[str] | None:
+    """The roles :func:`requires_role` restricts ``fn`` to, or ``None`` when it carries no restriction."""
+    roles = getattr(fn, REQUIRED_ROLES_ATTR, None)
+    return frozenset(roles) if roles is not None else None
+
+
+def available_to_least_privileged(fn: Callable[..., Any] | None) -> bool:
+    """True unless ``fn`` is restricted to roles that exclude the least-privileged one."""
+    roles = required_roles(fn)
+    return roles is None or LEAST_PRIVILEGED_ROLE in roles
+
+
 F = TypeVar("F", bound=Callable[..., Awaitable[Any]])
 
 
@@ -94,6 +115,7 @@ def requires_role(*roles: str) -> Callable[[F], F]:
                     return _denial(allowed, getattr(fn, "__name__", "tool"), role)
             return await fn(*args, **kwargs)
 
+        setattr(wrapper, REQUIRED_ROLES_ATTR, frozenset(allowed))
         return wrapper  # type: ignore[return-value]
 
     return decorator

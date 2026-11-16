@@ -557,3 +557,45 @@ async def test_the_task_store_forgets_its_oldest_tasks() -> None:
 
     assert [await store.get(f"t{i}", ctx) is not None for i in range(5)] == [False, False, True, True, True]
     assert await store.get("t4", ServerCallContext(user=_CallerUser("other@example.com"))) is None
+
+
+@pytest.mark.asyncio
+async def test_the_public_card_hides_tools_the_least_privileged_role_cannot_call() -> None:
+    """The card is served unauthenticated; ``requires_role`` is the source of truth for who may call a tool."""
+    from typing import Annotated
+
+    from agent_framework import Agent, tool
+
+    from shared.a2a_server import build_agent_card
+    from shared.guardrails.roles import requires_role
+    from tests.a2a_support import ScriptedModel
+
+    @tool(name="open_tool", description="Anyone signed in.")
+    async def open_tool(sku: Annotated[str, "sku"]) -> str:
+        return sku
+
+    @tool(name="customer_tool", description="Customers and above.")
+    @requires_role("customer", "seller")
+    async def customer_tool(sku: Annotated[str, "sku"]) -> str:
+        return sku
+
+    @tool(name="seller_tool", description="Internal seller report.")
+    @requires_role("seller", "admin")
+    async def seller_tool(sku: Annotated[str, "sku"]) -> str:
+        return sku
+
+    @tool(name="admin_tool", description="Internal admin export.")
+    @requires_role("admin")
+    async def admin_tool(sku: Annotated[str, "sku"]) -> str:
+        return sku
+
+    agent = Agent(
+        client=ScriptedModel(),
+        name="product-discovery",
+        instructions="x",
+        tools=[open_tool, customer_tool, seller_tool, admin_tool],
+    )
+    card = build_agent_card(agent=agent, agent_name="product-discovery", description="d", base_url="http://x")
+
+    assert {s.id for s in card.skills} == {"open_tool", "customer_tool"}
+    assert "Internal" not in card.SerializeToString().decode("utf-8", errors="ignore")

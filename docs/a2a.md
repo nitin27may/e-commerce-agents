@@ -35,8 +35,11 @@ set A2A_TRANSPORT=legacy`) without sending a message.
 The card (`/.well-known/agent-card.json`, public like `/health`) carries, built from the live agent so it
 cannot drift: name and description; one JSON-RPC interface whose URL is the host the caller reached the card
 by (set `A2A_PUBLIC_BASE_URL` behind a proxy that rewrites it); `streaming: true`, `pushNotifications:
-false`; the three extensions below; one skill per `FunctionTool` (its name and description verbatim; an MCP
-toolset has no static names and is skipped); and the two ways to authenticate (`X-Agent-Secret`, or an
+false`; the three extensions below; one skill per `FunctionTool` that the least-privileged role (`customer`) may call (its name and
+description verbatim; an MCP toolset has no static names and is skipped). The card is public, so a tool
+restricted by `requires_role` to roles that exclude `customer` (seller or admin tooling) is not listed;
+`requires_role` records its roles on the function it wraps, which is the single source of truth the card
+reads; and the two ways to authenticate (`X-Agent-Secret`, or an
 AS-issued bearer service token in `AUTH_MODE=oauth`).
 
 JSON-RPC methods: `SendMessage`, `SendStreamingMessage`, `GetTask`, `ListTasks`, `CancelTask`,
