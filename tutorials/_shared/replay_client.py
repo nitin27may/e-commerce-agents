@@ -100,16 +100,18 @@ def _message_key_dict(message: Any) -> dict[str, Any]:
     """``Message.to_dict()`` minus the framework's own per-run function-call ids.
 
     agent-framework-core 1.21 stamps every actionable ``function_call`` that has no
-    ``id`` with ``af-call-<uuid4>`` (``_generate_function_call_occurrence_id``). The
-    id lands in the *next* turn's request, so without this the key of every turn
-    after a tool call would differ on each run, and no fixture could ever match.
-    The model never sees it (it is not sent to the provider) and corpora recorded
-    before 1.21 do not contain it, so dropping it keeps every existing key unchanged.
+    ``id`` with ``af-call-<uuid4>`` (``_generate_function_call_occurrence_id``), and
+    1.22 copies it onto the matching ``function_result`` too. The ids land in the
+    *next* turn's request, so without this the key of every turn after a tool call
+    would differ on each run, and no fixture could ever match. The model never sees
+    them (they are not sent to the provider) and corpora recorded before 1.21 do not
+    contain them, so dropping them keeps every existing key unchanged.
     """
     data = message.to_dict()
     for content in data.get("contents") or []:
-        cid = content.get("id") if isinstance(content, dict) else None
-        if content.get("type") == "function_call" and isinstance(cid, str) and cid.startswith("af-call-"):
+        if not isinstance(content, dict) or content.get("type") not in ("function_call", "function_result"):
+            continue
+        if str(content.get("id") or "").startswith("af-call-"):
             del content["id"]
     return data
 

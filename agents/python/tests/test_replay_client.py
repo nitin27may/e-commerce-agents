@@ -144,14 +144,16 @@ def test_no_response_format_hash_unchanged() -> None:
 
 
 def test_framework_function_call_ids_do_not_reach_the_key() -> None:
-    """core >= 1.21 stamps ``af-call-<uuid4>`` on every function_call; that random
-    id must not make two identical requests hash differently, and a call without
-    one (every fixture recorded before 1.21) must hash the same as one with it."""
+    """core >= 1.21 stamps ``af-call-<uuid4>`` on every function_call (and 1.22 on its
+    function_result); that random id must not make two identical requests hash
+    differently, and a call without one (every fixture recorded before 1.21) must
+    hash the same as one with it."""
 
     def request(call_id: str | None) -> list[Message]:
         call = Content.from_function_call(call_id="call_1", name="get_weather", arguments={"city": "Paris"})
-        call.id = call_id
-        return [Message(role="assistant", contents=[call])]
+        result = Content.from_function_result(call_id="call_1", result="sunny")
+        call.id = result.id = call_id
+        return [Message(role="assistant", contents=[call]), Message(role="tool", contents=[result])]
 
     bare = _request_hash(_canonical_request(request(None), {}))
     assert _request_hash(_canonical_request(request("af-call-" + "a" * 32), {})) == bare
