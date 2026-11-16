@@ -30,9 +30,23 @@ public static class AuthRoutes
     // always creates a customer (it used to honour it, so anyone could sign up as admin).
     public sealed record SignupRequest(string? Email, string? Password, string? Name = null, string? FullName = null, string? Role = null);
 
-    // Same loose rule as Python's _EMAIL_RE: one "@", no whitespace, a dot in the domain.
-    private static readonly System.Text.RegularExpressions.Regex EmailPattern =
-        new(@"^[^@\s]+@[^@\s]+\.[^@\s]+$", System.Text.RegularExpressions.RegexOptions.Compiled);
+    // Same loose rule as Python's _is_plausible_email: exactly one "@", no whitespace, a dot
+    // inside the domain. Plain checks rather than a Regex: the equivalent pattern backtracks
+    // polynomially on crafted input.
+    internal static bool IsPlausibleEmail(string email)
+    {
+        foreach (var ch in email)
+        {
+            if (char.IsWhiteSpace(ch)) return false;
+        }
+
+        var at = email.IndexOf('@');
+        if (at <= 0 || at != email.LastIndexOf('@')) return false;
+
+        var domain = email.AsSpan(at + 1);
+        // A dot with at least one character on each side.
+        return domain.Length >= 3 && domain[1..^1].Contains('.');
+    }
 
     private const int MaxPasswordBytes = 72; // bcrypt's limit
 
@@ -99,7 +113,7 @@ public static class AuthRoutes
     {
         // Same checks, order and messages as Python's _validate_signup (400 + {"detail": msg}).
         var email = (request.Email ?? "").Trim().ToLowerInvariant();
-        if (email.Length > 254 || !EmailPattern.IsMatch(email))
+        if (email.Length > 254 || !IsPlausibleEmail(email))
         {
             return Results.BadRequest(new { detail = "Invalid email address" });
         }

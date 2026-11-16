@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import time
 import uuid
 from typing import Any
@@ -188,9 +187,21 @@ async def require_seller(user: dict[str, Any] = Depends(require_auth)) -> dict[s
 
 # ── Auth Routes (PUBLIC) ──────────────────────────────────────
 
-# Deliberately loose: one "@", no spaces, a dot in the domain. Real validation is
-# the confirmation mail this demo does not send. The .NET stack uses the same rule.
-_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+def _is_plausible_email(email: str) -> bool:
+    """Deliberately loose: exactly one "@", no whitespace, a dot inside the domain.
+
+    Real validation is the confirmation mail this demo does not send. Written as
+    plain string checks rather than a regular expression: the equivalent pattern
+    (``^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$``) backtracks polynomially on crafted input.
+    The .NET stack applies the same rule (``AuthRoutes.IsPlausibleEmail``).
+    """
+    if any(ch.isspace() for ch in email):
+        return False
+    local, sep, domain = email.partition("@")
+    if not sep or not local or "@" in domain:
+        return False
+    # A dot with at least one character on each side.
+    return "." in domain[1:-1]
 
 
 def _validate_signup(body: SignupRequest) -> tuple[str, str]:
@@ -200,7 +211,7 @@ def _validate_signup(body: SignupRequest) -> tuple[str, str]:
     same strings). Returns ``(lower-cased email, stripped name)``.
     """
     email = body.email.strip().lower()
-    if len(email) > 254 or not _EMAIL_RE.match(email):
+    if len(email) > 254 or not _is_plausible_email(email):
         raise HTTPException(status_code=400, detail="Invalid email address")
     # bcrypt reads at most 72 *bytes*; bcrypt >= 5 raises ValueError beyond that,
     # which used to surface as a 500.
