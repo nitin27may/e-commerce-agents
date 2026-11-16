@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { api } from "./api";
+import { api, RefreshUnavailableError } from "./api";
 
 /**
  * Refresh tokens rotate: each is single-use and presenting a spent one revokes
@@ -167,5 +167,87 @@ describe("refresh-token rotation in the client", () => {
 
     expect(localStorage.getItem("ecommerce_refresh_token")).toBeNull();
     expect(localStorage.getItem("ecommerce_access_token")).toBeNull();
+  });
+
+  it("clears the session on a 403 from refresh (deactivated account) too", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) =>
+        url.endsWith("/api/auth/refresh") ? json(403, { detail: "Account is deactivated" }) : json(401, {}),
+      ),
+    );
+
+    await expect(api.getConversations()).rejects.toThrow(/Session expired/);
+    expect(localStorage.getItem("ecommerce_refresh_token")).toBeNull();
+  });
+
+  describe("a refresh that fails for a reason that says nothing about the session", () => {
+    function failingRefresh(respond: () => Response | Promise<Response>) {
+      const fetchMock = vi.fn(async (url: string) => (url.endsWith("/api/auth/refresh") ? respond() : json(401, {})));
+      vi.stubGlobal("fetch", fetchMock);
+      return fetchMock;
+    }
+
+    it("keeps the session on a 429 and surfaces a retryable error that honours Retry-After", async () => {
+      failingRefresh(
+        () => new Response("{}", { status: 429, headers: { "Content-Type": "application/json", "Retry-After": "42" } }),
+      );
+
+      const err = await api.getConversations().catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(RefreshUnavailableError);
+      expect((err as RefreshUnavailableError).retryAfterSeconds).toBe(42);
+      expect((err as Error).message).toMatch(/42 seconds/);
+      expect(localStorage.getItem("ecommerce_refresh_token")).toBe("refresh-0");
+      expect(localStorage.getItem("ecommerce_access_token")).toBe("access-0");
+    });
+
+    it("keeps the session on a 5xx", async () => {
+      failingRefresh(() => json(503, { detail: "down" }));
+
+      await expect(api.getConversations()).rejects.toBeInstanceOf(RefreshUnavailableError);
+      expect(localStorage.getItem("ecommerce_refresh_token")).toBe("refresh-0");
+    });
+
+    it("keeps the session when the network drops", async () => {
+      failingRefresh(() => {
+        throw new TypeError("Failed to fetch");
+      });
+
+      await expect(api.getConversations()).rejects.toBeInstanceOf(RefreshUnavailableError);
+      expect(localStorage.getItem("ecommerce_refresh_token")).toBe("refresh-0");
+    });
+
+    it("still single-flights: simultaneous 401s share one refresh even when it is refused", async () => {
+      const fetchMock = failingRefresh(() => json(429, {}));
+
+      const results = await Promise.allSettled([api.getConversations(), api.getConversations()]);
+
+      expect(results.every((r) => r.status === "rejected")).toBe(true);
+      expect(fetchMock.mock.calls.filter(([u]) => String(u).endsWith("/api/auth/refresh"))).toHaveLength(1);
+      expect(localStorage.getItem("ecommerce_refresh_token")).toBe("refresh-0");
+    });
+
+    it("works again once the limiter lets the refresh through", async () => {
+      let limited = true;
+      let access = "access-0";
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string, init?: RequestInit) => {
+          if (url.endsWith("/api/auth/refresh")) {
+            if (limited) return json(429, {});
+            access = "access-1";
+            return json(200, { access_token: access, refresh_token: "refresh-1" });
+          }
+          return new Headers(init?.headers).get("Authorization") === `Bearer ${access}` ? json(200, { ok: 1 }) : json(401, {});
+        }),
+      );
+      access = "rotated-away";
+
+      await expect(api.getConversations()).rejects.toBeInstanceOf(RefreshUnavailableError);
+      limited = false;
+      await expect(api.getConversations()).resolves.toEqual({ ok: 1 });
+      expect(localStorage.getItem("ecommerce_refresh_token")).toBe("refresh-1");
+    });
   });
 });

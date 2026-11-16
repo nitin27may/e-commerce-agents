@@ -74,9 +74,11 @@ public static class AuthRoutes
     }
 
     /// <summary>
-    /// 10 requests per 60 s per client address across signup, login and refresh - its own
-    /// bucket, so a credential-guessing loop neither spends nor hides behind the chat budget.
-    /// Fails open (error log) when Redis is down, like the chat limiter.
+    /// The address-only ceiling (default 300 per 60 s) across signup, login and refresh - its own
+    /// bucket, so a flood neither spends nor hides behind the chat budget. Deliberately loose:
+    /// behind the default web proxy every browser user shares one address, so the tight limits are
+    /// per identity (<see cref="AccountLimitAsync"/>, <see cref="UserLimitAsync"/>). Fails open
+    /// (error log) when Redis is down, like the chat limiter.
     /// </summary>
     internal sealed class AuthRateLimitFilter(SlidingWindowRateLimiter limiter, AgentSettings settings) : IEndpointFilter
     {
@@ -90,7 +92,7 @@ public static class AuthRoutes
 
             if (!await limiter.TryAcquireAsync(
                     SlidingWindowRateLimiter.AuthKeyFor(ip),
-                    settings.RateLimitAuthMaxRequests,
+                    settings.RateLimitAuthIpMaxRequests,
                     settings.RateLimitAuthWindowSeconds,
                     http.RequestAborted))
             {
@@ -104,8 +106,42 @@ public static class AuthRoutes
         }
     }
 
+    private static readonly object TooManyBody = new { detail = "Too many authentication requests - try again shortly." };
+
+    private static IResult TooMany() => Results.Json(TooManyBody, statusCode: StatusCodes.Status429TooManyRequests);
+
+    /// <summary>Tight login / signup budget per (client address, target email); null when allowed.</summary>
+    private static async Task<IResult?> AccountLimitAsync(
+        HttpContext http, SlidingWindowRateLimiter limiter, AgentSettings settings, string email)
+    {
+        var ip = ClientAddress.Resolve(
+            http.Request.Headers["X-Forwarded-For"].FirstOrDefault(),
+            http.Connection.RemoteIpAddress,
+            settings.RateLimitTrustedProxyHops);
+        return await limiter.TryAcquireAsync(
+            SlidingWindowRateLimiter.AuthAccountKeyFor(ip, email),
+            settings.RateLimitAuthMaxRequests,
+            settings.RateLimitAuthWindowSeconds,
+            http.RequestAborted)
+            ? null
+            : TooMany();
+    }
+
+    /// <summary>Tight refresh budget per user; null when allowed. <paramref name="subject"/> must be verified.</summary>
+    private static async Task<IResult?> UserLimitAsync(
+        HttpContext http, SlidingWindowRateLimiter limiter, AgentSettings settings, string subject)
+        => await limiter.TryAcquireAsync(
+            SlidingWindowRateLimiter.AuthUserKeyFor(subject),
+            settings.RateLimitAuthMaxRequests,
+            settings.RateLimitAuthWindowSeconds,
+            http.RequestAborted)
+            ? null
+            : TooMany();
+
     private static async Task<IResult> Signup(
         [FromBody] SignupRequest request,
+        HttpContext http,
+        SlidingWindowRateLimiter limiter,
         DatabasePool pool,
         JwtTokenService jwt,
         AgentSettings settings
@@ -130,6 +166,11 @@ public static class AuthRoutes
         if (nameLength < 1 || nameLength > 100)
         {
             return Results.BadRequest(new { detail = "Name must be between 1 and 100 characters" });
+        }
+
+        if (await AccountLimitAsync(http, limiter, settings, email) is { } limited)
+        {
+            return limited;
         }
 
         const string role = "customer";
@@ -168,6 +209,8 @@ public static class AuthRoutes
 
     private static async Task<IResult> Login(
         [FromBody] LoginRequest request,
+        HttpContext http,
+        SlidingWindowRateLimiter limiter,
         DatabasePool pool,
         JwtTokenService jwt,
         AgentSettings settings,
@@ -180,6 +223,10 @@ public static class AuthRoutes
         }
 
         var email = request.Email.Trim().ToLowerInvariant();
+        if (await AccountLimitAsync(http, limiter, settings, email) is { } limited)
+        {
+            return limited;
+        }
 
         if (settings.AuthMode == "oauth")
         {
@@ -263,6 +310,8 @@ public static class AuthRoutes
 
     private static async Task<IResult> Refresh(
         [FromBody] RefreshRequest request,
+        HttpContext http,
+        SlidingWindowRateLimiter limiter,
         DatabasePool pool,
         JwtTokenService jwt,
         AgentSettings settings,
@@ -276,6 +325,13 @@ public static class AuthRoutes
 
         if (settings.AuthMode == "oauth")
         {
+            // An opaque token cannot be verified here, so its own digest is the bucket key (one
+            // session's budget; a made-up token only spends a bucket nobody else uses).
+            if (await UserLimitAsync(http, limiter, settings, request.RefreshToken) is { } oauthLimited)
+            {
+                return oauthLimited;
+            }
+
             try
             {
                 var token = await authServer.RequestTokenAsync(
@@ -301,6 +357,13 @@ public static class AuthRoutes
             if (settings.AuthRefreshRotation && principal.FindFirst("type")?.Value != "refresh")
             {
                 return Results.Unauthorized();
+            }
+
+            // Keyed by the verified subject: one user's refreshes never spend another's budget. An
+            // unverifiable or expired token threw above and is held only by the address ceiling.
+            if (await UserLimitAsync(http, limiter, settings, email) is { } limited)
+            {
+                return limited;
             }
 
             // Mirrors Python: re-check the DB (not just the token's claims) so a

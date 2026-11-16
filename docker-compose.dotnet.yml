@@ -195,6 +195,7 @@ services:
       # signup/login/refresh budget per client per minute. Raise it for local
       # Playwright runs, which log in once per test from one address.
       RATE_LIMIT_AUTH_MAX_REQUESTS: ${RATE_LIMIT_AUTH_MAX_REQUESTS:-10}
+      RATE_LIMIT_AUTH_IP_MAX_REQUESTS: ${RATE_LIMIT_AUTH_IP_MAX_REQUESTS:-300}
       RATE_LIMIT_TRUSTED_PROXY_HOPS: ${RATE_LIMIT_TRUSTED_PROXY_HOPS:-1}
       # New optional MAF feature flags (defaults preserve existing behavior)
       MAF_SESSION_BACKEND: ${MAF_SESSION_BACKEND:-postgres}

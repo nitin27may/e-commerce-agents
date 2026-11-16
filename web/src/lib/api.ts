@@ -183,6 +183,33 @@ function handleUnauthorized() {
   }
 }
 
+/**
+ * A refresh that failed for a reason that says nothing about the session: the
+ * limiter said 429, the server errored (5xx), or the network dropped. The user is
+ * still signed in, so the caller keeps the session and surfaces this instead of
+ * bouncing them to /login. `retryAfterSeconds` echoes `Retry-After` when sent.
+ */
+export class RefreshUnavailableError extends Error {
+  readonly retryAfterSeconds: number | null;
+  constructor(retryAfterSeconds: number | null) {
+    super(
+      retryAfterSeconds
+        ? `Could not refresh your session right now — please try again in about ${retryAfterSeconds} seconds.`
+        : "Could not refresh your session right now — please try again shortly."
+    );
+    this.name = "RefreshUnavailableError";
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+// `Retry-After` is either delta-seconds or an HTTP date; only the former is honoured.
+function retryAfterSeconds(res: Response): number | null {
+  const raw = res.headers.get("Retry-After");
+  if (!raw) return null;
+  const n = Number(raw.trim());
+  return Number.isFinite(n) && n > 0 ? Math.ceil(n) : null;
+}
+
 class ApiClient {
   private token: string | null = null;
   private refreshToken: string | null = null;
@@ -203,8 +230,10 @@ class ApiClient {
 
   /**
    * Attempt to swap the current refresh_token for a fresh access token.
-   * Returns the new access token, or `null` if refresh isn't possible —
-   * caller should then bounce the user to /login.
+   * Returns the new access token, or `null` if the session is genuinely over
+   * (no refresh token, or the server answered 401/403) — the caller should then
+   * bounce the user to /login. Throws `RefreshUnavailableError` for a 429, a 5xx
+   * or a network failure: those say nothing about the session, which is kept.
    */
   private async tryRefresh(): Promise<string | null> {
     if (!this.refreshToken && !readStored(STORAGE_REFRESH)) return null;
@@ -239,7 +268,14 @@ class ApiClient {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refresh_token: sent }),
       });
-      if (!res.ok) return this.adoptOtherTabsSession(sent);
+      if (!res.ok) {
+        // Another tab may have rotated meanwhile; that is a live session whatever we were told.
+        const adopted = this.adoptOtherTabsSession(sent);
+        if (adopted) return adopted;
+        // Only the server saying the token is bad (or forbidden) ends the session.
+        if (res.status === 401 || res.status === 403) return null;
+        throw new RefreshUnavailableError(retryAfterSeconds(res));
+      }
       const data = (await res.json()) as { access_token?: string; refresh_token?: string };
       if (!data.access_token) return null;
       this.token = data.access_token;
@@ -251,8 +287,10 @@ class ApiClient {
         writeStored(STORAGE_REFRESH, data.refresh_token);
       }
       return data.access_token;
-    } catch {
-      return null;
+    } catch (err) {
+      if (err instanceof RefreshUnavailableError) throw err;
+      // fetch() itself failed (offline, DNS, reset) or the body was unreadable: not a verdict on the session.
+      throw new RefreshUnavailableError(null);
     }
   }
 

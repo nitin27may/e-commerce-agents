@@ -117,6 +117,7 @@ public static class AgentSettingsLoader
             RateLimitMaxRequests = GetInt("RATE_LIMIT_MAX_REQUESTS", 30),
             RateLimitWindowSeconds = GetDouble("RATE_LIMIT_WINDOW_SECONDS", 60.0),
             RateLimitAuthMaxRequests = GetInt("RATE_LIMIT_AUTH_MAX_REQUESTS", 10),
+            RateLimitAuthIpMaxRequests = GetInt("RATE_LIMIT_AUTH_IP_MAX_REQUESTS", 300),
             RateLimitAuthWindowSeconds = GetDouble("RATE_LIMIT_AUTH_WINDOW_SECONDS", 60.0),
             RateLimitTrustedProxyHops = GetInt("RATE_LIMIT_TRUSTED_PROXY_HOPS", 1),
             CorsAllowedOrigins = Get("CORS_ALLOWED_ORIGINS", "http://localhost:3000"),

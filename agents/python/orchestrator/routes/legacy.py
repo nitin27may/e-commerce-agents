@@ -37,7 +37,7 @@ from shared.jwt_utils import (
     verify_password,
 )
 from shared.oauth.service_client import request_token
-from shared.rate_limit import rate_limit_auth
+from shared.rate_limit import enforce_auth_account_limit, enforce_auth_user_limit, rate_limit_auth
 from shared.refresh_tokens import RefreshRejectedError, issue_refresh_token, rotate_refresh_token
 from shared.tool_inputs import clamp_limit
 
@@ -232,9 +232,10 @@ async def _new_refresh_token(pool: Any, email: str) -> str:
 
 
 @router.post("/api/auth/signup", response_model=AuthResponse)
-async def signup(body: SignupRequest, _rate_limit: None = Depends(rate_limit_auth)) -> AuthResponse:
+async def signup(request: Request, body: SignupRequest, _rate_limit: None = Depends(rate_limit_auth)) -> AuthResponse:
     """Create a new user account and return tokens."""
     email, name = _validate_signup(body)
+    await enforce_auth_account_limit(request, email)
     pool = get_pool()
 
     # Check if user already exists
@@ -274,7 +275,7 @@ async def signup(body: SignupRequest, _rate_limit: None = Depends(rate_limit_aut
 
 
 @router.post("/api/auth/login", response_model=AuthResponse)
-async def login(body: LoginRequest, _rate_limit: None = Depends(rate_limit_auth)) -> AuthResponse:
+async def login(request: Request, body: LoginRequest, _rate_limit: None = Depends(rate_limit_auth)) -> AuthResponse:
     """Authenticate user and return tokens.
 
     In ``AUTH_MODE=oauth`` the orchestrator is a confidential first-party
@@ -285,6 +286,7 @@ async def login(body: LoginRequest, _rate_limit: None = Depends(rate_limit_auth)
     """
     pool = get_pool()
     email = body.email.strip().lower()
+    await enforce_auth_account_limit(request, email)
 
     if settings.AUTH_MODE == "oauth":
         try:
@@ -340,7 +342,9 @@ async def login(body: LoginRequest, _rate_limit: None = Depends(rate_limit_auth)
 
 
 @router.post("/api/auth/refresh")
-async def refresh_token(body: RefreshRequest, _rate_limit: None = Depends(rate_limit_auth)) -> dict[str, str]:
+async def refresh_token(
+    request: Request, body: RefreshRequest, _rate_limit: None = Depends(rate_limit_auth)
+) -> dict[str, str]:
     """Exchange a refresh token for a new access token (and, in local mode, a new refresh token).
 
     ``AUTH_MODE=local`` rotates by default (``AUTH_REFRESH_ROTATION``, see
@@ -354,6 +358,9 @@ async def refresh_token(body: RefreshRequest, _rate_limit: None = Depends(rate_l
     returning only a new access token.
     """
     if settings.AUTH_MODE == "oauth":
+        # An opaque token cannot be verified here, so its own digest is the bucket key
+        # (one session's budget; a made-up token only spends a bucket nobody else uses).
+        await enforce_auth_user_limit(request, body.refresh_token)
         try:
             token_data = await request_token("refresh_token", refresh_token=body.refresh_token)
         except httpx.HTTPStatusError:
@@ -371,6 +378,10 @@ async def refresh_token(body: RefreshRequest, _rate_limit: None = Depends(rate_l
         raise HTTPException(status_code=401, detail="Invalid token type")
 
     email = payload.get("sub", "")
+    # Keyed by the verified subject: one user's refreshes never spend another's budget.
+    # An unverifiable or expired token never reaches this line and is held only by the
+    # address ceiling.
+    await enforce_auth_user_limit(request, email)
 
     pool = get_pool()
     row = await pool.fetchrow(

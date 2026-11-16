@@ -193,6 +193,7 @@ services:
       # signup/login/refresh budget per client per minute. Raise it for local
       # Playwright runs, which log in once per test from one address.
       RATE_LIMIT_AUTH_MAX_REQUESTS: ${RATE_LIMIT_AUTH_MAX_REQUESTS:-10}
+      RATE_LIMIT_AUTH_IP_MAX_REQUESTS: ${RATE_LIMIT_AUTH_IP_MAX_REQUESTS:-300}
       RATE_LIMIT_TRUSTED_PROXY_HOPS: ${RATE_LIMIT_TRUSTED_PROXY_HOPS:-1}
       # MAF v1 feature flags — defaults preserve existing behaviour. The .NET
       # compose set these from day one; the Python compose was missing them

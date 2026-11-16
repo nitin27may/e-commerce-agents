@@ -157,6 +157,23 @@ public sealed class SlidingWindowRateLimiter
     /// </summary>
     public static string AuthKeyFor(string? clientIp) => $"ratelimit:auth:ip:{clientIp ?? "unknown"}";
 
+    /// <summary>
+    /// A stable stand-in for an email / subject inside a Redis key: trimmed, lower-cased, SHA-256,
+    /// first 32 hex characters. Key listings and MONITOR would otherwise show who is being attacked.
+    /// Same value as Python's <c>_identity_digest</c>.
+    /// </summary>
+    internal static string IdentityDigest(string value) =>
+        Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value.Trim().ToLowerInvariant()))
+        )[..32].ToLowerInvariant();
+
+    /// <summary>Login / signup budget per (client address, target email).</summary>
+    public static string AuthAccountKeyFor(string? clientIp, string email) =>
+        $"ratelimit:auth-account:{clientIp ?? "unknown"}|{IdentityDigest(email)}";
+
+    /// <summary>Refresh budget per user (subject of a verified token, or the opaque token itself).</summary>
+    public static string AuthUserKeyFor(string subject) => $"ratelimit:auth-user:{IdentityDigest(subject)}";
+
     public static string KeyFor(string? userEmail, string? clientIp) =>
         string.IsNullOrWhiteSpace(userEmail) || userEmail == "anonymous"
             ? $"ratelimit:chat:ip:{clientIp ?? "unknown"}"

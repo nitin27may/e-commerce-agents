@@ -279,7 +279,7 @@ else:
 
 | Item | Config / Action |
 |------|----------------|
-| Set the edge knobs | `CORS_ALLOWED_ORIGINS` to your real origin(s); `WEB_TRUSTED_PROXY_HOPS` to the number of ingress proxies in front of the frontend (default 0 puts every anonymous caller in one rate-limit bucket); keep `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=false` |
+| Set the edge knobs | `CORS_ALLOWED_ORIGINS` to your real origin(s); `WEB_TRUSTED_PROXY_HOPS` to the number of ingress proxies in front of the frontend (default 0 puts every anonymous caller in one address-level rate-limit bucket; login/signup are additionally limited per target email and refresh per user, so that shared address cannot be used to lock others out); keep `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=false` |
 | Rotate `JWT_SECRET` | Set to a 256-bit random value; store in Azure Key Vault |
 | Rotate `AGENT_SHARED_SECRET` | Same rotation cadence; inject via Managed Identity or Key Vault reference |
 | Enable strict identity | `GUARDRAILS_STRICT_IDENTITY=true` |

@@ -90,11 +90,19 @@ class Settings(BaseSettings):
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_MAX_REQUESTS: int = 30
     RATE_LIMIT_WINDOW_SECONDS: float = 60.0
-    # Credential endpoints (signup / login / refresh) get their own, much
-    # tighter bucket, keyed by client address: a password-guessing or
-    # account-spam loop should not be able to spend the chat budget, and a
-    # chat user hitting the chat limit should not be locked out of logging in.
+    # Credential endpoints (signup / login / refresh) get their own buckets,
+    # separate from chat: a password-guessing or account-spam loop should not
+    # spend the chat budget, and a chat user hitting the chat limit should not
+    # be locked out of logging in. Two layers, so one caller cannot starve others:
+    #   * RATE_LIMIT_AUTH_MAX_REQUESTS - the tight budget, per (client address,
+    #     target email) for login and signup (a single target cannot be brute
+    #     forced) and per user for refresh (read from the verified token).
+    #   * RATE_LIMIT_AUTH_IP_MAX_REQUESTS - a much looser address-only ceiling
+    #     over all three routes. Behind the default web proxy every browser user
+    #     shares one address, so this must stay far above what a crowd of real
+    #     users produces; it only stops a single script from flooding the service.
     RATE_LIMIT_AUTH_MAX_REQUESTS: int = 10
+    RATE_LIMIT_AUTH_IP_MAX_REQUESTS: int = 300
     RATE_LIMIT_AUTH_WINDOW_SECONDS: float = 60.0
     # How many reverse proxies in front of the orchestrator append to
     # X-Forwarded-For and are trusted to do so. The client address is the entry

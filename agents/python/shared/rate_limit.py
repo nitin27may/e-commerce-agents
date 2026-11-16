@@ -225,14 +225,16 @@ async def rate_limit_chat(request: Request) -> None:
 
 
 async def rate_limit_auth(request: Request) -> None:
-    """FastAPI dependency: rate-limit signup / login / refresh, per client address.
+    """FastAPI dependency: the address-only ceiling over signup / login / refresh.
 
-    Its own bucket (``ratelimit:auth:ip:<addr>``, default 10 per 60 s) so a
-    credential-guessing loop neither spends nor is hidden by the chat budget.
-    Always keyed by address — these routes are called before there is an
-    identity. Same fail-open behaviour as :func:`rate_limit_chat`: when Redis
-    is down the error is logged and the request proceeds, because locking
-    every user out of login during a cache outage is the worse failure.
+    Its own bucket (``ratelimit:auth:ip:<addr>``, default 300 per 60 s) so a
+    flood from one address neither spends nor hides behind the chat budget. It
+    is deliberately loose: with the default web proxy every browser user shares
+    one address, so the *tight* limits are per identity and live in
+    :func:`enforce_auth_account_limit` / :func:`enforce_auth_user_limit`. Same
+    fail-open behaviour as :func:`rate_limit_chat`: when Redis is down the error
+    is logged and the request proceeds, because locking every user out of login
+    during a cache outage is the worse failure.
     """
     if not settings.RATE_LIMIT_ENABLED:
         return
@@ -240,6 +242,54 @@ async def rate_limit_auth(request: Request) -> None:
         request,
         bucket="auth",
         key_suffix=f"ip:{_client_ip(request)}",
+        max_requests=settings.RATE_LIMIT_AUTH_IP_MAX_REQUESTS,
+        window_s=settings.RATE_LIMIT_AUTH_WINDOW_SECONDS,
+        label="authentication",
+    )
+
+
+def _identity_digest(value: str) -> str:
+    """A stable stand-in for an email / subject in a Redis key: lower-cased, then SHA-256.
+
+    Keys are never logged raw (see :func:`key_hash_for_log`) but Redis ``MONITOR``
+    and key listings would otherwise show who is being attacked, so the identity
+    is hashed before it becomes part of a key. Shared with the .NET limiter.
+    """
+    return hashlib.sha256(value.strip().lower().encode()).hexdigest()[:32]
+
+
+async def enforce_auth_account_limit(request: Request, email: str) -> None:
+    """Tight login / signup budget per (client address, target email).
+
+    One target cannot be brute-forced from an address, yet a script hammering
+    email X leaves login for email Y untouched. ``email`` is whatever the caller
+    typed; it is lower-cased here so case variants share a bucket.
+    """
+    if not settings.RATE_LIMIT_ENABLED:
+        return
+    await _enforce(
+        request,
+        bucket="auth-account",
+        key_suffix=f"{_client_ip(request)}|{_identity_digest(email)}",
+        max_requests=settings.RATE_LIMIT_AUTH_MAX_REQUESTS,
+        window_s=settings.RATE_LIMIT_AUTH_WINDOW_SECONDS,
+        label="authentication",
+    )
+
+
+async def enforce_auth_user_limit(request: Request, subject: str) -> None:
+    """Tight refresh budget per user.
+
+    ``subject`` must come from a token whose signature was already verified (or,
+    for opaque tokens that cannot be verified here, be the token itself): an
+    unverified claim would let a caller pick someone else's bucket.
+    """
+    if not settings.RATE_LIMIT_ENABLED:
+        return
+    await _enforce(
+        request,
+        bucket="auth-user",
+        key_suffix=_identity_digest(subject),
         max_requests=settings.RATE_LIMIT_AUTH_MAX_REQUESTS,
         window_s=settings.RATE_LIMIT_AUTH_WINDOW_SECONDS,
         label="authentication",

@@ -41,6 +41,7 @@ def _client(app: FastAPI) -> AsyncClient:
 def limits(redis_client: redis_asyncio.Redis, monkeypatch: pytest.MonkeyPatch) -> redis_asyncio.Redis:
     monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", True)
     monkeypatch.setattr(settings, "RATE_LIMIT_AUTH_MAX_REQUESTS", 3)
+    monkeypatch.setattr(settings, "RATE_LIMIT_AUTH_IP_MAX_REQUESTS", 3)
     monkeypatch.setattr(settings, "RATE_LIMIT_AUTH_WINDOW_SECONDS", 60.0)
     monkeypatch.setattr(settings, "RATE_LIMIT_MAX_REQUESTS", 100)
     monkeypatch.setattr(settings, "RATE_LIMIT_TRUSTED_PROXY_HOPS", 1)

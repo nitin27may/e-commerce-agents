@@ -1,3 +1,4 @@
+using Dapper;
 using ECommerceAgents.Orchestrator.Routes;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Data;
@@ -33,7 +34,7 @@ public sealed class AuthRateLimitTests(PostgresFixture pg)
         }
     }
 
-    private HttpClient Client(string redisUrl, out DatabasePool pool)
+    private HttpClient Client(string redisUrl, out DatabasePool pool, int ipCeiling = 3)
     {
         var settings = new AgentSettings
         {
@@ -41,6 +42,8 @@ public sealed class AuthRateLimitTests(PostgresFixture pg)
             RedisUrl = redisUrl,
             RateLimitEnabled = true,
             RateLimitAuthMaxRequests = 3,
+            RateLimitAuthIpMaxRequests = ipCeiling,
+            AuthRefreshRotation = false,
             RateLimitAuthWindowSeconds = 60,
             RateLimitTrustedProxyHops = 1,
         };
@@ -106,6 +109,97 @@ public sealed class AuthRateLimitTests(PostgresFixture pg)
         await Post("/api/auth/refresh", new { refresh_token = "junk" });
         await Post("/api/auth/signup", new { email = "not-an-email", password = "x", name = "x" });
         (await Post("/api/auth/refresh", new { refresh_token = "junk" })).Should().Be(HttpStatusCode.TooManyRequests);
+    }
+
+    private static async Task<HttpStatusCode> LoginAsAsync(HttpClient c, string forwardedFor, string email, string password)
+    {
+        var req = new HttpRequestMessage(HttpMethod.Post, "/api/auth/login")
+        {
+            Content = JsonContent.Create(new { email, password }),
+        };
+        req.Headers.Add("X-Forwarded-For", forwardedFor);
+        return (await c.SendAsync(req)).StatusCode;
+    }
+
+    private static async Task SeedUserAsync(DatabasePool pool, string email, string password)
+    {
+        await using var conn = await pool.OpenAsync();
+        await conn.ExecuteAsync(
+            "INSERT INTO users (email, password_hash, name, role) VALUES (@email, @hash, 'T', 'customer') ON CONFLICT (email) DO NOTHING",
+            new { email, hash = BCrypt.Net.BCrypt.HashPassword(password) });
+    }
+
+    [Fact]
+    public async Task ExhaustingLoginForOneEmail_DoesNotBlockAnotherEmailFromTheSameAddress()
+    {
+        if (!await RedisAvailableAsync())
+        {
+            return;
+        }
+
+        var c = Client(RedisUrl, out var pool, ipCeiling: 300);
+        await using var _ = pool;
+        var ip = RandomIp();
+        var targetX = $"x-{Guid.NewGuid():N}@example.com";
+        var targetY = $"y-{Guid.NewGuid():N}@example.com";
+        await SeedUserAsync(pool, targetY, "correct horse battery");
+
+        for (var i = 0; i < 3; i++)
+        {
+            (await LoginAsAsync(c, ip, targetX, "wrong-password")).Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        (await LoginAsAsync(c, ip, targetX, "wrong-password")).Should().Be(HttpStatusCode.TooManyRequests);
+        // Case variants share the target's bucket...
+        (await LoginAsAsync(c, ip, targetX.ToUpperInvariant(), "wrong-password")).Should().Be(HttpStatusCode.TooManyRequests);
+        // ...another target from the same address is untouched, and can succeed.
+        (await LoginAsAsync(c, ip, targetY, "correct horse battery")).Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task RefreshIsBudgetedPerUser_NotPerAddress()
+    {
+        if (!await RedisAvailableAsync())
+        {
+            return;
+        }
+
+        var c = Client(RedisUrl, out var pool, ipCeiling: 300);
+        await using var _ = pool;
+        var ip = RandomIp();
+        var emailA = $"a-{Guid.NewGuid():N}@example.com";
+        var emailB = $"b-{Guid.NewGuid():N}@example.com";
+        await SeedUserAsync(pool, emailA, "correct horse battery");
+        await SeedUserAsync(pool, emailB, "correct horse battery");
+
+        async Task<string> TokenFor(string email)
+        {
+            var login = await c.PostAsJsonAsync("/api/auth/login", new { email, password = "correct horse battery" });
+            login.EnsureSuccessStatusCode();
+            return (await login.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>()).GetProperty("refresh_token").GetString()!;
+        }
+
+        async Task<HttpStatusCode> Refresh(string token)
+        {
+            var req = new HttpRequestMessage(HttpMethod.Post, "/api/auth/refresh")
+            {
+                Content = JsonContent.Create(new { refresh_token = token }),
+            };
+            req.Headers.Add("X-Forwarded-For", ip);
+            return (await c.SendAsync(req)).StatusCode;
+        }
+
+        var tokenA = await TokenFor(emailA);
+        var tokenB = await TokenFor(emailB);
+
+        for (var i = 0; i < 3; i++)
+        {
+            (await Refresh(tokenA)).Should().Be(HttpStatusCode.OK);
+        }
+
+        (await Refresh(tokenA)).Should().Be(HttpStatusCode.TooManyRequests);
+        // User B, same address: unaffected by A's refreshes.
+        (await Refresh(tokenB)).Should().Be(HttpStatusCode.OK);
     }
 
     [Fact]

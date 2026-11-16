@@ -79,8 +79,14 @@ public sealed record AgentSettings
     public int HandoffMaxTurns { get; init; } = 3;
     public double RateLimitWindowSeconds { get; init; } = 60.0;
 
-    /// <summary>Signup / login / refresh bucket - Python's <c>RATE_LIMIT_AUTH_*</c>. Per client address.</summary>
+    /// <summary>
+    /// Signup / login / refresh buckets - Python's <c>RATE_LIMIT_AUTH_*</c>. The tight budget is per
+    /// (client address, target email) for login/signup and per user for refresh, so one caller cannot
+    /// starve the others; the address-only ceiling is far looser (behind the default web proxy every
+    /// browser user shares one address).
+    /// </summary>
     public int RateLimitAuthMaxRequests { get; init; } = 10;
+    public int RateLimitAuthIpMaxRequests { get; init; } = 300;
     public double RateLimitAuthWindowSeconds { get; init; } = 60.0;
 
     /// <summary>

@@ -147,11 +147,19 @@ brings CORS back with it.
   its same-origin proxy and needs nothing; set it only when a browser calls the orchestrator
   directly (`NEXT_PUBLIC_API_URL`). `curl`, scripts, evals and Playwright's `request` are not
   subject to CORS.
-- **Auth rate limit.** Signup, login and refresh share one bucket per client address:
-  `RATE_LIMIT_AUTH_MAX_REQUESTS` (10) per `RATE_LIMIT_AUTH_WINDOW_SECONDS` (60). Chat, `/api/orchestration/compare`
-  and `/resume` use the chat bucket. Both fail open (with an error log) when Redis is down. Local
-  Playwright runs log in once per test from one address, so raise `RATE_LIMIT_AUTH_MAX_REQUESTS`
-  (e.g. 1000) in `.env` before running them.
+- **Auth rate limits.** Signup, login and refresh have their own buckets, separate from chat, in two
+  layers so one caller cannot starve the others. The tight budget, `RATE_LIMIT_AUTH_MAX_REQUESTS` (10)
+  per `RATE_LIMIT_AUTH_WINDOW_SECONDS` (60), is per **(client address, target email)** for login and
+  signup — one target cannot be brute-forced, yet a script hammering one account leaves every other
+  account's login alone — and per **user** for refresh, read from the verified token (an invalid or
+  expired token never reaches it; opaque OAuth-mode tokens are keyed by their own digest). Over all
+  three routes sits a much looser address-only ceiling, `RATE_LIMIT_AUTH_IP_MAX_REQUESTS` (300 per
+  window), which is what actually bounds a single flooding source. Emails and subjects are hashed
+  before they become Redis keys and are never logged. Chat, `/api/orchestration/compare` and
+  `/resume` use the chat bucket. All fail open (with an error log) when Redis is down. The web client
+  treats only a 401/403 from refresh as a dead session; a 429, 5xx or network error keeps the user
+  signed in and surfaces a retryable error. Local Playwright runs log in repeatedly as a few accounts
+  from one address, so raise both limits (e.g. 1000 and 10000) in `.env` before running them.
 - **Client address.** The orchestrator takes the entry `RATE_LIMIT_TRUSTED_PROXY_HOPS` (default 1)
   places from the **right** of `X-Forwarded-For`; anything to its left is caller-supplied and ignored.
   The Next proxy writes that entry. **Limitation:** a Next 16 route handler cannot know the client
@@ -161,8 +169,8 @@ brings CORS back with it.
   gateway anyway). The proxy therefore strips the browser's `X-Forwarded-For`/`X-Real-IP`/`Forwarded`
   and forwards an address only when `WEB_TRUSTED_PROXY_HOPS` (default 0) says that many proxies you
   run sit in front of Next and append to the header. With the default, no address is forwarded and
-  the orchestrator sees the frontend container: **all anonymous callers share one auth bucket and one
-  chat bucket**. Behind a load balancer or ingress that appends the client address, set
+  the orchestrator sees the frontend container: **all anonymous callers share one address-level auth
+  ceiling and one chat bucket** (the per-account and per-user auth budgets are unaffected). Behind a load balancer or ingress that appends the client address, set
   `WEB_TRUSTED_PROXY_HOPS=1` (the orchestrator's default of 1 then needs no change). An orchestrator
   port reachable directly by clients (it is loopback-bound in compose) can have its header forged.
 

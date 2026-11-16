@@ -77,6 +77,7 @@ for stack in "${STACKS[@]}"; do
   # run shares one auth rate-limit bucket (10 per minute by default). Raise it
   # for the test stack only; compose passes it through to the orchestrator.
   export RATE_LIMIT_AUTH_MAX_REQUESTS="${RATE_LIMIT_AUTH_MAX_REQUESTS:-1000}"
+  export RATE_LIMIT_AUTH_IP_MAX_REQUESTS="${RATE_LIMIT_AUTH_IP_MAX_REQUESTS:-10000}"
 
   echo "--- starting stack"
   if ! docker compose -f "$file" --profile seed --profile agents --profile mcp --profile frontend up -d --build; then
