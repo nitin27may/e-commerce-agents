@@ -481,6 +481,19 @@ Two rules the reader enforces, each closing a defect that shipped:
 
 **Note on the FK between them:** `hitl_requests.checkpoint_id` references `workflow_checkpoints`, so a bare `TRUNCATE workflow_checkpoints` fails regardless of the FK's `ON DELETE` action — truncate both together or use `CASCADE`.
 
+### Approvals Foundation (migration `0006`)
+
+One inbox for every approval kind, with an audit trail and an outbox. Python repository only (`shared/approvals/repo.py`, `shared/outbox.py`); nothing in a request path writes these tables yet.
+
+| Table | Key Columns | Notes |
+|-------|-------------|-------|
+| **approvals** | `id` (PK), `source` (`tool` \| `workflow` \| `proposal` \| `event`), `source_ref`, `kind`, `requester_email`, `subject_email`, `amount`, `policy_version`, `route` (`auto` \| `support` \| `manager`), `assigned_role`, `status`, `recommendation` / `decision` (JSONB), `decided_by`, `due_at`, `escalation_level`, `claimed_at` / `claimed_by` | Status: `pending_confirm`, `pending_review`, `needs_info`, `approved`, `approved_with_edits`, `rejected`, `expired`, `executed`, `failed`. The CHECK `approvals_no_self_approval` forbids `decided_by = requester_email` (case-insensitive); the repository refuses it first. `claimed_at` fences whoever executes a decision. One row per `(source, source_ref)`. |
+| **approval_events** | `id` (BIGSERIAL PK), `approval_id` (FK, `ON DELETE RESTRICT`), `actor_email`, `actor_role`, `action`, `payload` (JSONB) | Append-only: a trigger refuses UPDATE and DELETE. |
+| **outbox** | `id` (BIGSERIAL PK), `topic`, `aggregate_id`, `payload` (JSONB), `dedupe_key` (UNIQUE), `available_at`, `attempts`, `locked_until`, `processed_at`, `last_error` | Events and timers (a timer is a future `available_at`). `enqueue()` runs on the caller's connection so it joins that transaction. |
+| **notifications** | `id` (PK), `user_email`, `kind`, `title`, `body`, `link`, `approval_id` (FK, `ON DELETE SET NULL`), `read_at` | |
+
+`tool_approval_requests` and `hitl_requests` each gained a nullable `approval_id` pointing at `approvals`; they stay as the per-source execution records.
+
 ### OAuth2 Authorization Server
 
 Present only when `AUTH_MODE=oauth`; the default `local` mode never touches these.
