@@ -23,9 +23,9 @@ import logging
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
-from decimal import ROUND_CEILING, Decimal
+from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
 from typing import Any
 
 import asyncpg
@@ -341,6 +341,31 @@ async def _judge(
     return check_restock_line(quantity=int(candidate.proposed_value), unit_cost=candidate.unit_cost, limits=limits)
 
 
+def clamp_restock(candidate: Candidate, limits: MerchantLimits) -> Candidate:
+    """A restock candidate cut down to the largest order the limits allow; anything else unchanged.
+
+    A blocked line can only be rejected and an edit can only lower a quantity, so a product whose shortfall is
+    above the limits would otherwise be shown as blocked for ever and could never be restocked through a
+    proposal. Propose the most the limits permit instead, and say so in the rationale. A candidate with no
+    known cost is left alone: the guard blocks it for that reason, which is the truthful one.
+    """
+    if candidate.field != "restock_quantity" or candidate.unit_cost is None or candidate.unit_cost < 0:
+        return candidate
+    wanted = int(candidate.proposed_value)
+    allowed = min(wanted, limits.max_restock_quantity)
+    if candidate.unit_cost > 0:
+        by_value = (limits.max_restock_order_value / candidate.unit_cost).to_integral_value(rounding=ROUND_FLOOR)
+        allowed = min(allowed, int(by_value))
+    if allowed >= wanted or allowed <= 0:
+        return candidate  # within the limits already, or not even one unit fits: let the guard give its reason
+    return replace(
+        candidate,
+        proposed_value=Decimal(allowed),
+        rationale=f"{candidate.rationale} Capped at {allowed} of the {wanted} units needed by the restock limits.",
+        evidence={**candidate.evidence, "needed_quantity": wanted, "capped_by_limits": True},
+    )
+
+
 async def generate_proposal(
     db: Db,
     seller_id: uuid.UUID,
@@ -380,7 +405,7 @@ async def generate_proposal(
             if (candidate.product_id, candidate.field) in existing:
                 result.skipped_existing += 1
             else:
-                fresh.append(candidate)
+                fresh.append(clamp_restock(candidate, active_limits))
         judged: list[tuple[Candidate, GuardResult]] = []
         for candidate in fresh:
             verdict = await _judge(conn, candidate, now=clock, limits=active_limits)

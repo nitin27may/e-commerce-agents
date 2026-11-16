@@ -41,9 +41,20 @@ logger = logging.getLogger(__name__)
 REVIEW_LINK = "/admin/approvals"
 TOPIC_TIMEOUT_APPLY = "approval.timeout_apply"
 _TOP_ROLE = "admin"  # "manager" in the policy file
-#: A merchant proposal whose seller is mid-decide is looked at again after this long, at most this many times.
+#: A merchant proposal whose seller is mid-decide is looked at again after this long. While the decide still
+#: holds a live claim the timer always waits (the claim's own TTL bounds that); once the claim is gone, lines
+#: left accepted or executed with no recorded decision get at most this many further looks.
 _PROPOSAL_DEFER_SECONDS = 30
 _PROPOSAL_MAX_DEFERS = 10
+
+
+def _proposal_max_waits() -> int:
+    """How many looks a live claim can cost: one claim lifetime, plus the looks allowed after it lapses.
+
+    A claim cannot stay live longer than its TTL, so this is a ceiling that is never reached in practice. It
+    exists so the timer cannot re-book itself for ever if that assumption is ever broken.
+    """
+    return int(settings.HITL_CLAIM_TTL_SECONDS // _PROPOSAL_DEFER_SECONDS) + 2 + _PROPOSAL_MAX_DEFERS
 
 
 async def _current_review(
@@ -187,18 +198,26 @@ async def on_sla_breached(conn: asyncpg.Connection, row: OutboxRow) -> None:
         # the seller told nothing changed. So: while a decide is in flight, look again later; and if lines did run,
         # never close the batch as "nothing was changed".
         in_flight = await _proposal_in_flight(conn, approval)
-        defers = int(row.payload.get("defers", 0))
-        if in_flight.busy and defers < _PROPOSAL_MAX_DEFERS:
+        defers = int(row.payload.get("defers", 0))  # looks spent after the claim lapsed
+        waits = int(row.payload.get("waits", 0))  # every look, live claim or not
+        # A live claim is never expired under: the budget used to be 10 x 30 s against a 600 s claim, so a slow
+        # decide was expired while it still held the claim. Only looks taken with no live claim spend the budget.
+        may_wait = in_flight.claim_live or (in_flight.busy and defers < _PROPOSAL_MAX_DEFERS)
+        if may_wait and waits < _proposal_max_waits():
             await enqueue(
                 conn,
                 repo.TOPIC_SLA_BREACHED,
-                {**row.payload, "defers": defers + 1},
+                {**row.payload, "defers": defers if in_flight.claim_live else defers + 1, "waits": waits + 1},
                 available_at=datetime.now(UTC) + timedelta(seconds=_PROPOSAL_DEFER_SECONDS),
-                dedupe_key=f"{repo.TOPIC_SLA_BREACHED}:{approval_id}:{approval['escalation_level']}:defer:{defers + 1}",
+                dedupe_key=f"{repo.TOPIC_SLA_BREACHED}:{approval_id}:{approval['escalation_level']}:defer:{waits + 1}",
                 aggregate_id=approval_id,
             )
             logger.info("approval expiry deferred, a decide is in flight id=%s", log_safe(approval_id))
             return
+        # Closing now. Lock the lines, then count again: a decide that commits a line between the first count
+        # and the update below would otherwise leave a price changed and the seller told nothing was.
+        await conn.execute("SELECT id FROM proposal_lines WHERE proposal_id = $1 FOR UPDATE", approval["source_ref"])
+        in_flight = await _proposal_in_flight(conn, approval)
         executed_lines = in_flight.executed
         extra = {"executed_lines": executed_lines}
         if in_flight.unfinished:  # accepted or edited but never run: they did not happen, so say so

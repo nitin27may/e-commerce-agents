@@ -18,7 +18,7 @@ from shared.config import settings
 from shared.merchant import execute as merchant_execute
 from shared.merchant.proposals import generate_proposal
 from tests import merchant_support as ms
-from worker import merchant_handlers
+from worker import approval_handlers, merchant_handlers
 from worker.approval_handlers import HANDLERS as APPROVAL_HANDLERS
 from worker.main import HANDLERS
 from worker.merchant_handlers import TOPIC_DAILY_RUN, next_run_at
@@ -135,7 +135,10 @@ async def test_the_deadline_passing_while_a_decide_holds_the_claim_does_not_expi
     deferred = await w.pool.fetch(
         "SELECT payload FROM outbox WHERE topic = 'approval.sla_breached' AND processed_at IS NULL"
     )
-    assert len(deferred) == 1 and json.loads(deferred[0]["payload"])["defers"] == 1  # the timer was re-booked
+    assert len(deferred) == 1  # the timer was re-booked
+    rebooked = json.loads(deferred[0]["payload"])
+    # A look taken while the claim is live is counted, but does not spend the after-the-claim budget.
+    assert (rebooked["waits"], rebooked["defers"]) == (1, 0)
     assert await w.pool.fetchval("SELECT price FROM products WHERE id = $1", price) == D("100.00")
 
     await w.pool.execute("UPDATE approvals SET claimed_at = NULL, claimed_by = NULL")  # the decide finished or died
@@ -143,6 +146,46 @@ async def test_the_deadline_passing_while_a_decide_holds_the_claim_does_not_expi
     await _tick(w.pool)
 
     assert await _status(w, result) == ("expired", "cancelled")
+
+
+async def test_a_claim_held_for_longer_than_the_defer_budget_is_still_not_expired_under(w: ms.World) -> None:
+    # The budget was 10 looks x 30 s = 300 s against a 600 s claim: a slow decide was expired while it still
+    # held the claim. A live claim must outlast any number of looks the budget allows.
+    await ms.product(w, "Overstock", price="100.00", stock=(300, 300), sold=20)
+    result = await generate_proposal(w.pool, w.seller_id)
+
+    for _ in range(approval_handlers._PROPOSAL_MAX_DEFERS + 3):
+        await w.pool.execute("UPDATE approvals SET claimed_at = NOW(), claimed_by = 'a-slow-decide'")
+        await _due_now(w.pool)
+        await _tick(w.pool)
+        assert await _status(w, result) == ("pending_review", "pending_review")
+
+    await w.pool.execute("UPDATE approvals SET claimed_at = NULL, claimed_by = NULL")
+    await _due_now(w.pool)
+    await _tick(w.pool)
+    assert await _status(w, result) == ("expired", "cancelled")
+
+
+async def test_the_timer_cannot_rebook_itself_for_ever_even_under_a_claim_that_never_lapses(w: ms.World) -> None:
+    await ms.product(w, "Overstock", price="100.00", stock=(300, 300), sold=20)
+    result = await generate_proposal(w.pool, w.seller_id)
+    await w.pool.execute("UPDATE approvals SET claimed_at = NOW(), claimed_by = 'never-lets-go'")
+    await w.pool.execute(
+        "UPDATE outbox SET payload = payload || jsonb_build_object('waits', $1::int) "
+        "WHERE topic = 'approval.sla_breached' AND processed_at IS NULL",
+        approval_handlers._proposal_max_waits(),
+    )
+
+    await _due_now(w.pool)
+    await _tick(w.pool)
+
+    assert (await _status(w, result))[0] == "expired"
+    assert (
+        await w.pool.fetchval(
+            "SELECT count(*) FROM outbox WHERE topic = 'approval.sla_breached' AND processed_at IS NULL"
+        )
+        == 0
+    )
 
 
 async def test_a_deadline_that_lands_mid_execution_does_not_end_with_prices_applied_and_the_batch_expired(

@@ -124,7 +124,7 @@ model money on a scheduled run; today's generation costs nothing.
 
 ### SLA expiry and a decide in flight
 
-The breach timer does not expire a batch while a decide holds the claim or any line is already `accepted`, `edited` or `executed`: it re-books itself (30 s, at most 10 times). If lines ran and no decide finishes, the batch closes with the approval `expired` (decision records `executed_lines`), the proposal `executed`, and the seller told how many changes were applied. "Nothing was changed" is only said when nothing ran.
+The breach timer does not expire a batch while a decide holds the claim or any line is already `accepted`, `edited` or `executed`: it re-books itself every 30 s. While the decide still holds a live claim the timer always waits (the claim's own lifetime, `HITL_CLAIM_TTL_SECONDS`, bounds that); once the claim is gone it looks at most 10 more times. When it does close the batch it locks the lines and counts again first, so a line committed at the last moment is reported. If lines ran and no decide finishes, the batch closes with the approval `expired` (decision records `executed_lines`), the proposal `executed`, and the seller told how many changes were applied. "Nothing was changed" is only said when nothing ran.
 
 An unanswered batch is reminded at half its SLA (notification to the seller) and expires at 72 hours:
 approval `expired`, proposal `cancelled`, nothing executed, the seller told.
@@ -137,3 +137,10 @@ approval `expired`, proposal `cancelled`, nothing executed, the seller told.
   output carries seller-authored product names and so needs a sanitizer entry.
 * Python-only by recorded decision (parity matrix row 39): the .NET stack has no proposal routes. Its
   approvals inbox shares the database and would list a proposal approval, but refuses to decide it.
+
+### A shortfall above the restock limits
+
+A blocked line can only be rejected, and an edit can only lower a quantity. So a product that needs more than
+`max_restock_quantity` units, or more than `max_restock_order_value` at its cost, is proposed at the largest
+order the limits allow, with the full need recorded in the line's evidence (`needed_quantity`,
+`capped_by_limits`) and stated in its rationale. A product with no recorded cost is still blocked for that reason.

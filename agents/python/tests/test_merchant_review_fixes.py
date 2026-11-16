@@ -14,7 +14,7 @@ import pytest
 from shared.merchant import execute as merchant_execute
 from shared.merchant.guards import ReasonCode, check_restock_line
 from shared.merchant.limits import get_limits
-from shared.merchant.proposals import generate_proposal
+from shared.merchant.proposals import Candidate, clamp_restock, generate_proposal
 from tests import merchant_support as ms
 from tests.test_proposal_execute import _as, _batch, _call, _price, _restocks, w  # noqa: F401  (w is a fixture)
 
@@ -230,3 +230,52 @@ async def test_a_restock_is_blocked_when_stock_is_already_on_order(w: ms.World) 
 
     assert done["status"] == "blocked" and done["reasons"] == ["restock_already_scheduled"]
     assert len(await _restocks(w, products["Short"])) == 1  # only the one that was already there
+
+
+# ── a shortfall above the limits is proposed at the limit, not shown as a line nobody can accept ──────────
+
+
+def _restock_candidate(quantity: int, unit_cost: str | None) -> Candidate:
+    return Candidate(
+        product_id=uuid.uuid4(),
+        product_name="Bulk item",
+        field="restock_quantity",
+        current_value=Decimal(0),
+        proposed_value=Decimal(quantity),
+        rationale="Short.",
+        evidence={},
+        priority=Decimal(1),
+        unit_cost=None if unit_cost is None else Decimal(unit_cost),
+    )
+
+
+def test_a_restock_above_the_quantity_limit_is_proposed_at_the_limit() -> None:
+    limits = get_limits()
+    clamped = clamp_restock(_restock_candidate(limits.max_restock_quantity + 500, "1.00"), limits)
+
+    assert clamped.proposed_value == Decimal(limits.max_restock_quantity)
+    assert clamped.evidence["needed_quantity"] == limits.max_restock_quantity + 500
+    assert check_restock_line(quantity=int(clamped.proposed_value), unit_cost=clamped.unit_cost, limits=limits).ok
+
+
+def test_a_restock_above_the_value_limit_is_cut_to_the_most_the_value_allows() -> None:
+    limits = get_limits()
+    unit_cost = Decimal("333.33")
+    wanted = int(limits.max_restock_order_value / unit_cost) + 40
+    clamped = clamp_restock(_restock_candidate(wanted, str(unit_cost)), limits)
+    quantity = int(clamped.proposed_value)
+
+    assert quantity < wanted
+    assert unit_cost * quantity <= limits.max_restock_order_value < unit_cost * (quantity + 1)
+    assert check_restock_line(quantity=quantity, unit_cost=unit_cost, limits=limits).ok
+
+
+def test_a_restock_within_the_limits_or_with_no_known_cost_is_left_alone() -> None:
+    limits = get_limits()
+    within = _restock_candidate(40, "2.50")
+    no_cost = _restock_candidate(limits.max_restock_quantity + 1, None)
+    one_unit_too_dear = _restock_candidate(3, str(limits.max_restock_order_value + 1))
+
+    assert clamp_restock(within, limits) is within
+    assert clamp_restock(no_cost, limits) is no_cost  # the guard blocks it as missing cost, the truthful reason
+    assert clamp_restock(one_unit_too_dear, limits) is one_unit_too_dear  # not even one fits: stays blocked
