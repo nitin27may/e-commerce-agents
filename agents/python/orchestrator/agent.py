@@ -8,13 +8,18 @@ from collections.abc import Mapping
 from typing import Annotated, Any
 
 import httpx
+from a2a.client.errors import AgentCardResolutionError
 from agent_framework import Agent, tool
 from pydantic import Field
 
 from orchestrator.prompts import get_system_prompt
+from shared.a2a_client import root_cause as a2a_root_cause
+from shared.a2a_client import send_blocking as a2a_send_blocking
+from shared.a2a_client import stream_events as a2a_stream_events
 from shared.agent_factory import agent_default_options, create_chat_client
 from shared.config import settings
 from shared.context import (
+    current_session_id,
     current_steps,
     current_stream_queue,
     current_user_email,
@@ -104,6 +109,9 @@ async def call_specialist_agent(
     request_body = {"message": message}
 
     with a2a_call_span("orchestrator", agent_name, url):
+        if settings.A2A_TRANSPORT == "a2a":
+            return await _call_over_a2a(agent_name, url, message, headers, stream_queue)
+
         # ── Streaming path ─────────────────────────────────────────────────
         # When an SSE context is active (stream_queue is set), connect to the
         # specialist's /message:stream endpoint and forward response chunks to
@@ -245,6 +253,119 @@ async def call_specialist_agent(
         except Exception:
             logger.exception("a2a.failure target=%s", log_safe(agent_name))
             return f"Failed to reach the {agent_name} agent. Please try again later."
+
+
+def _a2a_request_never_ran(exc: BaseException) -> bool:
+    """:func:`_request_never_ran`, for a failure raised by the A2A SDK client.
+
+    The SDK wraps transport errors in ``A2AClientError`` and keeps the ``httpx`` one as ``__cause__``
+    (:func:`shared.a2a_client.root_cause`). A failed agent-card fetch happens before any message is
+    sent, so it never ran either; a JSON-RPC error the specialist *returned* means it refused the call
+    before the executor started.
+    """
+    if isinstance(exc, AgentCardResolutionError):
+        return True
+    return _request_never_ran(a2a_root_cause(exc))
+
+
+async def _call_over_a2a(
+    agent_name: str,
+    url: str,
+    message: str,
+    headers: dict[str, str],
+    stream_queue: Any,
+) -> str:
+    """``call_specialist_agent``'s transport when ``A2A_TRANSPORT=a2a``: A2A 1.0 JSON-RPC via the SDK client.
+
+    The contract with the rest of the orchestrator is the legacy one, unchanged: text chunks go to
+    ``stream_queue`` as ``("delta", agent, text)``, steps to ``current_steps`` and the queue as live
+    ``step`` frames, usage to the turn's accumulator, a recorded-response miss raises
+    ``SpecialistReplayMissError``, and the same retry rule holds (re-send over the blocking call only
+    when the streamed request provably never ran; never after a frame, since tools may have run).
+    """
+    session_id = current_session_id.get("")
+
+    if stream_queue is not None:
+        chunks: list[str] = []
+        frames_seen = 0
+        try:
+            async for event in a2a_stream_events(
+                url, message, headers=headers, session_id=session_id, timeout=60, transport=_A2A_TRANSPORT
+            ):
+                frames_seen += 1
+                if event.kind == "step" and event.data is not None:
+                    bucket = current_steps.get()
+                    if bucket is not None:
+                        bucket.append(event.data)
+                    # `_live` marks the step as already sent. It is set on the very dict the bucket
+                    # holds (as the legacy path does) because chat.py's drain pops it from there: a
+                    # copy would let the step go out to the browser a second time.
+                    event.data["_live"] = True
+                    await stream_queue.put(("frame", "step", event.data))
+                elif event.kind == "usage":
+                    _record_specialist_usage(agent_name, event.data)
+                elif event.kind == "failed":
+                    logger.error(
+                        "a2a.task_failed target=%s state=%s",
+                        log_safe(agent_name),
+                        log_safe((event.data or {}).get("state", "")),
+                    )
+                elif event.text:
+                    chunks.append(event.text)
+                    await stream_queue.put(("delta", agent_name, event.text))
+            return "".join(chunks) or f"The {agent_name} agent returned an empty response."
+        except SpecialistReplayMissError:
+            raise
+        except Exception as exc:
+            if frames_seen:
+                logger.error(
+                    "a2a.stream_interrupted target=%s frames=%d reason=%s",
+                    log_safe(agent_name),
+                    frames_seen,
+                    type(a2a_root_cause(exc)).__name__,
+                )
+                note = f"[The {agent_name} agent's response was interrupted and may be incomplete.]"
+                partial = "".join(chunks)
+                return f"{partial}\n\n{note}" if partial else note
+            if not _a2a_request_never_ran(exc):
+                logger.error(
+                    "a2a.stream_failed_unsafe_to_retry target=%s reason=%s",
+                    log_safe(agent_name),
+                    type(a2a_root_cause(exc)).__name__,
+                )
+                return (
+                    f"[The {agent_name} agent could not be confirmed to have completed this request. "
+                    "It may or may not have acted on it; please check before trying again.]"
+                )
+            logger.warning(
+                "a2a.stream_fallback target=%s reason=%s", log_safe(agent_name), type(a2a_root_cause(exc)).__name__
+            )
+
+    try:
+        reply = await a2a_send_blocking(
+            url, message, headers=headers, session_id=session_id, timeout=30, transport=_A2A_TRANSPORT
+        )
+    except SpecialistReplayMissError:
+        raise
+    except Exception as exc:
+        cause = a2a_root_cause(exc)
+        if isinstance(cause, httpx.TimeoutException):
+            logger.error("a2a.timeout target=%s", log_safe(agent_name))
+            return f"The {agent_name} agent took too long to respond. Please try again."
+        if isinstance(cause, httpx.HTTPStatusError):
+            logger.error("a2a.error target=%s status=%s", log_safe(agent_name), cause.response.status_code)
+            return f"The {agent_name} agent returned an error (status {cause.response.status_code}). Please try again."
+        logger.error("a2a.failure target=%s reason=%s", log_safe(agent_name), type(cause).__name__)
+        return f"Failed to reach the {agent_name} agent. Please try again later."
+
+    bucket = current_steps.get()
+    if bucket is not None and reply.steps:
+        bucket.extend(reply.steps)
+    _record_specialist_usage(agent_name, reply.usage)
+    if not reply.ok:
+        logger.error("a2a.task_failed target=%s state=%s", log_safe(agent_name), log_safe(reply.state))
+        return f"The {agent_name} agent returned an error (task {reply.state}). Please try again."
+    return reply.text
 
 
 def _record_specialist_usage(agent_name: str, usage: Any) -> None:

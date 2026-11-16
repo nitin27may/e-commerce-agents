@@ -27,9 +27,8 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Annotated, Any
+from typing import Any
 
 import httpx
 import pytest
@@ -45,15 +44,6 @@ from a2a.types.a2a_pb2 import (
     TaskState,
 )
 from a2a.utils.errors import TaskNotFoundError
-from agent_framework import (
-    Agent,
-    BaseChatClient,
-    ChatResponse,
-    ChatResponseUpdate,
-    Content,
-    FunctionInvocationLayer,
-    tool,
-)
 from httpx import ASGITransport
 
 import shared.agent_host as agent_host
@@ -68,106 +58,14 @@ from shared.a2a_server import (
     BoundedTaskStore,
     session_id_from_context,
 )
-from shared.agent_host import create_agent_app
-from shared.agent_observability import STEP_MIDDLEWARE
-from shared.auth import AgentAuthMiddleware
 from shared.config import settings
-from shared.context import current_user_email
-from shared.replay_client import ReplayFixtureMissingError
-
-SECRET = "conformance-secret"
-USER = "alice@example.com"
-SESSION = "6f1c0a5e-2d3b-4c7e-9a10-1b2c3d4e5f60"
-ANSWER = "Hello world"
-# The same wire shape the legacy `usage` field/frame carries (shared.run_usage.to_wire_usage).
-WIRE_USAGE = {"input_token_count": 5, "output_token_count": 2, "cached_input_token_count": 0, "model": "gpt-4.1"}
-
-
-# ─────────────────────── a scripted model and a real agent ───────────────────────
-
-
-class _ScriptedModel(FunctionInvocationLayer, BaseChatClient):
-    """Asks for the ``lookup`` tool once, then answers ``ANSWER`` in two chunks with usage.
-
-    ``mode`` switches the behaviour: ``boom`` raises an error whose text must never reach a caller,
-    ``miss`` raises a replay-fixture miss.
-    """
-
-    OTEL_PROVIDER_NAME = "scripted"
-
-    def __init__(self, mode: str = "ok") -> None:
-        super().__init__()
-        self.mode = mode
-        self.seen: list[list[tuple[str, str]]] = []
-
-    def _inner_get_response(self, *, messages: Any, stream: bool, options: Any = None, **_: Any) -> Any:
-        self.seen.append([(str(m.role), m.text or "") for m in messages])
-        has_result = any(c.type == "function_result" for m in messages for c in m.contents)
-
-        async def _updates() -> AsyncIterator[ChatResponseUpdate]:
-            if self.mode == "boom":
-                raise RuntimeError('relation "secret_table" does not exist')
-            if self.mode == "miss":
-                raise ReplayFixtureMissingError("no fixture for hash abc123")
-            if not has_result:
-                call = Content.from_function_call(call_id="c1", name="lookup", arguments='{"sku": "XM5"}')
-                yield ChatResponseUpdate(role="assistant", contents=[call])
-                return
-            yield ChatResponseUpdate(role="assistant", contents=[Content.from_text(text="Hello ")])
-            yield ChatResponseUpdate(role="assistant", contents=[Content.from_text(text="world")])
-            yield ChatResponseUpdate(
-                role="assistant", contents=[Content.from_usage({"input_token_count": 5, "output_token_count": 2})]
-            )
-
-        if stream:
-            return self._build_response_stream(_updates())
-
-        async def _one() -> ChatResponse:
-            updates = [u async for u in _updates()]
-            return ChatResponse.from_updates(updates)
-
-        return _one()
-
-
-@tool(name="lookup", description="Look up the current price of a product by SKU.")
-async def lookup(sku: Annotated[str, "the product SKU"]) -> str:
-    # Reads the identity the middleware stamped: proves it reached the executor's task.
-    return f"{sku}=79.99 for {current_user_email.get()}"
-
-
-@tool(name="stock", description="Check stock for a SKU.")
-async def stock(sku: Annotated[str, "the product SKU"]) -> str:
-    return "in stock"
-
-
-def _build(mode: str = "ok") -> tuple[Any, _ScriptedModel]:
-    model = _ScriptedModel(mode)
-    agent = Agent(
-        client=model,
-        name="product-discovery",
-        instructions="You are a test specialist.",
-        tools=[lookup, stock],
-        middleware=STEP_MIDDLEWARE,
-    )
-    app = create_agent_app(
-        agent=agent,
-        agent_name="product-discovery",
-        port=8081,
-        description="Conformance test specialist.",
-    )
-    app.add_middleware(AgentAuthMiddleware, agent_name="product-discovery")
-    return app, model
+from tests.a2a_support import ANSWER, SESSION, USER, WIRE_USAGE, apply_env, build_app, lookup, stock
+from tests.a2a_support import headers as caller_headers
 
 
 @pytest.fixture(autouse=True)
 def _env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "AGENT_SHARED_SECRET", SECRET, raising=False)
-    monkeypatch.setattr(settings, "AUTH_MODE", "local", raising=False)
-    monkeypatch.setattr(settings, "LLM_PROVIDER", "openai", raising=False)
-
-
-def _headers(**extra: str) -> dict[str, str]:
-    return {"x-agent-secret": SECRET, "x-user-email": USER, "x-user-role": "customer", **extra}
+    apply_env(monkeypatch)
 
 
 @asynccontextmanager
@@ -176,7 +74,7 @@ async def _sdk_client(app: Any, *, streaming: bool, headers: dict[str, str] | No
     async with httpx.AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://specialist",
-        headers=headers if headers is not None else _headers(),
+        headers=headers if headers is not None else caller_headers(),
     ) as http:
         factory = ClientFactory(ClientConfig(streaming=streaming, httpx_client=http))
         client = await factory.create_from_url("http://specialist")
@@ -224,7 +122,7 @@ async def _blocking(app: Any, request: SendMessageRequest, *extensions: str) -> 
 
 @pytest.mark.asyncio
 async def test_card_is_served_publicly_and_parses_with_the_official_resolver() -> None:
-    app, _ = _build()
+    app, _ = build_app()
     # No credentials at all: discovery is public (shared.auth.PUBLIC_PATHS).
     async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://specialist:8081") as http:
         card = await A2ACardResolver(http, "http://specialist:8081").get_agent_card()
@@ -248,7 +146,7 @@ async def test_card_is_served_publicly_and_parses_with_the_official_resolver() -
 
 @pytest.mark.asyncio
 async def test_card_skills_come_from_the_tools_name_and_description_verbatim() -> None:
-    app, _ = _build()
+    app, _ = build_app()
     async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://specialist") as http:
         card = await A2ACardResolver(http, "http://specialist").get_agent_card()
 
@@ -261,7 +159,7 @@ async def test_card_skills_come_from_the_tools_name_and_description_verbatim() -
 
 @pytest.mark.asyncio
 async def test_card_declares_how_to_authenticate() -> None:
-    app, _ = _build()
+    app, _ = build_app()
     async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://specialist") as http:
         body = (await http.get("/.well-known/agent-card.json")).json()
 
@@ -278,7 +176,7 @@ async def test_card_declares_how_to_authenticate() -> None:
 @pytest.mark.asyncio
 async def test_public_base_url_overrides_the_derived_one(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "A2A_PUBLIC_BASE_URL", "https://agents.example.com/pd", raising=False)
-    app, _ = _build()
+    app, _ = build_app()
     async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://internal") as http:
         card = (await http.get("/.well-known/agent-card.json")).json()
     assert card["supportedInterfaces"][0]["url"] == f"https://agents.example.com/pd{A2A_RPC_PATH}"
@@ -289,7 +187,7 @@ async def test_public_base_url_overrides_the_derived_one(monkeypatch: pytest.Mon
 
 @pytest.mark.asyncio
 async def test_blocking_send_message_completes_a_task_with_the_answer_as_an_artifact() -> None:
-    app, _ = _build()
+    app, _ = build_app()
     task = await _blocking(app, _request(), *ALL_EXTENSION_URIS)
 
     assert task.status.state == TaskState.TASK_STATE_COMPLETED
@@ -303,7 +201,7 @@ async def test_blocking_send_message_completes_a_task_with_the_answer_as_an_arti
 
 @pytest.mark.asyncio
 async def test_blocking_response_carries_steps_and_usage_in_task_metadata() -> None:
-    app, _ = _build()
+    app, _ = build_app()
     task = await _blocking(app, _request(), *ALL_EXTENSION_URIS)
 
     metadata = _meta(task.metadata)
@@ -319,7 +217,7 @@ async def test_blocking_response_carries_steps_and_usage_in_task_metadata() -> N
 
 @pytest.mark.asyncio
 async def test_extension_metadata_is_only_sent_when_the_caller_asked_for_it() -> None:
-    app, _ = _build()
+    app, _ = build_app()
     task = await _blocking(app, _request())  # no A2A-Extensions header
 
     assert STEPS_EXTENSION_URI not in _meta(task.metadata)
@@ -335,7 +233,7 @@ async def test_extension_metadata_is_only_sent_when_the_caller_asked_for_it() ->
 
 @pytest.mark.asyncio
 async def test_streaming_walks_submitted_working_completed_and_ends_on_a_terminal_state() -> None:
-    app, _ = _build()
+    app, _ = build_app()
     events = await _stream(app, _request(), *ALL_EXTENSION_URIS)
 
     # The spec's rule for a streamed task: the first event is the Task itself, in `submitted`.
@@ -355,7 +253,7 @@ async def test_streaming_walks_submitted_working_completed_and_ends_on_a_termina
 
 @pytest.mark.asyncio
 async def test_streamed_text_arrives_as_append_chunks_with_a_final_last_chunk() -> None:
-    app, _ = _build()
+    app, _ = build_app()
     events = await _stream(app, _request())
 
     chunks = [e.artifact_update for e in events if e.HasField("artifact_update")]
@@ -368,7 +266,7 @@ async def test_streamed_text_arrives_as_append_chunks_with_a_final_last_chunk() 
 
 @pytest.mark.asyncio
 async def test_streamed_steps_and_usage_ride_in_status_update_metadata() -> None:
-    app, _ = _build()
+    app, _ = build_app()
     events = await _stream(app, _request(), *ALL_EXTENSION_URIS)
 
     updates = [(e.status_update, _meta(e.status_update.metadata)) for e in events if e.HasField("status_update")]
@@ -387,7 +285,7 @@ async def test_streamed_steps_and_usage_ride_in_status_update_metadata() -> None
 
 @pytest.mark.asyncio
 async def test_streaming_without_extensions_carries_no_extension_metadata() -> None:
-    app, _ = _build()
+    app, _ = build_app()
     events = await _stream(app, _request())
     for e in events:
         if e.HasField("status_update"):
@@ -403,7 +301,7 @@ async def test_text_survives_every_hop_even_the_awkward_characters() -> None:
         yield awkward[:12]
         yield awkward[12:]
 
-    app, _ = _build()
+    app, _ = build_app()
     monkey = pytest.MonkeyPatch()
     monkey.setattr(agent_host, "_run_agent_native_stream", _fake)
     try:
@@ -421,9 +319,9 @@ async def test_text_survives_every_hop_even_the_awkward_characters() -> None:
 
 
 async def _legacy_prompt(history: list[dict] | None) -> list[tuple[str, str]]:
-    app, model = _build()
+    app, model = build_app()
     async with httpx.AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://specialist", headers=_headers()
+        transport=ASGITransport(app=app), base_url="http://specialist", headers=caller_headers()
     ) as http:
         body: dict[str, Any] = {"message": "price of the XM5?"}
         if history:
@@ -446,7 +344,7 @@ async def test_the_model_sees_the_same_messages_on_both_wires(monkeypatch: pytes
 
     monkeypatch.setattr(agent_host, "_rehydrate_history_from_session", _rehydrate)
 
-    app, model = _build()
+    app, model = build_app()
     await _blocking(app, _request(context_id=SESSION))
     via_a2a = model.seen[0]
 
@@ -466,7 +364,7 @@ async def test_a_server_generated_context_id_is_never_used_as_a_session(monkeypa
         return None
 
     monkeypatch.setattr(agent_host, "_rehydrate_history_from_session", _rehydrate)
-    app, _ = _build()
+    app, _ = build_app()
     task = await _blocking(app, _request(context_id=""))  # anonymous caller: no conversation
 
     assert task.context_id, "the server minted a context id"
@@ -492,7 +390,7 @@ async def test_rehydration_stays_scoped_to_the_forwarded_caller(monkeypatch: pyt
             return []
 
     monkeypatch.setattr("shared.db.get_pool", lambda: _Pool())
-    app, _ = _build()
+    app, _ = build_app()
     await _blocking(app, _request(context_id=SESSION))
     assert seen_caller == [USER]
 
@@ -502,7 +400,7 @@ async def test_rehydration_stays_scoped_to_the_forwarded_caller(monkeypatch: pyt
 
 @pytest.mark.asyncio
 async def test_an_agent_error_fails_the_task_without_leaking_the_error_text() -> None:
-    app, _ = _build("boom")
+    app, _ = build_app("boom")
     task = await _blocking(app, _request(), *ALL_EXTENSION_URIS)
 
     assert task.status.state == TaskState.TASK_STATE_FAILED
@@ -513,7 +411,7 @@ async def test_an_agent_error_fails_the_task_without_leaking_the_error_text() ->
 
 @pytest.mark.asyncio
 async def test_a_streamed_failure_ends_with_a_failed_status_update() -> None:
-    app, _ = _build("boom")
+    app, _ = build_app("boom")
     events = await _stream(app, _request(), *ALL_EXTENSION_URIS)
 
     final = events[-1].status_update
@@ -524,7 +422,7 @@ async def test_a_streamed_failure_ends_with_a_failed_status_update() -> None:
 
 @pytest.mark.asyncio
 async def test_a_replay_miss_is_a_failed_task_marked_with_its_extension() -> None:
-    app, _ = _build("miss")
+    app, _ = build_app("miss")
     task = await _blocking(app, _request(), *ALL_EXTENSION_URIS)
 
     assert task.status.state == TaskState.TASK_STATE_FAILED
@@ -539,7 +437,7 @@ async def test_a_replay_miss_is_a_failed_task_marked_with_its_extension() -> Non
 
 @pytest.mark.asyncio
 async def test_a_message_with_no_text_is_rejected_not_run() -> None:
-    app, model = _build()
+    app, model = build_app()
     request = SendMessageRequest(
         message=Message(message_id=str(uuid.uuid4()), role=Role.ROLE_USER, parts=[Part(text="")])
     )
@@ -554,7 +452,7 @@ async def test_a_message_with_no_text_is_rejected_not_run() -> None:
 
 @pytest.mark.asyncio
 async def test_get_task_returns_a_finished_task_to_its_owner_only() -> None:
-    app, _ = _build()
+    app, _ = build_app()
     task = await _blocking(app, _request())
 
     async with _sdk_client(app, streaming=False) as client:
@@ -562,14 +460,16 @@ async def test_get_task_returns_a_finished_task_to_its_owner_only() -> None:
     assert fetched.status.state == TaskState.TASK_STATE_COMPLETED
     assert fetched.id == task.id
 
-    async with _sdk_client(app, streaming=False, headers=_headers(**{"x-user-email": "mallory@example.com"})) as client:
+    async with _sdk_client(
+        app, streaming=False, headers=caller_headers(**{"x-user-email": "mallory@example.com"})
+    ) as client:
         with pytest.raises(TaskNotFoundError):
             await client.get_task(GetTaskRequest(id=task.id))
 
 
 @pytest.mark.asyncio
 async def test_the_a2a_endpoint_requires_the_inter_agent_credential() -> None:
-    app, model = _build()
+    app, model = build_app()
     body = {
         "jsonrpc": "2.0",
         "id": 1,
@@ -592,9 +492,9 @@ async def test_the_a2a_endpoint_requires_the_inter_agent_credential() -> None:
 
 @pytest.mark.asyncio
 async def test_the_legacy_routes_still_answer_on_the_same_app() -> None:
-    app, _ = _build()
+    app, _ = build_app()
     async with httpx.AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://specialist", headers=_headers()
+        transport=ASGITransport(app=app), base_url="http://specialist", headers=caller_headers()
     ) as http:
         sent = (await http.post("/message:send", json={"message": "price of the XM5?"})).json()
         streamed = await http.post("/message:stream", json={"message": "price of the XM5?"})
