@@ -576,10 +576,11 @@ async def decision_for_approval(db: asyncpg.Pool | asyncpg.Connection, approval_
 
 
 async def _execute_approved_in_tx(
-    pool: asyncpg.Pool, approval_id: str, approver: str, amount: Decimal
+    pool: asyncpg.Pool, approval_id: str, approver: str, amount: Decimal, claim_token: str
 ) -> dict[str, Any]:
     async with pool.acquire() as conn, conn.transaction():
-        # Lock order: (no budget lock: a person's approval draws nothing) order, then the decision row.
+        # Lock order: (no budget lock: a person's approval draws nothing) order, then the approval row, then the
+        # decision row.
         proposed = await conn.fetchrow(
             "SELECT order_id FROM agent_decisions WHERE entry_type = 'decision' AND approval_id = $1",
             uuid.UUID(approval_id),
@@ -588,6 +589,13 @@ async def _execute_approved_in_tx(
             return {"success": False, "status": "failed", "reason": "decision_not_found"}
         if proposed["order_id"] is not None:
             await lock_order(conn, proposed["order_id"])
+        # The approval row lock is the one the SLA handler and every state change take (``FOR UPDATE``), so
+        # "is this approval still waiting, and is the claim still ours?" cannot change until we commit.
+        approval = await conn.fetchrow(
+            "SELECT status, claimed_by FROM approvals WHERE id = $1 FOR UPDATE", uuid.UUID(approval_id)
+        )
+        if approval is None:
+            return {"success": False, "status": "failed", "reason": "approval_not_found"}
         decision = await conn.fetchrow(
             "SELECT * FROM agent_decisions WHERE entry_type = 'decision' AND approval_id = $1 FOR UPDATE",
             uuid.UUID(approval_id),
@@ -606,6 +614,14 @@ async def _execute_approved_in_tx(
                 "amount": money(done["amount"]),
                 "replayed": True,
             }
+        # Pay only for a decide that still owns the approval. A decide whose claim went stale can have been overtaken
+        # by the SLA handler (it expired the approval and told staff nothing was done) or by another reviewer: paying
+        # now would make that statement false. Raising (not returning) releases the run_once reservation, so a
+        # legitimate retry is not blocked by a cached refusal.
+        if approval["status"] != "pending_review":
+            raise AutonomyError(409, f"Request is already {approval['status']}")
+        if approval["claimed_by"] != claim_token:
+            raise AutonomyError(409, "This approval was taken over by another reviewer")
         if not Decimal(0) < amount <= decision["amount"]:
             return {"success": False, "status": "failed", "reason": "amount_out_of_range"}
         order = await conn.fetchrow(
@@ -662,13 +678,18 @@ async def _execute_approved_in_tx(
 
 
 async def execute_approved(
-    pool: asyncpg.Pool, approval_id: str, *, approver_email: str, amount: Decimal
+    pool: asyncpg.Pool, approval_id: str, *, approver_email: str, amount: Decimal, claim_token: str
 ) -> dict[str, Any]:
-    """Run the staff-approved credit at most once for this approval (a retry, even edited, replays the first)."""
+    """Run the staff-approved credit at most once for this approval (a retry, even edited, replays the first).
+
+    ``claim_token`` is the deciding claim (``repo.claim``) the caller holds. The credit is written only while the
+    approval is still ``pending_review`` *and* that token still holds the claim, checked under the approval's row
+    lock inside the same transaction as the credit; otherwise it raises ``AutonomyError(409)`` and pays nothing.
+    """
     return await run_once(
         SCOPE_APPROVAL,
         f"approval:{approval_id}",
-        lambda: _execute_approved_in_tx(pool, approval_id, approver_email, amount),
+        lambda: _execute_approved_in_tx(pool, approval_id, approver_email, amount, claim_token),
     )
 
 

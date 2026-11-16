@@ -387,7 +387,12 @@ async def test_a_decide_in_flight_is_waited_for_not_expired(w: aus.World) -> Non
 
 async def test_an_approved_credit_that_ran_but_was_never_recorded_is_recorded_not_expired(w: aus.World) -> None:
     result = await _waiting(w)
-    await engine.execute_approved(w.pool, result["approval_id"], approver_email=aus.SUPPORT, amount=D("40.00"))
+    assert await repo.claim(w.pool, result["approval_id"], "decider", statuses=["pending_review"]) is not None
+    await engine.execute_approved(
+        w.pool, result["approval_id"], approver_email=aus.SUPPORT, amount=D("40.00"), claim_token="decider"
+    )
+    # the decide died before recording and its claim went stale
+    await repo.release_claim(w.pool, result["approval_id"], "decider")
     await w.pool.execute(
         "UPDATE approvals SET assigned_role = 'admin', escalation_level = 1 WHERE id = $1",
         uuid.UUID(result["approval_id"]),

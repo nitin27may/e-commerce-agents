@@ -93,7 +93,13 @@ holds. Staff approve or reject in the ordinary inbox (`POST /api/approvals/{id}/
   amount (`amount`, two decimals, positive); `request_info` is refused (nobody can answer the system);
 - rejecting changes nothing; the customer is never told about a credit that did not happen;
 - an SLA breach escalates support to manager once, then expires it, **never while a decide holds the claim** (the timer
-  waits), and an approved credit that ran but was never recorded is recorded, not expired.
+  waits), and an approved credit that ran but was never recorded is recorded, not expired;
+- **the credit is tied to the approval and to the claim.** The credit is written in a transaction that first locks the
+  approval row (`FOR UPDATE`, the same lock the SLA handler and every state change take) and pays only if the approval is
+  still `pending_review` **and** the decide's own claim token still holds it. A decide whose claim went stale mid-flight
+  can be overtaken by the SLA handler (which closes the approval and tells staff nothing was done); it then pays nothing and
+  answers the ordinary `409`, and the reservation is released so a legitimate retry is not blocked by a cached refusal.
+  `tests/test_autonomy_review_fixes.py` drives that interleaving through a real SLA tick.
 
 ## Nobody approves a credit to themselves
 

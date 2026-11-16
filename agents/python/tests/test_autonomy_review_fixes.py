@@ -296,3 +296,132 @@ async def test_w1_the_day_key_is_the_right_one_for_the_per_customer_cap(
     assert sorted(r["status"] for r in results) == ["executed", "executed"]
     days = {r["budget_day"] for r in await aus.decisions(w.pool)}
     assert len(days) == 2
+
+
+# ── W2: an approved credit is tied to the approval's status and to the deciding claim ───────────────────────────
+
+TICK: dict[str, Any] = {
+    "batch_size": 20,
+    "lease_seconds": 60,
+    "max_attempts": 3,
+    "backoff_base": 0.0,
+    "backoff_cap": 0.0,
+}
+
+
+async def _waiting(w: aus.World, *, event_id: str = "evt-1") -> dict[str, Any]:
+    order = await aus.order(w)
+    result = await _handle(w, order, 12, event_id)
+    assert result["status"] == "awaiting_approval"
+    return result
+
+
+async def _expire_through_the_sla_handler(w: aus.World, approval_id: str) -> None:
+    """What the worker does when the review deadline passes and the deciding claim has gone stale."""
+    from worker.main import HANDLERS
+    from worker.runner import run_once
+
+    await w.pool.execute(
+        "UPDATE approvals SET assigned_role = 'admin', escalation_level = 1, "
+        "claimed_at = NOW() - interval '1 hour' WHERE id = $1",
+        uuid.UUID(approval_id),
+    )
+    approval = await repo.get(w.pool, approval_id)
+    await w.pool.execute("DELETE FROM outbox")
+    async with w.pool.acquire() as conn:
+        await repo.schedule_review_timers(conn, dict(approval), now=approval["updated_at"])
+    await w.pool.execute("UPDATE outbox SET available_at = NOW() - interval '1 minute' WHERE processed_at IS NULL")
+    await run_once(w.pool, HANDLERS, "w1", **TICK)
+
+
+async def test_w2_a_decide_whose_claim_expired_mid_flight_pays_nothing_and_is_a_409(
+    w: aus.World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result = await _waiting(w)
+    approval_id = result["approval_id"]
+    real = engine.execute_approved
+
+    async def expired_first(*args: Any, **kwargs: Any):
+        # Between taking the claim and executing, the claim goes stale and the SLA handler closes the approval.
+        await _expire_through_the_sla_handler(w, approval_id)
+        assert (await repo.get(w.pool, approval_id))["status"] == "expired"
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(engine, "execute_approved", expired_first)
+
+    with pytest.raises(svc.ApprovalHTTPError) as err:
+        await svc.decide(approval_id, ADMIN, decision="approve")
+
+    assert err.value.status_code == 409
+    assert await aus.ledger_balance(w.pool, w.users[aus.CUSTOMER]) == 0
+    assert await aus.decisions(w.pool, "approved_execution") == []
+    assert (await repo.get(w.pool, approval_id))["status"] == "expired", "staff were told nothing was done: true"
+    assert await w.pool.fetchval("SELECT count(*) FROM idempotency_keys WHERE scope = 'autonomy_approval'") == 0
+
+
+async def test_w2_a_claim_taken_over_by_another_reviewer_pays_nothing(w: aus.World) -> None:
+    result = await _waiting(w)
+    approval_id = result["approval_id"]
+    assert await repo.claim(w.pool, approval_id, "someone-else", statuses=["pending_review"]) is not None
+
+    with pytest.raises(engine.AutonomyError) as err:
+        await engine.execute_approved(
+            w.pool, approval_id, approver_email=aus.ADMIN, amount=D("40.00"), claim_token="not-the-holder"
+        )
+
+    assert err.value.status_code == 409
+    assert await aus.ledger_balance(w.pool, w.users[aus.CUSTOMER]) == 0
+
+
+@pytest.mark.parametrize("status", ["expired", "rejected", "failed"])
+async def test_w2_an_approval_that_is_no_longer_waiting_pays_nothing(w: aus.World, status: str) -> None:
+    result = await _waiting(w)
+    approval_id = result["approval_id"]
+    assert await repo.claim(w.pool, approval_id, "t1", statuses=["pending_review"]) is not None
+    await w.pool.execute("UPDATE approvals SET status = $2 WHERE id = $1", uuid.UUID(approval_id), status)
+
+    with pytest.raises(engine.AutonomyError) as err:
+        await engine.execute_approved(
+            w.pool, approval_id, approver_email=aus.ADMIN, amount=D("40.00"), claim_token="t1"
+        )
+
+    assert err.value.status_code == 409
+    assert await aus.ledger_balance(w.pool, w.users[aus.CUSTOMER]) == 0
+
+
+async def test_w2_the_execution_waits_for_the_approval_row_lock_the_sla_handler_holds(w: aus.World) -> None:
+    """The handler locks the approval row (``FOR UPDATE``); execution takes the same lock, so the two serialise."""
+    result = await _waiting(w)
+    approval_id = result["approval_id"]
+    assert await repo.claim(w.pool, approval_id, "t1", statuses=["pending_review"]) is not None
+
+    async with w.pool.acquire() as holder, holder.transaction():
+        await holder.fetchrow("SELECT * FROM approvals WHERE id = $1 FOR UPDATE", uuid.UUID(approval_id))
+        running = asyncio.ensure_future(
+            engine.execute_approved(w.pool, approval_id, approver_email=aus.ADMIN, amount=D("40.00"), claim_token="t1")
+        )
+        await asyncio.sleep(0.3)
+        assert not running.done(), "execution did not wait for the row the handler holds"
+        # ...and the handler closes the approval before letting go.
+        await holder.execute("UPDATE approvals SET status = 'expired' WHERE id = $1", uuid.UUID(approval_id))
+
+    with pytest.raises(engine.AutonomyError) as err:
+        await running
+    assert err.value.status_code == 409
+    assert await aus.ledger_balance(w.pool, w.users[aus.CUSTOMER]) == 0
+
+
+async def test_w2_the_holder_of_a_live_claim_still_pays_once(w: aus.World) -> None:
+    result = await _waiting(w)
+    approval_id = result["approval_id"]
+    assert await repo.claim(w.pool, approval_id, "t1", statuses=["pending_review"]) is not None
+
+    first = await engine.execute_approved(
+        w.pool, approval_id, approver_email=aus.ADMIN, amount=D("40.00"), claim_token="t1"
+    )
+    again = await engine.execute_approved(
+        w.pool, approval_id, approver_email=aus.ADMIN, amount=D("40.00"), claim_token="t1"
+    )
+
+    assert first["success"] is True and again["success"] is True
+    assert await aus.ledger_balance(w.pool, w.users[aus.CUSTOMER]) == D("40.00")

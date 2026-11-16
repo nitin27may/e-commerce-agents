@@ -531,7 +531,12 @@ async def _approve_event(
 
     token, approval = await _claim_and_reauthorize(approval, actor, S.PENDING_REVIEW)
     try:
-        result = await autonomy.execute_approved(pool, approval_id, approver_email=actor.email, amount=amount)
+        try:
+            result = await autonomy.execute_approved(
+                pool, approval_id, approver_email=actor.email, amount=amount, claim_token=token
+            )
+        except autonomy.AutonomyError as exc:  # the claim is no longer ours (or the approval closed): nothing was paid
+            raise ApprovalHTTPError(exc.status_code, exc.detail) from None
         approved = await _record(
             approval, actor, token, S.APPROVED_WITH_EDITS if edits else S.APPROVED, "approve", note, edits
         )
