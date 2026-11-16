@@ -1,0 +1,24 @@
+{
+  "_comment": "Pins the B-14 user-context token for both stacks. Python mints these (shared/identity_token.py); the .NET stack (Auth/UserContextToken.cs) must derive the same key and verify the same tokens. Regenerate only on a deliberate format change (a v2): scripts in tests/test_identity_token.py check drift.",
+  "secret": "vector-secret-for-user-context-tokens-0123456789",
+  "kdf_info": "ecommerce-agents/a2a-user-context/v1",
+  "derived_key_hex": "9f6b8317f5d75bb5a6bdc553b686977a21777ce8a3b23303949e5c4dee5f16e3",
+  "audience": "product-discovery",
+  "issued_at": 1700000000,
+  "ttl_seconds": 300,
+  "verify_at": 1700000100,
+  "tokens": {
+    "customer": {
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6ImEyYS11c2VyLWNvbnRleHQrand0In0.eyJpc3MiOiJlY29tbWVyY2UtYWdlbnRzL29yY2hlc3RyYXRvciIsImF1ZCI6InByb2R1Y3QtZGlzY292ZXJ5Iiwic3ViIjoiYWxpY2VAZXhhbXBsZS5jb20iLCJlbWFpbCI6ImFsaWNlQGV4YW1wbGUuY29tIiwicm9sZSI6ImN1c3RvbWVyIiwic2lkIjoiNmYxYzBhNWUtMmQzYi00YzdlLTlhMTAtMWIyYzNkNGU1ZjYwIiwiYWN0Ijp7ImNsaWVudF9pZCI6Im9yY2hlc3RyYXRvciJ9LCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMDMwMCwianRpIjoidmVjdG9yLWp0aS1jdXN0b21lciJ9.M_VtO3HohMoq4XKa63L-lv9GOmKLwdyi4ORLeuyfp4s",
+      "email": "alice@example.com",
+      "role": "customer",
+      "session_id": "6f1c0a5e-2d3b-4c7e-9a10-1b2c3d4e5f60"
+    },
+    "anonymous": {
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6ImEyYS11c2VyLWNvbnRleHQrand0In0.eyJpc3MiOiJlY29tbWVyY2UtYWdlbnRzL29yY2hlc3RyYXRvciIsImF1ZCI6InByb2R1Y3QtZGlzY292ZXJ5Iiwic3ViIjoiYW5vbnltb3VzIiwiZW1haWwiOiIiLCJyb2xlIjoiYW5vbnltb3VzIiwic2lkIjoiIiwiYWN0Ijp7ImNsaWVudF9pZCI6Im9yY2hlc3RyYXRvciJ9LCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMDMwMCwianRpIjoidmVjdG9yLWp0aS1hbm9ueW1vdXMifQ.4sI0kCwyiifPdOUAKpsqzfGKAsL8wZ2KwBQbID06tK4",
+      "email": "",
+      "role": "anonymous",
+      "session_id": ""
+    }
+  }
+}

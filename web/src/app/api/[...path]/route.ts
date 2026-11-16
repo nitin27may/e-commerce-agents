@@ -45,6 +45,9 @@ const STRIP_REQUEST_HEADERS = new Set([
   "x-agent-secret",
   "x-user-email",
   "x-user-role",
+  // The signed user-context token the orchestrator sends specialists (B-14). A browser never mints one;
+  // stripping it keeps an attacker-chosen value from reaching anything that would read it.
+  "x-user-context",
   // Client-address headers are recomputed below, never passed through: the
   // browser's own values would let any caller pick the address the
   // orchestrator rate-limits them under.

@@ -21,6 +21,7 @@ it reads a Python one.
 from __future__ import annotations
 
 import os
+import time
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -29,11 +30,12 @@ from typing import Any
 import httpx
 import pytest
 from a2a.client import A2ACardResolver, ClientCallContext, ClientConfig, ClientFactory
+from a2a.client.errors import A2AClientError
 from a2a.client.service_parameters import ServiceParametersFactory, with_a2a_extensions
 from a2a.types.a2a_pb2 import Message, Part, Role, SendMessageRequest, TaskState
 from google.protobuf.json_format import MessageToDict
 
-from shared.a2a_client import A2AEvent, forget_cards, send_blocking, stream_events
+from shared.a2a_client import A2AEvent, forget_cards, root_cause, send_blocking, stream_events
 from shared.a2a_server import (
     A2A_PROTOCOL_VERSION,
     ALL_EXTENSION_URIS,
@@ -42,6 +44,7 @@ from shared.a2a_server import (
     STEPS_EXTENSION_URI,
     USAGE_EXTENSION_URI,
 )
+from shared.identity_token import HEADER_NAME, derive_key, mint
 from shared.replay_miss import SpecialistReplayMissError
 
 URL = os.environ.get("DOTNET_SPECIALIST_URL", "").rstrip("/")
@@ -67,12 +70,16 @@ def _fresh_cards() -> None:
 
 
 def _ctx(*extensions: str) -> ClientCallContext:
-    return ClientCallContext(service_parameters=ServiceParametersFactory.create([with_a2a_extensions(list(extensions))]))
+    return ClientCallContext(
+        service_parameters=ServiceParametersFactory.create([with_a2a_extensions(list(extensions))])
+    )
 
 
 def _request(text: str = "price of the XM5?", context_id: str = "") -> SendMessageRequest:
     return SendMessageRequest(
-        message=Message(message_id=str(uuid.uuid4()), role=Role.ROLE_USER, parts=[Part(text=text)], context_id=context_id)
+        message=Message(
+            message_id=str(uuid.uuid4()), role=Role.ROLE_USER, parts=[Part(text=text)], context_id=context_id
+        )
     )
 
 
@@ -211,7 +218,9 @@ async def test_the_repos_blocking_client_reads_a_dotnet_specialist() -> None:
 
 
 async def test_the_repos_streaming_client_reads_a_dotnet_specialist() -> None:
-    events: list[A2AEvent] = [e async for e in stream_events(URL, "price of the XM5?", headers=HEADERS, session_id=SESSION)]
+    events: list[A2AEvent] = [
+        e async for e in stream_events(URL, "price of the XM5?", headers=HEADERS, session_id=SESSION)
+    ]
 
     assert "".join(e.text for e in events if e.kind == "delta") == ANSWER
     [step] = [e.data for e in events if e.kind == "step"]
@@ -252,8 +261,73 @@ async def test_text_survives_the_hop_even_the_awkward_characters() -> None:
     expected = "a" + chr(0x2028) + "b" + chr(0x2029) + "c" + chr(0x85) + "d line\r\nbreak " + chr(0x1F600)
     async with _sdk(URL_WEIRD, streaming=True) as client:
         events = [e async for e in client.send_message(_request(), context=_ctx())]
-    streamed = "".join(p.text for e in events if e.HasField("artifact_update") for p in e.artifact_update.artifact.parts)
+    streamed = "".join(
+        p.text for e in events if e.HasField("artifact_update") for p in e.artifact_update.artifact.parts
+    )
     assert streamed == expected
 
     reply = await send_blocking(URL_WEIRD, "hi", headers=HEADERS)
     assert reply.text == expected
+
+
+# ─────────────────────── B-14: the signed user-context token, minted here and verified by .NET ───────────────────────
+
+URL_TOKEN = os.environ.get("DOTNET_SPECIALIST_URL_TOKEN", "").rstrip("/")
+# The .NET host's shared secret (ECommerceAgents.TestFixtures); the token key is derived from it.
+DOTNET_KEY = derive_key(SECRET)
+OTHER_KEY = derive_key("some-other-key-0123456789abcdef0123456789")
+
+
+def _token_headers(*, audience: str = "product-discovery", email: str = USER, key: bytes = DOTNET_KEY, **extra: str):
+    token = mint(email=email, role="customer", session_id="", audience=audience, key=key)
+    return {"x-agent-secret": SECRET, HEADER_NAME: token, **extra}
+
+
+@pytest.mark.skipif(not URL_TOKEN, reason="set DOTNET_SPECIALIST_URL_TOKEN (a .NET specialist with A2A_IDENTITY=token)")
+async def test_a_token_mode_dotnet_specialist_serves_the_user_a_python_token_names() -> None:
+    # No x-user-* header at all: the only thing that can tell the tool who is asking is the token.
+    headers = _token_headers(email="dora@example.com")
+    reply = await send_blocking(URL_TOKEN, "price of the XM5?", headers=headers)
+    assert reply.ok
+    [step] = reply.steps
+    assert "for dora@example.com" in str(step["tool_output"])
+
+    events = [e async for e in stream_events(URL_TOKEN, "price?", headers=headers)]
+    [streamed_step] = [e.data for e in events if e.kind == "step"]
+    assert streamed_step is not None and "for dora@example.com" in str(streamed_step["tool_output"])
+
+
+@pytest.mark.skipif(not URL_TOKEN, reason="set DOTNET_SPECIALIST_URL_TOKEN")
+@pytest.mark.parametrize(
+    "headers",
+    [
+        pytest.param({"x-agent-secret": SECRET, "x-user-email": USER, "x-user-role": "customer"}, id="headers-only"),
+        pytest.param(_token_headers(**{"x-user-email": "admin@example.com"}), id="forged-email-beside-a-valid-token"),
+        pytest.param(_token_headers(audience="order-management"), id="a-token-for-another-specialist"),
+        pytest.param(_token_headers(key=OTHER_KEY), id="a-token-signed-with-another-key"),
+    ],
+)
+async def test_a_token_mode_dotnet_specialist_refuses_what_is_not_a_valid_token(headers: dict[str, str]) -> None:
+    with pytest.raises(A2AClientError) as raised:
+        await send_blocking(URL_TOKEN, "hi", headers=headers)
+
+    cause = root_cause(raised.value)
+    assert isinstance(cause, httpx.HTTPStatusError) and cause.response.status_code == 401
+
+
+@pytest.mark.skipif(not URL_TOKEN, reason="set DOTNET_SPECIALIST_URL_TOKEN")
+async def test_a_token_mode_dotnet_specialist_refuses_an_expired_token() -> None:
+    expired = mint(
+        email=USER,
+        role="customer",
+        session_id="",
+        audience="product-discovery",
+        key=DOTNET_KEY,
+        now=int(time.time()) - 3600,
+    )
+
+    with pytest.raises(A2AClientError) as raised:
+        await send_blocking(URL_TOKEN, "hi", headers={"x-agent-secret": SECRET, HEADER_NAME: expired})
+
+    cause = root_cause(raised.value)
+    assert isinstance(cause, httpx.HTTPStatusError) and cause.response.status_code == 401

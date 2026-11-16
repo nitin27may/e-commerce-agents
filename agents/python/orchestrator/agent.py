@@ -105,7 +105,7 @@ async def call_specialist_agent(
     # / 500-char window that was silently losing context on long chats.
 
     stream_queue = current_stream_queue.get()
-    headers = await build_a2a_headers()
+    headers = await build_a2a_headers(agent_name)
     request_body = {"message": message}
 
     with a2a_call_span("orchestrator", agent_name, url):

@@ -105,7 +105,7 @@ class RemoteSpecialistChatClient(BaseChatClient):
         return reply.text
 
     async def _post(self, prompt: str) -> str:
-        headers = await build_a2a_headers()
+        headers = await build_a2a_headers(self._agent_name)
         if settings.A2A_TRANSPORT == "a2a":
             return await self._post_a2a(prompt, headers)
         async with httpx.AsyncClient(timeout=self._timeout, transport=_A2A_TRANSPORT) as client:

@@ -266,6 +266,19 @@ class Settings(BaseSettings):
     # connection that started it, so this is the bound on work a slow or dropped caller can leave behind.
     A2A_MAX_ACTIVE_TASKS: int = Field(default=32, ge=1)
     A2A_MAX_ACTIVE_TASKS_PER_CALLER: int = Field(default=8, ge=1)
+    # How a specialist learns which user a call is for (B-14, shared/identity_token.py). `headers`: the
+    # forwarded X-User-* headers, trusted on the strength of the inter-agent credential (the original way).
+    # `token`: only a signed, short-lived, audience-bound X-User-Context token; a call without a valid one is
+    # refused and the headers are ignored. `both` (default, for one release): the orchestrator sends both,
+    # a specialist verifies a token when one is present (a header that contradicts it is refused) and falls
+    # back to the headers when there is none, so a mixed or half-upgraded deployment keeps working.
+    A2A_IDENTITY: Literal["headers", "token", "both"] = "both"
+    # The key the token is signed with, HKDF-derived. Empty uses AGENT_SHARED_SECRET (nothing new to distribute).
+    # Set it to a value different from the shared secret so that holding X-Agent-Secret alone no longer lets a
+    # caller choose its user. Must be identical on the orchestrator and every specialist, on both stacks.
+    A2A_IDENTITY_KEY: str = ""
+    # Token lifetime. A verifier also refuses any token living longer than 15 minutes.
+    A2A_IDENTITY_TTL_SECONDS: int = Field(default=300, ge=30, le=900)
 
     # ── Telemetry ───────────────────────────────────────────────────
     OTEL_ENABLED: bool = False
@@ -507,6 +520,8 @@ class Settings(BaseSettings):
 
         _check("JWT_SECRET", self.JWT_SECRET)
         _check("AGENT_SHARED_SECRET", self.AGENT_SHARED_SECRET)
+        if self.A2A_IDENTITY_KEY.strip():
+            _check("A2A_IDENTITY_KEY", self.A2A_IDENTITY_KEY)
 
         if self.AUTH_MODE == "oauth":
             _check("OAUTH_SEED_KEY", self.OAUTH_SEED_KEY)

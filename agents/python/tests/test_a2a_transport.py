@@ -253,7 +253,7 @@ async def test_a_wrong_secret_is_reported_with_its_status(monkeypatch: pytest.Mo
     app, model = build_app()
     _bind(monkeypatch, ASGITransport(app=app), transport_mode="a2a", streaming=False)
 
-    async def _wrong_credentials() -> dict[str, str]:
+    async def _wrong_credentials(*_audience: str) -> dict[str, str]:
         return {"x-agent-secret": "not-the-secret", "x-user-email": USER, "x-user-role": "customer"}
 
     monkeypatch.setattr(orch_mod, "build_a2a_headers", _wrong_credentials)

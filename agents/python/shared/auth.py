@@ -24,6 +24,8 @@ from starlette.responses import JSONResponse, Response
 
 from shared.config import settings
 from shared.context import current_session_id, current_user_email, current_user_role
+from shared.identity_token import HEADER_NAME, IdentityTokenError
+from shared.identity_token import verify as verify_identity
 from shared.jwt_utils import decode_token
 from shared.log_safe import log_safe
 
@@ -57,16 +59,48 @@ def _identity_anomaly(email: str, role: str) -> str | None:
 
 
 def _apply_forwarded_identity(request: Request, agent_name: str) -> str | None:
-    """Read x-user-email/x-user-role/x-session-id, flag spoofing, stamp ContextVars.
+    """Resolve which user the inter-agent caller speaks for, flag spoofing, stamp ContextVars.
 
-    Shared by both inter-agent credential paths (shared secret in ``local``
-    mode, service token in ``oauth`` mode) since forwarded-identity handling
-    is identical either way. Returns a rejection reason if
-    ``GUARDRAILS_STRICT_IDENTITY`` should reject the request, else ``None``.
+    Shared by both inter-agent credential paths (shared secret in ``local`` mode, service token in ``oauth``
+    mode) since forwarded-identity handling is identical either way. Returns a rejection reason if the request
+    must be refused, else ``None``.
+
+    Where the identity comes from is ``A2A_IDENTITY`` (B-14, ``shared/identity_token.py``):
+
+    * ``headers``: the forwarded ``x-user-email`` / ``x-user-role`` / ``x-session-id``, trusted on the strength of
+      the inter-agent credential (the original behaviour; any ``x-user-context`` is ignored).
+    * ``both``: a signed ``x-user-context`` token when one is present, else the headers. A token that does not
+      verify is refused, never ignored (a caller that sent one meant it), and a header beside a valid token must
+      say the same thing: a forged ``x-user-email`` next to someone else's token is refused.
+    * ``token``: only a verified token; the headers are not read for identity at all.
     """
-    email = request.headers.get("x-user-email", "system")
-    role = request.headers.get("x-user-role", "system")
-    session_id = request.headers.get("x-session-id", "")
+    mode = settings.A2A_IDENTITY
+    token = request.headers.get(HEADER_NAME, "") if mode != "headers" else ""
+    header_email = request.headers.get("x-user-email")
+    header_role = request.headers.get("x-user-role")
+    header_session = request.headers.get("x-session-id", "")
+
+    if token:
+        try:
+            verified = verify_identity(token, audience=agent_name)
+        except IdentityTokenError as exc:
+            logger.warning("security.user_context_rejected agent=%s reason=%s", log_safe(agent_name), exc.reason)
+            return "Invalid user context"
+        if (
+            (header_email is not None and header_email != verified.email)
+            or (header_role is not None and header_role != verified.role)
+            or (header_session and header_session != verified.session_id)
+        ):
+            logger.warning("security.user_context_mismatch agent=%s", log_safe(agent_name))
+            return "Identity does not match the user context"
+        email, role, session_id = verified.email, verified.role, verified.session_id
+    elif mode == "token":
+        logger.warning("security.user_context_missing agent=%s", log_safe(agent_name))
+        return "User context required"
+    else:
+        email = header_email if header_email is not None else "system"
+        role = header_role if header_role is not None else "system"
+        session_id = header_session
 
     anomaly = _identity_anomaly(email, role)
     if anomaly:

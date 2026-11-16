@@ -15,6 +15,8 @@ import httpx2
 
 from shared.config import settings
 from shared.context import current_session_id, current_user_email, current_user_role
+from shared.identity_token import HEADER_NAME
+from shared.identity_token import mint as mint_identity
 from shared.oauth.client_secrets import derive_client_secret
 
 
@@ -117,20 +119,32 @@ def set_mcp_auth_header(client: httpx2.AsyncClient, token: str) -> None:
     client.headers["Authorization"] = f"Bearer {token}"
 
 
-async def build_a2a_headers() -> dict[str, str]:
-    """Build the outbound header set for an inter-agent A2A call.
+async def build_a2a_headers(audience: str = "") -> dict[str, str]:
+    """Build the outbound header set for an inter-agent A2A call to the specialist named ``audience``.
 
-    ``local`` mode: the static shared secret, as before. ``oauth`` mode: a
-    short-lived AS-issued service token (``agent:invoke`` scope) instead — the
-    shared secret is not sent at all. Either way the caller's end-user
-    identity travels the same way, via the forwarded ``x-user-*`` headers
-    that the callee's ``AgentAuthMiddleware`` reads regardless of mode.
+    The credential says which *agent* is calling. ``local`` mode: the static shared secret, as before.
+    ``oauth`` mode: a short-lived AS-issued service token (``agent:invoke`` scope) instead; the shared secret
+    is not sent at all.
+
+    The end user's identity travels beside it, as ``A2A_IDENTITY`` says (``shared/identity_token.py``):
+    ``headers`` the forwarded ``x-user-*`` headers only (the original way); ``token`` only a signed, short-lived
+    ``x-user-context`` token bound to ``audience`` (the specialist's registry name); ``both`` (the default, so a
+    mixed or half-upgraded deployment keeps working) the two together. A caller that does not know the
+    specialist's name (``audience`` empty) can only send headers, which ``token`` mode refuses to do silently.
     """
-    headers = {
-        "x-user-email": current_user_email.get(""),
-        "x-user-role": current_user_role.get(""),
-        "x-session-id": current_session_id.get(""),
-    }
+    email = current_user_email.get("")
+    role = current_user_role.get("")
+    session_id = current_session_id.get("")
+    mode = settings.A2A_IDENTITY
+
+    headers: dict[str, str] = {}
+    if mode != "token":
+        headers.update({"x-user-email": email, "x-user-role": role, "x-session-id": session_id})
+    if mode != "headers" and audience:
+        headers[HEADER_NAME] = mint_identity(email=email, role=role, session_id=session_id, audience=audience)
+    elif mode == "token":
+        raise ValueError("A2A_IDENTITY=token needs the specialist's name to bind the user-context token to")
+
     if settings.AUTH_MODE == "oauth":
         token = await acquire_service_token(scope="agent:invoke", audience=settings.AUTH_AGENT_AUDIENCE)
         headers["authorization"] = f"Bearer {token}"
