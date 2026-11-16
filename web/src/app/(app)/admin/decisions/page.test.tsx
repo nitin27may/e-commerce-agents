@@ -110,3 +110,91 @@ describe("AutonomyDecisionsPage — out-of-order responses", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });
+
+describe("AutonomyDecisionsPage — refresh", () => {
+  it("has a Refresh button that reloads decisions and budgets", async () => {
+    const spy = vi
+      .spyOn(api, "getAutonomyDecisions")
+      .mockResolvedValueOnce(page([decision(1)]))
+      .mockResolvedValueOnce(page([decision(1), decision(2)]));
+
+    render(<AutonomyDecisionsPage />);
+    await waitFor(() => expect(screen.getByText(/order 00000001/)).toBeInTheDocument());
+    expect(screen.queryByText(/order 00000002/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+
+    await waitFor(() => expect(screen.getByText(/order 00000002/)).toBeInTheDocument());
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled();
+  });
+
+  describe("after a simulated scenario", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    async function sendScenario() {
+      vi.spyOn(api, "simulateAutonomyEvent").mockResolvedValue({
+        enqueued: true,
+        outbox_id: 1,
+        event_id: "e",
+        order_id: "00000007-aaaa-bbbb-cccc-1234567890ab",
+        delay_days: 3,
+      });
+      render(<AutonomyDecisionsPage />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /small delay/ }));
+        await vi.advanceTimersByTimeAsync(0);
+      });
+    }
+
+    it("looks again until the new decision shows up, then stops by itself", async () => {
+      vi.useFakeTimers();
+      const spy = vi
+        .spyOn(api, "getAutonomyDecisions")
+        .mockResolvedValueOnce(page([decision(1)]))
+        .mockResolvedValueOnce(page([decision(1)])) // the worker has not got to it yet
+        .mockResolvedValue(page([decision(9), decision(1)]));
+
+      await sendScenario();
+      expect(spy).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000);
+      });
+      expect(spy).toHaveBeenCalledTimes(2);
+      expect(screen.queryByText(/order 00000009/)).not.toBeInTheDocument();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000);
+      });
+      expect(spy).toHaveBeenCalledTimes(3);
+      expect(screen.getByText(/order 00000009/)).toBeInTheDocument();
+
+      for (let i = 0; i < 10; i++) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(2000);
+        });
+      }
+      expect(spy).toHaveBeenCalledTimes(3); // found it: no more polling
+    });
+
+    it("gives up after a bounded number of looks when nothing arrives", async () => {
+      vi.useFakeTimers();
+      const spy = vi.spyOn(api, "getAutonomyDecisions").mockResolvedValue(page([decision(1)]));
+
+      await sendScenario();
+      for (let i = 0; i < 10; i++) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(2000);
+        });
+      }
+
+      expect(spy).toHaveBeenCalledTimes(1 + 5);
+    });
+  });
+});

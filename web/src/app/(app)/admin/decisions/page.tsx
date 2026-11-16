@@ -1,12 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Gauge, Loader2, Play } from "lucide-react";
+import { Gauge, Loader2, Play, RefreshCw } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { api, type AutonomyBudget, type AutonomyDecision, type AutonomyDecisionsResponse } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
 import { DecisionCard, money } from "@/components/admin/decision-card";
+
+// After a demo event is sent the worker decides it a moment later. Look a few times, then stop on our own.
+const POLL_INTERVAL_MS = 2000;
+const POLL_ATTEMPTS = 5;
 
 const FILTERS: { value: string; label: string }[] = [
   { value: "", label: "All" },
@@ -51,13 +55,16 @@ export default function AutonomyDecisionsPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [simulating, setSimulating] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [pollsLeft, setPollsLeft] = useState(0);
+  const totalBeforeEvent = useRef(0);
 
   // Responses can finish out of order (a slow "All" after a quick "Reversed"). Only the newest request may write
   // data, error or loading, and starting one aborts the previous so the browser also stops waiting for it.
   const latest = useRef(0);
   const inflight = useRef<AbortController | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<AutonomyDecisionsResponse | null> => {
     const id = ++latest.current;
     inflight.current?.abort();
     const controller = new AbortController();
@@ -65,11 +72,14 @@ export default function AutonomyDecisionsPage() {
     setError(null);
     try {
       const res = await api.getAutonomyDecisions(filter || undefined, { signal: controller.signal });
-      if (id === latest.current) setData(res);
+      if (id !== latest.current) return null;
+      setData(res);
+      return res;
     } catch (e) {
       if (id === latest.current && !(e instanceof DOMException && e.name === "AbortError")) {
         setError(e instanceof Error ? e.message : "Failed to load decisions");
       }
+      return null;
     } finally {
       if (id === latest.current) setLoading(false);
     }
@@ -80,6 +90,25 @@ export default function AutonomyDecisionsPage() {
   }, [user, isAdmin, load]);
 
   useEffect(() => () => inflight.current?.abort(), []);
+
+  // A bounded look-again after a demo event: stops when a new decision appears, after POLL_ATTEMPTS, or on unmount.
+  useEffect(() => {
+    if (pollsLeft <= 0) return;
+    const timer = setTimeout(async () => {
+      const res = await load();
+      setPollsLeft(res && res.total > totalBeforeEvent.current ? 0 : pollsLeft - 1);
+    }, POLL_INTERVAL_MS);
+    return () => clearTimeout(timer);
+  }, [pollsLeft, load]);
+
+  async function refresh() {
+    setRefreshing(true);
+    try {
+      await load();
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   function selectFilter(value: string) {
     if (value === filter) return;
@@ -103,6 +132,10 @@ export default function AutonomyDecisionsPage() {
           ? `Sent a ${res.delay_days}-day delay for order ${res.order_id.slice(0, 8)}. The worker will decide it in a moment.`
           : "That event was already sent.",
       );
+      if (res.enqueued) {
+        totalBeforeEvent.current = data?.total ?? 0;
+        setPollsLeft(POLL_ATTEMPTS);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not send the event");
     } finally {
@@ -132,6 +165,11 @@ export default function AutonomyDecisionsPage() {
             while it is reversible.
           </p>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" size="sm" variant="outline" onClick={refresh} disabled={refreshing}>
+            {refreshing ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
+            Refresh
+          </Button>
         {scenarios.length > 0 && (
           <div role="group" aria-label="Send a demo event" className="flex flex-wrap gap-2">
             {scenarios.map(([name, days]) => (
@@ -142,6 +180,7 @@ export default function AutonomyDecisionsPage() {
             ))}
           </div>
         )}
+        </div>
       </div>
 
       {data && !data.enabled && (
