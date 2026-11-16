@@ -43,7 +43,7 @@ async def test_replay_calls_mcp_weather_tool(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_weather_tool_returns_canned_data() -> None:
-    # FastMCP wraps the function; access the original via .fn
+    # MCPServer wraps the function; access the original via .fn
     fn = getattr(get_weather, "fn", get_weather)
     assert "Sunny" in fn("Paris")
     assert "No weather data" in fn("Atlantis")

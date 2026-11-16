@@ -135,7 +135,7 @@ Resuming builds a fresh `Workflow` (`BuildWorkflow(initialRefund)` again, same i
 - **The workflow needs a stable `name`.** Python's `storage.list_checkpoints(workflow_name=...)` and the .NET `sessionId` used with `RetrieveIndexAsync` are both how you find checkpoints later — lose the name/session id and the checkpoints are still on disk but unreachable through the normal API.
 - **State must round-trip through the backend's serializer.** Python's `on_checkpoint_save` returns a plain `dict` that has to survive JSON; .NET's `QueueStateUpdateAsync` is generic but still bound by what `CheckpointManager.CreateJson` can marshal. Custom objects need explicit (de)serialization — don't hand back something with, say, an open file handle or a live DB connection.
 - **Checkpoints pile up.** Neither `FileCheckpointStorage` nor `FileSystemJsonCheckpointStore` auto-deletes old snapshots. A production backend needs its own retention policy — see the `workflow_checkpoints` table note below.
-- **No MAF packaging workaround is needed.** `agent-framework-core` 1.22.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
+- **No MAF packaging workaround is needed.** `agent-framework-core` 1.26.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
 
 ## Tests
 

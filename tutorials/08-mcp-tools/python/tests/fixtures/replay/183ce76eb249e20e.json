@@ -35,22 +35,42 @@
           {
             "additional_properties": {
               "_mcp_tool_result_host_payload": {
+                "_meta": {
+                  "io.modelcontextprotocol/serverInfo": {
+                    "name": "maf-v1-ch08-weather",
+                    "version": ""
+                  }
+                },
                 "content": [
                   {
-                    "text": "Sunny, 18\u00b0C.",
+                    "text": "Sunny, 18°C.",
                     "type": "text"
                   }
                 ],
                 "isError": false,
+                "resultType": "complete",
                 "structuredContent": {
-                  "result": "Sunny, 18\u00b0C."
+                  "result": "Sunny, 18°C."
+                }
+              },
+              "_meta": {
+                "io.modelcontextprotocol/serverInfo": {
+                  "name": "maf-v1-ch08-weather",
+                  "version": ""
                 }
               }
             },
             "call_id": "call_DL2ytVDOxsJNbPXGceoE2Q5H",
             "items": [
               {
-                "additional_properties": {},
+                "additional_properties": {
+                  "_meta": {
+                    "io.modelcontextprotocol/serverInfo": {
+                      "name": "maf-v1-ch08-weather",
+                      "version": ""
+                    }
+                  }
+                },
                 "text": "{\"result\": \"Sunny, 18\\u00b0C.\"}",
                 "type": "text"
               }
@@ -95,7 +115,7 @@
         "contents": [
           {
             "additional_properties": {},
-            "text": "The weather in Paris is sunny and 18\u00b0C.",
+            "text": "The weather in Paris is sunny and 18°C.",
             "type": "text"
           }
         ],

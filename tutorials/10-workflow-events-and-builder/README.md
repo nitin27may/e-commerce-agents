@@ -65,7 +65,7 @@ uv run --project tutorials python tutorials/10-workflow-events-and-builder/pytho
 uv run --project tutorials pytest tutorials/10-workflow-events-and-builder/python/tests -v
 ```
 
-The current Python SDK (`agent-framework-core==1.22.0`, pinned in `tutorials/pyproject.toml`) does **not** use the `ctx.add_event(WorkflowEvent.emit(...))` pattern you may see in older MAF examples — that path is deprecated (`WorkflowEvent.emit()` raises a `DeprecationWarning` telling you to use `ctx.yield_output()` with `intermediate_output_from` instead, and `ctx.add_event()` now actively rejects/warns if an executor tries to emit an `output`/`intermediate`-typed event directly). `python/main.py` uses the current pattern — every executor calls `ctx.yield_output(...)`, and `WorkflowBuilder` decides whether a given executor's yields surface as `type="output"` or `type="intermediate"`:
+The current Python SDK (`agent-framework-core==1.26.0`, pinned in `tutorials/pyproject.toml`) does **not** use the `ctx.add_event(WorkflowEvent.emit(...))` pattern you may see in older MAF examples — that path is deprecated (`WorkflowEvent.emit()` raises a `DeprecationWarning` telling you to use `ctx.yield_output()` with `intermediate_output_from` instead, and `ctx.add_event()` now actively rejects/warns if an executor tries to emit an `output`/`intermediate`-typed event directly). `python/main.py` uses the current pattern — every executor calls `ctx.yield_output(...)`, and `WorkflowBuilder` decides whether a given executor's yields surface as `type="output"` or `type="intermediate"`:
 
 ```python
 def build_workflow():

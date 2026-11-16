@@ -290,7 +290,7 @@ There's no code yet, but one setup-time difference is worth knowing early:
   full capstone app (`dev.sh`), not the standalone tutorial chapters. Stop any
   local Postgres/Redis or change the ports in `docker-compose.yml`.
 - **Don't chase the old "empty `agent_framework/__init__.py`" bug.** It only affected
-  `agent-framework-core==1.0.0`. The repo pins `agent-framework-core==1.22.0`, which ships a real
+  `agent-framework-core==1.0.0`. The repo pins `agent-framework-core==1.26.0`, which ships a real
   `__init__.py`, so there is nothing to patch and no workaround file in the repo.
 
 ## Tests

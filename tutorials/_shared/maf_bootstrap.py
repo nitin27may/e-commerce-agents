@@ -6,7 +6,7 @@ environment variables from the repo-root .env, so tutorials share the same
 OpenAI / Azure OpenAI configuration as the capstone app.
 
 (It used to also patch an empty agent-framework __init__.py — a packaging bug
-in agent-framework-core 1.0.0 that is fixed upstream; the pinned 1.22.0 ships
+in agent-framework-core 1.0.0 that is fixed upstream; the pinned 1.26.0 ships
 the full public API, so chapters import from `agent_framework` directly.)
 
 Usage:

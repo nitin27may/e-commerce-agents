@@ -181,7 +181,7 @@ replaced with a real example.
   directive instructions, as `manager_agent()` does above.
 - **Worker boundaries matter.** Keep each worker's instructions narrow (one concrete kind of
   output) so the manager can chain them reliably instead of getting overlapping, redundant answers.
-- **No MAF packaging workaround is needed.** `agent-framework-core` 1.22.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`, including this one (`main.py:20-22`).
+- **No MAF packaging workaround is needed.** `agent-framework-core` 1.26.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`, including this one (`main.py:20-22`).
 
 ## Tests
 

@@ -163,7 +163,7 @@ came from is out of sync too; open an issue.
 | [05 Context Providers](../05-context-providers/) | `agents/python/shared/context_providers.py:35` — `UserProfileProvider`; `agents/python/product_discovery/agent.py:92` — wired into every specialist |
 | [06 Middleware](../06-middleware/) | `agents/python/shared/middleware.py:179` — `build_specialist_middleware()`, the single wiring point every agent uses, composing 8 layers today |
 | [07 Observability](../07-observability-otel/) | `agents/python/shared/telemetry.py:30,224,261` — `setup_telemetry`/`agent_run_span`/`a2a_call_span`; Aspire at `:18888` |
-| [08 MCP Tools](../08-mcp-tools/) | `agents/python/packages/mcp-product/`, `mcp-inventory/` — two real FastMCP servers over Streamable HTTP; `agents/python/product_discovery/agent.py:69` |
+| [08 MCP Tools](../08-mcp-tools/) | `agents/python/packages/mcp-product/`, `mcp-inventory/` — two real MCPServer servers over Streamable HTTP; `agents/python/product_discovery/agent.py:69` |
 | [09 Executors + Edges](../09-workflow-executors-and-edges/) | `agents/python/workflows/pre_purchase.py:60,79,98,117,148,229` — the fan-out/fan-in executor graph |
 | [10 Events + Builder](../10-workflow-events-and-builder/) | `agents/python/orchestrator/events.py:44` — `OrchestrationEvent`, the normalized protocol every mode's stream uses |
 | [11 Agents in Workflows](../11-agents-in-workflows/) | `agents/python/orchestrator/modes/group_chat_mode.py:65` — `_make_agent_responder()`, an `Agent` wrapped as a workflow responder |

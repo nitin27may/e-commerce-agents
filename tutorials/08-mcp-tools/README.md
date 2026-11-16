@@ -65,12 +65,12 @@ uv sync --project tutorials
 uv run --project tutorials python tutorials/08-mcp-tools/python/main.py
 ```
 
-The server, [`python/weather_mcp_server.py`](./python/weather_mcp_server.py), is a dozen lines of `FastMCP`:
+The server, [`python/weather_mcp_server.py`](./python/weather_mcp_server.py), is a dozen lines of `MCPServer`:
 
 ```python
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
-server = FastMCP("maf-v1-ch08-weather")
+server = MCPServer("maf-v1-ch08-weather")
 
 
 @server.tool()
@@ -177,7 +177,7 @@ Both honor the same MCP spec, so either client works against either-language ser
 - **The subprocess needs a Python interpreter that has `mcp` installed.** The .NET test's `PYTHON_BIN` env var controls which interpreter gets spawned; it defaults to the tutorials venv, not whatever `python3` resolves to on your `PATH`. This default was wrong for a long time — it pointed at `agents/.venv`, a path that stopped existing when the Python packages moved under `agents/python/`, so all three .NET tests here failed with a bare "No such file or directory". No CI job built or ran any tutorial .NET project until #20, so nothing noticed.
 - **Long-running MCP servers stay alive between calls.** Always scope them with `async with` (Python) or `await using` (.NET) so a crashed or forgotten test doesn't leave an orphan subprocess.
 - **Tool name collisions** across multiple MCP servers attached to one agent are a real failure mode in this repo, not a hypothetical: `agents/python/product_discovery/agent.py` explicitly does *not* register a local `get_price_history` tool alongside the MCP server's version of it, because MAF raises "Duplicate tool name" at agent-construction time if it does.
-- **No MAF packaging workaround is needed.** `agent-framework-core` 1.22.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
+- **No MAF packaging workaround is needed.** `agent-framework-core` 1.26.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
 
 ## Tests
 
@@ -190,7 +190,7 @@ cd tutorials/08-mcp-tools/dotnet && dotnet test
 Python ([`python/tests/test_mcp.py`](./python/tests/test_mcp.py)) covers, in order:
 
 1. **Replay integration** (`test_replay_calls_mcp_weather_tool`) — the MCP server subprocess runs for real, but the LLM call is replayed from a committed fixture (`tests/fixtures/replay/`), so it needs no credentials and is safe for CI.
-2. **Unit tests on the tool function** — canned-data lookup and case-insensitivity, exercised directly via `get_weather.fn` (FastMCP wraps the function; `.fn` reaches the original).
+2. **Unit tests on the tool function** — canned-data lookup and case-insensitivity, exercised directly via `get_weather.fn` (MCPServer wraps the function; `.fn` reaches the original).
 3. **`test_build_mcp_tool_configures_subprocess`** — asserts the `MCPStdioTool` is named correctly without spawning it.
 4. **`@pytest.mark.integration` tests** (`test_real_llm_calls_mcp_weather_tool`, `test_real_llm_skips_mcp_tool_for_unrelated_question`) — these hit a live LLM and are skipped automatically (`pytest.mark.skipif`) unless real credentials are present in `.env`; they are not required for a normal test run to pass.
 
@@ -200,7 +200,7 @@ Python ([`python/tests/test_mcp.py`](./python/tests/test_mcp.py)) covers, in ord
 
 This isn't a toy pattern confined to the tutorial — two real MCP servers back the capstone app:
 
-- `agents/python/packages/mcp-product/src/ecommerce_mcp_product/server.py` and `agents/python/packages/mcp-inventory/src/ecommerce_mcp_inventory/server.py` are `FastMCP` servers exposing product search/details/pricing and inventory/warehouse data over **Streamable HTTP** (not stdio — these run as standalone services, `mcp-product` on port 9000 and `mcp-inventory` on port 9001, see `docker-compose.yml`'s `mcp` profile).
+- `agents/python/packages/mcp-product/src/ecommerce_mcp_product/server.py` and `agents/python/packages/mcp-inventory/src/ecommerce_mcp_inventory/server.py` are `MCPServer` servers exposing product search/details/pricing and inventory/warehouse data over **Streamable HTTP** (not stdio — these run as standalone services, `mcp-product` on port 9000 and `mcp-inventory` on port 9001, see `docker-compose.yml`'s `mcp` profile).
 - `agents/python/product_discovery/agent.py:69` builds an `MCPStreamableHTTPTool` pointed at `settings.MCP_PRODUCT_SERVER_URL` when `settings.MCP_ENABLED` is true, and passes it into the agent's `tools` list alongside locally-defined tools like `semantic_search` and `check_stock` — the same "hand the MCP tool object straight to the agent" pattern this chapter's Python client uses, just over HTTP instead of stdio and with OAuth 2.1 resource-server auth optionally layered on (`settings.MCP_AUTH_ENABLED`, `shared/oauth/service_client.py`).
 - `agents/python/inventory_fulfillment/agent.py` follows the identical MCP-vs-direct-tools branch for the inventory domain.
 
