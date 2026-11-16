@@ -171,6 +171,15 @@ runs in `AUTH_MODE=oauth`, so that design would have put it into the default top
   capability: get, list, cancel, subscribe and continuing a task by id in a message all answer "not found" for another
   user's task). The .NET SDK's store interface passes no caller to the store, so ownership there is read from the
   forwarded identity the auth middleware stamped, which flows into the SDK's background execution.
+- **Anonymous callers read no stored task.** A caller with no resolved user (an unauthenticated chat, which the
+  orchestrator forwards with an empty email, or a health/system call with no identity at all, stamped `system`) shares
+  one task owner, so owner scoping alone would let one read another's tasks (`ListTasks` would list them all). Such a
+  caller gets "task not found" from `GetTask`, `SubscribeToTask` and a message that continues a task by id, and an empty
+  `ListTasks`; the task its own `SendMessage` / `SendStreamingMessage` response returns is all it needs, and it is still
+  served. `CancelTask` stays open to them on purpose: the orchestrator's best-effort cancel of an anonymous stream it
+  abandoned is a legitimate anonymous call, it needs the task id (a random id only that stream's response carries), and
+  refusing it would leave the abandoned task running. The per-process and anonymous-bucket active-task caps still apply.
+  Both stacks.
 - **Running tasks are capped.** A task outlives the connection that started it, so a burst of slow or dropped callers is
   a burst of concurrent model calls. `ActiveTaskLimiter` (both stacks) counts the tasks whose executor is running, per
   process (`A2A_MAX_ACTIVE_TASKS`, default 32) and per forwarded user (`A2A_MAX_ACTIVE_TASKS_PER_CALLER`, default 8;

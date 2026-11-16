@@ -41,6 +41,7 @@ from a2a.types.a2a_pb2 import (
     Part,
     Role,
     SendMessageRequest,
+    SubscribeToTaskRequest,
     TaskState,
 )
 from a2a.utils.errors import TaskNotFoundError
@@ -465,6 +466,68 @@ async def test_get_task_returns_a_finished_task_to_its_owner_only() -> None:
     ) as client:
         with pytest.raises(TaskNotFoundError):
             await client.get_task(GetTaskRequest(id=task.id))
+
+
+_SECRET_HEADER = {"x-agent-secret": caller_headers()["x-agent-secret"]}
+#: The two shapes of "no resolved user": an unauthenticated chat forwards an empty email; a health/system call
+#: forwards nothing, which the middleware stamps as ``system``.
+_ANONYMOUS_CALLERS = [{**_SECRET_HEADER, "x-user-email": "", "x-user-role": "anonymous"}, dict(_SECRET_HEADER)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("_ANONYMOUS", _ANONYMOUS_CALLERS, ids=["empty-email", "no-identity"])
+async def test_anonymous_callers_cannot_read_each_others_stored_tasks(_ANONYMOUS: dict[str, str]) -> None:
+    """Every anonymous caller shares one task owner, so a stored task is not readable by an anonymous caller.
+
+    Anonymous means no resolved user identity: an unauthenticated chat the orchestrator forwards, or a health /
+    system call. The task a caller's own response stream returns is all it ever needs.
+    """
+    from a2a.types.a2a_pb2 import ListTasksRequest
+
+    app, _ = build_app()
+    async with _sdk_client(app, streaming=False, headers=_ANONYMOUS) as client:
+        responses = [r async for r in client.send_message(_request())]
+    task = responses[0].task
+    assert task.status.state == TaskState.TASK_STATE_COMPLETED, "an anonymous caller is still served"
+    assert task.artifacts, "and gets its answer in its own response"
+
+    async with _sdk_client(app, streaming=False, headers=_ANONYMOUS) as other_anonymous:
+        with pytest.raises(TaskNotFoundError):
+            await other_anonymous.get_task(GetTaskRequest(id=task.id))
+        assert list((await other_anonymous.list_tasks(ListTasksRequest())).tasks) == []
+        with pytest.raises(TaskNotFoundError):  # continuing a stored task by id is a read of it
+            follow_up = _request("and again?")
+            follow_up.message.task_id = task.id
+            async for _ in other_anonymous.send_message(follow_up):
+                pass
+
+    async with _sdk_client(app, streaming=True, headers=_ANONYMOUS) as streaming_anonymous:
+        with pytest.raises(TaskNotFoundError):
+            async for _ in streaming_anonymous.subscribe(SubscribeToTaskRequest(id=task.id)):
+                pass
+
+    # A named user's tasks were never visible to an anonymous caller, and still are not.
+    named = await _blocking(app, _request())
+    async with _sdk_client(app, streaming=False, headers=_ANONYMOUS) as anonymous:
+        with pytest.raises(TaskNotFoundError):
+            await anonymous.get_task(GetTaskRequest(id=named.id))
+        assert list((await anonymous.list_tasks(ListTasksRequest())).tasks) == []
+    # ... and the anonymous task is not readable by a named user either.
+    async with _sdk_client(app, streaming=False) as named_client:
+        with pytest.raises(TaskNotFoundError):
+            await named_client.get_task(GetTaskRequest(id=task.id))
+
+
+@pytest.mark.asyncio
+async def test_an_anonymous_caller_still_counts_against_the_active_task_cap() -> None:
+    from shared.a2a_server import ActiveTaskLimiter
+
+    limiter = ActiveTaskLimiter(max_total=2, max_per_caller=1)
+
+    assert limiter.try_acquire("")
+    assert not limiter.try_acquire(""), "the anonymous bucket is capped like any caller"
+    assert limiter.try_acquire("alice@example.com")
+    assert not limiter.try_acquire("bob@example.com"), "and the per-process cap still applies"
 
 
 @pytest.mark.asyncio

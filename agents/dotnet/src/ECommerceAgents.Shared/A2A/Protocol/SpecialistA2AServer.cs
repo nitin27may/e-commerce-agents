@@ -21,6 +21,15 @@ namespace ECommerceAgents.Shared.A2A.Protocol;
 /// </list>
 /// Task reads are owner-scoped in <see cref="OwnedBoundedTaskStore"/>, which every read path (get, list,
 /// cancel, subscribe, and continuing a task by id in a message) goes through.
+/// <para>
+/// <b>Anonymous callers.</b> A caller with no resolved user (an unauthenticated chat forwards an empty email; a
+/// health/system call forwards nothing, which the auth middleware stamps <c>system</c>) shares one task owner, so
+/// owner scoping cannot tell two of them apart. Such a caller may touch no stored task: get and subscribe answer
+/// "task not found", list answers empty, and a message cannot continue a task by id. The task its own response
+/// stream returns is all it needs. <c>CancelTask</c> stays open to them: the client's best-effort cancel of a
+/// stream it abandoned is a legitimate anonymous call, and it needs the task's id, which only that stream's own
+/// response carries. The per-process active-task cap still applies to the anonymous bucket.
+/// </para>
 /// </remarks>
 public sealed class SpecialistA2AServer : A2AServer
 {
@@ -49,6 +58,11 @@ public sealed class SpecialistA2AServer : A2AServer
         }
     }
 
+    /// <summary>True for a caller with no resolved user identity (empty email, or the middleware's <c>system</c>).</summary>
+    internal static bool Anonymous => AmbientContext.CurrentUserEmail is "" or "system";
+
+    private static A2AException TaskNotFound() => new("Task not found", A2AErrorCode.TaskNotFound);
+
     private A2AException Masked(string method, Exception ex)
     {
         _log.LogError(ex, "a2a.handler_error method={Method} detail={Detail}", method, LogSafe.Clean(ex.GetType().Name));
@@ -59,6 +73,11 @@ public sealed class SpecialistA2AServer : A2AServer
         SendMessageRequest request, A2ARequestContext? requestContext, CancellationToken cancellationToken = default)
     {
         Admit();
+        if (Anonymous && !string.IsNullOrEmpty(request.Message?.TaskId))
+        {
+            throw TaskNotFound(); // continuing a stored task by id is a read of it
+        }
+
         try
         {
             return await base.SendMessageAsync(request, requestContext, cancellationToken);
@@ -75,6 +94,11 @@ public sealed class SpecialistA2AServer : A2AServer
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         Admit();
+        if (Anonymous && !string.IsNullOrEmpty(request.Message?.TaskId))
+        {
+            throw TaskNotFound();
+        }
+
         await foreach (var item in Guarded("SendStreamingMessage", base.SendStreamingMessageAsync(request, requestContext, cancellationToken), cancellationToken))
         {
             yield return item;
@@ -86,6 +110,11 @@ public sealed class SpecialistA2AServer : A2AServer
         A2ARequestContext? requestContext,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        if (Anonymous)
+        {
+            throw TaskNotFound();
+        }
+
         await foreach (var item in Guarded("SubscribeToTask", base.SubscribeToTaskAsync(request, requestContext, cancellationToken), cancellationToken))
         {
             yield return item;
@@ -95,6 +124,11 @@ public sealed class SpecialistA2AServer : A2AServer
     public override async Task<AgentTask> GetTaskAsync(
         GetTaskRequest request, A2ARequestContext? requestContext, CancellationToken cancellationToken = default)
     {
+        if (Anonymous)
+        {
+            throw TaskNotFound();
+        }
+
         try
         {
             return await base.GetTaskAsync(request, requestContext, cancellationToken);
@@ -108,6 +142,12 @@ public sealed class SpecialistA2AServer : A2AServer
     public override async Task<ListTasksResponse> ListTasksAsync(
         ListTasksRequest request, A2ARequestContext? requestContext, CancellationToken cancellationToken = default)
     {
+        if (Anonymous)
+        {
+            // The shared anonymous owner would list every anonymous caller's tasks.
+            return new ListTasksResponse { Tasks = [], NextPageToken = string.Empty, PageSize = 0, TotalSize = 0 };
+        }
+
         try
         {
             return await base.ListTasksAsync(request, requestContext, cancellationToken);

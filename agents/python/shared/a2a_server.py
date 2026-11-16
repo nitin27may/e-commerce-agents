@@ -66,7 +66,7 @@ from a2a.types.a2a_pb2 import (
     TaskStatus,
 )
 from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH, TransportProtocol
-from a2a.utils.errors import A2AError, InternalError
+from a2a.utils.errors import A2AError, InternalError, TaskNotFoundError
 from agent_framework import FunctionTool
 from fastapi import FastAPI
 from sse_starlette.sse import EventSourceResponse
@@ -133,6 +133,10 @@ FAILURE_TEXT = "Agent processing failed"
 
 
 # ─────────────────────────── identity ───────────────────────────
+
+
+#: The task owners that mean "no resolved user": see :meth:`_SpecialistRequestHandler._anonymous`.
+_ANONYMOUS_OWNERS = frozenset({"", "system"})
 
 
 class _CallerUser(User):
@@ -603,8 +607,20 @@ class _SpecialistRequestHandler(DefaultRequestHandlerV2):
             logger.warning("a2a.too_many_active_tasks total=%d", self.limiter.total)
             raise TooManyActiveTasksError
 
+    @staticmethod
+    def _anonymous(context: ServerCallContext) -> bool:
+        """True for a caller with no resolved user identity: an unauthenticated chat (email ``""``) or a
+        health/system call (no forwarded identity at all, which the auth middleware stamps as ``system``).
+
+        Every such caller shares one task owner, so owner scoping cannot tell them apart. The only task one of
+        them may touch is the one its own response stream returns; stored tasks are not readable by them.
+        """
+        return context.user.user_name in _ANONYMOUS_OWNERS
+
     async def on_message_send(self, params: Any, context: ServerCallContext) -> Any:
         self._admit(context)
+        if self._anonymous(context) and getattr(params.message, "task_id", ""):
+            raise TaskNotFoundError  # continuing a stored task by id is a read of it
         try:
             return await super().on_message_send(params, context)
         except A2AError:
@@ -614,6 +630,8 @@ class _SpecialistRequestHandler(DefaultRequestHandlerV2):
 
     async def on_message_send_stream(self, params: Any, context: ServerCallContext) -> AsyncGenerator[Any, None]:
         self._admit(context)
+        if self._anonymous(context) and getattr(params.message, "task_id", ""):
+            raise TaskNotFoundError
         try:
             async with aclosing(super().on_message_send_stream(params, context)) as events:
                 async for event in events:
@@ -624,6 +642,8 @@ class _SpecialistRequestHandler(DefaultRequestHandlerV2):
             raise self._masked("SendStreamingMessage", exc) from None
 
     async def on_subscribe_to_task(self, params: Any, context: ServerCallContext) -> AsyncGenerator[Any, None]:
+        if self._anonymous(context):
+            raise TaskNotFoundError
         try:
             async with aclosing(super().on_subscribe_to_task(params, context)) as events:
                 async for event in events:
@@ -634,6 +654,8 @@ class _SpecialistRequestHandler(DefaultRequestHandlerV2):
             raise self._masked("SubscribeToTask", exc) from None
 
     async def on_get_task(self, params: Any, context: ServerCallContext) -> Any:
+        if self._anonymous(context):
+            raise TaskNotFoundError
         try:
             return await super().on_get_task(params, context)
         except A2AError:
@@ -642,6 +664,8 @@ class _SpecialistRequestHandler(DefaultRequestHandlerV2):
             raise self._masked("GetTask", exc) from None
 
     async def on_list_tasks(self, params: Any, context: ServerCallContext) -> Any:
+        if self._anonymous(context):
+            return ListTasksResponse()  # the shared anonymous owner would list every anonymous caller's tasks
         try:
             return await super().on_list_tasks(params, context)
         except A2AError:

@@ -411,6 +411,57 @@ public sealed class A2ASpecialistServerTests
         list.Tasks.Select(t => t.Id).Should().Contain(mine.Id).And.NotContain(theirs.Id);
     }
 
+    /// <summary>
+    /// Every anonymous caller (an unauthenticated chat forwards an empty email; a health/system call forwards
+    /// nothing, stamped <c>system</c>) shares one task owner, so none of them may read a stored task. They are
+    /// still served, and the task their own response returns is all they need.
+    /// </summary>
+    [Theory]
+    [InlineData("", "anonymous")]
+    [InlineData("system", "system")]
+    public async Task AnonymousCallers_CannotReadEachOthersStoredTasks(string email, string role)
+    {
+        await using var specialist = await ScriptedSpecialist.StartAsync();
+        var task = (await Sdk(specialist.Caller(email: email, role: role)).SendMessageAsync(Request())).Task!;
+        Text(task).Should().Be(ScriptedToolChatClient.Answer, "an anonymous caller is still served, in its own response");
+
+        var other = Sdk(specialist.Caller(email: email, role: role));
+        var get = () => other.GetTaskAsync(new GetTaskRequest { Id = task.Id });
+        (await get.Should().ThrowAsync<A2AException>()).Which.ErrorCode.Should().Be(A2AErrorCode.TaskNotFound);
+
+        (await other.ListTasksAsync(new ListTasksRequest())).Tasks.Should().BeEmpty();
+
+        var subscribe = async () =>
+        {
+            await foreach (var _ in other.SubscribeToTaskAsync(new SubscribeToTaskRequest { Id = task.Id }))
+            {
+            }
+        };
+        (await subscribe.Should().ThrowAsync<A2AException>()).Which.ErrorCode.Should().Be(A2AErrorCode.TaskNotFound);
+
+        var @continue = () => other.SendMessageAsync(Request(taskId: task.Id, contextId: task.ContextId));
+        (await @continue.Should().ThrowAsync<A2AException>()).Which.ErrorCode.Should().Be(A2AErrorCode.TaskNotFound);
+
+        // A named user's task is no more visible to them than theirs is to a named user.
+        var named = (await Sdk(specialist.Caller()).SendMessageAsync(Request())).Task!;
+        var readNamed = () => other.GetTaskAsync(new GetTaskRequest { Id = named.Id });
+        (await readNamed.Should().ThrowAsync<A2AException>()).Which.ErrorCode.Should().Be(A2AErrorCode.TaskNotFound);
+        var readAnonymous = () => Sdk(specialist.Caller()).GetTaskAsync(new GetTaskRequest { Id = task.Id });
+        (await readAnonymous.Should().ThrowAsync<A2AException>()).Which.ErrorCode.Should().Be(A2AErrorCode.TaskNotFound);
+    }
+
+    [Fact]
+    public async Task AnonymousCallers_ShareOneBucketInTheActiveTaskCap()
+    {
+        var limiter = new ActiveTaskLimiter(maxTotal: 2, maxPerCaller: 1);
+
+        limiter.TryAcquire("").Should().BeTrue();
+        limiter.TryAcquire("").Should().BeFalse("the anonymous bucket is capped like any caller");
+        limiter.TryAcquire("alice@example.com").Should().BeTrue();
+        limiter.TryAcquire("bob@example.com").Should().BeFalse("and the per-process cap still applies");
+        await Task.CompletedTask;
+    }
+
     [Fact]
     public async Task TheLegacyRoutes_StillAnswerOnTheSameApp()
     {
@@ -511,6 +562,9 @@ public sealed class A2ASpecialistServerTests
     [Fact]
     public async Task AFailingTaskStore_AnswersTheFixedInternalError_NotTheExceptionText()
     {
+        // A signed-in caller: an anonymous one is refused before the store is ever touched (see
+        // AnonymousCallers_CannotReadEachOthersStoredTasks), and this test is about the store failing.
+        ECommerceAgents.Shared.Context.RequestContext.CurrentUserEmail = "alice@example.com";
         var logger = Microsoft.Extensions.Logging.Abstractions.NullLogger<A2AServer>.Instance;
         var server = new SpecialistA2AServer(
             new NoopHandler(), new ThrowingStore(), new ChannelEventNotifier(), logger, new A2AServerOptions { SupportsStreaming = true },
