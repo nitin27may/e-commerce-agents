@@ -25,8 +25,13 @@ import asyncpg
 
 from shared.config import settings
 from shared.db import use_pool
-from worker.approval_handlers import HANDLERS
+from worker.approval_handlers import HANDLERS as APPROVAL_HANDLERS
+from worker.merchant_handlers import HANDLERS as MERCHANT_HANDLERS
+from worker.merchant_handlers import ensure_scheduled
 from worker.runner import Handler, run_once
+
+#: Every topic the worker serves. Plain dispatch: adding a topic is adding a line to a handler module's dict.
+HANDLERS: dict[str, Handler] = {**APPROVAL_HANDLERS, **MERCHANT_HANDLERS}
 
 logger = logging.getLogger("worker")
 
@@ -59,6 +64,10 @@ async def run(stop: asyncio.Event, handlers: dict[str, Handler] | None = None) -
     worker_id = _worker_id()
     pool = await asyncpg.create_pool(settings.DATABASE_URL, min_size=1, max_size=max(2, settings.OUTBOX_BATCH_SIZE))
     use_pool(pool)  # handlers that act on a paused workflow go through the same code as a staff decision
+    try:
+        await ensure_scheduled(pool)  # the daily merchant run, only when MERCHANT_OPS_SCHEDULE_ENABLED
+    except (asyncpg.PostgresError, OSError) as exc:  # the schema may not be migrated yet: the poll loop below copes too
+        logger.warning("merchant schedule not booked class=%s", type(exc).__name__)
     logger.info("outbox worker started id=%s topics=%s", worker_id, sorted(handlers))
     try:
         while not stop.is_set():

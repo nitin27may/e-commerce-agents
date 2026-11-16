@@ -88,6 +88,18 @@ async def on_reminder_due(conn: asyncpg.Connection, row: OutboxRow) -> None:
     approval_id = str(approval["id"])
     await repo.append_event(conn, approval_id, "sla_reminder_sent", payload=marker)
     role = approval["assigned_role"]
+    if approval["source"] == "proposal" and approval["subject_email"]:
+        # A merchant proposal is reviewed by the seller who owns the products, not by a staff role.
+        await notify(
+            conn,
+            kind="merchant.proposal_reminder",
+            title="Suggestions for your products are waiting",
+            body=f"A proposal is waiting for your review until {approval['due_at']:%Y-%m-%d %H:%M} UTC.",
+            link="/seller/proposals",
+            approval_id=approval_id,
+            user_email=approval["subject_email"],
+        )
+        return
     if role is None:
         return
     await notify(
@@ -160,6 +172,24 @@ async def on_sla_breached(conn: asyncpg.Connection, row: OutboxRow) -> None:
         payload={"reason": "sla_breached", "on_timeout": target.value},
         decision={"decision": target.value, "reason": "sla_timeout"},
     )
+    if approval["source"] == "proposal":
+        # Nobody decided the batch in time: it lapses, and nothing in it was executed. The requester is the
+        # system actor, so it is the seller who is told.
+        await conn.execute(
+            "UPDATE proposals SET status = 'cancelled', updated_at = NOW() WHERE id = $1 AND status = 'pending_review'",
+            approval["source_ref"],
+        )
+        if approval["subject_email"]:
+            await notify(
+                conn,
+                kind="merchant.proposal_expired",
+                title="Suggestions for your products expired",
+                body="A proposal was not reviewed in time and was closed. Nothing was changed.",
+                link="/seller/proposals",
+                approval_id=approval_id,
+                user_email=approval["subject_email"],
+            )
+        return
     await notify(
         conn,
         kind="approval.timed_out",
