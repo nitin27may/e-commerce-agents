@@ -42,6 +42,9 @@ const REASON: Record<string, string> = {
   order_not_eligible: "The order is not in transit",
   delay_below_minimum: "The delay is too short to earn a credit",
   approval_already_open: "A credit for this order is already waiting for approval",
+  order_already_credited: "This order has already been credited",
+  beneficiary_is_staff: "The credit is for a staff member, so a person must decide it",
+  demo_user_excluded: "The demo account is never acted on",
 };
 
 export function reasonText(code: string): string {

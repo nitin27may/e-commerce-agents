@@ -81,7 +81,11 @@ credit has since been spent. The ledger balance is the sum of a customer's entri
 `run_once` (`autonomy_event:{topic:event_id}`) in front, a unique `event_key` behind it, and the decision commits on its own
 connection before `run_once` marks the event complete. A redelivered row, a second outbox row for the same event, or the same
 `event_id` sent twice acts once. A second event for an order already waiting on an approval is `no_action`
-(`approval_already_open`); a second *new* event on an already-credited order asks a person (`budget:order_count`).
+(`approval_already_open`); a second *new* event on an already-credited order is `no_action` with reason
+`order_already_credited` (logged in the decision log, **no approval opened**): a second goodwill credit for one order is not
+something the inbox should be asked, and approving it would be refused by the same ceiling. `per_order_max_count` (1 in the
+shipped policy) is that ceiling for both paths, autonomous and staff-approved; the approved execution still refuses at the
+ceiling as a backstop for an approval opened before the order was credited.
 
 ## Over budget: an approval
 

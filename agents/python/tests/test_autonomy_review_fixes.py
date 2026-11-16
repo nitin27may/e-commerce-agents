@@ -12,6 +12,7 @@ import asyncio
 import uuid
 from datetime import timedelta
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import asyncpg
@@ -425,3 +426,60 @@ async def test_w2_the_holder_of_a_live_claim_still_pays_once(w: aus.World) -> No
 
     assert first["success"] is True and again["success"] is True
     assert await aus.ledger_balance(w.pool, w.users[aus.CUSTOMER]) == D("40.00")
+
+
+# ── W3: a credited order is no_action, not an approval nobody can approve ───────────────────────────────────────
+
+
+async def test_w3_a_second_event_on_a_credited_order_is_no_action_and_opens_no_approval(w: aus.World) -> None:
+    order = await aus.order(w)
+    await _handle(w, order, 3, "evt-1")
+
+    again = await _handle(w, order, 12, "evt-2")  # even one that would otherwise be a $40 ask
+
+    assert again["tier"] == "no_action" and again["reasons"] == ["order_already_credited"], again
+    assert await w.pool.fetchval("SELECT count(*) FROM approvals") == 0
+    (_, second) = await aus.decisions(w.pool)
+    assert second["tier"] == "no_action" and second["outcome"] == "no_action" and second["budget_day"] is None
+    assert await aus.ledger_balance(w.pool, w.users[aus.CUSTOMER]) == D("5.00")
+
+
+async def test_w3_an_order_credited_after_an_approval_is_no_action_too(w: aus.World) -> None:
+    order = await aus.order(w)
+    first = await _handle(w, order, 12, "evt-1")
+    await svc.decide(first["approval_id"], STAFF, decision="approve")
+
+    again = await _handle(w, order, 12, "evt-2")
+
+    assert again["reasons"] == ["order_already_credited"]
+    assert await w.pool.fetchval("SELECT count(*) FROM approvals") == 1
+
+
+async def test_w3_the_order_ceiling_is_the_policys_per_order_max_count_for_both_paths(
+    w: aus.World, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With a ceiling of 2 the order may be credited twice (alone or after approval); the third event is no_action."""
+    monkeypatch.setattr("shared.config.settings.AUTONOMY_POLICY_PATH", aus.policy_file(tmp_path, per_order_max_count=2))
+    order = await aus.order(w)
+
+    one = await _handle(w, order, 3, "evt-1")  # alone
+    two = await _handle(w, order, 12, "evt-2")  # asks: under the ceiling
+    approved = await svc.decide(two["approval_id"], STAFF, decision="approve")  # and can be approved
+    three = await _handle(w, order, 3, "evt-3")  # at the ceiling
+
+    assert one["status"] == "executed" and two["status"] == "awaiting_approval"
+    assert approved["result"]["success"] is True
+    assert three["reasons"] == ["order_already_credited"]
+    assert await aus.ledger_balance(w.pool, w.users[aus.CUSTOMER]) == D("45.00")
+
+
+async def test_w3_no_approval_can_be_opened_that_approving_would_refuse(w: aus.World) -> None:
+    """The invariant behind W3: every approval the engine opens is one that approving can grant."""
+    order = await aus.order(w)
+    await _handle(w, order, 3, "evt-1")
+    for i in range(2, 5):
+        await _handle(w, order, 12, f"evt-{i}")
+
+    # None opened: the order was credited, so there is nothing a person could be asked to grant.
+    assert await w.pool.fetchval("SELECT count(*) FROM approvals") == 0
+    assert {r["tier"] for r in await aus.decisions(w.pool)} == {"auto", "no_action"}

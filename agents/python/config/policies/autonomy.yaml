@@ -22,7 +22,9 @@
 #
 #   per_action_max_amount   most one autonomous action may cost
 #   per_customer_per_day    {max_count, max_amount}  one customer, one UTC day
-#   per_order_max_count     autonomous actions on one order, ever (a duplicate carrier event must not pay twice)
+#   per_order_max_count     credits on one order, ever, autonomous or staff-approved (a duplicate carrier event must
+#                           not pay twice). At the ceiling a further event is `no_action: order_already_credited`,
+#                           never an approval, because approving it would be refused by the same ceiling.
 #   global_per_day          {max_count, max_amount}  every customer, one UTC day
 #
 # `events` maps an event topic to the action it may trigger and the deterministic rule that sizes it: the credit

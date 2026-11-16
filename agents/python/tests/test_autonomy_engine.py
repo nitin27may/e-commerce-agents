@@ -285,13 +285,15 @@ async def test_a_customers_own_daily_cap_sends_their_second_event_to_a_person(w:
     assert await aus.ledger_balance(w.pool, w.users[aus.CUSTOMER]) == D("5.00")
 
 
-async def test_a_second_event_on_an_already_credited_order_asks_and_names_the_order_cap(w: aus.World) -> None:
+async def test_a_second_event_on_an_already_credited_order_is_no_action_not_an_approval(w: aus.World) -> None:
+    """Review fix W3: it used to open an approval that approving could only ever fail (``order_already_credited``)."""
     order = await aus.order(w)
     await _handle(w, order, 3, "evt-1")
 
     again = await _handle(w, order, 3, "evt-2")
 
-    assert again["status"] == "awaiting_approval" and "budget:order_count" in again["reasons"]
+    assert again["status"] == "no_action" and again["reasons"] == ["order_already_credited"]
+    assert await w.pool.fetchval("SELECT count(*) FROM approvals") == 0
     assert await aus.ledger_balance(w.pool, w.users[aus.CUSTOMER]) == D("5.00")
 
 

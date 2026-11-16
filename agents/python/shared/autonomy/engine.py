@@ -43,6 +43,7 @@ from shared.approvals.intake import ASSIGNED_ROLE, ROLE_RANK
 from shared.autonomy.policy import (
     AUTONOMOUS_TIERS,
     AutonomyPolicy,
+    AutonomyPolicyError,
     Budget,
     Usage,
     check_budget,
@@ -184,6 +185,23 @@ async def lock_order(conn: asyncpg.Connection, order_id: uuid.UUID) -> None:
     await conn.execute("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", f"autonomy_order:{order_id}")
 
 
+async def credits_on_order(conn: asyncpg.Connection, order_id: uuid.UUID) -> int:
+    """Credits actually granted on this order, by the engine alone or after a person approved them.
+
+    Reversed ones still count: a second credit for the same delay is not something to hand out because the first was
+    undone. Call under :func:`lock_order`.
+    """
+    return int(
+        await conn.fetchval(
+            """SELECT count(*) FROM agent_decisions
+                WHERE order_id = $1 AND action = $2
+                  AND ((entry_type = 'decision' AND outcome = 'executed') OR entry_type = 'approved_execution')""",
+            order_id,
+            ACTION_GOODWILL_CREDIT,
+        )
+    )
+
+
 async def read_usage(
     conn: asyncpg.Connection, budget_key: str, day: date, *, user_id: uuid.UUID, order_id: uuid.UUID
 ) -> Usage:
@@ -200,15 +218,7 @@ async def read_usage(
         user_id,
         sorted(AUTONOMOUS_TIERS),
     )
-    # Credits actually granted on this order, by the engine alone or after a person approved them. Reversed
-    # ones still count: a second credit for the same delay is a person's call.
-    on_order = await conn.fetchval(
-        """SELECT count(*) FROM agent_decisions
-            WHERE order_id = $1 AND action = $2
-              AND ((entry_type = 'decision' AND outcome = 'executed') OR entry_type = 'approved_execution')""",
-        order_id,
-        ACTION_GOODWILL_CREDIT,
-    )
+    on_order = await credits_on_order(conn, order_id)
     return Usage(
         global_count=totals["n"],
         global_amount=totals["total"],
@@ -291,6 +301,12 @@ async def decide_shipment_delayed(
     amount = rule.credit_for(event.delay_days)
     if amount is None:
         return _no_action("delay_below_minimum", delay_days=event.delay_days), context
+    # The order's ceiling (``per_order_max_count``) holds for both paths: at it, a further credit is not something the
+    # system may do alone and not something the inbox should be asked either (approving it would be refused by the
+    # same ceiling). It is logged as ``no_action``, not opened as an approval nobody could approve.
+    credited = await credits_on_order(conn, order["id"])
+    if credited >= budget.per_order_max_count:
+        return _no_action("order_already_credited", amount=money(amount), credits_on_order=credited), context
     if await _approval_open_on_order(conn, order["id"]):
         return _no_action("approval_already_open", amount=money(amount)), context
 
@@ -631,14 +647,13 @@ async def _execute_approved_in_tx(
         )
         if order is None:
             return {"success": False, "status": "failed", "reason": "order_not_found"}
-        paid = await conn.fetchval(
-            """SELECT count(*) FROM agent_decisions
-                WHERE order_id = $1 AND action = $2
-                  AND ((entry_type = 'decision' AND outcome = 'executed') OR entry_type = 'approved_execution')""",
-            decision["order_id"],
-            ACTION_GOODWILL_CREDIT,
-        )
-        if paid:  # the order was credited some other way since this was proposed: do not pay twice
+        try:
+            ceiling = get_policy().budget(decision["budget_key"]).per_order_max_count
+        except (AutonomyPolicyError, KeyError):  # the budget is gone from the policy: the strictest reading
+            ceiling = 1
+        if await credits_on_order(conn, decision["order_id"]) >= ceiling:
+            # Credited some other way since this was proposed. The engine no longer opens such an approval, so this
+            # is a backstop for one opened before the order was credited (or by an older build): do not pay twice.
             return {"success": False, "status": "failed", "reason": "order_already_credited"}
         execution_id = uuid.uuid4()
         await _insert_row(
