@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -26,7 +26,7 @@ wheels = [
 
 [[package]]
 name = "agent-framework-devui"
-version = "1.0.0b260813"
+version = "1.0.0b261112"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "agent-framework-core" },
@@ -35,9 +35,9 @@ dependencies = [
     { name = "opentelemetry-sdk" },
     { name = "uvicorn", extra = ["standard"] },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a9/40/f64707d7b80aa124994bd89f6adaeb0c18ae1d2e42325fda892caaa68a01/agent_framework_devui-1.0.0b260813.tar.gz", hash = "sha256:5195f9dc2da0654257000c895e145739d239e1c1c2a179ab7a5bf2f87688a8b7", size = 361012, upload-time = "2026-08-14T02:39:33.463Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/63/4e/9e33cfadde769b0c1a2a72e5cf2217a4bdcff6d38a664a6e239bde51a154/agent_framework_devui-1.0.0b261112.tar.gz", hash = "sha256:4bcba09855695794c3fde901c06cd4d0b03e9781ae3c30350a443077ac5815d9", size = 378931, upload-time = "2026-11-12T18:25:12.184Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4f/ee/cb8dcf17950b24982f5c9286aada1359ea702be784af5fb43281df7c7fb0/agent_framework_devui-1.0.0b260813-py3-none-any.whl", hash = "sha256:e22beb3c500fc858537c8c0913fd4afbcdb5f5741515bbf046ecc5fabb5b4d53", size = 365896, upload-time = "2026-08-14T02:39:11.2Z" },
+    { url = "https://files.pythonhosted.org/packages/cf/ff/b3de5be096006f4d158a80e411a25cb54efa2fc636ebfd477b29ab58f434/agent_framework_devui-1.0.0b261112-py3-none-any.whl", hash = "sha256:59e31d72d16538a148fc58ccf895dde62356b679d25d93ac92beed8005688607", size = 384072, upload-time = "2026-11-12T18:25:51.123Z" },
 ]
 
 [[package]]
@@ -546,7 +546,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "agent-framework-core", specifier = "==1.26.0" },
-    { name = "agent-framework-devui", specifier = "==1.0.0b260813" },
+    { name = "agent-framework-devui", specifier = "==1.0.0b261112" },
     { name = "agent-framework-openai", specifier = "==1.18.2" },
     { name = "agent-framework-orchestrations", specifier = "==1.4.2" },
     { name = "mcp", extras = ["cli"], specifier = ">=2.2,<3" },

@@ -37,7 +37,7 @@ dependencies = [
     # Chapter 20b — DevUI (also has its own standalone pyproject.toml;
     # declared here too so `pytest tutorials/` can collect its tests without
     # a second venv). No stable release exists yet — pinned to the latest beta.
-    "agent-framework-devui==1.0.0b260813",
+    "agent-framework-devui==1.0.0b261112",
     # Chapter 08 — MCP tools (stdio weather server + MCPStdioTool client).
     # mcp 2.x: FastMCP is now mcp.server.mcpserver.MCPServer, and the client stack is httpx2.
     # Matches agents/python.
