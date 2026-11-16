@@ -15,6 +15,10 @@ per line, gzip-compressed::
 ``embedding`` is the vector as base64 of little-endian float32 -- the precision
 the ``vector`` column stores anyway, at roughly half the size of JSON floats.
 
+The whole file is validated before anything is returned (see ``read_embeddings_file``): a
+corrupt or wrong-sized file raises one ``EmbeddingsFileError`` so the seeder can skip embeddings
+with a log line rather than fail partway through inserting them.
+
 The header's ``model`` is compared with ``EMBEDDING_MODEL`` at load time —
 vectors from a different model live in a different space, so loading them under
 the wrong query model is silently meaningless. ``text_sha256`` is compared per
@@ -27,6 +31,7 @@ import base64
 import gzip
 import hashlib
 import json
+import math
 import struct
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -34,6 +39,9 @@ from pathlib import Path
 from typing import Any
 
 FILE_VERSION = 1
+# The ``product_embeddings.embedding`` column is ``vector(1536)`` (text-embedding-3-small); a file
+# of any other width cannot be inserted.
+EXPECTED_DIMENSIONS = 1536
 EMBEDDINGS_FILE = Path(__file__).resolve().parent / "data" / f"product_embeddings.v{FILE_VERSION}.jsonl.gz"
 
 
@@ -69,24 +77,78 @@ def _encode(embedding: list[float]) -> str:
 
 
 def _decode(blob: str) -> list[float]:
-    raw = base64.b64decode(blob)
+    raw = base64.b64decode(blob, validate=True)
+    if len(raw) % 4:
+        raise ValueError("embedding is not a whole number of float32 values")
     return list(struct.unpack(f"<{len(raw) // 4}f", raw))
 
 
-def read_embeddings_file(path: Path) -> EmbeddingsFile:
-    """Parse the precomputed file. Raises ValueError on a malformed one."""
-    with gzip.open(path, "rt", encoding="utf-8") as fh:
-        lines = [line for line in fh if line.strip()]
+class EmbeddingsFileError(ValueError):
+    """The precomputed embeddings file is unreadable, malformed or the wrong shape.
+
+    The message names the file and the first problem found, never file contents.
+    """
+
+
+def read_embeddings_file(path: Path, *, expected_dimensions: int = EXPECTED_DIMENSIONS) -> EmbeddingsFile:
+    """Parse and fully validate the precomputed file.
+
+    Everything is checked here, before the caller inserts a single row: the gzip container, the
+    header (an object with the right version, a string model and an integer ``dimensions`` equal to
+    ``expected_dimensions``), and every row (an object with string ``product_id`` / ``text_sha256``,
+    valid base64 of whole little-endian float32s, exactly ``dimensions`` finite values). Raises
+    :class:`EmbeddingsFileError` for any problem, so a bad file is skipped whole rather than failing
+    the seeder partway through its inserts.
+    """
+    name = path.name
+    try:
+        with gzip.open(path, "rt", encoding="utf-8") as fh:
+            lines = [line for line in fh if line.strip()]
+    except FileNotFoundError:
+        raise
+    except (OSError, EOFError, ValueError) as exc:  # BadGzipFile, truncated stream, bad UTF-8
+        raise EmbeddingsFileError(f"{name}: not a readable gzip/UTF-8 file ({type(exc).__name__})") from None
     if not lines:
-        raise ValueError(f"{path} is empty")
-    header = json.loads(lines[0])
-    if header.get("version") != FILE_VERSION or "model" not in header:
-        raise ValueError(f"{path}: unrecognised header {header!r}")
+        raise EmbeddingsFileError(f"{name} is empty")
+
+    try:
+        header = json.loads(lines[0])
+    except ValueError:
+        raise EmbeddingsFileError(f"{name}: header is not valid JSON") from None
+    if not isinstance(header, dict):
+        raise EmbeddingsFileError(f"{name}: header is not a JSON object")
+    if header.get("version") != FILE_VERSION:
+        raise EmbeddingsFileError(f"{name}: unsupported file version")
+    model = header.get("model")
+    if not isinstance(model, str) or not model:
+        raise EmbeddingsFileError(f"{name}: header has no model")
+    dimensions = header.get("dimensions")
+    if isinstance(dimensions, bool) or not isinstance(dimensions, int):
+        raise EmbeddingsFileError(f"{name}: header dimensions is not an integer")
+    if dimensions != expected_dimensions:
+        raise EmbeddingsFileError(f"{name}: header declares {dimensions} dimensions, expected {expected_dimensions}")
+
     vectors: dict[str, tuple[str, list[float]]] = {}
-    for line in lines[1:]:
-        row = json.loads(line)
-        vectors[row["product_id"]] = (row["text_sha256"], _decode(row["embedding"]))
-    return EmbeddingsFile(model=header["model"], dimensions=int(header["dimensions"]), vectors=vectors)
+    for number, line in enumerate(lines[1:], start=2):
+        try:
+            row = json.loads(line)
+        except ValueError:
+            raise EmbeddingsFileError(f"{name}: line {number} is not valid JSON") from None
+        if not isinstance(row, dict):
+            raise EmbeddingsFileError(f"{name}: line {number} is not a JSON object")
+        product_id, text_sha256, blob = row.get("product_id"), row.get("text_sha256"), row.get("embedding")
+        if not (isinstance(product_id, str) and isinstance(text_sha256, str) and isinstance(blob, str)):
+            raise EmbeddingsFileError(f"{name}: line {number} is missing product_id, text_sha256 or embedding")
+        try:
+            vector = _decode(blob)
+        except (ValueError, struct.error):  # binascii.Error is a ValueError
+            raise EmbeddingsFileError(f"{name}: line {number} has an undecodable embedding") from None
+        if len(vector) != dimensions:
+            raise EmbeddingsFileError(f"{name}: line {number} has {len(vector)} dimensions, expected {dimensions}")
+        if not all(math.isfinite(x) for x in vector):
+            raise EmbeddingsFileError(f"{name}: line {number} has a non-finite value")
+        vectors[product_id] = (text_sha256, vector)
+    return EmbeddingsFile(model=model, dimensions=dimensions, vectors=vectors)
 
 
 def write_embeddings_file(

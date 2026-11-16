@@ -39,7 +39,13 @@ from pathlib import Path
 import asyncpg
 import bcrypt
 
-from scripts.embedding_text import EMBEDDINGS_FILE, build_embedding_text, read_embeddings_file, text_hash
+from scripts.embedding_text import (
+    EMBEDDINGS_FILE,
+    EmbeddingsFileError,
+    build_embedding_text,
+    read_embeddings_file,
+    text_hash,
+)
 from shared.demo_tour import TOUR_EMAIL, TOUR_SEED, reset_tour_user
 from shared.oauth.client_secrets import derive_client_secret
 
@@ -925,8 +931,10 @@ async def seed_product_embeddings(
     else:
         try:
             precomputed = read_embeddings_file(data_path)
-        except (ValueError, KeyError, OSError) as exc:
-            logger.warning("Embeddings: could not read %s (%s) -- skipping", data_path.name, exc)
+        except (EmbeddingsFileError, OSError) as exc:
+            # The file is validated whole before any row is built, so nothing has been inserted.
+            logger.warning("Embeddings: could not use %s (%s) -- skipping; semantic_search will use full-text only",
+                           data_path.name, exc)
             return 0
         if precomputed.model != embedding_model:
             logger.info(
