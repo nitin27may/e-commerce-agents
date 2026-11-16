@@ -269,7 +269,10 @@ export interface AutonomyBudget {
 
 export interface AutonomyDecisionsResponse {
   decisions: AutonomyDecision[];
+  /** Every decision matching the filter, across all pages. */
   total: number;
+  limit?: number;
+  offset?: number;
   budgets: AutonomyBudget[];
   enabled: boolean;
   simulator_enabled: boolean;
@@ -1043,9 +1046,14 @@ class ApiClient {
   }
 
   // Event autonomy (#94), admin only
-  getAutonomyDecisions(state?: string, opts: { signal?: AbortSignal } = {}) {
-    const qs = state ? `?state=${encodeURIComponent(state)}` : "";
-    return this.request<AutonomyDecisionsResponse>(`/api/admin/decisions${qs}`, { signal: opts.signal });
+  /** Newest first. `total` in the response counts every match for `state`, not just this page. */
+  getAutonomyDecisions(state?: string, opts: { limit?: number; offset?: number; signal?: AbortSignal } = {}) {
+    const qs = new URLSearchParams();
+    if (state) qs.set("state", state);
+    if (opts.limit !== undefined) qs.set("limit", String(opts.limit));
+    if (opts.offset) qs.set("offset", String(opts.offset));
+    const q = qs.toString();
+    return this.request<AutonomyDecisionsResponse>(`/api/admin/decisions${q ? `?${q}` : ""}`, { signal: opts.signal });
   }
 
   reverseAutonomyDecision(id: string, note?: string) {

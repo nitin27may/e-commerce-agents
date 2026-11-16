@@ -198,3 +198,94 @@ describe("AutonomyDecisionsPage — refresh", () => {
     });
   });
 });
+
+describe("AutonomyDecisionsPage — paging", () => {
+  it("shows how many of the total are listed and loads older decisions with the next offset", async () => {
+    const spy = vi
+      .spyOn(api, "getAutonomyDecisions")
+      .mockResolvedValueOnce(page([decision(3), decision(2)], { total: 3 }))
+      .mockResolvedValueOnce(page([decision(1, "awaiting_approval")], { total: 3 }));
+
+    render(<AutonomyDecisionsPage />);
+    await waitFor(() => expect(screen.getByText("Showing 2 of 3 decisions, newest first.")).toBeInTheDocument());
+    expect(screen.queryByText(/order 00000001/)).not.toBeInTheDocument();
+    expect(spy.mock.calls[0][1]).toMatchObject({ limit: 50 });
+
+    fireEvent.click(screen.getByRole("button", { name: "Load older decisions" }));
+
+    await waitFor(() => expect(screen.getByText(/order 00000001/)).toBeInTheDocument());
+    expect(spy.mock.calls[1][1]).toMatchObject({ limit: 50, offset: 2 });
+    expect(screen.getByText("Showing 3 of 3 decisions, newest first.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Load older decisions" })).not.toBeInTheDocument();
+  });
+
+  it("does not list a row twice when new decisions shifted the pages", async () => {
+    vi.spyOn(api, "getAutonomyDecisions")
+      .mockResolvedValueOnce(page([decision(3), decision(2)], { total: 3 }))
+      .mockResolvedValueOnce(page([decision(2), decision(1)], { total: 4 })); // a new row pushed #2 down a page
+
+    render(<AutonomyDecisionsPage />);
+    await waitFor(() => expect(screen.getByText(/order 00000003/)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Load older decisions" }));
+
+    await waitFor(() => expect(screen.getByText(/order 00000001/)).toBeInTheDocument());
+    expect(screen.getAllByText(/order 00000002/)).toHaveLength(1);
+  });
+
+  it("pages within a filter, and a filter change starts again from the newest", async () => {
+    const spy = vi.spyOn(api, "getAutonomyDecisions").mockImplementation((state, opts) => {
+      if (state === "awaiting_approval") {
+        return Promise.resolve(
+          opts?.offset
+            ? page([decision(8, "awaiting_approval")], { total: 2 })
+            : page([decision(9, "awaiting_approval")], { total: 2 }),
+        );
+      }
+      return Promise.resolve(page([decision(1)], { total: 1 }));
+    });
+
+    render(<AutonomyDecisionsPage />);
+    await waitFor(() => expect(screen.getByText(/order 00000001/)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Waiting for approval" }));
+    await waitFor(() => expect(screen.getByText(/order 00000009/)).toBeInTheDocument());
+    expect(screen.queryByText(/order 00000001/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Load older decisions" }));
+
+    await waitFor(() => expect(screen.getByText(/order 00000008/)).toBeInTheDocument());
+    const last = spy.mock.calls.at(-1)!;
+    expect(last[0]).toBe("awaiting_approval");
+    expect(last[1]).toMatchObject({ offset: 1 });
+  });
+
+  it("a refresh keeps the rows already paged in", async () => {
+    const spy = vi
+      .spyOn(api, "getAutonomyDecisions")
+      .mockResolvedValueOnce(page([decision(2)], { total: 2 }))
+      .mockResolvedValueOnce(page([decision(1)], { total: 2 }))
+      .mockResolvedValueOnce(page([decision(2), decision(1)], { total: 2 }));
+
+    render(<AutonomyDecisionsPage />);
+    await waitFor(() => expect(screen.getByText(/order 00000002/)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Load older decisions" }));
+    await waitFor(() => expect(screen.getByText(/order 00000001/)).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(3));
+    expect(spy.mock.calls[2][1]).toMatchObject({ limit: 50 }); // at least the loaded count, never fewer than a page
+    expect(screen.getByText(/order 00000001/)).toBeInTheDocument();
+  });
+
+  it("the client sends limit and offset to the API", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async () => new Response(JSON.stringify(page([])), { status: 200 }));
+
+    await api.getAutonomyDecisions("awaiting_approval", { limit: 25, offset: 50 });
+    await api.getAutonomyDecisions();
+
+    expect(String(fetchSpy.mock.calls[0][0])).toContain("/api/admin/decisions?state=awaiting_approval&limit=25&offset=50");
+    expect(String(fetchSpy.mock.calls[1][0])).toMatch(/\/api\/admin\/decisions$/);
+  });
+});

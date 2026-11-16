@@ -12,6 +12,10 @@ import { DecisionCard, money } from "@/components/admin/decision-card";
 const POLL_INTERVAL_MS = 2000;
 const POLL_ATTEMPTS = 5;
 
+// Newest first. The backend caps a page at 200; older rows are reached with "Load older decisions".
+const PAGE_SIZE = 50;
+const MAX_PAGE = 200;
+
 const FILTERS: { value: string; label: string }[] = [
   { value: "", label: "All" },
   { value: "executed", label: "Done by the system" },
@@ -50,6 +54,9 @@ function BudgetMeter({ budget }: { budget: AutonomyBudget }) {
 export default function AutonomyDecisionsPage() {
   const { user, isLoading: authLoading, isAdmin } = useAuth();
   const [data, setData] = useState<AutonomyDecisionsResponse | null>(null);
+  const [decisions, setDecisionRows] = useState<AutonomyDecision[]>([]);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const loaded = useRef(0);
   const [filter, setFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -61,6 +68,10 @@ export default function AutonomyDecisionsPage() {
 
   // Responses can finish out of order (a slow "All" after a quick "Reversed"). Only the newest request may write
   // data, error or loading, and starting one aborts the previous so the browser also stops waiting for it.
+  const setDecisions = useCallback((rows: AutonomyDecision[]) => {
+    loaded.current = rows.length;
+    setDecisionRows(rows);
+  }, []);
   const latest = useRef(0);
   const inflight = useRef<AbortController | null>(null);
 
@@ -71,9 +82,12 @@ export default function AutonomyDecisionsPage() {
     inflight.current = controller;
     setError(null);
     try {
-      const res = await api.getAutonomyDecisions(filter || undefined, { signal: controller.signal });
+      // A reload keeps as many rows as the reviewer had already paged through (up to the backend's cap).
+      const limit = Math.min(MAX_PAGE, Math.max(PAGE_SIZE, loaded.current));
+      const res = await api.getAutonomyDecisions(filter || undefined, { limit, signal: controller.signal });
       if (id !== latest.current) return null;
       setData(res);
+      setDecisions(res.decisions);
       return res;
     } catch (e) {
       if (id === latest.current && !(e instanceof DOMException && e.name === "AbortError")) {
@@ -83,7 +97,37 @@ export default function AutonomyDecisionsPage() {
     } finally {
       if (id === latest.current) setLoading(false);
     }
-  }, [filter]);
+  }, [filter, setDecisions]);
+
+  async function loadMore() {
+    const id = ++latest.current; // supersedes an in-flight reload: this answer is the newer one
+    inflight.current?.abort();
+    const controller = new AbortController();
+    inflight.current = controller;
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const res = await api.getAutonomyDecisions(filter || undefined, {
+        limit: PAGE_SIZE,
+        offset: loaded.current,
+        signal: controller.signal,
+      });
+      if (id !== latest.current) return;
+      setData(res);
+      // New decisions arrive at the top, so a later page can repeat a row already shown: de-duplicate by id.
+      const seen = new Set(decisions.map((d) => d.id));
+      setDecisions([...decisions, ...res.decisions.filter((d) => !seen.has(d.id))]);
+    } catch (e) {
+      if (id === latest.current && !(e instanceof DOMException && e.name === "AbortError")) {
+        setError(e instanceof Error ? e.message : "Failed to load more decisions");
+      }
+    } finally {
+      if (id === latest.current) {
+        setLoadingMore(false);
+        setLoading(false);
+      }
+    }
+  }
 
   useEffect(() => {
     if (user && isAdmin) load();
@@ -113,6 +157,8 @@ export default function AutonomyDecisionsPage() {
   function selectFilter(value: string) {
     if (value === filter) return;
     setLoading(true); // the list below belongs to the previous filter until the new one answers
+    setDecisions([]);
+    setLoadingMore(false);
     setFilter(value);
   }
 
@@ -152,7 +198,6 @@ export default function AutonomyDecisionsPage() {
     );
   }
 
-  const decisions: AutonomyDecision[] = data?.decisions ?? [];
   const scenarios = Object.entries(data?.scenarios ?? {});
 
   return (
@@ -238,6 +283,17 @@ export default function AutonomyDecisionsPage() {
           {decisions.map((d) => (
             <DecisionCard key={d.id} decision={d} onReverse={reverse} />
           ))}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p role="status" className="text-sm text-muted-foreground">
+              Showing {decisions.length} of {Math.max(data?.total ?? 0, decisions.length)} decisions, newest first.
+            </p>
+            {data && decisions.length < data.total && (
+              <Button type="button" size="sm" variant="outline" onClick={loadMore} disabled={loadingMore}>
+                {loadingMore && <Loader2 className="animate-spin" data-icon="inline-start" />}
+                Load older decisions
+              </Button>
+            )}
+          </div>
         </div>
       )}
     </div>
