@@ -159,7 +159,7 @@ public static class AgentSettingsLoader
             DatabaseUrl = databaseUrl,
             RedisUrl = redisUrl,
 
-            LlmProvider = Get("LLM_PROVIDER", "openai").ToLowerInvariant(),
+            LlmProvider = Get("LLM_PROVIDER", "openai").Trim().ToLowerInvariant(),
             ReplayFixturesDir = Get("REPLAY_FIXTURES_DIR", "evals/fixtures/replay"),
             Record = Get("RECORD", "false").Equals("true", StringComparison.OrdinalIgnoreCase),
             ReplayRecordProvider = Get("REPLAY_RECORD_PROVIDER", "azure").ToLowerInvariant(),

@@ -159,7 +159,7 @@ def get_chat_client(agent_name: str | None = None) -> OpenAIChatClient | OpenAIC
     This matches the decision documented in the Ch01/Ch07 tutorial code —
     see docs/architecture.md for the full rationale.
     """
-    global_provider = settings.LLM_PROVIDER.lower()
+    global_provider = settings.LLM_PROVIDER.strip().lower()
 
     if global_provider == "replay":
         from shared.replay_client import ReplayChatClient
