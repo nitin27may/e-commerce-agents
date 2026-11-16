@@ -1,0 +1,11 @@
+# The storefront is a demo application, not a published site. Keep crawlers
+# out of the API proxy and the signed-in area; the documentation site
+# (generated from docs/) has its own robots.txt.
+User-agent: *
+Disallow: /api/
+Disallow: /admin
+Disallow: /seller
+Disallow: /checkout
+Disallow: /orders
+Disallow: /profile
+Disallow: /runs
