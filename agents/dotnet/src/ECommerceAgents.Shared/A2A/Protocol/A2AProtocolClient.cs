@@ -23,7 +23,7 @@ public sealed record SpecialistReply(
 
 /// <summary>One thing a streaming call produced, in the vocabulary the orchestrator already uses.</summary>
 public sealed record A2AEvent(string Kind, string Text = "", A2AWire.WireStep? Step = null,
-    ECommerceAgents.Shared.Context.SpecialistUsage? Usage = null, string State = "")
+    ECommerceAgents.Shared.Context.SpecialistUsage? Usage = null, string State = "", bool ReplayMiss = false)
 {
     public const string Delta = "delta";
     public const string StepKind = "step";
@@ -363,9 +363,9 @@ public sealed class A2AProtocolClient(
 
                     if (IsFailure(state) || IsInterrupted(state))
                     {
-                        yield return new A2AEvent(A2AEvent.Failed, MessageText(update.Status.Message), State: StateName(state))
-                        {
-                        };
+                        yield return new A2AEvent(
+                            A2AEvent.Failed, MessageText(update.Status.Message), State: StateName(state),
+                            ReplayMiss: IsFailure(state) && HasMiss(update.Metadata));
                     }
                 }
                 else if (response.Message is { } reply)
@@ -380,7 +380,9 @@ public sealed class A2AProtocolClient(
                 else if (response.Task is { } snapshot && IsFailure(snapshot.Status.State))
                 {
                     // A snapshot the server led with: it carries no text the deltas will not.
-                    yield return new A2AEvent(A2AEvent.Failed, MessageText(snapshot.Status.Message), State: StateName(snapshot.Status.State));
+                    yield return new A2AEvent(
+                        A2AEvent.Failed, MessageText(snapshot.Status.Message), State: StateName(snapshot.Status.State),
+                        ReplayMiss: HasMiss(snapshot.Metadata));
                 }
             }
         }

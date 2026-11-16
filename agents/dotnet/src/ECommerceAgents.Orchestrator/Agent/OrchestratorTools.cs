@@ -72,17 +72,34 @@ public sealed class OrchestratorTools(A2AClient client, AgentSettings settings, 
         // conversation from Postgres via the X-Session-Id header
         // (HistoryRehydrator), exactly as the Python orchestrator relies on.
         var streamWriter = RequestContext.CurrentStreamWriter;
-        if (streamWriter is null)
+        try
         {
-            return await _client.SendAsync(agentName, url, message);
-        }
+            if (streamWriter is null)
+            {
+                return await _client.SendAsync(agentName, url, message);
+            }
 
-        var full = new System.Text.StringBuilder();
-        await foreach (var delta in _client.StreamAsync(agentName, url, message))
-        {
-            full.Append(delta);
-            await streamWriter.WriteAsync(new StreamFrame("delta", delta));
+            var full = new System.Text.StringBuilder();
+            await foreach (var delta in _client.StreamAsync(agentName, url, message))
+            {
+                full.Append(delta);
+                await streamWriter.WriteAsync(new StreamFrame("delta", delta));
+            }
+            return full.ToString();
         }
-        return full.ToString();
+        catch (SpecialistReplayMissException)
+        {
+            // The specialist has no recording for its model call (LLM_PROVIDER=replay). The tool loop would turn an
+            // exception into a result the orchestrator's model reads and answers (and misses on again), so record the
+            // miss, end the loop without another model call, and let the chat route report it (ChatRoutes).
+            // Twin of Python's _SpecialistMissFunctionMiddleware (shared/replay_miss.py).
+            RequestContext.RecordReplayMiss();
+            if (FunctionInvokingChatClient.CurrentContext is { } invocation)
+            {
+                invocation.Terminate = true;
+            }
+
+            return "[no recorded response]";
+        }
     }
 }

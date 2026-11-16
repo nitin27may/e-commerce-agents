@@ -31,6 +31,9 @@ public static class RequestContext
     // Per-turn LLM token usage by agent (Python's current_run_usage). Mutable
     // object in an AsyncLocal, like _runCostUsd above, for the same reason.
     private static readonly AsyncLocal<RunUsage?> _runUsage = new();
+    // Set when a specialist reported a replay miss (see ReplayMiss). A box for the reason _runCostUsd is one: the tool
+    // call that records it runs in a task the function-invocation loop spawns, whose AsyncLocal writes the caller never sees.
+    private static readonly AsyncLocal<StrongBox<bool>?> _replayMiss = new();
 
     public static string CurrentUserEmail
     {
@@ -200,6 +203,23 @@ public static class RequestContext
     /// <summary>Whether the step at <paramref name="index"/> has already been streamed.</summary>
     public static bool IsStepDelivered(int index) => _deliveredSteps.Value?.Contains(index) ?? false;
 
+    /// <summary>
+    /// Records that a specialist's model call had no recording (<c>LLM_PROVIDER=replay</c>). The tool loop swallows an
+    /// exception a tool raises (the model would read it as a result and call again, which is exactly what must not
+    /// happen), so the tool records the miss here, ends the loop, and the chat route reads it back. Twin of
+    /// Python's <c>shared/replay_miss.py::begin_miss_tracking</c> / <c>raise_if_specialist_missed</c>.
+    /// </summary>
+    public static void RecordReplayMiss()
+    {
+        if (_replayMiss.Value is { } box)
+        {
+            box.Value = true;
+        }
+    }
+
+    /// <summary>Whether a specialist's replay miss ended this request's tool loop.</summary>
+    public static bool ReplayMissRecorded => _replayMiss.Value?.Value ?? false;
+
     public static IDisposable Scope(string email, string role, string sessionId, IReadOnlyList<HistoryEntry>? history = null)
     {
         var previous = (
@@ -212,7 +232,8 @@ public static class RequestContext
             Steps: _steps.Value,
             DeliveredSteps: _deliveredSteps.Value,
             RunUsage: _runUsage.Value,
-            RunCost: _runCostUsd.Value
+            RunCost: _runCostUsd.Value,
+            ReplayMiss: _replayMiss.Value
         );
         _userEmail.Value = email;
         _userRole.Value = role;
@@ -223,6 +244,7 @@ public static class RequestContext
         _steps.Value = new List<ExecutionStep>();
         _deliveredSteps.Value = new HashSet<int>();
         _runUsage.Value = new RunUsage();
+        _replayMiss.Value = new StrongBox<bool>(false);
         // A fresh spend tally per scope. Nothing ever called ResetRunCost, and AddRunCost's lazy
         // creation happens inside whatever async frame first prices a turn — a change an
         // AsyncLocal does not carry back to the caller — so the running total, and with it the
@@ -240,6 +262,7 @@ public static class RequestContext
             _deliveredSteps.Value = previous.DeliveredSteps;
             _runUsage.Value = previous.RunUsage;
             _runCostUsd.Value = previous.RunCost;
+            _replayMiss.Value = previous.ReplayMiss;
         });
     }
 

@@ -24,6 +24,18 @@ public sealed class RequiresEnvFactAttribute : FactAttribute
     }
 }
 
+/// <summary>Skips a theory unless an environment variable names a running peer.</summary>
+public sealed class RequiresEnvTheoryAttribute : TheoryAttribute
+{
+    public RequiresEnvTheoryAttribute(string variable)
+    {
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(variable)))
+        {
+            Skip = $"set {variable} to a running peer; scripts/a2a-interop.sh starts one";
+        }
+    }
+}
+
 /// <summary>
 /// B-13 interop, .NET client to Python specialist: <see cref="OrchestratorClient"/> with <c>A2A_TRANSPORT=a2a</c>
 /// and the official A2A .NET SDK client, against a real Python specialist (a real process on a real socket, around
@@ -217,6 +229,34 @@ public sealed class A2AInteropTests
 
         reply.State.Should().Be("failed");
         reply.ReplayMiss.Should().BeTrue();
+    }
+
+    // The orchestrator's own client, on either wire, against a Python specialist whose model has no recording: it raises
+    // the miss (the chat route reports it) instead of returning an apology the orchestrator's model would answer.
+    [RequiresEnvTheory(MissVar)]
+    [InlineData("legacy")]
+    [InlineData("a2a")]
+    public async Task APythonReplayMiss_RaisesFromTheOrchestratorsClient_BlockingAndStreaming(string transport)
+    {
+        A2AProtocolClient.ForgetCards();
+        var settings = Settings() with { A2aTransport = transport };
+        var client = new OrchestratorClient(
+            new HttpClient(new SocketsHttpHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(30) },
+            settings,
+            new AuthServerClient(new HttpClient(), settings),
+            NullLogger<OrchestratorClient>.Instance);
+        using var scope = Ambient.Scope(User, "customer", Session);
+
+        var blocking = () => client.SendAsync("product-discovery", Url(MissVar), "hi");
+        await blocking.Should().ThrowAsync<ECommerceAgents.Shared.A2A.SpecialistReplayMissException>();
+
+        var streaming = async () =>
+        {
+            await foreach (var _ in client.StreamAsync("product-discovery", Url(MissVar), "hi"))
+            {
+            }
+        };
+        await streaming.Should().ThrowAsync<ECommerceAgents.Shared.A2A.SpecialistReplayMissException>();
     }
 
     // ─────────────────────── B-14: the signed user-context token, minted here and verified by Python ───────────────────────

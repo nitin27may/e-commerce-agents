@@ -264,5 +264,15 @@ A2A_TRANSPORT=a2a scripts/replay-evals.sh --setup
 
 `input-required` for approvals, push notifications, the HTTP+JSON and gRPC bindings, the 0.3 compatibility shim in
 Python, asymmetric signing of the identity token, a golden-file contract test shared by both stacks (the live
-cross-process check replaced it), and a replay-miss path in the .NET orchestrator's chat route (the .NET stack has no
-`replay_miss` UX; the wire carries the marker and the client recognises it, the chat route does not act on it).
+cross-process check replaced it).
+
+## Replay misses
+
+Under `LLM_PROVIDER=replay` a prompt with no recording is a *miss*, on both stacks. A specialist reports it as HTTP 424
+`{"error":"replay_miss"}` (legacy `/message:send`), an `event: replay_miss` frame then `[DONE]` (legacy
+`/message:stream`), or a failed task with `replay-miss/v1` metadata (A2A 1.0). Each orchestrator's client raises it
+(`SpecialistReplayMissError` / `SpecialistReplayMissException`) rather than returning an apology the model would
+answer, the tool loop ends without another model call, and the chat route answers `replay_miss: {message}` on
+`/api/chat` or an `event: replay_miss` frame, `metadata` and `done` on the stream, saves no assistant message, logs no
+usage and deletes the unanswered user message. Both stacks do all of this; the .NET specialists' legacy routes emit the
+424 / frame too (they used to answer 500).
