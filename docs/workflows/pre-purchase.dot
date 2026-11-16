@@ -1,0 +1,22 @@
+digraph Workflow {
+  rankdir=TD;
+  node [shape=box, style=filled, fillcolor=lightblue];
+  edge [color=black, arrowhead=vee];
+
+  "fan-out" [fillcolor=lightgreen, label="fan-out\n(Start)"];
+  "reviews" [label="reviews"];
+  "stock" [label="stock"];
+  "price-history" [label="price-history"];
+  "merge-and-ship" [label="merge-and-ship"];
+  "synthesis" [label="synthesis"];
+
+  "fan_in::merge-and-ship::1faab8f0" [shape=ellipse, fillcolor=lightgoldenrod, label="fan-in"];
+  "price-history" -> "fan_in::merge-and-ship::1faab8f0";
+  "reviews" -> "fan_in::merge-and-ship::1faab8f0";
+  "stock" -> "fan_in::merge-and-ship::1faab8f0";
+  "fan_in::merge-and-ship::1faab8f0" -> "merge-and-ship";
+  "fan-out" -> "reviews";
+  "fan-out" -> "stock";
+  "fan-out" -> "price-history";
+  "merge-and-ship" -> "synthesis";
+}

@@ -62,7 +62,7 @@ The .NET backend is functionally complete for the core domain: all six specialis
 MCP server (`ECommerceAgents.Mcp`, real JSON-RPC over streamable HTTP via the official
 `ModelContextProtocol.AspNetCore` SDK) are implemented, along with a shared layer covering A2A
 client/host, JWT auth middleware, tool audit logging, PII redaction, checkpoint storage
-(in-memory, file, and Postgres backends), declarative workflow primitives, and config validation.
+(in-memory, file, and Postgres backends), and config validation.
 
 It is complete, with documented differences from the Python backend — see
 [`../../docs/parity-matrix.md`](../../docs/parity-matrix.md) for the honest, per-concept

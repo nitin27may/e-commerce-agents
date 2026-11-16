@@ -296,7 +296,7 @@ jobs:
 
       - name: Regenerate diagrams
         working-directory: agents/python
-        run: uv run python -m scripts.visualize_workflows
+        run: uv run python ../../scripts/visualize_workflows.py
 
       - name: Fail on uncommitted diff
         run: |

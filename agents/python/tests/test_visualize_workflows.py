@@ -1,15 +1,14 @@
 """
-Phase 7 Refactor 13 — visualize_workflows.py tests.
+visualize_workflows.py tests.
 
-Import the script's module and exercise its helpers + CLI entry point
-against isolated temp directories.
+Import the script's module and exercise its helpers + CLI entry point against
+isolated temp directories, plus a drift check on the committed diagrams.
 """
 
 from __future__ import annotations
 
 import importlib.util
 import sys
-import textwrap
 from pathlib import Path
 
 import pytest
@@ -24,30 +23,7 @@ _module = importlib.util.module_from_spec(_spec)
 sys.modules["visualize_workflows"] = _module
 _spec.loader.exec_module(_module)  # type: ignore[union-attr]
 
-
-SIMPLE_SPEC = textwrap.dedent(
-    """\
-    name: tiny
-    start: head
-    executors:
-      - id: head
-        op: upper
-      - id: tail
-        op: prefix
-        prefix: "END: "
-    edges:
-      - from: head
-        to: tail
-    """
-)
-
-
-@pytest.fixture
-def specs_dir(tmp_path) -> Path:
-    d = tmp_path / "specs"
-    d.mkdir()
-    (d / "tiny.yaml").write_text(SIMPLE_SPEC)
-    return d
+NAMES = {"pre-purchase", "return-replace"}
 
 
 @pytest.fixture
@@ -57,46 +33,50 @@ def out_dir(tmp_path) -> Path:
     return d
 
 
-def test_render_all_returns_mermaid_and_dot(specs_dir) -> None:
-    rendered = _module.render_all(specs_dir, Path("/tmp/ignored"))
-    assert "tiny" in rendered
-    mermaid, dot = rendered["tiny"]
-    assert mermaid.startswith("flowchart")
-    assert dot.startswith("digraph")
+def test_render_all_returns_mermaid_and_dot() -> None:
+    rendered = _module.render_all()
+    assert set(rendered) == NAMES
+    for mermaid, dot in rendered.values():
+        assert mermaid.startswith("flowchart")
+        assert dot.startswith("digraph")
 
 
-def test_write_rendered_creates_two_files_per_workflow(specs_dir, out_dir) -> None:
-    rendered = _module.render_all(specs_dir, out_dir)
-    written = _module.write_rendered(rendered, out_dir)
-    assert len(written) == 2
-    assert (out_dir / "tiny.mmd").is_file()
-    assert (out_dir / "tiny.dot").is_file()
+def test_render_is_deterministic() -> None:
+    assert _module.render_all() == _module.render_all()
 
 
-def test_check_drift_passes_when_files_match(specs_dir, out_dir) -> None:
-    rendered = _module.render_all(specs_dir, out_dir)
+def test_write_rendered_creates_two_files_per_workflow(out_dir) -> None:
+    written = _module.write_rendered(_module.render_all(), out_dir)
+    assert len(written) == 2 * len(NAMES)
+    for name in NAMES:
+        assert (out_dir / f"{name}.mmd").is_file()
+        assert (out_dir / f"{name}.dot").is_file()
+
+
+def test_check_drift_passes_when_files_match(out_dir) -> None:
+    rendered = _module.render_all()
     _module.write_rendered(rendered, out_dir)
     assert _module.check_drift(rendered, out_dir) == []
 
 
-def test_check_drift_reports_content_changes(specs_dir, out_dir) -> None:
-    rendered = _module.render_all(specs_dir, out_dir)
+def test_check_drift_reports_content_changes(out_dir) -> None:
+    rendered = _module.render_all()
     _module.write_rendered(rendered, out_dir)
-    (out_dir / "tiny.mmd").write_text("## tampered")
+    (out_dir / "pre-purchase.mmd").write_text("## tampered")
 
     problems = _module.check_drift(rendered, out_dir)
     assert any("content drift" in reason for _, reason in problems)
 
 
-def test_check_drift_reports_missing_files(specs_dir, out_dir) -> None:
-    rendered = _module.render_all(specs_dir, out_dir)  # intentionally do NOT write
+def test_check_drift_reports_missing_files(out_dir) -> None:
+    rendered = _module.render_all()  # intentionally do NOT write
     problems = _module.check_drift(rendered, out_dir)
     assert any("missing" in reason for _, reason in problems)
-    assert len(problems) == 2  # both .mmd and .dot missing
+    assert len(problems) == 2 * len(NAMES)
 
 
-def test_check_drift_flags_orphan_files(specs_dir, out_dir) -> None:
-    rendered = _module.render_all(specs_dir, out_dir)
+def test_check_drift_flags_orphan_files(out_dir) -> None:
+    rendered = _module.render_all()
     _module.write_rendered(rendered, out_dir)
     (out_dir / "orphan.mmd").write_text("abandoned")
 
@@ -104,26 +84,23 @@ def test_check_drift_flags_orphan_files(specs_dir, out_dir) -> None:
     assert any("orphan" in reason for _, reason in problems)
 
 
-def test_main_regenerates_files(specs_dir, out_dir) -> None:
-    exit_code = _module.main(["--specs", str(specs_dir), "--out", str(out_dir), "--quiet"])
-    assert exit_code == 0
-    assert (out_dir / "tiny.mmd").is_file()
-    assert (out_dir / "tiny.dot").is_file()
+def test_main_regenerates_files(out_dir) -> None:
+    assert _module.main(["--out", str(out_dir), "--quiet"]) == 0
+    assert (out_dir / "pre-purchase.mmd").is_file()
+    assert (out_dir / "return-replace.dot").is_file()
 
 
-def test_main_check_succeeds_after_regenerate(specs_dir, out_dir) -> None:
-    _module.main(["--specs", str(specs_dir), "--out", str(out_dir), "--quiet"])
-    exit_code = _module.main(["--specs", str(specs_dir), "--out", str(out_dir), "--quiet", "--check"])
-    assert exit_code == 0
+def test_main_check_succeeds_after_regenerate(out_dir) -> None:
+    _module.main(["--out", str(out_dir), "--quiet"])
+    assert _module.main(["--out", str(out_dir), "--quiet", "--check"]) == 0
 
 
-def test_main_check_fails_on_drift(specs_dir, out_dir) -> None:
-    _module.main(["--specs", str(specs_dir), "--out", str(out_dir), "--quiet"])
-    (out_dir / "tiny.mmd").write_text("## tampered")
-    exit_code = _module.main(["--specs", str(specs_dir), "--out", str(out_dir), "--quiet", "--check"])
-    assert exit_code == 1
+def test_main_check_fails_on_drift(out_dir) -> None:
+    _module.main(["--out", str(out_dir), "--quiet"])
+    (out_dir / "pre-purchase.mmd").write_text("## tampered")
+    assert _module.main(["--out", str(out_dir), "--quiet", "--check"]) == 1
 
 
-def test_main_noops_when_specs_dir_missing(tmp_path) -> None:
-    exit_code = _module.main(["--specs", str(tmp_path / "nope"), "--out", str(tmp_path), "--quiet"])
-    assert exit_code == 0  # missing specs = nothing to render; not an error
+def test_committed_diagrams_match_the_workflows() -> None:
+    """docs/workflows/ must be what the script would regenerate (the CI drift job's check)."""
+    assert _module.check_drift(_module.render_all(), _module.DEFAULT_OUT) == []

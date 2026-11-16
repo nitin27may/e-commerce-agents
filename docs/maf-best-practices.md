@@ -71,7 +71,6 @@ class MyExecutor(Executor):
 | **Sequential + HITL** | Ordered steps where a step needs human approval | `workflows/return_replace.py` |
 | **Round-table group chat** | Multiple perspectives debate over a shared transcript, then synthesize | `workflows/group_chat.py` |
 | **Handoff** | LLM-driven hand-off of control between agents | `orchestrator/handoff.py` (`HandoffBuilder`), reachable via `orchestrator/modes/handoff_mode.py` (`ORCHESTRATION_MODE=handoff` or per-request `mode`) |
-| **Declarative (YAML)** | Simple, config-defined pipelines without code | `shared/workflow_loader.py` + `config/workflows/*.yaml` |
 | **Tool routing** | Front-door orchestrator picks a specialist per turn | `orchestrator/agent.py` `call_specialist_agent` (default) |
 
 ### Concurrent — pre-purchase research
@@ -144,13 +143,6 @@ writing:
 Per-request selection takes priority over the `ORCHESTRATION_MODE` env default —
 see `orchestrator/modes/__init__.py::get_mode` for the resolution order.
 
-### Declarative — YAML pipelines
-
-`shared/workflow_loader.py` builds a `WorkflowBuilder` graph from a YAML spec
-(`config/workflows/*.yaml`) using a small op registry. Use for simple,
-non-branching pipelines that shouldn't require code. `scripts/visualize_workflows.py`
-renders these to Mermaid + Graphviz under `docs/workflows/`.
-
 ## Best practices
 
 - **Preserve the public surface.** Each workflow exposes a class with an
@@ -163,7 +155,7 @@ renders these to Mermaid + Graphviz under `docs/workflows/`.
   `WorkflowContext[None, Out]`. A wrong terminal type can stop a chain early.
 - **Carry state as a dataclass.** One state object threads through the graph;
   accumulate `completed_steps` / `errors` for observability.
-- **Pick the simplest pattern that fits.** Tool routing < declarative YAML <
+- **Pick the simplest pattern that fits.** Tool routing <
   sequential < concurrent < handoff, in rough order of complexity.
 
 ## Gotchas
@@ -174,9 +166,9 @@ renders these to Mermaid + Graphviz under `docs/workflows/`.
 - Do not add `from __future__ import annotations` to a module using
   `@response_handler` — MAF resolves its parameter types via `inspect.signature`
   at import time, and stringified annotations break that.
-- `scripts/visualize_workflows.py` renders **declarative YAML** workflows; Python
-  `WorkflowBuilder` graphs (pre-purchase, return-replace, group-chat) are
-  diagrammed by hand in this doc and the tutorials.
+- `scripts/visualize_workflows.py` renders the `pre-purchase` and `return-replace`
+  `WorkflowBuilder` graphs to `docs/workflows/`. The capstone has no declarative
+  (YAML) workflow loader; the declarative pattern is taught in tutorial chapter 19.
 
 ## Related documents
 

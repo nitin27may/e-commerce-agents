@@ -1,0 +1,16 @@
+flowchart TD
+  fan_out["fan-out (Start)"];
+  reviews["reviews"];
+  stock["stock"];
+  price_history["price-history"];
+  merge_and_ship["merge-and-ship"];
+  synthesis["synthesis"];
+  fan_in__merge_and_ship__1faab8f0((fan-in))
+  price_history --> fan_in__merge_and_ship__1faab8f0;
+  reviews --> fan_in__merge_and_ship__1faab8f0;
+  stock --> fan_in__merge_and_ship__1faab8f0;
+  fan_in__merge_and_ship__1faab8f0 --> merge_and_ship;
+  fan_out --> reviews;
+  fan_out --> stock;
+  fan_out --> price_history;
+  merge_and_ship --> synthesis;
