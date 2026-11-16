@@ -267,7 +267,7 @@ async def test_process_refund_retry_replays_the_original_refund_instead_of_error
 
 
 async def test_hitl_fails_closed_when_approval_record_write_fails(monkeypatch: pytest.MonkeyPatch) -> None:
-    from agent_framework._middleware import FunctionInvocationContext
+    from agent_framework import FunctionInvocationContext
 
     from shared.config import settings
     from shared.hitl import HITLFunctionMiddleware

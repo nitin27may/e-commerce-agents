@@ -24,9 +24,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from agent_framework import AgentSession, Message
-from agent_framework._sessions import HistoryProvider
-from agent_framework._types import Role
+from agent_framework import AgentSession, HistoryProvider, Message, Role
 
 from shared import config as _config
 

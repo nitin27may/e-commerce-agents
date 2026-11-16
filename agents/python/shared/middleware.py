@@ -22,7 +22,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from agent_framework._middleware import (
+from agent_framework import (
     AgentContext,
     AgentMiddleware,
     ChatContext,

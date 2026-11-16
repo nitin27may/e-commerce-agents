@@ -200,7 +200,7 @@ def test_get_checkpoint_storage_file_backend(monkeypatch, tmp_path) -> None:
         MAF_CHECKPOINT_DIR=str(tmp_path / "checkpoints"),
     )
     storage = factory.get_checkpoint_storage()
-    from agent_framework._workflows._checkpoint import FileCheckpointStorage
+    from agent_framework import FileCheckpointStorage
     assert isinstance(storage, FileCheckpointStorage)
     assert (tmp_path / "checkpoints").is_dir()
 
@@ -208,7 +208,7 @@ def test_get_checkpoint_storage_file_backend(monkeypatch, tmp_path) -> None:
 def test_get_checkpoint_storage_memory_backend(monkeypatch) -> None:
     factory = _reload_with_env(monkeypatch, MAF_CHECKPOINT_BACKEND="memory")
     storage = factory.get_checkpoint_storage()
-    from agent_framework._workflows._checkpoint import InMemoryCheckpointStorage
+    from agent_framework import InMemoryCheckpointStorage
     assert isinstance(storage, InMemoryCheckpointStorage)
 
 

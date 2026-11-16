@@ -199,7 +199,7 @@ This lets you browse tool schemas, call individual tools, and see raw MCP protoc
 In `product_discovery/agent.py` and `inventory_fulfillment/agent.py`:
 
 ```python
-from agent_framework._mcp import MCPStreamableHTTPTool
+from agent_framework import MCPStreamableHTTPTool
 from shared.config import settings
 
 def create_product_discovery_agent() -> Agent:

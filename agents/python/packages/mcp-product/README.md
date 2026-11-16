@@ -69,7 +69,7 @@ uv publish dist/ecommerce_mcp_product-*.whl
 
 ```python
 # With MAF (Microsoft Agent Framework)
-from agent_framework._mcp import MCPStreamableHTTPTool
+from agent_framework import MCPStreamableHTTPTool
 
 mcp_product = MCPStreamableHTTPTool(
     name="product-mcp",

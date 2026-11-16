@@ -6,7 +6,7 @@ of calling asyncpg directly. Both modes expose the same capabilities.
 """
 
 from agent_framework import Agent
-from agent_framework._mcp import MCPStreamableHTTPTool
+from agent_framework import MCPStreamableHTTPTool
 
 from inventory_fulfillment.prompts import get_system_prompt
 from inventory_fulfillment.tools import (

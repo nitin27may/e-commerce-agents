@@ -27,7 +27,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 from uuid import UUID
 
-from agent_framework._middleware import FunctionInvocationContext, FunctionMiddleware
+from agent_framework import FunctionInvocationContext, FunctionMiddleware
 
 from shared.config import settings
 from shared.context import current_session_id, current_user_email

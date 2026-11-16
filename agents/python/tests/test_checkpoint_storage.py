@@ -12,7 +12,7 @@ import pathlib
 import sys
 
 import pytest
-from agent_framework._workflows._checkpoint import (
+from agent_framework import (
     WorkflowCheckpoint,
     WorkflowCheckpointException,
 )

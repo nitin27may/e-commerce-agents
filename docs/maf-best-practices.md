@@ -41,9 +41,7 @@ MAF workflows are graphs of `Executor`s connected by edges. Each executor handle
 a typed message and either forwards it or yields output:
 
 ```python
-from agent_framework._workflows._executor import Executor, handler
-from agent_framework._workflows._workflow_builder import WorkflowBuilder
-from agent_framework._workflows._workflow_context import WorkflowContext
+from agent_framework import Executor, WorkflowBuilder, WorkflowContext, handler
 
 class MyExecutor(Executor):
     def __init__(self) -> None:
@@ -56,8 +54,8 @@ class MyExecutor(Executor):
         # or: await ctx.yield_output(state)   # emit a terminal result
 ```
 
-- Import from the `agent_framework._workflows` submodules — the v1.0 beta ships an
-  empty top-level `__init__` in a plain checkout.
+- Import from the public `agent_framework` package (pinned at 1.14.0). Private
+  `agent_framework._*` modules are blocked by `tests/test_no_private_maf_imports.py`.
 - A forwarding executor is typed `WorkflowContext[In, Out]`; a terminal executor
   that only yields is typed `WorkflowContext[None, Out]`.
 - Build with `WorkflowBuilder(start_executor=..., name=...)` then `.add_edge(a, b)`
@@ -170,9 +168,9 @@ renders these to Mermaid + Graphviz under `docs/workflows/`.
 
 ## Gotchas
 
-- Import workflow types from `agent_framework._workflows.*` submodules, not the
-  package root (empty `__init__` in v1.0 beta; `patch_maf.py` only re-exports
-  inside the Docker image).
+- Import MAF types from the public `agent_framework` package, never from
+  private `agent_framework._*` modules. The only exception is the allowlist in
+  `tests/test_no_private_maf_imports.py`, each entry with a reason.
 - Do not add `from __future__ import annotations` to a module using
   `@response_handler` — MAF resolves its parameter types via `inspect.signature`
   at import time, and stringified annotations break that.

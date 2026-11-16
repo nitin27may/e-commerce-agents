@@ -244,13 +244,13 @@ def get_checkpoint_storage(*, pool: Any = None) -> Any:
     backend = settings.MAF_CHECKPOINT_BACKEND.lower()
 
     if backend == "file":
-        from agent_framework._workflows._checkpoint import FileCheckpointStorage
+        from agent_framework import FileCheckpointStorage
 
         Path(settings.MAF_CHECKPOINT_DIR).mkdir(parents=True, exist_ok=True)
         return FileCheckpointStorage(settings.MAF_CHECKPOINT_DIR)
 
     if backend == "memory":
-        from agent_framework._workflows._checkpoint import InMemoryCheckpointStorage
+        from agent_framework import InMemoryCheckpointStorage
 
         return InMemoryCheckpointStorage()
 

@@ -57,7 +57,7 @@ Design notes:
 - ``tutorials/_shared/replay_client.py`` is a second, independent copy of
   this file — the tutorials workspace has its own venv with no path
   dependency on ``agents/python``, so it can't import this module directly.
-  Same precedent as ``patch_maf.py`` / ``tutorials/_shared/maf_bootstrap.py``.
+  The tutorials workspace keeps its own copies of shared helpers for the same reason.
   Keep the two in sync when either changes, with one deliberate exception:
   ``_normalize_for_hash`` is intentionally *not* mirrored there. See its
   docstring for why.

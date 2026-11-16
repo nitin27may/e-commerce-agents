@@ -17,9 +17,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from agent_framework._workflows._executor import Executor, handler
-from agent_framework._workflows._workflow_builder import WorkflowBuilder
-from agent_framework._workflows._workflow_context import WorkflowContext
+from agent_framework import Executor, WorkflowBuilder, WorkflowContext, handler
 
 logger = logging.getLogger(__name__)
 

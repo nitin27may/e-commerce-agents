@@ -24,7 +24,7 @@ import logging
 from collections.abc import Awaitable, Callable
 
 from agent_framework import ChatResponse, ChatResponseUpdate, Content, Message, ResponseStream
-from agent_framework._middleware import ChatContext, ChatMiddleware
+from agent_framework import ChatContext, ChatMiddleware
 
 from shared.config import settings
 from shared.guardrails.flags import current_guardrail_flags

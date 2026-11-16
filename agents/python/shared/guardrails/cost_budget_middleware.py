@@ -56,7 +56,7 @@ from contextvars import ContextVar
 from typing import Any
 
 from agent_framework import ChatResponse, ChatResponseUpdate, Content, Message, ResponseStream
-from agent_framework._middleware import ChatContext, ChatMiddleware
+from agent_framework import ChatContext, ChatMiddleware
 
 from shared.config import settings
 from shared.cost import estimate_cost

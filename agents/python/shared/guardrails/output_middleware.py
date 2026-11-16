@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable
 
-from agent_framework._middleware import FunctionInvocationContext, FunctionMiddleware
+from agent_framework import FunctionInvocationContext, FunctionMiddleware
 
 from shared.config import settings
 from shared.function_results import rewrap_function_result, unwrap_function_result
