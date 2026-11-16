@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>false</IsTestProject>
+    <Description>
+      A real .NET specialist on a real socket around a scripted model (no key, no database), for the
+      cross-process A2A interop check in scripts/a2a-interop.sh: the official Python a2a-sdk client drives it.
+      Test infrastructure only; nothing ships it.
+    </Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ECommerceAgents.TestFixtures\ECommerceAgents.TestFixtures.csproj" />
+  </ItemGroup>
+</Project>

@@ -93,14 +93,14 @@ public static class A2AWire
         [property: JsonPropertyName("tool_input")] object? ToolInput,
         [property: JsonPropertyName("tool_output")] object? ToolOutput,
         [property: JsonPropertyName("status")] string Status,
-        [property: JsonPropertyName("duration_ms")] int DurationMs,
+        [property: JsonPropertyName("duration_ms")] double DurationMs,
         [property: JsonPropertyName("agent")] string? Agent = null)
     {
         public static WireStep From(ExecutionStep step, string agent) =>
             new(step.ToolName, step.ToolInput, step.ToolOutput, step.Status, step.DurationMs, agent);
 
         public ExecutionStep ToExecutionStep(string? fallbackAgent = null) =>
-            new(ToolName, ToolInput, ToolOutput, Status, DurationMs, Agent ?? fallbackAgent);
+            new(ToolName, ToolInput, ToolOutput, Status, (int)Math.Round(DurationMs), Agent ?? fallbackAgent);
     }
 
     /// <summary>JSON for metadata and steps: plain (snake_case names are explicit on the records).</summary>
@@ -132,9 +132,8 @@ public static class A2AWire
             return fresh;
         }
 
-        var offset = payload.TryGetProperty("offset", out var o) && o.ValueKind == JsonValueKind.Number && o.TryGetInt32(out var n)
-            ? n
-            : 0;
+        // A protobuf Struct (the Python SDK's metadata) writes every number as a float: 0.0, not 0.
+        var offset = payload.TryGetProperty("offset", out var o) && Whole(o) is { } n ? (int)n : 0;
         if (!payload.TryGetProperty("steps", out var list) || list.ValueKind != JsonValueKind.Array)
         {
             return fresh;
@@ -179,15 +178,19 @@ public static class A2AWire
             return null;
         }
 
-        try
-        {
-            return element.Deserialize<SpecialistUsage>(WireJson);
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
+        // Read field by field: the Python SDK's metadata is a protobuf Struct, whose numbers arrive as 5.0.
+        long Count(string name) => element.TryGetProperty(name, out var v) && Whole(v) is { } n ? n : 0;
+
+        var model = element.TryGetProperty("model", out var m) && m.ValueKind == JsonValueKind.String ? m.GetString() ?? string.Empty : string.Empty;
+        var usage = new SpecialistUsage(Count("input_token_count"), Count("output_token_count"), Count("cached_input_token_count"), model);
+        return usage.InputTokenCount == 0 && usage.OutputTokenCount == 0 ? null : usage;
     }
+
+    /// <summary>A JSON number as a whole count (<c>5</c> and <c>5.0</c> both give 5); <c>null</c> for anything else.</summary>
+    private static long? Whole(JsonElement element) =>
+        element.ValueKind == JsonValueKind.Number && element.TryGetDouble(out var d) && d == Math.Floor(d) && Math.Abs(d) < long.MaxValue
+            ? (long)d
+            : null;
 
     /// <summary>A metadata dictionary (the shape the SDK's events carry).</summary>
     public static Dictionary<string, JsonElement> Metadata(params (string Key, JsonElement Value)[] entries)
