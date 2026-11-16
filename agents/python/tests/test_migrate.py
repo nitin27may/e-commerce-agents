@@ -153,3 +153,35 @@ async def test_bad_filenames_are_rejected(schema_dir: Path) -> None:
     (schema_dir / "migrations" / "add-thing.sql").write_text("SELECT 1;")
     with pytest.raises(migrate_mod.MigrationError, match="bad migration filename"):
         migrate_mod.discover(schema_dir)
+
+
+async def test_an_existing_volume_from_before_the_current_baseline_is_refused_and_nothing_is_recorded(
+    fresh_url: str,
+) -> None:
+    conn = await asyncpg.connect(fresh_url)
+    try:
+        await conn.execute((POSTGRES_DIR / "init.sql").read_text())
+        # An older init.sql: no products.search_vector, none of the newest tables.
+        await conn.execute("DROP INDEX idx_products_search")
+        await conn.execute("ALTER TABLE products DROP COLUMN search_vector")
+        await conn.execute("DROP TABLE hitl_requests")
+    finally:
+        await conn.close()
+
+    with pytest.raises(migrate_mod.MigrationError, match=r"products\.search_vector.*hitl_requests|dev\.sh --clean"):
+        await migrate_mod.migrate(fresh_url, POSTGRES_DIR)
+
+    conn = await asyncpg.connect(fresh_url)
+    try:
+        # Nothing recorded - not even the baseline - and no migration ran.
+        assert await conn.fetchval("SELECT count(*) FROM schema_migrations") == 0
+    finally:
+        await conn.close()
+
+
+async def test_the_baseline_markers_are_all_declared_in_init_sql() -> None:
+    init = (POSTGRES_DIR / "init.sql").read_text()
+    for table, column in migrate_mod.BASELINE_MARKERS:
+        assert f"CREATE TABLE IF NOT EXISTS {table} " in init or f"CREATE TABLE {table} " in init, table
+        if column:
+            assert column in init, f"{table}.{column}"

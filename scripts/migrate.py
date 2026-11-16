@@ -11,8 +11,12 @@ Behaviour:
   migration.
 * **Existing volume** (``products`` exists but ``schema_migrations`` has no
   baseline row — the volume was created by Postgres' ``initdb.d`` mount of
-  ``init.sql``): record the baseline as applied *without re-running it*
-  (``CREATE TABLE products`` has no ``IF NOT EXISTS``), then apply migrations.
+  ``init.sql``): first check that it really holds the *current* baseline (see
+  ``BASELINE_MARKERS``); if so, record the baseline as applied *without
+  re-running it* (``CREATE TABLE products`` has no ``IF NOT EXISTS``) and apply
+  migrations. A volume from before the current ``init.sql`` is refused, with
+  nothing recorded: claiming it is at baseline would leave it with a different
+  schema from a fresh database. Recreate it with ``./scripts/dev.sh --clean``.
 * **Idempotent**: a second run applies nothing.
 * **One transaction per migration**, so a failing file leaves no half-applied
   change and no ``schema_migrations`` row.
@@ -50,6 +54,22 @@ BASELINE_VERSION = "0001_baseline"
 ADVISORY_LOCK_KEY = 0x45434D4947524154  # "ECMIGRAT"
 _MIGRATION_NAME = re.compile(r"^(\d{4})_[a-z0-9_]+\.sql$")
 
+# Objects that exist only in the current baseline (``docker/postgres/init.sql``), the newest
+# additions to it. An existing volume is recorded as "at baseline" only if every one is present;
+# a volume created from an older init.sql lacks some and would otherwise be certified wrongly.
+# (table, column) pairs name a column; (table, None) a whole table. Keep in step with init.sql:
+# tests/test_migrate.py checks each marker is still declared there.
+BASELINE_MARKERS: tuple[tuple[str, str | None], ...] = (
+    ("products", "search_vector"),
+    ("idempotency_keys", None),
+    ("agent_memories", None),
+    ("workflow_checkpoints", None),
+    ("hitl_requests", None),
+    ("oauth_clients", None),
+    ("oauth_signing_keys", None),
+    ("oauth_tokens", None),
+)
+
 
 class MigrationError(RuntimeError):
     """A migration could not be applied or the recorded history disagrees with the files."""
@@ -67,6 +87,24 @@ class Migration:
     @property
     def checksum(self) -> str:
         return hashlib.sha256(self.path.read_bytes()).hexdigest()
+
+
+async def missing_baseline_markers(conn: asyncpg.Connection) -> list[str]:
+    """Names of ``BASELINE_MARKERS`` the connected database lacks (empty = it matches the baseline)."""
+    missing: list[str] = []
+    for table, column in BASELINE_MARKERS:
+        if column is None:
+            present = await conn.fetchval("SELECT to_regclass($1)", f"public.{table}")
+        else:
+            present = await conn.fetchval(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2",
+                table,
+                column,
+            )
+        if not present:
+            missing.append(table if column is None else f"{table}.{column}")
+    return missing
 
 
 def default_postgres_dir() -> Path:
@@ -131,6 +169,15 @@ async def migrate(dsn: str, postgres_dir: Path | None = None) -> list[str]:
                 if m.version in recorded:
                     continue
                 if m.version == BASELINE_VERSION and await conn.fetchval("SELECT to_regclass('public.products')"):
+                    missing = await missing_baseline_markers(conn)
+                    if missing:
+                        raise MigrationError(
+                            "this database predates the current baseline schema (missing: "
+                            + ", ".join(missing)
+                            + "), so it cannot be recorded as being at baseline. Recreate it with "
+                            "`./scripts/dev.sh --clean` (this discards its data), or apply the missing "
+                            "parts of docker/postgres/init.sql by hand and run the migration again."
+                        )
                     await conn.execute(
                         "INSERT INTO schema_migrations (version, checksum) VALUES ($1, $2)", m.version, m.checksum
                     )
