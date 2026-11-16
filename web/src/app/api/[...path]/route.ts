@@ -113,7 +113,9 @@ async function proxy(req: NextRequest): Promise<Response> {
       // The user cancelled. Not a gateway failure.
       return new Response(null, { status: 499 });
     }
-    console.error(`[api-proxy] ${req.method} ${req.nextUrl.pathname} -> ${target} failed`, err);
+    // Constant format string: the method and path come from the request, and
+    // console.error treats its first argument as a format string.
+    console.error("[api-proxy] %s %s -> %s failed", req.method, req.nextUrl.pathname, String(target), err);
     return Response.json({ detail: "The orchestrator is unreachable." }, { status: 502 });
   }
 

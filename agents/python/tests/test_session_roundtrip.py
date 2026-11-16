@@ -237,3 +237,15 @@ async def test_get_history_as_dicts_skips_messages_with_no_text() -> None:
 async def test_get_history_as_dicts_empty_for_unknown_session() -> None:
     provider = InMemorySessionHistoryProvider()
     assert await get_history_as_dicts(provider, "nope") == []
+
+
+def test_file_history_path_stays_inside_directory(tmp_path) -> None:
+    """A session id is request-derived; whatever it holds, the file lands inside the directory."""
+    from shared.session import FileSessionHistoryProvider
+
+    provider = FileSessionHistoryProvider(tmp_path)
+    for hostile in ("../../etc/passwd", "..", "a/b", "a\\..\\b", "/abs/path", "x\x00y"):
+        path = provider._path(hostile)
+        assert path.parent == tmp_path.resolve()
+        assert path.suffix == ".jsonl"
+    assert provider._path("3a1a42f5-0000-4000-8000-000000000001").name == "3a1a42f5-0000-4000-8000-000000000001.jsonl"

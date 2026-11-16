@@ -481,7 +481,10 @@ class Settings(BaseSettings):
                 )
                 if is_prod:
                     raise ValueError(msg)
-                logger.warning("settings.secret_unsafe var=%s reason=%s", name, msg)
+                # Log a fixed label, not ``msg``: ``msg`` carries the secret's length, and
+                # nothing derived from a secret's value belongs in a log line.
+                reason = "placeholder default" if is_default else "too short"
+                logger.warning("settings.secret_unsafe var=%s reason=%s", name, reason)
 
         _check("JWT_SECRET", self.JWT_SECRET)
         _check("AGENT_SHARED_SECRET", self.AGENT_SHARED_SECRET)
