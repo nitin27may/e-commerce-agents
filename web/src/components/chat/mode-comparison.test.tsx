@@ -68,6 +68,9 @@ describe("ModeComparison", () => {
           agents_involved: ["orchestrator"],
           step_count: 1,
           graph_mermaid: null,
+          tokens_in: 1000,
+          tokens_out: 120,
+          est_cost_usd: 0.0031,
           error: null,
         },
         {
@@ -78,6 +81,9 @@ describe("ModeComparison", () => {
           agents_involved: ["reviews", "stock"],
           step_count: 6,
           graph_mermaid: "graph LR\n  fan_out[fan-out] --> reviews\n  fan_out --> stock\n",
+          tokens_in: 0,
+          tokens_out: 0,
+          est_cost_usd: 0,
           error: null,
         },
       ],
@@ -96,6 +102,10 @@ describe("ModeComparison", () => {
     expect(screen.getByText("Stock: 10 units | Price trend: stable")).toBeInTheDocument();
     expect(screen.getByText("420ms")).toBeInTheDocument();
     expect(screen.getByText("180ms")).toBeInTheDocument();
+    expect(screen.getByTestId("usage-tool")).toHaveTextContent("1,120 tok · $0.0031");
+    // The workflow mode made no LLM call: a dash, never a "$0.00" cost claim.
+    expect(screen.getByTestId("usage-workflow:pre-purchase")).toHaveTextContent("—");
+    expect(screen.getByTestId("usage-workflow:pre-purchase")).not.toHaveTextContent("$");
     expect(api.compareModes).toHaveBeenCalledWith("worth it?", ["tool", "workflow:pre-purchase"]);
   });
 

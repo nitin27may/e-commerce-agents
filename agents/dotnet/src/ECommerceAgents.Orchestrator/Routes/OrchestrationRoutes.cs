@@ -5,6 +5,7 @@ using Dapper;
 using ECommerceAgents.Orchestrator.Modes;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
+using ECommerceAgents.Shared.Cost;
 using ECommerceAgents.Shared.Orchestration;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -379,8 +380,29 @@ public static class OrchestrationRoutes
             var sw = Stopwatch.StartNew();
             try
             {
+                // A fresh scope per mode: its own usage accumulator (so one mode's tokens
+                // are not added to the next), same caller identity.
+                using var scope = RequestContext.Scope(
+                    RequestContext.CurrentUserEmail,
+                    RequestContext.CurrentUserRole,
+                    RequestContext.CurrentSessionId);
                 var result = await mode.RunAsync(body.Message, new RunContext([], null), ct);
                 sw.Stop();
+
+                // null = the mode reported no usage (not captured); 0 = it made no LLM call.
+                long? tokensIn = null, tokensOut = null;
+                double? estCost = null;
+                if (result.NoLlmCalls)
+                {
+                    (tokensIn, tokensOut, estCost) = (0, 0, 0.0);
+                }
+                else if (RequestContext.CurrentRunUsage.Total() is { } total)
+                {
+                    tokensIn = total.InputTokenCount;
+                    tokensOut = total.OutputTokenCount;
+                    estCost = CostEstimator.EstimateRun(RequestContext.CurrentRunUsage.ByAgent);
+                }
+
                 results.Add(new
                 {
                     mode = mode.Name,
@@ -390,6 +412,9 @@ public static class OrchestrationRoutes
                     agents_involved = result.AgentsInvolved,
                     step_count = result.StepCount,
                     graph_mermaid = mode.GraphMermaid(),
+                    tokens_in = tokensIn,
+                    tokens_out = tokensOut,
+                    est_cost_usd = estCost,
                     error = (string?)null,
                 });
             }

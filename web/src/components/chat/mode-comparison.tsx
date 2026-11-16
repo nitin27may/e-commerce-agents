@@ -22,6 +22,19 @@ interface ModeComparisonProps {
 }
 
 /**
+ * Tokens and estimated cost on one compact line. A mode that made no LLM call
+ * (the workflow modes report an explicit zero) or reported nothing gets a dash,
+ * not "$0.00" — that would claim a measured cost the mode never incurred.
+ */
+export function formatUsage(result: Pick<CompareModeResult, "tokens_in" | "tokens_out" | "est_cost_usd">): string {
+  const total = (result.tokens_in ?? 0) + (result.tokens_out ?? 0);
+  if (!total) return "—";
+  const tokens = `${total.toLocaleString("en-US")} tok`;
+  const cost = result.est_cost_usd;
+  return cost == null ? tokens : `${tokens} · $${cost.toFixed(4)}`;
+}
+
+/**
  * The differentiator (plan Phase 1.6c): run one prompt through several
  * orchestration modes side by side — tool vs. handoff vs. a workflow
  * graph — and see the actual latency/step-count/answer difference, not
@@ -134,6 +147,7 @@ export function ModeComparison({ initialPrompt = "" }: ModeComparisonProps) {
                         <p className="whitespace-pre-wrap text-foreground/90">{result.text || "(no answer)"}</p>
                         <div className="flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground">
                           <span>{result.step_count} step{result.step_count === 1 ? "" : "s"}</span>
+                          <span data-testid={`usage-${result.mode}`}>{formatUsage(result)}</span>
                           {result.agents_involved.map((agent) => (
                             <Badge key={agent} variant="outline" className="text-[10px] font-normal">
                               {agent}

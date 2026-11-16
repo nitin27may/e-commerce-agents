@@ -40,4 +40,11 @@ public static class CostEstimator
         var pricing = model is not null && Pricing.TryGetValue(model, out var found) ? found : DefaultPricing;
         return (tokensIn / 1000.0 * pricing.InputPer1K) + (tokensOut / 1000.0 * pricing.OutputPer1K);
     }
+
+    /// <summary>Estimated USD for one run, each agent priced at the model it reported.</summary>
+    public static double EstimateRun(IReadOnlyDictionary<string, ECommerceAgents.Shared.Context.SpecialistUsage> byAgent) =>
+        byAgent.Values.Sum(u => Estimate(
+            u.Model,
+            (int)Math.Min(u.InputTokenCount, int.MaxValue),
+            (int)Math.Min(u.OutputTokenCount, int.MaxValue)));
 }

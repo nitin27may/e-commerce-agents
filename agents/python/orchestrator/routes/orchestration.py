@@ -10,11 +10,10 @@ through several modes, sequentially (a fair latency comparison and no
 resource contention beats a faster but muddier concurrent run), and
 returns per-mode text/latency/steps/graph — the artifact meant to be
 screenshotted showing tool vs. workflow vs. handoff side by side on the
-same prompt. ``tokens``/``est_cost_usd``/``grounding`` from the plan's
-original sketch are deliberately not in the response yet — they need
-Phase 3.5's ``shared/cost.py`` and Phase 2's grounding verifier, neither
-of which exists yet; returning fabricated numbers would be worse than
-not returning them. ``POST /{run_id}/resume`` is real as of Phase 1.5:
+same prompt. Each result carries ``tokens_in``/``tokens_out``/``est_cost_usd``
+from the mode's ``run_completed.usage`` (``null`` = the mode reported none, ``0``
+= an explicit zero, as the workflow modes make no LLM call); ``grounding`` is
+not in the response. ``POST /{run_id}/resume`` is real as of Phase 1.5:
 it resumes a paused ``workflow:return-replace`` run from the
 ``hitl_requests`` row Phase 1.5's ``chat.py`` linkage wrote.
 """
@@ -32,8 +31,10 @@ from pydantic import BaseModel
 
 from shared.config import settings
 from shared.context import current_user_email, current_user_role
+from shared.cost import usage_cost
 from shared.db import get_pool
 from shared.rate_limit import rate_limit_chat
+from shared.run_usage import tokens_from_usage
 
 from .legacy import require_admin, require_auth
 
@@ -79,6 +80,11 @@ class CompareModeResult(BaseModel):
     agents_involved: list[str]
     step_count: int
     graph_mermaid: str | None
+    # None = the mode reported no usage (not captured); 0 = it reported an explicit
+    # zero (the workflow modes make no LLM call).
+    tokens_in: int | None = None
+    tokens_out: int | None = None
+    est_cost_usd: float | None = None
     error: str | None = None
 
 
@@ -141,6 +147,7 @@ async def compare_modes(
         tool_call_count = 0
         node_enter_count = 0
         error: str | None = None
+        usage: dict[str, Any] | None = None
         try:
             async for event in mode.run(body.message, ctx):
                 if event.kind == "tool_call":
@@ -150,10 +157,12 @@ async def compare_modes(
                 elif event.kind == "run_completed":
                     text = event.payload.get("text", "")
                     agents_involved = event.payload.get("agents_involved", [])
+                    usage = event.payload.get("usage")
         except Exception as exc:
             logger.exception("compare.mode_error mode=%s", name)
             error = str(exc)
         latency_ms = int((time.monotonic() - start) * 1000)
+        tokens_in, tokens_out = tokens_from_usage(usage) if usage else (None, None)
 
         results.append(
             CompareModeResult(
@@ -167,6 +176,9 @@ async def compare_modes(
                 # much happened" signal — see orchestrator/events.py.
                 step_count=tool_call_count or node_enter_count,
                 graph_mermaid=mode.graph_mermaid(),
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+                est_cost_usd=usage_cost(usage),
                 error=error,
             )
         )

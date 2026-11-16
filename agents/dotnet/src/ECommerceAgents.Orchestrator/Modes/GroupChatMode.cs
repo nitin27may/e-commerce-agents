@@ -1,5 +1,6 @@
 using ECommerceAgents.Shared.Agents;
 using ECommerceAgents.Shared.Configuration;
+using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Orchestration;
 using ECommerceAgents.Shared.Prompts;
 using Microsoft.Agents.AI;
@@ -122,6 +123,8 @@ public sealed class GroupChatMode(AgentSettings settings, PromptLoader prompts) 
             .AsAIAgent(instructions: instructions, name: name);
 
         var reply = await agent.RunAsync(prompt, cancellationToken: ct);
+        // Accounting only: nothing here is added to the transcript the next speaker reads.
+        RequestContext.RecordUsage(name, SpecialistUsage.From(reply.Usage, _settings.LlmModel));
         return reply.Text.Trim();
     }
 

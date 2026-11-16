@@ -83,7 +83,8 @@ public sealed partial class ReturnReplaceMode(DatabasePool pool, AgentSettings s
         return new ModeRunResult(
             Summarise(state),
             ["order-management", "product-discovery", "pricing-promotions"],
-            state.CompletedSteps.Count
+            state.CompletedSteps.Count,
+            NoLlmCalls: true
         );
     }
 
@@ -92,7 +93,7 @@ public sealed partial class ReturnReplaceMode(DatabasePool pool, AgentSettings s
         var email = RequestContext.CurrentUserEmail;
         if (string.IsNullOrEmpty(email))
         {
-            return new ModeRunResult("You'll need to sign in before I can start a return.", ["orchestrator"], 0);
+            return new ModeRunResult("You'll need to sign in before I can start a return.", ["orchestrator"], 0, NoLlmCalls: true);
         }
 
         var order = await ResolveOrderAsync(message, email, ct);
@@ -101,7 +102,8 @@ public sealed partial class ReturnReplaceMode(DatabasePool pool, AgentSettings s
             return new ModeRunResult(
                 "I couldn't find an order to return. Tell me the order id and I'll take it from there.",
                 ["orchestrator"],
-                0
+                0,
+                NoLlmCalls: true
             );
         }
 
@@ -129,7 +131,8 @@ public sealed partial class ReturnReplaceMode(DatabasePool pool, AgentSettings s
             PendingApproval: outcome.PendingRequestId is not null,
             RequestId: outcome.PendingRequestId,
             LatestCheckpointId: outcome.LastCheckpointId,
-            SessionId: outcome.SessionId
+            SessionId: outcome.SessionId,
+            NoLlmCalls: true
         );
     }
 

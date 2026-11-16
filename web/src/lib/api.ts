@@ -106,6 +106,10 @@ export interface CompareModeResult {
   agents_involved: string[];
   step_count: number;
   graph_mermaid: string | null;
+  /** null = the mode reported no usage; 0 = it made no LLM call (the workflow modes). */
+  tokens_in?: number | null;
+  tokens_out?: number | null;
+  est_cost_usd?: number | null;
   error: string | null;
 }
 

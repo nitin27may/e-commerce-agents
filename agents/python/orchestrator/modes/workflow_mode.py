@@ -29,6 +29,13 @@ on a freshly-built workflow (not the one that paused) replays correctly
 through to ``finalize``. ``ReturnReplaceMode.resume()`` is that second
 call; ``orchestrator/routes/orchestration.py``'s resume endpoint is what
 reaches it from a live request — the first caller for both.
+
+Usage: neither workflow calls a chat model (verified — their executors run tools
+directly), so every ``run_completed`` carries an explicit zero ``usage``
+(``shared.run_usage.zero_usage``): a measured zero, distinguishable from a mode that
+simply never reported. The one model-adjacent call is the embedding lookup behind
+``search_products`` when the message holds no UUID; embeddings are not chat usage and
+are not counted here.
 """
 
 from __future__ import annotations
@@ -40,6 +47,7 @@ from typing import Any
 from orchestrator.events import OrchestrationEvent, adapt_workflow_event
 from shared.checkpoint_storage import RecordingCheckpointStorage, drain_new_checkpoint_ids
 from shared.factory import get_checkpoint_storage
+from shared.run_usage import zero_usage
 
 from .base import ModeCapabilities, RunContext
 
@@ -120,7 +128,9 @@ class PrePurchaseMode:
         product_id, error = await _resolve_product_id(message)
         if error:
             yield OrchestrationEvent(kind="error", payload={"message": error})
-            yield OrchestrationEvent(kind="run_completed", payload={"text": error, "agents_involved": []})
+            yield OrchestrationEvent(
+                kind="run_completed", payload={"text": error, "agents_involved": [], "usage": zero_usage()}
+            )
             return
 
         state = ResearchState(product_id=product_id)
@@ -155,6 +165,7 @@ class PrePurchaseMode:
                 "agents_involved": list(final_state.completed_steps) or ["pre-purchase-research"],
                 "product_id": product_id,
                 "latest_checkpoint_id": recorder.saved[-1] if recorder and recorder.saved else None,
+                "usage": zero_usage(),
             },
         )
 
@@ -215,13 +226,17 @@ class ReturnReplaceMode:
         if not email:
             error = "The return workflow needs a signed-in user."
             yield OrchestrationEvent(kind="error", payload={"message": error})
-            yield OrchestrationEvent(kind="run_completed", payload={"text": error, "agents_involved": []})
+            yield OrchestrationEvent(
+                kind="run_completed", payload={"text": error, "agents_involved": [], "usage": zero_usage()}
+            )
             return
 
         order_id, order_total, error = await _resolve_order(message)
         if error:
             yield OrchestrationEvent(kind="error", payload={"message": error})
-            yield OrchestrationEvent(kind="run_completed", payload={"text": error, "agents_involved": []})
+            yield OrchestrationEvent(
+                kind="run_completed", payload={"text": error, "agents_involved": [], "usage": zero_usage()}
+            )
             return
 
         state = WorkflowState(user_email=email, order_id=order_id, order_total=order_total or 0.0, reason=message)
@@ -268,6 +283,7 @@ class ReturnReplaceMode:
                     "pending_approval": True,
                     "request_id": pending_request_id,
                     "latest_checkpoint_id": latest_checkpoint_id,
+                    "usage": zero_usage(),
                 },
             )
             return
@@ -288,6 +304,7 @@ class ReturnReplaceMode:
                 "agents_involved": agents_involved,
                 "pending_approval": False,
                 "latest_checkpoint_id": latest_checkpoint_id,
+                "usage": zero_usage(),
             },
         )
 
@@ -365,6 +382,7 @@ class ReturnReplaceMode:
                 "agents_involved": agents_involved or ["return-replace"],
                 "pending_approval": False,
                 "latest_checkpoint_id": recorder.saved[-1] if recorder and recorder.saved else None,
+                "usage": zero_usage(),
             },
         )
 

@@ -20,6 +20,7 @@ from collections.abc import AsyncIterator
 
 from orchestrator import handoff as handoff_module
 from orchestrator.events import OrchestrationEvent, adapt_workflow_event
+from shared.run_usage import ORCHESTRATOR, begin_run_usage, usage_from_updates
 
 from .base import ModeCapabilities, RunContext
 
@@ -51,6 +52,11 @@ class HandoffMode:
         # reads through the module object, not on a name bound at import time
         # into this module's own namespace.
         known_participants = {"orchestrator", *handoff_module._load_registry().keys()}
+        # Specialist usage lands here from RemoteSpecialistChatClient (the A2A
+        # reply's `usage` field); the triage agent's own is read off its streamed
+        # updates below. Set before the workflow runs so every task it spawns
+        # shares this accumulator.
+        run_usage = begin_run_usage()
         workflow = handoff_module.build_orchestrator_handoff_workflow()
 
         current_speaker: str | None = None
@@ -69,6 +75,10 @@ class HandoffMode:
                     text = getattr(update, "text", None) if update is not None else None
                     if text:
                         turns[-1][1].append(text)
+                    # Only the local (LLM-backed) triage agent reports usage on its
+                    # updates; a remote specialist's was recorded off the wire.
+                    if executor_id == ORCHESTRATOR:
+                        run_usage.add(ORCHESTRATOR, usage_from_updates(update))
 
             adapted = adapt_workflow_event(event)
             if adapted is not None:
@@ -89,7 +99,7 @@ class HandoffMode:
         # grounding change.
         yield OrchestrationEvent(
             kind="run_completed",
-            payload={"text": final_text, "agents_involved": agents_involved},
+            payload={"text": final_text, "agents_involved": agents_involved, "usage": run_usage.snapshot()},
         )
 
     def graph_mermaid(self) -> str | None:

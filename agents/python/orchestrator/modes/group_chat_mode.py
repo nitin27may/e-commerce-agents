@@ -25,6 +25,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 
 from orchestrator.events import OrchestrationEvent, adapt_workflow_event
 from shared.grounding.ledger import reset_grounding_ledger
+from shared.run_usage import begin_run_usage, record_usage
 
 from .base import ModeCapabilities, RunContext
 
@@ -69,6 +70,9 @@ def _make_agent_responder(panel_name: str, instructions: str) -> Callable[[str, 
         )
         prompt = f"Question: {question}\n\nTranscript so far:\n{_format_transcript(transcript)}"
         response = await agent.run(prompt)
+        # Accounting only — never part of the panelist's text, which the next
+        # panelist and the moderator read.
+        record_usage(panel_name, getattr(response, "usage_details", None))
         return response.text or f"({panel_name} had nothing to add)"
 
     return _respond
@@ -97,6 +101,7 @@ class GroupChatMode:
         from workflows.group_chat import GroupChatState, GroupChatWorkflow
 
         reset_grounding_ledger()
+        run_usage = begin_run_usage()
 
         panelists = self._resolve_panelists()
         maf_workflow = GroupChatWorkflow(panelists=panelists)._build()
@@ -125,6 +130,9 @@ class GroupChatMode:
                 "text": final_state.verdict,
                 "agents_involved": agents_involved,
                 "transcript": final_state.transcript,
+                # The panelists' LLM calls, summed. The moderator is a local
+                # synthesizer in workflows/group_chat.py, not a model call.
+                "usage": run_usage.snapshot(),
             },
         )
 

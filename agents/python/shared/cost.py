@@ -46,3 +46,21 @@ def estimate_cost(model: str, tokens_in: int, tokens_out: int) -> float:
     """Estimate USD cost for a single call. Never raises on an unknown model."""
     pricing = _PRICING.get(model.lower(), _DEFAULT_PRICING)
     return (tokens_in / 1000) * pricing.input_per_1k + (tokens_out / 1000) * pricing.output_per_1k
+
+
+def usage_cost(usage: dict | None) -> float | None:
+    """USD for a ``run_completed.usage`` value (``{total, by_agent}``), priced per agent's model.
+
+    ``None`` when ``usage`` is absent (not captured); ``0.0`` for an explicit zero.
+    """
+    if usage is None:
+        return None
+    by_agent = usage.get("by_agent") or {}
+    return sum(
+        estimate_cost(
+            str(slot.get("model") or ""),
+            int(slot.get("input_token_count") or 0),
+            int(slot.get("output_token_count") or 0),
+        )
+        for slot in by_agent.values()
+    )

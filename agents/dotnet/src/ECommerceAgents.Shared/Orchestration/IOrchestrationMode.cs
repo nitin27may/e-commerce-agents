@@ -39,6 +39,10 @@ public sealed record RunContext(
 /// <param name="RequestId">MAF's resume token for that pause.</param>
 /// <param name="LatestCheckpointId">The checkpoint a later request resumes from.</param>
 /// <param name="SessionId">Keys the checkpoints this run wrote.</param>
+/// <param name="NoLlmCalls">
+/// True when the mode makes no chat-model call (the two workflow modes), so a turn's
+/// zero tokens is a measured zero rather than "usage was not captured".
+/// </param>
 /// <remarks>
 /// The four pause fields are defaulted so modes that never pause are unaffected. They
 /// exist because a pause previously could not leave the mode at all: the RequestId
@@ -52,7 +56,8 @@ public sealed record ModeRunResult(
     bool PendingApproval = false,
     string? RequestId = null,
     string? LatestCheckpointId = null,
-    string? SessionId = null
+    string? SessionId = null,
+    bool NoLlmCalls = false
 );
 
 /// <summary>

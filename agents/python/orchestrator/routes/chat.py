@@ -510,11 +510,16 @@ async def chat_stream(
         # run task is created so the task's copied context shares this object.
         run_usage = begin_run_usage()
 
+        run_metadata: dict[str, Any] = {}
+
         def _turn_usage() -> dict[str, Any]:
-            """This turn's {total, by_agent}, orchestrator's own calls included."""
-            if mode.name == "tool":
-                return run_usage.snapshot_with(ORCHESTRATOR, run_metadata.get("_maf_usage"))
-            return run_payload_box.get("usage") or run_usage.snapshot()
+            """This turn's {total, by_agent}, orchestrator's own calls included.
+
+            A mode that reports usage in its ``run_completed`` (every mode but the
+            direct-streaming ``tool`` path) wins; otherwise the accumulator plus the
+            orchestrator's own response usage. No mode is special-cased.
+            """
+            return run_payload_box.get("usage") or run_usage.snapshot_with(ORCHESTRATOR, run_metadata.get("_maf_usage"))
 
         # Mutable box for run_completed's full payload (checkpoint/HITL
         # linkage needs more than agents_involved) — stays empty for "tool"
@@ -526,7 +531,6 @@ async def chat_stream(
             from shared.agent_host import _run_agent_native_stream
 
             agent = create_orchestrator_agent()
-            run_metadata: dict[str, Any] = {}
 
             async def _run_mode_task() -> None:
                 reset_steps()

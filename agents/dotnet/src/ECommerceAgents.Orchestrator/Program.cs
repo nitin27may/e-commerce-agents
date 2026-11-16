@@ -82,7 +82,7 @@ builder.Services.AddSingleton(sp =>
 // Orchestration modes. Two registered: tool and workflow:pre-purchase.
 // The rest are honestly absent rather than registered-and-broken — see
 // ModeRegistry's remarks.
-builder.Services.AddSingleton<IOrchestrationMode>(sp => new ToolRouterMode(sp.GetRequiredService<AIAgent>()));
+builder.Services.AddSingleton<IOrchestrationMode>(sp => new ToolRouterMode(sp.GetRequiredService<AIAgent>(), sp.GetRequiredService<AgentSettings>().LlmModel));
 builder.Services.AddSingleton<IOrchestrationMode>(sp => new PrePurchaseMode(sp.GetRequiredService<DatabasePool>()));
 builder.Services.AddSingleton<IOrchestrationMode>(sp =>
     new ReturnReplaceMode(

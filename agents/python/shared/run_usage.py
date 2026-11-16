@@ -80,8 +80,8 @@ class RunUsage:
     def __init__(self) -> None:
         self.by_agent: dict[str, dict[str, Any]] = {}
 
-    def add(self, agent: str, usage: Mapping[str, Any] | None) -> None:
-        wire = to_wire_usage(usage)
+    def add(self, agent: str, usage: Mapping[str, Any] | None, model: str | None = None) -> None:
+        wire = to_wire_usage(usage, model)
         if wire is None:
             return
         slot = self.by_agent.setdefault(agent, {**dict.fromkeys(_COUNT_FIELDS, 0), "model": wire["model"]})
@@ -118,11 +118,46 @@ def begin_run_usage() -> RunUsage:
     return acc
 
 
-def record_usage(agent: str, usage: Mapping[str, Any] | None) -> None:
+def record_usage(agent: str, usage: Mapping[str, Any] | None, model: str | None = None) -> None:
     """Add ``usage`` to the current request's accumulator; a no-op outside one."""
     acc = current_run_usage.get()
     if acc is not None:
-        acc.add(agent, usage)
+        acc.add(agent, usage, model)
+
+
+def zero_usage() -> dict[str, Any]:
+    """The explicit "this run made no LLM call" value of ``run_completed.usage``.
+
+    A mode that never calls a model (the two workflow modes) reports this
+    instead of leaving ``usage`` out, so a reader can tell *measured zero* from
+    *not captured*.
+    """
+    return RunUsage().snapshot()
+
+
+def usage_from_updates(update: Any) -> dict[str, Any] | None:
+    """Sum the ``usage`` contents of one streamed MAF update into a ``UsageDetails``-style mapping.
+
+    A streaming agent reports its token counts as a ``usage`` content item on
+    (normally) its final update; this reads them without touching the text.
+    ``None`` when the update carries none.
+    """
+    contents = getattr(update, "contents", None)
+    if not isinstance(contents, list):
+        return None
+    total = {"input_token_count": 0, "output_token_count": 0, "cache_read_input_token_count": 0}
+    seen = False
+    for item in contents:
+        if getattr(item, "type", None) != "usage":
+            continue
+        details = getattr(item, "usage_details", None)
+        if not isinstance(details, Mapping):
+            continue
+        seen = True
+        total["input_token_count"] += _as_int(details.get("input_token_count"))
+        total["output_token_count"] += _as_int(details.get("output_token_count"))
+        total["cache_read_input_token_count"] += _as_int(details.get("cache_read_input_token_count"))
+    return total if seen else None
 
 
 def tokens_from_usage(usage: Mapping[str, Any] | None) -> tuple[int, int]:
