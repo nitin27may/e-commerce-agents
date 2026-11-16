@@ -40,15 +40,24 @@ TOPIC_TIMEOUT_APPLY = "approval.timeout_apply"
 _TOP_ROLE = "admin"  # "manager" in the policy file
 
 
-async def _current_review(conn: asyncpg.Connection, row: OutboxRow) -> dict[str, Any] | None:
-    """The locked approval this timer is about, or None when the timer no longer applies."""
+async def _current_review(
+    conn: asyncpg.Connection, row: OutboxRow, *, allow_needs_info: bool = False
+) -> dict[str, Any] | None:
+    """The locked approval this timer is about, or None when the timer no longer applies.
+
+    ``allow_needs_info`` is for the breach timer only: an approval waiting on the requester still has a
+    deadline, and missing it applies the kind's ``on_timeout``.
+    """
     approval_id = row.payload.get("approval_id") or row.aggregate_id
     if approval_id is None:
         return None
     current = await conn.fetchrow("SELECT * FROM approvals WHERE id = $1 FOR UPDATE", approval_id)
     if current is None:
         return None
-    if current["status"] != ApprovalStatus.PENDING_REVIEW.value:
+    live = {ApprovalStatus.PENDING_REVIEW.value}
+    if allow_needs_info:
+        live.add(ApprovalStatus.NEEDS_INFO.value)
+    if current["status"] not in live:
         logger.info("approval timer ignored, not in review id=%s topic=%s", approval_id, row.topic)
         return None
     if current["escalation_level"] != row.payload.get("level"):
@@ -100,11 +109,12 @@ def _on_timeout(kind: str) -> ApprovalStatus:
 
 
 async def on_sla_breached(conn: asyncpg.Connection, row: OutboxRow) -> None:
-    approval = await _current_review(conn, row)
+    approval = await _current_review(conn, row, allow_needs_info=True)
     if approval is None:
         return
     approval_id = str(approval["id"])
-    if approval["assigned_role"] == "support":
+    waiting_on_requester = approval["status"] == ApprovalStatus.NEEDS_INFO.value
+    if approval["assigned_role"] == "support" and not waiting_on_requester:
         await repo.escalate(
             conn,
             approval_id,
@@ -143,7 +153,7 @@ async def on_sla_breached(conn: asyncpg.Connection, row: OutboxRow) -> None:
     await repo.transition(
         conn,
         approval_id,
-        [ApprovalStatus.PENDING_REVIEW],
+        [ApprovalStatus.PENDING_REVIEW, ApprovalStatus.NEEDS_INFO],
         target,
         action="sla_timeout",
         payload={"reason": "sla_breached", "on_timeout": target.value},
@@ -172,7 +182,7 @@ async def on_timeout_apply(conn: asyncpg.Connection, row: OutboxRow) -> None:
     current = await repo.get(conn, approval_id)
     if (
         current is None
-        or current["status"] != ApprovalStatus.PENDING_REVIEW.value
+        or current["status"] not in (ApprovalStatus.PENDING_REVIEW.value, ApprovalStatus.NEEDS_INFO.value)
         or current["escalation_level"] != row.payload.get("level")
     ):
         logger.info("approval timeout ignored, no longer due id=%s", approval_id)

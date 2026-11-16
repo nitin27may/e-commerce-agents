@@ -17,7 +17,7 @@ from tests.test_approvals_routes import _paused, pool  # noqa: F401  (pool is a 
 pytestmark = pytest.mark.integration
 
 
-async def _unlinked_copy(pool, run_id, payload: str | None = None) -> str:
+async def _unlinked_copy(pool, run_id, payload: str | None = None) -> str:  # noqa: F811
     """A second hitl_requests row for the run with no inbox approval: a pre-inbox / failed-open row."""
     return str(
         await pool.fetchval(

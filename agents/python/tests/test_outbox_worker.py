@@ -252,6 +252,50 @@ async def test_timers_from_an_earlier_trip_through_review_are_stale(clean_db: as
     assert await clean_db.fetchval("SELECT count(*) FROM notifications") == 0
 
 
+async def test_needs_info_schedules_a_breach_timer_only(clean_db: asyncpg.Pool) -> None:
+    row = await _review(clean_db)
+    approval_id = str(row["id"])
+    before = {t["id"] for t in await _outbox(clean_db)}
+
+    waiting = await repo.transition(clean_db, approval_id, [ApprovalStatus.PENDING_REVIEW], "needs_info")
+
+    added = [t for t in await _outbox(clean_db) if t["id"] not in before]
+    assert [t["topic"] for t in added] == ["approval.sla_breached"], (
+        "staff are not reminded while the customer owes an answer"
+    )
+    assert added[0]["available_at"] == waiting["due_at"]
+
+
+@pytest.mark.parametrize("role,route", [("support", "support"), ("admin", "manager")])
+async def test_an_unanswered_needs_info_approval_expires(clean_db: asyncpg.Pool, role: str, route: str) -> None:
+    row = await _review(clean_db, role=role, route=route)
+    approval_id = str(row["id"])
+    await repo.transition(clean_db, approval_id, [ApprovalStatus.PENDING_REVIEW], "needs_info")
+    await _due_now(clean_db)
+
+    await _tick(clean_db)
+
+    after = await repo.get(clean_db, approval_id)
+    assert after["status"] == "expired", "on_timeout applies; a support-level approval is not escalated instead"
+    assert after["escalation_level"] == 0
+    assert "sla_timeout" in await _actions(clean_db, approval_id)
+    assert await clean_db.fetchval("SELECT count(*) FROM notifications WHERE kind = 'approval.timed_out'") == 1
+
+
+async def test_an_answered_needs_info_approval_ignores_the_old_breach_timer(clean_db: asyncpg.Pool) -> None:
+    row = await _review(clean_db)
+    approval_id = str(row["id"])
+    await repo.transition(clean_db, approval_id, [ApprovalStatus.PENDING_REVIEW], "needs_info")
+    stale = [t["id"] for t in await _outbox(clean_db, "approval.sla_breached")]
+    await asyncio.sleep(0.01)
+    await repo.transition(clean_db, approval_id, [ApprovalStatus.NEEDS_INFO], "pending_review")
+    await clean_db.execute("UPDATE outbox SET available_at = NOW() - interval '1 minute' WHERE id = ANY($1)", stale)
+
+    await _tick(clean_db)
+
+    assert (await repo.get(clean_db, approval_id))["status"] == "pending_review"
+
+
 async def test_a_timer_does_not_fire_before_it_is_due(clean_db: asyncpg.Pool) -> None:
     await _review(clean_db)
     result = await _tick(clean_db)

@@ -178,6 +178,28 @@ async def schedule_review_timers(conn: asyncpg.Connection, approval: dict[str, A
         )
 
 
+async def schedule_info_timer(conn: asyncpg.Connection, approval: dict[str, Any]) -> None:
+    """Enqueue the SLA breach timer for an approval waiting on the requester (``needs_info``).
+
+    Only the breach: nobody on staff is asked to act while the customer owes an answer, so there is no
+    reminder, and the breach applies the kind's ``on_timeout`` rather than escalating. An answer returns the
+    approval to ``pending_review``, which starts a fresh clock and makes this timer stale.
+    """
+    due_at: datetime | None = approval["due_at"]
+    if due_at is None:
+        return
+    approval_id = str(approval["id"])
+    level = approval["escalation_level"]
+    await enqueue(
+        conn,
+        TOPIC_SLA_BREACHED,
+        {"approval_id": approval_id, "level": level, "due_at": due_at.isoformat()},
+        available_at=due_at,
+        dedupe_key=f"{TOPIC_SLA_BREACHED}:{approval_id}:{level}:{int(due_at.timestamp() * 1000)}",
+        aggregate_id=approval_id,
+    )
+
+
 async def append_event(
     db: Db,
     approval_id: str,
@@ -336,8 +358,9 @@ async def transition(
         if _same_person(decided_by, current["requester_email"]):
             logger.warning("self-approval refused id=%s", approval_id)
             raise SelfApprovalError(f"approval {approval_id}: the requester cannot decide their own request")
-        if target is ApprovalStatus.PENDING_REVIEW and updates.get("due_at") is None:
-            # Entering review starts a fresh clock, also when an answer returns it from needs_info.
+        if target in (ApprovalStatus.PENDING_REVIEW, ApprovalStatus.NEEDS_INFO) and updates.get("due_at") is None:
+            # Entering review starts a fresh clock, also when an answer returns it from needs_info; waiting
+            # on the requester has its own deadline so an unanswered question cannot hold a request forever.
             deadline = _deadline(current["kind"], now)
             if deadline is not None:
                 updates["due_at"] = deadline
@@ -366,6 +389,8 @@ async def transition(
         logger.info("approval transition id=%s from=%s to=%s", approval_id, current["status"], target.value)
         if target is ApprovalStatus.PENDING_REVIEW:
             await schedule_review_timers(conn, dict(updated), now=now)
+        elif target is ApprovalStatus.NEEDS_INFO:
+            await schedule_info_timer(conn, dict(updated))
         return _row(updated)
 
 
