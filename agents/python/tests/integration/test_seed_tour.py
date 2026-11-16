@@ -236,3 +236,28 @@ async def test_reset_closes_the_tour_users_open_approvals_without_deleting_histo
     assert (await repo.get(clean_db, str(other["id"])))["status"] == "pending_review", "other users are untouched"
     actions = [e["action"] for e in await repo.list_events(clean_db, str(mine["id"]))]
     assert actions[-1] == "expired" and "created" in actions, "the audit trail is kept and extended"
+
+
+async def test_reset_leaves_an_approval_whose_claim_is_held(
+    clean_db: Any, database_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from shared.approvals import repo
+
+    await _run_seed(monkeypatch, database_url)
+    claimed = await repo.create(
+        clean_db, source="tool", kind="initiate_return", requester_email=TOUR_EMAIL, status="pending_review"
+    )
+    stale = await repo.create(
+        clean_db, source="tool", kind="initiate_return", requester_email=TOUR_EMAIL, status="pending_review"
+    )
+    await repo.claim(clean_db, str(claimed["id"]), "reviewer-token", statuses=["pending_review"])
+    await repo.claim(clean_db, str(stale["id"]), "crashed-token", statuses=["pending_review"])
+    await clean_db.execute(
+        "UPDATE approvals SET claimed_at = NOW() - interval '1 day' WHERE id = $1", stale["id"]
+    )  # a claim that outlived its TTL is a crashed resume, not a decision in progress
+
+    async with clean_db.acquire() as conn:
+        assert await reset_tour_user(conn) is True
+
+    assert (await repo.get(clean_db, str(claimed["id"])))["status"] == "pending_review", "a live claim is left alone"
+    assert (await repo.get(clean_db, str(stale["id"])))["status"] == "expired", "an expired claim does not protect"

@@ -33,6 +33,8 @@ from decimal import Decimal
 
 import asyncpg
 
+from shared.config import settings
+
 TOUR_EMAIL = "tour@example.com"
 TOUR_SEED = 7
 
@@ -113,10 +115,15 @@ async def _close_open_approvals(conn: asyncpg.Connection) -> None:
         repo.ApprovalStatus.PENDING_REVIEW,
         repo.ApprovalStatus.NEEDS_INFO,
     ]
+    # An approval whose claim is live has a reviewer (or the SLA worker) mid-decision: expiring it here would
+    # race their resume. Leave it; it settles itself, and the next reset sees it closed.
     rows = await conn.fetch(
-        "SELECT id, status FROM approvals WHERE lower(requester_email) = lower($1) AND status = ANY($2::text[])",
+        """SELECT id, status FROM approvals
+            WHERE lower(requester_email) = lower($1) AND status = ANY($2::text[])
+              AND NOT (claimed_at IS NOT NULL AND claimed_at >= NOW() - make_interval(secs => $3))""",
         TOUR_EMAIL,
         [s.value for s in open_states],
+        float(settings.HITL_CLAIM_TTL_SECONDS),
     )
     for row in rows:
         try:
