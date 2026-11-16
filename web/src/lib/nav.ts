@@ -11,6 +11,7 @@ import {
   CheckCircle,
   Activity,
   Lightbulb,
+  Gauge,
   type LucideIcon,
 } from "lucide-react";
 
@@ -59,6 +60,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Overview", href: "/admin", icon: Shield, adminOnly: true },
       { label: "Approvals", href: "/admin/approvals", icon: CheckCircle, adminOnly: true },
+      { label: "Decisions", href: "/admin/decisions", icon: Gauge, adminOnly: true },
       { label: "Usage", href: "/admin/usage", icon: BarChart3, adminOnly: true },
     ],
   },

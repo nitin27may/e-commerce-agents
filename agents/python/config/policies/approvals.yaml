@@ -26,7 +26,7 @@
 # adjust a golden case in testdata/. Both stacks' tests run every golden case, so they cannot drift apart.
 # Loading fails loudly on an unknown fact, operator, route or key.
 
-policy_version: "2026-11-16.1"
+policy_version: "2026-11-16.3"
 
 kinds:
   # A customer asks to send an order back. Facts are about the return being requested.
@@ -158,4 +158,24 @@ kinds:
       - id: owning-seller-reviews
         route: manager
         reason: The seller who owns the products reviews the batch
+        when: []
+
+  # An action the autonomy engine (#94) wanted to take but may not do alone: over a budget or outside every
+  # auto rule (config/policies/autonomy.yaml). The requester is the system actor, so any staff member may decide
+  # it. Only `amount` is a fact here. There is deliberately no `auto` rule: the engine already decided it may not
+  # act alone, and the policy must not undo that. A reviewer may lower the amount, never raise it. Nobody
+  # deciding in time expires it and nothing happens.
+  autonomous_action:
+    editable_fields: [amount]
+    sla_hours: 24
+    on_timeout: expire
+    rules:
+      - id: high-value-manager
+        route: manager
+        reason: A credit over 100 needs a manager
+        when:
+          - { fact: amount, op: gt, value: 100 }
+      - id: default-support
+        route: support
+        reason: Needs a support review
         when: []

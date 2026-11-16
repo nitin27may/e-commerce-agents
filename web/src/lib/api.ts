@@ -210,6 +210,76 @@ export interface ProposalGenerateResult {
   skipped_over_batch: number;
 }
 
+/** Where an autonomous decision stands, derived by the server from its append-only rows. */
+export type AutonomyState =
+  | "executed"
+  | "executed_after_approval"
+  | "awaiting_approval"
+  | "approving"
+  | "rejected"
+  | "expired"
+  | "failed"
+  | "reversed"
+  | "no_action";
+
+/** One decision the autonomy engine took on an event (#94). Money is a decimal string, never a float. */
+export interface AutonomyDecision {
+  id: string;
+  created_at: string;
+  event_type: string | null;
+  action: string;
+  budget_key: string | null;
+  customer_email: string | null;
+  order_id: string | null;
+  amount: string | null;
+  applied_amount: string | null;
+  tier: "auto" | "auto_notify" | "needs_approval" | "no_action" | null;
+  state: AutonomyState;
+  reasons: string[];
+  budget: {
+    budget_key?: string;
+    day?: string;
+    tripped?: string[];
+    drew?: { count: number; amount: string } | null;
+    usage_before?: { global_count: number; global_amount: string; customer_count: number } | null;
+  };
+  input: { event?: { event_id: string; delay_days: number | null }; rule?: string | null };
+  policy_version: string | null;
+  approval_id: string | null;
+  approval_status: string | null;
+  approved_by: string | null;
+  reversed_at: string | null;
+  reversed_by: string | null;
+  can_reverse: boolean;
+}
+
+/** A budget's caps and what it has drawn so far today (UTC). */
+export interface AutonomyBudget {
+  budget_key: string;
+  day: string;
+  used_count: number;
+  used_amount: string;
+  max_count: number;
+  max_amount: string;
+  per_action_max_amount: string;
+  per_customer_max_count: number;
+  per_customer_max_amount: string;
+  per_order_max_count: number;
+}
+
+export interface AutonomyDecisionsResponse {
+  decisions: AutonomyDecision[];
+  /** Every decision matching the filter, across all pages. */
+  total: number;
+  limit?: number;
+  offset?: number;
+  budgets: AutonomyBudget[];
+  enabled: boolean;
+  simulator_enabled: boolean;
+  /** Scenario name -> delay in days; empty unless the simulator is on. */
+  scenarios: Record<string, number>;
+}
+
 export interface NotificationsResponse {
   notifications: AppNotification[];
   unread_count: number;
@@ -973,6 +1043,31 @@ class ApiClient {
       method: "POST",
       body: JSON.stringify({ lines, note: note ?? null }),
     });
+  }
+
+  // Event autonomy (#94), admin only
+  /** Newest first. `total` in the response counts every match for `state`, not just this page. */
+  getAutonomyDecisions(state?: string, opts: { limit?: number; offset?: number; signal?: AbortSignal } = {}) {
+    const qs = new URLSearchParams();
+    if (state) qs.set("state", state);
+    if (opts.limit !== undefined) qs.set("limit", String(opts.limit));
+    if (opts.offset) qs.set("offset", String(opts.offset));
+    const q = qs.toString();
+    return this.request<AutonomyDecisionsResponse>(`/api/admin/decisions${q ? `?${q}` : ""}`, { signal: opts.signal });
+  }
+
+  reverseAutonomyDecision(id: string, note?: string) {
+    return this.request<{ status: string; reversal_id: string; reverses_id: string }>(
+      `/api/admin/decisions/${encodeURIComponent(id)}/reverse`,
+      { method: "POST", body: JSON.stringify({ note: note ?? null }) },
+    );
+  }
+
+  simulateAutonomyEvent(scenario: string) {
+    return this.request<{ enqueued: boolean; outbox_id: number | null; event_id: string; order_id: string; delay_days: number }>(
+      "/api/admin/events/simulate",
+      { method: "POST", body: JSON.stringify({ scenario }) },
+    );
   }
 
   // Products

@@ -189,6 +189,12 @@ async def on_sla_breached(conn: asyncpg.Connection, row: OutboxRow) -> None:
             role=_TOP_ROLE,
         )
         return
+    if approval["source"] == "event":
+        # An autonomous-action approval (#94): its own rules for work in flight; the requester is the system.
+        from worker.autonomy_handlers import on_event_breach
+
+        await on_event_breach(conn, row, approval)
+        return
     target = _on_timeout(approval["kind"])
     executed_lines = 0
     extra: dict[str, Any] = {}  # proposal only: how many lines had already run

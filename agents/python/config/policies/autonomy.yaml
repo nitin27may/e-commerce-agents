@@ -1,0 +1,77 @@
+# Autonomy budgets — what the system may do ON ITS OWN when an event arrives, and when it must ask a person (#94).
+# Python only (docs/parity-matrix.md row 40). Read by shared/autonomy/policy.py, validated whole at load time:
+# an unknown key, fact, operator, tier, budget or a rule that could act without a bound fails loudly.
+#
+# Two layers decide, in this order:
+#
+#   1. RULES (per action, first match wins, same {fact, op, value} shape as approvals.yaml) pick a TIER:
+#        auto            act alone; the customer is told
+#        auto_notify     act alone; the customer is told AND staff get a heads-up
+#        needs_approval  do nothing yet; open an approval (kind autonomous_action) for staff to decide
+#      A fact that could not be determined never satisfies a condition, so absent evidence can only ever fall
+#      through to needs_approval. The loader enforces the safety shape: the last rule is unconditional and is
+#      needs_approval, and every auto / auto_notify rule carries an `amount lte N` ceiling no higher than the
+#      action's per_action_max_amount.
+#
+#   2. BUDGETS cap what the system may spend alone, per UTC day, in money and in count. A tier of auto or
+#      auto_notify is only honoured if the draw fits EVERY cap below; the check and the draw happen under one
+#      lock, so two events cannot both spend the last of a budget. A draw that does not fit is not dropped: it
+#      becomes a needs_approval decision, with the cap that tripped recorded as the reason. Exactly at a cap is
+#      allowed. A reversal does not give a draw back (the system did act that day).
+#      A staff-approved action does not draw on the budget: a person authorised it.
+#
+#   per_action_max_amount   most one autonomous action may cost
+#   per_customer_per_day    {max_count, max_amount}  one customer, one UTC day
+#   per_order_max_count     credits on one order, ever, autonomous or staff-approved (a duplicate carrier event must
+#                           not pay twice). At the ceiling a further event is `no_action: order_already_credited`,
+#                           never an approval, because approving it would be refused by the same ceiling.
+#   global_per_day          {max_count, max_amount}  every customer, one UTC day
+#
+# `events` maps an event topic to the action it may trigger and the deterministic rule that sizes it: the credit
+# for a delay is the amount of the highest credit_tiers entry whose min_delay_days the delay reaches.
+# Nothing here calls a model.
+#
+# PLACEHOLDERS: every number in this file is the builder's, not derived from anything. Change a number -> bump
+# policy_version (every decision records the version it was judged by) and extend the golden cases in
+# testdata-autonomy/cases.yaml (a separate folder: the approvals golden cases in testdata/ are also read by the .NET tests).
+
+policy_version: "2026-11-16.1"
+
+budgets:
+  goodwill_credit:
+    per_action_max_amount: 25.00
+    per_customer_per_day: { max_count: 1, max_amount: 25.00 }
+    per_order_max_count: 1
+    global_per_day: { max_count: 20, max_amount: 200.00 }
+
+actions:
+  goodwill_credit:
+    budget: goodwill_credit
+    reversible: true
+    rules:
+      - id: auto-small-credit
+        tier: auto
+        reason: A small credit for a delay of at least two days
+        when:
+          - { fact: amount, op: lte, value: 10 }
+          - { fact: delay_days, op: gte, value: 2 }
+      - id: notify-medium-credit
+        tier: auto_notify
+        reason: A mid-size credit for a delay of at least five days; staff are told
+        when:
+          - { fact: amount, op: lte, value: 25 }
+          - { fact: delay_days, op: gte, value: 5 }
+      - id: default-approval
+        tier: needs_approval
+        reason: Outside what the system may do alone
+        when: []
+
+events:
+  order.shipment_delayed:
+    action: goodwill_credit
+    # Orders in these statuses can be late; delivered, cancelled and returned ones cannot.
+    eligible_order_statuses: [confirmed, shipped, out_for_delivery]
+    credit_tiers:
+      - { min_delay_days: 2, amount: 5.00 }
+      - { min_delay_days: 5, amount: 15.00 }
+      - { min_delay_days: 10, amount: 40.00 }

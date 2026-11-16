@@ -31,6 +31,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -42,6 +43,7 @@ import asyncpg
 from shared import hitl
 from shared.approvals import intake, repo
 from shared.approvals.repo import ApprovalStatus as S
+from shared.autonomy import engine as autonomy
 from shared.config import settings
 from shared.context import current_user_email, current_user_role
 from shared.db import get_pool
@@ -117,12 +119,29 @@ def repo_rank(role: str | None) -> int:
     return intake.ROLE_RANK.get((role or "").lower(), 0)
 
 
+#: Sources whose *subject* is the intended reviewer, so the beneficiary rule below does not apply to them. A merchant
+#: proposal is about a seller's own catalogue and the seller decides it, on the seller routes
+#: (``proposals_service.decide``), never through :func:`authorize_decider` (the staff path 404s the source first, see
+#: :func:`refuse_proposal`). Every other source is decided by staff, and for those the rule is: the reviewer may never
+#: be the party who receives the money or benefit of the action. Listed explicitly, not left as an accident.
+SELLER_DECIDED_SOURCES = frozenset({"proposal"})
+
+
 def authorize_decider(approval: dict[str, Any], actor: Actor) -> None:
-    """Raise 403 unless ``actor`` may decide ``approval``. Pure: reads nothing, changes nothing."""
+    """Raise 403 unless ``actor`` may decide ``approval``. Pure: reads nothing, changes nothing.
+
+    Two "not you" rules: never the requester, and (for a staff-decided source) never the subject, the customer the
+    action is *for*. An autonomous action's requester is the system actor, so without the second rule a staff member
+    could approve a credit to their own account. Run again after the claim, like every check here.
+    """
     if repo_rank(actor.role) == 0:
         raise ApprovalHTTPError(403, "Staff access required")
     if _same_person(actor.email, approval["requester_email"]):
         raise ApprovalHTTPError(403, "You cannot approve your own request")
+    if approval.get("source") not in SELLER_DECIDED_SOURCES and _same_person(
+        actor.email, approval.get("subject_email")
+    ):
+        raise ApprovalHTTPError(403, "You cannot decide a request that is for you")
     if not can_review(approval, actor):
         raise ApprovalHTTPError(403, "This approval is routed to a manager")
 
@@ -171,6 +190,9 @@ async def _source_detail(pool: asyncpg.Pool, approval: dict[str, Any]) -> dict[s
                 "status": row["status"],
                 "tool_input": hitl._decode_jsonb(row["tool_input"]) or {},  # noqa: SLF001
             }
+    if approval["source"] == "event":
+        decision = await autonomy.get_decision(pool, ref)
+        return None if decision is None else {"decision": decision}
     if approval["source"] == "workflow":
         row = await pool.fetchrow(
             "SELECT workflow_run_id, status, payload FROM hitl_requests WHERE id = $1",
@@ -211,6 +233,9 @@ async def decide(
             raise ApprovalHTTPError(422, "Edits cannot accompany a request for information")
         if not note:
             raise ApprovalHTTPError(422, "Say what you need to know in the note")
+        if approval["source"] == "event":
+            # The requester is the system actor: nobody could answer, and the approval would sit in needs_info.
+            raise ApprovalHTTPError(422, "An automatic action cannot ask for more information; approve or reject it")
         return await _request_info(approval, actor, note)
     if decision == "reject":
         if edits:
@@ -397,7 +422,28 @@ async def _reject(approval: dict[str, Any], actor: Actor, note: str | None) -> d
         return await _finish_workflow(approval, actor, approve=False, edits={}, note=note)
     if approval["source"] == "tool":
         return await _reject_tool(approval, actor, note)
+    if approval["source"] == "event":
+        return await _reject_event(approval, actor, note)
     raise ApprovalHTTPError(422, f"Approvals from source {approval['source']!r} cannot be decided yet")
+
+
+async def _reject_event(approval: dict[str, Any], actor: Actor, note: str | None) -> dict[str, Any]:
+    """Nothing was done for an autonomous-action approval, so rejecting it only records the decision."""
+    approval_id = str(approval["id"])
+    token, approval = await _claim_and_reauthorize(approval, actor, S.PENDING_REVIEW, S.NEEDS_INFO)
+    try:
+        if await autonomy.executed_for_approval(get_pool(), approval_id) is not None:
+            # The credit committed on its own transaction and the approve that paid it died before recording. Closing
+            # the approval as rejected would say nothing was done while the customer keeps the money. Only approving
+            # (which replays the stored credit and records it) is truthful. The claim is exclusive and the credit is
+            # written only under it, so no approve can start paying between this check and the record below.
+            raise ApprovalHTTPError(409, "The credit was already granted; approve to record it")
+        updated = await _record(approval, actor, token, S.REJECTED, "reject", note, {})
+    except BaseException:
+        await _release(approval_id, token)
+        raise
+    logger.info("approval.rejected id=%s source=event", log_safe(approval_id))
+    return {"approval": jsonable(updated), "result": {"status": "rejected"}}
 
 
 async def _reject_tool(approval: dict[str, Any], actor: Actor, note: str | None) -> dict[str, Any]:
@@ -459,7 +505,126 @@ async def _approve(approval: dict[str, Any], actor: Actor, edits: dict[str, Any]
         return await _finish_workflow(approval, actor, approve=True, edits=edits, note=note)
     if approval["source"] == "tool":
         return await _approve_tool(approval, actor, edits, note)
+    if approval["source"] == "event":
+        return await _approve_event(approval, actor, edits, note)
     raise ApprovalHTTPError(422, f"Approvals from source {approval['source']!r} cannot be decided yet")
+
+
+async def _approve_event(
+    approval: dict[str, Any], actor: Actor, edits: dict[str, Any], note: str | None
+) -> dict[str, Any]:
+    """Approve an autonomous action: grant the credit (at most once for this approval), then record the decision.
+
+    A reviewer may lower the amount and never raise it. The credit goes to the subject customer, the reviewer is
+    recorded separately, and a person's approval does not draw on the autonomy budget.
+    """
+    pool = get_pool()
+    approval_id = str(approval["id"])
+    proposed = await autonomy.decision_for_approval(pool, approval_id)
+    if proposed is None or proposed["amount"] is None:
+        raise ApprovalHTTPError(409, "The action behind this approval no longer exists")
+    try:
+        from shared.policy import get_policy
+
+        allowed = set(get_policy().kind(approval["kind"]).editable_fields)
+    except Exception:
+        allowed = set()
+    rejected = sorted(set(edits) - allowed)
+    if rejected:
+        raise ApprovalHTTPError(422, f"Not editable: {', '.join(rejected)}")
+    amount: Decimal = proposed["amount"]
+    if "amount" in edits:
+        amount = _edited_amount(edits["amount"], proposed["amount"])
+
+    token, approval = await _claim_and_reauthorize(approval, actor, S.PENDING_REVIEW)
+    try:
+        ran = await autonomy.executed_for_approval(pool, approval_id)
+        if ran is not None:
+            # An earlier attempt already paid and died before recording. Do not go back through ``run_once``: its
+            # reservation may still read "in progress" (a cancelled attempt never released it), which would answer
+            # with an error dict. The ledger row is the truth, so replay it.
+            result = {
+                "success": True,
+                "status": "executed",
+                "decision_id": str(ran["id"]),
+                "amount": autonomy.money(ran["amount"]),
+                "replayed": True,
+            }
+        else:
+            try:
+                result = await autonomy.execute_approved(
+                    pool, approval_id, approver_email=actor.email, amount=amount, claim_token=token
+                )
+            except autonomy.AutonomyError as exc:  # the claim is no longer ours / the approval closed: nothing paid
+                raise ApprovalHTTPError(exc.status_code, exc.detail) from None
+            if "success" not in result:
+                # ``run_once`` reports another attempt's in-progress reservation as ``{"error": ...}``, not as a
+                # failure of the credit. That is not a verdict: record nothing, hand the claim back (below), retry.
+                raise ApprovalHTTPError(409, "Another attempt to grant this credit is still running; try again shortly")
+        recorded_edits = edits
+        if result.get("success") and Decimal(result["amount"]) != amount:
+            # The credit that went out is not the one this request asked for: a first attempt's amount was replayed.
+            # The audit must say what was paid, so refuse a conflicting edit and otherwise record the real amount.
+            paid = Decimal(result["amount"])
+            if "amount" in edits:
+                raise ApprovalHTTPError(
+                    409,
+                    f"A credit of {paid:.2f} was already granted for this approval; "
+                    "approve with that amount, or without edits, to record it",
+                )
+            recorded_edits = {"amount": autonomy.money(paid)} if paid != proposed["amount"] else {}
+        approved = await _record(
+            approval,
+            actor,
+            token,
+            S.APPROVED_WITH_EDITS if recorded_edits else S.APPROVED,
+            "approve",
+            note,
+            recorded_edits,
+        )
+    except BaseException:
+        # Hand the claim back so a retry can record it: the credit is keyed by this approval, so a retry replays the
+        # first result instead of granting twice.
+        await _release(approval_id, token)
+        raise
+    final = await repo.transition(
+        pool,
+        approval_id,
+        [S(approved["status"])],
+        S.EXECUTED if result.get("success") else S.FAILED,
+        actor_email=actor.email,
+        actor_role=actor.role,
+        action="executed" if result.get("success") else "execution_failed",
+        payload={"success": bool(result.get("success")), "reason": result.get("reason")},
+    )
+    logger.info("approval.approved id=%s source=event success=%s", log_safe(approval_id), result.get("success"))
+    return {"approval": jsonable(final), "result": result}
+
+
+def _edited_amount(raw: Any, proposed: Decimal) -> Decimal:
+    """A reviewer's amount: a positive number with at most two decimals, never above what was proposed."""
+    if isinstance(raw, bool) or not isinstance(raw, (int, float, str, Decimal)):
+        raise ApprovalHTTPError(422, "amount must be a number")
+    try:
+        value = Decimal(str(raw))
+    except ArithmeticError:
+        raise ApprovalHTTPError(422, "amount must be a number") from None
+    if not value.is_finite():
+        raise ApprovalHTTPError(422, "amount must have at most two decimal places")
+    if value <= 0:
+        raise ApprovalHTTPError(422, "amount must be above zero")
+    if value > proposed:
+        raise ApprovalHTTPError(422, f"amount cannot be raised above the proposed {proposed:.2f}")
+    # Bound it first: ``quantize`` raises ``InvalidOperation`` past the context's precision (``1e30``, a long digit
+    # string), and that is a refusal, not a server error. Here ``0 < value <= proposed``, so it is small, and the guard
+    # below covers the exponent extremes anyway.
+    try:
+        two_places = value == value.quantize(Decimal("0.01"))
+    except ArithmeticError:
+        raise ApprovalHTTPError(422, "amount must have at most two decimal places") from None
+    if not two_places:
+        raise ApprovalHTTPError(422, "amount must have at most two decimal places")
+    return value
 
 
 async def _approve_tool(
@@ -561,7 +726,13 @@ def _workflow_decision(approval: dict[str, Any], actor: Actor, approve: bool, ed
     amount = edits.get("amount")
     if amount is not None:
         ceiling = float(approval["amount"]) if approval.get("amount") is not None else None
-        if isinstance(amount, bool) or not isinstance(amount, (int, float)) or amount < 0:
+        if isinstance(amount, bool) or not isinstance(amount, (int, float)):
+            raise ApprovalHTTPError(422, "amount must be a non-negative number")
+        try:  # an integer past float range raises OverflowError; NaN and infinity compare false against every bound
+            amount = float(amount)
+        except OverflowError:
+            raise ApprovalHTTPError(422, "amount must be a non-negative number") from None
+        if not math.isfinite(amount) or amount < 0:
             raise ApprovalHTTPError(422, "amount must be a non-negative number")
         if ceiling is not None and amount > ceiling:
             raise ApprovalHTTPError(422, "amount cannot exceed what is under review")

@@ -411,6 +411,9 @@ through; the rest are read from `.env` by host-run Python.
 | `APPROVAL_REMINDER_FRACTION` | `0.5` | The reminder fires this fraction of the way through an approval's `sla_hours` |
 | `MERCHANT_OPS_SCHEDULE_ENABLED` | `false` | The worker books and runs the daily merchant proposal run (`merchant.daily_run_due`); off, a stray row does nothing and does not reschedule. See [Merchant proposals](merchant-proposals.md#the-daily-run-m-4) |
 | `MERCHANT_OPS_RUN_HOUR_UTC` | `6` | UTC hour of that daily run |
+| `AUTONOMY_ENABLED` | `false` | The worker acts on events (`order.shipment_delayed`): inside an autonomy budget it issues a goodwill credit alone, outside it opens an approval. Off, a due event row is consumed and nothing happens. Past decisions stay listed and reversible. No model is called either way. See [Event autonomy](event-autonomy.md) |
+| `AUTONOMY_SIMULATOR_ENABLED` | `false` | Also needs `AUTONOMY_ENABLED`. Enables `POST /api/admin/events/simulate` (admin only); otherwise it is a 404. There is no production event producer, so with this off no event reaches the engine |
+| `AUTONOMY_POLICY_PATH` | *(empty)* | Use this autonomy policy file instead of `config/policies/autonomy.yaml` (tests, demos with small caps). The budgets themselves are the file, not environment |
 
 The merchant hard limits are a file, not environment: `agents/python/config/policies/merchant_limits.yaml` (`margin_floor_pct`, `max_change_pct_per_day`, `block_during_active_promotion`, `max_lines_per_batch`, and the restock limits `max_restock_quantity` and `max_restock_order_value`, both placeholders to set for your catalogue). See [Approvals](approvals.md).
 

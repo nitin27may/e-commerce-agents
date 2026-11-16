@@ -136,6 +136,17 @@ test.describe("authenticated shell", () => {
     await expect(page.locator("svg.recharts-surface").first()).toBeVisible();
   });
 
+  test("admin decisions page shows budget use, a reversible action and one waiting for approval", async ({ page }) => {
+    await seedAuth(page, "admin");
+    await mockApi(page);
+    await page.goto("/admin/decisions");
+    await expect(page.getByRole("heading", { name: "Autonomous decisions" })).toBeVisible();
+    await expect(page.getByText(/1 of 20 actions and \$5\.00 of \$200\.00 used today/)).toBeVisible();
+    await expect(page.getByText("Waiting for approval").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Reverse", exact: true })).toHaveCount(1);
+    await expect(page.getByRole("button", { name: /large delay/ })).toBeVisible();
+  });
+
   test("seller proposals page lists suggestions, blocks a limited line and shows its guard reason", async ({ page }) => {
     await seedAuth(page, "seller");
     await mockApi(page);

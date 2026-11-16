@@ -1,0 +1,185 @@
+# Event autonomy
+
+Issue [#94](https://github.com/nitin27may/e-commerce-agents/issues/94), plan rows V-1 and V-2. When an event arrives (a
+shipment running late), the system may act **on its own inside a budget**, and must **ask a person outside it**. Python
+only ([parity row 40](parity-matrix.md)). **Off by default** (`AUTONOMY_ENABLED=false`) and it makes **no model call**:
+the rule is deterministic and the customer text is a template.
+
+## The flow
+
+```
+POST /api/admin/events/simulate ──► outbox row  order.shipment_delayed   (the only producer today)
+                                          │   outbox worker (worker/autonomy_handlers.py)
+                                          ▼
+     rule: delay_days ──► a credit amount           (autonomy.yaml: events.*.credit_tiers)
+     tier rules (first match wins) ──► auto | auto_notify | needs_approval
+     budget caps (checked and drawn atomically) ──► an autonomous tier that does not fit becomes needs_approval
+                                          │
+        ┌─────────────────────────────────┴──────────────────────────────┐
+        ▼ acts alone                                                      ▼ asks
+  store_credit_ledger +credit                                  approvals row (kind autonomous_action, source event)
+  agent_decisions row (who/what/why/budget)                    agent_decisions row (awaiting_approval)
+  customer notified (auto_notify: staff too)                   staff notified; nothing else happens until they decide
+```
+
+Three delays in the shipped policy land in three tiers: 3 days is a $5.00 credit (`auto`), 6 days $15.00
+(`auto_notify`: acted alone and staff are told), 12 days $40.00 (`needs_approval`, over the $25 per-action cap).
+
+## The policy file
+
+`agents/python/config/policies/autonomy.yaml`, validated whole at load (`shared/autonomy/policy.py`, errors are
+`AutonomyPolicyError`), golden cases in `config/policies/testdata-autonomy/cases.yaml` (a separate folder: the approvals
+golden cases next to it are read by the .NET tests too). Same `{fact, op, value}` shape as `approvals.yaml`.
+
+- **A missing fact never satisfies a condition.** An unknown delay or amount can only fall through to `needs_approval`.
+- **The default is to ask.** The loader refuses a policy whose last rule is not unconditional `needs_approval`, an
+  autonomous rule without an `amount lte N` ceiling, or a ceiling above the budget's `per_action_max_amount`.
+- **Money is `Decimal`**, at most two decimal places (more is an error, not a rounding).
+- **Caps:** `per_action_max_amount`, `per_customer_per_day` (count and amount), `per_order_max_count` (ever),
+  `global_per_day` (count and amount), UTC day. Exactly at a cap is allowed. A reversal does **not** give a draw back.
+  A staff-approved action does not draw on the budget: a person authorised it.
+- Every decision records the policy `version` it was judged by. **Every number in the file is a placeholder.**
+
+## Atomic budgets
+
+The whole decision runs in one transaction that first takes `pg_advisory_xact_lock(hash(budget, UTC day))`. Two events racing
+for the last of a budget serialise on the lock; the second reads the first's committed draw and is turned into an approval.
+`tests/test_autonomy_engine.py` proves it with a widened read-to-draw window, and includes the negative control (lock
+removed: both spend). The lock is per budget and day, so one budget's events never wait on another's. Cost: all draws on one
+budget serialise, which is right for a cap and fine at this scale.
+
+**The per-order cap has its own lock.** The day-keyed lock cannot serialise the one cap that is not a daily cap: two events for
+one order that start on either side of midnight UTC hold *different* budget locks, and two approvals for one order hold none,
+so both would read "this order was not paid" and both pay. The decision therefore also takes `pg_advisory_xact_lock` on the
+order, and so does executing an approved credit. **Lock order, everywhere: budget, then order, then row locks** (the approval
+row, then the decision row); the approved path takes no budget lock (a person authorised it, nothing is drawn) and follows the
+same order from the order lock on, so the two cannot deadlock. Both races have tests with a negative control (lock removed:
+both pay).
+
+**The day key and the per-customer cap.** The per-customer cap is *per UTC calendar day*: a draw counts on, and serialises
+under, the day the event started (read before the lock is awaited, so an event that waits past midnight is still booked on the
+day it arrived). One customer therefore can receive a day's cap just before and again just after midnight, which is what a
+calendar-day cap means; a rolling 24-hour window would be a different policy, not a different lock. The day key is right for
+both daily caps; the order lock is what bounds a single order.
+
+## The log is append-only
+
+Migration `0012`. `agent_decisions` and `store_credit_ledger` refuse UPDATE and DELETE (trigger). What happens later is a new row:
+
+| `entry_type` | meaning |
+|---|---|
+| `decision` | the engine's verdict on an event: acted alone, asked, or found nothing to do (`no_action`, with the reason). One per event (`event_key` unique) |
+| `approved_execution` | staff approved an `awaiting_approval` decision and the credit ran. One per approval |
+| `reversal` | an undo, with a negating ledger entry. One per reversed row |
+
+**TRUNCATE is refused too.** A row trigger never sees `TRUNCATE`, and the seeder's `TRUNCATE ... users CASCADE` reaches both
+tables through their foreign keys, so a statement-level trigger refuses any `TRUNCATE` of either table that would destroy
+rows (an empty table is let through: nothing is lost, and the blanket `TRUNCATE` every test fixture runs keeps working).
+The one deliberate way to clear them is the migration's `reset_autonomy_log()` function, which opens the guard for its own
+transaction only. The dev/demo seeder calls it from one named function, `scripts/seed.py::reset_autonomy_log`, before its
+reset, and the Python test fixture (`clean_db`) calls it between tests; no application path does. It is a dev/demo reset
+and may discard history; it is not an escape hatch for production, where the append-only guarantee is the point.
+
+The admin page derives a state from these rows (`executed`, `awaiting_approval`, `executed_after_approval`, `rejected`,
+`expired`, `failed`, `reversed`, `no_action`). Reversal refuses (409) when nothing executed, it was already reversed, or the
+credit has since been spent. The ledger balance is the sum of a customer's entries; **nothing spends store credit yet**.
+
+## At most once
+
+`run_once` (`autonomy_event:{topic:event_id}`) in front, a unique `event_key` behind it, and the decision commits on its own
+connection before `run_once` marks the event complete. A redelivered row, a second outbox row for the same event, or the same
+`event_id` sent twice acts once. A second event for an order already waiting on an approval is `no_action`
+(`approval_already_open`); a second *new* event on an already-credited order is `no_action` with reason
+`order_already_credited` (logged in the decision log, **no approval opened**): a second goodwill credit for one order is not
+something the inbox should be asked, and approving it would be refused by the same ceiling. `per_order_max_count` (1 in the
+shipped policy) is that ceiling for both paths, autonomous and staff-approved; the approved execution still refuses at the
+ceiling as a backstop for an approval opened before the order was credited.
+
+## Over budget: an approval
+
+Kind `autonomous_action` in `approvals.yaml` (`amount` over 100 routes to a manager, otherwise support; no `auto` route). The
+requester is the system actor `autonomy@system`, so any staff member may decide it and the "never your own request" rule
+holds. Staff approve or reject in the ordinary inbox (`POST /api/approvals/{id}/decide`, source `event`):
+
+- approving grants the credit at most once for that approval, to the order's owner; a reviewer's edit may only **lower** the
+  amount (`amount`, two decimals, positive); `request_info` is refused (nobody can answer the system);
+- rejecting changes nothing; the customer is never told about a credit that did not happen;
+- an SLA breach escalates support to manager once, then expires it, **never while a decide holds the claim** (the timer
+  waits), and an approved credit that ran but was never recorded is recorded, not expired;
+- **the credit is tied to the approval and to the claim.** The credit is written in a transaction that first locks the
+  approval row (`FOR UPDATE`, the same lock the SLA handler and every state change take) and pays only if the approval is
+  still `pending_review` **and** the decide's own claim token still holds it. A decide whose claim went stale mid-flight
+  can be overtaken by the SLA handler (which closes the approval and tells staff nothing was done); it then pays nothing and
+  answers the ordinary `409`, and the reservation is released so a legitimate retry is not blocked by a cached refusal.
+  `tests/test_autonomy_review_fixes.py` drives that interleaving through a real SLA tick.
+
+## A paid credit is recorded, never undone on paper
+
+The credit commits on its own transaction, then the approval is recorded. A request that dies in between leaves a paid
+credit under a still-pending approval, so every later path must *record* it:
+
+- **reject** answers `409` ("approve to record it") instead of recording `rejected` (checked after the claim; the credit is
+  only ever written under the claim, so no approve can start paying between the check and the record);
+- **approve** replays the stored `approved_execution` row directly (not through `run_once`, whose reservation a cancelled
+  attempt leaves "in progress") and records the amount that went out. A retry whose amount edit differs is `409`; a retry
+  without edits records `{"amount": "<paid>"}` (status `approved_with_edits` when it differs from the proposal);
+- a `run_once` reservation held by another live attempt is `409`, claim handed back, nothing recorded: only a result with a
+  `success` key is a verdict, so a `{"error": ...}` shape can never close the approval as `failed`;
+- the SLA handler records it (it already did); `request_info` is refused for event approvals;
+- an `amount` edit that is not finite or beyond decimal precision is `422`, not `500`.
+
+Web: the decisions page pages 50 at a time (`limit`/`offset`, "Showing N of TOTAL", "Load older decisions"; the state
+filter is applied in SQL, so an old waiting decision is reachable), ignores out-of-order responses (latest-request id plus
+an `AbortController`), has a Refresh button, and after a demo scenario looks again every 2 s up to 5 times, stopping as
+soon as the total grows.
+
+## Nobody approves a credit to themselves
+
+The approval's requester is the system actor, so "never your own request" alone would let a staff member approve money for
+their own account. Three layers close it, and the engine never relies on the simulator being well behaved:
+
+- **The decider is never the subject.** `authorize_decider` (Python) / `AuthorizeDecider` (.NET) refuse the reviewer when
+  they are the approval's `subject_email` (case-insensitive), for every staff-decided source, again after the claim.
+  Merchant proposals are the one exemption (the seller is the subject and decides on the seller routes), named in code.
+  A database CHECK (`approvals_no_beneficiary_decision`, migration 0012) says the same for every source except `proposal`.
+- **The engine never acts alone for a staff beneficiary** (`support` or `admin`, whoever produced the event): the verdict
+  is always `needs_approval` with reason `beneficiary_is_staff`, which another staff member decides.
+- **The simulator** refuses (422) an explicit order whose owner is not a `customer`, or is the acting admin.
+
+## The demo tour user is never acted on
+
+`agent_decisions` holds foreign keys to `users` and `orders` with no `ON DELETE` rule (the append-only trigger would refuse
+`SET NULL` and `CASCADE` anyway), and the demo reset (`shared/demo_tour.py`) runs `DELETE FROM orders WHERE user_id = ...`.
+One decision row referencing the tour user's order would make every later reset fail. So the engine records
+`no_action: demo_user_excluded` for the tour user **without any user or order id on the row**, the scenario picker skips the
+account, and an explicit simulate on its order is a 422. Every other `DELETE FROM` in application code was checked against
+the new tables: they touch cart items, messages, checkpoints, idempotency keys, refresh tokens, embeddings and the eval
+seeder's products and reviews, none of which `agent_decisions` or `store_credit_ledger` reference. The seeder's
+`TRUNCATE ... users CASCADE` is the other path, handled below.
+
+## Admin API and page
+
+| Route | |
+|---|---|
+| `POST /api/admin/events/simulate` | `{scenario: small\|medium\|large}` or `{order_id, delay_days, event_id?}`. 404 unless `AUTONOMY_ENABLED` **and** `AUTONOMY_SIMULATOR_ENABLED`, for every caller and *before* the role check (a 401/403 would reveal that the route exists on an install that switched it off). A scenario picks the oldest eligible order of a customer with no autonomy activity today and no event queued, so the three land on three customers. Replaying an `event_id` enqueues nothing |
+| `GET /api/admin/decisions[?state=&limit=&offset=]` | decisions with state, reasons, the budget each drew on, and today's use per budget. `state` is filtered in SQL over every row (an old `awaiting_approval` decision stays findable); `limit` is at most 200, `offset` pages, `total` counts every match |
+| `POST /api/admin/decisions/{id}/reverse` | admin only; works even when the feature is switched off |
+
+Web: `/admin/decisions`.
+
+## Not built
+
+The LLM `ops-responder` mode (`EVENT_AGENT_MODE=agent`) and its fixtures need a keyed recording session. Price-drop,
+back-in-stock and order-risk events are cut by the plan (consent UX, checkout hot path); the engine takes another event type
+by adding an `events:` entry, a parser and a handler line. No real carrier feed produces `order.shipment_delayed`.
+
+### What the TRUNCATE guard is, and is not
+
+The triggers on `agent_decisions` and `store_credit_ledger` stop accidents: a stray `UPDATE`, `DELETE` or
+`TRUNCATE` from application code, a test fixture or a console. They are not a defence against the database role the
+application itself uses, which owns the tables and may call `reset_autonomy_log()`. That function is reached only from
+the seeder (`scripts/seed.py::reset_autonomy_log`) and the test fixtures, never from an HTTP route. An audit log that
+must survive a hostile application role needs a separate role or an external sink, which this repo does not have.
+
+Migration `0012` was amended on its own branch before it reached `main` (the reviewer constraint and the TRUNCATE
+guard). A database that ran the first draft of that branch needs `./scripts/dev.sh --clean`; nothing on `main` is affected.

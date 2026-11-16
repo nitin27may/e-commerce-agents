@@ -88,12 +88,26 @@ public sealed class ApprovalsService(
             throw new ApprovalHttpException(404, "Approval not found");
     }
 
-    /// <summary>Throws 403 unless <paramref name="actor"/> may decide <paramref name="approval"/>. Pure: reads nothing, changes nothing.</summary>
+    /// <summary>
+    /// Sources whose <em>subject</em> is the intended reviewer, so the beneficiary rule in <see cref="AuthorizeDecider"/> does not apply: a
+    /// merchant proposal is the seller's own and the seller decides it (Python's seller routes), never through this function. Every other
+    /// source is decided by staff, and the reviewer may never be the party who receives the money or benefit of the action. Same constant
+    /// as Python's <c>SELLER_DECIDED_SOURCES</c>.
+    /// </summary>
+    public static readonly IReadOnlySet<string> SellerDecidedSources = new HashSet<string> { "proposal" };
+
+    /// <summary>
+    /// Throws 403 unless <paramref name="actor"/> may decide <paramref name="approval"/>. Pure: reads nothing, changes nothing. Two "not you"
+    /// rules: never the requester, and (for a staff-decided source) never the subject, the customer the action is for: an autonomous
+    /// action's requester is the system actor, so without the second rule a staff member could approve a credit to their own account.
+    /// </summary>
     public static void AuthorizeDecider(Approval approval, Actor actor)
     {
         if (ApprovalIntake.Rank(actor.Role) == 0) throw new ApprovalHttpException(403, "Staff access required");
         if (SamePerson(actor.Email, approval.RequesterEmail))
             throw new ApprovalHttpException(403, "You cannot approve your own request");
+        if (!SellerDecidedSources.Contains(approval.Source) && SamePerson(actor.Email, approval.SubjectEmail))
+            throw new ApprovalHttpException(403, "You cannot decide a request that is for you");
         if (!CanReview(approval, actor)) throw new ApprovalHttpException(403, "This approval is routed to a manager");
     }
 
@@ -182,6 +196,12 @@ public sealed class ApprovalsService(
         var approval = await LoadAsync(approvalId);
         RefuseProposal(approval); // before anything else: not even a 403 hints at a decision path that does not exist
         AuthorizeDecider(approval, actor);
+        // An autonomous-action approval (Python's event autonomy, parity row 40) is granted by Python's engine: this stack has no
+        // executor for it. Refused for EVERY decision, before anything is claimed, so nothing changes: request_info in particular
+        // would park it in needs_info, where Python's approve then refuses it. Not a 404 (Python staff can decide it): "not supported
+        // on this stack", the 422 this service already uses for what it cannot decide.
+        if (approval.Source == "event")
+            throw new ApprovalHttpException(422, "Autonomous-action approvals cannot be decided on this stack; use the Python orchestrator");
         var trimmed = (note ?? "").Trim();
         var cleanNote = trimmed.Length == 0 ? null : trimmed[..Math.Min(trimmed.Length, MaxNoteLength)];
         var edited = edits ?? new Dictionary<string, JsonElement>();

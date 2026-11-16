@@ -31,7 +31,7 @@ database constraint and again in the repository. See the roles table in the [Sec
 ## The policy file
 
 ```yaml
-policy_version: "2026-11-16.1"
+policy_version: "2026-11-16.3"
 kinds:
   return_approval:
     editable_fields: [amount, resolution]
@@ -211,7 +211,11 @@ the same.
 | `GET /api/me/approvals` | any signed-in user | Their own approvals, status only |
 
 **Who may decide.** Only staff; never the requester (compared case-insensitively, even for an admin deciding their
-own request); and the staff role must be at or above the approval's `assigned_role` — `support` decides what the
+own request); **never the subject** (the party who receives the money or benefit: an autonomous action's requester is
+the system actor, so a staff member whose own order a credit is for must not be able to approve it; `403`, every source
+except `proposal`, whose seller *is* the subject and the intended reviewer and decides on the seller routes, never
+through this check: `SELLER_DECIDED_SOURCES` in Python, `SellerDecidedSources` in .NET, named rather than silently
+exempt; a database CHECK, `approvals_no_beneficiary_decision` in migration 0012, backs it with the same exemption); and the staff role must be at or above the approval's `assigned_role` — `support` decides what the
 policy routed to `support` (and `auto` requests still waiting for a person), `admin` decides everything including
 `manager` routes. A refusal is a `403` and changes nothing; it is checked before anything is claimed, **and again
 after the claim is taken**, on every path (approve, reject and request-info; tool and workflow alike). The first check
@@ -244,6 +248,16 @@ fails closed to a manager (logged) on both.
   the approval to `executed`/`failed` instead of answering `409` forever, and the timeout handler (`expire`, which also
   serves .NET) does the same instead of marking an executed thing `expired`. *Request information* on such a row is
   refused (`409`): the action already happened. A request that is resolved any other way is still a `409`.
+* **The same holds for an autonomous-action (`event`) credit, and a reject never contradicts a paid credit.** The credit
+  commits on its own transaction before the approval is recorded. If it ran and the recording died, *reject* answers
+  `409` ("approve to record it") rather than recording `rejected` while the customer keeps the money; *approve* replays
+  the stored ledger row (it does not go back through `run_once`, whose reservation a cancelled attempt leaves "in
+  progress") and records the amount that **actually went out**: a retry's conflicting amount edit is `409`, and a retry
+  without edits records `{"amount": "<paid>"}`. A `run_once` reservation held by another live attempt is `409` with the
+  claim handed back, never a `failed` approval. The SLA handler records such a credit instead of expiring it. Tool and
+  workflow approvals were already safe: their reject is a `409` once the request row is `executed`/resolved.
+* An `amount` edit that is not a finite number a database column could hold (`1e30`, a 400-digit string, NaN, an integer
+  past float range) is a `422`, never a `500`.
 * A claim lost while recording a *workflow* decision is a `409` ("taken over by another reviewer"), like every other
   lost claim, on both stacks (it used to surface as a `500`).
 

@@ -26,12 +26,13 @@ import asyncpg
 from shared.config import settings
 from shared.db import use_pool
 from worker.approval_handlers import HANDLERS as APPROVAL_HANDLERS
+from worker.autonomy_handlers import HANDLERS as AUTONOMY_HANDLERS
 from worker.merchant_handlers import HANDLERS as MERCHANT_HANDLERS
 from worker.merchant_handlers import ensure_scheduled
 from worker.runner import Handler, run_once
 
 #: Every topic the worker serves. Plain dispatch: adding a topic is adding a line to a handler module's dict.
-HANDLERS: dict[str, Handler] = {**APPROVAL_HANDLERS, **MERCHANT_HANDLERS}
+HANDLERS: dict[str, Handler] = {**APPROVAL_HANDLERS, **MERCHANT_HANDLERS, **AUTONOMY_HANDLERS}
 
 logger = logging.getLogger("worker")
 

@@ -60,6 +60,7 @@ This folder contains the full technical documentation for E-Commerce Agents.
 | [mcp-integration.md](mcp-integration.md) | MCP servers (MCPServer), `MCPStreamableHTTPTool` wiring, enable/disable, inspector |
 | [maf-best-practices.md](maf-best-practices.md) | MAF `@tool` patterns, middleware, prompt YAML, orchestration patterns |
 | [security-guide.md](security-guide.md) | Threat model, guardrails stack, auth/identity propagation, SQL controls, hardening |
+| [event-autonomy.md](event-autonomy.md) | Event autonomy: autonomy budgets, the append-only decision log, reversal, the event simulator, how an over-budget action becomes an approval |
 | [merchant-proposals.md](merchant-proposals.md) | Seller merchant proposals: deterministic markdown/restock suggestions, review through the approvals machinery, idempotent execution, the daily run |
 | [approvals.md](approvals.md) | Approval routing policy (`approvals.yaml`), default rules, golden cases, the approvals tables |
 | [agent-quality.md](agent-quality.md) | Eval methodology, datasets, red-team scenarios, scoring, CI gate |

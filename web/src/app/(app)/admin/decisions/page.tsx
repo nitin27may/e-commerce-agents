@@ -1,0 +1,301 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Gauge, Loader2, Play, RefreshCw } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
+import { api, type AutonomyBudget, type AutonomyDecision, type AutonomyDecisionsResponse } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/empty-state";
+import { DecisionCard, money } from "@/components/admin/decision-card";
+
+// After a demo event is sent the worker decides it a moment later. Look a few times, then stop on our own.
+const POLL_INTERVAL_MS = 2000;
+const POLL_ATTEMPTS = 5;
+
+// Newest first. The backend caps a page at 200; older rows are reached with "Load older decisions".
+const PAGE_SIZE = 50;
+const MAX_PAGE = 200;
+
+const FILTERS: { value: string; label: string }[] = [
+  { value: "", label: "All" },
+  { value: "executed", label: "Done by the system" },
+  { value: "awaiting_approval", label: "Waiting for approval" },
+  { value: "reversed", label: "Reversed" },
+  { value: "no_action", label: "Nothing to do" },
+];
+
+function BudgetMeter({ budget }: { budget: AutonomyBudget }) {
+  const pct = Math.min(100, Math.round((budget.used_count / Math.max(budget.max_count, 1)) * 100));
+  return (
+    <div className="rounded-lg border p-3 text-sm" data-testid="budget-meter">
+      <p className="font-medium">{budget.budget_key.replaceAll("_", " ")} budget</p>
+      <p className="text-muted-foreground">
+        {budget.used_count} of {budget.max_count} actions and {money(budget.used_amount)} of {money(budget.max_amount)} used
+        today ({budget.day}, UTC)
+      </p>
+      <div
+        role="progressbar"
+        aria-label={`${budget.budget_key} actions used today`}
+        aria-valuemin={0}
+        aria-valuemax={budget.max_count}
+        aria-valuenow={budget.used_count}
+        className="mt-2 h-2 w-full overflow-hidden rounded bg-muted"
+      >
+        <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">
+        At most {money(budget.per_action_max_amount)} per action, {budget.per_customer_max_count} per customer per day (
+        {money(budget.per_customer_max_amount)}), {budget.per_order_max_count} per order.
+      </p>
+    </div>
+  );
+}
+
+export default function AutonomyDecisionsPage() {
+  const { user, isLoading: authLoading, isAdmin } = useAuth();
+  const [data, setData] = useState<AutonomyDecisionsResponse | null>(null);
+  const [decisions, setDecisionRows] = useState<AutonomyDecision[]>([]);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const loaded = useRef(0);
+  const [filter, setFilter] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [simulating, setSimulating] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [pollsLeft, setPollsLeft] = useState(0);
+  const totalBeforeEvent = useRef(0);
+
+  // Responses can finish out of order (a slow "All" after a quick "Reversed"). Only the newest request may write
+  // data, error or loading, and starting one aborts the previous so the browser also stops waiting for it.
+  const setDecisions = useCallback((rows: AutonomyDecision[]) => {
+    loaded.current = rows.length;
+    setDecisionRows(rows);
+  }, []);
+  const latest = useRef(0);
+  const inflight = useRef<AbortController | null>(null);
+
+  const load = useCallback(async (): Promise<AutonomyDecisionsResponse | null> => {
+    const id = ++latest.current;
+    inflight.current?.abort();
+    const controller = new AbortController();
+    inflight.current = controller;
+    setError(null);
+    try {
+      // A reload keeps as many rows as the reviewer had already paged through (up to the backend's cap).
+      const limit = Math.min(MAX_PAGE, Math.max(PAGE_SIZE, loaded.current));
+      const res = await api.getAutonomyDecisions(filter || undefined, { limit, signal: controller.signal });
+      if (id !== latest.current) return null;
+      setData(res);
+      setDecisions(res.decisions);
+      return res;
+    } catch (e) {
+      if (id === latest.current && !(e instanceof DOMException && e.name === "AbortError")) {
+        setError(e instanceof Error ? e.message : "Failed to load decisions");
+      }
+      return null;
+    } finally {
+      if (id === latest.current) setLoading(false);
+    }
+  }, [filter, setDecisions]);
+
+  async function loadMore() {
+    const id = ++latest.current; // supersedes an in-flight reload: this answer is the newer one
+    inflight.current?.abort();
+    const controller = new AbortController();
+    inflight.current = controller;
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const res = await api.getAutonomyDecisions(filter || undefined, {
+        limit: PAGE_SIZE,
+        offset: loaded.current,
+        signal: controller.signal,
+      });
+      if (id !== latest.current) return;
+      setData(res);
+      // New decisions arrive at the top, so a later page can repeat a row already shown: de-duplicate by id.
+      const seen = new Set(decisions.map((d) => d.id));
+      setDecisions([...decisions, ...res.decisions.filter((d) => !seen.has(d.id))]);
+    } catch (e) {
+      if (id === latest.current && !(e instanceof DOMException && e.name === "AbortError")) {
+        setError(e instanceof Error ? e.message : "Failed to load more decisions");
+      }
+    } finally {
+      if (id === latest.current) {
+        setLoadingMore(false);
+        setLoading(false);
+      }
+    }
+  }
+
+  useEffect(() => {
+    if (user && isAdmin) load();
+  }, [user, isAdmin, load]);
+
+  useEffect(() => () => inflight.current?.abort(), []);
+
+  // A bounded look-again after a demo event: stops when a new decision appears, after POLL_ATTEMPTS, or on unmount.
+  useEffect(() => {
+    if (pollsLeft <= 0) return;
+    const timer = setTimeout(async () => {
+      const res = await load();
+      setPollsLeft(res && res.total > totalBeforeEvent.current ? 0 : pollsLeft - 1);
+    }, POLL_INTERVAL_MS);
+    return () => clearTimeout(timer);
+  }, [pollsLeft, load]);
+
+  async function refresh() {
+    setRefreshing(true);
+    try {
+      await load();
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  function selectFilter(value: string) {
+    if (value === filter) return;
+    setLoading(true); // the list below belongs to the previous filter until the new one answers
+    setDecisions([]);
+    setLoadingMore(false);
+    setFilter(value);
+  }
+
+  async function reverse(id: string, note?: string) {
+    await api.reverseAutonomyDecision(id, note);
+    setNotice("Reversed. The credit was taken back with a new entry; nothing was deleted.");
+    await load();
+  }
+
+  async function simulate(scenario: string) {
+    setSimulating(scenario);
+    setNotice(null);
+    try {
+      const res = await api.simulateAutonomyEvent(scenario);
+      setNotice(
+        res.enqueued
+          ? `Sent a ${res.delay_days}-day delay for order ${res.order_id.slice(0, 8)}. The worker will decide it in a moment.`
+          : "That event was already sent.",
+      );
+      if (res.enqueued) {
+        totalBeforeEvent.current = data?.total ?? 0;
+        setPollsLeft(POLL_ATTEMPTS);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not send the event");
+    } finally {
+      setSimulating(null);
+    }
+  }
+
+  if (authLoading) return null;
+  if (!user || !isAdmin) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <EmptyState icon={Gauge} title="Access Denied" description="Autonomous decisions are for admins." />
+      </div>
+    );
+  }
+
+  const scenarios = Object.entries(data?.scenarios ?? {});
+
+  return (
+    <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Autonomous decisions</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            What the system did on its own, what it asked about, and the budget each one drew on. An action can be reversed
+            while it is reversible.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" size="sm" variant="outline" onClick={refresh} disabled={refreshing}>
+            {refreshing ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
+            Refresh
+          </Button>
+        {scenarios.length > 0 && (
+          <div role="group" aria-label="Send a demo event" className="flex flex-wrap gap-2">
+            {scenarios.map(([name, days]) => (
+              <Button key={name} type="button" size="sm" variant="outline" onClick={() => simulate(name)} disabled={simulating !== null}>
+                {simulating === name ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Play data-icon="inline-start" />}
+                {name} delay ({days} days)
+              </Button>
+            ))}
+          </div>
+        )}
+        </div>
+      </div>
+
+      {data && !data.enabled && (
+        <p role="status" className="rounded-lg border bg-muted/40 px-3 py-2 text-sm">
+          Event autonomy is switched off (AUTONOMY_ENABLED), so the system is not acting on events. Past decisions are
+          still listed and can be reversed.
+        </p>
+      )}
+      {notice && (
+        <p role="status" className="rounded-lg border bg-muted/40 px-3 py-2 text-sm">
+          {notice}
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
+
+      {data && data.budgets.length > 0 && (
+        <section aria-label="Budgets" className="grid gap-3 sm:grid-cols-2">
+          {data.budgets.map((b) => (
+            <BudgetMeter key={b.budget_key} budget={b} />
+          ))}
+        </section>
+      )}
+
+      <div role="group" aria-label="Filter decisions" className="flex flex-wrap gap-1">
+        {FILTERS.map((f) => (
+          <Button
+            key={f.value}
+            type="button"
+            size="sm"
+            variant={filter === f.value ? "default" : "outline"}
+            aria-pressed={filter === f.value}
+            onClick={() => selectFilter(f.value)}
+          >
+            {f.label}
+          </Button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-16">
+          <Loader2 className="size-6 animate-spin text-muted-foreground" aria-label="Loading" />
+        </div>
+      ) : decisions.length === 0 ? (
+        <EmptyState
+          icon={Gauge}
+          title="No decisions yet"
+          description="When an event such as a delayed shipment arrives, the system's decision and the budget it used appear here."
+        />
+      ) : (
+        <div className="space-y-4">
+          {decisions.map((d) => (
+            <DecisionCard key={d.id} decision={d} onReverse={reverse} />
+          ))}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p role="status" className="text-sm text-muted-foreground">
+              Showing {decisions.length} of {Math.max(data?.total ?? 0, decisions.length)} decisions, newest first.
+            </p>
+            {data && decisions.length < data.total && (
+              <Button type="button" size="sm" variant="outline" onClick={loadMore} disabled={loadingMore}>
+                {loadingMore && <Loader2 className="animate-spin" data-icon="inline-start" />}
+                Load older decisions
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
