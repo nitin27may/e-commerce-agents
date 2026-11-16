@@ -227,13 +227,19 @@ def get_embeddings_client() -> openai.AsyncOpenAI | openai.AsyncAzureOpenAI:
                 "EMBEDDING_PROVIDER=openai_compatible requires EMBEDDING_BASE_URL, e.g. http://localhost:11434/v1 "
                 "for Ollama."
             )
-        # Local servers ignore the key, but the SDK insists on a non-empty one.
-        key = settings.EMBEDDING_API_KEY or settings.OPENAI_API_KEY or "not-needed"
+        # Local servers ignore the key, but the SDK insists on a non-empty one. Never the chat key: this is
+        # a different host from the chat endpoint, and a chat credential must not be sent to it.
+        key = settings.EMBEDDING_API_KEY or "not-needed"
         return openai.AsyncOpenAI(api_key=key, base_url=settings.EMBEDDING_BASE_URL)
 
     # openai. Following the chat provider keeps today's LLM_BASE_URL; an explicit
     # EMBEDDING_PROVIDER=openai means api.openai.com unless EMBEDDING_BASE_URL says otherwise.
-    key = settings.EMBEDDING_API_KEY or settings.OPENAI_API_KEY
+    # An explicit EMBEDDING_BASE_URL is a host of its own: it gets EMBEDDING_API_KEY or a placeholder, never the
+    # chat key (which would otherwise leak to a third party).
+    if settings.EMBEDDING_BASE_URL:
+        key = settings.EMBEDDING_API_KEY or "not-needed"
+    else:
+        key = settings.EMBEDDING_API_KEY or settings.OPENAI_API_KEY
     if not key:
         raise ValueError(
             "OPENAI_API_KEY (or EMBEDDING_API_KEY) is required for OpenAI embeddings. Set it in .env or choose "

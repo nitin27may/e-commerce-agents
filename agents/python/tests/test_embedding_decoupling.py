@@ -157,6 +157,16 @@ def test_openai_compatible_needs_a_base_url_and_no_key(cfg) -> None:
     assert client.api_key  # the SDK insists on a non-empty one; a local server ignores it
 
 
+def test_the_chat_key_is_never_sent_to_an_embedding_host(cfg) -> None:
+    """A separate EMBEDDING_BASE_URL is a third party: it gets EMBEDDING_API_KEY or a placeholder, not the chat key."""
+    cfg(EMBEDDING_PROVIDER="openai_compatible", EMBEDDING_BASE_URL="http://embed.example/v1", OPENAI_API_KEY="sk-chat")
+    assert factory.get_embeddings_client().api_key == "not-needed"
+    cfg(EMBEDDING_API_KEY="sk-embed")
+    assert factory.get_embeddings_client().api_key == "sk-embed"
+    cfg(EMBEDDING_PROVIDER="openai", EMBEDDING_API_KEY="", EMBEDDING_BASE_URL="http://embed.example/v1")
+    assert factory.get_embeddings_client().api_key == "not-needed"
+
+
 def test_openai_embeddings_without_any_key_fail_naming_it(cfg) -> None:
     cfg(OPENAI_API_KEY="")
     with pytest.raises(ValueError, match="OPENAI_API_KEY"):

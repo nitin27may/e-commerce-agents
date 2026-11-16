@@ -113,14 +113,19 @@ public static class EmbeddingClientFactory
                     "EMBEDDING_PROVIDER=openai_compatible requires EMBEDDING_BASE_URL, e.g. http://localhost:11434/v1 for Ollama");
             }
 
-            // Local servers ignore the key, but the SDK insists on a non-empty one.
-            var localKey = FirstNonBlank(settings.EmbeddingApiKey, settings.OpenAiApiKey) ?? "not-needed";
+            // Local servers ignore the key, but the SDK insists on a non-empty one. Never the chat key: this is
+            // a different host from the chat endpoint, and a chat credential must not be sent to it.
+            var localKey = FirstNonBlank(settings.EmbeddingApiKey) ?? "not-needed";
             return new OpenAIClient(
                 new ApiKeyCredential(localKey),
                 new OpenAIClientOptions { Endpoint = new Uri(settings.EmbeddingBaseUrl) }).GetEmbeddingClient(model);
         }
 
-        var openAiKey = FirstNonBlank(settings.EmbeddingApiKey, settings.OpenAiApiKey);
+        // An explicit EMBEDDING_BASE_URL is a host of its own: it gets EMBEDDING_API_KEY or a placeholder, never
+        // the chat key (which would otherwise leak to a third party).
+        var openAiKey = string.IsNullOrWhiteSpace(settings.EmbeddingBaseUrl)
+            ? FirstNonBlank(settings.EmbeddingApiKey, settings.OpenAiApiKey)
+            : FirstNonBlank(settings.EmbeddingApiKey) ?? "not-needed";
         if (openAiKey is null)
         {
             throw new InvalidOperationException("OPENAI_API_KEY (or EMBEDDING_API_KEY) is required for OpenAI embeddings");

@@ -295,7 +295,7 @@ embeddings API (Claude), and for running chat and embeddings on different endpoi
 |---|---|---|
 | `EMBEDDING_PROVIDER` | empty = follow `LLM_PROVIDER` | `openai`, `azure`, `openai_compatible` (any `/embeddings` endpoint: Ollama, vLLM, LM Studio) or `replay` (offline hashing vectors) |
 | `EMBEDDING_BASE_URL` | empty | Endpoint for embeddings only. Required for `openai_compatible`. Following `openai`, empty falls back to `LLM_BASE_URL` as before; an explicit `EMBEDDING_PROVIDER=openai` means api.openai.com |
-| `EMBEDDING_API_KEY` | empty | Replaces `OPENAI_API_KEY` (or the Azure key) for embeddings only. `openai_compatible` needs none |
+| `EMBEDDING_API_KEY` | empty | Replaces `OPENAI_API_KEY` (or the Azure key) for embeddings only. `openai_compatible` needs none. Whenever `EMBEDDING_BASE_URL` is set, the chat key is never sent to that host: it receives `EMBEDDING_API_KEY`, or the placeholder `not-needed` when that is empty |
 | `EMBEDDING_MODEL` | `text-embedding-3-small` | Model, or the Azure deployment when `AZURE_EMBEDDING_DEPLOYMENT` is set |
 | `EMBEDDING_DIM` | `1536` | Width of every vector. Must equal the `vector(N)` columns — see below |
 

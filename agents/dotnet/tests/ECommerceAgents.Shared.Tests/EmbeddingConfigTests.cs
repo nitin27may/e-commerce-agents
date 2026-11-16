@@ -87,6 +87,52 @@ public sealed class EmbeddingConfigTests
             .Should().BeOfType<OpenAIEmbeddingProvider>();
     }
 
+    [Theory]
+    [InlineData("openai_compatible", null, "not-needed")]
+    [InlineData("openai_compatible", "sk-embed", "sk-embed")]
+    [InlineData("openai", null, "not-needed")]
+    [InlineData("openai", "sk-embed", "sk-embed")]
+    public async Task TheChatKeyIsNeverSentToAnEmbeddingHost(string provider, string? embeddingKey, string expected)
+    {
+        using var listener = new System.Net.HttpListener();
+        var port = FreePort(System.Net.Sockets.TcpListener.Create(0));
+        var prefix = $"http://localhost:{port}/";
+        listener.Prefixes.Add(prefix);
+        listener.Start();
+        var seen = Task.Run(async () =>
+        {
+            var ctx = await listener.GetContextAsync();
+            var auth = ctx.Request.Headers["Authorization"];
+            var body = System.Text.Encoding.UTF8.GetBytes(
+                "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"index\":0,\"embedding\":[0.1,0.2]}],"
+                + "\"model\":\"m\",\"usage\":{\"prompt_tokens\":1,\"total_tokens\":1}}");
+            ctx.Response.ContentType = "application/json";
+            await ctx.Response.OutputStream.WriteAsync(body);
+            ctx.Response.Close();
+            return auth;
+        });
+
+        var settings = Base() with
+        {
+            OpenAiApiKey = "sk-chat",
+            EmbeddingProvider = provider,
+            EmbeddingBaseUrl = prefix,
+            EmbeddingApiKey = embeddingKey ?? "",
+        };
+        var client = EmbeddingClientFactory.CreateEmbeddingClient(settings);
+        try { await client.GenerateEmbeddingAsync("hello"); } catch (Exception) { /* only the request header matters */ }
+
+        (await seen.WaitAsync(TimeSpan.FromSeconds(10))).Should().Be($"Bearer {expected}");
+    }
+
+    private static int FreePort(System.Net.Sockets.TcpListener probe)
+    {
+        probe.Start();
+        var port = ((System.Net.IPEndPoint)probe.LocalEndpoint).Port;
+        probe.Stop();
+        return port;
+    }
+
     [Fact]
     public async Task ClaudeChatCanUseSeparateEmbeddings()
     {
