@@ -136,3 +136,44 @@ async def test_reset_puts_back_only_the_tour_users_data(
     assert await clean_db.fetchval("SELECT COUNT(*) FROM agent_memories WHERE user_id = $1", other_id) == 1
     assert await clean_db.fetchval("SELECT COUNT(*) FROM orders WHERE user_id = $1", other_id) == other_orders
     assert await clean_db.fetchval("SELECT total_spend FROM users WHERE id = $1", other_id) == other_spend
+
+
+async def test_a_miss_in_a_new_conversation_still_reports_its_id(
+    clean_db: Any, database_url: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The miss path sends the same metadata frame as a normal turn, so the thread can continue."""
+    import json
+
+    from orchestrator.routes.chat import ChatRequest, chat_stream
+    from shared.context import current_user_email, current_user_role
+    from shared.sse import aiter_sse_events
+
+    await _run_seed(monkeypatch, database_url)  # sets LLM_PROVIDER=replay in the environment
+    monkeypatch.setattr(shared_db, "_pool", clean_db)
+    for name, value in (("LLM_PROVIDER", "replay"), ("REPLAY_FIXTURES_DIR", str(tmp_path)), ("RECORD", False)):
+        monkeypatch.setattr(settings, name, value, raising=False)
+    user_id = await _user_id(clean_db, TOUR_EMAIL)
+    current_user_email.set(TOUR_EMAIL)
+    current_user_role.set("customer")
+
+    class _Req:
+        async def is_disconnected(self) -> bool:
+            return False
+
+    user = {"sub": TOUR_EMAIL, "user_id": str(user_id), "role": "customer"}
+    response = await chat_stream(ChatRequest(message="show me headphones", mode="tool"), _Req(), user=user)
+    raw = "".join([c async for c in response.body_iterator])
+
+    async def _chunks():
+        yield raw
+
+    frames = [pair async for pair in aiter_sse_events(_chunks())]
+    names = [n for n, _ in frames]
+    assert names.count("replay_miss") == 1
+    meta = json.loads(next(d for n, d in frames if n == "metadata"))
+    conversation_id = await clean_db.fetchval("SELECT id FROM conversations WHERE user_id = $1", user_id)
+    assert meta == {"conversation_id": str(conversation_id), "agents_involved": ["orchestrator"]}
+    # Nothing but the configured message says anything about the miss; no assistant turn was stored.
+    assert "hash=" not in raw and ".json" not in raw
+    assert await clean_db.fetchval("SELECT COUNT(*) FROM messages WHERE role = 'assistant'") == 0
+    assert frames[-1] == ("data", "[DONE]")

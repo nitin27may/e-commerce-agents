@@ -769,7 +769,10 @@ async def chat_stream(
 
         if replay_missed:
             # No recording for this prompt: nothing to persist, and the frame
-            # already told the client why. Close the stream (#86).
+            # already told the client why. The conversation id still goes out, so a
+            # brand-new conversation can be continued; nothing about the miss does.
+            miss_metadata = {"conversation_id": conversation_id, "agents_involved": list(agents_involved)}
+            yield f"event: metadata\ndata: {json.dumps(miss_metadata)}\n\n"
             yield "data: [DONE]\n\n"
             return
 

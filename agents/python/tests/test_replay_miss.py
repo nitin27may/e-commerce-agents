@@ -140,7 +140,7 @@ async def test_stream_route_tool_mode_emits_replay_miss(replay_empty: Path) -> N
     misses = _miss_frames(frames)
     assert len(misses) == 1 and misses[0]["message"]
     assert not any(name == "data" and "apologize" in data for name, data in frames)
-    assert frames[-1] == ("data", "[DONE]")
+    assert frames[-2][0] == "metadata" and frames[-1] == ("data", "[DONE]")
     _assert_no_leak(raw)
 
 
