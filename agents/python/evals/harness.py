@@ -33,6 +33,7 @@ from shared.context import (
 from shared.grounding.ledger import reset_grounding_ledger
 from shared.guardrails.flags import get_guardrail_flags, reset_guardrail_flags
 from shared.replay_client import ReplayFixtureMissingError
+from shared.run_usage import tokens_from_usage
 
 # Agent factory registry — maps eval agent names to their creation functions.
 # Lives here (not in run_evals.py) because ProductionRunner needs it to build
@@ -162,12 +163,15 @@ class ProductionRunner:
                 usage = event.payload.get("usage") or {}
 
         steps = get_steps()
+        # run_completed.usage is {total, by_agent}: the orchestrator's calls plus
+        # every specialist's, as reported over A2A.
+        tokens_in, tokens_out = tokens_from_usage(usage)
         return RunOutcome(
             text=text,
             tools_called=_tools_called(steps),
             routes=_routes(steps),
-            tokens_in=usage.get("input_token_count") or 0,
-            tokens_out=usage.get("output_token_count") or 0,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
             grounding=grounding,
         )
 

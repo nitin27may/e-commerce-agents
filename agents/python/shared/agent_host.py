@@ -24,6 +24,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from shared.readiness import register_readiness
+from shared.run_usage import to_wire_usage
 from shared.sse import sse_frame
 
 logging.basicConfig(level=logging.INFO)
@@ -277,14 +278,21 @@ def create_agent_app(
 
             reset_steps()
             reset_grounding_ledger()
+            run_metadata: dict[str, Any] = {}
             with agent_run_span(agent_name):
-                response_text = await _run_agent_native(agent, message, history=history)
+                response_text = await _run_agent_native(agent, message, history=history, metadata_box=run_metadata)
             # Return this specialist's captured tool steps so the orchestrator
             # can merge them into the live agentic timeline.
             steps = get_steps()
             for step in steps:
                 step["agent"] = agent_name
-            return {"response": response_text, "steps": steps}
+            payload: dict[str, Any] = {"response": response_text, "steps": steps}
+            # Token usage rides in its own field, never in `response`: the
+            # orchestrator's model reads that text (see shared/run_usage.py).
+            usage = to_wire_usage(run_metadata.get("_maf_usage"))
+            if usage:
+                payload["usage"] = usage
+            return payload
 
         except Exception:
             logger.exception("%s.message_error", agent_name)
@@ -329,6 +337,7 @@ def create_agent_app(
             steps = reset_steps()
             reset_grounding_ledger()
             sent = 0
+            run_metadata: dict[str, Any] = {}
 
             def _drain_new_steps() -> list[str]:
                 """Frames for every step recorded since the last drain.
@@ -347,7 +356,9 @@ def create_agent_app(
 
             with agent_run_span(agent_name):
                 try:
-                    async for chunk in _run_agent_native_stream(agent, message, history=history):
+                    async for chunk in _run_agent_native_stream(
+                        agent, message, history=history, metadata_box=run_metadata
+                    ):
                         # Flush before the chunk, not after: in a MAF tool loop
                         # the tools resolve first and the prose that describes
                         # them comes second, so a step drained here reaches the
@@ -367,6 +378,11 @@ def create_agent_app(
             # writing itself.
             for frame in _drain_new_steps():
                 yield frame
+            # Terminal usage frame, ahead of [DONE]. A named event, so a reader
+            # that only understands text frames can never mistake it for text.
+            usage = to_wire_usage(run_metadata.get("_maf_usage"))
+            if usage:
+                yield sse_frame(json.dumps(usage, separators=(",", ":")), event="usage")
             yield sse_frame("[DONE]")
 
         return StreamingResponse(_generate(), media_type="text/event-stream")

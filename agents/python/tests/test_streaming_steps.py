@@ -73,7 +73,7 @@ async def test_message_stream_emits_step_frames_before_done(
 
     # Fake streaming agent: yields one text chunk and populates current_steps
     # to simulate StepRecorderMiddleware capturing a tool call mid-run.
-    async def _fake_stream(agent, message, history=None):
+    async def _fake_stream(agent, message, history=None, metadata_box=None):
         steps = current_steps.get()
         if steps is not None:
             steps.append(
@@ -145,7 +145,7 @@ async def test_message_stream_emits_a_step_before_the_text_that_follows_it(
 
     from shared.agent_host import create_agent_app
 
-    async def _fake_stream(agent, message, history=None):
+    async def _fake_stream(agent, message, history=None, metadata_box=None):
         yield "Let me check. "
         steps = current_steps.get()
         if steps is not None:
@@ -197,7 +197,7 @@ async def test_message_stream_no_steps_skips_step_frames(
 
     from shared.agent_host import create_agent_app
 
-    async def _fake_stream(agent, message, history=None):
+    async def _fake_stream(agent, message, history=None, metadata_box=None):
         yield "simple answer"
 
     monkeypatch.setattr("shared.agent_host._run_agent_native_stream", _fake_stream)
@@ -573,7 +573,7 @@ async def test_newlines_survive_specialist_to_orchestrator_hop(
 
     from shared.agent_host import create_agent_app
 
-    async def _fake_stream(agent, message, history=None):
+    async def _fake_stream(agent, message, history=None, metadata_box=None):
         for chunk in chunks:
             yield chunk
 

@@ -14,6 +14,7 @@ from collections.abc import AsyncIterator
 from orchestrator.events import OrchestrationEvent, adapt_step
 from shared.agent_observability import get_steps, reset_steps
 from shared.grounding.ledger import reset_grounding_ledger
+from shared.run_usage import ORCHESTRATOR, begin_run_usage
 
 from .base import ModeCapabilities, RunContext
 
@@ -39,9 +40,12 @@ class ToolRouterMode:
         agent = create_orchestrator_agent()
         reset_steps()
         reset_grounding_ledger()
+        run_usage = begin_run_usage()
 
         run_metadata: dict = {}
         response_text = await _run_agent_native(agent, message, history=ctx.history, metadata_box=run_metadata)
+
+        run_usage.add(ORCHESTRATOR, run_metadata.get("_maf_usage"))
 
         steps = get_steps()
         for step in steps:
@@ -56,7 +60,9 @@ class ToolRouterMode:
                 "agents_involved": agents_involved,
                 "steps": steps,
                 "grounding": run_metadata.get("grounding"),
-                "usage": run_metadata.get("_maf_usage"),
+                # {total, by_agent}: the orchestrator's own LLM calls plus every
+                # specialist's, as reported over A2A (shared/run_usage.py).
+                "usage": run_usage.snapshot(),
             },
         )
 

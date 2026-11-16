@@ -24,6 +24,7 @@ from shared.factory import parse_agent_registry
 from shared.http_resilience import ResilientAsyncTransport
 from shared.middleware import build_specialist_middleware
 from shared.oauth.service_client import build_a2a_headers
+from shared.run_usage import record_usage
 from shared.sse import aiter_sse_events
 from shared.telemetry import a2a_call_span
 
@@ -151,6 +152,15 @@ async def call_specialist_agent(
                                 except (json.JSONDecodeError, ValueError):
                                     pass
                                 continue
+                            if current_event == "usage":
+                                # Accounting only: it goes to the turn's
+                                # accumulator, never into `chunks` (the tool
+                                # result the model reads) or the browser queue.
+                                try:
+                                    record_usage(agent_name, json.loads(payload))
+                                except (json.JSONDecodeError, ValueError, AttributeError):
+                                    logger.warning("a2a.usage_unparseable target=%s", agent_name)
+                                continue
                             if payload == "[DONE]":
                                 break
                             if payload.startswith("[ERROR"):
@@ -205,6 +215,7 @@ async def call_specialist_agent(
                 specialist_steps = data.get("steps") or []
                 if bucket is not None and specialist_steps:
                     bucket.extend(specialist_steps)
+                record_usage(agent_name, data.get("usage"))
                 return data.get("response", resp.text)
         except httpx.TimeoutException:
             logger.error("a2a.timeout target=%s", agent_name)
