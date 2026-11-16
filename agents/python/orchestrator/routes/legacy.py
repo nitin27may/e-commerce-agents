@@ -257,7 +257,7 @@ async def signup(body: SignupRequest, _rate_limit: None = Depends(rate_limit_aut
     access_token = create_access_token(row["email"], row["role"], user_id)
     refresh_token = await _new_refresh_token(pool, row["email"])
 
-    logger.info("auth.signup email=%s user_id=%s", email, user_id)
+    logger.info("auth.signup user_id=%s", user_id)
 
     return AuthResponse(
         access_token=access_token,
@@ -323,7 +323,7 @@ async def login(body: LoginRequest, _rate_limit: None = Depends(rate_limit_auth)
         refresh_token = await _new_refresh_token(pool, row["email"])
 
     user_id = str(row["id"])
-    logger.info("auth.login email=%s user_id=%s", email, user_id)
+    logger.info("auth.login user_id=%s", user_id)
 
     return AuthResponse(
         access_token=access_token,
@@ -394,7 +394,7 @@ async def refresh_token(body: RefreshRequest, _rate_limit: None = Depends(rate_l
     try:
         new_refresh = await rotate_refresh_token(pool, payload)
     except RefreshRejectedError as exc:
-        logger.info("auth.refresh_rejected email=%s reason=%s", email, exc.reason)
+        logger.info("auth.refresh_rejected reason=%s", exc.reason)
         raise HTTPException(status_code=401, detail="Invalid refresh token") from None
 
     return {"access_token": access_token, "refresh_token": new_refresh}

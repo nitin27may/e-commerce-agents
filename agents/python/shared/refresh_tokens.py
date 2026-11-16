@@ -91,7 +91,7 @@ async def rotate_refresh_token(pool: asyncpg.Pool, payload: dict[str, Any]) -> s
                     row["family_id"],
                 )
                 rejected = "reuse"
-                logger.warning("auth.refresh_reuse email=%s family=%s — family revoked", email, row["family_id"])
+                logger.warning("auth.refresh_reuse family=%s — family revoked", row["family_id"])
             elif row["expires_at"] <= datetime.now(UTC):
                 rejected = "expired"
             else:
