@@ -160,7 +160,7 @@ dotnet run -- "maf rocks"  # happy path
 - **Schema freedom is a tax.** Every declarative system is a small language; validate aggressively. This chapter's loader raises on unknown `op` values, duplicate executor ids, and edges referencing undeclared executors — do the same in any loader you write.
 - **Executors aren't free.** Each YAML entry builds a real `Executor` subclass instance. For very large specs, lazy-instantiate.
 - **Custom ops must live somewhere.** This chapter embeds them inline in `main.py` and exposes `register_op(name, factory)` so new ops can be added without touching the loader itself.
-- **No MAF packaging workaround is needed.** `agent-framework-core` 1.14.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. [`tutorials/_shared/maf_bootstrap.py`](../_shared/maf_bootstrap.py)`::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
+- **No MAF packaging workaround is needed.** `agent-framework-core` 1.22.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. [`tutorials/_shared/maf_bootstrap.py`](../_shared/maf_bootstrap.py)`::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
 - **`dotnet test` isn't wired up for this chapter yet.** `Declarative.csproj` already excludes a `tests/**/*.cs` glob and lists `InternalsVisibleTo="Declarative.Tests"`, but no `tests/` directory exists on disk in this chapter — unlike Chapter 9's `dotnet/tests/`. Treat the Python suite as the chapter's test coverage for now.
 
 ## Tests

@@ -148,7 +148,7 @@ public sealed class UserProfileProvider : AIContextProvider
 - **Python requires `source_id`** on both `__init__` (via `super().__init__(source_id=...)`) and `extend_instructions(source_id, text)`. Forgetting either raises at instantiation / call time, not silently.
 - **.NET's override point is `ProvideAIContextAsync`, not `InvokingAsync`.** `InvokingAsync` is the base class's own pipeline method that calls into your override internally — trying to override it directly is the wrong extension point; use the protected `ProvideAIContextAsync` shown above.
 - **Provider state is per-*provider*, not global.** In Python, the `state` dict passed to `before_run` is scoped to whichever provider chain the agent was built with. When you chain multiple providers (as `ECommerceContextProvider` does — see below), later providers can read fields earlier ones set, but only within that same run's `state` dict.
-- **No MAF packaging workaround is needed.** `agent-framework-core` 1.14.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
+- **No MAF packaging workaround is needed.** `agent-framework-core` 1.22.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
 
 ## Tests
 

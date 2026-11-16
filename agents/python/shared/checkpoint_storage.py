@@ -24,7 +24,7 @@ from agent_framework import (
     WorkflowCheckpointException,
 )
 
-# Not public at agent-framework-core 1.14.0 (allowlisted in tests/test_no_private_maf_imports.py).
+# Not public at agent-framework-core 1.22.0 (allowlisted in tests/test_no_private_maf_imports.py).
 from agent_framework._workflows._checkpoint_encoding import (
     decode_checkpoint_value,
     encode_checkpoint_value,

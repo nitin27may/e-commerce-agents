@@ -160,7 +160,7 @@ Python's explicit boundary executors are more verbose but make the data shape ob
 - **Don't mix input types across agent-executors.** The framework's `AgentExecutor` communicates in `AgentExecutorRequest`/`AgentExecutorResponse` — sending a raw string to one directly (skipping `InputAdapter`) fails at runtime, not at build time.
 - **`should_respond=True` matters** (Python). When `False`, the wrapped agent appends the message to its history but doesn't call the LLM — useful for pre-seeding context across a multi-turn workflow, easy to forget and end up with a silent no-op step.
 - **.NET's `TurnToken` is easy to miss.** `BuildSequential` wires the graph, but nothing calls the LLM until you send a `TurnToken` into the running `StreamingRun` — omit it and the workflow just sits there.
-- **No MAF packaging workaround is needed.** `agent-framework-core` 1.14.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
+- **No MAF packaging workaround is needed.** `agent-framework-core` 1.22.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
 
 ## Tests
 

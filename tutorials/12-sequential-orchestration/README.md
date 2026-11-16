@@ -176,7 +176,7 @@ This chapter shipped for a while with all three wrong at once. It built, it ran,
 - **.NET's wrapped agents will not start without a `TurnToken`.** `AgentExecutor` caches its input and waits. A run missing the token completes normally, having made no LLM call — the most expensive kind of silent failure, because it looks like a fast success.
 - **Instructions matter more than ever.** Every downstream agent sees the entire prior conversation, so each system prompt has to say explicitly what NOT to do — "do not rewrite the draft" on the Reviewer, "output ONLY the final sentence" on the Finalizer — or the pipeline drifts.
 - **Sequential isn't checkpointed by default.** Pass `checkpoint_storage=` to the `SequentialBuilder(...)` constructor (not to `.run()`) for durable pipelines; this chapter's demo doesn't configure one.
-- **No MAF packaging workaround is needed.** `agent-framework-core` 1.14.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
+- **No MAF packaging workaround is needed.** `agent-framework-core` 1.22.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
 
 ## Tests
 

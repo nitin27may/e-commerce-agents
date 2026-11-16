@@ -54,7 +54,7 @@ class MyExecutor(Executor):
         # or: await ctx.yield_output(state)   # emit a terminal result
 ```
 
-- Import from the public `agent_framework` package (pinned at 1.14.0). Private
+- Import from the public `agent_framework` package (pinned at 1.22.0). Private
   `agent_framework._*` modules are blocked by `tests/test_no_private_maf_imports.py`.
 - A forwarding executor is typed `WorkflowContext[In, Out]`; a terminal executor
   that only yields is typed `WorkflowContext[None, Out]`.
