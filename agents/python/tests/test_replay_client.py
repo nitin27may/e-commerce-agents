@@ -162,6 +162,23 @@ def test_framework_function_call_ids_do_not_reach_the_key() -> None:
     assert _request_hash(_canonical_request(request("fc_provider_1"), {})) != bare
 
 
+def test_an_af_call_value_in_call_id_is_already_stable_without_stripping() -> None:
+    """``call_id`` needs no ``af-call-`` stripping: ``_ordinalize_call_ids`` rewrites it to its ordinal position.
+
+    Stripping it as well would turn ``call_0`` into an absent field and miss every recorded fixture, so the
+    key is pinned to be identical for a random framework id and for a plain provider id.
+    """
+
+    def request(call_id: str) -> list[Message]:
+        call = Content.from_function_call(call_id=call_id, name="get_weather", arguments={"city": "Paris"})
+        result = Content.from_function_result(call_id=call_id, result="sunny")
+        return [Message(role="assistant", contents=[call]), Message(role="tool", contents=[result])]
+
+    plain = _request_hash(_canonical_request(request("call_1"), {}))
+    assert _request_hash(_canonical_request(request("af-call-" + "a" * 32), {})) == plain
+    assert _request_hash(_canonical_request(request("af-call-" + "b" * 32), {})) == plain
+
+
 @pytest.mark.asyncio
 async def test_streaming_replays_as_a_single_chunk_per_message(tmp_path) -> None:
     stub = _StubRecordClient(_text_response("streamed answer"))
