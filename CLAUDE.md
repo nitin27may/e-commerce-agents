@@ -179,9 +179,9 @@ Separately, the orchestrator's own read of *its* conversation's history (for `Ru
 
 | Layer | Technology |
 |-------|-----------|
-| Agent Framework | MAF Python SDK — `agent-framework-core` 1.26.0, `-openai` 1.18.2, `-orchestrations` 1.4.2 (pinned in `agents/python/pyproject.toml` and mirrored in `tutorials/pyproject.toml`), with MCP Python SDK `mcp[cli]` 2.x (`>=2.2,<3`; `FastMCP` is now `mcp.server.mcpserver.MCPServer`, and its client stack is `httpx2`); MAF .NET — `Microsoft.Agents.AI` 1.28.0 (`agents/dotnet/Directory.Packages.props`, shared by the tutorials via `tutorials/Directory.Packages.props`) |
+| Agent Framework | MAF Python SDK — `agent-framework-core` 1.26.0, `-openai` 1.18.2, `-orchestrations` 1.4.2 (pinned in `agents/python/pyproject.toml` and mirrored in `tutorials/pyproject.toml`), plus `-anthropic` 1.0.0b261112 (a beta; `agents/python` only, the tutorials do not use it), with MCP Python SDK `mcp[cli]` 2.x (`>=2.2,<3`; `FastMCP` is now `mcp.server.mcpserver.MCPServer`, and its client stack is `httpx2`); MAF .NET — `Microsoft.Agents.AI` 1.28.0 (`agents/dotnet/Directory.Packages.props`, shared by the tutorials via `tutorials/Directory.Packages.props`) |
 | Agent Communication | A2A Protocol: A2A 1.0 JSON-RPC at `/a2a/v1` (`a2a-sdk` 1.3.0, Python specialists) and the original `POST /message:send` + `/message:stream` pair (`A2A_TRANSPORT=legacy`, the default, and all a .NET specialist serves) |
-| LLM | OpenAI / Azure OpenAI (gpt-4.1), configurable via `LLM_PROVIDER` env var — plus any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, OpenRouter, GitHub Models) via `LLM_PROVIDER=openai` + `LLM_BASE_URL` |
+| LLM | OpenAI / Azure OpenAI (gpt-4.1) / Anthropic Claude (`claude-sonnet-5-5`, stub-tested only), configurable via `LLM_PROVIDER` env var — plus any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, OpenRouter, GitHub Models) via `LLM_PROVIDER=openai` + `LLM_BASE_URL` |
 | Backend | Python 3.12, FastAPI (orchestrator), Starlette (specialist agents via agent_host) |
 | Database | PostgreSQL 16 + pgvector (1536-dim embeddings for text-embedding-3-small) |
 | Cache | Redis 7 |
@@ -230,6 +230,11 @@ AZURE_OPENAI_KEY=...
 AZURE_OPENAI_DEPLOYMENT=gpt-4.1
 AZURE_OPENAI_API_VERSION=2024-12-01-preview
 
+# Anthropic (Claude) — Python and .NET; never run against the live API
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_MODEL=claude-sonnet-5-5   # LLM_MODEL is ignored; also set EMBEDDING_PROVIDER (Claude has no embeddings)
+
 # Any OpenAI-compatible endpoint (Ollama, vLLM, OpenRouter, Gemini's compatible API)
 LLM_PROVIDER=openai
 LLM_BASE_URL=http://localhost:11434/v1
@@ -238,7 +243,7 @@ LLM_API=chat_completions      # default `responses`; needed where there is no /r
 
 **Per-agent models.** A prompt file may carry `model: {provider, model, temperature}`; `get_chat_client(agent_name)` honours it and `prompt_loader` never lets the block into the composed prompt (a test pins the prompt byte-for-byte). No shipped file sets it.
 
-**Anthropic (Claude) is .NET-only for now** (`LLM_PROVIDER=anthropic`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`): the Python connector needs MAF core ≥ 1.24. It is wired and covered by a stubbed-transport test; it has never made a live call.
+**Anthropic (Claude) on both stacks** (`LLM_PROVIDER=anthropic`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, default `claude-sonnet-5-5` on each). Python uses MAF's `agent-framework-anthropic` (every release is a beta, so it is pinned exactly, `1.0.0b261112`, in the `maf` Dependabot group; it brings `anthropic` 2.x on `httpx2`), through `shared/anthropic_client.py`, which only raises the connector's 1024 `max_tokens` fallback to .NET's 4096. Both stacks are wired and covered by stubbed-transport tests (`tests/test_anthropic_provider.py` on Python); **neither has ever made a live call**. Anthropic has no embeddings API: with no `EMBEDDING_PROVIDER` the stack still starts, warns once, and semantic search uses its full-text arm. Gemini needs no provider code (`LLM_API=chat_completions` + its compatible `LLM_BASE_URL`); see `docs/configuration.md`.
 
 **Embeddings are configured separately** — `EMBEDDING_PROVIDER`, `EMBEDDING_BASE_URL`, `EMBEDDING_API_KEY`, `EMBEDDING_MODEL`, `EMBEDDING_DIM` — defaulting to the chat provider. The configured dimension is checked against the column type at startup; changing it is an explicit operator step (`uv run --project agents/python python scripts/reset_embeddings.py --dim N`), because it discards stored vectors.
 

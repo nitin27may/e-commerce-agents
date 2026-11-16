@@ -169,8 +169,9 @@ services:
       # compatible API). Empty means the provider's default.
       LLM_BASE_URL: ${LLM_BASE_URL:-}
       LLM_MODEL: ${LLM_MODEL:-gpt-4.1}
-      # LLM_PROVIDER=anthropic is .NET-only: the key is required then, the model defaults to
-      # claude-sonnet-5-5 (LLM_MODEL is ignored for it). Neither is read by the Python stack.
+      # LLM_PROVIDER=anthropic (Claude): the key is required then, the model defaults to
+      # claude-sonnet-5-5 and LLM_MODEL is ignored for it. Anthropic has no embeddings API, so set
+      # EMBEDDING_PROVIDER too or semantic search falls back to full-text. Stub-tested only; no live call yet.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-5-5}
       # Per-run spend ceiling. COST_BUDGET_MODE stays observe: the ceiling is only counted

@@ -165,6 +165,11 @@ services:
       # /responses route. Python stack only; .NET always uses Chat Completions.
       LLM_API: ${LLM_API:-responses}
       LLM_MODEL: ${LLM_MODEL:-gpt-4.1}
+      # LLM_PROVIDER=anthropic (Claude): the key is required then, the model defaults to
+      # claude-sonnet-5-5 and LLM_MODEL is ignored for it. Anthropic has no embeddings API, so set
+      # EMBEDDING_PROVIDER too or semantic search falls back to full-text. Stub-tested only; no live call yet.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-5-5}
       # Per-run spend ceiling. COST_BUDGET_MODE stays observe: the ceiling is only counted
       # (cost_budget.would_block), never enforced, until you set enforce yourself.
       COST_BUDGET_MODE: ${COST_BUDGET_MODE:-observe}

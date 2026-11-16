@@ -23,6 +23,8 @@
 #     the replay fixtures see) and "httpx2" (the MCP 2.x client's HTTP stack, which
 #     shared/oauth/service_client.py builds against): each is coupled to the MAF/MCP
 #     pins, so a bump to either is a deliberate step, not part of the routine PR.
+#     "agent-framework-anthropic" is matched by the "agent-framework*" pattern; it is a
+#     beta-only package, pinned exactly, and moves with core (its floor is core 1.24).
 #
 #   * The "actions" group takes minor and patch bumps only; a major version of an
 #     action is left as its own PR, like every other ecosystem here.
