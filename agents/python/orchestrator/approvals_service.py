@@ -537,12 +537,29 @@ async def _approve_event(
 
     token, approval = await _claim_and_reauthorize(approval, actor, S.PENDING_REVIEW)
     try:
-        try:
-            result = await autonomy.execute_approved(
-                pool, approval_id, approver_email=actor.email, amount=amount, claim_token=token
-            )
-        except autonomy.AutonomyError as exc:  # the claim is no longer ours (or the approval closed): nothing was paid
-            raise ApprovalHTTPError(exc.status_code, exc.detail) from None
+        ran = await autonomy.executed_for_approval(pool, approval_id)
+        if ran is not None:
+            # An earlier attempt already paid and died before recording. Do not go back through ``run_once``: its
+            # reservation may still read "in progress" (a cancelled attempt never released it), which would answer
+            # with an error dict. The ledger row is the truth, so replay it.
+            result = {
+                "success": True,
+                "status": "executed",
+                "decision_id": str(ran["id"]),
+                "amount": autonomy.money(ran["amount"]),
+                "replayed": True,
+            }
+        else:
+            try:
+                result = await autonomy.execute_approved(
+                    pool, approval_id, approver_email=actor.email, amount=amount, claim_token=token
+                )
+            except autonomy.AutonomyError as exc:  # the claim is no longer ours / the approval closed: nothing paid
+                raise ApprovalHTTPError(exc.status_code, exc.detail) from None
+            if "success" not in result:
+                # ``run_once`` reports another attempt's in-progress reservation as ``{"error": ...}``, not as a
+                # failure of the credit. That is not a verdict: record nothing, hand the claim back (below), retry.
+                raise ApprovalHTTPError(409, "Another attempt to grant this credit is still running; try again shortly")
         approved = await _record(
             approval, actor, token, S.APPROVED_WITH_EDITS if edits else S.APPROVED, "approve", note, edits
         )

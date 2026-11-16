@@ -11,6 +11,7 @@ R4  a huge-exponent amount is a 422, not a 500.
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from decimal import Decimal
 from typing import Any
@@ -20,6 +21,7 @@ import pytest
 
 from orchestrator import approvals_service as svc
 from shared.approvals import repo
+from shared.autonomy import engine
 from tests import autonomy_support as aus
 from tests.test_approvals_routes import ADMIN as TOOL_ADMIN
 from tests.test_approvals_routes import SUPPORT as TOOL_SUPPORT
@@ -146,3 +148,53 @@ async def test_r1_a_tool_reject_after_the_action_ran_is_a_409_and_expiry_records
 
     await svc.expire(approval_id, reason="sla_timeout")
     assert await tool_status(pool, approval_id) == "executed" and len(executed) == 1
+
+
+# ── R2: a reservation held by another attempt is a 409, not a failed approval ─
+
+
+def _reservation_key(approval_id: str) -> str:
+    return f"{engine.SCOPE_APPROVAL}:{hashlib.sha256(f'approval:{approval_id}'.encode()).hexdigest()}"
+
+
+async def _hold_reservation(w: aus.World, approval_id: str) -> None:
+    """What a cancelled attempt leaves: ``run_once`` only releases on ``Exception``, so a cancel keeps its key."""
+    await w.pool.execute(
+        "INSERT INTO idempotency_keys (key, scope, status) VALUES ($1, $2, 'in_progress')",
+        _reservation_key(approval_id),
+        engine.SCOPE_APPROVAL,
+    )
+
+
+async def test_r2_an_in_progress_reservation_is_a_409_and_leaves_the_approval_open(w: aus.World) -> None:
+    result = await _waiting(w)
+    await _hold_reservation(w, result["approval_id"])
+
+    with pytest.raises(svc.ApprovalHTTPError) as err:
+        await svc.decide(result["approval_id"], STAFF, decision="approve")
+
+    assert err.value.status_code == 409
+    row = await repo.get(w.pool, result["approval_id"])
+    assert (row["status"], row["claimed_by"]) == ("pending_review", None), "not failed, claim handed back"
+    assert await aus.ledger_balance(w.pool, w.users[aus.CUSTOMER]) == 0
+
+    await w.pool.execute("DELETE FROM idempotency_keys WHERE key = $1", _reservation_key(result["approval_id"]))
+    out = await svc.decide(result["approval_id"], STAFF, decision="approve")  # recovery stays possible
+    assert out["approval"]["status"] == "executed" and out["result"]["amount"] == "40.00"
+
+
+async def test_r2_a_credit_that_committed_under_a_stuck_reservation_is_recorded_not_failed(
+    w: aus.World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result, _ = await _paid_but_unrecorded(w, monkeypatch)
+    # the cancelled attempt never reached ``_complete``: the reservation is still in progress
+    await w.pool.execute(
+        "UPDATE idempotency_keys SET status = 'in_progress', result = NULL, completed_at = NULL WHERE key = $1",
+        _reservation_key(result["approval_id"]),
+    )
+
+    out = await svc.decide(result["approval_id"], STAFF, decision="approve")
+
+    assert out["approval"]["status"] == "executed" and out["result"]["amount"] == "40.00"
+    assert await aus.ledger_balance(w.pool, w.users[aus.CUSTOMER]) == D("40.00")
+    assert await w.pool.fetchval("SELECT count(*) FROM agent_decisions WHERE entry_type = 'approved_execution'") == 1
