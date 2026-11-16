@@ -32,21 +32,29 @@
         "additional_properties": {},
         "contents": [
           {
-            "additional_properties": {},
+            "additional_properties": {
+              "_mcp_tool_result_host_payload": {
+                "content": [
+                  {
+                    "text": "Sunny, 18\u00b0C.",
+                    "type": "text"
+                  }
+                ],
+                "isError": false,
+                "structuredContent": {
+                  "result": "Sunny, 18\u00b0C."
+                }
+              }
+            },
             "call_id": "call_DL2ytVDOxsJNbPXGceoE2Q5H",
             "items": [
-              {
-                "additional_properties": {},
-                "text": "Sunny, 18\u00b0C.",
-                "type": "text"
-              },
               {
                 "additional_properties": {},
                 "text": "{\"result\": \"Sunny, 18\\u00b0C.\"}",
                 "type": "text"
               }
             ],
-            "result": "Sunny, 18\u00b0C.\n{\"result\": \"Sunny, 18\\u00b0C.\"}",
+            "result": "{\"result\": \"Sunny, 18\\u00b0C.\"}",
             "type": "function_result"
           }
         ],
