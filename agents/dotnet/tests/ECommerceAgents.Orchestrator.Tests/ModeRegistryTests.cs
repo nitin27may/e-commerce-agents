@@ -104,7 +104,7 @@ public sealed class ModeRegistryTests
     /// </remarks>
     [Theory]
     [InlineData("workflow:pre-purchase", new[] { "fan-out", "reviews", "stock", "price-history", "merge-and-ship", "synthesis" })]
-    [InlineData("workflow:return-replace", new[] { "check-eligibility", "initiate-return", "search-replacements", "hitl-gate", "hitl-resume", "apply-discount", "finalize" })]
+    [InlineData("workflow:return-replace", new[] { "check-eligibility", "policy-gate", "policy-resume", "initiate-return", "search-replacements", "apply-discount", "finalize" })]
     public void EveryGraphNodeId_MatchesARealExecutorId(string modeName, string[] executorIds)
     {
         var mermaid = modeName == "workflow:pre-purchase"

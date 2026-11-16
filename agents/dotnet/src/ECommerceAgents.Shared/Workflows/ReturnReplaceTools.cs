@@ -1,5 +1,6 @@
 using Dapper;
 using ECommerceAgents.Shared.Configuration;
+using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Data;
 using ECommerceAgents.Shared.Tools;
 using System.Text.Json;
@@ -69,6 +70,30 @@ public sealed class ReturnReplaceTools(DatabasePool pool, AgentSettings settings
             : 0m;
 
         return new InitiateReturnResult(returnId, amount);
+    }
+
+    public async Task<AdjustReturnResult> AdjustReturnAmountAsync(
+        string returnId,
+        decimal amount,
+        CancellationToken ct = default
+    )
+    {
+        // Identity is the request's, not an argument: the resumed workflow runs as the requester.
+        var email = RequestContext.CurrentUserEmail;
+        if (string.IsNullOrWhiteSpace(email)) return new AdjustReturnResult(false, "No user context available");
+        if (amount < 0m) return new AdjustReturnResult(false, "amount must not be negative");
+        if (!Guid.TryParse(returnId, out var returnGuid)) return new AdjustReturnResult(false, "return not found");
+
+        await using var conn = await _pool.OpenAsync(ct);
+        var updated = await conn.ExecuteAsync(
+            @"UPDATE returns SET refund_amount = @amount
+               WHERE id = @returnGuid
+                 AND user_id = (SELECT id FROM users WHERE lower(email) = lower(@email))
+                 AND (refund_amount IS NULL OR @amount <= refund_amount)",
+            new { returnGuid, email, amount = Math.Round(amount, 2) });
+        return updated == 1
+            ? new AdjustReturnResult(true)
+            : new AdjustReturnResult(false, "return not found, not yours, or the amount exceeds the original refund");
     }
 
     public async Task<IReadOnlyList<JsonElement>> SearchReplacementsAsync(

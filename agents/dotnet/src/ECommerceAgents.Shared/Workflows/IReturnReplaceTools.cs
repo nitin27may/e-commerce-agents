@@ -17,6 +17,13 @@ public interface IReturnReplaceTools
         CancellationToken ct = default
     );
 
+    /// <summary>
+    /// Applies a reviewer's edited refund amount to the return that was just created, for the
+    /// caller's own return only (identity comes from the request context, never an argument).
+    /// Not an agent tool: no model can call it. Never raises a refund above what it was created for.
+    /// </summary>
+    Task<AdjustReturnResult> AdjustReturnAmountAsync(string returnId, decimal amount, CancellationToken ct = default);
+
     Task<IReadOnlyList<JsonElement>> SearchReplacementsAsync(
         decimal maxPrice,
         decimal minRating,
@@ -40,3 +47,5 @@ public sealed record InitiateReturnResult(
 );
 
 public sealed record LoyaltyInfo(string? Tier, decimal DiscountPct);
+
+public sealed record AdjustReturnResult(bool Success, string? Error = null);

@@ -1,6 +1,7 @@
 using Microsoft.Agents.AI.Workflows;
 
 using ECommerceAgents.Shared.Orchestration;
+using ECommerceAgents.Shared.Policy;
 
 namespace ECommerceAgents.Shared.Workflows;
 
@@ -13,21 +14,31 @@ namespace ECommerceAgents.Shared.Workflows;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Step chain: check-eligibility → initiate-return → search-replacements
-/// → hitl-gate → [ReturnApproval port, high value only] → apply-discount
-/// → finalize.
+/// Step chain: check-eligibility → policy-gate → [ReturnApproval port →
+/// policy-resume, unless the policy says <c>auto</c>] → initiate-return →
+/// search-replacements → apply-discount → finalize.
+/// </para>
+/// <para>
+/// Nothing is created before the gate: the <c>returns</c> row, the label and the order's
+/// <c>returned</c> status all come from <c>initiate-return</c>, which runs only once the policy
+/// has said <c>auto</c> or a reviewer has approved. A rejected (or expired) request leaves no
+/// return row and the order untouched. The gate asks the approval policy engine
+/// (<see cref="IReturnPolicy"/>, kind <c>return_approval</c>); <c>hitlThreshold</c> is only the
+/// fallback for when the engine cannot decide. The port answers a <see cref="ReturnDecision"/>
+/// (decision, resolution, amount, note, decided_by, approval_id) — the same shape as Python's —
+/// and an approving reviewer's edited resolution and amount are honoured by <c>initiate-return</c>.
 /// </para>
 /// <para>
 /// Python's <c>ctx.request_info(...)</c> can pause a workflow from inside
 /// any executor's own handler; MAF .NET has no equivalent ad-hoc call —
 /// pausing requires a dedicated <see cref="RequestPort"/> graph node
 /// (confirmed via the SDK's real API surface: <c>IWorkflowContext</c> has
-/// no <c>RequestInfoAsync</c>-shaped member). So the conditional "pause
-/// only above threshold" behavior Python expresses as one branch inside
-/// <c>_HitlGateExecutor.run</c> is expressed here as <see cref="GateDecisionExecutor"/>
+/// <c>RequestInfoAsync</c>-shaped member). So the conditional "pause
+/// unless the policy says auto" behavior Python expresses as one branch inside
+/// <c>_PolicyGateExecutor.run</c> is expressed here as <see cref="GateDecisionExecutor"/>
 /// routing to one of two targets by explicit <c>targetId</c> — the
-/// <see cref="RequestPort"/> for the high-value path, straight to
-/// apply-discount for the low-value one — rather than a single executor
+/// <see cref="RequestPort"/> when a person must decide, straight to
+/// initiate-return for an <c>auto</c> route — rather than a single executor
 /// deciding whether to pause itself.
 /// </para>
 /// <para>
@@ -47,16 +58,10 @@ namespace ECommerceAgents.Shared.Workflows;
 /// keying lets multiple orders pause concurrently on one instance.
 /// </para>
 /// <para>
-/// One deliberate improvement over Python here, not just a port: Python's
-/// <c>@response_handler</c> only receives the <c>ReturnApprovalRequest</c>
-/// snapshot it originally sent (a genuinely different, narrower payload
-/// than the full <c>WorkflowState</c>), so its resumed state loses
-/// <c>return_id</c>/<c>replacement_products</c>/<c>user_email</c> — its own
-/// module comment calls this out as accepted lossy rehydration. .NET's
-/// executors are plain constructed objects with full closure access, so
-/// <see cref="HitlResumeExecutor"/> is constructed holding a reference to
-/// the *same* <see cref="WorkflowState"/> instance threaded through the
-/// rest of the chain — nothing is lost on resume.
+/// The full <see cref="WorkflowState"/> survives the pause on both stacks: Python carries it in
+/// the approval request, .NET parks it in the workflow's checkpointed scope (the port carries a
+/// request in and a decision out, so the state itself does not cross it) and
+/// <see cref="PolicyResumeExecutor"/> reads it back.
 /// </para>
 /// </remarks>
 /// <summary>
@@ -87,12 +92,14 @@ public sealed class ReturnAndReplaceWorkflow
 
     private readonly IReturnReplaceTools _tools;
     private readonly decimal _threshold;
+    private readonly IReturnPolicy? _policy;
     private readonly Dictionary<string, (StreamingRun Run, ExternalRequest Request)> _pausedRuns = [];
 
-    public ReturnAndReplaceWorkflow(IReturnReplaceTools tools, decimal hitlThreshold = 500m)
+    public ReturnAndReplaceWorkflow(IReturnReplaceTools tools, decimal hitlThreshold = 500m, IReturnPolicy? policy = null)
     {
         _tools = tools ?? throw new ArgumentNullException(nameof(tools));
         _threshold = hitlThreshold;
+        _policy = policy;
     }
 
     // ─────────────────────── execute ─────────────────────────
@@ -109,24 +116,24 @@ public sealed class ReturnAndReplaceWorkflow
     private Workflow BuildWorkflow()
     {
         var check = new CheckEligibilityExecutor(_tools);
+        var port = RequestPort.Create<ReturnApprovalRequest, ReturnDecision>("ReturnApproval");
+        var gate = new GateDecisionExecutor(_threshold, _policy, port.Id);
+        var resume = new PolicyResumeExecutor();
         var initiate = new InitiateReturnExecutor(_tools);
         var search = new SearchReplacementsExecutor(_tools);
-        var port = RequestPort.Create<ReturnApprovalRequest, bool>("ReturnApproval");
-        var gate = new GateDecisionExecutor(_threshold, port.Id);
-        var resume = new HitlResumeExecutor();
         var discount = new ApplyDiscountExecutor(_tools);
         var finalize = new FinalizeExecutor();
 
         return new WorkflowBuilder(check)
-            .AddEdge(check, initiate)
-            .AddEdge(initiate, search)
-            .AddEdge(search, gate)
+            .AddEdge(check, gate)
             .AddEdge(gate, port)
-            .AddEdge(gate, discount)
+            .AddEdge(gate, initiate)
             .AddEdge(port, resume)
-            .AddEdge(resume, discount)
+            .AddEdge(resume, initiate)
+            .AddEdge(initiate, search)
+            .AddEdge(search, discount)
             .AddEdge(discount, finalize)
-            .WithOutputFrom(new ExecutorBinding[] { check, initiate, gate, resume, finalize })
+            .WithOutputFrom(new ExecutorBinding[] { check, gate, resume, initiate, finalize })
             .Build();
     }
 
@@ -196,7 +203,7 @@ public sealed class ReturnAndReplaceWorkflow
                 // exactly what /runs renders an approval prompt from.
                 pendingRequest = requestInfo.Request;
                 pendingRequestId = pendingRequest.RequestId;
-                events?.Report(OrchestrationEvent.RequestInfo("hitl-gate", pendingRequestId));
+                events?.Report(OrchestrationEvent.RequestInfo("policy-gate", pendingRequestId));
             }
 
             // The checkpoint worth resuming from is the one taken on the superstep that
@@ -244,7 +251,7 @@ public sealed class ReturnAndReplaceWorkflow
     /// instead of being reconstructed from <paramref name="requestId"/> — that argument
     /// is a correlation check, not the source of the response.
     /// </remarks>
-    public async Task<WorkflowState> ResumeFromCheckpointAsync(
+    public Task<WorkflowState> ResumeFromCheckpointAsync(
         CheckpointManager checkpoints,
         string sessionId,
         string checkpointId,
@@ -252,9 +259,22 @@ public sealed class ReturnAndReplaceWorkflow
         bool approved,
         CancellationToken ct = default,
         IProgress<OrchestrationEvent>? events = null
+    ) => ResumeFromCheckpointAsync(
+        checkpoints, sessionId, checkpointId, requestId, ReturnDecision.FromApproved(approved), ct, events);
+
+    /// <summary>As above, answering with a full <see cref="ReturnDecision"/> (resolution, edited amount, note).</summary>
+    public async Task<WorkflowState> ResumeFromCheckpointAsync(
+        CheckpointManager checkpoints,
+        string sessionId,
+        string checkpointId,
+        string requestId,
+        ReturnDecision decision,
+        CancellationToken ct = default,
+        IProgress<OrchestrationEvent>? events = null
     )
     {
         ArgumentNullException.ThrowIfNull(checkpoints);
+        ArgumentNullException.ThrowIfNull(decision);
 
         var run = await InProcessExecution.ResumeStreamingAsync(
             BuildWorkflow(), new CheckpointInfo(sessionId, checkpointId), checkpoints, ct);
@@ -283,7 +303,7 @@ public sealed class ReturnAndReplaceWorkflow
                 $"Checkpoint {checkpointId} is waiting on request {pending.RequestId}, not {requestId}.");
         }
 
-        await run.SendResponseAsync(pending.CreateResponse(approved));
+        await run.SendResponseAsync(pending.CreateResponse(decision));
 
         WorkflowState? finalState = null;
         await foreach (var evt in run.WatchStreamAsync(ct))
@@ -311,13 +331,17 @@ public sealed class ReturnAndReplaceWorkflow
 
     // ─────────────────────── resume ──────────────────────────
 
+    public Task<WorkflowState> ResumeAsync(WorkflowState state, bool approved, CancellationToken ct = default) =>
+        ResumeAsync(state, ReturnDecision.FromApproved(approved), ct);
+
     public async Task<WorkflowState> ResumeAsync(
         WorkflowState state,
-        bool approved,
+        ReturnDecision decision,
         CancellationToken ct = default
     )
     {
         ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(decision);
         if (!_pausedRuns.Remove(state.OrderId, out var paused))
         {
             throw new InvalidOperationException(
@@ -325,7 +349,7 @@ public sealed class ReturnAndReplaceWorkflow
             );
         }
 
-        await paused.Run.SendResponseAsync(paused.Request.CreateResponse(approved));
+        await paused.Run.SendResponseAsync(paused.Request.CreateResponse(decision));
 
         var finalState = state;
         await foreach (var evt in paused.Run.WatchStreamAsync(ct))
@@ -385,7 +409,7 @@ public sealed class ReturnAndReplaceWorkflow
             try
             {
                 var reason = string.IsNullOrWhiteSpace(state.Reason) ? "Customer requested replacement" : state.Reason;
-                result = await tools.InitiateReturnAsync(state.OrderId, reason, "store_credit", ct);
+                result = await tools.InitiateReturnAsync(state.OrderId, reason, RefundMethodFor(state.Resolution), ct);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -404,8 +428,36 @@ public sealed class ReturnAndReplaceWorkflow
             state.ReturnId = result.ReturnId;
             state.RefundAmount = result.RefundAmount;
             state.CompletedSteps.Add("initiate_return");
+
+            if (state.AmountOverride is { } edited && edited != state.RefundAmount)
+            {
+                // Honour the reviewer's edited amount on the return that was just created. A failure is an
+                // error, not a silent full refund.
+                AdjustReturnResult adjusted;
+                try
+                {
+                    adjusted = await tools.AdjustReturnAmountAsync(state.ReturnId ?? "", edited, ct);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    state.Errors.Add($"adjust_return_amount: {ex.Message}");
+                    await context.YieldOutputAsync(state, ct);
+                    return;
+                }
+                if (!adjusted.Success)
+                {
+                    state.Errors.Add($"adjust_return_amount: {adjusted.Error ?? "not applied"}");
+                    await context.YieldOutputAsync(state, ct);
+                    return;
+                }
+                state.RefundAmount = edited;
+            }
             await context.SendMessageAsync(state, ct);
         }
+
+        /// <summary>replacement is paid out as store credit toward the replacement.</summary>
+        private static string RefundMethodFor(string resolution) =>
+            resolution == "refund" ? "original_payment" : "store_credit";
     }
 
     [SendsMessage(typeof(WorkflowState))]
@@ -428,48 +480,75 @@ public sealed class ReturnAndReplaceWorkflow
     }
 
     /// <summary>
-    /// Decides whether this return needs approval — the .NET analog of the
-    /// branch inside Python's <c>_HitlGateExecutor.run</c>. Routes to
-    /// <paramref name="approvalPortId"/> (pausing the workflow) above
-    /// <paramref name="threshold"/>, or straight past it otherwise —
-    /// explicit <c>targetId</c> routing since the two outbound message
-    /// types differ (<see cref="ReturnApprovalRequest"/> vs.
-    /// <see cref="WorkflowState"/>), unlike a same-type conditional edge.
+    /// Routes the request through the approval policy — the .NET analog of Python's
+    /// <c>_PolicyGateExecutor.run</c>. Sends to <paramref name="approvalPortId"/> (pausing the workflow)
+    /// unless the policy routes it <c>auto</c>, in which case it goes straight on to initiate-return.
+    /// Explicit <c>targetId</c> routing since the two outbound message types differ
+    /// (<see cref="ReturnApprovalRequest"/> vs. <see cref="WorkflowState"/>).
+    /// If the policy cannot decide (<c>null</c>) the <paramref name="threshold"/> decides: an order
+    /// total strictly above it is reviewed by support.
     /// </summary>
     [SendsMessage(typeof(ReturnApprovalRequest))]
     [SendsMessage(typeof(WorkflowState))]
     [YieldsOutput(typeof(WorkflowState))]
-    private sealed class GateDecisionExecutor(decimal threshold, string approvalPortId) : Executor<WorkflowState>("hitl-gate")
+    private sealed class GateDecisionExecutor(decimal threshold, IReturnPolicy? policy, string approvalPortId)
+        : Executor<WorkflowState>("policy-gate")
     {
         public override async ValueTask HandleAsync(WorkflowState state, IWorkflowContext context, CancellationToken ct = default)
         {
-            state.CompletedSteps.Add("hitl_gate");
-            if (state.OrderTotal > threshold)
+            state.CompletedSteps.Add("policy_gate");
+
+            PolicyDecision? decision = null;
+            if (policy is not null)
             {
-                state.HitlRequested = true;
-                // Snapshot so a caller observing the stream sees the pause
-                // state before the RequestInfoEvent actually pauses the run.
-                await context.YieldOutputAsync(state, ct);
+                decision = await policy.DecideAsync(state, ct);
+            }
 
-                // Park the state in the workflow's own scope, because the port
-                // carries a ReturnApprovalRequest in and a bool out — the state
-                // itself does not cross it. Checkpointing captures this scope, so
-                // it is what lets a rebuilt graph pick up where this one stopped;
-                // a field on an executor would not survive the restore.
-                await context.QueueStateUpdateAsync(StateKey, state, ScopeName, ct);
+            string route;
+            IReadOnlyList<string> reasons;
+            string version;
+            if (decision is not null)
+            {
+                (route, reasons, version) = (decision.Route, decision.Reasons, decision.Version);
+            }
+            else
+            {
+                var over = state.OrderTotal > threshold;
+                route = over ? "support" : "auto";
+                reasons = [over
+                    ? $"Policy engine unavailable; order total is over the {threshold:F2} manual-review threshold"
+                    : "Policy engine unavailable; order total is within the auto-approval threshold"];
+                version = "";
+            }
 
-                var request = new ReturnApprovalRequest(state.OrderId, state.OrderTotal, state.RefundAmount, state.ReplacementProducts.Count);
-                await context.SendMessageAsync(request, approvalPortId, ct);
+            if (route == "auto")
+            {
+                state.HitlApproved = true;
+                await context.SendMessageAsync(state, ct);
                 return;
             }
 
-            state.HitlApproved = true;
-            await context.SendMessageAsync(state, ct);
+            state.HitlRequested = true;
+            state.RefundAmount = state.OrderTotal; // the amount under review; no return exists yet
+            // Snapshot so a caller observing the stream sees the
+            // pause state before the RequestInfoEvent actually pauses the run.
+            await context.YieldOutputAsync(state, ct);
+
+            // Park the state in the workflow's own scope, because the port
+            // carries a ReturnApprovalRequest in and a ReturnDecision out — the state
+            // itself does not cross it. Checkpointing captures this scope, so
+            // it is what lets a rebuilt graph pick up where this one stopped;
+            // a field on an executor would not survive the restore.
+            await context.QueueStateUpdateAsync(StateKey, state, ScopeName, ct);
+
+            var request = new ReturnApprovalRequest(
+                state.OrderId, state.OrderTotal, state.OrderTotal, 0, route, reasons, version);
+            await context.SendMessageAsync(request, approvalPortId, ct);
         }
     }
 
     /// <summary>
-    /// Fed by the <see cref="RequestPort"/> once a response arrives.
+    /// Fed by the <see cref="RequestPort"/> once a decision arrives.
     /// </summary>
     /// <remarks>
     /// Reads the state back out of the workflow's scope rather than closing over
@@ -481,20 +560,33 @@ public sealed class ReturnAndReplaceWorkflow
     /// </remarks>
     [SendsMessage(typeof(WorkflowState))]
     [YieldsOutput(typeof(WorkflowState))]
-    private sealed class HitlResumeExecutor() : Executor<bool>("hitl-resume")
+    private sealed class PolicyResumeExecutor() : Executor<ReturnDecision>("policy-resume")
     {
-        public override async ValueTask HandleAsync(bool approved, IWorkflowContext context, CancellationToken ct = default)
+        public override async ValueTask HandleAsync(ReturnDecision decision, IWorkflowContext context, CancellationToken ct = default)
         {
             var state = await context.ReadStateAsync<WorkflowState>(StateKey, ScopeName, ct)
                 ?? throw new InvalidOperationException(
                     $"No '{StateKey}' in scope '{ScopeName}' — the gate must park the state before the port pauses.");
 
-            state.HitlApproved = approved;
-            if (!approved)
+            state.HitlRequested = true;
+            state.ApprovalId = string.IsNullOrEmpty(decision.ApprovalId) ? null : decision.ApprovalId;
+            state.DecidedBy = string.IsNullOrEmpty(decision.DecidedBy) ? null : decision.DecidedBy;
+            if (!decision.IsApproval)
             {
-                state.Errors.Add("hitl_gate: return rejected by reviewer");
+                state.HitlApproved = false;
+                state.Errors.Add("policy_gate: return rejected by reviewer");
                 await context.YieldOutputAsync(state, ct);
                 return;
+            }
+
+            state.HitlApproved = true;
+            if (ReturnDecision.Resolutions.Contains(decision.Resolution))
+            {
+                state.Resolution = decision.Resolution;
+            }
+            if (decision.Amount is { } amount)
+            {
+                state.AmountOverride = amount;
             }
             await context.SendMessageAsync(state, ct);
         }

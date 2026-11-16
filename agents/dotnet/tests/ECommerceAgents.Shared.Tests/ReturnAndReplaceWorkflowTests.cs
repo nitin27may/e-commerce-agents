@@ -1,3 +1,4 @@
+using ECommerceAgents.Shared.Policy;
 using ECommerceAgents.Shared.Workflows;
 using FluentAssertions;
 using System.Text.Json;
@@ -5,6 +6,12 @@ using Xunit;
 
 namespace ECommerceAgents.Shared.Tests;
 
+/// <summary>
+/// Order under test: check-eligibility → policy-gate → initiate-return → search-replacements →
+/// apply-discount → finalize. Nothing is created before the gate, so a test can assert that a rejected
+/// return never reached <c>InitiateReturnAsync</c>. Behaviour mirrors Python's
+/// <c>tests/test_return_replace_workflow.py</c> for approve, reject and edit.
+/// </summary>
 public sealed class ReturnAndReplaceWorkflowTests
 {
     // ─────────────────────── happy path ──────────────────────
@@ -32,20 +39,20 @@ public sealed class ReturnAndReplaceWorkflowTests
         result.ReplacementProducts.Should().HaveCount(1);
         result.AppliedDiscount.Should().NotBeNull();
         result.AppliedDiscount!.Tier.Should().Be("silver");
-        result.CompletedSteps.Should().BeEquivalentTo(
+        result.CompletedSteps.Should().Equal(
             "check_eligibility",
+            "policy_gate",
             "initiate_return",
             "search_replacements",
-            "hitl_gate",
             "apply_discount",
             "finalize"
         );
     }
 
-    // ─────────────────────── HITL pause/resume ───────────────
+    // ─────────────────────── the gate pauses BEFORE anything is created ───────────────
 
     [Fact]
-    public async Task Execute_HighValue_PausesAtHitlGate()
+    public async Task Execute_HighValue_PausesAtThePolicyGate_WithNothingCreated()
     {
         var tools = new StubTools
         {
@@ -63,17 +70,60 @@ public sealed class ReturnAndReplaceWorkflowTests
         paused.HitlApproved.Should().BeNull();
         paused.CompletedSteps.Should().NotContain("apply_discount");
         paused.CompletedSteps.Should().NotContain("finalize");
-        tools.GetLoyaltyCalls.Should().Be(0); // discount not applied yet
+        // The point of the reorder: no return row, no label, no order status change before a person decides.
+        tools.InitiateCalls.Should().Be(0);
+        paused.ReturnId.Should().BeNull();
+        tools.GetLoyaltyCalls.Should().Be(0);
 
         var request = wf.BuildApprovalRequest(paused);
         request.OrderId.Should().Be("order-2");
         request.OrderTotal.Should().Be(800m);
-        request.RefundAmount.Should().Be(800m);
-        request.ReplacementCount.Should().Be(2);
+        request.RefundAmount.Should().Be(800m, "no return exists yet, so the amount under review is the order total");
+        request.ReplacementCount.Should().Be(0);
     }
 
     [Fact]
-    public async Task Resume_Approves_CompletesChain()
+    public async Task Policy_Auto_ProceedsWithoutPausing_EvenOverTheThreshold()
+    {
+        var tools = HappyTools();
+        var wf = new ReturnAndReplaceWorkflow(tools, 500m, new FixedPolicy("auto"));
+
+        var result = await wf.ExecuteAsync(new WorkflowState("c", "o") { OrderTotal = 900m });
+
+        result.HitlRequested.Should().BeFalse();
+        result.CompletedSteps.Should().Contain("finalize");
+        tools.InitiateCalls.Should().Be(1);
+    }
+
+    [Theory]
+    [InlineData("support")]
+    [InlineData("manager")]
+    public async Task Policy_NonAuto_PausesEvenForASmallOrder(string route)
+    {
+        var tools = HappyTools();
+        var wf = new ReturnAndReplaceWorkflow(tools, 500m, new FixedPolicy(route));
+
+        var result = await wf.ExecuteAsync(new WorkflowState("c", "o") { OrderTotal = 20m });
+
+        result.HitlRequested.Should().BeTrue();
+        result.HitlApproved.Should().BeNull();
+        tools.InitiateCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task PolicyThatCannotDecide_FallsBackToTheThreshold()
+    {
+        var wf = new ReturnAndReplaceWorkflow(HappyTools(), 500m, new FixedPolicy(null));
+
+        // Strictly exceeded pauses; exactly equal does not.
+        (await wf.ExecuteAsync(new WorkflowState("c", "o1") { OrderTotal = 500m })).HitlRequested.Should().BeFalse();
+        (await wf.ExecuteAsync(new WorkflowState("c", "o2") { OrderTotal = 500.01m })).HitlRequested.Should().BeTrue();
+    }
+
+    // ─────────────────────── HITL resume ───────────────
+
+    [Fact]
+    public async Task Resume_Approves_CreatesTheReturnAndCompletesTheChain()
     {
         var tools = new StubTools
         {
@@ -87,25 +137,20 @@ public sealed class ReturnAndReplaceWorkflowTests
         var state = new WorkflowState("vip@example.com", "order-3") { OrderTotal = 900m };
         var paused = await wf.ExecuteAsync(state);
         paused.HitlRequested.Should().BeTrue();
+        tools.InitiateCalls.Should().Be(0);
 
-        var final = await wf.ResumeAsync(paused, approved: true);
+        var final = await wf.ResumeAsync(paused, new ReturnDecision("approve", DecidedBy: "staff", ApprovalId: "ap-1"));
         final.HitlApproved.Should().BeTrue();
         final.AppliedDiscount!.DiscountPct.Should().Be(20m);
         final.CompletedSteps.Should().EndWith("finalize");
         final.CompletedSteps.Should().Contain("apply_discount");
+        tools.InitiateCalls.Should().Be(1);
+        (final.DecidedBy, final.ApprovalId).Should().Be(("staff", "ap-1"));
     }
 
     [Fact]
     public async Task Resume_Approves_PreservesFullStateAcrossThePause()
     {
-        // Deliberate improvement over Python (see ReturnAndReplaceWorkflow's
-        // class remarks): Python's @response_handler only receives the
-        // narrow ReturnApprovalRequest snapshot it originally sent, so its
-        // resumed state loses return_id/replacement_products/user_email.
-        // .NET's HitlResumeExecutor is constructed holding a reference to
-        // the *same* WorkflowState threaded through the rest of the chain,
-        // so nothing is lost — assert that explicitly rather than leaving
-        // it as an implicit, undocumented side effect of the design.
         var tools = new StubTools
         {
             Eligibility = new ReturnEligibility(true),
@@ -115,17 +160,18 @@ public sealed class ReturnAndReplaceWorkflowTests
         };
         var wf = new ReturnAndReplaceWorkflow(tools, hitlThreshold: 500m);
 
-        var state = new WorkflowState("vip@example.com", "order-preserve") { OrderTotal = 900m };
+        var state = new WorkflowState("vip@example.com", "order-preserve") { OrderTotal = 900m, Reason = "broken hinge" };
         var paused = await wf.ExecuteAsync(state);
         var final = await wf.ResumeAsync(paused, approved: true);
 
         final.UserEmail.Should().Be("vip@example.com");
+        final.Reason.Should().Be("broken hinge");
         final.ReturnId.Should().Be("ret-preserved");
         final.ReplacementProducts.Should().HaveCount(2);
     }
 
     [Fact]
-    public async Task Resume_Rejects_AppendsErrorAndSkipsDiscount()
+    public async Task Resume_Rejects_CreatesNothingAndNeverFinalizes()
     {
         var tools = new StubTools
         {
@@ -142,10 +188,69 @@ public sealed class ReturnAndReplaceWorkflowTests
 
         final.HitlApproved.Should().BeFalse();
         final.Errors.Should().ContainSingle()
-            .Which.Should().Contain("hitl_gate").And.Contain("rejected");
+            .Which.Should().Contain("policy_gate").And.Contain("rejected");
         final.CompletedSteps.Should().NotContain("apply_discount");
         final.CompletedSteps.Should().NotContain("finalize");
+        tools.InitiateCalls.Should().Be(0, "a rejected return leaves no return row and the order untouched");
+        final.ReturnId.Should().BeNull();
         tools.GetLoyaltyCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Resume_AnythingButApprove_IsARejection()
+    {
+        var tools = HappyTools();
+        var wf = new ReturnAndReplaceWorkflow(tools, 500m);
+        var paused = await wf.ExecuteAsync(new WorkflowState("c", "order-x") { OrderTotal = 900m });
+
+        var final = await wf.ResumeAsync(paused, new ReturnDecision("expired"));
+
+        final.HitlApproved.Should().BeFalse();
+        tools.InitiateCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Resume_EditedResolutionAndAmount_AreHonoured()
+    {
+        var tools = HappyTools();
+        tools.Initiate = new InitiateReturnResult("ret-edit", 900m);
+        var wf = new ReturnAndReplaceWorkflow(tools, 500m);
+        var paused = await wf.ExecuteAsync(new WorkflowState("c", "order-edit") { OrderTotal = 900m });
+
+        var final = await wf.ResumeAsync(paused, new ReturnDecision("approve", "refund", 75.5m));
+
+        tools.RefundMethods.Should().Equal("original_payment");
+        tools.Adjusted.Should().Equal(("ret-edit", 75.5m));
+        final.RefundAmount.Should().Be(75.5m);
+        final.Resolution.Should().Be("refund");
+        final.CompletedSteps.Should().Contain("finalize");
+    }
+
+    [Fact]
+    public async Task Resume_Unedited_DoesNotTouchTheAmount_AndDefaultsToStoreCredit()
+    {
+        var tools = HappyTools();
+        var wf = new ReturnAndReplaceWorkflow(tools, 500m);
+        var paused = await wf.ExecuteAsync(new WorkflowState("c", "order-plain") { OrderTotal = 900m });
+
+        await wf.ResumeAsync(paused, approved: true);
+
+        tools.Adjusted.Should().BeEmpty();
+        tools.RefundMethods.Should().Equal("store_credit");
+    }
+
+    [Fact]
+    public async Task Resume_AnAmountThatCannotBeApplied_IsAnErrorNotASilentFullRefund()
+    {
+        var tools = HappyTools();
+        tools.AdjustResult = new AdjustReturnResult(false, "not yours");
+        var wf = new ReturnAndReplaceWorkflow(tools, 500m);
+        var paused = await wf.ExecuteAsync(new WorkflowState("c", "order-bad") { OrderTotal = 900m });
+
+        var final = await wf.ResumeAsync(paused, new ReturnDecision("approve", Amount: 10m));
+
+        final.Errors.Should().Contain(e => e.Contains("adjust_return_amount"));
+        final.CompletedSteps.Should().NotContain("finalize");
     }
 
     [Fact]
@@ -259,10 +364,26 @@ public sealed class ReturnAndReplaceWorkflowTests
 
     // ─────────────────────── helpers ─────────────────────────
 
+    private static StubTools HappyTools() => new()
+    {
+        Eligibility = new ReturnEligibility(true),
+        Initiate = new InitiateReturnResult("ret-1", 900m),
+        Replacements = new[] { Product("W") },
+        Loyalty = new LoyaltyInfo("bronze", 0m),
+    };
+
     private static JsonElement Product(string name)
     {
         using var doc = JsonDocument.Parse($"{{\"name\":\"{name}\"}}");
         return doc.RootElement.Clone();
+    }
+
+    private sealed class FixedPolicy(string? route) : IReturnPolicy
+    {
+        public Task<PolicyDecision?> DecideAsync(WorkflowState state, CancellationToken ct = default) =>
+            Task.FromResult<PolicyDecision?>(route is null
+                ? null
+                : new PolicyDecision(route, ["because"], "test", new Dictionary<string, object?>(), "v-test"));
     }
 
     private sealed class StubTools : IReturnReplaceTools
@@ -272,9 +393,12 @@ public sealed class ReturnAndReplaceWorkflowTests
         public IEnumerable<JsonElement> Replacements { get; set; } = Array.Empty<JsonElement>();
         public Exception? SearchThrows { get; set; }
         public LoyaltyInfo? Loyalty { get; set; }
+        public AdjustReturnResult AdjustResult { get; set; } = new(true);
 
         public int InitiateCalls;
         public int GetLoyaltyCalls;
+        public List<string> RefundMethods { get; } = [];
+        public List<(string ReturnId, decimal Amount)> Adjusted { get; } = [];
 
         public Task<ReturnEligibility> CheckReturnEligibilityAsync(string orderId, CancellationToken ct = default)
             => Task.FromResult(Eligibility);
@@ -287,7 +411,14 @@ public sealed class ReturnAndReplaceWorkflowTests
         )
         {
             Interlocked.Increment(ref InitiateCalls);
+            RefundMethods.Add(refundMethod);
             return Task.FromResult(Initiate);
+        }
+
+        public Task<AdjustReturnResult> AdjustReturnAmountAsync(string returnId, decimal amount, CancellationToken ct = default)
+        {
+            Adjusted.Add((returnId, amount));
+            return Task.FromResult(AdjustResult);
         }
 
         public Task<IReadOnlyList<JsonElement>> SearchReplacementsAsync(

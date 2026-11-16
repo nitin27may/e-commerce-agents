@@ -3,6 +3,7 @@ using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Data;
 using ECommerceAgents.Shared.Orchestration;
+using ECommerceAgents.Shared.Policy;
 using ECommerceAgents.Shared.Workflows;
 using Microsoft.Agents.AI.Workflows;
 using System.Text.RegularExpressions;
@@ -10,10 +11,10 @@ using System.Text.RegularExpressions;
 namespace ECommerceAgents.Orchestrator.Modes;
 
 /// <summary>
-/// Sequential return-and-replace: check eligibility, initiate the return,
-/// find replacements, gate high-value refunds on a human, then apply a
-/// loyalty discount and finalise. Wraps <see cref="ReturnAndReplaceWorkflow"/>
-/// and its <c>RequestPort</c> HITL gate. Mirrors Python's
+/// Sequential return-and-replace: check eligibility, ask the approval policy
+/// whether a person must decide (pausing on a <c>RequestPort</c> if so), and only
+/// then initiate the return, find replacements, apply a loyalty discount and
+/// finalise. Wraps <see cref="ReturnAndReplaceWorkflow"/>. Mirrors Python's
 /// <c>ReturnReplaceMode</c>.
 /// </summary>
 /// <remarks>
@@ -32,7 +33,7 @@ public sealed partial class ReturnReplaceMode(DatabasePool pool, AgentSettings s
     public string Name => "workflow:return-replace";
     public string Label => "Return & Replace (sequential + in-workflow HITL)";
     public string Description =>
-        "Checks return eligibility, initiates the return, suggests replacements, and pauses for approval on high-value refunds.";
+        "Checks return eligibility, asks the approval policy whether a person must decide (pausing before anything is created), then initiates the return, suggests replacements and applies a loyalty discount.";
 
     public ModeCapabilities Capabilities => new(
         Streams: false,
@@ -48,37 +49,85 @@ public sealed partial class ReturnReplaceMode(DatabasePool pool, AgentSettings s
     /// </summary>
     public string? GraphMermaid() => """
         graph TD
-            check_eligibility[Check eligibility] --> initiate_return[Initiate return]
+            check_eligibility[Check eligibility] --> policy_gate{Policy route?}
+            policy_gate -->|support or manager| policy_resume[Await approval]
+            policy_gate -->|auto| initiate_return[Initiate return]
+            policy_resume --> initiate_return
             initiate_return --> search_replacements[Search replacements]
-            search_replacements --> hitl_gate{High value?}
-            hitl_gate -->|approval needed| hitl_resume[Await approval]
-            hitl_gate -->|under threshold| apply_discount[Apply loyalty discount]
-            hitl_resume --> apply_discount
+            search_replacements --> apply_discount[Apply loyalty discount]
             apply_discount --> finalize[Finalize]
         """;
 
     [GeneratedRegex(@"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")]
     private static partial Regex UuidPattern();
 
+    /// <summary>
+    /// The approval policy, read from the SAME <c>config/policies/approvals.yaml</c> as Python, or null when
+    /// it cannot be found or is invalid — the gate then falls back to <c>ReturnHitlThreshold</c>.
+    /// </summary>
+    private ReturnPolicyGate? Policy()
+    {
+        var path = PolicyFile();
+        if (path is null) return null;
+        try
+        {
+            return new ReturnPolicyGate(ApprovalPolicy.LoadFile(path), _pool);
+        }
+        catch (PolicyException)
+        {
+            return null;
+        }
+    }
+
+    private static string? PolicyFile()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            var repoCopy = Path.Combine(dir.FullName, "agents", "python", "config", "policies", "approvals.yaml");
+            if (File.Exists(repoCopy)) return repoCopy;
+            dir = dir.Parent;
+        }
+        var beside = Path.Combine(AppContext.BaseDirectory, "config", "policies", "approvals.yaml");
+        return File.Exists(beside) ? beside : null;
+    }
+
+    private ReturnAndReplaceWorkflow NewWorkflow() => new(
+        new ReturnReplaceTools(_pool, _settings),
+        (decimal)_settings.ReturnHitlThreshold,
+        Policy()
+    );
+
     /// <inheritdoc />
-    public async Task<ModeRunResult> ResumeAsync(
+    public Task<ModeRunResult> ResumeAsync(
         string sessionId,
         string checkpointId,
         string requestId,
         bool approved,
+        CancellationToken ct = default
+    ) => ResumeAsync(sessionId, checkpointId, requestId, ReturnDecision.FromApproved(approved), ct);
+
+    /// <summary>
+    /// Resumes with the reviewer's full answer — the resolution (refund / store_credit / replacement), an edited
+    /// refund amount, a note — the same <see cref="ReturnDecision"/> shape Python answers. Not on
+    /// <see cref="IResumableMode"/>: the resume route only carries approve/reject until the approvals API is
+    /// ported (D-5n).
+    /// </summary>
+    public async Task<ModeRunResult> ResumeAsync(
+        string sessionId,
+        string checkpointId,
+        string requestId,
+        ReturnDecision decision,
         CancellationToken ct = default
     )
     {
         // A fresh workflow object, exactly as a later process would get: the run that
         // paused lived in a previous request and is long gone. Everything it knew comes
         // back from the checkpoint.
-        var workflow = new ReturnAndReplaceWorkflow(
-            new ReturnReplaceTools(_pool, _settings),
-            (decimal)_settings.ReturnHitlThreshold
-        );
+        var workflow = NewWorkflow();
 
         var state = await workflow.ResumeFromCheckpointAsync(
-            _checkpoints, sessionId, checkpointId, requestId, approved, ct);
+            _checkpoints, sessionId, checkpointId, requestId, decision, ct);
 
         return new ModeRunResult(
             Summarise(state),
@@ -109,12 +158,8 @@ public sealed partial class ReturnReplaceMode(DatabasePool pool, AgentSettings s
 
         // Threshold comes from settings so .NET and Python gate at the same
         // value rather than each hardcoding one.
-        var workflow = new ReturnAndReplaceWorkflow(
-            new ReturnReplaceTools(_pool, _settings),
-            (decimal)_settings.ReturnHitlThreshold
-        );
-        // OrderTotal is what GateDecisionExecutor compares against the
-        // approval threshold. Leaving it at its default of 0 meant a $603
+        var workflow = NewWorkflow();
+        // OrderTotal is the amount the policy gate evaluates (and the fallback threshold compares). Leaving it at its default of 0 meant a $603
         // refund sailed past a $500 gate — caught only by running it, since
         // every workflow test supplies the total itself.
         var outcome = await workflow.RunAsync(
@@ -181,7 +226,8 @@ public sealed partial class ReturnReplaceMode(DatabasePool pool, AgentSettings s
         {
             // The pause is the answer here, not a failure — say so plainly
             // rather than implying the return is complete.
-            parts.Add("This refund is above the approval threshold, so it's waiting on a human before the refund is released.");
+            // The pause comes BEFORE anything is created: no return exists yet.
+            parts.Add($"This return needs approval before anything is changed (${state.OrderTotal:F2}); a person will review it.");
         }
         else if (state.HitlApproved == false)
         {
