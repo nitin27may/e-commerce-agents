@@ -200,9 +200,9 @@ LLM_API=chat_completions
 It applies to `LLM_PROVIDER=openai` only — `azure` is always Chat Completions, and `replay` serves
 recorded fixtures. With `RECORD=true`, the recorder uses the same switch, so a fixture recorded
 against a Chat-Completions-only endpoint is requested the way that endpoint accepts. The .NET
-stack always uses Chat Completions and has no such setting. `LLM_API` is read by host-run Python
-through Pydantic Settings; a compose file only forwards it into a container if its `environment:`
-block names it (see above).
+stack always uses Chat Completions and has no such setting. All three compose files forward
+`LLM_BASE_URL` to the agents, and the two that run the Python stack forward `LLM_API` as well, so
+the setting works the same in a container as it does for host-run Python.
 
 ## One stack at a time
 
