@@ -33,12 +33,16 @@ ASSIGNED_ROLE: dict[str, str] = {"auto": "support", "support": "support", "manag
 #: Rank of a staff role, lowest first; a role may decide anything assigned at or below its own rank.
 ROLE_RANK: dict[str, int] = {"support": 1, "admin": 2}
 
-_FALLBACK_REASON = "Policy engine unavailable: routed to a support review"
+_FALLBACK_REASON = "Policy engine unavailable: routed to a manager review"
 
 
 def fallback_decision() -> PolicyDecision:
-    """Used when the engine cannot decide (no facts, unknown kind, no database): a person reviews it."""
-    return PolicyDecision(route="support", reasons=(_FALLBACK_REASON,), evidence={}, version="")
+    """Used when the engine cannot decide (no facts, unknown kind, no database): fail closed to a manager.
+
+    Not ``support``: the lowest staff tier must never be the default for a decision nobody evaluated, since
+    the policy may well have routed that same request higher.
+    """
+    return PolicyDecision(route="manager", reasons=(_FALLBACK_REASON,), evidence={}, version="")
 
 
 async def decide_route(
@@ -49,7 +53,7 @@ async def decide_route(
     subject_email: str,
     db: asyncpg.Pool | asyncpg.Connection,
 ) -> PolicyDecision:
-    """Evaluate the policy for ``kind``; fall back to a support review if it cannot decide."""
+    """Evaluate the policy for ``kind``; fall back to a manager review if it cannot decide."""
     try:
         facts = await gather_facts(order_id, amount=amount, subject_email=subject_email, db=db)
         return evaluate(kind, facts)
@@ -195,7 +199,8 @@ async def open_workflow_approval(
     amount: float | None,
 ) -> dict[str, Any]:
     """Inbox row for a paused ``hitl_requests`` row; ``policy`` is the decision the workflow's gate took."""
-    route = policy.get("route") if policy.get("route") in ASSIGNED_ROLE else "support"
+    # An absent or unknown route fails closed to the top tier, never the lowest.
+    route = policy.get("route") if policy.get("route") in ASSIGNED_ROLE else "manager"
     decision = PolicyDecision(
         route=route,
         reasons=tuple(str(r) for r in policy.get("reasons") or ()) or (_FALLBACK_REASON,),

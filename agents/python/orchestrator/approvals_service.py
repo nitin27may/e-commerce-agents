@@ -757,7 +757,7 @@ async def ensure_for_hitl_request(hitl_id: str) -> str | None:
     """The inbox approval for a ``hitl_requests`` row, creating it for rows that predate the inbox."""
     pool = get_pool()
     row = await pool.fetchrow(
-        """SELECT h.user_email, h.approval_id, u.session_id
+        """SELECT h.user_email, h.approval_id, h.payload, u.session_id
              FROM hitl_requests h LEFT JOIN usage_logs u ON u.id = h.workflow_run_id
             WHERE h.id = $1""",
         hitl_id,
@@ -766,12 +766,34 @@ async def ensure_for_hitl_request(hitl_id: str) -> str | None:
         return None
     if row["approval_id"]:
         return str(row["approval_id"])
+    # Rebuild the policy decision from the facts the paused run recorded. Rows that predate the facts (or a
+    # failed rebuild) get the fail-closed fallback, which routes to a manager: this repair path must never
+    # hand a return to a lower tier than the policy would have chosen.
+    payload = hitl._decode_jsonb(row["payload"]) or {}  # noqa: SLF001
+    order_id = payload.get("order_id") if isinstance(payload, dict) else None
+    order_total = payload.get("order_total") if isinstance(payload, dict) else None
+    if order_id:
+        policy = await intake.policy_for_return(
+            pool,
+            user_email=row["user_email"],
+            order_id=str(order_id),
+            amount=float(order_total) if order_total is not None else None,
+        )
+    else:
+        decision = intake.fallback_decision()
+        policy = {
+            "route": decision.route,
+            "reasons": list(decision.reasons),
+            "evidence": {},
+            "policy_version": "",
+            "amount": None,
+        }
     approval = await intake.open_workflow_approval(
         pool,
         hitl_request_id=hitl_id,
         user_email=row["user_email"],
         conversation_id=str(row["session_id"]) if row["session_id"] else None,
-        policy={},
-        amount=None,
+        policy=policy,
+        amount=policy.get("amount"),
     )
     return str(approval["id"])

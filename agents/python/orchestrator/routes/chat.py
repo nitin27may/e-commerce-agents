@@ -258,7 +258,15 @@ async def _link_run_artifacts(
             run_payload["request_id"],
             checkpoint_id,
             user_email,
-            json.dumps({"text": run_payload.get("text", "")}, default=str),
+            # order_id/order_total let a later repair (ensure_for_hitl_request) re-run the real policy.
+            json.dumps(
+                {
+                    "text": run_payload.get("text", ""),
+                    "order_id": run_payload.get("order_id"),
+                    "order_total": run_payload.get("order_total"),
+                },
+                default=str,
+            ),
         )
         # The inbox row, routed by the gate's policy decision. Best effort: the hitl_requests row above
         # is what resume needs; a missing inbox row is repaired lazily when someone first decides it.
