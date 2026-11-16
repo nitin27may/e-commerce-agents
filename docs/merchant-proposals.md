@@ -67,8 +67,7 @@ The seller's own limits are the guards, not the approval rule.
 
 Only the seller who owns the proposal, or an `admin`. Another seller's proposal is a **404**,
 identical to a missing one. Customers and `support` get 403 (`require_seller`). The staff approvals
-inbox leaves proposals out and its decide endpoint answers 422 for source `proposal` (the same
-answer .NET gives), so there is one place to decide them.
+inbox leaves proposals out; its list omits them, its detail read is a 404 and its decide and answer-info endpoints answer 422 for every decision (both stacks), so there is one place to decide them.
 
 ## Deciding
 
@@ -80,6 +79,8 @@ answer .NET gives), so there is one place to decide them.
 | `edit` | execute at `value` (a restock quantity must be whole); recorded as approved with edits |
 | `reject` | nothing changes |
 
+**An edit can never raise a line** (the repo-wide rule). A restock quantity may be lowered, never raised above what was proposed; a price must stay between the proposed price and the price it started from (a markdown may be shallower than proposed, never deeper and never above where it began). A value outside that, past `NUMERIC(12,2)` or an INT32 quantity, not finite, or that rounds to zero is a **422** at decide time. `apply_line` checks the same rule again (`edit_beyond_proposal`) so a caller that bypasses the route cannot get past it.
+
 A line left out is rejected. A blocked line can only be rejected (422 otherwise).
 
 Execution, per accepted line (`execute_line`, run once under key `proposal_line:{id}`):
@@ -89,13 +90,18 @@ Execution, per accepted line (`execute_line`, run once under key `proposal_line:
 2. **re-run the guards against the facts as they are now**: a price that moved, a promotion that
    started or a change already made today since the batch was proposed all count. A failing line
    becomes `blocked` and changes nothing, whatever the seller typed;
-3. write: `products.price` and a `price_history` row, or one `restock_schedule` row (to the warehouse
+3. block, changing nothing, if the product's price is no longer the one the line was proposed against (`price_moved`; the UPDATE is also conditional on it), or, for a restock, stock is already on order (`restock_already_scheduled`) or the line is over `max_restock_quantity` / `max_restock_order_value`;
+4. write: `products.price` and a `price_history` row, or one `restock_schedule` row (to the warehouse
    furthest below its threshold, expected 7 days out).
 
 The approval is recorded **after** execution (as tool approvals are), fenced by the claim token: a
 crash leaves it open and a retry finishes without repeating anything, two concurrent decides give one
 200 and one 409, and a repeat after completion is a 409. The approval ends `executed` if any line ran,
 `failed` if every accepted line was blocked, `rejected` if nothing was accepted.
+
+### Generation is serialised per seller
+
+`generate_proposal` takes a per-seller `pg_advisory_xact_lock` before it reads "already proposed", so two concurrent runs (a click and the daily timer) make one batch and a restock is never ordered twice. A unique index on open lines is not expressible: a line's status does not say whether its proposal is still open (lines of an expired batch stay `proposed`).
 
 ## API
 
@@ -115,6 +121,10 @@ its own savepoint (one failing seller does not stop the others), then books the 
 transaction under a per-date dedupe key. With the flag off a stray row does nothing and does not
 reschedule. The flag exists because the keyed merchant-ops agent (M-2), when it lands, will spend
 model money on a scheduled run; today's generation costs nothing.
+
+### SLA expiry and a decide in flight
+
+The breach timer does not expire a batch while a decide holds the claim or any line is already `accepted`, `edited` or `executed`: it re-books itself (30 s, at most 10 times). If lines ran and no decide finishes, the batch closes with the approval `expired` (decision records `executed_lines`), the proposal `executed`, and the seller told how many changes were applied. "Nothing was changed" is only said when nothing ran.
 
 An unanswered batch is reminded at half its SLA (notification to the seller) and expires at 72 hours:
 approval `expired`, proposal `cancelled`, nothing executed, the seller told.

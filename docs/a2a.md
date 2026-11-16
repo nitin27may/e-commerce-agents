@@ -104,7 +104,7 @@ none, so tests compare the set.
 frame, which carries a *list*. Each orchestrator's legacy reader accepts both: `TolerantStepConverter` on .NET and
 `shared/legacy_wire.py` on Python (names compared ignoring case and underscores; a missing agent is filled with the
 specialist's name; the plural frame is split into live `step` frames). Before this, the Python orchestrator dropped a .NET
-specialist's blocking steps and read its `steps` frame as answer text. Usage needs no tolerance: both stacks name its
+specialist's blocking steps and read its `steps` frame as answer text. A specialist's steps are bounded on both stacks: a step keeps only its six canonical keys (Python also a bounded `provenance`), one frame or body contributes at most 50 steps and a turn collects at most 200 (`legacy_wire.MAX_STEPS_PER_*`, `A2AClient.MaxStepsPer*`). Usage needs no tolerance: both stacks name its
 fields explicitly. `scripts/a2a-interop.sh` checks it against a real .NET specialist.
 
 **Numbers on the wire.** A protobuf `Struct` (Python's metadata) writes every number as a float, so a .NET reader sees
@@ -270,6 +270,8 @@ Python, asymmetric signing of the identity token, a golden-file contract test sh
 cross-process check replaced it).
 
 ## Replay misses
+
+**Only a replaying process acts on a miss.** Every orchestrator-side check (the 424 status, the `replay_miss` frame, the `replay-miss/v1` metadata, a workflow's miss event, the tool's catch, the chat route's discard) is gated on that orchestrator's own `LLM_PROVIDER` being `replay` (`shared.replay_miss.replay_mode_active`, `ReplayMiss.IsActive`). Elsewhere a 424 or a miss frame is an ordinary specialist failure (the "returned an error" sentence, or an interrupted stream) and the user's message is kept. The specialist side still emits the signals (they only arise under replay).
 
 Under `LLM_PROVIDER=replay` a prompt with no recording is a *miss*, on both stacks. A specialist reports it as HTTP 424
 `{"error":"replay_miss"}` (legacy `/message:send`), an `event: replay_miss` frame then `[DONE]` (legacy

@@ -175,16 +175,20 @@ approver can wave it through.
 | `max_change_pct_per_day` | Most a price may move in one UTC day. Every change already in `price_history` today counts, plus the proposed one, each as `|new − old| / old × 100`. Exactly at the cap is allowed. |
 | `block_during_active_promotion` | Refuse a price change to a product covered by a promotion active now (`promotion_products`, `promotions.is_active`, start and end dates). |
 | `max_lines_per_batch` | Most lines one proposal batch may hold. |
+| `max_restock_quantity` | Most units one restock line may order (1 to INT32). **Placeholder** default 5000. |
+| `max_restock_order_value` | Most one restock line may commit, `quantity × unit_cost`. **Placeholder** default 50000. |
 | `policy_version` | Recorded on every guard result. Bump it when a number changes. |
 
 `shared/merchant/guards.py` is pure: `check_price_change`, `check_restock_line` and `check_batch` take the
 proposed change plus the facts and return a `GuardResult` (`ok`, the `reasons`, the `numbers` used and the
 `policy_version`). Every applicable reason is reported, not just the first. The reason codes are fixed:
 `invalid_price`, `missing_cost`, `margin_below_floor`, `daily_change_cap_exceeded`, `active_promotion`,
-`invalid_quantity`, `batch_too_large`. `shared/merchant/facts.py` reads the facts from Postgres (current price,
+`invalid_quantity`, `batch_too_large`, `restock_quantity_exceeded`, `restock_value_exceeded`, and three raised when a line is applied: `edit_beyond_proposal` (a reviewer's value raises the line: a restock above the proposed quantity, a price deeper than proposed or above where it started), `price_moved` (the price is no longer the one the line was proposed against) and `restock_already_scheduled` (stock is already on order). `shared/merchant/facts.py` reads the facts from Postgres (current price,
 `products.unit_cost`, today's `price_history` steps, the promotions linked in `promotion_products`), and
 `shared/merchant/limits.py` validates the YAML at load time, failing loudly on an unknown key or out-of-range
 value.
+
+**A merchant proposal is not the staff inbox's to decide, on both stacks.** `decide()` (and the answer-info route) answer 422 for source `proposal` for every decision, including `request_info`, which used to park the batch in `needs_info` where its system-actor requester can never answer. `GET /api/approvals/{id}` is a 404 for a proposal, matching the staff list that already left it out (.NET's list now excludes it too); the legacy resume and admin approve/deny routes cannot reach one. The seller decides on `/api/seller/proposals/{id}/decide` (Python only). An SLA breach never expires a proposal under a decide in flight: see [merchant proposals](merchant-proposals.md#sla-expiry-and-a-decide-in-flight).
 
 The schema is migration `0009_merchant_proposals.sql`: `proposals`, `proposal_lines` (per-line status
 including `blocked`, the guard result as JSONB), `promotion_products` and a nullable `products.unit_cost`. The
