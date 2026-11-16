@@ -79,6 +79,39 @@ const PROPOSALS = {
   total: 1,
 };
 
+const DECISIONS = {
+  decisions: [
+    {
+      id: "d-1", created_at: "2026-11-16T10:00:00Z", event_type: "order.shipment_delayed", action: "goodwill_credit",
+      budget_key: "goodwill_credit", customer_email: "carol@example.com", order_id: "12345678-aaaa-bbbb-cccc-1234567890ab",
+      amount: "5.00", applied_amount: null, tier: "auto", state: "executed",
+      reasons: ["A small credit for a delay of at least two days"],
+      budget: { budget_key: "goodwill_credit", day: "2026-11-16", tripped: [], drew: { count: 1, amount: "5.00" } },
+      input: { event: { event_id: "e1", delay_days: 3 }, rule: "auto-small-credit" }, policy_version: "v1",
+      approval_id: null, approval_status: null, approved_by: null, reversed_at: null, reversed_by: null, can_reverse: true,
+    },
+    {
+      id: "d-2", created_at: "2026-11-16T10:05:00Z", event_type: "order.shipment_delayed", action: "goodwill_credit",
+      budget_key: "goodwill_credit", customer_email: "dave@example.com", order_id: "87654321-aaaa-bbbb-cccc-1234567890ab",
+      amount: "40.00", applied_amount: null, tier: "needs_approval", state: "awaiting_approval",
+      reasons: ["Outside what the system may do alone"],
+      budget: { budget_key: "goodwill_credit", day: "2026-11-16", tripped: [], drew: null },
+      input: { event: { event_id: "e2", delay_days: 12 }, rule: "default-approval" }, policy_version: "v1",
+      approval_id: "ap-2", approval_status: "pending_review", approved_by: null, reversed_at: null, reversed_by: null, can_reverse: false,
+    },
+  ],
+  total: 2,
+  budgets: [
+    {
+      budget_key: "goodwill_credit", day: "2026-11-16", used_count: 1, used_amount: "5.00", max_count: 20, max_amount: "200.00",
+      per_action_max_amount: "25.00", per_customer_max_count: 1, per_customer_max_amount: "25.00", per_order_max_count: 1,
+    },
+  ],
+  enabled: true,
+  simulator_enabled: true,
+  scenarios: { small: 3, medium: 6, large: 12 },
+};
+
 export async function seedAuth(
   page: Page,
   role: "customer" | "admin" | "seller" = "customer",
@@ -101,6 +134,7 @@ export async function seedAuth(
 export async function mockApi(page: Page) {
   await page.route("**/api/**", async (route) => {
     const url = route.request().url();
+    if (url.includes("/api/admin/decisions")) return route.fulfill({ json: DECISIONS });
     if (url.includes("/api/seller/proposals")) return route.fulfill({ json: PROPOSALS });
     if (url.includes("/api/admin/usage")) return route.fulfill({ json: USAGE });
     if (url.includes("/api/orders")) return route.fulfill({ json: ORDERS });

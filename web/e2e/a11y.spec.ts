@@ -75,6 +75,7 @@ test.describe("authenticated shell", () => {
       ["products", "/products", "customer"],
       ["orders", "/orders", "customer"],
       ["admin usage", "/admin/usage", "admin"],
+      ["admin decisions", "/admin/decisions", "admin"],
       ["seller proposals", "/seller/proposals", "seller"],
     ] as const) {
       test(`${name} (${theme}) has no serious or critical violations`, async ({ page }) => {

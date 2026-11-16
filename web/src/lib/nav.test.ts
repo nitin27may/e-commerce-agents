@@ -21,6 +21,7 @@ describe("visibleGroups", () => {
     const labels = groups.flatMap((g) => g.items.map((i) => i.label));
     expect(labels).toContain("Seller");
     expect(labels).not.toContain("Usage");
+    expect(labels).not.toContain("Decisions");
   });
 
   it("shows admin items (Overview, Approvals, Usage) to an admin — no old labels", () => {
@@ -29,6 +30,7 @@ describe("visibleGroups", () => {
     expect(labels).toContain("Overview");
     expect(labels).toContain("Approvals");
     expect(labels).toContain("Usage");
+    expect(labels).toContain("Decisions");
     expect(labels).toContain("Runs"); // single Runs entry, from the Shop group
     expect(labels).toContain("Seller");
     expect(labels).not.toContain("Requests");
@@ -42,6 +44,7 @@ describe("labelForPath", () => {
   it("matches the most specific nav item", () => {
     expect(labelForPath("/admin/usage")).toBe("Usage");
     expect(labelForPath("/admin")).toBe("Overview");
+    expect(labelForPath("/admin/decisions")).toBe("Decisions");
     expect(labelForPath("/runs")).toBe("Runs"); // the single user-facing runs page
   });
 
