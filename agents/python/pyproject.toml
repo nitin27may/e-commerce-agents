@@ -10,9 +10,10 @@ dependencies = [
     # provider integrations that are still pre-release-only and make the
     # resolution unsatisfiable without --prerelease=allow. orchestrations is
     # a direct dependency because orchestrator/handoff.py imports
-    # HandoffBuilder from it. a2a/devui are not used (this repo's "A2A
-    # protocol" is a hand-rolled HTTP contract in shared/agent_host.py, not
-    # the agent-framework-a2a SDK package).
+    # HandoffBuilder from it. agent-framework-a2a/devui are not used: the A2A 1.0
+    # server (shared/a2a_server.py) is a custom executor on the official a2a-sdk,
+    # so the messages a specialist's model sees, and every replay-fixture hash,
+    # do not change.
     "agent-framework-core==1.26.0",
     "agent-framework-openai==1.18.2",
     "agent-framework-orchestrations==1.4.2",
@@ -45,6 +46,8 @@ dependencies = [
     "opentelemetry-instrumentation-asyncpg>=0.49b0",
     "opentelemetry-instrumentation-logging>=0.49b0",
     "opentelemetry-instrumentation-openai-v2>=0.1",
+    # A2A 1.0 server and client (shared/a2a_server.py, shared/a2a_client.py); pinned exactly like MAF.
+    "a2a-sdk[http-server]==1.3.0",
     "mcp[cli]>=2.2,<3",
     # core imports tenacity lazily for MCP tool-catalog recovery (>=1.25) but only declares it in its
     # `all` extra, which this repo deliberately does not use — without it every MCP connect fails.

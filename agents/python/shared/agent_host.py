@@ -23,6 +23,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from shared.a2a_server import A2AMount, mount_a2a
 from shared.log_safe import log_safe
 from shared.prompt_loader import load_model_override, validate_model_overrides
 from shared.readiness import register_readiness
@@ -256,6 +257,10 @@ def create_agent_app(
         on_startup/on_shutdown: Lifecycle callbacks.
     """
 
+    from shared.config import settings
+
+    a2a_mounts: list[A2AMount] = []
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         # A malformed per-agent ``model:`` block fails at startup, naming the file — not on request 1.
@@ -264,6 +269,8 @@ def create_agent_app(
             await on_startup(app)
         logger.info("%s.started port=%d", log_safe(agent_name), port)
         yield
+        for mount in a2a_mounts:
+            await mount.aclose()
         if on_shutdown:
             await on_shutdown()
 
@@ -275,14 +282,19 @@ def create_agent_app(
 
     register_readiness(app, agent_name)
 
-    @app.get("/.well-known/agent-card.json")
-    async def agent_card():
-        return {
-            "name": agent_name,
-            "description": description,
-            "url": f"http://{agent_name}:{port}",
-            "version": "1.0",
-        }
+    # The A2A 1.0 surface (agent card at /.well-known/agent-card.json, JSON-RPC at /a2a/v1) lives in
+    # shared/a2a_server.py. The two legacy routes below stay, unchanged, until both stacks default to
+    # A2A_TRANSPORT=a2a; the card used to be a four-field stub served from here.
+    a2a_mounts.append(
+        mount_a2a(
+            app,
+            agent=agent,
+            agent_name=agent_name,
+            port=port,
+            description=description,
+            public_base_url=settings.A2A_PUBLIC_BASE_URL,
+        )
+    )
 
     @app.post("/message:send")
     async def message_send(request: Request):
