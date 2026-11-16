@@ -207,15 +207,15 @@ class ReturnReplaceMode:
     name = "workflow:return-replace"
     label = "Return & Replace (sequential + in-workflow HITL)"
     description = (
-        "MAF sequential workflow: eligibility check, return initiation, replacement "
-        "search, an in-workflow HITL gate for high-value returns (ctx.request_info — "
-        "structurally different from the middleware-based approval flow `tool` mode "
-        "uses; see shared/hitl.py vs this workflow's hitl-gate executor), then "
-        "loyalty discount and finalize."
+        "MAF sequential workflow: eligibility check, then a policy gate that decides "
+        "whether a person must approve (ctx.request_info — structurally different from "
+        "the middleware-based approval flow `tool` mode uses; see shared/hitl.py vs this "
+        "workflow's policy-gate executor), and only then return initiation, replacement "
+        "search, loyalty discount and finalize."
     )
 ```
 
-That's a five-step pipeline — eligibility check → return initiation → replacement search → an in-workflow HITL approval gate for high-value returns → loyalty discount → finalize — selectable per request from the web chat UI via `mode-switcher.tsx`, with a checkpoint saved at the HITL gate so a paused run can be resumed later from `POST /api/orchestration/{run_id}/resume` (see `ReturnReplaceMode.resume()` in the same file). It's a considerably richer example of the pattern than this chapter's Writer/Reviewer/Finalizer demo, and it's real, currently-wired code, not a hypothetical refactor target.
+That's a five-step pipeline — eligibility check → a policy gate that pauses for approval unless the policy says `auto` → return initiation → replacement search → loyalty discount → finalize — selectable per request from the web chat UI via `mode-switcher.tsx`, with a checkpoint saved at the policy gate so a paused run can be resumed later from `POST /api/orchestration/{run_id}/resume` (see `ReturnReplaceMode.resume()` in the same file). It's a considerably richer example of the pattern than this chapter's Writer/Reviewer/Finalizer demo, and it's real, currently-wired code, not a hypothetical refactor target.
 
 ## What's next
 

@@ -91,6 +91,16 @@ async def _pause_a_return(clean_db, monkeypatch: pytest.MonkeyPatch, email: str,
     monkeypatch.setitem(modes_module.MODES, "workflow:return-replace", ReturnReplaceMode(tools=RETURN_TOOLS))
     monkeypatch.setattr("shared.db._pool", clean_db, raising=False)
 
+    # A real delivered order owned by the requester: since the return workflow creates the return only
+    # AFTER approval, the resume runs the real, ownership-checking initiate_return against this row.
+    await clean_db.execute(
+        """INSERT INTO orders (id, user_id, status, total, shipping_address)
+           VALUES ($1, $2, 'delivered', $3, '{"city": "Testville"}'::jsonb)""",
+        uuid.UUID(order_id),
+        user_id,
+        high,
+    )
+
     app = _app_for(email, user_id)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
         resp = await http.post(

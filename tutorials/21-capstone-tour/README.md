@@ -172,7 +172,7 @@ came from is out of sync too; open an issue.
 | [14 Handoff](../14-handoff-orchestration/) | `agents/python/orchestrator/handoff.py:49` — `build_orchestrator_handoff_workflow()`; `orchestrator/modes/handoff_mode.py:1` — live as `handoff` |
 | [15 Group Chat](../15-group-chat-orchestration/) | `agents/python/workflows/group_chat.py:99` — `GroupChatWorkflow`; `orchestrator/modes/group_chat_mode.py:78` — live as `group-chat` |
 | [16 Magentic](../16-magentic-orchestration/) | Not live — see the mode table above and this chapter's own honest gap note |
-| [17 HITL](../17-human-in-the-loop/) | `agents/python/workflows/return_replace.py:172,185` — `ctx.request_info`/`on_approval`, distinct from `shared/hitl.py`'s middleware gate |
+| [17 HITL](../17-human-in-the-loop/) | `agents/python/workflows/return_replace.py` — `ctx.request_info`/`on_decision`, distinct from `shared/hitl.py`'s middleware gate |
 | [18 Checkpoints](../18-state-and-checkpoints/) | `agents/python/shared/checkpoint_storage.py:34` — `PostgresCheckpointStorage`, real `workflow_checkpoints` table, resumable from `/runs` |
 | [19 Declarative](../19-declarative-workflows/) | none — the capstone has no declarative loader (removed, #98); return-replace/pre-purchase are hand-coded `WorkflowBuilder` graphs, not YAML |
 | [20 Visualization](../20-visualization/) | `scripts/visualize_workflows.py` (static, CI-drift-checked) + `web/src/components/chat/orchestration-graph.tsx` (live, SSE-animated) — two complementary mechanisms |

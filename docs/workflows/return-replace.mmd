@@ -1,12 +1,12 @@
 flowchart TD
   check_eligibility["check-eligibility (Start)"];
+  policy_gate["policy-gate"];
   initiate_return["initiate-return"];
   search_replacements["search-replacements"];
-  hitl_gate["hitl-gate"];
   apply_discount["apply-discount"];
   finalize["finalize"];
-  check_eligibility --> initiate_return;
+  check_eligibility --> policy_gate;
+  policy_gate --> initiate_return;
   initiate_return --> search_replacements;
-  search_replacements --> hitl_gate;
-  hitl_gate --> apply_discount;
+  search_replacements --> apply_discount;
   apply_discount --> finalize;

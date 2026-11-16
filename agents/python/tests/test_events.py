@@ -46,7 +46,7 @@ async def test_low_value_return_produces_node_enter_exit_pairs_and_run_started()
     assert "node_exit" in kinds
 
     enter_ids = {e.node_id for e in events if e.kind == "node_enter"}
-    assert {"check-eligibility", "initiate-return", "search-replacements", "hitl-gate", "finalize"} <= enter_ids
+    assert {"check-eligibility", "policy-gate", "initiate-return", "search-replacements", "finalize"} <= enter_ids
 
 
 @pytest.mark.asyncio
@@ -82,10 +82,10 @@ async def test_high_value_return_produces_request_info_event_with_resume_fields(
     request_info_events = [e for e in events if e.kind == "request_info"]
     assert len(request_info_events) == 1
     evt = request_info_events[0]
-    assert evt.node_id == "hitl-gate", "node_id must be source_executor_id, not the (unset) executor_id"
+    assert evt.node_id == "policy-gate", "node_id must be source_executor_id, not the (unset) executor_id"
     assert evt.payload["request_id"], "resume token must be present for a later /resume call"
     assert evt.payload["request_type"] == "ReturnApprovalRequest"
-    assert evt.payload["response_type"] == "bool"
+    assert evt.payload["response_type"] == "ReturnDecision"
     assert evt.payload["data"]["order_total"] == high
 
 
@@ -144,11 +144,21 @@ def test_adapt_step_handles_missing_agent_key() -> None:
 
 
 def test_jsonable_handles_dataclass_pydantic_and_plain_values() -> None:
-    from workflows.return_replace import ReturnApprovalRequest
+    from workflows.return_replace import ReturnApprovalRequest, WorkflowState
 
-    req = ReturnApprovalRequest(order_id="o1", order_total=100.0, refund_amount=20.0, replacement_count=1)
+    req = ReturnApprovalRequest(
+        order_id="o1",
+        order_total=100.0,
+        refund_amount=20.0,
+        replacement_count=1,
+        state=WorkflowState(user_email="a@b.com", order_id="o1"),
+    )
     result = _jsonable(req)
-    assert result == {"order_id": "o1", "order_total": 100.0, "refund_amount": 20.0, "replacement_count": 1}
+    # Nested dataclasses are converted too, so the whole request is JSON-safe.
+    assert result["order_id"] == "o1"
+    assert result["refund_amount"] == 20.0
+    assert result["state"]["order_id"] == "o1"
+    assert result["route"] == "support" and result["reasons"] == []
     assert _jsonable(None) is None
     assert _jsonable("text") == "text"
     assert _jsonable([1, "a", None]) == [1, "a", None]

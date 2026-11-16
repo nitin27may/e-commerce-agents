@@ -621,6 +621,10 @@ async def _paused(pool, monkeypatch: pytest.MonkeyPatch, email: str = REQUESTER)
     return order_id, run_id, str(approval_id), user_id
 
 
+async def _returns(pool, order_id: str) -> list:
+    return await pool.fetch("SELECT * FROM returns WHERE order_id = $1", uuid.UUID(order_id))
+
+
 @pytest.mark.asyncio
 async def test_the_workflow_pause_opens_a_routed_approval_linked_to_the_run(pool, monkeypatch) -> None:
     order_id, run_id, approval_id, _ = await _paused(pool, monkeypatch)
@@ -629,6 +633,62 @@ async def test_the_workflow_pause_opens_a_routed_approval_linked_to_the_run(pool
     assert (row["source"], row["kind"], row["status"]) == ("workflow", "return_approval", "pending_review")
     assert row["route"] == "manager" and row["assigned_role"] == "admin"  # over 500
     assert row["conversation_id"] is not None, "the requester's conversation is linked for request-info"
+    assert await _returns(pool, order_id) == [], "nothing is created before approval"
+
+
+@pytest.mark.asyncio
+async def test_staff_resume_runs_as_the_requester_and_the_return_is_created_for_the_customer(pool, monkeypatch) -> None:
+    order_id, run_id, approval_id, user_id = await _paused(pool, monkeypatch)
+
+    resp = await _call(_as(ADMIN, "admin"), "POST", f"/api/approvals/{approval_id}/decide", {"decision": "approve"})
+
+    assert resp.status_code == 200, resp.text
+    returns = await _returns(pool, order_id)
+    assert len(returns) == 1 and returns[0]["user_id"] == user_id, "created for the customer, not the approving admin"
+    assert await pool.fetchval("SELECT status FROM orders WHERE id = $1", uuid.UUID(order_id)) == "returned"
+    row = await pool.fetchrow("SELECT status, decided_by FROM approvals WHERE id = $1", approval_id)
+    assert (row["status"], row["decided_by"]) == ("executed", ADMIN)
+    assert "approved and finalized" in resp.json()["result"]["text"]
+    assert str(returns[0]["id"]) in resp.json()["result"]["text"], "the resumed run still knows the return it created"
+
+
+@pytest.mark.asyncio
+async def test_rejecting_leaves_no_return_and_the_order_untouched(pool, monkeypatch) -> None:
+    order_id, run_id, approval_id, _ = await _paused(pool, monkeypatch)
+
+    resp = await _call(
+        _as(ADMIN, "admin"), "POST", f"/api/approvals/{approval_id}/decide", {"decision": "reject", "note": "no"}
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert await _returns(pool, order_id) == []
+    assert await pool.fetchval("SELECT status FROM orders WHERE id = $1", uuid.UUID(order_id)) == "delivered"
+    assert (
+        await pool.fetchval("SELECT count(*) FROM order_status_history WHERE order_id = $1", uuid.UUID(order_id)) == 0
+    )
+    assert await _status(pool, approval_id) == "rejected"
+    assert await pool.fetchval("SELECT status FROM hitl_requests WHERE workflow_run_id = $1", run_id) == "rejected"
+
+
+@pytest.mark.asyncio
+async def test_an_edited_amount_and_resolution_are_honoured(pool, monkeypatch) -> None:
+    order_id, run_id, approval_id, _ = await _paused(pool, monkeypatch)
+
+    resp = await _call(
+        _as(ADMIN, "admin"),
+        "POST",
+        f"/api/approvals/{approval_id}/decide",
+        {"decision": "approve", "edits": {"amount": 99.5, "resolution": "refund"}},
+    )
+
+    assert resp.status_code == 200, resp.text
+    (ret,) = await _returns(pool, order_id)
+    assert float(ret["refund_amount"]) == 99.5
+    assert ret["refund_method"] == "original_payment"
+    assert await _status(pool, approval_id) == "executed"
+    decided = [e for e in await repo.list_events(pool, approval_id) if e["action"] == "decided"][0]
+    assert decided["payload"]["to"] == "approved_with_edits"
+    assert decided["payload"]["edits"] == {"amount": 99.5, "resolution": "refund"}
 
 
 @pytest.mark.asyncio
@@ -650,6 +710,7 @@ async def test_workflow_edits_outside_the_allowlist_or_range_are_422(pool, monke
     )
 
     assert resp.status_code == 422, resp.text
+    assert await _returns(pool, order_id) == []
     assert await pool.fetchval("SELECT status FROM hitl_requests WHERE workflow_run_id = $1", run_id) == "pending"
 
 
@@ -661,6 +722,7 @@ async def test_support_cannot_decide_a_manager_routed_workflow_approval(pool, mo
     legacy = await _call(_as(SUPPORT, "support"), "POST", f"/api/orchestration/{run_id}/resume", {"approved": True})
 
     assert (resp.status_code, legacy.status_code) == (403, 403)
+    assert await _returns(pool, order_id) == []
     assert await pool.fetchval("SELECT status FROM hitl_requests WHERE workflow_run_id = $1", run_id) == "pending"
 
 
@@ -675,12 +737,11 @@ async def test_the_requester_cannot_decide_their_own_workflow_approval(pool, mon
         {"decision": "approve"},
     )
 
-    assert resp.status_code == 403
-    assert await pool.fetchval("SELECT status FROM hitl_requests WHERE workflow_run_id = $1", run_id) == "pending"
+    assert resp.status_code == 403 and await _returns(pool, order_id) == []
 
 
 @pytest.mark.asyncio
-async def test_two_concurrent_workflow_decides_resume_once(pool, monkeypatch) -> None:
+async def test_two_concurrent_workflow_decides_create_one_return(pool, monkeypatch) -> None:
     order_id, run_id, approval_id, _ = await _paused(pool, monkeypatch)
 
     a, b = await asyncio.gather(
@@ -694,7 +755,7 @@ async def test_two_concurrent_workflow_decides_resume_once(pool, monkeypatch) ->
     )
 
     assert sorted([a.status_code, b.status_code]) == [200, 409]
-    assert await _status(pool, approval_id) == "executed"
+    assert len(await _returns(pool, order_id)) == 1
 
 
 @pytest.mark.asyncio
@@ -717,6 +778,7 @@ async def test_request_info_on_a_workflow_approval_parks_the_run_until_answered(
         await _call(admin, "POST", f"/api/approvals/{approval_id}/decide", {"decision": "approve"})
     ).status_code == 409
     assert (await _call(admin, "POST", f"/api/orchestration/{run_id}/resume", {"approved": True})).status_code == 409
+    assert await _returns(pool, order_id) == []
 
     answered = await _call(
         _app_for(REQUESTER, user_id, role="customer"),
@@ -728,7 +790,7 @@ async def test_request_info_on_a_workflow_approval_parks_the_run_until_answered(
     assert await pool.fetchval("SELECT status FROM hitl_requests WHERE workflow_run_id = $1", run_id) == "pending"
 
     final = await _call(admin, "POST", f"/api/approvals/{approval_id}/decide", {"decision": "approve"})
-    assert final.status_code == 200 and await _status(pool, approval_id) == "executed"
+    assert final.status_code == 200 and len(await _returns(pool, order_id)) == 1
 
 
 @pytest.mark.asyncio
@@ -740,6 +802,7 @@ async def test_the_legacy_resume_endpoint_is_a_shim_over_decide(pool, monkeypatc
     assert resp.status_code == 200 and resp.json()["approved"] is False
     row = await pool.fetchrow("SELECT status, decided_by FROM approvals WHERE id = $1", approval_id)
     assert (row["status"], row["decided_by"]) == ("rejected", ADMIN)
+    assert await _returns(pool, order_id) == []
 
 
 @pytest.mark.asyncio
@@ -752,6 +815,7 @@ async def test_an_old_paused_row_without_an_inbox_approval_is_repaired_on_resume
     resp = await _call(_as(ADMIN, "admin"), "POST", f"/api/orchestration/{run_id}/resume", {"approved": True})
 
     assert resp.status_code == 200, resp.text
+    assert len(await _returns(pool, order_id)) == 1
     assert (
         await pool.fetchval("SELECT status FROM approvals WHERE source = 'workflow' AND source_ref IS NOT NULL")
         == "executed"
@@ -768,6 +832,8 @@ async def test_expiry_resumes_a_workflow_as_a_rejection(pool, monkeypatch) -> No
     outcome = await svc.expire(approval_id)
 
     assert outcome["approval"]["status"] == "expired"
+    assert await _returns(pool, order_id) == [], "an expired request creates nothing"
+    assert await pool.fetchval("SELECT status FROM orders WHERE id = $1", uuid.UUID(order_id)) == "delivered"
     assert await pool.fetchval("SELECT status FROM hitl_requests WHERE workflow_run_id = $1", run_id) == "rejected"
     assert (
         await _call(_as(ADMIN, "admin"), "POST", f"/api/approvals/{approval_id}/decide", {"decision": "approve"})

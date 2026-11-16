@@ -226,8 +226,22 @@ policy routed to `support` (and `auto` requests still waiting for a person), `ad
   `pending_review`, and the reviewer can try again.
 
 **Edits** (`approve` only) are merged only for fields on the policy's `editable_fields` for that kind; any other
-field, or a bad value, is a `422` and nothing runs. Today edits apply to tool approvals; for a workflow approval they
-arrive with the reworked return workflow.
+field, or a bad value, is a `422` and nothing runs. For a tool approval they merge into the tool input; for a return
+they are `amount` (not above what is under review) and `resolution` (`refund`, `store_credit` or `replacement`), and
+are honoured when the return is created.
+
+### The return workflow
+
+`workflow:return-replace` is `check-eligibility → policy-gate → initiate-return → search-replacements →
+apply-discount → finalize`. The gate asks the policy engine (kind `return_approval`): `auto` proceeds without
+pausing; anything else pauses via `ctx.request_info` and opens an approval. **Nothing is created before the gate** —
+the `returns` row, the label and the order's `returned` status all come from `initiate-return`, which runs only after
+`auto` or a reviewer's approval. So a rejected or expired request leaves no return and the order untouched.
+
+The pause carries the whole `WorkflowState` and is answered with a `ReturnDecision` (`decision`, `resolution`,
+`amount`, `note`, `decided_by`, `approval_id`), so the resumed run restores everything and runs as the requester.
+`RETURN_HITL_THRESHOLD` is only the fallback when the engine cannot decide. Migration `0010` expired the returns that
+were paused under the previous graph: their checkpoints cannot be resumed under the new response type.
 
 **Request more information** does not touch MAF. The approval moves to `needs_info`, the reviewer's question is
 written into the requester's conversation, and a paused workflow stays paused (its `hitl_requests` row is parked as

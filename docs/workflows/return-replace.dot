@@ -4,14 +4,14 @@ digraph Workflow {
   edge [color=black, arrowhead=vee];
 
   "check-eligibility" [fillcolor=lightgreen, label="check-eligibility\n(Start)"];
+  "policy-gate" [label="policy-gate"];
   "initiate-return" [label="initiate-return"];
   "search-replacements" [label="search-replacements"];
-  "hitl-gate" [label="hitl-gate"];
   "apply-discount" [label="apply-discount"];
   "finalize" [label="finalize"];
-  "check-eligibility" -> "initiate-return";
+  "check-eligibility" -> "policy-gate";
+  "policy-gate" -> "initiate-return";
   "initiate-return" -> "search-replacements";
-  "search-replacements" -> "hitl-gate";
-  "hitl-gate" -> "apply-discount";
+  "search-replacements" -> "apply-discount";
   "apply-discount" -> "finalize";
 }

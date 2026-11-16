@@ -95,22 +95,25 @@ the fan-in handler receives `list[State]` and merges.
 
 ### Sequential + human-in-the-loop — return & replace
 
-Ordered chain that pauses for approval above a value threshold.
+Ordered chain that pauses for approval **before** anything is created, when the approval policy says so.
 
 ```mermaid
 flowchart LR
-    C[check-eligibility] --> I[initiate-return]
+    C[check-eligibility] --> G{policy-gate}
+    G -- auto --> I[initiate-return]
+    G -- support / manager --> RI[[request_info: approval]]
+    RI -- approved --> I
+    RI -- rejected or expired --> X[yield: rejected]
     I --> SR[search-replacements]
-    SR --> G{hitl-gate}
-    G -- below threshold --> D[apply-discount]
-    G -- above threshold --> RI[[request_info: approval]]
-    RI -- approved --> D
-    RI -- rejected --> X[yield: rejected]
+    SR --> D[apply-discount]
     D --> F[finalize]
 ```
 
-The gate uses `ctx.request_info(ReturnApprovalRequest, response_type=bool)` to
-pause, and a `@response_handler` resumes the chain when the approval arrives.
+The gate asks the policy engine (`shared/policy`, kind `return_approval`); `auto` proceeds, anything else
+calls `ctx.request_info(ReturnApprovalRequest, response_type=ReturnDecision)` to pause. The request carries the
+whole `WorkflowState`, and a `@response_handler` restores it and resumes the chain when the reviewer's
+`ReturnDecision` (decision, resolution, amount, note, decided_by, approval_id) arrives. A rejection leaves no
+`returns` row and the order untouched, because the return is created by the step *after* the gate.
 
 ### Round-table group chat — debate then synthesize
 

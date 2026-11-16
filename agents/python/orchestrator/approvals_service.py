@@ -482,25 +482,35 @@ async def _approve_tool(
 # ── workflow approvals ───────────────────────────────────────────────────────
 
 
-@dataclass(frozen=True)
-class _WorkflowDecision:
-    """What a reviewer decided for a paused workflow (the workflow's own response type arrives with D-8)."""
+def _workflow_decision(approval: dict[str, Any], actor: Actor, approve: bool, edits: dict[str, Any], note: str | None):
+    """Validate a reviewer's edits against the policy allowlist and build the workflow's ``ReturnDecision``."""
+    from workflows.return_replace import RESOLUTIONS, ReturnDecision
 
-    decision: str
-    note: str = ""
-    decided_by: str = ""
-    approval_id: str = ""
+    try:
+        from shared.policy import get_policy
 
+        allowed = set(get_policy().kind(_WORKFLOW_KIND).editable_fields)
+    except Exception:
+        allowed = set()
+    rejected = sorted(set(edits) - allowed)
+    if rejected:
+        raise ApprovalHTTPError(422, f"Not editable: {', '.join(rejected)}")
 
-def _workflow_decision(
-    approval: dict[str, Any], actor: Actor, approve: bool, edits: dict[str, Any], note: str | None
-) -> _WorkflowDecision:
-    """Build the workflow decision. The current workflow's response is a plain approve/reject, so it cannot
-    honour edits: refuse them instead of silently dropping what the reviewer changed."""
-    if edits:
-        raise ApprovalHTTPError(422, "Edits are not supported for return approvals yet")
-    return _WorkflowDecision(
+    amount = edits.get("amount")
+    if amount is not None:
+        ceiling = float(approval["amount"]) if approval.get("amount") is not None else None
+        if isinstance(amount, bool) or not isinstance(amount, (int, float)) or amount < 0:
+            raise ApprovalHTTPError(422, "amount must be a non-negative number")
+        if ceiling is not None and amount > ceiling:
+            raise ApprovalHTTPError(422, "amount cannot exceed what is under review")
+    resolution = edits.get("resolution", "store_credit")
+    if resolution not in RESOLUTIONS:
+        raise ApprovalHTTPError(422, f"resolution must be one of: {', '.join(RESOLUTIONS)}")
+
+    return ReturnDecision(
         decision="approve" if approve else "reject",
+        resolution=resolution,
+        amount=float(amount) if amount is not None else None,
         note=note or "",
         decided_by=actor.email,
         approval_id=str(approval["id"]),
@@ -562,7 +572,7 @@ async def _finish_workflow(
 
 
 async def resume_workflow(hitl_id: str, decision: Any, *, reviewer_email: str) -> dict[str, Any]:
-    """Resume a paused ``workflow:return-replace`` run from its checkpoint with a decision.
+    """Resume a paused ``workflow:return-replace`` run from its checkpoint with a ``ReturnDecision``.
 
     This is the claim / fence / resume machinery ``POST /api/orchestration/{run_id}/resume`` used to hold inline,
     unchanged in behaviour:
@@ -629,7 +639,7 @@ async def resume_workflow(hitl_id: str, decision: Any, *, reviewer_email: str) -
             async for event in mode.resume(
                 checkpoint_id=str(hitl_row["checkpoint_id"]),
                 request_id=hitl_row["request_id"],
-                approved=str(decision.decision).lower() == "approve",
+                decision=decision,
             ):
                 if event.kind == "run_completed":
                     final_payload = event.payload
@@ -685,11 +695,13 @@ async def expire(approval_id: str, *, reason: str = "expired") -> dict[str, Any]
     token = await _claim(approval, S.PENDING_REVIEW, S.NEEDS_INFO)
     try:
         if approval["source"] == "workflow":
+            from workflows.return_replace import ReturnDecision
+
             # A parked (needs_info) run is claimable again.
             await _unpark_workflow(approval)
             await resume_workflow(
                 str(approval["source_ref"]),
-                _WorkflowDecision("reject", note=reason, decided_by="system", approval_id=str(approval["id"])),
+                ReturnDecision(decision="reject", note=reason, decided_by="system", approval_id=str(approval["id"])),
                 reviewer_email="system",
             )
         elif approval["source"] == "tool":

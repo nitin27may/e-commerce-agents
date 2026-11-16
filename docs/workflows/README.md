@@ -37,7 +37,7 @@ message prints the exact command to run to fix it.
 | Name | Description | Source |
 |------|-------------|--------|
 | `pre-purchase` | Fan-out to reviews / stock / price history, fan-in, then synthesis | [`pre_purchase.py`](../../agents/python/workflows/pre_purchase.py) |
-| `return-replace` | Eligibility → initiate return → find replacements → approval gate → discount → finalize | [`return_replace.py`](../../agents/python/workflows/return_replace.py) |
+| `return-replace` | Eligibility → policy gate (pauses for approval unless the policy says `auto`) → initiate return → find replacements → discount → finalize | [`return_replace.py`](../../agents/python/workflows/return_replace.py) |
 
 The group-chat workflow is not rendered here: its graph is built around live
 agents, so it is only available at runtime through `GET /api/orchestration/modes/{name}/graph`.

@@ -193,11 +193,11 @@ class ReturnReplaceMode:
     name = "workflow:return-replace"
     label = "Return & Replace (sequential + in-workflow HITL)"
     description = (
-        "MAF sequential workflow: eligibility check, return initiation, replacement "
-        "search, an in-workflow HITL gate for high-value returns (ctx.request_info — "
-        "structurally different from the middleware-based approval flow `tool` mode "
-        "uses; see shared/hitl.py vs this workflow's hitl-gate executor), then "
-        "loyalty discount and finalize."
+        "MAF sequential workflow: eligibility check, then a policy gate that decides "
+        "whether a person must approve (ctx.request_info — structurally different from "
+        "the middleware-based approval flow `tool` mode uses; see shared/hitl.py vs this "
+        "workflow's policy-gate executor), and only then return initiation, replacement "
+        "search, loyalty discount and finalize."
     )
     capabilities = ModeCapabilities(streams=True, supports_hitl=True, supports_checkpoints=False, is_graph=True)
 
@@ -208,6 +208,7 @@ class ReturnReplaceMode:
         if self._tools is not None:
             return self._tools
         from product_discovery.tools import search_products
+        from shared.return_ops import adjust_return_amount
         from shared.tools.loyalty_tools import get_loyalty_tier
         from shared.tools.return_tools import check_return_eligibility, initiate_return
 
@@ -216,6 +217,8 @@ class ReturnReplaceMode:
             "initiate_return": getattr(initiate_return, "func", initiate_return),
             "search_products": getattr(search_products, "func", search_products),
             "get_loyalty_tier": getattr(get_loyalty_tier, "func", get_loyalty_tier),
+            # Not an @tool: applies a reviewer's edited amount after initiate_return (workflows/return_replace.py).
+            "adjust_return_amount": adjust_return_amount,
         }
 
     async def run(self, message: str, ctx: RunContext) -> AsyncIterator[OrchestrationEvent]:
@@ -246,6 +249,7 @@ class ReturnReplaceMode:
         recorder = RecordingCheckpointStorage(inner_storage) if inner_storage is not None else None
         seen = 0
         pending_request_id: str | None = None
+        pending_request: Any = None
 
         final_state = state
         async for event in maf_workflow.run(state, stream=True, checkpoint_storage=recorder):
@@ -258,6 +262,7 @@ class ReturnReplaceMode:
                     final_state = data
             if getattr(event, "type", None) == "request_info":
                 pending_request_id = getattr(event, "request_id", None)
+                pending_request = getattr(event, "data", None)
             if recorder is not None:
                 new_ids = drain_new_checkpoint_ids(recorder, seen)
                 for checkpoint_id in new_ids:
@@ -271,10 +276,9 @@ class ReturnReplaceMode:
         latest_checkpoint_id = recorder.saved[-1] if recorder and recorder.saved else None
 
         if final_state.hitl_requested and final_state.hitl_approved is None:
-            text = (
-                f"Return for order {order_id} needs approval — refund "
-                f"${final_state.refund_amount:.2f} exceeds the auto-approval threshold."
-            )
+            reasons = list(getattr(pending_request, "reasons", None) or [])
+            why = reasons[0] if reasons else "it is over the auto-approval threshold"
+            text = f"Return for order {order_id} needs approval — {why}. Nothing has been changed yet."
             yield OrchestrationEvent(
                 kind="run_completed",
                 payload={
@@ -282,9 +286,17 @@ class ReturnReplaceMode:
                     "agents_involved": agents_involved,
                     "pending_approval": True,
                     "request_id": pending_request_id,
-                    # What the inbox approval opened beside the hitl_requests row is routed on.
                     "order_id": order_id,
                     "order_total": final_state.order_total,
+                    # What the gate decided, for the inbox row chat.py opens beside the hitl_requests row.
+                    "approval_policy": {
+                        "route": getattr(pending_request, "route", "support"),
+                        "reasons": reasons,
+                        "evidence": getattr(pending_request, "evidence", None) or {},
+                        "policy_version": getattr(pending_request, "policy_version", ""),
+                        "order_id": order_id,
+                        "amount": final_state.order_total,
+                    },
                     "latest_checkpoint_id": latest_checkpoint_id,
                     "usage": zero_usage(),
                 },
@@ -311,7 +323,14 @@ class ReturnReplaceMode:
             },
         )
 
-    async def resume(self, *, checkpoint_id: str, request_id: str, approved: bool) -> AsyncIterator[OrchestrationEvent]:
+    async def resume(
+        self,
+        *,
+        checkpoint_id: str,
+        request_id: str,
+        decision: Any = None,
+        approved: bool | None = None,
+    ) -> AsyncIterator[OrchestrationEvent]:
         """Resume a paused return-replace run from a saved checkpoint.
 
         Not part of the ``OrchestrationMode`` protocol — ``tool``/``handoff``
@@ -325,7 +344,10 @@ class ReturnReplaceMode:
         for knowing which checkpoint/request_id belong to which paused run
         — see ``hitl_requests`` in ``docker/postgres/init.sql``.
         """
-        from workflows.return_replace import ReturnAndReplaceWorkflow, WorkflowState
+        from workflows.return_replace import ReturnAndReplaceWorkflow, ReturnDecision, WorkflowState
+
+        if decision is None:  # a bare approved/rejected flag, the shape before ReturnDecision
+            decision = ReturnDecision(decision="approve" if approved else "reject")
 
         maf_workflow = ReturnAndReplaceWorkflow(self._resolve_tools())._build_maf_workflow()
         inner_storage = get_checkpoint_storage()
@@ -334,7 +356,7 @@ class ReturnReplaceMode:
 
         final_state: WorkflowState | None = None
         async for event in maf_workflow.run(
-            responses={request_id: approved},
+            responses={request_id: decision},
             checkpoint_id=checkpoint_id,
             checkpoint_storage=recorder,
             stream=True,
@@ -362,15 +384,13 @@ class ReturnReplaceMode:
             text = "; ".join(final_state.errors)
             agents_involved = list(final_state.completed_steps)
         elif final_state.hitl_approved and "finalize" in final_state.completed_steps:
-            # Not final_state.return_id: _HitlGateExecutor.on_approval()
-            # (workflows/return_replace.py) deliberately rebuilds a minimal
-            # WorkflowState from the ReturnApprovalRequest snapshot on
-            # resume — order_id/order_total/refund_amount only, not
-            # return_id or replacement_products from the paused run. That's
-            # correct for return_replace.py's own executors (apply-discount
-            # and finalize only need the refund context), but it means text
-            # here can't reference the original return_id.
+            # The gate's request carries the whole WorkflowState, so the resumed run has the
+            # return_id and replacement_products of the paused one.
             text = f"Return for order {final_state.order_id} approved and finalized."
+            if final_state.return_id:
+                text += (
+                    f" Return {final_state.return_id}: ${final_state.refund_amount:.2f} as {final_state.resolution}."
+                )
             if final_state.applied_discount:
                 text += f" Loyalty discount applied: {final_state.applied_discount}."
             agents_involved = list(final_state.completed_steps)
@@ -378,12 +398,20 @@ class ReturnReplaceMode:
             text = "Return could not be completed."
             agents_involved = list(final_state.completed_steps)
 
+        completed = bool(
+            final_state is not None
+            and final_state.hitl_approved
+            and not final_state.errors
+            and "finalize" in final_state.completed_steps
+        )
         yield OrchestrationEvent(
             kind="run_completed",
             payload={
                 "text": text,
                 "agents_involved": agents_involved or ["return-replace"],
                 "pending_approval": False,
+                "completed": completed,
+                "return_id": final_state.return_id if final_state is not None else None,
                 "latest_checkpoint_id": recorder.saved[-1] if recorder and recorder.saved else None,
                 "usage": zero_usage(),
             },
@@ -394,9 +422,9 @@ class ReturnReplaceMode:
         # graph_mermaid() — see its comment.
         return (
             "graph LR\n"
-            "  check_eligibility[check-eligibility] --> initiate_return[initiate-return]\n"
+            "  check_eligibility[check-eligibility] --> policy_gate[policy-gate]\n"
+            "  policy_gate --> initiate_return[initiate-return]\n"
             "  initiate_return --> search_replacements[search-replacements]\n"
-            "  search_replacements --> hitl_gate[hitl-gate]\n"
-            "  hitl_gate --> apply_discount[apply-discount]\n"
+            "  search_replacements --> apply_discount[apply-discount]\n"
             "  apply_discount --> finalize\n"
         )
