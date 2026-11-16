@@ -77,7 +77,10 @@ async def get_product_reviews(
 
 @tool(
     name="analyze_sentiment",
-    description="Aggregate sentiment analysis for a product: average rating, rating distribution, and pros/cons summary from review text.",
+    description=(
+        "Aggregate sentiment analysis for a product: average rating, rating distribution, and pros/cons summary from "
+        "review text."
+    ),
 )
 async def analyze_sentiment(
     product_id: Annotated[str, Field(description="UUID of the product to analyze")],
@@ -194,7 +197,10 @@ async def analyze_sentiment(
 
 @tool(
     name="get_sentiment_by_topic",
-    description="Break down reviews into topics (quality, value, shipping, design, durability) with mention counts and average rating per topic.",
+    description=(
+        "Break down reviews into topics (quality, value, shipping, design, durability) with mention counts and "
+        "average rating per topic."
+    ),
 )
 async def get_sentiment_by_topic(
     product_id: Annotated[str, Field(description="UUID of the product")],
@@ -370,7 +376,10 @@ async def get_sentiment_trend(
 
 @tool(
     name="detect_fake_reviews",
-    description="Detect potentially fake or suspicious reviews for a product. Checks flagged reviews, unverified 5-star ratings, and generic language patterns.",
+    description=(
+        "Detect potentially fake or suspicious reviews for a product. Checks flagged reviews, unverified 5-star "
+        "ratings, and generic language patterns."
+    ),
 )
 async def detect_fake_reviews(
     product_id: Annotated[str, Field(description="UUID of the product to check")],
@@ -553,7 +562,9 @@ async def search_reviews(
 
 @tool(
     name="draft_seller_response",
-    description="Generate a professional response template for a negative review. Returns a template the seller can customize.",
+    description=(
+        "Generate a professional response template for a negative review. Returns a template the seller can customize."
+    ),
 )
 @requires_role("seller", "admin")
 async def draft_seller_response(
@@ -617,7 +628,9 @@ async def draft_seller_response(
             "review_title": row["title"],
             "review_body": row["body"][:200],
             "response_template": template,
-            "note": "This is a template. Customize it with specific details about the customer's concern before sending.",
+            "note": (
+                "This is a template. Customize it with specific details about the customer's concern before sending."
+            ),
         }
 
 

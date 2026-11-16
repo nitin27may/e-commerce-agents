@@ -23,7 +23,6 @@ from shared.tool_inputs import (
     validation_error_payload,
 )
 
-
 _GOOD_UUID = str(uuid4())
 _GOOD_ADDR = {
     "street": "123 Market St",

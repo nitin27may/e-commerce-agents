@@ -59,8 +59,8 @@ from shared.context import current_session_id
 from shared.db import get_pool
 from shared.grounding.ledger import reset_grounding_ledger
 from shared.rate_limit import rate_limit_chat
-from shared.session import get_history_as_dicts, get_history_provider
 from shared.run_usage import ORCHESTRATOR, begin_run_usage, tokens_from_usage
+from shared.session import get_history_as_dicts, get_history_provider
 from shared.sse import sse_frame
 from shared.usage_db import UsageTimer, log_agent_usage, log_execution_step
 
@@ -655,7 +655,7 @@ async def chat_stream(
 
                     try:
                         item = await _asyncio.wait_for(queue.get(), timeout=0.1)
-                    except _asyncio.TimeoutError:
+                    except TimeoutError:
                         continue
 
                     if item is None:
@@ -762,7 +762,8 @@ async def chat_stream(
             # set from the mode's run_completed event.
             steps = []
 
-        yield f"event: metadata\ndata: {json.dumps({'conversation_id': conversation_id, 'agents_involved': agents_involved})}\n\n"
+        metadata_frame = {"conversation_id": conversation_id, "agents_involved": agents_involved}
+        yield f"event: metadata\ndata: {json.dumps(metadata_frame)}\n\n"
 
         # Persist assistant message + timeline — authed only (anonymous
         # storefront chat has no conversation to write to).

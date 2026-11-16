@@ -9,12 +9,11 @@ Two tiers:
 
 from __future__ import annotations
 
+import asyncpg
 import pytest
 import pytest_asyncio
-import asyncpg
 
-from ecommerce_mcp_product.server import mcp, app, _get_pool
-
+from ecommerce_mcp_product.server import _get_pool, app, mcp
 
 # ─────────────────────── Registration smoke ─────────────────────────────────
 

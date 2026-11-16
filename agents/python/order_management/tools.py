@@ -24,7 +24,9 @@ async def get_user_orders(
     status: Annotated[
         str | None,
         Field(
-            description="Filter by order status: placed, confirmed, shipped, out_for_delivery, delivered, cancelled, returned"
+            description=(
+                "Filter by order status: placed, confirmed, shipped, out_for_delivery, delivered, cancelled, returned"
+            )
         ),
     ] = None,
     limit: Annotated[int, Field(description="Max number of orders to return")] = 10,
@@ -276,7 +278,10 @@ async def cancel_order(
 
             if order["status"] not in ("placed", "confirmed"):
                 return {
-                    "error": f"Cannot cancel order in '{order['status']}' status. Only 'placed' or 'confirmed' orders can be cancelled.",
+                    "error": (
+                        f"Cannot cancel order in '{order['status']}' status. Only 'placed' or 'confirmed' orders can "
+                        "be cancelled."
+                    ),
                     "order_id": str(order["id"]),
                     "current_status": order["status"],
                 }
@@ -298,7 +303,10 @@ async def cancel_order(
                 "new_status": "cancelled",
                 "reason": reason,
                 "refund_amount": float(order["total"]),
-                "message": f"Order cancelled successfully. A refund of ${float(order['total']):.2f} will be processed within 5-7 business days.",
+                "message": (
+                    f"Order cancelled successfully. A refund of ${float(order['total']):.2f} will be processed within "
+                    "5-7 business days."
+                ),
             }
 
 
@@ -342,7 +350,10 @@ async def modify_order(
 
         if order["status"] not in ("placed", "confirmed"):
             return {
-                "error": f"Cannot modify order in '{order['status']}' status. Only 'placed' or 'confirmed' orders can be modified.",
+                "error": (
+                    f"Cannot modify order in '{order['status']}' status. Only 'placed' or 'confirmed' orders can be "
+                    "modified."
+                ),
                 "order_id": str(order["id"]),
                 "current_status": order["status"],
             }

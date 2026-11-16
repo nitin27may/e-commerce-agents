@@ -5,8 +5,7 @@ server (``ecommerce_mcp_product.server``) via ``MCPStreamableHTTPTool`` instead
 of calling asyncpg directly. Both modes expose the same capabilities.
 """
 
-from agent_framework import Agent
-from agent_framework import MCPStreamableHTTPTool
+from agent_framework import Agent, MCPStreamableHTTPTool
 
 from product_discovery.prompts import get_system_prompt
 from product_discovery.tools import (

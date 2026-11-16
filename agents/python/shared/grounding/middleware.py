@@ -32,8 +32,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from agent_framework import Content, ResponseStream
-from agent_framework import AgentContext, AgentMiddleware
+from agent_framework import AgentContext, AgentMiddleware, Content, ResponseStream
 
 from shared.config import settings
 from shared.grounding.extractor import extract_claims, rewrite_cards

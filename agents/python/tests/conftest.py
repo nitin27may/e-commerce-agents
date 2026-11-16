@@ -14,7 +14,6 @@ Policy:
 
 from __future__ import annotations
 
-import asyncio
 import os
 from collections.abc import AsyncGenerator, Generator
 from pathlib import Path
@@ -179,7 +178,7 @@ class FakeChatClient:
         self.call_count: int = 0
         self.received_prompts: list[list[dict[str, Any]]] = []
 
-    def enqueue(self, *responses: str) -> "FakeChatClient":
+    def enqueue(self, *responses: str) -> FakeChatClient:
         self._responses.extend(responses)
         return self
 

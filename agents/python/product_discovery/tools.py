@@ -27,7 +27,9 @@ RATING_SORT = "p.rating DESC, p.review_count DESC"
 
 @tool(
     name="search_products",
-    description="Search the product catalog using natural language. Supports filtering by category, price range, and rating.",
+    description=(
+        "Search the product catalog using natural language. Supports filtering by category, price range, and rating."
+    ),
 )
 async def search_products(
     query: Annotated[
@@ -184,7 +186,10 @@ async def compare_products(
 
 @tool(
     name="semantic_search",
-    description="Search products using semantic similarity via pgvector embeddings. Best for vague or descriptive queries like 'something cozy for winter' or 'gift for a tech enthusiast'.",
+    description=(
+        "Search products using semantic similarity via pgvector embeddings. Best for vague or descriptive queries "
+        "like 'something cozy for winter' or 'gift for a tech enthusiast'."
+    ),
 )
 async def semantic_search(
     query: Annotated[str, Field(description="Descriptive search query in natural language")],

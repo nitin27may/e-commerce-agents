@@ -62,7 +62,7 @@ dev = [
     "pytest-cov>=5.0",
     "pytest-timeout>=2.3",
     "testcontainers[postgres,redis]>=4.8",
-    "ruff>=0.8",
+    "ruff==0.16.3",
 ]
 
 [build-system]
@@ -81,6 +81,13 @@ line-length = 120
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# These two modules hold prompt text, not code. Their long lines are the model-visible content
+# (a wrapped line would change the composed system prompt and the prompt-token baseline), so
+# E501 is intentionally not applied to them.
+"shared/schema_context.py" = ["E501"]
+"shared/tool_examples.py" = ["E501"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

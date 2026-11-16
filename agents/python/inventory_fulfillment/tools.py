@@ -52,7 +52,10 @@ async def get_restock_schedule(
 
 @tool(
     name="estimate_shipping",
-    description="Estimate shipping cost and delivery time for a product to a destination region. Finds the closest warehouse with stock and returns carrier options.",
+    description=(
+        "Estimate shipping cost and delivery time for a product to a destination region. Finds the closest warehouse "
+        "with stock and returns carrier options."
+    ),
 )
 async def estimate_shipping(
     product_id: Annotated[str, Field(description="UUID of the product")],
@@ -120,7 +123,10 @@ async def estimate_shipping(
 
 @tool(
     name="compare_carriers",
-    description="Compare all carrier options (Standard, Express, Overnight) between two regions with pricing and delivery estimates.",
+    description=(
+        "Compare all carrier options (Standard, Express, Overnight) between two regions with pricing and delivery "
+        "estimates."
+    ),
 )
 async def compare_carriers(
     region_from: Annotated[str, Field(description="Origin region: 'east', 'central', or 'west'")],
@@ -235,7 +241,10 @@ async def get_tracking_status(
 
 @tool(
     name="calculate_fulfillment_plan",
-    description="Calculate the optimal fulfillment plan for a multi-item order. Determines the best warehouse for each product and estimates total shipping cost.",
+    description=(
+        "Calculate the optimal fulfillment plan for a multi-item order. Determines the best warehouse for each "
+        "product and estimates total shipping cost."
+    ),
 )
 @requires_role("seller", "admin")
 async def calculate_fulfillment_plan(
@@ -340,7 +349,10 @@ async def calculate_fulfillment_plan(
 
 @tool(
     name="place_backorder",
-    description="Place a backorder for an out-of-stock product. Checks stock first and only creates a backorder if the product is truly unavailable.",
+    description=(
+        "Place a backorder for an out-of-stock product. Checks stock first and only creates a backorder if the "
+        "product is truly unavailable."
+    ),
     approval_mode="always_require",
 )
 @requires_role("seller", "admin")

@@ -23,7 +23,6 @@ from shared.context_providers import (
     UserProfileProvider,
 )
 
-
 # ─────────────────────── Fakes ───────────────────────
 
 
@@ -51,10 +50,10 @@ class FakePool:
         self._orders = order_rows or []
         self._memories = memory_rows or []
 
-    def acquire(self) -> "FakePool":
+    def acquire(self) -> FakePool:
         return self
 
-    async def __aenter__(self) -> "FakePool":
+    async def __aenter__(self) -> FakePool:
         return self
 
     async def __aexit__(self, *_exc: object) -> None:

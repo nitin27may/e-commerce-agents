@@ -14,11 +14,9 @@ Verifies:
 
 from __future__ import annotations
 
-import asyncio
 import os
 import pathlib
 import sys
-from types import SimpleNamespace
 
 import pytest
 
@@ -29,14 +27,13 @@ from tutorials._shared import maf_bootstrap  # noqa: E402
 
 maf_bootstrap.bootstrap()
 
-from shared.context import current_user_email  # noqa: E402
 from shared.agent_host import (  # noqa: E402
     _history_as_maf_messages,
     _rehydrate_history_from_session,
     _run_agent_native,
     _run_agent_native_stream,
 )
-
+from shared.context import current_user_email  # noqa: E402
 
 # ─────────────────────── Pure helpers ───────────────────────
 
@@ -359,6 +356,7 @@ def _llm_available() -> bool:
 async def test_native_path_against_real_llm() -> None:
     """Proves the native path produces a sensible answer against Azure/OpenAI."""
     from agent_framework import Agent
+
     from shared.factory import get_chat_client
 
     agent = Agent(
@@ -375,6 +373,7 @@ async def test_native_path_against_real_llm() -> None:
 @pytest.mark.skipif(not _llm_available(), reason="no LLM credentials in .env")
 async def test_native_path_streams_real_llm_output() -> None:
     from agent_framework import Agent
+
     from shared.factory import get_chat_client
 
     agent = Agent(

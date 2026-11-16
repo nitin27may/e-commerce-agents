@@ -21,13 +21,13 @@ custom loop in favour of MAF-native execution.
 
 from __future__ import annotations
 
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 from agent_framework import ContextProvider
 
 from shared.context import current_user_email
 from shared.db import get_pool
-
 
 # ──────────────────────── Fine-grained providers ────────────────────────
 

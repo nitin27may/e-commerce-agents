@@ -27,8 +27,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from agent_framework import ChatResponse, Message, ResponseStream
-from agent_framework import ChatContext, ChatMiddleware
+from agent_framework import ChatContext, ChatMiddleware, ChatResponse, Message, ResponseStream
 
 from shared.config import settings
 from shared.guardrails.moderation import classify

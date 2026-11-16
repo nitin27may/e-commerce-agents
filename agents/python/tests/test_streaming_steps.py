@@ -35,7 +35,6 @@ from shared.context import (
     current_user_role,
 )
 
-
 # ─────────────────────── helpers ────────────────────────────────────────────
 
 
@@ -119,7 +118,7 @@ async def test_message_stream_emits_step_frames_before_done(
     assert step_pos < done_pos, "step frame must appear before [DONE]"
 
     # Step JSON carries the tool name and the agent tag added by agent_host
-    step_data_line = next(l for l in body.splitlines() if l.startswith("data: ") and "search_products" in l)
+    step_data_line = next(ln for ln in body.splitlines() if ln.startswith("data: ") and "search_products" in ln)
     step = json.loads(step_data_line[6:])
     assert step["tool_name"] == "search_products"
     assert step["agent"] == "product-discovery"
@@ -425,7 +424,6 @@ async def test_runs_endpoint_returns_user_runs(
     from httpx import ASGITransport, AsyncClient
 
     from orchestrator.routes import require_auth, router
-    from shared.db import get_pool
     from shared.usage_db import log_agent_usage, log_execution_step
 
     # ── seed a user + run in the real test DB ──────────────────────────────

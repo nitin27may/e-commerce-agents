@@ -8,15 +8,11 @@ save/load/list/get_latest/delete cycle against a real table.
 
 from __future__ import annotations
 
-import pathlib
-import sys
-
 import pytest
 from agent_framework import (
     WorkflowCheckpoint,
     WorkflowCheckpointException,
 )
-
 
 # Reuse the conftest fixtures (postgres_pool + clean_db) defined at
 # agents/tests/conftest.py.
@@ -136,7 +132,8 @@ async def test_factory_returns_postgres_storage_when_backend_is_postgres(postgre
     import importlib
 
     monkeypatch.setenv("MAF_CHECKPOINT_BACKEND", "postgres")
-    from shared import config as config_mod, factory as factory_mod
+    from shared import config as config_mod
+    from shared import factory as factory_mod
 
     importlib.reload(config_mod)
     config_mod.Settings.model_config["env_file"] = None

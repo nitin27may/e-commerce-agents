@@ -48,7 +48,9 @@ async def check_return_eligibility(
                 "eligible": False,
                 "order_id": str(order["id"]),
                 "status": order["status"],
-                "reason": f"Order must be in 'delivered' status to initiate a return. Current status: {order['status']}.",
+                "reason": (
+                    f"Order must be in 'delivered' status to initiate a return. Current status: {order['status']}."
+                ),
             }
 
         # Check if already returned
@@ -143,7 +145,9 @@ async def initiate_return(
 
             if order["status"] != "delivered":
                 return {
-                    "error": f"Cannot return order in '{order['status']}' status. Only delivered orders can be returned."
+                    "error": (
+                        f"Cannot return order in '{order['status']}' status. Only delivered orders can be returned."
+                    )
                 }
 
             existing = await conn.fetchrow(
@@ -160,7 +164,8 @@ async def initiate_return(
             return_label_url = f"/api/returns/{label_token}/label"
 
             return_id = await conn.fetchval(
-                """INSERT INTO returns (order_id, user_id, reason, status, return_label_url, refund_method, refund_amount)
+                """INSERT INTO returns (order_id, user_id, reason, status, return_label_url,
+                                       refund_method, refund_amount)
                    VALUES ($1, $2, $3, 'requested', $4, $5, $6)
                    RETURNING id""",
                 order_id,
@@ -191,7 +196,10 @@ async def initiate_return(
             "refund_method": refund_method,
             "refund_amount": float(order["total"]),
             "return_label_url": return_label_url,
-            "message": f"Return initiated successfully. Print your return label and ship the items back. Refund of ${float(order['total']):.2f} will be processed {refund_timeline} after we receive the package.",
+            "message": (
+                "Return initiated successfully. Print your return label and ship the items back. Refund of "
+                f"${float(order['total']):.2f} will be processed {refund_timeline} after we receive the package."
+            ),
         }
 
 

@@ -12,7 +12,10 @@ from shared.db import get_pool
 
 @tool(
     name="get_price_history",
-    description="Get price history for a product over a specified number of days. Useful for showing price trends and identifying deals.",
+    description=(
+        "Get price history for a product over a specified number of days. Useful for showing price trends and "
+        "identifying deals."
+    ),
 )
 async def get_price_history(
     product_id: Annotated[str, Field(description="UUID of the product")],

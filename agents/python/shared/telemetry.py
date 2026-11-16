@@ -16,9 +16,10 @@ Auto-instrumented (zero code in agents):
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from contextlib import contextmanager
 from functools import wraps
-from typing import Any, Callable
+from typing import Any
 
 from shared.config import settings
 
@@ -53,12 +54,13 @@ def setup_telemetry(service_name: str, service_version: str = "1.0.0") -> None:
 
 def _do_setup(service_name: str, service_version: str) -> None:
     import os
-    from opentelemetry import trace, metrics
-    from opentelemetry.sdk.resources import Resource, SERVICE_NAME, SERVICE_VERSION
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+    from opentelemetry import metrics, trace
     from opentelemetry.sdk.metrics import MeterProvider
     from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+    from opentelemetry.sdk.resources import SERVICE_NAME, SERVICE_VERSION, Resource
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
     # Opt into latest experimental GenAI semantic conventions (required for Aspire GenAI view)
     os.environ.setdefault("OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental")
@@ -77,15 +79,15 @@ def _do_setup(service_name: str, service_version: str) -> None:
 
     # Try gRPC first (Aspire default), fall back to HTTP
     try:
-        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
         from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 
         span_exporter = OTLPSpanExporter(endpoint=endpoint, insecure=True)
         metric_exporter = OTLPMetricExporter(endpoint=endpoint, insecure=True)
         logger.info("Using gRPC OTLP exporters → %s", endpoint)
     except ImportError:
-        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
         from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 
         span_exporter = OTLPSpanExporter(endpoint=f"{endpoint}/v1/traces")
         metric_exporter = OTLPMetricExporter(endpoint=f"{endpoint}/v1/metrics")
@@ -115,7 +117,7 @@ def _do_setup(service_name: str, service_version: str) -> None:
     _instrument_logging()
 
 
-def _maybe_add_langfuse(tracer_provider: Any, BatchSpanProcessor: Any) -> None:
+def _maybe_add_langfuse(tracer_provider: Any, batch_span_processor_cls: Any) -> None:
     """Add a Langfuse OTLP span processor when LANGFUSE_ENABLED=true.
 
     Uses the standard OTLP HTTP exporter against Langfuse's OTel endpoint so
@@ -141,7 +143,7 @@ def _maybe_add_langfuse(tracer_provider: Any, BatchSpanProcessor: Any) -> None:
             endpoint=f"{host}/api/public/otel/v1/traces",
             headers={"Authorization": f"Basic {token}"},
         )
-        tracer_provider.add_span_processor(BatchSpanProcessor(langfuse_exporter))
+        tracer_provider.add_span_processor(batch_span_processor_cls(langfuse_exporter))
         logger.info("Langfuse OTel sink enabled → %s", host)
     except Exception:
         logger.exception("Failed to add Langfuse span exporter — continuing without it")
@@ -206,7 +208,8 @@ def enrich_span_with_session(agent_name: str = "") -> None:
         return
     try:
         from opentelemetry import trace
-        from shared.context import current_user_email, current_user_role, current_session_id
+
+        from shared.context import current_session_id, current_user_email, current_user_role
 
         span = trace.get_current_span()
         if not span.is_recording():
@@ -377,9 +380,9 @@ def _setup_log_provider(resource: Any, endpoint: str) -> None:
     import logging as _logging
 
     try:
+        from opentelemetry._logs import set_logger_provider
         from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
         from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
-        from opentelemetry._logs import set_logger_provider
 
         try:
             from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter

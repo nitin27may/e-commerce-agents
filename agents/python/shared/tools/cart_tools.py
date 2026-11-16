@@ -62,7 +62,9 @@ async def _resolve_product(conn, product_id: str) -> dict | None:
 
 @tool(
     name="add_to_cart",
-    description="Add a product to the user's shopping cart. If the product is already in the cart, the quantity is increased.",
+    description=(
+        "Add a product to the user's shopping cart. If the product is already in the cart, the quantity is increased."
+    ),
 )
 async def add_to_cart(
     product_id: Annotated[str, Field(description="UUID of the product to add")],
@@ -528,7 +530,9 @@ async def apply_coupon_to_cart(
         min_spend = float(coupon["min_spend"]) if coupon["min_spend"] else 0
         if subtotal < min_spend:
             return {
-                "error": f"Cart subtotal (${subtotal:.2f}) does not meet minimum spend of ${min_spend:.2f} for this coupon."
+                "error": (
+                    f"Cart subtotal (${subtotal:.2f}) does not meet minimum spend of ${min_spend:.2f} for this coupon."
+                )
             }
 
         # Calculate discount

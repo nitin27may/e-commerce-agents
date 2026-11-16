@@ -12,11 +12,11 @@ Wired through ``shared.factory.get_checkpoint_storage`` when
 
 from __future__ import annotations
 
-import asyncpg
 import json
 import logging
 from datetime import datetime
 
+import asyncpg
 from agent_framework import (
     CheckpointID,
     CheckpointStorage,

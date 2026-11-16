@@ -361,7 +361,10 @@ def test_the_recommendation_reads_the_keys_the_tools_actually_return() -> None:
 
     def returned_keys(path: str, func: str) -> set[str]:
         src = (root / path).read_text()
-        seg = src[src.index(f"async def {func}") :][:3000]
+        # The function's own source: up to the next top-level definition (a fixed-size window
+        # silently stopped short of the final return once the formatter lengthened the body).
+        seg = src[src.index(f"async def {func}") :]
+        seg = re.split(r"\n(?:@tool|async def |def )", seg[1:], maxsplit=1)[0]
         return set(re.findall(r'"([a-z_]+)":', seg[seg.rindex("return {") :][:800]))
 
     sentiment_keys = returned_keys("review_sentiment/tools.py", "analyze_sentiment")

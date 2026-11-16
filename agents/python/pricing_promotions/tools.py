@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC
 from typing import Annotated
 
 from agent_framework import tool
@@ -14,7 +15,10 @@ from shared.db import get_pool
 
 @tool(
     name="validate_coupon",
-    description="Validate a coupon code. Checks expiry, min spend, usage limit, applicable categories, and user-specific restrictions.",
+    description=(
+        "Validate a coupon code. Checks expiry, min spend, usage limit, applicable categories, and user-specific "
+        "restrictions."
+    ),
 )
 async def validate_coupon(
     code: Annotated[str, Field(description="Coupon code to validate")],
@@ -41,9 +45,9 @@ async def validate_coupon(
 
         # Check expiry
         if row["valid_until"]:
-            from datetime import datetime, timezone
+            from datetime import datetime
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             if now > row["valid_until"]:
                 return {"valid": False, "code": code, "error": "Coupon has expired"}
             if now < row["valid_from"]:
@@ -67,7 +71,10 @@ async def validate_coupon(
                 return {
                     "valid": False,
                     "code": code,
-                    "error": f"Coupon not valid for category '{category}'. Valid for: {', '.join(row['applicable_categories'])}",
+                    "error": (
+                        f"Coupon not valid for category '{category}'. Valid for: "
+                        f"{', '.join(row['applicable_categories'])}"
+                    ),
                 }
 
         # Check user-specific restriction
@@ -125,7 +132,10 @@ def _pct(value: object) -> float:
 
 @tool(
     name="optimize_cart",
-    description="Find the best combination of coupons, promotions, and loyalty discounts for a cart. Returns the optimal savings breakdown.",
+    description=(
+        "Find the best combination of coupons, promotions, and loyalty discounts for a cart. Returns the optimal "
+        "savings breakdown."
+    ),
 )
 async def optimize_cart(
     product_ids_with_quantities: Annotated[
