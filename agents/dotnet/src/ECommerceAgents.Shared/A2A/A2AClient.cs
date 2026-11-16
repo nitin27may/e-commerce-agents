@@ -1,4 +1,5 @@
 using ECommerceAgents.Shared.Logging;
+using ECommerceAgents.Shared.A2A.Protocol;
 using ECommerceAgents.Shared.Auth;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
@@ -45,6 +46,7 @@ public sealed class A2AClient
     private readonly AuthServerClient _authServerClient;
     private readonly ILogger<A2AClient> _logger;
     private readonly ResiliencePipeline<HttpResponseMessage> _pipeline;
+    private readonly A2AProtocolClient _protocol;
 
     public A2AClient(HttpClient http, AgentSettings settings, AuthServerClient authServerClient, ILogger<A2AClient> logger)
     {
@@ -53,6 +55,42 @@ public sealed class A2AClient
         _authServerClient = authServerClient;
         _logger = logger;
         _pipeline = BuildPipeline(logger);
+        _protocol = new A2AProtocolClient(http, ApplyCredentialsAsync, logger);
+    }
+
+    /// <summary>
+    /// <c>A2A_TRANSPORT=a2a</c>: speak A2A 1.0 JSON-RPC (<see cref="A2AProtocolClient"/>) instead of the
+    /// original <c>/message:send</c> + <c>/message:stream</c> pair. Per call, from settings, so a test can flip it.
+    /// </summary>
+    private bool UseA2A => string.Equals(_settings.A2aTransport, "a2a", StringComparison.Ordinal);
+
+    /// <summary>
+    /// The caller's credential and forwarded identity, on either wire: the static shared secret in local mode,
+    /// an authorization-server service token in oauth mode (the secret is then not sent at all), and the end
+    /// user's identity beside it.
+    /// </summary>
+    private async Task ApplyCredentialsAsync(HttpRequestMessage request, CancellationToken token)
+    {
+        request.Headers.Remove("X-Agent-Secret");
+        request.Headers.Authorization = null;
+        if (_settings.AuthMode == "oauth")
+        {
+            var serviceToken = await _authServerClient.AcquireServiceTokenAsync("agent:invoke", token);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", serviceToken);
+        }
+        else
+        {
+            request.Headers.Add("X-Agent-Secret", _settings.AgentSharedSecret);
+        }
+
+        foreach (var name in new[] { "X-User-Email", "X-User-Role", "X-Session-Id" })
+        {
+            request.Headers.Remove(name);
+        }
+
+        request.Headers.Add("X-User-Email", RequestContext.CurrentUserEmail);
+        request.Headers.Add("X-User-Role", RequestContext.CurrentUserRole);
+        request.Headers.Add("X-Session-Id", RequestContext.CurrentSessionId);
     }
 
     /// <summary>Build the shared retry + circuit-breaker pipeline.</summary>
@@ -125,6 +163,11 @@ public sealed class A2AClient
         CancellationToken ct = default
     )
     {
+        if (UseA2A)
+        {
+            return await SendOverA2AAsync(agentName, baseUrl, message, ct);
+        }
+
         using var activity = TelemetrySetup.A2ACallSpan("orchestrator", agentName, baseUrl);
         var (response, fallback) = await OpenAsync(agentName, baseUrl, "message:send", message, history, ct);
         if (fallback is not null)
@@ -187,6 +230,16 @@ public sealed class A2AClient
         [EnumeratorCancellation] CancellationToken ct = default
     )
     {
+        if (UseA2A)
+        {
+            await foreach (var delta in StreamOverA2AAsync(agentName, baseUrl, message, ct))
+            {
+                yield return delta;
+            }
+
+            yield break;
+        }
+
         using var activity = TelemetrySetup.A2ACallSpan("orchestrator", agentName, baseUrl);
         var (response, fallback) = await OpenAsync(agentName, baseUrl, "message:stream", message, history, ct);
         if (fallback is not null)
@@ -297,6 +350,158 @@ public sealed class A2AClient
         }
     }
 
+
+    // ─────────────────────── A2A 1.0 transport (A2A_TRANSPORT=a2a) ───────────────────────
+
+    /// <summary>
+    /// <see cref="SendAsync"/> over A2A 1.0: one blocking <c>SendMessage</c>. The contract with the rest of the
+    /// orchestrator is the legacy one, unchanged: the same fallback sentences, steps into the turn's timeline
+    /// (and the browser, live), usage into the tally.
+    /// </summary>
+    private async Task<string> SendOverA2AAsync(string agentName, string baseUrl, string message, CancellationToken ct)
+    {
+        using var activity = TelemetrySetup.A2ACallSpan("orchestrator", agentName, baseUrl);
+        SpecialistReply reply;
+        try
+        {
+            reply = await _protocol.SendBlockingAsync(baseUrl, message, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return BlockingFailureSentence(agentName, ex);
+        }
+
+        MergeReturnedSteps(agentName, reply.Steps.Select(s => s.ToExecutionStep()).ToList());
+        RequestContext.RecordUsage(agentName, reply.Usage);
+        if (!reply.Ok)
+        {
+            _logger.LogError(
+                "a2a.task_failed target={Target} state={State} replay_miss={Miss}",
+                LogSafe.Clean(agentName), LogSafe.Clean(reply.State), reply.ReplayMiss);
+            return $"The {agentName} agent returned an error (task {reply.State}). Please try again.";
+        }
+
+        return reply.Text;
+    }
+
+    private string BlockingFailureSentence(string agentName, Exception ex)
+    {
+        for (var cause = ex; cause is not null; cause = cause.InnerException)
+        {
+            switch (cause)
+            {
+                case TaskCanceledException or TimeoutException:
+                    _logger.LogError("a2a.timeout target={Target}", LogSafe.Clean(agentName));
+                    return $"The {agentName} agent took too long to respond. Please try again.";
+                case HttpRequestException { StatusCode: { } status }:
+                    _logger.LogError("a2a.error target={Target} status={Status}", LogSafe.Clean(agentName), (int)status);
+                    return $"The {agentName} agent returned an error (status {(int)status}). Please try again.";
+            }
+        }
+
+        _logger.LogError("a2a.failure target={Target} reason={Reason}", LogSafe.Clean(agentName), ex.GetType().Name);
+        return $"Failed to reach the {agentName} agent. Please try again later.";
+    }
+
+    /// <summary>
+    /// <see cref="StreamAsync"/> over A2A 1.0: one <c>SendStreamingMessage</c>, yielding text deltas. The retry
+    /// rule is the legacy one: a streamed request is re-sent over the blocking call only when it provably never
+    /// ran (<see cref="A2AProtocolClient.NeverRan"/>: no connection, a card problem, a non-ambiguous HTTP
+    /// refusal), and never after a frame has arrived, because the specialist's tools may have run.
+    /// </summary>
+    private async IAsyncEnumerable<string> StreamOverA2AAsync(
+        string agentName, string baseUrl, string message, [EnumeratorCancellation] CancellationToken ct)
+    {
+        using var activity = TelemetrySetup.A2ACallSpan("orchestrator", agentName, baseUrl);
+        var framesSeen = 0;
+        var emitted = false;
+        Exception? failure = null;
+
+        var events = _protocol.StreamEventsAsync(baseUrl, message, TimeSpan.FromSeconds(60), ct).GetAsyncEnumerator(ct);
+        try
+        {
+            while (true)
+            {
+                A2AEvent next;
+                try
+                {
+                    if (!await events.MoveNextAsync())
+                    {
+                        break;
+                    }
+
+                    next = events.Current;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+                {
+                    failure = ex;
+                    break;
+                }
+
+                framesSeen++;
+                switch (next.Kind)
+                {
+                    case A2AEvent.StepKind when next.Step is { } step:
+                        MergeReturnedSteps(agentName, [step.ToExecutionStep()]);
+                        break;
+                    case A2AEvent.UsageKind:
+                        RequestContext.RecordUsage(agentName, next.Usage);
+                        break;
+                    case A2AEvent.Failed:
+                        _logger.LogError("a2a.task_failed target={Target} state={State}", LogSafe.Clean(agentName), LogSafe.Clean(next.State));
+                        break;
+                    default:
+                        if (next.Text.Length > 0)
+                        {
+                            emitted = true;
+                            yield return next.Text;
+                        }
+
+                        break;
+                }
+            }
+        }
+        finally
+        {
+            await events.DisposeAsync();
+        }
+
+        if (failure is null)
+        {
+            if (!emitted)
+            {
+                yield return $"The {agentName} agent returned an empty response.";
+            }
+
+            yield break;
+        }
+
+        if (framesSeen > 0)
+        {
+            // Mid-stream failure: keep what the user already saw and say it is incomplete. Never re-post.
+            _logger.LogError(failure, "a2a.stream_interrupted target={Agent} frames={Frames}", LogSafe.Clean(agentName), framesSeen);
+            yield return $"[The {agentName} agent's response was interrupted and may be incomplete.]";
+            yield break;
+        }
+
+        if (!A2AProtocolClient.NeverRan(failure))
+        {
+            // Zero frames does not prove the specialist did nothing: a read timeout or dropped connection can
+            // land after a side-effecting tool has run but before any frame was emitted.
+            _logger.LogError(failure, "a2a.stream_failed_unsafe_to_retry target={Target}", LogSafe.Clean(agentName));
+            yield return $"[The {agentName} agent could not be confirmed to have completed this request. "
+                + "It may or may not have acted on it; please check before trying again.]";
+            yield break;
+        }
+
+        _logger.LogWarning("a2a.stream_fallback target={Target} reason={Reason}", LogSafe.Clean(agentName), failure.GetType().Name);
+        yield return await SendOverA2AAsync(agentName, baseUrl, message, ct);
+    }
+
     private static void MergeReturnedSteps(string agentName, IReadOnlyList<ExecutionStep>? steps)
     {
         if (steps is null)
@@ -368,18 +573,7 @@ public sealed class A2AClient
                     {
                         Content = JsonContent.Create(new A2ARequest(message, historyList)),
                     };
-                    if (_settings.AuthMode == "oauth")
-                    {
-                        var serviceToken = await _authServerClient.AcquireServiceTokenAsync("agent:invoke", token);
-                        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", serviceToken);
-                    }
-                    else
-                    {
-                        request.Headers.Add("X-Agent-Secret", _settings.AgentSharedSecret);
-                    }
-                    request.Headers.Add("X-User-Email", RequestContext.CurrentUserEmail);
-                    request.Headers.Add("X-User-Role", RequestContext.CurrentUserRole);
-                    request.Headers.Add("X-Session-Id", RequestContext.CurrentSessionId);
+                    await ApplyCredentialsAsync(request, token);
                     request.Content!.Headers.ContentType = new MediaTypeHeaderValue("application/json");
                     return await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
                 },

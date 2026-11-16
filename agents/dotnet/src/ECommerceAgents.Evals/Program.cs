@@ -239,6 +239,9 @@ internal sealed class ProductionRunner(DatabasePool pool, AgentSettings settings
         var services = new ServiceCollection();
         services.AddLogging(b => b.SetMinimumLevel(LogLevel.Warning));
         services.AddHttpClient();
+        // Same rule as the orchestrator: the specialist client carries credentials, so it never follows a redirect.
+        services.AddHttpClient("a2a")
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
         services.AddSingleton(settings);
         services.AddSingleton(pool);
         // Prompts are shared with the Python stack and live outside this project, so the

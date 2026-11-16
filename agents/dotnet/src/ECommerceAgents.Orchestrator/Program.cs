@@ -43,6 +43,11 @@ builder.Services.AddSingleton<UsageRecorder>();
 builder.Services.AddHttpClient();
 builder.Services.AddHttpClient<JwksKeyProvider>();
 builder.Services.AddHttpClient<AuthServerClient>();
+// The specialist client carries X-Agent-Secret and the forwarded user identity on every request, so it must
+// never follow a redirect: a 3xx would replay those headers against whatever origin it names (the A2A 1.0
+// client also refuses any 3xx itself; this makes the legacy wire safe the same way).
+builder.Services.AddHttpClient("a2a")
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
 builder.Services.AddSingleton(sp =>
 {
     var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("a2a");
