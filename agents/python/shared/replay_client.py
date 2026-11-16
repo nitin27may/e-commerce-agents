@@ -346,11 +346,11 @@ class ReplayChatClient(FunctionInvocationLayer, BaseChatClient):
                 api_version=settings.AZURE_OPENAI_API_VERSION,
             )
         elif provider == "openai":
-            from agent_framework.openai import OpenAIChatClient
+            from shared.factory import build_openai_client
 
             if not settings.OPENAI_API_KEY:
                 raise ValueError("RECORD=true with REPLAY_RECORD_PROVIDER=openai requires OPENAI_API_KEY in .env.")
-            self._record_client = OpenAIChatClient(
+            self._record_client = build_openai_client(
                 model=settings.LLM_MODEL,
                 api_key=settings.OPENAI_API_KEY,
                 base_url=settings.LLM_BASE_URL or None,

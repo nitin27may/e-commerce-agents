@@ -224,6 +224,11 @@ OPENAI_API_KEY=ollama          # any non-empty string — Ollama doesn't check i
 LLM_MODEL=qwen2.5:14b          # must be a tool-calling-capable model — see below
 ```
 
+If the endpoint has no Responses API — Gemini's OpenAI-compatible endpoint, some vLLM and Ollama
+versions answer `POST /responses` with a 404 — also set `LLM_API=chat_completions`. The default,
+`responses`, is right for api.openai.com. The setting only applies to the Python stack; the .NET
+stack always uses Chat Completions. See [Configuration](configuration.md#choosing-the-openai-wire-api-llm_api).
+
 Start the model first, and **raise the context window** — this is the single most common cause of
 a local run behaving worse than a hosted one:
 

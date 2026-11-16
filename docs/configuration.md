@@ -179,6 +179,31 @@ set -a && source .env && set +a      # bash/zsh
 dotnet run --project agents/dotnet/src/ECommerceAgents.Orchestrator
 ```
 
+## Choosing the OpenAI wire API (`LLM_API`)
+
+`LLM_PROVIDER=openai` talks to the endpoint in `LLM_BASE_URL` (default: api.openai.com). By default
+the Python stack uses OpenAI's **Responses API** (`POST /responses`). Many OpenAI-compatible
+servers implement only **Chat Completions** (`POST /chat/completions`) and answer `/responses`
+with a 404. Set:
+
+```dotenv
+LLM_PROVIDER=openai
+LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/   # e.g. Gemini
+LLM_API=chat_completions
+```
+
+| `LLM_API` | Client | Request path | Notes |
+|---|---|---|---|
+| `responses` (default) | `OpenAIChatClient` | `/responses` | Unchanged behaviour; replay fixtures are not affected |
+| `chat_completions` | `OpenAIChatCompletionClient` | `/chat/completions` | For endpoints with no Responses route |
+
+It applies to `LLM_PROVIDER=openai` only — `azure` is always Chat Completions, and `replay` serves
+recorded fixtures. With `RECORD=true`, the recorder uses the same switch, so a fixture recorded
+against a Chat-Completions-only endpoint is requested the way that endpoint accepts. The .NET
+stack always uses Chat Completions and has no such setting. `LLM_API` is read by host-run Python
+through Pydantic Settings; a compose file only forwards it into a container if its `environment:`
+block names it (see above).
+
 ## One stack at a time
 
 The Python and .NET stacks publish the same host ports — 3000, 5432, 6379, 8080–8085, 8090, 18888 —

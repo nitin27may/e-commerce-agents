@@ -15,6 +15,7 @@ without breaking our current `.env` files.
 
 import logging
 from pathlib import Path
+from typing import Literal
 
 from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -121,6 +122,13 @@ class Settings(BaseSettings):
     # LLM_PROVIDER=openai. See tutorials/00-setup/README.md for the GitHub
     # Models path, which is free with a GitHub PAT.
     LLM_BASE_URL: str = ""
+    # Which OpenAI wire API the `openai` provider speaks. `responses` (default)
+    # uses the Responses API (`POST /responses`), which api.openai.com supports on
+    # every model. `chat_completions` uses `POST /chat/completions` — set it for
+    # OpenAI-compatible endpoints that have no /responses route (Gemini's
+    # compatible endpoint, some vLLM / Ollama versions). The `azure` provider
+    # always uses Chat Completions and ignores this.
+    LLM_API: Literal["responses", "chat_completions"] = "responses"
     # replay-provider settings — see shared/replay_client.py. RECORD=true makes
     # a missing fixture fall through to a real call (via REPLAY_RECORD_PROVIDER)
     # and persist the result instead of raising.

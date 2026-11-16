@@ -63,13 +63,29 @@ def _validate_azure() -> None:
 # ─────────────────────── LLM clients ───────────────────────
 
 
+def build_openai_client(
+    *, model: str, api_key: str, base_url: str | None
+) -> OpenAIChatClient | OpenAIChatCompletionClient:
+    """Construct the ``openai``-provider client for the configured ``LLM_API``.
+
+    ``responses`` (default) -> ``OpenAIChatClient`` (``POST /responses``);
+    ``chat_completions`` -> ``OpenAIChatCompletionClient`` (``POST /chat/completions``).
+    Shared with the replay recorder so RECORD=true talks to the endpoint the same way.
+    """
+    if settings.LLM_API == "chat_completions":
+        return OpenAIChatCompletionClient(model=model, api_key=api_key, base_url=base_url)
+    return OpenAIChatClient(model=model, api_key=api_key, base_url=base_url)
+
+
 def get_chat_client() -> OpenAIChatClient | OpenAIChatCompletionClient | Any:
     """Return a MAF chat client configured for the active LLM_PROVIDER.
 
     * ``openai``  → ``OpenAIChatClient`` (Responses API — public OpenAI
       supports it on every model). Honors ``LLM_BASE_URL`` for any
       OpenAI-compatible endpoint (GitHub Models, OpenRouter, vLLM, LM
-      Studio) instead of api.openai.com.
+      Studio) instead of api.openai.com. Set ``LLM_API=chat_completions`` to
+      use ``OpenAIChatCompletionClient`` (``/chat/completions``) for
+      endpoints with no ``/responses`` route (Gemini, some vLLM/Ollama).
     * ``azure``   → ``OpenAIChatCompletionClient`` (Chat Completions API —
       universally supported across Azure OpenAI deployments; the
       Responses-API variant only works on the newest Azure regions).
@@ -84,8 +100,13 @@ def get_chat_client() -> OpenAIChatClient | OpenAIChatCompletionClient | Any:
 
     if provider == "openai":
         _validate_openai()
-        logger.info("Creating OpenAI chat client (model=%s, base_url=%s)", settings.LLM_MODEL, settings.LLM_BASE_URL)
-        return OpenAIChatClient(
+        logger.info(
+            "Creating OpenAI chat client (api=%s, model=%s, base_url=%s)",
+            settings.LLM_API,
+            settings.LLM_MODEL,
+            settings.LLM_BASE_URL,
+        )
+        return build_openai_client(
             model=settings.LLM_MODEL,
             api_key=settings.OPENAI_API_KEY,
             base_url=settings.LLM_BASE_URL or None,
