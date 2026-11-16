@@ -94,6 +94,15 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "deps(dotnet)"
+    ignore:
+      # These packages version with the .NET runtime. A major bump means moving
+      # the target framework and global.json, which is a deliberate step.
+      - dependency-name: "Microsoft.Extensions.*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "Microsoft.AspNetCore.*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "System.*"
+        update-types: ["version-update:semver-major"]
     groups:
       maf:
         patterns:
@@ -127,7 +136,11 @@ updates:
         update-types: ["version-update:semver-minor", "version-update:semver-major"]
       - dependency-name: "node"
         update-types: ["version-update:semver-major"]
-      - dependency-name: "mcr.microsoft.com/dotnet/*"
+      # Dependabot names these images without the registry host ("dotnet/sdk",
+      # "dotnet/aspnet"). The first version of this rule used the full
+      # "mcr.microsoft.com/dotnet/*" name, matched nothing, and the first run
+      # opened one 10.0 -> 11.0 pull request per Dockerfile.
+      - dependency-name: "dotnet/*"
         update-types: ["version-update:semver-major"]
     groups:
       docker-minor-patch:
