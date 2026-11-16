@@ -16,9 +16,10 @@ Auto-instrumented (zero code in agents):
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from contextlib import contextmanager
 from functools import wraps
-from typing import Any, Callable
+from typing import Any
 
 from shared.config import settings
 
@@ -53,12 +54,13 @@ def setup_telemetry(service_name: str, service_version: str = "1.0.0") -> None:
 
 def _do_setup(service_name: str, service_version: str) -> None:
     import os
-    from opentelemetry import trace, metrics
-    from opentelemetry.sdk.resources import Resource, SERVICE_NAME, SERVICE_VERSION
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+    from opentelemetry import metrics, trace
     from opentelemetry.sdk.metrics import MeterProvider
     from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+    from opentelemetry.sdk.resources import SERVICE_NAME, SERVICE_VERSION, Resource
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
     # Opt into latest experimental GenAI semantic conventions (required for Aspire GenAI view)
     os.environ.setdefault("OTEL_SEMCONV_STABILITY_OPT_IN", "gen_ai_latest_experimental")
@@ -67,22 +69,26 @@ def _do_setup(service_name: str, service_version: str) -> None:
 
     endpoint = settings.OTEL_EXPORTER_OTLP_ENDPOINT.rstrip("/")
 
-    resource = Resource.create({
-        SERVICE_NAME: service_name,
-        SERVICE_VERSION: service_version,
-        "deployment.environment": settings.ENVIRONMENT,
-    })
+    resource = Resource.create(
+        {
+            SERVICE_NAME: service_name,
+            SERVICE_VERSION: service_version,
+            "deployment.environment": settings.ENVIRONMENT,
+        }
+    )
 
     # Try gRPC first (Aspire default), fall back to HTTP
     try:
-        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
         from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+
         span_exporter = OTLPSpanExporter(endpoint=endpoint, insecure=True)
         metric_exporter = OTLPMetricExporter(endpoint=endpoint, insecure=True)
         logger.info("Using gRPC OTLP exporters → %s", endpoint)
     except ImportError:
-        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
         from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+
         span_exporter = OTLPSpanExporter(endpoint=f"{endpoint}/v1/traces")
         metric_exporter = OTLPMetricExporter(endpoint=f"{endpoint}/v1/metrics")
         logger.info("Using HTTP OTLP exporters → %s", endpoint)
@@ -111,7 +117,7 @@ def _do_setup(service_name: str, service_version: str) -> None:
     _instrument_logging()
 
 
-def _maybe_add_langfuse(tracer_provider: Any, BatchSpanProcessor: Any) -> None:
+def _maybe_add_langfuse(tracer_provider: Any, batch_span_processor_cls: Any) -> None:
     """Add a Langfuse OTLP span processor when LANGFUSE_ENABLED=true.
 
     Uses the standard OTLP HTTP exporter against Langfuse's OTel endpoint so
@@ -121,9 +127,7 @@ def _maybe_add_langfuse(tracer_provider: Any, BatchSpanProcessor: Any) -> None:
     if not settings.LANGFUSE_ENABLED:
         return
     if not (settings.LANGFUSE_PUBLIC_KEY and settings.LANGFUSE_SECRET_KEY):
-        logger.warning(
-            "LANGFUSE_ENABLED=true but LANGFUSE_PUBLIC_KEY or LANGFUSE_SECRET_KEY is empty — skipping"
-        )
+        logger.warning("LANGFUSE_ENABLED=true but LANGFUSE_PUBLIC_KEY or LANGFUSE_SECRET_KEY is empty — skipping")
         return
 
     import base64
@@ -133,15 +137,13 @@ def _maybe_add_langfuse(tracer_provider: Any, BatchSpanProcessor: Any) -> None:
             OTLPSpanExporter as OTLPHttpSpanExporter,
         )
 
-        token = base64.b64encode(
-            f"{settings.LANGFUSE_PUBLIC_KEY}:{settings.LANGFUSE_SECRET_KEY}".encode()
-        ).decode()
+        token = base64.b64encode(f"{settings.LANGFUSE_PUBLIC_KEY}:{settings.LANGFUSE_SECRET_KEY}".encode()).decode()
         host = settings.LANGFUSE_HOST.rstrip("/")
         langfuse_exporter = OTLPHttpSpanExporter(
             endpoint=f"{host}/api/public/otel/v1/traces",
             headers={"Authorization": f"Basic {token}"},
         )
-        tracer_provider.add_span_processor(BatchSpanProcessor(langfuse_exporter))
+        tracer_provider.add_span_processor(batch_span_processor_cls(langfuse_exporter))
         logger.info("Langfuse OTel sink enabled → %s", host)
     except Exception:
         logger.exception("Failed to add Langfuse span exporter — continuing without it")
@@ -153,6 +155,7 @@ def instrument_fastapi(app: Any) -> None:
         return
     try:
         from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
         FastAPIInstrumentor.instrument_app(app)
     except Exception:
         logger.exception("Failed to instrument FastAPI")
@@ -164,6 +167,7 @@ def instrument_starlette(app: Any) -> None:
         return
     try:
         from opentelemetry.instrumentation.starlette import StarletteInstrumentor
+
         StarletteInstrumentor.instrument_app(app)
     except Exception:
         logger.exception("Failed to instrument Starlette")
@@ -172,18 +176,21 @@ def instrument_starlette(app: Any) -> None:
 def get_tracer(name: str = "ecommerce") -> Any:
     """Get an OTel Tracer for creating custom spans."""
     from opentelemetry import trace
+
     return trace.get_tracer(name)
 
 
 def get_meter(name: str = "ecommerce") -> Any:
     """Get an OTel Meter for creating custom metrics."""
     from opentelemetry import metrics
+
     return metrics.get_meter(name)
 
 
 def get_current_trace_id() -> str | None:
     """Get the current trace_id as a hex string, or None if no active span."""
     from opentelemetry import trace
+
     span = trace.get_current_span()
     ctx = span.get_span_context()
     if ctx and ctx.is_valid:
@@ -201,7 +208,9 @@ def enrich_span_with_session(agent_name: str = "") -> None:
         return
     try:
         from opentelemetry import trace
-        from shared.context import current_user_email, current_user_role, current_session_id
+
+        from shared.context import current_session_id, current_user_email, current_user_role
+
         span = trace.get_current_span()
         if not span.is_recording():
             return
@@ -240,6 +249,7 @@ def agent_run_span(agent_name: str):
         return
 
     from opentelemetry.trace import SpanKind
+
     tracer = get_tracer("ecommerce.agent")
     with tracer.start_as_current_span(
         f"invoke_agent {agent_name}",
@@ -252,6 +262,7 @@ def agent_run_span(agent_name: str):
             yield span
         except Exception as e:
             from opentelemetry import trace as trace_api
+
             span.record_exception(e)
             span.set_status(trace_api.StatusCode.ERROR, str(e))
             raise
@@ -266,6 +277,7 @@ def a2a_call_span(source_agent: str, target_agent: str, target_url: str):
     Trace context is propagated by httpx instrumentation into the downstream span.
     """
     from opentelemetry.trace import SpanKind
+
     tracer = get_tracer("ecommerce.orchestrator")
     with tracer.start_as_current_span(
         f"invoke_agent {target_agent}",
@@ -281,6 +293,7 @@ def a2a_call_span(source_agent: str, target_agent: str, target_url: str):
             yield span
         except Exception as e:
             from opentelemetry import trace as trace_api
+
             span.record_exception(e)
             span.set_status(trace_api.StatusCode.ERROR, str(e))
             raise
@@ -298,6 +311,7 @@ def tool_call_span(tool_name: str):
         return
 
     from opentelemetry.trace import SpanKind
+
     tracer = get_tracer("ecommerce.agent")
     with tracer.start_as_current_span(
         f"tool {tool_name}",
@@ -308,6 +322,7 @@ def tool_call_span(tool_name: str):
             yield span
         except Exception as e:
             from opentelemetry import trace as trace_api
+
             span.record_exception(e)
             span.set_status(trace_api.StatusCode.ERROR, str(e))
             raise
@@ -340,6 +355,7 @@ def traced_tool(fn: Callable) -> Callable:
                 return result
             except Exception as e:
                 from opentelemetry import trace as trace_api
+
                 span.record_exception(e)
                 span.set_status(trace_api.StatusCode.ERROR, str(e))
                 span.set_attribute("tool.success", False)
@@ -362,16 +378,19 @@ def _setup_log_provider(resource: Any, endpoint: str) -> None:
     re-entering the pipeline and causing recursive export loops.
     """
     import logging as _logging
+
     try:
+        from opentelemetry._logs import set_logger_provider
         from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
         from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
-        from opentelemetry._logs import set_logger_provider
 
         try:
             from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
+
             log_exporter = OTLPLogExporter(endpoint=endpoint, insecure=True)
         except ImportError:
             from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
+
             log_exporter = OTLPLogExporter(endpoint=f"{endpoint}/v1/logs")
 
         log_provider = LoggerProvider(resource=resource)
@@ -405,6 +424,7 @@ def _instrument_openai() -> None:
     """
     try:
         from opentelemetry.instrumentation.openai_v2 import OpenAIInstrumentor
+
         OpenAIInstrumentor().instrument()
         logger.info("OpenAI SDK instrumented with GenAI semantic conventions")
     except ImportError:
@@ -420,6 +440,7 @@ def _instrument_openai() -> None:
 def _instrument_httpx() -> None:
     try:
         from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+
         HTTPXClientInstrumentor().instrument()
     except Exception:
         logger.warning("Failed to instrument httpx — LLM and A2A call spans may be missing")
@@ -428,6 +449,7 @@ def _instrument_httpx() -> None:
 def _instrument_asyncpg() -> None:
     try:
         from opentelemetry.instrumentation.asyncpg import AsyncPGInstrumentor
+
         AsyncPGInstrumentor().instrument()
     except Exception:
         logger.warning("Failed to instrument asyncpg — DB query spans may be missing")
@@ -436,6 +458,7 @@ def _instrument_asyncpg() -> None:
 def _instrument_logging() -> None:
     try:
         from opentelemetry.instrumentation.logging import LoggingInstrumentor
+
         LoggingInstrumentor().instrument(set_logging_format=False)
     except Exception:
         logger.warning("Failed to instrument logging")

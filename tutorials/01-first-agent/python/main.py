@@ -4,17 +4,17 @@ MAF v1 — Chapter 01: Your First Agent (Python)
 Minimum viable code to stand up a Microsoft Agent Framework agent against
 OpenAI (or Azure OpenAI) and ask it one question.
 
-Run from the repo root with the shared agents venv active:
+Run from the repo root (no key needed; see tutorials/_shared/llm.py):
 
-    source agents/.venv/bin/activate
-    python tutorials/01-first-agent/python/main.py
+    uv run --project tutorials python tutorials/01-first-agent/python/main.py
 
 Or override the question:
 
-    python tutorials/01-first-agent/python/main.py "Why is the sky blue?"
+    uv run --project tutorials python tutorials/01-first-agent/python/main.py "Why is the sky blue?"
 
 Environment:
-    Reads OPENAI_API_KEY (or Azure vars) and LLM_MODEL from the repo-root .env.
+    No key: replays the committed fixture. OPENAI_API_KEY (or the Azure vars) in the
+    repo-root .env switches to a live run; LLM_PROVIDER overrides the choice.
 """
 
 from __future__ import annotations
@@ -29,11 +29,9 @@ from tutorials._shared import maf_bootstrap  # noqa: E402
 
 maf_bootstrap.bootstrap()
 
-import os  # noqa: E402
 
-from agent_framework import Agent  # noqa: E402
-from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient  # noqa: E402
-from tutorials._shared.replay_client import ReplayChatClient  # noqa: E402
+from agent_framework import Agent, BaseChatClient  # noqa: E402
+from tutorials._shared.llm import build_chat_client  # noqa: E402
 
 INSTRUCTIONS = "You are a concise geography assistant. Keep answers to one short sentence."
 DEFAULT_QUESTION = "What is the capital of France?"
@@ -41,39 +39,10 @@ DEFAULT_QUESTION = "What is the capital of France?"
 FIXTURES_DIR = pathlib.Path(__file__).resolve().parent / "tests" / "fixtures" / "replay"
 
 
-def _default_client() -> OpenAIChatClient | OpenAIChatCompletionClient | ReplayChatClient:
-    """Build the chat client from env vars. Respects LLM_PROVIDER.
-
-    - OpenAI (public): uses the Responses-API-backed OpenAIChatClient.
-    - Azure OpenAI: uses OpenAIChatCompletionClient (Chat Completions API).
-      Not every Azure deployment exposes the Responses API, so defaulting to
-      Chat Completions keeps this chapter portable across Azure regions.
-    - replay: plays back a recorded fixture with no credentials required.
-      Set RECORD=true to record a new one against REPLAY_RECORD_PROVIDER
-      (default "openai") instead of raising when a fixture is missing.
-    """
-    provider = os.environ.get("LLM_PROVIDER", "openai").lower()
-    if provider == "replay":
-        return ReplayChatClient(
-            fixtures_dir=FIXTURES_DIR,
-            record=os.environ.get("RECORD", "").lower() in ("1", "true", "yes"),
-            record_provider=os.environ.get("REPLAY_RECORD_PROVIDER", "openai"),
-        )
-    if provider == "azure":
-        return OpenAIChatCompletionClient(
-            model=os.environ["AZURE_OPENAI_DEPLOYMENT"],
-            azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
-            api_key=os.environ.get("AZURE_OPENAI_KEY") or os.environ.get("AZURE_OPENAI_API_KEY"),
-            api_version=os.environ.get("AZURE_OPENAI_API_VERSION", "2024-10-21"),
-        )
-    return OpenAIChatClient(
-        model=os.environ.get("LLM_MODEL", "gpt-4.1"),
-        api_key=os.environ["OPENAI_API_KEY"],
-        # Phase 9: any OpenAI-compatible endpoint (GitHub Models, OpenRouter,
-        # vLLM, LM Studio, Ollama) instead of api.openai.com — see
-        # tutorials/00-setup/README.md's "Don't have a paid API key?" section.
-        base_url=os.environ.get("LLM_BASE_URL") or None,
-    )
+def _default_client() -> BaseChatClient:
+    """Chat client per the series key rule (tutorials/_shared/llm.py): an explicit
+    LLM_PROVIDER wins, else a key in the environment, else replay of the fixtures."""
+    return build_chat_client(FIXTURES_DIR)
 
 
 def build_agent(client: object | None = None) -> Agent:

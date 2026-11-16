@@ -20,7 +20,6 @@ from shared.middleware import (
     default_middleware_stack,
 )
 
-
 # ─────────────────────── Helpers ───────────────────────
 
 

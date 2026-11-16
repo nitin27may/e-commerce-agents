@@ -10,7 +10,21 @@
 [![PostgreSQL + pgvector](https://img.shields.io/badge/PostgreSQL-pgvector-336791.svg)](https://github.com/pgvector/pgvector)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED.svg)](https://docs.docker.com/compose/)
 
-A **multi-agent e-commerce platform** built with [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) (MAF). Six specialized AI agents collaborate over **A2A-style HTTP** (`/message:send`; spec conformance is tracked in [#88](https://github.com/nitin27may/e-commerce-agents/issues/88)) to handle product discovery, orders, pricing, reviews, inventory and support — with **two complete backends, Python and .NET / C#** (differences documented in the [parity matrix](docs/parity-matrix.md)), behind one Next.js frontend.
+A **hands-on course in [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) (MAF)** — 34 chapters in Python and .NET, with a no-key start — and the **multi-agent e-commerce platform** it builds up to. In the platform, six specialized AI agents collaborate over **A2A-style HTTP** (`/message:send`; spec conformance is tracked in [#88](https://github.com/nitin27may/e-commerce-agents/issues/88)) to handle product discovery, orders, pricing, reviews, inventory and support — with **two complete backends, Python and .NET / C#** (differences documented in the [parity matrix](docs/parity-matrix.md)), behind one Next.js frontend.
+
+### Learn
+
+New to MAF? Run chapter 1 now — no API key, no Docker:
+
+```bash
+uv sync --project tutorials
+uv run --project tutorials python tutorials/01-first-agent/python/main.py
+```
+
+It replays a recorded model response, so it works offline. From there, follow a
+[learning path](./tutorials/README.md#learning-paths) — first agent, inside an agent, workflows,
+multi-agent orchestration, production concerns — or the short route in the
+[course README](./tutorials/README.md).
 
 ### Run it
 
@@ -69,6 +83,7 @@ Companion demo repo for the AI article series on [nitinksingh.com](https://nitin
 
 | I want to... | Go here |
 |---|---|
+| **Learn MAF step by step** — start with no key | [tutorials/README.md](./tutorials/README.md) — 34 chapters; [run chapter 1](#learn) now |
 | **Just run it** | [Run it](#run-it) above — Docker, one command |
 | Run the .NET backend, or Windows, or with no API key | [Quick Start](https://nitinksingh.com/e-commerce-agents/getting-started/quick-start.html) |
 | Configure it | [Configuration](docs/configuration.md) — one `.env`, and how it reaches each service |
@@ -77,7 +92,6 @@ Companion demo repo for the AI article series on [nitinksingh.com](https://nitin
 | Learn what an agent even is — new to AI/agents | [Concepts](https://nitinksingh.com/e-commerce-agents/concepts/) — start at page 01 |
 | Understand how the agents work / add a new one | [Architecture](docs/architecture.md) · [Adding an Agent](docs/adding-an-agent.md) |
 | Use the MCP server | [MCP Integration](docs/mcp-integration.md) |
-| Follow the step-by-step tutorial series | [tutorials/README.md](./tutorials/README.md) — 34 chapters |
 | See what shipped and what is next | [Roadmap](https://nitinksingh.com/e-commerce-agents/getting-started/roadmap.html) · [CHANGELOG](CHANGELOG.md) |
 | See the generative UI, test users and scenarios to try | [Demo guide](https://nitinksingh.com/e-commerce-agents/getting-started/demo-guide.html) |
 

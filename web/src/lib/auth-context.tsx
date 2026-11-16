@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { api } from "@/lib/api";
+import { isStaffRole } from "@/lib/roles";
 
 interface User {
   email: string;
@@ -27,6 +28,8 @@ interface AuthContextValue extends AuthState {
   logout: () => void;
   isAuthenticated: boolean;
   isAdmin: boolean;
+  /** support or admin: may review approvals routed to staff. */
+  isStaff: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -110,6 +113,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       logout,
       isAuthenticated: !!state.user,
       isAdmin: state.user?.role === "admin",
+      isStaff: isStaffRole(state.user?.role),
     }),
     [state, login, signup, logout]
   );

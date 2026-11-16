@@ -45,6 +45,20 @@ class EvalCase:
     # call_specialist_agent. When set, correctness is scored on the route.
     expected_route: str | None = None
 
+    # ── Schema v2 (all optional; a v1 case sets none of them) ──
+    # Who the case runs as. Defaults to the runner's customer identity.
+    user_role: str | None = None
+    user_email: str | None = None
+    # Tool name -> arguments it must have been called with (subset match on the
+    # recorded tool_input; see evals/scorers/tool_args.py). Assertion only.
+    expected_tool_args: dict[str, dict[str, Any]] | None = None
+    # True: a tool must have refused the call for this role (permission_denied).
+    # False: none may have. None: not asserted.
+    expect_denial: bool | None = None
+    # True: a destructive tool must have been parked for approval
+    # (pending_approval). False: none may have. None: not asserted.
+    expect_hitl: bool | None = None
+
 
 @dataclass
 class EvalResult:
@@ -67,6 +81,10 @@ class EvalResult:
     error: str | None = None
     fixture_missing: bool = False
     passed: bool = False
+    # Schema v2 assertions that did not hold. They never move the scores; they
+    # fail the case and the run, since a regression here is a behaviour change
+    # the score cannot see.
+    assertion_failures: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -87,6 +105,11 @@ class EvalSummary:
     total_tokens_out: int = 0
     estimated_cost_usd: float = 0.0
     results: list[EvalResult] = field(default_factory=list)
+
+    @property
+    def assertion_failures(self) -> int:
+        """Total schema-v2 assertions (tool args, denial, HITL) that did not hold."""
+        return sum(len(r.assertion_failures) for r in self.results)
 
     @property
     def missing_fixtures(self) -> int:
@@ -114,6 +137,7 @@ class EvalSummary:
             "total_tokens_out": self.total_tokens_out,
             "estimated_cost_usd": round(self.estimated_cost_usd, 4),
             "missing_fixtures": self.missing_fixtures,
+            "assertion_failures": self.assertion_failures,
             "results": [
                 {
                     "input": r.input,
@@ -132,11 +156,20 @@ class EvalSummary:
                     "judge_reasoning": r.judge_reasoning,
                     "error": r.error,
                     "fixture_missing": r.fixture_missing,
+                    "assertion_failures": r.assertion_failures,
                     "passed": r.passed,
                 }
                 for r in self.results
             ],
         }
+
+
+def _parse_expected_tool_args(index: int, raw: Any) -> dict[str, dict[str, Any]] | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict) or not all(isinstance(v, dict) for v in raw.values()):
+        raise ValueError(f"Dataset entry {index}: expected_tool_args must map tool name -> {{argument: value}}")
+    return raw
 
 
 def load_dataset(path: str | Path) -> list[EvalCase]:
@@ -162,6 +195,11 @@ def load_dataset(path: str | Path) -> list[EvalCase]:
                 expected_fields=entry["expected_fields"],
                 criteria=entry["criteria"],
                 expected_route=entry.get("expected_route"),
+                user_role=entry.get("user_role"),
+                user_email=entry.get("user_email"),
+                expected_tool_args=_parse_expected_tool_args(i, entry.get("expected_tool_args")),
+                expect_denial=entry.get("expect_denial"),
+                expect_hitl=entry.get("expect_hitl"),
             )
         )
 
@@ -230,9 +268,7 @@ class AgentEvaluator:
             summary.avg_correctness = sum(r.correctness_score for r in summary.results) / n
             summary.avg_completeness = sum(r.completeness_score for r in summary.results) / n
             summary.overall_score = (
-                summary.avg_groundedness * 0.4
-                + summary.avg_correctness * 0.4
-                + summary.avg_completeness * 0.2
+                summary.avg_groundedness * 0.4 + summary.avg_correctness * 0.4 + summary.avg_completeness * 0.2
             )
 
         summary.estimated_cost_usd = estimate_cost(_current_model(), summary.total_tokens_in, summary.total_tokens_out)
@@ -244,7 +280,7 @@ class AgentEvaluator:
         result = EvalResult(input=case.input)
 
         start = time.monotonic()
-        outcome = await self._runner.run(case.input)
+        outcome = await self._runner.run(case.input, user_role=case.user_role, user_email=case.user_email)
         result.latency_ms = int((time.monotonic() - start) * 1000)
 
         if outcome.error:
@@ -289,19 +325,38 @@ class AgentEvaluator:
             result.fields_found = list(case.expected_fields) if verdict.score >= 1.0 else []
             result.fields_missing = [] if verdict.score >= 1.0 else list(case.expected_fields)
         else:
-            result.completeness_score, result.fields_found, result.fields_missing = (
-                self._score_completeness_keyword(response_text, case.expected_fields)
+            result.completeness_score, result.fields_found, result.fields_missing = self._score_completeness_keyword(
+                response_text, case.expected_fields
             )
 
         # Weighted overall score
         result.overall_score = (
-            result.groundedness_score * 0.4
-            + result.correctness_score * 0.4
-            + result.completeness_score * 0.2
+            result.groundedness_score * 0.4 + result.correctness_score * 0.4 + result.completeness_score * 0.2
         )
-        result.passed = result.overall_score >= self.pass_threshold
+        result.assertion_failures = self._check_assertions(case, outcome)
+        result.passed = result.overall_score >= self.pass_threshold and not result.assertion_failures
 
         return result
+
+    @staticmethod
+    def _check_assertions(case: EvalCase, outcome: Any) -> list[str]:
+        """Schema-v2 assertions: tool arguments, role denial, human approval."""
+        failures: list[str] = []
+
+        if case.expected_tool_args:
+            from evals.scorers.tool_args import score_tool_args
+
+            verdict = score_tool_args(outcome.tool_calls, case.expected_tool_args)
+            failures.extend(
+                f"tool_args: {name} was not called with {case.expected_tool_args[name]}" for name in verdict.missing
+            )
+
+        if case.expect_denial is not None and outcome.denied != case.expect_denial:
+            failures.append(f"expect_denial={case.expect_denial} but denied={outcome.denied}")
+        if case.expect_hitl is not None and outcome.hitl_requested != case.expect_hitl:
+            failures.append(f"expect_hitl={case.expect_hitl} but hitl_requested={outcome.hitl_requested}")
+
+        return failures
 
     @staticmethod
     async def _score_groundedness_fallback(response_text: str, criteria: dict[str, bool]) -> float:
@@ -419,11 +474,15 @@ def format_summary_report(summary: EvalSummary, verbose: bool = False) -> str:
         for i, r in enumerate(summary.results, 1):
             status = "PASS" if r.passed else "FAIL"
             lines.append(f"  [{status}] Case {i}: {r.input[:60]}")
-            lines.append(f"    Groundedness: {r.groundedness_score:.1%}  "
-                         f"Correctness: {r.correctness_score:.1%}  "
-                         f"Completeness: {r.completeness_score:.1%}  "
-                         f"Overall: {r.overall_score:.1%}")
+            lines.append(
+                f"    Groundedness: {r.groundedness_score:.1%}  "
+                f"Correctness: {r.correctness_score:.1%}  "
+                f"Completeness: {r.completeness_score:.1%}  "
+                f"Overall: {r.overall_score:.1%}"
+            )
             lines.append(f"    Tools called: {', '.join(r.tools_called) or '(none)'}")
+            for failure in r.assertion_failures:
+                lines.append(f"    Assertion failed: {failure}")
             if r.fields_missing:
                 lines.append(f"    Missing fields: {', '.join(r.fields_missing)}")
             if r.judge_reasoning:

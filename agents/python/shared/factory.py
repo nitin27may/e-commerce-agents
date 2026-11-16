@@ -6,7 +6,8 @@ flags (MAF_SESSION_BACKEND, MAF_CHECKPOINT_BACKEND, etc.) swap implementations
 without touching call sites.
 
 Exports:
-    get_chat_client          — MAF chat client for OpenAI or Azure
+    get_chat_client          — MAF chat client for OpenAI or Azure (optional per-agent model override)
+    agent_default_options    — the per-agent temperature, as MAF default_options
     get_embeddings_client    — async OpenAI embeddings client
     get_embedding_model      — correct model/deployment name per provider
     parse_agent_registry     — validate an A2A endpoint map (raises, never degrades)
@@ -32,6 +33,15 @@ import openai
 from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient
 
 from shared.config import settings
+from shared.context import current_agent_model
+from shared.embedding_config import (
+    embedding_model_name,
+    embedding_provider,
+    embedding_request_kwargs,
+    follows_chat_provider,
+    verify_vector_length,
+)
+from shared.prompt_loader import ModelOverride, load_model_override
 
 logger = logging.getLogger(__name__)
 
@@ -63,13 +73,53 @@ def _validate_azure() -> None:
 # ─────────────────────── LLM clients ───────────────────────
 
 
-def get_chat_client() -> OpenAIChatClient | OpenAIChatCompletionClient | Any:
+def build_openai_client(
+    *, model: str, api_key: str, base_url: str | None
+) -> OpenAIChatClient | OpenAIChatCompletionClient:
+    """Construct the ``openai``-provider client for the configured ``LLM_API``.
+
+    ``responses`` (default) -> ``OpenAIChatClient`` (``POST /responses``);
+    ``chat_completions`` -> ``OpenAIChatCompletionClient`` (``POST /chat/completions``).
+    Shared with the replay recorder so RECORD=true talks to the endpoint the same way.
+    """
+    if settings.LLM_API == "chat_completions":
+        return OpenAIChatCompletionClient(model=model, api_key=api_key, base_url=base_url)
+    return OpenAIChatClient(model=model, api_key=api_key, base_url=base_url)
+
+
+def _resolve_override(agent_name: str | None) -> ModelOverride | None:
+    """The agent's validated ``model:`` block, or ``None`` (no name, no file, or no block)."""
+    if not agent_name:
+        return None
+    return load_model_override(agent_name)
+
+
+def agent_default_options(agent_name: str | None) -> dict[str, Any] | None:
+    """MAF ``Agent(default_options=...)`` carrying the agent's configured temperature, else ``None``.
+
+    ``None`` is exactly ``Agent``'s own default, so an agent with no override is unchanged.
+    """
+    override = _resolve_override(agent_name)
+    if override is None or override.temperature is None:
+        return None
+    return {"temperature": override.temperature}
+
+
+def get_chat_client(agent_name: str | None = None) -> OpenAIChatClient | OpenAIChatCompletionClient | Any:
     """Return a MAF chat client configured for the active LLM_PROVIDER.
+
+    ``agent_name`` (the ``config/prompts/<agent_name>.yaml`` stem) selects an optional per-agent
+    ``model:`` block (provider / model / temperature); anything it leaves out, and every agent
+    without one, uses the global settings. Under ``LLM_PROVIDER=replay`` the replay client is
+    always returned — fixtures are keyed by request, not model — and no block is applied.
+    ``shared.context.current_agent_model`` is set to the model in effect so cost pricing uses it.
 
     * ``openai``  → ``OpenAIChatClient`` (Responses API — public OpenAI
       supports it on every model). Honors ``LLM_BASE_URL`` for any
       OpenAI-compatible endpoint (GitHub Models, OpenRouter, vLLM, LM
-      Studio) instead of api.openai.com.
+      Studio) instead of api.openai.com. Set ``LLM_API=chat_completions`` to
+      use ``OpenAIChatCompletionClient`` (``/chat/completions``) for
+      endpoints with no ``/responses`` route (Gemini, some vLLM/Ollama).
     * ``azure``   → ``OpenAIChatCompletionClient`` (Chat Completions API —
       universally supported across Azure OpenAI deployments; the
       Responses-API variant only works on the newest Azure regions).
@@ -80,34 +130,9 @@ def get_chat_client() -> OpenAIChatClient | OpenAIChatCompletionClient | Any:
     This matches the decision documented in the Ch01/Ch07 tutorial code —
     see docs/architecture.md for the full rationale.
     """
-    provider = settings.LLM_PROVIDER.lower()
+    global_provider = settings.LLM_PROVIDER.lower()
 
-    if provider == "openai":
-        _validate_openai()
-        logger.info("Creating OpenAI chat client (model=%s, base_url=%s)", settings.LLM_MODEL, settings.LLM_BASE_URL)
-        return OpenAIChatClient(
-            model=settings.LLM_MODEL,
-            api_key=settings.OPENAI_API_KEY,
-            base_url=settings.LLM_BASE_URL or None,
-        )
-
-    if provider == "azure":
-        _validate_azure()
-        api_version = settings.AZURE_OPENAI_API_VERSION
-        logger.info(
-            "Creating Azure OpenAI chat-completions client (deployment=%s, endpoint=%s, api_version=%s)",
-            settings.AZURE_OPENAI_DEPLOYMENT,
-            settings.AZURE_OPENAI_ENDPOINT,
-            api_version,
-        )
-        return OpenAIChatCompletionClient(
-            model=settings.AZURE_OPENAI_DEPLOYMENT,
-            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
-            api_key=settings.AZURE_OPENAI_KEY,
-            api_version=api_version,
-        )
-
-    if provider == "replay":
+    if global_provider == "replay":
         from shared.replay_client import ReplayChatClient
 
         logger.info(
@@ -119,11 +144,54 @@ def get_chat_client() -> OpenAIChatClient | OpenAIChatCompletionClient | Any:
             record_provider=settings.REPLAY_RECORD_PROVIDER,
         )
 
-    raise ValueError(f"Unknown LLM_PROVIDER: {settings.LLM_PROVIDER!r}. Must be 'openai', 'azure', or 'replay'.")
+    if global_provider == "anthropic":
+        raise ValueError(
+            "LLM_PROVIDER=anthropic is available on the .NET stack only (the Python connector needs MAF core >= 1.24). "
+            "Use 'openai' or 'azure' here, or run the .NET stack."
+        )
+
+    if global_provider not in ("openai", "azure"):
+        raise ValueError(f"Unknown LLM_PROVIDER: {settings.LLM_PROVIDER!r}. Must be 'openai', 'azure', or 'replay'.")
+
+    override = _resolve_override(agent_name)
+    provider = (override.provider if override and override.provider else None) or global_provider
+    override_model = override.model if override else None
+
+    if provider == "openai":
+        _validate_openai()
+        model = override_model or settings.LLM_MODEL
+        # LLM_BASE_URL belongs to the global openai endpoint; an agent that switches *to* openai
+        # from another global provider talks to api.openai.com.
+        base_url = (settings.LLM_BASE_URL or None) if global_provider == "openai" else None
+        logger.info("Creating OpenAI chat client (api=%s, model=%s, base_url=%s)", settings.LLM_API, model, base_url)
+        current_agent_model.set(model if override_model else "")
+        return build_openai_client(model=model, api_key=settings.OPENAI_API_KEY, base_url=base_url)
+
+    _validate_azure()
+    deployment = override_model or settings.AZURE_OPENAI_DEPLOYMENT
+    api_version = settings.AZURE_OPENAI_API_VERSION
+    logger.info(
+        "Creating Azure OpenAI chat-completions client (deployment=%s, endpoint=%s, api_version=%s)",
+        deployment,
+        settings.AZURE_OPENAI_ENDPOINT,
+        api_version,
+    )
+    current_agent_model.set(deployment if override_model else "")
+    return OpenAIChatCompletionClient(
+        model=deployment,
+        azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+        api_key=settings.AZURE_OPENAI_KEY,
+        api_version=api_version,
+    )
 
 
 def get_embeddings_client() -> openai.AsyncOpenAI | openai.AsyncAzureOpenAI:
     """Return an async client configured for embeddings.
+
+    The provider is ``EMBEDDING_PROVIDER`` (``openai | azure | openai_compatible | replay``), or
+    the chat provider's when that is empty -- so an existing install behaves exactly as before.
+    ``EMBEDDING_BASE_URL`` / ``EMBEDDING_API_KEY`` replace ``LLM_BASE_URL`` / the chat key for
+    embeddings only (see ``shared/embedding_config.py``).
 
     The ``replay`` branch is the whole point of #52. Without it this fell
     through to the OpenAI path and raised "OPENAI_API_KEY is required", MAF
@@ -132,27 +200,74 @@ def get_embeddings_client() -> openai.AsyncOpenAI | openai.AsyncAzureOpenAI:
     entirely in replay mode, so pgvector semantic search was exercised by no
     CI run at all while product-discovery still scored 92%.
     """
-    if settings.LLM_PROVIDER.lower() == "replay":
+    provider = embedding_provider(settings)
+
+    if provider == "replay":
         from shared.replay_embeddings import ReplayEmbeddingsClient
 
         return ReplayEmbeddingsClient()  # type: ignore[return-value]
 
-    if settings.LLM_PROVIDER.lower() == "azure":
-        _validate_azure()
+    if provider == "azure":
+        endpoint = settings.EMBEDDING_BASE_URL or settings.AZURE_OPENAI_ENDPOINT
+        key = settings.EMBEDDING_API_KEY or settings.AZURE_OPENAI_KEY
+        if not endpoint or not key:
+            raise ValueError(
+                "Azure embeddings need AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_KEY (or EMBEDDING_BASE_URL and "
+                "EMBEDDING_API_KEY). Set them in .env or choose another EMBEDDING_PROVIDER."
+            )
         return openai.AsyncAzureOpenAI(
-            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
-            api_key=settings.AZURE_OPENAI_KEY,
+            azure_endpoint=endpoint,
+            api_key=key,
             api_version=settings.AZURE_OPENAI_API_VERSION,
         )
-    _validate_openai()
-    return openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY, base_url=settings.LLM_BASE_URL or None)
+
+    if provider == "openai_compatible":
+        if not settings.EMBEDDING_BASE_URL:
+            raise ValueError(
+                "EMBEDDING_PROVIDER=openai_compatible requires EMBEDDING_BASE_URL, e.g. http://localhost:11434/v1 "
+                "for Ollama."
+            )
+        # Local servers ignore the key, but the SDK insists on a non-empty one. Never the chat key: this is
+        # a different host from the chat endpoint, and a chat credential must not be sent to it.
+        key = settings.EMBEDDING_API_KEY or "not-needed"
+        return openai.AsyncOpenAI(api_key=key, base_url=settings.EMBEDDING_BASE_URL)
+
+    # openai. Following the chat provider keeps today's LLM_BASE_URL; an explicit
+    # EMBEDDING_PROVIDER=openai means api.openai.com unless EMBEDDING_BASE_URL says otherwise.
+    # An explicit EMBEDDING_BASE_URL is a host of its own: it gets EMBEDDING_API_KEY or a placeholder, never the
+    # chat key (which would otherwise leak to a third party).
+    if settings.EMBEDDING_BASE_URL:
+        key = settings.EMBEDDING_API_KEY or "not-needed"
+    else:
+        key = settings.EMBEDDING_API_KEY or settings.OPENAI_API_KEY
+    if not key:
+        raise ValueError(
+            "OPENAI_API_KEY (or EMBEDDING_API_KEY) is required for OpenAI embeddings. Set it in .env or choose "
+            "another EMBEDDING_PROVIDER."
+        )
+    base_url = settings.EMBEDDING_BASE_URL or (settings.LLM_BASE_URL if follows_chat_provider(settings) else "")
+    return openai.AsyncOpenAI(api_key=key, base_url=base_url or None)
 
 
 def get_embedding_model() -> str:
     """Correct embedding model (OpenAI) / deployment (Azure) name."""
-    if settings.LLM_PROVIDER.lower() == "azure" and settings.AZURE_EMBEDDING_DEPLOYMENT:
-        return settings.AZURE_EMBEDDING_DEPLOYMENT
-    return settings.EMBEDDING_MODEL
+    return embedding_model_name(settings)
+
+
+async def embed_texts(texts: list[str]) -> list[list[float]]:
+    """Embed ``texts`` with the configured embedding client, checking every vector's width.
+
+    Passes ``dimensions=EMBEDDING_DIM`` to models that accept it; for others a vector of the
+    wrong size raises rather than reaching the database.
+    """
+    model = get_embedding_model()
+    response = await get_embeddings_client().embeddings.create(
+        model=model, input=texts, **embedding_request_kwargs(model, settings)
+    )
+    vectors = [list(item.embedding) for item in response.data]
+    for vector in vectors:
+        verify_vector_length(vector, settings)
+    return vectors
 
 
 # ─────────────────────── A2A registry ───────────────────────
@@ -244,13 +359,13 @@ def get_checkpoint_storage(*, pool: Any = None) -> Any:
     backend = settings.MAF_CHECKPOINT_BACKEND.lower()
 
     if backend == "file":
-        from agent_framework._workflows._checkpoint import FileCheckpointStorage
+        from agent_framework import FileCheckpointStorage
 
         Path(settings.MAF_CHECKPOINT_DIR).mkdir(parents=True, exist_ok=True)
         return FileCheckpointStorage(settings.MAF_CHECKPOINT_DIR)
 
     if backend == "memory":
-        from agent_framework._workflows._checkpoint import InMemoryCheckpointStorage
+        from agent_framework import InMemoryCheckpointStorage
 
         return InMemoryCheckpointStorage()
 

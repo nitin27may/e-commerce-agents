@@ -136,6 +136,18 @@ jobs:
               AGENT_NAME=inventory_fulfillment
               AGENT_PORT=8085
             smoke_module: inventory_fulfillment.main
+          # The outbox worker: AGENT_NAME=worker copies worker/ into the image (the
+          # Dockerfile copies ${AGENT_NAME}/), compose overrides the command. The smoke
+          # import is what catches a worker/ that is missing from the image.
+          - image: outbox-worker
+            context: ./agents/python
+            dockerfile: ./agents/python/Dockerfile
+            build_args: |
+              AGENT_NAME=worker
+              AGENT_PORT=8095
+            # Space-separated: the worker imports these lazily to apply an SLA timeout, so
+            # importing worker.main alone would pass on an image that cannot do its job.
+            smoke_module: worker.main orchestrator.approvals_service orchestrator.modes.workflow_mode
           # auth-server is an agent-shaped image too (AUTH_MODE=oauth path).
           # docker-compose.yml builds it from the same Dockerfile.
           - image: auth-server
@@ -300,8 +312,9 @@ jobs:
             "${IMAGE_TAG}" \
             run --no-project python -c "
           import importlib, sys
-          mod = importlib.import_module('${{ matrix.smoke_module }}')
-          print('[OK] ${{ matrix.image }}: ${{ matrix.smoke_module }} imports cleanly')
+          for name in '${{ matrix.smoke_module }}'.split():
+              importlib.import_module(name)
+              print('[OK] ${{ matrix.image }}: ' + name + ' imports cleanly')
           sys.exit(0)
           "
 

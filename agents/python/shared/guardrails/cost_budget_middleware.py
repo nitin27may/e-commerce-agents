@@ -55,12 +55,20 @@ from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
 from typing import Any
 
-from agent_framework import ChatResponse, ChatResponseUpdate, Content, Message, ResponseStream
-from agent_framework._middleware import ChatContext, ChatMiddleware
+from agent_framework import (
+    ChatContext,
+    ChatMiddleware,
+    ChatResponse,
+    ChatResponseUpdate,
+    Content,
+    Message,
+    ResponseStream,
+)
 
 from shared.config import settings
+from shared.context import current_agent_model
 from shared.cost import estimate_cost
-from shared.metrics import record_llm_turn_cost
+from shared.metrics import record_llm_turn_cost, record_would_block
 
 logger = logging.getLogger(__name__)
 
@@ -91,9 +99,22 @@ def _current_model() -> str:
     Duplicated rather than imported: ``evals`` depends on ``shared``, not the
     other way around, so ``shared.guardrails`` can't import from ``evals``.
     """
+    if current_agent_model.get():  # per-agent override from the agent's YAML
+        return current_agent_model.get()
     if settings.LLM_PROVIDER.lower() == "azure":
         return settings.AZURE_OPENAI_DEPLOYMENT
     return settings.LLM_MODEL
+
+
+def _served_model(response: Any) -> str:
+    """The model that actually served this turn, else the configured one.
+
+    A provider reports the model on the response (``ChatResponse.model``); that, not
+    the deployment alias in settings, is what was billed. Falls back to the configured
+    name when the response carries none (replay fixtures, some compatible endpoints).
+    """
+    model = getattr(response, "model", None)
+    return model if isinstance(model, str) and model else _current_model()
 
 
 def _turn_cost(response: Any) -> tuple[float, int, int] | None:
@@ -113,7 +134,8 @@ def _turn_cost(response: Any) -> tuple[float, int, int] | None:
         return None
     tokens_in = usage.get("input_token_count") or 0
     tokens_out = usage.get("output_token_count") or 0
-    return estimate_cost(_current_model(), tokens_in, tokens_out), tokens_in, tokens_out
+    cached = usage.get("cache_read_input_token_count") or usage.get("cached_input_token_count") or 0
+    return estimate_cost(_served_model(response), tokens_in, tokens_out, cached), tokens_in, tokens_out
 
 
 BUDGET_REFUSAL_MESSAGE = (
@@ -134,6 +156,7 @@ class CostBudgetMiddleware(ChatMiddleware):
     def __init__(self) -> None:
         self.turns_recorded = 0
         self.blocked = 0
+        self.would_block = 0
 
     async def process(self, context: ChatContext, call_next: Callable[[], Awaitable[None]]) -> None:
         mode = settings.COST_BUDGET_MODE
@@ -146,12 +169,24 @@ class CostBudgetMiddleware(ChatMiddleware):
             self.blocked += 1
             logger.warning(
                 "cost_budget.blocked run_cost_usd=%.4f budget_usd=%.4f",
-                get_run_cost(), budget,
+                get_run_cost(),
+                budget,
             )
             context.result = self._refusal_result(context)
             # Short-circuit: do NOT call call_next() — no further LLM turn
             # is made once the run is already over budget.
             return
+
+        if mode == "observe" and budget is not None and get_run_cost() > budget:
+            # What enforce would have done here. Counting it is how an operator learns,
+            # before switching to enforce, how often the ceiling would have bitten.
+            self.would_block += 1
+            logger.info(
+                "cost_budget.would_block run_cost_usd=%.4f budget_usd=%.4f",
+                get_run_cost(),
+                budget,
+            )
+            record_would_block(agent=settings.OTEL_SERVICE_NAME)
 
         await call_next()
 
@@ -170,7 +205,9 @@ class CostBudgetMiddleware(ChatMiddleware):
             total = _add_run_cost(cost)
             logger.info(
                 "cost_budget.turn_recorded turn_cost_usd=%.4f run_cost_usd=%.4f mode=%s",
-                cost, total, settings.COST_BUDGET_MODE,
+                cost,
+                total,
+                settings.COST_BUDGET_MODE,
             )
             # Same estimate, as a counter rather than only a log line — a log
             # line cannot be alerted on without shipping and parsing logs.
@@ -180,7 +217,7 @@ class CostBudgetMiddleware(ChatMiddleware):
             # the spend actually went.
             record_llm_turn_cost(
                 cost,
-                model=_current_model(),
+                model=_served_model(response),
                 tokens_in=tokens_in,
                 tokens_out=tokens_out,
                 agent=settings.OTEL_SERVICE_NAME,

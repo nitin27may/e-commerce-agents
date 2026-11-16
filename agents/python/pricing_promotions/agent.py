@@ -9,7 +9,7 @@ from pricing_promotions.tools import (
     optimize_cart,
     validate_coupon,
 )
-from shared.agent_factory import create_chat_client
+from shared.agent_factory import agent_default_options, create_chat_client
 from shared.context import current_user_role
 from shared.context_providers import ECommerceContextProvider
 from shared.middleware import build_specialist_middleware
@@ -40,7 +40,8 @@ AGENT_TOOLS = [
 def create_pricing_promotions_agent() -> Agent:
     """Create the Pricing & Promotions ChatAgent with all tools."""
     return Agent(
-        client=create_chat_client(),
+        client=create_chat_client("pricing-promotions"),
+        default_options=agent_default_options("pricing-promotions"),
         name="pricing-promotions",
         description=(
             "Coupon validation, cart optimization, loyalty discounts, bundle deals, and active promotions discovery."

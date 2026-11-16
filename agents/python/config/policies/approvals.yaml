@@ -1,0 +1,146 @@
+# Approval routing policy — read by BOTH stacks (Python shared/policy, .NET Shared/Policy/ApprovalPolicy.cs).
+#
+# For each approval kind, an ordered rule list. The FIRST rule whose conditions all hold decides the route;
+# the last rule of every kind has no conditions, so a route is always found. There is no expression
+# evaluation: a condition is {fact, op, value} and nothing else.
+#
+#   route       auto     -> approved by policy, no human
+#               support  -> the support queue
+#               manager  -> the manager queue (the admin role)
+#   op          lt | lte | gt | gte | eq | in      (in: value is a list)
+#   fact        amount                 refund / order amount in dollars
+#               days_since_delivery    whole days since the order was delivered
+#               loyalty_tier           bronze | silver | gold
+#               returns_90d            returns the requester opened in the last 90 days
+#               refund_to_spend_ratio  amount / the requester's lifetime spend
+#               account_age_days       whole days since the account was created
+#
+# A fact that could not be determined (no delivery yet, no recorded spend) is "unknown", and a condition on
+# an unknown fact is simply not met — so an auto rule can never fire on missing evidence.
+#
+# Per kind: editable_fields   fields a reviewer may change when approving (approve-with-edits)
+#           sla_hours         hours a review may sit before it is reminded and escalated
+#           on_timeout        what happens when the SLA runs out: reject | expire
+#
+# Change a rule or a threshold -> bump policy_version (it is stored on every approval it routes) and add or
+# adjust a golden case in testdata/. Both stacks' tests run every golden case, so they cannot drift apart.
+# Loading fails loudly on an unknown fact, operator, route or key.
+
+policy_version: "2026-11-16.1"
+
+kinds:
+  # A customer asks to send an order back. Facts are about the return being requested.
+  return_approval:
+    editable_fields: [amount, resolution]
+    sla_hours: 24
+    on_timeout: expire
+    rules: &money_rules
+      - id: outside-return-window
+        route: manager
+        reason: Delivered more than 30 days ago, outside the return window
+        when:
+          - { fact: days_since_delivery, op: gt, value: 30 }
+      - id: frequent-returner
+        route: manager
+        reason: Three or more returns in the last 90 days
+        when:
+          - { fact: returns_90d, op: gte, value: 3 }
+      - id: refund-dominates-spend
+        route: manager
+        reason: The refund is more than half of the customer's lifetime spend
+        when:
+          - { fact: refund_to_spend_ratio, op: gt, value: 0.5 }
+      - id: high-value
+        route: manager
+        reason: Amount over 500 needs a manager
+        when:
+          - { fact: amount, op: gt, value: 500 }
+      - id: new-account-mid-value
+        route: manager
+        reason: Account under 30 days old with an amount over 100
+        when:
+          - { fact: account_age_days, op: lt, value: 30 }
+          - { fact: amount, op: gt, value: 100 }
+      - id: auto-small-good-standing
+        route: auto
+        reason: Small in-window request from a customer in good standing
+        when:
+          - { fact: amount, op: lte, value: 50 }
+          - { fact: days_since_delivery, op: lte, value: 30 }
+          - { fact: returns_90d, op: lt, value: 2 }
+          - { fact: refund_to_spend_ratio, op: lte, value: 0.25 }
+          - { fact: account_age_days, op: gte, value: 30 }
+      - id: auto-trusted-tier
+        route: auto
+        reason: In-window request up to 150 from a silver or gold customer in good standing
+        when:
+          - { fact: amount, op: lte, value: 150 }
+          - { fact: days_since_delivery, op: lte, value: 30 }
+          - { fact: loyalty_tier, op: in, value: [silver, gold] }
+          - { fact: returns_90d, op: lt, value: 2 }
+          - { fact: refund_to_spend_ratio, op: lte, value: 0.25 }
+          - { fact: account_age_days, op: gte, value: 30 }
+      - id: default-support
+        route: support
+        reason: Needs a support review
+        when: []
+
+  # The tool-middleware kinds from shared/hitl.py HITL_GATED_TOOLS.
+  initiate_return:
+    editable_fields: [refund_method]
+    sla_hours: 24
+    on_timeout: expire
+    rules: *money_rules
+
+  process_refund:
+    editable_fields: []
+    sla_hours: 24
+    on_timeout: expire
+    rules: *money_rules
+
+  cancel_order:
+    editable_fields: []
+    sla_hours: 12
+    on_timeout: expire
+    rules:
+      - id: high-value
+        route: manager
+        reason: Cancelling an order over 1000 needs a manager
+        when:
+          - { fact: amount, op: gt, value: 1000 }
+      - id: auto-small
+        route: auto
+        reason: Small order from a customer in good standing
+        when:
+          - { fact: amount, op: lte, value: 100 }
+          - { fact: returns_90d, op: lt, value: 3 }
+      - id: default-support
+        route: support
+        reason: Needs a support review
+        when: []
+
+  modify_order:
+    editable_fields: [new_address]
+    sla_hours: 12
+    on_timeout: expire
+    rules:
+      - id: high-value
+        route: manager
+        reason: Changing an order over 1000 needs a manager
+        when:
+          - { fact: amount, op: gt, value: 1000 }
+      - id: default-support
+        route: support
+        reason: Needs a support review
+        when: []
+
+  # Not about a customer's money: an inventory commitment, so it goes to a manager.
+  place_backorder:
+    editable_fields: [quantity]
+    sla_hours: 48
+    on_timeout: expire
+    rules:
+      - id: default-manager
+        route: manager
+        reason: Inventory commitments are a manager decision
+        when: []

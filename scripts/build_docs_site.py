@@ -131,6 +131,7 @@ SECTIONS: tuple[Section, ...] = (
             "docs/mcp-integration.md",
             "docs/telemetry.md",
             "docs/security-guide.md",
+            "docs/approvals.md",
             "docs/agent-quality.md",
             "docs/maf-best-practices.md",
             "docs/releasing.md",
@@ -158,24 +159,20 @@ SECTIONS: tuple[Section, ...] = (
     ),
 )
 
-# Tutorial tiers, copied from tutorials/README.md's own "Tiers" section rather
-# than renumbered here. The labels have to match exactly: a site nav reading
-# "Tier 7 — Missing Concepts" against a repo that calls the same five chapters
-# Tier 6 is worse than no grouping at all, because both look authoritative.
-# Setup, Capstone and the bonus chapter genuinely sit outside the tiers there,
-# so they keep their own headings instead of being folded into a neighbour.
-TIERS: tuple[tuple[str, range], ...] = (
-    ("Setup", range(0, 1)),
-    ("Tier 1 — Core Agent", range(1, 5)),
-    ("Tier 2 — Agent Internals", range(5, 9)),
-    ("Tier 3 — Workflow Foundations", range(9, 12)),
-    ("Tier 4 — Orchestrations", range(12, 17)),
-    ("Tier 5 — Advanced", range(17, 21)),
-    ("Capstone", range(21, 22)),
-    ("Bonus Pattern", range(22, 23)),
-    ("Tier 6 — Missing Concepts", range(23, 28)),
-    ("Tier 7 — Patterns Without Production Wiring", range(28, 32)),
-    ("Cost Control", range(32, 33)),
+# Tutorial learning paths, copied from tutorials/README.md's own "Learning paths"
+# section rather than invented here. The titles have to match exactly: a site nav
+# that groups chapters differently from the repo's own README looks just as
+# authoritative and is wrong. A path can span several chapter ranges (Workflows
+# is 09-11 plus 17-20), so each carries a tuple of ranges. Setup sits outside
+# the paths there, so it keeps its own heading; the Capstone is last.
+TIERS: tuple[tuple[str, tuple[range, ...]], ...] = (
+    ("Setup", (range(0, 1),)),
+    ("Your first agent", (range(1, 5),)),
+    ("Inside an agent", (range(5, 9),)),
+    ("Workflows", (range(9, 12), range(17, 21))),
+    ("Multi-agent orchestration", (range(12, 17), range(22, 23), range(27, 31))),
+    ("Production concerns", (range(23, 27), range(31, 33))),
+    ("Capstone", (range(21, 22),)),
 )
 
 
@@ -197,11 +194,11 @@ class Page:
 
 
 def chapter_tier(slug: str) -> str:
-    """Map ``14-handoff-orchestration`` to its tier title."""
+    """Map ``14-handoff-orchestration`` to its learning-path title."""
     match = re.match(r"(\d+)", slug)
     number = int(match.group(1)) if match else 99
-    for title, span in TIERS:
-        if number in span:
+    for title, spans in TIERS:
+        if any(number in span for span in spans):
             return title
     return TIERS[-1][0]
 
@@ -314,8 +311,8 @@ def collect_pages() -> list[Page]:
         if section.title == "Tutorials":
             for tier_order, (tier_title, _) in enumerate(TIERS, start=1):
                 tier_slug = tier_title.split(" — ")[0].lower().replace(" ", "-")
-                # "Setup" / "Capstone" / "Bonus Pattern" have no "Tier N"
-                # prefix, so the split above already yields a usable slug.
+                # Path titles carry no " — " suffix, so the split above
+                # already yields a usable slug.
                 pages.append(
                     Page(
                         source=Path(f"{slug}/{tier_slug}.md"),

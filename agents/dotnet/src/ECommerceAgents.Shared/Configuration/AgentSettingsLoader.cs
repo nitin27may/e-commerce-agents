@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Extensions.Configuration;
 
 namespace ECommerceAgents.Shared.Configuration;
@@ -37,10 +38,40 @@ public static class AgentSettingsLoader
         );
     }
 
+    /// <summary>The resume timeout must be positive and shorter than the claim TTL (mirrors Python's validator).</summary>
+    private static int ValidatedResumeTimeout(int timeoutSeconds, int claimTtlSeconds)
+    {
+        if (timeoutSeconds <= 0 || timeoutSeconds >= claimTtlSeconds)
+        {
+            throw new InvalidOperationException(
+                "HITL_RESUME_TIMEOUT_SECONDS must be positive and shorter than HITL_CLAIM_TTL_SECONDS "
+                    + $"(got {timeoutSeconds} and {claimTtlSeconds}).");
+        }
+
+        return timeoutSeconds;
+    }
+
     public static AgentSettings Load(IConfiguration config)
     {
         string Get(string key, string fallback = "") =>
             config[key] ?? Environment.GetEnvironmentVariable(key) ?? fallback;
+
+        int EmbeddingDim()
+        {
+            var raw = Get("EMBEDDING_DIM");
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return AgentSettings.DefaultEmbeddingDim;
+            }
+
+            // Fail at startup rather than coerce: a silently-wrong width corrupts every stored vector.
+            return int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var dim) && dim > 0
+                ? dim
+                : throw new InvalidOperationException("EMBEDDING_DIM must be a positive integer");
+        }
+
+        string AnthropicModel() =>
+            string.IsNullOrWhiteSpace(Get("ANTHROPIC_MODEL")) ? AgentSettings.DefaultAnthropicModel : Get("ANTHROPIC_MODEL").Trim();
 
         string GetWithAlias(string primary, string alias, string fallback = "")
         {
@@ -96,13 +127,28 @@ public static class AgentSettingsLoader
             ReplayFixturesDir = Get("REPLAY_FIXTURES_DIR", "evals/fixtures/replay"),
             Record = Get("RECORD", "false").Equals("true", StringComparison.OrdinalIgnoreCase),
             ReplayRecordProvider = Get("REPLAY_RECORD_PROVIDER", "azure").ToLowerInvariant(),
-            LlmModel = Get("LLM_MODEL", "gpt-4.1"),
+            // With LLM_PROVIDER=anthropic the model is ANTHROPIC_MODEL (default claude-sonnet-5-5), not
+            // LLM_MODEL: the compose files forward LLM_MODEL with a gpt-4.1 default that Anthropic would reject.
+            LlmModel = Get("LLM_PROVIDER", "openai").Equals("anthropic", StringComparison.OrdinalIgnoreCase)
+                ? AnthropicModel()
+                : Get("LLM_MODEL", "gpt-4.1"),
+            AnthropicModel = AnthropicModel(),
+            AnthropicApiKey = Get("ANTHROPIC_API_KEY"),
             EmbeddingModel = Get("EMBEDDING_MODEL", "text-embedding-3-small"),
+            EmbeddingProvider = Get("EMBEDDING_PROVIDER").Trim().ToLowerInvariant(),
+            EmbeddingBaseUrl = Get("EMBEDDING_BASE_URL"),
+            EmbeddingApiKey = Get("EMBEDDING_API_KEY"),
+            EmbeddingDim = EmbeddingDim(),
             OpenAiApiKey = Get("OPENAI_API_KEY"),
             LlmBaseUrl = Get("LLM_BASE_URL"),
             RateLimitEnabled = GetBool("RATE_LIMIT_ENABLED", true),
             RateLimitMaxRequests = GetInt("RATE_LIMIT_MAX_REQUESTS", 30),
             RateLimitWindowSeconds = GetDouble("RATE_LIMIT_WINDOW_SECONDS", 60.0),
+            RateLimitAuthMaxRequests = GetInt("RATE_LIMIT_AUTH_MAX_REQUESTS", 10),
+            RateLimitAuthIpMaxRequests = GetInt("RATE_LIMIT_AUTH_IP_MAX_REQUESTS", 300),
+            RateLimitAuthWindowSeconds = GetDouble("RATE_LIMIT_AUTH_WINDOW_SECONDS", 60.0),
+            RateLimitTrustedProxyHops = GetInt("RATE_LIMIT_TRUSTED_PROXY_HOPS", 1),
+            CorsAllowedOrigins = Get("CORS_ALLOWED_ORIGINS", "http://localhost:3000"),
             HandoffMaxTurns = GetInt("HANDOFF_MAX_TURNS", 3),
             GroundingMode = ValidatedGroundingMode(Get("GROUNDING_MODE", "annotate")),
             CostBudgetMode = Get("COST_BUDGET_MODE", "observe"),
@@ -119,6 +165,8 @@ public static class AgentSettingsLoader
             AgentSharedSecret = Get("AGENT_SHARED_SECRET", "agent-internal-secret"),
 
             AuthMode = Get("AUTH_MODE", "local").ToLowerInvariant(),
+            AuthRefreshRotation = GetBool("AUTH_REFRESH_ROTATION", true),
+            AuthRefreshFamilyMaxDays = GetInt("AUTH_REFRESH_FAMILY_MAX_DAYS", 30),
             AuthServerIssuer = Get("AUTH_SERVER_ISSUER", "http://localhost:8090"),
             AuthServerJwksUrl = Get("AUTH_SERVER_JWKS_URL", "http://localhost:8090/.well-known/jwks.json"),
             AuthServerTokenUrl = Get("AUTH_SERVER_TOKEN_URL", "http://localhost:8090/oauth/token"),
@@ -158,6 +206,9 @@ public static class AgentSettingsLoader
             WorkflowVisualizationOnBuild = GetBool("WORKFLOW_VISUALIZATION_ON_BUILD", false),
             MafHandoffMode = Get("MAF_HANDOFF_MODE", "tool").ToLowerInvariant(),
             HitlEnabled = GetBool("HITL_ENABLED", true),
+            HitlClaimTtlSeconds = GetInt("HITL_CLAIM_TTL_SECONDS", 600),
+            HitlResumeTimeoutSeconds = ValidatedResumeTimeout(
+                GetInt("HITL_RESUME_TIMEOUT_SECONDS", 300), GetInt("HITL_CLAIM_TTL_SECONDS", 600)),
         };
     }
 

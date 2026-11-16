@@ -62,8 +62,8 @@ uv run --project tutorials python tutorials/20-visualization/python/main.py
 Source: [`python/main.py`](./python/main.py). The workflow is the same three-executor pipeline used throughout the earlier workflow chapters — uppercase, then a non-empty gate, then a logger — built with the normal `WorkflowBuilder`:
 
 ```python
-from agent_framework._workflows._viz import WorkflowViz
-from agent_framework._workflows._workflow_builder import WorkflowBuilder
+from agent_framework import WorkflowViz
+from agent_framework import WorkflowBuilder
 
 def build_workflow():
     up = UppercaseExecutor()
@@ -149,7 +149,7 @@ This chapter previously shipped a .NET *stub* that printed API usage instead of 
 - **Node IDs must be unique.** Two executors sharing an `id` fail at `WorkflowBuilder.build()` time (e.g., two `ValidateExecutor()` instances both defaulting to `id="validate"`), not at visualization time — the diagram only renders once the build already succeeded, so a visualization bug is rarely actually a visualization bug.
 - **Mermaid is GitHub-native, DOT needs Graphviz.** Commit `.mmd` files and GitHub renders them inline in issues, PRs, and wikis with zero extra tooling. The `.dot` text is portable, but turning it into PNG/SVG requires a local or CI install of `graphviz`.
 - **Determinism depends on your builder, not just the renderer.** `WorkflowViz` renders whatever edge order the graph gives it. If your own code adds edges by iterating a `set` or `dict` without a stable order, the rendered output can shuffle between runs even though the *logical* graph didn't change — iterate over ordered collections (lists, tuples) when building the graph.
-- **The MAF v1.0 empty-`__init__.py` packaging bug is fixed upstream, but this chapter still patches defensively.** `tutorials/_shared/maf_bootstrap.py::bootstrap()` re-exports the public API into `agent_framework/__init__.py` if it's empty (or carries an older bootstrap patch marker) before any tutorial imports the package — every chapter's `main.py` and tests call it first. This is distinct from `agents/python/patch_maf.py`, which is the production app's copy of the same defensive fix; both are effectively no-ops against the pinned 1.14.0 wheel (which ships a real `__init__.py`), but are left in place rather than removed. There is no `shared/maf.py`.
+- **No MAF packaging workaround is needed.** `agent-framework-core` 1.22.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
 
 ## Tests
 
@@ -179,7 +179,7 @@ They compare rendered output against the actual graph topology rather than check
 
 Two complementary mechanisms, one static and one live:
 
-- **Static, build-time.** [`scripts/visualize_workflows.py`](../../scripts/visualize_workflows.py) walks every workflow spec under `agents/python/config/workflows/*.yaml`, loads each via `shared.workflow_loader.load_workflows_directory`, and renders it with the exact same `WorkflowViz` API this chapter teaches (`scripts/visualize_workflows.py:36`). It writes `docs/workflows/{name}.mmd` and `{name}.dot`, and its `--check` flag fails CI on drift — missing files, content that no longer matches the spec, or orphaned output with no matching spec — when `WORKFLOW_VISUALIZATION_ON_BUILD=true` (`scripts/visualize_workflows.py:71`). Today it renders one workflow, `text-pipeline` (`docs/workflows/text-pipeline.mmd`), with production workflows (`return-replace`, `pre-purchase`) documented as landing later.
+- **Static, build-time.** [`scripts/visualize_workflows.py`](../../scripts/visualize_workflows.py) builds the capstone's real `pre-purchase` and `return-replace` `WorkflowBuilder` graphs and renders each with the exact same `WorkflowViz` API this chapter teaches (`scripts/visualize_workflows.py:57`). It writes `docs/workflows/{name}.mmd` and `{name}.dot`, and its `--check` flag fails CI on drift — missing files, content that no longer matches the graph, or orphaned output — when `WORKFLOW_VISUALIZATION_ON_BUILD=true` (`scripts/visualize_workflows.py:120`).
 - **Live, runtime.** `web/src/components/chat/orchestration-graph.tsx` fetches a mode's static `graph_mermaid()` output from `GET /api/orchestration/modes/{name}/graph` (`agents/python/orchestrator/routes/orchestration.py:63`) and re-renders it client-side with the house Mermaid palette, then overlays live state as SSE `node` events arrive during a run — active, done, and errored executors get different node classes (`web/src/components/chat/orchestration-graph.tsx:20`). Correlating a live `node_id` to a diagram node relies on a deliberate backend convention: every mode's `graph_mermaid()` uses the real executor id with dashes swapped for underscores as the Mermaid node id, documented on `PrePurchaseMode.graph_mermaid()` in `agents/python/orchestrator/modes/workflow_mode.py:164`. This is a different code path from `visualize_workflows.py` — one renders a fixed spec at build time and diffs it in CI, the other renders a mode's fixed topology at request time and animates it against a live run.
 
 ## What's next

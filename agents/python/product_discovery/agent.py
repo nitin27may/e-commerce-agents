@@ -5,8 +5,7 @@ server (``ecommerce_mcp_product.server``) via ``MCPStreamableHTTPTool`` instead
 of calling asyncpg directly. Both modes expose the same capabilities.
 """
 
-from agent_framework import Agent
-from agent_framework._mcp import MCPStreamableHTTPTool
+from agent_framework import Agent, MCPStreamableHTTPTool
 
 from product_discovery.prompts import get_system_prompt
 from product_discovery.tools import (
@@ -17,7 +16,7 @@ from product_discovery.tools import (
     search_products,
     semantic_search,
 )
-from shared.agent_factory import create_chat_client
+from shared.agent_factory import agent_default_options, create_chat_client
 from shared.config import settings
 from shared.context import current_user_role
 from shared.context_providers import ECommerceContextProvider
@@ -84,7 +83,8 @@ def create_product_discovery_agent() -> Agent:
         tools = AGENT_TOOLS  # type: ignore[assignment]
 
     return Agent(
-        client=create_chat_client(),
+        client=create_chat_client("product-discovery"),
+        default_options=agent_default_options("product-discovery"),
         name="product-discovery",
         description="Natural language product search, semantic similarity, recommendations, and price tracking.",
         instructions=get_system_prompt(current_user_role.get() or "customer"),

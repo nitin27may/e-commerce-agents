@@ -28,8 +28,14 @@ from tutorials._shared import maf_bootstrap  # noqa: E402
 maf_bootstrap.bootstrap()
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
-from agent_framework import Agent, BaseChatClient, Message  # noqa: E402
-from agent_framework._types import ChatResponse, ChatResponseUpdate, ResponseStream  # noqa: E402
+from agent_framework import (  # noqa: E402
+    Agent,
+    BaseChatClient,
+    ChatResponse,
+    ChatResponseUpdate,
+    Message,
+    ResponseStream,
+)
 from main import FIXTURES_DIR, INSTRUCTIONS, _default_client, ask, build_agent  # noqa: E402
 
 

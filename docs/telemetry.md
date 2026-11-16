@@ -257,6 +257,46 @@ All telemetry settings are managed via environment variables, loaded through Pyd
 | `OTEL_SERVICE_NAME` | `ecommerce` | Fallback service name. Overridden by each agent's `setup_telemetry(service_name)` call. |
 | `ENVIRONMENT` | `development` | Mapped to `deployment.environment` resource attribute. |
 
+### Cost and usage
+
+Every run's estimated cost is a number the app computes, not one the provider reports, so it is
+emitted as its own signal rather than left to GenAI spans:
+
+| Instrument | Meaning |
+|---|---|
+| `ecommerce.llm.cost.usd` | Estimated spend per LLM turn, attributes `model`, `agent`, `mode` |
+| `ecommerce.llm.tokens` | Tokens per turn, split by `direction` (`input` / `output`) |
+| `cost_budget.would_block` | Turns the per-run ceiling would have refused. Counted in `observe` mode when a run is already past `COST_BUDGET_USD_PER_RUN`; nothing is refused |
+
+The estimate is `shared/cost.py` (Python) / `CostEstimator.cs` (.NET): uncached input + cached
+input + output, each agent priced at the model its usage reported (a dated snapshot such as
+`gpt-4.1-2025-04-14` prices as `gpt-4.1`). A model with no price entry is priced at the default
+entry and logs `cost.model_unpriced` once. **Cached input is billed as ordinary input until a
+`cached_input_per_1k` is entered for the model**, so cache-heavy traffic is overstated, never
+understated; the file names the provider pricing page to take that number from.
+
+Each orchestrated turn also persists `usage_logs.model`, `tokens_cached_in` and `cost_usd`
+(migration `0007`). `NULL` means usage was not captured; a mode that makes no LLM call (the two
+workflow modes) writes an explicit `0`. The admin usage and audit pages read these.
+
+### Prompt and completion content (off by default)
+
+GenAI spans record token counts, model and latency always. The **prompt and
+completion text** is only recorded when
+`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true`, and all three compose
+files default it to `false`: chat turns contain customer names, addresses and
+order details, and the Aspire dashboard is unauthenticated. To see message
+bodies locally, set it in `.env` (or the shell) and recreate the stack:
+
+```bash
+echo 'OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true' >> .env
+docker compose up -d --force-recreate orchestrator
+```
+
+(`GENAI_CAPTURE_CONTENT=true` is the application-level switch that sets the same
+variable for host-run Python; the .NET stack reads it too.) Do not enable it
+where real customer data flows.
+
 ### Docker Compose Ports
 
 | Port | Service |

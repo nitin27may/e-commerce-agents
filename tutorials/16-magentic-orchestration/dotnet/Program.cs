@@ -1,17 +1,16 @@
 // MAF v1 — Chapter 16: Magentic Orchestration (.NET status stub)
 //
-// Microsoft's official docs state:
+// Microsoft's docs used to say:
 //
 //   "Magentic Orchestration is not yet supported in C#."
-//   https://learn.microsoft.com/en-us/agent-framework/workflows/orchestrations/magentic?pivots=programming-language-csharp
 //
-// Confirmed against Microsoft.Agents.AI.Workflows 1.1.0 — there is no
-// MagenticBuilder / StandardMagenticManager symbol in the .NET assembly.
-// Any .NET sample that claims otherwise is invented API.
-//
-// This file is a placeholder that prints the current status so the chapter
-// dotnet project stays runnable (`dotnet build`, `dotnet run`). Swap it
-// for a real sample once the types land in a future package version.
+// That stopped being true: Microsoft.Agents.AI.Workflows 1.28.0 exports
+// MagenticWorkflowBuilder plus MagenticPlanCreatedEvent / MagenticReplannedEvent /
+// MagenticProgressLedgerUpdatedEvent and friends (the Python names
+// MagenticBuilder / StandardMagenticManager still do not exist in .NET).
+// This chapter has not been ported yet; the file below is a placeholder that
+// says so, so the project stays runnable (`dotnet build`, `dotnet run`).
+// Replace it with a real sample built on MagenticWorkflowBuilder.
 
 namespace MafV1.Ch16.Magentic;
 
@@ -21,12 +20,8 @@ public static class Program
     {
         Console.WriteLine("Chapter 16 — Magentic Orchestration");
         Console.WriteLine();
-        Console.WriteLine("Magentic orchestration is Python-only in Microsoft Agent Framework v1.1.");
-        Console.WriteLine("From the official docs:");
-        Console.WriteLine();
-        Console.WriteLine("    \"Magentic Orchestration is not yet supported in C#.\"");
-        Console.WriteLine();
-        Console.WriteLine("    https://learn.microsoft.com/en-us/agent-framework/workflows/orchestrations/magentic?pivots=programming-language-csharp");
+        Console.WriteLine("Magentic orchestration now exists in .NET (MagenticWorkflowBuilder in");
+        Console.WriteLine("Microsoft.Agents.AI.Workflows 1.28), but this chapter's C# sample is not yet ported.");
         Console.WriteLine();
         Console.WriteLine("Run the Python reference implementation instead:");
         Console.WriteLine();
@@ -35,6 +30,6 @@ public static class Program
         Console.WriteLine();
         Console.WriteLine("The chapter README walks the Python manager loop end-to-end — facts");
         Console.WriteLine("ledger, plan, progress ledger, stall detection, reset — and explains");
-        Console.WriteLine("what to expect when Magentic lands in Microsoft.Agents.AI.Workflows.");
+        Console.WriteLine("the manager loop the .NET MagenticWorkflowBuilder is expected to mirror.");
     }
 }

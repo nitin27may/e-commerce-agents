@@ -282,6 +282,52 @@ public sealed class ProductToolsTests : IAsyncLifetime
         results.First(r => r.Id == farId.ToString()).Similarity.Should().BeApproximately(0.0, 0.0001);
     }
 
+    // ─────────────────────── Fallbacks when embeddings are unavailable (#83) ──────
+    // Mirrors Python's tests/test_product_embeddings.py.
+
+    [Fact]
+    public async Task SemanticSearch_FallsBackToFullTextWhenEmbeddingCallFails()
+    {
+        var (anc, exact, _, kettle) = await SeedFtsCatalogAsync();
+        var tools = new ProductTools(_pool, new UnavailableEmbeddingProvider("no key"));
+
+        var results = await tools.SemanticSearch("noise cancellation headphones");
+
+        var ids = results.Select(r => r.Id).ToList();
+        ids.Should().Contain(anc.ToString());
+        ids.Should().Contain(exact.ToString());
+        ids.Should().NotContain(kettle.ToString());
+        // No vector arm: Similarity is null, Score is the text arm's 1/(k+rank).
+        results.Should().AllSatisfy(r => r.Similarity.Should().BeNull());
+        results.Select(r => r.Score).Should().BeInDescendingOrder();
+    }
+
+    [Fact]
+    public async Task FindSimilarProducts_FallsBackToSameCategoryByRatingWithoutEmbeddings()
+    {
+        var (anc, exact, decoy, kettle) = await SeedFtsCatalogAsync(); // no embeddings seeded
+
+        var results = await _tools.FindSimilarProducts(anc.ToString(), limit: 5);
+
+        // Same category (Electronics), source excluded, best rated first.
+        results.Select(r => r.Id).Should().Equal(decoy.ToString(), exact.ToString());
+        results.Select(r => r.Id).Should().NotContain(kettle.ToString());
+        results.Should().AllSatisfy(r =>
+        {
+            r.Error.Should().BeNull();
+            r.Similarity.Should().BeNull();
+        });
+    }
+
+    [Fact]
+    public void TheFactoryDegradesInsteadOfThrowingWithoutACredential()
+    {
+        var provider = EmbeddingClientFactory.CreateProvider(
+            new AgentSettings { LlmProvider = "openai", OpenAiApiKey = "" });
+
+        provider.Should().BeOfType<UnavailableEmbeddingProvider>();
+    }
+
     /// <summary>Seeds 3 products with hand-built 1536-dim pgvector rows: <c>refId</c>
     /// and <c>closeId</c> get an identical "hot at index 0" vector (cosine
     /// similarity 1.0), <c>farId</c> gets an orthogonal "hot at index 1" vector

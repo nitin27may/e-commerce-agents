@@ -128,6 +128,37 @@ public sealed class PromptLoader
         return string.Join("\n\n", parts);
     }
 
+    /// <summary>
+    /// The agent's optional <c>model:</c> block, validated; null when absent (true of every shipped
+    /// file) or when no such prompt file exists. Python twin: <c>load_model_override</c>.
+    /// </summary>
+    public ModelOverride? LoadModelOverride(string agentName)
+    {
+        var path = Path.Combine(_promptsRoot, $"{agentName}.yaml");
+        return File.Exists(path) ? ParseModelBlock(path) : null;
+    }
+
+    /// <summary>Parses every agent file's <c>model:</c> block (startup check); throws naming the file.</summary>
+    public void ValidateModelOverrides()
+    {
+        if (!Directory.Exists(_promptsRoot))
+        {
+            return;
+        }
+
+        foreach (var path in Directory.GetFiles(_promptsRoot, "*.yaml").Order())
+        {
+            ParseModelBlock(path);
+        }
+    }
+
+    private ModelOverride? ParseModelBlock(string path)
+    {
+        var config = _yaml.Deserialize<Dictionary<string, object>>(File.ReadAllText(path))
+                     ?? new Dictionary<string, object>();
+        return ModelOverride.Parse(config.GetValueOrDefault("model"), Path.GetFileName(path));
+    }
+
     private Dictionary<string, object> LoadSharedFile(string filename)
     {
         var path = Path.Combine(_promptsRoot, "_shared", filename);

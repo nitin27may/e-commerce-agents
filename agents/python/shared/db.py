@@ -19,6 +19,12 @@ async def init_db_pool() -> None:
     )
 
 
+def use_pool(pool: asyncpg.Pool | None) -> None:
+    """Adopt an already-open pool as the process-wide one (the outbox worker owns its pool and shares it)."""
+    global _pool
+    _pool = pool
+
+
 def get_pool() -> asyncpg.Pool:
     """Get the connection pool. Raises if not initialized."""
     if _pool is None:

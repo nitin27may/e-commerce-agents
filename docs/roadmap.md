@@ -263,10 +263,12 @@ Recorded so these are not rediscovered as oversights:
   would be additive only.
 - **Anonymous storefront conversations are not persisted** on either stack, so follow-ups there
   have no context at any tier. A product decision, not a bug.
-- **Magentic orchestration exists in neither stack**, and on .NET it is unavailable rather than
-  merely unbuilt: Magentic is Python-only in MAF v1. Chapter 16's .NET side is a status stub whose
-  tests are a tripwire — they reflect over the shipped assembly and go red the day Microsoft ships
-  it. Not a parity gap, because neither side has it.
+- **Magentic orchestration is wired into neither stack's orchestrator.** On .NET it is now
+  available rather than unavailable: `Microsoft.Agents.AI.Workflows` 1.28.0 exports
+  `MagenticWorkflowBuilder` (found when the .NET packages moved from 1.18 to 1.28, #84; it was
+  Python-only in MAF v1.1). Chapter 16's .NET side is still a status stub, and its tests — formerly
+  a tripwire for absence — now pin that the types exist. Not a parity gap, because neither side
+  has it, but the "unavailable" excuse is gone.
 
 ---
 

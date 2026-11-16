@@ -57,7 +57,7 @@ Design notes:
 - ``tutorials/_shared/replay_client.py`` is a second, independent copy of
   this file — the tutorials workspace has its own venv with no path
   dependency on ``agents/python``, so it can't import this module directly.
-  Same precedent as ``patch_maf.py`` / ``tutorials/_shared/maf_bootstrap.py``.
+  The tutorials workspace keeps its own copies of shared helpers for the same reason.
   Keep the two in sync when either changes, with one deliberate exception:
   ``_normalize_for_hash`` is intentionally *not* mirrored there. See its
   docstring for why.
@@ -90,6 +90,39 @@ class ReplayFixtureMissingError(RuntimeError):
     """
 
 
+def _response_format_key(response_format: Any) -> Any:
+    """Stable, JSON-serializable form of an options ``response_format``.
+
+    A Pydantic model class becomes its name plus JSON schema; a mapping (a raw
+    JSON-schema format) is used as-is; anything else falls back to ``str``.
+    """
+    if isinstance(response_format, type) and hasattr(response_format, "model_json_schema"):
+        return {"name": response_format.__name__, "schema": response_format.model_json_schema()}
+    if isinstance(response_format, dict):
+        return response_format
+    return str(response_format)
+
+
+def _message_key_dict(message: Any) -> dict[str, Any]:
+    """``Message.to_dict()`` minus the framework's own per-run function-call ids.
+
+    agent-framework-core 1.21 stamps every actionable ``function_call`` that has no
+    ``id`` with ``af-call-<uuid4>`` (``_generate_function_call_occurrence_id``), and
+    1.22 copies it onto the matching ``function_result`` too. The ids land in the
+    *next* turn's request, so without this the key of every turn after a tool call
+    would differ on each run, and no fixture could ever match. The model never sees
+    them (they are not sent to the provider) and corpora recorded before 1.21 do not
+    contain them, so dropping them keeps every existing key unchanged.
+    """
+    data = message.to_dict()
+    for content in data.get("contents") or []:
+        if not isinstance(content, dict) or content.get("type") not in ("function_call", "function_result"):
+            continue
+        if str(content.get("id") or "").startswith("af-call-"):
+            del content["id"]
+    return data
+
+
 def _canonical_request(messages: Any, options: dict[str, Any] | None) -> dict[str, Any]:
     """JSON-serializable, hashable view of a request: every message plus tool schemas.
 
@@ -104,32 +137,37 @@ def _canonical_request(messages: Any, options: dict[str, Any] | None) -> dict[st
             tool_specs.append(t.to_json_schema_spec())
         except AttributeError:
             tool_specs.append({"name": getattr(t, "name", str(t))})
-    return {
-        "messages": [m.to_dict() for m in messages],
+    canonical: dict[str, Any] = {
+        "messages": [_message_key_dict(m) for m in messages],
         "tools": tool_specs,
         # Agent-level system instructions travel in options, not as a message
         # — include them so "same question, different instructions" doesn't
         # collide on one fixture.
         "instructions": (options or {}).get("instructions"),
     }
+    # A structured-output call must not replay a prose fixture recorded without
+    # one (it would parse-fail: a wrong answer, not a reported miss). Added only
+    # when set, so every pre-existing fixture's key is unchanged.
+    response_format = (options or {}).get("response_format")
+    if response_format is not None:
+        canonical["response_format"] = _response_format_key(response_format)
+    return canonical
 
 
 # Volatile values that live in tool-result payloads. Both are database-derived
 # and differ on every reseed, which is the whole reason _normalize_for_hash
 # exists — see its docstring.
-_UUID_RE = re.compile(
-    r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
-)
+_UUID_RE = re.compile(r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b")
 # Anchored, and longest-match-first: a full timestamp is consumed before the
 # bare-month arm can nibble its leading "YYYY-MM". The month arm exists because
 # get_sentiment_trend buckets by DATE_TRUNC('month', ...) and returns labels
 # like "2026-08", which shift with the seed date exactly like a full timestamp.
 _TIMESTAMP_RE = re.compile(
-    r"\b\d{4}-\d{2}"                           # year-month
-    r"(?:-\d{2}"                                # optional day
-    r"(?:[T ]\d{2}:\d{2}:\d{2}"                # optional time
-    r"(?:\.\d+)?"                               # optional fractional seconds
-    r"(?:Z|[+-]\d{2}:?\d{2})?)?"                # optional timezone
+    r"\b\d{4}-\d{2}"  # year-month
+    r"(?:-\d{2}"  # optional day
+    r"(?:[T ]\d{2}:\d{2}:\d{2}"  # optional time
+    r"(?:\.\d+)?"  # optional fractional seconds
+    r"(?:Z|[+-]\d{2}:?\d{2})?)?"  # optional timezone
     r")?\b"
 )
 
@@ -199,11 +237,15 @@ def _ordinalize_call_ids(messages: list[Any]) -> list[Any]:
             if call_id is None:
                 contents.append(content)
                 continue
-            contents.append(
-                {**content, "call_id": seen.setdefault(call_id, f"call_{len(seen)}")}
-            )
+            contents.append({**content, "call_id": seen.setdefault(call_id, f"call_{len(seen)}")})
         out.append({**message, "contents": contents})
     return out
+
+
+# Roles whose messages carry database- or clock-derived text: tool results, and
+# system messages (the same text as ``instructions``, when a caller sends it
+# as a message instead of an option).
+_SCRUBBED_ROLES = ("tool", "system")
 
 
 def _normalize_for_hash(canonical: dict[str, Any]) -> dict[str, Any]:
@@ -223,7 +265,14 @@ def _normalize_for_hash(canonical: dict[str, Any]) -> dict[str, Any]:
     file on disk still stores the raw request, which is what makes it readable
     and what lets ``evals/rehash_fixtures.py`` recompute keys offline.
 
-    Deliberately scoped to tool results. A tool *call*'s arguments live in the
+    ``instructions`` and ``role: "system"`` messages are scrubbed the same way
+    (#86): the composed prompt contains example UUIDs and dates as well as the
+    per-request order list, and the order ids and ``created_at`` values in the
+    latter change on every reseed. The trade-off is deliberate: editing an
+    example date or id inside a prompt no longer invalidates fixtures, because
+    the model-visible *shape* is unchanged; any change to the prose still does.
+
+    Otherwise scoped to tool results. A tool *call*'s arguments live in the
     preceding assistant message and are hashed verbatim, so two genuinely
     different calls can never collide on one fixture.
 
@@ -243,10 +292,17 @@ def _normalize_for_hash(canonical: dict[str, Any]) -> dict[str, Any]:
     tutorial fixture for no benefit.
     """
     messages = [
-        _scrub(m) if isinstance(m, dict) and m.get("role") == "tool" else m
+        _scrub(m) if isinstance(m, dict) and m.get("role") in _SCRUBBED_ROLES else m
         for m in canonical.get("messages", [])
     ]
-    return {**canonical, "messages": _ordinalize_call_ids(messages)}
+    normalized = {**canonical, "messages": _ordinalize_call_ids(messages)}
+    # The system prompt is the other place volatile values reach the key:
+    # ``RecentOrdersProvider`` renders the caller's real order ids and
+    # now-relative dates into the instructions. Prose is untouched, so a
+    # reworded prompt still hashes differently — only ids and dates blur.
+    if isinstance(normalized.get("instructions"), str):
+        normalized["instructions"] = _scrub(normalized["instructions"])
+    return normalized
 
 
 def _request_hash(canonical: dict[str, Any]) -> str:
@@ -306,11 +362,11 @@ class ReplayChatClient(FunctionInvocationLayer, BaseChatClient):
                 api_version=settings.AZURE_OPENAI_API_VERSION,
             )
         elif provider == "openai":
-            from agent_framework.openai import OpenAIChatClient
+            from shared.factory import build_openai_client
 
             if not settings.OPENAI_API_KEY:
                 raise ValueError("RECORD=true with REPLAY_RECORD_PROVIDER=openai requires OPENAI_API_KEY in .env.")
-            self._record_client = OpenAIChatClient(
+            self._record_client = build_openai_client(
                 model=settings.LLM_MODEL,
                 api_key=settings.OPENAI_API_KEY,
                 base_url=settings.LLM_BASE_URL or None,

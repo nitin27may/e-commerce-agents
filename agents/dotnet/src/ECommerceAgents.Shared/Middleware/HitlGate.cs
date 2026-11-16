@@ -1,3 +1,4 @@
+using ECommerceAgents.Shared.Logging;
 using Dapper;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
@@ -122,7 +123,7 @@ public sealed class HitlGate
             // closed for exactly this reason: a high-stakes tool must never
             // execute unapproved just because the approval record couldn't
             // be written. A transient DB error is not consent.
-            _logger?.LogError(ex, "hitl.failed_to_create_request tool={Tool}", toolName);
+            _logger?.LogError(ex, "hitl.failed_to_create_request tool={Tool}", LogSafe.Clean(toolName));
             return new
             {
                 status = "error",
@@ -133,9 +134,9 @@ public sealed class HitlGate
 
         _logger?.LogInformation(
             "hitl.pending tool={Tool} agent={Agent} request_id={RequestId}",
-            toolName,
-            agentName,
-            requestId
+            LogSafe.Clean(toolName),
+            LogSafe.Clean(agentName),
+            LogSafe.Clean(requestId)
         );
         return new
         {

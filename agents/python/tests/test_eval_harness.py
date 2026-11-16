@@ -72,10 +72,13 @@ async def test_orchestrator_run_extracts_route_from_specialist_call(monkeypatch:
         messages=[
             Message(
                 role="assistant",
-                contents=[Content.from_function_call(
-                    call_id="c1", name="call_specialist_agent",
-                    arguments={"agent_name": "product-discovery", "message": "hi"},
-                )],
+                contents=[
+                    Content.from_function_call(
+                        call_id="c1",
+                        name="call_specialist_agent",
+                        arguments={"agent_name": "product-discovery", "message": "hi"},
+                    )
+                ],
             )
         ],
         response_id=str(uuid.uuid4()),
@@ -85,8 +88,11 @@ async def test_orchestrator_run_extracts_route_from_specialist_call(monkeypatch:
 
     fake = _ScriptedClient(call_response, _text_response("Found some headphones."))
     fake_agent = Agent(
-        client=fake, instructions="test", name="orchestrator",
-        tools=[call_specialist_agent], middleware=STEP_MIDDLEWARE,
+        client=fake,
+        instructions="test",
+        name="orchestrator",
+        tools=[call_specialist_agent],
+        middleware=STEP_MIDDLEWARE,
     )
     monkeypatch.setattr("orchestrator.agent.create_orchestrator_agent", lambda: fake_agent)
 
@@ -102,9 +108,7 @@ async def test_orchestrator_run_extracts_route_from_specialist_call(monkeypatch:
 async def test_specialist_run_uses_real_agent_host_path(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = _ScriptedClient(_text_response("Here are some products."))
     fake_agent = Agent(client=fake, instructions="test", name="product-discovery")
-    monkeypatch.setattr(
-        "product_discovery.agent.create_product_discovery_agent", lambda: fake_agent
-    )
+    monkeypatch.setattr("product_discovery.agent.create_product_discovery_agent", lambda: fake_agent)
 
     runner = ProductionRunner("product-discovery")
     outcome = await runner.run("find headphones")

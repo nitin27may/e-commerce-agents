@@ -201,6 +201,69 @@ public sealed class SpecialistPipelineTests
         // "if settings.GUARDRAILS_ENABLED" master-switch semantics.
         fakeChatClient.CallCount.Should().Be(1);
     }
+
+    // ─────────────────────── cost gate (E-2d) ───────────────────
+
+    private static readonly UsageDetails OneThousandIn = new() { InputTokenCount = 1000, OutputTokenCount = 0 };
+
+    [Fact]
+    public async Task CostGate_Blocking_TalliesTheRunCost()
+    {
+        using var scope = RequestContext.Scope("u@example.com", "customer", "sess-cost-1");
+        var chat = new FakeChatClient { Usage = OneThousandIn }.EnqueueResponse("ok");
+        var inner = chat.AsAIAgent(instructions: "be helpful", name: "test-agent");
+
+        var wrapped = SpecialistPipeline.Apply(inner, new AgentSettings(), BuildServices(), "test-agent");
+        await wrapped.RunAsync("hi");
+
+        RequestContext.CurrentRunCostUsd.Should().BeApproximately(
+            ECommerceAgents.Shared.Cost.CostEstimator.Estimate("gpt-4.1", 1000, 0), 1e-9);
+    }
+
+    [Fact]
+    public async Task CostGate_Streaming_NowTalliesTheRunCostToo()
+    {
+        // The streaming half used to price nothing, so a streamed run's cost stayed at zero.
+        using var scope = RequestContext.Scope("u@example.com", "customer", "sess-cost-2");
+        var chat = new FakeChatClient { Usage = OneThousandIn }.EnqueueResponse("streamed answer");
+        var inner = chat.AsAIAgent(instructions: "be helpful", name: "test-agent");
+
+        var wrapped = SpecialistPipeline.Apply(inner, new AgentSettings(), BuildServices(), "test-agent");
+        await foreach (var _ in wrapped.RunStreamingAsync("hi"))
+        {
+        }
+
+        RequestContext.CurrentRunCostUsd.Should().BeApproximately(
+            ECommerceAgents.Shared.Cost.CostEstimator.Estimate("gpt-4.1", 1000, 0), 1e-9);
+    }
+
+    [Fact]
+    public async Task CostGate_ObserveMode_CountsWouldBlockButStillCalls()
+    {
+        using var scope = RequestContext.Scope("u@example.com", "customer", "sess-cost-3");
+        var settings = new AgentSettings { CostBudgetMode = "observe", CostBudgetUsdPerRun = 0.000001 };
+        var chat = new FakeChatClient { Usage = OneThousandIn }.EnqueueResponse("one").EnqueueResponse("two");
+        var inner = chat.AsAIAgent(instructions: "be helpful", name: "test-agent");
+
+        long counted = 0;
+        using var listener = new System.Diagnostics.Metrics.MeterListener();
+        listener.InstrumentPublished = (instrument, l) =>
+        {
+            if (instrument.Name == "cost_budget.would_block")
+            {
+                l.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, value, _, _) => Interlocked.Add(ref counted, value));
+        listener.Start();
+
+        var wrapped = SpecialistPipeline.Apply(inner, settings, BuildServices(), "test-agent");
+        await wrapped.RunAsync("first");  // starts under the ceiling
+        var second = await wrapped.RunAsync("second");  // already over: enforce would have refused
+
+        second.Text.Should().Be("two");
+        counted.Should().Be(1);
+    }
 }
 
 /// <summary>

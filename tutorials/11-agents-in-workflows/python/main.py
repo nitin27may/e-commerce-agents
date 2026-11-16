@@ -12,7 +12,6 @@ Run:
 from __future__ import annotations
 
 import asyncio
-import os
 import pathlib
 import sys
 
@@ -21,50 +20,27 @@ from tutorials._shared import maf_bootstrap  # noqa: E402
 
 maf_bootstrap.bootstrap()
 
-from agent_framework import Agent, Message  # noqa: E402
-from agent_framework._workflows._agent_executor import (  # noqa: E402
+from agent_framework import (  # noqa: E402
+    Agent,
     AgentExecutor,
     AgentExecutorRequest,
     AgentExecutorResponse,
+    BaseChatClient,
+    Executor,
+    Message,
+    WorkflowBuilder,  # noqa: E402
+    WorkflowContext,  # noqa: E402
+    handler,
 )
-from agent_framework._workflows._executor import Executor, handler  # noqa: E402
-from agent_framework._workflows._workflow_builder import WorkflowBuilder  # noqa: E402
-from agent_framework._workflows._workflow_context import WorkflowContext  # noqa: E402
-from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient  # noqa: E402
-from tutorials._shared.replay_client import ReplayChatClient  # noqa: E402
+from tutorials._shared.llm import build_chat_client  # noqa: E402
 
 FIXTURES_DIR = pathlib.Path(__file__).resolve().parent / "tests" / "fixtures" / "replay"
 
 
-def _default_client() -> OpenAIChatClient | OpenAIChatCompletionClient | ReplayChatClient:
-    provider = os.environ.get("LLM_PROVIDER", "openai").lower()
-    if provider == "replay":
-        # ReplayChatClient's streaming branch wires the same finalizer real
-        # clients use (BaseChatClient._build_response_stream), which is what
-        # this chapter's workflow-level streaming (translate() below calls
-        # workflow.run(..., stream=True), driving each AgentExecutor via
-        # agent.run(stream=True)) needs to collapse updates back into a
-        # ChatResponse via get_final_response().
-        return ReplayChatClient(
-            fixtures_dir=FIXTURES_DIR,
-            record=os.environ.get("RECORD", "").lower() in ("1", "true", "yes"),
-            record_provider=os.environ.get("REPLAY_RECORD_PROVIDER", "openai"),
-        )
-    if provider == "azure":
-        return OpenAIChatCompletionClient(
-            model=os.environ["AZURE_OPENAI_DEPLOYMENT"],
-            azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
-            api_key=os.environ.get("AZURE_OPENAI_KEY") or os.environ.get("AZURE_OPENAI_API_KEY"),
-            api_version=os.environ.get("AZURE_OPENAI_API_VERSION", "2024-10-21"),
-        )
-    return OpenAIChatClient(
-        model=os.environ.get("LLM_MODEL", "gpt-4.1"),
-        api_key=os.environ["OPENAI_API_KEY"],
-        # Phase 9: any OpenAI-compatible endpoint (GitHub Models, OpenRouter,
-        # vLLM, LM Studio, Ollama) instead of api.openai.com — see
-        # tutorials/00-setup/README.md's "Don't have a paid API key?" section.
-        base_url=os.environ.get("LLM_BASE_URL") or None,
-    )
+def _default_client() -> BaseChatClient:
+    """Chat client per the series key rule (tutorials/_shared/llm.py): an explicit
+    LLM_PROVIDER wins, else a key in the environment, else replay of the fixtures."""
+    return build_chat_client(FIXTURES_DIR)
 
 
 def translator(target_language: str, name: str) -> Agent:

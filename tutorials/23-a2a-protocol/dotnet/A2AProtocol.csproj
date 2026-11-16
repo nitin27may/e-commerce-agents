@@ -8,19 +8,18 @@
     <RootNamespace>MafV1.Ch23.A2AProtocol</RootNamespace>
     <AssemblyName>A2AProtocol</AssemblyName>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Agents.AI" Version="1.1.0" />
-    <PackageReference Include="Microsoft.Agents.AI.OpenAI" Version="1.1.0" />
-    <PackageReference Include="Azure.AI.OpenAI" Version="2.1.0" />
+    <PackageReference Include="Microsoft.Agents.AI" />
+    <PackageReference Include="Microsoft.Agents.AI.OpenAI" />
+    <PackageReference Include="Azure.AI.OpenAI" />
     <!-- TestServer is the .NET counterpart to Python's httpx ASGITransport:
          a real request pipeline, real routing, no socket. It lives in the
          AspNetCore.TestHost package and is referenced by the APP, not just the
          tests, because main() uses it too — the chapter's whole point is that
          the coordinator talks real HTTP to the specialist. -->
-    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
   </ItemGroup>
 
   <!-- Exclude the test project's sources from the main build; the test project owns them. -->

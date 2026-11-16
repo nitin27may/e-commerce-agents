@@ -2,6 +2,7 @@
   {
     "input": "Is the Sony WH-1000XM5 in stock right now?",
     "expected_tools": ["check_stock"],
+    "expected_tool_args": {"check_stock": {"product_id": "dc9e2baa-8182-58f8-9df1-97d049426ba1"}},
     "expected_fields": ["status"],
     "criteria": {
       "grounded": true,
@@ -12,6 +13,7 @@
   {
     "input": "When will the Sony WH-1000XM5 be back in stock?",
     "expected_tools": ["get_restock_schedule"],
+    "expected_tool_args": {"get_restock_schedule": {"product_id": "dc9e2baa-8182-58f8-9df1-97d049426ba1"}},
     "expected_fields": ["status"],
     "criteria": {
       "grounded": true,
@@ -22,6 +24,7 @@
   {
     "input": "How long will shipping take for the Sony WH-1000XM5 to ZIP code 90210?",
     "expected_tools": ["estimate_shipping"],
+    "expected_tool_args": {"estimate_shipping": {"product_id": "dc9e2baa-8182-58f8-9df1-97d049426ba1", "destination_region": "west"}},
     "expected_fields": ["tracking_number"],
     "criteria": {
       "grounded": true,
@@ -32,6 +35,7 @@
   {
     "input": "Compare shipping carriers and delivery times from the east region to the west region",
     "expected_tools": ["compare_carriers"],
+    "expected_tool_args": {"compare_carriers": {"region_from": "east", "region_to": "west"}},
     "expected_fields": ["tracking_number"],
     "criteria": {
       "grounded": true,
@@ -42,6 +46,7 @@
   {
     "input": "What's the tracking status of order 550e8400-e29b-41d4-a716-446655440002?",
     "expected_tools": ["get_tracking_status"],
+    "expected_tool_args": {"get_tracking_status": {"order_id": "550e8400-e29b-41d4-a716-446655440002"}},
     "expected_fields": ["status", "tracking_number"],
     "criteria": {
       "grounded": true,

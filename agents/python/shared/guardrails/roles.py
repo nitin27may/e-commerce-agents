@@ -28,6 +28,7 @@ from typing import Any, TypeVar
 
 from shared.config import settings
 from shared.context import current_user_role
+from shared.log_safe import log_safe
 
 logger = logging.getLogger(__name__)
 
@@ -40,9 +41,9 @@ def _denial(allowed: set[str], tool: str, role: str) -> dict[str, Any]:
     required = sorted(allowed)
     logger.warning(
         "guardrails.role_denied tool=%s role=%s required=%s",
-        tool,
-        role or "<none>",
-        required,
+        log_safe(tool),
+        log_safe(role or "<none>"),
+        log_safe(required),
     )
     return {
         "error": "permission_denied",

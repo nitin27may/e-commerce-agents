@@ -45,12 +45,41 @@ Every change ships with tests.
 
 ## Definition of done (run before opening a PR)
 
+CI gates all of this; run the parts your change touches.
+
 ```bash
-# Python
+# Python (CI: tests.yml)
+cd agents/python && uv sync --all-packages --extra dev
 cd agents/python && uv run ruff check . && uv run ruff format --check . && uv run pytest
-# Frontend
+# Frontend (CI: tests.yml)
 cd web && pnpm lint && pnpm exec tsc --noEmit && pnpm test && pnpm build
+# .NET (CI: tests.yml)
+cd agents/dotnet && dotnet test ECommerceAgents.sln
+# Tutorials (CI: tutorials.yml)
+uv run --project tutorials pytest tutorials/ -m "not integration"
+# Docs checks (CI: tutorials.yml, jekyll-gh-pages.yml)
+python3 scripts/build_docs_site.py --check
+python3 scripts/check_tutorial_readmes.py --check
+python3 scripts/check_tutorial_coverage.py --check
 ```
+
+- **Replay eval smoke** (CI: `evals.yml`, on PRs that touch `evals/`, `shared/`, the
+  orchestrator or an agent): if you changed a prompt, a tool schema or a tool's output,
+  run the recipe in
+  [`agents/python/evals/fixtures/README.md`](agents/python/evals/fixtures/README.md)
+  and confirm zero fixture misses. It needs no key.
+- **UI smoke** (CI: `web-ui-smoke` in `tests.yml`): `cd web && pnpm exec playwright test
+  e2e/ui-smoke.spec.ts e2e/not-found.spec.ts` against `pnpm dev` or a production
+  build. Backend-free.
+- Security scanning (CodeQL, dependency review) runs on its own in CI.
+
+## Good first issues
+
+New here? Start with the issues labelled
+[`good first issue`](https://github.com/nitin27may/e-commerce-agents/labels/good%20first%20issue).
+Each one is scoped to a single area, names the files to start from, and says how to
+check the result — all of it runs with no API key. Comment on the issue before you
+start so two people do not pick up the same one.
 
 ## PRs
 

@@ -133,6 +133,13 @@ public sealed class AgentSettingsLoaderTests
             ["HandoffMaxTurns"] = "HANDOFF_MAX_TURNS",
             ["RateLimitMaxRequests"] = "RATE_LIMIT_MAX_REQUESTS",
             ["RateLimitEnabled"] = "RATE_LIMIT_ENABLED",
+            ["AuthRefreshRotation"] = "AUTH_REFRESH_ROTATION",
+            ["AuthRefreshFamilyMaxDays"] = "AUTH_REFRESH_FAMILY_MAX_DAYS",
+            ["RateLimitAuthMaxRequests"] = "RATE_LIMIT_AUTH_MAX_REQUESTS",
+            ["RateLimitAuthIpMaxRequests"] = "RATE_LIMIT_AUTH_IP_MAX_REQUESTS",
+            ["HitlResumeTimeoutSeconds"] = "HITL_RESUME_TIMEOUT_SECONDS",
+            ["RateLimitTrustedProxyHops"] = "RATE_LIMIT_TRUSTED_PROXY_HOPS",
+            ["CorsAllowedOrigins"] = "CORS_ALLOWED_ORIGINS",
             ["CostBudgetMode"] = "COST_BUDGET_MODE",
             ["GroundingMode"] = "GROUNDING_MODE",
         };

@@ -25,15 +25,18 @@ from starlette.responses import JSONResponse, Response
 from shared.config import settings
 from shared.context import current_session_id, current_user_email, current_user_role
 from shared.jwt_utils import decode_token
+from shared.log_safe import log_safe
 
 logger = logging.getLogger(__name__)
 
 # Paths that skip authentication
-PUBLIC_PATHS = {"/health", "/.well-known/agent-card.json"}
+PUBLIC_PATHS = {"/health", "/ready", "/.well-known/agent-card.json"}
 
 # Roles the platform recognizes. 'system' is the inter-agent sentinel used when
-# a call originates without an end user (internal / health flows).
-_ALLOWED_ROLES = {"customer", "seller", "admin", "system"}
+# a call originates without an end user (internal / health flows). 'support'
+# is the staff role that reviews approvals routed to it; 'power_user' is a
+# seeded customer variant that was previously rejected as unknown.
+_ALLOWED_ROLES = {"customer", "power_user", "seller", "support", "admin", "system"}
 
 
 def _identity_anomaly(email: str, role: str) -> str | None:
@@ -69,10 +72,10 @@ def _apply_forwarded_identity(request: Request, agent_name: str) -> str | None:
     if anomaly:
         logger.warning(
             "security.identity_spoof_suspected agent=%s reason=%s email=%s role=%s",
-            agent_name,
-            anomaly,
-            email,
-            role,
+            log_safe(agent_name),
+            log_safe(anomaly),
+            log_safe(email),
+            log_safe(role),
         )
         if settings.GUARDRAILS_STRICT_IDENTITY:
             return "Invalid forwarded identity"
@@ -119,8 +122,8 @@ class AgentAuthMiddleware(BaseHTTPMiddleware):
             logger.info(
                 "auth.agent agent=%s user=%s role=%s",
                 self.agent_name,
-                current_user_email.get(),
-                current_user_role.get(),
+                log_safe(current_user_email.get()),
+                log_safe(current_user_role.get()),
             )
             return await call_next(request)
 
@@ -154,8 +157,8 @@ class AgentAuthMiddleware(BaseHTTPMiddleware):
             logger.info(
                 "auth.agent agent=%s user=%s role=%s",
                 self.agent_name,
-                current_user_email.get(),
-                current_user_role.get(),
+                log_safe(current_user_email.get()),
+                log_safe(current_user_role.get()),
             )
             return await call_next(request)
 
@@ -179,5 +182,5 @@ class AgentAuthMiddleware(BaseHTTPMiddleware):
         current_user_role.set(role)
         current_session_id.set(request.headers.get("x-session-id", ""))
 
-        logger.info("auth.user agent=%s user=%s role=%s", self.agent_name, email, role)
+        logger.info("auth.user agent=%s user=%s role=%s", self.agent_name, log_safe(email), log_safe(role))
         return await call_next(request)

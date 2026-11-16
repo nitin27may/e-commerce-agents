@@ -56,7 +56,9 @@ class ResourceOwnerPasswordCredentialsGrant(_BaseResourceOwnerPasswordCredential
         async def _lookup() -> User | None:
             pool = get_pool()
             row = await pool.fetchrow(
-                "SELECT id, email, password_hash, role, is_active FROM users WHERE email = $1",
+                # Case-insensitive, preferring the exact spelling typed (see migration 0004).
+                "SELECT id, email, password_hash, role, is_active FROM users "
+                "WHERE lower(email) = lower($1) ORDER BY (email = $1) DESC, created_at LIMIT 1",
                 username,
             )
             if row is None or not row["is_active"]:

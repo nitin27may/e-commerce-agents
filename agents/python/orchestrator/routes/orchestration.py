@@ -10,19 +10,16 @@ through several modes, sequentially (a fair latency comparison and no
 resource contention beats a faster but muddier concurrent run), and
 returns per-mode text/latency/steps/graph — the artifact meant to be
 screenshotted showing tool vs. workflow vs. handoff side by side on the
-same prompt. ``tokens``/``est_cost_usd``/``grounding`` from the plan's
-original sketch are deliberately not in the response yet — they need
-Phase 3.5's ``shared/cost.py`` and Phase 2's grounding verifier, neither
-of which exists yet; returning fabricated numbers would be worse than
-not returning them. ``POST /{run_id}/resume`` is real as of Phase 1.5:
+same prompt. Each result carries ``tokens_in``/``tokens_out``/``est_cost_usd``
+from the mode's ``run_completed.usage`` (``null`` = the mode reported none, ``0``
+= an explicit zero, as the workflow modes make no LLM call); ``grounding`` is
+not in the response. ``POST /{run_id}/resume`` is real as of Phase 1.5:
 it resumes a paused ``workflow:return-replace`` run from the
 ``hitl_requests`` row Phase 1.5's ``chat.py`` linkage wrote.
 """
 
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
 import time
 from typing import Any
@@ -30,10 +27,14 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from shared.context import current_user_email, current_user_role
+from shared.config import settings  # noqa: F401 - re-exported: tests patch the instance the resume path reads
+from shared.cost import usage_cost
 from shared.db import get_pool
+from shared.log_safe import log_safe
+from shared.rate_limit import rate_limit_chat
+from shared.run_usage import tokens_from_usage
 
-from .legacy import require_admin, require_auth
+from .legacy import require_auth, require_staff
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,11 @@ class CompareModeResult(BaseModel):
     agents_involved: list[str]
     step_count: int
     graph_mermaid: str | None
+    # None = the mode reported no usage (not captured); 0 = it reported an explicit
+    # zero (the workflow modes make no LLM call).
+    tokens_in: int | None = None
+    tokens_out: int | None = None
+    est_cost_usd: float | None = None
     error: str | None = None
 
 
@@ -86,7 +92,11 @@ class CompareResponse(BaseModel):
 
 
 @router.post("/compare", response_model=CompareResponse)
-async def compare_modes(body: CompareRequest, user: dict[str, Any] = Depends(require_auth)) -> CompareResponse:
+async def compare_modes(
+    body: CompareRequest,
+    user: dict[str, Any] = Depends(require_auth),
+    _rate_limit: None = Depends(rate_limit_chat),
+) -> CompareResponse:
     """Run one prompt through several modes and report per-mode results.
 
     Standalone — no conversation, no persisted history (``RunContext(history=[])``
@@ -135,6 +145,7 @@ async def compare_modes(body: CompareRequest, user: dict[str, Any] = Depends(req
         tool_call_count = 0
         node_enter_count = 0
         error: str | None = None
+        usage: dict[str, Any] | None = None
         try:
             async for event in mode.run(body.message, ctx):
                 if event.kind == "tool_call":
@@ -144,10 +155,13 @@ async def compare_modes(body: CompareRequest, user: dict[str, Any] = Depends(req
                 elif event.kind == "run_completed":
                     text = event.payload.get("text", "")
                     agents_involved = event.payload.get("agents_involved", [])
+                    usage = event.payload.get("usage")
         except Exception as exc:
-            logger.exception("compare.mode_error mode=%s", name)
+            logger.exception("compare.mode_error mode=%s", log_safe(name))
             error = str(exc)
         latency_ms = int((time.monotonic() - start) * 1000)
+        est_cost = usage_cost(usage)
+        tokens_in, tokens_out = tokens_from_usage(usage) if est_cost is not None else (None, None)
 
         results.append(
             CompareModeResult(
@@ -161,6 +175,9 @@ async def compare_modes(body: CompareRequest, user: dict[str, Any] = Depends(req
                 # much happened" signal — see orchestrator/events.py.
                 step_count=tool_call_count or node_enter_count,
                 graph_mermaid=mode.graph_mermaid(),
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+                est_cost_usd=est_cost,
                 error=error,
             )
         )
@@ -174,115 +191,44 @@ class ResumeRequest(BaseModel):
 
 @router.post("/{run_id}/resume")
 async def resume_run(
-    run_id: str, body: ResumeRequest, admin: dict[str, Any] = Depends(require_admin)
+    run_id: str,
+    body: ResumeRequest,
+    staff: dict[str, Any] = Depends(require_staff),
+    _rate_limit: None = Depends(rate_limit_chat),
 ) -> dict[str, Any]:
-    """Resume a workflow paused on in-workflow HITL, from committed checkpoint state.
+    """Resume a workflow paused on in-workflow HITL — a thin shim over the unified ``decide``.
 
-    Admin only: the person who asked for a return must not be the one who
-    approves it (#92). Claims the most recent *pending* ``hitl_requests`` row
-    for ``run_id`` atomically (``pending`` -> ``processing``) *before* the
-    workflow runs, so two concurrent clicks cannot both resume and both
-    release a refund; the loser gets 409. The claim is handed back if the
-    request cannot be resumed or the resume raises, so the button stays live.
-    Resumes via ``ReturnReplaceMode.resume()`` (currently the only mode with
-    anything to resume) and then marks the request resolved. A request with no
-    ``request_id``/``checkpoint_id`` predates Phase 1.5's checkpoint wiring and
-    can't be resumed this way — surfaced as 409, not silently treated as "not
-    found".
+    Staff only (support or admin, at or above the approval's assigned role): the person who asked for a return
+    must not be the one who approves it (#92), so the requester is refused with 403 before anything is claimed.
+    Finds the latest ``hitl_requests`` row for ``run_id`` (creating its inbox approval if it predates the
+    inbox) and hands the decision to ``orchestrator.approvals_service.decide``, which owns the claim / fence /
+    resume machinery: a ``pending`` -> ``processing`` claim before the workflow runs (a second click is a 409),
+    a ``claimed_at`` fencing token and TTL takeover for a crashed resume, the remaining steps executed as the
+    requester with the reviewer recorded separately, and the claim handed back if the resume fails or is
+    cancelled. A request with no ``request_id``/``checkpoint_id`` predates checkpoint wiring and is a 409.
     """
+    from orchestrator import approvals_service as svc
+
     pool = get_pool()
-    reviewer_email = str(admin.get("sub", ""))
-
-    hitl = await pool.fetchrow(
-        """UPDATE hitl_requests SET status = 'processing'
-           WHERE id = (
-                 SELECT id FROM hitl_requests
-                  WHERE workflow_run_id = $1 AND status = 'pending'
-                    AND lower(user_email) <> lower($2)
-                  ORDER BY created_at DESC LIMIT 1)
-             AND status = 'pending'
-           RETURNING *""",
-        run_id,
-        reviewer_email,
+    row = await pool.fetchrow(
+        "SELECT id FROM hitl_requests WHERE workflow_run_id = $1 ORDER BY created_at DESC LIMIT 1", run_id
     )
-    if not hitl:
-        # Nothing claimable: "never existed" is a 404, "someone already took it" a
-        # 409, and a pending request the caller raised themselves a 403 (#92).
-        latest = await pool.fetchrow(
-            "SELECT status, user_email FROM hitl_requests WHERE workflow_run_id = $1 ORDER BY created_at DESC LIMIT 1",
-            run_id,
-        )
-        if latest is None:
-            raise HTTPException(status_code=404, detail="No pending approval found for this run")
-        if latest["status"] == "pending" and latest["user_email"].lower() == reviewer_email.lower():
-            raise HTTPException(status_code=403, detail="You cannot approve your own request")
-        raise HTTPException(status_code=409, detail=f"Request is already {latest['status']}")
+    if row is None:
+        raise HTTPException(status_code=404, detail="No pending approval found for this run")
+    approval_id = await svc.ensure_for_hitl_request(str(row["id"]))
+    if approval_id is None:
+        raise HTTPException(status_code=404, detail="No pending approval found for this run")
 
-    async def _release() -> None:
-        await pool.execute(
-            "UPDATE hitl_requests SET status = 'pending' WHERE id = $1 AND status = 'processing'", hitl["id"]
-        )
-
-    if hitl["kind"] != "return_approval":
-        await _release()
-        raise HTTPException(status_code=400, detail=f"Resume not supported for request kind {hitl['kind']!r}")
-    if not hitl["request_id"] or not hitl["checkpoint_id"]:
-        await _release()
-        raise HTTPException(status_code=409, detail="This pending request predates checkpoint-based resume")
-
-    from orchestrator.modes.workflow_mode import ReturnReplaceMode
-
-    mode = ReturnReplaceMode()
-    final_payload: dict[str, Any] = {}
-    # The workflow's remaining steps (loyalty discount, finalize) read the
-    # request identity from ContextVars, and that is currently the approving
-    # admin. They must act for the customer who asked for the return, so run
-    # them under the stored requester's identity and restore the reviewer's
-    # afterwards. The reviewer still authorised the call (require_admin) and is
-    # recorded as ``decided_by`` below.
-    requester_email = hitl["user_email"]
-    resumed = False
-    email_token = current_user_email.set(requester_email)
-    role_token = current_user_role.set("customer")
+    actor = svc.Actor(email=str(staff.get("sub", "")), role=str(staff.get("role", "")))
     try:
-        requester_role = await pool.fetchval("SELECT role FROM users WHERE email = $1", requester_email) or "customer"
-        current_user_role.set(requester_role)
-        async for event in mode.resume(
-            checkpoint_id=str(hitl["checkpoint_id"]), request_id=hitl["request_id"], approved=body.approved
-        ):
-            if event.kind == "run_completed":
-                final_payload = event.payload
-        resumed = True
-    finally:
-        current_user_role.reset(role_token)
-        current_user_email.reset(email_token)
-        if not resumed:
-            # Any way out without a completed resume, cancellation included
-            # (client disconnect, shutdown: CancelledError is not an Exception),
-            # hands the claim back so the row is not stuck in 'processing'.
-            # Shielded so a second cancel cannot interrupt the release itself.
-            await asyncio.shield(_release())
+        outcome = await svc.decide(approval_id, actor, decision="approve" if body.approved else "reject")
+    except svc.ApprovalHTTPError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from None
 
-    await pool.execute(
-        """UPDATE hitl_requests
-           SET status = $1, responded_at = NOW(), response = $2::jsonb
-           WHERE id = $3""",
-        "approved" if body.approved else "rejected",
-        # No responder column exists, so the reviewer is recorded in the response.
-        json.dumps({"approved": body.approved, "decided_by": admin.get("sub")}),
-        hitl["id"],
-    )
-    new_checkpoint_id = final_payload.get("latest_checkpoint_id")
-    if new_checkpoint_id:
-        await pool.execute(
-            "UPDATE workflow_checkpoints SET usage_log_id = $1 WHERE checkpoint_id = $2",
-            run_id,
-            new_checkpoint_id,
-        )
-
+    result = outcome["result"]
     return {
         "run_id": run_id,
         "approved": body.approved,
-        "text": final_payload.get("text", ""),
-        "agents_involved": final_payload.get("agents_involved", []),
+        "text": result.get("text", ""),
+        "agents_involved": result.get("agents_involved", []),
     }

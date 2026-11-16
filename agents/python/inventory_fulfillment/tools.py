@@ -19,7 +19,8 @@ async def get_restock_schedule(
     pool = get_pool()
     async with pool.acquire() as conn:
         product = await conn.fetchrow(
-            "SELECT id, name FROM products WHERE id = $1", product_id,
+            "SELECT id, name FROM products WHERE id = $1",
+            product_id,
         )
         if not product:
             return {"error": f"Product not found: {product_id}"}
@@ -49,7 +50,13 @@ async def get_restock_schedule(
         }
 
 
-@tool(name="estimate_shipping", description="Estimate shipping cost and delivery time for a product to a destination region. Finds the closest warehouse with stock and returns carrier options.")
+@tool(
+    name="estimate_shipping",
+    description=(
+        "Estimate shipping cost and delivery time for a product to a destination region. Finds the closest warehouse "
+        "with stock and returns carrier options."
+    ),
+)
 async def estimate_shipping(
     product_id: Annotated[str, Field(description="UUID of the product")],
     destination_region: Annotated[str, Field(description="Destination region: 'east', 'central', or 'west'")],
@@ -65,7 +72,8 @@ async def estimate_shipping(
                ORDER BY
                    CASE WHEN w.region = $2 THEN 0 ELSE 1 END,
                    wi.quantity DESC""",
-            product_id, destination_region,
+            product_id,
+            destination_region,
         )
         if not inventory:
             return {
@@ -86,7 +94,8 @@ async def estimate_shipping(
                JOIN carriers c ON sr.carrier_id = c.id
                WHERE sr.region_from = $1 AND sr.region_to = $2
                ORDER BY sr.price""",
-            region_from, destination_region,
+            region_from,
+            destination_region,
         )
 
         return {
@@ -112,7 +121,13 @@ async def estimate_shipping(
         }
 
 
-@tool(name="compare_carriers", description="Compare all carrier options (Standard, Express, Overnight) between two regions with pricing and delivery estimates.")
+@tool(
+    name="compare_carriers",
+    description=(
+        "Compare all carrier options (Standard, Express, Overnight) between two regions with pricing and delivery "
+        "estimates."
+    ),
+)
 async def compare_carriers(
     region_from: Annotated[str, Field(description="Origin region: 'east', 'central', or 'west'")],
     region_to: Annotated[str, Field(description="Destination region: 'east', 'central', or 'west'")],
@@ -126,7 +141,8 @@ async def compare_carriers(
                JOIN carriers c ON sr.carrier_id = c.id
                WHERE sr.region_from = $1 AND sr.region_to = $2
                ORDER BY sr.price""",
-            region_from, region_to,
+            region_from,
+            region_to,
         )
         if not rows:
             return {
@@ -177,7 +193,8 @@ async def get_tracking_status(
                FROM orders o
                JOIN users u ON o.user_id = u.id
                WHERE o.id = $1 AND u.email = $2""",
-            order_id, email,
+            order_id,
+            email,
         )
         if not order:
             return {"error": f"Order not found or not accessible: {order_id}"}
@@ -216,11 +233,19 @@ async def get_tracking_status(
                 "status": history[0]["status"],
                 "location": history[0]["location"],
                 "timestamp": history[0]["timestamp"].isoformat(),
-            } if history else None,
+            }
+            if history
+            else None,
         }
 
 
-@tool(name="calculate_fulfillment_plan", description="Calculate the optimal fulfillment plan for a multi-item order. Determines the best warehouse for each product and estimates total shipping cost.")
+@tool(
+    name="calculate_fulfillment_plan",
+    description=(
+        "Calculate the optimal fulfillment plan for a multi-item order. Determines the best warehouse for each "
+        "product and estimates total shipping cost."
+    ),
+)
 @requires_role("seller", "admin")
 async def calculate_fulfillment_plan(
     product_ids: Annotated[list[str], Field(description="List of product UUIDs to fulfill")],
@@ -237,7 +262,8 @@ async def calculate_fulfillment_plan(
 
         for pid in product_ids:
             product = await conn.fetchrow(
-                "SELECT id, name, price FROM products WHERE id = $1", pid,
+                "SELECT id, name, price FROM products WHERE id = $1",
+                pid,
             )
             if not product:
                 unavailable.append(pid)
@@ -252,7 +278,8 @@ async def calculate_fulfillment_plan(
                    ORDER BY
                        CASE WHEN w.region = $2 THEN 0 ELSE 1 END,
                        wi.quantity DESC""",
-                pid, destination_region,
+                pid,
+                destination_region,
             )
 
             if not inventory:
@@ -289,20 +316,25 @@ async def calculate_fulfillment_plan(
                    WHERE sr.region_from = $1 AND sr.region_to = $2
                    ORDER BY sr.price
                    LIMIT 1""",
-                region_from, destination_region,
+                region_from,
+                destination_region,
             )
 
             shipping_cost = float(rate["price"]) if rate else 0.0
             total_shipping += shipping_cost
 
-            shipment_details.append({
-                "warehouse": warehouse_key,
-                "items": [i["product_name"] for i in items],
-                "item_count": len(items),
-                "carrier": rate["carrier"] if rate else "Unknown",
-                "shipping_cost": shipping_cost,
-                "delivery_window": f"{rate['estimated_days_min']}-{rate['estimated_days_max']} business days" if rate else "Unknown",
-            })
+            shipment_details.append(
+                {
+                    "warehouse": warehouse_key,
+                    "items": [i["product_name"] for i in items],
+                    "item_count": len(items),
+                    "carrier": rate["carrier"] if rate else "Unknown",
+                    "shipping_cost": shipping_cost,
+                    "delivery_window": f"{rate['estimated_days_min']}-{rate['estimated_days_max']} business days"
+                    if rate
+                    else "Unknown",
+                }
+            )
 
         return {
             "destination_region": destination_region,
@@ -317,7 +349,10 @@ async def calculate_fulfillment_plan(
 
 @tool(
     name="place_backorder",
-    description="Place a backorder for an out-of-stock product. Checks stock first and only creates a backorder if the product is truly unavailable.",
+    description=(
+        "Place a backorder for an out-of-stock product. Checks stock first and only creates a backorder if the "
+        "product is truly unavailable."
+    ),
     approval_mode="always_require",
 )
 @requires_role("seller", "admin")
@@ -335,7 +370,8 @@ async def place_backorder(
     pool = get_pool()
     async with pool.acquire() as conn:
         product = await conn.fetchrow(
-            "SELECT id, name, price FROM products WHERE id = $1", product_id,
+            "SELECT id, name, price FROM products WHERE id = $1",
+            product_id,
         )
         if not product:
             return {"error": f"Product not found: {product_id}"}
@@ -370,6 +406,7 @@ async def place_backorder(
 
         # Mock backorder confirmation (no new table needed)
         import uuid
+
         backorder_id = str(uuid.uuid4())
 
         return {
@@ -385,6 +422,8 @@ async def place_backorder(
                 "date": next_restock["expected_date"].isoformat(),
                 "quantity": next_restock["expected_quantity"],
                 "warehouse": next_restock["warehouse"],
-            } if next_restock else None,
+            }
+            if next_restock
+            else None,
             "message": "Backorder placed successfully. You will be notified when the product is back in stock.",
         }

@@ -1,8 +1,10 @@
+using ECommerceAgents.Shared.Logging;
 using ECommerceAgents.Shared.Auth;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.ContextProviders;
 using ECommerceAgents.Shared.Data;
+using ECommerceAgents.Shared.Health;
 using ECommerceAgents.Shared.Middleware;
 using ECommerceAgents.Shared.Telemetry;
 using Microsoft.Agents.AI;
@@ -47,7 +49,16 @@ public static class AgentHost
     /// camelCase policy, which <see cref="ECommerceAgents.Shared.A2A.A2AClient"/>'s
     /// own response DTO matches explicitly via <c>JsonPropertyName</c>.
     /// </summary>
-    public sealed record AgentResponse(string Response, IReadOnlyList<ExecutionStep>? Steps = null);
+    public sealed record AgentResponse(
+        string Response,
+        IReadOnlyList<ExecutionStep>? Steps = null,
+        // This process's LLM token usage for the call (snake_case wire shape, see
+        // SpecialistUsage). Its own field, never part of Response, which is the
+        // text the orchestrator's model reads. Omitted when the model reported none.
+        [property: System.Text.Json.Serialization.JsonIgnore(
+            Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        SpecialistUsage? Usage = null
+    );
 
     /// <summary>
     /// Build a standalone <see cref="WebApplication"/> configured as an A2A
@@ -94,10 +105,14 @@ public static class AgentHost
 
         var app = builder.Build();
 
+        // A malformed per-agent model: block fails here, naming the file, not on the first request.
+        app.Services.GetService<ECommerceAgents.Shared.Prompts.PromptLoader>()?.ValidateModelOverrides();
+
         app.UseAgentAuth();
 
         app.MapGet("/", () => Results.Ok(new { status = "ok", service = name, port }));
         app.MapGet("/health", () => Results.Ok(new { healthy = true, service = name }));
+        app.MapReadiness(name);
 
         app.MapGet("/.well-known/agent-card.json", () =>
             Results.Ok(new
@@ -134,7 +149,8 @@ public static class AgentHost
             try
             {
                 var reply = await onMessage(payload.Message, services);
-                return Results.Ok(new AgentResponse(reply, RequestContext.CurrentSteps.ToList()));
+                return Results.Ok(new AgentResponse(
+                    reply, RequestContext.CurrentSteps.ToList(), RequestContext.CurrentRunUsage.Total()));
             }
             catch (Exception ex)
             {
@@ -218,6 +234,14 @@ public static class AgentHost
                 // Anything that completed after the final chunk — a tool the model
                 // never narrated, or a run that produced no text at all.
                 await DrainStepsAsync();
+
+                // Terminal usage frame, ahead of [DONE]: a named event, so a reader
+                // that only understands text frames cannot mistake it for text.
+                if (RequestContext.CurrentRunUsage.Total() is { } usageFrame)
+                {
+                    await http.Response.WriteAsync(
+                        $"event: usage\ndata: {usageFrame.ToWireJson()}\n\n", Encoding.UTF8);
+                }
                 await http.Response.WriteAsync("data: [DONE]\n\n", Encoding.UTF8);
                 await http.Response.Body.FlushAsync();
             }
@@ -260,6 +284,9 @@ public static class AgentHost
         messages.Add(new ChatMessage(ChatRole.User, message));
 
         var response = await agent.RunAsync(messages);
+        RequestContext.RecordUsage(
+            RunUsage.SelfKey,
+            SpecialistUsage.From(response.Usage, services.GetService<AgentSettings>()?.LlmModel ?? ""));
         return response.Text;
     }
 
@@ -290,8 +317,15 @@ public static class AgentHost
             .ToList();
         messages.Add(new ChatMessage(ChatRole.User, message));
 
+        var model = services.GetService<AgentSettings>()?.LlmModel ?? "";
         await foreach (var update in agent.RunStreamingAsync(messages, cancellationToken: ct))
         {
+            // Usage arrives as a content item on an update, not as text.
+            foreach (var content in update.Contents.OfType<UsageContent>())
+            {
+                RequestContext.RecordUsage(RunUsage.SelfKey, SpecialistUsage.From(content.Details, model));
+            }
+
             if (!string.IsNullOrEmpty(update.Text))
             {
                 yield return update.Text;
@@ -307,6 +341,6 @@ internal static class LoggingExtensions
     public static void LogException(this ILogger logger, Exception ex, string template, params object?[] args)
     {
         var rendered = string.Format(System.Globalization.CultureInfo.InvariantCulture, template.Replace("{Service}", "{0}"), args);
-        logger.LogError(ex, "{Message}", rendered);
+        logger.LogError(ex, "{Message}", LogSafe.Clean(rendered, 1000));
     }
 }

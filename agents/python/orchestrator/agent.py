@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Annotated
+from collections.abc import Mapping
+from typing import Annotated, Any
 
 import httpx
 from agent_framework import Agent, tool
 from pydantic import Field
 
 from orchestrator.prompts import get_system_prompt
-from shared.agent_factory import create_chat_client
+from shared.agent_factory import agent_default_options, create_chat_client
 from shared.config import settings
 from shared.context import (
     current_steps,
@@ -22,8 +23,11 @@ from shared.context import (
 from shared.context_providers import ECommerceContextProvider
 from shared.factory import parse_agent_registry
 from shared.http_resilience import ResilientAsyncTransport
+from shared.log_safe import log_safe
 from shared.middleware import build_specialist_middleware
 from shared.oauth.service_client import build_a2a_headers
+from shared.replay_miss import REPLAY_MISS_EVENT, SpecialistReplayMissError, is_replay_miss_status
+from shared.run_usage import record_usage
 from shared.sse import aiter_sse_events
 from shared.telemetry import a2a_call_span
 
@@ -85,7 +89,9 @@ async def call_specialist_agent(
         available = ", ".join(AGENT_REGISTRY.keys()) if AGENT_REGISTRY else "none configured"
         return f"Unknown agent: {agent_name}. Available agents: {available}"
 
-    logger.info("a2a.call source=orchestrator target=%s user=%s", agent_name, current_user_email.get())
+    logger.info(
+        "a2a.call source=orchestrator target=%s user=%s", log_safe(agent_name), log_safe(current_user_email.get())
+    )
 
     # Audit fix #14: stop forwarding a truncated copy of the conversation
     # history on every A2A call. The session id travels in the header; the
@@ -121,10 +127,15 @@ async def call_specialist_agent(
                         json=request_body,
                         headers=headers,
                     ) as resp:
+                        if is_replay_miss_status(resp.status_code):
+                            raise SpecialistReplayMissError()
                         resp.raise_for_status()
                         stream_opened = True
                         async for current_event, payload in aiter_sse_events(resp.aiter_text()):
                             frames_seen += 1
+                            if current_event == REPLAY_MISS_EVENT:
+                                # The specialist has no recording for its model call.
+                                raise SpecialistReplayMissError()
                             if current_event == "step":
                                 # Merge specialist tool-call step into the
                                 # shared current_steps for this request, and
@@ -151,14 +162,28 @@ async def call_specialist_agent(
                                 except (json.JSONDecodeError, ValueError):
                                     pass
                                 continue
+                            if current_event == "usage":
+                                # Accounting only: it goes to the turn's
+                                # accumulator, never into `chunks` (the tool
+                                # result the model reads) or the browser queue.
+                                try:
+                                    _record_specialist_usage(agent_name, json.loads(payload))
+                                except (json.JSONDecodeError, ValueError):
+                                    logger.warning("a2a.usage_unparseable target=%s", log_safe(agent_name))
+                                continue
                             if payload == "[DONE]":
                                 break
                             if payload.startswith("[ERROR"):
-                                logger.error("a2a.stream_error target=%s payload=%s", agent_name, payload)
+                                logger.error(
+                                    "a2a.stream_error target=%s payload=%s", log_safe(agent_name), log_safe(payload)
+                                )
                                 continue
                             chunks.append(payload)
                             await stream_queue.put(("delta", agent_name, payload))
                 return "".join(chunks) or f"The {agent_name} agent returned an empty response."
+            except SpecialistReplayMissError:
+                # Not an A2A failure: end the turn as a miss (shared/replay_miss.py).
+                raise
             except Exception as exc:
                 if frames_seen:
                     # Mid-stream failure: keep what the user already saw and say
@@ -166,7 +191,7 @@ async def call_specialist_agent(
                     # have already run.
                     logger.error(
                         "a2a.stream_interrupted target=%s frames=%d reason=%s",
-                        agent_name,
+                        log_safe(agent_name),
                         frames_seen,
                         type(exc).__name__,
                     )
@@ -180,14 +205,14 @@ async def call_specialist_agent(
                     # was emitted. Re-posting would run it twice.
                     logger.error(
                         "a2a.stream_failed_unsafe_to_retry target=%s reason=%s",
-                        agent_name,
+                        log_safe(agent_name),
                         type(exc).__name__,
                     )
                     return (
                         f"[The {agent_name} agent could not be confirmed to have completed this request. "
                         "It may or may not have acted on it; please check before trying again.]"
                     )
-                logger.warning("a2a.stream_fallback target=%s reason=%s", agent_name, type(exc).__name__)
+                logger.warning("a2a.stream_fallback target=%s reason=%s", log_safe(agent_name), type(exc).__name__)
                 # The request provably never ran (see _request_never_ran), so
                 # the blocking path is a safe retry.
 
@@ -199,22 +224,45 @@ async def call_specialist_agent(
                     json=request_body,
                     headers=headers,
                 )
+                if is_replay_miss_status(resp.status_code):
+                    raise SpecialistReplayMissError()
                 resp.raise_for_status()
                 data = resp.json()
                 bucket = current_steps.get()
                 specialist_steps = data.get("steps") or []
                 if bucket is not None and specialist_steps:
                     bucket.extend(specialist_steps)
+                _record_specialist_usage(agent_name, data.get("usage"))
                 return data.get("response", resp.text)
+        except SpecialistReplayMissError:
+            raise
         except httpx.TimeoutException:
-            logger.error("a2a.timeout target=%s", agent_name)
+            logger.error("a2a.timeout target=%s", log_safe(agent_name))
             return f"The {agent_name} agent took too long to respond. Please try again."
         except httpx.HTTPStatusError as e:
-            logger.error("a2a.error target=%s status=%s", agent_name, e.response.status_code)
+            logger.error("a2a.error target=%s status=%s", log_safe(agent_name), e.response.status_code)
             return f"The {agent_name} agent returned an error (status {e.response.status_code}). Please try again."
         except Exception:
-            logger.exception("a2a.failure target=%s", agent_name)
+            logger.exception("a2a.failure target=%s", log_safe(agent_name))
             return f"Failed to reach the {agent_name} agent. Please try again later."
+
+
+def _record_specialist_usage(agent_name: str, usage: Any) -> None:
+    """Add a specialist's reported usage to the turn's accumulator; a malformed value is ignored.
+
+    Usage is accounting, never part of the answer: a specialist that ran and replied must not be
+    reported as unreachable because its ``usage`` field was not a mapping. Logged once per call
+    (fixed text, no payload), then dropped.
+    """
+    if usage is None:
+        return
+    if not isinstance(usage, Mapping):
+        logger.warning("a2a.usage_unparseable target=%s", log_safe(agent_name))
+        return
+    try:
+        record_usage(agent_name, usage)
+    except (TypeError, ValueError, AttributeError):
+        logger.warning("a2a.usage_unparseable target=%s", log_safe(agent_name))
 
 
 # Export tools list for direct use by routes.py (bypassing MAF Responses API)
@@ -224,7 +272,8 @@ ORCHESTRATOR_TOOLS = [call_specialist_agent]
 def create_orchestrator_agent() -> Agent:
     """Create the Customer Support orchestrator ChatAgent."""
     return Agent(
-        client=create_chat_client(),
+        client=create_chat_client("orchestrator"),
+        default_options=agent_default_options("orchestrator"),
         name="orchestrator",
         description="Customer support orchestrator that routes requests to specialist agents.",
         instructions=get_system_prompt(current_user_role.get() or "customer"),

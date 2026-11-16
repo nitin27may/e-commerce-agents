@@ -20,9 +20,7 @@ from __future__ import annotations
 
 from contextvars import ContextVar
 
-current_guardrail_flags: ContextVar[dict[str, bool] | None] = ContextVar(
-    "current_guardrail_flags", default=None
-)
+current_guardrail_flags: ContextVar[dict[str, bool] | None] = ContextVar("current_guardrail_flags", default=None)
 
 
 def reset_guardrail_flags() -> dict[str, bool]:

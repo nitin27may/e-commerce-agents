@@ -117,7 +117,12 @@ cp .env.example .env
 ```
 
 `.env` at the repo root is read by every tutorial chapter and by the capstone app
-alike. `LLM_PROVIDER` selects the block: `openai`, `azure`, or `replay`.
+alike. `LLM_PROVIDER` selects the block: `openai`, `azure`, or `replay`. The tutorials'
+rule for keys is the same in every chapter: an explicit `LLM_PROVIDER` wins; otherwise a
+key in the environment selects OpenAI or Azure; otherwise the chapter replays its
+committed fixture and says so (`tutorials/_shared/llm.py`). Note that `.env.example`
+sets `LLM_PROVIDER=openai`, so after `cp .env.example .env` a chapter tries a live
+call until you either add a key or comment that line out (or set `LLM_PROVIDER=replay`).
 
 ### Option A — OpenAI (or any OpenAI-compatible endpoint)
 
@@ -186,9 +191,9 @@ answer doesn't reflect the tool's canned data, that's the model's
 tool-calling support, not a bug in the chapter.
 
 **Option 2 — Replay (free, no network, no key at all).** Every tutorial chapter's
-`tests/` directory ships committed fixtures recorded against a real model. Set
-`LLM_PROVIDER=replay` and the chapter's own client construction plays them back
-with zero credentials:
+`tests/` directory ships committed fixtures recorded against a real model. With no
+key in the environment (and `LLM_PROVIDER` unset or `replay`) the chapter's own
+client construction plays them back with zero credentials:
 
 ```bash
 LLM_PROVIDER=replay uv run --project tutorials python tutorials/01-first-agent/python/main.py
@@ -284,11 +289,9 @@ There's no code yet, but one setup-time difference is worth knowing early:
 - **Ports 5432 / 6379 / 8080 already in use.** Only matters if you're running the
   full capstone app (`dev.sh`), not the standalone tutorial chapters. Stop any
   local Postgres/Redis or change the ports in `docker-compose.yml`.
-- **Don't chase the old "empty `agent_framework/__init__.py`" bug.** Earlier
-  builds of this repo needed `agents/python/patch_maf.py` to work around a
-  packaging bug in `agent-framework-core==1.0.0`. The repo now pins
-  `agent-framework-core>=1.14.0`, which ships a real `__init__.py`, so that patch
-  is already a no-op — you don't need to think about it.
+- **Don't chase the old "empty `agent_framework/__init__.py`" bug.** It only affected
+  `agent-framework-core==1.0.0`. The repo pins `agent-framework-core==1.22.0`, which ships a real
+  `__init__.py`, so there is nothing to patch and no workaround file in the repo.
 
 ## Tests
 

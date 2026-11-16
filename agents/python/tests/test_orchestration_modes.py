@@ -302,7 +302,7 @@ def test_handoff_triage_agent_has_no_tools(monkeypatch) -> None:
         def __init__(self, **kwargs):
             captured.update(kwargs)
 
-    monkeypatch.setattr(handoff_module, "create_chat_client", lambda: object())
+    monkeypatch.setattr(handoff_module, "create_chat_client", lambda *_a, **_k: object())
     monkeypatch.setattr(handoff_module, "Agent", _FakeAgent)
 
     handoff_module.create_handoff_triage_agent()

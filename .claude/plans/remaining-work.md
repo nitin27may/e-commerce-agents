@@ -463,6 +463,8 @@ Listed so they are not rediscovered as gaps.
   shared rather than duplicated: the seeder is the single source of demo data, and a second
   implementation would have to produce byte-identical rows or the dual-backend parity gate becomes
   meaningless. Neither service is an agent, so neither demonstrates anything about MAF.
+- **Superseded 2026-11-15:** .NET MAF 1.28.0 ships `MagenticWorkflowBuilder` (Part IV §7), so the
+  "unavailable on .NET" half of the next line is no longer true. The app still has no Magentic mode.
 - **Magentic orchestration exists in neither stack**, and on .NET it is unavailable rather than
   unbuilt: Magentic is Python-only in MAF v1. Chapter 16's .NET tests reflect over
   `Microsoft.Agents.AI.Workflows` and assert the gap still exists, with a control test so a failed
@@ -649,7 +651,7 @@ is recorded twice. Every session is a person running a script on a local stack.
 
 | Session | When | Key | Records | Unblocks | Estimate |
 |---|---|---|---|---|---|
-| **R0 — the tour** | After wave 1 and B-3 | OpenAI or Azure OpenAI (the existing one) | The ~10-prompt demo tour (C-6) and the catalog embeddings export (A-6b) | C-7 → C-11, C-18 | $1–3 |
+| **R0 — the tour** | After wave 1 and B-3 | OpenAI or Azure OpenAI (the existing one) | The ~10-prompt demo tour (C-6), the catalog embeddings export (A-6b), and the default-prompt fixtures for tutorial chapters 04, 05, 07, 12, 13, 14, 16 (found by C-16) | C-7 → C-11, C-18 | $1–3 |
 | **R1 — everything else, one sitting** | When B-6 has merged and B-16, D-5b, M-2 are *ready on their branches* — those three change what the model sees, so the replay gate fails until their fixtures are refreshed. Record against the ready branches and merge code and fixtures together | Same | New eval cases: multi-turn, role, approval, argument (E-3b); red-team v2 + judge verdicts (E-4); guardrail FP/FN (E-6); MCP-path suites (E-7); all six .NET datasets and baselines (E-8, closes §11); five-mode benchmark (E-10); re-record of cases touching gated tools (D-5b); `merchant_ops` dataset (M-2); group-chat fixtures (B-16); a tour re-check | E-9 and every row marked R1 | $5–9 |
 | **R2 — other vendors** | After P-3, P-4, P-5 | Anthropic, Google; optionally local Ollama at $0 | Wiring smoke for each provider; the model scorecard, one fixture directory per model (P-7) | P-3–P-5 sign-off, P-7 | $1–3 per provider |
 
@@ -792,6 +794,71 @@ Six further corrections from the same review were to this plan and are applied i
 (fixture-changing steps merge with their recordings, not before), B-4/B-5 ordering, B-11's key
 requirement, replay-miss propagation in C-4, new tables as migrations only, and specialist usage on
 the stream endpoint in E-2a.
+
+### Wave 1 — built 2026-11-15/16
+
+| Step | Outcome |
+|---|---|
+| B-4 | .NET MAF 1.18.0 → **1.28.0**, nothing pinned short. Production needed **no source change**: none of the HITL, checkpoint or telemetry areas flagged in Part III forced a redesign. `global.json` at the repo root pins SDK 10.0.100 with `rollForward: latestFeature`. |
+| B-5 | All 62 tutorial projects on central package management at production's versions, no source fixes. |
+| — | **Magentic now exists in .NET.** `Microsoft.Agents.AI.Workflows` 1.28.0 exports `MagenticWorkflowBuilder` and its events; chapter 16's tripwire fired as designed and was inverted rather than deleted (it now asserts the types exist). §18's "Magentic exists in neither stack … unavailable on .NET" is **superseded**: the app still has no Magentic mode on either stack, but that is now a choice, not an upstream limit. Chapter 16's .NET side is "not yet ported" — a rewrite against the .NET API, not a transliteration. |
+| — | DevUI .NET is still prerelease-only (`1.28.0-preview`); chapter 20b stays not ported. |
+| C-16 | 24 of 32 chapter entry points run with no key, enforced by a `tutorials-keyless` CI job. **Seven need a recorded fixture for their default prompt** — 04, 05, 07, 12, 13, 14, 16 — and are on the runner's skip-list with that reason; record them in R0. 20b is a live-only server. Chapter 18 also calls no model (not listed in #104); chapter 23 is not a long-running server and runs keyless. `.env.example` sets `LLM_PROVIDER=openai`, which disables the fallback for anyone who copies it — documented, not changed. |
+| C-17 | As planned. No time estimates were invented; the paths carry none. |
+| A-10 | As planned. First real migration is `0002_hitl_claimed_at.sql`, which closes wave 0's stale-claim gap: a `processing` row whose claim is older than `HITL_CLAIM_TTL_SECONDS` (600) can be taken over, both stacks. **Limit:** a resume genuinely still running past the TTL can finish alongside the new claimant — harmless while the post-gate steps are side-effect free; D-8 must guard it. |
+| A-11 | `/ready` on every service, both stacks, same JSON. **Found by testing:** with Postgres paused the probe hung for minutes because it borrowed a pooled connection; each probe now opens its own short-lived connection. A plain endpoint was used on .NET instead of `AddHealthChecks` so the shape matches Python. Only the .NET orchestrator image lacked curl. |
+| A-9 | Written, **never run end to end**: Docker Hub returned 429 on image pulls in the build environment. Exercised only against host-run Python services. CI is its first real run. |
+| A-6a | As planned. Also: `EmbeddingClientFactory` (.NET) no longer crashes at startup with no key. The precomputed file does not exist yet (A-6b, R0). |
+| C-2 | As planned. First attempt broke a fixture — tour orders for Electronics shifted the counts in a recorded "trending electronics" answer — so the tour orders are Home and Clothing. `--reset-tour-user` also clears idempotency keys for the (now stable) tour order ids. `seed_workflow_checkpoints` still uses `uuid4`. |
+| B-1 | As planned, with one wrong claim: adding `response_format` to the key **did** change one hash — tutorial 29's planner call sets it — re-keyed offline. The script tracks its own PIDs instead of `pkill`. `fixture_drift` cannot detect prompt drift (nothing stable to diff against). |
+| C-3 | Every one of the 102 fixtures changed hash (each instruction block contains example ids and dates); renamed offline, contents untouched. |
+| E-2a/b | Specialist usage now reaches `usage_logs` through both endpoints, both stacks; the orchestrator eval suite's recorded input tokens went 38,659 → 99,847. **The .NET orchestrator had been logging zero tokens for every turn.** Cross-stack pairing is asserted by a shared literal, not exercised. No `model`/cost columns yet (E-2d). On .NET the *streaming* cost gate still does not tally. |
+| E-3a | Five new case fields; ~25 existing cases gained argument assertions from committed fixtures, prompts unchanged. HITL is detected from a new `hitl_requests` row because the middleware sits outside the step recorder. |
+| E-3c | As planned. `total_tokens_in/out` already existed in the report. |
+| A-4 | As planned on CORS, capture default and pins (`uv` 0.11.32, `aspire-dashboard` 13.6.5, verified by manifest). **Next 16 cannot tell a route handler the client's address**, so by default none is forwarded and all anonymous callers share one bucket; `WEB_TRUSTED_PROXY_HOPS` restores per-client limits behind a real proxy. `scripts/e2e-both-stacks.sh` raises the auth limit for the stack it starts, or the parity specs would hit 429. |
+| A-12 | Migration is `0003`. **Two .NET holes nobody had filed, both closed:** signup honoured a client-supplied `role` (anyone could sign up as admin), and read `full_name` where the client sends `name`. Passwords over 72 bytes returned 500 on both stacks. OAuth-mode rotation recorded as parity row 29. |
+| B-2 | 17 app modules and 15 tutorial files moved to public imports; two names allowlisted (`encode_checkpoint_value`, `decode_checkpoint_value`). `patch_maf.py` deleted. |
+| B-10 | Nothing in the running app used the loader. `visualize_workflows.py` now renders the real `pre-purchase` and `return-replace` graphs; the diagram drift-check CI job had a broken invocation and is fixed. `MermaidExporter.cs` went with the .NET loader. |
+| P-1 | As planned. Found: `docker-compose.yml` and `docker-compose.dotnet.yml` never forwarded `LLM_BASE_URL`, so a compatible endpoint only worked host-run or via the demo file; all three forward it now, and the Python two forward `LLM_API`. |
+| C-12, C-14, A-8a/b/c, C-19, A-13 | As planned. `ui-smoke` runs with no backend (9/9). The MCP integration job is a per-package matrix because the two `tests/conftest.py` files cannot be collected together. CodeQL / dependency-review action tags were not verifiable offline. |
+
+Carried forward from this wave:
+
+- The pricing-promotions baseline is stale (0.727 measured vs 0.680 committed, on `main` too). Refresh it in R1.
+- Re-seeding an already-seeded database makes one product-discovery case miss its fixture; a fresh database is clean. `dev.sh` re-seeds on every start, so C-7's no-key demo must seed fresh or this must be fixed first.
+- `.env.example` sets `LLM_PROVIDER=openai`, which disables the tutorials' keyless fallback for anyone who copies it.
+- `dev.ps1` has now been edited by three steps and executed by none.
+
+### Wave 2 — built 2026-11-16
+
+| Step | Outcome |
+|---|---|
+| B-3 | Python MAF core 1.14.0 → **1.22.0** (`-openai` 1.17.0, `-orchestrations` 1.3.2 — the highest that resolve under `core<1.23`). No application code changed and **nothing needed a live recording**. 57 eval fixtures and 22 tutorial fixtures were re-keyed offline: at 1.21 an error `function_result` gained an `exception` field (1 fixture); at 1.22 every `function_call` gained `"hosted": false` (56). **`fixture_drift` reported clean while the replay suite missed fixtures**: core 1.21 stamps a random `af-call-<uuid>` on each function call and 1.22 copies it to the result, so the next turn's request never matched. Both replay clients now drop those ids from the key. Tutorial 08's MCP fixture had its stored *request* rewritten to 1.21's tool-result shape while keeping the recorded *response* — a candidate for a real re-record in R0. A 1.14 checkpoint still decodes under 1.22; the reverse does not hold. `encode_/decode_checkpoint_value` are still private. Tutorial fixtures have no drift tool; they were rebuilt with an uncommitted script — worth committing one before B-6. |
+| D-2 | As planned. The auth-server has no role allowlist (it copies `users.role` into the token), so it needed no change. `seed_support_user` is appended and draws no random numbers. |
+| D-3 | Migration `0006`. `approvals` carries `claimed_at`/`claimed_by` from the start; the self-approval rule is a database CHECK as well as repository code; `approval_events` is append-only by trigger. |
+| D-4 | One YAML read by both engines, 89 golden cases run on both stacks, and each stack asserts every rule is hit by a case. The default thresholds are the builder's, not derived from anything: >30 days since delivery, ≥3 returns in 90 days, refund >0.5× lifetime spend, amount >500, or a <30-day account with >100 → manager; ≤50 in good standing, or ≤150 for silver/gold → auto; else support. Python rejects an unquoted numeric `policy_version`, .NET accepts it. |
+| D-5a | One decide path; the legacy resume and admin approve/deny routes are shims over it. **Resume widened from admin-only to staff** (support or admin, checked against the assigned level). `auto` is recorded, not executed, and still goes to a person — acting on it is D-5b, which needs re-recorded fixtures. A bad amount (above the amount under review) or an unknown resolution is 422 before anything is claimed. |
+| D-7 | Migration `0011` (0006 had no parked state and no role-addressed notifications). Timers are scheduled inside `repo.create`/`transition`, so no caller can forget them. **Gap found at integration, fixed:** the worker's top-level timeout only flipped the approval to `expired`, leaving a paused return resumable; a separate `approval.timeout_apply` row now resumes it as a rejection (separate because the breach handler holds the approval row lock, so resuming in place would deadlock). The worker image has never been built locally (registry blocked). |
+| D-8 | As planned, and the dataclass spike passed: `ReturnDecision` round-trips through `PostgresCheckpointStorage` and a fresh-process resume at core 1.22 (`FileCheckpointStorage` refuses custom types). Migration `0010` expires approvals paused under the old shape. `initiate_return` now honours `refund_method = store_credit`. **Not done:** `returns.approval_id` / `returns.resolution` columns (D-9). The .NET resume route still carries only approve/reject. |
+| E-2c | As planned. Workflow modes emit an explicit zero marked `no_llm_calls`. The Python group-chat moderator is a local synthesiser; the .NET one is an LLM call — a real difference between the stacks. No .NET tests for handoff or group-chat usage (non-injectable client factory). |
+| E-2d | **No cached-input price was entered** — the repo documents none and none was invented — so cost is *still* overstated for cache-heavy runs. The mechanism is in place; a maintainer must enter rates from the provider's pricing page. Migration `0007`. **Wrong in the wave-1 log:** the .NET cost gate did not merely fail to tally on streams — nothing ever started the running total, so it was always zero, blocking path included. Fixed. |
+| E-5 | First measured numbers for the injection detector, against 36 synthetic injections and 502 natural texts: 0 false positives on natural text, recall 52.8% (19/36), precision 76% once ten hand-written near-misses are added. Sanitizer recall 58.3%. Off by default in the eval script. `security-guide.md` had claimed the red-team suite "continuously measures" the detector; it does not, and no longer says so. |
+| C-4 | As planned plus two things the plan missed: group-chat panelists swallowed a replay miss and wrote the fixture hash into the transcript; a failed workflow executor's `error` event named the hash. `ReplayChatClient` has no chat-middleware layer, so the tool loop is stopped by a function middleware raising `MiddlewareTermination`. A miss now also sends the `metadata` frame, so the conversation id survives. |
+| C-5 | Built; covered by component tests, `tsc` and build only — never seen in a browser. Nine draft chips; every one currently produces the miss callout because no tour is recorded. |
+| P-2 | No shipped prompt file sets a model; a test pins the composed prompt byte-for-byte. On .NET cost still falls back to the global model, not the per-agent one. |
+| P-4 | `Anthropic` NuGet 13.8.0, no dependency bump. Model comes from `ANTHROPIC_MODEL` (compose forwards `LLM_MODEL` defaulting to gpt-4.1). **Never made a live call**; Claude models are unpriced. Python rejects the provider with a message pointing at .NET. |
+| P-6 | Migration `0008`. The dimension was hardcoded in six places. `agent_memories` is not truncated by the reset script (real rows; only its unused vector column is nulled). Two prompt files still tell the model the dimension is 1536 — left, because changing prompt text invalidates fixtures. The Ollama path is documented, not exercised. |
+| M-1 | Migration `0009`. Costs are price × a per-category ratio (0.50–0.78) and the limits (15% margin floor, 10%/day, 25 lines) are the builder's placeholders. Every query touching `products`/`promotions` selects named columns, so no tool output changed. |
+| X-1 | Both packages build, pass `twine check --strict`, install into a clean venv and answer `initialize`. Found: the documented Claude Desktop config launched an HTTP server where stdio is needed (added `--transport stdio`); READMEs linked the wrong GitHub account. Maintainer-only: PyPI trusted publishers, the `pypi`/`testpypi` environments, name availability. |
+
+Carried forward from wave 2:
+
+- **#106 is unmerged** behind one high-severity CodeQL alert with no location (the four located ones are fixed). It now carries waves 1 and 2.
+- Migrations arrived out of order (0011 before 0008–0010). The runner applies late lower numbers cleanly; verified on a fresh database and on one already at 0011.
+- Concurrent builders collided three times on `docs/parity-matrix.md` row numbers. Give each builder its row number up front.
+- Enter real cached-input and Claude prices in `shared/cost.py` / `CostEstimator.cs`.
+- The tour's approval step must be done as admin: the tour order routes to `manager`.
+- `dev.ps1` has now been edited by five steps and executed by none.
 
 ---
 
@@ -950,8 +1017,9 @@ JSON, so token-level prose streaming becomes partial JSON needing incremental pa
 stacks; specialist text passes through the orchestrator model, so cards would have to survive two
 schema hops; OpenAI-compatible endpoints vary in support; and it forces a full re-record on both
 stacks. Use it only where code consumes the output: `evals/scorers/llm_judge.py` and group-chat
-panelist stances after B-16. **Magentic — not built**: Python-only, so a permanent parity gap; B-9
-removes the advertising.
+panelist stances after B-16. **Magentic — not built.** The reason given at planning time (Python-only, so a permanent parity
+gap) stopped being true when B-4 landed: see §7. B-9 removed the advertising of a mode that does not
+exist.
 
 **Order:** B-1 → B-2 → B-3 → B-6 → B-7; B-4 → B-5 (the .NET upgrade is independent of the Python
 one and sits in wave 1); B-9 → B-11 → B-12 → B-13 → B-14 (B-12 also
@@ -969,7 +1037,7 @@ needs B-3; B-11 needs A-1); B-6 → B-16, B-18.
 | B-d6 | Preview packages in the .NET app | Accept, pinned exactly, grouped in Dependabot |
 | B-d7 | Structured output | Not on the chat path; B-19 instead |
 | B-d8 | Group chat | Migrate (B-16) after the upgrade |
-| B-d9 | Magentic and the declarative mode | Do not build Magentic; delete the loader (B-10) |
+| B-d9 | Magentic and the declarative mode | Delete the loader (B-10). **Magentic: premise changed 2026-11-15** — .NET MAF 1.28.0 ships `MagenticWorkflowBuilder` (found by B-4), so it is no longer a permanent parity gap. Not scheduled; a maintainer decision (see §7) |
 
 ---
 

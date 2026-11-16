@@ -24,6 +24,7 @@ twice if the first answer was thin, and it should decide that at run time, not h
 
 - **Budget matters here.** Magentic makes multiple manager LLM calls in addition to every worker
   call. Expect somewhere between 5 and 15 LLM calls for a single task on the default settings.
+- **Key:** `main.py`'s default prompt has no recorded fixture, so running it needs a key (live run). Without one, the chapter's tests replay their own recorded prompt: `uv run --project tutorials pytest tutorials/16-magentic-orchestration/python/tests -m "not integration"`.
 
 ## The concept
 
@@ -99,7 +100,7 @@ Source: [`python/main.py`](./python/main.py). The three workers and the manager 
 `Agent` instances — the manager's instructions are what make it a *planner*, not a special type:
 
 ```python
-# tutorials/16-magentic-orchestration/python/main.py:79-101
+# tutorials/16-magentic-orchestration/python/main.py:62-84
 def manager_agent() -> Agent:
     """A planning LLM the Magentic manager uses to decompose and delegate."""
     return Agent(
@@ -125,7 +126,7 @@ def build_workflow():
     ).build()
 ```
 
-`plan()` (`main.py:118-141`) drives the streamed run and separates two kinds of events: a
+`plan()` (`main.py:101-125`) drives the streamed run and separates two kinds of events: a
 `group_chat` event whose payload is a `GroupChatRequestSentEvent` (the manager dispatching to a
 named worker) and an `output` event carrying the final synthesized answer. Sample output:
 
@@ -141,19 +142,22 @@ Here's a concise launch brief for your AI meal planner:
 
 ## .NET
 
-Magentic orchestration is **Python-only** in Microsoft Agent Framework today. The official docs
-say so directly, and it's confirmed against `Microsoft.Agents.AI.Workflows` 1.1.0 — there is no
-`MagenticBuilder` / `StandardMagenticManager` symbol in the .NET assembly.
+Magentic orchestration was Python-only when this chapter was written, and the official docs said
+so directly. **That is no longer true:** `Microsoft.Agents.AI.Workflows` 1.28.0 exports
+`MagenticWorkflowBuilder` plus `MagenticPlanCreatedEvent`, `MagenticReplannedEvent`,
+`MagenticProgressLedgerUpdatedEvent` and the ledger/prompt-override types. The Python names
+(`MagenticBuilder` / `StandardMagenticManager`) still do not exist in the .NET assembly, so a
+port is a rewrite against the .NET API, not a transliteration. That port has not been done yet.
 
 ```bash
 cd tutorials/16-magentic-orchestration/dotnet
-dotnet run   # prints the "not yet supported in C#" status and points back at the Python example
+dotnet run   # prints the "not yet ported" status and points back at the Python example
 ```
 
 [`dotnet/Program.cs`](./dotnet/Program.cs) is a status stub, not a working sample — it exists so
 the chapter's dotnet project still builds and runs, and it links straight back to the Python
-walkthrough above. If a future `agent-framework` release adds C# Magentic support, this stub is
-what gets replaced with a real example.
+walkthrough above. Now that the SDK ships `MagenticWorkflowBuilder`, this stub is what gets
+replaced with a real example.
 
 ## Side-by-side differences
 
@@ -177,14 +181,7 @@ what gets replaced with a real example.
   directive instructions, as `manager_agent()` does above.
 - **Worker boundaries matter.** Keep each worker's instructions narrow (one concrete kind of
   output) so the manager can chain them reliably instead of getting overlapping, redundant answers.
-- **The old "empty `__init__.py`" packaging bug is not something you need to work around anymore.**
-  `agent-framework-core==1.0.0` shipped with an empty `__init__.py`; that's fixed upstream as of
-  1.14.0, which this repo now pins. `agents/python/patch_maf.py` (used by the capstone app) is a
-  documented no-op today — it only writes when the file is empty, which it no longer is. Tutorials
-  use a separate, still-active helper, `tutorials/_shared/maf_bootstrap.py`, which both patches
-  `agent_framework`'s `__init__.py` defensively (same no-op-if-already-patched logic) and loads the
-  repo-root `.env`; every chapter's `main.py` and tests call `maf_bootstrap.bootstrap()` before
-  importing `agent_framework`, including this one (`main.py:21-22`).
+- **No MAF packaging workaround is needed.** `agent-framework-core` 1.22.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`, including this one (`main.py:20-22`).
 
 ## Tests
 
@@ -212,9 +209,7 @@ The .NET side ships [`dotnet/tests/MagenticTests.cs`](./dotnet/tests/MagenticTes
 cd tutorials/16-magentic-orchestration/dotnet && dotnet test tests/Magentic.Tests.csproj
 ```
 
-What they test is the claim's shelf life. A stub that says "not supported yet" is only honest while it stays true, and left alone it decays silently — the package gets bumped, Magentic lands, and this chapter goes on telling .NET readers to go use Python. Nothing fails, so nobody notices.
-
-So the tests reflect over the shipped `Microsoft.Agents.AI.Workflows` assembly and assert `Magentic` types are still absent, with a control test asserting the sibling builders (`BuildSequential`, `BuildConcurrent`, and the handoff/group-chat builders) *are* present — without which a failed assembly load would look identical to "still missing". **A failure here is good news:** it means the chapter needs rewriting.
+What they test is the claim's shelf life. They began as a tripwire asserting Magentic was *absent* from `Microsoft.Agents.AI.Workflows`, and the tripwire did fire: it went red when the tutorials moved from 1.1.0 to 1.28.0, because 1.28.0 ships `MagenticWorkflowBuilder`. Rather than delete it, the test was inverted. It now reflects over the assembly and asserts the Magentic types *are* present (so a rename or removal in a later bump is noticed), that the Python-only names are still absent, and — with a control test asserting the sibling builders (`BuildSequential`, `BuildConcurrent`, and the handoff/group-chat builders) are present, without which a failed assembly load would look identical to "missing" — that the stub still tells readers the truth.
 
 ## How this shows up in the capstone
 
@@ -230,7 +225,7 @@ Until that lands, this chapter's own code is the standalone teaching example of 
 manager loop you'd wire in once Magentic gets a capstone mode:
 
 ```
-tutorials/16-magentic-orchestration/python/main.py:92-101
+tutorials/16-magentic-orchestration/python/main.py:75-84
 ```
 
 `build_workflow()` — a `StandardMagenticManager` wrapping three workers — is the shape a future

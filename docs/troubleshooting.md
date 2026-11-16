@@ -103,6 +103,15 @@ docker compose exec -T db psql -U ecommerce -d ecommerce_agents \
 Alternatively `./scripts/dev.sh --clean` rebuilds from `init.sql` — simpler, but
 it drops all local data.
 
+## Rolled back to an older checkout after running on `agent-framework-core` 1.22
+
+Core 1.22 reads everything earlier releases stored, but the chat history and
+workflow checkpoints it writes can carry fields (`hosted`, `merge_mode`) that
+pre-1.22 runtimes cannot read. If you move a database that has already been used
+on 1.22 back to an older checkout and resuming a run or loading a conversation
+fails, rebuild the local data with `./scripts/dev.sh --clean`. Upgrading needs
+no such step.
+
 ## UI changes not showing in the running stack
 
 The frontend is a built container. Rebuild it:

@@ -12,7 +12,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.11.32 /uv /uvx /bin/
 
 # Create non-root user
 RUN groupadd -r agent && useradd -r -g agent -d /app -s /sbin/nologin agent
@@ -26,10 +26,6 @@ WORKDIR /app
 # unsatisfiable. The lock pins a known-good graph.
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
-
-# Patch MAF v1.0 empty __init__.py (ships without re-exports)
-COPY patch_maf.py .
-RUN uv run --no-project python patch_maf.py
 
 # Copy shared library and prompt configs (all agents need these)
 COPY shared/ shared/
@@ -86,6 +82,16 @@ COPY order_management/ order_management/
 COPY inventory_fulfillment/ inventory_fulfillment/
 COPY review_sentiment/ review_sentiment/
 COPY pricing_promotions/ pricing_promotions/
+
+# The outbox worker (AGENT_NAME=worker) applies an SLA timeout by calling
+# orchestrator.approvals_service.expire, which resumes a paused return through
+# orchestrator.modes.workflow_mode -- the same code a staff decision runs. Both
+# imports are lazy (inside on_timeout_apply), so a worker image without
+# orchestrator/ builds, starts and passes a `worker.main` import, then raises
+# ModuleNotFoundError on every approval.timeout_apply row. Copied unconditionally
+# for the same reason as the specialists above; the duplicate COPY for
+# AGENT_NAME=orchestrator is harmless.
+COPY orchestrator/ orchestrator/
 
 # Give non-root user ownership of the app directory (for uv cache + runtime)
 RUN chown -R agent:agent /app

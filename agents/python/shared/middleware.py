@@ -22,7 +22,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from agent_framework._middleware import (
+from agent_framework import (
     AgentContext,
     AgentMiddleware,
     ChatContext,
@@ -32,6 +32,7 @@ from agent_framework._middleware import (
 )
 
 from shared.config import settings
+from shared.log_safe import log_safe
 
 logger = logging.getLogger(__name__)
 
@@ -54,21 +55,25 @@ class AgentRunLogger(AgentMiddleware):
             context.metadata.setdefault("run_id", run_id)
 
         start = time.perf_counter()
-        logger.info("agent.start agent=%s run_id=%s", agent_name, run_id)
+        logger.info("agent.start agent=%s run_id=%s", log_safe(agent_name), run_id)
         try:
             await call_next()
         except Exception:
             elapsed = (time.perf_counter() - start) * 1000
             logger.exception(
                 "agent.fail agent=%s run_id=%s elapsed_ms=%.1f",
-                agent_name, run_id, elapsed,
+                log_safe(agent_name),
+                run_id,
+                elapsed,
             )
             raise
         else:
             elapsed = (time.perf_counter() - start) * 1000
             logger.info(
                 "agent.finish agent=%s run_id=%s elapsed_ms=%.1f",
-                agent_name, run_id, elapsed,
+                log_safe(agent_name),
+                run_id,
+                elapsed,
             )
 
 
@@ -115,7 +120,9 @@ class ToolAuditMiddleware(FunctionMiddleware):
             self.audited.append(record)
             logger.info(
                 "tool.invoked name=%s elapsed_ms=%.1f error=%s",
-                name, elapsed, error or "-",
+                log_safe(name),
+                elapsed,
+                log_safe(error or "-"),
             )
 
 
@@ -228,6 +235,12 @@ def build_specialist_middleware(*, include_steps: bool = True) -> list[Any]:
         stack.append(CostBudgetMiddleware())
     if settings.OUTPUT_MODERATION_MODE != "off":
         stack.append(OutputModerationMiddleware())
+    # Replay mode only (empty otherwise): a specialist's recorded-response miss ends
+    # the turn as a miss instead of becoming tool text the model answers — see
+    # shared/replay_miss.py.
+    from shared.replay_miss import replay_miss_middleware
+
+    stack.extend(replay_miss_middleware())
     if include_steps:
         stack.extend(STEP_MIDDLEWARE)
     return stack

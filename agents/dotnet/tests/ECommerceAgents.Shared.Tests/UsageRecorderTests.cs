@@ -158,4 +158,26 @@ public sealed class UsageRecorderTests : IAsyncLifetime
         measured.Dispose();
         measured.DurationMs.Should().BeGreaterThanOrEqualTo(30);
     }
+
+    [Fact]
+    public async Task LogAgentUsage_PersistsModelCachedTokensAndCost_AndKeepsNullDistinctFromZero()
+    {
+        var recorder = new UsageRecorder(_pool);
+        var measured = await recorder.LogAgentUsageAsync(
+            _userId, "orchestrator", tokensIn: 2000, model: "gpt-4.1", tokensCachedIn: 1500, costUsd: 0.0123);
+        var free = await recorder.LogAgentUsageAsync(_userId, "orchestrator", tokensCachedIn: 0, costUsd: 0.0);
+        var unknown = await recorder.LogAgentUsageAsync(_userId, "orchestrator");
+
+        await using var conn = await _pool.OpenAsync();
+        var row = await conn.QueryFirstAsync(
+            "SELECT model, tokens_cached_in, cost_usd FROM usage_logs WHERE id = @id", new { id = measured });
+        ((string)row.model).Should().Be("gpt-4.1");
+        ((int)row.tokens_cached_in).Should().Be(1500);
+        ((decimal)row.cost_usd).Should().Be(0.0123m);
+
+        var zeroCost = await conn.ExecuteScalarAsync<decimal?>("SELECT cost_usd FROM usage_logs WHERE id = @id", new { id = free });
+        zeroCost.Should().Be(0m);
+        var nullCost = await conn.ExecuteScalarAsync<decimal?>("SELECT cost_usd FROM usage_logs WHERE id = @id", new { id = unknown });
+        nullCost.Should().BeNull();
+    }
 }

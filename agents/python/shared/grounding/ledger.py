@@ -23,7 +23,7 @@ from typing import Any
 
 # Imported from the concrete submodule, matching shared/agent_observability.py:
 # the agent-framework v1.0 beta ships an empty top-level __init__.
-from agent_framework._middleware import FunctionInvocationContext, FunctionMiddleware
+from agent_framework import FunctionInvocationContext, FunctionMiddleware
 
 from shared.function_results import unwrap_function_result
 

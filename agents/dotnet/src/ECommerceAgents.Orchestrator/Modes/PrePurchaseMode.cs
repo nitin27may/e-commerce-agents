@@ -64,7 +64,8 @@ public sealed partial class PrePurchaseMode(DatabasePool pool) : IOrchestrationM
             return new ModeRunResult(
                 "I couldn't work out which product you mean. Tell me the product name or id and I'll research it.",
                 ["orchestrator"],
-                0
+                0,
+                NoLlmCalls: true
             );
         }
 
@@ -74,7 +75,8 @@ public sealed partial class PrePurchaseMode(DatabasePool pool) : IOrchestrationM
         return new ModeRunResult(
             Summarise(state),
             ["product-discovery", "review-sentiment", "inventory-fulfillment", "pricing-promotions"],
-            state.CompletedSteps.Count
+            state.CompletedSteps.Count,
+            NoLlmCalls: true
         );
     }
 

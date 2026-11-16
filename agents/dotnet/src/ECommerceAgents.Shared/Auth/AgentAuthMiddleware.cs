@@ -1,3 +1,4 @@
+using ECommerceAgents.Shared.Logging;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
 using Microsoft.AspNetCore.Builder;
@@ -27,6 +28,7 @@ public sealed class AgentAuthMiddleware
     {
         "/",
         "/health",
+        "/ready",
         "/.well-known/agent-card.json",
         "/api/auth/signup",
         "/api/auth/login",
@@ -51,11 +53,13 @@ public sealed class AgentAuthMiddleware
     /// matching.</summary>
     private const string OptionalAuthPathPrefix = "/api/products";
 
-    /// <summary>Roles the platform recognizes. 'system' is the inter-agent sentinel used when a call originates without an end user (internal / health flows).</summary>
+    /// <summary>Roles the platform recognizes. 'system' is the inter-agent sentinel used when a call originates without an end user (internal / health flows). 'support' is the staff role that reviews approvals routed to it; 'power_user' is a seeded customer variant.</summary>
     private static readonly HashSet<string> _allowedRoles = new(StringComparer.OrdinalIgnoreCase)
     {
         "customer",
+        "power_user",
         "seller",
+        "support",
         "admin",
         "system",
     };
@@ -249,7 +253,7 @@ public sealed class AgentAuthMiddleware
             // tokens crash the request instead of cleanly rejecting it. Widened to
             // catch that + the ArgumentException family so any invalid token input
             // 401s rather than 500s.
-            _logger.LogWarning("jwt.invalid message={Message}", ex.Message);
+            _logger.LogWarning("jwt.invalid message={Message}", LogSafe.Clean(ex.Message));
             await Reject(context, 401, "Invalid token");
         }
     }
@@ -296,9 +300,9 @@ public sealed class AgentAuthMiddleware
         {
             _logger.LogWarning(
                 "security.identity_spoof_suspected reason={Reason} email={Email} role={Role}",
-                anomaly,
-                email,
-                role
+                LogSafe.Clean(anomaly),
+                LogSafe.Clean(email),
+                LogSafe.Clean(role)
             );
             if (_settings.GuardrailsStrictIdentity)
             {

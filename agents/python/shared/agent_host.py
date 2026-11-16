@@ -23,6 +23,18 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from shared.log_safe import log_safe
+from shared.prompt_loader import load_model_override, validate_model_overrides
+from shared.readiness import register_readiness
+from shared.replay_client import ReplayFixtureMissingError
+from shared.replay_miss import (
+    REPLAY_MISS_BODY,
+    REPLAY_MISS_EVENT,
+    REPLAY_MISS_STATUS,
+    begin_miss_tracking,
+    raise_if_specialist_missed,
+)
+from shared.run_usage import served_model, to_wire_usage
 from shared.sse import sse_frame
 
 logging.basicConfig(level=logging.INFO)
@@ -50,14 +62,22 @@ def _history_as_maf_messages(history: list[dict] | None, user_message: str) -> l
     return messages
 
 
-def _run_options() -> dict[str, Any]:
+def _run_options(agent: Any = None) -> dict[str, Any]:
     """Per-run chat options applied to every agent. Pins the sampling
     temperature so the same query yields consistent answers (the provider
     default of ~1.0 makes identical prompts diverge — see LLM_TEMPERATURE).
+
+    Run-level options win over an ``Agent``'s ``default_options``, so an agent's own
+    ``model: {temperature}`` block (config/prompts/<agent>.yaml) is applied here, by the
+    agent's name, rather than left to ``default_options``.
     """
     from shared.config import settings
 
-    return {"temperature": settings.LLM_TEMPERATURE}
+    temperature = settings.LLM_TEMPERATURE
+    override = load_model_override(str(getattr(agent, "name", "") or ""))
+    if override is not None and override.temperature is not None:
+        temperature = override.temperature
+    return {"temperature": temperature}
 
 
 async def _run_agent_native(
@@ -77,12 +97,16 @@ async def _run_agent_native(
     plain ``str`` return can't carry that side-channel data.
     """
     messages = _history_as_maf_messages(history, user_message)
-    response = await agent.run(messages, options=_run_options())
+    begin_miss_tracking()
+    response = await agent.run(messages, options=_run_options(agent))
+    raise_if_specialist_missed()
     if metadata_box is not None:
         metadata_box.update(getattr(response, "additional_properties", None) or {})
         usage = getattr(response, "usage_details", None)
         if usage:
             metadata_box["_maf_usage"] = dict(usage)
+        if model := served_model(response):
+            metadata_box["_maf_model"] = model
     return response.text or ""
 
 
@@ -104,17 +128,21 @@ async def _run_agent_native_stream(
     here just returns that cached result.
     """
     messages = _history_as_maf_messages(history, user_message)
-    stream = agent.run(messages, stream=True, options=_run_options())
+    begin_miss_tracking()
+    stream = agent.run(messages, stream=True, options=_run_options(agent))
     async for update in stream:
         text = getattr(update, "text", None)
         if text:
             yield text
+    raise_if_specialist_missed()
     if metadata_box is not None and hasattr(stream, "get_final_response"):
         final = await stream.get_final_response()
         metadata_box.update(getattr(final, "additional_properties", None) or {})
         usage = getattr(final, "usage_details", None)
         if usage:
             metadata_box["_maf_usage"] = dict(usage)
+        if model := served_model(final):
+            metadata_box["_maf_model"] = model
 
 
 # ─────────────────────── Session rehydration ──────────────────────
@@ -160,7 +188,7 @@ async def _rehydrate_history_from_session(session_id: str) -> list[dict] | None:
         # Anonymous callers legitimately land here; so would a future call site
         # that forgot to forward identity. Log either way rather than returning
         # an empty context that reads like "this conversation had no history".
-        logger.info("session.rehydrate_skipped reason=no_identity session_id=%s", session_id)
+        logger.info("session.rehydrate_skipped reason=no_identity session_id=%s", log_safe(session_id))
         return None
 
     try:
@@ -195,7 +223,7 @@ async def _rehydrate_history_from_session(session_id: str) -> list[dict] | None:
             caller,
         )
     except Exception:
-        logger.exception("session.rehydrate_failed session_id=%s", session_id)
+        logger.exception("session.rehydrate_failed session_id=%s", log_safe(session_id))
         return None
 
     history: list[dict] = []
@@ -230,9 +258,11 @@ def create_agent_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # A malformed per-agent ``model:`` block fails at startup, naming the file — not on request 1.
+        validate_model_overrides()
         if on_startup:
             await on_startup(app)
-        logger.info("%s.started port=%d", agent_name, port)
+        logger.info("%s.started port=%d", log_safe(agent_name), port)
         yield
         if on_shutdown:
             await on_shutdown()
@@ -242,6 +272,8 @@ def create_agent_app(
     @app.get("/health")
     async def health():
         return {"status": "ok", "agent": agent_name, "port": port}
+
+    register_readiness(app, agent_name)
 
     @app.get("/.well-known/agent-card.json")
     async def agent_card():
@@ -274,17 +306,28 @@ def create_agent_app(
 
             reset_steps()
             reset_grounding_ledger()
+            run_metadata: dict[str, Any] = {}
             with agent_run_span(agent_name):
-                response_text = await _run_agent_native(agent, message, history=history)
+                response_text = await _run_agent_native(agent, message, history=history, metadata_box=run_metadata)
             # Return this specialist's captured tool steps so the orchestrator
             # can merge them into the live agentic timeline.
             steps = get_steps()
             for step in steps:
                 step["agent"] = agent_name
-            return {"response": response_text, "steps": steps}
+            payload: dict[str, Any] = {"response": response_text, "steps": steps}
+            # Token usage rides in its own field, never in `response`: the
+            # orchestrator's model reads that text (see shared/run_usage.py).
+            usage = to_wire_usage(run_metadata.get("_maf_usage"), run_metadata.get("_maf_model"))
+            if usage:
+                payload["usage"] = usage
+            return payload
 
+        except ReplayFixtureMissingError:
+            # Replay mode only: tell the caller this is a missing recording, not a failure.
+            logger.warning("%s.replay_miss", log_safe(agent_name))
+            return JSONResponse(REPLAY_MISS_BODY, status_code=REPLAY_MISS_STATUS)
         except Exception:
-            logger.exception("%s.message_error", agent_name)
+            logger.exception("%s.message_error", log_safe(agent_name))
             return JSONResponse(
                 {"error": "Agent processing failed"},
                 status_code=500,
@@ -312,7 +355,7 @@ def create_agent_app(
                 if session_id:
                     history = await _rehydrate_history_from_session(session_id)
         except Exception:
-            logger.exception("%s.message_stream_parse_error", agent_name)
+            logger.exception("%s.message_stream_parse_error", log_safe(agent_name))
             return StreamingResponse(
                 iter([sse_frame("[ERROR: bad request]")]),
                 media_type="text/event-stream",
@@ -326,6 +369,7 @@ def create_agent_app(
             steps = reset_steps()
             reset_grounding_ledger()
             sent = 0
+            run_metadata: dict[str, Any] = {}
 
             def _drain_new_steps() -> list[str]:
                 """Frames for every step recorded since the last drain.
@@ -344,7 +388,9 @@ def create_agent_app(
 
             with agent_run_span(agent_name):
                 try:
-                    async for chunk in _run_agent_native_stream(agent, message, history=history):
+                    async for chunk in _run_agent_native_stream(
+                        agent, message, history=history, metadata_box=run_metadata
+                    ):
                         # Flush before the chunk, not after: in a MAF tool loop
                         # the tools resolve first and the prose that describes
                         # them comes second, so a step drained here reaches the
@@ -353,8 +399,14 @@ def create_agent_app(
                         for frame in _drain_new_steps():
                             yield frame
                         yield sse_frame(chunk)
+                except ReplayFixtureMissingError:
+                    # The 200 is already sent, so the miss is an explicit frame.
+                    logger.warning("%s.replay_miss", log_safe(agent_name))
+                    yield sse_frame(json.dumps(REPLAY_MISS_BODY), event=REPLAY_MISS_EVENT)
+                    yield sse_frame("[DONE]")
+                    return
                 except Exception:
-                    logger.exception("%s.message_stream_error", agent_name)
+                    logger.exception("%s.message_stream_error", log_safe(agent_name))
                     yield sse_frame("[ERROR: agent processing failed]")
 
             # Anything that completed after the final chunk — a tool whose
@@ -364,6 +416,11 @@ def create_agent_app(
             # writing itself.
             for frame in _drain_new_steps():
                 yield frame
+            # Terminal usage frame, ahead of [DONE]. A named event, so a reader
+            # that only understands text frames can never mistake it for text.
+            usage = to_wire_usage(run_metadata.get("_maf_usage"), run_metadata.get("_maf_model"))
+            if usage:
+                yield sse_frame(json.dumps(usage, separators=(",", ":")), event="usage")
             yield sse_frame("[DONE]")
 
         return StreamingResponse(_generate(), media_type="text/event-stream")

@@ -32,6 +32,8 @@ on a route::
 
 from __future__ import annotations
 
+import hashlib
+import ipaddress
 import logging
 import time
 import uuid
@@ -117,21 +119,77 @@ async def check_rate_limit(
 
 
 def _client_ip(request: Request) -> str:
-    """Best-effort client IP — trust X-Forwarded-For only because every
-    deployment of this repo (docker-compose, the local dev stack) puts the
-    orchestrator behind its own reverse proxy or is accessed directly; a
-    production deployment fronted by an untrusted proxy chain would need
-    to validate this against a configured trusted-proxy list instead of
-    taking the header at face value.
+    """The caller's address, trusting only what a proxy *we run* appended.
+
+    ``X-Forwarded-For`` is ``client, proxy1, proxy2`` — each hop appends the
+    address of whoever connected to it, so every entry except the ones our own
+    proxies wrote is caller-controlled. The old rule (first entry) was exactly
+    the spoofable one: anyone could rotate a fake ``X-Forwarded-For`` and never
+    hit a limit. With ``RATE_LIMIT_TRUSTED_PROXY_HOPS = n`` we take the entry
+    ``n`` places from the right — the address the outermost trusted proxy saw.
+
+    Falls back to the TCP peer when the setting is 0, when the header is
+    missing or shorter than ``n``, or when the chosen entry is not an IP
+    literal (so a garbage value can never become a Redis key).
     """
+    peer = request.client.host if request.client else "unknown"
+    hops = settings.RATE_LIMIT_TRUSTED_PROXY_HOPS
     forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    if hops <= 0 or not forwarded:
+        return peer
+    chain = [part.strip() for part in forwarded.split(",") if part.strip()]
+    if len(chain) < hops:
+        return peer
+    candidate = chain[-hops]
+    try:
+        return str(ipaddress.ip_address(candidate))
+    except ValueError:
+        return peer
+
+
+def key_hash_for_log(key: str) -> str:
+    """A stable, non-reversible stand-in for a rate-limit key in log lines.
+
+    Keys embed the caller's email or IP address and part of them is caller-supplied,
+    so the raw key is neither safe to log (personal data) nor safe to interpolate
+    (log forging). Twelve hex characters of its SHA-256 are enough to correlate
+    repeated hits. The .NET limiter logs the same value (``KeyHashForLog``).
+    """
+    return hashlib.sha256(key.encode()).hexdigest()[:12].upper()
+
+
+async def _enforce(
+    request: Request,
+    *,
+    bucket: str,
+    key_suffix: str,
+    max_requests: int,
+    window_s: float,
+    label: str,
+) -> None:
+    """Check one sliding-window bucket; 429 when exceeded, fail open on Redis errors."""
+    key = f"ratelimit:{bucket}:{key_suffix}"
+    client = get_redis_client()
+    try:
+        await check_rate_limit(client, key, max_requests=max_requests, window_s=window_s)
+    except RateLimitExceededError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many {label} requests — try again in about {exc.retry_after_s:.0f} seconds.",
+            headers={"Retry-After": str(int(exc.retry_after_s))},
+        ) from None
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("rate_limit.redis_unavailable key_hash=%s — failing open", key_hash_for_log(key))
+        return
 
 
 async def rate_limit_chat(request: Request) -> None:
-    """FastAPI dependency: rate-limit ``/api/chat*`` by user id, or by IP for anonymous traffic.
+    """FastAPI dependency: rate-limit chat-cost endpoints by user id, or by IP for anonymous traffic.
+
+    Used on ``/api/chat*`` and on the orchestration endpoints that run a
+    model turn (``/api/orchestration/compare``, ``.../{run_id}/resume``).
 
     A no-op when ``RATE_LIMIT_ENABLED`` is false. Fails open (logs and lets
     the request through) if Redis itself is unreachable — an outage of the
@@ -155,27 +213,84 @@ async def rate_limit_chat(request: Request) -> None:
     from shared.context import current_user_email
 
     user_email = current_user_email.get()
-    if user_email:
-        key = f"ratelimit:chat:user:{user_email}"
-    else:
-        key = f"ratelimit:chat:ip:{_client_ip(request)}"
+    suffix = f"user:{user_email}" if user_email else f"ip:{_client_ip(request)}"
+    await _enforce(
+        request,
+        bucket="chat",
+        key_suffix=suffix,
+        max_requests=settings.RATE_LIMIT_MAX_REQUESTS,
+        window_s=settings.RATE_LIMIT_WINDOW_SECONDS,
+        label="chat",
+    )
 
-    client = get_redis_client()
-    try:
-        await check_rate_limit(
-            client,
-            key,
-            max_requests=settings.RATE_LIMIT_MAX_REQUESTS,
-            window_s=settings.RATE_LIMIT_WINDOW_SECONDS,
-        )
-    except RateLimitExceededError as exc:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Too many chat requests — try again in about {exc.retry_after_s:.0f} seconds.",
-            headers={"Retry-After": str(int(exc.retry_after_s))},
-        ) from None
-    except HTTPException:
-        raise
-    except Exception:
-        logger.exception("rate_limit.redis_unavailable key=%s — failing open", key)
+
+async def rate_limit_auth(request: Request) -> None:
+    """FastAPI dependency: the address-only ceiling over signup / login / refresh.
+
+    Its own bucket (``ratelimit:auth:ip:<addr>``, default 300 per 60 s) so a
+    flood from one address neither spends nor hides behind the chat budget. It
+    is deliberately loose: with the default web proxy every browser user shares
+    one address, so the *tight* limits are per identity and live in
+    :func:`enforce_auth_account_limit` / :func:`enforce_auth_user_limit`. Same
+    fail-open behaviour as :func:`rate_limit_chat`: when Redis is down the error
+    is logged and the request proceeds, because locking every user out of login
+    during a cache outage is the worse failure.
+    """
+    if not settings.RATE_LIMIT_ENABLED:
         return
+    await _enforce(
+        request,
+        bucket="auth",
+        key_suffix=f"ip:{_client_ip(request)}",
+        max_requests=settings.RATE_LIMIT_AUTH_IP_MAX_REQUESTS,
+        window_s=settings.RATE_LIMIT_AUTH_WINDOW_SECONDS,
+        label="authentication",
+    )
+
+
+def _identity_digest(value: str) -> str:
+    """A stable stand-in for an email / subject in a Redis key: lower-cased, then SHA-256.
+
+    Keys are never logged raw (see :func:`key_hash_for_log`) but Redis ``MONITOR``
+    and key listings would otherwise show who is being attacked, so the identity
+    is hashed before it becomes part of a key. Shared with the .NET limiter.
+    """
+    return hashlib.sha256(value.strip().lower().encode()).hexdigest()[:32]
+
+
+async def enforce_auth_account_limit(request: Request, email: str) -> None:
+    """Tight login / signup budget per (client address, target email).
+
+    One target cannot be brute-forced from an address, yet a script hammering
+    email X leaves login for email Y untouched. ``email`` is whatever the caller
+    typed; it is lower-cased here so case variants share a bucket.
+    """
+    if not settings.RATE_LIMIT_ENABLED:
+        return
+    await _enforce(
+        request,
+        bucket="auth-account",
+        key_suffix=f"{_client_ip(request)}|{_identity_digest(email)}",
+        max_requests=settings.RATE_LIMIT_AUTH_MAX_REQUESTS,
+        window_s=settings.RATE_LIMIT_AUTH_WINDOW_SECONDS,
+        label="authentication",
+    )
+
+
+async def enforce_auth_user_limit(request: Request, subject: str) -> None:
+    """Tight refresh budget per user.
+
+    ``subject`` must come from a token whose signature was already verified (or,
+    for opaque tokens that cannot be verified here, be the token itself): an
+    unverified claim would let a caller pick someone else's bucket.
+    """
+    if not settings.RATE_LIMIT_ENABLED:
+        return
+    await _enforce(
+        request,
+        bucket="auth-user",
+        key_suffix=_identity_digest(subject),
+        max_requests=settings.RATE_LIMIT_AUTH_MAX_REQUESTS,
+        window_s=settings.RATE_LIMIT_AUTH_WINDOW_SECONDS,
+        label="authentication",
+    )

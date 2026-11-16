@@ -94,7 +94,14 @@ async def _seed_catalog(pool: Any) -> None:
                 """INSERT INTO products
                        (id, name, description, category, brand, price, rating, review_count, is_active)
                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE)""",
-                pid, name, desc, category, brand, price, rating, reviews,
+                pid,
+                name,
+                desc,
+                category,
+                brand,
+                price,
+                rating,
+                reviews,
             )
 
 
@@ -102,7 +109,8 @@ async def _seed_embedding(pool: Any, product_id: uuid.UUID, vector: list[float])
     async with pool.acquire() as conn:
         await conn.execute(
             "INSERT INTO product_embeddings (product_id, embedding) VALUES ($1, $2::vector)",
-            product_id, str(vector),
+            product_id,
+            str(vector),
         )
 
 
@@ -173,9 +181,7 @@ async def test_name_weight_outranks_description_weight(_pool: Any) -> None:
 async def test_filters_compose_with_query(_pool: Any) -> None:
     await _seed_catalog(_pool)
 
-    results = await pd_tools.search_products(
-        query="headphones", category="Electronics", max_price=300
-    )
+    results = await pd_tools.search_products(query="headphones", category="Electronics", max_price=300)
 
     ids = [r["id"] for r in results]
     assert str(ANC) in ids

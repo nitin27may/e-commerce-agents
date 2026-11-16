@@ -97,6 +97,26 @@ export interface OrchestrationMode {
   default: boolean;
 }
 
+/** One suggested prompt in the demo tour — `GET /api/demo/tour` (orchestrator/routes/demo.py). */
+export interface DemoTourChip {
+  id: string;
+  label: string;
+  prompt: string;
+  /** An `OrchestrationMode.name`. */
+  mode: string;
+  /** false = continue the previous chip's conversation (a scripted follow-up). */
+  new_conversation: boolean;
+}
+
+/** The demo tour manifest. Only a backend started as a demo serves one. */
+export interface DemoTour {
+  chips: DemoTourChip[];
+  /** Shown when a prompt has no recorded response. */
+  miss_message: string;
+  /** The seeded account the tour runs as; "Reset demo" is offered to it alone. */
+  tour_user: string;
+}
+
 /** One mode's result from `POST /api/orchestration/compare`. */
 export interface CompareModeResult {
   mode: string;
@@ -106,6 +126,10 @@ export interface CompareModeResult {
   agents_involved: string[];
   step_count: number;
   graph_mermaid: string | null;
+  /** null = the mode reported no usage; 0 = it made no LLM call (the workflow modes). */
+  tokens_in?: number | null;
+  tokens_out?: number | null;
+  est_cost_usd?: number | null;
   error: string | null;
 }
 
@@ -121,6 +145,22 @@ export interface RunStep {
   tool_output: Record<string, unknown> | null;
   status: string;
   duration_ms: number;
+}
+
+export interface AppNotification {
+  id: string;
+  kind: string;
+  title: string;
+  body: string;
+  link: string | null;
+  approval_id: string | null;
+  created_at: string;
+  read: boolean;
+}
+
+export interface NotificationsResponse {
+  notifications: AppNotification[];
+  unread_count: number;
 }
 
 export interface RunEntry {
@@ -152,6 +192,26 @@ export interface CartResponse {
   billing_same_as_shipping: boolean;
 }
 
+const STORAGE_ACCESS = "ecommerce_access_token";
+const STORAGE_REFRESH = "ecommerce_refresh_token";
+
+// localStorage can be missing or throw (SSR, private windows, blocked storage).
+function readStored(key: string): string | null {
+  try {
+    return typeof window === "undefined" ? null : localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeStored(key: string, value: string) {
+  try {
+    if (typeof window !== "undefined") localStorage.setItem(key, value);
+  } catch {
+    /* in-memory copy still works for this tab */
+  }
+}
+
 // Stale JWT → clear auth and bounce to /login. Idempotent.
 function handleUnauthorized() {
   if (typeof window === "undefined") return;
@@ -161,6 +221,33 @@ function handleUnauthorized() {
   if (!window.location.pathname.startsWith("/login")) {
     window.location.href = "/login";
   }
+}
+
+/**
+ * A refresh that failed for a reason that says nothing about the session: the
+ * limiter said 429, the server errored (5xx), or the network dropped. The user is
+ * still signed in, so the caller keeps the session and surfaces this instead of
+ * bouncing them to /login. `retryAfterSeconds` echoes `Retry-After` when sent.
+ */
+export class RefreshUnavailableError extends Error {
+  readonly retryAfterSeconds: number | null;
+  constructor(retryAfterSeconds: number | null) {
+    super(
+      retryAfterSeconds
+        ? `Could not refresh your session right now — please try again in about ${retryAfterSeconds} seconds.`
+        : "Could not refresh your session right now — please try again shortly."
+    );
+    this.name = "RefreshUnavailableError";
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+// `Retry-After` is either delta-seconds or an HTTP date; only the former is honoured.
+function retryAfterSeconds(res: Response): number | null {
+  const raw = res.headers.get("Retry-After");
+  if (!raw) return null;
+  const n = Number(raw.trim());
+  return Number.isFinite(n) && n > 0 ? Math.ceil(n) : null;
 }
 
 class ApiClient {
@@ -183,34 +270,82 @@ class ApiClient {
 
   /**
    * Attempt to swap the current refresh_token for a fresh access token.
-   * Returns the new access token, or `null` if refresh isn't possible —
-   * caller should then bounce the user to /login.
+   * Returns the new access token, or `null` if the session is genuinely over
+   * (no refresh token, or the server answered 401/403) — the caller should then
+   * bounce the user to /login. Throws `RefreshUnavailableError` for a 429, a 5xx
+   * or a network failure: those say nothing about the session, which is kept.
    */
   private async tryRefresh(): Promise<string | null> {
-    if (!this.refreshToken) return null;
+    if (!this.refreshToken && !readStored(STORAGE_REFRESH)) return null;
     if (this.inflightRefresh) return this.inflightRefresh;
+    // The server rotates refresh tokens: each one is single-use, and presenting
+    // a spent one revokes the whole session. So at most ONE refresh may be in
+    // flight — per tab (the promise below) and across tabs (a Web Lock, with a
+    // re-read of localStorage inside it so the second tab sends the first
+    // tab's successor rather than the token it loaded at page start).
+    const locks = typeof navigator !== "undefined" ? navigator.locks : undefined;
     this.inflightRefresh = (async () => {
       try {
-        const res = await fetch(`${API_URL}/api/auth/refresh`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ refresh_token: this.refreshToken }),
-        });
-        if (!res.ok) return null;
-        const data = (await res.json()) as { access_token?: string };
-        if (!data.access_token) return null;
-        this.token = data.access_token;
-        if (typeof window !== "undefined") {
-          localStorage.setItem("ecommerce_access_token", data.access_token);
-        }
-        return data.access_token;
-      } catch {
-        return null;
+        if (!locks) return await this.refreshOnce();
+        return await locks.request("ecommerce-refresh", () => this.refreshOnce());
       } finally {
         this.inflightRefresh = null;
       }
     })();
     return this.inflightRefresh;
+  }
+
+  private async refreshOnce(): Promise<string | null> {
+    // localStorage is the source of truth: another tab may have rotated since
+    // this one last looked.
+    const stored = readStored(STORAGE_REFRESH);
+    if (stored) this.refreshToken = stored;
+    const sent = this.refreshToken;
+    if (!sent) return null;
+    try {
+      const res = await fetch(`${API_URL}/api/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: sent }),
+      });
+      if (!res.ok) {
+        // Another tab may have rotated meanwhile; that is a live session whatever we were told.
+        const adopted = this.adoptOtherTabsSession(sent);
+        if (adopted) return adopted;
+        // Only the server saying the token is bad (or forbidden) ends the session.
+        if (res.status === 401 || res.status === 403) return null;
+        throw new RefreshUnavailableError(retryAfterSeconds(res));
+      }
+      const data = (await res.json()) as { access_token?: string; refresh_token?: string };
+      if (!data.access_token) return null;
+      this.token = data.access_token;
+      writeStored(STORAGE_ACCESS, data.access_token);
+      // `refresh_token` is absent when the server has rotation switched off
+      // (and in AUTH_MODE=oauth): keep using the one we have.
+      if (data.refresh_token) {
+        this.refreshToken = data.refresh_token;
+        writeStored(STORAGE_REFRESH, data.refresh_token);
+      }
+      return data.access_token;
+    } catch (err) {
+      if (err instanceof RefreshUnavailableError) throw err;
+      // fetch() itself failed (offline, DNS, reset) or the body was unreadable: not a verdict on the session.
+      throw new RefreshUnavailableError(null);
+    }
+  }
+
+  /**
+   * A refresh rejected with a token another tab has since replaced is not a
+   * dead session — that tab already rotated and stored the successor (and a
+   * fresh access token). Adopt them rather than logging the user out.
+   */
+  private adoptOtherTabsSession(sent: string): string | null {
+    const latest = readStored(STORAGE_REFRESH);
+    const access = readStored(STORAGE_ACCESS);
+    if (!latest || latest === sent || !access) return null;
+    this.refreshToken = latest;
+    this.token = access;
+    return access;
   }
 
   private async request<T>(
@@ -275,7 +410,7 @@ class ApiClient {
   }
 
   refresh(refreshToken: string) {
-    return this.request<{ access_token: string }>("/api/auth/refresh", {
+    return this.request<{ access_token: string; refresh_token?: string }>("/api/auth/refresh", {
       method: "POST",
       body: JSON.stringify({ refresh_token: refreshToken }),
     });
@@ -348,6 +483,14 @@ class ApiClient {
        * backend fall back to `settings.ORCHESTRATION_MODE` (default `"tool"`).
        */
       mode?: string;
+      /**
+       * Fired for `event: replay_miss` — the demo replays recorded model
+       * responses and this prompt has none (orchestrator/routes/chat.py). It is
+       * a notice for the thread, never display text, so it must not reach
+       * `onChunk` or `onOrchestrationEvent`. `message` is the tour manifest's
+       * `miss_message`; the stream carries nothing else about the miss.
+       */
+      onReplayMiss?: (miss: { message: string }) => void;
     } = {}
   ): Promise<{ conversation_id: string; agents_involved: string[] }> {
     const allowRefresh = options.allowRefresh ?? true;
@@ -454,6 +597,16 @@ class ApiClient {
             continue;
           }
 
+          if (currentEventType === "replay_miss") {
+            try {
+              const miss = JSON.parse(data) as { message?: unknown };
+              options.onReplayMiss?.({ message: typeof miss.message === "string" ? miss.message : "" });
+            } catch {
+              options.onReplayMiss?.({ message: "" });
+            }
+            continue;
+          }
+
           if (currentEventType === "grounding") {
             try {
               options.onGrounding?.(JSON.parse(data) as GroundingReport);
@@ -500,6 +653,36 @@ class ApiClient {
     }
 
     return metadata ?? { conversation_id: conversationId ?? "", agents_involved: [] };
+  }
+
+  // Demo tour (a no-key replay demo; absent on a normal install)
+
+  /**
+   * The tour manifest, or `null` when this backend is not a demo. "Not a demo"
+   * is detected here, at runtime, from the 404 the route answers with while
+   * `DEMO_TOUR_ENABLED` is off — so the build encodes nothing about the backend.
+   * Any other failure is also `null`: the tour is an extra, and a flaky fetch
+   * must not put an error where the chat's empty state is.
+   */
+  async getDemoTour(): Promise<DemoTour | null> {
+    try {
+      const res = await fetch(`${API_URL}/api/demo/tour`);
+      if (!res.ok) return null;
+      const data = (await res.json()) as Partial<DemoTour>;
+      if (!Array.isArray(data.chips) || data.chips.length === 0) return null;
+      return {
+        chips: data.chips,
+        miss_message: typeof data.miss_message === "string" ? data.miss_message : "",
+        tour_user: typeof data.tour_user === "string" ? data.tour_user : "",
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /** Put the tour user's data back as seeded. The server refuses anyone else. */
+  resetDemo() {
+    return this.request<{ status: string }>("/api/demo/reset", { method: "POST" });
   }
 
   // Orchestration modes
@@ -615,6 +798,17 @@ class ApiClient {
 
   getUsageStats() {
     return this.request<any>("/api/admin/usage");
+  }
+
+  getNotifications(limit = 20) {
+    return this.request<NotificationsResponse>(`/api/me/notifications?limit=${limit}`);
+  }
+
+  markNotificationRead(id: string) {
+    return this.request<{ ok: boolean }>(
+      `/api/me/notifications/${encodeURIComponent(id)}/read`,
+      { method: "POST" },
+    );
   }
 
   getRuns(params?: { limit?: number; offset?: number }) {

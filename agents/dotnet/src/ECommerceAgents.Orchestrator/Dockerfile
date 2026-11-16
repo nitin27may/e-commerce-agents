@@ -19,7 +19,10 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0
 # No explicit --gid/--uid: recent Ubuntu-based base images pre-bake a
 # uid/gid 1000 "ubuntu" user, which collided here.
 RUN groupadd --system dotnet \
- && useradd --system --gid dotnet --create-home dotnet
+ && useradd --system --gid dotnet --create-home dotnet \
+ && apt-get update && apt-get install -y --no-install-recommends curl \
+ && rm -rf /var/lib/apt/lists/*
+# curl: the compose healthcheck probes /ready (the aspnet image ships without it).
 WORKDIR /app
 COPY --from=build --chown=dotnet:dotnet /app/out ./
 COPY --chown=dotnet:dotnet agents/python/config ./agents/python/config

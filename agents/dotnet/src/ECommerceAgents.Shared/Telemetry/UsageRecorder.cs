@@ -1,3 +1,4 @@
+using ECommerceAgents.Shared.Logging;
 using Dapper;
 using ECommerceAgents.Shared.Data;
 using Microsoft.Extensions.Logging;
@@ -39,17 +40,23 @@ public sealed class UsageRecorder
         int durationMs = 0,
         string status = "success",
         string? errorMessage = null,
+        string? model = null,
+        int? tokensCachedIn = null,
+        double? costUsd = null,
         CancellationToken ct = default
     )
     {
+        // model / tokensCachedIn / costUsd are null when the run's usage was not captured, and
+        // an explicit 0 cost when the mode makes no LLM call — the two stay distinguishable.
         try
         {
             await using var conn = await _pool.OpenAsync(ct);
             var id = await conn.ExecuteScalarAsync<Guid>(
                 @"INSERT INTO usage_logs
                   (user_id, agent_name, session_id, trace_id, input_summary,
-                   tokens_in, tokens_out, tool_calls_count, duration_ms, status, error_message)
-                  VALUES (@u, @n, @s, @t, @i, @ti, @to, @tc, @d, @st, @e)
+                   tokens_in, tokens_out, tool_calls_count, duration_ms, status, error_message,
+                   model, tokens_cached_in, cost_usd)
+                  VALUES (@u, @n, @s, @t, @i, @ti, @to, @tc, @d, @st, @e, @m, @tcache, @cost)
                   RETURNING id",
                 new
                 {
@@ -64,13 +71,16 @@ public sealed class UsageRecorder
                     d = durationMs,
                     st = status,
                     e = errorMessage,
+                    m = model,
+                    tcache = tokensCachedIn,
+                    cost = costUsd,
                 }
             );
             return id;
         }
         catch (Exception ex)
         {
-            _logger?.LogError(ex, "Failed to log agent usage for {Agent}", agentName);
+            _logger?.LogError(ex, "Failed to log agent usage for {Agent}", LogSafe.Clean(agentName));
             return null;
         }
     }
@@ -107,7 +117,7 @@ public sealed class UsageRecorder
         }
         catch (Exception ex)
         {
-            _logger?.LogError(ex, "Failed to log execution step {Index} for {Tool}", stepIndex, toolName);
+            _logger?.LogError(ex, "Failed to log execution step {Index} for {Tool}", stepIndex, LogSafe.Clean(toolName));
         }
     }
 

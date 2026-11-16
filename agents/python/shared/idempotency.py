@@ -43,6 +43,8 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any, ParamSpec, TypeVar
 
+from shared.log_safe import log_safe
+
 logger = logging.getLogger(__name__)
 
 # An "in_progress" reservation older than this is treated as abandoned
@@ -100,7 +102,7 @@ async def _reserve(pool: Any, key: str, scope: str) -> tuple[bool, dict[str, Any
         # error; see shared/hitl.py's _decode_jsonb for the same fix.
         raw = existing["result"]
         cached = json.loads(raw) if isinstance(raw, str) else (dict(raw) if raw else {})
-        logger.info("idempotency.replay scope=%s key=%s", scope, key)
+        logger.info("idempotency.replay scope=%s key=%s", log_safe(scope), log_safe(key))
         return False, cached or {}
 
     age = datetime.now(UTC) - existing["created_at"]
@@ -113,13 +115,20 @@ async def _reserve(pool: Any, key: str, scope: str) -> tuple[bool, dict[str, Any
             existing["created_at"],
         )
         if taken is not None:
-            logger.warning("idempotency.reclaimed_stale scope=%s key=%s age_s=%.1f", scope, key, age.total_seconds())
+            logger.warning(
+                "idempotency.reclaimed_stale scope=%s key=%s age_s=%.1f",
+                log_safe(scope),
+                log_safe(key),
+                age.total_seconds(),
+            )
             return True, None
         # Someone else reclaimed it first (or completed it) between our
         # SELECT and this UPDATE — fall through to the conflict response;
         # a subsequent retry will see whatever state they left it in.
 
-    logger.info("idempotency.conflict scope=%s key=%s status=%s", scope, key, existing["status"])
+    logger.info(
+        "idempotency.conflict scope=%s key=%s status=%s", log_safe(scope), log_safe(key), log_safe(existing["status"])
+    )
     return False, {"error": _CONFLICT_MESSAGE}
 
 
@@ -200,3 +209,27 @@ def idempotent(
         return wrapper
 
     return decorator
+
+
+async def run_once[T: dict](scope: str, key_material: str, fn: Callable[[], Awaitable[T]]) -> T:
+    """Run ``fn`` at most once per ``(scope, key_material)`` and replay its result for any repeat.
+
+    ``idempotent()`` keys on the call's arguments, which is wrong when the arguments are *meant* to differ
+    between attempts (an approval executed with reviewer edits): the key must be the approval's id, not a hash
+    of its input. Same reservation protocol (reserve, replay if completed, refuse a young in-progress
+    duplicate, take over a stale one, release on failure). ``fn`` must return a ``dict``.
+    """
+    from shared.db import get_pool
+
+    key = f"{scope}:{hashlib.sha256(key_material.encode()).hexdigest()}"
+    pool = get_pool()
+    reserved, conflict_or_cached = await _reserve(pool, key, scope)
+    if not reserved:
+        return conflict_or_cached  # type: ignore[return-value]
+    try:
+        result = await fn()
+    except Exception:
+        await _release(pool, key)
+        raise
+    await _complete(pool, key, result if isinstance(result, dict) else {})
+    return result

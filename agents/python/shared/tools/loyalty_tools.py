@@ -44,7 +44,9 @@ async def get_loyalty_tier() -> dict:
             "tier": row["loyalty_tier"],
             "total_spend": float(row["total_spend"]),
             "discount_pct": float(row["discount_pct"]),
-            "free_shipping_threshold": float(row["free_shipping_threshold"]) if row["free_shipping_threshold"] else None,
+            "free_shipping_threshold": float(row["free_shipping_threshold"])
+            if row["free_shipping_threshold"]
+            else None,
             "priority_support": row["priority_support"],
         }
 
@@ -59,7 +61,10 @@ async def get_loyalty_tier() -> dict:
         return result
 
 
-@tool(name="calculate_loyalty_discount", description="Calculate the loyalty discount amount for a given cart total based on the current user's tier.")
+@tool(
+    name="calculate_loyalty_discount",
+    description="Calculate the loyalty discount amount for a given cart total based on the current user's tier.",
+)
 async def calculate_loyalty_discount(
     cart_total: Annotated[float, Field(description="Cart total before loyalty discount")],
 ) -> dict:
@@ -81,9 +86,8 @@ async def calculate_loyalty_discount(
 
         discount_pct = float(row["discount_pct"])
         discount_amount = cart_total * (discount_pct / 100)
-        free_shipping = (
-            row["free_shipping_threshold"] is not None
-            and cart_total >= float(row["free_shipping_threshold"])
+        free_shipping = row["free_shipping_threshold"] is not None and cart_total >= float(
+            row["free_shipping_threshold"]
         )
 
         return {
@@ -110,7 +114,9 @@ async def get_loyalty_benefits() -> list[dict]:
                 "tier": r["name"],
                 "min_spend_required": float(r["min_spend"]),
                 "discount_pct": float(r["discount_pct"]),
-                "free_shipping_threshold": float(r["free_shipping_threshold"]) if r["free_shipping_threshold"] else None,
+                "free_shipping_threshold": float(r["free_shipping_threshold"])
+                if r["free_shipping_threshold"]
+                else None,
                 "priority_support": r["priority_support"],
             }
             for r in rows

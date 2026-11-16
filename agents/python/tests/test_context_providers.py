@@ -23,7 +23,6 @@ from shared.context_providers import (
     UserProfileProvider,
 )
 
-
 # ─────────────────────── Fakes ───────────────────────
 
 
@@ -51,10 +50,10 @@ class FakePool:
         self._orders = order_rows or []
         self._memories = memory_rows or []
 
-    def acquire(self) -> "FakePool":
+    def acquire(self) -> FakePool:
         return self
 
-    async def __aenter__(self) -> "FakePool":
+    async def __aenter__(self) -> FakePool:
         return self
 
     async def __aexit__(self, *_exc: object) -> None:
@@ -110,6 +109,7 @@ def user_email(monkeypatch):
 
 def _patch_pool(monkeypatch, pool: FakePool) -> None:
     import shared.context_providers as mod
+
     monkeypatch.setattr(mod, "get_pool", lambda: pool)
 
 
@@ -150,6 +150,7 @@ async def test_user_profile_provider_no_op_when_no_user(monkeypatch) -> None:
 async def test_user_profile_provider_no_op_when_db_unavailable(monkeypatch, user_email) -> None:
     """A missing pool (e.g., worker startup) must not crash the agent run."""
     import shared.context_providers as mod
+
     monkeypatch.setattr(mod, "get_pool", lambda: (_ for _ in ()).throw(RuntimeError("no pool")))
     ctx = FakeContext()
     state: dict[str, Any] = {}
@@ -214,9 +215,7 @@ async def test_agent_memories_respects_limit(monkeypatch, user_email) -> None:
 
     _patch_pool(monkeypatch, CapturingPool(memory_rows=MEMORY_ROWS))
     state: dict[str, Any] = {"user": {"email": user_email}}
-    await AgentMemoriesProvider(limit=3).before_run(
-        agent=None, session=None, context=FakeContext(), state=state
-    )
+    await AgentMemoriesProvider(limit=3).before_run(agent=None, session=None, context=FakeContext(), state=state)
     # email + limit → second arg is the numeric limit
     assert 3 in captured_args
 

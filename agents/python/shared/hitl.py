@@ -27,23 +27,26 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 from uuid import UUID
 
-from agent_framework._middleware import FunctionInvocationContext, FunctionMiddleware
+from agent_framework import FunctionInvocationContext, FunctionMiddleware
 
 from shared.config import settings
 from shared.context import current_session_id, current_user_email
-from shared.idempotency import idempotent
+from shared.idempotency import idempotent, run_once
+from shared.log_safe import log_safe
 
 logger = logging.getLogger(__name__)
 
 # Tools that require human approval before executing.
 # Matches the @tool(approval_mode="always_require") decorators.
-HITL_GATED_TOOLS: frozenset[str] = frozenset({
-    "cancel_order",
-    "modify_order",
-    "process_refund",
-    "initiate_return",
-    "place_backorder",
-})
+HITL_GATED_TOOLS: frozenset[str] = frozenset(
+    {
+        "cancel_order",
+        "modify_order",
+        "process_refund",
+        "initiate_return",
+        "place_backorder",
+    }
+)
 
 
 # ─────────────────────── Middleware ─────────────────────────────────────────
@@ -71,11 +74,7 @@ class HITLFunctionMiddleware(FunctionMiddleware):
             return
 
         fn = getattr(context, "function", None)
-        tool_name: str = (
-            getattr(fn, "name", None)
-            or getattr(fn, "__name__", None)
-            or ""
-        )
+        tool_name: str = getattr(fn, "name", None) or getattr(fn, "__name__", None) or ""
 
         if tool_name not in HITL_GATED_TOOLS:
             await call_next()
@@ -103,7 +102,7 @@ class HITLFunctionMiddleware(FunctionMiddleware):
                 tool_input=raw_args,
             )
         except Exception:
-            logger.exception("hitl: failed to create approval request for %s", tool_name)
+            logger.exception("hitl: failed to create approval request for %s", log_safe(tool_name))
             # Fail CLOSED — a high-stakes tool (cancel_order, process_refund,
             # initiate_return, modify_order, place_backorder) must never
             # execute unapproved just because the approval record couldn't
@@ -121,9 +120,9 @@ class HITLFunctionMiddleware(FunctionMiddleware):
 
         logger.info(
             "hitl.pending tool=%s user=%s request_id=%s",
-            tool_name,
-            user_email,
-            request_id,
+            log_safe(tool_name),
+            log_safe(user_email),
+            log_safe(request_id),
         )
 
         label = tool_name.replace("_", " ")
@@ -179,6 +178,7 @@ async def _create_hitl_request(
     tool_input: dict,
 ) -> UUID:
     from shared.db import get_pool
+
     pool = get_pool()
     row = await pool.fetchrow(
         """INSERT INTO tool_approval_requests
@@ -191,7 +191,24 @@ async def _create_hitl_request(
         tool_name,
         json.dumps(tool_input),
     )
-    return row["id"]
+    request_id: UUID = row["id"]
+
+    # The inbox row (D-5a). Best effort: the request above is the source of truth and the caller's
+    # answer to the user must not change if the inbox cannot be written.
+    try:
+        from shared.approvals.intake import open_tool_approval
+
+        await open_tool_approval(
+            pool,
+            request_id=str(request_id),
+            user_email=user_email,
+            session_id=session_id,
+            tool_name=tool_name,
+            tool_input=tool_input,
+        )
+    except Exception:
+        logger.exception("hitl: could not open the inbox approval for request %s", log_safe(request_id))
+    return request_id
 
 
 async def list_hitl_requests(
@@ -200,6 +217,7 @@ async def list_hitl_requests(
 ) -> list[dict]:
     """Return HITL requests for the admin approval queue."""
     from shared.db import get_pool
+
     pool = get_pool()
 
     where = "WHERE status = $1" if status else ""
@@ -236,10 +254,9 @@ async def list_hitl_requests(
 
 async def get_hitl_request(request_id: str) -> dict | None:
     from shared.db import get_pool
+
     pool = get_pool()
-    row = await pool.fetchrow(
-        "SELECT * FROM tool_approval_requests WHERE id = $1", request_id
-    )
+    row = await pool.fetchrow("SELECT * FROM tool_approval_requests WHERE id = $1", request_id)
     if not row:
         return None
     return {
@@ -267,6 +284,7 @@ async def claim_hitl_request(request_id: str) -> dict | None:
     "someone else got here first" and refuse, not retry.
     """
     from shared.db import get_pool
+
     pool = get_pool()
     row = await pool.fetchrow(
         """UPDATE tool_approval_requests
@@ -302,6 +320,7 @@ async def resolve_hitl_request(
     and this returns False, same as before.
     """
     from shared.db import get_pool
+
     pool = get_pool()
     final_status = "executed" if (decision == "approved" and execution_result) else decision
     result = await pool.execute(
@@ -321,8 +340,62 @@ async def resolve_hitl_request(
 # ─────────────────────── Action executor ────────────────────────────────────
 
 
-@idempotent("hitl_execute", identity_fn=lambda tool_name, tool_input, user_email: user_email)
+class InvalidEditsError(ValueError):
+    """A reviewer's edits name a field the policy does not allow them to change, or carry a bad value."""
+
+
+_REFUND_METHODS = frozenset({"original_payment", "store_credit"})
+
+
+def merge_edits(tool_name: str, tool_input: dict, edits: dict | None) -> dict:
+    """The tool input with a reviewer's ``edits`` applied — ONLY for fields on the policy's ``editable_fields``.
+
+    Anything else raises ``InvalidEditsError`` (the API answers 422) and nothing is merged: an allowlist, so a
+    reviewer cannot rewrite ``order_id`` or ``return_id`` and point an approval at someone else's order.
+    """
+    if not edits:
+        return dict(tool_input)
+    from shared.policy import PolicyError, get_policy
+
+    try:
+        allowed = set(get_policy().kind(tool_name).editable_fields)
+    except PolicyError:
+        allowed = set()
+    rejected = sorted(set(edits) - allowed)
+    if rejected:
+        raise InvalidEditsError(f"not editable for {tool_name}: {', '.join(rejected)}")
+    if "refund_method" in edits and edits["refund_method"] not in _REFUND_METHODS:
+        raise InvalidEditsError("refund_method must be 'original_payment' or 'store_credit'")
+    return {**tool_input, **edits}
+
+
 async def execute_approved_action(
+    tool_name: str,
+    tool_input: dict,
+    user_email: str,
+    approval_id: str | None = None,
+) -> dict:
+    """Execute an approved action at most once.
+
+    With an ``approval_id`` the idempotency key is that id (reviewer edits change ``tool_input``, so an input
+    hash would let an edited retry run a second time). Without one — the legacy shape — the key is the
+    requester plus the exact input, as before.
+    """
+    if approval_id:
+        return await run_once(
+            "hitl_execute_approval",
+            str(approval_id),
+            lambda: _execute_action(tool_name, tool_input, user_email),
+        )
+    return await _execute_idempotent(tool_name, tool_input, user_email)
+
+
+@idempotent("hitl_execute", identity_fn=lambda tool_name, tool_input, user_email: user_email)
+async def _execute_idempotent(tool_name: str, tool_input: dict, user_email: str) -> dict:
+    return await _execute_action(tool_name, tool_input, user_email)
+
+
+async def _execute_action(
     tool_name: str,
     tool_input: dict,
     user_email: str,
@@ -343,6 +416,7 @@ async def execute_approved_action(
     ``approve_hitl_request``).
     """
     from shared.db import get_pool
+
     pool = get_pool()
 
     if tool_name == "cancel_order":
@@ -405,6 +479,9 @@ async def execute_approved_action(
     if tool_name == "initiate_return":
         order_id = tool_input.get("order_id", "")
         reason = tool_input.get("reason", "Admin-approved return")
+        refund_method = tool_input.get("refund_method")
+        if refund_method not in _REFUND_METHODS:
+            refund_method = "original_payment"
         async with pool.acquire() as conn:
             # NOT EXISTS guards against a second run inserting a second
             # returns row for the same order (a double-execution here
@@ -413,7 +490,7 @@ async def execute_approved_action(
             # WHERE ... status NOT IN (...) above).
             row = await conn.fetchrow(
                 """INSERT INTO returns (order_id, user_id, reason, status, refund_method)
-                   SELECT o.id, o.user_id, $3, 'approved', 'original_payment'
+                   SELECT o.id, o.user_id, $3, 'approved', $4
                    FROM orders o
                    JOIN users u ON o.user_id = u.id
                    WHERE o.id = $1 AND u.email = $2
@@ -422,6 +499,7 @@ async def execute_approved_action(
                 order_id,
                 user_email,
                 reason,
+                refund_method,
             )
         if row:
             return {
@@ -445,6 +523,7 @@ async def execute_approved_action(
         order_id = tool_input.get("order_id", "")
         new_address = tool_input.get("new_address", {})
         import json as _json
+
         async with pool.acquire() as conn:
             result = await conn.execute(
                 """UPDATE orders SET shipping_address = $3::jsonb, updated_at = NOW()

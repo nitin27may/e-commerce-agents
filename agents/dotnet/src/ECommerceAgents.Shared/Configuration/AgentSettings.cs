@@ -61,6 +61,22 @@ public sealed record AgentSettings
     /// </summary>
     public string LlmBaseUrl { get; init; } = "";
 
+    /// <summary>
+    /// <c>ANTHROPIC_API_KEY</c>, required when <c>LLM_PROVIDER=anthropic</c> (.NET only — the Python
+    /// connector needs MAF core 1.24+; see docs/parity-matrix.md). Never logged.
+    /// </summary>
+    public string AnthropicApiKey { get; init; } = "";
+
+    /// <summary>
+    /// <c>ANTHROPIC_MODEL</c>. With <c>LLM_PROVIDER=anthropic</c> the loader copies it into
+    /// <see cref="LlmModel"/> (which cost and telemetry read), instead of <c>LLM_MODEL</c> — the compose files
+    /// forward <c>LLM_MODEL</c> with a gpt-4.1 default that Anthropic would reject.
+    /// </summary>
+    public string AnthropicModel { get; init; } = DefaultAnthropicModel;
+
+    /// <summary>Other current ids, for the docs: <c>claude-opus-5-5</c>, <c>claude-haiku-5-5</c>.</summary>
+    public const string DefaultAnthropicModel = "claude-sonnet-5-5";
+
     // ── Rate limiting (issue #30) — .NET twin of Python's RATE_LIMIT_* ──
     public bool RateLimitEnabled { get; init; } = true;
     public int RateLimitMaxRequests { get; init; } = 30;
@@ -78,6 +94,26 @@ public sealed record AgentSettings
     /// </remarks>
     public int HandoffMaxTurns { get; init; } = 3;
     public double RateLimitWindowSeconds { get; init; } = 60.0;
+
+    /// <summary>
+    /// Signup / login / refresh buckets - Python's <c>RATE_LIMIT_AUTH_*</c>. The tight budget is per
+    /// (client address, target email) for login/signup and per user for refresh, so one caller cannot
+    /// starve the others; the address-only ceiling is far looser (behind the default web proxy every
+    /// browser user shares one address).
+    /// </summary>
+    public int RateLimitAuthMaxRequests { get; init; } = 10;
+    public int RateLimitAuthIpMaxRequests { get; init; } = 300;
+    public double RateLimitAuthWindowSeconds { get; init; } = 60.0;
+
+    /// <summary>
+    /// Trusted reverse proxies that append to <c>X-Forwarded-For</c>; the client address is the
+    /// entry this many places from the right. 0 ignores the header. Python's
+    /// <c>RATE_LIMIT_TRUSTED_PROXY_HOPS</c>.
+    /// </summary>
+    public int RateLimitTrustedProxyHops { get; init; } = 1;
+
+    /// <summary>Comma-separated browser origins allowed by CORS - Python's <c>CORS_ALLOWED_ORIGINS</c>.</summary>
+    public string CorsAllowedOrigins { get; init; } = "http://localhost:3000";
 
     // ── Grounding (issue #33 PR 7) — .NET twin of Python's GROUNDING_MODE ──
     /// <summary>
@@ -100,6 +136,28 @@ public sealed record AgentSettings
     /// <summary>USD ceiling for a single agent run; null disables the ceiling.</summary>
     public double? CostBudgetUsdPerRun { get; init; }
     public string EmbeddingModel { get; init; } = "text-embedding-3-small";
+
+    /// <summary>
+    /// <c>EMBEDDING_PROVIDER</c>: "openai" | "azure" | "openai_compatible" | "replay"; empty follows
+    /// <see cref="LlmProvider"/>, exactly as before. Python twin: <c>shared/embedding_config.py</c>.
+    /// </summary>
+    public string EmbeddingProvider { get; init; } = "";
+
+    /// <summary><c>EMBEDDING_BASE_URL</c>: replaces <c>LLM_BASE_URL</c> (or the Azure endpoint) for embeddings only.</summary>
+    public string EmbeddingBaseUrl { get; init; } = "";
+
+    /// <summary><c>EMBEDDING_API_KEY</c>: replaces the chat key for embeddings only. Never logged.</summary>
+    public string EmbeddingApiKey { get; init; } = "";
+
+    /// <summary>
+    /// <c>EMBEDDING_DIM</c>: the width of every vector; must equal the <c>vector(N)</c> columns
+    /// (<c>scripts/reset_embeddings.py</c> changes them; <see cref="Agents.EmbeddingDimensionCheck"/> verifies).
+    /// </summary>
+    public int EmbeddingDim { get; init; } = DefaultEmbeddingDim;
+
+    /// <summary>The baseline's column width (text-embedding-3-small).</summary>
+    public const int DefaultEmbeddingDim = 1536;
+
     public string OpenAiApiKey { get; init; } = "";
 
     /// <summary>
@@ -132,6 +190,19 @@ public sealed record AgentSettings
     // shared by both stacks), which issues RS256 tokens validated via its
     // JWKS. No external IdP.
     public string AuthMode { get; init; } = "local"; // "local" | "oauth"
+
+    /// <summary>
+    /// AuthMode=local only: rotate refresh tokens with reuse detection (Python's
+    /// <c>AUTH_REFRESH_ROTATION</c>). False restores "refresh returns only a new access token".
+    /// </summary>
+    public bool AuthRefreshRotation { get; init; } = true;
+
+    /// <summary>
+    /// Absolute lifetime of a refresh-token family from the login that started it (migration 0005).
+    /// Rotation mints a fresh 7-day token each time, so without a cap a session that keeps
+    /// refreshing never ends. Mirrors Python's <c>AUTH_REFRESH_FAMILY_MAX_DAYS</c>.
+    /// </summary>
+    public int AuthRefreshFamilyMaxDays { get; init; } = 30;
 
     public string AuthServerIssuer { get; init; } = "http://localhost:8090";
     public string AuthServerJwksUrl { get; init; } = "http://localhost:8090/.well-known/jwks.json";
@@ -237,4 +308,13 @@ public sealed record AgentSettings
     // return/replace workflow specifically — this flag gates the generic
     // cross-agent tool-interception queue (HitlApprovalMiddleware).
     public bool HitlEnabled { get; init; } = true;
+
+    // How long a resume claim ('processing' on hitl_requests) may be held before
+    // another approver can take it over. Mirrors Python's HITL_CLAIM_TTL_SECONDS.
+    public int HitlClaimTtlSeconds { get; init; } = 600;
+
+    // Hard timeout on one resume execution. Must be shorter than the claim TTL, or a stalled
+    // resume could still be running when another approver takes its claim. Mirrors Python's
+    // HITL_RESUME_TIMEOUT_SECONDS.
+    public int HitlResumeTimeoutSeconds { get; init; } = 300;
 }

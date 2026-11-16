@@ -35,7 +35,6 @@ from shared.context import (
     current_user_role,
 )
 
-
 # ─────────────────────── helpers ────────────────────────────────────────────
 
 
@@ -73,7 +72,7 @@ async def test_message_stream_emits_step_frames_before_done(
 
     # Fake streaming agent: yields one text chunk and populates current_steps
     # to simulate StepRecorderMiddleware capturing a tool call mid-run.
-    async def _fake_stream(agent, message, history=None):
+    async def _fake_stream(agent, message, history=None, metadata_box=None):
         steps = current_steps.get()
         if steps is not None:
             steps.append(
@@ -119,7 +118,7 @@ async def test_message_stream_emits_step_frames_before_done(
     assert step_pos < done_pos, "step frame must appear before [DONE]"
 
     # Step JSON carries the tool name and the agent tag added by agent_host
-    step_data_line = next(l for l in body.splitlines() if l.startswith("data: ") and "search_products" in l)
+    step_data_line = next(ln for ln in body.splitlines() if ln.startswith("data: ") and "search_products" in ln)
     step = json.loads(step_data_line[6:])
     assert step["tool_name"] == "search_products"
     assert step["agent"] == "product-discovery"
@@ -145,7 +144,7 @@ async def test_message_stream_emits_a_step_before_the_text_that_follows_it(
 
     from shared.agent_host import create_agent_app
 
-    async def _fake_stream(agent, message, history=None):
+    async def _fake_stream(agent, message, history=None, metadata_box=None):
         yield "Let me check. "
         steps = current_steps.get()
         if steps is not None:
@@ -197,7 +196,7 @@ async def test_message_stream_no_steps_skips_step_frames(
 
     from shared.agent_host import create_agent_app
 
-    async def _fake_stream(agent, message, history=None):
+    async def _fake_stream(agent, message, history=None, metadata_box=None):
         yield "simple answer"
 
     monkeypatch.setattr("shared.agent_host._run_agent_native_stream", _fake_stream)
@@ -425,7 +424,6 @@ async def test_runs_endpoint_returns_user_runs(
     from httpx import ASGITransport, AsyncClient
 
     from orchestrator.routes import require_auth, router
-    from shared.db import get_pool
     from shared.usage_db import log_agent_usage, log_execution_step
 
     # ── seed a user + run in the real test DB ──────────────────────────────
@@ -573,7 +571,7 @@ async def test_newlines_survive_specialist_to_orchestrator_hop(
 
     from shared.agent_host import create_agent_app
 
-    async def _fake_stream(agent, message, history=None):
+    async def _fake_stream(agent, message, history=None, metadata_box=None):
         for chunk in chunks:
             yield chunk
 

@@ -21,12 +21,12 @@ a conversation row and then pass it to ``agent.run(messages, session=...)``.
 
 import json
 import logging
+import os
+import re
 from pathlib import Path
 from typing import Any
 
-from agent_framework import AgentSession, Message
-from agent_framework._sessions import HistoryProvider
-from agent_framework._types import Role
+from agent_framework import AgentSession, HistoryProvider, Message, Role
 
 from shared import config as _config
 
@@ -88,8 +88,14 @@ class FileSessionHistoryProvider(HistoryProvider):
         self._dir.mkdir(parents=True, exist_ok=True)
 
     def _path(self, session_id: str) -> Path:
-        safe = session_id.replace("/", "_")
-        return self._dir / f"{safe}.jsonl"
+        # A session id can come from a request header. Keep only filename-safe characters,
+        # then confirm the normalised path is still inside the directory.
+        safe = re.sub(r"[^A-Za-z0-9_.-]", "_", session_id)
+        base = os.path.normpath(os.path.abspath(self._dir))
+        full = os.path.normpath(os.path.join(base, f"{safe}.jsonl"))
+        if not full.startswith(base + os.sep):
+            raise ValueError("session id does not map to a file inside the history directory")
+        return Path(full)
 
     async def get_messages(
         self,

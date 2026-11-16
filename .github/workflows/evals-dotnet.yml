@@ -79,9 +79,10 @@ jobs:
       # the data Python does.
       - name: Apply schema and seed
         run: |
-          PGPASSWORD=ecommerce_secret psql -h localhost -U ecommerce -d ecommerce_agents \
-            -f docker/postgres/init.sql
           uv sync --project agents/python --extra dev
+          # Baseline (docker/postgres/init.sql) + docker/postgres/migrations/*, in order.
+          # DATABASE_URL defaults to the service container above.
+          uv run --project agents/python python -m scripts.migrate
           uv run --project agents/python python -m scripts.seed
 
       - name: Build

@@ -2,6 +2,7 @@
   {
     "input": "Is coupon WELCOME10 valid for my current cart?",
     "expected_tools": ["validate_coupon"],
+    "expected_tool_args": {"validate_coupon": {"code": "WELCOME10"}},
     "expected_fields": ["total"],
     "criteria": {
       "grounded": true,
@@ -41,6 +42,7 @@
   {
     "input": "Has the price of the Sony WH-1000XM5 dropped recently?",
     "expected_tools": ["get_price_history"],
+    "expected_tool_args": {"get_price_history": {"product_id": "dc9e2baa-8182-58f8-9df1-97d049426ba1", "days": 30}},
     "expected_fields": ["price"],
     "criteria": {
       "grounded": true,

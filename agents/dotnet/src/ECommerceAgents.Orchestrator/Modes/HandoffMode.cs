@@ -131,6 +131,17 @@ public sealed class HandoffMode(AgentSettings settings, A2AClient a2a, PromptLoa
                         ctx.Events?.Report(OrchestrationEvent.NodeEnter(chunk.AuthorName));
                     }
 
+                    // Only the local, LLM-backed triage agent reports usage on its updates;
+                    // a remote specialist's is recorded off the A2A reply (A2AClient).
+                    // Accounting only — never part of the text.
+                    if (chunk.AuthorName == "orchestrator")
+                    {
+                        foreach (var usage in chunk.Contents.OfType<UsageContent>())
+                        {
+                            RequestContext.RecordUsage("orchestrator", SpecialistUsage.From(usage.Details, _settings.LlmModel));
+                        }
+                    }
+
                     break;
 
                 case WorkflowOutputEvent output when output.Data is List<ChatMessage> final:
@@ -172,7 +183,7 @@ public sealed class HandoffMode(AgentSettings settings, A2AClient a2a, PromptLoa
     /// it does not have and it would answer directly instead of handing off.
     /// </remarks>
     private AIAgent BuildTriageAgent() =>
-        ECommerceAgents.Shared.Agents.ChatClientFactory.Create(_settings).AsAIAgent(
+        ECommerceAgents.Shared.Agents.ChatClientFactory.Create(_settings, "handoff-triage", _prompts).AsAIAgent(
             instructions: _prompts.Load("handoff-triage"),
             name: "orchestrator",
             description: "Triage agent that routes the conversation to a specialist.");

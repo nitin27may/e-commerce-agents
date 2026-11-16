@@ -1,3 +1,4 @@
+using ECommerceAgents.Shared.Logging;
 using ECommerceAgents.Shared.Auth;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
@@ -134,7 +135,36 @@ public sealed class A2AClient
         using var open = response!;
         var payload = await open.Content.ReadFromJsonAsync<A2AResponse>(ResponseJsonOptions, ct);
         MergeReturnedSteps(agentName, payload?.Steps);
+        RecordReportedUsage(agentName, payload?.Usage);
         return payload?.Response ?? string.Empty;
+    }
+
+    /// <summary>
+    /// Adds a specialist's reported usage to the turn's tally. A malformed value (not an object, or
+    /// fields of the wrong type) is logged once and ignored: usage is accounting, never part of the
+    /// answer, so a specialist that ran and replied must not fail the call over it.
+    /// </summary>
+    private void RecordReportedUsage(string agentName, JsonElement? usage)
+    {
+        if (usage is not { ValueKind: not (JsonValueKind.Null or JsonValueKind.Undefined) } element)
+        {
+            return;
+        }
+
+        try
+        {
+            if (element.ValueKind == JsonValueKind.Object)
+            {
+                RequestContext.RecordUsage(agentName, element.Deserialize<SpecialistUsage>(ResponseJsonOptions));
+                return;
+            }
+        }
+        catch (JsonException)
+        {
+            // fall through to the single warning below
+        }
+
+        _logger.LogWarning("a2a.usage_unparseable target={Target}", LogSafe.Clean(agentName));
     }
 
     /// <summary>
@@ -197,7 +227,7 @@ public sealed class A2AClient
                 _logger.LogError(
                     failure,
                     "a2a.stream_interrupted target={Agent} frames={Frames}",
-                    agentName,
+                    LogSafe.Clean(agentName),
                     framesSeen
                 );
                 yield return $"[The {agentName} agent's response was interrupted and may be incomplete.]";
@@ -242,6 +272,22 @@ public sealed class A2AClient
                 // with the specialist's name (a specialist doesn't know its
                 // own name in RequestContext, so it can't tag itself).
                 MergeReturnedSteps(agentName, JsonSerializer.Deserialize<List<ExecutionStep>>(chunk, ResponseJsonOptions));
+                continue;
+            }
+            if (eventType == "usage")
+            {
+                // Accounting only: into the turn's tally, never yielded. What this
+                // method yields is the text the orchestrator's model reads.
+                SpecialistUsage? reported = null;
+                try
+                {
+                    reported = JsonSerializer.Deserialize<SpecialistUsage>(chunk, ResponseJsonOptions);
+                }
+                catch (JsonException)
+                {
+                    _logger.LogWarning("a2a.usage_unparseable target={Target}", LogSafe.Clean(agentName));
+                }
+                RequestContext.RecordUsage(agentName, reported);
                 continue;
             }
             if (chunk != "[DONE]")
@@ -343,7 +389,7 @@ public sealed class A2AClient
             if (!response.IsSuccessStatusCode)
             {
                 var status = (int)response.StatusCode;
-                _logger.LogError("a2a.error target={Target} status={Status}", agentName, status);
+                _logger.LogError("a2a.error target={Target} status={Status}", LogSafe.Clean(agentName), status);
                 response.Dispose();
                 return (null, $"The {agentName} agent returned an error (status {status}). Please try again.");
             }
@@ -352,17 +398,17 @@ public sealed class A2AClient
         }
         catch (BrokenCircuitException)
         {
-            _logger.LogError("a2a.circuit_open_short_circuit target={Target}", agentName);
+            _logger.LogError("a2a.circuit_open_short_circuit target={Target}", LogSafe.Clean(agentName));
             return (null, $"The {agentName} agent is temporarily unavailable. Please try again in a moment.");
         }
         catch (TaskCanceledException)
         {
-            _logger.LogError("a2a.timeout target={Target}", agentName);
+            _logger.LogError("a2a.timeout target={Target}", LogSafe.Clean(agentName));
             return (null, $"The {agentName} agent took too long to respond. Please try again.");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "a2a.failure target={Target}", agentName);
+            _logger.LogError(ex, "a2a.failure target={Target}", LogSafe.Clean(agentName));
             return (null, $"Failed to reach the {agentName} agent. Please try again later.");
         }
     }
@@ -379,6 +425,8 @@ public sealed class A2AClient
 
     private sealed record A2AResponse(
         [property: JsonPropertyName("response")] string Response,
-        [property: JsonPropertyName("steps")] List<ExecutionStep>? Steps = null
+        [property: JsonPropertyName("steps")] List<ExecutionStep>? Steps = null,
+        // Kept as raw JSON so a malformed value cannot fail deserialising the whole response.
+        [property: JsonPropertyName("usage")] JsonElement? Usage = null
     );
 }

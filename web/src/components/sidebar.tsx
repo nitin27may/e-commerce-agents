@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { visibleGroups, type NavItem } from "@/lib/nav";
+import { NotificationBell } from "@/components/notification-bell";
 
 function NavLink({
   item,
@@ -95,9 +96,10 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         <div className="flex size-8 items-center justify-center rounded-lg bg-primary">
           <Store className="size-4 text-primary-foreground" />
         </div>
-        <span className="text-sm font-semibold tracking-tight">
+        <span className="flex-1 text-sm font-semibold tracking-tight">
           E-Commerce Agents
         </span>
+        {user && <NotificationBell />}
       </div>
 
       <Separator />

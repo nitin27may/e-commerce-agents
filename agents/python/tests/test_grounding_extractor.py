@@ -30,15 +30,13 @@ def test_extracts_multiple_products_array() -> None:
     )
     claims = extract_claims(text)
     assert {c.id for c in claims.products} == {
-        _PRODUCT_ID, "22222222-2222-2222-2222-222222222222",
+        _PRODUCT_ID,
+        "22222222-2222-2222-2222-222222222222",
     }
 
 
 def test_extracts_order_card() -> None:
-    text = (
-        "```order\n"
-        f'{{"id": "{_ORDER_ID}", "status": "shipped", "total": 1068.43, "tracking": "TRK277303722"}}\n```'
-    )
+    text = f'```order\n{{"id": "{_ORDER_ID}", "status": "shipped", "total": 1068.43, "tracking": "TRK277303722"}}\n```'
     claims = extract_claims(text)
     assert len(claims.orders) == 1
     assert claims.orders[0].id == _ORDER_ID
@@ -120,10 +118,7 @@ def test_rewrite_cards_corrects_price_in_place() -> None:
 
 
 def test_rewrite_cards_drops_all_entries_removes_whole_fence() -> None:
-    text = (
-        "```products\n"
-        f'[{{"name": "A", "id": "{_PRODUCT_ID}", "price": 5.0}}]\n```'
-    )
+    text = f'```products\n[{{"name": "A", "id": "{_PRODUCT_ID}", "price": 5.0}}]\n```'
     result = rewrite_cards(text, lambda e: None, lambda e: e)
     assert "```" not in result
 

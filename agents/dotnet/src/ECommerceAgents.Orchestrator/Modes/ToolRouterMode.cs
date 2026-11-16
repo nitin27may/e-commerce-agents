@@ -22,9 +22,10 @@ namespace ECommerceAgents.Orchestrator.Modes;
 /// need it — rather than being a hole in the registry. Python makes the same
 /// split for the same reason.
 /// </remarks>
-public sealed class ToolRouterMode(AIAgent agent) : IOrchestrationMode
+public sealed class ToolRouterMode(AIAgent agent, string? model = null) : IOrchestrationMode
 {
     private readonly AIAgent _agent = agent;
+    private readonly string _model = model ?? string.Empty;
 
     public string Name => "tool";
     public string Label => "Tool Router";
@@ -53,6 +54,8 @@ public sealed class ToolRouterMode(AIAgent agent) : IOrchestrationMode
         }
 
         var response = await _agent.RunAsync(messages, cancellationToken: ct);
+        // The orchestrator's own LLM calls; specialists' arrive over A2A (A2AClient).
+        RequestContext.RecordUsage("orchestrator", SpecialistUsage.From(response.Usage, _model));
 
         var steps = RequestContext.CurrentSteps;
         return new ModeRunResult(

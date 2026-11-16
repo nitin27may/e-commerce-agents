@@ -4,28 +4,43 @@ version = "0.1.0"
 description = "Standalone MCP server exposing e-commerce product catalog data (search, details, comparison, price history)"
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Nitin Singh" }]
 keywords = ["mcp", "model-context-protocol", "e-commerce", "product", "fastmcp"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
-    "Topic :: Software Development :: Libraries :: Application Frameworks",
+    "Framework :: AsyncIO",
+    "Topic :: Database",
+    "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
     "mcp[cli]>=1.27.0,<2",  # 2.0.0 relocates mcp.server.fastmcp; pin below it until migrated
-    "asyncpg>=0.30",
-    "uvicorn>=0.34",
-    "pyjwt[crypto]>=2.10.1",
+    "asyncpg>=0.30,<1",
+    "uvicorn>=0.34,<1",
+    "pyjwt[crypto]>=2.10.1,<3",
 ]
+
+[project.urls]
+Homepage = "https://github.com/nitin27may/e-commerce-agents"
+Documentation = "https://github.com/nitin27may/e-commerce-agents/blob/main/docs/mcp-integration.md"
+Repository = "https://github.com/nitin27may/e-commerce-agents"
+Issues = "https://github.com/nitin27may/e-commerce-agents/issues"
 
 [project.scripts]
 ecommerce-mcp-product = "ecommerce_mcp_product.server:main"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.sdist]
+# The tests build their database from the monorepo's docker/postgres (a path outside this directory),
+# so they cannot run from an sdist; ship the source, the readme and the licence.
+include = ["src", "README.md", "LICENSE"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ecommerce_mcp_product"]

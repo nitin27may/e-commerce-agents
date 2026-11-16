@@ -55,6 +55,10 @@ type AuditEntry = {
   status: "success" | "error";
   error_message: string | null;
   trace_id: string | null;
+  model?: string | null;
+  tokens_cached_in?: number | null;
+  /** null = not captured; 0 = the mode made no LLM call. */
+  cost_usd?: number | null;
   created_at: string;
   steps: AuditStep[];
 };
@@ -483,7 +487,14 @@ export default function AdminAuditPage() {
                           </div>
 
                           {/* Tokens */}
-                          <div className="w-[80px] shrink-0 py-2.5 text-right text-xs text-muted-foreground">
+                          <div
+                            className="w-[80px] shrink-0 py-2.5 text-right text-xs text-muted-foreground"
+                            title={
+                              entry.cost_usd == null
+                                ? "Cost not captured"
+                                : `${entry.model ?? "no model call"} · ${formatNumber(entry.tokens_cached_in ?? 0)} cached in · est. $${entry.cost_usd.toFixed(4)}`
+                            }
+                          >
                             {formatNumber(entry.tokens_in + entry.tokens_out)}
                           </div>
 

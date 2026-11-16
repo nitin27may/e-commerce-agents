@@ -34,6 +34,13 @@ public sealed class JwtTokenService(AgentSettings settings)
 
     public string IssueRefreshToken(string email, string role) => Issue(email, role, RefreshTokenLifetime);
 
+    /// <summary>
+    /// A refresh token that carries a <c>jti</c> (the <c>refresh_tokens</c> row key) and
+    /// <c>type=refresh</c>, matching Python's claims, for <see cref="RefreshTokenStore"/>.
+    /// </summary>
+    public string IssueRefreshToken(string email, string role, string jti) =>
+        Issue(email, role, RefreshTokenLifetime, new Claim("jti", jti), new Claim("type", "refresh"));
+
     public ClaimsPrincipal Validate(string token)
     {
         var parameters = new TokenValidationParameters
@@ -107,7 +114,7 @@ public sealed class JwtTokenService(AgentSettings settings)
         return SHA256.HashData(raw);
     }
 
-    private string Issue(string email, string role, TimeSpan lifetime)
+    private string Issue(string email, string role, TimeSpan lifetime, params Claim[] extra)
     {
         var key = new SymmetricSecurityKey(DeriveKeyBytes(_settings.JwtSecret));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
@@ -119,7 +126,7 @@ public sealed class JwtTokenService(AgentSettings settings)
                 new Claim("email", email),
                 new Claim("role", role),
                 new Claim("iat", new DateTimeOffset(now).ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
-            },
+            }.Concat(extra),
             notBefore: now,
             expires: now.Add(lifetime),
             signingCredentials: creds

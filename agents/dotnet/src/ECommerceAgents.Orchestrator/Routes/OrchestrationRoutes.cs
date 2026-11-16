@@ -1,9 +1,12 @@
+using ECommerceAgents.Shared.Logging;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
 using ECommerceAgents.Shared.Data;
 using Dapper;
 using ECommerceAgents.Orchestrator.Modes;
+using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
+using ECommerceAgents.Shared.Cost;
 using ECommerceAgents.Shared.Orchestration;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -36,8 +39,8 @@ public static class OrchestrationRoutes
     {
         routes.MapGet("/api/orchestration/modes", ListModes);
         routes.MapGet("/api/orchestration/modes/{name}/graph", GetModeGraph);
-        routes.MapPost("/api/orchestration/compare", CompareModes);
-        routes.MapPost("/api/orchestration/{runId}/resume", ResumeRun);
+        routes.MapPost("/api/orchestration/compare", CompareModes).AddEndpointFilter<ChatRoutes.ChatRateLimitFilter>();
+        routes.MapPost("/api/orchestration/{runId}/resume", ResumeRun).AddEndpointFilter<ChatRoutes.ChatRateLimitFilter>();
         return routes;
     }
 
@@ -69,6 +72,7 @@ public static class OrchestrationRoutes
         ResumeRequest? body,
         DatabasePool pool,
         ModeRegistry registry,
+        AgentSettings settings,
         ILoggerFactory loggers
     )
     {
@@ -98,15 +102,22 @@ public static class OrchestrationRoutes
         await using var conn = await pool.OpenAsync();
 
         var claimed = await conn.QueryFirstOrDefaultAsync(
-            @"UPDATE hitl_requests SET status = 'processing'
+            // Claimable = pending, or 'processing' with a claim older than the TTL (a resume
+            // whose process died before releasing it; claimed_at is NULL for rows claimed
+            // before migration 0002, which are equally stale). The predicate is repeated on
+            // the outer UPDATE so two takeovers racing for one stale row cannot both win.
+            @"UPDATE hitl_requests SET status = 'processing', claimed_at = NOW()
                WHERE id = (
                      SELECT id FROM hitl_requests
-                      WHERE workflow_run_id = @runGuid AND status = 'pending'
+                      WHERE workflow_run_id = @runGuid
+                        AND (status = 'pending' OR (status = 'processing'
+                              AND (claimed_at IS NULL OR claimed_at < NOW() - make_interval(secs => @ttl))))
                         AND lower(user_email) <> lower(@email)
                       ORDER BY created_at DESC LIMIT 1)
-                 AND status = 'pending'
-           RETURNING id, kind, request_id, checkpoint_id, payload, user_email",
-            new { runGuid, email });
+                 AND (status = 'pending' OR (status = 'processing'
+                      AND (claimed_at IS NULL OR claimed_at < NOW() - make_interval(secs => @ttl))))
+           RETURNING id, kind, request_id, checkpoint_id, payload, user_email, claimed_at",
+            new { runGuid, email, ttl = (double)settings.HitlClaimTtlSeconds });
 
         if (claimed is null)
         {
@@ -134,6 +145,11 @@ public static class OrchestrationRoutes
         }
 
         var claimId = (Guid)claimed.id;
+        // claimed_at is the claim's fencing token: every claim and takeover rewrites it, so
+        // "claimed_at still equals what I was handed" means "this claim is still mine". The
+        // release and the final decision are both conditional on it; a caller whose claim was
+        // taken over (it stalled past the TTL) changes nothing and gets 409.
+        var claimToken = (DateTime)claimed.claimed_at;
         var kind = (string)claimed.kind;
         var requestId = (string?)claimed.request_id;
         var checkpointId = (Guid?)claimed.checkpoint_id;
@@ -142,20 +158,20 @@ public static class OrchestrationRoutes
         {
             if (kind != "return_approval")
             {
-                return await ReleaseAsync(conn, claimId,
+                return await ReleaseAsync(conn, claimId, claimToken,
                     Results.BadRequest(new { detail = $"Resume not supported for request kind '{kind}'" }));
             }
 
             if (requestId is null || checkpointId is null)
             {
                 // Where the seeded demo rows land: they carry neither, by design.
-                return await ReleaseAsync(conn, claimId,
+                return await ReleaseAsync(conn, claimId, claimToken,
                     Results.Conflict(new { detail = "This pending request predates checkpoint-based resume" }));
             }
 
             if (registry.Get("workflow:return-replace") is not IResumableMode mode)
             {
-                return await ReleaseAsync(conn, claimId,
+                return await ReleaseAsync(conn, claimId, claimToken,
                     Results.Conflict(new { detail = "This backend cannot resume workflow runs" }));
             }
 
@@ -166,7 +182,7 @@ public static class OrchestrationRoutes
             string? sessionId = SessionIdFrom((object?)claimed.payload);
             if (sessionId is null)
             {
-                return await ReleaseAsync(conn, claimId,
+                return await ReleaseAsync(conn, claimId, claimToken,
                     Results.Conflict(new { detail = "This pending request predates checkpoint-based resume" }));
             }
 
@@ -182,9 +198,20 @@ public static class OrchestrationRoutes
             ModeRunResult result;
             RequestContext.CurrentUserEmail = requesterEmail;
             RequestContext.CurrentUserRole = requesterRole;
+            // Hard stop well inside the claim TTL (the loader validates it is shorter), so a frozen
+            // resume ends, and releases, before anyone else may take the row over.
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(settings.HitlResumeTimeoutSeconds));
             try
             {
-                result = await mode.ResumeAsync(sessionId, checkpointId.Value.ToString(), requestId, approved);
+                result = await mode.ResumeAsync(
+                    sessionId, checkpointId.Value.ToString(), requestId, approved, timeout.Token);
+            }
+            catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+            {
+                loggers.CreateLogger("hitl").LogWarning("hitl.resume_timeout hitl_id={ClaimId}", LogSafe.Clean(claimId));
+                await ReleaseClaimAsync(conn, claimId, claimToken);
+                return Results.Json(
+                    new { detail = "Resume timed out; the approval is still pending." }, statusCode: 504);
             }
             finally
             {
@@ -192,16 +219,24 @@ public static class OrchestrationRoutes
                 RequestContext.CurrentUserRole = reviewerRole;
             }
 
-            await conn.ExecuteAsync(
+            var decided = await conn.ExecuteAsync(
                 @"UPDATE hitl_requests
                      SET status = @status, responded_at = NOW(), response = @response::jsonb
-                   WHERE id = @claimId AND status = 'processing'",
+                   WHERE id = @claimId AND status = 'processing' AND claimed_at = @claimToken",
                 new
                 {
                     claimId,
+                    claimToken,
                     status = approved ? "approved" : "rejected",
                     response = JsonSerializer.Serialize(new { approved, decided_by = reviewerEmail }),
                 });
+            if (decided != 1)
+            {
+                // The claim was taken over while this resume ran: someone else owns the
+                // decision now. Record nothing.
+                loggers.CreateLogger("hitl").LogWarning("hitl.claim_lost hitl_id={ClaimId}", LogSafe.Clean(claimId));
+                return Results.Conflict(new { detail = "This approval was taken over by another reviewer" });
+            }
 
             // Back-link whatever the resumed run checkpointed, so /runs keeps showing the
             // full trail rather than stopping at the pause.
@@ -217,10 +252,8 @@ public static class OrchestrationRoutes
         }
         catch (Exception ex)
         {
-            loggers.CreateLogger("hitl").LogError(ex, "hitl.resume_failed run={RunId}", runId);
-            await conn.ExecuteAsync(
-                "UPDATE hitl_requests SET status = 'pending' WHERE id = @claimId AND status = 'processing'",
-                new { claimId });
+            loggers.CreateLogger("hitl").LogError(ex, "hitl.resume_failed run={RunId}", LogSafe.Clean(runId));
+            await ReleaseClaimAsync(conn, claimId, claimToken);
             return Results.Problem("Resume failed; the approval is still pending.");
         }
     }
@@ -228,13 +261,19 @@ public static class OrchestrationRoutes
     public sealed record ResumeResponse(string RunId, bool Approved, string Text, List<string> AgentsInvolved);
 
     /// <summary>Hands the claim back before returning a refusal, so the button stays live.</summary>
-    private static async Task<IResult> ReleaseAsync(System.Data.Common.DbConnection conn, Guid claimId, IResult result)
+    private static async Task<IResult> ReleaseAsync(
+        System.Data.Common.DbConnection conn, Guid claimId, DateTime claimToken, IResult result)
     {
-        await conn.ExecuteAsync(
-            "UPDATE hitl_requests SET status = 'pending' WHERE id = @claimId AND status = 'processing'",
-            new { claimId });
+        await ReleaseClaimAsync(conn, claimId, claimToken);
         return result;
     }
+
+    /// <summary>Fenced by the claim token: a claim that was taken over is not the caller's to release.</summary>
+    private static Task<int> ReleaseClaimAsync(System.Data.Common.DbConnection conn, Guid claimId, DateTime claimToken)
+        => conn.ExecuteAsync(
+            @"UPDATE hitl_requests SET status = 'pending', claimed_at = NULL
+               WHERE id = @claimId AND status = 'processing' AND claimed_at = @claimToken",
+            new { claimId, claimToken });
 
     private static string? SessionIdFrom(object? payload)
     {
@@ -342,8 +381,29 @@ public static class OrchestrationRoutes
             var sw = Stopwatch.StartNew();
             try
             {
+                // A fresh scope per mode: its own usage accumulator (so one mode's tokens
+                // are not added to the next), same caller identity.
+                using var scope = RequestContext.Scope(
+                    RequestContext.CurrentUserEmail,
+                    RequestContext.CurrentUserRole,
+                    RequestContext.CurrentSessionId);
                 var result = await mode.RunAsync(body.Message, new RunContext([], null), ct);
                 sw.Stop();
+
+                // null = the mode reported no usage (not captured); 0 = it made no LLM call.
+                long? tokensIn = null, tokensOut = null;
+                double? estCost = null;
+                if (result.NoLlmCalls)
+                {
+                    (tokensIn, tokensOut, estCost) = (0, 0, 0.0);
+                }
+                else if (RequestContext.CurrentRunUsage.Total() is { } total)
+                {
+                    tokensIn = total.InputTokenCount;
+                    tokensOut = total.OutputTokenCount;
+                    estCost = CostEstimator.EstimateRun(RequestContext.CurrentRunUsage.ByAgent);
+                }
+
                 results.Add(new
                 {
                     mode = mode.Name,
@@ -353,6 +413,9 @@ public static class OrchestrationRoutes
                     agents_involved = result.AgentsInvolved,
                     step_count = result.StepCount,
                     graph_mermaid = mode.GraphMermaid(),
+                    tokens_in = tokensIn,
+                    tokens_out = tokensOut,
+                    est_cost_usd = estCost,
                     error = (string?)null,
                 });
             }

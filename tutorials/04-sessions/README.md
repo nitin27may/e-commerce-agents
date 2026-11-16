@@ -10,6 +10,7 @@ A MAF `AgentSession` is a snapshot of everything the agent remembers about a con
 
 - Completed [Chapter 03 — Streaming and Multi-turn](../03-streaming-and-multiturn/)
 - Repo-root `.env` with a working LLM provider (`OPENAI_API_KEY`, or `AZURE_OPENAI_ENDPOINT` + `AZURE_OPENAI_KEY` + `AZURE_OPENAI_DEPLOYMENT`)
+- **Key:** `main.py`'s default prompt has no recorded fixture, so running it needs a key (live run). Without one, the chapter's tests replay their own recorded prompt: `uv run --project tutorials pytest tutorials/04-sessions/python/tests -m "not integration"`.
 
 ## The concept
 

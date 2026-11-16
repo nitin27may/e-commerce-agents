@@ -82,6 +82,39 @@ jobs:
       - name: Run pytest (deterministic chapters only)
         run: uv run --project tutorials pytest tutorials/ -m "not integration"
 
+  tutorials-keyless:
+    name: Tutorials · every chapter runs with no key
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # No `env:` secrets here, on purpose. The one rule for keys is that every
+    # chapter runs with no key and a key is only for a live run; this job is what
+    # keeps that true (see tutorials/_shared/llm.py and
+    # scripts/run_tutorials_keyless.py, which carries the skip-list and its reasons).
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install Python 3.12
+        run: uv python install 3.12
+
+      - name: Sync dependencies
+        working-directory: tutorials
+        run: uv sync --frozen --extra dev
+
+      - name: Assert no key is present
+        run: |
+          if env | grep -qE '_API_KEY=.+'; then
+            echo "A *_API_KEY variable is set; this job must run keyless." >&2
+            exit 1
+          fi
+
+      - name: Run every chapter with no key
+        run: python3 scripts/run_tutorials_keyless.py
+
   tutorials-lint:
     name: Tutorials · ruff check
     runs-on: ubuntu-latest

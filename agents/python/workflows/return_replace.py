@@ -1,17 +1,26 @@
-"""Return and Replace Workflow — MAF Sequential orchestration with HITL gate.
+"""Return and Replace Workflow — MAF Sequential orchestration with a policy gate.
 
-Step chain: check-eligibility → initiate-return → search-replacements →
-hitl-gate → apply-discount → finalize.
+Step chain: check-eligibility → policy-gate → initiate-return → search-replacements →
+apply-discount → finalize.
 
-The HITL gate pauses the workflow above ``settings.RETURN_HITL_THRESHOLD``
-and emits a ``ReturnApprovalRequest`` via ``ctx.request_info`` so an
-external system (UI, Slack, on-call human) can approve or reject before
-the discount is applied and the return is finalized.
+Nothing is created before the gate: the ``returns`` row, the label and the order's ``returned`` status all
+come from ``initiate-return``, which runs only once the policy has said ``auto`` or a reviewer has approved.
+A rejected (or expired) request therefore leaves no return row and the order untouched.
 
-Refactored from a custom sequential state machine to a MAF
-``WorkflowBuilder`` per ``plans/refactor/09-return-replace-sequential-hitl.md``.
-Public API — class, dataclass, ``execute(state) -> state`` signature — is
-preserved so callers don't have to change.
+The gate asks the approval policy engine (``shared/policy``, kind ``return_approval``) where the request goes.
+``auto`` proceeds without pausing; anything else pauses via ``ctx.request_info`` with a ``ReturnApprovalRequest``
+that carries the FULL ``WorkflowState`` — so the resumed run restores it exactly, instead of rebuilding a
+minimal copy — and waits for a ``ReturnDecision`` (``decision``, ``resolution``, ``amount``, ``note``,
+``decided_by``, ``approval_id``). ``settings.RETURN_HITL_THRESHOLD`` is only the fallback for when the engine
+cannot decide (no database, no identity, unknown order).
+
+An approving reviewer may edit the resolution (``refund`` / ``store_credit`` / ``replacement``) and the amount;
+both are honoured by ``initiate-return``. A rejection, or anything that is not an approval, ends the run with
+an error and no side effects.
+
+Refactored from a custom sequential state machine to a MAF ``WorkflowBuilder`` per
+``plans/refactor/09-return-replace-sequential-hitl.md``. Public API — class, dataclass,
+``execute(state) -> state`` signature — is preserved so callers don't have to change.
 
 Note: do NOT add ``from __future__ import annotations`` here. MAF's
 ``@response_handler`` resolves parameter types via ``inspect.signature``
@@ -19,16 +28,19 @@ at import time; stringified annotations break that resolution.
 """
 
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
-from agent_framework._workflows._executor import Executor, handler
-from agent_framework._workflows._request_info_mixin import response_handler
-from agent_framework._workflows._workflow_builder import WorkflowBuilder
-from agent_framework._workflows._workflow_context import WorkflowContext
+from agent_framework import Executor, WorkflowBuilder, WorkflowContext, handler, response_handler
 
 from shared.config import settings
+from shared.policy import PolicyDecision
 
 logger = logging.getLogger(__name__)
+
+#: What a reviewer may resolve a return as. ``replacement`` is paid out as store credit toward the replacement.
+RESOLUTIONS = ("refund", "store_credit", "replacement")
+_REFUND_METHOD = {"refund": "original_payment", "store_credit": "store_credit", "replacement": "store_credit"}
 
 
 @dataclass
@@ -47,9 +59,13 @@ class WorkflowState:
     replacement_products: list = field(default_factory=list)
     applied_discount: "dict | None" = None
 
-    # HITL state
+    # Policy gate / reviewer decision
     hitl_requested: bool = False
     hitl_approved: "bool | None" = None
+    resolution: str = "store_credit"
+    amount_override: "float | None" = None
+    approval_id: "str | None" = None
+    decided_by: "str | None" = None
 
     # Execution tracking
     completed_steps: list = field(default_factory=list)
@@ -58,12 +74,78 @@ class WorkflowState:
 
 @dataclass
 class ReturnApprovalRequest:
-    """Payload emitted by the HITL gate for high-value returns."""
+    """Payload emitted by the policy gate when a person has to decide.
+
+    ``state`` is the whole in-flight ``WorkflowState`` (verified to round-trip through MAF's checkpoint
+    encoder): the response handler restores it instead of rebuilding a partial copy. ``refund_amount`` is the
+    amount under review — the order total, since no return exists yet. The policy fields are what the inbox
+    shows the reviewer.
+    """
 
     order_id: str
     order_total: float
     refund_amount: float
     replacement_count: int
+    state: WorkflowState
+    route: str = "support"
+    reasons: list = field(default_factory=list)
+    evidence: dict = field(default_factory=dict)
+    policy_version: str = ""
+
+
+@dataclass
+class ReturnDecision:
+    """A reviewer's answer. ``decision`` is ``approve`` or ``reject``; anything else counts as a rejection."""
+
+    decision: str = "reject"
+    resolution: str = "store_credit"  # refund | store_credit | replacement
+    amount: "float | None" = None  # an edited refund amount; None keeps the order total
+    note: str = ""
+    decided_by: str = ""
+    approval_id: str = ""
+
+
+PolicyFn = Callable[[WorkflowState], Awaitable[PolicyDecision | None]]
+
+
+def _policy_unavailable_decision() -> PolicyDecision:
+    """What a return gets when the approval policy cannot be loaded: a human at manager level, never ``auto``."""
+    return PolicyDecision(
+        route="manager",
+        reasons=("Approval policy unavailable: routed to a manager review",),
+        evidence={"fallback": "policy_unavailable"},
+        version="",
+    )
+
+
+async def default_return_policy(state: WorkflowState) -> PolicyDecision | None:
+    """Ask the policy engine; ``None`` means it could not gather facts (the gate then uses the threshold fallback).
+
+    Facts are gathered for whoever the request is running as (the identity ContextVars), never for a
+    function argument, and only from that person's own rows.
+
+    A policy file that cannot be loaded or does not define ``return_approval`` is different: that is a
+    broken control, not missing evidence, so it fails closed -- the return goes to a manager and is never
+    auto-approved by a threshold -- and is logged at error level.
+    """
+    from shared.policy import PolicyError, evaluate, get_policy
+    from shared.policy.facts import gather_facts
+
+    try:
+        get_policy()
+    except Exception:
+        logger.exception("return policy file could not be loaded; routing the return to a manager")
+        return _policy_unavailable_decision()
+
+    try:
+        facts = await gather_facts(state.order_id, amount=state.order_total)
+        return evaluate("return_approval", facts)
+    except PolicyError:
+        logger.exception("return policy has no usable return_approval kind; routing the return to a manager")
+        return _policy_unavailable_decision()
+    except Exception as exc:  # missing evidence must never wedge a customer's return
+        logger.warning("return policy could not decide (%s); using the threshold fallback", type(exc).__name__)
+        return None
 
 
 # ─────────────────────── Executors ───────────────────────
@@ -97,6 +179,82 @@ class _CheckEligibilityExecutor(Executor):
         await ctx.send_message(state)
 
 
+class _PolicyGateExecutor(Executor):
+    """Routes the request through the approval policy; pauses via ``ctx.request_info`` unless it is ``auto``."""
+
+    def __init__(self, threshold: float, policy_fn: PolicyFn = default_return_policy) -> None:
+        super().__init__(id="policy-gate")
+        self._threshold = threshold
+        self._policy_fn = policy_fn
+
+    def _fallback(self, state: WorkflowState) -> PolicyDecision:
+        over = state.order_total > self._threshold
+        return PolicyDecision(
+            route="support" if over else "auto",
+            reasons=(
+                (f"Policy engine unavailable; order total is over the {self._threshold:.2f} manual-review threshold",)
+                if over
+                else ("Policy engine unavailable; order total is within the auto-approval threshold",)
+            ),
+            evidence={"fallback": "threshold", "threshold": self._threshold},
+            version="",
+        )
+
+    @handler
+    async def run(self, state: WorkflowState, ctx: WorkflowContext[WorkflowState, WorkflowState]) -> None:
+        state.completed_steps.append("policy_gate")
+        decision = await self._policy_fn(state) or self._fallback(state)
+        if decision.route == "auto":
+            state.hitl_approved = True
+            await ctx.send_message(state)
+            return
+
+        state.hitl_requested = True
+        state.refund_amount = state.order_total  # the amount under review; no return exists yet
+        # Emit a snapshot so callers observing the stream can see the
+        # pause state before the request_info event pauses execution.
+        await ctx.yield_output(state)
+        await ctx.request_info(
+            ReturnApprovalRequest(
+                order_id=state.order_id,
+                order_total=state.order_total,
+                refund_amount=state.order_total,
+                replacement_count=0,
+                state=state,
+                route=decision.route,
+                reasons=list(decision.reasons),
+                evidence=dict(decision.evidence),
+                policy_version=decision.version,
+            ),
+            response_type=ReturnDecision,
+        )
+
+    @response_handler(request=ReturnApprovalRequest, response=ReturnDecision)
+    async def on_decision(self, original_request, response, ctx) -> None:
+        state = _restore_state(original_request.state)
+        state.hitl_requested = True
+        state.approval_id = response.approval_id or None
+        state.decided_by = response.decided_by or None
+        if str(response.decision).lower() != "approve":
+            state.hitl_approved = False
+            state.errors.append("policy_gate: return rejected by reviewer")
+            await ctx.yield_output(state)
+            return
+        state.hitl_approved = True
+        if response.resolution in RESOLUTIONS:
+            state.resolution = response.resolution
+        if response.amount is not None:
+            state.amount_override = float(response.amount)
+        await ctx.send_message(state)
+
+
+def _restore_state(raw) -> WorkflowState:
+    """The checkpointed state, as a ``WorkflowState`` (tolerates a plain mapping from another encoder)."""
+    if isinstance(raw, WorkflowState):
+        return raw
+    return WorkflowState(**dict(raw))
+
+
 class _InitiateReturnExecutor(Executor):
     def __init__(self, tools: dict) -> None:
         super().__init__(id="initiate-return")
@@ -113,7 +271,7 @@ class _InitiateReturnExecutor(Executor):
             result = await fn(
                 order_id=state.order_id,
                 reason=state.reason or "Customer requested replacement",
-                refund_method="store_credit",
+                refund_method=_REFUND_METHOD.get(state.resolution, "store_credit"),
             )
         except Exception as exc:
             state.errors.append(f"initiate_return: {exc}")
@@ -128,7 +286,29 @@ class _InitiateReturnExecutor(Executor):
         state.return_id = result.get("return_id")
         state.refund_amount = float(result.get("refund_amount", 0.0))
         state.completed_steps.append("initiate_return")
+
+        if state.amount_override is not None and state.amount_override != state.refund_amount:
+            if not await self._apply_edited_amount(state):
+                await ctx.yield_output(state)
+                return
         await ctx.send_message(state)
+
+    async def _apply_edited_amount(self, state: WorkflowState) -> bool:
+        """Honour a reviewer's edited amount on the return that was just created."""
+        adjust = self._tools.get("adjust_return_amount")
+        if adjust is None:
+            state.errors.append("initiate_return: cannot apply the reviewed amount (adjust_return_amount unavailable)")
+            return False
+        try:
+            outcome = await adjust(return_id=state.return_id, amount=state.amount_override)
+        except Exception as exc:
+            state.errors.append(f"adjust_return_amount: {exc}")
+            return False
+        if not outcome.get("success"):
+            state.errors.append(f"adjust_return_amount: {outcome.get('error', 'not applied')}")
+            return False
+        state.refund_amount = float(state.amount_override)
+        return True
 
 
 class _SearchReplacementsExecutor(Executor):
@@ -151,55 +331,6 @@ class _SearchReplacementsExecutor(Executor):
             except Exception as exc:
                 state.errors.append(f"search_replacements: {exc}")
         await ctx.send_message(state)
-
-
-class _HitlGateExecutor(Executor):
-    """Pauses the workflow via ``ctx.request_info`` for high-value orders."""
-
-    def __init__(self, threshold: float) -> None:
-        super().__init__(id="hitl-gate")
-        self._threshold = threshold
-
-    @handler
-    async def run(self, state: WorkflowState, ctx: WorkflowContext[WorkflowState, WorkflowState]) -> None:
-        state.completed_steps.append("hitl_gate")
-        if state.order_total > self._threshold:
-            state.hitl_requested = True
-            # Emit a snapshot so callers observing the stream can see the
-            # pause state before the request_info event pauses execution.
-            await ctx.yield_output(state)
-            await ctx.request_info(
-                ReturnApprovalRequest(
-                    order_id=state.order_id,
-                    order_total=state.order_total,
-                    refund_amount=state.refund_amount,
-                    replacement_count=len(state.replacement_products),
-                ),
-                response_type=bool,
-            )
-            return
-        state.hitl_approved = True
-        await ctx.send_message(state)
-
-    @response_handler(request=ReturnApprovalRequest, response=bool)
-    async def on_approval(self, original_request, response, ctx) -> None:
-        approved = bool(response)
-        # Rehydrate a minimal state from the original_request; the rest of
-        # the chain only needs the refund context that was captured there.
-        resumed = WorkflowState(
-            user_email="",
-            order_id=original_request.order_id,
-            order_total=original_request.order_total,
-            refund_amount=original_request.refund_amount,
-            hitl_requested=True,
-            hitl_approved=approved,
-            completed_steps=["check_eligibility", "initiate_return", "search_replacements", "hitl_gate"],
-        )
-        if not approved:
-            resumed.errors.append("hitl_gate: return rejected by reviewer")
-            await ctx.yield_output(resumed)
-            return
-        await ctx.send_message(resumed)
 
 
 class _ApplyDiscountExecutor(Executor):
@@ -240,30 +371,31 @@ class _FinalizeExecutor(Executor):
 
 
 class ReturnAndReplaceWorkflow:
-    """MAF-backed sequential return workflow with HITL approval gate.
+    """MAF-backed sequential return workflow with a policy-driven approval gate.
 
     Construct once with the tools dict, then call ``execute(state)`` as
     many times as you like; each call builds a fresh MAF workflow under
-    the covers.
+    the covers. ``policy_fn`` overrides how the gate asks the policy engine (tests).
     """
 
-    def __init__(self, tools: dict) -> None:
+    def __init__(self, tools: dict, policy_fn: PolicyFn = default_return_policy) -> None:
         self._tools = tools
+        self._policy_fn = policy_fn
 
     def _build_maf_workflow(self):
         check = _CheckEligibilityExecutor(self._tools)
+        gate = _PolicyGateExecutor(float(settings.RETURN_HITL_THRESHOLD), self._policy_fn)
         initiate = _InitiateReturnExecutor(self._tools)
         search = _SearchReplacementsExecutor(self._tools)
-        gate = _HitlGateExecutor(float(settings.RETURN_HITL_THRESHOLD))
         discount = _ApplyDiscountExecutor(self._tools)
         finalize = _FinalizeExecutor()
 
         return (
             WorkflowBuilder(start_executor=check, name="return-and-replace")
-            .add_edge(check, initiate)
+            .add_edge(check, gate)
+            .add_edge(gate, initiate)
             .add_edge(initiate, search)
-            .add_edge(search, gate)
-            .add_edge(gate, discount)
+            .add_edge(search, discount)
             .add_edge(discount, finalize)
             .build()
         )
@@ -271,7 +403,7 @@ class ReturnAndReplaceWorkflow:
     async def execute(self, state: WorkflowState) -> WorkflowState:
         """Run the workflow and return the final state snapshot.
 
-        When the HITL gate fires, execution pauses waiting for a response
+        When the gate pauses for a reviewer, execution stops waiting for a response
         and the most recent state snapshot is returned (with
         ``hitl_requested=True`` and ``hitl_approved=None``).
         """

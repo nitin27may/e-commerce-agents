@@ -1,0 +1,214 @@
+# Golden cases: input facts -> expected route, rule and reasons.
+# Both stacks' tests run every case against config/policies/approvals.yaml (Python test_policy_engine.py,
+# .NET ApprovalPolicyTests), so the two engines cannot drift. A fact left out is unknown.
+# Every rule of every kind must be hit by at least one case; the tests enforce that too.
+
+cases:
+  - name: "small in-window good standing is auto-approved"
+    kind: return_approval
+    facts: { amount: 40, days_since_delivery: 5, loyalty_tier: bronze, returns_90d: 0, refund_to_spend_ratio: 0.05, account_age_days: 200 }
+    expect:
+      route: auto
+      rule: auto-small-good-standing
+      reasons:
+        - "Small in-window request from a customer in good standing"
+  - name: "amount exactly 50 is still auto"
+    kind: return_approval
+    facts: { amount: 50, days_since_delivery: 5, loyalty_tier: bronze, returns_90d: 0, refund_to_spend_ratio: 0.05, account_age_days: 200 }
+    expect:
+      route: auto
+      rule: auto-small-good-standing
+      reasons:
+        - "Small in-window request from a customer in good standing"
+  - name: "amount just over 50 for a bronze customer goes to support"
+    kind: return_approval
+    facts: { amount: 50.01, days_since_delivery: 5, loyalty_tier: bronze, returns_90d: 0, refund_to_spend_ratio: 0.05, account_age_days: 200 }
+    expect:
+      route: support
+      rule: default-support
+      reasons:
+        - "Needs a support review"
+  - name: "delivered exactly 30 days ago is in the window"
+    kind: return_approval
+    facts: { amount: 40, days_since_delivery: 30, loyalty_tier: bronze, returns_90d: 0, refund_to_spend_ratio: 0.05, account_age_days: 200 }
+    expect:
+      route: auto
+      rule: auto-small-good-standing
+      reasons:
+        - "Small in-window request from a customer in good standing"
+  - name: "delivered 31 days ago is outside the window"
+    kind: return_approval
+    facts: { amount: 40, days_since_delivery: 31, loyalty_tier: bronze, returns_90d: 0, refund_to_spend_ratio: 0.05, account_age_days: 200 }
+    expect:
+      route: manager
+      rule: outside-return-window
+      reasons:
+        - "Delivered more than 30 days ago, outside the return window"
+  - name: "the window rule beats a tiny amount"
+    kind: return_approval
+    facts: { amount: 10, days_since_delivery: 45, loyalty_tier: bronze, returns_90d: 0, refund_to_spend_ratio: 0.05, account_age_days: 200 }
+    expect:
+      route: manager
+      rule: outside-return-window
+      reasons:
+        - "Delivered more than 30 days ago, outside the return window"
+  - name: "three returns in 90 days is a risk signal"
+    kind: return_approval
+    facts: { amount: 40, days_since_delivery: 5, loyalty_tier: bronze, returns_90d: 3, refund_to_spend_ratio: 0.05, account_age_days: 200 }
+    expect:
+      route: manager
+      rule: frequent-returner
+      reasons:
+        - "Three or more returns in the last 90 days"
+  - name: "two returns in 90 days is not auto but not a risk signal"
+    kind: return_approval
+    facts: { amount: 40, days_since_delivery: 5, loyalty_tier: bronze, returns_90d: 2, refund_to_spend_ratio: 0.05, account_age_days: 200 }
+    expect:
+      route: support
+      rule: default-support
+      reasons:
+        - "Needs a support review"
+  - name: "refund over half of lifetime spend is a risk signal"
+    kind: return_approval
+    facts: { amount: 40, days_since_delivery: 5, loyalty_tier: bronze, returns_90d: 0, refund_to_spend_ratio: 0.51, account_age_days: 200 }
+    expect:
+      route: manager
+      rule: refund-dominates-spend
+      reasons:
+        - "The refund is more than half of the customer's lifetime spend"
+  - name: "a ratio of exactly 0.5 is not over half but is not auto"
+    kind: return_approval
+    facts: { amount: 40, days_since_delivery: 5, loyalty_tier: bronze, returns_90d: 0, refund_to_spend_ratio: 0.5, account_age_days: 200 }
+    expect:
+      route: support
+      rule: default-support
+      reasons:
+        - "Needs a support review"
+  - name: "a ratio of exactly 0.25 is still auto"
+    kind: return_approval
+    facts: { amount: 40, days_since_delivery: 5, loyalty_tier: bronze, returns_90d: 0, refund_to_spend_ratio: 0.25, account_age_days: 200 }
+    expect:
+      route: auto
+      rule: auto-small-good-standing
+      reasons:
+        - "Small in-window request from a customer in good standing"
+  - name: "amount over 500 goes to a manager"
+    kind: return_approval
+    facts: { amount: 500.01, days_since_delivery: 5, loyalty_tier: gold, returns_90d: 0, refund_to_spend_ratio: 0.05, account_age_days: 200 }
+    expect:
+      route: manager
+      rule: high-value
+      reasons:
+        - "Amount over 500 needs a manager"
+  - name: "amount of exactly 500 from gold goes to support"
+    kind: return_approval
+    facts: { amount: 500, days_since_delivery: 5, loyalty_tier: gold, returns_90d: 0, refund_to_spend_ratio: 0.05, account_age_days: 200 }
+    expect:
+      route: support
+      rule: default-support
+      reasons:
+        - "Needs a support review"
+  - name: "new account with an amount over 100 goes to a manager"
+    kind: return_approval
+    facts: { amount: 120, days_since_delivery: 5, loyalty_tier: bronze, returns_90d: 0, refund_to_spend_ratio: 0.05, account_age_days: 10 }
+    expect:
+      route: manager
+      rule: new-account-mid-value
+      reasons:
+        - "Account under 30 days old with an amount over 100"
+  - name: "new account with an amount of exactly 100 goes to support"
+    kind: return_approval
+    facts: { amount: 100, days_since_delivery: 5, loyalty_tier: silver, returns_90d: 0, refund_to_spend_ratio: 0.05, account_age_days: 10 }
+    expect:
+      route: support
+      rule: default-support
+      reasons:
+        - "Needs a support review"
+  - name: "a small request from a new account is not auto"
+    kind: return_approval
+    facts: { amount: 40, days_since_delivery: 5, loyalty_tier: bronze, returns_90d: 0, refund_to_spend_ratio: 0.05, account_age_days: 10 }
+    expect:
+      route: support
+      rule: default-support
+      reasons:
+        - "Needs a support review"
+  - name: "an account of exactly 30 days can be auto"
+    kind: return_approval
+    facts: { amount: 40, days_since_delivery: 5, loyalty_tier: bronze, returns_90d: 0, refund_to_spend_ratio: 0.05, account_age_days: 30 }
+    expect:
+      route: auto
+      rule: auto-small-good-standing
+      reasons:
+        - "Small in-window request from a customer in good standing"
+  - name: "silver customer up to 150 is auto"
+    kind: return_approval
+    facts: { amount: 150, days_since_delivery: 5, loyalty_tier: silver, returns_90d: 0, refund_to_spend_ratio: 0.05, account_age_days: 200 }
+    expect:
+      route: auto
+      rule: auto-trusted-tier
+      reasons:
+        - "In-window request up to 150 from a silver or gold customer in good standing"
+  - name: "gold customer up to 150 is auto"
+    kind: return_approval
+    facts: { amount: 150, days_since_delivery: 5, loyalty_tier: gold, returns_90d: 0, refund_to_spend_ratio: 0.05, account_age_days: 200 }
+    expect:
+      route: auto
+      rule: auto-trusted-tier
+      reasons:
+        - "In-window request up to 150 from a silver or gold customer in good standing"
+  - name: "gold customer just over 150 goes to support"
+    kind: return_approval
+    facts: { amount: 150.01, days_since_delivery: 5, loyalty_tier: gold, returns_90d: 0, refund_to_spend_ratio: 0.05, account_age_days: 200 }
+    expect:
+      route: support
+      rule: default-support
+      reasons:
+        - "Needs a support review"
+  - name: "bronze customer at 100 goes to support"
+    kind: return_approval
+    facts: { amount: 100, days_since_delivery: 5, loyalty_tier: bronze, returns_90d: 0, refund_to_spend_ratio: 0.05, account_age_days: 200 }
+    expect:
+      route: support
+      rule: default-support
+      reasons:
+        - "Needs a support review"
+  - name: "silver customer with a high ratio is not auto"
+    kind: return_approval
+    facts: { amount: 120, days_since_delivery: 5, loyalty_tier: silver, returns_90d: 0, refund_to_spend_ratio: 0.3, account_age_days: 200 }
+    expect:
+      route: support
+      rule: default-support
+      reasons:
+        - "Needs a support review"
+  - name: "unknown delivery date never auto-approves"
+    kind: return_approval
+    facts: { amount: 40, loyalty_tier: bronze, returns_90d: 0, refund_to_spend_ratio: 0.05, account_age_days: 200 }
+    expect:
+      route: support
+      rule: default-support
+      reasons:
+        - "Needs a support review"
+  - name: "unknown spend never auto-approves"
+    kind: return_approval
+    facts: { amount: 40, days_since_delivery: 5, loyalty_tier: bronze, returns_90d: 0, account_age_days: 200 }
+    expect:
+      route: support
+      rule: default-support
+      reasons:
+        - "Needs a support review"
+  - name: "unknown facts still reach a manager rule on the facts that are known"
+    kind: return_approval
+    facts: { amount: 600 }
+    expect:
+      route: manager
+      rule: high-value
+      reasons:
+        - "Amount over 500 needs a manager"
+  - name: "no facts at all falls through to support"
+    kind: return_approval
+    facts: {}
+    expect:
+      route: support
+      rule: default-support
+      reasons:
+        - "Needs a support review"

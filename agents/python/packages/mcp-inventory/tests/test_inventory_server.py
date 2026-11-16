@@ -9,12 +9,11 @@ Two tiers:
 
 from __future__ import annotations
 
+import asyncpg
 import pytest
 import pytest_asyncio
-import asyncpg
 
-from ecommerce_mcp_inventory.server import mcp, app, _get_pool
-
+from ecommerce_mcp_inventory.server import _get_pool, app, mcp
 
 # ─────────────────────── Registration smoke ─────────────────────────────────
 
@@ -71,9 +70,7 @@ async def product_and_warehouse(postgres_pool: asyncpg.Pool) -> dict:
             seller_id,
         )
         if pid is None:
-            pid = await conn.fetchval(
-                "SELECT id FROM products WHERE name = 'Inv Widget' LIMIT 1"
-            )
+            pid = await conn.fetchval("SELECT id FROM products WHERE name = 'Inv Widget' LIMIT 1")
 
         wid = await conn.fetchval(
             """INSERT INTO warehouses (name, region, location)
@@ -82,9 +79,7 @@ async def product_and_warehouse(postgres_pool: asyncpg.Pool) -> dict:
                RETURNING id"""
         )
         if wid is None:
-            wid = await conn.fetchval(
-                "SELECT id FROM warehouses WHERE name = 'Test East WH' LIMIT 1"
-            )
+            wid = await conn.fetchval("SELECT id FROM warehouses WHERE name = 'Test East WH' LIMIT 1")
 
         await conn.execute(
             """INSERT INTO warehouse_inventory (product_id, warehouse_id, quantity, reorder_threshold)
@@ -100,6 +95,7 @@ async def product_and_warehouse(postgres_pool: asyncpg.Pool) -> dict:
 async def _patched_pool(postgres_pool: asyncpg.Pool, monkeypatch: pytest.MonkeyPatch):
     """Patch module-level _pool so tool functions use the test container."""
     import ecommerce_mcp_inventory.server as srv
+
     monkeypatch.setattr(srv, "_pool", postgres_pool)
     yield
 

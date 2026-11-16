@@ -32,8 +32,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from agent_framework import Content, ResponseStream
-from agent_framework._middleware import AgentContext, AgentMiddleware
+from agent_framework import AgentContext, AgentMiddleware, Content, ResponseStream
 
 from shared.config import settings
 from shared.grounding.extractor import extract_claims, rewrite_cards
@@ -80,7 +79,10 @@ class GroundingVerificationMiddleware(AgentMiddleware):
         self.unverified_total += report.unverified_count
         logger.info(
             "grounding.verified total=%d verified=%d unverified=%d mode=%s",
-            report.total_count, report.verified_count, report.unverified_count, mode,
+            report.total_count,
+            report.verified_count,
+            report.unverified_count,
+            mode,
         )
 
         if mode in ("annotate", "enforce"):

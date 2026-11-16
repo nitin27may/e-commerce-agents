@@ -91,7 +91,7 @@ class UserProfileProvider(ContextProvider):
         state["user"] = {"email": self.email, "name": self.name, "loyalty_tier": self.loyalty_tier}
 ```
 
-`build_agent()` wires it in with `context_providers=[provider]`, and `main()` reads email/name/tier from `sys.argv` so you can run the same script for different users without touching code. `main.py` also supports `LLM_PROVIDER=replay` (a canned, no-network chat client the tests use for CI) alongside `openai` and `azure` — see `_default_client()` for the full provider switch.
+`build_agent()` wires it in with `context_providers=[provider]`, and `main()` reads email/name/tier from `sys.argv` so you can run the same script for different users without touching code. `main.py` follows the series key rule — an explicit `LLM_PROVIDER` (`openai`, `azure`, `replay`), else a key in the environment, else replay of the committed fixtures — see `tutorials/_shared/llm.py` for the switch. Note that its *default* prompt has no recorded fixture, so a keyless `python main.py` replays a miss; the tests' recorded prompt is the keyless path.
 
 The `source_id` argument to both `super().__init__(...)` and `extend_instructions(...)` lets MAF dedupe and debug which provider injected what when several are chained together (as the capstone does — see below).
 
@@ -148,7 +148,7 @@ public sealed class UserProfileProvider : AIContextProvider
 - **Python requires `source_id`** on both `__init__` (via `super().__init__(source_id=...)`) and `extend_instructions(source_id, text)`. Forgetting either raises at instantiation / call time, not silently.
 - **.NET's override point is `ProvideAIContextAsync`, not `InvokingAsync`.** `InvokingAsync` is the base class's own pipeline method that calls into your override internally — trying to override it directly is the wrong extension point; use the protected `ProvideAIContextAsync` shown above.
 - **Provider state is per-*provider*, not global.** In Python, the `state` dict passed to `before_run` is scoped to whichever provider chain the agent was built with. When you chain multiple providers (as `ECommerceContextProvider` does — see below), later providers can read fields earlier ones set, but only within that same run's `state` dict.
-- **The `agents/python/patch_maf.py` MAF packaging workaround is legacy.** It patched an empty `__init__.py` shipped by `agent-framework-core==1.0.0`; the repo now pins a version where that's fixed upstream, so it's a defensive no-op. Tutorial code doesn't use it at all — `tutorials/_shared/maf_bootstrap.py` is the sanctioned bootstrap that tutorials call instead, and it's what `python/main.py` calls before importing `agent_framework`.
+- **No MAF packaging workaround is needed.** `agent-framework-core` 1.22.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
 
 ## Tests
 

@@ -32,7 +32,10 @@ from agent_framework import (
 )
 
 from shared.http_resilience import ResilientAsyncTransport
+from shared.log_safe import log_safe
 from shared.oauth.service_client import build_a2a_headers
+from shared.replay_miss import SpecialistReplayMissError, is_replay_miss_status
+from shared.run_usage import record_usage
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +47,21 @@ logger = logging.getLogger(__name__)
 # orchestrator/agent.py's _A2A_TRANSPORT for the same reasoning on the
 # other A2A call path.
 _A2A_TRANSPORT = ResilientAsyncTransport()
+
+
+def _record_reported_usage(agent_name: str, data: Any) -> None:
+    """Add the specialist's wire ``usage`` to the turn's accumulator.
+
+    Accounting only: the field never reaches the text the mesh's models read, and a
+    malformed one is dropped with a fixed log line rather than failing the call.
+    """
+    usage = data.get("usage") if isinstance(data, dict) else None
+    if usage is None:
+        return
+    try:
+        record_usage(agent_name, usage)
+    except (TypeError, ValueError, AttributeError):
+        logger.warning("a2a.usage_unparseable target=%s", log_safe(agent_name))
 
 
 class RemoteSpecialistChatClient(BaseChatClient):
@@ -74,8 +92,13 @@ class RemoteSpecialistChatClient(BaseChatClient):
                 json={"message": prompt, "history": []},
                 headers=headers,
             )
+            if is_replay_miss_status(resp.status_code):
+                # A recorded-response miss inside the specialist: end the run as a
+                # miss rather than handing the marker to the handoff model as text.
+                raise SpecialistReplayMissError()
             resp.raise_for_status()
             data = resp.json()
+            _record_reported_usage(self._agent_name, data)
             return str(data.get("response", resp.text))
 
     @staticmethod

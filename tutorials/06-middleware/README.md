@@ -174,7 +174,7 @@ The tool-call guard (the "Atlantis" refusal) lives directly inside the `AIFuncti
 - **The arguments dict is not mutable in every backend.** To short-circuit a tool call in Python, set `context.result` rather than mutating `context.arguments`.
 - **`DelegatingChatClient` must call `base.GetResponseAsync(...)`** (or return a cached response). Forgetting to call the inner client hangs the run.
 - **A tool guard baked into the function body is not the same as function middleware.** In .NET, the guard runs as part of the tool call itself; in Python, `FunctionMiddleware` wraps the call from outside. Different layers, different observability — the .NET version can't be reused across tools without duplicating the guard code.
-- **MAF packaging bug — now a no-op.** Older `agent-framework-core==1.0.0` wheels shipped an empty `__init__.py`. `tutorials/_shared/maf_bootstrap.py` patches it defensively before any `agent_framework` import; this repo now pins `agent-framework` 1.14.0, which fixed the bug upstream, so the patch step does nothing on a current install. The capstone app carries the equivalent `agents/python/patch_maf.py`, same no-op status (see `CLAUDE.md`'s "MAF Package Patch" note) — don't spend time chasing this if you see the patch code, it's inert.
+- **No MAF packaging workaround is needed.** `agent-framework-core` 1.22.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
 
 ## Tests
 

@@ -5,14 +5,15 @@
 DevUI is Python-only in the versions this repo pins.
 
 A `Microsoft.Agents.AI.DevUI` package **does** now exist on NuGet — but every
-release is a prerelease (latest at time of writing: `1.19.0-preview.260822.1`),
+release is a prerelease (latest at time of writing: `1.28.0-preview.261106.1`),
 and there is no stable version. Microsoft's [DevUI docs](https://learn.microsoft.com/en-us/agent-framework/devui/)
 still carry a "Coming Soon" banner on the C# pivot:
 
 > DevUI documentation for C# is coming soon. Please check back later or refer to the Python documentation for conceptual guidance.
 
-This repo's .NET side is pinned to `Microsoft.Agents.AI` **1.1.0** stable. Taking
-a 1.19 preview for one tutorial chapter would mean this chapter ran against a
+Every .NET chapter is pinned to `Microsoft.Agents.AI` **1.28.0** stable
+(`tutorials/Directory.Packages.props`, the same version as production). Taking
+a 1.28 preview for one tutorial chapter would mean this chapter ran against a
 different framework version from every other one, on a package whose API can
 change between previews — which is a worse lesson than the gap itself.
 

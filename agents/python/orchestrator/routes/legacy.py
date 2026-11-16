@@ -29,13 +29,17 @@ from shared.db import get_pool
 from shared.factory import get_token_verifier
 from shared.idempotency import idempotent
 from shared.jwt_utils import (
+    MAX_PASSWORD_BYTES,
     create_access_token,
     create_refresh_token,
     decode_token,
     hash_password,
     verify_password,
 )
+from shared.log_safe import log_safe
 from shared.oauth.service_client import request_token
+from shared.rate_limit import enforce_auth_account_limit, enforce_auth_user_limit, rate_limit_auth
+from shared.refresh_tokens import RefreshRejectedError, issue_refresh_token, rotate_refresh_token
 from shared.tool_inputs import clamp_limit
 
 logger = logging.getLogger(__name__)
@@ -175,6 +179,17 @@ async def require_admin(user: dict[str, Any] = Depends(require_auth)) -> dict[st
     return user
 
 
+async def require_staff(user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
+    """Require the authenticated user to be staff: the support or admin role.
+
+    ``support`` reviews approvals routed to it; ``admin`` acts as manager and
+    may do everything support can. Sellers and customers are never staff.
+    """
+    if user.get("role") not in ("support", "admin"):
+        raise HTTPException(status_code=403, detail="Staff access required")
+    return user
+
+
 async def require_seller(user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     """Require the authenticated user to have seller or admin role."""
     if user.get("role") not in ("seller", "admin"):
@@ -185,13 +200,65 @@ async def require_seller(user: dict[str, Any] = Depends(require_auth)) -> dict[s
 # ── Auth Routes (PUBLIC) ──────────────────────────────────────
 
 
+def _is_plausible_email(email: str) -> bool:
+    """Deliberately loose: exactly one "@", no whitespace, a dot inside the domain.
+
+    Real validation is the confirmation mail this demo does not send. Written as
+    plain string checks rather than a regular expression: the equivalent pattern
+    (``^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$``) backtracks polynomially on crafted input.
+    The .NET stack applies the same rule (``AuthRoutes.IsPlausibleEmail``).
+    """
+    if any(ch.isspace() for ch in email):
+        return False
+    local, sep, domain = email.partition("@")
+    if not sep or not local or "@" in domain:
+        return False
+    # A dot with at least one character on each side.
+    return "." in domain[1:-1]
+
+
+def _validate_signup(body: SignupRequest) -> tuple[str, str]:
+    """Normalise and validate a signup body; 400 + ``{"detail": msg}`` on the first problem.
+
+    Messages are part of the cross-stack wire contract (AuthRoutes.cs returns the
+    same strings). Returns ``(lower-cased email, stripped name)``.
+    """
+    email = body.email.strip().lower()
+    if len(email) > 254 or not _is_plausible_email(email):
+        raise HTTPException(status_code=400, detail="Invalid email address")
+    # bcrypt reads at most 72 *bytes*; bcrypt >= 5 raises ValueError beyond that,
+    # which used to surface as a 500.
+    if not 8 <= len(body.password.encode()) <= MAX_PASSWORD_BYTES:
+        raise HTTPException(status_code=400, detail="Password must be between 8 and 72 bytes long")
+    name = body.name.strip()
+    if not 1 <= len(name) <= 100:
+        raise HTTPException(status_code=400, detail="Name must be between 1 and 100 characters")
+    return email, name
+
+
+# Email lookups for credentials typed by a person. Accounts created by older Python builds kept
+# the address exactly as typed (mixed case) and migration 0004 leaves a row alone when
+# lower-casing it would collide with another, so match case-insensitively and prefer the
+# spelling the caller actually typed, then the oldest row. $1 is the address as typed.
+_USER_BY_TYPED_EMAIL = "WHERE lower(email) = lower($1) ORDER BY (email = $1) DESC, created_at LIMIT 1"
+
+
+async def _new_refresh_token(pool: Any, email: str) -> str:
+    """A refresh token for a fresh login: recorded (new family) when rotation is on, plain JWT otherwise."""
+    if settings.AUTH_REFRESH_ROTATION:
+        return await issue_refresh_token(pool, email)
+    return create_refresh_token(email)
+
+
 @router.post("/api/auth/signup", response_model=AuthResponse)
-async def signup(body: SignupRequest) -> AuthResponse:
+async def signup(request: Request, body: SignupRequest, _rate_limit: None = Depends(rate_limit_auth)) -> AuthResponse:
     """Create a new user account and return tokens."""
+    email, name = _validate_signup(body)
+    await enforce_auth_account_limit(request, email)
     pool = get_pool()
 
     # Check if user already exists
-    existing = await pool.fetchrow("SELECT id FROM users WHERE email = $1", body.email)
+    existing = await pool.fetchrow("SELECT id FROM users WHERE lower(email) = $1", email)
     if existing:
         raise HTTPException(status_code=409, detail="Email already registered")
 
@@ -201,16 +268,16 @@ async def signup(body: SignupRequest) -> AuthResponse:
         """INSERT INTO users (email, password_hash, name, role, loyalty_tier)
            VALUES ($1, $2, $3, 'customer', 'bronze')
            RETURNING id, email, name, role, loyalty_tier, total_spend, created_at""",
-        body.email,
+        email,
         password_hash,
-        body.name,
+        name,
     )
 
     user_id = str(row["id"])
     access_token = create_access_token(row["email"], row["role"], user_id)
-    refresh_token = create_refresh_token(row["email"])
+    refresh_token = await _new_refresh_token(pool, row["email"])
 
-    logger.info("auth.signup email=%s user_id=%s", body.email, user_id)
+    logger.info("auth.signup user_id=%s", log_safe(user_id))
 
     return AuthResponse(
         access_token=access_token,
@@ -227,7 +294,7 @@ async def signup(body: SignupRequest) -> AuthResponse:
 
 
 @router.post("/api/auth/login", response_model=AuthResponse)
-async def login(body: LoginRequest) -> AuthResponse:
+async def login(request: Request, body: LoginRequest, _rate_limit: None = Depends(rate_limit_auth)) -> AuthResponse:
     """Authenticate user and return tokens.
 
     In ``AUTH_MODE=oauth`` the orchestrator is a confidential first-party
@@ -237,10 +304,14 @@ async def login(body: LoginRequest) -> AuthResponse:
     duplicate the password check. In ``local`` mode nothing changes.
     """
     pool = get_pool()
+    typed = body.email.strip()
+    email = typed.lower()
+    await enforce_auth_account_limit(request, email)
 
     if settings.AUTH_MODE == "oauth":
         try:
-            token_data = await request_token("password", username=body.email, password=body.password, scope="api:chat")
+            # The address as typed: the auth-server matches case-insensitively and prefers an exact spelling.
+            token_data = await request_token("password", username=typed, password=body.password, scope="api:chat")
         except httpx.HTTPStatusError:
             raise HTTPException(status_code=401, detail="Invalid email or password")
 
@@ -248,8 +319,8 @@ async def login(body: LoginRequest) -> AuthResponse:
         refresh_token = token_data["refresh_token"]
 
         row = await pool.fetchrow(
-            "SELECT id, email, name, role, loyalty_tier, total_spend FROM users WHERE email = $1",
-            body.email,
+            f"SELECT id, email, name, role, loyalty_tier, total_spend FROM users {_USER_BY_TYPED_EMAIL}",
+            typed,
         )
         if not row:
             # The AS validated these credentials against the same `users`
@@ -257,9 +328,9 @@ async def login(body: LoginRequest) -> AuthResponse:
             raise HTTPException(status_code=401, detail="Invalid email or password")
     else:
         row = await pool.fetchrow(
-            """SELECT id, email, password_hash, name, role, loyalty_tier, total_spend, is_active
-               FROM users WHERE email = $1""",
-            body.email,
+            f"""SELECT id, email, password_hash, name, role, loyalty_tier, total_spend, is_active
+                FROM users {_USER_BY_TYPED_EMAIL}""",
+            typed,
         )
 
         if not row:
@@ -272,10 +343,10 @@ async def login(body: LoginRequest) -> AuthResponse:
             raise HTTPException(status_code=401, detail="Invalid email or password")
 
         access_token = create_access_token(row["email"], row["role"], str(row["id"]))
-        refresh_token = create_refresh_token(row["email"])
+        refresh_token = await _new_refresh_token(pool, row["email"])
 
     user_id = str(row["id"])
-    logger.info("auth.login email=%s user_id=%s", body.email, user_id)
+    logger.info("auth.login user_id=%s", log_safe(user_id))
 
     return AuthResponse(
         access_token=access_token,
@@ -292,8 +363,14 @@ async def login(body: LoginRequest) -> AuthResponse:
 
 
 @router.post("/api/auth/refresh")
-async def refresh_token(body: RefreshRequest) -> dict[str, str]:
-    """Exchange a refresh token for a new access token.
+async def refresh_token(
+    request: Request, body: RefreshRequest, _rate_limit: None = Depends(rate_limit_auth)
+) -> dict[str, str]:
+    """Exchange a refresh token for a new access token (and, in local mode, a new refresh token).
+
+    ``AUTH_MODE=local`` rotates by default (``AUTH_REFRESH_ROTATION``, see
+    ``shared/refresh_tokens.py``): the response is ``{access_token, refresh_token}``
+    and the presented token is spent.
 
     In ``AUTH_MODE=oauth`` this relays a ``refresh_token`` grant to the
     auth-server, which does not rotate refresh tokens (see the design doc's
@@ -302,6 +379,9 @@ async def refresh_token(body: RefreshRequest) -> dict[str, str]:
     returning only a new access token.
     """
     if settings.AUTH_MODE == "oauth":
+        # An opaque token cannot be verified here, so its own digest is the bucket key
+        # (one session's budget; a made-up token only spends a bucket nobody else uses).
+        await enforce_auth_user_limit(request, body.refresh_token)
         try:
             token_data = await request_token("refresh_token", refresh_token=body.refresh_token)
         except httpx.HTTPStatusError:
@@ -319,6 +399,10 @@ async def refresh_token(body: RefreshRequest) -> dict[str, str]:
         raise HTTPException(status_code=401, detail="Invalid token type")
 
     email = payload.get("sub", "")
+    # Keyed by the verified subject: one user's refreshes never spend another's budget.
+    # An unverifiable or expired token never reaches this line and is held only by the
+    # address ceiling.
+    await enforce_auth_user_limit(request, email)
 
     pool = get_pool()
     row = await pool.fetchrow(
@@ -334,7 +418,18 @@ async def refresh_token(body: RefreshRequest) -> dict[str, str]:
 
     access_token = create_access_token(email, row["role"], str(row["id"]))
 
-    return {"access_token": access_token}
+    if not settings.AUTH_REFRESH_ROTATION:
+        return {"access_token": access_token}
+
+    # Rotation: consume this token, hand back its successor. A token already
+    # consumed (or one that predates `jti`) is rejected; reuse revokes the family.
+    try:
+        new_refresh = await rotate_refresh_token(pool, payload)
+    except RefreshRejectedError as exc:
+        logger.info("auth.refresh_rejected reason=%s", log_safe(exc.reason))
+        raise HTTPException(status_code=401, detail="Invalid refresh token") from None
+
+    return {"access_token": access_token, "refresh_token": new_refresh}
 
 
 # ── Conversation Routes ───────────────────────────────────────
@@ -548,7 +643,7 @@ async def submit_access_request(
         body.use_case,
     )
 
-    logger.info("marketplace.request user=%s agent=%s", user.get("sub"), body.agent_name)
+    logger.info("marketplace.request user=%s agent=%s", log_safe(user.get("sub")), log_safe(body.agent_name))
 
     return {
         "id": str(row["id"]),
@@ -669,9 +764,9 @@ async def approve_request(
 
     logger.info(
         "admin.approve request=%s agent=%s admin=%s",
-        request_id,
-        req["agent_name"],
-        admin.get("sub"),
+        log_safe(request_id),
+        log_safe(req["agent_name"]),
+        log_safe(admin.get("sub")),
     )
 
     return {"status": "approved", "request_id": request_id}
@@ -708,9 +803,9 @@ async def deny_request(
 
     logger.info(
         "admin.deny request=%s agent=%s admin=%s",
-        request_id,
-        req["agent_name"],
-        admin.get("sub"),
+        log_safe(request_id),
+        log_safe(req["agent_name"]),
+        log_safe(admin.get("sub")),
     )
 
     return {"status": "denied", "request_id": request_id}
@@ -754,7 +849,9 @@ async def get_usage_stats(admin: dict[str, Any] = Depends(require_admin)) -> dic
                SUM(tokens_in) as total_tokens_in,
                SUM(tokens_out) as total_tokens_out,
                AVG(duration_ms)::integer as avg_duration_ms,
-               SUM(tool_calls_count) as total_tool_calls
+               SUM(tool_calls_count) as total_tool_calls,
+               SUM(tokens_cached_in) as total_tokens_cached_in,
+               SUM(cost_usd) as total_cost_usd
            FROM usage_logs
            WHERE created_at >= NOW() - INTERVAL '30 days'""",
     )
@@ -768,7 +865,8 @@ async def get_usage_stats(admin: dict[str, Any] = Depends(require_admin)) -> dic
                SUM(tokens_in) as tokens_in,
                SUM(tokens_out) as tokens_out,
                AVG(duration_ms)::integer as avg_duration_ms,
-               COUNT(*) FILTER (WHERE status = 'error') as error_count
+               COUNT(*) FILTER (WHERE status = 'error') as error_count,
+               SUM(cost_usd) as cost_usd
            FROM usage_logs
            WHERE created_at >= NOW() - INTERVAL '30 days'
            GROUP BY agent_name
@@ -796,6 +894,10 @@ async def get_usage_stats(admin: dict[str, Any] = Depends(require_admin)) -> dic
             "total_tokens_out": overall["total_tokens_out"] or 0,
             "avg_duration_ms": overall["avg_duration_ms"] or 0,
             "total_tool_calls": overall["total_tool_calls"] or 0,
+            # Rows written before the cost columns, or by a mode that reported no usage,
+            # carry NULL and contribute nothing: this is the cost of the rows that have one.
+            "total_tokens_cached_in": overall["total_tokens_cached_in"] or 0,
+            "total_cost_usd": float(overall["total_cost_usd"] or 0),
         },
         "by_agent": [
             {
@@ -806,6 +908,7 @@ async def get_usage_stats(admin: dict[str, Any] = Depends(require_admin)) -> dic
                 "tokens_out": r["tokens_out"] or 0,
                 "avg_duration_ms": r["avg_duration_ms"] or 0,
                 "error_count": r["error_count"],
+                "cost_usd": float(r["cost_usd"] or 0),
             }
             for r in agent_rows
         ],
@@ -842,105 +945,53 @@ class HITLDecisionBody(BaseModel):
     note: str | None = None
 
 
+async def _decide_tool_request(
+    request_id: str, staff: dict[str, Any], decision: str, note: str | None
+) -> dict[str, Any]:
+    """Run a legacy tool-request decision through the unified ``decide`` (orchestrator/approvals_service.py).
+
+    The approvals inbox is the one code path: this endpoint only finds (or, for a request that predates the
+    inbox, creates) the linked approval and maps the service's answers onto the status codes this route always
+    returned — 404 unknown, 403 own request, 400 already resolved, 409 lost a race.
+    """
+    from orchestrator import approvals_service as svc
+
+    try:
+        uuid.UUID(request_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="HITL request not found") from None
+    approval_id = await svc.ensure_for_tool_request(request_id)
+    if approval_id is None:
+        raise HTTPException(status_code=404, detail="HITL request not found")
+    actor = svc.Actor(email=str(staff.get("sub", "")), role=str(staff.get("role", "")))
+    try:
+        outcome = await svc.decide(approval_id, actor, decision=decision, note=note)
+    except svc.ApprovalHTTPError as exc:
+        status_code = 400 if exc.status_code == 409 and exc.detail.startswith("Request is already") else exc.status_code
+        raise HTTPException(status_code=status_code, detail=exc.detail) from None
+    logger.info("hitl.%s approval_id=%s", log_safe(decision), log_safe(approval_id))
+    return outcome
+
+
 @router.post("/api/admin/hitl/requests/{request_id}/approve")
 async def approve_hitl_request(
     request_id: str,
     body: HITLDecisionBody = HITLDecisionBody(),
-    admin: dict[str, Any] = Depends(require_admin),
+    staff: dict[str, Any] = Depends(require_staff),
 ) -> dict[str, Any]:
-    """Approve a pending HITL request and execute the underlying action."""
-    from shared.hitl import claim_hitl_request, execute_approved_action, get_hitl_request, resolve_hitl_request
-
-    # An approver may not approve their own request, even as admin (#92). Checked
-    # before the claim: a claim-then-refuse would strand the row in 'processing'.
-    # user_email is immutable on the row, so a read-then-claim cannot be raced
-    # into a different requester.
-    pending = await get_hitl_request(request_id)
-    admin_email = admin.get("sub", "admin")
-    if pending and pending["status"] == "pending" and pending["user_email"].lower() == admin_email.lower():
-        raise HTTPException(status_code=403, detail="You cannot approve your own request")
-
-    # Atomically claim the request (pending -> processing) BEFORE executing
-    # the underlying action — this is what closes the race two concurrent
-    # approve clicks used to hit (both would pass a pre-check read here,
-    # both would execute, and only the second write-after-execute would
-    # notice). Whoever wins this UPDATE is the only caller that proceeds.
-    req = await claim_hitl_request(request_id)
-    if not req:
-        existing = await get_hitl_request(request_id)
-        if not existing:
-            raise HTTPException(status_code=404, detail="HITL request not found")
-        raise HTTPException(status_code=400, detail=f"Request is already {existing['status']}")
-
-    try:
-        result = await execute_approved_action(
-            tool_name=req["tool_name"],
-            tool_input=req["tool_input"],
-            user_email=req["user_email"],
-        )
-    except Exception:
-        # The claim above already moved this row out of 'pending' — if we
-        # left it 'processing' on an unhandled error it could never be
-        # retried (claim_hitl_request only matches 'pending'). Revert the
-        # claim so a follow-up approve attempt is possible, then let the
-        # error surface as a 500.
-        await get_pool().execute(
-            "UPDATE tool_approval_requests SET status = 'pending' WHERE id = $1 AND status = 'processing'",
-            request_id,
-        )
-        raise
-
-    updated = await resolve_hitl_request(
-        request_id=request_id,
-        decision="approved",
-        admin_email=admin_email,
-        note=body.note,
-        execution_result=result,
-    )
-    if not updated:
-        raise HTTPException(status_code=409, detail="Request was already resolved by another admin")
-
-    logger.info(
-        "hitl.approved request_id=%s tool=%s admin=%s success=%s",
-        request_id,
-        req["tool_name"],
-        admin_email,
-        result.get("success"),
-    )
-    return {"status": "approved", "execution_result": result}
+    """Approve a pending HITL request and execute the underlying action (thin shim over ``decide``)."""
+    outcome = await _decide_tool_request(request_id, staff, "approve", body.note)
+    return {"status": "approved", "execution_result": outcome["result"]}
 
 
 @router.post("/api/admin/hitl/requests/{request_id}/deny")
 async def deny_hitl_request(
     request_id: str,
     body: HITLDecisionBody = HITLDecisionBody(),
-    admin: dict[str, Any] = Depends(require_admin),
+    staff: dict[str, Any] = Depends(require_staff),
 ) -> dict[str, Any]:
-    """Deny a pending HITL request (no action is taken)."""
-    from shared.hitl import get_hitl_request, resolve_hitl_request
-
-    req = await get_hitl_request(request_id)
-    if not req:
-        raise HTTPException(status_code=404, detail="HITL request not found")
-    if req["status"] != "pending":
-        raise HTTPException(status_code=400, detail=f"Request is already {req['status']}")
-
-    admin_email = admin.get("sub", "admin")
-    updated = await resolve_hitl_request(
-        request_id=request_id,
-        decision="denied",
-        admin_email=admin_email,
-        note=body.note,
-    )
-    if not updated:
-        raise HTTPException(status_code=409, detail="Request was already resolved by another admin")
-
-    logger.info(
-        "hitl.denied request_id=%s tool=%s admin=%s",
-        request_id,
-        req["tool_name"],
-        admin_email,
-    )
+    """Deny a pending HITL request (no action is taken; thin shim over ``decide``)."""
+    await _decide_tool_request(request_id, staff, "reject", body.note)
     return {"status": "denied"}
 
 
@@ -986,7 +1037,7 @@ async def get_audit_log(
         f"""SELECT
                ul.id, ul.agent_name, ul.input_summary, ul.tokens_in, ul.tokens_out,
                ul.tool_calls_count, ul.duration_ms, ul.status, ul.error_message,
-               ul.trace_id, ul.created_at,
+               ul.trace_id, ul.created_at, ul.model, ul.tokens_cached_in, ul.cost_usd,
                u.email as user_email, u.name as user_name
            FROM usage_logs ul
            LEFT JOIN users u ON ul.user_id::uuid = u.id
@@ -1023,6 +1074,9 @@ async def get_audit_log(
                 "status": r["status"],
                 "error_message": r["error_message"],
                 "trace_id": r["trace_id"],
+                "model": r["model"],
+                "tokens_cached_in": r["tokens_cached_in"],
+                "cost_usd": float(r["cost_usd"]) if r["cost_usd"] is not None else None,
                 "created_at": r["created_at"].isoformat(),
                 "steps": [
                     {
@@ -1456,7 +1510,10 @@ async def get_order(order_id: str, user: dict = Depends(require_auth)):
     )
 
     ret = await pool.fetchrow(
-        "SELECT id, reason, status, refund_method, refund_amount, return_label_url, created_at, resolved_at FROM returns WHERE order_id = $1",
+        (
+            "SELECT id, reason, status, refund_method, refund_amount, return_label_url, created_at, resolved_at FROM "
+            "returns WHERE order_id = $1"
+        ),
         order_id,
     )
 
@@ -1535,7 +1592,10 @@ async def cancel_order(order_id: str, body: CancelOrderRequest, user: dict = Dep
     if order["status"] not in ("placed", "confirmed"):
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot cancel order with status '{order['status']}'. Only placed or confirmed orders can be cancelled.",
+            detail=(
+                f"Cannot cancel order with status '{order['status']}'. Only placed or confirmed orders can be "
+                "cancelled."
+            ),
         )
 
     async with pool.acquire() as conn:
@@ -1594,7 +1654,8 @@ async def return_order(order_id: str, body: ReturnOrderRequest, user: dict = Dep
     async with pool.acquire() as conn:
         async with conn.transaction():
             ret = await conn.fetchrow(
-                """INSERT INTO returns (order_id, user_id, reason, status, return_label_url, refund_method, refund_amount)
+                """INSERT INTO returns (order_id, user_id, reason, status, return_label_url,
+                                       refund_method, refund_amount)
                    VALUES ($1, $2, $3, 'requested', $4, $5, $6)
                    RETURNING id""",
                 order_id,
@@ -1714,9 +1775,6 @@ def _build_return_label_pdf(
     def pdf_str(s: str) -> str:
         return s.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
-    from_addr = f"{pdf_str(user_name)}\\n{pdf_str(addr_street)}\\n{pdf_str(addr_city)}, {pdf_str(addr_state)} {pdf_str(addr_zip)}"
-    to_addr = "E-Commerce Agents Returns Center\\n1200 Returns Blvd, Suite 400\\nMemphis, TN 38118"
-
     # Build PDF objects
     objects = []
 
@@ -1750,7 +1808,7 @@ def _build_return_label_pdf(
         "30 680 552 50 re f",
         "0 0 0 rg",
         f"BT /F2 16 Tf 180 700 Td ({pdf_str(barcode)}) Tj ET",
-        f"BT /F1 9 Tf 30 685 Td (Scan or enter this code at drop-off) Tj ET",
+        "BT /F1 9 Tf 30 685 Td (Scan or enter this code at drop-off) Tj ET",
         # --- Carrier ---
         "0 0 0 rg",
         f"BT /F2 12 Tf 30 655 Td (Carrier: {pdf_str(carrier)}) Tj ET",
@@ -1777,14 +1835,14 @@ def _build_return_label_pdf(
         "0.97 0.97 0.97 rg",
         "30 460 552 75 re f",
         "0 0 0 rg",
-        f"BT /F2 10 Tf 40 520 Td (Order ID:) Tj ET",
+        "BT /F2 10 Tf 40 520 Td (Order ID:) Tj ET",
         f"BT /F1 10 Tf 140 520 Td (#{pdf_str(order_id)}...) Tj ET",
-        f"BT /F2 10 Tf 40 504 Td (Return ID:) Tj ET",
+        "BT /F2 10 Tf 40 504 Td (Return ID:) Tj ET",
         f"BT /F1 10 Tf 140 504 Td (#{pdf_str(return_id)}...) Tj ET",
-        f"BT /F2 10 Tf 40 488 Td (Reason:) Tj ET",
+        "BT /F2 10 Tf 40 488 Td (Reason:) Tj ET",
         f"BT /F1 10 Tf 140 488 Td ({pdf_str(reason[:60])}) Tj ET",
-        f"BT /F2 10 Tf 40 472 Td (Status:) Tj ET",
-        f"BT /F1 10 Tf 140 472 Td (Return Requested) Tj ET",
+        "BT /F2 10 Tf 40 472 Td (Status:) Tj ET",
+        "BT /F1 10 Tf 140 472 Td (Return Requested) Tj ET",
         # --- Instructions Box ---
         "0.05 0.58 0.55 rg",  # Teal
         "30 380 552 60 re f",
@@ -1799,8 +1857,14 @@ def _build_return_label_pdf(
         "BT /F1 10 Tf 40 332 Td (5. Your refund will be processed after we receive and inspect the items.) Tj ET",
         # --- Footer ---
         "0.6 0.6 0.6 rg",
-        "BT /F1 8 Tf 30 50 Td (Generated by E-Commerce Agents | This label is valid for 30 days from the return request date.) Tj ET",
-        f"BT /F1 8 Tf 30 38 Td (Label ID: {pdf_str(barcode)} | For support, contact support@ecommerce-agents.com) Tj ET",
+        (
+            "BT /F1 8 Tf 30 50 Td (Generated by E-Commerce Agents | This label is valid for 30 days from the return "
+            "request date.) Tj ET"
+        ),
+        (
+            f"BT /F1 8 Tf 30 38 Td (Label ID: {pdf_str(barcode)} | For support, contact support@ecommerce-agents.com) "
+            "Tj ET"
+        ),
     ]
 
     stream = "\n".join(stream_lines)
@@ -1862,7 +1926,8 @@ async def get_cart(user: dict = Depends(require_auth)):
     items = await pool.fetch(
         """SELECT ci.id, ci.product_id, ci.quantity,
                   p.name, p.brand, p.category, p.price, p.original_price, p.image_url,
-                  COALESCE((SELECT SUM(wi.quantity) FROM warehouse_inventory wi WHERE wi.product_id = ci.product_id), 0) as available_qty
+                  COALESCE((SELECT SUM(wi.quantity) FROM warehouse_inventory wi
+                            WHERE wi.product_id = ci.product_id), 0) as available_qty
            FROM cart_items ci
            JOIN products p ON ci.product_id = p.id
            WHERE ci.cart_id = $1
@@ -2200,7 +2265,10 @@ async def _do_checkout(user_id: str, body: CheckoutRequest) -> dict:
                 if stock < item["quantity"]:
                     raise HTTPException(
                         status_code=400,
-                        detail=f"Insufficient stock for '{item['name']}'. Available: {stock}, requested: {item['quantity']}",
+                        detail=(
+                            f"Insufficient stock for '{item['name']}'. Available: {stock}, requested: "
+                            f"{item['quantity']}"
+                        ),
                     )
 
             # 5. Calculate subtotal
@@ -2327,7 +2395,10 @@ async def _do_checkout(user_id: str, body: CheckoutRequest) -> dict:
                         break
                     deduct = min(remaining, wh["quantity"])
                     await conn.execute(
-                        "UPDATE warehouse_inventory SET quantity = quantity - $1 WHERE warehouse_id = $2 AND product_id = $3",
+                        (
+                            "UPDATE warehouse_inventory SET quantity = quantity - $1 WHERE warehouse_id = $2 AND "
+                            "product_id = $3"
+                        ),
                         deduct,
                         wh["warehouse_id"],
                         wh["product_id"],

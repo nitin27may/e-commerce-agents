@@ -12,7 +12,10 @@ from shared.db import get_pool
 from shared.tool_inputs import clamp_limit
 
 
-@tool(name="store_memory", description="Store a memory about the current user's preferences, behavior, or feedback for future reference.")
+@tool(
+    name="store_memory",
+    description="Store a memory about the current user's preferences, behavior, or feedback for future reference.",
+)
 async def store_memory(
     category: Annotated[str, Field(description="Memory category: preference, behavior, feedback, or context")],
     content: Annotated[str, Field(description="The memory content to store")],
@@ -31,14 +34,22 @@ async def store_memory(
         memory_id = await conn.fetchval(
             """INSERT INTO agent_memories (user_id, category, content, importance)
                VALUES ($1, $2, $3, $4) RETURNING id""",
-            user["id"], category, content, min(max(importance, 1), 10),
+            user["id"],
+            category,
+            content,
+            min(max(importance, 1), 10),
         )
         return {"stored": True, "memory_id": str(memory_id), "category": category}
 
 
-@tool(name="recall_memories", description="Recall stored memories about the current user's preferences and past interactions.")
+@tool(
+    name="recall_memories",
+    description="Recall stored memories about the current user's preferences and past interactions.",
+)
 async def recall_memories(
-    category: Annotated[str | None, Field(description="Filter by category: preference, behavior, feedback, context")] = None,
+    category: Annotated[
+        str | None, Field(description="Filter by category: preference, behavior, feedback, context")
+    ] = None,
     limit: Annotated[int, Field(description="Max memories to return")] = 10,
 ) -> list[dict]:
     pool = get_pool()

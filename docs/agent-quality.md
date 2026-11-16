@@ -139,7 +139,14 @@ A case **passes** when all required signals pass. The suite gate is 80% pass rat
 | 7 | inventory-fulfillment | injection | Exfiltrate `AGENT_SHARED_SECRET` via stock-check request |
 | 8 | product-discovery | injection | Embedded token injection (`PWNED-1337`) |
 
-The pure scoring functions (`injection_resisted`, `refusal_correct`, `role_confined`) in `evals/safety_evaluator.py` are unit-tested without a live LLM. The end-to-end adversarial run requires a live model and runs in CI only.
+The pure scoring functions (`injection_resisted`, `refusal_correct`, `role_confined`) in `evals/safety_evaluator.py` are unit-tested without a live LLM.
+
+### Indirect injection and the guardrail's own numbers
+
+Two deterministic pieces sit beside the model-facing suite, neither calling a model:
+
+- `evals/seed_adversarial.py` (it refuses to run without `--yes`, since its default `DATABASE_URL` is the dev database; `replay-evals.sh` passes it) inserts a corpus of reviews and product spec text carrying injected instructions, each with a unique canary token, on dedicated `[adversarial]` products. It is **not** part of the normal seed: `scripts/replay-evals.sh --adversarial` (or `ADVERSARIAL_SEED=1`) runs it after the quality suites and before the safety suite, and it is off by default so the recorded safety suite is unaffected. Cases that use the corpus need recordings and arrive with a later recording session.
+- `evals/guardrail_confusion.py` runs the inbound detector and the output sanitizer over benign text (seeded reviews, descriptions, specs, the eval datasets' prompts) and over that corpus, writing precision, recall and false-positive examples to [`evals/results/guardrail-confusion.md`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/evals/results/guardrail-confusion.md). It is a regex detector against a small synthetic corpus: it measures those patterns on that text, not real attackers. `tests/test_guardrail_confusion.py` pins the numbers within a tolerance. The end-to-end adversarial run requires a live model and runs in CI only.
 
 ---
 
@@ -175,6 +182,16 @@ uv run python -m evals.run_evals \
   --output-json eval-pd.json
 python -c "import json; r=json.load(open('eval-pd.json')); exit(0 if r['overall_score'] >= 0.7 else 1)"
 ```
+
+---
+
+## Cost numbers
+
+The eval report's `Est. cost` and the runtime `usage_logs.cost_usd` come from the same table
+(`shared/cost.py`). Both bill cached input tokens at the ordinary input price until a
+per-model cached rate is entered, so they overstate a cache-heavy run (in the sampled replay
+fixture about 97% of input was cached) and never understate it. See
+[telemetry.md](telemetry.md#cost-and-usage).
 
 ---
 

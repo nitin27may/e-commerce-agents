@@ -48,16 +48,17 @@ action is awaiting approval. When an admin later approves it, a *separate* code 
 original LLM loop is never resumed.** The approval doesn't continue the conversation — it just
 performs the action the model asked for, outside the conversation entirely.
 
-**In-workflow suspend/resume** — [`workflows/return_replace.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/workflows/return_replace.py)'s `_HitlGateExecutor`.
-For return workflows above a value threshold (`settings.RETURN_HITL_THRESHOLD`), the executor
-calls `await ctx.request_info(ReturnApprovalRequest(...), response_type=bool)` — and
+**In-workflow suspend/resume** — [`workflows/return_replace.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/workflows/return_replace.py)'s `_PolicyGateExecutor`.
+For return requests the approval policy does not mark `auto` (`RETURN_HITL_THRESHOLD` is only the fallback when
+the engine cannot decide), the executor calls `await ctx.request_info(ReturnApprovalRequest(...), response_type=ReturnDecision)` — before the return row, label or order status exist — and
 this doesn't short-circuit a single tool call, it **pauses the entire workflow graph**. Everything
 the graph had already computed is written to a checkpoint (see
 [state, memory, and sessions](08-state-memory-and-sessions.md)) so the pause can outlive the
 current request. Resume happens via a handler MAF calls back into automatically —
-`@response_handler(request=ReturnApprovalRequest, response=bool)` on `on_approval()` —
-which picks the workflow back up from exactly where it paused and keeps running the remaining
-steps (loyalty discount, finalize).
+`@response_handler(request=ReturnApprovalRequest, response=ReturnDecision)` on `on_decision()` —
+which restores the full `WorkflowState` the request carried, picks the workflow back up from exactly where it
+paused and runs the remaining steps (initiate return, replacement search, loyalty discount, finalize). A
+reviewer may edit the resolution and amount; a rejection or an expiry creates nothing.
 
 The difference in one sentence: `shared/hitl.py` intercepts one tool call and the tool simply never
 runs — there's no "loop" to resume, because nothing was ever mid-sequence. `return_replace.py`
@@ -82,9 +83,9 @@ flowchart LR
   end
 
   subgraph wf["workflows/return_replace.py — workflow mode"]
-    t2["_HitlGateExecutor"] --> pause["ctx.request_info<br/>whole graph pauses"]
+    t2["_PolicyGateExecutor"] --> pause["ctx.request_info<br/>whole graph pauses"]
     pause --> cp[("checkpoint saved")]
-    cp -.resume, maybe different process.-> resume["on_approval() —<br/>graph continues from here"]
+    cp -.resume, maybe different process.-> resume["on_decision() —<br/>graph continues from here"]
   end
 
   class t1,t2,gate1,exec,resume core

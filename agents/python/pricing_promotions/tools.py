@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC
 from typing import Annotated
 
 from agent_framework import tool
@@ -12,7 +13,13 @@ from shared.context import current_user_email
 from shared.db import get_pool
 
 
-@tool(name="validate_coupon", description="Validate a coupon code. Checks expiry, min spend, usage limit, applicable categories, and user-specific restrictions.")
+@tool(
+    name="validate_coupon",
+    description=(
+        "Validate a coupon code. Checks expiry, min spend, usage limit, applicable categories, and user-specific "
+        "restrictions."
+    ),
+)
 async def validate_coupon(
     code: Annotated[str, Field(description="Coupon code to validate")],
     cart_total: Annotated[float, Field(description="Current cart total before discount")],
@@ -38,8 +45,9 @@ async def validate_coupon(
 
         # Check expiry
         if row["valid_until"]:
-            from datetime import datetime, timezone
-            now = datetime.now(timezone.utc)
+            from datetime import datetime
+
+            now = datetime.now(UTC)
             if now > row["valid_until"]:
                 return {"valid": False, "code": code, "error": "Coupon has expired"}
             if now < row["valid_from"]:
@@ -63,7 +71,10 @@ async def validate_coupon(
                 return {
                     "valid": False,
                     "code": code,
-                    "error": f"Coupon not valid for category '{category}'. Valid for: {', '.join(row['applicable_categories'])}",
+                    "error": (
+                        f"Coupon not valid for category '{category}'. Valid for: "
+                        f"{', '.join(row['applicable_categories'])}"
+                    ),
                 }
 
         # Check user-specific restriction
@@ -119,11 +130,17 @@ def _pct(value: object) -> float:
     return pct if 0.0 <= pct <= 100.0 else 0.0
 
 
-@tool(name="optimize_cart", description="Find the best combination of coupons, promotions, and loyalty discounts for a cart. Returns the optimal savings breakdown.")
+@tool(
+    name="optimize_cart",
+    description=(
+        "Find the best combination of coupons, promotions, and loyalty discounts for a cart. Returns the optimal "
+        "savings breakdown."
+    ),
+)
 async def optimize_cart(
     product_ids_with_quantities: Annotated[
         list[dict],
-        Field(description="List of items: [{\"product_id\": \"uuid\", \"quantity\": 1}, ...]"),
+        Field(description='List of items: [{"product_id": "uuid", "quantity": 1}, ...]'),
     ],
 ) -> dict:
     email = current_user_email.get()
@@ -140,14 +157,16 @@ async def optimize_cart(
             )
             if not row:
                 return {"error": f"Product not found: {pid}"}
-            cart_items.append({
-                "product_id": str(row["id"]),
-                "name": row["name"],
-                "price": float(row["price"]),
-                "category": row["category"],
-                "quantity": qty,
-                "subtotal": float(row["price"]) * qty,
-            })
+            cart_items.append(
+                {
+                    "product_id": str(row["id"]),
+                    "name": row["name"],
+                    "price": float(row["price"]),
+                    "category": row["category"],
+                    "quantity": qty,
+                    "subtotal": float(row["price"]) * qty,
+                }
+            )
 
         original_total = sum(i["subtotal"] for i in cart_items)
         categories = list({i["category"] for i in cart_items})
@@ -192,12 +211,14 @@ async def optimize_cart(
                 best_coupon = c
 
         if best_coupon:
-            savings.append({
-                "type": "coupon",
-                "code": best_coupon["code"],
-                "description": best_coupon["description"],
-                "amount": round(best_coupon_savings, 2),
-            })
+            savings.append(
+                {
+                    "type": "coupon",
+                    "code": best_coupon["code"],
+                    "description": best_coupon["description"],
+                    "amount": round(best_coupon_savings, 2),
+                }
+            )
 
         # 2. Find applicable promotions
         promos = await conn.fetch(
@@ -233,17 +254,17 @@ async def optimize_cart(
                     continue
 
                 bundle_total = sum(
-                    i["subtotal"]
-                    for i in cart_items
-                    if i["product_id"] in required_ids or i["name"] in required_names
+                    i["subtotal"] for i in cart_items if i["product_id"] in required_ids or i["name"] in required_names
                 )
                 amount = bundle_total * (_pct(rules.get("discount_pct")) / 100)
                 if amount > 0:
-                    savings.append({
-                        "type": "bundle_promotion",
-                        "name": promo["name"],
-                        "amount": round(amount, 2),
-                    })
+                    savings.append(
+                        {
+                            "type": "bundle_promotion",
+                            "name": promo["name"],
+                            "amount": round(amount, 2),
+                        }
+                    )
 
             elif promo_type == "buy_x_get_y":
                 # Two rule shapes, because the seeded data uses the second and
@@ -280,12 +301,14 @@ async def optimize_cart(
                         continue
 
                     if amount > 0:
-                        savings.append({
-                            "type": "buy_x_get_y",
-                            "name": promo["name"],
-                            "product": item["name"],
-                            "amount": round(amount, 2),
-                        })
+                        savings.append(
+                            {
+                                "type": "buy_x_get_y",
+                                "name": promo["name"],
+                                "product": item["name"],
+                                "amount": round(amount, 2),
+                            }
+                        )
 
             elif promo_type == "flash_sale":
                 # Same mismatch again: the seed scopes flash sales by
@@ -303,13 +326,14 @@ async def optimize_cart(
                         continue
                     amount = item["subtotal"] * (discount_pct / 100)
                     if amount > 0:
-                        savings.append({
-                            "type": "flash_sale",
-                            "name": promo["name"],
-                            "product": item["name"],
-                            "amount": round(amount, 2),
-                        })
-
+                        savings.append(
+                            {
+                                "type": "flash_sale",
+                                "name": promo["name"],
+                                "product": item["name"],
+                                "amount": round(amount, 2),
+                            }
+                        )
 
         # 3. Calculate loyalty discount
         if email:
@@ -322,12 +346,14 @@ async def optimize_cart(
             )
             if user and float(user["discount_pct"]) > 0:
                 loyalty_amount = original_total * (float(user["discount_pct"]) / 100)
-                savings.append({
-                    "type": "loyalty_discount",
-                    "tier": user["loyalty_tier"],
-                    "discount_pct": float(user["discount_pct"]),
-                    "amount": round(loyalty_amount, 2),
-                })
+                savings.append(
+                    {
+                        "type": "loyalty_discount",
+                        "tier": user["loyalty_tier"],
+                        "discount_pct": float(user["discount_pct"]),
+                        "amount": round(loyalty_amount, 2),
+                    }
+                )
 
         total_savings = sum(s["amount"] for s in savings)
         final_total = max(0, original_total - total_savings)
@@ -405,15 +431,18 @@ async def check_bundle_eligibility(
         products = []
         for pid in product_ids:
             row = await conn.fetchrow(
-                "SELECT id, name, price, category FROM products WHERE id = $1", pid,
+                "SELECT id, name, price, category FROM products WHERE id = $1",
+                pid,
             )
             if row:
-                products.append({
-                    "product_id": str(row["id"]),
-                    "name": row["name"],
-                    "price": float(row["price"]),
-                    "category": row["category"],
-                })
+                products.append(
+                    {
+                        "product_id": str(row["id"]),
+                        "name": row["name"],
+                        "price": float(row["price"]),
+                        "category": row["category"],
+                    }
+                )
 
         if not products:
             return {"eligible": False, "error": "No valid products found"}
@@ -439,39 +468,37 @@ async def check_bundle_eligibility(
                 matching = [pid for pid in product_ids if pid in required_ids]
                 if len(matching) == len(required_ids):
                     discount_pct = rules.get("discount_pct", 0)
-                    bundle_total = sum(
-                        p["price"] for p in products if p["product_id"] in required_ids
-                    )
+                    bundle_total = sum(p["price"] for p in products if p["product_id"] in required_ids)
                     savings = bundle_total * (discount_pct / 100)
-                    eligible_bundles.append({
-                        "promotion_name": promo["name"],
-                        "discount_pct": discount_pct,
-                        "bundle_total": round(bundle_total, 2),
-                        "savings": round(savings, 2),
-                        "end_date": promo["end_date"].isoformat(),
-                        "qualifying_products": [
-                            p["name"] for p in products if p["product_id"] in required_ids
-                        ],
-                    })
+                    eligible_bundles.append(
+                        {
+                            "promotion_name": promo["name"],
+                            "discount_pct": discount_pct,
+                            "bundle_total": round(bundle_total, 2),
+                            "savings": round(savings, 2),
+                            "end_date": promo["end_date"].isoformat(),
+                            "qualifying_products": [p["name"] for p in products if p["product_id"] in required_ids],
+                        }
+                    )
 
             # Check by categories
             if required_categories:
                 cart_categories = [p["category"] for p in products]
                 if all(cat in cart_categories for cat in required_categories):
                     discount_pct = rules.get("discount_pct", 0)
-                    matching_products = [
-                        p for p in products if p["category"] in required_categories
-                    ]
+                    matching_products = [p for p in products if p["category"] in required_categories]
                     bundle_total = sum(p["price"] for p in matching_products)
                     savings = bundle_total * (discount_pct / 100)
-                    eligible_bundles.append({
-                        "promotion_name": promo["name"],
-                        "discount_pct": discount_pct,
-                        "bundle_total": round(bundle_total, 2),
-                        "savings": round(savings, 2),
-                        "end_date": promo["end_date"].isoformat(),
-                        "qualifying_products": [p["name"] for p in matching_products],
-                    })
+                    eligible_bundles.append(
+                        {
+                            "promotion_name": promo["name"],
+                            "discount_pct": discount_pct,
+                            "bundle_total": round(bundle_total, 2),
+                            "savings": round(savings, 2),
+                            "end_date": promo["end_date"].isoformat(),
+                            "qualifying_products": [p["name"] for p in matching_products],
+                        }
+                    )
 
         # Also check buy_x_get_y promotions
         bxgy_promos = await conn.fetch(
@@ -491,13 +518,15 @@ async def check_bundle_eligibility(
             free_qty = rules.get("free_quantity", 0)
             matching = [p for p in products if not applicable_cats or p["category"] in applicable_cats]
             if matching:
-                bxgy_eligible.append({
-                    "promotion_name": promo["name"],
-                    "buy_quantity": buy_qty,
-                    "free_quantity": free_qty,
-                    "applicable_products": [p["name"] for p in matching],
-                    "end_date": promo["end_date"].isoformat(),
-                })
+                bxgy_eligible.append(
+                    {
+                        "promotion_name": promo["name"],
+                        "buy_quantity": buy_qty,
+                        "free_quantity": free_qty,
+                        "applicable_products": [p["name"] for p in matching],
+                        "end_date": promo["end_date"].isoformat(),
+                    }
+                )
 
         return {
             "eligible": len(eligible_bundles) > 0 or len(bxgy_eligible) > 0,

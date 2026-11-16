@@ -167,12 +167,11 @@ async def test_return_replace_mode_resume_completes_a_fresh_workflow_object(
 
     resume_final = resume_events[-1]
     assert resume_final.kind == "run_completed"
-    # Not "ret-99": on_approval() rebuilds a minimal WorkflowState from the
-    # ReturnApprovalRequest snapshot, which doesn't carry the original
-    # return_id (see resume()'s comment in workflow_mode.py). Assert what
-    # actually survives resume — same fields test_return_replace_workflow.py's
-    # own resume tests assert on.
+    # The paused request carries the whole WorkflowState, so the resumed run knows the return it
+    # created AFTER approval ("ret-99" comes from the initiate_return stub that ran post-resume).
     assert "approved and finalized" in resume_final.payload["text"]
+    assert "ret-99" in resume_final.payload["text"]
+    assert resume_final.payload["completed"] is True
     assert "finalize" in resume_final.payload["agents_involved"]
     assert resume_final.payload["pending_approval"] is False
     # Resume itself checkpoints too (discount, finalize supersteps).

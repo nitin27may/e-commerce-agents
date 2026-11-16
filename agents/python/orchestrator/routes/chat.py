@@ -58,10 +58,14 @@ from shared.agent_observability import get_steps, reset_steps
 from shared.context import current_session_id
 from shared.db import get_pool
 from shared.grounding.ledger import reset_grounding_ledger
+from shared.log_safe import log_safe
 from shared.rate_limit import rate_limit_chat
+from shared.replay_client import ReplayFixtureMissingError
+from shared.replay_miss import REPLAY_MISS_EVENT, is_replay_miss_event, miss_payload
+from shared.run_usage import ORCHESTRATOR, begin_run_usage
 from shared.session import get_history_as_dicts, get_history_provider
 from shared.sse import sse_frame
-from shared.usage_db import UsageTimer, log_agent_usage, log_execution_step
+from shared.usage_db import UsageTimer, log_agent_usage, log_execution_step, usage_columns
 
 from .legacy import optional_auth
 
@@ -81,6 +85,8 @@ class ChatResponse(BaseModel):
     conversation_id: str
     agents_involved: list[str]
     grounding: dict[str, Any] | None = None
+    # Set instead of an answer when replay mode has no recording for this prompt (#86).
+    replay_miss: dict[str, str] | None = None
 
 
 _PENDING_PERSIST_TASKS: set[_asyncio.Task] = set()
@@ -156,6 +162,9 @@ async def _persist_assistant_turn(
     disconnecting mid-stream doesn't lose the response the agent already
     generated.
     """
+    # `stream_usage` is the turn's {total, by_agent}: the orchestrator's own
+    # calls plus every specialist's (shared/run_usage.py).
+    usage_cols = usage_columns(stream_usage)
     try:
         # `_live` is a transport marker set when a step was already streamed
         # (orchestrator/agent.py). The normal path pops it while deciding what
@@ -185,8 +194,7 @@ async def _persist_assistant_turn(
             input_summary=body_message,
             duration_ms=duration_ms,
             tool_calls_count=len(steps),
-            tokens_in=stream_usage.get("input_token_count") or 0,
-            tokens_out=stream_usage.get("output_token_count") or 0,
+            **usage_cols,
         )
         if usage_log_id:
             for idx, s in enumerate(steps):
@@ -206,18 +214,22 @@ async def _persist_assistant_turn(
         # sent any earlier: the usage_logs row is created here, several frames
         # after `metadata` has already gone out.
         run_payload_box["usage_log_id"] = usage_log_id
-        await _link_run_artifacts(pool, usage_log_id, user_email, run_payload_box)
+        await _link_run_artifacts(pool, usage_log_id, user_email, run_payload_box, conversation_id)
         if disconnected:
             logger.info(
                 "chat_stream.persisted_after_disconnect conversation=%s chars=%d",
-                conversation_id,
+                log_safe(conversation_id),
                 len(response_text),
             )
     except Exception:
-        logger.exception("chat_stream.persist_error conversation=%s disconnected=%s", conversation_id, disconnected)
+        logger.exception(
+            "chat_stream.persist_error conversation=%s disconnected=%s", log_safe(conversation_id), disconnected
+        )
 
 
-async def _link_run_artifacts(pool: Any, usage_log_id: Any, user_email: str, run_payload: dict[str, Any]) -> None:
+async def _link_run_artifacts(
+    pool: Any, usage_log_id: Any, user_email: str, run_payload: dict[str, Any], conversation_id: Any = None
+) -> None:
     """Correlate a run's checkpoint + HITL pause (if any) back to its
     ``usage_logs`` row — what ``GET /api/runs/{id}/checkpoints`` and
     ``POST /api/orchestration/{run_id}/resume`` need to find them later.
@@ -238,16 +250,66 @@ async def _link_run_artifacts(pool: Any, usage_log_id: Any, user_email: str, run
             checkpoint_id,
         )
     if run_payload.get("pending_approval") and run_payload.get("request_id"):
-        await pool.execute(
+        policy = run_payload.get("approval_policy")
+        policy = policy if isinstance(policy, dict) else {}
+        hitl_id = await pool.fetchval(
             """INSERT INTO hitl_requests
                    (workflow_run_id, request_id, checkpoint_id, user_email, kind, payload, status)
-               VALUES ($1, $2, $3, $4, 'return_approval', $5::jsonb, 'pending')""",
+               VALUES ($1, $2, $3, $4, 'return_approval', $5::jsonb, 'pending')
+               RETURNING id""",
             usage_log_id,
             run_payload["request_id"],
             checkpoint_id,
             user_email,
-            json.dumps({"text": run_payload.get("text", "")}, default=str),
+            # order_id/order_total let a later repair (ensure_for_hitl_request) re-run the real policy.
+            json.dumps(
+                {
+                    "text": run_payload.get("text", ""),
+                    "order_id": run_payload.get("order_id"),
+                    "order_total": run_payload.get("order_total"),
+                },
+                default=str,
+            ),
         )
+        # The inbox row, routed by the gate's policy decision. Best effort: the hitl_requests row above
+        # is what resume needs; a missing inbox row is repaired lazily when someone first decides it.
+        try:
+            from shared.approvals.intake import open_workflow_approval, policy_for_return
+
+            if not policy:  # the run did not carry its own decision: ask the engine now
+                policy = await policy_for_return(
+                    pool,
+                    user_email=user_email,
+                    order_id=run_payload.get("order_id"),
+                    amount=run_payload.get("order_total"),
+                )
+            if not conversation_id:
+                conversation_id = await pool.fetchval("SELECT session_id FROM usage_logs WHERE id = $1", usage_log_id)
+            await open_workflow_approval(
+                pool,
+                hitl_request_id=str(hitl_id),
+                user_email=user_email,
+                conversation_id=str(conversation_id) if conversation_id else None,
+                policy=policy,
+                amount=policy.get("amount"),
+            )
+        except Exception:
+            logger.exception("chat.approval_open_failed hitl=%s", log_safe(hitl_id))
+
+
+async def _discard_replay_missed_message(pool: Any, conversation_id: Any, message_id: Any) -> None:
+    """Take back the user message of a turn that got no answer because replay had no recording.
+
+    The message was saved before the run. Left in place it would sit in the conversation unanswered and be
+    carried into every later turn's history, changing the replay key of prompts that are recorded. Only the
+    replay-miss path calls this: any other outcome keeps the message, as it always did.
+    """
+    if not message_id:
+        return
+    try:
+        await pool.execute("DELETE FROM messages WHERE id = $1 AND conversation_id = $2", message_id, conversation_id)
+    except Exception:
+        logger.exception("chat.replay_miss_cleanup_failed conversation=%s", log_safe(conversation_id))
 
 
 @router.post("/api/chat", response_model=ChatResponse)
@@ -269,6 +331,7 @@ async def chat(
 
     conversation_id = body.conversation_id
     history: list[dict[str, str]] = []
+    user_message_id: Any = None
 
     if not is_anon:
         # Resolve or create conversation
@@ -299,10 +362,10 @@ async def chat(
         # insert would double it into the context sent to the LLM.
         history = await get_history_as_dicts(get_history_provider(pool=pool), conversation_id)
 
-        # Save user message
-        await pool.execute(
+        # Save user message (its id is kept only so a replay miss can take it back out)
+        user_message_id = await pool.fetchval(
             """INSERT INTO messages (conversation_id, role, content, agent_name)
-               VALUES ($1, 'user', $2, NULL)""",
+               VALUES ($1, 'user', $2, NULL) RETURNING id""",
             conversation_id,
             body.message,
         )
@@ -338,6 +401,7 @@ async def chat(
     steps: list[dict[str, Any]] = []
     run_payload: dict[str, Any] = {}
     ctx = RunContext(history=history, conversation_id=conversation_id)
+    replay_miss: dict[str, str] | None = None
 
     with UsageTimer() as timer:
         with agent_run_span("orchestrator"):
@@ -349,13 +413,23 @@ async def chat(
                         response_text = run_payload.get("text", "")
                         agents_involved = run_payload.get("agents_involved", agents_involved)
                         steps = run_payload.get("steps", steps)
+            except ReplayFixtureMissingError:
+                logger.warning(
+                    "chat.replay_miss conversation=%s mode=%s", log_safe(conversation_id), log_safe(mode_name)
+                )
+                replay_miss = miss_payload()
+                response_text = replay_miss["message"]
+                await _discard_replay_missed_message(pool, conversation_id, user_message_id)
             except Exception:
                 logger.exception(
-                    "chat.agent_error user=%s conversation=%s mode=%s", user_email, conversation_id, mode_name
+                    "chat.agent_error user=%s conversation=%s mode=%s",
+                    log_safe(user_email),
+                    log_safe(conversation_id),
+                    log_safe(mode_name),
                 )
                 response_text = "I apologize, but I encountered an issue processing your request. Please try again."
 
-    if not is_anon:
+    if not is_anon and replay_miss is None:
         # Save assistant message + update conversation + usage (authed only)
         await pool.execute(
             """INSERT INTO messages (conversation_id, role, content, agent_name, agents_involved)
@@ -368,23 +442,22 @@ async def chat(
             "UPDATE conversations SET last_message_at = NOW() WHERE id = $1",
             conversation_id,
         )
-        usage = run_payload.get("usage") or {}
         usage_log_id = await log_agent_usage(
             user_id=user_id,
             agent_name="orchestrator",
             input_summary=body.message,
             duration_ms=timer.duration_ms,
             tool_calls_count=len(steps) if steps else max(len(agents_involved) - 1, 0),
-            tokens_in=usage.get("input_token_count") or 0,
-            tokens_out=usage.get("output_token_count") or 0,
+            **usage_columns(run_payload.get("usage")),
         )
-        await _link_run_artifacts(pool, usage_log_id, user_email, run_payload)
+        await _link_run_artifacts(pool, usage_log_id, user_email, run_payload, conversation_id)
 
     return ChatResponse(
         response=response_text,
         conversation_id=conversation_id or "",
         agents_involved=agents_involved,
         grounding=run_payload.get("grounding"),
+        replay_miss=replay_miss,
     )
 
 
@@ -417,6 +490,7 @@ async def chat_stream(
 
     conversation_id = body.conversation_id
     history: list[dict[str, str]] = []
+    user_message_id: Any = None
 
     if not is_anon:
         # Resolve or create conversation
@@ -444,10 +518,10 @@ async def chat_stream(
         # matching comment for why the ordering matters.
         history = await get_history_as_dicts(get_history_provider(pool=pool), conversation_id)
 
-        # Save user message
-        await pool.execute(
+        # Save user message (its id is kept only so a replay miss can take it back out)
+        user_message_id = await pool.fetchval(
             """INSERT INTO messages (conversation_id, role, content, agent_name)
-               VALUES ($1, 'user', $2, NULL)""",
+               VALUES ($1, 'user', $2, NULL) RETURNING id""",
             conversation_id,
             body.message,
         )
@@ -502,6 +576,22 @@ async def chat_stream(
         # Shared queue: orchestrator LLM chunks + specialist streaming chunks.
         queue: _asyncio.Queue = _asyncio.Queue()
         current_stream_queue.set(queue)
+        # Specialist usage lands here from call_specialist_agent. Set before the
+        # run task is created so the task's copied context shares this object.
+        run_usage = begin_run_usage()
+
+        run_metadata: dict[str, Any] = {}
+
+        def _turn_usage() -> dict[str, Any]:
+            """This turn's {total, by_agent}, orchestrator's own calls included.
+
+            A mode that reports usage in its ``run_completed`` (every mode but the
+            direct-streaming ``tool`` path) wins; otherwise the accumulator plus the
+            orchestrator's own response usage. No mode is special-cased.
+            """
+            return run_payload_box.get("usage") or run_usage.snapshot_with(
+                ORCHESTRATOR, run_metadata.get("_maf_usage"), run_metadata.get("_maf_model")
+            )
 
         # Mutable box for run_completed's full payload (checkpoint/HITL
         # linkage needs more than agents_involved) — stays empty for "tool"
@@ -513,7 +603,6 @@ async def chat_stream(
             from shared.agent_host import _run_agent_native_stream
 
             agent = create_orchestrator_agent()
-            run_metadata: dict[str, Any] = {}
 
             async def _run_mode_task() -> None:
                 reset_steps()
@@ -521,16 +610,22 @@ async def chat_stream(
                 with agent_run_span("orchestrator"):
                     try:
                         async for chunk in _run_agent_native_stream(
-                            agent, body.message, history=history, metadata_box=run_metadata,
+                            agent,
+                            body.message,
+                            history=history,
+                            metadata_box=run_metadata,
                         ):
                             await queue.put(("text", chunk))
                         if "grounding" in run_metadata:
                             await queue.put(("frame", "grounding", run_metadata["grounding"]))
+                    except ReplayFixtureMissingError:
+                        logger.warning("chat_stream.replay_miss conversation=%s", log_safe(conversation_id))
+                        await queue.put(("frame", REPLAY_MISS_EVENT, miss_payload()))
                     except Exception:
                         logger.exception(
                             "chat_stream.agent_error user=%s conversation=%s",
-                            user_email,
-                            conversation_id,
+                            log_safe(user_email),
+                            log_safe(conversation_id),
                         )
                         error_msg = "I apologize, but I encountered an issue. Please try again."
                         await queue.put(("text", error_msg))
@@ -550,6 +645,7 @@ async def chat_stream(
                 # run_completed can fall back to a single end-of-run dump,
                 # the same guarantee "tool" mode gets for free.
                 streamed_any_text = False
+                miss_seen = False
                 with agent_run_span("orchestrator"):
                     try:
                         async for event in mode.run(body.message, ctx):
@@ -589,6 +685,10 @@ async def chat_stream(
                                 await queue.put(("frame", "checkpoint", {"node_id": event.node_id, **event.payload}))
                             elif event.kind == "request_info":
                                 await queue.put(("frame", "request_info", {"node_id": event.node_id, **event.payload}))
+                            elif event.kind == "error" and (miss_seen or is_replay_miss_event(event.payload)):
+                                # A failed executor's message names a fixture hash. The
+                                # miss itself is reported once, below or as the raised error.
+                                miss_seen = True
                             elif event.kind == "error":
                                 await queue.put(("frame", "error", {"node_id": event.node_id, **event.payload}))
                                 await queue.put(("text", " [an error occurred] "))
@@ -600,17 +700,27 @@ async def chat_stream(
                                     if final_text:
                                         await queue.put(("text", final_text))
                             # run_started / graph / grounding: nothing to render yet.
+                        if miss_seen:
+                            await queue.put(("frame", REPLAY_MISS_EVENT, miss_payload()))
+                    except ReplayFixtureMissingError:
+                        logger.warning(
+                            "chat_stream.replay_miss conversation=%s mode=%s",
+                            log_safe(conversation_id),
+                            log_safe(mode_name),
+                        )
+                        await queue.put(("frame", REPLAY_MISS_EVENT, miss_payload()))
                     except Exception:
                         logger.exception(
                             "chat_stream.mode_error user=%s conversation=%s mode=%s",
-                            user_email,
-                            conversation_id,
-                            mode_name,
+                            log_safe(user_email),
+                            log_safe(conversation_id),
+                            log_safe(mode_name),
                         )
                         await queue.put(("text", "I apologize, but I encountered an issue. Please try again."))
                 agents_involved[:] = final_agents_involved
                 await queue.put(None)  # sentinel
 
+        replay_missed = False
         agent_task = _asyncio.create_task(_run_mode_task())
 
         try:
@@ -619,7 +729,7 @@ async def chat_stream(
                     if await request.is_disconnected():
                         logger.info(
                             "chat_stream.client_disconnected conversation=%s elapsed_ms=%d",
-                            conversation_id,
+                            log_safe(conversation_id),
                             int((time.monotonic() - start_time) * 1000),
                         )
                         agent_task.cancel()
@@ -628,7 +738,7 @@ async def chat_stream(
                     if time.monotonic() > deadline:
                         logger.warning(
                             "chat_stream.timeout conversation=%s budget_s=%s",
-                            conversation_id,
+                            log_safe(conversation_id),
                             settings.MAF_STREAM_TIMEOUT_SECONDS,
                         )
                         timeout_msg = " [stream timed out — please retry]"
@@ -639,7 +749,7 @@ async def chat_stream(
 
                     try:
                         item = await _asyncio.wait_for(queue.get(), timeout=0.1)
-                    except _asyncio.TimeoutError:
+                    except TimeoutError:
                         continue
 
                     if item is None:
@@ -683,6 +793,7 @@ async def chat_stream(
                         # it bypasses the byte-cap/truncation accounting above.
                         frame_name: str = item[1]
                         frame_payload: dict[str, Any] = item[2]
+                        replay_missed = replay_missed or frame_name == REPLAY_MISS_EVENT
                         yield f"event: {frame_name}\ndata: {json.dumps(frame_payload, default=str)}\n\n"
 
             finally:
@@ -717,11 +828,21 @@ async def chat_stream(
                         body_message=body.message,
                         start_time=start_time,
                         run_payload_box=run_payload_box,
-                        stream_usage=(run_metadata.get("_maf_usage") or {}) if mode.name == "tool" else {},
+                        stream_usage=_turn_usage(),
                         disconnected=True,
                     )
                 )
             raise
+
+        if replay_missed:
+            # No recording for this prompt: nothing to persist, and the frame
+            # already told the client why. The conversation id still goes out, so a
+            # brand-new conversation can be continued; nothing about the miss does.
+            await _discard_replay_missed_message(pool, conversation_id, user_message_id)
+            miss_metadata = {"conversation_id": conversation_id, "agents_involved": list(agents_involved)}
+            yield f"event: metadata\ndata: {json.dumps(miss_metadata)}\n\n"
+            yield "data: [DONE]\n\n"
+            return
 
         response_text = "".join(full_response)
 
@@ -740,15 +861,14 @@ async def chat_stream(
                 if s.pop("_live", False):
                     continue
                 yield f"event: step\ndata: {json.dumps(s, default=str)}\n\n"
-            stream_usage = run_metadata.get("_maf_usage") or {}
         else:
             # Non-"tool" modes already emitted their own "step"/"node"/
             # "handoff" frames inline as they occurred; agents_involved was
             # set from the mode's run_completed event.
             steps = []
-            stream_usage = {}
 
-        yield f"event: metadata\ndata: {json.dumps({'conversation_id': conversation_id, 'agents_involved': agents_involved})}\n\n"
+        metadata_frame = {"conversation_id": conversation_id, "agents_involved": agents_involved}
+        yield f"event: metadata\ndata: {json.dumps(metadata_frame)}\n\n"
 
         # Persist assistant message + timeline — authed only (anonymous
         # storefront chat has no conversation to write to).
@@ -777,7 +897,7 @@ async def chat_stream(
                 body_message=body.message,
                 start_time=start_time,
                 run_payload_box=run_payload_box,
-                stream_usage=stream_usage,
+                stream_usage=_turn_usage(),
                 disconnected=False,
             )
         )
@@ -786,7 +906,7 @@ async def chat_stream(
         except _asyncio.CancelledError:
             raise
         except Exception:
-            logger.exception("chat.persist_failed conversation=%s", conversation_id)
+            logger.exception("chat.persist_failed conversation=%s", log_safe(conversation_id))
 
         # Name the run, now that it has an id. `pending_approval` is what lets
         # the chat thread render its own approval control instead of sending

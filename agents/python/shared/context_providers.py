@@ -21,13 +21,13 @@ custom loop in favour of MAF-native execution.
 
 from __future__ import annotations
 
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 from agent_framework import ContextProvider
 
 from shared.context import current_user_email
 from shared.db import get_pool
-
 
 # ──────────────────────── Fine-grained providers ────────────────────────
 
@@ -138,10 +138,7 @@ class RecentOrdersProvider(ContextProvider):
             lines = [f"Recent orders ({len(orders)}):"]
             for order in orders:
                 date = order["created_at"].strftime("%Y-%m-%d")
-                lines.append(
-                    f"  - order_id={order['id']} | {order['status']} "
-                    f"| ${order['total']:.2f} | {date}"
-                )
+                lines.append(f"  - order_id={order['id']} | {order['status']} | ${order['total']:.2f} | {date}")
             context.extend_instructions("recent-orders", "\n".join(lines))
 
     async def after_run(self, *, agent: Any, session: Any, context: Any, state: dict[str, Any]) -> None:
@@ -197,10 +194,7 @@ class AgentMemoriesProvider(ContextProvider):
         if hasattr(context, "extend_instructions"):
             lines = ["## User Preferences & History"]
             for memory in memories:
-                lines.append(
-                    f"  - [{memory['category']}] {memory['content']} "
-                    f"(importance: {memory['importance']})"
-                )
+                lines.append(f"  - [{memory['category']}] {memory['content']} (importance: {memory['importance']})")
             context.extend_instructions("agent-memories", "\n".join(lines))
 
     async def after_run(self, *, agent: Any, session: Any, context: Any, state: dict[str, Any]) -> None:
@@ -241,8 +235,7 @@ class ECommerceContextProvider(ContextProvider):
         if user:
             lines.append(f"Current user: {user['name']} ({user['email']})")
             lines.append(
-                f"Role: {user['role']}, Loyalty tier: {user['loyalty_tier']}, "
-                f"Total spend: ${user['total_spend']:.2f}"
+                f"Role: {user['role']}, Loyalty tier: {user['loyalty_tier']}, Total spend: ${user['total_spend']:.2f}"
             )
 
         orders = state.get("recent_orders")
@@ -250,20 +243,14 @@ class ECommerceContextProvider(ContextProvider):
             lines.append(f"Recent orders ({len(orders)}):")
             for order in orders:
                 date = order["created_at"].strftime("%Y-%m-%d")
-                lines.append(
-                    f"  - order_id={order['id']} | {order['status']} "
-                    f"| ${order['total']:.2f} | {date}"
-                )
+                lines.append(f"  - order_id={order['id']} | {order['status']} | ${order['total']:.2f} | {date}")
 
         memories = state.get("memories")
         if memories:
             lines.append("")
             lines.append("## User Preferences & History")
             for memory in memories:
-                lines.append(
-                    f"  - [{memory['category']}] {memory['content']} "
-                    f"(importance: {memory['importance']})"
-                )
+                lines.append(f"  - [{memory['category']}] {memory['content']} (importance: {memory['importance']})")
 
         if lines:
             state["user_context"] = "\n".join(lines)

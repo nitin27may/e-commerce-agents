@@ -88,7 +88,7 @@ This layer is the broadest defense. Its weakness is that it is only as reliable 
 
 **Default behavior**: observe-only. Detections increment a counter, set `context.metadata["guardrail_injection_detected"]`, and log at INFO. Set `GUARDRAILS_BLOCK_ON_INJECTION=true` to log at WARNING; blocking of the request itself requires a custom middleware that reads the metadata flag.
 
-**False-positive rate**: patterns are deliberately high-precision to avoid blocking legitimate phrasing. The safety/red-team eval suite (`evals/safety_evaluator.py`) continuously measures both precision and recall.
+**False-positive rate**: patterns are deliberately high-precision to avoid blocking legitimate phrasing. The red-team suite (`evals/safety_evaluator.py`) scores the *model's* resistance, not this detector; the detector's own precision and recall are measured by `evals/guardrail_confusion.py` and committed as [`evals/results/guardrail-confusion.md`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/evals/results/guardrail-confusion.md). That is a regex detector measured against a small synthetic corpus and the repo's own bland seeded text: it shows no false positives on that text and about half of the corpus caught, and says nothing about real attackers or real review text.
 
 ### Layer 3 — Stored-injection neutralization (`OutputSanitizationMiddleware`)
 
@@ -155,12 +155,14 @@ Authorization: Bearer <JWT>
 
 Paths `/health` and `/.well-known/agent-card.json` bypass auth.
 
+**Refresh tokens rotate (local mode).** `/api/auth/refresh` returns `{access_token, refresh_token}` and spends the token it was given: each refresh token has a `jti` and a row in `refresh_tokens` (migration 0003; `shared/refresh_tokens.py`, `RefreshTokenStore` on .NET). Presenting an already-spent token means a copy exists, so the whole token family is revoked and the call is a `401`. Tokens issued before this change have no `jti` and are rejected (one forced re-login). The web client single-flights its refresh within a tab and across tabs; any other client must do the same, since two parallel refreshes with one token look exactly like replay. A session has an **absolute lifetime**: the login that starts a token family stamps `family_expires_at` (migration 0005, `AUTH_REFRESH_FAMILY_MAX_DAYS`, default 30), every rotated successor inherits it and never outlives it, and refreshing after it has passed is a `401` (log in again). Rotation also prunes a bounded batch of dead rows (expired for over a day, or in a family with no live token). `AUTH_REFRESH_ROTATION=false` restores the old stateless behaviour. **Not covered:** `AUTH_MODE=oauth` (see below and the [parity matrix](parity-matrix.md)). Signup validates input on both stacks with `400 {"detail": ...}`: email is lower-cased and format-checked, the password must be 8–72 bytes (bcrypt's limit — longer used to be a `500` on Python), the name 1–100 characters; signup always creates a `customer`.
+
 JWT signing uses `bcrypt` for passwords and `PyJWT` for token generation. Default `JWT_SECRET` is `change-me-in-production` — the config validator warns if this is not overridden at startup.
 
 **`AUTH_MODE=oauth`:** the orchestrator's `/api/auth/login` and `/api/auth/refresh` routes broker the request to the self-hosted Authorization Server (AS, `agents/python/auth_server/`) instead of issuing tokens locally:
 
 - **Login** relays a `password` (ROPC) grant to the AS as a confidential first-party client — the AS re-verifies the bcrypt hash from the same `users` table, so this does not duplicate the password check. The AS returns an RS256 access token (`aud=ecommerce-orchestrator`, `scope=api:chat`, `role`/`user_id` custom claims) plus an opaque refresh token.
-- **Refresh** relays a `refresh_token` grant. The AS does not rotate refresh tokens (`INCLUDE_NEW_REFRESH_TOKEN=False`) — a deliberate choice, since the frontend never re-persists a rotated refresh token.
+- **Refresh** relays a `refresh_token` grant. The AS does not rotate refresh tokens (`INCLUDE_NEW_REFRESH_TOKEN=False`) — a choice made when the frontend did not re-persist refresh tokens. It now does (for local-mode rotation), so rotating here is possible follow-up work; it is **out of scope** of #102 and recorded in the parity matrix.
 - `AgentAuthMiddleware`'s Bearer branch validates the RS256 token against the AS's published JWKS (`RS256Verifier` / `.NET`'s `JwtTokenService.ValidateOAuth` + `JwksKeyProvider`): signature, issuer, audience, expiry, and required scope.
 - Phases A–D of the OAuth work all shipped and are live-verified on both stacks. What remains — key rotation, RFC 7591 dynamic client registration, and the audit matrix — is tracked in [`.claude/plans/remaining-work.md`](https://github.com/nitin27may/e-commerce-agents/blob/main/.claude/plans/remaining-work.md).
 
@@ -190,10 +192,23 @@ The caller acquires this service token via a `client_credentials` grant (`shared
 
 Either mode, `_identity_anomaly()` validates the forwarded headers the same way:
 
-- `role` must be one of `customer`, `seller`, `admin`, `system`
+- `role` must be one of `customer`, `power_user`, `seller`, `support`, `admin`, `system`
 - `email` must contain `@` (unless it is the sentinel value `system`)
 
 If `GUARDRAILS_STRICT_IDENTITY=true`, anomalies result in a 401 instead of a logged warning.
+
+### Roles
+
+| Role | Who | Notes |
+|---|---|---|
+| `customer` | Shoppers | Default for signup; the role is never client-supplied |
+| `power_user` | Seeded customer variant | Access to every agent; no extra authority |
+| `seller` | Marketplace sellers | Own products only |
+| `support` | Staff | Reviews approvals routed to `support`. Staff = `support` or `admin` (`require_staff` in `orchestrator/routes/legacy.py`; `StaffGuard` on .NET) |
+| `admin` | Platform admins | Acts as manager; everything `support` can do plus admin routes |
+| `system` | Inter-agent sentinel | A call with no end user |
+
+What each role may approve is in [Approvals and the Routing Policy](approvals.md): `support` decides approvals routed to `support`, `admin` also decides those routed to `manager`, and nobody — staff included — decides their own request (Python stack; the .NET approval routes are unchanged).
 
 ### MCP resource-server auth (Specialists → MCP servers, optional)
 
@@ -277,6 +292,7 @@ else:
 
 | Item | Config / Action |
 |------|----------------|
+| Set the edge knobs | `CORS_ALLOWED_ORIGINS` to your real origin(s); `WEB_TRUSTED_PROXY_HOPS` to the number of ingress proxies in front of the frontend (default 0 puts every anonymous caller in one address-level rate-limit bucket; login/signup are additionally limited per target email and refresh per user, so that shared address cannot be used to lock others out); keep `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=false` |
 | Rotate `JWT_SECRET` | Set to a 256-bit random value; store in Azure Key Vault |
 | Rotate `AGENT_SHARED_SECRET` | Same rotation cadence; inject via Managed Identity or Key Vault reference |
 | Enable strict identity | `GUARDRAILS_STRICT_IDENTITY=true` |

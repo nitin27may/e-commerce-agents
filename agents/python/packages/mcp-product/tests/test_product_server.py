@@ -9,12 +9,11 @@ Two tiers:
 
 from __future__ import annotations
 
+import asyncpg
 import pytest
 import pytest_asyncio
-import asyncpg
 
-from ecommerce_mcp_product.server import mcp, app, _get_pool
-
+from ecommerce_mcp_product.server import _get_pool, app, mcp
 
 # ─────────────────────── Registration smoke ─────────────────────────────────
 
@@ -72,9 +71,7 @@ async def product_id(postgres_pool: asyncpg.Pool) -> str:
             seller_id,
         )
         if pid is None:
-            pid = await conn.fetchval(
-                "SELECT id FROM products WHERE name = 'Widget Pro' LIMIT 1"
-            )
+            pid = await conn.fetchval("SELECT id FROM products WHERE name = 'Widget Pro' LIMIT 1")
         return str(pid)
 
 
@@ -82,6 +79,7 @@ async def product_id(postgres_pool: asyncpg.Pool) -> str:
 async def _patched_pool(postgres_pool: asyncpg.Pool, monkeypatch: pytest.MonkeyPatch):
     """Patch the module-level _pool so tool functions use the test container."""
     import ecommerce_mcp_product.server as srv
+
     monkeypatch.setattr(srv, "_pool", postgres_pool)
     yield
 
@@ -191,7 +189,7 @@ async def test_search_matches_stemmed_terms(
     fts_catalog: dict[str, str],
     _patched_pool: None,
 ) -> None:
-    """"noise cancellation" must find "noise cancelling" — no literal substring."""
+    """ "noise cancellation" must find "noise cancelling" — no literal substring."""
     from ecommerce_mcp_product.server import search_products
 
     results = await search_products(query="noise cancellation headphones")

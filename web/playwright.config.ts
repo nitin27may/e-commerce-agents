@@ -35,7 +35,14 @@ export default defineConfig({
   projects: [
     {
       name: `chromium-${backend}`,
-      use: { browserName: "chromium" },
+      use: {
+        browserName: "chromium",
+        // Escape hatch for machines whose pre-installed Chromium is a different
+        // revision from the one this Playwright pins. Unset in CI.
+        launchOptions: process.env.PW_CHROMIUM_PATH
+          ? { executablePath: process.env.PW_CHROMIUM_PATH }
+          : {},
+      },
     },
   ],
 });

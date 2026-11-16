@@ -1,3 +1,4 @@
+using ECommerceAgents.Shared.Logging;
 using ECommerceAgents.Shared.Tools;
 using ECommerceAgents.Shared.A2A;
 using ECommerceAgents.Shared.Configuration;
@@ -52,7 +53,7 @@ public sealed class OrchestratorTools(A2AClient client, AgentSettings settings, 
         if (!_registry.TryGetValue(agentName, out var url))
         {
             var available = string.Join(", ", _registry.Keys);
-            _logger.LogWarning("a2a.unknown_target name={Agent}", agentName);
+            _logger.LogWarning("a2a.unknown_target name={Agent}", LogSafe.Clean(agentName));
             return $"Unknown agent: {agentName}. Available agents: {available}";
         }
 

@@ -1,3 +1,4 @@
+using ECommerceAgents.Shared.Logging;
 using Dapper;
 using ECommerceAgents.Shared.Data;
 using Microsoft.Extensions.Logging;
@@ -74,7 +75,7 @@ public sealed class IdempotencyGuard(DatabasePool pool, ILogger<IdempotencyGuard
             // No stable identity to scope a key to, so every call would collide with
             // every other caller's. Running unguarded is strictly better than that;
             // Python makes the same call for the same reason.
-            _logger?.LogWarning("idempotency.skipped_no_identity scope={Scope}", scope);
+            _logger?.LogWarning("idempotency.skipped_no_identity scope={Scope}", LogSafe.Clean(scope));
             return await operation();
         }
 
@@ -143,7 +144,7 @@ public sealed class IdempotencyGuard(DatabasePool pool, ILogger<IdempotencyGuard
 
         if ((string)existing.status == "completed")
         {
-            _logger?.LogInformation("idempotency.replay scope={Scope} key={Key}", scope, key);
+            _logger?.LogInformation("idempotency.replay scope={Scope} key={Key}", LogSafe.Clean(scope), LogSafe.Clean(key));
             return (false, DecodeResult(existing.result));
         }
 
@@ -163,13 +164,13 @@ public sealed class IdempotencyGuard(DatabasePool pool, ILogger<IdempotencyGuard
             {
                 _logger?.LogWarning(
                     "idempotency.reclaimed_stale scope={Scope} key={Key} age_s={Age:F1}",
-                    scope, key, age.TotalSeconds);
+                    LogSafe.Clean(scope), LogSafe.Clean(key), age.TotalSeconds);
                 return (true, null);
             }
         }
 
         _logger?.LogInformation(
-            "idempotency.conflict scope={Scope} key={Key} status={Status}", scope, key, (string)existing.status);
+            "idempotency.conflict scope={Scope} key={Key} status={Status}", LogSafe.Clean(scope), LogSafe.Clean(key), LogSafe.Clean((string)existing.status));
         return (false, new { error = ConflictMessage });
     }
 

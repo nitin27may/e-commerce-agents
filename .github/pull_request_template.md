@@ -16,12 +16,20 @@
 - [ ] Branched off `main` and kept focused to one concern
 - [ ] Tests added or adjusted — every change ships with tests
 - [ ] Docs updated if behaviour changed (`docs/` is the source for the site)
-- [ ] Definition of done passes locally:
+- [ ] Definition of done passes locally (CI gates every line; run what your change touches):
 
 ```bash
 cd agents/python && uv run ruff check . && uv run ruff format --check . && uv run pytest
 cd web && pnpm lint && pnpm exec tsc --noEmit && pnpm test && pnpm build
+cd agents/dotnet && dotnet test ECommerceAgents.sln
+uv run --project tutorials pytest tutorials/ -m "not integration"
+python3 scripts/build_docs_site.py --check
+python3 scripts/check_tutorial_readmes.py --check
+python3 scripts/check_tutorial_coverage.py --check
 ```
+
+- [ ] Changed a prompt, tool schema or tool output? Replay eval smoke re-run with zero
+      fixture misses (recipe in `agents/python/evals/fixtures/README.md`)
 
 ## Stacks affected
 

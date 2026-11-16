@@ -33,6 +33,7 @@ from shared.context import (
 from shared.grounding.ledger import reset_grounding_ledger
 from shared.guardrails.flags import get_guardrail_flags, reset_guardrail_flags
 from shared.replay_client import ReplayFixtureMissingError
+from shared.run_usage import tokens_from_usage
 
 # Agent factory registry — maps eval agent names to their creation functions.
 # Lives here (not in run_evals.py) because ProductionRunner needs it to build
@@ -65,6 +66,12 @@ class RunOutcome:
     # reporting an agent that scored 0 — the ambiguity that let issue #25 sit
     # open across two PRs.
     fixture_missing: bool = False
+    # Schema v2: what each tool was called with (step-shaped: tool_name +
+    # tool_input), and whether the run was refused by role gating / parked for
+    # human approval. All derived from the recorded steps, never from the text.
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    denied: bool = False
+    hitl_requested: bool = False
 
 
 def _create_agent(agent_name: str) -> Any:
@@ -78,6 +85,40 @@ def _create_agent(agent_name: str) -> Any:
 
 def _tools_called(steps: list[dict[str, Any]]) -> list[str]:
     return [s.get("tool_name", "") for s in steps if s.get("tool_name")]
+
+
+def _tool_calls(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [{"tool_name": s["tool_name"], "tool_input": s.get("tool_input")} for s in steps if s.get("tool_name")]
+
+
+def _output_field(step: dict[str, Any], key: str) -> Any:
+    output = step.get("tool_output")
+    return output.get(key) if isinstance(output, dict) else None
+
+
+def _was_denied(steps: list[dict[str, Any]]) -> bool:
+    """A tool refused the call for the caller's role (``shared.guardrails.roles._denial``)."""
+    return any(_output_field(s, "error") == "permission_denied" for s in steps)
+
+
+def _hitl_requested(steps: list[dict[str, Any]]) -> bool:
+    """A step shows a destructive tool parked for approval (``pending_approval`` result).
+
+    Rarely fires on its own: ``HITLFunctionMiddleware`` sits outside
+    ``StepRecorderMiddleware`` and short-circuits before it, so a parked call
+    leaves no step. ``_hitl_rows`` below is the signal that actually sees it.
+    """
+    return any(_output_field(s, "status") == "pending_approval" for s in steps)
+
+
+async def _hitl_rows() -> int | None:
+    """Rows in ``hitl_requests`` (``None`` when there is no database to ask)."""
+    try:
+        from shared.db import get_pool
+
+        return await get_pool().fetchval("SELECT count(*) FROM hitl_requests")
+    except Exception:
+        return None
 
 
 def _routes(steps: list[dict[str, Any]]) -> list[str]:
@@ -110,16 +151,28 @@ class ProductionRunner:
         self.agent_name = agent_name
         self.user_email = user_email
         self.user_role = user_role
-        self._agent: Any = None
+        # Agents bake the caller's role into their composed prompt at construction,
+        # so a per-case role needs its own agent, not the first one built.
+        self._agents: dict[str, Any] = {}
+        self._run_role = user_role
 
-    async def run(self, user_input: str) -> RunOutcome:
-        current_user_email.set(self.user_email)
-        current_user_role.set(self.user_role)
+    async def run(
+        self,
+        user_input: str,
+        *,
+        user_role: str | None = None,
+        user_email: str | None = None,
+    ) -> RunOutcome:
+        """Run one input. ``user_role`` / ``user_email`` override the runner's defaults for this case."""
+        self._run_role = user_role or self.user_role
+        current_user_email.set(user_email or self.user_email)
+        current_user_role.set(self._run_role)
         current_session_id.set("")
         reset_steps()
         reset_grounding_ledger()
         reset_guardrail_flags()
 
+        hitl_rows_before = await _hitl_rows()
         try:
             if self.agent_name == "orchestrator":
                 outcome = await self._run_orchestrator(user_input)
@@ -144,6 +197,13 @@ class ProductionRunner:
             )
 
         outcome.guardrail_flags = get_guardrail_flags()
+        steps = get_steps()
+        outcome.tool_calls = _tool_calls(steps)
+        outcome.denied = _was_denied(steps)
+        hitl_rows_after = await _hitl_rows()
+        outcome.hitl_requested = _hitl_requested(steps) or (
+            hitl_rows_before is not None and hitl_rows_after is not None and hitl_rows_after > hitl_rows_before
+        )
         return outcome
 
     async def _run_orchestrator(self, user_input: str) -> RunOutcome:
@@ -162,23 +222,27 @@ class ProductionRunner:
                 usage = event.payload.get("usage") or {}
 
         steps = get_steps()
+        # run_completed.usage is {total, by_agent}: the orchestrator's calls plus
+        # every specialist's, as reported over A2A.
+        tokens_in, tokens_out = tokens_from_usage(usage)
         return RunOutcome(
             text=text,
             tools_called=_tools_called(steps),
             routes=_routes(steps),
-            tokens_in=usage.get("input_token_count") or 0,
-            tokens_out=usage.get("output_token_count") or 0,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
             grounding=grounding,
         )
 
     async def _run_specialist(self, user_input: str) -> RunOutcome:
         from shared.agent_host import _run_agent_native
 
-        if self._agent is None:
-            self._agent = _create_agent(self.agent_name)
+        agent = self._agents.get(self._run_role)
+        if agent is None:
+            agent = self._agents[self._run_role] = _create_agent(self.agent_name)
 
         metadata_box: dict[str, Any] = {}
-        text = await _run_agent_native(self._agent, user_input, metadata_box=metadata_box)
+        text = await _run_agent_native(agent, user_input, metadata_box=metadata_box)
 
         steps = get_steps()
         usage = metadata_box.get("_maf_usage") or {}

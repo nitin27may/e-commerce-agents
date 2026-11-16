@@ -264,6 +264,60 @@ if [ -n "$GENERATED_SECRETS" ]; then
     info "Tokens issued before this run are no longer valid; sign in again."
 fi
 
+# ── LLM key preflight ────────────────────────────────────────
+# With LLM_PROVIDER=openai or azure and no key, the stack starts and then every
+# answer is an apology. Stop before building or touching volumes, and say how to
+# go on. (--infra-only and --seed-only never call a model.) scripts/dev.ps1
+# mirrors this.
+
+# env_value NAME — the shell's value if set, otherwise the last NAME= line of .env.
+env_value() {
+    local name="$1" value
+    value="${!name:-}"
+    if [ -z "$value" ]; then
+        value="$(grep -E "^${name}=" .env | tail -n 1 | cut -d= -f2- || true)"
+    fi
+    value="${value%$'\r'}"
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    value="${value#\"}"; value="${value%\"}"
+    value="${value#\'}"; value="${value%\'}"
+    printf '%s' "$value"
+}
+
+# A key that is unset, empty or still the .env.example placeholder is no key.
+has_llm_key() {
+    local value="$1"
+    [ -n "$value" ] && [ "$value" != "sk-your-openai-api-key-here" ]
+}
+
+if [ "$INFRA_ONLY" != true ] && [ "$SEED_ONLY" != true ]; then
+    LLM_PROVIDER_VALUE="$(env_value LLM_PROVIDER | tr '[:upper:]' '[:lower:]')"
+    LLM_PROVIDER_VALUE="${LLM_PROVIDER_VALUE:-openai}"
+    LLM_KEY_MISSING=false
+    case "$LLM_PROVIDER_VALUE" in
+        openai)
+            has_llm_key "$(env_value OPENAI_API_KEY)" || LLM_KEY_MISSING=true
+            ;;
+        azure)
+            if ! has_llm_key "$(env_value AZURE_OPENAI_KEY)" && ! has_llm_key "$(env_value AZURE_OPENAI_API_KEY)"; then
+                LLM_KEY_MISSING=true
+            fi
+            ;;
+    esac
+    if [ "$LLM_KEY_MISSING" = true ]; then
+        error "LLM_PROVIDER=${LLM_PROVIDER_VALUE} but no API key is set, so every answer would fail."
+        echo ""
+        echo "  Two ways forward:"
+        echo "    1. Add your key to .env (OPENAI_API_KEY, or AZURE_OPENAI_KEY for LLM_PROVIDER=azure),"
+        echo "       then run this again."
+        echo "    2. Set LLM_PROVIDER=replay in .env to play back recorded model responses with no key."
+        echo "       Only the recorded demo prompts answer; anything else says it was not recorded."
+        echo ""
+        exit 1
+    fi
+fi
+
 # ── Clean (if requested) ─────────────────────────────────────
 
 if [ "$CLEAN" = true ]; then
@@ -376,33 +430,21 @@ if ! "${COMPOSE[@]}" exec -T db sh -c 'PGPASSWORD=ecommerce_secret psql -h 127.0
     success "Database reinitialized with correct credentials"
 fi
 
-# Verify the SCHEMA matches, not just the credentials.
+# Bring the SCHEMA up to date, not just the credentials.
 #
 # A volume can authenticate perfectly and still carry a schema from before the
-# last init.sql change. That is the more common way to land here — pulling new
-# commits and restarting the same stack, rather than switching stacks — and it
-# is far nastier than an auth failure, because nothing errors. Search just
-# quietly returns nothing and the agent says "I couldn't find any", which reads
-# like an empty catalogue rather than a broken index.
-#
-# products.search_vector is the canary: it arrived with the v1.2.0 full-text
-# search work, so any volume predating that lacks it. Hardcoded on purpose —
-# deriving the check from init.sql would be clever and would drift.
-if ! "${COMPOSE[@]}" exec -T db sh -c 'PGPASSWORD=ecommerce_secret psql -h 127.0.0.1 -U ecommerce -d ecommerce_agents -tAc "SELECT 1 FROM information_schema.columns WHERE table_name = '"'"'products'"'"' AND column_name = '"'"'search_vector'"'"'"' 2>/dev/null | grep -q 1; then
+# last change; nothing errors, search just quietly returns nothing. Schema
+# changes are numbered migrations now (docker/postgres/migrations, applied by
+# scripts/migrate.py on top of the frozen init.sql baseline), so an old volume
+# is upgraded in place, keeping its data. The seeder runs the same step again
+# (idempotent) before it seeds.
+step "Applying database migrations"
+if ! "${COMPOSE[@]}" --profile seed run --rm seeder uv run --no-project python -m scripts.migrate; then
     echo ""
-    warn "Database schema is out of date — products.search_vector is missing."
+    warn "Schema migration failed — see the output above."
     echo ""
-    echo "  Your Postgres volume predates the full-text search change. The stack will"
-    echo "  start and look healthy, and every product search will silently return"
-    echo "  nothing. Refusing to start into that."
-    echo ""
-    echo "  Two ways forward:"
-    echo ""
-    echo "    Recreate the volume (loses local data, reseeds from scratch):"
+    echo "  If the volume is disposable, recreate it (loses local data, reseeds):"
     echo "      ./scripts/dev.sh --clean"
-    echo ""
-    echo "    Or apply the schema in place, keeping your data:"
-    echo "      docker compose exec -T db psql -U ecommerce -d ecommerce_agents < docker/postgres/init.sql"
     echo ""
     exit 1
 fi
@@ -428,12 +470,12 @@ fi
 step "Starting agents and frontend"
 "${COMPOSE[@]}" "${RUN_PROFILES[@]}" up -d
 
-wait_for_http "Orchestrator"      "http://localhost:8080/health"
-wait_for_http "Product Discovery" "http://localhost:8081/health"
-wait_for_http "Order Management"  "http://localhost:8082/health"
-wait_for_http "Pricing & Promos"  "http://localhost:8083/health"
-wait_for_http "Review & Sentim."  "http://localhost:8084/health"
-wait_for_http "Inventory & Ful."  "http://localhost:8085/health"
+wait_for_http "Orchestrator"      "http://localhost:8080/ready"
+wait_for_http "Product Discovery" "http://localhost:8081/ready"
+wait_for_http "Order Management"  "http://localhost:8082/ready"
+wait_for_http "Pricing & Promos"  "http://localhost:8083/ready"
+wait_for_http "Review & Sentim."  "http://localhost:8084/ready"
+wait_for_http "Inventory & Ful."  "http://localhost:8085/ready"
 
 success "All agents are running"
 

@@ -1,7 +1,9 @@
+using ECommerceAgents.Shared.Logging;
 using Dapper;
 using ECommerceAgents.Orchestrator.Modes;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
+using ECommerceAgents.Shared.Cost;
 using ECommerceAgents.Shared.Data;
 using ECommerceAgents.Shared.Grounding;
 using ECommerceAgents.Shared.Orchestration;
@@ -166,6 +168,7 @@ public static class ChatRoutes
         {
             var response = await agent.RunAsync(BuildMessages(ctx.History));
             responseText = response.Text;
+            RequestContext.RecordUsage("orchestrator", SpecialistUsage.From(response.Usage, settings.LlmModel));
         }
         sw.Stop();
 
@@ -342,6 +345,11 @@ public static class ChatRoutes
         {
             await foreach (var update in agent.RunStreamingAsync(BuildMessages(ctx.History), cancellationToken: abort))
             {
+                foreach (var content in update.Contents.OfType<UsageContent>())
+                {
+                    RequestContext.RecordUsage("orchestrator", SpecialistUsage.From(content.Details, settings.LlmModel));
+                }
+
                 if (string.IsNullOrEmpty(update.Text))
                 {
                     continue;
@@ -511,7 +519,7 @@ public static class ChatRoutes
             // tear a finished reply. But a swallowed failure means a paused refund with
             // no way to approve it, so it is logged loudly rather than absorbed.
             loggers.CreateLogger("hitl").LogError(ex,
-                "hitl.link_failed run={UsageLogId} session={SessionId}", usageLogId, modeResult?.SessionId);
+                "hitl.link_failed run={UsageLogId} session={SessionId}", usageLogId, LogSafe.Clean(modeResult?.SessionId));
         }
     }
 
@@ -525,21 +533,18 @@ public static class ChatRoutes
     /// callers — the .NET twin of Python's <c>rate_limit_chat</c> FastAPI
     /// dependency (<c>orchestrator/routes/chat.py</c>).
     /// </summary>
-    private sealed class ChatRateLimitFilter(SlidingWindowRateLimiter limiter) : IEndpointFilter
+    internal sealed class ChatRateLimitFilter(SlidingWindowRateLimiter limiter, AgentSettings settings) : IEndpointFilter
     {
         public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
         {
             var http = context.HttpContext;
 
-            // X-Forwarded-For is trusted only because every deployment of this
-            // repo puts the orchestrator behind its own proxy or is reached
-            // directly; a production deployment behind an untrusted proxy chain
-            // would need a configured trusted-proxy list. Same caveat Python's
-            // _client_ip carries.
-            var forwarded = http.Request.Headers["X-Forwarded-For"].FirstOrDefault();
-            var ip = string.IsNullOrWhiteSpace(forwarded)
-                ? http.Connection.RemoteIpAddress?.ToString()
-                : forwarded.Split(',')[0].Trim();
+            // Only the entry our own proxy appended is believed (right-most after
+            // RATE_LIMIT_TRUSTED_PROXY_HOPS); see ClientAddress.
+            var ip = ClientAddress.Resolve(
+                http.Request.Headers["X-Forwarded-For"].FirstOrDefault(),
+                http.Connection.RemoteIpAddress,
+                settings.RateLimitTrustedProxyHops);
 
             var key = SlidingWindowRateLimiter.KeyFor(RequestContext.CurrentUserEmail, ip);
             if (!await limiter.TryAcquireAsync(key, http.RequestAborted))
@@ -810,12 +815,22 @@ public static class ChatRoutes
             );
         }
 
+        // The orchestrator's own tokens plus every specialist's, as reported over A2A.
+        var total = RequestContext.CurrentRunUsage.Total();
+        // Same for every mode: a mode that makes no LLM call writes an explicit 0 cost, one that
+        // reported nothing writes NULL (CostEstimator.SummarizeRun).
+        var columns = CostEstimator.SummarizeRun(RequestContext.CurrentRunUsage, modeResult?.NoLlmCalls == true);
         var usageLogId = await usage.LogAgentUsageAsync(
             ctx.UserId,
             "orchestrator",
             inputSummary: userMessage,
+            tokensIn: (int)Math.Min(total?.InputTokenCount ?? 0, int.MaxValue),
+            tokensOut: (int)Math.Min(total?.OutputTokenCount ?? 0, int.MaxValue),
             durationMs: durationMs,
-            toolCallsCount: agentsInvolved.Count - 1
+            toolCallsCount: agentsInvolved.Count - 1,
+            model: columns.Model,
+            tokensCachedIn: columns.TokensCachedIn,
+            costUsd: columns.CostUsd
         );
 
         // Issue #16: persist this turn's agentic-timeline steps —
@@ -846,7 +861,7 @@ public static class ChatRoutes
             loggers.CreateLogger("hitl").LogError(
                 "hitl.orphaned_pause session={SessionId} checkpoint={CheckpointId} request={RequestId} — "
                     + "no usage_logs row, so no approval can be surfaced for it",
-                modeResult.SessionId, modeResult.LatestCheckpointId, modeResult.RequestId);
+                LogSafe.Clean(modeResult.SessionId), LogSafe.Clean(modeResult.LatestCheckpointId), LogSafe.Clean(modeResult.RequestId));
         }
 
         return null;

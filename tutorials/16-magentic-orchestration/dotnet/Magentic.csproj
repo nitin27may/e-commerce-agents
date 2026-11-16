@@ -8,13 +8,12 @@
     <RootNamespace>MafV1.Ch16.Magentic</RootNamespace>
     <AssemblyName>Magentic</AssemblyName>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
   </PropertyGroup>
 
   <!--
-    No Microsoft.Agents.AI.Workflows reference — Magentic orchestration is
-    not yet supported in C# (package 1.1.0). This project is an informational
-    stub; add the workflow packages when MagenticBuilder lands for .NET.
+    No Microsoft.Agents.AI.Workflows reference in the stub itself. Magentic
+    shipped for .NET in Workflows 1.28 (MagenticWorkflowBuilder); this project
+    is an informational stub until the chapter is ported.
   -->
 
   <!-- Exclude the test project's sources from the main build; the test project owns them. -->

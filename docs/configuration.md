@@ -140,6 +140,47 @@ URL before the infrastructure that assigns it existed. `NEXT_PUBLIC_API_URL` is 
 `web/src/lib/api.ts` as an escape hatch for calling an orchestrator directly, which works and
 brings CORS back with it.
 
+### Browser-facing edge: CORS, client address, rate limits
+
+- **CORS.** `CORS_ALLOWED_ORIGINS` (comma-separated, default `http://localhost:3000`) on both
+  orchestrators; credentials are never allowed (auth is a Bearer header). The web app goes through
+  its same-origin proxy and needs nothing; set it only when a browser calls the orchestrator
+  directly (`NEXT_PUBLIC_API_URL`). `curl`, scripts, evals and Playwright's `request` are not
+  subject to CORS.
+- **Auth rate limits.** Signup, login and refresh have their own buckets, separate from chat, in two
+  layers so one caller cannot starve the others. The tight budget, `RATE_LIMIT_AUTH_MAX_REQUESTS` (10)
+  per `RATE_LIMIT_AUTH_WINDOW_SECONDS` (60), is per **(client address, target email)** for login and
+  signup — one target cannot be brute-forced, yet a script hammering one account leaves every other
+  account's login alone — and per **user** for refresh, read from the verified token (an invalid or
+  expired token never reaches it; opaque OAuth-mode tokens are keyed by their own digest). Over all
+  three routes sits a much looser address-only ceiling, `RATE_LIMIT_AUTH_IP_MAX_REQUESTS` (300 per
+  window), which is what actually bounds a single flooding source. Emails and subjects are hashed
+  before they become Redis keys and are never logged. Chat, `/api/orchestration/compare` and
+  `/resume` use the chat bucket. All fail open (with an error log) when Redis is down. The web client
+  treats only a 401/403 from refresh as a dead session; a 429, 5xx or network error keeps the user
+  signed in and surfaces a retryable error. Local Playwright runs log in repeatedly as a few accounts
+  from one address, so raise both limits (e.g. 1000 and 10000) in `.env` before running them.
+- **Client address.** The orchestrator takes the entry `RATE_LIMIT_TRUSTED_PROXY_HOPS` (default 1)
+  places from the **right** of `X-Forwarded-For`; anything to its left is caller-supplied and ignored.
+  The Next proxy writes that entry. **Limitation:** a Next 16 route handler cannot know the client
+  address — `NextRequest.ip` was removed in 15 and the socket is not exposed; Next only fills
+  `X-Forwarded-For` from the socket when the header is absent, so a browser-supplied value is
+  indistinguishable from a real one (and behind Docker's published port the socket is the bridge
+  gateway anyway). The proxy therefore strips the browser's `X-Forwarded-For`/`X-Real-IP`/`Forwarded`
+  and forwards an address only when `WEB_TRUSTED_PROXY_HOPS` (default 0) says that many proxies you
+  run sit in front of Next and append to the header. With the default, no address is forwarded and
+  the orchestrator sees the frontend container: **all anonymous callers share one address-level auth
+  ceiling and one chat bucket** (the per-account and per-user auth budgets are unaffected). Behind a load balancer or ingress that appends the client address, set
+  `WEB_TRUSTED_PROXY_HOPS=1` (the orchestrator's default of 1 then needs no change). The orchestrator
+  port is published **loopback-only** (`127.0.0.1:8080`) in all three compose files, like the specialists, so
+  the only way to reach it from another machine is through the frontend, whose proxy writes the
+  trusted entry. Were :8080 published on all interfaces, any caller could send their own
+  `X-Forwarded-For` and pick their rate-limit bucket (or a victim's). Consequence: `localhost:8080`
+  from the host (dev scripts, Playwright, `scripts/compose-smoke.sh`) works unchanged, but a LAN
+  address, or a devcontainer / remote-IDE port forward that targets the host's external interface,
+  no longer reaches it. Forward `127.0.0.1:8080` instead, or put your own authenticated reverse proxy in
+  front (and set `RATE_LIMIT_TRUSTED_PROXY_HOPS` to match). The frontend stays on `3000:3000`.
+
 ### 4. The .NET stack — containers yes, host no
 
 `docker-compose.dotnet.yml` interpolates from the same root `.env` in exactly the same way, so the
@@ -152,6 +193,184 @@ Running .NET on the host (`dotnet run`) reads environment variables and `appsett
 set -a && source .env && set +a      # bash/zsh
 dotnet run --project agents/dotnet/src/ECommerceAgents.Orchestrator
 ```
+
+## Choosing the OpenAI wire API (`LLM_API`)
+
+`LLM_PROVIDER=openai` talks to the endpoint in `LLM_BASE_URL` (default: api.openai.com). By default
+the Python stack uses OpenAI's **Responses API** (`POST /responses`). Many OpenAI-compatible
+servers implement only **Chat Completions** (`POST /chat/completions`) and answer `/responses`
+with a 404. Set:
+
+```dotenv
+LLM_PROVIDER=openai
+LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/   # e.g. Gemini
+LLM_API=chat_completions
+```
+
+| `LLM_API` | Client | Request path | Notes |
+|---|---|---|---|
+| `responses` (default) | `OpenAIChatClient` | `/responses` | Unchanged behaviour; replay fixtures are not affected |
+| `chat_completions` | `OpenAIChatCompletionClient` | `/chat/completions` | For endpoints with no Responses route |
+
+It applies to `LLM_PROVIDER=openai` only — `azure` is always Chat Completions, and `replay` serves
+recorded fixtures. With `RECORD=true`, the recorder uses the same switch, so a fixture recorded
+against a Chat-Completions-only endpoint is requested the way that endpoint accepts. The .NET
+stack always uses Chat Completions and has no such setting. All three compose files forward
+`LLM_BASE_URL` to the agents, and the two that run the Python stack forward `LLM_API` as well, so
+the setting works the same in a container as it does for host-run Python.
+
+## Choosing a model per agent (`model:` in the prompt YAML)
+
+By default every agent uses the one model in `LLM_MODEL` (or `AZURE_OPENAI_DEPLOYMENT`). Any
+agent can override it with an optional `model:` block in its own
+`agents/python/config/prompts/<agent>.yaml` — the files the .NET stack reads too:
+
+```yaml
+# agents/python/config/prompts/orchestrator.yaml
+model:
+  model: gpt-4.1-mini     # routing is a cheap decision
+  temperature: 0.0
+# agents/python/config/prompts/pricing-promotions.yaml
+model:
+  model: gpt-4.1          # arithmetic and policy reasoning deserve the stronger model
+```
+
+All three keys are optional; anything left out falls back to the global setting.
+
+| Key | Meaning |
+|---|---|
+| `provider` | `openai` or `azure`. Defaults to `LLM_PROVIDER`. A different provider needs that provider's own credentials (`OPENAI_API_KEY`, or the three `AZURE_OPENAI_*` variables); the global `LLM_BASE_URL` is never inherited by an agent that switches *to* `openai` |
+| `model` | Model id (`openai`) or deployment name (`azure`) |
+| `temperature` | 0–2; replaces `LLM_TEMPERATURE` for this agent |
+
+Agent names are the file stems: `orchestrator`, `handoff-triage` (the handoff mode's triage
+agent), `product-discovery`, `order-management`, `pricing-promotions`, `review-sentiment`,
+`inventory-fulfillment`. Other agents' files are untouched.
+
+- **No shipped file has a `model:` block.** The mechanism is off until you add one, so behaviour,
+  scores and replay fixtures are exactly as before.
+- **The block never reaches the model.** `load_prompt` composes only `system_prompt`, and replay
+  fixtures are keyed by the instructions, so the composed prompt is byte-identical with or without
+  it (a test proves it).
+- **Validated at startup.** An unknown key, unknown provider or out-of-range temperature stops the
+  service at startup with a message naming the file. (`anthropic` is a valid provider on the .NET
+  stack only; see [parity-matrix.md](parity-matrix.md).)
+- **Replay ignores it.** Under `LLM_PROVIDER=replay` the replay client answers regardless of model.
+- **Cost.** A response that names the model it served is priced as that model. Where it names none,
+  pricing falls back to the model the agent's client was built with (`current_agent_model`), then
+  to the global setting. A model absent from `shared/cost.py`'s table is priced at the default
+  entry and logged once. On .NET, cost uses the model the provider reports and otherwise the global
+  `LLM_MODEL`; the per-agent model is not yet threaded through the .NET cost fallback.
+
+A model change is a recording-session event for replay evals only if you also want the fixtures to
+reflect that model's answers; the replay key ignores the model.
+
+## Anthropic (Claude) — .NET stack only
+
+```dotenv
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_MODEL=claude-sonnet-5-5     # default. Others: claude-opus-5-5, claude-haiku-5-5
+```
+
+| | |
+|---|---|
+| Stacks | **.NET only.** The Python stack rejects `LLM_PROVIDER=anthropic` with a message saying so: its connector (`agent-framework-anthropic`) is beta-only and needs MAF core ≥ 1.24, and the repo is on 1.22 (a later step, tracked in [parity-matrix.md](parity-matrix.md) row 33) |
+| Client | The official [`Anthropic`](https://www.nuget.org/packages/Anthropic) NuGet package (13.8.0), through its `IChatClient` adapter in `ChatClientFactory`. It needs `Microsoft.Extensions.AI.Abstractions` ≥ 10.5.1; the solution resolves 10.11.0, so nothing was bumped |
+| Key | Required when selected; startup fails naming `ANTHROPIC_API_KEY` (never its value). The SDK sends it as `Authorization: Bearer` |
+| Model | `ANTHROPIC_MODEL`, **not** `LLM_MODEL` — the compose files forward `LLM_MODEL` with a `gpt-4.1` default that Anthropic would reject |
+| Output length | Claude's API requires `max_tokens`; the adapter applies 4096 when a request sets none |
+| Per-agent | `provider: anthropic` is valid in an agent's `model:` block ([above](#choosing-a-model-per-agent-model-in-the-prompt-yaml)); an agent moving from anthropic to `openai` must name its `model` |
+| Embeddings | **Anthropic has no embeddings API.** With this provider semantic search is unavailable until a separate embedding provider is configured ([below](#embeddings-are-configured-separately)); the stack still starts, logs what is missing, and product search falls back to full-text |
+| Cost | The repo documents no Claude prices, so none were invented: Claude models are **unpriced**, and the cost module logs one fixed line and estimates at its default (gpt-4.1) entry. Treat cost figures as meaningless for Claude until a maintainer adds the entries from Anthropic's pricing page |
+| Tested | A stub-`HttpMessageHandler` test: request shape, a canned `tool_use` → tool execution → `tool_result` follow-up, and usage mapping. It does **not** prove tool-choice quality, prompt caching, real error shapes (rate limits, overload, bad key) or streaming edge cases, and it has never run against the live API |
+
+## Embeddings are configured separately
+
+Semantic search needs an embedding model. It used to follow `LLM_PROVIDER` and assume 1536
+dimensions everywhere. It is now its own setting group — which also matters for providers with no
+embeddings API (Claude), and for running chat and embeddings on different endpoints.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `EMBEDDING_PROVIDER` | empty = follow `LLM_PROVIDER` | `openai`, `azure`, `openai_compatible` (any `/embeddings` endpoint: Ollama, vLLM, LM Studio) or `replay` (offline hashing vectors) |
+| `EMBEDDING_BASE_URL` | empty | Endpoint for embeddings only. Required for `openai_compatible`. Following `openai`, empty falls back to `LLM_BASE_URL` as before; an explicit `EMBEDDING_PROVIDER=openai` means api.openai.com |
+| `EMBEDDING_API_KEY` | empty | Replaces `OPENAI_API_KEY` (or the Azure key) for embeddings only. `openai_compatible` needs none. Whenever `EMBEDDING_BASE_URL` is set, the chat key is never sent to that host: it receives `EMBEDDING_API_KEY`, or the placeholder `not-needed` when that is empty |
+| `EMBEDDING_MODEL` | `text-embedding-3-small` | Model, or the Azure deployment when `AZURE_EMBEDDING_DEPLOYMENT` is set |
+| `EMBEDDING_DIM` | `1536` | Width of every vector. Must equal the `vector(N)` columns — see below |
+
+With none of these set, nothing changes: embeddings follow the chat provider, 1536 dimensions.
+`dimensions=EMBEDDING_DIM` is sent to the models that accept it (OpenAI's `text-embedding-3-*`);
+for any other model a vector of the wrong size is refused with a message instead of reaching the
+database. Under `LLM_PROVIDER=replay` the offline vectors are 1536 wide unless `EMBEDDING_DIM` says
+otherwise.
+
+**The dimension is a database property.** `product_embeddings.embedding` and
+`agent_memories.embedding` are `vector(1536)` in the frozen baseline (`init.sql`), and changing a
+vector column destroys the stored vectors — so it is an explicit operator action, not a migration:
+
+```bash
+uv run --project agents/python python scripts/reset_embeddings.py --dim 768
+```
+
+It truncates `product_embeddings`, clears (does not delete) `agent_memories.embedding` — the memory
+rows hold what users told the agents, and nothing writes that column today — retypes both columns
+and rebuilds the ivfflat index, in one transaction. It refuses anything over 2000 dimensions, which
+pgvector cannot index: ask the API for fewer with `dimensions=` (text-embedding-3-large defaults to
+3072 but accepts 1536), or store `halfvec`, which the script does not do. Afterwards set
+`EMBEDDING_DIM` to match and re-embed (the seeder, or `scripts.generate_embeddings`).
+
+**Fail fast.** The product-discovery agent, the seeder and `generate_embeddings` compare
+`EMBEDDING_DIM` with the real column types (`atttypmod`) at startup and stop with a message naming
+the fix when they differ; the .NET product-discovery service does the same. Migration
+`0008_embedding_model.sql` adds `product_embeddings.embedding_model`, which the seeder's loader and
+`generate_embeddings` fill so you can tell which model wrote a vector (`replay-hashing-vectorizer`
+for offline ones). The precomputed `product_embeddings.v1.jsonl.gz` is only loaded when its header
+model equals `EMBEDDING_MODEL` and its width equals `EMBEDDING_DIM`.
+
+### Local embeddings with Ollama (documented, not exercised here)
+
+```dotenv
+EMBEDDING_PROVIDER=openai_compatible
+EMBEDDING_BASE_URL=http://localhost:11434/v1      # http://host.docker.internal:11434/v1 in containers
+EMBEDDING_MODEL=nomic-embed-text                  # `ollama pull nomic-embed-text`
+EMBEDDING_DIM=768
+```
+
+then `scripts/reset_embeddings.py --dim 768` and `generate_embeddings` as above. This path is
+documented but **has not been run**: it needs a reachable Ollama, and the build environment had
+none. What is tested is everything around it — client construction for `openai_compatible`, the
+width checks, the reset script and the startup check against a real Postgres.
+
+## Per-run cost ceiling (`COST_BUDGET_*`)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `COST_BUDGET_MODE` | `observe` | `off` attaches nothing; `observe` estimates and logs each run and counts a turn past the ceiling as `cost_budget.would_block`, never refusing; `enforce` refuses the next LLM turn once a run's estimated cost passes the ceiling |
+| `COST_BUDGET_USD_PER_RUN` | `0.50` in `.env.example` and the three compose files; unset in code | USD ceiling for one run. With no value, even `enforce` refuses nothing |
+
+`0.50` is a demo default, large enough for a normal turn and small enough to catch a runaway
+agent loop. The mode stays `observe`: watch `cost_budget.would_block` (see
+[telemetry.md](telemetry.md#cost-and-usage)) before choosing `enforce`. The figure is an
+estimate from a hand-maintained price table, not a bill.
+
+## Outbox worker (`OUTBOX_*`)
+
+The `outbox-worker` service (`python -m worker.main`) drains the `outbox` table. See
+[Approvals](approvals.md#the-outbox-worker-sla-and-notifications). Compose passes the first five
+through; the rest are read from `.env` by host-run Python.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `OUTBOX_WORKER_ENABLED` | `true` | `false` keeps the process up and idle: it drains nothing, so no reminders, escalations or timeouts happen |
+| `OUTBOX_POLL_INTERVAL_SECONDS` | `2` | Sleep between polls when the table has nothing due |
+| `OUTBOX_BATCH_SIZE` | `10` | Rows claimed per tick |
+| `OUTBOX_MAX_ATTEMPTS` | `8` | Tries before a failing row is parked (`outbox.failed_at`) |
+| `OUTBOX_LEASE_SECONDS` | `120` | How long a claimed row stays owned; a crashed worker's rows are retaken after it. Also the hard timeout of one handler |
+| `OUTBOX_BACKOFF_BASE_SECONDS` | `5` | Retry delay is `base * 2^(attempts-1)` |
+| `OUTBOX_BACKOFF_MAX_SECONDS` | `600` | Ceiling on that delay |
+| `OUTBOX_WORKER_HEARTBEAT_FILE` | `/tmp/outbox-worker.heartbeat` | Touched every loop; the container healthcheck reads its age |
+| `APPROVAL_REMINDER_FRACTION` | `0.5` | The reminder fires this fraction of the way through an approval's `sla_hours` |
 
 ## One stack at a time
 

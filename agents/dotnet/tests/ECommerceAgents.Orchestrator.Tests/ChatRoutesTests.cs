@@ -273,6 +273,35 @@ public sealed class ChatRoutesTests : IAsyncLifetime
         status.Should().Be("success");
     }
 
+    [Theory]
+    [InlineData("/api/chat")]
+    [InlineData("/api/chat/stream")]
+    public async Task Chat_LogsOrchestratorAndSpecialistTokensTogether(string endpoint)
+    {
+        // The orchestrator's own LLM call reports 1000/50; "during" it a specialist
+        // call records 120/30, exactly as A2AClient does when it reads the specialist's
+        // `usage` field / `event: usage` frame (OnCall runs inside the request scope).
+        var chat = new FakeChatClient
+        {
+            Usage = new UsageDetails { InputTokenCount = 1000, OutputTokenCount = 50 },
+            OnCall = () => RequestContext.RecordUsage(
+                "product-discovery", new SpecialistUsage(120, 30, 100, "gpt-4.1")),
+        }.EnqueueResponse("answer");
+        using var client = ClientFor(chat);
+
+        var response = await client.PostAsJsonAsync(endpoint, new { message = "price of the XM5?" });
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadAsStringAsync();
+
+        await using var conn = await _pool.OpenAsync();
+        var row = await conn.QuerySingleAsync<(int TokensIn, int TokensOut)>(
+            "SELECT tokens_in AS TokensIn, tokens_out AS TokensOut FROM usage_logs WHERE agent_name = 'orchestrator'");
+        row.Should().Be((1120, 80));
+
+        // Accounting only: nothing of it reaches the browser.
+        body.Should().NotContain("input_token_count").And.NotContain("event: usage");
+    }
+
     // ─────────────────────── streaming chat ──────────────────
 
     [Fact]

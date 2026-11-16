@@ -23,11 +23,7 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-# Import from the concrete submodule rather than the package root: the
-# agent-framework v1.0 beta ships an empty __init__ that patch_maf.py re-exports
-# only inside the Docker image, so the top-level names aren't importable in a
-# plain checkout (e.g. local tests). The submodule path is stable.
-from agent_framework._middleware import FunctionInvocationContext, FunctionMiddleware
+from agent_framework import FunctionInvocationContext, FunctionMiddleware
 
 from shared.context import current_steps
 

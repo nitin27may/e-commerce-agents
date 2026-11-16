@@ -72,6 +72,13 @@ for stack in "${STACKS[@]}"; do
   teardown "$(compose_file_for python)"
   teardown "$(compose_file_for dotnet)"
 
+  # Every spec logs in from the same address, and at the default
+  # WEB_TRUSTED_PROXY_HOPS=0 the proxy forwards no client address, so the whole
+  # run shares one auth rate-limit bucket (10 per minute by default). Raise it
+  # for the test stack only; compose passes it through to the orchestrator.
+  export RATE_LIMIT_AUTH_MAX_REQUESTS="${RATE_LIMIT_AUTH_MAX_REQUESTS:-1000}"
+  export RATE_LIMIT_AUTH_IP_MAX_REQUESTS="${RATE_LIMIT_AUTH_IP_MAX_REQUESTS:-10000}"
+
   echo "--- starting stack"
   if ! docker compose -f "$file" --profile seed --profile agents --profile mcp --profile frontend up -d --build; then
     echo "!!! $stack failed to start" >&2

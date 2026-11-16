@@ -18,9 +18,7 @@ async def _get_or_create_cart(conn, user_id: str) -> str:
     cart = await conn.fetchrow("SELECT id FROM carts WHERE user_id = $1", user_id)
     if cart:
         return str(cart["id"])
-    row = await conn.fetchrow(
-        "INSERT INTO carts (user_id) VALUES ($1) RETURNING id", user_id
-    )
+    row = await conn.fetchrow("INSERT INTO carts (user_id) VALUES ($1) RETURNING id", user_id)
     return str(row["id"])
 
 
@@ -62,7 +60,12 @@ async def _resolve_product(conn, product_id: str) -> dict | None:
     return {"matches": [dict(r) for r in rows]}
 
 
-@tool(name="add_to_cart", description="Add a product to the user's shopping cart. If the product is already in the cart, the quantity is increased.")
+@tool(
+    name="add_to_cart",
+    description=(
+        "Add a product to the user's shopping cart. If the product is already in the cart, the quantity is increased."
+    ),
+)
 async def add_to_cart(
     product_id: Annotated[str, Field(description="UUID of the product to add")],
     quantity: Annotated[int, Field(description="Quantity to add (default 1)")] = 1,
@@ -90,8 +93,7 @@ async def add_to_cart(
             return {
                 "error": (
                     f"Multiple products match '{product_id}'. Ask the user which one, "
-                    "or call search_products for full details. Candidates: "
-                    + "; ".join(names)
+                    "or call search_products for full details. Candidates: " + "; ".join(names)
                 ),
             }
         if not product["is_active"]:
@@ -107,7 +109,9 @@ async def add_to_cart(
                ON CONFLICT (cart_id, product_id)
                DO UPDATE SET quantity = cart_items.quantity + EXCLUDED.quantity
                RETURNING quantity""",
-            uuid.UUID(cart_id), resolved_product_id, quantity,
+            uuid.UUID(cart_id),
+            resolved_product_id,
+            quantity,
         )
 
         return {
@@ -226,7 +230,8 @@ async def remove_from_cart(
                USING products p
                WHERE ci.cart_id = $1 AND ci.product_id = $2 AND p.id = ci.product_id
                RETURNING p.name""",
-            cart["id"], product["id"],
+            cart["id"],
+            product["id"],
         )
         if not deleted:
             return {"error": f"Product '{product['name']}' not found in cart"}
@@ -238,7 +243,10 @@ async def remove_from_cart(
         }
 
 
-@tool(name="update_cart_quantity", description="Update the quantity of a product in the user's cart. If quantity is 0 or less, the item is removed.")
+@tool(
+    name="update_cart_quantity",
+    description="Update the quantity of a product in the user's cart. If quantity is 0 or less, the item is removed.",
+)
 async def update_cart_quantity(
     product_id: Annotated[str, Field(description="UUID of the product to update")],
     quantity: Annotated[int, Field(description="New quantity for the product")],
@@ -273,7 +281,8 @@ async def update_cart_quantity(
                    USING products p
                    WHERE ci.cart_id = $1 AND ci.product_id = $2 AND p.id = ci.product_id
                    RETURNING p.name""",
-                cart["id"], resolved_pid,
+                cart["id"],
+                resolved_pid,
             )
             if not deleted:
                 return {"error": f"Product '{product['name']}' not found in cart"}
@@ -291,7 +300,9 @@ async def update_cart_quantity(
                FROM products p
                WHERE ci.cart_id = $1 AND ci.product_id = $2 AND p.id = ci.product_id
                RETURNING p.name, p.price, ci.quantity""",
-            cart["id"], resolved_pid, quantity,
+            cart["id"],
+            resolved_pid,
+            quantity,
         )
         if not updated:
             return {"error": f"Product '{product['name']}' not found in cart"}
@@ -342,7 +353,8 @@ async def set_shipping_address(
             """UPDATE carts
                SET shipping_address = $2, updated_at = NOW()
                WHERE id = $1""",
-            uuid.UUID(cart_id), json.dumps(address),
+            uuid.UUID(cart_id),
+            json.dumps(address),
         )
 
         return {
@@ -387,7 +399,8 @@ async def set_billing_address(
             """UPDATE carts
                SET billing_address = $2, billing_same_as_shipping = FALSE, updated_at = NOW()
                WHERE id = $1""",
-            uuid.UUID(cart_id), json.dumps(address),
+            uuid.UUID(cart_id),
+            json.dumps(address),
         )
 
         return {
@@ -397,7 +410,9 @@ async def set_billing_address(
         }
 
 
-@tool(name="set_billing_same_as_shipping", description="Set the billing address to be the same as the shipping address.")
+@tool(
+    name="set_billing_same_as_shipping", description="Set the billing address to be the same as the shipping address."
+)
 async def set_billing_same_as_shipping() -> dict:
     email = current_user_email.get()
     if not email:
@@ -514,7 +529,11 @@ async def apply_coupon_to_cart(
         # Check min spend
         min_spend = float(coupon["min_spend"]) if coupon["min_spend"] else 0
         if subtotal < min_spend:
-            return {"error": f"Cart subtotal (${subtotal:.2f}) does not meet minimum spend of ${min_spend:.2f} for this coupon."}
+            return {
+                "error": (
+                    f"Cart subtotal (${subtotal:.2f}) does not meet minimum spend of ${min_spend:.2f} for this coupon."
+                )
+            }
 
         # Calculate discount
         discount_value = float(coupon["discount_value"])
@@ -536,7 +555,9 @@ async def apply_coupon_to_cart(
             """UPDATE carts
                SET coupon_code = $2, discount_amount = $3, updated_at = NOW()
                WHERE id = $1""",
-            cart["id"], coupon["code"], discount,
+            cart["id"],
+            coupon["code"],
+            discount,
         )
 
         # Increment usage counter

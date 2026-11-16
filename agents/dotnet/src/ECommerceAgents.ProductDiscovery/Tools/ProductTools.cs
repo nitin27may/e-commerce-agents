@@ -1,3 +1,4 @@
+using ECommerceAgents.Shared.Logging;
 using ECommerceAgents.Shared.Tools;
 using Dapper;
 using ECommerceAgents.Shared.Agents;
@@ -283,12 +284,51 @@ public sealed class ProductTools(DatabasePool pool, IEmbeddingProvider embedding
         [Description("Max results")] int limit = 5
     )
     {
-        var vectorText = await EmbedAsync(query);
+        // If the embedding call fails (no key, provider outage) run the full-text
+        // arm alone instead of failing the tool call — mirrors Python.
+        string? vectorText;
+        try
+        {
+            vectorText = await EmbedAsync(query);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Serilog.Log.Warning(
+                "semantic_search: embedding call failed ({Type}: {Message}) -- falling back to full-text only",
+                ex.GetType().Name, LogSafe.Clean(ex.Message));
+            vectorText = null;
+        }
 
         // Pull a wider candidate set from each arm than we return — fusion only has
         // something to work with if a product can appear in one list but not the other.
         var candidates = Math.Max(limit * 4, 20);
         var tsQuery = OrJoinedTsQuery("@query");
+
+        if (vectorText is null)
+        {
+            // Same output shape as the hybrid path: Similarity is null (as for a
+            // product only the text arm matched) and Score is that arm's 1/(k+rank).
+            var ftsSql = $@"
+                WITH fts AS (
+                    SELECT p.id AS product_id,
+                           ROW_NUMBER() OVER (ORDER BY ts_rank(p.search_vector, {tsQuery}) DESC) AS rank
+                    FROM products p
+                    WHERE p.is_active = TRUE
+                      AND {tsQuery} <> ''::tsquery
+                      AND p.search_vector @@ {tsQuery}
+                    LIMIT @candidates
+                )
+                SELECT p.id, p.name, p.description, p.category, p.brand, p.price, p.rating, p.image_url,
+                       NULL::float8 AS similarity,
+                       1.0 / ({RrfK} + f.rank) AS score
+                FROM fts f
+                JOIN products p ON p.id = f.product_id
+                ORDER BY score DESC, p.rating DESC
+                LIMIT @limit";
+            await using var ftsConn = await _pool.OpenAsync();
+            var ftsRows = await ftsConn.QueryAsync(ftsSql, new { query, candidates, limit });
+            return ftsRows.Select(r => (SemanticSearchResult)ToSemanticResult(r)).ToList();
+        }
 
         // Hybrid retrieval: rank by vector cosine and by full-text relevance
         // independently, then fuse with Reciprocal Rank Fusion. RRF sums
@@ -329,21 +369,23 @@ public sealed class ProductTools(DatabasePool pool, IEmbeddingProvider embedding
 
         await using var conn = await _pool.OpenAsync();
         var rows = await conn.QueryAsync(sql, new { vector = vectorText, query, candidates, limit });
-        return rows.Select(r => new SemanticSearchResult(
-            Id: ((Guid)r.id).ToString(),
-            Name: (string)r.name,
-            Description: Truncate((string?)r.description ?? "", 150),
-            Category: (string)r.category,
-            Brand: (string?)r.brand ?? "",
-            Price: (decimal)r.price,
-            Rating: (decimal)r.rating,
-            // Null when only the text arm matched — the product has no embedding
-            // row, or ranked outside the vector candidate window.
-            Similarity: r.similarity is null ? null : Math.Round((double)r.similarity, 3),
-            Score: Math.Round((double)r.score, 5),
-            ImageUrl: (string?)r.image_url
-        )).ToList();
+        return rows.Select(r => (SemanticSearchResult)ToSemanticResult(r)).ToList();
     }
+
+    private static SemanticSearchResult ToSemanticResult(dynamic r) => new(
+        Id: ((Guid)r.id).ToString(),
+        Name: (string)r.name,
+        Description: Truncate((string?)r.description ?? "", 150),
+        Category: (string)r.category,
+        Brand: (string?)r.brand ?? "",
+        Price: (decimal)r.price,
+        Rating: (decimal)r.rating,
+        // Null when only the text arm matched — the product has no embedding
+        // row, or ranked outside the vector candidate window.
+        Similarity: r.similarity is null ? null : Math.Round((double)r.similarity, 3),
+        Score: Math.Round((double)r.score, 5),
+        ImageUrl: (string?)r.image_url
+    );
 
     [Description("Find products similar to a given product based on embedding similarity.")]
     public async Task<List<SimilarProductResult>> FindSimilarProducts(
@@ -364,7 +406,34 @@ public sealed class ProductTools(DatabasePool pool, IEmbeddingProvider embedding
         );
         if (refVectorText is null)
         {
-            return new List<SimilarProductResult> { new(Error: $"No embedding found for product {productId}") };
+            // No vector for this product: degrade to "same category, best rated"
+            // rather than an error. Only a product that does not exist still errors.
+            var category = await conn.QuerySingleOrDefaultAsync<string?>(
+                "SELECT category FROM products WHERE id = @pid",
+                new { pid }
+            );
+            if (category is null)
+            {
+                return new List<SimilarProductResult> { new(Error: $"No embedding found for product {productId}") };
+            }
+
+            var fallback = await conn.QueryAsync(
+                @"SELECT id, name, category, brand, price, rating
+                  FROM products
+                  WHERE category = @category AND id != @pid AND is_active = TRUE
+                  ORDER BY rating DESC, review_count DESC, name
+                  LIMIT @limit",
+                new { category, pid, limit }
+            );
+            return fallback.Select(r => new SimilarProductResult(
+                Id: ((Guid)r.id).ToString(),
+                Name: (string)r.name,
+                Category: (string)r.category,
+                Brand: (string?)r.brand ?? "",
+                Price: (decimal)r.price,
+                Rating: (decimal)r.rating,
+                Similarity: null
+            )).ToList();
         }
 
         var rows = await conn.QueryAsync(

@@ -15,6 +15,7 @@ without breaking our current `.env` files.
 
 import logging
 from pathlib import Path
+from typing import Literal
 
 from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -89,6 +90,35 @@ class Settings(BaseSettings):
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_MAX_REQUESTS: int = 30
     RATE_LIMIT_WINDOW_SECONDS: float = 60.0
+    # Credential endpoints (signup / login / refresh) get their own buckets,
+    # separate from chat: a password-guessing or account-spam loop should not
+    # spend the chat budget, and a chat user hitting the chat limit should not
+    # be locked out of logging in. Two layers, so one caller cannot starve others:
+    #   * RATE_LIMIT_AUTH_MAX_REQUESTS - the tight budget, per (client address,
+    #     target email) for login and signup (a single target cannot be brute
+    #     forced) and per user for refresh (read from the verified token).
+    #   * RATE_LIMIT_AUTH_IP_MAX_REQUESTS - a much looser address-only ceiling
+    #     over all three routes. Behind the default web proxy every browser user
+    #     shares one address, so this must stay far above what a crowd of real
+    #     users produces; it only stops a single script from flooding the service.
+    RATE_LIMIT_AUTH_MAX_REQUESTS: int = 10
+    RATE_LIMIT_AUTH_IP_MAX_REQUESTS: int = 300
+    RATE_LIMIT_AUTH_WINDOW_SECONDS: float = 60.0
+    # How many reverse proxies in front of the orchestrator append to
+    # X-Forwarded-For and are trusted to do so. The client address is the entry
+    # that many places from the RIGHT of the header (1 = the right-most entry,
+    # i.e. what the Next.js proxy appended). Entries further left were supplied
+    # by the caller and are never trusted. 0 ignores the header entirely and
+    # uses the TCP peer address.
+    RATE_LIMIT_TRUSTED_PROXY_HOPS: int = 1
+
+    # ── CORS ────────────────────────────────────────────────────────
+    # Comma-separated list of origins allowed to call the orchestrator from a
+    # browser. The web app reaches the API through its own same-origin proxy
+    # (web/src/app/api/[...path]/route.ts), so the default only needs to cover
+    # `NEXT_PUBLIC_API_URL` direct-call setups. Credentials (cookies) are never
+    # allowed: auth is a Bearer token in a header.
+    CORS_ALLOWED_ORIGINS: str = "http://localhost:3000"
 
     # ── LLM ─────────────────────────────────────────────────────────
     LLM_PROVIDER: str = "openai"  # openai | azure | replay
@@ -100,18 +130,39 @@ class Settings(BaseSettings):
     # LLM_PROVIDER=openai. See tutorials/00-setup/README.md for the GitHub
     # Models path, which is free with a GitHub PAT.
     LLM_BASE_URL: str = ""
+    # Which OpenAI wire API the `openai` provider speaks. `responses` (default)
+    # uses the Responses API (`POST /responses`), which api.openai.com supports on
+    # every model. `chat_completions` uses `POST /chat/completions` — set it for
+    # OpenAI-compatible endpoints that have no /responses route (Gemini's
+    # compatible endpoint, some vLLM / Ollama versions). The `azure` provider
+    # always uses Chat Completions and ignores this.
+    LLM_API: Literal["responses", "chat_completions"] = "responses"
     # replay-provider settings — see shared/replay_client.py. RECORD=true makes
     # a missing fixture fall through to a real call (via REPLAY_RECORD_PROVIDER)
     # and persist the result instead of raising.
     REPLAY_RECORD_PROVIDER: str = "openai"  # openai | azure — used only when RECORD=true
     REPLAY_FIXTURES_DIR: str = "evals/fixtures/replay"  # relative to the process cwd (agents/python)
     RECORD: bool = False
+    # The no-key demo tour (#86): suggested prompts the web UI offers as chips, and
+    # `POST /api/demo/reset` for the tour user. Off by default, so a normal install
+    # serves 404 on both and the UI shows nothing. DEMO_TOUR_PATH is relative to
+    # agents/python (an absolute path is used as is).
+    DEMO_TOUR_ENABLED: bool = False
+    DEMO_TOUR_PATH: str = "config/demo/tour.yaml"
     # Sampling temperature for every agent run. Defaults LOW for consistent,
     # reproducible answers — at the provider default (~1.0) the same query can
     # yield categorically different results (e.g. finding vs. not finding a
     # borderline-priced product). Raise toward 1.0 for more varied phrasing.
     LLM_TEMPERATURE: float = 0.2
     EMBEDDING_MODEL: str = "text-embedding-3-small"
+    # Embeddings are decoupled from the chat provider (#96). Empty EMBEDDING_PROVIDER follows
+    # LLM_PROVIDER, exactly as before; otherwise openai | azure | openai_compatible | replay.
+    # EMBEDDING_BASE_URL / EMBEDDING_API_KEY, when set, replace LLM_BASE_URL / OPENAI_API_KEY for
+    # embeddings only. EMBEDDING_DIM must equal the vector(N) column (see scripts/reset_embeddings.py).
+    EMBEDDING_PROVIDER: str = ""
+    EMBEDDING_BASE_URL: str = ""
+    EMBEDDING_API_KEY: str = ""
+    EMBEDDING_DIM: int = 1536
     OPENAI_API_KEY: str = ""
 
     AZURE_OPENAI_ENDPOINT: str = ""
@@ -148,6 +199,18 @@ class Settings(BaseSettings):
     AUTH_SERVER_TOKEN_URL: str = "http://localhost:8090/oauth/token"
     AUTH_ACCESS_TOKEN_TTL: int = 3600  # seconds
     AUTH_REFRESH_TOKEN_TTL: int = 604800  # 7 days
+    # AUTH_MODE=local only: /api/auth/refresh issues a new refresh token on
+    # every use and revokes the whole token family if an already-used one is
+    # presented again (refresh_tokens table, migration 0003). false restores
+    # the old behaviour of returning only a new access token. Has no effect
+    # in AUTH_MODE=oauth — rotation there is the auth-server's job and is not
+    # implemented (docs/parity-matrix.md).
+    AUTH_REFRESH_ROTATION: bool = True
+    # Absolute lifetime of a refresh-token family, counted from the login that started it
+    # (migration 0005). Rotation hands every successor a fresh 7-day token, so without a cap a
+    # session that keeps refreshing never ends; once this has passed, refresh is a 401 and the
+    # user logs in again.
+    AUTH_REFRESH_FAMILY_MAX_DAYS: int = 30
     AUTH_JWKS_CACHE_TTL: int = 900  # resource-server JWKS cache
     AUTH_RSA_KEY_SIZE: int = 2048  # auth-server only
     AUTH_SIGNING_KEY_ENCRYPTION_KEY: str = ""  # optional KEK for the private key at rest
@@ -205,6 +268,32 @@ class Settings(BaseSettings):
     # before executing. Requests queue in the hitl_requests DB table and are
     # reviewed at /admin/approvals.
     HITL_ENABLED: bool = True
+    # How long a resume claim ('processing' on hitl_requests) may be held before
+    # another approver can take it over. A crash between claim and release used to
+    # strand the row forever; claimed_at (migration 0002) makes that detectable.
+    # Must comfortably exceed the longest legitimate resume.
+    HITL_CLAIM_TTL_SECONDS: int = 600
+    # Hard timeout on one resume execution. Must be shorter than the claim TTL, or a
+    # stalled resume could still be running when another approver takes its claim.
+    HITL_RESUME_TIMEOUT_SECONDS: int = 300
+
+    # ── Outbox worker (python -m worker.main) ───────────────────────
+    # Drains the outbox table: approval reminders, SLA escalation and timeouts. One Python worker
+    # serves both stacks (they share the database). Disabled, the process idles and drains nothing.
+    OUTBOX_WORKER_ENABLED: bool = True
+    OUTBOX_POLL_INTERVAL_SECONDS: float = 2.0
+    OUTBOX_BATCH_SIZE: int = 10
+    # A row that fails this many times is parked (outbox.failed_at) instead of retried forever.
+    OUTBOX_MAX_ATTEMPTS: int = 8
+    # How long a claimed row stays owned; a crashed worker's rows are picked up again after it.
+    OUTBOX_LEASE_SECONDS: int = 120
+    # Retry delay = base * 2**(attempts - 1), capped.
+    OUTBOX_BACKOFF_BASE_SECONDS: float = 5.0
+    OUTBOX_BACKOFF_MAX_SECONDS: float = 600.0
+    # Touched every loop; the container healthcheck reads its age.
+    OUTBOX_WORKER_HEARTBEAT_FILE: str = "/tmp/outbox-worker.heartbeat"
+    # The reminder fires this fraction of an approval's sla_hours after it enters review.
+    APPROVAL_REMINDER_FRACTION: float = 0.5
 
     # ── MCP integration (optional, flag-gated) ──────────────────────
     # When enabled, specialist agents connect to MCP servers for their data
@@ -363,6 +452,11 @@ class Settings(BaseSettings):
         populate_by_name=True,
     )
 
+    @property
+    def cors_origins(self) -> list[str]:
+        """``CORS_ALLOWED_ORIGINS`` split on commas, blanks dropped, trailing slashes trimmed."""
+        return [o.strip().rstrip("/") for o in self.CORS_ALLOWED_ORIGINS.split(",") if o.strip()]
+
     @model_validator(mode="after")
     def _validate_secrets(self) -> "Settings":
         """Fail fast on weak / default secrets in production; warn in dev.
@@ -387,7 +481,10 @@ class Settings(BaseSettings):
                 )
                 if is_prod:
                     raise ValueError(msg)
-                logger.warning("settings.secret_unsafe var=%s reason=%s", name, msg)
+                # Log a fixed label, not ``msg``: ``msg`` carries the secret's length, and
+                # nothing derived from a secret's value belongs in a log line.
+                reason = "placeholder default" if is_default else "too short"
+                logger.warning("settings.secret_unsafe var=%s reason=%s", name, reason)
 
         _check("JWT_SECRET", self.JWT_SECRET)
         _check("AGENT_SHARED_SECRET", self.AGENT_SHARED_SECRET)
@@ -402,6 +499,15 @@ class Settings(BaseSettings):
                 )
                 raise ValueError(msg)
 
+        return self
+
+    @model_validator(mode="after")
+    def _validate_hitl_timeouts(self) -> "Settings":
+        if not 0 < self.HITL_RESUME_TIMEOUT_SECONDS < self.HITL_CLAIM_TTL_SECONDS:
+            raise ValueError(
+                "HITL_RESUME_TIMEOUT_SECONDS must be positive and shorter than HITL_CLAIM_TTL_SECONDS "
+                f"(got {self.HITL_RESUME_TIMEOUT_SECONDS} and {self.HITL_CLAIM_TTL_SECONDS})."
+            )
         return self
 
     @model_validator(mode="after")

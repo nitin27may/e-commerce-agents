@@ -45,6 +45,22 @@ Test cases live in `evals/datasets/` as JSON arrays. Each test case has:
 }
 ```
 
+### Schema v2 (optional per-case fields)
+
+All optional; a case that sets none of them behaves exactly as before. None of them
+moves a score or a baseline — they are assertions, and a failed one fails the case and
+the run (`Assertion failed:` in the verbose report, `assertion_failures` in the JSON).
+
+| Field | Meaning |
+|---|---|
+| `user_role` / `user_email` | Run the case as this caller (default: the runner's `customer` / `eval@example.com`). Agents bake the role into their prompt, so the runner builds one agent per role. |
+| `expected_tool_args` | `{tool: {arg: value}}`. Subset match against the `tool_input` recorded in the steps (`evals/scorers/tool_args.py`): extra arguments are fine, strings compare case-insensitively, numbers by value. Keys must be tools the case also lists in `expected_tools`. |
+| `expect_denial` | `true`: a tool refused the call for this role (`permission_denied` step output). `false`: none did. |
+| `expect_hitl` | `true`: a destructive tool was parked for approval (a new `hitl_requests` row, or a `pending_approval` step). `false`: none was. |
+
+`expected_tool_args` on a case only holds while its fixtures do: a re-recording that makes
+the model pass different arguments fails the assertion, which is the point.
+
 ## Running Evals
 
 From the `agents/python/` directory, against a real LLM:
@@ -129,6 +145,23 @@ uv run python -m evals.run_evals --suite safety --pass-threshold 0.8 --verbose
 
 Each case names a `target_agent` and an `attack_type` (`injection` | `jailbreak` |
 `role_escalation`); the runner builds the right agent per case.
+
+## Prompt token gate
+
+`evals/prompt_tokens.py` counts, with `tiktoken` (`o200k_base`), the composed system prompt
+plus the tool schemas each agent carries — per agent and per role — and compares against
+`evals/baselines/prompt_tokens.json`. Any agent/role that grows by more than 10% fails.
+Keyless and free (it builds the agents, no model call); it runs as a step of `tests.yml`.
+
+```bash
+LLM_PROVIDER=replay uv run python -m evals.prompt_tokens                    # the gate
+LLM_PROVIDER=replay uv run python -m evals.prompt_tokens --update-baseline  # after a reviewed change
+```
+
+The eval report and `--output-json` also carry `total_tokens_in` / `total_tokens_out`
+(summed from the fixtures' recorded usage; for the orchestrator that now includes its
+specialists). `--update-baseline` stores them and a later `--baseline` run prints the
+change as an informational line; they never gate.
 
 ## CI/CD Integration
 

@@ -119,6 +119,12 @@ async def run_evaluation(
             )
             exit_code = 1
 
+        # Schema-v2 assertions (expected_tool_args / expect_denial / expect_hitl)
+        # do not move any score, so a regression in them fails the run directly.
+        if summary.assertion_failures:
+            print(f"Evaluation FAILED — {summary.assertion_failures} case assertion(s) did not hold.", file=sys.stderr)
+            exit_code = 1
+
         if update_baseline_path:
             write_baseline(update_baseline_path, summary)
             print(f"Baseline updated: {update_baseline_path}")

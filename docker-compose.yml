@@ -49,7 +49,7 @@ services:
   # ── Aspire Dashboard (OpenTelemetry) ────────────────────────
 
   aspire:
-    image: mcr.microsoft.com/dotnet/aspire-dashboard:latest
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:13.6.5
     ports:
       - "127.0.0.1:18888:18888"   # Dashboard UI
       - "127.0.0.1:18890:18889"   # OTLP receiver
@@ -58,12 +58,11 @@ services:
     # TCP-check the OTLP receiver. Aspire's dashboard image doesn't ship
     # curl/wget so we use bash's /dev/tcp pseudo-device — present in the
     # default `bash` shell of the base image.
-    healthcheck:
-      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/127.0.0.1/18888' && echo ok || exit 1"]
-      interval: 10s
-      timeout: 3s
-      retries: 10
-      start_period: 20s
+    # No healthcheck, deliberately. The dashboard image ships no shell at all
+    # (`sh`, `bash`, `curl` and `wget` are all absent), so a CMD-SHELL probe can
+    # never run: the old /dev/tcp check reported "unhealthy" on every start.
+    # Nothing may wait on `service_healthy` for this service; use
+    # `service_started`. Verified against aspire-dashboard:13.6.5.
 
   # ── Seed Database (runs once, exits) ────────────────────────
 
@@ -73,15 +72,27 @@ services:
       args:
         AGENT_NAME: orchestrator
     working_dir: /app
-    command: uv run --no-project python -m scripts.seed
+    # Schema first (scripts/migrate.py: baseline + docker/postgres/migrations), then data.
+    command: sh -c "uv run --no-project python -m scripts.migrate && uv run --no-project python -m scripts.seed"
     volumes:
       - ./scripts:/app/scripts:ro
+      - ./docker/postgres:/app/docker/postgres:ro
     depends_on:
       db:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://ecommerce:ecommerce_secret@db:5432/ecommerce_agents
       OAUTH_SEED_KEY: ${OAUTH_SEED_KEY:-dev-oauth-seed-change-me}
+      # The seeder fills product_embeddings: replay vectors under
+      # LLM_PROVIDER=replay, else scripts/data/product_embeddings.v1.jsonl.gz
+      # when its model matches EMBEDDING_MODEL. It never calls an embedding API.
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      # Embeddings are configured apart from the chat provider (empty provider = follow LLM_PROVIDER).
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-}
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-1536}
     restart: "no"
     profiles: ["seed"]
 
@@ -124,18 +135,46 @@ services:
       args:
         AGENT_NAME: orchestrator
         AGENT_PORT: 8080
-    ports: ["8080:8080"]
+    ports: ["127.0.0.1:8080:8080"]
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }
+      product-discovery: { condition: service_healthy }
+      order-management: { condition: service_healthy }
+      pricing-promotions: { condition: service_healthy }
+      review-sentiment: { condition: service_healthy }
+      inventory-fulfillment: { condition: service_healthy }
+    # /ready (not /health): the service is up AND its database has the migrated
+    # schema. Dependents wait on this via `condition: service_healthy` (#102).
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/ready > /dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 15s
 
     environment: &agent-env
       DATABASE_URL: postgresql://ecommerce:ecommerce_secret@db:5432/ecommerce_agents
       REDIS_URL: redis://redis:6379
       LLM_PROVIDER: ${LLM_PROVIDER:-openai}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Any OpenAI-compatible endpoint (Ollama, vLLM, OpenRouter, Gemini's
+      # compatible API). Empty means the provider's default.
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      # responses (default) | chat_completions — needed for endpoints with no
+      # /responses route. Python stack only; .NET always uses Chat Completions.
+      LLM_API: ${LLM_API:-responses}
       LLM_MODEL: ${LLM_MODEL:-gpt-4.1}
+      # Per-run spend ceiling. COST_BUDGET_MODE stays observe: the ceiling is only counted
+      # (cost_budget.would_block), never enforced, until you set enforce yourself.
+      COST_BUDGET_MODE: ${COST_BUDGET_MODE:-observe}
+      COST_BUDGET_USD_PER_RUN: ${COST_BUDGET_USD_PER_RUN:-0.50}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      # Embeddings are configured apart from the chat provider (empty provider = follow LLM_PROVIDER).
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-}
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-1536}
       AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
       AZURE_OPENAI_KEY: ${AZURE_OPENAI_KEY:-}
       AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-}
@@ -159,9 +198,17 @@ services:
       OTEL_ENABLED: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://aspire:18889
       OTEL_SERVICE_NAME: ecommerce.orchestrator
-      # Capture LLM input/output content in Aspire GenAI telemetry view
-      # Set to "false" in production environments that process PII
-      OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: ${OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT:-true}
+      # Prompt/completion content in GenAI spans is OFF by default (it carries PII);
+      # set OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true to see it locally.
+      OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: ${OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT:-false}
+      # Browser origins allowed to call the API directly (NEXT_PUBLIC_API_URL).
+      # The default web app uses the same-origin proxy and needs none.
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
+      # signup/login/refresh budget per client per minute. Raise it for local
+      # Playwright runs, which log in once per test from one address.
+      RATE_LIMIT_AUTH_MAX_REQUESTS: ${RATE_LIMIT_AUTH_MAX_REQUESTS:-10}
+      RATE_LIMIT_AUTH_IP_MAX_REQUESTS: ${RATE_LIMIT_AUTH_IP_MAX_REQUESTS:-300}
+      RATE_LIMIT_TRUSTED_PROXY_HOPS: ${RATE_LIMIT_TRUSTED_PROXY_HOPS:-1}
       # MAF v1 feature flags — defaults preserve existing behaviour. The .NET
       # compose set these from day one; the Python compose was missing them
       # so toggling RETURN_HITL_THRESHOLD / etc. required editing the
@@ -190,6 +237,14 @@ services:
     ports: ["127.0.0.1:8081:8081"]
     depends_on:
       db: { condition: service_healthy }
+    # /ready (not /health): the service is up AND its database has the migrated
+    # schema. Dependents wait on this via `condition: service_healthy` (#102).
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/ready > /dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 15s
 
     environment:
       <<: *agent-env
@@ -211,6 +266,14 @@ services:
     ports: ["127.0.0.1:8082:8082"]
     depends_on:
       db: { condition: service_healthy }
+    # /ready (not /health): the service is up AND its database has the migrated
+    # schema. Dependents wait on this via `condition: service_healthy` (#102).
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8082/ready > /dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 15s
 
     environment:
       <<: *agent-env
@@ -225,6 +288,14 @@ services:
     ports: ["127.0.0.1:8083:8083"]
     depends_on:
       db: { condition: service_healthy }
+    # /ready (not /health): the service is up AND its database has the migrated
+    # schema. Dependents wait on this via `condition: service_healthy` (#102).
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8083/ready > /dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 15s
 
     environment:
       <<: *agent-env
@@ -239,6 +310,14 @@ services:
     ports: ["127.0.0.1:8084:8084"]
     depends_on:
       db: { condition: service_healthy }
+    # /ready (not /health): the service is up AND its database has the migrated
+    # schema. Dependents wait on this via `condition: service_healthy` (#102).
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8084/ready > /dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 15s
 
     environment:
       <<: *agent-env
@@ -253,6 +332,14 @@ services:
     ports: ["127.0.0.1:8085:8085"]
     depends_on:
       db: { condition: service_healthy }
+    # /ready (not /health): the service is up AND its database has the migrated
+    # schema. Dependents wait on this via `condition: service_healthy` (#102).
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8085/ready > /dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 15s
 
     environment:
       <<: *agent-env
@@ -265,6 +352,37 @@ services:
       MCP_INVENTORY_SERVER_URL: http://mcp-inventory:9001/mcp
       MCP_INVENTORY_AUDIENCE: ${MCP_INVENTORY_AUDIENCE:-mcp-inventory}
       MCP_INVENTORY_REQUIRED_SCOPE: ${MCP_INVENTORY_REQUIRED_SCOPE:-mcp:inventory}
+    profiles: ["agents"]
+
+  # ── Outbox worker (approval reminders, SLA escalation, timeouts) ──
+  #
+  # Drains the outbox table; see docs/approvals.md. Same Python agent image,
+  # different command. Publishes no port. Waits for the seeder when it is part of this run
+  # (it applies the migrations); it also retries until the schema exists.
+  outbox-worker:
+    build:
+      context: ./agents/python
+      args: { AGENT_NAME: worker, AGENT_PORT: 8095 }
+    command: uv run --no-project python -m worker.main
+    depends_on:
+      db: { condition: service_healthy }
+      seeder: { condition: service_completed_successfully, required: false }
+    # No port: the worker touches a heartbeat file every loop; healthy = it was touched in the last 2 minutes.
+    healthcheck:
+      test: ["CMD-SHELL", "find /tmp/outbox-worker.heartbeat -mmin -2 | grep -q . || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    environment:
+      DATABASE_URL: postgresql://ecommerce:ecommerce_secret@db:5432/ecommerce_agents
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      # false: the process stays up and idle and drains nothing.
+      OUTBOX_WORKER_ENABLED: ${OUTBOX_WORKER_ENABLED:-true}
+      OUTBOX_POLL_INTERVAL_SECONDS: ${OUTBOX_POLL_INTERVAL_SECONDS:-2}
+      OUTBOX_BATCH_SIZE: ${OUTBOX_BATCH_SIZE:-10}
+      OUTBOX_MAX_ATTEMPTS: ${OUTBOX_MAX_ATTEMPTS:-8}
+      OUTBOX_LEASE_SECONDS: ${OUTBOX_LEASE_SECONDS:-120}
     profiles: ["agents"]
 
   # ── MCP Servers (optional — enable with MCP_ENABLED=true) ──────
@@ -354,8 +472,13 @@ services:
       # origin and Next forwards from there, so this is a container-network
       # address rather than a host-published one.
       ORCHESTRATOR_URL: http://orchestrator:8080
+      # Reverse proxies YOU run in front of this container that append to
+      # X-Forwarded-For (0 = none, the published-port default). Leave at 0
+      # unless one exists: Next cannot tell a real client address from a forged
+      # header. See docs/configuration.md.
+      WEB_TRUSTED_PROXY_HOPS: ${WEB_TRUSTED_PROXY_HOPS:-0}
     depends_on:
-      orchestrator: { condition: service_started }
+      orchestrator: { condition: service_healthy }
     profiles: ["frontend"]
 
 volumes:

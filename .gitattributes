@@ -9,6 +9,10 @@
 *.ps1 text eol=lf
 
 # Same reasoning for files consumed inside Linux containers.
+# SQL migrations are checksummed (scripts/migrate.py); CRLF would change the hash of a file
+# that was applied from a Linux checkout. migrate.py also folds CRLF to LF before hashing.
+*.sql text eol=lf
+
 Dockerfile* text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf

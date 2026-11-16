@@ -45,7 +45,10 @@ async def check_stock(
         }
 
 
-@tool(name="get_warehouse_availability", description="Get detailed warehouse availability for a product including restock schedules.")
+@tool(
+    name="get_warehouse_availability",
+    description="Get detailed warehouse availability for a product including restock schedules.",
+)
 async def get_warehouse_availability(
     product_id: Annotated[str, Field(description="UUID of the product")],
 ) -> dict:

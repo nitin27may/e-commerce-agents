@@ -26,13 +26,46 @@ public interface IEmbeddingProvider
     Task<string> EmbedAsVectorLiteralAsync(string text, CancellationToken ct = default);
 }
 
-/// <summary>Real embeddings from OpenAI or Azure OpenAI.</summary>
-public sealed class OpenAIEmbeddingProvider(EmbeddingClient client) : IEmbeddingProvider
+/// <summary>
+/// Stand-in used when no real embedding client could be built (no API key, no
+/// Azure endpoint). Every call throws, which <c>ProductTools</c> turns into the
+/// full-text-only fallback — the .NET twin of Python, where the same missing key
+/// raises inside <c>semantic_search</c> and is caught there. Without it the
+/// service refused to start at all, a worse outcome than degraded search.
+/// </summary>
+public sealed class UnavailableEmbeddingProvider(string reason) : IEmbeddingProvider
+{
+    public string Reason { get; } = reason;
+
+    public Task<string> EmbedAsVectorLiteralAsync(string text, CancellationToken ct = default) =>
+        throw new InvalidOperationException($"Embeddings are unavailable: {Reason}");
+}
+
+/// <summary>Real embeddings from OpenAI, Azure OpenAI or an OpenAI-compatible server.</summary>
+/// <param name="client">The SDK embedding client.</param>
+/// <param name="requestDimensions">Sent as the <c>dimensions</c> parameter (text-embedding-3 models only); null omits it.</param>
+/// <param name="expectedDimensions">
+/// The width the database column has (<c>EMBEDDING_DIM</c>). A vector of any other size is refused here with a
+/// message, rather than reaching pgvector as an opaque error. Null skips the check (tests, no configured width).
+/// </param>
+public sealed class OpenAIEmbeddingProvider(
+    EmbeddingClient client,
+    int? requestDimensions = null,
+    int? expectedDimensions = null) : IEmbeddingProvider
 {
     public async Task<string> EmbedAsVectorLiteralAsync(string text, CancellationToken ct = default)
     {
-        var response = await client.GenerateEmbeddingAsync(text, cancellationToken: ct);
-        return ToVectorLiteral(response.Value.ToFloats().ToArray().Select(f => (double)f));
+        var options = requestDimensions is { } d ? new EmbeddingGenerationOptions { Dimensions = d } : null;
+        var response = await client.GenerateEmbeddingAsync(text, options, ct);
+        var vector = response.Value.ToFloats().ToArray();
+        if (expectedDimensions is { } expected && vector.Length != expected)
+        {
+            throw new InvalidOperationException(
+                $"the embedding model returned {vector.Length} dimensions but EMBEDDING_DIM={expected}; set EMBEDDING_DIM to the "
+                + "model's size and run scripts/reset_embeddings.py --dim N, or pick a model that supports dimensions=");
+        }
+
+        return ToVectorLiteral(vector.Select(f => (double)f));
     }
 
     internal static string ToVectorLiteral(IEnumerable<double> values) =>
@@ -57,17 +90,20 @@ public sealed class OpenAIEmbeddingProvider(EmbeddingClient client) : IEmbedding
 /// both standard libraries, where BLAKE2b (Python's first choice here) is not
 /// available in .NET without a third-party package.
 /// </remarks>
-public sealed class ReplayEmbeddingProvider : IEmbeddingProvider
+public sealed class ReplayEmbeddingProvider(int dimensions = ReplayEmbeddingProvider.Dimensions) : IEmbeddingProvider
 {
-    /// <summary>Matches text-embedding-3-small, so replay vectors drop into the same column.</summary>
+    /// <summary>
+    /// The default width: matches text-embedding-3-small, so replay vectors drop into the same column.
+    /// <c>EMBEDDING_DIM</c> overrides it (Python's <c>embed_text(text, dimensions)</c> twin).
+    /// </summary>
     public const int Dimensions = 1536;
 
     public Task<string> EmbedAsVectorLiteralAsync(string text, CancellationToken ct = default) =>
-        Task.FromResult(OpenAIEmbeddingProvider.ToVectorLiteral(Embed(text)));
+        Task.FromResult(OpenAIEmbeddingProvider.ToVectorLiteral(Embed(text, dimensions)));
 
     /// <summary>The raw vector. Public because it is a cross-stack contract, not an
     /// implementation detail: tests assert it byte-for-byte against Python's output.</summary>
-    public static double[] Embed(string text)
+    public static double[] Embed(string text, int dimensions = Dimensions)
     {
         // `double`, not `float`, so this matches Python bit for bit. Python
         // computes in float64; accumulating and normalising in float32 here
@@ -76,10 +112,10 @@ public sealed class ReplayEmbeddingProvider : IEmbeddingProvider
         // would make a cross-stack equality test impossible to write honestly —
         // and "compatible within a tolerance" is a weaker guarantee than this
         // shared-database invariant deserves.
-        var vector = new double[Dimensions];
+        var vector = new double[dimensions];
         foreach (var token in Tokenize(text))
         {
-            var (index, sign) = Bucket(token);
+            var (index, sign) = Bucket(token, dimensions);
             vector[index] += sign;
         }
 
@@ -127,10 +163,10 @@ public sealed class ReplayEmbeddingProvider : IEmbeddingProvider
     /// the same digest than the index, so unrelated tokens colliding in one
     /// bucket tend to cancel rather than reinforce.
     /// </summary>
-    private static (int Index, double Sign) Bucket(string token)
+    private static (int Index, double Sign) Bucket(string token, int dimensions)
     {
         var digest = SHA256.HashData(Encoding.UTF8.GetBytes(token));
-        var index = (int)(System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(digest) % Dimensions);
+        var index = (int)(System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(digest) % (uint)dimensions);
         var sign = (digest[4] & 1) == 1 ? 1d : -1d;
         return (index, sign);
     }

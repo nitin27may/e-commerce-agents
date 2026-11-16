@@ -1,0 +1,125 @@
+{
+  "encoding": "o200k_base",
+  "entries": {
+    "product-discovery": {
+      "customer": {
+        "instructions": 3086,
+        "tools": 1342,
+        "tool_count": 13,
+        "total": 4428
+      },
+      "seller": {
+        "instructions": 3107,
+        "tools": 1342,
+        "tool_count": 13,
+        "total": 4449
+      },
+      "admin": {
+        "instructions": 3092,
+        "tools": 1342,
+        "tool_count": 13,
+        "total": 4434
+      }
+    },
+    "order-management": {
+      "customer": {
+        "instructions": 3846,
+        "tools": 1666,
+        "tool_count": 18,
+        "total": 5512
+      },
+      "seller": {
+        "instructions": 3847,
+        "tools": 1666,
+        "tool_count": 18,
+        "total": 5513
+      },
+      "admin": {
+        "instructions": 3843,
+        "tools": 1666,
+        "tool_count": 18,
+        "total": 5509
+      }
+    },
+    "pricing-promotions": {
+      "customer": {
+        "instructions": 3153,
+        "tools": 891,
+        "tool_count": 11,
+        "total": 4044
+      },
+      "seller": {
+        "instructions": 3159,
+        "tools": 891,
+        "tool_count": 11,
+        "total": 4050
+      },
+      "admin": {
+        "instructions": 3159,
+        "tools": 891,
+        "tool_count": 11,
+        "total": 4050
+      }
+    },
+    "review-sentiment": {
+      "customer": {
+        "instructions": 3125,
+        "tools": 1213,
+        "tool_count": 13,
+        "total": 4338
+      },
+      "seller": {
+        "instructions": 3131,
+        "tools": 1213,
+        "tool_count": 13,
+        "total": 4344
+      },
+      "admin": {
+        "instructions": 3129,
+        "tools": 1213,
+        "tool_count": 13,
+        "total": 4342
+      }
+    },
+    "inventory-fulfillment": {
+      "customer": {
+        "instructions": 3076,
+        "tools": 894,
+        "tool_count": 10,
+        "total": 3970
+      },
+      "seller": {
+        "instructions": 3087,
+        "tools": 894,
+        "tool_count": 10,
+        "total": 3981
+      },
+      "admin": {
+        "instructions": 3081,
+        "tools": 894,
+        "tool_count": 10,
+        "total": 3975
+      }
+    },
+    "orchestrator": {
+      "customer": {
+        "instructions": 2967,
+        "tools": 126,
+        "tool_count": 1,
+        "total": 3093
+      },
+      "seller": {
+        "instructions": 3063,
+        "tools": 126,
+        "tool_count": 1,
+        "total": 3189
+      },
+      "admin": {
+        "instructions": 2971,
+        "tools": 126,
+        "tool_count": 1,
+        "total": 3097
+      }
+    }
+  }
+}

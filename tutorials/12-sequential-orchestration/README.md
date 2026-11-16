@@ -16,6 +16,8 @@ Chapter 11 wrapped a single `ChatClientAgent` as a workflow executor and wired t
 | **OpenAI** | `OPENAI_API_KEY` | `LLM_MODEL` (default `gpt-4.1`) |
 | **Azure OpenAI** | `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_KEY`, `AZURE_OPENAI_DEPLOYMENT` | `AZURE_OPENAI_API_VERSION` (default `2024-10-21`) |
 
+- **Key:** `main.py`'s default prompt has no recorded fixture, so running it needs a key (live run). Without one, the chapter's tests replay their own recorded prompt: `uv run --project tutorials pytest tutorials/12-sequential-orchestration/python/tests -m "not integration"`.
+
 ## The concept
 
 Hand the builder an ordered list of agents; it returns a `Workflow` where participant 1 runs against the input message, participant 2 runs against the input plus participant 1's response, participant 3 runs against all of that, and so on. Each participant is still a normal MAF agent — same `Agent(...)` / `AsAIAgent(...)` construction as every prior chapter — the builder is what turns the list into a pipeline with shared conversation state.
@@ -174,7 +176,7 @@ This chapter shipped for a while with all three wrong at once. It built, it ran,
 - **.NET's wrapped agents will not start without a `TurnToken`.** `AgentExecutor` caches its input and waits. A run missing the token completes normally, having made no LLM call — the most expensive kind of silent failure, because it looks like a fast success.
 - **Instructions matter more than ever.** Every downstream agent sees the entire prior conversation, so each system prompt has to say explicitly what NOT to do — "do not rewrite the draft" on the Reviewer, "output ONLY the final sentence" on the Finalizer — or the pipeline drifts.
 - **Sequential isn't checkpointed by default.** Pass `checkpoint_storage=` to the `SequentialBuilder(...)` constructor (not to `.run()`) for durable pipelines; this chapter's demo doesn't configure one.
-- **The old "MAF v1.0 wheel ships an empty `__init__.py`" packaging bug is fixed upstream** — this repo now pins `agent-framework` 1.14.0, so it's no longer active. `tutorials/_shared/maf_bootstrap.py` still runs its patch step defensively (every chapter's `main.py` calls `maf_bootstrap.bootstrap()` first), but it's a no-op on a current install; the capstone app's equivalent, `agents/python/patch_maf.py`, is the same documented no-op.
+- **No MAF packaging workaround is needed.** `agent-framework-core` 1.22.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
 
 ## Tests
 
@@ -205,15 +207,15 @@ class ReturnReplaceMode:
     name = "workflow:return-replace"
     label = "Return & Replace (sequential + in-workflow HITL)"
     description = (
-        "MAF sequential workflow: eligibility check, return initiation, replacement "
-        "search, an in-workflow HITL gate for high-value returns (ctx.request_info — "
-        "structurally different from the middleware-based approval flow `tool` mode "
-        "uses; see shared/hitl.py vs this workflow's hitl-gate executor), then "
-        "loyalty discount and finalize."
+        "MAF sequential workflow: eligibility check, then a policy gate that decides "
+        "whether a person must approve (ctx.request_info — structurally different from "
+        "the middleware-based approval flow `tool` mode uses; see shared/hitl.py vs this "
+        "workflow's policy-gate executor), and only then return initiation, replacement "
+        "search, loyalty discount and finalize."
     )
 ```
 
-That's a five-step pipeline — eligibility check → return initiation → replacement search → an in-workflow HITL approval gate for high-value returns → loyalty discount → finalize — selectable per request from the web chat UI via `mode-switcher.tsx`, with a checkpoint saved at the HITL gate so a paused run can be resumed later from `POST /api/orchestration/{run_id}/resume` (see `ReturnReplaceMode.resume()` in the same file). It's a considerably richer example of the pattern than this chapter's Writer/Reviewer/Finalizer demo, and it's real, currently-wired code, not a hypothetical refactor target.
+That's a five-step pipeline — eligibility check → a policy gate that pauses for approval unless the policy says `auto` → return initiation → replacement search → loyalty discount → finalize — selectable per request from the web chat UI via `mode-switcher.tsx`, with a checkpoint saved at the policy gate so a paused run can be resumed later from `POST /api/orchestration/{run_id}/resume` (see `ReturnReplaceMode.resume()` in the same file). It's a considerably richer example of the pattern than this chapter's Writer/Reviewer/Finalizer demo, and it's real, currently-wired code, not a hypothetical refactor target.
 
 ## What's next
 

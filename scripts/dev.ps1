@@ -275,46 +275,32 @@ function Repair-StaleDatabaseVolume {
     Write-Ok 'Database reinitialized with correct credentials'
 }
 
-function Assert-DatabaseSchema {
+function Invoke-Migrations {
     <#
         .SYNOPSIS
-        Verifies the SCHEMA matches, not just the credentials.
+        Brings the SCHEMA up to date, not just the credentials.
 
         .DESCRIPTION
         A volume can authenticate perfectly and still carry a schema from before
-        the last init.sql change. That is the more common way to land here —
-        pulling new commits and restarting the same stack, rather than switching
-        stacks — and it is nastier than an auth failure, because nothing errors.
-        Search quietly returns nothing and the agent says "I couldn't find any",
-        which reads like an empty catalogue rather than a broken index.
-
-        products.search_vector is the canary: it arrived with the v1.2.0
-        full-text search work, so any volume predating that lacks it. Hardcoded
-        on purpose — deriving the check from init.sql would be clever and would
-        drift.
+        the last change; nothing errors, search just quietly returns nothing.
+        Schema changes are numbered migrations now (docker/postgres/migrations,
+        applied by scripts/migrate.py on top of the frozen init.sql baseline), so
+        an old volume is upgraded in place, keeping its data. The seeder runs the
+        same step again (idempotent) before it seeds.
     #>
-    $query = "SELECT 1 FROM information_schema.columns WHERE table_name = 'products' AND column_name = 'search_vector'"
-    $probe = @('exec', '-T', 'db', 'sh', '-c',
-               "PGPASSWORD=ecommerce_secret psql -h 127.0.0.1 -U ecommerce -d ecommerce_agents -tAc `"$query`"")
-    $result = & docker @($ComposeArgs + $probe) 2>$null
-    if ($result -match '1') { return }
-
-    Write-Host ''
-    Write-Warn 'Database schema is out of date — products.search_vector is missing.'
-    Write-Host ''
-    Write-Host '  Your Postgres volume predates the full-text search change. The stack will'
-    Write-Host '  start and look healthy, and every product search will silently return'
-    Write-Host '  nothing. Refusing to start into that.'
-    Write-Host ''
-    Write-Host '  Two ways forward:'
-    Write-Host ''
-    Write-Host '    Recreate the volume (loses local data, reseeds from scratch):'
-    Write-Host '      ./scripts/dev.ps1 -Clean'
-    Write-Host ''
-    Write-Host '    Or apply the schema in place, keeping your data:'
-    Write-Host '      docker compose exec -T db psql -U ecommerce -d ecommerce_agents < docker/postgres/init.sql'
-    Write-Host ''
-    exit 1
+    Write-Step 'Applying database migrations'
+    try {
+        Invoke-Compose -Arguments @('--profile', 'seed', 'run', '--rm', 'seeder',
+                                    'uv', 'run', '--no-project', 'python', '-m', 'scripts.migrate')
+    } catch {
+        Write-Host ''
+        Write-Warn 'Schema migration failed — see the output above.'
+        Write-Host ''
+        Write-Host '  If the volume is disposable, recreate it (loses local data, reseeds):'
+        Write-Host '      ./scripts/dev.ps1 -Clean'
+        Write-Host ''
+        exit 1
+    }
 }
 
 function Show-Summary {
@@ -367,6 +353,46 @@ try {
     if ($generated.Count -gt 0) {
         Write-Info "Generated local secrets in .env: $($generated -join ' ')"
         Write-Info 'Tokens issued before this run are no longer valid; sign in again.'
+    }
+
+    # ── LLM key preflight ────────────────────────────────────
+    # Mirrors dev.sh: openai/azure with no key means every answer fails, so stop
+    # before building or touching volumes. -InfraOnly and -SeedOnly call no model.
+    # The process environment wins, then the last NAME= line of .env.
+    function Get-EnvValue {
+        param([string]$Name)
+        $value = [Environment]::GetEnvironmentVariable($Name)
+        if (-not $value) {
+            $line = Get-Content '.env' | Where-Object { $_ -match "^$Name=" } | Select-Object -Last 1
+            if ($line) { $value = $line.Substring($Name.Length + 1) }
+        }
+        if (-not $value) { return '' }
+        return $value.Trim().Trim('"').Trim("'")
+    }
+    function Test-LlmKey {
+        param([string]$Value)
+        return ($Value -ne '') -and ($Value -ne 'sk-your-openai-api-key-here')
+    }
+    if (-not $InfraOnly -and -not $SeedOnly) {
+        $provider = (Get-EnvValue 'LLM_PROVIDER').ToLower()
+        if (-not $provider) { $provider = 'openai' }
+        $keyMissing = $false
+        if ($provider -eq 'openai') {
+            $keyMissing = -not (Test-LlmKey (Get-EnvValue 'OPENAI_API_KEY'))
+        } elseif ($provider -eq 'azure') {
+            $keyMissing = -not ((Test-LlmKey (Get-EnvValue 'AZURE_OPENAI_KEY')) -or (Test-LlmKey (Get-EnvValue 'AZURE_OPENAI_API_KEY')))
+        }
+        if ($keyMissing) {
+            Write-Err "LLM_PROVIDER=$provider but no API key is set, so every answer would fail."
+            Write-Host ''
+            Write-Host '  Two ways forward:'
+            Write-Host '    1. Add your key to .env (OPENAI_API_KEY, or AZURE_OPENAI_KEY for LLM_PROVIDER=azure),'
+            Write-Host '       then run this again.'
+            Write-Host '    2. Set LLM_PROVIDER=replay in .env to play back recorded model responses with no key.'
+            Write-Host '       Only the recorded demo prompts answer; anything else says it was not recorded.'
+            Write-Host ''
+            exit 1
+        }
     }
 
     # ── Clean ────────────────────────────────────────────────
@@ -427,7 +453,7 @@ try {
             'exec', 'db', 'pg_isready', '-h', '127.0.0.1', '-U', 'ecommerce', '-d', 'ecommerce_agents')
         Wait-ForHealth -Name 'Redis' -Probe @('exec', 'redis', 'redis-cli', 'ping')
         Repair-StaleDatabaseVolume
-        Assert-DatabaseSchema
+        Invoke-Migrations
         Invoke-Compose -Arguments @('--profile', 'seed', 'run', '--rm', 'seeder')
         Write-Ok 'Seeder complete'
         exit 0
@@ -454,7 +480,7 @@ try {
         'exec', 'db', 'pg_isready', '-h', '127.0.0.1', '-U', 'ecommerce', '-d', 'ecommerce_agents')
     Wait-ForHealth -Name 'Redis' -Probe @('exec', 'redis', 'redis-cli', 'ping')
     Repair-StaleDatabaseVolume
-    Assert-DatabaseSchema
+    Invoke-Migrations
     Write-Ok 'Infrastructure is ready'
 
     # ── Seed ─────────────────────────────────────────────────
@@ -472,12 +498,12 @@ try {
     Write-Step 'Starting agents and frontend'
     Invoke-Compose -Arguments ($RunProfiles + @('up', '-d'))
 
-    Wait-ForHttp -Name 'Orchestrator'      -Url 'http://localhost:8080/health'
-    Wait-ForHttp -Name 'Product Discovery' -Url 'http://localhost:8081/health'
-    Wait-ForHttp -Name 'Order Management'  -Url 'http://localhost:8082/health'
-    Wait-ForHttp -Name 'Pricing & Promos'  -Url 'http://localhost:8083/health'
-    Wait-ForHttp -Name 'Review & Sentiment' -Url 'http://localhost:8084/health'
-    Wait-ForHttp -Name 'Inventory & Fulfilment' -Url 'http://localhost:8085/health'
+    Wait-ForHttp -Name 'Orchestrator'      -Url 'http://localhost:8080/ready'
+    Wait-ForHttp -Name 'Product Discovery' -Url 'http://localhost:8081/ready'
+    Wait-ForHttp -Name 'Order Management'  -Url 'http://localhost:8082/ready'
+    Wait-ForHttp -Name 'Pricing & Promos'  -Url 'http://localhost:8083/ready'
+    Wait-ForHttp -Name 'Review & Sentiment' -Url 'http://localhost:8084/ready'
+    Wait-ForHttp -Name 'Inventory & Fulfilment' -Url 'http://localhost:8085/ready'
     Write-Ok 'All agents are running'
 
     Wait-ForHttp -Name 'Frontend' -Url 'http://localhost:3000' -TimeoutSeconds 90

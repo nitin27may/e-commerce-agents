@@ -52,8 +52,17 @@ cd agents/python && uv run uvicorn product_discovery.main:app --port 8081 --relo
 # Run frontend locally
 cd web && pnpm dev
 
-# Generate embeddings
+# Embeddings are seeded automatically (the seeder fills product_embeddings).
+# Regenerate, or export the precomputed file a keyed install loads:
 cd agents/python && uv run python -m scripts.generate_embeddings
+cd agents/python && uv run python -m scripts.generate_embeddings --export scripts/data/product_embeddings.v1.jsonl.gz
+
+# Apply schema migrations (the seeder and dev.sh do this for you)
+uv run --project agents/python python -m scripts.migrate
+
+# Replay eval suite, keyless — the same script CI runs
+scripts/replay-evals.sh --setup          # migrate + seed a fresh DB, then every suite
+cd agents/python && uv run python -m evals.fixture_drift   # 0 clean · 1 offline-fixable · 2 re-record
 
 # Lint Python
 cd agents/python && uv run ruff check .
@@ -85,15 +94,15 @@ Each specialist agent runs as an independent microservice with its own port and 
 
 ### Orchestrator route layout
 
-`orchestrator/routes/` is a package, not a single file: `chat.py` holds `/api/chat` + `/api/chat/stream`, `orchestration.py` holds the mode-introspection endpoints (`/api/orchestration/modes`, `.../graph`, `.../compare` — real as of Phase 1.6c, runs one prompt through several modes sequentially and reports per-mode text/latency/steps/graph; `tokens`/`est_cost_usd`/`grounding` aren't in the response yet, since they need Phase 3.5/Phase 2 infrastructure that doesn't exist — and `.../{run_id}/resume`, real as of Phase 1.5), and `legacy.py` holds everything else (auth, marketplace, admin, cart, checkout, orders, seller, and — Phase 1.5 — `GET /api/runs/{id}/checkpoints`) — the pre-split monolith, kept together since the split's purpose was isolating chat, not fully decomposing the route surface. `orchestrator/routes/__init__.py` combines all three into the single `router` `orchestrator/main.py` includes, and re-exports `optional_auth`/`require_auth`/`require_admin`/`require_seller`/`settings` so existing import sites are unaffected.
+`orchestrator/routes/` is a package, not a single file: `chat.py` holds `/api/chat` + `/api/chat/stream`, `orchestration.py` holds the mode-introspection endpoints (`/api/orchestration/modes`, `.../graph`, `.../compare` — real as of Phase 1.6c, runs one prompt through several modes sequentially and reports per-mode text/latency/steps/graph; each result carries `tokens_in`/`tokens_out`/`est_cost_usd`, null meaning "not captured" and an explicit zero for the two workflow modes, which call no model; `grounding` is not in the response — and `.../{run_id}/resume`, real as of Phase 1.5), and `legacy.py` holds everything else (auth, marketplace, admin, cart, checkout, orders, seller, and — Phase 1.5 — `GET /api/runs/{id}/checkpoints`) — the pre-split monolith, kept together since the split's purpose was isolating chat, not fully decomposing the route surface. Three smaller modules sit beside them: `approvals.py` (the staff approvals inbox and decide endpoint — see *Approvals* below), `notifications.py` (`/api/me/notifications`, the parked-outbox admin list) and `demo.py` (`/api/demo/tour`, `/api/demo/reset`, only when `DEMO_TOUR_ENABLED`). `orchestrator/routes/__init__.py` combines them all into the single `router` `orchestrator/main.py` includes, and re-exports `optional_auth`/`require_auth`/`require_admin`/`require_staff`/`require_seller`/`settings` so existing import sites are unaffected.
 
 **Web UI (Phase 1.6).** `web/src/components/chat/mode-switcher.tsx` (1.6a) is a composer control fed by `GET /api/orchestration/modes`, threading the selected mode through `api.ts::chatStream()`'s `mode` option and persisting it per conversation in localStorage. `orchestration-graph.tsx` (1.6b) renders a mode's `graph_mermaid()` output client-side (house palette applied client-side — the backend's generated source carries no styling) and animates nodes live from the `onOrchestrationEvent` hook's `node`/`error` frames; correlating a live `node_id` to a diagram node relies on a deliberate backend convention — every workflow mode's `graph_mermaid()` uses the real executor id with dashes swapped for underscores as the Mermaid node id (see `PrePurchaseMode.graph_mermaid()`'s comment in `workflow_mode.py`). `mode-comparison.tsx` (1.6c) is a standalone dialog (not tied to the active conversation) that calls `POST /api/orchestration/compare` and renders a result card per mode, reusing `orchestration-graph.tsx` in a static (non-live) rendering by passing the mode's `agents_involved` as `doneNodeIds`.
 
-**Resume UI (`/runs`).** `web/src/app/(app)/runs/page.tsx` fetches `GET /api/runs/{id}/checkpoints` for every visible run up front (not lazily on row-expand — a lazy fetch means a "Needs approval" badge can never show until a row's already been opened once, defeating its purpose as something to scan the list for), and shows Approve/Reject buttons calling `POST /api/orchestration/{run_id}/resume` for any row with a pending `hitl_request` — to admins only. Resume is admin-only on both stacks and a reviewer can never be the requester; everyone else sees "Awaiting staff review", in `/runs` and on the in-chat approval card alike. The resumed workflow executes as the original requester (tools read identity from ContextVars), with the reviewer recorded separately. Rows are always expandable now, not gated on `steps.length > 0` — workflow modes never populate `agent_execution_steps` (only "tool" mode's `log_execution_step()` calls do), so that gate used to hide the expand affordance for exactly the runs most likely to have a pending approval.
+**Resume UI (`/runs`).** `web/src/app/(app)/runs/page.tsx` fetches `GET /api/runs/{id}/checkpoints` for every visible run up front (not lazily on row-expand — a lazy fetch means a "Needs approval" badge can never show until a row's already been opened once, defeating its purpose as something to scan the list for), and shows Approve/Reject buttons calling `POST /api/orchestration/{run_id}/resume` for any row with a pending `hitl_request` — to staff only. A reviewer can never be the requester, on either stack. On Python, resume is a thin caller of the approvals decide function: staff means `support` or `admin`, and the reviewer's role must be at or above the level the policy assigned (`support` cannot decide a `manager` route). On .NET resume is still admin-only (the approvals API is not ported). Everyone else sees "Awaiting staff review", in `/runs` and on the in-chat approval card alike. The resumed workflow executes as the original requester (tools read identity from ContextVars), with the reviewer recorded separately. Rows are always expandable now, not gated on `steps.length > 0` — workflow modes never populate `agent_execution_steps` (only "tool" mode's `log_execution_step()` calls do), so that gate used to hide the expand affordance for exactly the runs most likely to have a pending approval.
 
-Both chat endpoints resolve an orchestration mode (request body `mode` -> `settings.ORCHESTRATION_MODE` -> `"tool"`) via `orchestrator.modes.get_mode()` and dispatch through it — `orchestrator/modes/` is what makes those modes reachable from a live request rather than tests-only. Five are registered: `tool` (default, LLM calls `call_specialist_agent`), `handoff` (`orchestrator/handoff.py`'s `HandoffBuilder` mesh), `workflow:pre-purchase` (`workflows/pre_purchase.py`'s concurrent fan-out/fan-in), `workflow:return-replace` (`workflows/return_replace.py`'s sequential graph with an in-workflow `ctx.request_info` HITL gate), and `group-chat` (`workflows/group_chat.py`'s round-table debate, two agent-backed panelists then a moderator). The two workflow modes and group-chat resolve a product_id/order_id out of the chat message themselves (a UUID literal if present, else a lookup — `search_products` / the user's most recent order) since neither underlying workflow ever took free text.
+Both chat endpoints resolve an orchestration mode (request body `mode` -> `settings.ORCHESTRATION_MODE` -> `"tool"`) via `orchestrator.modes.get_mode()` and dispatch through it — `orchestrator/modes/` is what makes those modes reachable from a live request rather than tests-only. Five are registered: `tool` (default, LLM calls `call_specialist_agent`), `handoff` (`orchestrator/handoff.py`'s `HandoffBuilder` mesh), `workflow:pre-purchase` (`workflows/pre_purchase.py`'s concurrent fan-out/fan-in), `workflow:return-replace` (`workflows/return_replace.py`'s sequential graph `check → policy-gate → initiate-return → search → discount → finalize`; the gate asks the approval policy and pauses with `ctx.request_info` *before* anything is created, so a rejected return leaves no `returns` row), and `group-chat` (`workflows/group_chat.py`'s round-table debate, two agent-backed panelists then a moderator). The two workflow modes and group-chat resolve a product_id/order_id out of the chat message themselves (a UUID literal if present, else a lookup — `search_products` / the user's most recent order) since neither underlying workflow ever took free text.
 
-**Checkpoints + resume (Phase 1.5).** `PrePurchaseMode` and `ReturnReplaceMode` attach `shared.factory.get_checkpoint_storage()` to every workflow run, wrapped in `shared.checkpoint_storage.RecordingCheckpointStorage` so each save surfaces as its own `kind="checkpoint"` event (MAF's own event stream never mentions a save). `chat.py`'s `_link_run_artifacts()` correlates a run's `usage_logs` row to its checkpoints (`workflow_checkpoints.usage_log_id`) and, when `workflow:return-replace` pauses, writes a `hitl_requests` row carrying MAF's own resume token (`request_id`) and the paused checkpoint. `ReturnReplaceMode.resume()` — reached from `POST /api/orchestration/{run_id}/resume` — builds a *fresh* `Workflow` object (there's no live one to reuse; the one that paused lived in a prior request's process memory) and resumes purely from `checkpoint_id` + `responses={request_id: approved}`, verified directly to replay correctly through discount and finalize. Note: `_HitlGateExecutor.on_approval()` (`workflows/return_replace.py`, unchanged) rebuilds a minimal `WorkflowState` from the approval-request snapshot on resume — `return_id`/`replacement_products` from the original run don't survive; `resume()`'s response text is written to not depend on them.
+**Checkpoints + resume (Phase 1.5).** `PrePurchaseMode` and `ReturnReplaceMode` attach `shared.factory.get_checkpoint_storage()` to every workflow run, wrapped in `shared.checkpoint_storage.RecordingCheckpointStorage` so each save surfaces as its own `kind="checkpoint"` event (MAF's own event stream never mentions a save). `chat.py`'s `_link_run_artifacts()` correlates a run's `usage_logs` row to its checkpoints (`workflow_checkpoints.usage_log_id`) and, when `workflow:return-replace` pauses, writes a `hitl_requests` row carrying MAF's own resume token (`request_id`) and the paused checkpoint. `ReturnReplaceMode.resume()` — reached from `POST /api/orchestration/{run_id}/resume` — builds a *fresh* `Workflow` object (there's no live one to reuse; the one that paused lived in a prior request's process memory) and resumes purely from `checkpoint_id` + `responses={request_id: ReturnDecision(...)}` (a small dataclass: decision, resolution `refund|store_credit|replacement`, amount, note, decider, approval id — it round-trips through `PostgresCheckpointStorage`; MAF's `FileCheckpointStorage` refuses custom types), verified directly to replay correctly through discount and finalize. The approval request carries the full `WorkflowState`, and `_PolicyGateExecutor.on_decision()` restores it on resume, so `return_id` and `replacement_products` survive the pause (they used not to). No decision before the SLA expires resumes the run as a rejection.
 
 `chat_stream()` branches on the resolved mode: `tool` keeps its original direct-agent SSE path (no mode streams token-level deltas the way `_run_agent_native_stream` does), while every other mode streams through `get_mode(...).run()` directly, translating each `OrchestrationEvent` into an SSE frame — `delta` becomes real display text (extracted via `orchestrator.events.delta_text`) when it's present, `node_enter`/`node_exit` becomes `event: node`, `handoff` becomes `event: handoff`, `tool_call` becomes `event: step`, `checkpoint`/`request_info`/`error` get their own named frames. Not every mode streams incremental text — `handoff` does (its "output" events carry `AgentResponseUpdate` content), but the three MAF-workflow modes mostly don't (their executors call `ctx.send_message()`, which produces no delta; the one `ctx.yield_output()` carries a raw state dataclass) — so `_run_mode_task()` falls back to pushing `run_completed`'s full text as a single chunk if nothing streamed incrementally, guaranteeing every mode a non-empty visible response. The web client (`web/src/lib/api.ts::chatStream`) routes any SSE event name outside `step`/`metadata`/`delta`/plain-text to an `onOrchestrationEvent` hook rather than rendering it as chat text — no UI consumes these frames yet (that's Phase 1.6), but the parser had to be fixed to not corrupt the chat bubble with raw JSON once a caller sets `mode` to anything other than `tool`.
 
@@ -101,9 +110,14 @@ Both chat endpoints resolve an orchestration mode (request body `mode` -> `setti
 
 `shared/agent_host.py` is a lightweight A2A-compatible FastAPI host. It does **not** implement a custom tool-calling loop — the legacy `_run_agent_with_tools()` / `_run_agent_with_tools_stream()` OpenAI chat-completions loop was removed once MAF-native execution was confirmed compatible with production Azure deployments (see the module docstring). Every request now goes through MAF's own `agent.run()` (blocking) / `agent.run(..., stream=True)` (SSE streaming); the `Agent` object owns its tools, system prompt, and context-provider chain, so `agent_host.py` just threads the A2A request into the right MAF call and (for streaming) forwards chunks over SSE.
 
-### MAF Package Patch
+### MAF imports
 
-`agents/python/patch_maf.py` — workaround for a packaging bug in `agent-framework-core==1.0.0`, whose `__init__.py` shipped empty with no public re-exports. Fixed upstream by 1.14.0 (the version this repo now pins), so `patch()` is already a no-op on a current install (it only writes when the file is empty). The Dockerfile still runs it defensively; it does nothing today.
+MAF is imported from its public surface (`agent_framework`, `agent_framework.orchestrations`, …),
+never from `agent_framework._*`. `agents/python/tests/test_no_private_maf_imports.py` enforces it with
+a two-entry allowlist (`encode_checkpoint_value` / `decode_checkpoint_value`, which are not exported
+at the pinned version and which `PostgresCheckpointStorage` needs). The old `patch_maf.py`
+workaround for the empty-`__init__` packaging bug in core 1.0.0 is gone; it had been a no-op since
+the pin moved past it.
 
 ### YAML Prompt Composition System
 
@@ -113,8 +127,19 @@ Shared prompt fragments live in `agents/python/config/prompts/_shared/` (groundi
 
 Each agent's `create_*_agent()` factory calls `get_system_prompt(current_user_role.get())` (which wraps `load_prompt(agent_name, user_role)`) at agent-construction time, and agents are rebuilt on every request (see `orchestrator/routes/chat.py`) — so the composed prompt is genuinely role-aware per request (admin sees different instructions than customer). Earlier revisions built the prompt once at *import* time with a hardcoded default role, which silently defeated the role-specific YAML blocks; that bug is fixed.
 
+### Approvals
+
+One inbox, one decide path (Python; .NET has the policy engine and the return gate but not the API — see `docs/parity-matrix.md`). Full detail is in `docs/approvals.md`.
+
+- **Policy, not prompt, decides who approves.** `agents/python/config/policies/approvals.yaml` is an ordered rule list per approval kind (operators `lt/lte/gt/gte/eq/in` only, first match wins) routing to `auto`, `support` or `manager`. Python (`shared/policy/`) and .NET (`ApprovalPolicy.cs`) read the same file and run the same golden cases in `config/policies/testdata/`; a missing fact never satisfies a condition, so `auto` cannot fire on absent evidence. `auto` is *recorded* today, not acted on: the request still goes to a person.
+- **State lives in `approvals`** (migration 0006) with an append-only `approval_events` audit; `tool_approval_requests` and `hitl_requests` remain as per-source execution records linked by `approval_id`. Every state change goes through `shared/approvals/repo.py` (`create`, guarded `transition`, `claim`/`release_claim`, `escalate`). The database itself refuses a decider equal to the requester.
+- **Deciding** is `POST /api/approvals/{id}/decide` (`approve | reject | request_info`, optional `edits`). Edits are accepted only for the kind's `editable_fields` and can never raise the amount. The legacy resume and admin approve/deny routes call the same function.
+- **Deadlines are outbox rows.** Entering `pending_review` schedules a reminder and an SLA timer in the same transaction (`shared/outbox.py`). `agents/python/worker/` (compose service `outbox-worker`; `uv run python -m worker.main`) claims rows with `FOR UPDATE SKIP LOCKED` under a lease, retries with capped backoff and parks a row after `OUTBOX_MAX_ATTEMPTS`. A breach escalates `support → manager` once; at the top it applies the kind's `on_timeout`, which for a paused return means resuming it as a rejection. The worker serves both stacks, since they share the database.
+- **Identity on execution:** whoever approves, the action runs as the original requester (tools read ContextVars), and the reviewer is recorded separately.
+
 ### Auth & Identity Flow
 
+- **Roles**: `customer`, `power_user`, `seller`, `support`, `admin`. `require_staff` admits `support` and `admin`; signup always creates a `customer` on both stacks.
 - **External requests**: JWT Bearer token validated by `AgentAuthMiddleware` in `shared/auth.py`
 - **Inter-agent requests**: `X-Agent-Secret` header (shared secret) + `X-User-Email` / `X-User-Role` headers
 - **Identity propagation**: Auth middleware sets ContextVars (`current_user_email`, `current_user_role`, `current_session_id`) which tools read directly — no parameter passing through the call stack
@@ -134,7 +159,7 @@ Separately, the orchestrator's own read of *its* conversation's history (for `Ru
 
 | Layer | Technology |
 |-------|-----------|
-| Agent Framework | MAF Python SDK — `agent-framework-core` 1.14.0, `-openai` 1.13.0, `-orchestrations` 1.1.0 (pinned in `agents/python/pyproject.toml`) |
+| Agent Framework | MAF Python SDK — `agent-framework-core` 1.22.0, `-openai` 1.17.0, `-orchestrations` 1.3.2 (pinned in `agents/python/pyproject.toml`; core 1.23+ requires MCP 2.x, a separate step); MAF .NET — `Microsoft.Agents.AI` 1.28.0 (`agents/dotnet/Directory.Packages.props`, shared by the tutorials via `tutorials/Directory.Packages.props`) |
 | Agent Communication | A2A Protocol (HTTP POST to `/message:send`) |
 | LLM | OpenAI / Azure OpenAI (gpt-4.1), configurable via `LLM_PROVIDER` env var — plus any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, OpenRouter, GitHub Models) via `LLM_PROVIDER=openai` + `LLM_BASE_URL` |
 | Backend | Python 3.12, FastAPI (orchestrator), Starlette (specialist agents via agent_host) |
@@ -184,11 +209,25 @@ AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
 AZURE_OPENAI_KEY=...
 AZURE_OPENAI_DEPLOYMENT=gpt-4.1
 AZURE_OPENAI_API_VERSION=2024-12-01-preview
+
+# Any OpenAI-compatible endpoint (Ollama, vLLM, OpenRouter, Gemini's compatible API)
+LLM_PROVIDER=openai
+LLM_BASE_URL=http://localhost:11434/v1
+LLM_API=chat_completions      # default `responses`; needed where there is no /responses route
 ```
+
+**Per-agent models.** A prompt file may carry `model: {provider, model, temperature}`; `get_chat_client(agent_name)` honours it and `prompt_loader` never lets the block into the composed prompt (a test pins the prompt byte-for-byte). No shipped file sets it.
+
+**Anthropic (Claude) is .NET-only for now** (`LLM_PROVIDER=anthropic`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`): the Python connector needs MAF core ≥ 1.24. It is wired and covered by a stubbed-transport test; it has never made a live call.
+
+**Embeddings are configured separately** — `EMBEDDING_PROVIDER`, `EMBEDDING_BASE_URL`, `EMBEDDING_API_KEY`, `EMBEDDING_MODEL`, `EMBEDDING_DIM` — defaulting to the chat provider. The configured dimension is checked against the column type at startup; changing it is an explicit operator step (`uv run --project agents/python python scripts/reset_embeddings.py --dim N`), because it discards stored vectors.
+
+`LLM_API` is Python-only: the .NET stack always uses Chat Completions. Under `LLM_PROVIDER=replay`
+no model is called at all — that is what CI, the eval smoke suite and the tutorials' keyless path use.
 
 ## Database
 
-- Schema in `docker/postgres/init.sql` (34 tables)
+- Schema: `docker/postgres/init.sql` is the frozen baseline (34 tables); every change since is a numbered file in `docker/postgres/migrations/` (0002–0011 today: approval claims, refresh tokens, approvals/outbox/notifications, usage cost columns, embedding model, merchant proposals, worker leases) applied by `scripts/migrate.py` (the seeder, `dev.sh`/`dev.ps1` and every test fixture run it). Never edit an applied migration — the checksum guard fails the run; add a new one. The runner applies whatever is unapplied in numeric order, so a lower number arriving late is fine.
 - All queries use parameterized `$1, $2` syntax (asyncpg)
 - All user-facing queries filter by `user_email` or `user_id`
 - Embeddings stored as `vector(1536)` with ivfflat cosine index
@@ -196,7 +235,7 @@ AZURE_OPENAI_API_VERSION=2024-12-01-preview
 
 ## Testing & Evals
 
-Three traps here cost more time than anything else in the repo.
+Four traps here cost more time than anything else in the repo.
 
 **Playwright: wait on the composer's stop icon, never on status text.** A streamed
 turn is finished when the submit button stops showing the stop icon — not when
@@ -214,6 +253,19 @@ so changing what a tool *returns* changes the key and the fixture misses, which 
 harness reports as an infrastructure failure rather than a bad answer. Re-record
 after any change to a dataset, a prompt, a tool schema, or a tool's output shape;
 the recipe is in `evals/fixtures/README.md`.
+
+**Two eval runs on one machine collide.** The specialists bind fixed ports 8081–8085, so a second
+`scripts/replay-evals.sh` (or anything else on those ports) makes the first report missing fixtures
+that are not missing. Serialize runs — `flock <lockfile> scripts/replay-evals.sh` — and never
+`pkill` services by name. The same symptom appears when re-seeding a database that was already
+seeded: start from a fresh one.
+
+**`fixture_drift` exit 0 does not prove the fixtures still match.** It diffs stored requests against
+what the installed MAF would serialise, but it cannot see values MAF generates at run time. Core 1.21
+began stamping a random `af-call-<uuid>` id on every function call, which lands in the next turn's
+request: the drift tool reported clean while every post-tool-call fixture missed. `replay_client`
+now strips those ids from the key. After any MAF bump, `scripts/replay-evals.sh` is the gate; the
+drift tool only tells you which kind of repair is needed.
 
 **The `full` eval suite spends real money and is human-dispatch only.** It runs on
 `workflow_dispatch` alone, never a schedule. Nothing in this repo may put a live

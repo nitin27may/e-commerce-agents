@@ -53,8 +53,7 @@ Design notes:
   this file — the production app reads credentials from
   ``shared.config.settings``, not raw ``os.environ``, so the two can't share
   a single implementation without a cross-workspace dependency this repo
-  doesn't have. Same precedent as ``tutorials/_shared/maf_bootstrap.py`` /
-  ``agents/python/patch_maf.py``. Keep the two in sync when either changes.
+  doesn't have. Keep the two in sync when either changes.
 """
 
 from __future__ import annotations
@@ -84,6 +83,39 @@ class ReplayFixtureMissingError(RuntimeError):
     """
 
 
+def _response_format_key(response_format: Any) -> Any:
+    """Stable, JSON-serializable form of an options ``response_format``.
+
+    A Pydantic model class becomes its name plus JSON schema; a mapping (a raw
+    JSON-schema format) is used as-is; anything else falls back to ``str``.
+    """
+    if isinstance(response_format, type) and hasattr(response_format, "model_json_schema"):
+        return {"name": response_format.__name__, "schema": response_format.model_json_schema()}
+    if isinstance(response_format, dict):
+        return response_format
+    return str(response_format)
+
+
+def _message_key_dict(message: Any) -> dict[str, Any]:
+    """``Message.to_dict()`` minus the framework's own per-run function-call ids.
+
+    agent-framework-core 1.21 stamps every actionable ``function_call`` that has no
+    ``id`` with ``af-call-<uuid4>`` (``_generate_function_call_occurrence_id``), and
+    1.22 copies it onto the matching ``function_result`` too. The ids land in the
+    *next* turn's request, so without this the key of every turn after a tool call
+    would differ on each run, and no fixture could ever match. The model never sees
+    them (they are not sent to the provider) and corpora recorded before 1.21 do not
+    contain them, so dropping them keeps every existing key unchanged.
+    """
+    data = message.to_dict()
+    for content in data.get("contents") or []:
+        if not isinstance(content, dict) or content.get("type") not in ("function_call", "function_result"):
+            continue
+        if str(content.get("id") or "").startswith("af-call-"):
+            del content["id"]
+    return data
+
+
 def _canonical_request(messages: Any, options: dict[str, Any] | None) -> dict[str, Any]:
     """JSON-serializable, hashable view of a request: every message plus tool schemas.
 
@@ -98,14 +130,21 @@ def _canonical_request(messages: Any, options: dict[str, Any] | None) -> dict[st
             tool_specs.append(t.to_json_schema_spec())
         except AttributeError:
             tool_specs.append({"name": getattr(t, "name", str(t))})
-    return {
-        "messages": [m.to_dict() for m in messages],
+    canonical: dict[str, Any] = {
+        "messages": [_message_key_dict(m) for m in messages],
         "tools": tool_specs,
         # Agent-level system instructions travel in options, not as a message
         # — include them so "same question, different instructions" doesn't
         # collide on one fixture.
         "instructions": (options or {}).get("instructions"),
     }
+    # A structured-output call must not replay a prose fixture recorded without
+    # one (it would parse-fail: a wrong answer, not a reported miss). Added only
+    # when set, so every pre-existing fixture's key is unchanged.
+    response_format = (options or {}).get("response_format")
+    if response_format is not None:
+        canonical["response_format"] = _response_format_key(response_format)
+    return canonical
 
 
 def _request_hash(canonical: dict[str, Any]) -> str:

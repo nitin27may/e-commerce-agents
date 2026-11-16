@@ -10,7 +10,7 @@ Code-built workflows are great when engineers own the graph. Declarative workflo
 - You want GitOps — workflow diffs show up in PRs as YAML changes, not code changes.
 - You need to swap a pipeline's shape without a deploy, because the graph lives in a config file instead of compiled code.
 
-MAF ships a built-in declarative schema (`Microsoft.Agents.AI.Workflows.Declarative` on .NET; a Python equivalent exists too), but the simplest way to *understand* the pattern is to roll your own minimal loader. This chapter does exactly that, then points at the capstone for where the same idea is used for real.
+MAF ships a built-in declarative schema (`Microsoft.Agents.AI.Workflows.Declarative` on .NET; a Python equivalent exists too), but the simplest way to *understand* the pattern is to roll your own minimal loader. This chapter does exactly that, and notes where the capstone stands on the idea (it deliberately has no declarative loader).
 
 ## Prerequisites
 
@@ -157,10 +157,10 @@ dotnet run -- "maf rocks"  # happy path
 
 ## Gotchas
 
-- **Schema freedom is a tax.** Every declarative system is a small language; validate aggressively. Both this chapter's loader and the capstone's `agents/python/shared/workflow_loader.py` raise on unknown `op` values, duplicate executor ids, and edges referencing undeclared executors — do the same in any loader you write.
+- **Schema freedom is a tax.** Every declarative system is a small language; validate aggressively. This chapter's loader raises on unknown `op` values, duplicate executor ids, and edges referencing undeclared executors — do the same in any loader you write.
 - **Executors aren't free.** Each YAML entry builds a real `Executor` subclass instance. For very large specs, lazy-instantiate.
-- **Custom ops must live somewhere.** This chapter embeds them inline in `main.py`; the capstone's loader exposes `register_op(name, factory)` so production code can add domain-specific ops without touching the loader itself.
-- **The old "MAF v1.0 wheel ships an empty `__init__.py`" packaging bug is fixed upstream, not by a workaround file.** `agent-framework` 1.14.0 (now pinned) ships a real `__init__.py`. `agents/python/patch_maf.py` still exists but is a documented no-op — it only patches when the file is empty, which it no longer is. The bootstrap tutorials actually rely on is [`tutorials/_shared/maf_bootstrap.py`](../_shared/maf_bootstrap.py), which every chapter's `main.py` and test suite call at import time; it still carries the patch logic defensively but is a no-op on a current install.
+- **Custom ops must live somewhere.** This chapter embeds them inline in `main.py` and exposes `register_op(name, factory)` so new ops can be added without touching the loader itself.
+- **No MAF packaging workaround is needed.** `agent-framework-core` 1.22.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. [`tutorials/_shared/maf_bootstrap.py`](../_shared/maf_bootstrap.py)`::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
 - **`dotnet test` isn't wired up for this chapter yet.** `Declarative.csproj` already excludes a `tests/**/*.cs` glob and lists `InternalsVisibleTo="Declarative.Tests"`, but no `tests/` directory exists on disk in this chapter — unlike Chapter 9's `dotnet/tests/`. Treat the Python suite as the chapter's test coverage for now.
 
 ## Tests
@@ -183,9 +183,7 @@ Most of them are validation, because the whole premise of a declarative loader i
 
 ## How this shows up in the capstone
 
-The capstone's declarative loader lives at [`agents/python/shared/workflow_loader.py`](../../agents/python/shared/workflow_loader.py) — `load_workflow()` at `agents/python/shared/workflow_loader.py:158` and `register_op()` at `agents/python/shared/workflow_loader.py:118` are the production versions of this chapter's `main.py` functions, with the same op-registry pattern plus stricter validation (`WorkflowSpecError` for missing keys, duplicate ids, and dangling edges).
-
-As of this session, only one real spec exists: [`agents/python/config/workflows/text-pipeline.yaml`](../../agents/python/config/workflows/text-pipeline.yaml) — the same toy `upper -> non_empty -> prefix` pipeline as this chapter, used to exercise the loader and the visualization pipeline (`docs/workflows/README.md`). The two production workflows referenced elsewhere in the capstone — return/replace and pre-purchase — are hand-coded MAF workflows (`workflows/return_replace.py`, `workflows/pre_purchase.py`), not declarative YAML specs. `agents/python/config/workflows/SCHEMA.md` says explicitly that declarative specs for them "land alongside their respective refactor steps" — they have not landed as of this session. Don't take this chapter as evidence the production workflows are YAML-driven; only the loader and the toy demo spec are real today.
+It does not. The capstone once carried a small YAML loader of its own (`agents/python/shared/workflow_loader.py`, with a single toy `text-pipeline` spec) and a .NET twin; nothing in the running app ever used either, so both were removed (#98). The capstone's two production workflows — return/replace and pre-purchase — are hand-coded MAF `WorkflowBuilder` graphs (`agents/python/workflows/return_replace.py:259`, `agents/python/workflows/pre_purchase.py:300`), not YAML specs. This chapter is self-contained: its loader and its `workflow.yaml` live in `python/` and `dotnet/` here, and it imports nothing from `agents/`. Don't take it as evidence the production workflows are YAML-driven.
 
 ## What's next
 

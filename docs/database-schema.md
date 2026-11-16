@@ -324,7 +324,7 @@ erDiagram
 | Table | Key Columns | Notes |
 |-------|-------------|-------|
 | **products** | `id` (PK), `name`, `category`, `brand`, `price`, `original_price`, `rating`, `specs` (JSONB) | Categories: Electronics, Clothing, Home, Sports, Books. `specs` stores product-specific attributes as flexible JSON. |
-| **product_embeddings** | `id` (PK), `product_id` (FK -> products), `embedding` (vector(1536)) | One embedding per product. Uses `text-embedding-3-small` (1536 dimensions). IVFFlat index with 10 lists for cosine similarity search. |
+| **product_embeddings** | `id` (PK), `product_id` (FK -> products), `embedding` (vector(1536)), `embedding_model` (migration 0008) | One embedding per product. Defaults to `text-embedding-3-small` (1536 dimensions); the width is `EMBEDDING_DIM` and changes only through `scripts/reset_embeddings.py` (see [configuration](configuration.md#embeddings-are-configured-separately)). `embedding_model` records which model wrote the vector (`replay-hashing-vectorizer` for offline ones; NULL for rows from before 0008). IVFFlat index with 10 lists for cosine similarity search. |
 | **price_history** | `id` (PK), `product_id` (FK -> products), `price`, `recorded_at` | Daily price snapshots. Seeder generates 90 days of history. |
 
 **Indexes**
@@ -448,7 +448,7 @@ Two rules the reader enforces, each closing a defect that shipped:
 |-------|-------------|-------|
 | **conversations** | `id` (PK), `user_id` (FK -> users), `title`, `is_active`, `last_message_at` | Soft-delete via `is_active`. Title auto-set from first user message (first 100 chars). |
 | **messages** | `id` (PK), `conversation_id` (FK -> conversations), `role`, `content`, `agent_name`, `agents_involved` (TEXT[]), `metadata` (JSONB) | Roles: `user`, `assistant`, `system`. `agents_involved` tracks which specialist agents contributed. `metadata` stores tool call data and trace info. |
-| **usage_logs** | `id` (PK), `user_id` (FK -> users), `agent_name`, `trace_id`, `tokens_in`, `tokens_out`, `tool_calls_count`, `duration_ms`, `status` | `trace_id` correlates with OTel traces in the Aspire Dashboard. Status: `success` or `error`. |
+| **usage_logs** | `id` (PK), `user_id` (FK -> users), `agent_name`, `trace_id`, `tokens_in`, `tokens_out`, `tokens_cached_in`, `model`, `cost_usd`, `tool_calls_count`, `duration_ms`, `status` | `model`, `tokens_cached_in` and `cost_usd` (migration `0007`) are NULL when the run's usage was not captured; `cost_usd = 0` is a mode that makes no LLM call. `trace_id` correlates with OTel traces in the Aspire Dashboard. Status: `success` or `error`. |
 | **agent_execution_steps** | `id` (PK), `usage_log_id` (FK -> usage_logs), `step_index`, `tool_name`, `tool_input` (JSONB), `tool_output` (JSONB), `duration_ms` | Ordered by `step_index`. Records each tool invocation within an agent execution. |
 
 **Indexes**
@@ -468,7 +468,7 @@ Two rules the reader enforces, each closing a defect that shipped:
 
 | Table | Key Columns | Notes |
 |-------|-------------|-------|
-| **agent_memories** | `id` (PK), `user_id` (FK -> users), `category`, `content`, `importance` (SMALLINT), `embedding` (`vector(1536)`), `expires_at`, `is_active` | Long-term per-user memory, distinct from conversation history: written by `store_memory` and read by `recall_memories`. Embedded, so recall is semantic rather than keyword. Soft-deleted via `is_active`; `expires_at` lets a memory age out. |
+| **agent_memories** | `id` (PK), `user_id` (FK -> users), `category`, `content`, `importance` (SMALLINT), `embedding` (`vector(1536)`; resized with `product_embeddings` by `scripts/reset_embeddings.py`), `expires_at`, `is_active` | Long-term per-user memory, distinct from conversation history: written by `store_memory` and read by `recall_memories`. Embedded, so recall is semantic rather than keyword. Soft-deleted via `is_active`; `expires_at` lets a memory age out. |
 
 ### Human-in-the-Loop & Durability
 
@@ -480,6 +480,19 @@ Two rules the reader enforces, each closing a defect that shipped:
 | **idempotency_keys** | `key` (PK, VARCHAR(600)), `scope`, `status` (`in_progress` \| `completed`), `result` (JSONB), `completed_at` | Reserved with `INSERT ... ON CONFLICT DO NOTHING`, so a duplicate is refused rather than racing. A completed reservation replays its cached `result`; one older than 60s is reclaimed, which is how a crashed process recovers. This is what stops an approved refund from executing twice. |
 
 **Note on the FK between them:** `hitl_requests.checkpoint_id` references `workflow_checkpoints`, so a bare `TRUNCATE workflow_checkpoints` fails regardless of the FK's `ON DELETE` action — truncate both together or use `CASCADE`.
+
+### Approvals Foundation (migration `0006`)
+
+One inbox for every approval kind, with an audit trail and an outbox. Python repository only (`shared/approvals/repo.py`, `shared/outbox.py`). `approvals` and `approval_events` are written by every gated tool call and every paused return and by the approvals API; `outbox` and `notifications` are not written by anything yet.
+
+| Table | Key Columns | Notes |
+|-------|-------------|-------|
+| **approvals** | `id` (PK), `source` (`tool` \| `workflow` \| `proposal` \| `event`), `source_ref`, `kind`, `requester_email`, `subject_email`, `amount`, `policy_version`, `route` (`auto` \| `support` \| `manager`), `assigned_role`, `status`, `recommendation` / `decision` (JSONB), `decided_by`, `due_at`, `escalation_level`, `claimed_at` / `claimed_by` | Status: `pending_confirm`, `pending_review`, `needs_info`, `approved`, `approved_with_edits`, `rejected`, `expired`, `executed`, `failed`. The CHECK `approvals_no_self_approval` forbids `decided_by = requester_email` (case-insensitive); the repository refuses it first. `claimed_at` fences whoever executes a decision. One row per `(source, source_ref)`. |
+| **approval_events** | `id` (BIGSERIAL PK), `approval_id` (FK, `ON DELETE RESTRICT`), `actor_email`, `actor_role`, `action`, `payload` (JSONB) | Append-only: a trigger refuses UPDATE and DELETE. |
+| **outbox** | `id` (BIGSERIAL PK), `topic`, `aggregate_id`, `payload` (JSONB), `dedupe_key` (UNIQUE), `available_at`, `attempts`, `locked_until`, `processed_at`, `last_error` | Events and timers (a timer is a future `available_at`). `enqueue()` runs on the caller's connection so it joins that transaction. |
+| **notifications** | `id` (PK), `user_email`, `kind`, `title`, `body`, `link`, `approval_id` (FK, `ON DELETE SET NULL`), `read_at` | |
+
+`tool_approval_requests` and `hitl_requests` each gained a nullable `approval_id` pointing at `approvals`; they stay as the per-source execution records.
 
 ### OAuth2 Authorization Server
 
@@ -501,7 +514,7 @@ The seeder (`scripts/seed.py`) populates the database with deterministic data (`
 |-------|-------|---------|
 | users | 20 | 1 admin, 2 power users, 2 sellers, 15 customers |
 | products | 50 | 10 per category (Electronics, Clothing, Home, Sports, Books) |
-| product_embeddings | 0 | **Not seeded.** Run `scripts/generate_embeddings.py` separately to populate all 50 |
+| product_embeddings | 50 under `LLM_PROVIDER=replay`; otherwise 0 until `scripts/data/product_embeddings.v1.jsonl.gz` exists | Filled by the seeder (replay vectors, or the precomputed file when its model matches `EMBEDDING_MODEL`); `scripts/generate_embeddings.py` regenerates, `--export` writes the file |
 | orders | 200 | Distributed across statuses (placed through delivered/cancelled) |
 | order_items | ~400 | 1-4 items per order |
 | order_status_history | ~600 | Full tracking timeline per order |
@@ -538,8 +551,8 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;   -- gen_random_uuid()
 
 ## Gotchas
 
-- **product_embeddings** is empty after a default `./scripts/dev.sh` run. The seeder does not populate it — `scripts/generate_embeddings.py` is a separate manual step, because embedding 50 products costs an API call per product. Until it runs, `semantic_search` is lexical-only: the vector arm of the hybrid query returns no rows and full-text search carries the result, which degrades quietly rather than erroring.
-- **product_embeddings** uses an IVFFlat index (`lists = 10`). This index type requires the table to have existing data before creation, or it will be empty, so `generate_embeddings.py` reindexes after writing.
+- **product_embeddings** is filled by the seeder: replay-scheme vectors under `LLM_PROVIDER=replay`, or the precomputed `scripts/data/product_embeddings.v1.jsonl.gz` under openai/azure when its model matches `EMBEDDING_MODEL` (the seeder never calls an embedding API; a human generates the file with `generate_embeddings --export`). With no file the table stays empty and `semantic_search` runs its full-text arm alone; it also does so whenever the query-time embedding call fails, and `find_similar_products` falls back to same-category-by-rating for a product with no vector.
+- **product_embeddings** uses an IVFFlat index (`lists = 10`). This index type requires the table to have existing data before creation, or it will be empty, so the seeder and `generate_embeddings.py` both reindex after writing.
 - **agent_catalog.name** is the FK target for `access_requests` and `agent_permissions`, not the `id` column. This simplifies lookups but means agent names cannot be renamed without cascading updates.
 - **warehouse_inventory** has a composite primary key `(warehouse_id, product_id)` rather than a surrogate UUID.
 - **usage_logs.user_id** is typed as `UUID REFERENCES users(id)`, but some queries cast it with `::uuid` defensively in the audit endpoint.

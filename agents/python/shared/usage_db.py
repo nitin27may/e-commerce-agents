@@ -8,10 +8,14 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Mapping
 from typing import Any
 from uuid import UUID
 
+from shared.cost import usage_cost, usage_model
 from shared.db import get_pool
+from shared.log_safe import log_safe
+from shared.run_usage import tokens_from_usage
 from shared.telemetry import get_current_trace_id
 
 logger = logging.getLogger(__name__)
@@ -28,8 +32,15 @@ async def log_agent_usage(
     duration_ms: int = 0,
     status: str = "success",
     error_message: str | None = None,
+    model: str | None = None,
+    tokens_cached_in: int | None = None,
+    cost_usd: float | None = None,
 ) -> UUID | None:
-    """Insert a record into usage_logs. Returns the usage_log id."""
+    """Insert a record into usage_logs. Returns the usage_log id.
+
+    ``model``, ``tokens_cached_in`` and ``cost_usd`` are ``None`` when the run's usage
+    was not captured; use :func:`usage_columns` to derive them from a run's usage.
+    """
     pool = get_pool()
     trace_id = get_current_trace_id()
 
@@ -37,8 +48,9 @@ async def log_agent_usage(
         row = await pool.fetchrow(
             """INSERT INTO usage_logs
                (user_id, agent_name, session_id, trace_id, input_summary,
-                tokens_in, tokens_out, tool_calls_count, duration_ms, status, error_message)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                tokens_in, tokens_out, tool_calls_count, duration_ms, status, error_message,
+                model, tokens_cached_in, cost_usd)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
                RETURNING id""",
             str(user_id) if user_id else None,
             agent_name,
@@ -51,11 +63,35 @@ async def log_agent_usage(
             duration_ms,
             status,
             error_message,
+            model,
+            tokens_cached_in,
+            cost_usd,
         )
         return row["id"] if row else None
     except Exception:
-        logger.exception("Failed to log agent usage for %s", agent_name)
+        logger.exception("Failed to log agent usage for %s", log_safe(agent_name))
         return None
+
+
+def usage_columns(usage: Mapping[str, Any] | None) -> dict[str, Any]:
+    """``log_agent_usage`` keyword arguments for a run's ``{total, by_agent}`` usage.
+
+    ``usage=None`` (not captured) yields NULL model/cached/cost, while an explicit zero
+    (a mode that made no LLM call) yields ``cost_usd=0.0`` — the two stay distinguishable
+    in the table.
+    """
+    cost = usage_cost(usage)
+    if usage is None or cost is None:
+        return {"tokens_in": 0, "tokens_out": 0, "model": None, "tokens_cached_in": None, "cost_usd": None}
+    tokens_in, tokens_out = tokens_from_usage(usage)
+    total = usage.get("total") if isinstance(usage.get("total"), Mapping) else usage
+    return {
+        "tokens_in": tokens_in,
+        "tokens_out": tokens_out,
+        "model": usage_model(usage),
+        "tokens_cached_in": int(total.get("cached_input_token_count") or 0),
+        "cost_usd": cost,
+    }
 
 
 async def log_execution_step(
@@ -83,7 +119,7 @@ async def log_execution_step(
             duration_ms,
         )
     except Exception:
-        logger.exception("Failed to log execution step %s for %s", step_index, tool_name)
+        logger.exception("Failed to log execution step %s for %s", log_safe(step_index), log_safe(tool_name))
 
 
 class UsageTimer:
@@ -93,7 +129,7 @@ class UsageTimer:
         self._start: float = 0
         self.duration_ms: int = 0
 
-    def __enter__(self) -> "UsageTimer":
+    def __enter__(self) -> UsageTimer:
         self._start = time.perf_counter()
         return self
 
@@ -106,6 +142,7 @@ def _safe_json(data: dict | None) -> str | None:
     if data is None:
         return None
     import json
+
     try:
         return json.dumps(data, default=str)
     except (TypeError, ValueError):

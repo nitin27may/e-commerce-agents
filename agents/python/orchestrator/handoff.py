@@ -23,7 +23,7 @@ from typing import Any
 from agent_framework import Agent
 from agent_framework_orchestrations import HandoffBuilder
 
-from shared.agent_factory import create_chat_client
+from shared.agent_factory import agent_default_options, create_chat_client
 from shared.config import settings
 from shared.context import current_user_role
 from shared.factory import parse_agent_registry
@@ -67,7 +67,8 @@ def create_handoff_triage_agent() -> Agent:
     23,637 characters, 100-200 s, and no specialist ever invoked.
     """
     return Agent(
-        client=create_chat_client(),
+        client=create_chat_client("handoff-triage"),
+        default_options=agent_default_options("handoff-triage"),
         name="orchestrator",
         description="Triage agent that routes the conversation to a specialist.",
         instructions=load_prompt("handoff-triage", current_user_role.get() or "customer"),

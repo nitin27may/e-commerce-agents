@@ -144,8 +144,14 @@ async def test_return_replace_pauses_then_admin_resumes_with_no_model(
     assert hitl["checkpoint_id"] is not None
     run_id = str(hitl["workflow_run_id"])
 
-    # The real tools ran: a return row exists and the order is already 'returned'.
-    assert await clean_db.fetchval("SELECT count(*) FROM returns WHERE order_id = $1", order_id) == 1
+    # Nothing is created before a person decides: no return row, no label, the order is still delivered.
+    assert await clean_db.fetchval("SELECT count(*) FROM returns WHERE order_id = $1", order_id) == 0
+    assert await clean_db.fetchval("SELECT status FROM orders WHERE id = $1", order_id) == "delivered"
+    # The pause opened an inbox approval, routed by the policy engine (over 500 -> a manager).
+    approval = await clean_db.fetchrow("SELECT * FROM approvals WHERE source_ref = $1", hitl["id"])
+    assert approval is not None and approval["status"] == "pending_review"
+    assert (approval["route"], approval["assigned_role"]) == ("manager", "admin")
+    assert approval["policy_version"]
 
     # --- 2. An admin approves; the workflow must reach finalize. -----------------------
     admin_app = _app_as(ADMIN_EMAIL, "admin", admin_id)
@@ -160,6 +166,12 @@ async def test_return_replace_pauses_then_admin_resumes_with_no_model(
     assert body["approved"] is True
     assert "finalize" in body["agents_involved"]
     assert "approved and finalized" in body["text"]
+
+    # Approval ran the real initiate_return as the CUSTOMER (its ownership check reads the identity ContextVars):
+    # the return exists for the customer's order, created only now.
+    assert await clean_db.fetchval("SELECT count(*) FROM returns WHERE order_id = $1", order_id) == 1
+    assert await clean_db.fetchval("SELECT status FROM orders WHERE id = $1", order_id) == "returned"
+    assert await clean_db.fetchval("SELECT status FROM approvals WHERE source_ref = $1", hitl["id"]) == "executed"
 
     row = await clean_db.fetchrow("SELECT status, responded_at, response FROM hitl_requests WHERE id = $1", hitl["id"])
     assert row["status"] == "approved"

@@ -28,6 +28,9 @@ public static class RequestContext
     // Running LLM spend for the current agent run, in USD. The .NET twin of
     // Python's current_run_cost_usd ContextVar (issue #30).
     private static readonly AsyncLocal<StrongBox<double>?> _runCostUsd = new();
+    // Per-turn LLM token usage by agent (Python's current_run_usage). Mutable
+    // object in an AsyncLocal, like _runCostUsd above, for the same reason.
+    private static readonly AsyncLocal<RunUsage?> _runUsage = new();
 
     public static string CurrentUserEmail
     {
@@ -70,6 +73,15 @@ public static class RequestContext
         box.Value += usd;
         return box.Value;
     }
+
+    /// <summary>
+    /// This turn's token usage by agent. Never null: outside a <see cref="Scope"/>
+    /// it is a throwaway accumulator, so a stray read cannot throw.
+    /// </summary>
+    public static RunUsage CurrentRunUsage => _runUsage.Value ?? new RunUsage();
+
+    /// <summary>Adds <paramref name="usage"/> to this turn's tally under <paramref name="agent"/>. No-op outside a <see cref="Scope"/>.</summary>
+    public static void RecordUsage(string agent, SpecialistUsage? usage) => _runUsage.Value?.Add(agent, usage);
 
     public static IReadOnlyList<HistoryEntry> CurrentHistory
     {
@@ -198,7 +210,9 @@ public static class RequestContext
             InvokedAgents: _invokedAgents.Value,
             GuardrailFlags: _guardrailFlags.Value,
             Steps: _steps.Value,
-            DeliveredSteps: _deliveredSteps.Value
+            DeliveredSteps: _deliveredSteps.Value,
+            RunUsage: _runUsage.Value,
+            RunCost: _runCostUsd.Value
         );
         _userEmail.Value = email;
         _userRole.Value = role;
@@ -208,6 +222,12 @@ public static class RequestContext
         _guardrailFlags.Value = new Dictionary<string, bool>();
         _steps.Value = new List<ExecutionStep>();
         _deliveredSteps.Value = new HashSet<int>();
+        _runUsage.Value = new RunUsage();
+        // A fresh spend tally per scope. Nothing ever called ResetRunCost, and AddRunCost's lazy
+        // creation happens inside whatever async frame first prices a turn — a change an
+        // AsyncLocal does not carry back to the caller — so the running total, and with it the
+        // per-run ceiling, was never visible to the code that checks it.
+        _runCostUsd.Value = new StrongBox<double>(0.0);
         return new Disposable(() =>
         {
             _userEmail.Value = previous.Email;
@@ -218,6 +238,8 @@ public static class RequestContext
             _guardrailFlags.Value = previous.GuardrailFlags;
             _steps.Value = previous.Steps;
             _deliveredSteps.Value = previous.DeliveredSteps;
+            _runUsage.Value = previous.RunUsage;
+            _runCostUsd.Value = previous.RunCost;
         });
     }
 

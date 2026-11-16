@@ -2,6 +2,7 @@
   {
     "input": "What do customer reviews say about the Sony WH-1000XM5?",
     "expected_tools": ["analyze_sentiment"],
+    "expected_tool_args": {"analyze_sentiment": {"product_id": "dc9e2baa-8182-58f8-9df1-97d049426ba1"}},
     "expected_fields": ["rating"],
     "criteria": {
       "grounded": true,
@@ -11,6 +12,7 @@
   {
     "input": "What's the overall sentiment for the Dyson V15?",
     "expected_tools": ["analyze_sentiment"],
+    "expected_tool_args": {"analyze_sentiment": {"product_id": "a6fc9ef2-1267-5758-b4f2-6988f7877785"}},
     "expected_fields": ["rating"],
     "criteria": {
       "grounded": true,
@@ -21,6 +23,7 @@
   {
     "input": "Are there any fake or suspicious reviews on the Sony WH-1000XM5?",
     "expected_tools": ["detect_fake_reviews"],
+    "expected_tool_args": {"detect_fake_reviews": {"product_id": "dc9e2baa-8182-58f8-9df1-97d049426ba1"}},
     "expected_fields": ["rating"],
     "criteria": {
       "grounded": true,
@@ -31,6 +34,7 @@
   {
     "input": "What are the most common complaint topics in reviews for the Dyson V15?",
     "expected_tools": ["get_sentiment_by_topic"],
+    "expected_tool_args": {"get_sentiment_by_topic": {"product_id": "a6fc9ef2-1267-5758-b4f2-6988f7877785"}},
     "expected_fields": ["rating"],
     "criteria": {
       "grounded": true,
@@ -41,6 +45,7 @@
   {
     "input": "How has sentiment for the Sony WH-1000XM5 changed over the last few months?",
     "expected_tools": ["get_sentiment_trend"],
+    "expected_tool_args": {"get_sentiment_trend": {"product_id": "dc9e2baa-8182-58f8-9df1-97d049426ba1", "months": 6}},
     "expected_fields": ["rating"],
     "criteria": {
       "grounded": true,

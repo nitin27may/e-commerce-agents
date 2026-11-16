@@ -42,6 +42,20 @@ jobs:
         # can import them; without it, collection fails with ModuleNotFoundError.
         run: uv sync --all-packages --extra dev
 
+      # Keyless and free: builds each agent (no model call) and counts its composed
+      # system prompt + tool schemas per role with tiktoken, against
+      # evals/baselines/prompt_tokens.json. Fails on >10% growth for any agent/role.
+      # After a reviewed, intended change: `uv run python -m evals.prompt_tokens --update-baseline`.
+      # tiktoken downloads its encoding file on first use (public, no credentials).
+      - name: Prompt token budget (keyless)
+        working-directory: agents/python
+        env:
+          LLM_PROVIDER: replay
+          ENVIRONMENT: test
+          JWT_SECRET: ci-eval-jwt-secret-please-rotate-32bytes
+          AGENT_SHARED_SECRET: ci-eval-agent-secret-please-rotate-32b
+        run: uv run python -m evals.prompt_tokens
+
       - name: Run pytest with coverage
         working-directory: agents/python
         run: |
@@ -60,16 +74,42 @@ jobs:
           path: agents/python/coverage.xml
           retention-days: 30
 
+  # The project's documented lint gate (CONTRIBUTING.md, the PR template). ruff is pinned
+  # in agents/python/pyproject.toml so a new release cannot add findings under a green PR.
+  lint:
+    name: Python · ruff check + format
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install Python 3.12
+        run: uv python install 3.12
+
+      - name: Sync dependencies
+        working-directory: agents/python
+        run: uv sync --extra dev
+
+      - name: ruff check
+        working-directory: agents/python
+        run: uv run ruff check .
+
+      - name: ruff format --check
+        working-directory: agents/python
+        run: uv run ruff format --check .
+
   mcp-package-tests:
     name: MCP packages · smoke tests
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # Registration/import smoke tests only — no testcontainer Postgres needed.
-    # Integration-marked tests are skipped here (`-m "not integration"`). They
-    # are NOT run by any other scheduled job today — evals.yml is
-    # workflow_dispatch-only and only runs `evals.run_evals`, not pytest, so it
-    # never exercises these packages' integration tests. A PR-blocking smoke
-    # gate that would cover this is planned but not yet implemented.
+    # Integration-marked tests are skipped here (`-m "not integration"`) and run
+    # by mcp-package-integration below.
     strategy:
       matrix:
         package:
@@ -93,6 +133,57 @@ jobs:
       - name: Run smoke tests (skip integration)
         working-directory: agents/python
         run: uv run pytest ${{ matrix.package.dir }}/tests -m "not integration" -v
+
+      # The publish workflow (publish-mcp.yml) runs only on a tag, so everything it depends on is proven
+      # here on every change: the package builds, its metadata renders on PyPI, and the built wheel
+      # installs into an empty environment with a working console script.
+      - name: Build sdist and wheel
+        working-directory: agents/python
+        run: uv build ${{ matrix.package.dir }} --out-dir dist/${{ matrix.package.name }}
+
+      - name: Check package metadata (twine)
+        working-directory: agents/python
+        run: uvx twine@7.0.0 check --strict dist/${{ matrix.package.name }}/*
+
+      - name: Install the wheel into a clean environment and start the entry point
+        working-directory: agents/python
+        run: |
+          uv venv --python 3.12 /tmp/wheel-venv
+          uv pip install --python /tmp/wheel-venv/bin/python dist/${{ matrix.package.name }}/*.whl
+          /tmp/wheel-venv/bin/${{ matrix.package.name }} --help
+
+  mcp-package-integration:
+    name: MCP packages · integration (Postgres)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # One invocation per package, not `pytest packages/*/tests`: both packages
+    # have a `tests` package with its own conftest, and pytest refuses to load
+    # two of them in one run (ImportPathMismatchError). Testcontainers uses the
+    # runner's Docker daemon.
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - { name: ecommerce-mcp-product, dir: packages/mcp-product }
+          - { name: ecommerce-mcp-inventory, dir: packages/mcp-inventory }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install Python 3.12
+        run: uv python install 3.12
+
+      - name: Sync package deps
+        working-directory: agents/python
+        run: uv sync --frozen --all-packages --extra dev
+
+      - name: Run integration tests
+        working-directory: agents/python
+        run: uv run pytest ${{ matrix.package.dir }}/tests -m integration -v
 
   dotnet-tests:
     name: .NET · dotnet test + coverage
@@ -173,11 +264,69 @@ jobs:
       - name: Build
         run: pnpm build
 
-  # Playwright E2E is intentionally not run in CI. It needs the full live
-  # stack (docker compose: Postgres + Redis + all agents) and, unless the stack
-  # is started with LLM_PROVIDER=replay, a real OPENAI_API_KEY, which is
-  # impractical and costly for every push. The specs remain under web/e2e/ — run them locally against
-  # a running app with: cd web && pnpm exec playwright test
+  # The full Playwright suite (the other specs under web/e2e/) is intentionally
+  # not run in CI: it needs the live stack (docker compose: Postgres + Redis +
+  # all agents) and, unless that stack runs with LLM_PROVIDER=replay, a real
+  # OPENAI_API_KEY. Run it locally with: cd web && pnpm exec playwright test
+  #
+  # web-ui-smoke below is the exception. ui-smoke.spec.ts stubs `**/api/**` and
+  # seeds auth in localStorage, and not-found.spec.ts hits a public route, so
+  # both run against the production build alone. No model key, no backend.
+  web-ui-smoke:
+    name: Web · Playwright UI smoke (no backend)
+    # Pinned, not ubuntu-latest: the Playwright version in web/pnpm-lock.yaml
+    # (1.59) cannot install Chromium's system dependencies on Ubuntu 26.04,
+    # which ubuntu-latest now resolves to. Move this with the Playwright bump.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Build
+        run: pnpm build
+
+      - name: Start the production server
+        run: |
+          nohup pnpm start > next-start.log 2>&1 &
+          for _ in $(seq 1 60); do
+            curl -fsS -o /dev/null http://localhost:3000/login && exit 0
+            sleep 1
+          done
+          cat next-start.log
+          exit 1
+
+      - name: Run UI smoke specs
+        run: pnpm exec playwright test e2e/ui-smoke.spec.ts e2e/not-found.spec.ts --trace off
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-ui-smoke-results
+          path: web/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
 
   workflow-visualization-drift:
     name: Workflow diagrams · drift check
@@ -197,7 +346,7 @@ jobs:
 
       - name: Regenerate diagrams
         working-directory: agents/python
-        run: uv run python -m scripts.visualize_workflows
+        run: uv run python ../../scripts/visualize_workflows.py
 
       - name: Fail on uncommitted diff
         run: |
@@ -221,7 +370,7 @@ jobs:
   #     broken tutorial chapter blocks a security fix from shipping.
   publish-main:
     name: Publish :main images
-    needs: [python-tests, mcp-package-tests, dotnet-tests, web-tests]
+    needs: [lint, python-tests, mcp-package-tests, mcp-package-integration, dotnet-tests, web-tests]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read

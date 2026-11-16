@@ -186,8 +186,11 @@ Three things did:
 Fixed in three places:
 
 - `shared/replay_client.py::_normalize_for_hash` replaces UUIDs and
-  timestamps with placeholders **when hashing**, for `role: "tool"` messages
-  only. The fixture on disk still stores the raw request. Tool *call*
+  timestamps with placeholders **when hashing**, in `role: "tool"` and
+  `role: "system"` messages and in `instructions` (the latter two since #86:
+  the recent-orders block and the prompt's example ids and dates are volatile
+  too, which is why every fixture was re-keyed then; prose edits still change
+  the key). The fixture on disk still stores the raw request. Tool *call*
   arguments live in the preceding assistant message and are hashed verbatim,
   so two different calls can never collide on one fixture — read that
   function's docstring for the assumption this depends on.

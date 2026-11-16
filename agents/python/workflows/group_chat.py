@@ -15,7 +15,7 @@ agent-backed responders.
 
 Imports come from the public ``agent_framework`` package root. (An earlier
 revision used the private ``agent_framework._workflows`` submodules because
-1.0.0 shipped an empty top-level ``__init__``; the pinned 1.14.0 re-exports
+1.0.0 shipped an empty top-level ``__init__``; the pinned 1.22.0 re-exports
 these names, so that workaround is gone here.)
 """
 
@@ -28,6 +28,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from agent_framework import Executor, WorkflowBuilder, WorkflowContext, handler
+
+from shared.replay_client import ReplayFixtureMissingError
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +71,11 @@ class _PanelistExecutor(Executor):
         try:
             result = self._responder(state.question, list(state.transcript))
             text = await result if inspect.isawaitable(result) else result
+        except ReplayFixtureMissingError:
+            # A missing recording is not a panelist's opinion: fail the run so the
+            # chat route reports a replay miss, instead of writing the error text
+            # (which names a fixture hash) into the transcript the user reads.
+            raise
         except Exception as exc:  # pragma: no cover - defensive
             text = f"({self._name} could not respond: {exc})"
             logger.exception("group_chat.panelist_failed name=%s", self._name)

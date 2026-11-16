@@ -50,8 +50,8 @@ transcript and forwards it; the moderator is the terminal executor that yields t
 synthesized verdict.
 
 ```python
-from agent_framework._workflows._executor import Executor, handler
-from agent_framework._workflows._workflow_context import WorkflowContext
+from agent_framework import Executor, handler
+from agent_framework import WorkflowContext
 
 class _PanelistExecutor(Executor):
     @handler
@@ -63,6 +63,11 @@ class _PanelistExecutor(Executor):
 
 The forwarders are typed `WorkflowContext[State, State]`; the moderator (terminal)
 is `WorkflowContext[None, State]` and calls `ctx.yield_output(state)`.
+
+## Prerequisites
+
+- No chat client and no key: `main.py` imports none. Its panelists and synthesizer are plain callables, so the run below makes no model call.
+- It imports the production `workflows.group_chat` module from `agents/python`, which is why the run command starts there.
 
 ## Run it
 

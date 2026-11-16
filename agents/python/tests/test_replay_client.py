@@ -110,6 +110,75 @@ async def test_replay_never_calls_the_record_client_when_fixture_exists(tmp_path
     assert stub.calls == 1, "existing fixture must short-circuit before touching the record client"
 
 
+def test_response_format_changes_key() -> None:
+    """A structured-output call must not replay a prose fixture recorded without one."""
+    from pydantic import BaseModel
+
+    class Card(BaseModel):
+        title: str
+
+    class OtherCard(BaseModel):
+        title: str
+        price: float
+
+    messages = [Message(role="user", contents=["hello"])]
+    plain = _request_hash(_canonical_request(messages, {}))
+    with_card = _request_hash(_canonical_request(messages, {"response_format": Card}))
+    with_other = _request_hash(_canonical_request(messages, {"response_format": OtherCard}))
+    with_dict = _request_hash(_canonical_request(messages, {"response_format": {"type": "json_object"}}))
+
+    assert len({plain, with_card, with_other, with_dict}) == 4
+    # Same format -> same key.
+    assert with_card == _request_hash(_canonical_request(messages, {"response_format": Card}))
+
+
+def test_no_response_format_hash_unchanged() -> None:
+    """Without a response_format the canonical request has no such key, so every
+    fixture recorded before it existed keeps its hash."""
+    messages = [Message(role="user", contents=["hello"])]
+    for options in (None, {}, {"response_format": None}):
+        assert "response_format" not in _canonical_request(messages, options)
+
+    canonical = _canonical_request(messages, {})
+    assert set(canonical) == {"messages", "tools", "instructions"}
+
+
+def test_framework_function_call_ids_do_not_reach_the_key() -> None:
+    """core >= 1.21 stamps ``af-call-<uuid4>`` on every function_call (and 1.22 on its
+    function_result); that random id must not make two identical requests hash
+    differently, and a call without one (every fixture recorded before 1.21) must
+    hash the same as one with it."""
+
+    def request(call_id: str | None) -> list[Message]:
+        call = Content.from_function_call(call_id="call_1", name="get_weather", arguments={"city": "Paris"})
+        result = Content.from_function_result(call_id="call_1", result="sunny")
+        call.id = result.id = call_id
+        return [Message(role="assistant", contents=[call]), Message(role="tool", contents=[result])]
+
+    bare = _request_hash(_canonical_request(request(None), {}))
+    assert _request_hash(_canonical_request(request("af-call-" + "a" * 32), {})) == bare
+    assert _request_hash(_canonical_request(request("af-call-" + "b" * 32), {})) == bare
+    # A provider-assigned id is not the framework's, so it still distinguishes requests.
+    assert _request_hash(_canonical_request(request("fc_provider_1"), {})) != bare
+
+
+def test_an_af_call_value_in_call_id_is_already_stable_without_stripping() -> None:
+    """``call_id`` needs no ``af-call-`` stripping: ``_ordinalize_call_ids`` rewrites it to its ordinal position.
+
+    Stripping it as well would turn ``call_0`` into an absent field and miss every recorded fixture, so the
+    key is pinned to be identical for a random framework id and for a plain provider id.
+    """
+
+    def request(call_id: str) -> list[Message]:
+        call = Content.from_function_call(call_id=call_id, name="get_weather", arguments={"city": "Paris"})
+        result = Content.from_function_result(call_id=call_id, result="sunny")
+        return [Message(role="assistant", contents=[call]), Message(role="tool", contents=[result])]
+
+    plain = _request_hash(_canonical_request(request("call_1"), {}))
+    assert _request_hash(_canonical_request(request("af-call-" + "a" * 32), {})) == plain
+    assert _request_hash(_canonical_request(request("af-call-" + "b" * 32), {})) == plain
+
+
 @pytest.mark.asyncio
 async def test_streaming_replays_as_a_single_chunk_per_message(tmp_path) -> None:
     stub = _StubRecordClient(_text_response("streamed answer"))
@@ -258,16 +327,24 @@ def test_tool_results_hash_the_same_across_a_reseed():
     """The bug this fixes: a fresh DB reseed hands the same tool a payload with
     new random UUIDs and new seed-time timestamps, which changed the fixture
     key and made every affected fixture unreachable."""
-    session_a = _canonical([
-        _user_msg("What do reviews say about the Sony WH-1000XM5?"),
-        _tool_msg('{"review_id": "e9418342-8843-4b1b-ab01-e63fe2e8b8f0", '
-                  '"rating": 5, "date": "2026-05-18T21:27:13.100156+00:00"}'),
-    ])
-    session_b = _canonical([
-        _user_msg("What do reviews say about the Sony WH-1000XM5?"),
-        _tool_msg('{"review_id": "bf88ec9f-1137-4de9-b0ef-d2a50a29513d", '
-                  '"rating": 5, "date": "2026-05-19T09:02:44.881003+00:00"}'),
-    ])
+    session_a = _canonical(
+        [
+            _user_msg("What do reviews say about the Sony WH-1000XM5?"),
+            _tool_msg(
+                '{"review_id": "e9418342-8843-4b1b-ab01-e63fe2e8b8f0", '
+                '"rating": 5, "date": "2026-05-18T21:27:13.100156+00:00"}'
+            ),
+        ]
+    )
+    session_b = _canonical(
+        [
+            _user_msg("What do reviews say about the Sony WH-1000XM5?"),
+            _tool_msg(
+                '{"review_id": "bf88ec9f-1137-4de9-b0ef-d2a50a29513d", '
+                '"rating": 5, "date": "2026-05-19T09:02:44.881003+00:00"}'
+            ),
+        ]
+    )
 
     assert _request_hash(session_a) == _request_hash(session_b)
 
@@ -280,18 +357,76 @@ def test_different_questions_still_hash_differently():
     assert _request_hash(a) != _request_hash(b)
 
 
+_PROMPT = (
+    "You are an order specialist.\n"
+    "Recent orders for this user:\n"
+    "- {oid} placed {when} (shipped)\n"
+    "Always cite real order ids."
+)
+
+
+def _with_instructions(instructions: str, *, system_message: bool = False) -> dict[str, Any]:
+    messages = [_user_msg("Where is my order?")]
+    if system_message:
+        messages.insert(0, {"role": "system", "contents": [{"type": "text", "text": instructions}]})
+        return {"messages": messages, "tools": [], "instructions": None}
+    return {"messages": messages, "tools": [], "instructions": instructions}
+
+
+def test_instructions_differing_only_in_uuid_or_date_hash_equal():
+    """The recent-orders block in the system prompt carries real order ids and
+    now-relative dates, which change on every reseed (#86)."""
+    id_a, id_b = "e9418342-8843-4b1b-ab01-e63fe2e8b8f0", "bf88ec9f-1137-4de9-b0ef-d2a50a29513d"
+    a = _with_instructions(_PROMPT.format(oid=id_a, when="2026-05-18T21:27:13.100156+00:00"))
+    b = _with_instructions(_PROMPT.format(oid=id_b, when="2026-11-02T09:02:44+00:00"))
+    c = _with_instructions(_PROMPT.format(oid=id_b, when="2026-11-02"))
+
+    assert _request_hash(a) == _request_hash(b) == _request_hash(c)
+
+
+def test_system_messages_are_scrubbed_like_instructions():
+    a = _with_instructions(
+        _PROMPT.format(oid="e9418342-8843-4b1b-ab01-e63fe2e8b8f0", when="2026-05-18"), system_message=True
+    )
+    b = _with_instructions(
+        _PROMPT.format(oid="bf88ec9f-1137-4de9-b0ef-d2a50a29513d", when="2026-11-02"), system_message=True
+    )
+    assert _request_hash(a) == _request_hash(b)
+
+
+def test_instructions_with_different_prose_still_hash_differently():
+    base = _PROMPT.format(oid="e9418342-8843-4b1b-ab01-e63fe2e8b8f0", when="2026-05-18")
+    reworded = base.replace("Always cite real order ids.", "Never cite order ids.")
+
+    assert _request_hash(_with_instructions(base)) != _request_hash(_with_instructions(reworded))
+    # ...and a different *number of* ids is a different prompt, not a different value.
+    extra_line = base + "\n- e9418342-8843-4b1b-ab01-e63fe2e8b8f0 placed 2026-05-18 (shipped)"
+    assert _request_hash(_with_instructions(base)) != _request_hash(_with_instructions(extra_line))
+
+
+def test_user_messages_are_not_scrubbed():
+    """Only system text and tool results are volatile; what the user typed is the request."""
+    a = _canonical([_user_msg("Track order e9418342-8843-4b1b-ab01-e63fe2e8b8f0")])
+    b = _canonical([_user_msg("Track order bf88ec9f-1137-4de9-b0ef-d2a50a29513d")])
+
+    assert _request_hash(a) != _request_hash(b)
+
+
 def test_tool_call_arguments_are_not_normalized():
     """A tool *call*'s arguments live in the assistant message and are hashed
     verbatim, so two different lookups can never collide on one fixture."""
+
     def assistant_call(order_id: str) -> dict[str, Any]:
         return {
             "role": "assistant",
-            "contents": [{
-                "type": "function_call",
-                "call_id": "call_1",
-                "name": "get_order",
-                "arguments": {"order_id": order_id},
-            }],
+            "contents": [
+                {
+                    "type": "function_call",
+                    "call_id": "call_1",
+                    "name": "get_order",
+                    "arguments": {"order_id": order_id},
+                }
+            ],
         }
 
     a = _canonical([_user_msg("track it"), assistant_call("550e8400-e29b-41d4-a716-446655440001")])
@@ -315,19 +450,27 @@ def test_calendar_month_buckets_hash_the_same_as_the_calendar_advances():
     key silently became a function of the wall-clock date. Both payloads below
     describe the same 15 reviews; only the calendar has moved.
     """
-    seven_buckets = _canonical([
-        _user_msg("How has sentiment for the Sony WH-1000XM5 changed?"),
-        _tool_msg('{"product_name": "Sony WH-1000XM5", "period_months": 6, "trend": "declining", '
-                  '"monthly_data": [{"month": "2026-02", "average_rating": 5.0, "review_count": 1}, '
-                  '{"month": "2026-03", "average_rating": 4.0, "review_count": 2}, '
-                  '{"month": "2026-08", "average_rating": 4.67, "review_count": 3}]}'),
-    ])
-    five_buckets = _canonical([
-        _user_msg("How has sentiment for the Sony WH-1000XM5 changed?"),
-        _tool_msg('{"product_name": "Sony WH-1000XM5", "period_months": 6, "trend": "stable", '
-                  '"monthly_data": [{"month": "2026-03", "average_rating": 4.5, "review_count": 2}, '
-                  '{"month": "2026-08", "average_rating": 4.67, "review_count": 3}]}'),
-    ])
+    seven_buckets = _canonical(
+        [
+            _user_msg("How has sentiment for the Sony WH-1000XM5 changed?"),
+            _tool_msg(
+                '{"product_name": "Sony WH-1000XM5", "period_months": 6, "trend": "declining", '
+                '"monthly_data": [{"month": "2026-02", "average_rating": 5.0, "review_count": 1}, '
+                '{"month": "2026-03", "average_rating": 4.0, "review_count": 2}, '
+                '{"month": "2026-08", "average_rating": 4.67, "review_count": 3}]}'
+            ),
+        ]
+    )
+    five_buckets = _canonical(
+        [
+            _user_msg("How has sentiment for the Sony WH-1000XM5 changed?"),
+            _tool_msg(
+                '{"product_name": "Sony WH-1000XM5", "period_months": 6, "trend": "stable", '
+                '"monthly_data": [{"month": "2026-03", "average_rating": 4.5, "review_count": 2}, '
+                '{"month": "2026-08", "average_rating": 4.67, "review_count": 3}]}'
+            ),
+        ]
+    )
 
     assert _request_hash(seven_buckets) == _request_hash(five_buckets)
 
@@ -340,14 +483,18 @@ def test_the_bucket_scrub_does_not_blur_different_products():
     ``monthly_data``/``trend`` still separates them — which is why this stays
     keyed rather than blanket-scrubbing numbers.
     """
-    sony = _canonical([
-        _user_msg("trend?"),
-        _tool_msg('{"product_name": "Sony WH-1000XM5", "trend": "declining", "monthly_data": []}'),
-    ])
-    dyson = _canonical([
-        _user_msg("trend?"),
-        _tool_msg('{"product_name": "Dyson V15", "trend": "declining", "monthly_data": []}'),
-    ])
+    sony = _canonical(
+        [
+            _user_msg("trend?"),
+            _tool_msg('{"product_name": "Sony WH-1000XM5", "trend": "declining", "monthly_data": []}'),
+        ]
+    )
+    dyson = _canonical(
+        [
+            _user_msg("trend?"),
+            _tool_msg('{"product_name": "Dyson V15", "trend": "declining", "monthly_data": []}'),
+        ]
+    )
 
     assert _request_hash(sony) != _request_hash(dyson)
 
@@ -373,9 +520,7 @@ def test_every_committed_fixture_rehashes_to_its_own_filename():
     fixtures = sorted(fixtures_dir.glob("*.json"))
     assert fixtures, f"no fixtures found in {fixtures_dir}"
 
-    mismatched = [
-        f.name for f in fixtures if _request_hash(json.loads(f.read_text())["request"]) != f.stem
-    ]
+    mismatched = [f.name for f in fixtures if _request_hash(json.loads(f.read_text())["request"]) != f.stem]
     assert not mismatched, (
         f"{len(mismatched)} fixture(s) no longer hash to their own filename "
         f"(first few: {mismatched[:5]}). Run: uv run python -m evals.rehash_fixtures"
@@ -424,9 +569,7 @@ def test_deterministic_product_ids_are_load_bearing_for_this_design():
             blob = json.dumps(message)
             if any(
                 version != "5"
-                for match, version in (
-                    (m.group(0), m.group(1)) for m in uuid_re.finditer(blob)
-                )
+                for match, version in ((m.group(0), m.group(1)) for m in uuid_re.finditer(blob))
                 if not match.startswith(synthetic)
             ):
                 offenders.append(f.name)

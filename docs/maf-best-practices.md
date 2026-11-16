@@ -41,9 +41,7 @@ MAF workflows are graphs of `Executor`s connected by edges. Each executor handle
 a typed message and either forwards it or yields output:
 
 ```python
-from agent_framework._workflows._executor import Executor, handler
-from agent_framework._workflows._workflow_builder import WorkflowBuilder
-from agent_framework._workflows._workflow_context import WorkflowContext
+from agent_framework import Executor, WorkflowBuilder, WorkflowContext, handler
 
 class MyExecutor(Executor):
     def __init__(self) -> None:
@@ -56,8 +54,8 @@ class MyExecutor(Executor):
         # or: await ctx.yield_output(state)   # emit a terminal result
 ```
 
-- Import from the `agent_framework._workflows` submodules — the v1.0 beta ships an
-  empty top-level `__init__` in a plain checkout.
+- Import from the public `agent_framework` package (pinned at 1.22.0). Private
+  `agent_framework._*` modules are blocked by `tests/test_no_private_maf_imports.py`.
 - A forwarding executor is typed `WorkflowContext[In, Out]`; a terminal executor
   that only yields is typed `WorkflowContext[None, Out]`.
 - Build with `WorkflowBuilder(start_executor=..., name=...)` then `.add_edge(a, b)`
@@ -73,7 +71,6 @@ class MyExecutor(Executor):
 | **Sequential + HITL** | Ordered steps where a step needs human approval | `workflows/return_replace.py` |
 | **Round-table group chat** | Multiple perspectives debate over a shared transcript, then synthesize | `workflows/group_chat.py` |
 | **Handoff** | LLM-driven hand-off of control between agents | `orchestrator/handoff.py` (`HandoffBuilder`), reachable via `orchestrator/modes/handoff_mode.py` (`ORCHESTRATION_MODE=handoff` or per-request `mode`) |
-| **Declarative (YAML)** | Simple, config-defined pipelines without code | `shared/workflow_loader.py` + `config/workflows/*.yaml` |
 | **Tool routing** | Front-door orchestrator picks a specialist per turn | `orchestrator/agent.py` `call_specialist_agent` (default) |
 
 ### Concurrent — pre-purchase research
@@ -98,22 +95,25 @@ the fan-in handler receives `list[State]` and merges.
 
 ### Sequential + human-in-the-loop — return & replace
 
-Ordered chain that pauses for approval above a value threshold.
+Ordered chain that pauses for approval **before** anything is created, when the approval policy says so.
 
 ```mermaid
 flowchart LR
-    C[check-eligibility] --> I[initiate-return]
+    C[check-eligibility] --> G{policy-gate}
+    G -- auto --> I[initiate-return]
+    G -- support / manager --> RI[[request_info: approval]]
+    RI -- approved --> I
+    RI -- rejected or expired --> X[yield: rejected]
     I --> SR[search-replacements]
-    SR --> G{hitl-gate}
-    G -- below threshold --> D[apply-discount]
-    G -- above threshold --> RI[[request_info: approval]]
-    RI -- approved --> D
-    RI -- rejected --> X[yield: rejected]
+    SR --> D[apply-discount]
     D --> F[finalize]
 ```
 
-The gate uses `ctx.request_info(ReturnApprovalRequest, response_type=bool)` to
-pause, and a `@response_handler` resumes the chain when the approval arrives.
+The gate asks the policy engine (`shared/policy`, kind `return_approval`); `auto` proceeds, anything else
+calls `ctx.request_info(ReturnApprovalRequest, response_type=ReturnDecision)` to pause. The request carries the
+whole `WorkflowState`, and a `@response_handler` restores it and resumes the chain when the reviewer's
+`ReturnDecision` (decision, resolution, amount, note, decided_by, approval_id) arrives. A rejection leaves no
+`returns` row and the order untouched, because the return is created by the step *after* the gate.
 
 ### Round-table group chat — debate then synthesize
 
@@ -146,13 +146,6 @@ writing:
 Per-request selection takes priority over the `ORCHESTRATION_MODE` env default —
 see `orchestrator/modes/__init__.py::get_mode` for the resolution order.
 
-### Declarative — YAML pipelines
-
-`shared/workflow_loader.py` builds a `WorkflowBuilder` graph from a YAML spec
-(`config/workflows/*.yaml`) using a small op registry. Use for simple,
-non-branching pipelines that shouldn't require code. `scripts/visualize_workflows.py`
-renders these to Mermaid + Graphviz under `docs/workflows/`.
-
 ## Best practices
 
 - **Preserve the public surface.** Each workflow exposes a class with an
@@ -165,20 +158,20 @@ renders these to Mermaid + Graphviz under `docs/workflows/`.
   `WorkflowContext[None, Out]`. A wrong terminal type can stop a chain early.
 - **Carry state as a dataclass.** One state object threads through the graph;
   accumulate `completed_steps` / `errors` for observability.
-- **Pick the simplest pattern that fits.** Tool routing < declarative YAML <
+- **Pick the simplest pattern that fits.** Tool routing <
   sequential < concurrent < handoff, in rough order of complexity.
 
 ## Gotchas
 
-- Import workflow types from `agent_framework._workflows.*` submodules, not the
-  package root (empty `__init__` in v1.0 beta; `patch_maf.py` only re-exports
-  inside the Docker image).
+- Import MAF types from the public `agent_framework` package, never from
+  private `agent_framework._*` modules. The only exception is the allowlist in
+  `tests/test_no_private_maf_imports.py`, each entry with a reason.
 - Do not add `from __future__ import annotations` to a module using
   `@response_handler` — MAF resolves its parameter types via `inspect.signature`
   at import time, and stringified annotations break that.
-- `scripts/visualize_workflows.py` renders **declarative YAML** workflows; Python
-  `WorkflowBuilder` graphs (pre-purchase, return-replace, group-chat) are
-  diagrammed by hand in this doc and the tutorials.
+- `scripts/visualize_workflows.py` renders the `pre-purchase` and `return-replace`
+  `WorkflowBuilder` graphs to `docs/workflows/`. The capstone has no declarative
+  (YAML) workflow loader; the declarative pattern is taught in tutorial chapter 19.
 
 ## Related documents
 

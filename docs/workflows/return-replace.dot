@@ -1,0 +1,17 @@
+digraph Workflow {
+  rankdir=TD;
+  node [shape=box, style=filled, fillcolor=lightblue];
+  edge [color=black, arrowhead=vee];
+
+  "check-eligibility" [fillcolor=lightgreen, label="check-eligibility\n(Start)"];
+  "policy-gate" [label="policy-gate"];
+  "initiate-return" [label="initiate-return"];
+  "search-replacements" [label="search-replacements"];
+  "apply-discount" [label="apply-discount"];
+  "finalize" [label="finalize"];
+  "check-eligibility" -> "policy-gate";
+  "policy-gate" -> "initiate-return";
+  "initiate-return" -> "search-replacements";
+  "search-replacements" -> "apply-discount";
+  "apply-discount" -> "finalize";
+}

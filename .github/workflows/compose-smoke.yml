@@ -1,0 +1,65 @@
+# Keyless boot smoke for both compose stacks (A-9, #85).
+#
+# Boots each stack with LLM_PROVIDER=replay, waits for /ready on the orchestrator and every
+# specialist, logs in as a seeded customer and lists products. No secrets are referenced by this
+# file, and the first step fails the job if any *_API_KEY is present: nothing that costs money may
+# sit behind an automatic trigger (see evals.yml). Recording stays a human running a script.
+#
+# Not covered: a chat turn (needs replay fixtures for that path) and the frontend image.
+name: Compose smoke
+
+on:
+  pull_request:
+    paths:
+      - "docker-compose*.yml"
+      - "docker/**"
+      - "agents/**"
+      - "scripts/migrate.py"
+      - "scripts/seed.py"
+      - "scripts/compose-smoke.sh"
+      - ".github/workflows/compose-smoke.yml"
+  push:
+    branches: [main]
+    paths:
+      - "docker-compose*.yml"
+      - "docker/**"
+      - "scripts/migrate.py"
+      - "scripts/compose-smoke.sh"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compose-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  boot:
+    name: Boot (${{ matrix.stack }}, replay, keyless)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - stack: python
+            compose: docker-compose.yml
+          - stack: dotnet
+            compose: docker-compose.dotnet.yml
+    steps:
+      # First step, deliberately: no later step can run with a credential in scope.
+      - name: Refuse to run with any API key set
+        run: |
+          leaked="$(env | grep -E '^[A-Za-z0-9_]*(_API_KEY|AZURE_OPENAI_KEY)=.+' | cut -d= -f1 || true)"
+          if [ -n "$leaked" ]; then
+            echo "::error::credentials present in the environment: $leaked"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - name: Boot the stack and smoke it
+        env:
+          LLM_PROVIDER: replay
+        run: scripts/compose-smoke.sh --compose-file "${{ matrix.compose }}"
