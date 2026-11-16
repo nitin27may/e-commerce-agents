@@ -109,7 +109,7 @@
           {
             "additional_properties": {},
             "call_id": "call_UCUu8QzIKoIIEO1M6CdmbVnO",
-            "exception": "integer division or modulo by zero",
+            "exception": "FunctionInvocationError",
             "items": [
               {
                 "additional_properties": {},
