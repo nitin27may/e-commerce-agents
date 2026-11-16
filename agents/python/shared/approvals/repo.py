@@ -14,6 +14,11 @@ with a precise error):
   ``SelfApprovalError`` here, the ``approvals_no_self_approval`` CHECK in the database.
 * **Append-only audit.** ``append_event()`` inserts; a trigger refuses any UPDATE or DELETE of
   ``approval_events``. ``create()`` and ``transition()`` each append their own event.
+* **SLA timers ride the state change.** An approval that enters ``pending_review`` (created there, or
+  transitioned into it) gets its ``due_at`` and two outbox timers — ``approval.reminder_due`` and
+  ``approval.sla_breached`` — enqueued in the *same* transaction, so a review can never exist without a
+  deadline and a rolled-back one leaves no timer. The worker (``worker/``) acts on them; ``escalate()``
+  is its guarded way to hand a review up a level and start the next clock.
 
 Identity of *who is acting* is passed in by the caller (the route read it from ContextVars); this module
 never reads a request context, because stored approvals are also advanced by the worker, which has none.
@@ -26,11 +31,15 @@ import json
 import logging
 from collections.abc import AsyncIterator, Collection
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
 import asyncpg
+
+from shared.config import settings
+from shared.outbox import enqueue
+from shared.policy.loader import PolicyError, get_policy
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +130,50 @@ def _same_person(a: str | None, b: str | None) -> bool:
     return a is not None and b is not None and a.strip().lower() == b.strip().lower()
 
 
+TOPIC_REMINDER_DUE = "approval.reminder_due"
+TOPIC_SLA_BREACHED = "approval.sla_breached"
+
+
+def _sla_hours(kind: str) -> int | None:
+    """The kind's ``sla_hours`` from the policy file, or None for a kind the policy does not know."""
+    try:
+        return get_policy().kind(kind).sla_hours
+    except PolicyError:
+        logger.warning("no sla policy for approval kind=%s; no timers scheduled", kind)
+        return None
+
+
+def _deadline(kind: str, now: datetime) -> datetime | None:
+    hours = _sla_hours(kind)
+    return None if hours is None else now + timedelta(hours=hours)
+
+
+async def schedule_review_timers(conn: asyncpg.Connection, approval: dict[str, Any], *, now: datetime) -> None:
+    """Enqueue the reminder and breach timers for ``approval``'s current review level (its ``due_at``).
+
+    Each timer carries the level and the deadline it was set for, and its dedupe key is built from both, so
+    scheduling twice is a no-op and a timer left over from an earlier level or an earlier trip through
+    ``needs_info`` recognises itself as stale when it fires.
+    """
+    due_at: datetime | None = approval["due_at"]
+    if due_at is None:
+        return
+    approval_id = str(approval["id"])
+    level = approval["escalation_level"]
+    payload = {"approval_id": approval_id, "level": level, "due_at": due_at.isoformat()}
+    reminder_at = now + (due_at - now) * settings.APPROVAL_REMINDER_FRACTION if due_at > now else now
+    stamp = int(due_at.timestamp() * 1000)
+    for topic, at in ((TOPIC_REMINDER_DUE, reminder_at), (TOPIC_SLA_BREACHED, due_at)):
+        await enqueue(
+            conn,
+            topic,
+            payload,
+            available_at=at,
+            dedupe_key=f"{topic}:{approval_id}:{level}:{stamp}",
+            aggregate_id=approval_id,
+        )
+
+
 async def append_event(
     db: Db,
     approval_id: str,
@@ -184,6 +237,9 @@ async def create(
     if route is not None and route not in _ROUTES:
         raise ValueError(f"unknown approval route: {route!r}")
     status = ApprovalStatus(status)
+    now = datetime.now(UTC)
+    if status is ApprovalStatus.PENDING_REVIEW and due_at is None:
+        due_at = _deadline(kind, now)
     async with _tx(db) as conn:
         row = await conn.fetchrow(
             """INSERT INTO approvals (source, source_ref, kind, requester_email, subject_email, conversation_id,
@@ -219,6 +275,8 @@ async def create(
             payload={"kind": kind, "source": source, "status": status.value},
         )
         logger.info("approval created id=%s source=%s kind=%s", row["id"], source, kind)
+        if status is ApprovalStatus.PENDING_REVIEW:
+            await schedule_review_timers(conn, dict(row), now=now)
         return _row(row)
 
 
@@ -254,6 +312,7 @@ async def transition(
     if updates.get("route") is not None and updates["route"] not in _ROUTES:
         raise ValueError(f"unknown approval route: {updates['route']!r}")
 
+    now = datetime.now(UTC)
     async with _tx(db) as conn:
         current = await conn.fetchrow("SELECT * FROM approvals WHERE id = $1 FOR UPDATE", approval_id)
         if current is None:
@@ -265,6 +324,11 @@ async def transition(
         if _same_person(decided_by, current["requester_email"]):
             logger.warning("self-approval refused id=%s", approval_id)
             raise SelfApprovalError(f"approval {approval_id}: the requester cannot decide their own request")
+        if target is ApprovalStatus.PENDING_REVIEW and updates.get("due_at") is None:
+            # Entering review starts a fresh clock, also when an answer returns it from needs_info.
+            deadline = _deadline(current["kind"], now)
+            if deadline is not None:
+                updates["due_at"] = deadline
 
         sets = ["status = $2", "updated_at = NOW()"]
         args: list[Any] = [approval_id, target.value]
@@ -286,6 +350,55 @@ async def transition(
             payload={**(payload or {}), "from": current["status"], "to": target.value},
         )
         logger.info("approval transition id=%s from=%s to=%s", approval_id, current["status"], target.value)
+        if target is ApprovalStatus.PENDING_REVIEW:
+            await schedule_review_timers(conn, dict(updated), now=now)
+        return _row(updated)
+
+
+async def escalate(
+    db: Db,
+    approval_id: str,
+    *,
+    expected_level: int,
+    assigned_role: str,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Hand a review up one level: new ``assigned_role``, ``escalation_level + 1``, a fresh deadline and timers.
+
+    Guarded like ``transition()``: only a ``pending_review`` approval still at ``expected_level`` moves
+    (else ``InvalidTransitionError``, nothing changed), so a redelivered breach cannot escalate twice.
+    The status stays ``pending_review``; the change is audited as ``escalated`` (system actor).
+    """
+    if assigned_role not in ("support", "admin"):
+        raise ValueError(f"unknown approval role: {assigned_role!r}")
+    now = datetime.now(UTC)
+    async with _tx(db) as conn:
+        current = await conn.fetchrow("SELECT * FROM approvals WHERE id = $1 FOR UPDATE", approval_id)
+        if current is None:
+            raise ApprovalNotFoundError(approval_id)
+        if current["status"] != ApprovalStatus.PENDING_REVIEW.value or current["escalation_level"] != expected_level:
+            raise InvalidTransitionError(f"approval {approval_id} is not a pending review at level {expected_level}")
+        updated = await conn.fetchrow(
+            """UPDATE approvals SET assigned_role = $2, escalation_level = escalation_level + 1,
+                                    due_at = $3, updated_at = NOW()
+                WHERE id = $1 RETURNING *""",
+            approval_id,
+            assigned_role,
+            _deadline(current["kind"], now),
+        )
+        await append_event(
+            conn,
+            approval_id,
+            "escalated",
+            payload={
+                **(payload or {}),
+                "from_role": current["assigned_role"],
+                "to_role": assigned_role,
+                "level": updated["escalation_level"],
+            },
+        )
+        logger.info("approval escalated id=%s level=%s", approval_id, updated["escalation_level"])
+        await schedule_review_timers(conn, dict(updated), now=now)
         return _row(updated)
 
 

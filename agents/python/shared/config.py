@@ -269,6 +269,24 @@ class Settings(BaseSettings):
     # stalled resume could still be running when another approver takes its claim.
     HITL_RESUME_TIMEOUT_SECONDS: int = 300
 
+    # ── Outbox worker (python -m worker.main) ───────────────────────
+    # Drains the outbox table: approval reminders, SLA escalation and timeouts. One Python worker
+    # serves both stacks (they share the database). Disabled, the process idles and drains nothing.
+    OUTBOX_WORKER_ENABLED: bool = True
+    OUTBOX_POLL_INTERVAL_SECONDS: float = 2.0
+    OUTBOX_BATCH_SIZE: int = 10
+    # A row that fails this many times is parked (outbox.failed_at) instead of retried forever.
+    OUTBOX_MAX_ATTEMPTS: int = 8
+    # How long a claimed row stays owned; a crashed worker's rows are picked up again after it.
+    OUTBOX_LEASE_SECONDS: int = 120
+    # Retry delay = base * 2**(attempts - 1), capped.
+    OUTBOX_BACKOFF_BASE_SECONDS: float = 5.0
+    OUTBOX_BACKOFF_MAX_SECONDS: float = 600.0
+    # Touched every loop; the container healthcheck reads its age.
+    OUTBOX_WORKER_HEARTBEAT_FILE: str = "/tmp/outbox-worker.heartbeat"
+    # The reminder fires this fraction of an approval's sla_hours after it enters review.
+    APPROVAL_REMINDER_FRACTION: float = 0.5
+
     # ── MCP integration (optional, flag-gated) ──────────────────────
     # When enabled, specialist agents connect to MCP servers for their data
     # layer instead of calling asyncpg directly. MCP servers must be running
