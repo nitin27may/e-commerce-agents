@@ -95,6 +95,15 @@ specialist's task store (`OwnedBoundedTaskStore`) republishes the extension meta
 blocking `SendMessage` returns the same `Task.metadata` on either stack. The .NET server also echoes the activated
 extensions in an `A2A-Extensions` response header (the SDK's own negotiation); the Python server does not yet.
 
+**The legacy wire spells a step per stack.** A Python specialist writes `tool_name` / `duration_ms` (one
+`event: step` frame per step); a .NET specialist's `AgentHost` writes the framework's defaults: camelCase in a blocking
+`/message:send` body (`toolName`, `durationMs`, a null `agent`) and PascalCase in `/message:stream`'s `event: steps`
+frame, which carries a *list*. Each orchestrator's legacy reader accepts both: `TolerantStepConverter` on .NET and
+`shared/legacy_wire.py` on Python (names compared ignoring case and underscores; a missing agent is filled with the
+specialist's name; the plural frame is split into live `step` frames). Before this, the Python orchestrator dropped a .NET
+specialist's blocking steps and read its `steps` frame as answer text. Usage needs no tolerance: both stacks name its
+fields explicitly. `scripts/a2a-interop.sh` checks it against a real .NET specialist.
+
 **Numbers on the wire.** A protobuf `Struct` (Python's metadata) writes every number as a float, so a .NET reader sees
 `5.0`, `0.0`. The .NET wire readers accept whole-valued floats; a reader that wants an integer silently dropped a
 Python specialist's steps and usage until the cross-process check found it.

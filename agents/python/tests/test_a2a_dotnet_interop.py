@@ -331,3 +331,63 @@ async def test_a_token_mode_dotnet_specialist_refuses_an_expired_token() -> None
 
     cause = root_cause(raised.value)
     assert isinstance(cause, httpx.HTTPStatusError) and cause.response.status_code == 401
+
+
+# ─────────────────────── the legacy wire: the orchestrator's own reader against a .NET specialist ───────────────────────
+# The .NET host's /message:send and /message:stream spell a step their own way (camelCase, and PascalCase in a
+# plural `event: steps` frame); the Python orchestrator used to drop them, and read the steps frame as answer text.
+
+
+@pytest.fixture
+def _legacy_orchestrator(monkeypatch: pytest.MonkeyPatch):
+    import orchestrator.agent as orch
+    from shared.config import settings
+    from shared.context import current_session_id, current_steps, current_user_email, current_user_role
+
+    monkeypatch.setattr(orch, "AGENT_REGISTRY", {"product-discovery": URL})
+    monkeypatch.setattr(settings, "AGENT_SHARED_SECRET", SECRET, raising=False)
+    monkeypatch.setattr(settings, "A2A_TRANSPORT", "legacy", raising=False)
+    current_user_email.set(USER)
+    current_user_role.set("customer")
+    current_session_id.set(SESSION)
+    current_steps.set([])
+    return orch
+
+
+async def test_the_orchestrators_legacy_blocking_call_keeps_a_dotnet_specialists_steps_and_usage(
+    _legacy_orchestrator,
+) -> None:
+    from shared.context import current_steps, current_stream_queue
+    from shared.run_usage import begin_run_usage
+
+    current_stream_queue.set(None)
+    run_usage = begin_run_usage()
+
+    text = await _legacy_orchestrator.call_specialist_agent(agent_name="product-discovery", message="price?")
+
+    assert text == ANSWER
+    [step] = current_steps.get()
+    assert step["tool_name"] == "lookup" and step["agent"] == "product-discovery"
+    assert run_usage.by_agent["product-discovery"]["input_token_count"] == 5
+
+
+async def test_the_orchestrators_legacy_streaming_call_keeps_a_dotnet_specialists_steps_and_usage(
+    _legacy_orchestrator,
+) -> None:
+    import asyncio
+
+    from shared.context import current_steps, current_stream_queue
+    from shared.run_usage import begin_run_usage
+
+    queue: asyncio.Queue = asyncio.Queue()
+    current_stream_queue.set(queue)
+    run_usage = begin_run_usage()
+
+    text = await _legacy_orchestrator.call_specialist_agent(agent_name="product-discovery", message="price?")
+
+    assert text == ANSWER  # never the steps JSON
+    [step] = current_steps.get()
+    assert step["tool_name"] == "lookup" and step["agent"] == "product-discovery"
+    frames = [queue.get_nowait() for _ in range(queue.qsize())]
+    assert [f[1] for f in frames if f[0] == "frame"] == ["step"]
+    assert run_usage.by_agent["product-discovery"]["output_token_count"] == 2
