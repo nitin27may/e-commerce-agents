@@ -21,13 +21,15 @@ Notification text never includes anything a requester typed: a kind from the pol
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import asyncpg
 
 from shared.approvals import repo
 from shared.approvals.repo import ApprovalStatus
+from shared.config import settings
 from shared.log_safe import log_safe
 from shared.notifications import notify
 from shared.outbox import enqueue
@@ -39,6 +41,9 @@ logger = logging.getLogger(__name__)
 REVIEW_LINK = "/admin/approvals"
 TOPIC_TIMEOUT_APPLY = "approval.timeout_apply"
 _TOP_ROLE = "admin"  # "manager" in the policy file
+#: A merchant proposal whose seller is mid-decide is looked at again after this long, at most this many times.
+_PROPOSAL_DEFER_SECONDS = 30
+_PROPOSAL_MAX_DEFERS = 10
 
 
 async def _current_review(
@@ -121,6 +126,34 @@ def _on_timeout(kind: str) -> ApprovalStatus:
     return ApprovalStatus.REJECTED if action == "reject" else ApprovalStatus.EXPIRED
 
 
+@dataclass(frozen=True)
+class _ProposalFlight:
+    claim_live: bool
+    executed: int  # lines already applied to the catalogue
+    unfinished: int  # lines accepted or edited but not yet run
+
+    @property
+    def busy(self) -> bool:
+        return self.claim_live or self.executed > 0 or self.unfinished > 0
+
+
+async def _proposal_in_flight(conn: asyncpg.Connection, approval: dict[str, Any]) -> _ProposalFlight:
+    """Whether a seller's decide is (or was) working on this proposal: a live claim, or lines past ``proposed``."""
+    claim_live = await conn.fetchval(
+        "SELECT claimed_at IS NOT NULL AND claimed_at >= NOW() - make_interval(secs => $2) "
+        "FROM approvals WHERE id = $1",
+        approval["id"],
+        float(settings.HITL_CLAIM_TTL_SECONDS),
+    )
+    counts = await conn.fetchrow(
+        """SELECT count(*) FILTER (WHERE status = 'executed') AS executed,
+                  count(*) FILTER (WHERE status IN ('accepted', 'edited')) AS unfinished
+             FROM proposal_lines WHERE proposal_id = $1""",
+        approval["source_ref"],
+    )
+    return _ProposalFlight(bool(claim_live), int(counts["executed"]), int(counts["unfinished"]))
+
+
 async def on_sla_breached(conn: asyncpg.Connection, row: OutboxRow) -> None:
     approval = await _current_review(conn, row, allow_needs_info=True)
     if approval is None:
@@ -146,6 +179,32 @@ async def on_sla_breached(conn: asyncpg.Connection, row: OutboxRow) -> None:
         )
         return
     target = _on_timeout(approval["kind"])
+    executed_lines = 0
+    if approval["source"] == "proposal":
+        # A seller's decide may be executing lines right now (it holds the claim), or may have executed some and
+        # not yet recorded the decision. Expiring under it would end with prices applied, the approval expired and
+        # the seller told nothing changed. So: while a decide is in flight, look again later; and if lines did run,
+        # never close the batch as "nothing was changed".
+        in_flight = await _proposal_in_flight(conn, approval)
+        defers = int(row.payload.get("defers", 0))
+        if in_flight.busy and defers < _PROPOSAL_MAX_DEFERS:
+            await enqueue(
+                conn,
+                repo.TOPIC_SLA_BREACHED,
+                {**row.payload, "defers": defers + 1},
+                available_at=datetime.now(UTC) + timedelta(seconds=_PROPOSAL_DEFER_SECONDS),
+                dedupe_key=f"{repo.TOPIC_SLA_BREACHED}:{approval_id}:{approval['escalation_level']}:defer:{defers + 1}",
+                aggregate_id=approval_id,
+            )
+            logger.info("approval expiry deferred, a decide is in flight id=%s", log_safe(approval_id))
+            return
+        executed_lines = in_flight.executed
+        if in_flight.unfinished:  # accepted or edited but never run: they did not happen, so say so
+            await conn.execute(
+                "UPDATE proposal_lines SET status = 'failed' "
+                "WHERE proposal_id = $1 AND status IN ('accepted', 'edited')",
+                approval["source_ref"],
+            )
     if approval["source"] in ("workflow", "tool") and approval["source_ref"]:
         # The paused return must actually be resumed as a rejection (or the tool request denied), and that
         # runs the workflow on its own connections - it cannot happen inside this row-locked transaction.
@@ -169,22 +228,29 @@ async def on_sla_breached(conn: asyncpg.Connection, row: OutboxRow) -> None:
         [ApprovalStatus.PENDING_REVIEW, ApprovalStatus.NEEDS_INFO],
         target,
         action="sla_timeout",
-        payload={"reason": "sla_breached", "on_timeout": target.value},
-        decision={"decision": target.value, "reason": "sla_timeout"},
+        payload={"reason": "sla_breached", "on_timeout": target.value, "executed_lines": executed_lines},
+        decision={"decision": target.value, "reason": "sla_timeout", "executed_lines": executed_lines},
     )
     if approval["source"] == "proposal":
-        # Nobody decided the batch in time: it lapses, and nothing in it was executed. The requester is the
-        # system actor, so it is the seller who is told.
+        # Nobody decided the batch in time: it lapses. The requester is the system actor, so it is the seller who
+        # is told. Normally nothing ran; if a decide executed lines and never recorded itself, the batch ends
+        # "executed" and the seller is told those changes were applied.
         await conn.execute(
-            "UPDATE proposals SET status = 'cancelled', updated_at = NOW() WHERE id = $1 AND status = 'pending_review'",
+            "UPDATE proposals SET status = $2, updated_at = NOW() WHERE id = $1 AND status = 'pending_review'",
             approval["source_ref"],
+            "executed" if executed_lines else "cancelled",
         )
         if approval["subject_email"]:
             await notify(
                 conn,
                 kind="merchant.proposal_expired",
                 title="Suggestions for your products expired",
-                body="A proposal was not reviewed in time and was closed. Nothing was changed.",
+                body=(
+                    f"A proposal was not fully reviewed in time. {executed_lines} change(s) had already been applied; "
+                    "the rest were not."
+                    if executed_lines
+                    else "A proposal was not reviewed in time and was closed. Nothing was changed."
+                ),
                 link="/seller/proposals",
                 approval_id=approval_id,
                 user_email=approval["subject_email"],

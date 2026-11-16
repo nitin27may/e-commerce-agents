@@ -112,6 +112,89 @@ async def test_a_decided_proposal_is_not_expired_by_its_late_timer(w: ms.World) 
     assert await w.pool.fetchval("SELECT price FROM products WHERE id = $1", price) == D("90.00")
 
 
+# ── SLA expiry never races a decide that is in flight ────────────────────────
+
+
+async def _status(w: ms.World, result: Any) -> tuple[str, str]:
+    approval = await repo.get(w.pool, result.approval_id)
+    proposal = await w.pool.fetchval("SELECT status FROM proposals WHERE id = $1", uuid.UUID(result.proposal_id))
+    return approval["status"], proposal
+
+
+async def test_the_deadline_passing_while_a_decide_holds_the_claim_does_not_expire_the_batch(w: ms.World) -> None:
+    price = await ms.product(w, "Overstock", price="100.00", stock=(300, 300), sold=20)
+    result = await generate_proposal(w.pool, w.seller_id)
+    await w.pool.execute("UPDATE approvals SET claimed_at = NOW(), claimed_by = 'a-decide-in-flight'")
+
+    await _due_now(w.pool)
+    await _tick(w.pool)
+
+    assert await _status(w, result) == ("pending_review", "pending_review")
+    kinds = {r["kind"] for r in await w.pool.fetch("SELECT kind FROM notifications")}
+    assert "merchant.proposal_expired" not in kinds
+    deferred = await w.pool.fetch(
+        "SELECT payload FROM outbox WHERE topic = 'approval.sla_breached' AND processed_at IS NULL"
+    )
+    assert len(deferred) == 1 and json.loads(deferred[0]["payload"])["defers"] == 1  # the timer was re-booked
+    assert await w.pool.fetchval("SELECT price FROM products WHERE id = $1", price) == D("100.00")
+
+    await w.pool.execute("UPDATE approvals SET claimed_at = NULL, claimed_by = NULL")  # the decide finished or died
+    await _due_now(w.pool)
+    await _tick(w.pool)
+
+    assert await _status(w, result) == ("expired", "cancelled")
+
+
+async def test_a_deadline_that_lands_mid_execution_does_not_end_with_prices_applied_and_the_batch_expired(
+    w: ms.World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    price = await ms.product(w, "Overstock", price="100.00", stock=(300, 300), sold=20)
+    result = await generate_proposal(w.pool, w.seller_id)
+    line_id = str(await w.pool.fetchval("SELECT id FROM proposal_lines"))
+    real = merchant_execute.execute_line
+    seen: list[tuple[str, str]] = []
+
+    async def breach_after_the_write(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        outcome = await real(*args, **kwargs)  # the price is now changed; the approval is not yet recorded
+        await _due_now(w.pool)
+        await _tick(w.pool)  # the SLA timer fires right here
+        seen.append(await _status(w, result))
+        return outcome
+
+    monkeypatch.setattr(merchant_execute, "execute_line", breach_after_the_write)
+
+    done = await svc.decide(
+        result.proposal_id, Actor(ms.SELLER, "seller"), lines=[{"line_id": line_id, "decision": "accept"}]
+    )
+
+    assert seen == [("pending_review", "pending_review")]  # the timer looked, saw a decide, and stood down
+    assert done["approval"]["status"] == "executed"
+    assert await _status(w, result) == ("executed", "executed")
+    assert await w.pool.fetchval("SELECT price FROM products WHERE id = $1", price) == D("90.00")
+    kinds = {r["kind"] for r in await w.pool.fetch("SELECT kind FROM notifications")}
+    assert "merchant.proposal_expired" not in kinds
+
+
+async def test_a_decide_that_executed_lines_and_died_is_closed_truthfully_not_as_nothing_changed(
+    w: ms.World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    price = await ms.product(w, "Overstock", price="100.00", stock=(300, 300), sold=20)
+    result = await generate_proposal(w.pool, w.seller_id)
+    line_id = str(await w.pool.fetchval("SELECT id FROM proposal_lines"))
+    await merchant_execute.apply_line(w.pool, line_id, D("90.00"))  # applied; the decision was never recorded
+    assert await w.pool.fetchval("SELECT price FROM products WHERE id = $1", price) == D("90.00")
+
+    for _ in range(12):  # the timer keeps looking while a retry could still finish it, then closes it
+        await _due_now(w.pool)
+        await _tick(w.pool)
+
+    approval = await repo.get(w.pool, result.approval_id)
+    assert approval["status"] == "expired" and approval["decision"]["executed_lines"] == 1
+    assert (await _status(w, result))[1] == "executed"  # not "cancelled": a change did run
+    body = await w.pool.fetchval("SELECT body FROM notifications WHERE kind = 'merchant.proposal_expired'")
+    assert "1 change(s) had already been applied" in body and "Nothing was changed" not in body
+
+
 # ── an interrupted decide ────────────────────────────────────────────────────
 
 
