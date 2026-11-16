@@ -29,6 +29,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 import httpx
 from a2a.client import A2ACardResolver, ClientCallContext, ClientConfig, ClientFactory
@@ -167,6 +168,36 @@ def _request(message: str, session_id: str) -> SendMessageRequest:
     )
 
 
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def _origin(url: str) -> tuple[str, str, int | None] | None:
+    """(scheme, host, port) of ``url`` with the scheme's default port made explicit; ``None`` if it has none."""
+    try:
+        parts = urlsplit(url)
+        scheme = parts.scheme.lower()
+        host = (parts.hostname or "").lower()
+        port = parts.port or _DEFAULT_PORTS.get(scheme)
+    except ValueError:
+        return None
+    return (scheme, host, port) if scheme and host else None
+
+
+def _foreign_interface(card: AgentCard, registry_url: str) -> str | None:
+    """The first interface URL of ``card`` whose origin is not the registry's, else ``None``.
+
+    The card is data the specialist chose (its interface URL derives from the request's Host header or
+    ``A2A_PUBLIC_BASE_URL``), and the HTTP client carries ``X-Agent-Secret`` and the forwarded user
+    identity on every request. A card must therefore never be able to move those to another origin:
+    the registry entry is the only origin this process was configured to trust.
+    """
+    expected = _origin(registry_url)
+    for interface in card.supported_interfaces:
+        if expected is None or _origin(interface.url) != expected:
+            return interface.url
+    return None
+
+
 def _call_context(timeout: float) -> ClientCallContext:
     return ClientCallContext(
         service_parameters=ServiceParametersFactory.create([with_a2a_extensions(list(ALL_EXTENSION_URIS))]),
@@ -184,11 +215,24 @@ async def _open_client(
     streaming: bool,
 ) -> AsyncIterator[Any]:
     """An SDK client for the specialist at ``url``, with the caller's credentials on every request."""
-    async with httpx.AsyncClient(timeout=timeout, transport=transport, headers=headers) as http:
+    # Never follow a redirect: a 3xx from the card URL (or from the RPC endpoint) would replay the
+    # credential headers against whatever origin it names.
+    async with httpx.AsyncClient(
+        timeout=timeout, transport=transport, headers=headers, follow_redirects=False
+    ) as http:
         key = url.rstrip("/")
         cached = _card_cache.get(key)
         fresh = cached is None or time.monotonic() >= cached[0]
         card = await A2ACardResolver(http, key).get_agent_card() if fresh else cached[1]  # type: ignore[index]
+        foreign = _foreign_interface(card, key)
+        if foreign is not None:
+            # Nothing has been sent but the card fetch, which carries the credentials to the registry
+            # origin only; the message and its credentials never go to the card's origin.
+            _card_cache.pop(key, None)
+            logger.error("a2a.card_origin_mismatch registry=%s interface=%s", log_safe(key), log_safe(foreign))
+            raise AgentCardResolutionError(
+                f"the agent card at {log_safe(key)} names an interface on a different origin; refusing to send"
+            )
         try:
             client = ClientFactory(ClientConfig(streaming=streaming, httpx_client=http)).create(card)
         except ValueError as exc:

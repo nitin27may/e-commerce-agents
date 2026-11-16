@@ -334,3 +334,74 @@ async def test_a_specialist_that_serves_only_the_legacy_card_is_reported_not_cal
     assert result == "Failed to reach the product-discovery agent. Please try again later."
     assert set(seen) == {"GET /.well-known/agent-card.json"}
     assert a2a_client._card_cache == {}
+
+
+def _card_naming(url: str) -> dict[str, Any]:
+    return {
+        "name": "product-discovery",
+        "description": "x",
+        "version": "1.0",
+        "supportedInterfaces": [{"url": url, "protocolBinding": "JSONRPC", "protocolVersion": "1.0"}],
+        "capabilities": {"streaming": True},
+        "defaultInputModes": ["text/plain"],
+        "defaultOutputModes": ["text/plain"],
+        "skills": [],
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("streaming", [True, False], ids=["stream", "blocking"])
+@pytest.mark.parametrize(
+    "interface_url",
+    [
+        "http://evil.example:9999/a2a/v1",
+        "http://pd:9999/a2a/v1",  # same host, other port
+        "https://pd:8081/a2a/v1",  # same host and port, other scheme
+    ],
+)
+async def test_a_card_naming_another_origin_is_refused_before_any_message_or_credential_is_sent(
+    monkeypatch: pytest.MonkeyPatch, streaming: bool, interface_url: str
+) -> None:
+    """The card is the specialist's own claim; the shared secret must only ever go to the registry origin."""
+    seen: list[httpx.Request] = []
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.url.path == "/.well-known/agent-card.json":
+            return httpx.Response(200, json=_card_naming(interface_url))
+        raise AssertionError("no message may be sent when the card names another origin")
+
+    _bind(monkeypatch, httpx.MockTransport(_handler), transport_mode="a2a", streaming=streaming)
+
+    result = await call_specialist_agent(agent_name="product-discovery", message="hi")
+
+    assert result == "Failed to reach the product-discovery agent. Please try again later."
+    # The streamed attempt provably never ran, so the blocking retry fetches the card once more.
+    assert {(r.method, r.url.host, r.url.port, r.url.path) for r in seen} == {
+        ("GET", "pd", 8081, "/.well-known/agent-card.json")
+    }
+    assert a2a_client._card_cache == {}
+
+
+@pytest.mark.asyncio
+async def test_a_redirecting_card_url_is_not_followed_with_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    hosts: list[str] = []
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        hosts.append(request.url.host)
+        return httpx.Response(302, headers={"location": "http://evil.example/.well-known/agent-card.json"})
+
+    _bind(monkeypatch, httpx.MockTransport(_handler), transport_mode="a2a", streaming=False)
+
+    result = await call_specialist_agent(agent_name="product-discovery", message="hi")
+
+    assert result.startswith("The product-discovery agent returned an error")
+    assert set(hosts) == {"pd"}
+
+
+def test_origins_compare_by_scheme_host_and_effective_port() -> None:
+    same = a2a_client._origin
+    assert same("http://PD:8081/x") == same("http://pd:8081/a2a/v1")
+    assert same("https://pd/x") == same("https://pd:443/y")
+    assert same("http://pd:8081") != same("http://pd:8082")
+    assert same("not a url") is None

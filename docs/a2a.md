@@ -114,6 +114,13 @@ queried.
   it, so a client that drops a stream leaves the specialist running to completion; on the legacy stream a
   disconnect cancelled the run. `CancelTask` is the way to stop one, and the orchestrator does not call it
   yet.
+- **The client only ever talks to the registry origin.** The card's interface URL comes from the request's
+  `Host` header or `A2A_PUBLIC_BASE_URL`, and the client carries `X-Agent-Secret` and the forwarded user
+  identity on every request. A card naming an interface whose origin (scheme, host, effective port) differs
+  from the `AGENT_REGISTRY` entry is refused as a card problem: no message and no credential is sent to that
+  origin, and the card is not cached. Redirects are never followed. Consequence: `A2A_PUBLIC_BASE_URL` must
+  name the same origin the registry uses to reach the specialist (a proxy that publishes a different public
+  origin needs the registry to use it too).
 - The client caches each specialist's card for five minutes.
 
 ## Testing
