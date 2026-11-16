@@ -475,8 +475,8 @@ _ANONYMOUS_CALLERS = [{**_SECRET_HEADER, "x-user-email": "", "x-user-role": "ano
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("_ANONYMOUS", _ANONYMOUS_CALLERS, ids=["empty-email", "no-identity"])
-async def test_anonymous_callers_cannot_read_each_others_stored_tasks(_ANONYMOUS: dict[str, str]) -> None:
+@pytest.mark.parametrize("anonymous", _ANONYMOUS_CALLERS, ids=["empty-email", "no-identity"])
+async def test_anonymous_callers_cannot_read_each_others_stored_tasks(anonymous: dict[str, str]) -> None:
     """Every anonymous caller shares one task owner, so a stored task is not readable by an anonymous caller.
 
     Anonymous means no resolved user identity: an unauthenticated chat the orchestrator forwards, or a health /
@@ -485,13 +485,13 @@ async def test_anonymous_callers_cannot_read_each_others_stored_tasks(_ANONYMOUS
     from a2a.types.a2a_pb2 import ListTasksRequest
 
     app, _ = build_app()
-    async with _sdk_client(app, streaming=False, headers=_ANONYMOUS) as client:
+    async with _sdk_client(app, streaming=False, headers=anonymous) as client:
         responses = [r async for r in client.send_message(_request())]
     task = responses[0].task
     assert task.status.state == TaskState.TASK_STATE_COMPLETED, "an anonymous caller is still served"
     assert task.artifacts, "and gets its answer in its own response"
 
-    async with _sdk_client(app, streaming=False, headers=_ANONYMOUS) as other_anonymous:
+    async with _sdk_client(app, streaming=False, headers=anonymous) as other_anonymous:
         with pytest.raises(TaskNotFoundError):
             await other_anonymous.get_task(GetTaskRequest(id=task.id))
         assert list((await other_anonymous.list_tasks(ListTasksRequest())).tasks) == []
@@ -501,14 +501,14 @@ async def test_anonymous_callers_cannot_read_each_others_stored_tasks(_ANONYMOUS
             async for _ in other_anonymous.send_message(follow_up):
                 pass
 
-    async with _sdk_client(app, streaming=True, headers=_ANONYMOUS) as streaming_anonymous:
+    async with _sdk_client(app, streaming=True, headers=anonymous) as streaming_anonymous:
         with pytest.raises(TaskNotFoundError):
             async for _ in streaming_anonymous.subscribe(SubscribeToTaskRequest(id=task.id)):
                 pass
 
     # A named user's tasks were never visible to an anonymous caller, and still are not.
     named = await _blocking(app, _request())
-    async with _sdk_client(app, streaming=False, headers=_ANONYMOUS) as anonymous:
+    async with _sdk_client(app, streaming=False, headers=anonymous) as anonymous:
         with pytest.raises(TaskNotFoundError):
             await anonymous.get_task(GetTaskRequest(id=named.id))
         assert list((await anonymous.list_tasks(ListTasksRequest())).tasks) == []

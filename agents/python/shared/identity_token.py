@@ -144,8 +144,8 @@ def verify(token: str, *, audience: str, key: bytes | None = None, now: int | No
     Raises :class:`IdentityTokenError` with a fixed ``reason`` for anything that must not be believed: a
     malformed token, a wrong algorithm or type, a bad signature, expiry, the wrong audience or issuer, a
     lifetime longer than :data:`MAX_LIFETIME_SECONDS`, an ``iat`` or ``nbf`` in the future, a time claim that is
-    not a whole number, or a missing claim (``exp``, ``iat``, ``iss``, ``aud``, ``sub``, ``email``, ``role``). Nothing of the token's content is in
-    the reason.
+    not a whole number, or a missing claim (``exp``, ``iat``, ``iss``, ``aud``, ``sub``, ``email``, ``role``).
+    Nothing of the token's content is in the reason.
     """
     try:
         header = jwt.get_unverified_header(token)
