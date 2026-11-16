@@ -36,7 +36,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   clothing: "bg-chart-3/10 text-chart-3 border-chart-3/30 dark:bg-chart-3/15",
   home: "bg-chart-4/10 text-chart-4 border-chart-4/30 dark:bg-chart-4/15",
   sports: "bg-chart-2/10 text-chart-2 border-chart-2/30 dark:bg-chart-2/15",
-  books: "bg-warning/10 text-warning border-warning/30 dark:bg-warning/15",
+  books: "bg-warning/10 text-[color-mix(in_oklab,var(--warning)_45%,black)] dark:text-warning border-warning/30 dark:bg-warning/15",
 };
 
 interface ChatProductCardProps {

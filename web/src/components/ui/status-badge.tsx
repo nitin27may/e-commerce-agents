@@ -12,8 +12,8 @@ export type SemanticTone = "success" | "warning" | "info" | "destructive" | "neu
 
 /** Badge background/text/border classes, keyed by tone. */
 export const TONE_BADGE_CLASS: Record<SemanticTone, string> = {
-  success: "bg-success/10 text-success border-success/30 dark:bg-success/15",
-  warning: "bg-warning/10 text-warning border-warning/30 dark:bg-warning/15",
+  success: "bg-success/10 text-[color-mix(in_oklab,var(--success)_62%,black)] dark:text-success border-success/30 dark:bg-success/15",
+  warning: "bg-warning/10 text-[color-mix(in_oklab,var(--warning)_45%,black)] dark:text-warning border-warning/30 dark:bg-warning/15",
   info: "bg-info/10 text-info border-info/30 dark:bg-info/15",
   destructive: "bg-destructive/10 text-destructive border-destructive/30 dark:bg-destructive/15",
   neutral: "bg-muted/50 text-muted-foreground border-border",
@@ -21,8 +21,8 @@ export const TONE_BADGE_CLASS: Record<SemanticTone, string> = {
 
 /** Plain text-color class, keyed by tone — for icons/values with no badge chrome. */
 export const TONE_TEXT_CLASS: Record<SemanticTone, string> = {
-  success: "text-success",
-  warning: "text-warning",
+  success: "text-[color-mix(in_oklab,var(--success)_62%,black)] dark:text-success",
+  warning: "text-[color-mix(in_oklab,var(--warning)_45%,black)] dark:text-warning",
   info: "text-info",
   destructive: "text-destructive",
   neutral: "text-muted-foreground",

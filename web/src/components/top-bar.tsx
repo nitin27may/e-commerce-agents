@@ -37,11 +37,12 @@ export function TopBar() {
           type="button"
           onClick={openCommandPalette}
           className="flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted"
-          aria-label="Search (Cmd+K)"
         >
           <Search className="size-4" />
-          <span className="hidden md:inline">Search…</span>
-          <kbd className="ml-2 hidden rounded border bg-background px-1.5 py-0.5 text-[10px] md:inline">
+          {/* The visible text is the accessible name (WCAG 2.5.3); below md it
+              is hidden visually but still announced. */}
+          <span className="max-md:sr-only">Search…</span>
+          <kbd aria-hidden="true" className="ml-2 hidden rounded border bg-background px-1.5 py-0.5 text-[10px] md:inline">
             ⌘K
           </kbd>
         </button>
@@ -50,12 +51,14 @@ export function TopBar() {
 
         <Link
           href="/profile"
-          aria-label="Profile"
           className="rounded-full ring-offset-background transition hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring"
         >
           <Avatar className="size-8">
             <AvatarFallback className="text-xs">{initials}</AvatarFallback>
           </Avatar>
+          {/* Name comes from content (initials + "Profile") so the visible text
+              is part of the accessible name (WCAG 2.5.3). */}
+          <span className="sr-only">Profile</span>
         </Link>
       </div>
     </header>

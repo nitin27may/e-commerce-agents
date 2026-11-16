@@ -270,8 +270,10 @@ jobs:
   # OPENAI_API_KEY. Run it locally with: cd web && pnpm exec playwright test
   #
   # web-ui-smoke below is the exception. ui-smoke.spec.ts stubs `**/api/**` and
-  # seeds auth in localStorage, and not-found.spec.ts hits a public route, so
-  # both run against the production build alone. No model key, no backend.
+  # seeds auth in localStorage, not-found.spec.ts hits a public route, and
+  # a11y.spec.ts runs axe over the pages that render without a backend, so all
+  # three run against the production build alone. No model key, no backend.
+  # Each runs on the desktop and the mobile-chromium project (playwright.config.ts).
   web-ui-smoke:
     name: Web · Playwright UI smoke (no backend)
     # Pinned, not ubuntu-latest: the Playwright version in web/pnpm-lock.yaml
@@ -317,7 +319,7 @@ jobs:
           exit 1
 
       - name: Run UI smoke specs
-        run: pnpm exec playwright test e2e/ui-smoke.spec.ts e2e/not-found.spec.ts --trace off
+        run: pnpm exec playwright test e2e/ui-smoke.spec.ts e2e/not-found.spec.ts e2e/a11y.spec.ts --trace off
 
       - name: Upload Playwright report on failure
         if: failure()
