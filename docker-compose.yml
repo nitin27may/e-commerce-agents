@@ -226,6 +226,12 @@ services:
       # Which wire the orchestrator speaks to a specialist: the original /message:send +
       # /message:stream pair (legacy) or A2A 1.0 JSON-RPC at /a2a/v1 (a2a). See docs/a2a.md.
       A2A_TRANSPORT: ${A2A_TRANSPORT:-legacy}
+      # How a specialist learns which user a call is for: headers | both (default) | token. `both` sends and
+      # verifies a signed, short-lived X-User-Context token and still accepts the headers; see docs/a2a.md.
+      # The key is shared by every process on both stacks; empty means AGENT_SHARED_SECRET.
+      A2A_IDENTITY: ${A2A_IDENTITY:-both}
+      A2A_IDENTITY_KEY: ${A2A_IDENTITY_KEY:-}
+      A2A_IDENTITY_TTL_SECONDS: ${A2A_IDENTITY_TTL_SECONDS:-300}
       AGENT_REGISTRY: >-
         {
           "product-discovery": "http://product-discovery:8081",

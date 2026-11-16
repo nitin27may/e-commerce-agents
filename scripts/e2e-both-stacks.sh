@@ -43,6 +43,7 @@
 #   scripts/e2e-both-stacks.sh                  # both backends, whole suite
 #   scripts/e2e-both-stacks.sh --only dotnet    # one backend (python | dotnet | py-net | net-py)
 #   scripts/e2e-both-stacks.sh --mixed          # both backends and both mixed variants
+#   scripts/e2e-both-stacks.sh --mixed py-net   # just one mixed variant (or net-py)
 #   scripts/e2e-both-stacks.sh -- e2e/orchestration-parity.spec.ts
 #
 set -uo pipefail
@@ -58,7 +59,10 @@ WITH_MIXED=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --only) ONLY="$2"; shift 2 ;;
-    --mixed) WITH_MIXED=1; shift ;;
+    --mixed)
+      # `--mixed` adds both mixed variants to the pure stacks; `--mixed py-net` (or net-py) runs just that one.
+      if [[ "${2:-}" == "py-net" || "${2:-}" == "net-py" ]]; then ONLY="$2"; shift 2; else WITH_MIXED=1; shift; fi
+      ;;
     --) shift; PLAYWRIGHT_ARGS=("$@"); break ;;
     *) echo "Unknown option: $1" >&2; exit 2 ;;
   esac

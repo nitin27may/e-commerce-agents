@@ -25,7 +25,7 @@ Browser  ──JWT (RS256)──►  Orchestrator  ──Bearer <agent:invoke>�
 The platform has three principal trust boundaries:
 
 1. **Browser → Orchestrator** — unauthenticated HTTP. Attacker is any internet client. `local` mode: self-issued HS256 JWT. `oauth` mode: the orchestrator brokers a Resource Owner Password Credentials grant against the self-hosted Authorization Server (AS) and relays its RS256 access/refresh tokens — the AS is the sole authority on credentials.
-2. **Orchestrator → Specialists** — internal network. `local` mode: static shared secret. `oauth` mode: a short-lived AS-issued client-credentials service token (`aud=ecommerce-agents`, `scope=agent:invoke`) per call — the shared secret is rejected outright, not just unused. Attacker is a compromised container that knows the secret/can mint or steal a token, but may still supply arbitrary forwarded identity headers.
+2. **Orchestrator → Specialists** — internal network. `local` mode: static shared secret. `oauth` mode: a short-lived AS-issued client-credentials service token (`aud=ecommerce-agents`, `scope=agent:invoke`) per call — the shared secret is rejected outright, not just unused. Attacker is a compromised container that knows the secret/can mint or steal a token. With `A2A_IDENTITY=headers` it can still supply arbitrary forwarded identity headers; the signed user-context token (below, B-14) is what narrows that, though not for a compromised *specialist* (the signing key is symmetric).
 3. **Specialists → MCP servers** — internal network, only reachable when `MCP_ENABLED=true`. `local`/default: unauthenticated. `oauth` mode with `MCP_AUTH_ENABLED=true`: each MCP server is an OAuth 2.1 resource server — a separate client-credentials token per resource (`scope=mcp:product` / `mcp:inventory`), independently acquired and cached, rejected if presented at the wrong server.
 
 ### Threat categories
@@ -189,6 +189,23 @@ X-Session-ID:  <session>
 ```
 
 The caller acquires this service token via a `client_credentials` grant (`shared/oauth/service_client.py::acquire_service_token`, cached per `(scope, audience)` with a 30s refresh skew — `.NET`'s `AuthServerClient.AcquireServiceTokenAsync`). The token proves the caller is a legitimate first-party agent; the end-user's actual identity still travels via the same forwarded `X-User-*` headers as `local` mode. System/health-originated calls carry a service token with no forwarded headers at all, mapping to `role=system`.
+
+**The signed user-context token (B-14, `A2A_IDENTITY`).** The credential above says which *agent* is calling; the headers said which *user*, with nothing binding the second claim to the first, so anyone holding the shared secret (or a stolen service token) could act as any user. The orchestrator now also sends
+
+```
+X-User-Context: <JWT, alg=HS256, typ=a2a-user-context+jwt, iss=ecommerce-agents/orchestrator,
+                 aud=<the specialist's registry name>, sub/email/role/sid, act={client_id: orchestrator}, 5 minute exp>
+```
+
+and the specialist's `AgentAuthMiddleware` (both stacks, same format and key, `docs/a2a.md`) verifies it before believing any identity:
+
+| `A2A_IDENTITY` | Behaviour |
+|---|---|
+| `headers` | the forwarded headers, as above; any token is ignored |
+| `both` (**default**, one release) | a token when present: a bad one (expired, wrong audience or issuer, wrong key, a lifetime over 15 minutes, wrong algorithm or type) is refused 401, never ignored in favour of the headers, and a header that contradicts a valid one (`X-User-Email: admin@...` beside someone else's token) is refused 401; with no token, the headers, so a half-upgraded deployment works |
+| `token` | only a verified token; a call without one is refused and the headers are not read |
+
+The key is HKDF-SHA256 of `A2A_IDENTITY_KEY`, else `AGENT_SHARED_SECRET`. **Set `A2A_IDENTITY_KEY` to a value different from the shared secret** (and the same on every process): then a caller holding only `X-Agent-Secret` can no longer choose its user, and a captured request cannot be replayed at another specialist (the `aud` is the target) or after five minutes. **Limit:** the key is symmetric, so a *compromised specialist* (which holds it to verify) could mint a token for any user; asymmetric signing, the orchestrator alone holding a private key, is the follow-up that closes that and needs key distribution this repo does not have outside `AUTH_MODE=oauth`. The web proxy strips `X-User-Context` (and the other inter-agent headers) from browser requests. `_identity_anomaly()` below still judges the identity a token carries.
 
 Either mode, `_identity_anomaly()` validates the forwarded headers the same way:
 
