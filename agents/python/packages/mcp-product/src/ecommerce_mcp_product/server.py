@@ -21,7 +21,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 import asyncpg
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ def _or_joined_tsquery(param: str) -> str:
 
 
 @asynccontextmanager
-async def _lifespan(server: FastMCP):
+async def _lifespan(server: MCPServer):
     global _pool
     _pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=8)
     logger.info("product-mcp: DB pool ready")
@@ -73,14 +73,6 @@ _mcp_kwargs: dict = {
         "details, compare products side by side, and check price history."
     ),
     "lifespan": _lifespan,
-    # FastMCP auto-enables DNS-rebinding Host-header protection whenever
-    # `host` is left at its default "127.0.0.1", allowlisting only
-    # localhost/127.0.0.1/::1 — which silently 421s every real call over
-    # the Docker network (e.g. a specialist calling http://mcp-product:9000).
-    # This app is actually served via `uvicorn ... --host 0.0.0.0`
-    # (see main()/the Dockerfile CMD), so declare that explicitly here too —
-    # `host="127.0.0.1"` was never accurate for how this process really runs.
-    "host": "0.0.0.0",
 }
 
 if MCP_AUTH_ENABLED:
@@ -97,11 +89,14 @@ if MCP_AUTH_ENABLED:
     _mcp_kwargs["auth"] = AuthSettings(
         issuer_url=AUTH_SERVER_ISSUER,
         resource_server_url=_resource_url,
+        # The verifier checks the token's audience itself (JwksTokenVerifier), so the SDK's
+        # resource-indicator check (default True in 3.0) stays off — same behaviour as mcp 1.x.
+        validate_token_resource=False,
         required_scopes=[MCP_PRODUCT_REQUIRED_SCOPE],
     )
     logger.info("product-mcp: OAuth 2.1 resource-server mode enabled issuer=%s", AUTH_SERVER_ISSUER)
 
-mcp = FastMCP("product-discovery-mcp", **_mcp_kwargs)
+mcp = MCPServer("product-discovery-mcp", **_mcp_kwargs)
 
 
 def _get_pool() -> asyncpg.Pool:
@@ -377,7 +372,12 @@ async def get_price_history(
 
 # Starlette ASGI app — used by uvicorn in Docker Compose and local dev.
 # MAF's MCPStreamableHTTPTool connects to the /mcp endpoint exposed here.
-app = mcp.streamable_http_app()
+# ``host`` here is what the DNS-rebinding guard keys off: MCPServer auto-enables Host-header
+# protection (allowlisting only localhost/127.0.0.1/::1) whenever it is left at the default
+# "127.0.0.1", which silently 421s every real call over the Docker network. In mcp 2.x the
+# argument moved from the constructor to ``streamable_http_app()``. This app is served via
+# ``uvicorn ... --host 0.0.0.0`` (see main()/the Dockerfile CMD), so declare that.
+app = mcp.streamable_http_app(host="0.0.0.0")
 
 
 def main(argv: list[str] | None = None) -> None:

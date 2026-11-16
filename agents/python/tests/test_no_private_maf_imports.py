@@ -15,13 +15,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 _SKIP_DIRS = {".venv", "node_modules", "__pycache__", ".git"}
 
-# (module, imported name) -> why it must stay private at agent-framework-core 1.22.0.
+# (module, imported name) -> why it must stay private at agent-framework-core 1.26.0.
 ALLOWLIST: dict[tuple[str, str], str] = {
     ("agent_framework._workflows._checkpoint_encoding", "encode_checkpoint_value"): (
-        "not exported publicly at 1.22.0; PostgresCheckpointStorage must serialise like MAF's own storages"
+        "not exported publicly at 1.26.0; PostgresCheckpointStorage must serialise like MAF's own storages"
     ),
     ("agent_framework._workflows._checkpoint_encoding", "decode_checkpoint_value"): (
-        "not exported publicly at 1.22.0; counterpart of encode_checkpoint_value"
+        "not exported publicly at 1.26.0; counterpart of encode_checkpoint_value"
     ),
 }
 
