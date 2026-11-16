@@ -3,12 +3,7 @@
     "instructions": "You are an execution assistant for an e-commerce store, running one step of an already-approved plan at a time. Each user message names the step to perform right now. If the step needs to search the catalog, call the `search_products` tool. Otherwise reason directly over the product results already visible earlier in this conversation. Keep your answer to a few sentences and stay focused on this one step.",
     "messages": [
       {
-        "additional_properties": {
-          "_attribution": {
-            "source_id": "in_memory",
-            "source_type": "InMemoryHistoryProvider"
-          }
-        },
+        "additional_properties": {},
         "contents": [
           {
             "additional_properties": {},
@@ -20,18 +15,13 @@
         "type": "message"
       },
       {
-        "additional_properties": {
-          "_attribution": {
-            "source_id": "in_memory",
-            "source_type": "InMemoryHistoryProvider"
-          }
-        },
-        "author_name": "executor-agent",
+        "additional_properties": {},
         "contents": [
           {
             "additional_properties": {},
             "arguments": "{\"query\":\"photography gifts\"}",
             "call_id": "call_fw1Wv149oLwKoVxvMR6O4mwc",
+            "hosted": false,
             "name": "search_products",
             "type": "function_call"
           }
@@ -40,13 +30,7 @@
         "type": "message"
       },
       {
-        "additional_properties": {
-          "_attribution": {
-            "source_id": "in_memory",
-            "source_type": "InMemoryHistoryProvider"
-          }
-        },
-        "author_name": "executor-agent",
+        "additional_properties": {},
         "contents": [
           {
             "additional_properties": {},
@@ -63,36 +47,6 @@
           }
         ],
         "role": "tool",
-        "type": "message"
-      },
-      {
-        "additional_properties": {
-          "_attribution": {
-            "source_id": "in_memory",
-            "source_type": "InMemoryHistoryProvider"
-          }
-        },
-        "author_name": "executor-agent",
-        "contents": [
-          {
-            "additional_properties": {},
-            "text": "Here are the photography-related products found:\n\n- Compact Mirrorless Camera ($189)\n- 50mm Prime Lens ($129)\n- Travel Camera Tripod ($39)\n- Padded Camera Strap ($19)\n- Professional Studio Light Kit ($349)\n\nLet me know the next step you\u2019d like to take.",
-            "type": "text"
-          }
-        ],
-        "role": "assistant",
-        "type": "message"
-      },
-      {
-        "additional_properties": {},
-        "contents": [
-          {
-            "additional_properties": {},
-            "text": "Step 2: Filter the results to items priced under $200.",
-            "type": "text"
-          }
-        ],
-        "role": "user",
         "type": "message"
       }
     ],
@@ -134,7 +88,7 @@
     ]
   },
   "response": {
-    "created_at": "2026-08-20T02:49:29.000000Z",
+    "created_at": "2026-08-20T02:49:28.000000Z",
     "finish_reason": "stop",
     "messages": [
       {
@@ -142,7 +96,7 @@
         "contents": [
           {
             "additional_properties": {},
-            "text": "The following photography-related products are priced under $200:\n\n- Compact Mirrorless Camera ($189)\n- 50mm Prime Lens ($129)\n- Travel Camera Tripod ($39)\n- Padded Camera Strap ($19)\n\nOnly the Professional Studio Light Kit ($349) exceeds your $200 limit.",
+            "text": "Here are the photography-related products found:\n\n- Compact Mirrorless Camera ($189)\n- 50mm Prime Lens ($129)\n- Travel Camera Tripod ($39)\n- Padded Camera Strap ($19)\n- Professional Studio Light Kit ($349)\n\nLet me know the next step you\u2019d like to take.",
             "type": "text"
           }
         ],
@@ -151,16 +105,16 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-EEn8LdgoSV5L9VfxGD5zIAByrs1B4",
+    "response_id": "chatcmpl-EEn8KfUoSO70cSpctBlfY4vBSbdgG",
     "type": "chat_response",
     "usage_details": {
       "cache_read_input_token_count": 0,
       "completion/reasoning_tokens": 0,
-      "input_token_count": 400,
-      "output_token_count": 61,
+      "input_token_count": 311,
+      "output_token_count": 63,
       "prompt/cached_tokens": 0,
       "reasoning_output_token_count": 0,
-      "total_token_count": 461
+      "total_token_count": 374
     }
   }
 }

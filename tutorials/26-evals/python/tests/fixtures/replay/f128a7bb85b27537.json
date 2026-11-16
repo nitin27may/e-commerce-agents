@@ -1,13 +1,13 @@
 {
   "request": {
-    "instructions": "You are a shopping assistant for a small store. When the user asks about products, call the `search_products` tool \u2014 never answer from memory. When you mention a product in your answer, always include its exact product id (e.g. 'P001') and its exact price, copied verbatim from the tool result, not rounded or paraphrased. For other questions, answer directly in one short sentence.",
+    "instructions": "You are a shopping assistant for a small electronics store. When the user asks about a product's price, stock, or availability, call the `search_catalog` tool with the product name and answer using the exact numbers it returns. Never guess a price or stock count. For anything else, answer directly in one short sentence.",
     "messages": [
       {
         "additional_properties": {},
         "contents": [
           {
             "additional_properties": {},
-            "text": "Do you have any noise-cancelling headphones? What's the price and product id?",
+            "text": "How many Mechanical Keyboards are in stock?",
             "type": "text"
           }
         ],
@@ -19,9 +19,10 @@
         "contents": [
           {
             "additional_properties": {},
-            "arguments": "{\"query\":\"noise-cancelling headphones\"}",
-            "call_id": "call_ANXyuFhTF0Pp5GJl9nprPQAr",
-            "name": "search_products",
+            "arguments": "{\"product_name\":\"Mechanical Keyboard\"}",
+            "call_id": "call_ytGit8jASPDnDzQZa7xFQXtp",
+            "hosted": false,
+            "name": "search_catalog",
             "type": "function_call"
           }
         ],
@@ -33,15 +34,15 @@
         "contents": [
           {
             "additional_properties": {},
-            "call_id": "call_ANXyuFhTF0Pp5GJl9nprPQAr",
+            "call_id": "call_ytGit8jASPDnDzQZa7xFQXtp",
             "items": [
               {
                 "additional_properties": {},
-                "text": "[{\"id\": \"P001\", \"name\": \"Wireless Noise-Cancelling Headphones\", \"price\": 129.99, \"category\": \"Electronics\"}]",
+                "text": "Mechanical Keyboard: $89.99, 15 units (in stock).",
                 "type": "text"
               }
             ],
-            "result": "[{\"id\": \"P001\", \"name\": \"Wireless Noise-Cancelling Headphones\", \"price\": 129.99, \"category\": \"Electronics\"}]",
+            "result": "Mechanical Keyboard: $89.99, 15 units (in stock).",
             "type": "function_result"
           }
         ],
@@ -52,20 +53,20 @@
     "tools": [
       {
         "function": {
-          "description": "Search the product catalog by keyword. Returns matching products with id, name, and price.",
-          "name": "search_products",
+          "description": "Look up the price and stock count for a product in the catalog by name.",
+          "name": "search_catalog",
           "parameters": {
             "properties": {
-              "query": {
-                "description": "Keyword(s) to match against product name or category, e.g. 'headphones'.",
-                "title": "Query",
+              "product_name": {
+                "description": "The product name to look up, e.g. 'Wireless Mouse'.",
+                "title": "Product Name",
                 "type": "string"
               }
             },
             "required": [
-              "query"
+              "product_name"
             ],
-            "title": "search_products_input",
+            "title": "search_catalog_input",
             "type": "object"
           }
         },
@@ -74,7 +75,7 @@
     ]
   },
   "response": {
-    "created_at": "2026-08-20T02:34:07.000000Z",
+    "created_at": "2026-08-20T02:34:37.000000Z",
     "finish_reason": "stop",
     "messages": [
       {
@@ -82,7 +83,7 @@
         "contents": [
           {
             "additional_properties": {},
-            "text": "Yes, we have Wireless Noise-Cancelling Headphones (product id: P001) available for $129.99.",
+            "text": "There are 15 Mechanical Keyboards in stock.",
             "type": "text"
           }
         ],
@@ -91,16 +92,16 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-EEmtTXf5OdPWE6aUlGHMfk2dBj24T",
+    "response_id": "chatcmpl-EEmtx7I3LipvcRiTLm4jPNzthqCjr",
     "type": "chat_response",
     "usage_details": {
       "cache_read_input_token_count": 0,
       "completion/reasoning_tokens": 0,
-      "input_token_count": 245,
-      "output_token_count": 27,
+      "input_token_count": 191,
+      "output_token_count": 12,
       "prompt/cached_tokens": 0,
       "reasoning_output_token_count": 0,
-      "total_token_count": 272
+      "total_token_count": 203
     }
   }
 }

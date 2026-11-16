@@ -1,13 +1,13 @@
 {
   "request": {
-    "instructions": "You are a shopping assistant. When the user asks about a product's price, call the `get_product_price` tool with the product ID and answer in one short sentence.",
+    "instructions": "You are a helpful assistant. When the user asks about weather in a city, call get_weather. Keep answers to one short sentence.",
     "messages": [
       {
         "additional_properties": {},
         "contents": [
           {
             "additional_properties": {},
-            "text": "What's the price of product P-300?",
+            "text": "What's the weather in Paris?",
             "type": "text"
           }
         ],
@@ -19,9 +19,10 @@
         "contents": [
           {
             "additional_properties": {},
-            "arguments": "{\"product_id\":\"P-300\"}",
-            "call_id": "call_u5F6IQibVV8yUmozmEThVuiz",
-            "name": "get_product_price",
+            "arguments": "{\"city\":\"Paris\"}",
+            "call_id": "call_xLEnlRJcd5RDmwsx60oytGdN",
+            "hosted": false,
+            "name": "get_weather",
             "type": "function_call"
           }
         ],
@@ -33,15 +34,15 @@
         "contents": [
           {
             "additional_properties": {},
-            "call_id": "call_u5F6IQibVV8yUmozmEThVuiz",
+            "call_id": "call_xLEnlRJcd5RDmwsx60oytGdN",
             "items": [
               {
                 "additional_properties": {},
-                "text": "$899.00",
+                "text": "Sunny, 18\u00b0C.",
                 "type": "text"
               }
             ],
-            "result": "$899.00",
+            "result": "Sunny, 18\u00b0C.",
             "type": "function_result"
           }
         ],
@@ -52,20 +53,20 @@
     "tools": [
       {
         "function": {
-          "description": "Look up the current price for a product by ID.",
-          "name": "get_product_price",
+          "description": "Look up the current weather for a city.",
+          "name": "get_weather",
           "parameters": {
             "properties": {
-              "product_id": {
-                "description": "The product ID to look up, e.g. 'P-100'.",
-                "title": "Product Id",
+              "city": {
+                "description": "The city to look up, e.g. 'Paris'.",
+                "title": "City",
                 "type": "string"
               }
             },
             "required": [
-              "product_id"
+              "city"
             ],
-            "title": "get_product_price_input",
+            "title": "get_weather_input",
             "type": "object"
           }
         },
@@ -74,7 +75,7 @@
     ]
   },
   "response": {
-    "created_at": "2026-08-20T08:22:27.000000Z",
+    "created_at": "2026-08-19T18:18:06.000000Z",
     "finish_reason": "stop",
     "messages": [
       {
@@ -82,7 +83,7 @@
         "contents": [
           {
             "additional_properties": {},
-            "text": "The price of product P-300 is $899.00.",
+            "text": "The weather in Paris is sunny with a temperature of 18\u00b0C.",
             "type": "text"
           }
         ],
@@ -91,16 +92,16 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-EEsKZNpdUY8FoiXkIt8D4lctu6AOB",
+    "response_id": "chatcmpl-EEf9SvTxV9ip0KKZQ3wkRbERes1zg",
     "type": "chat_response",
     "usage_details": {
       "cache_read_input_token_count": 0,
       "completion/reasoning_tokens": 0,
-      "input_token_count": 151,
-      "output_token_count": 15,
+      "input_token_count": 128,
+      "output_token_count": 16,
       "prompt/cached_tokens": 0,
       "reasoning_output_token_count": 0,
-      "total_token_count": 166
+      "total_token_count": 144
     }
   }
 }

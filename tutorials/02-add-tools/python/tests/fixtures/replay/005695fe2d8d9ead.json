@@ -1,13 +1,13 @@
 {
   "request": {
-    "instructions": "You are a shopping assistant for a small electronics store. When the user asks about a product's price, stock, or availability, call the `search_catalog` tool with the product name and answer using the exact numbers it returns. Never guess a price or stock count. For anything else, answer directly in one short sentence.",
+    "instructions": "You are a helpful assistant. When the user asks about the price of a product by SKU, call the `get_product_price` tool. For other questions, answer directly in one short sentence.",
     "messages": [
       {
         "additional_properties": {},
         "contents": [
           {
             "additional_properties": {},
-            "text": "What does the Noise-Cancelling Headphones cost?",
+            "text": "What's the price of SKU-001?",
             "type": "text"
           }
         ],
@@ -19,9 +19,10 @@
         "contents": [
           {
             "additional_properties": {},
-            "arguments": "{\"product_name\":\"Noise-Cancelling Headphones\"}",
-            "call_id": "call_ds3QLvLnJ0w7jqIAAraJOwrv",
-            "name": "search_catalog",
+            "arguments": "{\"sku\":\"SKU-001\"}",
+            "call_id": "call_UPqucqJMtssVdRDfg8ZOur2S",
+            "hosted": false,
+            "name": "get_product_price",
             "type": "function_call"
           }
         ],
@@ -33,15 +34,15 @@
         "contents": [
           {
             "additional_properties": {},
-            "call_id": "call_ds3QLvLnJ0w7jqIAAraJOwrv",
+            "call_id": "call_UPqucqJMtssVdRDfg8ZOur2S",
             "items": [
               {
                 "additional_properties": {},
-                "text": "Noise-Cancelling Headphones: $149.99, 8 units (in stock).",
+                "text": "$79.99 \u2014 Wireless Mouse",
                 "type": "text"
               }
             ],
-            "result": "Noise-Cancelling Headphones: $149.99, 8 units (in stock).",
+            "result": "$79.99 \u2014 Wireless Mouse",
             "type": "function_result"
           }
         ],
@@ -52,20 +53,20 @@
     "tools": [
       {
         "function": {
-          "description": "Look up the price and stock count for a product in the catalog by name.",
-          "name": "search_catalog",
+          "description": "Look up the current price for a product SKU.",
+          "name": "get_product_price",
           "parameters": {
             "properties": {
-              "product_name": {
-                "description": "The product name to look up, e.g. 'Wireless Mouse'.",
-                "title": "Product Name",
+              "sku": {
+                "description": "The product SKU to look up, e.g. 'SKU-001'.",
+                "title": "Sku",
                 "type": "string"
               }
             },
             "required": [
-              "product_name"
+              "sku"
             ],
-            "title": "search_catalog_input",
+            "title": "get_product_price_input",
             "type": "object"
           }
         },
@@ -74,7 +75,7 @@
     ]
   },
   "response": {
-    "created_at": "2026-08-20T02:34:40.000000Z",
+    "created_at": "2026-08-20T08:36:54.000000Z",
     "finish_reason": "stop",
     "messages": [
       {
@@ -82,7 +83,7 @@
         "contents": [
           {
             "additional_properties": {},
-            "text": "The Noise-Cancelling Headphones cost $149.99 and there are 8 units in stock.",
+            "text": "The price of SKU-001 (Wireless Mouse) is $79.99.",
             "type": "text"
           }
         ],
@@ -91,16 +92,16 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-EEmu0MAdq5KutzDpPsW3wVepEuAqN",
+    "response_id": "chatcmpl-EEsYYDvs8WJHTr2A8sDWljbSAhE12",
     "type": "chat_response",
     "usage_details": {
       "cache_read_input_token_count": 0,
       "completion/reasoning_tokens": 0,
-      "input_token_count": 201,
-      "output_token_count": 23,
+      "input_token_count": 154,
+      "output_token_count": 18,
       "prompt/cached_tokens": 0,
       "reasoning_output_token_count": 0,
-      "total_token_count": 224
+      "total_token_count": 172
     }
   }
 }

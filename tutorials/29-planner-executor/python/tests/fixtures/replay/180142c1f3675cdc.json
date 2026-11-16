@@ -32,6 +32,7 @@
             "additional_properties": {},
             "arguments": "{\"query\":\"photography gifts\"}",
             "call_id": "call_fw1Wv149oLwKoVxvMR6O4mwc",
+            "hosted": false,
             "name": "search_products",
             "type": "function_call"
           }
@@ -84,81 +85,11 @@
         "type": "message"
       },
       {
-        "additional_properties": {
-          "_attribution": {
-            "source_id": "in_memory",
-            "source_type": "InMemoryHistoryProvider"
-          }
-        },
-        "contents": [
-          {
-            "additional_properties": {},
-            "text": "Step 2: Filter the results to items priced under $200.",
-            "type": "text"
-          }
-        ],
-        "role": "user",
-        "type": "message"
-      },
-      {
-        "additional_properties": {
-          "_attribution": {
-            "source_id": "in_memory",
-            "source_type": "InMemoryHistoryProvider"
-          }
-        },
-        "author_name": "executor-agent",
-        "contents": [
-          {
-            "additional_properties": {},
-            "text": "The following photography-related products are priced under $200:\n\n- Compact Mirrorless Camera ($189)\n- 50mm Prime Lens ($129)\n- Travel Camera Tripod ($39)\n- Padded Camera Strap ($19)\n\nOnly the Professional Studio Light Kit ($349) exceeds your $200 limit.",
-            "type": "text"
-          }
-        ],
-        "role": "assistant",
-        "type": "message"
-      },
-      {
-        "additional_properties": {
-          "_attribution": {
-            "source_id": "in_memory",
-            "source_type": "InMemoryHistoryProvider"
-          }
-        },
-        "contents": [
-          {
-            "additional_properties": {},
-            "text": "Step 3: Pick the best-suited items for a birthday gift from the filtered results.",
-            "type": "text"
-          }
-        ],
-        "role": "user",
-        "type": "message"
-      },
-      {
-        "additional_properties": {
-          "_attribution": {
-            "source_id": "in_memory",
-            "source_type": "InMemoryHistoryProvider"
-          }
-        },
-        "author_name": "executor-agent",
-        "contents": [
-          {
-            "additional_properties": {},
-            "text": "The best-suited items for a birthday gift from the filtered list are:\n\n- Compact Mirrorless Camera ($189): Great for someone interested in exploring photography or upgrading from a smartphone.\n- 50mm Prime Lens ($129): Perfect for someone who already owns a compatible camera and wants to experiment with creative portrait or low-light shots.\n- Travel Camera Tripod ($39): Practical for travelers and outdoor enthusiasts.\n- Padded Camera Strap ($19): A thoughtful, useful accessory for any camera owner.\n\nIf you want a standout, main gift, the Compact Mirrorless Camera is an excellent choice. For a smaller, thoughtful present, the 50mm Prime Lens or Travel Camera Tripod also make great options.",
-            "type": "text"
-          }
-        ],
-        "role": "assistant",
-        "type": "message"
-      },
-      {
         "additional_properties": {},
         "contents": [
           {
             "additional_properties": {},
-            "text": "Step 4: Summarize a top recommendation for a photography gift within the budget.",
+            "text": "Step 2: Filter the results to items priced under $200.",
             "type": "text"
           }
         ],
@@ -204,7 +135,7 @@
     ]
   },
   "response": {
-    "created_at": "2026-08-20T02:49:32.000000Z",
+    "created_at": "2026-08-20T02:49:29.000000Z",
     "finish_reason": "stop",
     "messages": [
       {
@@ -212,7 +143,7 @@
         "contents": [
           {
             "additional_properties": {},
-            "text": "Top Recommendation: The Compact Mirrorless Camera ($189) is the best photography gift within your $200 budget. It\u2019s beginner-friendly, includes a versatile kit lens, and offers a great starting point (or upgrade) for anyone interested in photography. This thoughtful gift is both practical and exciting for a birthday celebration.",
+            "text": "The following photography-related products are priced under $200:\n\n- Compact Mirrorless Camera ($189)\n- 50mm Prime Lens ($129)\n- Travel Camera Tripod ($39)\n- Padded Camera Strap ($19)\n\nOnly the Professional Studio Light Kit ($349) exceeds your $200 limit.",
             "type": "text"
           }
         ],
@@ -221,16 +152,16 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-EEn8O8DCEMAhseOp1Vv05zgpHFrle",
+    "response_id": "chatcmpl-EEn8LdgoSV5L9VfxGD5zIAByrs1B4",
     "type": "chat_response",
     "usage_details": {
       "cache_read_input_token_count": 0,
       "completion/reasoning_tokens": 0,
-      "input_token_count": 659,
-      "output_token_count": 64,
+      "input_token_count": 400,
+      "output_token_count": 61,
       "prompt/cached_tokens": 0,
       "reasoning_output_token_count": 0,
-      "total_token_count": 723
+      "total_token_count": 461
     }
   }
 }
