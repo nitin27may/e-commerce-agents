@@ -653,10 +653,15 @@ async def _execute_approved_in_tx(
         )
         if order is None:
             return {"success": False, "status": "failed", "reason": "order_not_found"}
+        policy = get_policy()
         try:
-            ceiling = get_policy().budget(decision["budget_key"]).per_order_max_count
-        except (AutonomyPolicyError, KeyError):  # the budget is gone from the policy: the strictest reading
+            ceiling = policy.budget(decision["budget_key"]).per_order_max_count
+        except AutonomyPolicyError:  # the budget is gone from the policy: the strictest reading
             ceiling = 1
+        try:  # the action's own ``reversible`` flag, as for an autonomous draw; an action the policy lost is not
+            reversible = policy.action(decision["action"]).reversible
+        except AutonomyPolicyError:
+            reversible = False
         if await credits_on_order(conn, decision["order_id"]) >= ceiling:
             # Credited some other way since this was proposed. The engine no longer opens such an approval, so this
             # is a backstop for one opened before the order was credited (or by an older build): do not pay twice.
@@ -679,7 +684,7 @@ async def _execute_approved_in_tx(
             budget={"budget_key": decision["budget_key"], "drew": None, "note": "a person authorised this: no draw"},
             policy_version=decision["policy_version"],
             approval_id=decision["approval_id"],
-            reversible=True,
+            reversible=reversible,
             actor_email=approver,
         )
         await _grant_credit(
@@ -818,7 +823,7 @@ SELECT d.id, d.event_key, d.event_type, d.action, d.budget_key, d.order_id, d.am
        d.reasons, d.input, d.budget, d.policy_version, d.approval_id, d.reversible, d.created_at,
        u.email AS customer_email,
        a.status AS approval_status, a.assigned_role AS approval_role,
-       x.id AS execution_id, x.amount AS applied_amount, x.actor_email AS approved_by,
+       x.id AS execution_id, x.reversible AS execution_reversible, x.amount AS applied_amount, x.actor_email AS approved_by,
        r.id AS reversal_id, r.created_at AS reversed_at, r.actor_email AS reversed_by, r.note AS reversal_note
   FROM agent_decisions d
   LEFT JOIN users u ON u.id = d.user_id
@@ -875,7 +880,8 @@ def _present(row: asyncpg.Record) -> dict[str, Any]:
         "reversed_at": row["reversed_at"].isoformat() if row["reversed_at"] else None,
         "reversed_by": row["reversed_by"],
         "can_reverse": bool(
-            state in ("executed", "executed_after_approval") and (row["reversible"] or row["execution_id"])
+            state in ("executed", "executed_after_approval")
+            and (row["execution_reversible"] if row["execution_id"] else row["reversible"])
         ),
     }
 

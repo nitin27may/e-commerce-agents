@@ -527,3 +527,39 @@ async def test_w4a_the_simulator_never_picks_the_tour_user(w: aus.World, on: Non
     with pytest.raises(svc.ApprovalHTTPError) as err:
         await autonomy_service.simulate(ADMIN, order_id=str(tour_order), delay_days=3)
     assert err.value.status_code == 422
+
+
+# ── suggestion: an approved execution honours the policy's ``reversible`` ───────────────────────────────────────
+
+
+def _irreversible_policy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, reversible: bool) -> None:
+    import yaml
+
+    from shared.autonomy.policy import POLICY_PATH
+
+    doc = yaml.safe_load(POLICY_PATH.read_text(encoding="utf-8"))
+    doc["actions"]["goodwill_credit"]["reversible"] = reversible
+    path = tmp_path / "autonomy.yaml"
+    path.write_text(yaml.safe_dump(doc), encoding="utf-8")
+    monkeypatch.setattr("shared.config.settings.AUTONOMY_POLICY_PATH", str(path))
+
+
+@pytest.mark.parametrize("reversible", [True, False])
+async def test_an_approved_execution_is_reversible_exactly_when_the_policy_says(
+    w: aus.World, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reversible: bool
+) -> None:
+    _irreversible_policy(tmp_path, monkeypatch, reversible=reversible)
+    order = await aus.order(w)
+    waiting = await _handle(w, order, 12, "evt-1")
+
+    await svc.decide(waiting["approval_id"], STAFF, decision="approve")
+
+    (execution,) = await aus.decisions(w.pool, "approved_execution")
+    assert execution["reversible"] is reversible
+    shown = await engine.get_decision(w.pool, waiting["decision_id"])
+    assert shown["can_reverse"] is reversible
+    if not reversible:
+        with pytest.raises(engine.AutonomyError) as err:
+            await engine.reverse(w.pool, waiting["decision_id"], actor_email=aus.ADMIN)
+        assert err.value.status_code == 409
+        assert await aus.ledger_balance(w.pool, w.users[aus.CUSTOMER]) == D("40.00")
