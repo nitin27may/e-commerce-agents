@@ -1,4 +1,5 @@
 using Dapper;
+using ECommerceAgents.Shared.Approvals;
 using ECommerceAgents.Shared.Data;
 using ECommerceAgents.Shared.Idempotency;
 using System.Text.Json;
@@ -15,43 +16,33 @@ namespace ECommerceAgents.Orchestrator.Routes;
 internal static class HitlActionExecutor
 {
     /// <summary>
-    /// Runs an approved destructive action, once.
+    /// Runs an approved destructive action at most once, keyed by the approval's id.
     /// </summary>
     /// <remarks>
-    /// Guarded because approval is exactly where a double-execution is most expensive:
-    /// two admins clicking Approve on the same queued refund, or one admin retrying after
-    /// a timeout. The key is scoped to <paramref name="userEmail"/> — the *target
-    /// customer*, not the acting admin — because keying on the approver would let two
-    /// different admins each release the same refund. Python's port found that one the
-    /// hard way (<c>shared/hitl.py:323</c>).
+    /// The key is the approval id rather than a hash of the input: a reviewer's edits change the input, so an input hash would let an
+    /// edited retry run a second time. The id is the same string Python keys on (<c>hitl_execute_approval</c>), so a retry that lands
+    /// on the other stack still replays. Returns the result as JSON so a replayed result keeps its types
+    /// (<c>success</c> stays a boolean).
     /// </remarks>
-    public static async Task<Dictionary<string, object?>> ExecuteAsync(
+    public static async Task<JsonElement> ExecuteApprovedAsync(
         DatabasePool pool,
         string toolName,
         JsonElement toolInput,
-        string userEmail
+        string userEmail,
+        Guid approvalId
     )
     {
-        var result = await new IdempotencyGuard(pool).ExecuteAsync(
-            "hitl_execute",
-            userEmail,
-            new { toolName, toolInput = toolInput.GetRawText() },
-            async () => (object)await ExecuteCoreAsync(pool, toolName, toolInput, userEmail));
+        var result = await new IdempotencyGuard(pool).RunOnceAsync(
+            "hitl_execute_approval",
+            approvalId.ToString(),
+            async () => (object)await ExecuteCoreAsync(pool, ApprovalIntake.CanonicalToolName(toolName), toolInput, userEmail));
 
-        return Unwrap(result);
+        return result switch
+        {
+            JsonElement e when e.ValueKind == JsonValueKind.Object => e,
+            _ => JsonSerializer.SerializeToElement(result),
+        };
     }
-
-    /// <summary>
-    /// A replayed result comes back as the cached JSON rather than the original
-    /// dictionary, so it is converted back to the shape callers expect.
-    /// </summary>
-    private static Dictionary<string, object?> Unwrap(object result) => result switch
-    {
-        Dictionary<string, object?> d => d,
-        JsonElement e when e.ValueKind == JsonValueKind.Object =>
-            e.EnumerateObject().ToDictionary(p => p.Name, p => (object?)p.Value.ToString()),
-        _ => new Dictionary<string, object?> { ["status"] = "completed" },
-    };
 
     private static async Task<Dictionary<string, object?>> ExecuteCoreAsync(
         DatabasePool pool,
@@ -94,26 +85,33 @@ internal static class HitlActionExecutor
 
             case "process_refund":
             {
-                var orderId = GetString(toolInput, "order_id") ?? "";
-                if (!Guid.TryParse(orderId, out var orderGuid))
+                // process_refund takes a return_id (the gated tool's own shape), not an order id: it settles the RETURN, guarded by
+                // status so a second execution reports "already resolved" instead of a second success. Same as Python.
+                var returnId = GetString(toolInput, "return_id") ?? "";
+                if (!Guid.TryParse(returnId, out var returnGuid))
                 {
-                    return Failure("Order not found.");
+                    return Failure("Return not found, already resolved, or access denied.");
                 }
                 var row = await conn.QueryFirstOrDefaultAsync(
-                    @"UPDATE orders SET status = 'refunded'
-                      WHERE id = @id AND user_id = (SELECT id FROM users WHERE email = @email)
-                      RETURNING id, total",
-                    new { id = orderGuid, email = userEmail }
+                    @"UPDATE returns SET status = 'refunded', resolved_at = NOW()
+                      WHERE id = @id
+                        AND user_id = (SELECT id FROM users WHERE email = @email)
+                        AND status NOT IN ('refunded', 'denied')
+                      RETURNING id, order_id, refund_method, refund_amount",
+                    new { id = returnGuid, email = userEmail }
                 );
                 if (row is null)
                 {
-                    return Failure("Order not found.");
+                    return Failure("Return not found, already resolved, or access denied.");
                 }
-                var total = (decimal)row.total;
+                var amount = row.refund_amount is null ? 0m : (decimal)row.refund_amount;
+                var method = (string?)row.refund_method ?? "original_payment";
                 return Success(new Dictionary<string, object?>
                 {
-                    ["refunded_amount"] = total,
-                    ["message"] = $"Refund of ${total:F2} processed.",
+                    ["return_id"] = returnId,
+                    ["order_id"] = ((Guid)row.order_id).ToString(),
+                    ["refunded_amount"] = amount,
+                    ["message"] = $"Refund of ${amount:F2} processed via {method.Replace('_', ' ')}.",
                 });
             }
 
@@ -121,21 +119,34 @@ internal static class HitlActionExecutor
             {
                 var orderId = GetString(toolInput, "order_id") ?? "";
                 var reason = GetString(toolInput, "reason") ?? "Admin-approved return";
+                var refundMethod = GetString(toolInput, "refund_method");
+                if (refundMethod is not ("original_payment" or "store_credit")) refundMethod = "original_payment";
                 if (!Guid.TryParse(orderId, out var orderGuid))
                 {
                     return Failure("Order not found.");
                 }
+                // NOT EXISTS: a second run must not insert a second returns row for the same order.
                 var returnId = await conn.QueryFirstOrDefaultAsync<Guid?>(
                     @"INSERT INTO returns (order_id, user_id, reason, status, refund_method)
-                      SELECT o.id, o.user_id, @reason, 'approved', 'original_payment'
+                      SELECT o.id, o.user_id, @reason, 'approved', @refundMethod
                       FROM orders o JOIN users u ON o.user_id = u.id
                       WHERE o.id = @id AND u.email = @email
+                        AND NOT EXISTS (SELECT 1 FROM returns r WHERE r.order_id = o.id)
                       RETURNING id",
-                    new { id = orderGuid, email = userEmail, reason }
+                    new { id = orderGuid, email = userEmail, reason, refundMethod }
                 );
                 if (returnId is null)
                 {
-                    return Failure("Order not found.");
+                    var existing = await conn.ExecuteScalarAsync<Guid?>(
+                        "SELECT id FROM returns WHERE order_id = @id LIMIT 1", new { id = orderGuid });
+                    return existing is { } found
+                        ? new Dictionary<string, object?>
+                        {
+                            ["success"] = false,
+                            ["return_id"] = found.ToString(),
+                            ["message"] = "A return has already been initiated for this order.",
+                        }
+                        : Failure("Order not found.");
                 }
                 return Success(new Dictionary<string, object?>
                 {

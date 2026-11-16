@@ -1,10 +1,13 @@
 using Dapper;
+using ECommerceAgents.Orchestrator.Approvals;
 using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Data;
+using ECommerceAgents.Shared.Logging;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Logging;
 using System.Text.Json;
 
 namespace ECommerceAgents.Orchestrator.Routes;
@@ -12,12 +15,12 @@ namespace ECommerceAgents.Orchestrator.Routes;
 /// <summary>
 /// <c>/api/admin/hitl/*</c> — the tool-level HITL approval queue admin
 /// surface. Mirrors Python's <c>list_hitl_requests</c> /
-/// <c>approve_hitl_request</c> / <c>deny_hitl_request</c>
-/// (<c>routes.py:1199-1296</c>, <c>shared/hitl.py</c>). Previously missing
-/// entirely from the .NET orchestrator — nothing gated any tool calls, so
-/// this queue would always have been empty even if the routes existed;
-/// see <see cref="ECommerceAgents.Shared.Middleware.HitlApprovalMiddleware"/>
-/// for the piece that actually populates it.
+/// <c>approve_hitl_request</c> / <c>deny_hitl_request</c>. The list stays
+/// admin-only; approve and deny are thin shims over the unified
+/// <see cref="ApprovalsService.DecideAsync"/> (the same one
+/// <c>POST /api/approvals/{id}/decide</c> and the run-resume route call) and
+/// are open to staff, bounded by the level the approval policy assigned.
+/// <see cref="ECommerceAgents.Shared.Middleware.HitlGate"/> populates the queue.
 /// </summary>
 public static class HitlRoutes
 {
@@ -80,141 +83,67 @@ public static class HitlRoutes
         return Results.Ok(new { requests = rows, total = rows.Count });
     }
 
-    // ─────────────────────── approve ─────────────────────────
+    // ─────────────────────── approve / deny: thin shims over the one decide ───────────────────────
+
+    /// <summary>
+    /// Runs a legacy tool-request decision through <see cref="ApprovalsService.DecideAsync"/> — the approvals inbox is the one code path.
+    /// This only finds (or, for a request that predates the inbox, creates) the linked approval and maps the service's answers onto the
+    /// status codes these routes always returned: 404 unknown, 403 own request, 400 already resolved, 409 lost a race.
+    /// Staff, not admin-only: a support reviewer may decide what the policy routed to support, bounded by the assigned level.
+    /// </summary>
+    private static async Task<(IResult? Failure, DecideOutcome? Outcome)> DecideToolRequestAsync(
+        string requestId, ApprovalsService service, ILoggerFactory loggers, string decision, string? note)
+    {
+        if (StaffGuard.Require() is { } denied) return (denied, null);
+        if (!Guid.TryParse(requestId, out var reqId))
+        {
+            return (Results.NotFound(new { detail = "HITL request not found" }), null);
+        }
+
+        var approvalId = await service.EnsureForToolRequestAsync(reqId);
+        if (approvalId is null)
+        {
+            return (Results.NotFound(new { detail = "HITL request not found" }), null);
+        }
+
+        var actor = new Actor(RequestContext.CurrentUserEmail, RequestContext.CurrentUserRole);
+        try
+        {
+            var outcome = await service.DecideAsync(approvalId.Value.ToString(), actor, decision, note: note);
+            loggers.CreateLogger("hitl").LogInformation(
+                "hitl.{Decision} approval_id={ApprovalId}", LogSafe.Clean(decision), approvalId.Value);
+            return (null, outcome);
+        }
+        catch (ApprovalHttpException ex)
+        {
+            // "already <status>" has always been a 400 here; the unified API answers 409.
+            var status = ex.StatusCode == 409 && ex.Detail.StartsWith("Request is already", StringComparison.Ordinal)
+                ? 400
+                : ex.StatusCode;
+            return (Results.Json(new { detail = ex.Detail }, statusCode: status), null);
+        }
+    }
 
     private static async Task<IResult> Approve(
         string requestId,
         [FromBody] HitlDecisionBody? body,
-        DatabasePool pool
+        ApprovalsService service,
+        ILoggerFactory loggers
     )
     {
-        var guard = RequireAdmin();
-        if (guard is not null) return guard;
-        if (!Guid.TryParse(requestId, out var reqId))
-        {
-            return Results.NotFound(new { detail = "HITL request not found" });
-        }
-
-        await using var conn = await pool.OpenAsync();
-
-        // Claim the row BEFORE executing, not after. The previous shape here
-        // was: read status, check it's pending, execute, then UPDATE ... WHERE
-        // status = 'pending' — and that leaves a real window where two
-        // concurrent approvals both pass the pre-check and both execute the
-        // underlying action. Only the loser's UPDATE failed, by which point a
-        // duplicate refund has already been issued. Python hit exactly this and
-        // fixed it the same way; see shared/hitl.py::claim_hitl_request, whose
-        // docstring documents the duplicate-refund case as the motivation.
-        //
-        // A single atomic pending -> processing transition means only one
-        // caller ever reaches the executor.
-        //
-        // The approver may not be the requester, even as admin (#92). That is part
-        // of the claim's WHERE clause rather than a read beforehand, so a refused
-        // self-approval never moves the row out of 'pending'.
-        var approver = RequestContext.CurrentUserEmail;
-        var claimed = await conn.QueryFirstOrDefaultAsync(
-            @"UPDATE tool_approval_requests
-              SET status = 'processing'
-              WHERE id = @id AND status = 'pending'
-                AND lower(user_email) <> lower(@approver)
-              RETURNING id, user_email, tool_name, tool_input",
-            new { id = reqId, approver }
-        );
-
-        if (claimed is null)
-        {
-            // Either it doesn't exist, or someone else claimed it first. Tell
-            // those apart with a follow-up read purely for the error message —
-            // the claim above is what actually guards execution.
-            var existing = await conn.QueryFirstOrDefaultAsync(
-                "SELECT status FROM tool_approval_requests WHERE id = @id",
-                new { id = reqId }
-            );
-            if (existing is null)
-            {
-                return Results.NotFound(new { detail = "HITL request not found" });
-            }
-            if ((string)existing.status == "pending")
-            {
-                // Still pending, so the only thing that kept the claim from matching
-                // is the requester check.
-                return Results.Json(new { detail = "You cannot approve your own request" }, statusCode: 403);
-            }
-            return Results.BadRequest(new { detail = $"Request is already {(string)existing.status}" });
-        }
-
-        var toolInput = ParseJson(claimed.tool_input);
-        var result = await HitlActionExecutor.ExecuteAsync(pool, (string)claimed.tool_name, toolInput, (string)claimed.user_email);
-
-        var adminEmail = RequestContext.CurrentUserEmail;
-        // Mirrors Python's resolve_hitl_request: execute_approved_action always
-        // returns a non-empty dict (even on failure), so "decision == approved
-        // and execution_result" is always true here — final DB status is
-        // "executed" regardless of whether the underlying action succeeded;
-        // that nuance lives only in execution_result.success.
-        //
-        // Guarded on 'processing' (the state we just claimed) rather than
-        // 'pending', so this closes out our own claim and nothing else's.
-        await conn.ExecuteAsync(
-            @"UPDATE tool_approval_requests
-              SET status = 'executed', admin_note = @note, approved_by = @admin,
-                  execution_result = @result::jsonb, resolved_at = NOW()
-              WHERE id = @id AND status = 'processing'",
-            new
-            {
-                note = body?.Note,
-                admin = adminEmail,
-                result = JsonSerializer.Serialize(result),
-                id = reqId,
-            }
-        );
-
-        return Results.Ok(new { status = "approved", execution_result = result });
+        var (failure, outcome) = await DecideToolRequestAsync(requestId, service, loggers, "approve", body?.Note);
+        return failure ?? Results.Ok(new { status = "approved", execution_result = outcome!.Result });
     }
-
-    // ─────────────────────── deny ────────────────────────────
 
     private static async Task<IResult> Deny(
         string requestId,
         [FromBody] HitlDecisionBody? body,
-        DatabasePool pool
+        ApprovalsService service,
+        ILoggerFactory loggers
     )
     {
-        var guard = RequireAdmin();
-        if (guard is not null) return guard;
-        if (!Guid.TryParse(requestId, out var reqId))
-        {
-            return Results.NotFound(new { detail = "HITL request not found" });
-        }
-
-        await using var conn = await pool.OpenAsync();
-        var req = await conn.QueryFirstOrDefaultAsync(
-            "SELECT status FROM tool_approval_requests WHERE id = @id",
-            new { id = reqId }
-        );
-        if (req is null)
-        {
-            return Results.NotFound(new { detail = "HITL request not found" });
-        }
-        var currentStatus = (string)req.status;
-        if (currentStatus != "pending")
-        {
-            return Results.BadRequest(new { detail = $"Request is already {currentStatus}" });
-        }
-
-        var updated = await conn.ExecuteAsync(
-            @"UPDATE tool_approval_requests
-              SET status = 'denied', admin_note = @note, approved_by = @admin, resolved_at = NOW()
-              WHERE id = @id AND status = 'pending'",
-            new { note = body?.Note, admin = RequestContext.CurrentUserEmail, id = reqId }
-        );
-        if (updated == 0)
-        {
-            return Results.Conflict(new { detail = "Request was already resolved by another admin" });
-        }
-
-        return Results.Ok(new { status = "denied" });
+        var (failure, _) = await DecideToolRequestAsync(requestId, service, loggers, "reject", body?.Note);
+        return failure ?? Results.Ok(new { status = "denied" });
     }
 
     // ─────────────────────── helpers ─────────────────────────

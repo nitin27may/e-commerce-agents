@@ -367,6 +367,13 @@ public sealed class ResumeRouteTests : IAsyncLifetime
         await conn.ExecuteAsync(
             $"UPDATE hitl_requests SET status = 'processing', claimed_at = {claimedAtSql} WHERE workflow_run_id = @runId",
             new { runId });
+        // A resume now holds two claims: the approval's (taken by the unified decide) and the hitl row's (taken when the workflow
+        // resumes). A crashed resume leaves both stale, so age the approval's together with the hitl one — same as the Python helper.
+        await conn.ExecuteAsync(
+            $@"UPDATE approvals SET claimed_at = {claimedAtSql}
+                WHERE source = 'workflow'
+                  AND source_ref IN (SELECT id FROM hitl_requests WHERE workflow_run_id = @runId)",
+            new { runId });
     }
 
     private async Task<DateTime?> ClaimedAtAsync(Guid runId)

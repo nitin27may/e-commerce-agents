@@ -1,3 +1,4 @@
+using ECommerceAgents.Shared.Approvals;
 using ECommerceAgents.Shared.Logging;
 using Dapper;
 using ECommerceAgents.Orchestrator.Modes;
@@ -176,7 +177,7 @@ public static class ChatRoutes
 
         await PersistAssistantMessageAsync(
             pool, usage, ctx, request.Message, responseText, agentsInvolved, (int)sw.ElapsedMilliseconds,
-            loggers, modeResult: modeResult
+            loggers, settings, modeResult: modeResult
         );
 
         return Results.Ok(new ChatResponse(
@@ -434,7 +435,7 @@ public static class ChatRoutes
         // difference that only shows up as a user's lost message.
         var runId = await PersistAssistantMessageAsync(
             pool, usage, ctx, request.Message, responseText.ToString(), agentsInvolved, (int)sw.ElapsedMilliseconds,
-            loggers,
+            loggers, settings,
             metadata: new Dictionary<string, object> { ["agents_involved"] = agentsInvolved },
             modeResult: modeResult
         );
@@ -478,7 +479,8 @@ public static class ChatRoutes
         Guid usageLogId,
         ConversationContext ctx,
         ModeRunResult? modeResult,
-        ILoggerFactory loggers
+        ILoggerFactory loggers,
+        AgentSettings? settings = null
     )
     {
         if (modeResult?.LatestCheckpointId is null && modeResult?.PendingApproval != true)
@@ -499,18 +501,38 @@ public static class ChatRoutes
 
             if (modeResult.PendingApproval && modeResult.RequestId is not null)
             {
-                await conn.ExecuteAsync(
+                var requester = RequestContext.CurrentUserEmail ?? "";
+                var hitlId = await conn.ExecuteScalarAsync<Guid>(
                     @"INSERT INTO hitl_requests
                           (workflow_run_id, request_id, checkpoint_id, user_email, kind, payload, status)
-                      VALUES (@usageLogId, @requestId, @checkpointId, @email, 'return_approval', @payload::jsonb, 'pending')",
+                      VALUES (@usageLogId, @requestId, @checkpointId, @email, 'return_approval', @payload::jsonb, 'pending')
+                      RETURNING id",
                     new
                     {
                         usageLogId,
                         requestId = modeResult.RequestId,
                         checkpointId = Guid.TryParse(modeResult.LatestCheckpointId, out var pid) ? pid : (Guid?)null,
-                        email = RequestContext.CurrentUserEmail ?? "",
-                        payload = JsonSerializer.Serialize(new { session_id = modeResult.SessionId }),
+                        email = requester,
+                        // session_id is what resume needs; order_id/order_total let a later repair
+                        // (ApprovalsService.EnsureForHitlRequestAsync) re-run the real policy.
+                        payload = JsonSerializer.Serialize(new
+                        {
+                            session_id = modeResult.SessionId,
+                            order_id = modeResult.Approval?.OrderId,
+                            order_total = modeResult.Approval?.OrderTotal,
+                        }),
                     });
+
+                // The inbox row, routed by the gate's own policy decision. Best effort, as in Python: the hitl_requests row
+                // above is what resume needs, and a missing inbox row is repaired when someone first decides it.
+                try
+                {
+                    await OpenWorkflowApprovalAsync(pool, settings, conn, hitlId, usageLogId, requester, modeResult);
+                }
+                catch (Exception ex)
+                {
+                    loggers.CreateLogger("hitl").LogError(ex, "chat.approval_open_failed hitl={HitlId}", hitlId);
+                }
             }
         }
         catch (Exception ex)
@@ -521,6 +543,42 @@ public static class ChatRoutes
             loggers.CreateLogger("hitl").LogError(ex,
                 "hitl.link_failed run={UsageLogId} session={SessionId}", usageLogId, LogSafe.Clean(modeResult?.SessionId));
         }
+    }
+
+    /// <summary>
+    /// Opens the inbox <c>approvals</c> row for a paused return. The gate's own routing decision (route, reasons, policy version)
+    /// decides who may approve; the evidence a reviewer reads is gathered from the same engine, and a run that did not carry a decision
+    /// asks the engine now.
+    /// </summary>
+    private static async Task OpenWorkflowApprovalAsync(
+        DatabasePool pool,
+        AgentSettings? settings,
+        System.Data.Common.DbConnection conn,
+        Guid hitlId,
+        Guid usageLogId,
+        string requester,
+        ModeRunResult modeResult)
+    {
+        var policy = ECommerceAgents.Shared.Policy.ApprovalPolicyLocator.Current;
+        var repo = new ApprovalRepository(pool, settings ?? new AgentSettings(), policy);
+        var intake = new ApprovalIntake(pool, repo, policy);
+
+        var info = modeResult.Approval;
+        var evaluated = await intake.PolicyForReturnAsync(requester, info?.OrderId, info?.OrderTotal);
+        var routed = info is null
+            ? evaluated
+            : evaluated with
+            {
+                Route = info.Route,
+                Reasons = info.Reasons,
+                PolicyVersion = info.PolicyVersion,
+                // The evidence describes the rule that matched; keep it only when the second evaluation agrees with the gate.
+                Evidence = evaluated.Route == info.Route ? evaluated.Evidence : new Dictionary<string, object?>(),
+            };
+
+        var conversationId = await conn.ExecuteScalarAsync<object?>(
+            "SELECT session_id FROM usage_logs WHERE id = @usageLogId", new { usageLogId });
+        await intake.OpenWorkflowApprovalAsync(hitlId, requester, conversationId?.ToString(), routed);
     }
 
     // ─────────────────────── shared persistence helpers ──────────────────────
@@ -785,6 +843,7 @@ public static class ChatRoutes
         List<string> agentsInvolved,
         int durationMs,
         ILoggerFactory loggers,
+        AgentSettings? settings = null,
         Dictionary<string, object>? metadata = null,
         ModeRunResult? modeResult = null
     )
@@ -848,7 +907,7 @@ public static class ChatRoutes
                 await usage.LogExecutionStepAsync(id, i, step.ToolName, step.ToolInput, step.ToolOutput, step.Status, step.DurationMs);
             }
 
-            await LinkRunArtifactsAsync(pool, id, ctx, modeResult, loggers);
+            await LinkRunArtifactsAsync(pool, id, ctx, modeResult, loggers, settings);
             return id;
         }
         else if (modeResult?.PendingApproval == true)

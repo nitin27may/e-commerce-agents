@@ -38,7 +38,7 @@ public sealed class HitlPausePersistenceTests : IAsyncLifetime
         _pool = new DatabasePool(new AgentSettings { DatabaseUrl = _pg.ConnectionString });
         await using var conn = await _pool.OpenAsync();
         await conn.ExecuteAsync(
-            @"TRUNCATE hitl_requests, workflow_checkpoints, agent_execution_steps, usage_logs,
+            @"TRUNCATE approval_events, approvals, outbox, hitl_requests, workflow_checkpoints, agent_execution_steps, usage_logs,
                        messages, conversations, users RESTART IDENTITY CASCADE");
         await conn.ExecuteAsync(
             "INSERT INTO users (email, password_hash, name, role) VALUES (@Email, 'x', 'Pause Tester', 'customer')",
@@ -75,6 +75,42 @@ public sealed class HitlPausePersistenceTests : IAsyncLifetime
         linked.Should().Be((Guid)row.workflow_run_id);
     }
 
+    /// <summary>
+    /// D-5n: the pause also opens the inbox row, routed by the gate's own decision (not a second evaluation), linked to the hitl row,
+    /// with the SLA timers the Python worker drains written in the same transaction.
+    /// </summary>
+    [Fact]
+    public async Task APausedWorkflowRun_OpensAnInboxApproval_RoutedByTheGatesDecision_WithItsTimers()
+    {
+        using var client = ClientFor(new PausingMode(_pool));
+        (await client.PostAsJsonAsync("/api/chat", new { message = "return it", mode = PausingMode.ModeName })).EnsureSuccessStatusCode();
+
+        await using var conn = await _pool.OpenAsync();
+        var hitl = await conn.QueryFirstAsync("SELECT id, approval_id, payload::text AS payload FROM hitl_requests");
+        ((string)hitl.payload).Should().Contain("order_total", "a later repair can re-run the real policy from the order and amount");
+        ((Guid?)hitl.approval_id).Should().NotBeNull();
+
+        var approval = await conn.QueryFirstAsync(
+            @"SELECT source, source_ref, kind, requester_email, status, route, assigned_role, policy_version, amount, due_at,
+                     recommendation->'reasons'->>0 AS reason
+                FROM approvals WHERE id = @id", new { id = (Guid)hitl.approval_id });
+        ((string)approval.source).Should().Be("workflow");
+        ((Guid)approval.source_ref).Should().Be((Guid)hitl.id);
+        ((string)approval.kind).Should().Be("return_approval");
+        ((string)approval.requester_email).Should().Be(Email);
+        ((string)approval.status).Should().Be("pending_review");
+        ((string)approval.route).Should().Be("manager");
+        ((string)approval.assigned_role).Should().Be("admin");
+        ((string)approval.policy_version).Should().Be("pause-policy");
+        ((decimal)approval.amount).Should().Be(700m);
+        ((string)approval.reason).Should().Be("Amount over 500");
+        ((DateTime?)approval.due_at).Should().NotBeNull();
+
+        var topics = await conn.QueryAsync<string>(
+            "SELECT topic FROM outbox WHERE aggregate_id = @id ORDER BY topic", new { id = (Guid)hitl.approval_id });
+        topics.Should().Equal("approval.reminder_due", "approval.sla_breached");
+    }
+
     [Fact]
     public async Task ARunThatDidNotPause_LeavesNoApprovalRow()
     {
@@ -85,6 +121,7 @@ public sealed class HitlPausePersistenceTests : IAsyncLifetime
 
         await using var conn = await _pool.OpenAsync();
         (await conn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM hitl_requests")).Should().Be(0);
+        (await conn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM approvals")).Should().Be(0);
     }
 
     private HttpClient ClientFor(IOrchestrationMode mode)
@@ -140,7 +177,9 @@ public sealed class HitlPausePersistenceTests : IAsyncLifetime
             return new ModeRunResult(
                 "Waiting on approval.", ["orchestrator"], 1,
                 PendingApproval: true, RequestId: RequestId,
-                LatestCheckpointId: checkpointId.ToString(), SessionId: "session-1");
+                LatestCheckpointId: checkpointId.ToString(), SessionId: "session-1",
+                // What the real gate reports: who the policy says must decide, and the order under review.
+                Approval: new PendingApprovalInfo("manager", ["Amount over 500"], "pause-policy", Guid.NewGuid().ToString(), 700m));
         }
     }
 }

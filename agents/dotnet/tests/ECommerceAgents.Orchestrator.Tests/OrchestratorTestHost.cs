@@ -1,3 +1,4 @@
+using ECommerceAgents.Orchestrator.Approvals;
 using ECommerceAgents.Orchestrator.Routes;
 using ECommerceAgents.Shared.Auth;
 using ECommerceAgents.Shared.Configuration;
@@ -61,6 +62,8 @@ public static class OrchestratorTestHost
                     services.AddSingleton<IOrchestrationMode>(sp => new ToolRouterMode(sp.GetRequiredService<AIAgent>()));
                     services.AddSingleton<ModeRegistry>();
                     services.AddLogging();
+                    // The approvals inbox (unified API, and the shims behind the legacy resume / admin approve-deny routes).
+                    services.AddApprovals();
                     services.AddSingleton(new AuthServerClient(
                         new HttpClient(authServerHandler ?? new HttpClientHandler()),
                         settings

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using System.Text.Json;
 using ECommerceAgents.Shared.Data;
 using Dapper;
+using ECommerceAgents.Orchestrator.Approvals;
 using ECommerceAgents.Orchestrator.Modes;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
@@ -54,32 +55,28 @@ public static class OrchestrationRoutes
     public sealed record ResumeRequest(bool? Approved);
 
     /// <summary>
-    /// Resumes a paused workflow run after a human decision.
+    /// Resumes a paused workflow run after a human decision — a thin shim over the unified
+    /// <see cref="ApprovalsService.DecideAsync"/>, exactly as Python's <c>resume_run</c> is.
     /// </summary>
     /// <remarks>
-    /// Mirrors Python's <c>resume_run</c> (<c>routes/orchestration.py:174</c>), including
-    /// its error strings, so the message the UI surfaces is identical on both stacks.
-    ///
-    /// One deliberate difference: the pending row is claimed *before* the workflow runs,
-    /// with the same guarded UPDATE <c>HitlRoutes</c> uses. Python updates it afterwards,
-    /// which leaves a window where two clicks both resume, both finalize, and both
-    /// release a refund — the loser only discovering it after the money moved. The claim
-    /// is reverted if the resume throws, so a transient failure does not strand the row
-    /// in <c>processing</c> with the button gone.
+    /// Staff only (support or admin, at or above the level the approval policy assigned): the person who asked for a return must not be the
+    /// one who approves it (#92), so the requester is refused with 403 before anything is claimed. Finds the latest <c>hitl_requests</c> row
+    /// for the run (creating its inbox approval if it predates the inbox) and hands the decision to the service, which owns the claim /
+    /// fence / resume machinery: a claim before the workflow runs (a second click is a 409), a <c>claimed_at</c> fencing token and TTL
+    /// takeover for a crashed resume, the remaining steps executed as the requester with the reviewer recorded separately, and the claim
+    /// handed back if the resume fails or is cancelled. A request with no <c>request_id</c>/<c>checkpoint_id</c> predates checkpoint wiring
+    /// and is a 409. Error strings match Python's, so the message the UI surfaces is identical on both stacks.
     /// </remarks>
     private static async Task<IResult> ResumeRun(
         string runId,
         ResumeRequest? body,
         DatabasePool pool,
-        ModeRegistry registry,
-        AgentSettings settings,
-        ILoggerFactory loggers
+        ApprovalsService service
     )
     {
-        var email = RequestContext.CurrentUserEmail;
-        if (string.IsNullOrWhiteSpace(email))
+        if (StaffGuard.Require() is { } denied)
         {
-            return Results.Unauthorized();
+            return denied;
         }
 
         if (!Guid.TryParse(runId, out var runGuid))
@@ -93,205 +90,36 @@ public static class OrchestrationRoutes
             return Results.BadRequest(new { detail = "approved is required" });
         }
 
-        // Admin only: whoever asked for the return must not be the one who approves it (#92).
-        if (!string.Equals(RequestContext.CurrentUserRole, "admin", StringComparison.OrdinalIgnoreCase))
+        Guid? hitlId;
+        await using (var conn = await pool.OpenAsync())
         {
-            return Results.Json(new { detail = "Admin access required" }, statusCode: 403);
-        }
-
-        await using var conn = await pool.OpenAsync();
-
-        var claimed = await conn.QueryFirstOrDefaultAsync(
-            // Claimable = pending, or 'processing' with a claim older than the TTL (a resume
-            // whose process died before releasing it; claimed_at is NULL for rows claimed
-            // before migration 0002, which are equally stale). The predicate is repeated on
-            // the outer UPDATE so two takeovers racing for one stale row cannot both win.
-            @"UPDATE hitl_requests SET status = 'processing', claimed_at = NOW()
-               WHERE id = (
-                     SELECT id FROM hitl_requests
-                      WHERE workflow_run_id = @runGuid
-                        AND (status = 'pending' OR (status = 'processing'
-                              AND (claimed_at IS NULL OR claimed_at < NOW() - make_interval(secs => @ttl))))
-                        AND lower(user_email) <> lower(@email)
-                      ORDER BY created_at DESC LIMIT 1)
-                 AND (status = 'pending' OR (status = 'processing'
-                      AND (claimed_at IS NULL OR claimed_at < NOW() - make_interval(secs => @ttl))))
-           RETURNING id, kind, request_id, checkpoint_id, payload, user_email, claimed_at",
-            new { runGuid, email, ttl = (double)settings.HitlClaimTtlSeconds });
-
-        if (claimed is null)
-        {
-            // Nothing claimable. Distinguish "never existed" from "someone already took
-            // it" (a double-click, which deserves to say so) and from "this is your own
-            // request" (#92: an admin may not approve a return they raised).
-            var latest = await conn.QueryFirstOrDefaultAsync(
-                @"SELECT status, user_email FROM hitl_requests
-                   WHERE workflow_run_id = @runGuid
-                   ORDER BY created_at DESC LIMIT 1",
+            hitlId = await conn.ExecuteScalarAsync<Guid?>(
+                "SELECT id FROM hitl_requests WHERE workflow_run_id = @runGuid ORDER BY created_at DESC LIMIT 1",
                 new { runGuid });
-
-            if (latest is null)
-            {
-                return Results.NotFound(new { detail = "No pending approval found for this run" });
-            }
-
-            if ((string)latest.status == "pending"
-                && string.Equals((string)latest.user_email, email, StringComparison.OrdinalIgnoreCase))
-            {
-                return Results.Json(new { detail = "You cannot approve your own request" }, statusCode: 403);
-            }
-
-            return Results.Conflict(new { detail = $"Request is already {(string)latest.status}" });
+        }
+        var approvalId = hitlId is { } id ? await service.EnsureForHitlRequestAsync(id) : null;
+        if (approvalId is null)
+        {
+            return Results.NotFound(new { detail = "No pending approval found for this run" });
         }
 
-        var claimId = (Guid)claimed.id;
-        // claimed_at is the claim's fencing token: every claim and takeover rewrites it, so
-        // "claimed_at still equals what I was handed" means "this claim is still mine". The
-        // release and the final decision are both conditional on it; a caller whose claim was
-        // taken over (it stalled past the TTL) changes nothing and gets 409.
-        var claimToken = (DateTime)claimed.claimed_at;
-        var kind = (string)claimed.kind;
-        var requestId = (string?)claimed.request_id;
-        var checkpointId = (Guid?)claimed.checkpoint_id;
-
+        var actor = new Actor(RequestContext.CurrentUserEmail, RequestContext.CurrentUserRole);
         try
         {
-            if (kind != "return_approval")
-            {
-                return await ReleaseAsync(conn, claimId, claimToken,
-                    Results.BadRequest(new { detail = $"Resume not supported for request kind '{kind}'" }));
-            }
-
-            if (requestId is null || checkpointId is null)
-            {
-                // Where the seeded demo rows land: they carry neither, by design.
-                return await ReleaseAsync(conn, claimId, claimToken,
-                    Results.Conflict(new { detail = "This pending request predates checkpoint-based resume" }));
-            }
-
-            if (registry.Get("workflow:return-replace") is not IResumableMode mode)
-            {
-                return await ReleaseAsync(conn, claimId, claimToken,
-                    Results.Conflict(new { detail = "This backend cannot resume workflow runs" }));
-            }
-
-            // Explicitly typed: `claimed` is Dapper's dynamic, so letting sessionId infer
-            // from it makes every downstream call dynamically dispatched — including
-            // mode.ResumeAsync, whose result then comes back as object and fails at
-            // runtime on .AgentsInvolved rather than at compile time.
-            string? sessionId = SessionIdFrom((object?)claimed.payload);
-            if (sessionId is null)
-            {
-                return await ReleaseAsync(conn, claimId, claimToken,
-                    Results.Conflict(new { detail = "This pending request predates checkpoint-based resume" }));
-            }
-
-            // The rest of the workflow (loyalty discount, finalize) reads the caller's
-            // identity from RequestContext, which is currently the approving admin. Run it
-            // as the customer who asked for the return so their tier is applied, and put
-            // the reviewer back afterwards. The reviewer is recorded as decided_by below.
-            string requesterEmail = (string)claimed.user_email;
-            string requesterRole = await conn.ExecuteScalarAsync<string?>(
-                "SELECT role FROM users WHERE email = @requesterEmail", new { requesterEmail }) ?? "customer";
-            var reviewerEmail = RequestContext.CurrentUserEmail;
-            var reviewerRole = RequestContext.CurrentUserRole;
-            ModeRunResult result;
-            RequestContext.CurrentUserEmail = requesterEmail;
-            RequestContext.CurrentUserRole = requesterRole;
-            // Hard stop well inside the claim TTL (the loader validates it is shorter), so a frozen
-            // resume ends, and releases, before anyone else may take the row over.
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(settings.HitlResumeTimeoutSeconds));
-            try
-            {
-                result = await mode.ResumeAsync(
-                    sessionId, checkpointId.Value.ToString(), requestId, approved, timeout.Token);
-            }
-            catch (OperationCanceledException) when (timeout.IsCancellationRequested)
-            {
-                loggers.CreateLogger("hitl").LogWarning("hitl.resume_timeout hitl_id={ClaimId}", LogSafe.Clean(claimId));
-                await ReleaseClaimAsync(conn, claimId, claimToken);
-                return Results.Json(
-                    new { detail = "Resume timed out; the approval is still pending." }, statusCode: 504);
-            }
-            finally
-            {
-                RequestContext.CurrentUserEmail = reviewerEmail;
-                RequestContext.CurrentUserRole = reviewerRole;
-            }
-
-            var decided = await conn.ExecuteAsync(
-                @"UPDATE hitl_requests
-                     SET status = @status, responded_at = NOW(), response = @response::jsonb
-                   WHERE id = @claimId AND status = 'processing' AND claimed_at = @claimToken",
-                new
-                {
-                    claimId,
-                    claimToken,
-                    status = approved ? "approved" : "rejected",
-                    response = JsonSerializer.Serialize(new { approved, decided_by = reviewerEmail }),
-                });
-            if (decided != 1)
-            {
-                // The claim was taken over while this resume ran: someone else owns the
-                // decision now. Record nothing.
-                loggers.CreateLogger("hitl").LogWarning("hitl.claim_lost hitl_id={ClaimId}", LogSafe.Clean(claimId));
-                return Results.Conflict(new { detail = "This approval was taken over by another reviewer" });
-            }
-
-            // Back-link whatever the resumed run checkpointed, so /runs keeps showing the
-            // full trail rather than stopping at the pause.
-            string? newCheckpoint = result.LatestCheckpointId;
-            if (newCheckpoint is not null && Guid.TryParse(newCheckpoint, out var newCid))
-            {
-                await conn.ExecuteAsync(
-                    "UPDATE workflow_checkpoints SET usage_log_id = @runGuid WHERE checkpoint_id = @newCid",
-                    new { runGuid, newCid });
-            }
-
-            return Results.Ok(new ResumeResponse(runId, approved, result.Text, result.AgentsInvolved.ToList()));
+            var outcome = await service.DecideAsync(approvalId.Value.ToString(), actor, approved ? "approve" : "reject");
+            var text = outcome.Result.TryGetProperty("text", out var t) ? t.GetString() ?? "" : "";
+            var agents = outcome.Result.TryGetProperty("agents_involved", out var a) && a.ValueKind == JsonValueKind.Array
+                ? a.EnumerateArray().Select(x => x.GetString() ?? "").ToList()
+                : [];
+            return Results.Ok(new ResumeResponse(runId, approved, text, agents));
         }
-        catch (Exception ex)
+        catch (ApprovalHttpException ex)
         {
-            loggers.CreateLogger("hitl").LogError(ex, "hitl.resume_failed run={RunId}", LogSafe.Clean(runId));
-            await ReleaseClaimAsync(conn, claimId, claimToken);
-            return Results.Problem("Resume failed; the approval is still pending.");
+            return Results.Json(new { detail = ex.Detail }, statusCode: ex.StatusCode);
         }
     }
 
     public sealed record ResumeResponse(string RunId, bool Approved, string Text, List<string> AgentsInvolved);
-
-    /// <summary>Hands the claim back before returning a refusal, so the button stays live.</summary>
-    private static async Task<IResult> ReleaseAsync(
-        System.Data.Common.DbConnection conn, Guid claimId, DateTime claimToken, IResult result)
-    {
-        await ReleaseClaimAsync(conn, claimId, claimToken);
-        return result;
-    }
-
-    /// <summary>Fenced by the claim token: a claim that was taken over is not the caller's to release.</summary>
-    private static Task<int> ReleaseClaimAsync(System.Data.Common.DbConnection conn, Guid claimId, DateTime claimToken)
-        => conn.ExecuteAsync(
-            @"UPDATE hitl_requests SET status = 'pending', claimed_at = NULL
-               WHERE id = @claimId AND status = 'processing' AND claimed_at = @claimToken",
-            new { claimId, claimToken });
-
-    private static string? SessionIdFrom(object? payload)
-    {
-        if (payload is not string raw || string.IsNullOrWhiteSpace(raw))
-        {
-            return null;
-        }
-        try
-        {
-            return JsonDocument.Parse(raw).RootElement.TryGetProperty("session_id", out var v)
-                ? v.GetString()
-                : null;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
 
     private static IResult ListModes(ModeRegistry registry) => Results.Ok(registry.Describe());
 
