@@ -557,6 +557,12 @@ public sealed class A2AClient
         yield return await SendOverA2AAsync(agentName, baseUrl, message, ct);
     }
 
+    /// <summary>Most steps one frame or body may contribute, and most a whole turn collects from specialists (Python: <c>legacy_wire.MAX_STEPS_PER_*</c>).</summary>
+    public const int MaxStepsPerFrame = 50;
+
+    /// <inheritdoc cref="MaxStepsPerFrame"/>
+    public const int MaxStepsPerTurn = 200;
+
     private static void MergeReturnedSteps(string agentName, IReadOnlyList<ExecutionStep>? steps)
     {
         if (steps is null)
@@ -566,8 +572,15 @@ public sealed class A2AClient
 
         var writer = RequestContext.CurrentStreamWriter;
 
-        foreach (var step in steps)
+        // A specialist is not trusted to flood the timeline: the rest of an oversized frame, and anything past the turn's
+        // cap, is dropped. (A step carries only the six fields of ExecutionStep, so there is no openness in its keys.)
+        foreach (var step in steps.Take(MaxStepsPerFrame))
         {
+            if (RequestContext.CurrentSteps.Count >= MaxStepsPerTurn)
+            {
+                break;
+            }
+
             var tagged = step with { Agent = agentName };
             RequestContext.RecordStep(tagged);
 

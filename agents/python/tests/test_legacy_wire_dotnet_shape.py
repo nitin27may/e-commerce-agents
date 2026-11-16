@@ -26,7 +26,7 @@ from shared.context import (
     current_user_email,
     current_user_role,
 )
-from shared.legacy_wire import normalize_step, normalize_steps
+from shared.legacy_wire import MAX_STEPS_PER_FRAME, MAX_STEPS_PER_TURN, admit_steps, normalize_step, normalize_steps
 from shared.run_usage import begin_run_usage
 
 USAGE = {"input_token_count": 120, "output_token_count": 30, "cached_input_token_count": 100, "model": "gpt-4.1"}
@@ -72,7 +72,7 @@ def _setup(monkeypatch: pytest.MonkeyPatch, handler) -> asyncio.Queue:
 
 
 def test_normalize_step_accepts_every_spelling() -> None:
-    expected_keys = {"tool_name", "tool_input", "tool_output", "status", "duration_ms", "agent"}
+    expected_keys = {"tool_name", "tool_input", "tool_output", "status", "duration_ms", "agent", "provenance"}
     for raw in (CAMEL_STEP, PASCAL_STEP, {"tool_name": "t", "tool_input": {}, "tool_output": {}, "status": "s"}):
         step = normalize_step(raw, "inventory")
         assert step is not None
@@ -80,13 +80,81 @@ def test_normalize_step_accepts_every_spelling() -> None:
         assert step["agent"] == "inventory"
         assert step["tool_name"] == raw.get("toolName") or step["tool_name"] in ("get_stock", "t")
     assert normalize_step(CAMEL_STEP, "x")["duration_ms"] == 12
-    # A specialist's own agent tag wins; unknown keys survive; non-objects are skipped.
-    assert normalize_step({"toolName": "t", "agent": "pricing", "extra": 1}, "x") == {
+    # A specialist's own agent tag wins; keys that are not part of a step are dropped (a specialist is not trusted
+    # to add fields the browser and the persisted metadata then carry); non-objects are skipped.
+    assert normalize_step({"toolName": "t", "agent": "pricing", "extra": 1, "_live": True}, "x") == {
         "tool_name": "t",
         "agent": "pricing",
-        "extra": 1,
     }
     assert normalize_steps(["junk", CAMEL_STEP, None], "x") == [normalize_step(CAMEL_STEP, "x")]
+
+
+def test_a_frame_carries_at_most_the_per_frame_cap_of_steps() -> None:
+    many = [{"tool_name": f"t{i}"} for i in range(MAX_STEPS_PER_FRAME + 40)]
+
+    steps = normalize_steps(many, "x")
+
+    assert len(steps) == MAX_STEPS_PER_FRAME
+    assert steps[0]["tool_name"] == "t0" and steps[-1]["tool_name"] == f"t{MAX_STEPS_PER_FRAME - 1}"
+
+
+def test_the_turn_cap_admits_only_what_room_is_left() -> None:
+    bucket: list[dict] = [{"tool_name": "old"}] * (MAX_STEPS_PER_TURN - 2)
+    batch = [{"tool_name": f"n{i}"} for i in range(5)]
+
+    assert admit_steps(bucket, batch) == batch[:2]
+    assert admit_steps(bucket + batch[:2], batch) == []
+    assert admit_steps(None, batch, admitted=MAX_STEPS_PER_TURN - 1) == batch[:1]
+
+
+@pytest.mark.asyncio
+async def test_a_specialist_flooding_steps_is_capped_per_turn_over_the_stream(monkeypatch: pytest.MonkeyPatch) -> None:
+    frames = "".join(
+        f"event: step\ndata: {json.dumps({'tool_name': f'tool{i}', 'x': 'y'})}\n\n"
+        for i in range(MAX_STEPS_PER_TURN + 80)
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=(frames + "data: ok\n\ndata: [DONE]\n\n").encode(),
+        )
+
+    queue = _setup(monkeypatch, handler)
+
+    result = await orch_mod.call_specialist_agent(agent_name="product-discovery", message="stock?")
+
+    bucket = current_steps.get()
+    assert result == "ok"
+    assert len(bucket) == MAX_STEPS_PER_TURN
+    sent = []
+    while not queue.empty():
+        item = queue.get_nowait()
+        if item[0] == "frame" and item[1] == "step":
+            sent.append(item[2])
+    assert len(sent) == MAX_STEPS_PER_TURN
+    allowed = {"tool_name", "tool_input", "tool_output", "status", "duration_ms", "agent", "_live"}
+    assert all(set(step) <= allowed for step in sent)
+
+
+@pytest.mark.asyncio
+async def test_a_blocking_response_flooding_steps_is_capped(monkeypatch: pytest.MonkeyPatch) -> None:
+    body = {"response": "done", "steps": [{"tool_name": f"t{i}", "junk": 1} for i in range(MAX_STEPS_PER_FRAME + 30)]}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/message:stream":
+            raise httpx.ConnectError("refused")
+        return httpx.Response(200, json=body)
+
+    _setup(monkeypatch, handler)
+    current_stream_queue.set(None)  # no browser stream: the blocking path
+
+    await orch_mod.call_specialist_agent(agent_name="product-discovery", message="stock?")
+
+    bucket = current_steps.get()
+    assert len(bucket) == MAX_STEPS_PER_FRAME
+    assert all("junk" not in step for step in bucket)
 
 
 @pytest.mark.asyncio

@@ -28,7 +28,7 @@ from shared.context import (
 from shared.context_providers import ECommerceContextProvider
 from shared.factory import parse_agent_registry
 from shared.http_resilience import ResilientAsyncTransport
-from shared.legacy_wire import normalize_steps
+from shared.legacy_wire import admit_steps, normalize_steps
 from shared.log_safe import log_safe
 from shared.middleware import build_specialist_middleware
 from shared.oauth.service_client import build_a2a_headers
@@ -130,6 +130,8 @@ async def call_specialist_agent(
             # and the browser may have seen steps and text, so a failure must
             # not be retried against /message:send: that would run it again.
             frames_seen = 0
+            # Steps taken from this stream so far: the per-turn cap's count when there is no bucket to count in.
+            steps_forwarded = 0
             # True once the specialist accepted the stream (2xx). From then on the
             # agent may be running, so nothing here may fall back to /message:send.
             stream_opened = False
@@ -175,6 +177,9 @@ async def call_specialist_agent(
                                 except (json.JSONDecodeError, ValueError):
                                     continue
                                 bucket = current_steps.get()
+                                admitted_here = len(bucket) if bucket is not None else steps_forwarded
+                                wire_steps = admit_steps(bucket, wire_steps, admitted=steps_forwarded)
+                                steps_forwarded = admitted_here + len(wire_steps)
                                 for step_data in wire_steps:
                                     if bucket is not None:
                                         bucket.append(step_data)
@@ -252,7 +257,7 @@ async def call_specialist_agent(
                 resp.raise_for_status()
                 data = resp.json()
                 bucket = current_steps.get()
-                specialist_steps = normalize_steps(data.get("steps") or [], agent_name)
+                specialist_steps = admit_steps(bucket, normalize_steps(data.get("steps") or [], agent_name))
                 if bucket is not None and specialist_steps:
                     bucket.extend(specialist_steps)
                 _record_specialist_usage(agent_name, data.get("usage"))
