@@ -42,7 +42,7 @@ _COUNT_FIELDS = ("input_token_count", "output_token_count", "cached_input_token_
 def _as_int(value: Any) -> int:
     try:
         return max(int(value or 0), 0)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):  # a negative count is treated as absent; so is an infinity
         return 0
 
 

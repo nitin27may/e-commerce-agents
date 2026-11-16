@@ -68,6 +68,64 @@ public sealed class A2AWireTests
     public void Usage_ThatIsEmptyOrMalformed_IsNull(string json) =>
         A2AWire.ParseUsage(Json(json)).Should().BeNull();
 
+    [Theory]
+    [InlineData("{\"input_token_count\":-500,\"output_token_count\":10}", 0, 10)]
+    [InlineData("{\"input_token_count\":7,\"output_token_count\":-3,\"cached_input_token_count\":-9}", 7, 0)]
+    public void Usage_WithANegativeCount_TreatsItAsAbsent(string json, long input, long output)
+    {
+        var usage = A2AWire.ParseUsage(Json(json));
+
+        usage.Should().NotBeNull();
+        (usage!.InputTokenCount, usage.OutputTokenCount, usage.CachedInputTokenCount).Should().Be((input, output, 0L));
+    }
+
+    [Fact]
+    public void Usage_ThatIsOnlyNegative_IsNull() =>
+        A2AWire.ParseUsage(Json("{\"input_token_count\":-500,\"output_token_count\":-10}")).Should().BeNull();
+
+    [Fact]
+    public void RunUsage_NeverRecordsANegativeCount_WhateverWireItCameOver()
+    {
+        var usage = new RunUsage();
+        usage.Add("a", new SpecialistUsage(100, 20, 0, "m"));
+
+        usage.Add("a", new SpecialistUsage(-500, 5, -1, "m"));
+        usage.Add("b", new SpecialistUsage(-1, -1, 0, "m"));
+
+        usage.ByAgent["a"].Should().Be(new SpecialistUsage(100, 25, 0, "m"));
+        usage.ByAgent.Should().NotContainKey("b");
+        usage.Total()!.InputTokenCount.Should().Be(100);
+    }
+
+    [Theory]
+    [InlineData("-1")]
+    [InlineData("2147483648")]
+    [InlineData("1099511627776")]
+    [InlineData("1e30")]
+    [InlineData("0.5")]
+    [InlineData("\"0\"")]
+    [InlineData("true")]
+    public void MergeSteps_WithAnOffsetOutsideZeroToIntMax_IgnoresTheBatch(string offset)
+    {
+        var known = new List<A2AWire.WireStep>();
+
+        var fresh = A2AWire.MergeSteps(known, Json("{\"steps\":[{\"tool_name\":\"a\",\"status\":\"ok\",\"duration_ms\":1}],\"offset\":" + offset + "}"));
+
+        fresh.Should().BeEmpty();
+        known.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("0.0")]
+    public void MergeSteps_AcceptsAWholeOffset_IntOrStructFloat(string offset)
+    {
+        var known = new List<A2AWire.WireStep>();
+
+        A2AWire.MergeSteps(known, Json("{\"steps\":[{\"tool_name\":\"a\",\"status\":\"ok\",\"duration_ms\":1}],\"offset\":" + offset + "}"))
+            .Should().ContainSingle();
+    }
+
     [Fact]
     public void MergeSteps_IsIdempotentByIndex_SoTheTerminalRepeatAddsNothingNew()
     {

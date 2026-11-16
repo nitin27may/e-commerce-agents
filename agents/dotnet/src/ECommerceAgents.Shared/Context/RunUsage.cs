@@ -67,6 +67,19 @@ public sealed class RunUsage
             return;
         }
 
+        // A count below zero is treated as absent, not recorded: a specialist (hostile, or buggy) must not be able to
+        // lower the spend this turn records. Same rule as Python's `_as_int`, whichever wire the report came over.
+        usage = usage with
+        {
+            InputTokenCount = Math.Max(usage.InputTokenCount, 0),
+            OutputTokenCount = Math.Max(usage.OutputTokenCount, 0),
+            CachedInputTokenCount = Math.Max(usage.CachedInputTokenCount, 0),
+        };
+        if (usage.InputTokenCount == 0 && usage.OutputTokenCount == 0)
+        {
+            return;
+        }
+
         lock (_gate)
         {
             _byAgent[agent] = _byAgent.TryGetValue(agent, out var existing)

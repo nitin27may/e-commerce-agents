@@ -133,7 +133,19 @@ public static class A2AWire
         }
 
         // A protobuf Struct (the Python SDK's metadata) writes every number as a float: 0.0, not 0.
-        var offset = payload.TryGetProperty("offset", out var o) && Whole(o) is { } n ? (int)n : 0;
+        // An offset that is not a whole number in 0..int.MaxValue is hostile or broken: that batch is ignored, never
+        // wrapped by a cast into some other index.
+        long offset = 0;
+        if (payload.TryGetProperty("offset", out var o))
+        {
+            if (Whole(o) is not { } n || n < 0 || n > int.MaxValue)
+            {
+                return fresh;
+            }
+
+            offset = n;
+        }
+
         if (!payload.TryGetProperty("steps", out var list) || list.ValueKind != JsonValueKind.Array)
         {
             return fresh;
@@ -179,7 +191,8 @@ public static class A2AWire
         }
 
         // Read field by field: the Python SDK's metadata is a protobuf Struct, whose numbers arrive as 5.0.
-        long Count(string name) => element.TryGetProperty(name, out var v) && Whole(v) is { } n ? n : 0;
+        // A negative count is treated as absent (zero), never recorded: a specialist must not be able to lower spend.
+        long Count(string name) => element.TryGetProperty(name, out var v) && Whole(v) is { } n and >= 0 ? n : 0;
 
         var model = element.TryGetProperty("model", out var m) && m.ValueKind == JsonValueKind.String ? m.GetString() ?? string.Empty : string.Empty;
         var usage = new SpecialistUsage(Count("input_token_count"), Count("output_token_count"), Count("cached_input_token_count"), model);

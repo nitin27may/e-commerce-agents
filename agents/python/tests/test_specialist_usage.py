@@ -84,6 +84,26 @@ def test_wire_conversion_is_idempotent_and_drops_empty_usage() -> None:
     assert to_wire_usage({"input_token_count": 0, "output_token_count": 0}) is None
 
 
+@pytest.mark.parametrize(
+    ("reported", "expected"),
+    [
+        ({"input_token_count": -500, "output_token_count": 10}, (0, 10)),
+        ({"input_token_count": 7, "output_token_count": -3, "cached_input_token_count": -9}, (7, 0)),
+        ({"input_token_count": -500, "output_token_count": -10}, None),
+        ({"input_token_count": float("inf"), "output_token_count": 4}, (0, 4)),
+        ({"input_token_count": float("nan"), "output_token_count": 4}, (0, 4)),
+    ],
+)
+def test_a_negative_or_non_finite_reported_count_is_treated_as_absent(reported: dict, expected) -> None:
+    """A specialist must not be able to lower the spend a turn records: a count below zero is never recorded."""
+    wire = to_wire_usage(reported)
+
+    assert (None if wire is None else (wire["input_token_count"], wire["output_token_count"])) == expected
+    acc = RunUsage()
+    acc.add("product-discovery", {**reported, "model": "m"})
+    assert all(slot[k] >= 0 for slot in acc.by_agent.values() for k in ("input_token_count", "output_token_count"))
+
+
 def test_accumulator_sums_per_agent_and_in_total() -> None:
     acc = RunUsage()
     acc.add("orchestrator", ORCHESTRATOR_USAGE)

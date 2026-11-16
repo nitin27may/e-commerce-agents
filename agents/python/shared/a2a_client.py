@@ -145,6 +145,21 @@ def _task_text(task: Task) -> str:
     return "".join(part.text for artifact in task.artifacts for part in artifact.parts if part.text)
 
 
+_INT32_MAX = 2**31 - 1
+
+
+def _wire_offset(value: Any) -> int | None:
+    """A steps ``offset`` as an int, or ``None`` unless it is a whole number in ``0..int32 max``.
+
+    The protobuf ``Struct`` metadata delivers every number as a float (``0.0``), so a whole float is fine.
+    """
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    if isinstance(value, float) and not value.is_integer():
+        return None
+    return int(value) if 0 <= value <= _INT32_MAX else None
+
+
 def _merge_steps(known: list[dict[str, Any]], update: dict[str, Any]) -> list[dict[str, Any]]:
     """Fold a steps-extension payload (``{steps, offset}``) into ``known``; returns the steps that were new.
 
@@ -152,7 +167,9 @@ def _merge_steps(known: list[dict[str, Any]], update: dict[str, Any]) -> list[di
     streaming caller has already seen, and a blocking caller reading only that update gets them all.
     """
     fresh: list[dict[str, Any]] = []
-    offset = int(update.get("offset", 0))
+    offset = _wire_offset(update.get("offset", 0))
+    if offset is None:
+        return fresh  # not a whole number in 0..2**31-1: the batch is ignored, like the .NET reader
     for i, step in enumerate(update.get("steps") or []):
         index = offset + i
         if index >= len(known) and isinstance(step, dict):
