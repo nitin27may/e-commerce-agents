@@ -70,7 +70,7 @@ dev = [
     "pytest-cov>=5.0",
     "pytest-timeout>=2.3",
     "testcontainers[postgres,redis]>=4.8",
-    "ruff==0.16.3",
+    "ruff==0.17.5",
 ]
 
 [build-system]

@@ -48,17 +48,17 @@ dependencies = [
     # Chapter 19 — declarative workflows parse workflow.yaml directly
     "pyyaml==6.0.3",
     # Chapters 02, 06 — tool argument schemas
-    "pydantic==2.13.4",
+    "pydantic==2.14.3",
     # Chapter 07 — observability: chapter code builds its own TracerProvider
     # and span exporters, so the SDK (not just the API) is a direct import.
-    "opentelemetry-sdk==1.44.0",
+    "opentelemetry-sdk==1.45.2",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
-    "ruff==0.16.3",
+    "ruff==0.17.5",
 ]
 
 [tool.uv]
