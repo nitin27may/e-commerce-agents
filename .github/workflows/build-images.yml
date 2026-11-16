@@ -145,7 +145,9 @@ jobs:
             build_args: |
               AGENT_NAME=worker
               AGENT_PORT=8095
-            smoke_module: worker.main
+            # Space-separated: the worker imports these lazily to apply an SLA timeout, so
+            # importing worker.main alone would pass on an image that cannot do its job.
+            smoke_module: worker.main orchestrator.approvals_service orchestrator.modes.workflow_mode
           # auth-server is an agent-shaped image too (AUTH_MODE=oauth path).
           # docker-compose.yml builds it from the same Dockerfile.
           - image: auth-server
@@ -310,8 +312,9 @@ jobs:
             "${IMAGE_TAG}" \
             run --no-project python -c "
           import importlib, sys
-          mod = importlib.import_module('${{ matrix.smoke_module }}')
-          print('[OK] ${{ matrix.image }}: ${{ matrix.smoke_module }} imports cleanly')
+          for name in '${{ matrix.smoke_module }}'.split():
+              importlib.import_module(name)
+              print('[OK] ${{ matrix.image }}: ' + name + ' imports cleanly')
           sys.exit(0)
           "
 

@@ -83,6 +83,16 @@ COPY inventory_fulfillment/ inventory_fulfillment/
 COPY review_sentiment/ review_sentiment/
 COPY pricing_promotions/ pricing_promotions/
 
+# The outbox worker (AGENT_NAME=worker) applies an SLA timeout by calling
+# orchestrator.approvals_service.expire, which resumes a paused return through
+# orchestrator.modes.workflow_mode -- the same code a staff decision runs. Both
+# imports are lazy (inside on_timeout_apply), so a worker image without
+# orchestrator/ builds, starts and passes a `worker.main` import, then raises
+# ModuleNotFoundError on every approval.timeout_apply row. Copied unconditionally
+# for the same reason as the specialists above; the duplicate COPY for
+# AGENT_NAME=orchestrator is harmless.
+COPY orchestrator/ orchestrator/
+
 # Give non-root user ownership of the app directory (for uv cache + runtime)
 RUN chown -R agent:agent /app
 

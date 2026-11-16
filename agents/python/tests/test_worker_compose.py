@@ -39,3 +39,44 @@ def test_built_worker_selects_the_worker_package_in_the_shared_dockerfile(compos
 def test_ci_smoke_imports_the_worker_inside_its_image() -> None:
     workflow = (REPO_ROOT / ".github/workflows/build-images.yml").read_text()
     assert "image: outbox-worker" in workflow and "smoke_module: worker.main" in workflow
+
+
+def test_ci_smoke_also_imports_what_the_worker_imports_lazily() -> None:
+    workflow = (REPO_ROOT / ".github/workflows/build-images.yml").read_text()
+    worker_entry = workflow.split("image: outbox-worker", 1)[1].split("image: auth-server", 1)[0]
+    for module in ("orchestrator.approvals_service", "orchestrator.modes.workflow_mode"):
+        assert module in worker_entry
+
+
+def test_worker_image_file_set_can_import_the_timeout_path(tmp_path: Path) -> None:
+    """Rebuild the worker image's file set from the Dockerfile's COPY lines and import the lazy chain in it."""
+    import shutil
+    import subprocess
+    import sys
+
+    dockerfile = (REPO_ROOT / "agents/python/Dockerfile").read_text()
+    copied = [
+        line.split()[1].rstrip("/")
+        for line in dockerfile.splitlines()
+        if line.startswith("COPY ") and "--from" not in line and "${" not in line and line.split()[1].endswith("/")
+    ]
+    assert "orchestrator" in copied and "worker" not in copied  # worker/ arrives via ${AGENT_NAME}
+    src = REPO_ROOT / "agents/python"
+    for name in [*copied, "worker"]:
+        shutil.copytree(src / name, tmp_path / name, ignore=shutil.ignore_patterns("__pycache__"))
+    code = "import worker.main, orchestrator.approvals_service, orchestrator.modes.workflow_mode"
+    env = {
+        "PATH": "/usr/bin:/bin",
+        "PYTHONPATH": str(tmp_path),
+        "ENVIRONMENT": "test",
+        "JWT_SECRET": "x" * 32,
+        "AGENT_SHARED_SECRET": "y" * 32,
+        "DATABASE_URL": "postgresql://d:d@localhost/d",
+        "OPENAI_API_KEY": "sk-test",
+        "OTEL_ENABLED": "false",
+        "AGENT_REGISTRY": "{}",
+    }
+    result = subprocess.run(
+        [sys.executable, "-c", code], cwd=tmp_path, env=env, capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 0, result.stderr
