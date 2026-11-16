@@ -113,6 +113,26 @@ holds. Staff approve or reject in the ordinary inbox (`POST /api/approvals/{id}/
   answers the ordinary `409`, and the reservation is released so a legitimate retry is not blocked by a cached refusal.
   `tests/test_autonomy_review_fixes.py` drives that interleaving through a real SLA tick.
 
+## A paid credit is recorded, never undone on paper
+
+The credit commits on its own transaction, then the approval is recorded. A request that dies in between leaves a paid
+credit under a still-pending approval, so every later path must *record* it:
+
+- **reject** answers `409` ("approve to record it") instead of recording `rejected` (checked after the claim; the credit is
+  only ever written under the claim, so no approve can start paying between the check and the record);
+- **approve** replays the stored `approved_execution` row directly (not through `run_once`, whose reservation a cancelled
+  attempt leaves "in progress") and records the amount that went out. A retry whose amount edit differs is `409`; a retry
+  without edits records `{"amount": "<paid>"}` (status `approved_with_edits` when it differs from the proposal);
+- a `run_once` reservation held by another live attempt is `409`, claim handed back, nothing recorded: only a result with a
+  `success` key is a verdict, so a `{"error": ...}` shape can never close the approval as `failed`;
+- the SLA handler records it (it already did); `request_info` is refused for event approvals;
+- an `amount` edit that is not finite or beyond decimal precision is `422`, not `500`.
+
+Web: the decisions page pages 50 at a time (`limit`/`offset`, "Showing N of TOTAL", "Load older decisions"; the state
+filter is applied in SQL, so an old waiting decision is reachable), ignores out-of-order responses (latest-request id plus
+an `AbortController`), has a Refresh button, and after a demo scenario looks again every 2 s up to 5 times, stopping as
+soon as the total grows.
+
 ## Nobody approves a credit to themselves
 
 The approval's requester is the system actor, so "never your own request" alone would let a staff member approve money for

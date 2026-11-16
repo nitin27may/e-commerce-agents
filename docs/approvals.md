@@ -248,6 +248,16 @@ fails closed to a manager (logged) on both.
   the approval to `executed`/`failed` instead of answering `409` forever, and the timeout handler (`expire`, which also
   serves .NET) does the same instead of marking an executed thing `expired`. *Request information* on such a row is
   refused (`409`): the action already happened. A request that is resolved any other way is still a `409`.
+* **The same holds for an autonomous-action (`event`) credit, and a reject never contradicts a paid credit.** The credit
+  commits on its own transaction before the approval is recorded. If it ran and the recording died, *reject* answers
+  `409` ("approve to record it") rather than recording `rejected` while the customer keeps the money; *approve* replays
+  the stored ledger row (it does not go back through `run_once`, whose reservation a cancelled attempt leaves "in
+  progress") and records the amount that **actually went out**: a retry's conflicting amount edit is `409`, and a retry
+  without edits records `{"amount": "<paid>"}`. A `run_once` reservation held by another live attempt is `409` with the
+  claim handed back, never a `failed` approval. The SLA handler records such a credit instead of expiring it. Tool and
+  workflow approvals were already safe: their reject is a `409` once the request row is `executed`/resolved.
+* An `amount` edit that is not a finite number a database column could hold (`1e30`, a 400-digit string, NaN, an integer
+  past float range) is a `422`, never a `500`.
 * A claim lost while recording a *workflow* decision is a `409` ("taken over by another reviewer"), like every other
   lost claim, on both stacks (it used to surface as a `500`).
 
