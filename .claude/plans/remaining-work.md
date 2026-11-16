@@ -795,7 +795,7 @@ Six further corrections from the same review were to this plan and are applied i
 requirement, replay-miss propagation in C-4, new tables as migrations only, and specialist usage on
 the stream endpoint in E-2a.
 
-### Wave 1 — in progress
+### Wave 1 — built 2026-11-15/16
 
 | Step | Outcome |
 |---|---|
@@ -805,6 +805,29 @@ the stream endpoint in E-2a.
 | — | DevUI .NET is still prerelease-only (`1.28.0-preview`); chapter 20b stays not ported. |
 | C-16 | 24 of 32 chapter entry points run with no key, enforced by a `tutorials-keyless` CI job. **Seven need a recorded fixture for their default prompt** — 04, 05, 07, 12, 13, 14, 16 — and are on the runner's skip-list with that reason; record them in R0. 20b is a live-only server. Chapter 18 also calls no model (not listed in #104); chapter 23 is not a long-running server and runs keyless. `.env.example` sets `LLM_PROVIDER=openai`, which disables the fallback for anyone who copies it — documented, not changed. |
 | C-17 | As planned. No time estimates were invented; the paths carry none. |
+| A-10 | As planned. First real migration is `0002_hitl_claimed_at.sql`, which closes wave 0's stale-claim gap: a `processing` row whose claim is older than `HITL_CLAIM_TTL_SECONDS` (600) can be taken over, both stacks. **Limit:** a resume genuinely still running past the TTL can finish alongside the new claimant — harmless while the post-gate steps are side-effect free; D-8 must guard it. |
+| A-11 | `/ready` on every service, both stacks, same JSON. **Found by testing:** with Postgres paused the probe hung for minutes because it borrowed a pooled connection; each probe now opens its own short-lived connection. A plain endpoint was used on .NET instead of `AddHealthChecks` so the shape matches Python. Only the .NET orchestrator image lacked curl. |
+| A-9 | Written, **never run end to end**: Docker Hub returned 429 on image pulls in the build environment. Exercised only against host-run Python services. CI is its first real run. |
+| A-6a | As planned. Also: `EmbeddingClientFactory` (.NET) no longer crashes at startup with no key. The precomputed file does not exist yet (A-6b, R0). |
+| C-2 | As planned. First attempt broke a fixture — tour orders for Electronics shifted the counts in a recorded "trending electronics" answer — so the tour orders are Home and Clothing. `--reset-tour-user` also clears idempotency keys for the (now stable) tour order ids. `seed_workflow_checkpoints` still uses `uuid4`. |
+| B-1 | As planned, with one wrong claim: adding `response_format` to the key **did** change one hash — tutorial 29's planner call sets it — re-keyed offline. The script tracks its own PIDs instead of `pkill`. `fixture_drift` cannot detect prompt drift (nothing stable to diff against). |
+| C-3 | Every one of the 102 fixtures changed hash (each instruction block contains example ids and dates); renamed offline, contents untouched. |
+| E-2a/b | Specialist usage now reaches `usage_logs` through both endpoints, both stacks; the orchestrator eval suite's recorded input tokens went 38,659 → 99,847. **The .NET orchestrator had been logging zero tokens for every turn.** Cross-stack pairing is asserted by a shared literal, not exercised. No `model`/cost columns yet (E-2d). On .NET the *streaming* cost gate still does not tally. |
+| E-3a | Five new case fields; ~25 existing cases gained argument assertions from committed fixtures, prompts unchanged. HITL is detected from a new `hitl_requests` row because the middleware sits outside the step recorder. |
+| E-3c | As planned. `total_tokens_in/out` already existed in the report. |
+| A-4 | As planned on CORS, capture default and pins (`uv` 0.11.32, `aspire-dashboard` 13.6.5, verified by manifest). **Next 16 cannot tell a route handler the client's address**, so by default none is forwarded and all anonymous callers share one bucket; `WEB_TRUSTED_PROXY_HOPS` restores per-client limits behind a real proxy. `scripts/e2e-both-stacks.sh` raises the auth limit for the stack it starts, or the parity specs would hit 429. |
+| A-12 | Migration is `0003`. **Two .NET holes nobody had filed, both closed:** signup honoured a client-supplied `role` (anyone could sign up as admin), and read `full_name` where the client sends `name`. Passwords over 72 bytes returned 500 on both stacks. OAuth-mode rotation recorded as parity row 29. |
+| B-2 | 17 app modules and 15 tutorial files moved to public imports; two names allowlisted (`encode_checkpoint_value`, `decode_checkpoint_value`). `patch_maf.py` deleted. |
+| B-10 | Nothing in the running app used the loader. `visualize_workflows.py` now renders the real `pre-purchase` and `return-replace` graphs; the diagram drift-check CI job had a broken invocation and is fixed. `MermaidExporter.cs` went with the .NET loader. |
+| P-1 | As planned. Found: `docker-compose.yml` and `docker-compose.dotnet.yml` never forwarded `LLM_BASE_URL`, so a compatible endpoint only worked host-run or via the demo file; all three forward it now, and the Python two forward `LLM_API`. |
+| C-12, C-14, A-8a/b/c, C-19, A-13 | As planned. `ui-smoke` runs with no backend (9/9). The MCP integration job is a per-package matrix because the two `tests/conftest.py` files cannot be collected together. CodeQL / dependency-review action tags were not verifiable offline. |
+
+Carried forward from this wave:
+
+- The pricing-promotions baseline is stale (0.727 measured vs 0.680 committed, on `main` too). Refresh it in R1.
+- Re-seeding an already-seeded database makes one product-discovery case miss its fixture; a fresh database is clean. `dev.sh` re-seeds on every start, so C-7's no-key demo must seed fresh or this must be fixed first.
+- `.env.example` sets `LLM_PROVIDER=openai`, which disables the tutorials' keyless fallback for anyone who copies it.
+- `dev.ps1` has now been edited by three steps and executed by none.
 
 ---
 
