@@ -40,6 +40,8 @@ from scripts.embedding_text import EMBEDDINGS_FILE, build_embedding_text, write_
 from shared.config import settings
 from shared.embedding_check import verify_embedding_dimensions
 from shared.embedding_config import (
+    NO_EMBEDDINGS,
+    NO_EMBEDDINGS_MESSAGE,
     embedding_dim,
     embedding_model_name,
     embedding_provider,
@@ -97,6 +99,10 @@ async def main(export_path: Path | None = None) -> None:
 
         # Same check the agents run at startup: a column of another width would fail every insert below.
         await verify_embedding_dimensions(conn)
+
+        if LLM_PROVIDER == NO_EMBEDDINGS:
+            # Before the DELETE below: failing after it would leave the table empty for no reason.
+            raise SystemExit(NO_EMBEDDINGS_MESSAGE)
 
         if export_path is not None and LLM_PROVIDER == "replay":
             raise SystemExit("--export needs a real embedding provider; LLM_PROVIDER=replay vectors are not a model")

@@ -6,7 +6,8 @@
 #     left as individual PRs, because a major is where the breakage is and each
 #     deserves its own review.
 #
-#   * The Microsoft Agent Framework packages (agent-framework-*, Microsoft.Agents.AI*)
+#   * The Microsoft Agent Framework packages (agent-framework-*, Microsoft.Agents.AI*),
+#     the A2A protocol SDK (a2a-sdk, and the .NET A2A / A2A.AspNetCore previews)
 #     and the MCP SDK are held in a group of their own, never mixed into the
 #     routine PR. A MAF bump is a deliberate step, not a chore: it can invalidate
 #     the replay fixtures under agents/python/evals/fixtures (the request hash
@@ -23,6 +24,8 @@
 #     the replay fixtures see) and "httpx2" (the MCP 2.x client's HTTP stack, which
 #     shared/oauth/service_client.py builds against): each is coupled to the MAF/MCP
 #     pins, so a bump to either is a deliberate step, not part of the routine PR.
+#     "agent-framework-anthropic" is matched by the "agent-framework*" pattern; it is a
+#     beta-only package, pinned exactly, and moves with core (its floor is core 1.24).
 #
 #   * The "actions" group takes minor and patch bumps only; a major version of an
 #     action is left as its own PR, like every other ecosystem here.
@@ -91,10 +94,21 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "deps(dotnet)"
+    ignore:
+      # These packages version with the .NET runtime. A major bump means moving
+      # the target framework and global.json, which is a deliberate step.
+      - dependency-name: "Microsoft.Extensions.*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "Microsoft.AspNetCore.*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "System.*"
+        update-types: ["version-update:semver-major"]
     groups:
       maf:
         patterns:
           - "Microsoft.Agents.AI*"
+          - "A2A"
+          - "A2A.*"
           - "ModelContextProtocol*"
       dotnet-minor-patch:
         update-types:
@@ -122,7 +136,11 @@ updates:
         update-types: ["version-update:semver-minor", "version-update:semver-major"]
       - dependency-name: "node"
         update-types: ["version-update:semver-major"]
-      - dependency-name: "mcr.microsoft.com/dotnet/*"
+      # Dependabot names these images without the registry host ("dotnet/sdk",
+      # "dotnet/aspnet"). The first version of this rule used the full
+      # "mcr.microsoft.com/dotnet/*" name, matched nothing, and the first run
+      # opened one 10.0 -> 11.0 pull request per Dockerfile.
+      - dependency-name: "dotnet/*"
         update-types: ["version-update:semver-major"]
     groups:
       docker-minor-patch:

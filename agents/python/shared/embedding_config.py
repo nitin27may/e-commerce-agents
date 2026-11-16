@@ -41,7 +41,11 @@ _DIMENSIONS_PARAM_PREFIX = "text-embedding-3"
 
 
 def embedding_provider(cfg: Any = None) -> str:
-    """The embedding provider in effect: ``EMBEDDING_PROVIDER``, else the chat provider's."""
+    """The embedding provider in effect: ``EMBEDDING_PROVIDER``, else the chat provider's.
+
+    With ``LLM_PROVIDER=anthropic`` and no ``EMBEDDING_PROVIDER`` this is ``"anthropic"`` (``NO_EMBEDDINGS``):
+    there is no embeddings API to follow, and ``get_embeddings_client`` then says what to set.
+    """
     chosen = (_settings(cfg).EMBEDDING_PROVIDER or "").strip().lower()
     if chosen:
         if chosen not in EMBEDDING_PROVIDERS:
@@ -51,6 +55,16 @@ def embedding_provider(cfg: Any = None) -> str:
             )
         return chosen
     return (_settings(cfg).LLM_PROVIDER or "openai").strip().lower()
+
+
+# What ``embedding_provider`` returns when the chat provider is ``anthropic`` and nothing else was
+# chosen: Anthropic has no embeddings API, so there is no provider to follow. Not a valid
+# ``EMBEDDING_PROVIDER`` value; callers treat it as "embeddings unavailable".
+NO_EMBEDDINGS = "anthropic"
+NO_EMBEDDINGS_MESSAGE = (
+    "LLM_PROVIDER=anthropic has no embeddings API; set EMBEDDING_PROVIDER (openai, azure, openai_compatible) "
+    "and its key or EMBEDDING_BASE_URL (see docs/configuration.md)"
+)
 
 
 def follows_chat_provider(cfg: Any = None) -> bool:

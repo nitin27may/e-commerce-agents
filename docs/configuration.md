@@ -219,6 +219,34 @@ stack always uses Chat Completions and has no such setting. All three compose fi
 `LLM_BASE_URL` to the agents, and the two that run the Python stack forward `LLM_API` as well, so
 the setting works the same in a container as it does for host-run Python.
 
+### Gemini through its OpenAI-compatible endpoint
+
+No separate provider: Gemini is `LLM_PROVIDER=openai` pointed at Google's compatible endpoint, over
+Chat Completions.
+
+```dotenv
+LLM_PROVIDER=openai
+LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
+LLM_API=chat_completions            # the endpoint has no /responses route
+OPENAI_API_KEY=<your Gemini API key>   # the OpenAI-named variable carries the Gemini key
+LLM_MODEL=<a Gemini model id from Google's model list>
+EMBEDDING_PROVIDER=openai_compatible   # see below
+EMBEDDING_BASE_URL=<an embeddings endpoint>
+```
+
+- **Embeddings.** Left empty, `EMBEDDING_PROVIDER` follows `LLM_PROVIDER` and would send embedding
+  requests (model `text-embedding-3-small`) to the Gemini base URL. Set the `EMBEDDING_*` group
+  explicitly ([below](#embeddings-are-configured-separately)), or accept that semantic search falls
+  back to full-text.
+- **Choose a tool-calling model** and check Google's current OpenAI-compatibility page for which
+  request parameters it honours, any limits on tool schemas, and structured-output behaviour. This
+  repository does not assert them: nothing here has talked to Google's servers.
+- **Tested** only by `tests/test_gemini_compat_endpoint.py`, a stubbed transport: the request goes to
+  `<LLM_BASE_URL>chat/completions` with the key as bearer credential, and a canned `tool_calls`
+  response runs a tool and is answered with a `tool` message. That proves this repo's wiring, not
+  Gemini's behaviour, and no live call has been made. A model scorecard run (P-7) is where Gemini
+  would be measured.
+
 ## Choosing a model per agent (`model:` in the prompt YAML)
 
 By default every agent uses the one model in `LLM_MODEL` (or `AZURE_OPENAI_DEPLOYMENT`). Any
@@ -239,8 +267,8 @@ All three keys are optional; anything left out falls back to the global setting.
 
 | Key | Meaning |
 |---|---|
-| `provider` | `openai` or `azure`. Defaults to `LLM_PROVIDER`. A different provider needs that provider's own credentials (`OPENAI_API_KEY`, or the three `AZURE_OPENAI_*` variables); the global `LLM_BASE_URL` is never inherited by an agent that switches *to* `openai` |
-| `model` | Model id (`openai`) or deployment name (`azure`) |
+| `provider` | `openai`, `azure` or `anthropic`. Defaults to `LLM_PROVIDER`. A different provider needs that provider's own credentials (`OPENAI_API_KEY`, the three `AZURE_OPENAI_*` variables, or `ANTHROPIC_API_KEY`); the global `LLM_BASE_URL` is never inherited by an agent that switches *to* `openai` |
+| `model` | Model id (`openai`, `anthropic`; the latter defaults to `ANTHROPIC_MODEL`) or deployment name (`azure`). Required when the global provider is `anthropic` and the agent switches to another one |
 | `temperature` | 0–2; replaces `LLM_TEMPERATURE` for this agent |
 
 Agent names are the file stems: `orchestrator`, `handoff-triage` (the handoff mode's triage
@@ -253,8 +281,7 @@ agent), `product-discovery`, `order-management`, `pricing-promotions`, `review-s
   fixtures are keyed by the instructions, so the composed prompt is byte-identical with or without
   it (a test proves it).
 - **Validated at startup.** An unknown key, unknown provider or out-of-range temperature stops the
-  service at startup with a message naming the file. (`anthropic` is a valid provider on the .NET
-  stack only; see [parity-matrix.md](parity-matrix.md).)
+  service at startup with a message naming the file.
 - **Replay ignores it.** Under `LLM_PROVIDER=replay` the replay client answers regardless of model.
 - **Cost.** A response that names the model it served is priced as that model. Where it names none,
   pricing falls back to the model the agent's client was built with (`current_agent_model`), then
@@ -265,25 +292,36 @@ agent), `product-discovery`, `order-management`, `pricing-promotions`, `review-s
 A model change is a recording-session event for replay evals only if you also want the fixtures to
 reflect that model's answers; the replay key ignores the model.
 
-## Anthropic (Claude) — .NET stack only
+## Anthropic (Claude) — Python and .NET stacks
 
 ```dotenv
 LLM_PROVIDER=anthropic
 ANTHROPIC_API_KEY=sk-ant-...
-ANTHROPIC_MODEL=claude-sonnet-5-5     # default. Others: claude-opus-5-5, claude-haiku-5-5
+ANTHROPIC_MODEL=claude-sonnet-5-5     # default, on both stacks. Others: claude-opus-5-5, claude-haiku-5-5
+EMBEDDING_PROVIDER=openai             # Claude has no embeddings API: see the Embeddings row
 ```
 
-| | |
-|---|---|
-| Stacks | **.NET only.** The Python stack rejects `LLM_PROVIDER=anthropic` with a message saying so: its connector (`agent-framework-anthropic`) is beta-only and needs MAF core ≥ 1.24, and the repo is on 1.22 (a later step, tracked in [parity-matrix.md](parity-matrix.md) row 33) |
-| Client | The official [`Anthropic`](https://www.nuget.org/packages/Anthropic) NuGet package (13.8.0), through its `IChatClient` adapter in `ChatClientFactory`. It needs `Microsoft.Extensions.AI.Abstractions` ≥ 10.5.1; the solution resolves 10.11.0, so nothing was bumped |
-| Key | Required when selected; startup fails naming `ANTHROPIC_API_KEY` (never its value). The SDK sends it as `Authorization: Bearer` |
-| Model | `ANTHROPIC_MODEL`, **not** `LLM_MODEL` — the compose files forward `LLM_MODEL` with a `gpt-4.1` default that Anthropic would reject |
-| Output length | Claude's API requires `max_tokens`; the adapter applies 4096 when a request sets none |
-| Per-agent | `provider: anthropic` is valid in an agent's `model:` block ([above](#choosing-a-model-per-agent-model-in-the-prompt-yaml)); an agent moving from anthropic to `openai` must name its `model` |
-| Embeddings | **Anthropic has no embeddings API.** With this provider semantic search is unavailable until a separate embedding provider is configured ([below](#embeddings-are-configured-separately)); the stack still starts, logs what is missing, and product search falls back to full-text |
-| Cost | The repo documents no Claude prices, so none were invented: Claude models are **unpriced**, and the cost module logs one fixed line and estimates at its default (gpt-4.1) entry. Treat cost figures as meaningless for Claude until a maintainer adds the entries from Anthropic's pricing page |
-| Tested | A stub-`HttpMessageHandler` test: request shape, a canned `tool_use` → tool execution → `tool_result` follow-up, and usage mapping. It does **not** prove tool-choice quality, prompt caching, real error shapes (rate limits, overload, bad key) or streaming edge cases, and it has never run against the live API |
+> **Never run against the live API.** Both stacks are wired and proven with stubbed-transport
+> tests only. A smoke run with a real key is still owed (R2 in the plan); until then treat Claude
+> support as untested against real responses.
+
+| | Python | .NET |
+|---|---|---|
+| Client | MAF's own connector, [`agent-framework-anthropic`](https://pypi.org/project/agent-framework-anthropic/) `1.0.0b261112`, as `shared/anthropic_client.py::ECommerceAnthropicClient` (a thin subclass that sets the default `max_tokens`). **Every release of that package is a beta** (there is no stable line), so it is pinned exactly in `agents/python/pyproject.toml` and listed in the `maf` Dependabot group; it needs `agent-framework-core >= 1.24` (the repo is on 1.26.0) and brings the official `anthropic` SDK (2.8.0, built on `httpx2`). It calls the Messages API through the SDK's `beta.messages` namespace | The official [`Anthropic`](https://www.nuget.org/packages/Anthropic) NuGet package (13.8.0), through its `IChatClient` adapter in `ChatClientFactory`. It needs `Microsoft.Extensions.AI.Abstractions` ≥ 10.5.1; the solution resolves 10.11.0, so nothing was bumped |
+| Key | Required when selected; `get_chat_client` fails naming `ANTHROPIC_API_KEY` (never its value). The SDK sends it as `Authorization: Bearer` | Required when selected; startup fails naming `ANTHROPIC_API_KEY` (never its value). Same header |
+| Model | `ANTHROPIC_MODEL` (default `claude-sonnet-5-5`), **not** `LLM_MODEL` — the compose files forward `LLM_MODEL` with a `gpt-4.1` default that Anthropic would reject | Same |
+| Output length | Claude's API requires `max_tokens`; the connector's own fallback is 1024, which truncates specialist answers, so the client applies **4096** when a call sets none (an explicit `max_tokens` still wins) | The adapter applies 4096 when a request sets none |
+| Per-agent | `provider: anthropic` is valid in an agent's `model:` block ([above](#choosing-a-model-per-agent-model-in-the-prompt-yaml)); an agent moving from anthropic to another provider must name its `model` | Same |
+| Embeddings | **Anthropic has no embeddings API.** With this provider and no `EMBEDDING_PROVIDER`, semantic search is unavailable until a separate embedding provider is configured ([below](#embeddings-are-configured-separately)). The stack still starts and logs what is missing: the chat client warns once, the seeder skips embeddings, `semantic_search` falls back to its full-text arm, and `scripts/generate_embeddings.py` exits with the instruction before it clears anything | The stack still starts, logs what is missing, and product search falls back to full-text |
+| Recording | `REPLAY_RECORD_PROVIDER=anthropic` with `RECORD=true` records replay fixtures through the same client. Fixtures are keyed by request, not model, so they replay under any provider | — |
+| Cost | `shared/cost.py` has no Claude entries: the repo documents no Claude prices, so none were invented. The cost module logs `cost.model_unpriced` once and estimates at its default (gpt-4.1) entry. Treat cost figures as meaningless for Claude until a maintainer adds the entries from Anthropic's pricing page | Same: Claude models are unpriced in `CostEstimator` |
+| Tested | `tests/test_anthropic_provider.py`: a stubbed `httpx2` transport under a real MAF `Agent` — request shape, a canned `tool_use` → Python tool call → `tool_result` follow-up, usage mapping, **blocking and streaming**; the factory, per-agent block and embeddings behaviour; the recorder round trip. **No network, no key** | A stub-`HttpMessageHandler` test: request shape, a canned `tool_use` → tool execution → `tool_result` follow-up, and usage mapping |
+
+What the stubbed tests **cannot** prove, on either stack: that Claude picks the right tool or
+arguments (tool-choice quality), prompt caching, the shape of real error responses (rate limits,
+overload, a bad key), streaming edge cases beyond the canned events, or that the canned JSON
+matches api.anthropic.com byte for byte (it follows the published schema). Nothing in CI calls
+Claude, and nothing may put an Anthropic key behind an automatic trigger.
 
 ## Embeddings are configured separately
 

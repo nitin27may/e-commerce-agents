@@ -253,7 +253,7 @@ async def test_a_wrong_secret_is_reported_with_its_status(monkeypatch: pytest.Mo
     app, model = build_app()
     _bind(monkeypatch, ASGITransport(app=app), transport_mode="a2a", streaming=False)
 
-    async def _wrong_credentials() -> dict[str, str]:
+    async def _wrong_credentials(*_audience: str) -> dict[str, str]:
         return {"x-agent-secret": "not-the-secret", "x-user-email": USER, "x-user-role": "customer"}
 
     monkeypatch.setattr(orch_mod, "build_a2a_headers", _wrong_credentials)
@@ -303,6 +303,24 @@ def test_the_steps_merge_is_idempotent_by_index() -> None:
     assert (first, second, repeat) == ([{"n": 1}], [{"n": 2}], [])
     assert known == [{"n": 1}, {"n": 2}]
     assert a2a_client._merge_steps([], {}) == []
+
+
+@pytest.mark.parametrize("offset", [-1, 2**31, 2**40, 1e30, float("inf"), float("nan"), 0.5, "0", True, [0], None])
+def test_a_steps_offset_that_is_not_a_whole_number_in_int32_range_ignores_the_batch(offset: Any) -> None:
+    """A hostile or broken offset must not place steps at a wrapped index; the whole batch is dropped."""
+    known: list[dict[str, Any]] = []
+
+    assert a2a_client._merge_steps(known, {"steps": [{"n": 1}], "offset": offset}) == []
+    assert known == []
+
+
+@pytest.mark.parametrize("offset", [0, 0.0, 3, 3.0, 2**31 - 1])
+def test_a_steps_offset_in_range_is_accepted_whether_int_or_struct_float(offset: Any) -> None:
+    known: list[dict[str, Any]] = [{"n": i} for i in range(3)]
+
+    merged = a2a_client._merge_steps(known, {"steps": [{"n": 9}], "offset": offset})
+
+    assert merged == ([] if offset in (0, 0.0) else [{"n": 9}])
 
 
 def test_struct_numbers_come_back_as_ints_where_they_are_integral() -> None:

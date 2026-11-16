@@ -49,7 +49,7 @@ from scripts.embedding_text import (
 )
 from shared.demo_tour import TOUR_EMAIL, TOUR_SEED, reset_tour_user
 from shared.embedding_check import verify_embedding_dimensions
-from shared.embedding_config import embedding_dim, embedding_provider
+from shared.embedding_config import NO_EMBEDDINGS, NO_EMBEDDINGS_MESSAGE, embedding_dim, embedding_provider
 from shared.oauth.client_secrets import derive_client_secret
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -910,6 +910,11 @@ async def seed_product_embeddings(
     that data. Returns the number of rows inserted.
     """
     provider = (provider if provider is not None else embedding_provider()).lower()
+    if provider == NO_EMBEDDINGS:
+        # LLM_PROVIDER=anthropic with no EMBEDDING_PROVIDER: nothing could embed a query, so stored vectors
+        # would be unreachable. Same as the .NET stack: say why and use full-text only.
+        logger.info("Embeddings: %s -- skipping; semantic_search will use full-text only", NO_EMBEDDINGS_MESSAGE)
+        return 0
     embedding_model = embedding_model or os.environ.get("EMBEDDING_MODEL", "text-embedding-3-small")
     data_path = data_path or EMBEDDINGS_FILE
 

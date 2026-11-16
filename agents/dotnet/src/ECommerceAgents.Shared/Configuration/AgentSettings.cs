@@ -282,6 +282,48 @@ public sealed record AgentSettings
     // ── Agent Registry (A2A endpoint map) ───────────────────────
     public string AgentRegistry { get; init; } = "{}";
 
+    /// <summary>
+    /// <c>A2A_TRANSPORT</c>: which wire the <em>calling</em> side (orchestrator, handoff mesh) speaks to a
+    /// specialist — <c>legacy</c> (the original <c>/message:send</c> + <c>/message:stream</c> pair, the
+    /// default) or <c>a2a</c> (A2A 1.0 JSON-RPC at <c>/a2a/v1</c>). Every specialist serves both. Twin of
+    /// Python's <c>A2A_TRANSPORT</c>.
+    /// </summary>
+    public string A2aTransport { get; init; } = "legacy";
+
+    /// <summary>
+    /// <c>A2A_PUBLIC_BASE_URL</c>: the origin a specialist advertises in its agent card. Empty derives it
+    /// from the request (scheme + Host). Must name the same origin the registry uses to reach the
+    /// specialist, or a calling client refuses the card.
+    /// </summary>
+    public string A2aPublicBaseUrl { get; init; } = "";
+
+    /// <summary><c>A2A_MAX_ACTIVE_TASKS</c>: A2A tasks a specialist runs at once, in total (over it: refused, never queued).</summary>
+    public int A2aMaxActiveTasks { get; init; } = 32;
+
+    /// <summary><c>A2A_MAX_ACTIVE_TASKS_PER_CALLER</c>: the same bound per forwarded user.</summary>
+    public int A2aMaxActiveTasksPerCaller { get; init; } = 8;
+
+    /// <summary>
+    /// <c>A2A_IDENTITY</c> (B-14): how a specialist learns which user a call is for. <c>headers</c>: the forwarded
+    /// <c>X-User-*</c> headers, trusted on the strength of the inter-agent credential (the original way). <c>token</c>:
+    /// only a signed, short-lived, audience-bound <c>X-User-Context</c> token; a call without a valid one is refused and
+    /// the headers are not read. <c>both</c> (default, for one release): the orchestrator sends both, a specialist
+    /// verifies a token when one is present (a header that contradicts it is refused) and falls back to the headers when
+    /// there is none, so a mixed or half-upgraded deployment keeps working. See <see cref="Auth.UserContextToken"/>.
+    /// </summary>
+    public string A2aIdentity { get; init; } = "both";
+
+    /// <summary>
+    /// <c>A2A_IDENTITY_KEY</c>: the key the token is signed with (HKDF-derived). Empty uses
+    /// <see cref="AgentSharedSecret"/> (nothing new to distribute). Set it to a value different from the shared secret
+    /// so that holding <c>X-Agent-Secret</c> alone no longer lets a caller choose its user. Identical on every process,
+    /// on both stacks.
+    /// </summary>
+    public string A2aIdentityKey { get; init; } = "";
+
+    /// <summary><c>A2A_IDENTITY_TTL_SECONDS</c>: token lifetime (30 to 900; a verifier refuses any token living longer than 15 minutes).</summary>
+    public int A2aIdentityTtlSeconds { get; init; } = 300;
+
     // ── Telemetry ───────────────────────────────────────────────
     public bool OtelEnabled { get; init; }
     public string OtelExporterOtlpEndpoint { get; init; } = "http://localhost:18889";

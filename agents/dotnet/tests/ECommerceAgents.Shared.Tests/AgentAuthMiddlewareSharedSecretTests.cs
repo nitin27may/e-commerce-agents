@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Net;
 using System.Net.Http.Json;
@@ -126,6 +127,39 @@ public sealed class AgentAuthMiddlewareSharedSecretTests
         var response = await client.SendAsync(Forged(secret));
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Theory]
+    [InlineData("token", "", true)]
+    [InlineData("token", "<shared-secret>", true)]
+    [InlineData("token", "a-distinct-identity-key-0123456789abcdef", false)]
+    [InlineData("both", "", false)]
+    [InlineData("headers", "<shared-secret>", false)]
+    public void TokenMode_WithoutADistinctKey_WarnsAtStartup_AndNeverLogsTheKey(string mode, string key, bool warns)
+    {
+        key = key == "<shared-secret>" ? Secret : key;
+        var settings = new AgentSettings
+        {
+            AgentSharedSecret = Secret,
+            JwtSecret = new string('j', 48),
+            Environment = "test",
+            A2aIdentity = mode,
+            A2aIdentityKey = key,
+        };
+        var lines = new List<string>();
+
+        AgentSettingsValidator.Validate(settings, new ListLogger(lines));
+
+        lines.Any(l => l.Contains("settings.a2a_identity_key_not_distinct")).Should().Be(warns);
+        lines.Should().NotContain(l => l.Contains(Secret) || (key.Length > 0 && l.Contains(key)));
+    }
+
+    private sealed class ListLogger(List<string> lines) : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            lines.Add(formatter(state, exception));
     }
 
     [Fact]

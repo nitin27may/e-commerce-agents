@@ -21,6 +21,15 @@
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
   </ItemGroup>
 
+  <ItemGroup Label="A2A 1.0 (spec 1.0, JSON-RPC binding)">
+    <!-- The official A2A .NET SDK (a2aproject/a2a-dotnet). Both are PREVIEW releases, pinned exactly
+         (plan decision B-d6) and grouped in Dependabot with the other protocol packages. Server and
+         client share the A2A package; A2A.AspNetCore supplies the JSON-RPC endpoint and the
+         A2A-Extensions negotiation. -->
+    <PackageVersion Include="A2A" Version="1.0.0-preview4" />
+    <PackageVersion Include="A2A.AspNetCore" Version="1.0.0-preview4" />
+  </ItemGroup>
+
   <ItemGroup Label="ASP.NET Core + hosting">
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.11" />
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.2.3" />

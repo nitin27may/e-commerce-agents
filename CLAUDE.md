@@ -72,6 +72,17 @@ cd agents/python && uv run ruff format --check .
 cd agents/python && uv run pytest tests/test_a2a_conformance.py tests/test_a2a_transport.py -v
 A2A_TRANSPORT=a2a scripts/replay-evals.sh   # (from the repo root)
 
+# .NET side of the same contract, and the signed user-context token on both stacks
+cd agents/dotnet && dotnet test tests/ECommerceAgents.Shared.Tests --filter "FullyQualifiedName~A2A|FullyQualifiedName~UserContextToken"
+cd agents/python && uv run pytest tests/test_identity_token.py -v
+
+# Cross-process interop, both directions, keyless (real specialists on real sockets around scripted models;
+# the official Python client against a .NET specialist and the official .NET client against a Python one)
+scripts/a2a-interop.sh
+
+# Mixed stacks: Python orchestrator + .NET specialists (py-net) and the reverse (net-py). Needs Docker and a model key to run
+scripts/e2e-both-stacks.sh --mixed -- e2e/orchestration-parity.spec.ts
+
 # Run Python tests (--all-packages pulls in the MCP workspace packages, e.g. ecommerce-mcp-product)
 cd agents/python && uv sync --all-packages --extra dev
 cd agents/python && uv run pytest
@@ -149,20 +160,21 @@ One inbox, one decide path, on both stacks over the same tables (Python: `orches
 
 - **Roles**: `customer`, `power_user`, `seller`, `support`, `admin`. `require_staff` admits `support` and `admin`; signup always creates a `customer` on both stacks.
 - **External requests**: JWT Bearer token validated by `AgentAuthMiddleware` in `shared/auth.py`
-- **Inter-agent requests**: `X-Agent-Secret` header (shared secret) + `X-User-Email` / `X-User-Role` headers
+- **Inter-agent requests**: `X-Agent-Secret` header (shared secret) + the user's identity, which travels as `A2A_IDENTITY` says (`headers` | `both` default | `token`): the forwarded `X-User-Email` / `X-User-Role` / `X-Session-Id` headers, or a signed, short-lived, audience-bound `X-User-Context` token the orchestrator mints (`shared/identity_token.py` / `Auth/UserContextToken.cs`; same format and key on both stacks, pinned by `config/identity/testdata/user-context.v1.json`). A token that does not verify is refused, never ignored; a header that contradicts a valid one is refused; `token` mode reads no header. The key is HKDF of `A2A_IDENTITY_KEY` else `AGENT_SHARED_SECRET`; symmetric, so a compromised specialist is not stopped. A caller holding only `X-Agent-Secret` is stopped from choosing its user only with `A2A_IDENTITY=token` **and** a distinct `A2A_IDENTITY_KEY` (under the default `both` it can omit the token and forge the headers; `token` without a distinct key logs a startup warning); `jti` is audit-only, there is no replay cache (docs/a2a.md says what it does buy)
 - **Identity propagation**: Auth middleware sets ContextVars (`current_user_email`, `current_user_role`, `current_session_id`) which tools read directly — no parameter passing through the call stack
 
-### A2A 1.0 (Python specialists)
+### A2A 1.0 (both stacks)
 
-Every Python specialist serves two wires; `docs/a2a.md` has the detail. The legacy `/message:send` and `/message:stream` are untouched. Beside them `shared/a2a_server.py` mounts, via the official `a2a-sdk` (1.3.0, spec 1.0, JSON-RPC binding only), the agent card at `/.well-known/agent-card.json` and the JSON-RPC methods at `/a2a/v1`. `A2A_TRANSPORT=legacy|a2a` (default `legacy`) picks what the *caller* speaks (`orchestrator/agent.py::_call_over_a2a`, `shared/remote_agent.py`, both through `shared/a2a_client.py`); `a2a` works against Python specialists only until the .NET port (B-13), and a .NET specialist's stub card makes the client fail as a card problem without sending anything.
+Every specialist, Python and .NET, serves two wires; `docs/a2a.md` has the detail. The legacy `/message:send` and `/message:stream` are untouched. Beside them the A2A 1.0 JSON-RPC binding is mounted at `/a2a/v1` with the agent card at `/.well-known/agent-card.json`: Python via the official `a2a-sdk` (1.3.0, spec 1.0; `shared/a2a_server.py`), .NET via the official A2A .NET SDK (`A2A` + `A2A.AspNetCore` **1.0.0-preview4**, spec 1.0, pinned exactly, a preview; `Shared/A2A/Protocol/`). JSON-RPC binding only on both. `A2A_TRANSPORT=legacy|a2a` (default `legacy`) picks what the *caller* speaks, on both orchestrators (Python: `orchestrator/agent.py::_call_over_a2a`, `shared/remote_agent.py`, through `shared/a2a_client.py`; .NET: `A2AClient` behind `A2AProtocolClient`), and any orchestrator can call any specialist over `a2a`: `scripts/a2a-interop.sh` proves both directions across processes.
 
-- **The executor is custom, on purpose.** `SpecialistExecutor` calls `shared.agent_host._run_agent_native_stream` (looked up at call time), so the messages a specialist's model sees are identical on both wires and no replay fixture changes. Do not swap in `agent-framework-a2a`'s `A2AExecutor`: it builds a MAF session from `contextId`. `tests/test_a2a_conformance.py` pins model-input equality, including rehydrated history.
-- **`contextId` is the session id**; the `x-session-id` header is a fallback. The SDK generates a UUID `contextId` when the caller sent none, which looks like a session id, so the server's generator prefixes invented ids `a2a-ctx-` and `session_id_from_context` ignores them.
-- **Steps, usage and replay misses ride in status-update metadata under three extension URIs** (`steps/v1`, `usage/v1`, `replay-miss/v1`), sent only to a caller that listed them in `A2A-Extensions`. The SDK merges status metadata into `Task.metadata` with the last write winning per key, so steps carry an `offset` and the terminal update repeats all of them (the client merges by index).
-- **Three SDK facts that cost time:** a status update needs an initial `Task` event enqueued first; the first artifact chunk must be `append=false`; the SDK client wraps every `httpx` error in `A2AClientError`, so retry decisions go through `shared.a2a_client.root_cause`. The SDK server also writes SSE JSON with raw U+2028/U+2029/U+0085, which the SDK client splits lines on; `_SafeJsonRpcDispatcher` escapes them.
-- On the orchestrator, `_live` must be set on the very dict `current_steps` holds (as the legacy path does), because `chat.py` drains it from there; a copy sends every step to the browser twice.
-- Tasks live in a bounded in-memory store (`BoundedTaskStore`: the bound is process-wide, reads are scoped to the owner); not a durable record. *Running* tasks are capped per process and per caller (`ActiveTaskLimiter`, `A2A_MAX_ACTIVE_TASKS` / `A2A_MAX_ACTIVE_TASKS_PER_CALLER`; over the cap is a JSON-RPC error, never a queue).
-- **The client only sends to the registry origin** (a card naming another origin is a card problem, no credentials sent, redirects never followed) and best-effort cancels a streamed task it abandons. The public card lists only tools the `customer` role may call (`requires_role` records its roles on the function). Exceptions outside the executor answer the SDK's fixed `Internal error`, detail logged.
+- **The executor is custom, on purpose, on both stacks.** Python's `SpecialistExecutor` calls `shared.agent_host._run_agent_native_stream` (looked up at call time); .NET's `SpecialistA2AExecutor` calls `AgentHost.RunAgentWithHistoryStreamingAsync`. The messages a specialist's model sees are identical on both wires and no replay fixture changes. Do not swap in `agent-framework-a2a`'s `A2AExecutor` (Python): it builds a MAF session from `contextId`. The conformance tests pin model-input equality.
+- **`contextId` is the session id**; the `x-session-id` header is a fallback. Both SDKs invent a `contextId` when the caller sent none and it looks like a session id: Python's generator prefixes invented ids `a2a-ctx-` (`session_id_from_context` ignores them); .NET uses the SDK's `ClientProvidedContextId` flag (`A2AWire.SessionIdFromContext`).
+- **Steps, usage and replay misses ride in status-update metadata under three extension URIs** (`steps/v1`, `usage/v1`, `replay-miss/v1`), sent only to a caller that listed them in `A2A-Extensions`. Steps carry an `offset` and the terminal update repeats all of them (the client merges by index). The Python SDK merges status metadata into `Task.metadata`; **the .NET SDK does not**, so `OwnedBoundedTaskStore` republishes it. A protobuf `Struct` writes numbers as floats (`5.0`): .NET wire readers accept whole-valued floats.
+- **SDK facts that cost time:** a status update needs an initial `Task` event enqueued first (both SDKs); the first artifact chunk must be `append=false` (Python); the Python SDK client wraps every `httpx` error in `A2AClientError`, so retry decisions go through `shared.a2a_client.root_cause` (the .NET client throws `HttpRequestException` directly: `A2AProtocolClient.NeverRan`); the Python SDK server writes SSE JSON with raw U+2028/U+2029/U+0085, which its client splits lines on (`_SafeJsonRpcDispatcher` escapes them; .NET already does); the .NET SDK's `ITaskStore` passes no caller, so ownership is read from the ambient forwarded identity; the HttpClient the SDK hands a handler has already marked its request as sent, so the guarded .NET handler forwards a copy.
+- On the Python orchestrator, `_live` must be set on the very dict `current_steps` holds (as the legacy path does), because `chat.py` drains it from there; a copy sends every step to the browser twice.
+- Tasks live in a bounded in-memory store (`BoundedTaskStore` / `OwnedBoundedTaskStore`: the bound is process-wide, reads are scoped to the owner); not a durable record. *Running* tasks are capped per process and per caller (`ActiveTaskLimiter`, `A2A_MAX_ACTIVE_TASKS` / `A2A_MAX_ACTIVE_TASKS_PER_CALLER`; over the cap is a JSON-RPC error, never a queue).
+- **The client only sends to the registry origin** (a card naming another origin is a card problem, no credentials sent, redirects never followed on either wire) and best-effort cancels a streamed task it abandons. The public card lists only tools the `customer` role may call (Python: `requires_role` records its roles on the function; .NET: `[RequiresRole]` metadata cross-checked against every `RoleGuard.Ensure` by `A2ARoleMetadataTests`). Exceptions outside the executor answer a fixed `Internal error`, detail logged.
+- **Mixed stacks:** `docker-compose.mixed.yml` + `scripts/e2e-both-stacks.sh --mixed` (`scripts/lib/mixed-env.sh`): `py-net` and `net-py`. Validated with `docker compose config` only. The identity token needs no extra configuration across stacks (the key falls back to the shared secret).
 
 ### Conversation History Forwarding
 
@@ -179,9 +191,9 @@ Separately, the orchestrator's own read of *its* conversation's history (for `Ru
 
 | Layer | Technology |
 |-------|-----------|
-| Agent Framework | MAF Python SDK — `agent-framework-core` 1.26.0, `-openai` 1.18.2, `-orchestrations` 1.4.2 (pinned in `agents/python/pyproject.toml` and mirrored in `tutorials/pyproject.toml`), with MCP Python SDK `mcp[cli]` 2.x (`>=2.2,<3`; `FastMCP` is now `mcp.server.mcpserver.MCPServer`, and its client stack is `httpx2`); MAF .NET — `Microsoft.Agents.AI` 1.28.0 (`agents/dotnet/Directory.Packages.props`, shared by the tutorials via `tutorials/Directory.Packages.props`) |
-| Agent Communication | A2A Protocol: A2A 1.0 JSON-RPC at `/a2a/v1` (`a2a-sdk` 1.3.0, Python specialists) and the original `POST /message:send` + `/message:stream` pair (`A2A_TRANSPORT=legacy`, the default, and all a .NET specialist serves) |
-| LLM | OpenAI / Azure OpenAI (gpt-4.1), configurable via `LLM_PROVIDER` env var — plus any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, OpenRouter, GitHub Models) via `LLM_PROVIDER=openai` + `LLM_BASE_URL` |
+| Agent Framework | MAF Python SDK — `agent-framework-core` 1.26.0, `-openai` 1.18.2, `-orchestrations` 1.4.2 (pinned in `agents/python/pyproject.toml` and mirrored in `tutorials/pyproject.toml`), plus `-anthropic` 1.0.0b261112 (a beta; `agents/python` only, the tutorials do not use it), with MCP Python SDK `mcp[cli]` 2.x (`>=2.2,<3`; `FastMCP` is now `mcp.server.mcpserver.MCPServer`, and its client stack is `httpx2`); MAF .NET — `Microsoft.Agents.AI` 1.28.0 (`agents/dotnet/Directory.Packages.props`, shared by the tutorials via `tutorials/Directory.Packages.props`) |
+| Agent Communication | A2A Protocol: A2A 1.0 JSON-RPC at `/a2a/v1` on every specialist (`a2a-sdk` 1.3.0 on Python, `A2A` + `A2A.AspNetCore` 1.0.0-preview4 on .NET) and the original `POST /message:send` + `/message:stream` pair (`A2A_TRANSPORT=legacy`, the default); user identity as headers or a signed `X-User-Context` token (`A2A_IDENTITY`) |
+| LLM | OpenAI / Azure OpenAI (gpt-4.1) / Anthropic Claude (`claude-sonnet-5-5`, stub-tested only), configurable via `LLM_PROVIDER` env var — plus any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, OpenRouter, GitHub Models) via `LLM_PROVIDER=openai` + `LLM_BASE_URL` |
 | Backend | Python 3.12, FastAPI (orchestrator), Starlette (specialist agents via agent_host) |
 | Database | PostgreSQL 16 + pgvector (1536-dim embeddings for text-embedding-3-small) |
 | Cache | Redis 7 |
@@ -230,6 +242,11 @@ AZURE_OPENAI_KEY=...
 AZURE_OPENAI_DEPLOYMENT=gpt-4.1
 AZURE_OPENAI_API_VERSION=2024-12-01-preview
 
+# Anthropic (Claude) — Python and .NET; never run against the live API
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_MODEL=claude-sonnet-5-5   # LLM_MODEL is ignored; also set EMBEDDING_PROVIDER (Claude has no embeddings)
+
 # Any OpenAI-compatible endpoint (Ollama, vLLM, OpenRouter, Gemini's compatible API)
 LLM_PROVIDER=openai
 LLM_BASE_URL=http://localhost:11434/v1
@@ -238,7 +255,7 @@ LLM_API=chat_completions      # default `responses`; needed where there is no /r
 
 **Per-agent models.** A prompt file may carry `model: {provider, model, temperature}`; `get_chat_client(agent_name)` honours it and `prompt_loader` never lets the block into the composed prompt (a test pins the prompt byte-for-byte). No shipped file sets it.
 
-**Anthropic (Claude) is .NET-only for now** (`LLM_PROVIDER=anthropic`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`): the Python connector needs MAF core ≥ 1.24. It is wired and covered by a stubbed-transport test; it has never made a live call.
+**Anthropic (Claude) on both stacks** (`LLM_PROVIDER=anthropic`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, default `claude-sonnet-5-5` on each). Python uses MAF's `agent-framework-anthropic` (every release is a beta, so it is pinned exactly, `1.0.0b261112`, in the `maf` Dependabot group; it brings `anthropic` 2.x on `httpx2`), through `shared/anthropic_client.py`, which only raises the connector's 1024 `max_tokens` fallback to .NET's 4096. Both stacks are wired and covered by stubbed-transport tests (`tests/test_anthropic_provider.py` on Python); **neither has ever made a live call**. Anthropic has no embeddings API: with no `EMBEDDING_PROVIDER` the stack still starts, warns once, and semantic search uses its full-text arm. Gemini needs no provider code (`LLM_API=chat_completions` + its compatible `LLM_BASE_URL`); see `docs/configuration.md`.
 
 **Embeddings are configured separately** — `EMBEDDING_PROVIDER`, `EMBEDDING_BASE_URL`, `EMBEDDING_API_KEY`, `EMBEDDING_MODEL`, `EMBEDDING_DIM` — defaulting to the chat provider. The configured dimension is checked against the column type at startup; changing it is an explicit operator step (`uv run --project agents/python python scripts/reset_embeddings.py --dim N`), because it discards stored vectors.
 

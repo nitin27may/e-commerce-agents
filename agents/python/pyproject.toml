@@ -14,6 +14,7 @@ dependencies = [
     # server (shared/a2a_server.py) is a custom executor on the official a2a-sdk,
     # so the messages a specialist's model sees, and every replay-fixture hash,
     # do not change.
+    "agent-framework-anthropic==1.0.0b261112",
     "agent-framework-core==1.26.0",
     "agent-framework-openai==1.18.2",
     "agent-framework-orchestrations==1.4.2",

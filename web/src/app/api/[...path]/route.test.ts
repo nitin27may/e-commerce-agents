@@ -75,11 +75,13 @@ describe("api proxy", () => {
           "X-Agent-Secret": "shared",
           "x-user-email": "admin@example.com",
           "X-User-Role": "admin",
+          "X-User-Context": "a.b.c",
         },
       }),
     );
 
     const sent = fetchSpy.mock.calls[0][1].headers as Headers;
+    expect(sent.get("x-user-context")).toBeNull();
     expect(sent.get("x-agent-secret")).toBeNull();
     expect(sent.get("x-user-email")).toBeNull();
     expect(sent.get("x-user-role")).toBeNull();

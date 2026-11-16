@@ -121,7 +121,7 @@ class Settings(BaseSettings):
     CORS_ALLOWED_ORIGINS: str = "http://localhost:3000"
 
     # ── LLM ─────────────────────────────────────────────────────────
-    LLM_PROVIDER: str = "openai"  # openai | azure | replay
+    LLM_PROVIDER: str = "openai"  # openai | azure | anthropic | replay
     LLM_MODEL: str = "gpt-4.1"
     # Optional base_url override for the OpenAI-compatible `openai` provider —
     # points OpenAIChatClient at any OpenAI-compatible endpoint (GitHub Models,
@@ -140,7 +140,7 @@ class Settings(BaseSettings):
     # replay-provider settings — see shared/replay_client.py. RECORD=true makes
     # a missing fixture fall through to a real call (via REPLAY_RECORD_PROVIDER)
     # and persist the result instead of raising.
-    REPLAY_RECORD_PROVIDER: str = "openai"  # openai | azure — used only when RECORD=true
+    REPLAY_RECORD_PROVIDER: str = "openai"  # openai | azure | anthropic — used only when RECORD=true
     REPLAY_FIXTURES_DIR: str = "evals/fixtures/replay"  # relative to the process cwd (agents/python)
     RECORD: bool = False
     # The no-key demo tour (#86): suggested prompts the web UI offers as chips, and
@@ -164,6 +164,11 @@ class Settings(BaseSettings):
     EMBEDDING_API_KEY: str = ""
     EMBEDDING_DIM: int = 1536
     OPENAI_API_KEY: str = ""
+    # LLM_PROVIDER=anthropic (Claude), through MAF's agent-framework-anthropic connector. The model is
+    # ANTHROPIC_MODEL, never LLM_MODEL: the compose files forward LLM_MODEL with a gpt-4.1 default that
+    # Anthropic would reject. The default id matches the .NET stack's AgentSettings.DefaultAnthropicModel.
+    ANTHROPIC_API_KEY: str = ""
+    ANTHROPIC_MODEL: str = "claude-sonnet-5-5"
 
     AZURE_OPENAI_ENDPOINT: str = ""
 
@@ -261,6 +266,19 @@ class Settings(BaseSettings):
     # connection that started it, so this is the bound on work a slow or dropped caller can leave behind.
     A2A_MAX_ACTIVE_TASKS: int = Field(default=32, ge=1)
     A2A_MAX_ACTIVE_TASKS_PER_CALLER: int = Field(default=8, ge=1)
+    # How a specialist learns which user a call is for (B-14, shared/identity_token.py). `headers`: the
+    # forwarded X-User-* headers, trusted on the strength of the inter-agent credential (the original way).
+    # `token`: only a signed, short-lived, audience-bound X-User-Context token; a call without a valid one is
+    # refused and the headers are ignored. `both` (default, for one release): the orchestrator sends both,
+    # a specialist verifies a token when one is present (a header that contradicts it is refused) and falls
+    # back to the headers when there is none, so a mixed or half-upgraded deployment keeps working.
+    A2A_IDENTITY: Literal["headers", "token", "both"] = "both"
+    # The key the token is signed with, HKDF-derived. Empty uses AGENT_SHARED_SECRET (nothing new to distribute).
+    # Set it to a value different from the shared secret so that holding X-Agent-Secret alone no longer lets a
+    # caller choose its user. Must be identical on the orchestrator and every specialist, on both stacks.
+    A2A_IDENTITY_KEY: str = ""
+    # Token lifetime. A verifier also refuses any token living longer than 15 minutes.
+    A2A_IDENTITY_TTL_SECONDS: int = Field(default=300, ge=30, le=900)
 
     # ── Telemetry ───────────────────────────────────────────────────
     OTEL_ENABLED: bool = False
@@ -502,6 +520,20 @@ class Settings(BaseSettings):
 
         _check("JWT_SECRET", self.JWT_SECRET)
         _check("AGENT_SHARED_SECRET", self.AGENT_SHARED_SECRET)
+        if self.A2A_IDENTITY_KEY.strip():
+            _check("A2A_IDENTITY_KEY", self.A2A_IDENTITY_KEY)
+
+        # `token` mode only protects against a caller holding just X-Agent-Secret when the signing key is a different
+        # secret; with no key (it falls back to the shared secret) or the same value, holding the secret is holding the
+        # key. Name the variables, never a value.
+        identity_key = self.A2A_IDENTITY_KEY.strip()
+        shared_secret = self.AGENT_SHARED_SECRET.strip()
+        if self.A2A_IDENTITY == "token" and (not identity_key or identity_key == shared_secret):
+            logger.warning(
+                "settings.a2a_identity_key_not_distinct mode=token reason=%s: a caller holding only the shared secret "
+                "can still mint user-context tokens; set A2A_IDENTITY_KEY to a different secret",
+                "key_empty" if not identity_key else "key_equals_shared_secret",
+            )
 
         if self.AUTH_MODE == "oauth":
             _check("OAUTH_SEED_KEY", self.OAUTH_SEED_KEY)

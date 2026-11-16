@@ -223,6 +223,36 @@ jobs:
           path: agents/dotnet/TestResults/
           retention-days: 30
 
+  # B-13/B-14: the two stacks speak the same A2A 1.0 wire and the same signed user-context token. Real
+  # specialists on real sockets around scripted models (no key, no database, no Docker), driven by the other
+  # stack's clients, in both directions. See scripts/a2a-interop.sh and docs/a2a.md.
+  a2a-interop:
+    name: A2A interop · Python ⇄ .NET (keyless)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install Python 3.12
+        run: uv python install 3.12
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Sync Python dependencies
+        working-directory: agents/python
+        run: uv sync --all-packages --extra dev
+
+      - name: Interop, both directions
+        run: scripts/a2a-interop.sh
+
   web-tests:
     name: Web · typecheck + lint + test + build
     runs-on: ubuntu-latest

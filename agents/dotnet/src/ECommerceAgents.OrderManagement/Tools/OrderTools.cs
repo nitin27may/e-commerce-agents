@@ -274,6 +274,7 @@ public sealed class OrderTools(DatabasePool pool, AgentSettings settings)
     // ─────────────────────── State-mutating ──────────────────
 
     [Description("Cancel an order. Only orders in 'placed' or 'confirmed' status can be cancelled.")]
+    [ECommerceAgents.Shared.Guardrails.RequiresRole("customer", "seller")]
     public async Task<CancelOrderResult> CancelOrder(
         [Description("UUID of the order to cancel")] string orderId,
         [Description("Reason for cancellation")] string reason
@@ -365,6 +366,7 @@ public sealed class OrderTools(DatabasePool pool, AgentSettings settings)
     }
 
     [Description("Modify the shipping address of an order. Only orders that haven't shipped yet can be modified.")]
+    [ECommerceAgents.Shared.Guardrails.RequiresRole("customer", "seller")]
     public async Task<ModifyOrderResult> ModifyOrder(
         [Description("UUID of the order to modify")] string orderId,
         [Description("New shipping address: street, city, state, zip, country")]

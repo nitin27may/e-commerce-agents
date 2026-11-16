@@ -671,6 +671,7 @@ public sealed class ReviewTools(DatabasePool pool, AgentSettings settings)
     // ─────────────────────── draft_seller_response ───────────
 
     [Description("Generate a professional response template for a review. Returns a template the seller can customize.")]
+    [ECommerceAgents.Shared.Guardrails.RequiresRole("seller", "admin")]
     public async Task<SellerResponseResult> DraftSellerResponse(
         [Description("UUID of the review to respond to")] string reviewId
     )

@@ -1,0 +1,89 @@
+# ============================================================
+# E-Commerce Agents — mixed-stack overlay (B-11)
+#
+# One orchestrator from one stack in front of the five specialists of the OTHER stack. It is the regression net
+# for the A2A work: Python and .NET speak the same wire (docs/a2a.md), and this is the run that proves a
+# Python orchestrator can route to .NET specialists and the reverse, over `legacy` and over `A2A_TRANSPORT=a2a`.
+#
+#   MIXED=py-net   Python orchestrator, .NET specialists   (base: docker-compose.yml)
+#   MIXED=net-py   .NET orchestrator, Python specialists   (base: docker-compose.dotnet.yml)
+#
+# Use `scripts/e2e-both-stacks.sh --mixed`: it exports the variables below, picks the base file and runs the
+# suite. By hand, for py-net:
+#
+#   MIXED=py-net scripts/lib/mixed-env.sh   # prints the exports; or set them yourself, see the script
+#   docker compose -f docker-compose.yml -f docker-compose.mixed.yml \
+#     --profile seed --profile agents --profile frontend up --build
+#
+# ── How ─────────────────────────────────────────────────────
+#
+# Only the five specialists change. Each keeps the base file's service (ports, healthcheck, profile, the
+# environment contract it shares with the orchestrator, including AGENT_SHARED_SECRET) and has its `build`
+# replaced (`!override`) by the other stack's: the .NET per-specialist Dockerfile with the repository as context,
+# or the one Python Dockerfile with `agents/python` as context and AGENT_NAME / AGENT_PORT. The two stacks name
+# their database and redis settings differently (DATABASE_URL / REDIS_URL, ConnectionStrings__*), so the overlay
+# sets both spellings; each stack reads its own and ignores the other.
+# AGENT_REGISTRY is unchanged: the registry names the same hosts and ports whichever stack answers.
+#
+# ── Variables (set by scripts/e2e-both-stacks.sh --mixed) ────
+#
+#   MIXED_CONTEXT            build context for the specialists: `.` (py-net) or `./agents/python` (net-py)
+#   MIXED_DOCKERFILE_<NAME>  the specialist's Dockerfile, relative to that context: agents/dotnet/src/
+#                            ECommerceAgents.<Name>/Dockerfile (py-net) or `Dockerfile` (net-py)
+#
+# ── What it does not do ─────────────────────────────────────
+#
+# - It was validated with `docker compose config` only. Building the images needs base-image pulls, and the
+#   Playwright run against it (e2e/orchestration-parity.spec.ts) needs a live model key: C-6's recordings are
+#   Python's request hashes and cannot serve a .NET specialist. A keyless mixed run needs its own recordings
+#   per stack combination.
+# - Both stacks default to A2A_IDENTITY=both and share AGENT_SHARED_SECRET (the token key falls back to it), so
+#   the signed user-context token works across the two with no extra configuration.
+# - It publishes the same host ports as the stacks it is layered on, so it cannot run beside either.
+# ============================================================
+
+name: e-commerce-agents-mixed
+
+x-db-env: &db-env
+  # Python's spelling...
+  DATABASE_URL: postgresql://ecommerce:ecommerce_secret@db:5432/ecommerce_agents
+  REDIS_URL: redis://redis:6379
+  # ...and .NET's.
+  ConnectionStrings__Postgres: Host=db;Port=5432;Database=ecommerce_agents;Username=ecommerce;Password=ecommerce_secret
+  ConnectionStrings__Redis: redis:6379
+
+services:
+  product-discovery:
+    build: !override
+      context: ${MIXED_CONTEXT:?run through scripts/e2e-both-stacks.sh --mixed, or see docker-compose.mixed.yml}
+      dockerfile: ${MIXED_DOCKERFILE_PRODUCT_DISCOVERY:?see docker-compose.mixed.yml}
+      args: { AGENT_NAME: product_discovery, AGENT_PORT: 8081 }
+    environment: *db-env
+
+  order-management:
+    build: !override
+      context: ${MIXED_CONTEXT:?see docker-compose.mixed.yml}
+      dockerfile: ${MIXED_DOCKERFILE_ORDER_MANAGEMENT:?see docker-compose.mixed.yml}
+      args: { AGENT_NAME: order_management, AGENT_PORT: 8082 }
+    environment: *db-env
+
+  pricing-promotions:
+    build: !override
+      context: ${MIXED_CONTEXT:?see docker-compose.mixed.yml}
+      dockerfile: ${MIXED_DOCKERFILE_PRICING_PROMOTIONS:?see docker-compose.mixed.yml}
+      args: { AGENT_NAME: pricing_promotions, AGENT_PORT: 8083 }
+    environment: *db-env
+
+  review-sentiment:
+    build: !override
+      context: ${MIXED_CONTEXT:?see docker-compose.mixed.yml}
+      dockerfile: ${MIXED_DOCKERFILE_REVIEW_SENTIMENT:?see docker-compose.mixed.yml}
+      args: { AGENT_NAME: review_sentiment, AGENT_PORT: 8084 }
+    environment: *db-env
+
+  inventory-fulfillment:
+    build: !override
+      context: ${MIXED_CONTEXT:?see docker-compose.mixed.yml}
+      dockerfile: ${MIXED_DOCKERFILE_INVENTORY_FULFILLMENT:?see docker-compose.mixed.yml}
+      args: { AGENT_NAME: inventory_fulfillment, AGENT_PORT: 8085 }
+    environment: *db-env
