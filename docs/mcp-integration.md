@@ -22,7 +22,7 @@ With MCP enabled, the same agents call a running MCP server instead:
 Specialist Agent (MAF)
   → MCPStreamableHTTPTool (MAF's built-in MCP client)
   → Streamable HTTP (MCP protocol)
-  → MCP Server (FastMCP + asyncpg)
+  → MCP Server (MCPServer + asyncpg)
   → PostgreSQL
 ```
 
@@ -36,7 +36,7 @@ Only the data access layer changes.
 | `mcp-product` | 9000 | Product search, details, comparison, trending, price history | `packages/mcp-product` |
 | `mcp-inventory` | 9001 | Stock levels, warehouses, shipping, carriers | `packages/mcp-inventory` |
 
-Both use [FastMCP](https://github.com/modelcontextprotocol/python-sdk) and expose the MCP streamable
+Both use `MCPServer` from the [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) 2.x (called `FastMCP`, in `mcp.server.fastmcp`, before 2.0) and expose the MCP streamable
 HTTP transport at `/mcp`. MAF's `MCPStreamableHTTPTool` connects to that endpoint.
 
 ## Enabling MCP mode
@@ -102,15 +102,24 @@ docker compose restart auth-server
   workspace members) validates the bearer JWT via `PyJWKClient` against `AUTH_SERVER_JWKS_URL`:
   signature, issuer (`AUTH_SERVER_ISSUER`), audience (`mcp-product` / `mcp-inventory`), and required
   scope (`mcp:product` / `mcp:inventory`).
-- `FastMCP(token_verifier=..., auth=AuthSettings(issuer_url=..., resource_server_url=..., required_scopes=[...]))`
+- `MCPServer(token_verifier=..., auth=AuthSettings(issuer_url=..., resource_server_url=..., required_scopes=[...], validate_token_resource=False))`
   — the MCP Python SDK auto-mounts `GET /.well-known/oauth-protected-resource/mcp` and wraps
   `POST /mcp` in `RequireAuthMiddleware`. An unauthenticated or wrong-scope call gets `401` plus a
   spec-shaped header: `WWW-Authenticate: Bearer error="invalid_token", error_description="...", resource_metadata="http://.../.well-known/oauth-protected-resource/mcp"`.
-- Each server is served with `host="0.0.0.0"` explicitly. **Gotcha**: FastMCP auto-enables
+- `validate_token_resource=False` keeps the 1.x behaviour: the vendored verifier checks the audience
+  itself, so the SDK's RFC 8707 resource-indicator check (it defaults to on in SDK 3.0, and warns when
+  unset) is off. Note too that 2.x preserves a path-less issuer exactly, so the protected-resource
+  metadata lists `authorization_servers` without a trailing slash.
+- Each app is built with `mcp.streamable_http_app(host="0.0.0.0")` explicitly (in 2.x `host` moved from
+  the constructor to this call). **Gotcha**: MCPServer auto-enables
   DNS-rebinding Host-header protection whenever `host` is left at its default `"127.0.0.1"`,
   allowlisting only `localhost`/`127.0.0.1`/`::1` — which would silently `421` every real call over
   the Docker network (e.g. `http://mcp-product:9000/mcp`), auth or no auth. This is fixed in both
   `server.py` files; don't remove the explicit `host` argument.
+- The OAuth-mode client (`shared/oauth/service_client.py::build_mcp_http_client`) returns an
+  `httpx2.AsyncClient`: the 2.x client stack, and so MAF's `MCPStreamableHTTPTool(http_client=...)`,
+  does not accept an `httpx.AsyncClient`. Core 1.25+ also imports `tenacity` for MCP catalog recovery
+  but only lists it in its `all` extra, so `tenacity` is a direct dependency here.
 - The Dockerfile/compose healthchecks curl `/mcp` when `MCP_AUTH_ENABLED=false`, but the
   auto-mounted, unauthenticated `/.well-known/oauth-protected-resource/mcp` when it's `true` — `/mcp`
   always `401`s once auth is on, so the healthcheck target has to switch too.
@@ -149,7 +158,7 @@ A generic OAuth 2.1 client completes the standard protected-resource discovery f
 4. Call `POST /mcp` with `Authorization: Bearer <token>`
 
 The .NET MCP host (`ECommerceAgents.Mcp`) uses the official `ModelContextProtocol.AspNetCore` SDK
-(real JSON-RPC over streamable HTTP at `POST /mcp`, same transport shape as the Python FastMCP
+(real JSON-RPC over streamable HTTP at `POST /mcp`, same transport shape as the Python MCPServer
 servers) with its own bearer-token gate (`GET /.well-known/oauth-protected-resource`, the same
 `WWW-Authenticate` shape on 401) implemented as ASP.NET Core middleware ahead of the SDK's own
 routing, reusing the same `JwtTokenService`/`JwksKeyProvider` the Phase B/C auth paths use.
@@ -256,7 +265,7 @@ agents/python/packages/
     pyproject.toml          # name = "ecommerce-mcp-product"; PyPI metadata
     README.md  LICENSE      # the PyPI page; MIT
     src/ecommerce_mcp_product/
-      server.py             # FastMCP server + ASGI app
+      server.py             # MCPServer + ASGI app
     tests/
   mcp-inventory/
     pyproject.toml          # name = "ecommerce-mcp-inventory"; PyPI metadata
@@ -377,19 +386,19 @@ mkdir -p agents/python/packages/mcp-<domain>/src/ecommerce_mcp_<domain>
 2. Add `pyproject.toml` mirroring the existing packages (name `ecommerce-mcp-<domain>`,
    deps `mcp[cli]`, `asyncpg`, `uvicorn`, console script entry-point).
 
-3. Write `server.py` using FastMCP:
+3. Write `server.py` using MCPServer:
 
 ```python
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from typing import Annotated
 
-mcp = FastMCP("my-domain-mcp", lifespan=_lifespan)
+mcp = MCPServer("my-domain-mcp", lifespan=_lifespan)
 
 @mcp.tool()
 async def my_tool(param: Annotated[str, "Description"]) -> dict:
     ...
 
-app = mcp.streamable_http_app()  # ASGI entry-point for uvicorn
+app = mcp.streamable_http_app(host="0.0.0.0")  # ASGI entry-point for uvicorn
 ```
 
 4. Register the package in the workspace root `pyproject.toml`:

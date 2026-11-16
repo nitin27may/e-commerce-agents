@@ -119,6 +119,10 @@ at the pinned version and which `PostgresCheckpointStorage` needs). The old `pat
 workaround for the empty-`__init__` packaging bug in core 1.0.0 is gone; it had been a no-op since
 the pin moved past it.
 
+### MCP 2.x notes
+
+The two MCP servers (`agents/python/packages/mcp-*`) are `MCPServer` apps; `host="0.0.0.0"` is passed to `streamable_http_app()` (it used to be a constructor argument) so the DNS-rebinding guard does not 421 Docker-network calls, and `AuthSettings(validate_token_resource=False)` is explicit because the vendored `JwksTokenVerifier` checks the audience itself. Client side, `MCPStreamableHTTPTool(http_client=...)` needs an `httpx2.AsyncClient` (see `shared/oauth/service_client.py::build_mcp_http_client`), and `tenacity` is a direct dependency because core imports it lazily for MCP catalog recovery without declaring it outside its `all` extra. `tests/test_mcp_client_tool.py` exercises the real client against a real MCP 2.x server. An MCP tool result's `function_result` carries SDK-supplied `_meta`/`resultType` fields, which are part of the replay key: a tutorial 08 fixture was re-keyed for that (response untouched).
+
 ### YAML Prompt Composition System
 
 Prompts are NOT hardcoded strings. `shared/prompt_loader.py` loads from `agents/python/config/prompts/{agent_name}.yaml` and composes: base prompt + grounding-rules (shared) + role-specific instructions + schema context + tool examples.
@@ -159,7 +163,7 @@ Separately, the orchestrator's own read of *its* conversation's history (for `Ru
 
 | Layer | Technology |
 |-------|-----------|
-| Agent Framework | MAF Python SDK — `agent-framework-core` 1.22.0, `-openai` 1.17.0, `-orchestrations` 1.3.2 (pinned in `agents/python/pyproject.toml`; core 1.23+ requires MCP 2.x, a separate step); MAF .NET — `Microsoft.Agents.AI` 1.28.0 (`agents/dotnet/Directory.Packages.props`, shared by the tutorials via `tutorials/Directory.Packages.props`) |
+| Agent Framework | MAF Python SDK — `agent-framework-core` 1.26.0, `-openai` 1.18.2, `-orchestrations` 1.4.2 (pinned in `agents/python/pyproject.toml` and mirrored in `tutorials/pyproject.toml`), with MCP Python SDK `mcp[cli]` 2.x (`>=2.2,<3`; `FastMCP` is now `mcp.server.mcpserver.MCPServer`, and its client stack is `httpx2`); MAF .NET — `Microsoft.Agents.AI` 1.28.0 (`agents/dotnet/Directory.Packages.props`, shared by the tutorials via `tutorials/Directory.Packages.props`) |
 | Agent Communication | A2A Protocol (HTTP POST to `/message:send`) |
 | LLM | OpenAI / Azure OpenAI (gpt-4.1), configurable via `LLM_PROVIDER` env var — plus any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, OpenRouter, GitHub Models) via `LLM_PROVIDER=openai` + `LLM_BASE_URL` |
 | Backend | Python 3.12, FastAPI (orchestrator), Starlette (specialist agents via agent_host) |
