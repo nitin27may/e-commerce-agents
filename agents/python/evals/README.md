@@ -45,6 +45,22 @@ Test cases live in `evals/datasets/` as JSON arrays. Each test case has:
 }
 ```
 
+### Schema v2 (optional per-case fields)
+
+All optional; a case that sets none of them behaves exactly as before. None of them
+moves a score or a baseline — they are assertions, and a failed one fails the case and
+the run (`Assertion failed:` in the verbose report, `assertion_failures` in the JSON).
+
+| Field | Meaning |
+|---|---|
+| `user_role` / `user_email` | Run the case as this caller (default: the runner's `customer` / `eval@example.com`). Agents bake the role into their prompt, so the runner builds one agent per role. |
+| `expected_tool_args` | `{tool: {arg: value}}`. Subset match against the `tool_input` recorded in the steps (`evals/scorers/tool_args.py`): extra arguments are fine, strings compare case-insensitively, numbers by value. Keys must be tools the case also lists in `expected_tools`. |
+| `expect_denial` | `true`: a tool refused the call for this role (`permission_denied` step output). `false`: none did. |
+| `expect_hitl` | `true`: a destructive tool was parked for approval (a new `hitl_requests` row, or a `pending_approval` step). `false`: none was. |
+
+`expected_tool_args` on a case only holds while its fixtures do: a re-recording that makes
+the model pass different arguments fails the assertion, which is the point.
+
 ## Running Evals
 
 From the `agents/python/` directory, against a real LLM:

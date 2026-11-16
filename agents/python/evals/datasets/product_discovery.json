@@ -2,6 +2,7 @@
   {
     "input": "Find me wireless headphones under $300",
     "expected_tools": ["search_products"],
+    "expected_tool_args": {"search_products": {"query": "wireless headphones", "max_price": 300}},
     "expected_fields": ["name", "price"],
     "criteria": {
       "grounded": true,
@@ -12,6 +13,7 @@
   {
     "input": "Show me the full details for the Sony WH-1000XM5",
     "expected_tools": ["search_products", "get_product_details"],
+    "expected_tool_args": {"get_product_details": {"product_id": "dc9e2baa-8182-58f8-9df1-97d049426ba1"}},
     "expected_fields": ["name", "description", "price", "rating", "specs"],
     "criteria": {
       "grounded": true,
@@ -31,6 +33,7 @@
   {
     "input": "wireless headphones with noise cancellation under $300",
     "expected_tools": ["search_products"],
+    "expected_tool_args": {"search_products": {"max_price": 300, "category": "Electronics"}},
     "expected_fields": ["name", "price"],
     "criteria": {
       "grounded": true,
@@ -52,6 +55,7 @@
   {
     "input": "What are the trending electronics this month?",
     "expected_tools": ["get_trending_products"],
+    "expected_tool_args": {"get_trending_products": {"category": "Electronics", "days": 30}},
     "expected_fields": ["name", "price", "category"],
     "criteria": {
       "grounded": true,
