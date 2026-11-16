@@ -307,3 +307,30 @@ def test_the_steps_merge_is_idempotent_by_index() -> None:
 
 def test_struct_numbers_come_back_as_ints_where_they_are_integral() -> None:
     assert a2a_client._plain({"a": 3.0, "b": [1.0, 2.5], "c": {"d": 4.0}}) == {"a": 3, "b": [1, 2.5], "c": {"d": 4}}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("streaming", [True, False], ids=["stream", "blocking"])
+async def test_a_specialist_that_serves_only_the_legacy_card_is_reported_not_called(
+    monkeypatch: pytest.MonkeyPatch, streaming: bool
+) -> None:
+    """A .NET specialist (until B-13) answers the card with a stub that has no A2A interface.
+
+    ``A2A_TRANSPORT=a2a`` against it must fail as a card problem, without sending a message, and must
+    not cache the unusable card.
+    """
+    seen: list[str] = []
+
+    def _legacy_stub(request: httpx.Request) -> httpx.Response:
+        seen.append(f"{request.method} {request.url.path}")
+        if request.url.path == "/.well-known/agent-card.json":
+            return httpx.Response(200, json={"name": "product-discovery", "description": "x", "version": "1.0"})
+        raise AssertionError("no message may be sent to a card that advertises no A2A interface")
+
+    _bind(monkeypatch, httpx.MockTransport(_legacy_stub), transport_mode="a2a", streaming=streaming)
+
+    result = await call_specialist_agent(agent_name="product-discovery", message="hi")
+
+    assert result == "Failed to reach the product-discovery agent. Please try again later."
+    assert set(seen) == {"GET /.well-known/agent-card.json"}
+    assert a2a_client._card_cache == {}

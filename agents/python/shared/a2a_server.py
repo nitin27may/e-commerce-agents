@@ -106,7 +106,8 @@ _EXTENSION_DESCRIPTIONS = {
     ),
     USAGE_EXTENSION_URI: (
         "Token accounting for the run. The terminal status update's metadata[uri] is "
-        "{input_tokens, output_tokens, model?}; it is never part of the answer text."
+        "{input_token_count, output_token_count, cached_input_token_count, model}; it is never part of "
+        "the answer text."
     ),
     REPLAY_MISS_EXTENSION_URI: (
         "Set on a failed task whose model call had no recorded response (LLM_PROVIDER=replay only). "

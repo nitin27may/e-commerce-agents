@@ -32,7 +32,7 @@ from typing import Any, Literal
 
 import httpx
 from a2a.client import A2ACardResolver, ClientCallContext, ClientConfig, ClientFactory
-from a2a.client.errors import A2AClientError
+from a2a.client.errors import A2AClientError, AgentCardResolutionError
 from a2a.client.service_parameters import ServiceParametersFactory, with_a2a_extensions
 from a2a.types.a2a_pb2 import (
     AgentCard,
@@ -187,12 +187,21 @@ async def _open_client(
     async with httpx.AsyncClient(timeout=timeout, transport=transport, headers=headers) as http:
         key = url.rstrip("/")
         cached = _card_cache.get(key)
-        if cached is not None and time.monotonic() < cached[0]:
-            card = cached[1]
-        else:
-            card = await A2ACardResolver(http, key).get_agent_card()
+        fresh = cached is None or time.monotonic() >= cached[0]
+        card = await A2ACardResolver(http, key).get_agent_card() if fresh else cached[1]  # type: ignore[index]
+        try:
+            client = ClientFactory(ClientConfig(streaming=streaming, httpx_client=http)).create(card)
+        except ValueError as exc:
+            # A card with no A2A 1.0 JSON-RPC interface: the four-field stub a .NET specialist (until
+            # B-13) or an old Python image still serves. Nothing was sent, so callers treat it as a
+            # card problem, which is what it is, and A2A_TRANSPORT=legacy is the way out.
+            _card_cache.pop(key, None)
+            raise AgentCardResolutionError(
+                f"the specialist at {log_safe(key)} advertises no A2A 1.0 JSON-RPC interface; "
+                "set A2A_TRANSPORT=legacy to call it"
+            ) from exc
+        if fresh:
             _card_cache[key] = (time.monotonic() + _CARD_TTL_SECONDS, card)
-        client = ClientFactory(ClientConfig(streaming=streaming, httpx_client=http)).create(card)
         try:
             yield client
         finally:

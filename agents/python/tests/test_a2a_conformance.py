@@ -491,6 +491,43 @@ async def test_the_a2a_endpoint_requires_the_inter_agent_credential() -> None:
 
 
 @pytest.mark.asyncio
+async def test_a_streamed_task_completes_over_a_real_socket() -> None:
+    """The same client against a real uvicorn server, so SSE framing is checked on a real connection too.
+
+    ``ASGITransport`` buffers differently from a socket; this is the check that nothing in the stream
+    depends on that. The card's URL is discovered, not configured: it is whatever host:port the client
+    connected to.
+    """
+    import asyncio
+
+    import uvicorn
+
+    app, _ = build_app()
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=0, log_level="warning", lifespan="on"))
+    serving = asyncio.create_task(server.serve())
+    try:
+        for _ in range(200):
+            if server.started:
+                break
+            await asyncio.sleep(0.02)
+        assert server.started, "uvicorn did not start"
+        port = server.servers[0].sockets[0].getsockname()[1]
+
+        async with httpx.AsyncClient(headers=caller_headers()) as http:
+            factory = ClientFactory(ClientConfig(streaming=True, httpx_client=http))
+            client = await factory.create_from_url(f"http://127.0.0.1:{port}")
+            events = [e async for e in client.send_message(_request(), context=_ctx(*ALL_EXTENSION_URIS))]
+    finally:
+        server.should_exit = True
+        await serving
+
+    text = "".join(e.artifact_update.artifact.parts[0].text for e in events if e.HasField("artifact_update"))
+    assert text == ANSWER
+    assert events[-1].status_update.status.state == TaskState.TASK_STATE_COMPLETED
+    assert _meta(events[-1].status_update.metadata)[USAGE_EXTENSION_URI] == WIRE_USAGE
+
+
+@pytest.mark.asyncio
 async def test_the_legacy_routes_still_answer_on_the_same_app() -> None:
     app, _ = build_app()
     async with httpx.AsyncClient(
