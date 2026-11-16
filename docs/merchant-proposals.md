@@ -39,8 +39,10 @@ Per active product of the seller, over a 90-day window of orders that were not c
   the percentage it was sized for.
 * Never both for one product. A batch holds every actionable restock, the 8 most urgent markdowns and
   up to 3 blocked lines (so the seller sees why something was not proposed), cut to
-  `max_lines_per_batch`. A batch with nothing the seller could accept is not stored. A (product,
-  field) that already has an open line is not proposed again, so generating twice makes one batch.
+  `max_lines_per_batch`. A batch with nothing the seller could accept is not stored. A product
+  that already has an open line of either kind in an open batch gets no new line of either kind (a product is
+  restocked or marked down, never both, across batches too), so generating twice makes one batch;
+  `skipped_existing` counts the candidates dropped for it.
 
 The numbers are the builder's heuristics (`GenerationRules`); the **limits** are in
 `merchant_limits.yaml` and are hard: margin floor, daily change cap, no change during an active
