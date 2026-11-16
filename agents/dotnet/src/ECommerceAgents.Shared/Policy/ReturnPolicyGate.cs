@@ -7,11 +7,30 @@ namespace ECommerceAgents.Shared.Policy;
 
 /// <summary>
 /// Where the return workflow's policy gate gets its routing decision. A <c>null</c> answer means
-/// "the engine cannot decide" and the gate falls back to <c>ReturnHitlThreshold</c>.
+/// "the engine cannot gather facts" and the gate falls back to <c>ReturnHitlThreshold</c>. A policy FILE that
+/// cannot be loaded is not that: it fails closed, see <see cref="FailClosedReturnPolicy"/>.
 /// </summary>
 public interface IReturnPolicy
 {
     Task<PolicyDecision?> DecideAsync(WorkflowState state, CancellationToken ct = default);
+}
+
+/// <summary>
+/// The decision for a return when the approval policy itself is broken (file missing, unparseable, or it has no
+/// <c>return_approval</c> kind): a human at manager level, never <c>auto</c>. A broken control must not fall back
+/// to a threshold that can auto-approve.
+/// </summary>
+public sealed class FailClosedReturnPolicy : IReturnPolicy
+{
+    public static PolicyDecision Decision() => new(
+        "manager",
+        ["Approval policy unavailable: routed to a manager review"],
+        "policy-unavailable",
+        new Dictionary<string, object?> { ["fallback"] = "policy_unavailable" },
+        "");
+
+    public Task<PolicyDecision?> DecideAsync(WorkflowState state, CancellationToken ct = default) =>
+        Task.FromResult<PolicyDecision?>(Decision());
 }
 
 /// <summary>
@@ -32,9 +51,15 @@ public sealed class ReturnPolicyGate(ApprovalPolicy policy, DatabasePool pool) :
             var facts = await ApprovalFacts.GatherAsync(pool, email, state.OrderId, (double)state.OrderTotal, ct);
             return policy.Evaluate(Kind, facts);
         }
-        catch (Exception ex) when (ex is PolicyException or Npgsql.NpgsqlException or InvalidOperationException)
+        catch (PolicyException ex)
         {
-            // The engine failing must never wedge a customer's return: the gate uses the threshold instead.
+            // The policy does not define return_approval (or is otherwise unusable): fail closed to a manager.
+            Serilog.Log.Error(ex, "Return policy is unusable; routing the return to a manager");
+            return FailClosedReturnPolicy.Decision();
+        }
+        catch (Exception ex) when (ex is Npgsql.NpgsqlException or InvalidOperationException)
+        {
+            // Missing evidence must never wedge a customer's return: the gate uses the threshold instead.
             return null;
         }
     }

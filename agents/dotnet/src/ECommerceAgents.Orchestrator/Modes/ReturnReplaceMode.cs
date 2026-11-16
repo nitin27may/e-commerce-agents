@@ -62,20 +62,50 @@ public sealed partial class ReturnReplaceMode(DatabasePool pool, AgentSettings s
     private static partial Regex UuidPattern();
 
     /// <summary>
-    /// The approval policy, read from the SAME <c>config/policies/approvals.yaml</c> as Python, or null when
-    /// it cannot be found or is invalid — the gate then falls back to <c>ReturnHitlThreshold</c>.
+    /// The approval policy, read from the SAME <c>config/policies/approvals.yaml</c> as Python. When the file
+    /// cannot be found or is invalid this FAILS CLOSED: every return goes to a manager (never auto-approved by
+    /// the <c>ReturnHitlThreshold</c>) and an error is logged.
     /// </summary>
-    private ReturnPolicyGate? Policy()
+    private IReturnPolicy Policy()
     {
         var path = PolicyFile();
-        if (path is null) return null;
+        if (path is null)
+        {
+            Serilog.Log.Error("approvals.yaml not found; every return is routed to a manager until it is");
+            return new FailClosedReturnPolicy();
+        }
         try
         {
             return new ReturnPolicyGate(ApprovalPolicy.LoadFile(path), _pool);
         }
-        catch (PolicyException)
+        catch (PolicyException ex)
         {
-            return null;
+            Serilog.Log.Error(ex, "approvals.yaml is invalid; every return is routed to a manager until it is fixed");
+            return new FailClosedReturnPolicy();
+        }
+    }
+
+    /// <summary>
+    /// Validate the policy file once at startup so a broken one is an error in the log before the first return.
+    /// Does not throw: the gate fails closed on its own.
+    /// </summary>
+    public static bool CheckPolicyFile()
+    {
+        var path = PolicyFile();
+        if (path is null)
+        {
+            Serilog.Log.Error("approval_policy_invalid: approvals.yaml not found; every return will be routed to a manager");
+            return false;
+        }
+        try
+        {
+            ApprovalPolicy.LoadFile(path).Kind(ReturnPolicyGate.Kind);
+            return true;
+        }
+        catch (PolicyException ex)
+        {
+            Serilog.Log.Error(ex, "approval_policy_invalid: approvals.yaml could not be loaded; every return will be routed to a manager");
+            return false;
         }
     }
 

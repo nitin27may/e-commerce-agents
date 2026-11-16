@@ -122,6 +122,7 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 app.Services.GetRequiredService<PromptLoader>().ValidateModelOverrides(); // fail at startup, naming the file
+ReturnReplaceMode.CheckPolicyFile(); // log loudly if approvals.yaml is broken; the return gate fails closed regardless
 
 app.UseCors();
 app.UseAgentAuth(isOrchestrator: true);

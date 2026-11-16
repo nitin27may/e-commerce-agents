@@ -106,6 +106,29 @@ public sealed class ReturnPolicyGateTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task APolicyWithoutReturnApproval_FailsClosedToAManager_NotTheThreshold()
+    {
+        RequestContext.CurrentUserEmail = Email;
+        var order = await DeliveredOrderAsync(30m);
+        var other = ApprovalPolicy.Parse(
+            "policy_version: v1\nkinds:\n  something_else:\n    editable_fields: []\n    sla_hours: 1\n    on_timeout: expire\n    rules:\n      - id: r\n        route: support\n        reason: x\n        when: []\n");
+
+        var decision = await new ReturnPolicyGate(other, _pool).DecideAsync(new WorkflowState(Email, order) { OrderTotal = 30m });
+
+        decision.Should().NotBeNull();
+        decision!.Route.Should().Be("manager");
+    }
+
+    [Fact]
+    public async Task TheFailClosedPolicy_AlwaysRoutesToAManager()
+    {
+        var decision = await new FailClosedReturnPolicy().DecideAsync(new WorkflowState(Email, "o") { OrderTotal = 1m });
+
+        decision!.Route.Should().Be("manager");
+        decision.Reasons.Should().ContainSingle().Which.Should().Contain("unavailable");
+    }
+
+    [Fact]
     public async Task SomeoneElsesOrder_ContributesNoFacts_SoItCannotBeAutoApproved()
     {
         var order = await DeliveredOrderAsync(30m);

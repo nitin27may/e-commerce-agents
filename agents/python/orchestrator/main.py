@@ -29,10 +29,31 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def check_approval_policy() -> bool:
+    """Load and validate ``approvals.yaml`` now, so a broken file is an error in the startup log.
+
+    Deliberately does not stop the process: the return gate fails closed on its own (a broken policy routes
+    every return to a manager and never auto-approves), and refusing to boot would also take down replay and
+    demo installs that never decide an approval. What it must not do is stay silent until the first return.
+    """
+    try:
+        from shared.policy import get_policy
+
+        get_policy()
+    except Exception:
+        logger.exception(
+            "orchestrator.approval_policy_invalid: approvals.yaml could not be loaded; "
+            "every return will be routed to a manager until it is fixed"
+        )
+        return False
+    return True
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup: telemetry + DB pool. Shutdown: close pool."""
     validate_model_overrides()  # a malformed per-agent ``model:`` block fails here, naming the file
+    check_approval_policy()
     setup_telemetry("ecommerce.orchestrator")
     instrument_fastapi(app)
     await init_db_pool()

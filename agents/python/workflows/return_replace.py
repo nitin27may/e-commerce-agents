@@ -108,19 +108,42 @@ class ReturnDecision:
 PolicyFn = Callable[[WorkflowState], Awaitable[PolicyDecision | None]]
 
 
+def _policy_unavailable_decision() -> PolicyDecision:
+    """What a return gets when the approval policy cannot be loaded: a human at manager level, never ``auto``."""
+    return PolicyDecision(
+        route="manager",
+        reasons=("Approval policy unavailable: routed to a manager review",),
+        evidence={"fallback": "policy_unavailable"},
+        version="",
+    )
+
+
 async def default_return_policy(state: WorkflowState) -> PolicyDecision | None:
-    """Ask the policy engine; ``None`` means it could not decide (the gate then uses the threshold fallback).
+    """Ask the policy engine; ``None`` means it could not gather facts (the gate then uses the threshold fallback).
 
     Facts are gathered for whoever the request is running as (the identity ContextVars), never for a
     function argument, and only from that person's own rows.
+
+    A policy file that cannot be loaded or does not define ``return_approval`` is different: that is a
+    broken control, not missing evidence, so it fails closed -- the return goes to a manager and is never
+    auto-approved by a threshold -- and is logged at error level.
     """
-    from shared.policy import evaluate
+    from shared.policy import PolicyError, evaluate, get_policy
     from shared.policy.facts import gather_facts
+
+    try:
+        get_policy()
+    except Exception:
+        logger.exception("return policy file could not be loaded; routing the return to a manager")
+        return _policy_unavailable_decision()
 
     try:
         facts = await gather_facts(state.order_id, amount=state.order_total)
         return evaluate("return_approval", facts)
-    except Exception as exc:  # the engine failing must never wedge a customer's return
+    except PolicyError:
+        logger.exception("return policy has no usable return_approval kind; routing the return to a manager")
+        return _policy_unavailable_decision()
+    except Exception as exc:  # missing evidence must never wedge a customer's return
         logger.warning("return policy could not decide (%s); using the threshold fallback", type(exc).__name__)
         return None
 
