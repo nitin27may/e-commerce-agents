@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Annotated
+from collections.abc import Mapping
+from typing import Annotated, Any
 
 import httpx
 from agent_framework import Agent, tool
@@ -157,8 +158,8 @@ async def call_specialist_agent(
                                 # accumulator, never into `chunks` (the tool
                                 # result the model reads) or the browser queue.
                                 try:
-                                    record_usage(agent_name, json.loads(payload))
-                                except (json.JSONDecodeError, ValueError, AttributeError):
+                                    _record_specialist_usage(agent_name, json.loads(payload))
+                                except (json.JSONDecodeError, ValueError):
                                     logger.warning("a2a.usage_unparseable target=%s", agent_name)
                                 continue
                             if payload == "[DONE]":
@@ -215,7 +216,7 @@ async def call_specialist_agent(
                 specialist_steps = data.get("steps") or []
                 if bucket is not None and specialist_steps:
                     bucket.extend(specialist_steps)
-                record_usage(agent_name, data.get("usage"))
+                _record_specialist_usage(agent_name, data.get("usage"))
                 return data.get("response", resp.text)
         except httpx.TimeoutException:
             logger.error("a2a.timeout target=%s", agent_name)
@@ -226,6 +227,24 @@ async def call_specialist_agent(
         except Exception:
             logger.exception("a2a.failure target=%s", agent_name)
             return f"Failed to reach the {agent_name} agent. Please try again later."
+
+
+def _record_specialist_usage(agent_name: str, usage: Any) -> None:
+    """Add a specialist's reported usage to the turn's accumulator; a malformed value is ignored.
+
+    Usage is accounting, never part of the answer: a specialist that ran and replied must not be
+    reported as unreachable because its ``usage`` field was not a mapping. Logged once per call
+    (fixed text, no payload), then dropped.
+    """
+    if usage is None:
+        return
+    if not isinstance(usage, Mapping):
+        logger.warning("a2a.usage_unparseable target=%s", agent_name)
+        return
+    try:
+        record_usage(agent_name, usage)
+    except (TypeError, ValueError, AttributeError):
+        logger.warning("a2a.usage_unparseable target=%s", agent_name)
 
 
 # Export tools list for direct use by routes.py (bypassing MAF Responses API)

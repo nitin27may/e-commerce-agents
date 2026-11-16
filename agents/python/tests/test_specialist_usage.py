@@ -396,3 +396,23 @@ async def test_run_completed_usage_is_total_and_by_agent(monkeypatch: pytest.Mon
     assert usage["total"] == {"input_token_count": 1120, "output_token_count": 80, "cached_input_token_count": 100}
     assert set(usage["by_agent"]) == {"orchestrator", "product-discovery"}
     assert current_run_usage.get() is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad_usage", ["lots of tokens", [1, 2, 3], 42], ids=["string", "list", "number"])
+async def test_a_malformed_usage_field_on_the_blocking_path_does_not_hide_the_answer(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, bad_usage: object
+) -> None:
+    def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"response": SPECIALIST_TEXT, "usage": bad_usage})
+
+    acc, _ = _bind_request(monkeypatch, httpx.MockTransport(respond), streaming=False)
+
+    with caplog.at_level("WARNING", logger="orchestrator.agent"):
+        result = await call_specialist_agent(agent_name="product-discovery", message="hi")
+
+    # Not "Failed to reach the ... agent": the specialist ran and answered.
+    assert result == SPECIALIST_TEXT
+    assert acc.by_agent == {}
+    assert sum("a2a.usage_unparseable" in r.getMessage() for r in caplog.records) == 1
+    assert "lots of tokens" not in caplog.text

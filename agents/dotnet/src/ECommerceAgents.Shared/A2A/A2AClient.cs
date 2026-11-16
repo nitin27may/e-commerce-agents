@@ -134,8 +134,36 @@ public sealed class A2AClient
         using var open = response!;
         var payload = await open.Content.ReadFromJsonAsync<A2AResponse>(ResponseJsonOptions, ct);
         MergeReturnedSteps(agentName, payload?.Steps);
-        RequestContext.RecordUsage(agentName, payload?.Usage);
+        RecordReportedUsage(agentName, payload?.Usage);
         return payload?.Response ?? string.Empty;
+    }
+
+    /// <summary>
+    /// Adds a specialist's reported usage to the turn's tally. A malformed value (not an object, or
+    /// fields of the wrong type) is logged once and ignored: usage is accounting, never part of the
+    /// answer, so a specialist that ran and replied must not fail the call over it.
+    /// </summary>
+    private void RecordReportedUsage(string agentName, JsonElement? usage)
+    {
+        if (usage is not { ValueKind: not (JsonValueKind.Null or JsonValueKind.Undefined) } element)
+        {
+            return;
+        }
+
+        try
+        {
+            if (element.ValueKind == JsonValueKind.Object)
+            {
+                RequestContext.RecordUsage(agentName, element.Deserialize<SpecialistUsage>(ResponseJsonOptions));
+                return;
+            }
+        }
+        catch (JsonException)
+        {
+            // fall through to the single warning below
+        }
+
+        _logger.LogWarning("a2a.usage_unparseable target={Target}", agentName);
     }
 
     /// <summary>
@@ -397,6 +425,7 @@ public sealed class A2AClient
     private sealed record A2AResponse(
         [property: JsonPropertyName("response")] string Response,
         [property: JsonPropertyName("steps")] List<ExecutionStep>? Steps = null,
-        [property: JsonPropertyName("usage")] SpecialistUsage? Usage = null
+        // Kept as raw JSON so a malformed value cannot fail deserialising the whole response.
+        [property: JsonPropertyName("usage")] JsonElement? Usage = null
     );
 }

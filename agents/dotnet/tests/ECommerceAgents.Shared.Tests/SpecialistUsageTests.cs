@@ -166,6 +166,23 @@ public sealed class SpecialistUsageTests
         RequestContext.CurrentRunUsage.ByAgent["product-discovery"].Should().Be(Wire);
     }
 
+    [Theory]
+    [InlineData("\"lots of tokens\"")]
+    [InlineData("[1,2,3]")]
+    [InlineData("42")]
+    [InlineData("{\"input_token_count\":\"many\",\"output_token_count\":1,\"cached_input_token_count\":0,\"model\":\"m\"}")]
+    public async Task SendAsync_AMalformedUsageField_DoesNotHideTheAnswer(string badUsage)
+    {
+        var body = $"{{\"response\":\"{SpecialistText}\",\"usage\":{badUsage}}}";
+        using var scope = RequestContext.Scope("u@example.com", "customer", "");
+
+        var text = await BuildClient(new Canned(body, "application/json"))
+            .SendAsync("product-discovery", "http://localhost", "hi");
+
+        text.Should().Be(SpecialistText, "the specialist ran and replied; only its accounting was bad");
+        RequestContext.CurrentRunUsage.ByAgent.Should().BeEmpty();
+    }
+
     [Fact]
     public async Task StreamAsync_RecordsUsageFrame_AndNeverYieldsIt()
     {
