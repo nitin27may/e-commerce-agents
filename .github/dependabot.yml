@@ -6,7 +6,8 @@
 #     left as individual PRs, because a major is where the breakage is and each
 #     deserves its own review.
 #
-#   * The Microsoft Agent Framework packages (agent-framework-*, Microsoft.Agents.AI*)
+#   * The Microsoft Agent Framework packages (agent-framework-*, Microsoft.Agents.AI*),
+#     the A2A protocol SDK (a2a-sdk, and the .NET A2A / A2A.AspNetCore previews)
 #     and the MCP SDK are held in a group of their own, never mixed into the
 #     routine PR. A MAF bump is a deliberate step, not a chore: it can invalidate
 #     the replay fixtures under agents/python/evals/fixtures (the request hash
@@ -97,6 +98,8 @@ updates:
       maf:
         patterns:
           - "Microsoft.Agents.AI*"
+          - "A2A"
+          - "A2A.*"
           - "ModelContextProtocol*"
       dotnet-minor-patch:
         update-types:

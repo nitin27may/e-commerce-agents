@@ -38,6 +38,21 @@ public static class AgentSettingsLoader
         );
     }
 
+    /// <summary>
+    /// <c>A2A_TRANSPORT</c> is <c>legacy</c> or <c>a2a</c>; anything else fails at startup (Python's field is a
+    /// <c>Literal</c>), so a typo cannot silently fall back to the other wire.
+    /// </summary>
+    private static string ValidatedA2aTransport(string raw)
+    {
+        var value = raw.Trim().ToLowerInvariant();
+        if (value is "legacy" or "a2a")
+        {
+            return value;
+        }
+
+        throw new InvalidOperationException($"A2A_TRANSPORT='{raw}' is not supported. Use legacy or a2a.");
+    }
+
     /// <summary>The resume timeout must be positive and shorter than the claim TTL (mirrors Python's validator).</summary>
     private static int ValidatedResumeTimeout(int timeoutSeconds, int claimTtlSeconds)
     {
@@ -188,6 +203,10 @@ public static class AgentSettingsLoader
             McpResourceUrl = Get("MCP_INVENTORY_RESOURCE_URL", "http://localhost:9001/mcp"),
 
             AgentRegistry = Get("AGENT_REGISTRY", "{}"),
+            A2aTransport = ValidatedA2aTransport(Get("A2A_TRANSPORT", "legacy")),
+            A2aPublicBaseUrl = Get("A2A_PUBLIC_BASE_URL").Trim(),
+            A2aMaxActiveTasks = Math.Max(1, GetInt("A2A_MAX_ACTIVE_TASKS", 32)),
+            A2aMaxActiveTasksPerCaller = Math.Max(1, GetInt("A2A_MAX_ACTIVE_TASKS_PER_CALLER", 8)),
 
             OtelEnabled = GetBool("OTEL_ENABLED", false),
             OtelExporterOtlpEndpoint = Get("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:18889"),

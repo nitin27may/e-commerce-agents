@@ -1,4 +1,5 @@
 using ECommerceAgents.Shared.Logging;
+using ECommerceAgents.Shared.A2A.Protocol;
 using ECommerceAgents.Shared.Auth;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
@@ -25,7 +26,8 @@ namespace ECommerceAgents.Shared.A2A;
 /// Per-specialist HTTP shell. Exposes the canonical A2A contract:
 /// <list type="bullet">
 /// <item><c>GET /</c> and <c>GET /health</c></item>
-/// <item><c>GET /.well-known/agent-card.json</c></item>
+/// <item><c>GET /.well-known/agent-card.json</c> — the A2A 1.0 spec card (B-13)</item>
+/// <item><c>POST /a2a/v1</c> — A2A 1.0, JSON-RPC binding (<see cref="A2ASpecialistHost"/>)</item>
 /// <item><c>POST /message:send</c></item>
 /// <item><c>POST /message:stream</c> (issue #14 — see <see cref="RunAgentWithHistoryStreamingAsync"/>)</item>
 /// </list>
@@ -103,6 +105,9 @@ public static class AgentHost
 
         configureServices?.Invoke(builder, settings);
 
+        // A2A 1.0 (JSON-RPC at /a2a/v1 + the spec agent card) beside the legacy routes below.
+        builder.Services.AddA2ASpecialist(name, description, port, settings);
+
         var app = builder.Build();
 
         // A malformed per-agent model: block fails here, naming the file, not on the first request.
@@ -114,16 +119,8 @@ public static class AgentHost
         app.MapGet("/health", () => Results.Ok(new { healthy = true, service = name }));
         app.MapReadiness(name);
 
-        app.MapGet("/.well-known/agent-card.json", () =>
-            Results.Ok(new
-            {
-                name,
-                description,
-                url = $"http://0.0.0.0:{port}",
-                capabilities = new[] { "message:send", "message:stream" },
-                transport = "a2a",
-            })
-        );
+        // The spec agent card (A2A 1.0) and the JSON-RPC endpoint; the legacy pair stays below, untouched.
+        app.MapA2ASpecialist();
 
         app.MapPost("/message:send", async (
             [FromBody] MessagePayload payload,

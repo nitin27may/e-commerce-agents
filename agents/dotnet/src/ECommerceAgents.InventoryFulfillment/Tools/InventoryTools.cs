@@ -295,6 +295,7 @@ public sealed class InventoryTools(DatabasePool pool, AgentSettings settings)
     // ─────────────────────── calculate_fulfillment_plan ──────
 
     [Description("Calculate the optimal fulfillment plan for a multi-item order. Determines the best warehouse for each product and estimates total shipping cost.")]
+    [ECommerceAgents.Shared.Guardrails.RequiresRole("seller", "admin")]
     public async Task<FulfillmentPlanResult> CalculateFulfillmentPlan(
         [Description("List of product UUIDs to fulfill")] List<string> productIds,
         [Description("Destination region: 'east', 'central', or 'west'")] string destinationRegion
@@ -413,6 +414,7 @@ public sealed class InventoryTools(DatabasePool pool, AgentSettings settings)
     // ─────────────────────── place_backorder ─────────────────
 
     [Description("Place a backorder for an out-of-stock product. Checks stock first and only creates a backorder if the product is truly unavailable.")]
+    [ECommerceAgents.Shared.Guardrails.RequiresRole("seller", "admin")]
     public async Task<PlaceBackorderResult> PlaceBackorder(
         [Description("UUID of the product to backorder")] string productId,
         [Description("Quantity to backorder (>=1)")] int quantity

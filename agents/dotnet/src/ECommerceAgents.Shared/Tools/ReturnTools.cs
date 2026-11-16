@@ -129,6 +129,7 @@ public sealed class ReturnTools(DatabasePool pool, AgentSettings settings, Idemp
     }
 
     [Description("Initiate a return for a delivered order. Generates a return shipping label.")]
+    [ECommerceAgents.Shared.Guardrails.RequiresRole("customer", "seller")]
     public Task<object> InitiateReturn(
         [Description("UUID of the order to return")] string orderId,
         [Description("Reason for the return")] string reason,
@@ -213,6 +214,7 @@ public sealed class ReturnTools(DatabasePool pool, AgentSettings settings, Idemp
     }
 
     [Description("Process the refund for an approved return.")]
+    [ECommerceAgents.Shared.Guardrails.RequiresRole("customer", "seller")]
     public Task<object> ProcessRefund(
         [Description("UUID of the return to refund")] string returnId
     )
