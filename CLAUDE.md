@@ -168,6 +168,22 @@ same `repo.claim`/`transition` as every other kind; the requester is the system 
 eval dataset are not built (they need a key); no `@tool` exists for it, so no fixture is affected. The daily run
 (`merchant.daily_run_due`) is off unless `MERCHANT_OPS_SCHEDULE_ENABLED`.
 
+### Event autonomy (#94, Python only)
+
+Budgets for what the system may do on its own when an event arrives, `docs/event-autonomy.md`. `order.shipment_delayed`
+(an outbox row; only the admin simulator produces it) is sized into a goodwill credit by a deterministic rule;
+`config/policies/autonomy.yaml` (`shared/autonomy/policy.py`, validated whole: the last rule is `needs_approval`, every
+autonomous rule carries an `amount lte` ceiling within the budget's per-action cap) picks `auto`, `auto_notify` or
+`needs_approval`, and an autonomous tier must also fit every cap (per action, per customer/day, per order, global/day).
+`shared/autonomy/engine.py` does the check and the draw in one transaction under a per-(budget, UTC day) advisory lock, so
+two events cannot both spend the last of a budget; over a cap it opens an `approvals` row (kind `autonomous_action`, source
+`event`, requester the system actor `autonomy@system`, never an auto route) instead of failing. `agent_decisions` and
+`store_credit_ledger` are append-only (trigger): a reversal is a new row and a negating ledger entry, and does not return the
+day's budget. An event acts once (`run_once` plus a unique `event_key`). A staff approval runs the credit once for the
+approval, may only lower the amount, and draws no budget; an SLA breach never expires one mid-decide. **Off unless
+`AUTONOMY_ENABLED`**, the simulator additionally needs `AUTONOMY_SIMULATOR_ENABLED`, and no model is called. Every number in
+`autonomy.yaml` is a placeholder.
+
 ### Auth & Identity Flow
 
 - **Roles**: `customer`, `power_user`, `seller`, `support`, `admin`. `require_staff` admits `support` and `admin`; signup always creates a `customer` on both stacks.
