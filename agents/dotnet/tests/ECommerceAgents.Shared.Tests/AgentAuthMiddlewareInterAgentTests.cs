@@ -284,6 +284,31 @@ public sealed class AgentAuthMiddlewareInterAgentTests
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    [Theory]
+    [InlineData("support")]
+    [InlineData("power_user")]
+    public async Task StaffAndPowerUserRoles_AcceptedUnderStrictIdentity(string role)
+    {
+        var (key, _) = NewRsaKey();
+        var settings = SettingsFor() with { GuardrailsStrictIdentity = true };
+        var token = IssueToken(key, settings.AuthServerIssuer, "ecommerce-agents", "agent:invoke");
+        using var server = BuildServer(settings, key);
+        using var client = server.CreateClient();
+
+        var response = await client.SendAsync(
+            Request(
+                token,
+                new Dictionary<string, string>
+                {
+                    ["X-User-Email"] = "alice@example.com",
+                    ["X-User-Role"] = role,
+                }
+            )
+        );
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     [Fact]
     public async Task SpoofedRole_AllowedWhenNotStrict()
     {

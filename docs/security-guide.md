@@ -192,10 +192,23 @@ The caller acquires this service token via a `client_credentials` grant (`shared
 
 Either mode, `_identity_anomaly()` validates the forwarded headers the same way:
 
-- `role` must be one of `customer`, `seller`, `admin`, `system`
+- `role` must be one of `customer`, `power_user`, `seller`, `support`, `admin`, `system`
 - `email` must contain `@` (unless it is the sentinel value `system`)
 
 If `GUARDRAILS_STRICT_IDENTITY=true`, anomalies result in a 401 instead of a logged warning.
+
+### Roles
+
+| Role | Who | Notes |
+|---|---|---|
+| `customer` | Shoppers | Default for signup; the role is never client-supplied |
+| `power_user` | Seeded customer variant | Access to every agent; no extra authority |
+| `seller` | Marketplace sellers | Own products only |
+| `support` | Staff | Reviews approvals routed to `support`. Staff = `support` or `admin` (`require_staff` in `orchestrator/routes/legacy.py`; `StaffGuard` on .NET) |
+| `admin` | Platform admins | Acts as manager; everything `support` can do plus admin routes |
+| `system` | Inter-agent sentinel | A call with no end user |
+
+A sketch of what each role may approve lands with the approvals API; today `require_staff` exists but no route uses it, so `support` has no approval rights yet. Support is never the requester's own reviewer: the self-approval rule applies to staff too.
 
 ### MCP resource-server auth (Specialists → MCP servers, optional)
 

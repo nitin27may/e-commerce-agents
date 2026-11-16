@@ -13,10 +13,13 @@ Pre-seeded accounts for testing different roles:
 | Email | Password | Role | Loyalty Tier |
 |-------|----------|------|-------------|
 | `admin.demo@gmail.com` | admin123 | Admin | Gold |
+| `support.demo@gmail.com` | support123 | Support (staff) | Bronze |
 | `seller.demo@gmail.com` | seller123 | Seller | Bronze |
 | `seller2.demo@gmail.com` | seller123 | Seller | Bronze |
 | `alice.johnson@gmail.com` | customer123 | Customer | Gold |
 | `bob.smith@gmail.com` | customer123 | Customer | Silver |
+
+`support` is a staff role: it reviews approvals that policy routes to support (`admin` acts as manager and can do everything support can). It does not yet change who may approve a paused return; that arrives with the unified approvals API. `power.demo@gmail.com` / `power123` is a `power_user` (a customer variant with access to every agent).
 
 ---
 

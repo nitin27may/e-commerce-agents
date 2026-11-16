@@ -32,8 +32,10 @@ logger = logging.getLogger(__name__)
 PUBLIC_PATHS = {"/health", "/ready", "/.well-known/agent-card.json"}
 
 # Roles the platform recognizes. 'system' is the inter-agent sentinel used when
-# a call originates without an end user (internal / health flows).
-_ALLOWED_ROLES = {"customer", "seller", "admin", "system"}
+# a call originates without an end user (internal / health flows). 'support'
+# is the staff role that reviews approvals routed to it; 'power_user' is a
+# seeded customer variant that was previously rejected as unknown.
+_ALLOWED_ROLES = {"customer", "power_user", "seller", "support", "admin", "system"}
 
 
 def _identity_anomaly(email: str, role: str) -> str | None:

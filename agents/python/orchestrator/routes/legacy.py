@@ -178,6 +178,17 @@ async def require_admin(user: dict[str, Any] = Depends(require_auth)) -> dict[st
     return user
 
 
+async def require_staff(user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
+    """Require the authenticated user to be staff: the support or admin role.
+
+    ``support`` reviews approvals routed to it; ``admin`` acts as manager and
+    may do everything support can. Sellers and customers are never staff.
+    """
+    if user.get("role") not in ("support", "admin"):
+        raise HTTPException(status_code=403, detail="Staff access required")
+    return user
+
+
 async def require_seller(user: dict[str, Any] = Depends(require_auth)) -> dict[str, Any]:
     """Require the authenticated user to have seller or admin role."""
     if user.get("role") not in ("seller", "admin"):

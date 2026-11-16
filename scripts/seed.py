@@ -3,6 +3,7 @@ E-Commerce Agents — Database Seeder
 
 Seeds the database with realistic e-commerce data:
 - 20 users (1 admin, 2 power_users, 2 sellers, 15 customers)
+- a support staff user (support.demo@gmail.com), appended so no other row moves
 - 50 products across 5 categories
 - 200 orders with status distribution
 - 500 reviews (5% fake)
@@ -993,6 +994,35 @@ async def seed_tour_user(conn: asyncpg.Connection) -> None:
     logger.info("Seeded tour user %s with a delivered and a shipped order", TOUR_EMAIL)
 
 
+SUPPORT_EMAIL = "support.demo@gmail.com"
+
+
+async def seed_support_user(conn: asyncpg.Connection) -> None:
+    """Create the support staff user: support.demo@gmail.com.
+
+    Appended after every other seed step and deliberately NOT part of ``USERS``:
+    ``USERS`` feeds the order, review and cart seeding, so adding a row there
+    would shift every value drawn after it from the global ``random`` stream.
+    This step draws nothing, so no existing seeded row changes. Like the tour
+    user it gets the free agents (no approval-required ones) so it can chat.
+    """
+    user_id = await conn.fetchval(
+        """INSERT INTO users (email, password_hash, name, role, loyalty_tier, total_spend)
+           VALUES ($1, $2, 'Support Agent', 'support', 'bronze', 0)
+           ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name
+           RETURNING id""",
+        SUPPORT_EMAIL, hash_pw("support123"),
+    )
+    admin_id = await conn.fetchval("SELECT id FROM users WHERE email = 'admin.demo@gmail.com'")
+    for agent_name in [a[0] for a in AGENT_CATALOG if not a[6]]:
+        await conn.execute(
+            """INSERT INTO agent_permissions (user_id, agent_name, role, granted_by)
+               VALUES ($1, $2, 'user', $3) ON CONFLICT DO NOTHING""",
+            user_id, agent_name, admin_id,
+        )
+    logger.info("Seeded support user %s", SUPPORT_EMAIL)
+
+
 async def seed_hitl_requests(conn: asyncpg.Connection, user_ids: dict[str, uuid.UUID]) -> None:
     """Create one of each HITL state so the admin pending-approvals UI
     has something to show on first login.
@@ -1129,6 +1159,7 @@ async def main(reset_tour_only: bool = False) -> None:
 
         await seed_product_embeddings(conn)
         await seed_tour_user(conn)
+        await seed_support_user(conn)
 
         # Collect planner statistics before anyone queries this data.
         #
