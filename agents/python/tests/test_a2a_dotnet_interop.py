@@ -243,7 +243,10 @@ async def test_a_dotnet_agent_error_is_a_failed_task_without_the_error_text() ->
 
 
 @pytest.mark.skipif(not URL_MISS, reason="set DOTNET_SPECIALIST_URL_MISS")
-async def test_a_dotnet_replay_miss_is_recognised_by_the_python_client() -> None:
+async def test_a_dotnet_replay_miss_is_recognised_by_the_python_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    from shared.config import settings
+
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "replay", raising=False)  # only a replaying caller honours a miss
     with pytest.raises(SpecialistReplayMissError):
         await send_blocking(URL_MISS, "hi", headers=HEADERS)
     with pytest.raises(SpecialistReplayMissError):

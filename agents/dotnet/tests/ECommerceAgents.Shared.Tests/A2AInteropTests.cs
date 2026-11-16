@@ -263,7 +263,8 @@ public sealed class A2AInteropTests
     public async Task APythonReplayMiss_RaisesFromTheOrchestratorsClient_BlockingAndStreaming(string transport)
     {
         A2AProtocolClient.ForgetCards();
-        var settings = Settings() with { A2aTransport = transport };
+        // A miss is only a miss to a caller that is itself replaying (ReplayMiss.IsActive).
+        var settings = Settings() with { A2aTransport = transport, LlmProvider = "replay" };
         var client = new OrchestratorClient(
             new HttpClient(new SocketsHttpHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(30) },
             settings,
