@@ -90,9 +90,33 @@ public sealed class ReadinessTests(PostgresFixture pg)
         }
         checks.GetProperty("database").GetProperty("ok").GetBoolean().Should().BeTrue();
         checks.GetProperty("migrations").GetProperty("ok").GetBoolean().Should().BeTrue();
-        checks.GetProperty("migrations").GetProperty("detail").GetString().Should().Contain("applied");
+        // Unauthenticated endpoint: ok or not ok only, never the migration version.
+        checks.GetProperty("migrations").GetProperty("detail").GetString().Should().Be("ok");
         checks.GetProperty("redis").GetProperty("ok").GetBoolean().Should().BeFalse();
         checks.GetProperty("redis").GetProperty("critical").GetBoolean().Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ConcurrentCallers_ShareOneProbe_AndTheResultIsCachedBrieflyThenRefreshed()
+    {
+        var cache = new ReadinessCache(TimeSpan.FromMilliseconds(300));
+        var probes = 0;
+        async Task<(int, object)> Probe()
+        {
+            Interlocked.Increment(ref probes);
+            await Task.Delay(150);
+            return (200, new { status = "ready" });
+        }
+
+        await Task.WhenAll(Enumerable.Range(0, 25).Select(_ => cache.GetAsync(Probe)));
+        probes.Should().Be(1, "at most one probe may run at a time, and its result is shared");
+
+        await cache.GetAsync(Probe);
+        probes.Should().Be(1, "within the TTL the cached result is reused");
+
+        await Task.Delay(400);
+        await cache.GetAsync(Probe);
+        probes.Should().Be(2);
     }
 
     [Fact]

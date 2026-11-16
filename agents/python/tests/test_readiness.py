@@ -50,7 +50,8 @@ async def test_ready_when_database_schema_and_redis_are_up(specialist, healthy) 
     assert set(body["checks"]) == {"database", "migrations", "redis"}
     assert all(c["ok"] for c in body["checks"].values())
     assert body["checks"]["redis"]["critical"] is False
-    assert "applied" in body["checks"]["migrations"]["detail"]
+    # Unauthenticated endpoint: ok or not ok only, never the migration version.
+    assert body["checks"]["migrations"]["detail"] == "ok"
 
 
 async def test_ready_is_public_on_a_specialist_behind_auth(specialist, healthy) -> None:
@@ -157,3 +158,44 @@ async def test_the_orchestrator_exposes_ready(healthy) -> None:
 
     assert resp.status_code == 200
     assert resp.json()["service"] == "orchestrator"
+
+
+# ── the public endpoint cannot be used to exhaust Postgres connections ──
+
+
+def _counting_app(monkeypatch: pytest.MonkeyPatch, *, ttl: float, delay: float = 0.2):
+    from fastapi import FastAPI
+
+    calls = {"n": 0}
+
+    async def fake_readiness(service: str, timeout: float = 2.0):
+        calls["n"] += 1
+        await asyncio.sleep(delay)
+        return 200, {"status": "ready", "service": service, "checks": {}}
+
+    monkeypatch.setattr(readiness_mod, "readiness", fake_readiness)
+    monkeypatch.setattr(readiness_mod, "CACHE_TTL_S", ttl)
+    app = FastAPI()
+    readiness_mod.register_readiness(app, "svc")
+    return app, calls
+
+
+async def test_concurrent_ready_requests_share_one_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    app, calls = _counting_app(monkeypatch, ttl=30.0)
+
+    responses = await asyncio.gather(*[_get(app, "/ready") for _ in range(25)])
+
+    assert all(r.status_code == 200 for r in responses)
+    assert calls["n"] == 1, "at most one probe may run at a time, and its result is shared"
+
+
+async def test_the_result_is_cached_briefly_then_refreshed(monkeypatch: pytest.MonkeyPatch) -> None:
+    app, calls = _counting_app(monkeypatch, ttl=0.3, delay=0.0)
+
+    await _get(app, "/ready")
+    await _get(app, "/ready")
+    assert calls["n"] == 1
+
+    await asyncio.sleep(0.4)
+    await _get(app, "/ready")
+    assert calls["n"] == 2
