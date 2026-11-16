@@ -63,6 +63,14 @@ export function editBounds(line: ProposalLine): { min: number; max: number } | n
   return { min: Math.min(current, proposed), max: Math.max(current, proposed) };
 }
 
+/** An edited price equal to the current one changes nothing; the server refuses it ("reject the line instead"). */
+export function isNoChangeEdit(line: ProposalLine, value: string | number | null | undefined): boolean {
+  if (line.field !== "price") return false;
+  const n = toNumber(value);
+  const current = toNumber(line.current_value);
+  return n != null && current != null && Math.round(n * 100) === Math.round(current * 100);
+}
+
 export function reasonText(code: string): string {
   return REASON_TEXT[code] ?? code.replaceAll("_", " ");
 }
@@ -117,6 +125,7 @@ export function ProposalCard({
     if (choices[l.id] !== "edit") return false;
     const n = toNumber(values[l.id]);
     if (n == null || n <= 0 || (l.field === "restock_quantity" && !Number.isInteger(n))) return true;
+    if (isNoChangeEdit(l, values[l.id])) return true;
     const bounds = editBounds(l);
     return bounds != null && (n < bounds.min || n > bounds.max);
   });
@@ -199,6 +208,11 @@ export function ProposalCard({
                             value={values[line.id]}
                             onChange={(e) => setValues((p) => ({ ...p, [line.id]: e.target.value }))}
                           />
+                        )}
+                        {choices[line.id] === "edit" && isNoChangeEdit(line, values[line.id]) && (
+                          <p role="note" className="text-xs text-muted-foreground">
+                            That is the current price: no change — reject the line instead.
+                          </p>
                         )}
                       </div>
                     ) : (

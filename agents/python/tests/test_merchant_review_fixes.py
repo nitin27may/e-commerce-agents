@@ -81,7 +81,7 @@ async def test_a_restock_edit_one_above_the_proposal_is_422_and_one_below_runs(w
 
 
 @pytest.mark.parametrize(
-    "value,status", [("89.99", 422), ("90.00", 200), ("95.00", 200), ("100.00", 200), ("100.01", 422)]
+    "value,status", [("89.99", 422), ("90.00", 200), ("95.00", 200), ("100.00", 422), ("100.01", 422)]
 )
 async def test_a_price_edit_stays_between_the_proposed_and_the_current_price(
     w: ms.World,  # noqa: F811
@@ -95,6 +95,42 @@ async def test_a_price_edit_stays_between_the_proposed_and_the_current_price(
     assert resp.status_code == status, resp.text
     if status == 422:
         assert await _price(w, products["Overstock"]) == D("100.00")
+
+
+async def test_a_price_edit_equal_to_the_current_price_is_422_with_a_reason_and_writes_nothing(
+    w: ms.World,  # noqa: F811
+) -> None:
+    proposal_id, products, lines = await _batch(w)
+    history_before = await w.pool.fetchval("SELECT count(*) FROM price_history")
+
+    resp = await _decide(proposal_id, {"line_id": lines["Overstock"], "decision": "edit", "value": "100.00"})
+
+    assert resp.status_code == 422, resp.text
+    assert "no change" in resp.json()["detail"] and "reject the line instead" in resp.json()["detail"]
+    assert await _price(w, products["Overstock"]) == D("100.00")
+    assert await w.pool.fetchval("SELECT count(*) FROM price_history") == history_before
+    assert await w.pool.fetchval("SELECT status FROM approvals WHERE source = 'proposal'") == "pending_review"
+
+
+async def test_apply_line_treats_an_unchanged_price_as_nothing_to_do_and_writes_no_history(
+    w: ms.World,  # noqa: F811
+) -> None:
+    _, products, lines = await _batch(w)
+    history_before = await w.pool.fetchval("SELECT count(*) FROM price_history")
+
+    done = await merchant_execute.apply_line(w.pool, lines["Overstock"], D("100.00"))
+
+    assert done["status"] == "executed" and done["applied_value"] == "100.00" and done["changed"] is False
+    assert await _price(w, products["Overstock"]) == D("100.00")
+    assert await w.pool.fetchval("SELECT count(*) FROM price_history") == history_before
+
+
+async def test_a_restock_edited_to_zero_is_still_invalid(w: ms.World) -> None:  # noqa: F811
+    proposal_id, _, lines = await _batch(w)
+
+    resp = await _decide(proposal_id, {"line_id": lines["Short"], "decision": "edit", "value": 0})
+
+    assert resp.status_code == 422, resp.text
 
 
 async def test_apply_line_refuses_a_value_that_raises_the_line_even_when_the_api_was_bypassed(

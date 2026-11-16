@@ -238,6 +238,9 @@ def _parse_decisions(raw: list[dict[str, Any]], lines: dict[str, asyncpg.Record]
             value = value.quantize(Decimal("0.01"))
             if value <= 0:
                 raise ApprovalHTTPError(422, "An edit needs a positive value")
+            # An edit that leaves the price where it is changes nothing and would only write a price_history row.
+            if line["field"] == "price" and line["current_value"] is not None and value == line["current_value"]:
+                raise ApprovalHTTPError(422, "That is the current price: no change — reject the line instead")
             # A reviewer's edit can never raise a line (the repo-wide rule): the same check runs again at apply time.
             edit = check_edit_bounds(
                 field=line["field"],

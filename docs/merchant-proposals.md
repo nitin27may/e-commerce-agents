@@ -79,7 +79,7 @@ inbox leaves proposals out; its list omits them, its detail read, decide and ans
 | `edit` | execute at `value` (a restock quantity must be whole); recorded as approved with edits |
 | `reject` | nothing changes |
 
-**An edit can never raise a line** (the repo-wide rule). A restock quantity may be lowered, never raised above what was proposed; a price must stay between the proposed price and the price it started from (a markdown may be shallower than proposed, never deeper and never above where it began). A value outside that, past `NUMERIC(12,2)` or an INT32 quantity, not finite, or that rounds to zero is a **422** at decide time. `apply_line` checks the same rule again (`edit_beyond_proposal`) so a caller that bypasses the route cannot get past it.
+**An edit can never raise a line** (the repo-wide rule). A restock quantity may be lowered, never raised above what was proposed; a price must stay between the proposed price and the price it started from (a markdown may be shallower than proposed, never deeper and never above where it began). A value outside that, past `NUMERIC(12,2)` or an INT32 quantity, not finite, or that rounds to zero is a **422** at decide time. `apply_line` checks the same rule again (`edit_beyond_proposal`) so a caller that bypasses the route cannot get past it. A price edit equal to the price the line started from changes nothing and is a **422** ("no change — reject the line instead"; the seller card mirrors it); `apply_line` treats an unchanged price as already done (`executed`, `changed: false`) with no `UPDATE` and no `price_history` row.
 
 A line left out is rejected. A blocked line can only be rejected (422 otherwise).
 

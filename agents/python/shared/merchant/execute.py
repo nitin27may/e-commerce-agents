@@ -158,6 +158,11 @@ async def _apply_price(
     if bounds.blocked:
         await _set_status(conn, line["id"], "blocked", bounds)
         return _outcome(line["id"], "blocked", reasons=[r.value for r in bounds.reasons])
+    if final_value == facts.current_price:
+        # Already at the price the reviewer settled on: nothing to change, so no UPDATE and no price_history row.
+        await _set_status(conn, line["id"], "executed", executed=True)
+        logger.info("proposal line already at its price line=%s field=price", log_safe(line["id"]))
+        return _outcome(line["id"], "executed", field="price", applied_value=str(final_value), changed=False)
     verdict = check_price_change(
         current_price=facts.current_price,
         proposed_price=final_value,
