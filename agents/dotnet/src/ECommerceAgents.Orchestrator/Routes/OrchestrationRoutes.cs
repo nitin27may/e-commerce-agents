@@ -1,3 +1,4 @@
+using ECommerceAgents.Shared.Logging;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
 using ECommerceAgents.Shared.Data;
@@ -207,7 +208,7 @@ public static class OrchestrationRoutes
             }
             catch (OperationCanceledException) when (timeout.IsCancellationRequested)
             {
-                loggers.CreateLogger("hitl").LogWarning("hitl.resume_timeout hitl_id={ClaimId}", claimId);
+                loggers.CreateLogger("hitl").LogWarning("hitl.resume_timeout hitl_id={ClaimId}", LogSafe.Clean(claimId));
                 await ReleaseClaimAsync(conn, claimId, claimToken);
                 return Results.Json(
                     new { detail = "Resume timed out; the approval is still pending." }, statusCode: 504);
@@ -233,7 +234,7 @@ public static class OrchestrationRoutes
             {
                 // The claim was taken over while this resume ran: someone else owns the
                 // decision now. Record nothing.
-                loggers.CreateLogger("hitl").LogWarning("hitl.claim_lost hitl_id={ClaimId}", claimId);
+                loggers.CreateLogger("hitl").LogWarning("hitl.claim_lost hitl_id={ClaimId}", LogSafe.Clean(claimId));
                 return Results.Conflict(new { detail = "This approval was taken over by another reviewer" });
             }
 
@@ -251,7 +252,7 @@ public static class OrchestrationRoutes
         }
         catch (Exception ex)
         {
-            loggers.CreateLogger("hitl").LogError(ex, "hitl.resume_failed run={RunId}", runId);
+            loggers.CreateLogger("hitl").LogError(ex, "hitl.resume_failed run={RunId}", LogSafe.Clean(runId));
             await ReleaseClaimAsync(conn, claimId, claimToken);
             return Results.Problem("Resume failed; the approval is still pending.");
         }

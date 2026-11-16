@@ -1,3 +1,4 @@
+using ECommerceAgents.Shared.Logging;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -61,9 +62,9 @@ public sealed class ToolAuditMiddleware
             _audited.Enqueue(record);
             _logger.LogInformation(
                 "tool.invoked name={Tool} elapsed_ms={Elapsed:F1} error={Error}",
-                toolName,
+                LogSafe.Clean(toolName),
                 sw.Elapsed.TotalMilliseconds,
-                error ?? "-"
+                LogSafe.Clean(error ?? "-")
             );
         }
     }

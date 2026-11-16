@@ -1,3 +1,4 @@
+using ECommerceAgents.Shared.Logging;
 using ECommerceAgents.Shared.Configuration;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
@@ -142,14 +143,14 @@ public sealed class SlidingWindowRateLimiter
     /// 12 hex characters of its SHA-256 are enough to correlate repeated hits.
     /// </summary>
     internal static string KeyHashForLog(string key) =>
-        Convert.ToHexString(
-            System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key))
-        )[..12]
-            // Hex cannot contain a line break. The two Replace calls change nothing at run time;
-            // they are here because static analysis (CodeQL cs/log-forging) follows taint through
-            // the hash and only recognises explicit line-break removal as a sanitiser.
-            .Replace("\r", string.Empty, StringComparison.Ordinal)
-            .Replace("\n", string.Empty, StringComparison.Ordinal);
+        // Hex cannot contain a line break; LogSafe.Clean is applied anyway because static analysis
+        // (CodeQL cs/log-forging) follows taint through the hash and only recognises explicit line-break
+        // removal as a sanitiser.
+        LogSafe.Clean(
+            Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key))
+            )[..12]
+        );
 
     /// <summary>
     /// Per-user when we know who is calling, per-IP otherwise — anonymous

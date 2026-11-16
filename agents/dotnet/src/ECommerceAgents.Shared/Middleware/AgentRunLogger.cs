@@ -1,3 +1,4 @@
+using ECommerceAgents.Shared.Logging;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 
@@ -18,7 +19,7 @@ public sealed class AgentRunLogger
     {
         var runId = Guid.NewGuid().ToString("N")[..8];
         var sw = Stopwatch.StartNew();
-        _logger.LogInformation("agent.start agent={Agent} run_id={RunId}", agentName, runId);
+        _logger.LogInformation("agent.start agent={Agent} run_id={RunId}", LogSafe.Clean(agentName), runId);
         try
         {
             var result = await body(runId);

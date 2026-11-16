@@ -1,3 +1,4 @@
+using ECommerceAgents.Shared.Logging;
 using ECommerceAgents.Shared.Auth;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
@@ -340,6 +341,6 @@ internal static class LoggingExtensions
     public static void LogException(this ILogger logger, Exception ex, string template, params object?[] args)
     {
         var rendered = string.Format(System.Globalization.CultureInfo.InvariantCulture, template.Replace("{Service}", "{0}"), args);
-        logger.LogError(ex, "{Message}", rendered);
+        logger.LogError(ex, "{Message}", LogSafe.Clean(rendered, 1000));
     }
 }

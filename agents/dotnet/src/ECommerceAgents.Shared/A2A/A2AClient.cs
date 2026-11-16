@@ -1,3 +1,4 @@
+using ECommerceAgents.Shared.Logging;
 using ECommerceAgents.Shared.Auth;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
@@ -163,7 +164,7 @@ public sealed class A2AClient
             // fall through to the single warning below
         }
 
-        _logger.LogWarning("a2a.usage_unparseable target={Target}", agentName);
+        _logger.LogWarning("a2a.usage_unparseable target={Target}", LogSafe.Clean(agentName));
     }
 
     /// <summary>
@@ -226,7 +227,7 @@ public sealed class A2AClient
                 _logger.LogError(
                     failure,
                     "a2a.stream_interrupted target={Agent} frames={Frames}",
-                    agentName,
+                    LogSafe.Clean(agentName),
                     framesSeen
                 );
                 yield return $"[The {agentName} agent's response was interrupted and may be incomplete.]";
@@ -284,7 +285,7 @@ public sealed class A2AClient
                 }
                 catch (JsonException)
                 {
-                    _logger.LogWarning("a2a.usage_unparseable target={Target}", agentName);
+                    _logger.LogWarning("a2a.usage_unparseable target={Target}", LogSafe.Clean(agentName));
                 }
                 RequestContext.RecordUsage(agentName, reported);
                 continue;
@@ -388,7 +389,7 @@ public sealed class A2AClient
             if (!response.IsSuccessStatusCode)
             {
                 var status = (int)response.StatusCode;
-                _logger.LogError("a2a.error target={Target} status={Status}", agentName, status);
+                _logger.LogError("a2a.error target={Target} status={Status}", LogSafe.Clean(agentName), status);
                 response.Dispose();
                 return (null, $"The {agentName} agent returned an error (status {status}). Please try again.");
             }
@@ -397,17 +398,17 @@ public sealed class A2AClient
         }
         catch (BrokenCircuitException)
         {
-            _logger.LogError("a2a.circuit_open_short_circuit target={Target}", agentName);
+            _logger.LogError("a2a.circuit_open_short_circuit target={Target}", LogSafe.Clean(agentName));
             return (null, $"The {agentName} agent is temporarily unavailable. Please try again in a moment.");
         }
         catch (TaskCanceledException)
         {
-            _logger.LogError("a2a.timeout target={Target}", agentName);
+            _logger.LogError("a2a.timeout target={Target}", LogSafe.Clean(agentName));
             return (null, $"The {agentName} agent took too long to respond. Please try again.");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "a2a.failure target={Target}", agentName);
+            _logger.LogError(ex, "a2a.failure target={Target}", LogSafe.Clean(agentName));
             return (null, $"Failed to reach the {agentName} agent. Please try again later.");
         }
     }

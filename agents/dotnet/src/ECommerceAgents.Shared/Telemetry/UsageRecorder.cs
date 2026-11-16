@@ -1,3 +1,4 @@
+using ECommerceAgents.Shared.Logging;
 using Dapper;
 using ECommerceAgents.Shared.Data;
 using Microsoft.Extensions.Logging;
@@ -79,7 +80,7 @@ public sealed class UsageRecorder
         }
         catch (Exception ex)
         {
-            _logger?.LogError(ex, "Failed to log agent usage for {Agent}", agentName);
+            _logger?.LogError(ex, "Failed to log agent usage for {Agent}", LogSafe.Clean(agentName));
             return null;
         }
     }
@@ -116,7 +117,7 @@ public sealed class UsageRecorder
         }
         catch (Exception ex)
         {
-            _logger?.LogError(ex, "Failed to log execution step {Index} for {Tool}", stepIndex, toolName);
+            _logger?.LogError(ex, "Failed to log execution step {Index} for {Tool}", stepIndex, LogSafe.Clean(toolName));
         }
     }
 

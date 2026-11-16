@@ -1,3 +1,4 @@
+using ECommerceAgents.Shared.Logging;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
 using Microsoft.AspNetCore.Builder;
@@ -252,7 +253,7 @@ public sealed class AgentAuthMiddleware
             // tokens crash the request instead of cleanly rejecting it. Widened to
             // catch that + the ArgumentException family so any invalid token input
             // 401s rather than 500s.
-            _logger.LogWarning("jwt.invalid message={Message}", ex.Message);
+            _logger.LogWarning("jwt.invalid message={Message}", LogSafe.Clean(ex.Message));
             await Reject(context, 401, "Invalid token");
         }
     }
@@ -299,9 +300,9 @@ public sealed class AgentAuthMiddleware
         {
             _logger.LogWarning(
                 "security.identity_spoof_suspected reason={Reason} email={Email} role={Role}",
-                anomaly,
-                email,
-                role
+                LogSafe.Clean(anomaly),
+                LogSafe.Clean(email),
+                LogSafe.Clean(role)
             );
             if (_settings.GuardrailsStrictIdentity)
             {

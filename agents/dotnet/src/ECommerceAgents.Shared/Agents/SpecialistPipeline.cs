@@ -1,3 +1,4 @@
+using ECommerceAgents.Shared.Logging;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using ECommerceAgents.Shared.Configuration;
@@ -418,7 +419,7 @@ public static class SpecialistPipeline
             var sanitized = OutputSanitizer.Sanitize(result, fields);
             if (!Equals(sanitized, result))
             {
-                logger.LogInformation("guardrails.output_sanitized tool={Tool}", context.Function.Name);
+                logger.LogInformation("guardrails.output_sanitized tool={Tool}", LogSafe.Clean(context.Function.Name));
             }
             return sanitized;
         };

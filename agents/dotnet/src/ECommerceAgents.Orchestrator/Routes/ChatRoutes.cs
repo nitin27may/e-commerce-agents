@@ -1,3 +1,4 @@
+using ECommerceAgents.Shared.Logging;
 using Dapper;
 using ECommerceAgents.Orchestrator.Modes;
 using ECommerceAgents.Shared.Configuration;
@@ -518,7 +519,7 @@ public static class ChatRoutes
             // tear a finished reply. But a swallowed failure means a paused refund with
             // no way to approve it, so it is logged loudly rather than absorbed.
             loggers.CreateLogger("hitl").LogError(ex,
-                "hitl.link_failed run={UsageLogId} session={SessionId}", usageLogId, modeResult?.SessionId);
+                "hitl.link_failed run={UsageLogId} session={SessionId}", usageLogId, LogSafe.Clean(modeResult?.SessionId));
         }
     }
 
@@ -860,7 +861,7 @@ public static class ChatRoutes
             loggers.CreateLogger("hitl").LogError(
                 "hitl.orphaned_pause session={SessionId} checkpoint={CheckpointId} request={RequestId} — "
                     + "no usage_logs row, so no approval can be surfaced for it",
-                modeResult.SessionId, modeResult.LatestCheckpointId, modeResult.RequestId);
+                LogSafe.Clean(modeResult.SessionId), LogSafe.Clean(modeResult.LatestCheckpointId), LogSafe.Clean(modeResult.RequestId));
         }
 
         return null;

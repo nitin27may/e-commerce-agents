@@ -1,3 +1,4 @@
+using ECommerceAgents.Shared.Logging;
 using ECommerceAgents.Shared.Tools;
 using Dapper;
 using ECommerceAgents.Shared.Agents;
@@ -294,7 +295,7 @@ public sealed class ProductTools(DatabasePool pool, IEmbeddingProvider embedding
         {
             Serilog.Log.Warning(
                 "semantic_search: embedding call failed ({Type}: {Message}) -- falling back to full-text only",
-                ex.GetType().Name, ex.Message);
+                ex.GetType().Name, LogSafe.Clean(ex.Message));
             vectorText = null;
         }
 
