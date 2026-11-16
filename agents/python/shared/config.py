@@ -89,6 +89,27 @@ class Settings(BaseSettings):
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_MAX_REQUESTS: int = 30
     RATE_LIMIT_WINDOW_SECONDS: float = 60.0
+    # Credential endpoints (signup / login / refresh) get their own, much
+    # tighter bucket, keyed by client address: a password-guessing or
+    # account-spam loop should not be able to spend the chat budget, and a
+    # chat user hitting the chat limit should not be locked out of logging in.
+    RATE_LIMIT_AUTH_MAX_REQUESTS: int = 10
+    RATE_LIMIT_AUTH_WINDOW_SECONDS: float = 60.0
+    # How many reverse proxies in front of the orchestrator append to
+    # X-Forwarded-For and are trusted to do so. The client address is the entry
+    # that many places from the RIGHT of the header (1 = the right-most entry,
+    # i.e. what the Next.js proxy appended). Entries further left were supplied
+    # by the caller and are never trusted. 0 ignores the header entirely and
+    # uses the TCP peer address.
+    RATE_LIMIT_TRUSTED_PROXY_HOPS: int = 1
+
+    # ── CORS ────────────────────────────────────────────────────────
+    # Comma-separated list of origins allowed to call the orchestrator from a
+    # browser. The web app reaches the API through its own same-origin proxy
+    # (web/src/app/api/[...path]/route.ts), so the default only needs to cover
+    # `NEXT_PUBLIC_API_URL` direct-call setups. Credentials (cookies) are never
+    # allowed: auth is a Bearer token in a header.
+    CORS_ALLOWED_ORIGINS: str = "http://localhost:3000"
 
     # ── LLM ─────────────────────────────────────────────────────────
     LLM_PROVIDER: str = "openai"  # openai | azure | replay
@@ -367,6 +388,11 @@ class Settings(BaseSettings):
         extra="ignore",
         populate_by_name=True,
     )
+
+    @property
+    def cors_origins(self) -> list[str]:
+        """``CORS_ALLOWED_ORIGINS`` split on commas, blanks dropped, trailing slashes trimmed."""
+        return [o.strip().rstrip("/") for o in self.CORS_ALLOWED_ORIGINS.split(",") if o.strip()]
 
     @model_validator(mode="after")
     def _validate_secrets(self) -> "Settings":

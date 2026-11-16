@@ -18,6 +18,8 @@
  */
 import type { NextRequest } from "next/server";
 
+import { trustedClientAddress, trustedProxyHops } from "@/lib/client-ip";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
@@ -43,6 +45,12 @@ const STRIP_REQUEST_HEADERS = new Set([
   "x-agent-secret",
   "x-user-email",
   "x-user-role",
+  // Client-address headers are recomputed below, never passed through: the
+  // browser's own values would let any caller pick the address the
+  // orchestrator rate-limits them under.
+  "x-forwarded-for",
+  "x-real-ip",
+  "forwarded",
 ]);
 
 const STRIP_RESPONSE_HEADERS = new Set([
@@ -77,6 +85,11 @@ async function proxy(req: NextRequest): Promise<Response> {
   // header is not enough — undici substitutes its own default when it is
   // absent, so the value has to be pinned.
   headers.set("accept-encoding", "identity");
+
+  // Tell the orchestrator who is calling, if (and only if) we can know. See
+  // `trustedClientAddress` for why a route handler usually cannot.
+  const client = trustedClientAddress(req.headers.get("x-forwarded-for"), trustedProxyHops());
+  if (client) headers.set("x-forwarded-for", client);
 
   const hasBody = req.method !== "GET" && req.method !== "HEAD";
 

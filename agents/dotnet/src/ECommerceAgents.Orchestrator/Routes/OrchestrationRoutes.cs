@@ -37,8 +37,8 @@ public static class OrchestrationRoutes
     {
         routes.MapGet("/api/orchestration/modes", ListModes);
         routes.MapGet("/api/orchestration/modes/{name}/graph", GetModeGraph);
-        routes.MapPost("/api/orchestration/compare", CompareModes);
-        routes.MapPost("/api/orchestration/{runId}/resume", ResumeRun);
+        routes.MapPost("/api/orchestration/compare", CompareModes).AddEndpointFilter<ChatRoutes.ChatRateLimitFilter>();
+        routes.MapPost("/api/orchestration/{runId}/resume", ResumeRun).AddEndpointFilter<ChatRoutes.ChatRateLimitFilter>();
         return routes;
     }
 

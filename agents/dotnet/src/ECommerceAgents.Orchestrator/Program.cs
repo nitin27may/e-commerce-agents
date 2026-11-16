@@ -104,18 +104,20 @@ builder.Services.AddSingleton<AIAgent>(sp =>
     return OrchestratorAgentFactory.Create(settings, prompts, tools, services: sp);
 });
 
-// Mirrors the Python orchestrator's CORSMiddleware(allow_origins=["*"], allow_credentials=True,
-// allow_methods=["*"], allow_headers=["*"]) — the browser frontend calls this API cross-origin
-// (localhost:3000 -> localhost:8080). SetIsOriginAllowed(_ => true) is the ASP.NET Core
-// equivalent of a wildcard origin that's still compatible with AllowCredentials(); plain
-// AllowAnyOrigin() throws when combined with AllowCredentials().
+// Mirrors the Python orchestrator's CORSMiddleware: explicit origins from CORS_ALLOWED_ORIGINS
+// (default http://localhost:3000), no credentials. The browser normally reaches this API through
+// the Next.js same-origin proxy; the list only matters for direct calls (NEXT_PUBLIC_API_URL).
+// Auth is a Bearer header, never a cookie, so AllowCredentials is deliberately absent.
+var corsOrigins = settings.CorsAllowedOrigins
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+    .Select(o => o.TrimEnd('/'))
+    .ToArray();
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy => policy
-        .SetIsOriginAllowed(_ => true)
+        .WithOrigins(corsOrigins)
         .AllowAnyMethod()
-        .AllowAnyHeader()
-        .AllowCredentials());
+        .AllowAnyHeader());
 });
 
 var app = builder.Build();

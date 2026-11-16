@@ -86,6 +86,41 @@ describe("api proxy", () => {
     expect(sent.get("authorization")).toBe("Bearer abc");
   });
 
+  describe("client address", () => {
+    afterEach(() => {
+      delete process.env.WEB_TRUSTED_PROXY_HOPS;
+    });
+
+    it("drops a browser-supplied X-Forwarded-For when no proxy is trusted (default)", async () => {
+      const fetchSpy = stubFetch(async () => new Response("[]", { status: 200 }));
+      await GET(
+        makeRequest({
+          headers: { "x-forwarded-for": "6.6.6.6", "x-real-ip": "6.6.6.6", forwarded: "for=6.6.6.6" },
+        }),
+      );
+      const sent = fetchSpy.mock.calls[0][1].headers as Headers;
+      expect(sent.get("x-forwarded-for")).toBeNull();
+      expect(sent.get("x-real-ip")).toBeNull();
+      expect(sent.get("forwarded")).toBeNull();
+    });
+
+    it("forwards only the right-most trusted entry, never the caller's claims", async () => {
+      process.env.WEB_TRUSTED_PROXY_HOPS = "1";
+      const fetchSpy = stubFetch(async () => new Response("[]", { status: 200 }));
+      await GET(makeRequest({ headers: { "x-forwarded-for": "6.6.6.6, 198.51.100.1" } }));
+      const sent = fetchSpy.mock.calls[0][1].headers as Headers;
+      expect(sent.get("x-forwarded-for")).toBe("198.51.100.1");
+    });
+
+    it("sends nothing when the chain is shorter than the trusted hops", async () => {
+      process.env.WEB_TRUSTED_PROXY_HOPS = "2";
+      const fetchSpy = stubFetch(async () => new Response("[]", { status: 200 }));
+      await GET(makeRequest({ headers: { "x-forwarded-for": "198.51.100.1" } }));
+      const sent = fetchSpy.mock.calls[0][1].headers as Headers;
+      expect(sent.get("x-forwarded-for")).toBeNull();
+    });
+  });
+
   it("tolerates a trailing slash on ORCHESTRATOR_URL", async () => {
     process.env.ORCHESTRATOR_URL = "http://orchestrator:8080/";
     const fetchSpy = stubFetch(async () => new Response("[]", { status: 200 }));

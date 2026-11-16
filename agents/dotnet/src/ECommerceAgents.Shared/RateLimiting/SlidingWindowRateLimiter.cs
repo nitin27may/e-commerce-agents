@@ -70,7 +70,7 @@ public sealed class SlidingWindowRateLimiter
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "rate_limit.redis_unavailable url={Url}", _settings.RedisUrl);
+            _logger.LogError(ex, "rate_limit.redis_unavailable url={Url}", _settings.RedisUrl);
             return null;
         }
     }
@@ -85,7 +85,14 @@ public sealed class SlidingWindowRateLimiter
     /// deliberately so — one protects spend, the other protects money
     /// leaving the business.
     /// </remarks>
-    public async Task<bool> TryAcquireAsync(string key, CancellationToken ct = default)
+    public Task<bool> TryAcquireAsync(string key, CancellationToken ct = default) =>
+        TryAcquireAsync(key, _settings.RateLimitMaxRequests, _settings.RateLimitWindowSeconds, ct);
+
+    /// <summary>
+    /// Same check against an explicit budget - used by the auth bucket, which is much tighter
+    /// than the chat one. Fails open (logs, allows) when Redis is unavailable.
+    /// </summary>
+    public async Task<bool> TryAcquireAsync(string key, int maxRequests, double windowSeconds, CancellationToken ct = default)
     {
         if (!_settings.RateLimitEnabled)
         {
@@ -99,7 +106,7 @@ public sealed class SlidingWindowRateLimiter
         }
 
         var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        var windowMs = (long)(_settings.RateLimitWindowSeconds * 1000);
+        var windowMs = (long)(windowSeconds * 1000);
         var member = $"{nowMs}:{Guid.NewGuid():N}"[..Math.Min(32, $"{nowMs}:{Guid.NewGuid():N}".Length)];
 
         try
@@ -107,7 +114,7 @@ public sealed class SlidingWindowRateLimiter
             var result = await mux.GetDatabase().ScriptEvaluateAsync(
                 SlidingWindowScript,
                 [key],
-                [nowMs, windowMs, _settings.RateLimitMaxRequests, member]
+                [nowMs, windowMs, maxRequests, member]
             );
 
             var values = (RedisValue[]?)result;
@@ -123,7 +130,7 @@ public sealed class SlidingWindowRateLimiter
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "rate_limit.check_failed key={Key} — allowing request", key);
+            _logger.LogError(ex, "rate_limit.check_failed key={Key} — failing open", key);
             return true;
         }
     }
@@ -132,6 +139,8 @@ public sealed class SlidingWindowRateLimiter
     /// Per-user when we know who is calling, per-IP otherwise — anonymous
     /// storefront traffic is exactly the case that needs limiting most.
     /// </summary>
+    public static string AuthKeyFor(string? clientIp) => $"ratelimit:auth:ip:{clientIp ?? "unknown"}";
+
     public static string KeyFor(string? userEmail, string? clientIp) =>
         string.IsNullOrWhiteSpace(userEmail) || userEmail == "anonymous"
             ? $"ratelimit:chat:ip:{clientIp ?? "unknown"}"

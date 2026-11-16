@@ -531,21 +531,18 @@ public static class ChatRoutes
     /// callers — the .NET twin of Python's <c>rate_limit_chat</c> FastAPI
     /// dependency (<c>orchestrator/routes/chat.py</c>).
     /// </summary>
-    private sealed class ChatRateLimitFilter(SlidingWindowRateLimiter limiter) : IEndpointFilter
+    internal sealed class ChatRateLimitFilter(SlidingWindowRateLimiter limiter, AgentSettings settings) : IEndpointFilter
     {
         public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
         {
             var http = context.HttpContext;
 
-            // X-Forwarded-For is trusted only because every deployment of this
-            // repo puts the orchestrator behind its own proxy or is reached
-            // directly; a production deployment behind an untrusted proxy chain
-            // would need a configured trusted-proxy list. Same caveat Python's
-            // _client_ip carries.
-            var forwarded = http.Request.Headers["X-Forwarded-For"].FirstOrDefault();
-            var ip = string.IsNullOrWhiteSpace(forwarded)
-                ? http.Connection.RemoteIpAddress?.ToString()
-                : forwarded.Split(',')[0].Trim();
+            // Only the entry our own proxy appended is believed (right-most after
+            // RATE_LIMIT_TRUSTED_PROXY_HOPS); see ClientAddress.
+            var ip = ClientAddress.Resolve(
+                http.Request.Headers["X-Forwarded-For"].FirstOrDefault(),
+                http.Connection.RemoteIpAddress,
+                settings.RateLimitTrustedProxyHops);
 
             var key = SlidingWindowRateLimiter.KeyFor(RequestContext.CurrentUserEmail, ip);
             if (!await limiter.TryAcquireAsync(key, http.RequestAborted))

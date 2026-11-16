@@ -79,6 +79,20 @@ public sealed record AgentSettings
     public int HandoffMaxTurns { get; init; } = 3;
     public double RateLimitWindowSeconds { get; init; } = 60.0;
 
+    /// <summary>Signup / login / refresh bucket - Python's <c>RATE_LIMIT_AUTH_*</c>. Per client address.</summary>
+    public int RateLimitAuthMaxRequests { get; init; } = 10;
+    public double RateLimitAuthWindowSeconds { get; init; } = 60.0;
+
+    /// <summary>
+    /// Trusted reverse proxies that append to <c>X-Forwarded-For</c>; the client address is the
+    /// entry this many places from the right. 0 ignores the header. Python's
+    /// <c>RATE_LIMIT_TRUSTED_PROXY_HOPS</c>.
+    /// </summary>
+    public int RateLimitTrustedProxyHops { get; init; } = 1;
+
+    /// <summary>Comma-separated browser origins allowed by CORS - Python's <c>CORS_ALLOWED_ORIGINS</c>.</summary>
+    public string CorsAllowedOrigins { get; init; } = "http://localhost:3000";
+
     // ── Grounding (issue #33 PR 7) — .NET twin of Python's GROUNDING_MODE ──
     /// <summary>
     /// "off" | "observe" | "annotate". Defaults to annotate, matching Python.

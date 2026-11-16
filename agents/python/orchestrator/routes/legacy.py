@@ -36,6 +36,7 @@ from shared.jwt_utils import (
     verify_password,
 )
 from shared.oauth.service_client import request_token
+from shared.rate_limit import rate_limit_auth
 from shared.tool_inputs import clamp_limit
 
 logger = logging.getLogger(__name__)
@@ -186,7 +187,7 @@ async def require_seller(user: dict[str, Any] = Depends(require_auth)) -> dict[s
 
 
 @router.post("/api/auth/signup", response_model=AuthResponse)
-async def signup(body: SignupRequest) -> AuthResponse:
+async def signup(body: SignupRequest, _rate_limit: None = Depends(rate_limit_auth)) -> AuthResponse:
     """Create a new user account and return tokens."""
     pool = get_pool()
 
@@ -227,7 +228,7 @@ async def signup(body: SignupRequest) -> AuthResponse:
 
 
 @router.post("/api/auth/login", response_model=AuthResponse)
-async def login(body: LoginRequest) -> AuthResponse:
+async def login(body: LoginRequest, _rate_limit: None = Depends(rate_limit_auth)) -> AuthResponse:
     """Authenticate user and return tokens.
 
     In ``AUTH_MODE=oauth`` the orchestrator is a confidential first-party
@@ -292,7 +293,7 @@ async def login(body: LoginRequest) -> AuthResponse:
 
 
 @router.post("/api/auth/refresh")
-async def refresh_token(body: RefreshRequest) -> dict[str, str]:
+async def refresh_token(body: RefreshRequest, _rate_limit: None = Depends(rate_limit_auth)) -> dict[str, str]:
     """Exchange a refresh token for a new access token.
 
     In ``AUTH_MODE=oauth`` this relays a ``refresh_token`` grant to the

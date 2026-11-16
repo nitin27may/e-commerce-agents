@@ -33,6 +33,7 @@ from pydantic import BaseModel
 from shared.config import settings
 from shared.context import current_user_email, current_user_role
 from shared.db import get_pool
+from shared.rate_limit import rate_limit_chat
 
 from .legacy import require_admin, require_auth
 
@@ -87,7 +88,11 @@ class CompareResponse(BaseModel):
 
 
 @router.post("/compare", response_model=CompareResponse)
-async def compare_modes(body: CompareRequest, user: dict[str, Any] = Depends(require_auth)) -> CompareResponse:
+async def compare_modes(
+    body: CompareRequest,
+    user: dict[str, Any] = Depends(require_auth),
+    _rate_limit: None = Depends(rate_limit_chat),
+) -> CompareResponse:
     """Run one prompt through several modes and report per-mode results.
 
     Standalone — no conversation, no persisted history (``RunContext(history=[])``
@@ -175,7 +180,10 @@ class ResumeRequest(BaseModel):
 
 @router.post("/{run_id}/resume")
 async def resume_run(
-    run_id: str, body: ResumeRequest, admin: dict[str, Any] = Depends(require_admin)
+    run_id: str,
+    body: ResumeRequest,
+    admin: dict[str, Any] = Depends(require_admin),
+    _rate_limit: None = Depends(rate_limit_chat),
 ) -> dict[str, Any]:
     """Resume a workflow paused on in-workflow HITL, from committed checkpoint state.
 

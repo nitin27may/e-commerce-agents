@@ -2,6 +2,7 @@ using Dapper;
 using ECommerceAgents.Shared.Auth;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Data;
+using ECommerceAgents.Shared.RateLimiting;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -37,10 +38,41 @@ public static class AuthRoutes
 
     public static IEndpointRouteBuilder MapAuthRoutes(this IEndpointRouteBuilder routes)
     {
-        routes.MapPost("/api/auth/signup", Signup);
-        routes.MapPost("/api/auth/login", Login);
-        routes.MapPost("/api/auth/refresh", Refresh);
+        routes.MapPost("/api/auth/signup", Signup).AddEndpointFilter<AuthRateLimitFilter>();
+        routes.MapPost("/api/auth/login", Login).AddEndpointFilter<AuthRateLimitFilter>();
+        routes.MapPost("/api/auth/refresh", Refresh).AddEndpointFilter<AuthRateLimitFilter>();
         return routes;
+    }
+
+    /// <summary>
+    /// 10 requests per 60 s per client address across signup, login and refresh - its own
+    /// bucket, so a credential-guessing loop neither spends nor hides behind the chat budget.
+    /// Fails open (error log) when Redis is down, like the chat limiter.
+    /// </summary>
+    internal sealed class AuthRateLimitFilter(SlidingWindowRateLimiter limiter, AgentSettings settings) : IEndpointFilter
+    {
+        public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+        {
+            var http = context.HttpContext;
+            var ip = ClientAddress.Resolve(
+                http.Request.Headers["X-Forwarded-For"].FirstOrDefault(),
+                http.Connection.RemoteIpAddress,
+                settings.RateLimitTrustedProxyHops);
+
+            if (!await limiter.TryAcquireAsync(
+                    SlidingWindowRateLimiter.AuthKeyFor(ip),
+                    settings.RateLimitAuthMaxRequests,
+                    settings.RateLimitAuthWindowSeconds,
+                    http.RequestAborted))
+            {
+                return Results.Json(
+                    new { detail = "Too many authentication requests - try again shortly." },
+                    statusCode: StatusCodes.Status429TooManyRequests
+                );
+            }
+
+            return await next(context);
+        }
     }
 
     private static async Task<IResult> Signup(

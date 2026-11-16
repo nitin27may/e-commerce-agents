@@ -19,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from orchestrator.routes import router
+from shared.config import settings
 from shared.db import close_db_pool, init_db_pool
 from shared.readiness import register_readiness
 from shared.telemetry import instrument_fastapi, setup_telemetry
@@ -48,8 +49,12 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    # Explicit origins, no credentials: auth is a Bearer header, never a
+    # cookie, and the browser reaches this API through the Next.js same-origin
+    # proxy anyway. Set CORS_ALLOWED_ORIGINS if you call it directly
+    # (NEXT_PUBLIC_API_URL).
+    allow_origins=settings.cors_origins,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

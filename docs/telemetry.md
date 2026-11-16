@@ -257,6 +257,24 @@ All telemetry settings are managed via environment variables, loaded through Pyd
 | `OTEL_SERVICE_NAME` | `ecommerce` | Fallback service name. Overridden by each agent's `setup_telemetry(service_name)` call. |
 | `ENVIRONMENT` | `development` | Mapped to `deployment.environment` resource attribute. |
 
+### Prompt and completion content (off by default)
+
+GenAI spans record token counts, model and latency always. The **prompt and
+completion text** is only recorded when
+`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true`, and all three compose
+files default it to `false`: chat turns contain customer names, addresses and
+order details, and the Aspire dashboard is unauthenticated. To see message
+bodies locally, set it in `.env` (or the shell) and recreate the stack:
+
+```bash
+echo 'OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true' >> .env
+docker compose up -d --force-recreate orchestrator
+```
+
+(`GENAI_CAPTURE_CONTENT=true` is the application-level switch that sets the same
+variable for host-run Python; the .NET stack reads it too.) Do not enable it
+where real customer data flows.
+
 ### Docker Compose Ports
 
 | Port | Service |
