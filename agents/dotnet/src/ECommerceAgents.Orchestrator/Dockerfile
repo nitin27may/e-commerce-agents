@@ -1,5 +1,5 @@
 # Build + publish. Context = repo root (see docker-compose.dotnet.yml).
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0 AS build
 WORKDIR /src
 # Directory.Build.props carries TreatWarningsAsErrors, LangVersion,
 # InvariantGlobalization and VersionPrefix. Omitting it did not break the build —
