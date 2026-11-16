@@ -40,7 +40,16 @@ def _http(exc: ApprovalHTTPError) -> HTTPException:
     return HTTPException(status_code=exc.status_code, detail=exc.detail)
 
 
-@router.post("/api/admin/events/simulate")
+def simulator_enabled() -> None:
+    """404 unless the simulator is on, for *everyone*. Runs before the admin check (decorator dependencies come first)
+    so a 401/403 cannot tell a caller the route exists on an install that has switched it off."""
+    try:
+        svc.require_enabled()
+    except ApprovalHTTPError as exc:
+        raise _http(exc) from None
+
+
+@router.post("/api/admin/events/simulate", dependencies=[Depends(simulator_enabled)])
 async def simulate_event(body: SimulateBody, user: dict[str, Any] = Depends(require_admin)) -> dict[str, Any]:
     try:
         return await svc.simulate(

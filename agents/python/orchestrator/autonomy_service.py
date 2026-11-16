@@ -35,7 +35,7 @@ MAX_NOTE_LENGTH = 500
 SCENARIOS: dict[str, int] = {"small": 3, "medium": 6, "large": 12}
 
 
-def _require_enabled() -> None:
+def require_enabled() -> None:
     if not (settings.AUTONOMY_ENABLED and settings.AUTONOMY_SIMULATOR_ENABLED):
         raise ApprovalHTTPError(404, "Not found")
 
@@ -79,7 +79,7 @@ async def simulate(
     event_id: str | None = None,
 ) -> dict[str, Any]:
     """Enqueue one ``order.shipment_delayed`` event. Replaying the same ``event_id`` enqueues nothing."""
-    _require_enabled()
+    require_enabled()
     if event_id is not None and not event_id.strip():
         raise ApprovalHTTPError(422, "event_id cannot be empty")
     if scenario is not None:

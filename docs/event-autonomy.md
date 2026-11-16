@@ -141,7 +141,7 @@ seeder's products and reviews, none of which `agent_decisions` or `store_credit_
 
 | Route | |
 |---|---|
-| `POST /api/admin/events/simulate` | `{scenario: small\|medium\|large}` or `{order_id, delay_days, event_id?}`. 404 unless `AUTONOMY_ENABLED` **and** `AUTONOMY_SIMULATOR_ENABLED`. A scenario picks the oldest eligible order of a customer with no autonomy activity today and no event queued, so the three land on three customers. Replaying an `event_id` enqueues nothing |
+| `POST /api/admin/events/simulate` | `{scenario: small\|medium\|large}` or `{order_id, delay_days, event_id?}`. 404 unless `AUTONOMY_ENABLED` **and** `AUTONOMY_SIMULATOR_ENABLED`, for every caller and *before* the role check (a 401/403 would reveal that the route exists on an install that switched it off). A scenario picks the oldest eligible order of a customer with no autonomy activity today and no event queued, so the three land on three customers. Replaying an `event_id` enqueues nothing |
 | `GET /api/admin/decisions[?state=&limit=&offset=]` | decisions with state, reasons, the budget each drew on, and today's use per budget. `state` is filtered in SQL over every row (an old `awaiting_approval` decision stays findable); `limit` is at most 200, `offset` pages, `total` counts every match |
 | `POST /api/admin/decisions/{id}/reverse` | admin only; works even when the feature is switched off |
 

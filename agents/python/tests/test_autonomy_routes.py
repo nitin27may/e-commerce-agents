@@ -96,6 +96,25 @@ async def test_the_simulator_is_a_404_unless_both_switches_are_on(
     assert await _outbox(w) == []
 
 
+@pytest.mark.parametrize(
+    ("email", "role"), [(aus.CUSTOMER, "customer"), (aus.SUPPORT, "support"), ("s@example.com", "seller")]
+)
+async def test_with_the_simulator_off_a_non_admin_gets_the_same_404_as_everyone(
+    w: aus.World, monkeypatch: pytest.MonkeyPatch, email: str, role: str
+) -> None:
+    """Review fix: the switch is checked before the role, so a 403 cannot reveal that the route exists."""
+    monkeypatch.setattr("shared.config.settings.AUTONOMY_ENABLED", True)
+    monkeypatch.setattr("shared.config.settings.AUTONOMY_SIMULATOR_ENABLED", False)
+
+    off = await _call(_as(email, role), "POST", SIMULATE, {"scenario": "small"})
+    admin_off = await _call(_admin(), "POST", SIMULATE, {"scenario": "small"})
+    monkeypatch.setattr("shared.config.settings.AUTONOMY_SIMULATOR_ENABLED", True)
+    on = await _call(_as(email, role), "POST", SIMULATE, {"scenario": "small"})
+
+    assert (off.status_code, admin_off.status_code, on.status_code) == (404, 404, 403)
+    assert off.json() == admin_off.json()
+
+
 # ── who may call ─────────────────────────────────────────────────────────────
 
 
