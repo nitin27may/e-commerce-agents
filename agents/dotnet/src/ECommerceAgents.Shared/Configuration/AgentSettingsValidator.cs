@@ -45,6 +45,19 @@ public static class AgentSettingsValidator
             Check("A2A_IDENTITY_KEY", settings.A2aIdentityKey, isProd, logger);
         }
 
+        // `token` mode only protects against a caller holding just X-Agent-Secret when the signing key is a different
+        // secret; with no key (it falls back to the shared secret) or the same value, holding the secret is holding the
+        // key. Names the variables, never a value.
+        var identityKey = (settings.A2aIdentityKey ?? string.Empty).Trim();
+        if (string.Equals(settings.A2aIdentity, "token", StringComparison.Ordinal)
+            && (identityKey.Length == 0 || string.Equals(identityKey, (settings.AgentSharedSecret ?? string.Empty).Trim(), StringComparison.Ordinal)))
+        {
+            logger.LogWarning(
+                "settings.a2a_identity_key_not_distinct mode=token reason={Reason}: a caller holding only AGENT_SHARED_SECRET "
+                + "can still mint user-context tokens; set A2A_IDENTITY_KEY to a different secret",
+                identityKey.Length == 0 ? "key_empty" : "key_equals_shared_secret");
+        }
+
         if (settings.AuthMode == "oauth")
         {
             Check("OAUTH_SEED_KEY", settings.OAuthSeedKey, isProd, logger);

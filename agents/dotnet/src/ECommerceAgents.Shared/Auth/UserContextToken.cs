@@ -40,9 +40,13 @@ public sealed record UserContext(string Email, string Role, string SessionId, st
 /// <b>Key.</b> HMAC-SHA256 over a key derived with HKDF-SHA256 (RFC 5869, no salt) from <c>A2A_IDENTITY_KEY</c> if set,
 /// else <c>AGENT_SHARED_SECRET</c>, with a fixed info string. No new identity provider, nothing new to distribute in
 /// the default setup. The key is symmetric, so a specialist could also mint a token: a <em>compromised specialist</em>
-/// is not stopped by this. What it adds is that a request cannot be replayed at another specialist or after it
-/// expires, that a header forged beside a valid token is refused, and that, with <c>A2A_IDENTITY_KEY</c> different
-/// from the shared secret, a caller holding only <c>X-Agent-Secret</c> can no longer choose its user.
+/// is not stopped by this. What it adds is that a request cannot be replayed at <em>another</em> specialist or after it
+/// expires (at the <em>same</em> specialist it can be replayed until then: <c>jti</c> is minted for audit correlation
+/// and nothing checks it) and that a header forged beside a valid token is refused. A caller holding only
+/// <c>X-Agent-Secret</c> can no longer choose its user <b>only when both</b> hold: <c>A2A_IDENTITY=token</c> (the
+/// default, <c>both</c>, still accepts a request with no token and believes its <c>X-User-*</c> headers) <b>and</b>
+/// <c>A2A_IDENTITY_KEY</c> is different from the shared secret. A process in <c>token</c> mode without a distinct key
+/// logs a startup warning.
 /// </para>
 /// </remarks>
 public static class UserContextToken

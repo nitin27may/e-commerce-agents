@@ -133,17 +133,29 @@ header `typ=a2a-user-context+jwt` (a user's login JWT, also HS256, can never be 
 (`ecommerce-agents/orchestrator`), `aud` (**the specialist's registry name**: a token for one specialist is no use at
 another), `sub` (the email, or `anonymous`), `email`, `role`, `sid` (the session id), `act` (`{"client_id":
 "orchestrator"}`, RFC 8693), `iat`, `exp`, `jti`. Lifetime `A2A_IDENTITY_TTL_SECONDS` (default 300, 30 to 900) and a
-verifier refuses any token living longer than 15 minutes. Minted per call; nothing is stored.
+verifier refuses any token living longer than 15 minutes, one whose `iat` or `nbf` is in the future (beyond 30 seconds of
+leeway), one with a missing `exp`/`iat`/`iss`/`aud`/`sub`/`email`/`role`, and one whose `iat`/`exp`/`nbf` is not a whole
+number. Both stacks judge every token the same way: `user-context.v1.json` also carries a `negative` list that each
+stack must refuse. Minted per call; nothing is stored.
 
 **Key**: HMAC-SHA256 over a key derived with HKDF-SHA256 (RFC 5869, no salt, fixed `info` string) from
 `A2A_IDENTITY_KEY` if set, else `AGENT_SHARED_SECRET`. No new identity provider, nothing new to distribute in the
 default setup, and the same on both stacks.
 
 **What it buys, and what it does not.** The key is symmetric: a specialist can verify a token and could also mint one,
-so a *compromised specialist* is not stopped by this. It adds: a request cannot be replayed at another specialist or
-after it expires; a header forged beside a valid token is refused; and, with `A2A_IDENTITY_KEY` set to a value
-**different from** the shared secret, a caller that holds only `X-Agent-Secret` (a leaked compose file, an SSRF) can no
-longer choose its user. Asymmetric signing (the orchestrator alone holding a private key) is the follow-up that closes
+so a *compromised specialist* is not stopped by this. It adds: a request cannot be replayed at *another* specialist or
+after it expires; and a header forged beside a valid token is refused. A caller that holds only `X-Agent-Secret` (a
+leaked compose file, an SSRF) can no longer choose its user **only when both** hold: `A2A_IDENTITY=token` **and**
+`A2A_IDENTITY_KEY` set to a value **different from** the shared secret. Under the default `both`, a caller that omits
+the token and sends forged `X-User-*` headers is believed (that is what keeps a half-upgraded deployment working), and
+with no distinct key the shared secret is also the signing key, so holding it is holding the key. Starting in `token`
+mode with the key empty or equal to `AGENT_SHARED_SECRET` logs a warning (`settings.a2a_identity_key_not_distinct`, on
+both stacks; the key is never logged).
+
+**No replay protection within the lifetime.** `jti` is minted, and nothing checks it: no specialist keeps a seen-`jti`
+set. A captured request replays at the *same* specialist until `exp` plus the 30 second leeway (default five minutes,
+at most 15). `jti` is for audit correlation only today. A replay cache (bounded, per specialist, keyed by `jti` until
+`exp`) is the follow-up if that window matters. Asymmetric signing (the orchestrator alone holding a private key) is the follow-up that closes
 the compromised-specialist case; it needs key distribution this repo does not have outside `AUTH_MODE=oauth`.
 
 **Default and rollout**: `both`. Moving the default to `token` is the next release's step, once the mixed-stack

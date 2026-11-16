@@ -523,6 +523,17 @@ class Settings(BaseSettings):
         if self.A2A_IDENTITY_KEY.strip():
             _check("A2A_IDENTITY_KEY", self.A2A_IDENTITY_KEY)
 
+        # `token` mode only protects against a caller holding just X-Agent-Secret when the signing key is a different
+        # secret; with no key (it falls back to the shared secret) or the same value, holding the secret is holding the
+        # key. Name the variables, never a value.
+        identity_key = self.A2A_IDENTITY_KEY.strip()
+        if self.A2A_IDENTITY == "token" and (not identity_key or identity_key == self.AGENT_SHARED_SECRET.strip()):
+            logger.warning(
+                "settings.a2a_identity_key_not_distinct mode=token reason=%s: a caller holding only AGENT_SHARED_SECRET "
+                "can still mint user-context tokens; set A2A_IDENTITY_KEY to a different secret",
+                "key_empty" if not identity_key else "key_equals_shared_secret",
+            )
+
         if self.AUTH_MODE == "oauth":
             _check("OAUTH_SEED_KEY", self.OAUTH_SEED_KEY)
             if is_prod and not self.AUTH_SIGNING_KEY_ENCRYPTION_KEY.strip():

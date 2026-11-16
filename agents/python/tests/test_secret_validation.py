@@ -114,3 +114,32 @@ def test_production_rejects_compose_jwt_placeholder(monkeypatch: pytest.MonkeyPa
     )
     with pytest.raises(ValueError, match=r"JWT_SECRET is unsafe \(placeholder default\)"):
         config_mod.Settings(_env_file=None)
+
+
+@pytest.mark.parametrize(
+    ("mode", "key", "warns"),
+    [
+        ("token", "", True),
+        ("token", _STRONG_SECRET, True),  # equal to the shared secret
+        ("token", _STRONG_SECOND, False),
+        ("both", "", False),
+        ("headers", _STRONG_SECRET, False),
+    ],
+)
+def test_token_mode_without_a_distinct_key_warns_and_never_logs_it(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, mode: str, key: str, warns: bool
+) -> None:
+    config_mod = _prepare_env(
+        monkeypatch,
+        environment="production",
+        JWT_SECRET="j" * 48,
+        AGENT_SHARED_SECRET=_STRONG_SECRET,
+        A2A_IDENTITY=mode,
+        A2A_IDENTITY_KEY=key,
+    )
+    with caplog.at_level(logging.WARNING):
+        config_mod.Settings(_env_file=None)  # type: ignore[call-arg]
+
+    messages = [rec.getMessage() for rec in caplog.records]
+    assert any("settings.a2a_identity_key_not_distinct" in m for m in messages) is warns
+    assert not any(_STRONG_SECRET in m or _STRONG_SECOND in m for m in messages)
