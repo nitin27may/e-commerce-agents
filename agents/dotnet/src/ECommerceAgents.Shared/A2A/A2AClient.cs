@@ -134,6 +134,7 @@ public sealed class A2AClient
         using var open = response!;
         var payload = await open.Content.ReadFromJsonAsync<A2AResponse>(ResponseJsonOptions, ct);
         MergeReturnedSteps(agentName, payload?.Steps);
+        RequestContext.RecordUsage(agentName, payload?.Usage);
         return payload?.Response ?? string.Empty;
     }
 
@@ -242,6 +243,22 @@ public sealed class A2AClient
                 // with the specialist's name (a specialist doesn't know its
                 // own name in RequestContext, so it can't tag itself).
                 MergeReturnedSteps(agentName, JsonSerializer.Deserialize<List<ExecutionStep>>(chunk, ResponseJsonOptions));
+                continue;
+            }
+            if (eventType == "usage")
+            {
+                // Accounting only: into the turn's tally, never yielded. What this
+                // method yields is the text the orchestrator's model reads.
+                SpecialistUsage? reported = null;
+                try
+                {
+                    reported = JsonSerializer.Deserialize<SpecialistUsage>(chunk, ResponseJsonOptions);
+                }
+                catch (JsonException)
+                {
+                    _logger.LogWarning("a2a.usage_unparseable target={Target}", agentName);
+                }
+                RequestContext.RecordUsage(agentName, reported);
                 continue;
             }
             if (chunk != "[DONE]")
@@ -379,6 +396,7 @@ public sealed class A2AClient
 
     private sealed record A2AResponse(
         [property: JsonPropertyName("response")] string Response,
-        [property: JsonPropertyName("steps")] List<ExecutionStep>? Steps = null
+        [property: JsonPropertyName("steps")] List<ExecutionStep>? Steps = null,
+        [property: JsonPropertyName("usage")] SpecialistUsage? Usage = null
     );
 }

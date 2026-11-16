@@ -166,6 +166,7 @@ public static class ChatRoutes
         {
             var response = await agent.RunAsync(BuildMessages(ctx.History));
             responseText = response.Text;
+            RequestContext.RecordUsage("orchestrator", SpecialistUsage.From(response.Usage, settings.LlmModel));
         }
         sw.Stop();
 
@@ -342,6 +343,11 @@ public static class ChatRoutes
         {
             await foreach (var update in agent.RunStreamingAsync(BuildMessages(ctx.History), cancellationToken: abort))
             {
+                foreach (var content in update.Contents.OfType<UsageContent>())
+                {
+                    RequestContext.RecordUsage("orchestrator", SpecialistUsage.From(content.Details, settings.LlmModel));
+                }
+
                 if (string.IsNullOrEmpty(update.Text))
                 {
                     continue;
@@ -810,10 +816,14 @@ public static class ChatRoutes
             );
         }
 
+        // The orchestrator's own tokens plus every specialist's, as reported over A2A.
+        var total = RequestContext.CurrentRunUsage.Total();
         var usageLogId = await usage.LogAgentUsageAsync(
             ctx.UserId,
             "orchestrator",
             inputSummary: userMessage,
+            tokensIn: (int)Math.Min(total?.InputTokenCount ?? 0, int.MaxValue),
+            tokensOut: (int)Math.Min(total?.OutputTokenCount ?? 0, int.MaxValue),
             durationMs: durationMs,
             toolCallsCount: agentsInvolved.Count - 1
         );

@@ -48,7 +48,16 @@ public static class AgentHost
     /// camelCase policy, which <see cref="ECommerceAgents.Shared.A2A.A2AClient"/>'s
     /// own response DTO matches explicitly via <c>JsonPropertyName</c>.
     /// </summary>
-    public sealed record AgentResponse(string Response, IReadOnlyList<ExecutionStep>? Steps = null);
+    public sealed record AgentResponse(
+        string Response,
+        IReadOnlyList<ExecutionStep>? Steps = null,
+        // This process's LLM token usage for the call (snake_case wire shape, see
+        // SpecialistUsage). Its own field, never part of Response, which is the
+        // text the orchestrator's model reads. Omitted when the model reported none.
+        [property: System.Text.Json.Serialization.JsonIgnore(
+            Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        SpecialistUsage? Usage = null
+    );
 
     /// <summary>
     /// Build a standalone <see cref="WebApplication"/> configured as an A2A
@@ -136,7 +145,8 @@ public static class AgentHost
             try
             {
                 var reply = await onMessage(payload.Message, services);
-                return Results.Ok(new AgentResponse(reply, RequestContext.CurrentSteps.ToList()));
+                return Results.Ok(new AgentResponse(
+                    reply, RequestContext.CurrentSteps.ToList(), RequestContext.CurrentRunUsage.Total()));
             }
             catch (Exception ex)
             {
@@ -220,6 +230,14 @@ public static class AgentHost
                 // Anything that completed after the final chunk — a tool the model
                 // never narrated, or a run that produced no text at all.
                 await DrainStepsAsync();
+
+                // Terminal usage frame, ahead of [DONE]: a named event, so a reader
+                // that only understands text frames cannot mistake it for text.
+                if (RequestContext.CurrentRunUsage.Total() is { } usageFrame)
+                {
+                    await http.Response.WriteAsync(
+                        $"event: usage\ndata: {usageFrame.ToWireJson()}\n\n", Encoding.UTF8);
+                }
                 await http.Response.WriteAsync("data: [DONE]\n\n", Encoding.UTF8);
                 await http.Response.Body.FlushAsync();
             }
@@ -262,6 +280,9 @@ public static class AgentHost
         messages.Add(new ChatMessage(ChatRole.User, message));
 
         var response = await agent.RunAsync(messages);
+        RequestContext.RecordUsage(
+            RunUsage.SelfKey,
+            SpecialistUsage.From(response.Usage, services.GetService<AgentSettings>()?.LlmModel ?? ""));
         return response.Text;
     }
 
@@ -292,8 +313,15 @@ public static class AgentHost
             .ToList();
         messages.Add(new ChatMessage(ChatRole.User, message));
 
+        var model = services.GetService<AgentSettings>()?.LlmModel ?? "";
         await foreach (var update in agent.RunStreamingAsync(messages, cancellationToken: ct))
         {
+            // Usage arrives as a content item on an update, not as text.
+            foreach (var content in update.Contents.OfType<UsageContent>())
+            {
+                RequestContext.RecordUsage(RunUsage.SelfKey, SpecialistUsage.From(content.Details, model));
+            }
+
             if (!string.IsNullOrEmpty(update.Text))
             {
                 yield return update.Text;

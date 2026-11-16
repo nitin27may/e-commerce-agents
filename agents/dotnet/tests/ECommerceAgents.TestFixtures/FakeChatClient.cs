@@ -37,6 +37,13 @@ public sealed class FakeChatClient : IChatClient
     public Action? OnCall { get; set; }
 
     /// <summary>
+    /// Token usage each call reports (<see cref="ChatResponse.Usage"/>, or a trailing
+    /// <see cref="UsageContent"/> update when streaming). <c>null</c> (the default)
+    /// reports none, as before.
+    /// </summary>
+    public UsageDetails? Usage { get; set; }
+
+    /// <summary>
     /// The <see cref="ChatOptions"/> each call arrived with — this is where
     /// tools and instructions live, so it is the only way a test can prove an
     /// <c>AIContextProvider</c> enriched the request instead of replacing it.
@@ -58,7 +65,7 @@ public sealed class FakeChatClient : IChatClient
         _receivedMessages.Add(messages);
         _receivedOptions.Add(options);
         var text = NextResponse();
-        return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, text)));
+        return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, text)) { Usage = Usage });
     }
 
     public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
@@ -71,6 +78,10 @@ public sealed class FakeChatClient : IChatClient
         _receivedOptions.Add(options);
         var text = NextResponse();
         yield return new ChatResponseUpdate(ChatRole.Assistant, text);
+        if (Usage is not null)
+        {
+            yield return new ChatResponseUpdate(ChatRole.Assistant, new List<AIContent> { new UsageContent(Usage) });
+        }
         await Task.CompletedTask;
     }
 
