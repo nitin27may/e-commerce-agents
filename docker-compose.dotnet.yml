@@ -65,12 +65,16 @@ services:
       - "127.0.0.1:18890:18889"
     environment:
       DASHBOARD__FRONTEND__AUTHMODE: Unsecured
+    # Same check as docker-compose.yml. The image has no curl/wget, and
+    # /dev/tcp is a bash feature: CMD-SHELL runs /bin/sh, so it has to be
+    # invoked through bash explicitly. The previous form ran it under sh and
+    # reported the dashboard unhealthy forever.
     healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/18889 && echo ok || exit 1"]
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/127.0.0.1/18888' && echo ok || exit 1"]
       interval: 10s
       timeout: 3s
-      retries: 5
-      start_period: 5s
+      retries: 10
+      start_period: 20s
 
   # ── Seeder (reuses the Python script; single source of truth) ──
 

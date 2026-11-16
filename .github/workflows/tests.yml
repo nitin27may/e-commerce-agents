@@ -227,7 +227,10 @@ jobs:
   # both run against the production build alone. No model key, no backend.
   web-ui-smoke:
     name: Web · Playwright UI smoke (no backend)
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: the Playwright version in web/pnpm-lock.yaml
+    # (1.59) cannot install Chromium's system dependencies on Ubuntu 26.04,
+    # which ubuntu-latest now resolves to. Move this with the Playwright bump.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
       run:
