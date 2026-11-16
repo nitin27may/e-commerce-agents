@@ -795,6 +795,27 @@ public sealed class ApprovalRoutesTests : IAsyncLifetime
         (await _repo.ListEventsAsync(approval.Id)).Select(e => e.Action).Should().Equal("created");
     }
 
+    [Theory]
+    [InlineData("approve", "admin")]
+    [InlineData("reject", "admin")]
+    [InlineData("request_info", "admin")]
+    [InlineData("approve", "support")]
+    [InlineData("reject", "support")]
+    [InlineData("request_info", "support")]
+    public async Task StaffCannotDecideAnEventApproval_OnThisStack_WithAnyDecision_AndNothingChanges(string decision, string role)
+    {
+        var approval = await SeedEventApprovalAsync(Customer);
+        using var client = ClientFor($"{role}-reviewer@example.com", role);
+
+        var response = await DecideAsync(client, approval.Id, new { decision, note = "why?" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity, "not supported on this stack, and not the 404 of an unknown id");
+        (await JsonOf(response)).GetProperty("detail").GetString().Should().Contain("cannot be decided on this stack");
+        (await StatusAsync(approval.Id)).Should().Be("pending_review");
+        (await _repo.ListEventsAsync(approval.Id)).Select(e => e.Action).Should().Equal("created");
+        (await _repo.GetAsync(approval.Id))!.ClaimedBy.Should().BeNull();
+    }
+
     [Fact]
     public void TheBeneficiaryRule_AppliesToEveryStaffDecidedSource_AndExemptsOnlyTheSellerDecidedProposal()
     {

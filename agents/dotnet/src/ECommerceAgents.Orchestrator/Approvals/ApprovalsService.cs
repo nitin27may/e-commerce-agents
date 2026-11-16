@@ -196,6 +196,12 @@ public sealed class ApprovalsService(
         var approval = await LoadAsync(approvalId);
         RefuseProposal(approval); // before anything else: not even a 403 hints at a decision path that does not exist
         AuthorizeDecider(approval, actor);
+        // An autonomous-action approval (Python's event autonomy, parity row 40) is granted by Python's engine: this stack has no
+        // executor for it. Refused for EVERY decision, before anything is claimed, so nothing changes: request_info in particular
+        // would park it in needs_info, where Python's approve then refuses it. Not a 404 (Python staff can decide it): "not supported
+        // on this stack", the 422 this service already uses for what it cannot decide.
+        if (approval.Source == "event")
+            throw new ApprovalHttpException(422, "Autonomous-action approvals cannot be decided on this stack; use the Python orchestrator");
         var trimmed = (note ?? "").Trim();
         var cleanNote = trimmed.Length == 0 ? null : trimmed[..Math.Min(trimmed.Length, MaxNoteLength)];
         var edited = edits ?? new Dictionary<string, JsonElement>();
