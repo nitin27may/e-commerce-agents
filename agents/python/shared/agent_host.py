@@ -24,6 +24,14 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from shared.readiness import register_readiness
+from shared.replay_client import ReplayFixtureMissingError
+from shared.replay_miss import (
+    REPLAY_MISS_BODY,
+    REPLAY_MISS_EVENT,
+    REPLAY_MISS_STATUS,
+    begin_miss_tracking,
+    raise_if_specialist_missed,
+)
 from shared.run_usage import served_model, to_wire_usage
 from shared.sse import sse_frame
 
@@ -79,7 +87,9 @@ async def _run_agent_native(
     plain ``str`` return can't carry that side-channel data.
     """
     messages = _history_as_maf_messages(history, user_message)
+    begin_miss_tracking()
     response = await agent.run(messages, options=_run_options())
+    raise_if_specialist_missed()
     if metadata_box is not None:
         metadata_box.update(getattr(response, "additional_properties", None) or {})
         usage = getattr(response, "usage_details", None)
@@ -108,11 +118,13 @@ async def _run_agent_native_stream(
     here just returns that cached result.
     """
     messages = _history_as_maf_messages(history, user_message)
+    begin_miss_tracking()
     stream = agent.run(messages, stream=True, options=_run_options())
     async for update in stream:
         text = getattr(update, "text", None)
         if text:
             yield text
+    raise_if_specialist_missed()
     if metadata_box is not None and hasattr(stream, "get_final_response"):
         final = await stream.get_final_response()
         metadata_box.update(getattr(final, "additional_properties", None) or {})
@@ -298,6 +310,10 @@ def create_agent_app(
                 payload["usage"] = usage
             return payload
 
+        except ReplayFixtureMissingError:
+            # Replay mode only: tell the caller this is a missing recording, not a failure.
+            logger.warning("%s.replay_miss", agent_name)
+            return JSONResponse(REPLAY_MISS_BODY, status_code=REPLAY_MISS_STATUS)
         except Exception:
             logger.exception("%s.message_error", agent_name)
             return JSONResponse(
@@ -371,6 +387,12 @@ def create_agent_app(
                         for frame in _drain_new_steps():
                             yield frame
                         yield sse_frame(chunk)
+                except ReplayFixtureMissingError:
+                    # The 200 is already sent, so the miss is an explicit frame.
+                    logger.warning("%s.replay_miss", agent_name)
+                    yield sse_frame(json.dumps(REPLAY_MISS_BODY), event=REPLAY_MISS_EVENT)
+                    yield sse_frame("[DONE]")
+                    return
                 except Exception:
                     logger.exception("%s.message_stream_error", agent_name)
                     yield sse_frame("[ERROR: agent processing failed]")

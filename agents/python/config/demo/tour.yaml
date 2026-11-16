@@ -1,0 +1,82 @@
+# The no-key demo tour (#86): the chips the chat empty state offers, in order, and the
+# text shown when a visitor asks something that was never recorded.
+#
+# THESE PROMPTS ARE DRAFTS. Under LLM_PROVIDER=replay a prompt only answers if its
+# exact request was recorded, so a recording session finalizes this file: edit the
+# wording here, record, and ship the fixtures with it. Changing a prompt without
+# re-recording turns its chip into a replay miss.
+#
+# Fields per chip:
+#   id               unique, stable (used as the React key and in tests)
+#   label            the chip text
+#   prompt           sent verbatim as the user's message
+#   mode             an orchestration mode registered in orchestrator/modes (default "tool")
+#   new_conversation true starts a fresh conversation; false continues the previous
+#                    chip's, and is only meaningful for a scripted follow-up. The first
+#                    chip must start one.
+#
+# Drafting rules (plan C.1): no "now"-relative answers (days remaining, restock dates)
+# and no "remember this" prompts, because memory writes change what the next
+# prompt's context providers inject and so change its request hash.
+#
+# The return prompt names the tour user's delivered order by its fixed uuid5 id
+# (shared/demo_tour.py::tour_order_id); tests/test_demo_tour_endpoints.py keeps the two in step.
+
+miss_message: >-
+  This demo replays recorded answers, and this question was not one of them.
+  Pick one of the suggested prompts, or run the stack with your own model key to ask anything.
+
+chips:
+  - id: search-headphones
+    label: Find noise-cancelling headphones
+    prompt: Show me noise-cancelling headphones under $350.
+    mode: tool
+    new_conversation: true
+
+  - id: follow-up-compare
+    label: Which one has the best reviews?
+    prompt: Which of those has the best reviews?
+    mode: tool
+    new_conversation: false
+
+  - id: order-status
+    label: Where is my sweater order?
+    prompt: What is the status of my Patagonia Better Sweater order?
+    mode: tool
+    new_conversation: true
+
+  - id: coupons
+    label: Any coupons for Electronics?
+    prompt: Which coupons can I use on an Electronics purchase over $100?
+    mode: tool
+    new_conversation: true
+
+  - id: stock
+    label: Is the Sony WH-1000XM5 in stock?
+    prompt: Is the Sony WH-1000XM5 in stock?
+    mode: tool
+    new_conversation: true
+
+  - id: handoff-order
+    label: Handoff mesh - track my order
+    prompt: Where is my Patagonia Better Sweater order and when will it arrive?
+    mode: handoff
+    new_conversation: true
+
+  - id: pre-purchase
+    label: Pre-purchase research
+    prompt: I am thinking of buying the Sony WH-1000XM5. Is it a good time to buy?
+    mode: "workflow:pre-purchase"
+    new_conversation: true
+
+  - id: group-chat
+    label: Round-table debate
+    prompt: Is the Sony WH-1000XM5 worth its price?
+    mode: group-chat
+    new_conversation: true
+
+  - id: return-approval
+    label: Return my Dyson (needs approval)
+    prompt: I want to return order 3a1a42f5-62ae-520e-b54f-89eee633f9dc, the vacuum is not what I expected.
+    mode: "workflow:return-replace"
+    new_conversation: true

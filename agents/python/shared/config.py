@@ -143,6 +143,12 @@ class Settings(BaseSettings):
     REPLAY_RECORD_PROVIDER: str = "openai"  # openai | azure — used only when RECORD=true
     REPLAY_FIXTURES_DIR: str = "evals/fixtures/replay"  # relative to the process cwd (agents/python)
     RECORD: bool = False
+    # The no-key demo tour (#86): suggested prompts the web UI offers as chips, and
+    # `POST /api/demo/reset` for the tour user. Off by default, so a normal install
+    # serves 404 on both and the UI shows nothing. DEMO_TOUR_PATH is relative to
+    # agents/python (an absolute path is used as is).
+    DEMO_TOUR_ENABLED: bool = False
+    DEMO_TOUR_PATH: str = "config/demo/tour.yaml"
     # Sampling temperature for every agent run. Defaults LOW for consistent,
     # reproducible answers — at the provider default (~1.0) the same query can
     # yield categorically different results (e.g. finding vs. not finding a

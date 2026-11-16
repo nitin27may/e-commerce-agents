@@ -59,6 +59,8 @@ from shared.context import current_session_id
 from shared.db import get_pool
 from shared.grounding.ledger import reset_grounding_ledger
 from shared.rate_limit import rate_limit_chat
+from shared.replay_client import ReplayFixtureMissingError
+from shared.replay_miss import REPLAY_MISS_EVENT, is_replay_miss_event, miss_payload
 from shared.run_usage import ORCHESTRATOR, begin_run_usage
 from shared.session import get_history_as_dicts, get_history_provider
 from shared.sse import sse_frame
@@ -82,6 +84,8 @@ class ChatResponse(BaseModel):
     conversation_id: str
     agents_involved: list[str]
     grounding: dict[str, Any] | None = None
+    # Set instead of an answer when replay mode has no recording for this prompt (#86).
+    replay_miss: dict[str, str] | None = None
 
 
 _PENDING_PERSIST_TASKS: set[_asyncio.Task] = set()
@@ -341,6 +345,7 @@ async def chat(
     steps: list[dict[str, Any]] = []
     run_payload: dict[str, Any] = {}
     ctx = RunContext(history=history, conversation_id=conversation_id)
+    replay_miss: dict[str, str] | None = None
 
     with UsageTimer() as timer:
         with agent_run_span("orchestrator"):
@@ -352,13 +357,17 @@ async def chat(
                         response_text = run_payload.get("text", "")
                         agents_involved = run_payload.get("agents_involved", agents_involved)
                         steps = run_payload.get("steps", steps)
+            except ReplayFixtureMissingError:
+                logger.warning("chat.replay_miss conversation=%s mode=%s", conversation_id, mode_name)
+                replay_miss = miss_payload()
+                response_text = replay_miss["message"]
             except Exception:
                 logger.exception(
                     "chat.agent_error user=%s conversation=%s mode=%s", user_email, conversation_id, mode_name
                 )
                 response_text = "I apologize, but I encountered an issue processing your request. Please try again."
 
-    if not is_anon:
+    if not is_anon and replay_miss is None:
         # Save assistant message + update conversation + usage (authed only)
         await pool.execute(
             """INSERT INTO messages (conversation_id, role, content, agent_name, agents_involved)
@@ -386,6 +395,7 @@ async def chat(
         conversation_id=conversation_id or "",
         agents_involved=agents_involved,
         grounding=run_payload.get("grounding"),
+        replay_miss=replay_miss,
     )
 
 
@@ -545,6 +555,9 @@ async def chat_stream(
                             await queue.put(("text", chunk))
                         if "grounding" in run_metadata:
                             await queue.put(("frame", "grounding", run_metadata["grounding"]))
+                    except ReplayFixtureMissingError:
+                        logger.warning("chat_stream.replay_miss conversation=%s", conversation_id)
+                        await queue.put(("frame", REPLAY_MISS_EVENT, miss_payload()))
                     except Exception:
                         logger.exception(
                             "chat_stream.agent_error user=%s conversation=%s",
@@ -569,6 +582,7 @@ async def chat_stream(
                 # run_completed can fall back to a single end-of-run dump,
                 # the same guarantee "tool" mode gets for free.
                 streamed_any_text = False
+                miss_seen = False
                 with agent_run_span("orchestrator"):
                     try:
                         async for event in mode.run(body.message, ctx):
@@ -608,6 +622,10 @@ async def chat_stream(
                                 await queue.put(("frame", "checkpoint", {"node_id": event.node_id, **event.payload}))
                             elif event.kind == "request_info":
                                 await queue.put(("frame", "request_info", {"node_id": event.node_id, **event.payload}))
+                            elif event.kind == "error" and (miss_seen or is_replay_miss_event(event.payload)):
+                                # A failed executor's message names a fixture hash. The
+                                # miss itself is reported once, below or as the raised error.
+                                miss_seen = True
                             elif event.kind == "error":
                                 await queue.put(("frame", "error", {"node_id": event.node_id, **event.payload}))
                                 await queue.put(("text", " [an error occurred] "))
@@ -619,6 +637,11 @@ async def chat_stream(
                                     if final_text:
                                         await queue.put(("text", final_text))
                             # run_started / graph / grounding: nothing to render yet.
+                        if miss_seen:
+                            await queue.put(("frame", REPLAY_MISS_EVENT, miss_payload()))
+                    except ReplayFixtureMissingError:
+                        logger.warning("chat_stream.replay_miss conversation=%s mode=%s", conversation_id, mode_name)
+                        await queue.put(("frame", REPLAY_MISS_EVENT, miss_payload()))
                     except Exception:
                         logger.exception(
                             "chat_stream.mode_error user=%s conversation=%s mode=%s",
@@ -630,6 +653,7 @@ async def chat_stream(
                 agents_involved[:] = final_agents_involved
                 await queue.put(None)  # sentinel
 
+        replay_missed = False
         agent_task = _asyncio.create_task(_run_mode_task())
 
         try:
@@ -702,6 +726,7 @@ async def chat_stream(
                         # it bypasses the byte-cap/truncation accounting above.
                         frame_name: str = item[1]
                         frame_payload: dict[str, Any] = item[2]
+                        replay_missed = replay_missed or frame_name == REPLAY_MISS_EVENT
                         yield f"event: {frame_name}\ndata: {json.dumps(frame_payload, default=str)}\n\n"
 
             finally:
@@ -741,6 +766,12 @@ async def chat_stream(
                     )
                 )
             raise
+
+        if replay_missed:
+            # No recording for this prompt: nothing to persist, and the frame
+            # already told the client why. Close the stream (#86).
+            yield "data: [DONE]\n\n"
+            return
 
         response_text = "".join(full_response)
 

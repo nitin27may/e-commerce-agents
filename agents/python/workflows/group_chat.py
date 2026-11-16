@@ -29,6 +29,8 @@ from typing import Any
 
 from agent_framework import Executor, WorkflowBuilder, WorkflowContext, handler
 
+from shared.replay_client import ReplayFixtureMissingError
+
 logger = logging.getLogger(__name__)
 
 # Given the question and the running transcript (prior turns), return this
@@ -69,6 +71,11 @@ class _PanelistExecutor(Executor):
         try:
             result = self._responder(state.question, list(state.transcript))
             text = await result if inspect.isawaitable(result) else result
+        except ReplayFixtureMissingError:
+            # A missing recording is not a panelist's opinion: fail the run so the
+            # chat route reports a replay miss, instead of writing the error text
+            # (which names a fixture hash) into the transcript the user reads.
+            raise
         except Exception as exc:  # pragma: no cover - defensive
             text = f"({self._name} could not respond: {exc})"
             logger.exception("group_chat.panelist_failed name=%s", self._name)

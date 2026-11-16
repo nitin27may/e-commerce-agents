@@ -234,6 +234,12 @@ def build_specialist_middleware(*, include_steps: bool = True) -> list[Any]:
         stack.append(CostBudgetMiddleware())
     if settings.OUTPUT_MODERATION_MODE != "off":
         stack.append(OutputModerationMiddleware())
+    # Replay mode only (empty otherwise): a specialist's recorded-response miss ends
+    # the turn as a miss instead of becoming tool text the model answers — see
+    # shared/replay_miss.py.
+    from shared.replay_miss import replay_miss_middleware
+
+    stack.extend(replay_miss_middleware())
     if include_steps:
         stack.extend(STEP_MIDDLEWARE)
     return stack

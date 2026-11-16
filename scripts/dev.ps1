@@ -355,6 +355,46 @@ try {
         Write-Info 'Tokens issued before this run are no longer valid; sign in again.'
     }
 
+    # ── LLM key preflight ────────────────────────────────────
+    # Mirrors dev.sh: openai/azure with no key means every answer fails, so stop
+    # before building or touching volumes. -InfraOnly and -SeedOnly call no model.
+    # The process environment wins, then the last NAME= line of .env.
+    function Get-EnvValue {
+        param([string]$Name)
+        $value = [Environment]::GetEnvironmentVariable($Name)
+        if (-not $value) {
+            $line = Get-Content '.env' | Where-Object { $_ -match "^$Name=" } | Select-Object -Last 1
+            if ($line) { $value = $line.Substring($Name.Length + 1) }
+        }
+        if (-not $value) { return '' }
+        return $value.Trim().Trim('"').Trim("'")
+    }
+    function Test-LlmKey {
+        param([string]$Value)
+        return ($Value -ne '') -and ($Value -ne 'sk-your-openai-api-key-here')
+    }
+    if (-not $InfraOnly -and -not $SeedOnly) {
+        $provider = (Get-EnvValue 'LLM_PROVIDER').ToLower()
+        if (-not $provider) { $provider = 'openai' }
+        $keyMissing = $false
+        if ($provider -eq 'openai') {
+            $keyMissing = -not (Test-LlmKey (Get-EnvValue 'OPENAI_API_KEY'))
+        } elseif ($provider -eq 'azure') {
+            $keyMissing = -not ((Test-LlmKey (Get-EnvValue 'AZURE_OPENAI_KEY')) -or (Test-LlmKey (Get-EnvValue 'AZURE_OPENAI_API_KEY')))
+        }
+        if ($keyMissing) {
+            Write-Err "LLM_PROVIDER=$provider but no API key is set, so every answer would fail."
+            Write-Host ''
+            Write-Host '  Two ways forward:'
+            Write-Host '    1. Add your key to .env (OPENAI_API_KEY, or AZURE_OPENAI_KEY for LLM_PROVIDER=azure),'
+            Write-Host '       then run this again.'
+            Write-Host '    2. Set LLM_PROVIDER=replay in .env to play back recorded model responses with no key.'
+            Write-Host '       Only the recorded demo prompts answer; anything else says it was not recorded.'
+            Write-Host ''
+            exit 1
+        }
+    }
+
     # ── Clean ────────────────────────────────────────────────
     if ($Clean) {
         Write-Step 'Cleaning up (removing containers, volumes, orphans)'

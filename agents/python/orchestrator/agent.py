@@ -25,6 +25,7 @@ from shared.factory import parse_agent_registry
 from shared.http_resilience import ResilientAsyncTransport
 from shared.middleware import build_specialist_middleware
 from shared.oauth.service_client import build_a2a_headers
+from shared.replay_miss import REPLAY_MISS_EVENT, SpecialistReplayMissError, is_replay_miss_status
 from shared.run_usage import record_usage
 from shared.sse import aiter_sse_events
 from shared.telemetry import a2a_call_span
@@ -123,10 +124,15 @@ async def call_specialist_agent(
                         json=request_body,
                         headers=headers,
                     ) as resp:
+                        if is_replay_miss_status(resp.status_code):
+                            raise SpecialistReplayMissError()
                         resp.raise_for_status()
                         stream_opened = True
                         async for current_event, payload in aiter_sse_events(resp.aiter_text()):
                             frames_seen += 1
+                            if current_event == REPLAY_MISS_EVENT:
+                                # The specialist has no recording for its model call.
+                                raise SpecialistReplayMissError()
                             if current_event == "step":
                                 # Merge specialist tool-call step into the
                                 # shared current_steps for this request, and
@@ -170,6 +176,9 @@ async def call_specialist_agent(
                             chunks.append(payload)
                             await stream_queue.put(("delta", agent_name, payload))
                 return "".join(chunks) or f"The {agent_name} agent returned an empty response."
+            except SpecialistReplayMissError:
+                # Not an A2A failure: end the turn as a miss (shared/replay_miss.py).
+                raise
             except Exception as exc:
                 if frames_seen:
                     # Mid-stream failure: keep what the user already saw and say
@@ -210,6 +219,8 @@ async def call_specialist_agent(
                     json=request_body,
                     headers=headers,
                 )
+                if is_replay_miss_status(resp.status_code):
+                    raise SpecialistReplayMissError()
                 resp.raise_for_status()
                 data = resp.json()
                 bucket = current_steps.get()
@@ -218,6 +229,8 @@ async def call_specialist_agent(
                     bucket.extend(specialist_steps)
                 _record_specialist_usage(agent_name, data.get("usage"))
                 return data.get("response", resp.text)
+        except SpecialistReplayMissError:
+            raise
         except httpx.TimeoutException:
             logger.error("a2a.timeout target=%s", agent_name)
             return f"The {agent_name} agent took too long to respond. Please try again."

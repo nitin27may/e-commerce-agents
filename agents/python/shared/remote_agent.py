@@ -33,6 +33,7 @@ from agent_framework import (
 
 from shared.http_resilience import ResilientAsyncTransport
 from shared.oauth.service_client import build_a2a_headers
+from shared.replay_miss import SpecialistReplayMissError, is_replay_miss_status
 from shared.run_usage import record_usage
 
 logger = logging.getLogger(__name__)
@@ -90,6 +91,10 @@ class RemoteSpecialistChatClient(BaseChatClient):
                 json={"message": prompt, "history": []},
                 headers=headers,
             )
+            if is_replay_miss_status(resp.status_code):
+                # A recorded-response miss inside the specialist: end the run as a
+                # miss rather than handing the marker to the handoff model as text.
+                raise SpecialistReplayMissError()
             resp.raise_for_status()
             data = resp.json()
             _record_reported_usage(self._agent_name, data)
