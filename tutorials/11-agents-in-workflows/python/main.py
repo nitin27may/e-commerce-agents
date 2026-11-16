@@ -20,15 +20,18 @@ from tutorials._shared import maf_bootstrap  # noqa: E402
 
 maf_bootstrap.bootstrap()
 
-from agent_framework import Agent, BaseChatClient, Message  # noqa: E402
-from agent_framework import (  # noqa: E402
+from agent_framework import (  # noqa: E402  # noqa: E402  # noqa: E402
+    Agent,
     AgentExecutor,
     AgentExecutorRequest,
     AgentExecutorResponse,
+    BaseChatClient,
+    Executor,
+    Message,
+    WorkflowBuilder,  # noqa: E402
+    WorkflowContext,  # noqa: E402
+    handler,
 )
-from agent_framework import Executor, handler  # noqa: E402
-from agent_framework import WorkflowBuilder  # noqa: E402
-from agent_framework import WorkflowContext  # noqa: E402
 from tutorials._shared.llm import build_chat_client  # noqa: E402
 
 FIXTURES_DIR = pathlib.Path(__file__).resolve().parent / "tests" / "fixtures" / "replay"

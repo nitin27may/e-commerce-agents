@@ -22,10 +22,13 @@ from tutorials._shared import maf_bootstrap  # noqa: E402
 maf_bootstrap.bootstrap()
 
 import yaml  # noqa: E402
-from agent_framework import Executor, handler  # noqa: E402
-from agent_framework import Workflow  # noqa: E402
-from agent_framework import WorkflowBuilder  # noqa: E402
-from agent_framework import WorkflowContext  # noqa: E402
+from agent_framework import (  # noqa: E402
+    Executor,
+    Workflow,  # noqa: E402
+    WorkflowBuilder,  # noqa: E402
+    WorkflowContext,  # noqa: E402
+    handler,
+)
 
 SPEC_PATH = pathlib.Path(__file__).resolve().parent / "workflow.yaml"
 
