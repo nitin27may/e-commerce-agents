@@ -13,7 +13,7 @@
 #   agents/dotnet/tests/ECommerceAgents.Shared.Tests/A2AInteropTests.cs, which drives it with the official A2A
 #   .NET SDK client and with the orchestrator's A2AClient under A2A_TRANSPORT=a2a.
 #
-# Needs `uv` and the .NET SDK. Ports can be moved with A2A_INTEROP_BASE_PORT (default 18080; uses 8 ports).
+# Needs `uv` and the .NET SDK. Ports can be moved with A2A_INTEROP_BASE_PORT (default 18080; uses 10 ports).
 # Only the processes this script started are stopped, by PID.
 set -uo pipefail
 
@@ -59,17 +59,17 @@ wait_for() { # url, label, pid
   return 1
 }
 
-start_dotnet() { # port, mode
-  local port="$1" mode="$2"
-  dotnet "$HOST_DLL" "http://127.0.0.1:$port" "$mode" >"$LOG_DIR/dotnet-$mode.log" 2>&1 &
+start_dotnet() { # port, mode [identity]
+  local port="$1" mode="$2" identity="${3:-both}"
+  A2A_IDENTITY="$identity" dotnet "$HOST_DLL" "http://127.0.0.1:$port" "$mode" >"$LOG_DIR/dotnet-$mode-$identity.log" 2>&1 &
   PIDS+=("$!")
   wait_for "http://127.0.0.1:$port/health" ".NET specialist ($mode)" "$!"
 }
 
-start_python() { # port, mode
-  local port="$1" mode="$2"
-  (cd "$PY_DIR" && exec uv run python -m tests.a2a_interop_server --port "$port" --mode "$mode") \
-    >"$LOG_DIR/python-$mode.log" 2>&1 &
+start_python() { # port, mode [identity]
+  local port="$1" mode="$2" identity="${3:-both}"
+  (cd "$PY_DIR" && exec uv run python -m tests.a2a_interop_server --port "$port" --mode "$mode" --identity "$identity") \
+    >"$LOG_DIR/python-$mode-$identity.log" 2>&1 &
   PIDS+=("$!")
   wait_for "http://127.0.0.1:$port/health" "Python specialist ($mode)" "$!"
 }
@@ -88,11 +88,14 @@ HOST_DLL="$(ls "$NET_DIR"/tests/ECommerceAgents.A2AInteropHost/bin/Debug/net10.0
 
 STATUS=0
 
-echo "a2a-interop: starting .NET specialists (ok, boom, miss, weird)"
+echo "a2a-interop: starting .NET specialists (ok, boom, miss, weird, token-mode)"
 start_dotnet "$((BASE + 1))" ok || exit 1
 start_dotnet "$((BASE + 2))" boom || exit 1
 start_dotnet "$((BASE + 3))" miss || exit 1
 start_dotnet "$((BASE + 4))" weird || exit 1
+# B-14: a specialist that takes identity from the signed token alone (A2A_IDENTITY=token).
+start_dotnet "$((BASE + 8))" ok token || exit 1
+export DOTNET_SPECIALIST_URL_TOKEN="http://127.0.0.1:$((BASE + 8))"
 export DOTNET_SPECIALIST_URL="http://127.0.0.1:$((BASE + 1))"
 export DOTNET_SPECIALIST_URL_FAIL="http://127.0.0.1:$((BASE + 2))"
 export DOTNET_SPECIALIST_URL_MISS="http://127.0.0.1:$((BASE + 3))"
@@ -108,10 +111,12 @@ fi
 echo "a2a-interop: Python client -> .NET specialist"
 (cd "$PY_DIR" && uv run pytest tests/test_a2a_dotnet_interop.py -v -p no:cacheprovider) || STATUS=1
 
-echo "a2a-interop: starting Python specialists (ok, boom, miss)"
+echo "a2a-interop: starting Python specialists (ok, boom, miss, token-mode)"
 start_python "$((BASE + 5))" ok || exit 1
 start_python "$((BASE + 6))" boom || exit 1
 start_python "$((BASE + 7))" miss || exit 1
+start_python "$((BASE + 9))" ok token || exit 1
+export PYTHON_SPECIALIST_URL_TOKEN="http://127.0.0.1:$((BASE + 9))"
 export PYTHON_SPECIALIST_URL="http://127.0.0.1:$((BASE + 5))"
 export PYTHON_SPECIALIST_URL_FAIL="http://127.0.0.1:$((BASE + 6))"
 export PYTHON_SPECIALIST_URL_MISS="http://127.0.0.1:$((BASE + 7))"

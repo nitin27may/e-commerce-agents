@@ -53,6 +53,27 @@ public static class AgentSettingsLoader
         throw new InvalidOperationException($"A2A_TRANSPORT='{raw}' is not supported. Use legacy or a2a.");
     }
 
+    /// <summary>A bounded integer setting; out of range fails at startup (Python's <c>Field(ge=, le=)</c> does too).</summary>
+    private static int InRange(string name, int value, int min, int max) =>
+        value >= min && value <= max
+            ? value
+            : throw new InvalidOperationException($"{name}={value} is out of range ({min} to {max}).");
+
+    /// <summary>
+    /// <c>A2A_IDENTITY</c> is <c>headers</c>, <c>token</c> or <c>both</c>; anything else fails at startup (Python's field
+    /// is a <c>Literal</c>), so a typo cannot silently fall back to a different trust model.
+    /// </summary>
+    private static string ValidatedA2aIdentity(string raw)
+    {
+        var value = raw.Trim().ToLowerInvariant();
+        if (value is "headers" or "token" or "both")
+        {
+            return value;
+        }
+
+        throw new InvalidOperationException($"A2A_IDENTITY='{raw}' is not supported. Use headers, token or both.");
+    }
+
     /// <summary>The resume timeout must be positive and shorter than the claim TTL (mirrors Python's validator).</summary>
     private static int ValidatedResumeTimeout(int timeoutSeconds, int claimTtlSeconds)
     {
@@ -205,8 +226,11 @@ public static class AgentSettingsLoader
             AgentRegistry = Get("AGENT_REGISTRY", "{}"),
             A2aTransport = ValidatedA2aTransport(Get("A2A_TRANSPORT", "legacy")),
             A2aPublicBaseUrl = Get("A2A_PUBLIC_BASE_URL").Trim(),
-            A2aMaxActiveTasks = Math.Max(1, GetInt("A2A_MAX_ACTIVE_TASKS", 32)),
-            A2aMaxActiveTasksPerCaller = Math.Max(1, GetInt("A2A_MAX_ACTIVE_TASKS_PER_CALLER", 8)),
+            A2aMaxActiveTasks = InRange("A2A_MAX_ACTIVE_TASKS", GetInt("A2A_MAX_ACTIVE_TASKS", 32), 1, int.MaxValue),
+            A2aMaxActiveTasksPerCaller = InRange("A2A_MAX_ACTIVE_TASKS_PER_CALLER", GetInt("A2A_MAX_ACTIVE_TASKS_PER_CALLER", 8), 1, int.MaxValue),
+            A2aIdentity = ValidatedA2aIdentity(Get("A2A_IDENTITY", "both")),
+            A2aIdentityKey = Get("A2A_IDENTITY_KEY").Trim(),
+            A2aIdentityTtlSeconds = InRange("A2A_IDENTITY_TTL_SECONDS", GetInt("A2A_IDENTITY_TTL_SECONDS", 300), 30, 900),
 
             OtelEnabled = GetBool("OTEL_ENABLED", false),
             OtelExporterOtlpEndpoint = Get("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:18889"),

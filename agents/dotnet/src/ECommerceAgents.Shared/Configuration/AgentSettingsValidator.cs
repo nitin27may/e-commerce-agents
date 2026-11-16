@@ -40,6 +40,10 @@ public static class AgentSettingsValidator
         var isProd = !IsDevelopmentEnv(settings.Environment);
         Check("JWT_SECRET", settings.JwtSecret, isProd, logger);
         Check("AGENT_SHARED_SECRET", settings.AgentSharedSecret, isProd, logger);
+        if (!string.IsNullOrWhiteSpace(settings.A2aIdentityKey))
+        {
+            Check("A2A_IDENTITY_KEY", settings.A2aIdentityKey, isProd, logger);
+        }
 
         if (settings.AuthMode == "oauth")
         {

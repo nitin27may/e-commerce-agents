@@ -113,7 +113,7 @@ public static class AgentHost
         // A malformed per-agent model: block fails here, naming the file, not on the first request.
         app.Services.GetService<ECommerceAgents.Shared.Prompts.PromptLoader>()?.ValidateModelOverrides();
 
-        app.UseAgentAuth();
+        app.UseAgentAuth(agentName: name);
 
         app.MapGet("/", () => Results.Ok(new { status = "ok", service = name, port }));
         app.MapGet("/health", () => Results.Ok(new { healthy = true, service = name }));

@@ -39,7 +39,11 @@ public sealed class A2AClient
     /// call with no options (<c>/message:stream</c>'s hand-written SSE
     /// frame, <c>AgentHost.cs</c>) — both round-trip correctly either way.
     /// </summary>
-    private static readonly JsonSerializerOptions ResponseJsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions ResponseJsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        // A Python specialist's steps are snake_case (tool_name), a .NET specialist's camelCase: read either.
+        Converters = { new TolerantStepConverter() },
+    };
 
     private readonly HttpClient _http;
     private readonly AgentSettings _settings;
@@ -65,11 +69,14 @@ public sealed class A2AClient
     private bool UseA2A => string.Equals(_settings.A2aTransport, "a2a", StringComparison.Ordinal);
 
     /// <summary>
-    /// The caller's credential and forwarded identity, on either wire: the static shared secret in local mode,
-    /// an authorization-server service token in oauth mode (the secret is then not sent at all), and the end
-    /// user's identity beside it.
+    /// The caller's credential and the user it speaks for, on either wire. The credential says which <em>agent</em> is
+    /// calling: the static shared secret in local mode, an authorization-server service token in oauth mode (the secret
+    /// is then not sent at all). The user's identity travels beside it as <c>A2A_IDENTITY</c> says (B-14,
+    /// <see cref="UserContextToken"/>): <c>headers</c> the forwarded <c>X-User-*</c> headers only (the original way);
+    /// <c>token</c> only a signed, short-lived <c>X-User-Context</c> token bound to <paramref name="agentName"/> (the
+    /// specialist's registry name); <c>both</c> (the default, so a mixed or half-upgraded deployment keeps working) the two.
     /// </summary>
-    private async Task ApplyCredentialsAsync(HttpRequestMessage request, CancellationToken token)
+    private async Task ApplyCredentialsAsync(HttpRequestMessage request, string agentName, CancellationToken token)
     {
         request.Headers.Remove("X-Agent-Secret");
         request.Headers.Authorization = null;
@@ -83,14 +90,36 @@ public sealed class A2AClient
             request.Headers.Add("X-Agent-Secret", _settings.AgentSharedSecret);
         }
 
-        foreach (var name in new[] { "X-User-Email", "X-User-Role", "X-Session-Id" })
+        foreach (var name in new[] { "X-User-Email", "X-User-Role", "X-Session-Id", UserContextToken.HeaderName })
         {
             request.Headers.Remove(name);
         }
 
-        request.Headers.Add("X-User-Email", RequestContext.CurrentUserEmail);
-        request.Headers.Add("X-User-Role", RequestContext.CurrentUserRole);
-        request.Headers.Add("X-Session-Id", RequestContext.CurrentSessionId);
+        var mode = _settings.A2aIdentity;
+        if (mode != "token")
+        {
+            request.Headers.Add("X-User-Email", RequestContext.CurrentUserEmail);
+            request.Headers.Add("X-User-Role", RequestContext.CurrentUserRole);
+            request.Headers.Add("X-Session-Id", RequestContext.CurrentSessionId);
+        }
+
+        if (mode != "headers" && !string.IsNullOrEmpty(agentName))
+        {
+            request.Headers.Add(
+                UserContextToken.HeaderName,
+                UserContextToken.Mint(
+                    RequestContext.CurrentUserEmail,
+                    RequestContext.CurrentUserRole,
+                    RequestContext.CurrentSessionId,
+                    agentName,
+                    UserContextToken.ConfiguredKey(_settings),
+                    _settings.A2aIdentityTtlSeconds));
+        }
+        else if (mode == "token")
+        {
+            throw new InvalidOperationException(
+                "A2A_IDENTITY=token needs the specialist's name to bind the user-context token to");
+        }
     }
 
     /// <summary>Build the shared retry + circuit-breaker pipeline.</summary>
@@ -364,7 +393,7 @@ public sealed class A2AClient
         SpecialistReply reply;
         try
         {
-            reply = await _protocol.SendBlockingAsync(baseUrl, message, ct);
+            reply = await _protocol.SendBlockingAsync(agentName, baseUrl, message, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -421,7 +450,7 @@ public sealed class A2AClient
         var emitted = false;
         Exception? failure = null;
 
-        var events = _protocol.StreamEventsAsync(baseUrl, message, TimeSpan.FromSeconds(60), ct).GetAsyncEnumerator(ct);
+        var events = _protocol.StreamEventsAsync(agentName, baseUrl, message, TimeSpan.FromSeconds(60), ct).GetAsyncEnumerator(ct);
         try
         {
             while (true)
@@ -573,7 +602,7 @@ public sealed class A2AClient
                     {
                         Content = JsonContent.Create(new A2ARequest(message, historyList)),
                     };
-                    await ApplyCredentialsAsync(request, token);
+                    await ApplyCredentialsAsync(request, agentName, token);
                     request.Content!.Headers.ContentType = new MediaTypeHeaderValue("application/json");
                     return await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
                 },

@@ -222,7 +222,7 @@ public sealed class A2AClientTransportTests
 
         wire.Calls.Should().Equal("card");
         var ex = await Assert.ThrowsAsync<A2ACardProblemException>(() => new A2AProtocolClient(
-            new HttpClient(wire), (_, _) => Task.CompletedTask, NullLogger.Instance).SendBlockingAsync(Registry, "hi"));
+            new HttpClient(wire), (_, _, _) => Task.CompletedTask, NullLogger.Instance).SendBlockingAsync("product-discovery", Registry, "hi"));
         ex.Message.Should().Contain("A2A_TRANSPORT=legacy");
     }
 
@@ -300,10 +300,10 @@ public sealed class A2AClientTransportTests
     public async Task AnAbandonedStream_SendsABestEffortCancelTask()
     {
         var wire = new ScriptedWire { StreamFailsWith = StreamFailure.None, HoldOpenAfterFirstChunk = true };
-        var protocol = new A2AProtocolClient(new HttpClient(wire), (_, _) => Task.CompletedTask, NullLogger.Instance);
+        var protocol = new A2AProtocolClient(new HttpClient(wire), (_, _, _) => Task.CompletedTask, NullLogger.Instance);
         A2AProtocolClient.ForgetCards();
 
-        await foreach (var ev in protocol.StreamEventsAsync(Registry, "hi", TimeSpan.FromSeconds(30)))
+        await foreach (var ev in protocol.StreamEventsAsync("product-discovery", Registry, "hi", TimeSpan.FromSeconds(30)))
         {
             if (ev.Kind == A2AEvent.Delta)
             {
@@ -319,12 +319,12 @@ public sealed class A2AClientTransportTests
     public async Task AStreamThatFails_IsCancelled_AndAFailingCancelNeverReplacesTheOriginalError()
     {
         var wire = new ScriptedWire { StreamFailsWith = StreamFailure.DropsAfterFirstChunk, CancelFails = true };
-        var protocol = new A2AProtocolClient(new HttpClient(wire), (_, _) => Task.CompletedTask, NullLogger.Instance);
+        var protocol = new A2AProtocolClient(new HttpClient(wire), (_, _, _) => Task.CompletedTask, NullLogger.Instance);
         A2AProtocolClient.ForgetCards();
 
         var act = async () =>
         {
-            await foreach (var _ in protocol.StreamEventsAsync(Registry, "hi", TimeSpan.FromSeconds(30)))
+            await foreach (var _ in protocol.StreamEventsAsync("product-discovery", Registry, "hi", TimeSpan.FromSeconds(30)))
             {
             }
         };
@@ -338,11 +338,11 @@ public sealed class A2AClientTransportTests
     public async Task ACompletedStream_SendsNoCancel()
     {
         var wire = new ScriptedWire { StreamFailsWith = StreamFailure.None };
-        var protocol = new A2AProtocolClient(new HttpClient(wire), (_, _) => Task.CompletedTask, NullLogger.Instance);
+        var protocol = new A2AProtocolClient(new HttpClient(wire), (_, _, _) => Task.CompletedTask, NullLogger.Instance);
         A2AProtocolClient.ForgetCards();
 
         var events = new List<A2AEvent>();
-        await foreach (var ev in protocol.StreamEventsAsync(Registry, "hi", TimeSpan.FromSeconds(30)))
+        await foreach (var ev in protocol.StreamEventsAsync("product-discovery", Registry, "hi", TimeSpan.FromSeconds(30)))
         {
             events.Add(ev);
         }
@@ -372,7 +372,7 @@ public sealed class A2AClientTransportTests
         await using var specialist = await ScriptedSpecialist.StartAsync(mode: "miss");
         var protocol = new A2AProtocolClient(
             specialist.App.GetTestServer().CreateClient(),
-            (request, _) =>
+            (request, _, _) =>
             {
                 foreach (var h in ScriptedSpecialist.CallerHeaders())
                 {
@@ -384,7 +384,7 @@ public sealed class A2AClientTransportTests
             NullLogger.Instance);
         A2AProtocolClient.ForgetCards();
 
-        var reply = await protocol.SendBlockingAsync("http://localhost", "hi");
+        var reply = await protocol.SendBlockingAsync("product-discovery", "http://localhost", "hi");
 
         reply.State.Should().Be("failed");
         reply.ReplayMiss.Should().BeTrue();

@@ -204,7 +204,7 @@ public sealed class A2AInteropTests
         A2AProtocolClient.ForgetCards();
         var protocol = new A2AProtocolClient(
             new HttpClient(new SocketsHttpHandler { AllowAutoRedirect = false }),
-            (request, _) =>
+            (request, _, _) =>
             {
                 request.Headers.TryAddWithoutValidation("X-Agent-Secret", Secret);
                 request.Headers.TryAddWithoutValidation("X-User-Email", User);
@@ -213,9 +213,73 @@ public sealed class A2AInteropTests
             },
             NullLogger.Instance);
 
-        var reply = await protocol.SendBlockingAsync(Url(MissVar), "hi");
+        var reply = await protocol.SendBlockingAsync("product-discovery", Url(MissVar), "hi");
 
         reply.State.Should().Be("failed");
         reply.ReplayMiss.Should().BeTrue();
+    }
+
+    // ─────────────────────── B-14: the signed user-context token, minted here and verified by Python ───────────────────────
+
+    private const string TokenVar = "PYTHON_SPECIALIST_URL_TOKEN";
+
+    private static OrchestratorClient ClientWithIdentity(string identity, string transport)
+    {
+        A2AProtocolClient.ForgetCards();
+        var settings = new AgentSettings
+        {
+            AgentSharedSecret = Secret,
+            JwtSecret = new string('j', 48),
+            Environment = "test",
+            A2aTransport = transport,
+            A2aIdentity = identity,
+        };
+        return new OrchestratorClient(
+            new HttpClient(new SocketsHttpHandler { AllowAutoRedirect = false }),
+            settings,
+            new AuthServerClient(new HttpClient(), settings),
+            NullLogger<OrchestratorClient>.Instance);
+    }
+
+    [RequiresEnvFact(TokenVar)]
+    public async Task APythonTokenModeSpecialist_ServesTheUserADotNetTokenNames_OnBothWires()
+    {
+        foreach (var transport in new[] { "a2a", "legacy" })
+        {
+            var client = ClientWithIdentity("token", transport);
+            using var scope = Ambient.Scope("dora@example.com", "customer", "");
+
+            var text = await client.SendAsync("product-discovery", Url(TokenVar), "price of the XM5?");
+
+            text.Should().Be("Hello world", transport);
+            // No X-User-* header was sent: the tool knows who is asking only from the token.
+            Ambient.CurrentSteps.Should().ContainSingle().Which.ToolOutput!.ToString().Should().Contain("for dora@example.com", transport);
+        }
+    }
+
+    [RequiresEnvFact(TokenVar)]
+    public async Task APythonTokenModeSpecialist_RefusesAHeadersOnlyDotNetCaller_OnBothWires()
+    {
+        foreach (var transport in new[] { "a2a", "legacy" })
+        {
+            var client = ClientWithIdentity("headers", transport);
+            using var scope = Ambient.Scope("dora@example.com", "customer", "");
+
+            var text = await client.SendAsync("product-discovery", Url(TokenVar), "hi");
+
+            text.Should().Be("The product-discovery agent returned an error (status 401). Please try again.", transport);
+        }
+    }
+
+    [RequiresEnvFact(TokenVar)]
+    public async Task APythonSpecialist_RefusesATokenMintedForAnotherSpecialist()
+    {
+        var client = ClientWithIdentity("token", "legacy");
+        using var scope = Ambient.Scope("dora@example.com", "customer", "");
+
+        // The caller names order-management (and so mints a token for it) but the URL is product-discovery's.
+        var text = await client.SendAsync("order-management", Url(TokenVar), "hi");
+
+        text.Should().Be("The order-management agent returned an error (status 401). Please try again.");
     }
 }

@@ -43,12 +43,42 @@ public sealed class A2ASettingsTests
         load.Should().Throw<InvalidOperationException>().WithMessage("*A2A_TRANSPORT*");
     }
 
-    [Fact]
-    public void ActiveTaskCaps_AreFlooredAtOne()
+    [Theory]
+    [InlineData("A2A_MAX_ACTIVE_TASKS", "0")]
+    [InlineData("A2A_MAX_ACTIVE_TASKS_PER_CALLER", "-3")]
+    [InlineData("A2A_IDENTITY_TTL_SECONDS", "29")]
+    [InlineData("A2A_IDENTITY_TTL_SECONDS", "901")]
+    public void OutOfRangeNumbers_AreRejectedAtStartup_AsPythonsFieldsDo(string name, string value)
     {
-        var settings = Load(("A2A_MAX_ACTIVE_TASKS", "0"), ("A2A_MAX_ACTIVE_TASKS_PER_CALLER", "-3"));
+        var load = () => Load((name, value));
 
-        settings.A2aMaxActiveTasks.Should().Be(1);
-        settings.A2aMaxActiveTasksPerCaller.Should().Be(1);
+        load.Should().Throw<InvalidOperationException>().WithMessage($"*{name}*");
+    }
+
+    [Fact]
+    public void Identity_Defaults_MatchPython()
+    {
+        var settings = Load();
+
+        settings.A2aIdentity.Should().Be("both");
+        settings.A2aIdentityKey.Should().BeEmpty();
+        settings.A2aIdentityTtlSeconds.Should().Be(300);
+    }
+
+    [Theory]
+    [InlineData("headers")]
+    [InlineData("TOKEN")]
+    [InlineData(" both ")]
+    public void Identity_AcceptsTheThreeModes(string value) =>
+        Load(("A2A_IDENTITY", value)).A2aIdentity.Should().Be(value.Trim().ToLowerInvariant());
+
+    [Theory]
+    [InlineData("jwt")]
+    [InlineData("")]
+    public void Identity_RejectsAnythingElse_AtStartup(string value)
+    {
+        var load = () => Load(("A2A_IDENTITY", value));
+
+        load.Should().Throw<InvalidOperationException>().WithMessage("*A2A_IDENTITY*");
     }
 }

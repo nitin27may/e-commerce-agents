@@ -32,6 +32,24 @@ public sealed class A2AWireTests
         known[0].ToExecutionStep().DurationMs.Should().Be(12);
     }
 
+    [Theory]
+    [InlineData("{\"tool_name\":\"lookup\",\"tool_input\":{\"sku\":\"XM5\"},\"tool_output\":\"ok\",\"status\":\"success\",\"duration_ms\":12.0,\"agent\":\"a\"}")]
+    [InlineData("{\"toolName\":\"lookup\",\"toolInput\":{\"sku\":\"XM5\"},\"toolOutput\":\"ok\",\"status\":\"success\",\"durationMs\":12,\"agent\":\"a\"}")]
+    [InlineData("{\"ToolName\":\"lookup\",\"ToolInput\":{\"sku\":\"XM5\"},\"ToolOutput\":\"ok\",\"Status\":\"success\",\"DurationMs\":12,\"Agent\":\"a\"}")]
+    public void LegacySteps_AreReadWhicheverStackWroteThem(string json)
+    {
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web) { Converters = { new TolerantStepConverter() } };
+
+        var step = JsonSerializer.Deserialize<ExecutionStep>(json, options)!;
+
+        step.ToolName.Should().Be("lookup");
+        step.Status.Should().Be("success");
+        step.DurationMs.Should().Be(12);
+        step.Agent.Should().Be("a");
+        step.ToolInput!.ToString().Should().Contain("XM5");
+        step.ToolOutput!.ToString().Should().Be("ok");
+    }
+
     [Fact]
     public void Usage_FromPython_ParsesDespiteFloatNumbers()
     {

@@ -61,7 +61,7 @@ public sealed class A2AStreamInterruptedException(string message) : Exception(me
 /// </remarks>
 public sealed class A2AProtocolClient(
     HttpClient http,
-    Func<HttpRequestMessage, CancellationToken, Task> applyCredentials,
+    Func<HttpRequestMessage, string, CancellationToken, Task> applyCredentials,
     ILogger logger)
 {
     private static readonly TimeSpan CardTtl = TimeSpan.FromMinutes(5);
@@ -125,7 +125,8 @@ public sealed class A2AProtocolClient(
     private sealed class GuardedHandler(
         HttpClient inner,
         string registryUrl,
-        Func<HttpRequestMessage, CancellationToken, Task> credentials,
+        string audience,
+        Func<HttpRequestMessage, string, CancellationToken, Task> credentials,
         bool wantExtensions) : HttpMessageHandler
     {
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -139,7 +140,7 @@ public sealed class A2AProtocolClient(
             // The shared client refuses a message that was already sent, and the SDK's own client has marked
             // this one by the time it reaches a handler: forward a copy.
             using var copy = Copy(request);
-            await credentials(copy, cancellationToken);
+            await credentials(copy, audience, cancellationToken);
             if (wantExtensions)
             {
                 copy.Headers.Remove("A2A-Extensions");
@@ -170,17 +171,17 @@ public sealed class A2AProtocolClient(
         return copy;
     }
 
-    private HttpClient Guarded(string registryUrl) =>
-        new(new GuardedHandler(http, registryUrl, applyCredentials, wantExtensions: true), disposeHandler: true)
+    private HttpClient Guarded(string registryUrl, string audience) =>
+        new(new GuardedHandler(http, registryUrl, audience, applyCredentials, wantExtensions: true), disposeHandler: true)
         {
             Timeout = Timeout.InfiniteTimeSpan,
         };
 
     /// <summary>The SDK client for the specialist at <paramref name="registryUrl"/>, resolved from its card.</summary>
-    private async Task<IA2AClient> OpenAsync(string registryUrl, CancellationToken ct)
+    private async Task<IA2AClient> OpenAsync(string agentName, string registryUrl, CancellationToken ct)
     {
         var key = registryUrl.TrimEnd('/');
-        var client = Guarded(key);
+        var client = Guarded(key, agentName);
         var fresh = !Cards.TryGetValue(key, out var cached) || DateTime.UtcNow >= cached.Expires;
         AgentCard card;
         if (fresh)
@@ -268,9 +269,10 @@ public sealed class A2AProtocolClient(
     // ─────────────────────── blocking ───────────────────────
 
     /// <summary>One <c>SendMessage</c>: run the task to a terminal state and return its text, steps and usage.</summary>
-    public async Task<SpecialistReply> SendBlockingAsync(string registryUrl, string message, CancellationToken ct = default)
+    public async Task<SpecialistReply> SendBlockingAsync(
+        string agentName, string registryUrl, string message, CancellationToken ct = default)
     {
-        var client = await OpenAsync(registryUrl, ct);
+        var client = await OpenAsync(agentName, registryUrl, ct);
         var response = await client.SendMessageAsync(Request(message), ct);
 
         if (response.Task is { } task)
@@ -308,12 +310,13 @@ public sealed class A2AProtocolClient(
     /// before one. <paramref name="idleTimeout"/> bounds the wait for each event, not the whole call.
     /// </summary>
     public async IAsyncEnumerable<A2AEvent> StreamEventsAsync(
+        string agentName,
         string registryUrl,
         string message,
         TimeSpan idleTimeout,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        var client = await OpenAsync(registryUrl, ct);
+        var client = await OpenAsync(agentName, registryUrl, ct);
         var steps = new List<A2AWire.WireStep>();
         var finished = false;
         var taskId = string.Empty;
