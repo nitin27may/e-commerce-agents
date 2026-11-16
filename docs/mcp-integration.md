@@ -253,12 +253,14 @@ Each MCP server is a standalone Python package under `agents/python/packages/`:
 ```
 agents/python/packages/
   mcp-product/
-    pyproject.toml          # name = "ecommerce-mcp-product"
+    pyproject.toml          # name = "ecommerce-mcp-product"; PyPI metadata
+    README.md  LICENSE      # the PyPI page; MIT
     src/ecommerce_mcp_product/
       server.py             # FastMCP server + ASGI app
     tests/
   mcp-inventory/
-    pyproject.toml          # name = "ecommerce-mcp-inventory"
+    pyproject.toml          # name = "ecommerce-mcp-inventory"; PyPI metadata
+    README.md  LICENSE
     src/ecommerce_mcp_inventory/
       server.py
     tests/
@@ -269,24 +271,82 @@ workspace; the MCP packages share resolved deps without re-pinning.
 
 ## Publishing a server independently
 
-```bash
-cd agents/python
+Both packages are built to be published to PyPI as `ecommerce-mcp-product` and `ecommerce-mcp-inventory`.
+Each carries its own metadata, `LICENSE` and a README that states the database schema it expects, how to
+point it at a database, its transports and the optional OAuth settings — that README is the PyPI page.
 
-# Build wheel + sdist
-uv build --package ecommerce-mcp-product
-uv build --package ecommerce-mcp-inventory
-
-# Publish to PyPI (or a private registry)
-uv publish dist/ecommerce_mcp_product-*.whl
-uv publish dist/ecommerce_mcp_inventory-*.whl
-```
-
-Once published, any MCP client can install and run the server without the rest of this repo:
+Once published, any MCP client can run a server without the rest of this repo:
 
 ```bash
-pip install ecommerce-mcp-product
-DATABASE_URL=postgresql://... ecommerce-mcp-product   # starts on :9000
+DATABASE_URL=postgresql://... uvx ecommerce-mcp-product                       # HTTP on :9000, endpoint /mcp
+DATABASE_URL=postgresql://... uvx ecommerce-mcp-product --transport stdio     # for clients that launch it
 ```
+
+### What CI checks on every change
+
+The `MCP packages · smoke tests` job in `tests.yml` builds the sdist and wheel of each package
+(`uv build`), runs `twine check --strict` on them, installs the wheel into an empty virtualenv and starts the
+console script with `--help`. The integration job starts the real console script against the test Postgres and
+speaks MCP to it — `initialize`, `tools/list` and a tool call — once over streamable HTTP and once over stdio
+(`tests/test_entrypoint.py` in each package). Nothing is uploaded.
+
+### Release procedure
+
+Releases are cut by pushing a tag. `.github/workflows/publish-mcp.yml` runs **only** on tags matching
+`mcp-product-v*` / `mcp-inventory-v*` and on a manual dispatch; an ordinary push or pull request never
+triggers it, and it holds no stored token.
+
+1. **Bump the version** in the package's `pyproject.toml` (`agents/python/packages/mcp-<domain>/`) and merge
+   it to `main` through a normal pull request. Dependencies are resolved from the workspace `uv.lock`; if you
+   change a dependency range, run `uv lock` in `agents/python` and commit the result.
+2. **Dry run on TestPyPI (recommended for the first release of each package):** Actions → *Publish MCP
+   packages* → *Run workflow*, choose the package. It builds and checks, then uploads to TestPyPI through the
+   `testpypi` environment. TestPyPI refuses to overwrite a version, so a retry needs a new version number.
+   Check the page, then `uvx --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/
+   ecommerce-mcp-product --help`.
+3. **Tag the merge commit** and push the tag — the tag is `mcp-<domain>-v<version>`, and the version must be the
+   one in `pyproject.toml`:
+
+   ```bash
+   git tag mcp-product-v0.1.0 && git push origin mcp-product-v0.1.0
+   ```
+
+4. The workflow then, for that one package only: refuses to continue unless the tag's version equals the
+   package's `pyproject.toml` version and the tagged commit is on `main`; runs the package's non-integration
+   tests; builds sdist + wheel; runs `twine check`; installs the wheel into an empty environment; and uploads
+   to PyPI via trusted publishing (`pypa/gh-action-pypi-publish`, `id-token: write`, environment `pypi`).
+   A mismatch fails the run before anything is uploaded.
+5. Each package is versioned and tagged independently of the other, and of the application's `vX.Y.Z` tags
+   (`release.yml` only matches `v*.*.*`).
+
+A PyPI upload cannot be replaced: to fix a bad release, yank it on PyPI and publish the next version.
+
+### What only the maintainer can do
+
+The workflow cannot do these, and it fails at the upload step until they are done. Nothing was published or
+registered when this workflow was written.
+
+1. **Confirm the package names are free.** `ecommerce-mcp-product` and `ecommerce-mcp-inventory` have not been
+   checked against PyPI — name availability could not be verified reliably when this was written. Look at
+   `https://pypi.org/project/<name>/` (a 404 means unclaimed; PyPI also rejects names too similar to an existing
+   one at upload time). If a name is taken, rename the package in its `pyproject.toml`, in `publish-mcp.yml`'s
+   `dist_name` check and in its README.
+2. **Register a trusted publisher for each project** on [pypi.org](https://pypi.org/manage/account/publishing/).
+   Neither project exists yet, so add it as a *pending publisher*, with:
+
+   | Field | Value |
+   |-------|-------|
+   | PyPI project name | `ecommerce-mcp-product` (then `ecommerce-mcp-inventory`) |
+   | Owner | `nitin27may` |
+   | Repository name | `e-commerce-agents` |
+   | Workflow name | `publish-mcp.yml` |
+   | Environment name | `pypi` |
+
+   For the TestPyPI dry run, register the same on [test.pypi.org](https://test.pypi.org/manage/account/publishing/)
+   with environment name `testpypi`. The two indexes are separate accounts.
+3. **Create the GitHub environments** `pypi` and `testpypi` (Settings → Environments). Give `pypi` a required
+   reviewer if you want a click between the tag and the upload, as `release.yml` does with `release`. A missing
+   environment is created empty on first use, which means no approval gate.
 
 ## Adding a new MCP server
 
@@ -331,18 +391,22 @@ members = ["packages/mcp-product", "packages/mcp-inventory", "packages/mcp-<doma
 
 ## Using from external MCP clients
 
-Because these are standard MCP servers, any MCP-compatible client can connect:
+Because these are standard MCP servers, any MCP-compatible client can connect. Clients that launch the
+server themselves use the stdio transport (`--transport stdio`); the console script's default is streamable
+HTTP, which is what `MCPStreamableHTTPTool` and the LangChain adapter below connect to:
 
 ```json
 // Claude Desktop — claude_desktop_config.json
 {
   "mcpServers": {
     "ecommerce-product": {
-      "command": "ecommerce-mcp-product",
+      "command": "uvx",
+      "args": ["ecommerce-mcp-product", "--transport", "stdio"],
       "env": { "DATABASE_URL": "postgresql://..." }
     },
     "ecommerce-inventory": {
-      "command": "ecommerce-mcp-inventory",
+      "command": "uvx",
+      "args": ["ecommerce-mcp-inventory", "--transport", "stdio"],
       "env": { "DATABASE_URL": "postgresql://..." }
     }
   }

@@ -745,10 +745,10 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "asyncpg", specifier = ">=0.30" },
+    { name = "asyncpg", specifier = ">=0.30,<1" },
     { name = "mcp", extras = ["cli"], specifier = ">=1.27.0,<2" },
-    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.10.1" },
-    { name = "uvicorn", specifier = ">=0.34" },
+    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.10.1,<3" },
+    { name = "uvicorn", specifier = ">=0.34,<1" },
 ]
 
 [[package]]
@@ -764,10 +764,10 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "asyncpg", specifier = ">=0.30" },
+    { name = "asyncpg", specifier = ">=0.30,<1" },
     { name = "mcp", extras = ["cli"], specifier = ">=1.27.0,<2" },
-    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.10.1" },
-    { name = "uvicorn", specifier = ">=0.34" },
+    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.10.1,<3" },
+    { name = "uvicorn", specifier = ">=0.34,<1" },
 ]
 
 [[package]]

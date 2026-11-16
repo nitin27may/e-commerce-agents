@@ -134,6 +134,24 @@ jobs:
         working-directory: agents/python
         run: uv run pytest ${{ matrix.package.dir }}/tests -m "not integration" -v
 
+      # The publish workflow (publish-mcp.yml) runs only on a tag, so everything it depends on is proven
+      # here on every change: the package builds, its metadata renders on PyPI, and the built wheel
+      # installs into an empty environment with a working console script.
+      - name: Build sdist and wheel
+        working-directory: agents/python
+        run: uv build ${{ matrix.package.dir }} --out-dir dist/${{ matrix.package.name }}
+
+      - name: Check package metadata (twine)
+        working-directory: agents/python
+        run: uvx twine@7.0.0 check --strict dist/${{ matrix.package.name }}/*
+
+      - name: Install the wheel into a clean environment and start the entry point
+        working-directory: agents/python
+        run: |
+          uv venv --python 3.12 /tmp/wheel-venv
+          uv pip install --python /tmp/wheel-venv/bin/python dist/${{ matrix.package.name }}/*.whl
+          /tmp/wheel-venv/bin/${{ matrix.package.name }} --help
+
   mcp-package-integration:
     name: MCP packages · integration (Postgres)
     runs-on: ubuntu-latest

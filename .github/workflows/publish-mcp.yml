@@ -1,0 +1,206 @@
+name: Publish MCP packages
+
+# Publishes ecommerce-mcp-product / ecommerce-mcp-inventory to PyPI.
+#
+#   git tag mcp-product-v0.1.0   && git push origin mcp-product-v0.1.0     # -> PyPI, package ecommerce-mcp-product
+#   git tag mcp-inventory-v0.1.0 && git push origin mcp-inventory-v0.1.0   # -> PyPI, package ecommerce-mcp-inventory
+#
+# It runs ONLY on those tags and on a manual dispatch -- never on an ordinary push or pull request.
+# No token is stored anywhere: PyPI trusted publishing (OIDC) swaps this run's identity for a short-lived
+# upload token, which is why `id-token: write` is granted to the publish jobs and to nothing else.
+#
+#   build              one package per run: the one the tag names (or the one chosen on dispatch). A tag
+#                      publishes only if its version equals the version in that package's pyproject.toml and
+#                      its commit is on main. Builds sdist + wheel, runs `twine check`, the package's
+#                      non-integration tests, and installs the wheel into an empty environment.
+#   publish-pypi       tag runs only. Environment `pypi`.
+#   publish-testpypi   manual dispatch only: a dry run against TestPyPI. Environment `testpypi`.
+#
+# SETUP REQUIRED (only the maintainer can do it), and it fails without it -- see docs/mcp-integration.md:
+#   * on pypi.org, per project, a trusted publisher: owner nitin27may, repository e-commerce-agents,
+#     workflow publish-mcp.yml, environment pypi (and the same on test.pypi.org with environment testpypi);
+#   * GitHub environments `pypi` and `testpypi` (give `pypi` a required reviewer if a click is wanted);
+#   * the package names must be free on PyPI.
+# A project that does not exist yet needs a *pending* publisher registered first.
+
+on:
+  push:
+    tags:
+      - "mcp-product-v*"
+      - "mcp-inventory-v*"
+  workflow_dispatch:
+    inputs:
+      package:
+        description: "Package to upload to TestPyPI (bump its version first: TestPyPI refuses a re-upload)"
+        type: choice
+        required: true
+        options:
+          - mcp-product
+          - mcp-inventory
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-mcp-${{ github.ref }}
+  cancel-in-progress: false # never cancel an upload mid-flight
+
+jobs:
+  build:
+    name: Build and check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      package_dir: ${{ steps.resolve.outputs.package_dir }}
+      dist_name: ${{ steps.resolve.outputs.dist_name }}
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the main-ancestry check below needs history
+
+      - name: Resolve the package and verify the tag
+        id: resolve
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_PACKAGE: ${{ inputs.package }}
+        run: |
+          set -euo pipefail
+          tag_version=""
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            package="$INPUT_PACKAGE"
+          else
+            case "$REF_NAME" in
+              mcp-product-v*)   package=mcp-product;   tag_version="${REF_NAME#mcp-product-v}" ;;
+              mcp-inventory-v*) package=mcp-inventory; tag_version="${REF_NAME#mcp-inventory-v}" ;;
+              *) echo "::error::tag '$REF_NAME' is not mcp-product-v* or mcp-inventory-v*"; exit 1 ;;
+            esac
+          fi
+          case "$package" in
+            mcp-product|mcp-inventory) ;;
+            *) echo "::error::unknown package '$package'"; exit 1 ;;
+          esac
+          package_dir="agents/python/packages/$package"
+          dist_name="ecommerce-$package"
+          version="$(python3 -c 'import sys, tomllib; print(tomllib.load(open(sys.argv[1], "rb"))["project"]["version"])' "$package_dir/pyproject.toml")"
+          declared="$(python3 -c 'import sys, tomllib; print(tomllib.load(open(sys.argv[1], "rb"))["project"]["name"])' "$package_dir/pyproject.toml")"
+          if [ "$declared" != "$dist_name" ]; then
+            echo "::error::$package_dir/pyproject.toml is named '$declared', expected '$dist_name'"; exit 1
+          fi
+          if [ -n "$tag_version" ] && [ "$tag_version" != "$version" ]; then
+            echo "::error::tag version '$tag_version' does not match $package_dir/pyproject.toml version '$version'. Fix one and re-tag."
+            exit 1
+          fi
+          if [ "$EVENT" = "push" ]; then
+            git fetch --no-tags origin main
+            git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
+              echo "::error::the tagged commit is not on main; refusing to publish from an unreviewed branch"; exit 1; }
+          fi
+          {
+            echo "package_dir=$package_dir"
+            echo "dist_name=$dist_name"
+            echo "version=$version"
+          } >> "$GITHUB_OUTPUT"
+          echo "Publishing $dist_name $version (event: $EVENT)"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install Python 3.12
+        run: uv python install 3.12
+
+      - name: Sync workspace deps
+        working-directory: agents/python
+        run: uv sync --frozen --all-packages --extra dev
+
+      - name: Run the package's smoke tests
+        working-directory: agents/python
+        env:
+          PACKAGE_DIR: ${{ steps.resolve.outputs.package_dir }}
+        run: uv run pytest "${PACKAGE_DIR#agents/python/}/tests" -m "not integration" -q
+
+      - name: Build sdist and wheel (only this package)
+        env:
+          PACKAGE_DIR: ${{ steps.resolve.outputs.package_dir }}
+        run: uv build "$PACKAGE_DIR" --out-dir dist
+
+      - name: Check the built files carry the expected name and version
+        env:
+          DIST_NAME: ${{ steps.resolve.outputs.dist_name }}
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          stem="${DIST_NAME//-/_}-$VERSION"
+          ls -1 dist
+          test "$(ls -1 dist | wc -l)" = "2"
+          test -f "dist/$stem.tar.gz"
+          test -f "dist/$stem-py3-none-any.whl"
+
+      - name: Check package metadata (twine)
+        run: uvx twine@7.0.0 check --strict dist/*
+
+      - name: Install the wheel into a clean environment and start the entry point
+        env:
+          DIST_NAME: ${{ steps.resolve.outputs.dist_name }}
+        run: |
+          uv venv --python 3.12 /tmp/wheel-venv
+          uv pip install --python /tmp/wheel-venv/bin/python dist/*.whl
+          "/tmp/wheel-venv/bin/$DIST_NAME" --help
+
+      - name: Upload the built files
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-pypi:
+    name: Publish to PyPI
+    if: github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/project/${{ needs.build.outputs.dist_name }}/${{ needs.build.outputs.version }}/
+    permissions:
+      id-token: write # trusted publishing: exchange this run's OIDC identity for an upload token
+    steps:
+      - name: Download the built files
+        uses: actions/download-artifact@v4
+        with:
+          name: mcp-dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+
+  publish-testpypi:
+    name: Publish to TestPyPI (dry run)
+    if: github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/project/${{ needs.build.outputs.dist_name }}/${{ needs.build.outputs.version }}/
+    permissions:
+      id-token: write
+    steps:
+      - name: Download the built files
+        uses: actions/download-artifact@v4
+        with:
+          name: mcp-dist
+          path: dist/
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: dist/

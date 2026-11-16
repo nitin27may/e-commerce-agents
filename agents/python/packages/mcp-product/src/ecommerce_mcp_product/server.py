@@ -10,7 +10,7 @@ Run as HTTP service:
     uvicorn ecommerce_mcp_product.server:app --host 0.0.0.0 --port 9000
 
 Run via console script (installed):
-    ecommerce-mcp-product
+    ecommerce-mcp-product            # add --transport stdio for stdio
 """
 
 from __future__ import annotations
@@ -379,8 +379,31 @@ async def get_price_history(
 app = mcp.streamable_http_app()
 
 
-def main() -> None:
-    """Console script entry-point. Runs the HTTP server via uvicorn."""
+def main(argv: list[str] | None = None) -> None:
+    """Console script entry-point.
+
+    Default: the streamable HTTP server on ``$PORT`` (``9000``), served at ``/mcp``. With
+    ``--transport stdio`` (or ``MCP_TRANSPORT=stdio``) it speaks MCP over stdin/stdout instead, which is
+    what clients that launch the server themselves (Claude Desktop, MCP Inspector) expect. The OAuth
+    resource-server settings apply to the HTTP transport only.
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="ecommerce-mcp-product", description="MCP server for the E-Commerce Agents platform."
+    )
+    parser.add_argument(
+        "--transport",
+        choices=["http", "stdio"],
+        default=os.environ.get("MCP_TRANSPORT", "http"),
+        help="http (default): streamable HTTP on $PORT. stdio: MCP over stdin/stdout.",
+    )
+    args = parser.parse_args(argv)
+
+    if args.transport == "stdio":
+        mcp.run()
+        return
+
     import uvicorn
 
     port = int(os.environ.get("PORT", "9000"))
