@@ -42,6 +42,7 @@ import asyncpg
 from shared import hitl
 from shared.approvals import intake, repo
 from shared.approvals.repo import ApprovalStatus as S
+from shared.autonomy import engine as autonomy
 from shared.config import settings
 from shared.context import current_user_email, current_user_role
 from shared.db import get_pool
@@ -171,6 +172,9 @@ async def _source_detail(pool: asyncpg.Pool, approval: dict[str, Any]) -> dict[s
                 "status": row["status"],
                 "tool_input": hitl._decode_jsonb(row["tool_input"]) or {},  # noqa: SLF001
             }
+    if approval["source"] == "event":
+        decision = await autonomy.get_decision(pool, ref)
+        return None if decision is None else {"decision": decision}
     if approval["source"] == "workflow":
         row = await pool.fetchrow(
             "SELECT workflow_run_id, status, payload FROM hitl_requests WHERE id = $1",
@@ -211,6 +215,9 @@ async def decide(
             raise ApprovalHTTPError(422, "Edits cannot accompany a request for information")
         if not note:
             raise ApprovalHTTPError(422, "Say what you need to know in the note")
+        if approval["source"] == "event":
+            # The requester is the system actor: nobody could answer, and the approval would sit in needs_info.
+            raise ApprovalHTTPError(422, "An automatic action cannot ask for more information; approve or reject it")
         return await _request_info(approval, actor, note)
     if decision == "reject":
         if edits:
@@ -397,7 +404,22 @@ async def _reject(approval: dict[str, Any], actor: Actor, note: str | None) -> d
         return await _finish_workflow(approval, actor, approve=False, edits={}, note=note)
     if approval["source"] == "tool":
         return await _reject_tool(approval, actor, note)
+    if approval["source"] == "event":
+        return await _reject_event(approval, actor, note)
     raise ApprovalHTTPError(422, f"Approvals from source {approval['source']!r} cannot be decided yet")
+
+
+async def _reject_event(approval: dict[str, Any], actor: Actor, note: str | None) -> dict[str, Any]:
+    """Nothing was done for an autonomous-action approval, so rejecting it only records the decision."""
+    approval_id = str(approval["id"])
+    token, approval = await _claim_and_reauthorize(approval, actor, S.PENDING_REVIEW, S.NEEDS_INFO)
+    try:
+        updated = await _record(approval, actor, token, S.REJECTED, "reject", note, {})
+    except BaseException:
+        await _release(approval_id, token)
+        raise
+    logger.info("approval.rejected id=%s source=event", log_safe(approval_id))
+    return {"approval": jsonable(updated), "result": {"status": "rejected"}}
 
 
 async def _reject_tool(approval: dict[str, Any], actor: Actor, note: str | None) -> dict[str, Any]:
@@ -459,7 +481,77 @@ async def _approve(approval: dict[str, Any], actor: Actor, edits: dict[str, Any]
         return await _finish_workflow(approval, actor, approve=True, edits=edits, note=note)
     if approval["source"] == "tool":
         return await _approve_tool(approval, actor, edits, note)
+    if approval["source"] == "event":
+        return await _approve_event(approval, actor, edits, note)
     raise ApprovalHTTPError(422, f"Approvals from source {approval['source']!r} cannot be decided yet")
+
+
+async def _approve_event(
+    approval: dict[str, Any], actor: Actor, edits: dict[str, Any], note: str | None
+) -> dict[str, Any]:
+    """Approve an autonomous action: grant the credit (at most once for this approval), then record the decision.
+
+    A reviewer may lower the amount and never raise it. The credit goes to the subject customer, the reviewer is
+    recorded separately, and a person's approval does not draw on the autonomy budget.
+    """
+    pool = get_pool()
+    approval_id = str(approval["id"])
+    proposed = await autonomy.decision_for_approval(pool, approval_id)
+    if proposed is None or proposed["amount"] is None:
+        raise ApprovalHTTPError(409, "The action behind this approval no longer exists")
+    try:
+        from shared.policy import get_policy
+
+        allowed = set(get_policy().kind(approval["kind"]).editable_fields)
+    except Exception:
+        allowed = set()
+    rejected = sorted(set(edits) - allowed)
+    if rejected:
+        raise ApprovalHTTPError(422, f"Not editable: {', '.join(rejected)}")
+    amount: Decimal = proposed["amount"]
+    if "amount" in edits:
+        amount = _edited_amount(edits["amount"], proposed["amount"])
+
+    token, approval = await _claim_and_reauthorize(approval, actor, S.PENDING_REVIEW)
+    try:
+        result = await autonomy.execute_approved(pool, approval_id, approver_email=actor.email, amount=amount)
+        approved = await _record(
+            approval, actor, token, S.APPROVED_WITH_EDITS if edits else S.APPROVED, "approve", note, edits
+        )
+    except BaseException:
+        # Hand the claim back so a retry can record it: the credit is keyed by this approval, so a retry replays the
+        # first result instead of granting twice.
+        await _release(approval_id, token)
+        raise
+    final = await repo.transition(
+        pool,
+        approval_id,
+        [S(approved["status"])],
+        S.EXECUTED if result.get("success") else S.FAILED,
+        actor_email=actor.email,
+        actor_role=actor.role,
+        action="executed" if result.get("success") else "execution_failed",
+        payload={"success": bool(result.get("success")), "reason": result.get("reason")},
+    )
+    logger.info("approval.approved id=%s source=event success=%s", log_safe(approval_id), result.get("success"))
+    return {"approval": jsonable(final), "result": result}
+
+
+def _edited_amount(raw: Any, proposed: Decimal) -> Decimal:
+    """A reviewer's amount: a positive number with at most two decimals, never above what was proposed."""
+    if isinstance(raw, bool) or not isinstance(raw, (int, float, str, Decimal)):
+        raise ApprovalHTTPError(422, "amount must be a number")
+    try:
+        value = Decimal(str(raw))
+    except ArithmeticError:
+        raise ApprovalHTTPError(422, "amount must be a number") from None
+    if not value.is_finite() or value != value.quantize(Decimal("0.01")):
+        raise ApprovalHTTPError(422, "amount must have at most two decimal places")
+    if value <= 0:
+        raise ApprovalHTTPError(422, "amount must be above zero")
+    if value > proposed:
+        raise ApprovalHTTPError(422, f"amount cannot be raised above the proposed {proposed:.2f}")
+    return value
 
 
 async def _approve_tool(
