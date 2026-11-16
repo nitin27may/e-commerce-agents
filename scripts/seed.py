@@ -10,17 +10,27 @@ Seeds the database with realistic e-commerce data:
 - 15 coupons, 5 promotions, 3 loyalty tiers
 - 90-day price history
 - 6 agent catalog entries + permissions
+- the demo-tour user (tour@example.com) with a delivered and a shipped order
 
-Usage: uv run python -m scripts.seed
+Usage: uv run python -m scripts.seed [--reset-tour-user]
+
+--reset-tour-user puts only the tour user back to its seeded state (orders,
+returns, conversations, memories, cart ...) without re-seeding anything else.
+
+SEED_CLOCK_OFFSET_DAYS=N seeds as if the clock were N days behind the real one,
+i.e. as though the database had been seeded N days ago. Every "now"-relative
+timestamp moves with it; nothing else does.
 """
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 import logging
 import os
 import random
+import sys
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -30,6 +40,7 @@ import asyncpg
 import bcrypt
 
 from scripts.embedding_text import EMBEDDINGS_FILE, build_embedding_text, read_embeddings_file, text_hash
+from shared.demo_tour import TOUR_EMAIL, TOUR_SEED, reset_tour_user
 from shared.oauth.client_secrets import derive_client_secret
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -47,6 +58,17 @@ OAUTH_SEED_KEY = os.environ.get("OAUTH_SEED_KEY", "dev-oauth-seed-change-me")
 
 # Deterministic seed for reproducible data
 random.seed(42)
+
+
+def _now() -> datetime:
+    """The seeder's clock: real UTC now, minus SEED_CLOCK_OFFSET_DAYS (default 0).
+
+    Every seeded timestamp is "now minus something", so with an offset the whole
+    dataset reads as though it had been seeded that many days ago. CI seeds at
+    offsets 0 and 13 to prove nothing depends on the database being fresh. It
+    consumes no random draws, so the offset never changes any other seeded value.
+    """
+    return datetime.now(timezone.utc) - timedelta(days=float(os.environ.get("SEED_CLOCK_OFFSET_DAYS", "0") or 0))
 
 
 def hash_pw(password: str) -> str:
@@ -313,6 +335,21 @@ async def seed_users(conn: asyncpg.Connection) -> dict[str, uuid.UUID]:
 _PRODUCT_ID_NAMESPACE = uuid.UUID("6f2f7f0e-6b0b-4f0e-9f0e-6b0b4f0e9f0e")
 
 
+_ORDER_ID_NAMESPACE = uuid.UUID("0c6f3a52-8d1e-4f0b-b7a4-2f6a9e5d1c33")
+
+
+def order_id_for(index: int) -> uuid.UUID:
+    """Deterministic id for the index-th seeded order.
+
+    ``gen_random_uuid()`` made every seed hand out different order ids, which end
+    up in the instructions the context providers inject (``RecentOrdersProvider``)
+    and in prompts like "return order <uuid>" -- both hashed verbatim into replay
+    fixture keys. uuid5 over the loop index fixes them, and unlike drawing from
+    ``random`` it consumes nothing, so every other seeded value is unchanged.
+    """
+    return uuid.uuid5(_ORDER_ID_NAMESPACE, f"order-{index}")
+
+
 def product_id_for(name: str) -> uuid.UUID:
     """Deterministic product id, derived from its (unique) name.
 
@@ -436,7 +473,7 @@ async def seed_shipping_rates(conn: asyncpg.Connection, carrier_ids: list[uuid.U
 
 async def seed_coupons(conn: asyncpg.Connection) -> None:
     """Seed coupons."""
-    now = datetime.now(timezone.utc)
+    now = _now()
     for code, desc, dtype, value, min_spend, max_disc, limit, valid_until, cats, user_email in COUPONS:
         until = datetime.fromisoformat(valid_until).replace(tzinfo=timezone.utc) if valid_until else now + timedelta(days=365)
         await conn.execute(
@@ -452,7 +489,7 @@ async def seed_coupons(conn: asyncpg.Connection) -> None:
 
 async def seed_promotions(conn: asyncpg.Connection) -> None:
     """Seed promotions."""
-    now = datetime.now(timezone.utc)
+    now = _now()
     for promo in PROMOTIONS:
         await conn.execute(
             """INSERT INTO promotions (name, type, rules, start_date, end_date)
@@ -482,7 +519,7 @@ async def seed_orders(conn: asyncpg.Connection, user_ids: dict[str, uuid.UUID], 
     for status, weight in ORDER_STATUSES_WEIGHTED:
         statuses.extend([status] * weight)
 
-    now = datetime.now(timezone.utc)
+    now = _now()
     order_ids = []
 
     for i in range(200):
@@ -508,9 +545,9 @@ async def seed_orders(conn: asyncpg.Connection, user_ids: dict[str, uuid.UUID], 
         tracking = f"TRK{random.randint(100000000, 999999999)}" if status in ("shipped", "out_for_delivery", "delivered") else None
 
         row = await conn.fetchrow(
-            """INSERT INTO orders (user_id, status, total, shipping_address, billing_address, shipping_carrier, tracking_number, created_at)
-               VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8) RETURNING id""",
-            user_id, status, total, json.dumps(address), json.dumps(address), carrier, tracking, created,
+            """INSERT INTO orders (id, user_id, status, total, shipping_address, billing_address, shipping_carrier, tracking_number, created_at)
+               VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9) RETURNING id""",
+            order_id_for(i), user_id, status, total, json.dumps(address), json.dumps(address), carrier, tracking, created,
         )
         order_id = row["id"]
         order_ids.append(order_id)
@@ -592,7 +629,7 @@ async def seed_reviews(conn: asyncpg.Connection, user_ids: dict[str, uuid.UUID],
             title = f"{'Great' if rating >= 4 else 'Okay' if rating == 3 else 'Disappointing'} {pt}"
             verified = random.random() < 0.7
 
-        created = datetime.now(timezone.utc) - timedelta(days=random.randint(1, 180))
+        created = _now() - timedelta(days=random.randint(1, 180))
         await conn.execute(
             """INSERT INTO reviews (product_id, user_id, rating, title, body, verified_purchase, is_flagged, created_at)
                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)""",
@@ -611,7 +648,7 @@ async def seed_reviews(conn: asyncpg.Connection, user_ids: dict[str, uuid.UUID],
 
 async def seed_price_history(conn: asyncpg.Connection, products: list[dict]) -> None:
     """Seed 90 days of price history for all products."""
-    now = datetime.now(timezone.utc)
+    now = _now()
     count = 0
     for product in products:
         base_price = float(product["price"])
@@ -633,7 +670,7 @@ async def seed_price_history(conn: asyncpg.Connection, products: list[dict]) -> 
 
 async def seed_restock_schedule(conn: asyncpg.Connection, warehouse_ids: list[uuid.UUID], products: list[dict]) -> None:
     """Seed restock schedules for low-stock items."""
-    now = datetime.now(timezone.utc)
+    now = _now()
     restocks = [
         ("Dyson V15 Detect", 0, 50, 15),    # Out of stock → restock in 15 days
         ("Dyson V15 Detect", 1, 30, 15),
@@ -919,6 +956,35 @@ async def seed_product_embeddings(
     return len(rows)
 
 
+async def seed_tour_user(conn: asyncpg.Connection) -> None:
+    """Create (or put back) the demo-tour user: tour@example.com.
+
+    Appended after every other seed step and driven by its own
+    ``random.Random(7)``, never the global ``random`` -- so adding it moves no
+    value seeded before it and the replay fixtures keyed on that data still hit.
+    Safe to re-run on its own (``--reset-tour-user``): the user row is upserted
+    and everything the tour accumulated is deleted before the two orders are
+    recreated, relative to the seeder's clock.
+    """
+    rng = random.Random(TOUR_SEED)
+    user_id = await conn.fetchval(
+        """INSERT INTO users (email, password_hash, name, role, loyalty_tier, total_spend)
+           VALUES ($1, $2, 'Tour Visitor', 'customer', 'silver', 0)
+           ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name
+           RETURNING id""",
+        TOUR_EMAIL, hash_pw("tour123"),
+    )
+    admin_id = await conn.fetchval("SELECT id FROM users WHERE email = 'admin.demo@gmail.com'")
+    for agent_name in [a[0] for a in AGENT_CATALOG if not a[6]]:
+        await conn.execute(
+            """INSERT INTO agent_permissions (user_id, agent_name, role, granted_by)
+               VALUES ($1, $2, 'user', $3) ON CONFLICT DO NOTHING""",
+            user_id, agent_name, admin_id,
+        )
+    await reset_tour_user(conn, now=_now(), rng=rng)
+    logger.info("Seeded tour user %s with a delivered and a shipped order", TOUR_EMAIL)
+
+
 async def seed_hitl_requests(conn: asyncpg.Connection, user_ids: dict[str, uuid.UUID]) -> None:
     """Create one of each HITL state so the admin pending-approvals UI
     has something to show on first login.
@@ -997,11 +1063,15 @@ async def seed_hitl_requests(conn: asyncpg.Connection, user_ids: dict[str, uuid.
     logger.info("Seeded %d HITL requests (pending + approved + rejected)", len(states))
 
 
-async def main() -> None:
+async def main(reset_tour_only: bool = False) -> None:
     logger.info("Connecting to database: %s", DATABASE_URL.split("@")[-1])
     conn = await connect_with_retry(DATABASE_URL)
 
     try:
+        if reset_tour_only:
+            await seed_tour_user(conn)
+            return
+
         # Check if already seeded
         count = await conn.fetchval("SELECT COUNT(*) FROM users")
         if count > 0:
@@ -1050,6 +1120,7 @@ async def main() -> None:
         await seed_hitl_requests(conn, user_ids)
 
         await seed_product_embeddings(conn)
+        await seed_tour_user(conn)
 
         # Collect planner statistics before anyone queries this data.
         #
@@ -1074,4 +1145,11 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    _parser = argparse.ArgumentParser(description="Seed the database.")
+    _parser.add_argument(
+        "--reset-tour-user",
+        action="store_true",
+        help="only put the tour user back to its seeded state; seed nothing else",
+    )
+    _args = _parser.parse_args(sys.argv[1:])
+    asyncio.run(main(reset_tour_only=_args.reset_tour_user))
