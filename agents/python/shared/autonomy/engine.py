@@ -50,6 +50,7 @@ from shared.autonomy.policy import (
     evaluate_tier,
     get_policy,
 )
+from shared.demo_tour import TOUR_EMAIL
 from shared.idempotency import run_once
 from shared.log_safe import log_safe
 from shared.notifications import notify
@@ -295,6 +296,11 @@ async def decide_shipment_delayed(
     )
     if order is None:
         return _no_action("order_not_found"), context
+    if str(order["email"]).strip().lower() == TOUR_EMAIL:
+        # The demo tour's reset deletes this user's orders, and agent_decisions holds foreign keys to orders and users
+        # that the append-only trigger would never let be nulled or cascaded. So no row of ours may ever reference the
+        # tour user, not even a no_action one: the context keeps no ids.
+        return _no_action("demo_user_excluded"), context
     context.update(order_id=order["id"], user_id=order["user_id"], customer_email=order["email"])
     if order["status"] not in rule.eligible_order_statuses:
         return _no_action("order_not_eligible", order_status=order["status"]), context

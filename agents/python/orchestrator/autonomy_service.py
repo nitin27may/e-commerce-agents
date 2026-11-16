@@ -22,6 +22,7 @@ from shared.autonomy import engine
 from shared.autonomy.policy import AutonomyPolicyError, get_policy
 from shared.config import settings
 from shared.db import get_pool
+from shared.demo_tour import TOUR_EMAIL
 from shared.log_safe import log_safe
 from shared.outbox import enqueue
 
@@ -52,6 +53,7 @@ async def _pick_order(scenario: str) -> uuid.UUID:
     order_id = await get_pool().fetchval(
         """SELECT o.id FROM orders o JOIN users u ON u.id = o.user_id
             WHERE o.status = ANY($1::text[]) AND u.role = 'customer' AND u.is_active IS NOT FALSE
+              AND lower(u.email) <> $4
               AND NOT EXISTS (SELECT 1 FROM agent_decisions d WHERE d.order_id = o.id)
               AND NOT EXISTS (SELECT 1 FROM agent_decisions d
                                WHERE d.user_id = o.user_id AND d.entry_type = 'decision' AND d.budget_day = $2)
@@ -61,6 +63,7 @@ async def _pick_order(scenario: str) -> uuid.UUID:
         sorted(rule.eligible_order_statuses),
         engine.utc_day(),
         engine.TOPIC_SHIPMENT_DELAYED,
+        TOUR_EMAIL,  # the demo reset deletes this user's orders; no decision row may ever reference them
     )
     if order_id is None:
         raise ApprovalHTTPError(409, f"No eligible order is left for the {scenario!r} scenario")
@@ -105,7 +108,11 @@ async def simulate(
         # The explicit path used to skip the scenario picker's customers-only filter: an admin could simulate an
         # event on their own order and be the beneficiary of what staff then approve. Only a customer's order, and
         # never the acting admin's, is a valid subject (the engine also refuses to pay staff on its own).
-        if owner["role"] != "customer" or str(owner["email"]).lower() == actor.email.strip().lower():
+        if (
+            owner["role"] != "customer"
+            or str(owner["email"]).lower() == actor.email.strip().lower()
+            or str(owner["email"]).strip().lower() == TOUR_EMAIL
+        ):
             raise ApprovalHTTPError(422, "Events can only be simulated on a customer's order")
         event = event_id or f"sim-{order}-{days}"
     event = event.strip()[:200]

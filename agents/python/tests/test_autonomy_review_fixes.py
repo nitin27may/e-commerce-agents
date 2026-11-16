@@ -19,6 +19,7 @@ import asyncpg
 import pytest
 
 from orchestrator import approvals_service as svc
+from orchestrator import autonomy_service
 from shared.approvals import repo
 from shared.autonomy import engine
 from tests import autonomy_support as aus
@@ -483,3 +484,46 @@ async def test_w3_no_approval_can_be_opened_that_approving_would_refuse(w: aus.W
     # None opened: the order was credited, so there is nothing a person could be asked to grant.
     assert await w.pool.fetchval("SELECT count(*) FROM approvals") == 0
     assert {r["tier"] for r in await aus.decisions(w.pool)} == {"auto", "no_action"}
+
+
+# ── W4a: autonomy never touches the demo tour user ───────────────────────────
+
+
+async def test_w4a_the_engine_never_acts_for_the_tour_user_and_a_reset_still_works(w: aus.World) -> None:
+    from shared.demo_tour import RESET_STATEMENTS, TOUR_EMAIL
+
+    w.users[TOUR_EMAIL] = await aus.user(w.pool, TOUR_EMAIL)
+    tour_order = await aus.order(w, TOUR_EMAIL)
+    other = await aus.order(w, aus.CUSTOMER)
+
+    outcome = await _handle(w, tour_order, 12, "evt-tour")
+    await _handle(w, other, 3, "evt-other")
+
+    assert outcome["tier"] == "no_action" and outcome["reasons"] == ["demo_user_excluded"]
+    assert await w.pool.fetchval("SELECT count(*) FROM approvals") == 0
+    assert await aus.ledger_balance(w.pool, w.users[TOUR_EMAIL]) == 0
+    assert (
+        await w.pool.fetchval(
+            "SELECT count(*) FROM agent_decisions WHERE order_id = $1 OR user_id = $2", tour_order, w.users[TOUR_EMAIL]
+        )
+        == 0
+    ), "no row may reference the tour user"
+    # the reset's own statements delete the tour user's orders
+    async with w.pool.acquire() as conn:
+        for sql, param in RESET_STATEMENTS:
+            await conn.execute(sql, w.users[TOUR_EMAIL] if param == "id" else TOUR_EMAIL)
+    assert await w.pool.fetchval("SELECT count(*) FROM orders WHERE user_id = $1", w.users[TOUR_EMAIL]) == 0
+
+
+async def test_w4a_the_simulator_never_picks_the_tour_user(w: aus.World, on: None) -> None:
+    from shared.demo_tour import TOUR_EMAIL
+
+    w.users[TOUR_EMAIL] = await aus.user(w.pool, TOUR_EMAIL)
+    tour_order = await aus.order(w, TOUR_EMAIL)  # the oldest order: a scenario would pick it
+    mine = await aus.order(w, aus.CUSTOMER)
+
+    sent = await autonomy_service.simulate(ADMIN, scenario="small")
+    assert sent["order_id"] == str(mine)
+    with pytest.raises(svc.ApprovalHTTPError) as err:
+        await autonomy_service.simulate(ADMIN, order_id=str(tour_order), delay_days=3)
+    assert err.value.status_code == 422

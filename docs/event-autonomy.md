@@ -118,6 +118,17 @@ their own account. Three layers close it, and the engine never relies on the sim
   is always `needs_approval` with reason `beneficiary_is_staff`, which another staff member decides.
 - **The simulator** refuses (422) an explicit order whose owner is not a `customer`, or is the acting admin.
 
+## The demo tour user is never acted on
+
+`agent_decisions` holds foreign keys to `users` and `orders` with no `ON DELETE` rule (the append-only trigger would refuse
+`SET NULL` and `CASCADE` anyway), and the demo reset (`shared/demo_tour.py`) runs `DELETE FROM orders WHERE user_id = ...`.
+One decision row referencing the tour user's order would make every later reset fail. So the engine records
+`no_action: demo_user_excluded` for the tour user **without any user or order id on the row**, the scenario picker skips the
+account, and an explicit simulate on its order is a 422. Every other `DELETE FROM` in application code was checked against
+the new tables: they touch cart items, messages, checkpoints, idempotency keys, refresh tokens, embeddings and the eval
+seeder's products and reviews, none of which `agent_decisions` or `store_credit_ledger` reference. The seeder's
+`TRUNCATE ... users CASCADE` is the other path, handled below.
+
 ## Admin API and page
 
 | Route | |
