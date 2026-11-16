@@ -98,7 +98,19 @@ async def open_approval(
     amount: float | None,
     conversation_id: str | None,
 ) -> dict[str, Any]:
-    """Create the routed approval (``pending_review``) and its audit events. Idempotent per source record."""
+    """Create the routed approval (``pending_review``) and its audit events. Idempotent per source record.
+
+    A route the engine returned that is not one of ``auto`` / ``support`` / ``manager`` fails closed to a
+    manager review (logged), as ``ApprovalIntake`` does on .NET; it never raises ``KeyError``.
+    """
+    if decision.route not in ASSIGNED_ROLE:
+        logger.warning("approval route unknown, routed to a manager route=%s", log_safe(decision.route))
+        decision = PolicyDecision(
+            route="manager",
+            reasons=tuple(decision.reasons) or (_FALLBACK_REASON,),
+            evidence=decision.evidence,
+            version=decision.version,
+        )
     existing = await db.fetchrow("SELECT * FROM approvals WHERE source = $1 AND source_ref = $2", source, source_ref)
     if existing is not None:
         return repo._row(existing)  # noqa: SLF001 - same package; keeps the JSON columns decoded
