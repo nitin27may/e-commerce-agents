@@ -25,7 +25,7 @@ from tutorials._shared import maf_bootstrap  # noqa: E402
 
 maf_bootstrap.bootstrap()
 
-from agent_framework import (  # noqa: E402  # noqa: E402
+from agent_framework import (  # noqa: E402
     Agent,
     AgentContext,
     AgentMiddleware,

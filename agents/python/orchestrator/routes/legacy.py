@@ -187,6 +187,7 @@ async def require_seller(user: dict[str, Any] = Depends(require_auth)) -> dict[s
 
 # ── Auth Routes (PUBLIC) ──────────────────────────────────────
 
+
 def _is_plausible_email(email: str) -> bool:
     """Deliberately loose: exactly one "@", no whitespace, a dot inside the domain.
 
