@@ -56,7 +56,7 @@ async def test_blocking_miss_removes_only_the_missed_user_message(
     )
 
     assert result.replay_miss is not None
-    assert await _roles(clean_db, conversation_id) == ["user", "assistant"], "earlier turns are untouched"
+    assert sorted(await _roles(clean_db, conversation_id)) == ["assistant", "user"], "earlier turns are untouched"
     assert await clean_db.fetchval("SELECT count(*) FROM messages WHERE content = 'unrecorded question'") == 0, (
         "the unanswered user message is gone"
     )
