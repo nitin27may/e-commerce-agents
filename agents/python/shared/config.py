@@ -246,6 +246,9 @@ class Settings(BaseSettings):
     # strand the row forever; claimed_at (migration 0002) makes that detectable.
     # Must comfortably exceed the longest legitimate resume.
     HITL_CLAIM_TTL_SECONDS: int = 600
+    # Hard timeout on one resume execution. Must be shorter than the claim TTL, or a
+    # stalled resume could still be running when another approver takes its claim.
+    HITL_RESUME_TIMEOUT_SECONDS: int = 300
 
     # ── MCP integration (optional, flag-gated) ──────────────────────
     # When enabled, specialist agents connect to MCP servers for their data
@@ -448,6 +451,15 @@ class Settings(BaseSettings):
                 )
                 raise ValueError(msg)
 
+        return self
+
+    @model_validator(mode="after")
+    def _validate_hitl_timeouts(self) -> "Settings":
+        if not 0 < self.HITL_RESUME_TIMEOUT_SECONDS < self.HITL_CLAIM_TTL_SECONDS:
+            raise ValueError(
+                "HITL_RESUME_TIMEOUT_SECONDS must be positive and shorter than HITL_CLAIM_TTL_SECONDS "
+                f"(got {self.HITL_RESUME_TIMEOUT_SECONDS} and {self.HITL_CLAIM_TTL_SECONDS})."
+            )
         return self
 
     @model_validator(mode="after")

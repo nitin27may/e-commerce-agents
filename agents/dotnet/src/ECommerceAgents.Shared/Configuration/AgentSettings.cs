@@ -261,4 +261,9 @@ public sealed record AgentSettings
     // How long a resume claim ('processing' on hitl_requests) may be held before
     // another approver can take it over. Mirrors Python's HITL_CLAIM_TTL_SECONDS.
     public int HitlClaimTtlSeconds { get; init; } = 600;
+
+    // Hard timeout on one resume execution. Must be shorter than the claim TTL, or a stalled
+    // resume could still be running when another approver takes its claim. Mirrors Python's
+    // HITL_RESUME_TIMEOUT_SECONDS.
+    public int HitlResumeTimeoutSeconds { get; init; } = 300;
 }

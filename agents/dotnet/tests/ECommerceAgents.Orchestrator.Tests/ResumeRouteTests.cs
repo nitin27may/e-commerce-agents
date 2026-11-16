@@ -320,6 +320,45 @@ public sealed class ResumeRouteTests : IAsyncLifetime
         seenDuringResume.Should().NotBeNull("the claim must stamp claimed_at before the workflow runs");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ATakenOverClaim_CannotFinalizeOrRelease(bool firstFails)
+    {
+        var (runId, _) = await SeedPendingAsync();
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var mode = new StubResumableMode(gateFirstCall: gate, failFirstCall: firstFails);
+
+        // A claims and freezes.
+        using var clientA = ClientFor(mode, email: "a@example.com");
+        var aInFlight = clientA.PostAsJsonAsync($"/api/orchestration/{runId}/resume", new { approved = true });
+        for (var i = 0; i < 80 && mode.Calls == 0; i++)
+        {
+            await Task.Delay(25);
+        }
+        mode.Calls.Should().Be(1);
+
+        // A's claim ages past the TTL; B takes it over and completes.
+        await ForceClaimAsync(runId, "NOW() - interval '1 hour'");
+        using var clientB = ClientFor(mode, email: "b@example.com");
+        var b = await clientB.PostAsJsonAsync($"/api/orchestration/{runId}/resume", new { approved = false });
+        b.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // A wakes: its finalize (or its failure-release) must be a no-op.
+        gate.SetResult();
+        var a = await aInFlight;
+        if (!firstFails)
+        {
+            a.StatusCode.Should().Be(HttpStatusCode.Conflict, "A must be told its claim was lost");
+        }
+
+        (await StatusOfAsync(runId)).Should().Be("rejected", "B's decision stands");
+        await using var conn = await _pool.OpenAsync();
+        (await conn.ExecuteScalarAsync<string>(
+            "SELECT response::text FROM hitl_requests WHERE workflow_run_id = @runId", new { runId }))
+            .Should().Contain("b@example.com");
+    }
+
     // ─────────────────────── helpers ────────────────────────
 
     private async Task ForceClaimAsync(Guid runId, string claimedAtSql)
@@ -412,7 +451,11 @@ public sealed class ResumeRouteTests : IAsyncLifetime
     }
 
     /// <summary>Counts how many times the workflow was actually driven.</summary>
-    private sealed class StubResumableMode(TimeSpan? delay = null) : IOrchestrationMode, IResumableMode
+    private sealed class StubResumableMode(
+        TimeSpan? delay = null,
+        TaskCompletionSource? gateFirstCall = null,
+        bool failFirstCall = false
+    ) : IOrchestrationMode, IResumableMode
     {
         private int _calls;
 
@@ -434,7 +477,15 @@ public sealed class ResumeRouteTests : IAsyncLifetime
         public async Task<ModeRunResult> ResumeAsync(
             string sessionId, string checkpointId, string requestId, bool approved, CancellationToken ct = default)
         {
-            Interlocked.Increment(ref _calls);
+            var callNumber = Interlocked.Increment(ref _calls);
+            if (callNumber == 1 && gateFirstCall is not null)
+            {
+                await gateFirstCall.Task; // the first resume is frozen until the test lets it go
+                if (failFirstCall)
+                {
+                    throw new InvalidOperationException("boom");
+                }
+            }
             SeenEmail = RequestContext.CurrentUserEmail;
             SeenRole = RequestContext.CurrentUserRole;
             LastApproved = approved;

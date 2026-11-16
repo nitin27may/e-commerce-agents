@@ -241,10 +241,19 @@ async def resume_run(
             raise HTTPException(status_code=403, detail="You cannot approve your own request")
         raise HTTPException(status_code=409, detail=f"Request is already {latest['status']}")
 
+    # claimed_at is the claim's fencing token: every claim and takeover rewrites it,
+    # so "claimed_at still equals what I was handed" means "this claim is still
+    # mine". The release and the final decision are both conditional on it; a
+    # caller whose claim was taken over (it stalled past the TTL) changes nothing
+    # and gets 409, and the live claimant's decision stands.
+    claim_token = hitl["claimed_at"]
+
     async def _release() -> None:
         await pool.execute(
-            "UPDATE hitl_requests SET status = 'pending', claimed_at = NULL WHERE id = $1 AND status = 'processing'",
+            "UPDATE hitl_requests SET status = 'pending', claimed_at = NULL "
+            "WHERE id = $1 AND status = 'processing' AND claimed_at = $2",
             hitl["id"],
+            claim_token,
         )
 
     if hitl["kind"] != "return_approval":
@@ -271,12 +280,18 @@ async def resume_run(
     try:
         requester_role = await pool.fetchval("SELECT role FROM users WHERE email = $1", requester_email) or "customer"
         current_user_role.set(requester_role)
-        async for event in mode.resume(
-            checkpoint_id=str(hitl["checkpoint_id"]), request_id=hitl["request_id"], approved=body.approved
-        ):
-            if event.kind == "run_completed":
-                final_payload = event.payload
+        # Hard stop well inside the claim TTL (settings validates it is shorter), so a
+        # frozen resume ends - and releases - before anyone else may take the row over.
+        async with asyncio.timeout(settings.HITL_RESUME_TIMEOUT_SECONDS):
+            async for event in mode.resume(
+                checkpoint_id=str(hitl["checkpoint_id"]), request_id=hitl["request_id"], approved=body.approved
+            ):
+                if event.kind == "run_completed":
+                    final_payload = event.payload
         resumed = True
+    except TimeoutError:
+        logger.warning("hitl.resume_timeout hitl_id=%s", hitl["id"])
+        raise HTTPException(status_code=504, detail="Resume timed out; the approval is still pending.") from None
     finally:
         current_user_role.reset(role_token)
         current_user_email.reset(email_token)
@@ -287,15 +302,21 @@ async def resume_run(
             # Shielded so a second cancel cannot interrupt the release itself.
             await asyncio.shield(_release())
 
-    await pool.execute(
+    decided = await pool.execute(
         """UPDATE hitl_requests
            SET status = $1, responded_at = NOW(), response = $2::jsonb
-           WHERE id = $3""",
+           WHERE id = $3 AND status = 'processing' AND claimed_at = $4""",
         "approved" if body.approved else "rejected",
         # No responder column exists, so the reviewer is recorded in the response.
         json.dumps({"approved": body.approved, "decided_by": admin.get("sub")}),
         hitl["id"],
+        claim_token,
     )
+    if decided != "UPDATE 1":
+        # The claim was taken over while this resume ran: someone else owns the
+        # decision now. Record nothing.
+        logger.warning("hitl.claim_lost hitl_id=%s", hitl["id"])
+        raise HTTPException(status_code=409, detail="This approval was taken over by another reviewer")
     new_checkpoint_id = final_payload.get("latest_checkpoint_id")
     if new_checkpoint_id:
         await pool.execute(

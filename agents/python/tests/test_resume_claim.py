@@ -154,3 +154,99 @@ async def test_the_ttl_is_configurable(clean_db, monkeypatch: pytest.MonkeyPatch
 
     monkeypatch.setattr(settings, "HITL_CLAIM_TTL_SECONDS", 10)
     assert (await _post(_admin_app(), f"/api/orchestration/{run_id}/resume", {"approved": True})).status_code == 200
+
+
+# ── Claim fencing: a stalled resume cannot undo or repeat its successor's ───
+
+
+async def _a_stalls_then_b_takes_over(clean_db, monkeypatch, run_id: str, *, a_fails: bool):
+    """A claims and stalls; its claim is back-dated; B takes over and completes.
+
+    Returns A's task (still blocked) and the event that lets A's resume proceed.
+    """
+    from orchestrator.modes.workflow_mode import ReturnReplaceMode
+
+    real_resume = ReturnReplaceMode.resume
+    release_a = asyncio.Event()
+    calls = {"n": 0}
+
+    async def _resume(self, **kwargs: Any):
+        calls["n"] += 1
+        if calls["n"] > 1:  # B: the real thing
+            async for event in real_resume(self, **kwargs):
+                yield event
+            return
+        await release_a.wait()  # A: frozen until released
+        if a_fails:
+            raise RuntimeError("boom")
+        async for event in real_resume(self, **kwargs):
+            yield event
+
+    monkeypatch.setattr(ReturnReplaceMode, "resume", _resume)
+    a = asyncio.create_task(
+        _post(
+            _admin_app("a@example.com"),
+            f"/api/orchestration/{run_id}/resume",
+            {"approved": True},
+            raise_app_exceptions=False,
+        )
+    )
+    for _ in range(100):
+        if await _status(clean_db, run_id) == "processing":
+            break
+        await asyncio.sleep(0.05)
+    await _force_claim(clean_db, run_id, "NOW() - interval '1 hour'")  # A is now past the TTL
+
+    b = await _post(_admin_app("b@example.com"), f"/api/orchestration/{run_id}/resume", {"approved": False})
+    assert b.status_code == 200
+    return a, release_a
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("a_fails", [False, True], ids=["a-finalizes", "a-fails-and-releases"])
+async def test_a_taken_over_claim_cannot_finalize_or_release(
+    clean_db, monkeypatch: pytest.MonkeyPatch, a_fails: bool
+) -> None:
+    user_id = await _seed_user(clean_db, REQUESTER)
+    _, run_id = await _pause_a_return(clean_db, monkeypatch, REQUESTER, user_id)
+
+    a, release_a = await _a_stalls_then_b_takes_over(clean_db, monkeypatch, run_id, a_fails=a_fails)
+    release_a.set()
+    a_resp = await a
+
+    if not a_fails:
+        assert a_resp.status_code == 409, "A must be told its claim was lost"
+    row = await clean_db.fetchrow("SELECT status, response FROM hitl_requests WHERE workflow_run_id = $1", run_id)
+    assert row["status"] == "rejected", "B's decision must stand: A's release/finalize are no-ops"
+    assert "b@example.com" in str(row["response"])
+
+
+@pytest.mark.asyncio
+async def test_a_hung_resume_times_out_and_releases(clean_db, monkeypatch: pytest.MonkeyPatch) -> None:
+    from orchestrator.modes.workflow_mode import ReturnReplaceMode
+    from orchestrator.routes.orchestration import settings
+
+    user_id = await _seed_user(clean_db, REQUESTER)
+    _, run_id = await _pause_a_return(clean_db, monkeypatch, REQUESTER, user_id)
+
+    async def _hang(self, **_kwargs: Any):
+        await asyncio.sleep(3600)
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(ReturnReplaceMode, "resume", _hang)
+    monkeypatch.setattr(settings, "HITL_RESUME_TIMEOUT_SECONDS", 1)
+
+    resp = await _post(_admin_app(), f"/api/orchestration/{run_id}/resume", {"approved": True})
+
+    assert resp.status_code == 504
+    assert await _status(clean_db, run_id) == "pending"
+
+
+def test_resume_timeout_must_be_shorter_than_the_claim_ttl() -> None:
+    from pydantic import ValidationError
+
+    from shared.config import Settings
+
+    with pytest.raises(ValidationError):
+        Settings(HITL_RESUME_TIMEOUT_SECONDS=600, HITL_CLAIM_TTL_SECONDS=600)
+    Settings(HITL_RESUME_TIMEOUT_SECONDS=30, HITL_CLAIM_TTL_SECONDS=600)

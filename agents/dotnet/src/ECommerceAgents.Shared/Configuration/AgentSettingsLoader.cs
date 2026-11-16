@@ -37,6 +37,19 @@ public static class AgentSettingsLoader
         );
     }
 
+    /// <summary>The resume timeout must be positive and shorter than the claim TTL (mirrors Python's validator).</summary>
+    private static int ValidatedResumeTimeout(int timeoutSeconds, int claimTtlSeconds)
+    {
+        if (timeoutSeconds <= 0 || timeoutSeconds >= claimTtlSeconds)
+        {
+            throw new InvalidOperationException(
+                "HITL_RESUME_TIMEOUT_SECONDS must be positive and shorter than HITL_CLAIM_TTL_SECONDS "
+                    + $"(got {timeoutSeconds} and {claimTtlSeconds}).");
+        }
+
+        return timeoutSeconds;
+    }
+
     public static AgentSettings Load(IConfiguration config)
     {
         string Get(string key, string fallback = "") =>
@@ -164,6 +177,8 @@ public static class AgentSettingsLoader
             MafHandoffMode = Get("MAF_HANDOFF_MODE", "tool").ToLowerInvariant(),
             HitlEnabled = GetBool("HITL_ENABLED", true),
             HitlClaimTtlSeconds = GetInt("HITL_CLAIM_TTL_SECONDS", 600),
+            HitlResumeTimeoutSeconds = ValidatedResumeTimeout(
+                GetInt("HITL_RESUME_TIMEOUT_SECONDS", 300), GetInt("HITL_CLAIM_TTL_SECONDS", 600)),
         };
     }
 
