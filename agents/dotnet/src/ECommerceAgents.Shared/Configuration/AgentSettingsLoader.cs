@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Extensions.Configuration;
 
 namespace ECommerceAgents.Shared.Configuration;
@@ -54,6 +55,20 @@ public static class AgentSettingsLoader
     {
         string Get(string key, string fallback = "") =>
             config[key] ?? Environment.GetEnvironmentVariable(key) ?? fallback;
+
+        int EmbeddingDim()
+        {
+            var raw = Get("EMBEDDING_DIM");
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return AgentSettings.DefaultEmbeddingDim;
+            }
+
+            // Fail at startup rather than coerce: a silently-wrong width corrupts every stored vector.
+            return int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var dim) && dim > 0
+                ? dim
+                : throw new InvalidOperationException("EMBEDDING_DIM must be a positive integer");
+        }
 
         string AnthropicModel() =>
             string.IsNullOrWhiteSpace(Get("ANTHROPIC_MODEL")) ? AgentSettings.DefaultAnthropicModel : Get("ANTHROPIC_MODEL").Trim();
@@ -120,6 +135,10 @@ public static class AgentSettingsLoader
             AnthropicModel = AnthropicModel(),
             AnthropicApiKey = Get("ANTHROPIC_API_KEY"),
             EmbeddingModel = Get("EMBEDDING_MODEL", "text-embedding-3-small"),
+            EmbeddingProvider = Get("EMBEDDING_PROVIDER").Trim().ToLowerInvariant(),
+            EmbeddingBaseUrl = Get("EMBEDDING_BASE_URL"),
+            EmbeddingApiKey = Get("EMBEDDING_API_KEY"),
+            EmbeddingDim = EmbeddingDim(),
             OpenAiApiKey = Get("OPENAI_API_KEY"),
             LlmBaseUrl = Get("LLM_BASE_URL"),
             RateLimitEnabled = GetBool("RATE_LIMIT_ENABLED", true),

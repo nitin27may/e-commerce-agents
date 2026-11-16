@@ -34,6 +34,13 @@ from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient
 
 from shared.config import settings
 from shared.context import current_agent_model
+from shared.embedding_config import (
+    embedding_model_name,
+    embedding_provider,
+    embedding_request_kwargs,
+    follows_chat_provider,
+    verify_vector_length,
+)
 from shared.prompt_loader import ModelOverride, load_model_override
 
 logger = logging.getLogger(__name__)
@@ -181,6 +188,11 @@ def get_chat_client(agent_name: str | None = None) -> OpenAIChatClient | OpenAIC
 def get_embeddings_client() -> openai.AsyncOpenAI | openai.AsyncAzureOpenAI:
     """Return an async client configured for embeddings.
 
+    The provider is ``EMBEDDING_PROVIDER`` (``openai | azure | openai_compatible | replay``), or
+    the chat provider's when that is empty -- so an existing install behaves exactly as before.
+    ``EMBEDDING_BASE_URL`` / ``EMBEDDING_API_KEY`` replace ``LLM_BASE_URL`` / the chat key for
+    embeddings only (see ``shared/embedding_config.py``).
+
     The ``replay`` branch is the whole point of #52. Without it this fell
     through to the OpenAI path and raised "OPENAI_API_KEY is required", MAF
     caught that and handed the model an error result, and the agent quietly
@@ -188,27 +200,68 @@ def get_embeddings_client() -> openai.AsyncOpenAI | openai.AsyncAzureOpenAI:
     entirely in replay mode, so pgvector semantic search was exercised by no
     CI run at all while product-discovery still scored 92%.
     """
-    if settings.LLM_PROVIDER.lower() == "replay":
+    provider = embedding_provider(settings)
+
+    if provider == "replay":
         from shared.replay_embeddings import ReplayEmbeddingsClient
 
         return ReplayEmbeddingsClient()  # type: ignore[return-value]
 
-    if settings.LLM_PROVIDER.lower() == "azure":
-        _validate_azure()
+    if provider == "azure":
+        endpoint = settings.EMBEDDING_BASE_URL or settings.AZURE_OPENAI_ENDPOINT
+        key = settings.EMBEDDING_API_KEY or settings.AZURE_OPENAI_KEY
+        if not endpoint or not key:
+            raise ValueError(
+                "Azure embeddings need AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_KEY (or EMBEDDING_BASE_URL and "
+                "EMBEDDING_API_KEY). Set them in .env or choose another EMBEDDING_PROVIDER."
+            )
         return openai.AsyncAzureOpenAI(
-            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
-            api_key=settings.AZURE_OPENAI_KEY,
+            azure_endpoint=endpoint,
+            api_key=key,
             api_version=settings.AZURE_OPENAI_API_VERSION,
         )
-    _validate_openai()
-    return openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY, base_url=settings.LLM_BASE_URL or None)
+
+    if provider == "openai_compatible":
+        if not settings.EMBEDDING_BASE_URL:
+            raise ValueError(
+                "EMBEDDING_PROVIDER=openai_compatible requires EMBEDDING_BASE_URL, e.g. http://localhost:11434/v1 "
+                "for Ollama."
+            )
+        # Local servers ignore the key, but the SDK insists on a non-empty one.
+        key = settings.EMBEDDING_API_KEY or settings.OPENAI_API_KEY or "not-needed"
+        return openai.AsyncOpenAI(api_key=key, base_url=settings.EMBEDDING_BASE_URL)
+
+    # openai. Following the chat provider keeps today's LLM_BASE_URL; an explicit
+    # EMBEDDING_PROVIDER=openai means api.openai.com unless EMBEDDING_BASE_URL says otherwise.
+    key = settings.EMBEDDING_API_KEY or settings.OPENAI_API_KEY
+    if not key:
+        raise ValueError(
+            "OPENAI_API_KEY (or EMBEDDING_API_KEY) is required for OpenAI embeddings. Set it in .env or choose "
+            "another EMBEDDING_PROVIDER."
+        )
+    base_url = settings.EMBEDDING_BASE_URL or (settings.LLM_BASE_URL if follows_chat_provider(settings) else "")
+    return openai.AsyncOpenAI(api_key=key, base_url=base_url or None)
 
 
 def get_embedding_model() -> str:
     """Correct embedding model (OpenAI) / deployment (Azure) name."""
-    if settings.LLM_PROVIDER.lower() == "azure" and settings.AZURE_EMBEDDING_DEPLOYMENT:
-        return settings.AZURE_EMBEDDING_DEPLOYMENT
-    return settings.EMBEDDING_MODEL
+    return embedding_model_name(settings)
+
+
+async def embed_texts(texts: list[str]) -> list[list[float]]:
+    """Embed ``texts`` with the configured embedding client, checking every vector's width.
+
+    Passes ``dimensions=EMBEDDING_DIM`` to models that accept it; for others a vector of the
+    wrong size raises rather than reaching the database.
+    """
+    model = get_embedding_model()
+    response = await get_embeddings_client().embeddings.create(
+        model=model, input=texts, **embedding_request_kwargs(model, settings)
+    )
+    vectors = [list(item.embedding) for item in response.data]
+    for vector in vectors:
+        verify_vector_length(vector, settings)
+    return vectors
 
 
 # ─────────────────────── A2A registry ───────────────────────

@@ -33,6 +33,12 @@ var app = AgentHost.Build(
     }
 );
 
+// Fail at startup, naming the fix, if EMBEDDING_DIM disagrees with the stored vector columns
+// (Python twin: shared/embedding_check.py, called from product_discovery/main.py).
+await EmbeddingDimensionCheck.VerifyAsync(
+    app.Services.GetRequiredService<ECommerceAgents.Shared.Data.DatabasePool>(),
+    app.Services.GetRequiredService<ECommerceAgents.Shared.Configuration.AgentSettings>());
+
 app.Run(Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "http://0.0.0.0:8081");
 
 

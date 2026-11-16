@@ -324,7 +324,7 @@ erDiagram
 | Table | Key Columns | Notes |
 |-------|-------------|-------|
 | **products** | `id` (PK), `name`, `category`, `brand`, `price`, `original_price`, `rating`, `specs` (JSONB) | Categories: Electronics, Clothing, Home, Sports, Books. `specs` stores product-specific attributes as flexible JSON. |
-| **product_embeddings** | `id` (PK), `product_id` (FK -> products), `embedding` (vector(1536)) | One embedding per product. Uses `text-embedding-3-small` (1536 dimensions). IVFFlat index with 10 lists for cosine similarity search. |
+| **product_embeddings** | `id` (PK), `product_id` (FK -> products), `embedding` (vector(1536)), `embedding_model` (migration 0008) | One embedding per product. Defaults to `text-embedding-3-small` (1536 dimensions); the width is `EMBEDDING_DIM` and changes only through `scripts/reset_embeddings.py` (see [configuration](configuration.md#embeddings-are-configured-separately)). `embedding_model` records which model wrote the vector (`replay-hashing-vectorizer` for offline ones; NULL for rows from before 0008). IVFFlat index with 10 lists for cosine similarity search. |
 | **price_history** | `id` (PK), `product_id` (FK -> products), `price`, `recorded_at` | Daily price snapshots. Seeder generates 90 days of history. |
 
 **Indexes**
@@ -468,7 +468,7 @@ Two rules the reader enforces, each closing a defect that shipped:
 
 | Table | Key Columns | Notes |
 |-------|-------------|-------|
-| **agent_memories** | `id` (PK), `user_id` (FK -> users), `category`, `content`, `importance` (SMALLINT), `embedding` (`vector(1536)`), `expires_at`, `is_active` | Long-term per-user memory, distinct from conversation history: written by `store_memory` and read by `recall_memories`. Embedded, so recall is semantic rather than keyword. Soft-deleted via `is_active`; `expires_at` lets a memory age out. |
+| **agent_memories** | `id` (PK), `user_id` (FK -> users), `category`, `content`, `importance` (SMALLINT), `embedding` (`vector(1536)`; resized with `product_embeddings` by `scripts/reset_embeddings.py`), `expires_at`, `is_active` | Long-term per-user memory, distinct from conversation history: written by `store_memory` and read by `recall_memories`. Embedded, so recall is semantic rather than keyword. Soft-deleted via `is_active`; `expires_at` lets a memory age out. |
 
 ### Human-in-the-Loop & Durability
 

@@ -18,11 +18,21 @@ import pytest
 import yaml
 from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient
 
+from shared import config as config_module
 from shared import factory, prompt_loader
-from shared.config import settings
 from shared.context import current_agent_model
 from shared.prompt_loader import PROMPTS_DIR, load_model_override, load_prompt, validate_model_overrides
 from shared.run_usage import configured_model_name
+
+
+def _set(monkeypatch, name: str, value) -> None:
+    """Patch ``name`` on every live settings object.
+
+    Other tests rebuild ``shared.config`` / ``shared.factory`` with a fresh ``Settings`` (importlib.reload), so
+    ``factory.settings`` and ``config.settings`` can be different objects; the code under test reads both.
+    """
+    for obj in {id(o): o for o in (factory.settings, config_module.settings)}.values():
+        monkeypatch.setattr(obj, name, value)
 
 
 @pytest.fixture
@@ -45,11 +55,11 @@ def _with_model_block(prompts_dir: Path, agent: str, block: object) -> None:
 
 @pytest.fixture
 def openai_settings(monkeypatch) -> None:
-    monkeypatch.setattr(settings, "LLM_PROVIDER", "openai")
-    monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test")
-    monkeypatch.setattr(settings, "LLM_MODEL", "gpt-4.1")
-    monkeypatch.setattr(settings, "LLM_BASE_URL", "")
-    monkeypatch.setattr(settings, "LLM_API", "responses")
+    _set(monkeypatch, "LLM_PROVIDER", "openai")
+    _set(monkeypatch, "OPENAI_API_KEY", "sk-test")
+    _set(monkeypatch, "LLM_MODEL", "gpt-4.1")
+    _set(monkeypatch, "LLM_BASE_URL", "")
+    _set(monkeypatch, "LLM_API", "responses")
     current_agent_model.set("")
 
 
@@ -150,18 +160,18 @@ def test_calling_without_a_name_ignores_overrides(prompts_dir, openai_settings) 
 
 def test_override_can_switch_provider(prompts_dir, monkeypatch) -> None:
     """Global azure, one agent on public OpenAI: needs OPENAI_API_KEY, and never inherits Azure's base URL."""
-    monkeypatch.setattr(settings, "LLM_PROVIDER", "azure")
-    monkeypatch.setattr(settings, "AZURE_OPENAI_ENDPOINT", "https://x.openai.azure.com/")
-    monkeypatch.setattr(settings, "AZURE_OPENAI_KEY", "k")
-    monkeypatch.setattr(settings, "AZURE_OPENAI_DEPLOYMENT", "gpt41-prod")
-    monkeypatch.setattr(settings, "OPENAI_API_KEY", "")
-    monkeypatch.setattr(settings, "LLM_API", "responses")
+    _set(monkeypatch, "LLM_PROVIDER", "azure")
+    _set(monkeypatch, "AZURE_OPENAI_ENDPOINT", "https://x.openai.azure.com/")
+    _set(monkeypatch, "AZURE_OPENAI_KEY", "k")
+    _set(monkeypatch, "AZURE_OPENAI_DEPLOYMENT", "gpt41-prod")
+    _set(monkeypatch, "OPENAI_API_KEY", "")
+    _set(monkeypatch, "LLM_API", "responses")
     _with_model_block(prompts_dir, "orchestrator", {"provider": "openai", "model": "gpt-4.1-mini"})
 
     with pytest.raises(ValueError, match="OPENAI_API_KEY"):
         factory.get_chat_client("orchestrator")
 
-    monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test")
+    _set(monkeypatch, "OPENAI_API_KEY", "sk-test")
     client = factory.get_chat_client("orchestrator")
     assert isinstance(client, OpenAIChatClient)
     assert client.model == "gpt-4.1-mini"
@@ -170,10 +180,10 @@ def test_override_can_switch_provider(prompts_dir, monkeypatch) -> None:
 
 
 def test_azure_override_names_the_deployment(prompts_dir, monkeypatch) -> None:
-    monkeypatch.setattr(settings, "LLM_PROVIDER", "azure")
-    monkeypatch.setattr(settings, "AZURE_OPENAI_ENDPOINT", "https://x.openai.azure.com/")
-    monkeypatch.setattr(settings, "AZURE_OPENAI_KEY", "k")
-    monkeypatch.setattr(settings, "AZURE_OPENAI_DEPLOYMENT", "gpt41-prod")
+    _set(monkeypatch, "LLM_PROVIDER", "azure")
+    _set(monkeypatch, "AZURE_OPENAI_ENDPOINT", "https://x.openai.azure.com/")
+    _set(monkeypatch, "AZURE_OPENAI_KEY", "k")
+    _set(monkeypatch, "AZURE_OPENAI_DEPLOYMENT", "gpt41-prod")
     _with_model_block(prompts_dir, "orchestrator", {"model": "mini-deployment"})
     client = factory.get_chat_client("orchestrator")
     assert client.model == "mini-deployment"
@@ -187,7 +197,7 @@ def test_invalid_block_fails_client_construction_naming_the_file(prompts_dir, op
 
 
 def test_anthropic_provider_points_at_the_dotnet_stack(monkeypatch) -> None:
-    monkeypatch.setattr(settings, "LLM_PROVIDER", "anthropic")
+    _set(monkeypatch, "LLM_PROVIDER", "anthropic")
     with pytest.raises(ValueError, match=r"\.NET stack only"):
         factory.get_chat_client()
 
@@ -195,7 +205,7 @@ def test_anthropic_provider_points_at_the_dotnet_stack(monkeypatch) -> None:
 def test_replay_ignores_overrides(prompts_dir, monkeypatch) -> None:
     from shared.replay_client import ReplayChatClient
 
-    monkeypatch.setattr(settings, "LLM_PROVIDER", "replay")
+    _set(monkeypatch, "LLM_PROVIDER", "replay")
     _with_model_block(prompts_dir, "orchestrator", {"provider": "openai", "model": "gpt-4.1-nano"})
     current_agent_model.set("")
     assert isinstance(factory.get_chat_client("orchestrator"), ReplayChatClient)
@@ -206,8 +216,8 @@ def test_replay_ignores_overrides(prompts_dir, monkeypatch) -> None:
 
 
 def test_cost_falls_back_to_the_model_in_effect(monkeypatch) -> None:
-    monkeypatch.setattr(settings, "LLM_PROVIDER", "openai")
-    monkeypatch.setattr(settings, "LLM_MODEL", "gpt-4.1")
+    _set(monkeypatch, "LLM_PROVIDER", "openai")
+    _set(monkeypatch, "LLM_MODEL", "gpt-4.1")
     current_agent_model.set("")
     assert configured_model_name() == "gpt-4.1"
     token = current_agent_model.set("gpt-4.1-nano")
@@ -226,7 +236,7 @@ def test_run_options_apply_the_agents_temperature(prompts_dir, monkeypatch) -> N
 
     from shared.agent_host import _run_options
 
-    monkeypatch.setattr(settings, "LLM_TEMPERATURE", 0.2)
+    _set(monkeypatch, "LLM_TEMPERATURE", 0.2)
     _with_model_block(prompts_dir, "pricing-promotions", {"temperature": 0.9})
     assert _run_options(SimpleNamespace(name="pricing-promotions")) == {"temperature": 0.9}
     assert _run_options(SimpleNamespace(name="order-management")) == {"temperature": 0.2}

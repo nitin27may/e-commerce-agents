@@ -88,6 +88,11 @@ services:
       # when its model matches EMBEDDING_MODEL. It never calls an embedding API.
       LLM_PROVIDER: ${LLM_PROVIDER:-openai}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      # Embeddings are configured apart from the chat provider (empty provider = follow LLM_PROVIDER).
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-}
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-1536}
     restart: "no"
     profiles: ["seed"]
 
@@ -165,6 +170,11 @@ services:
       COST_BUDGET_MODE: ${COST_BUDGET_MODE:-observe}
       COST_BUDGET_USD_PER_RUN: ${COST_BUDGET_USD_PER_RUN:-0.50}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      # Embeddings are configured apart from the chat provider (empty provider = follow LLM_PROVIDER).
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-}
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-1536}
       AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
       AZURE_OPENAI_KEY: ${AZURE_OPENAI_KEY:-}
       AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-}

@@ -155,6 +155,14 @@ class Settings(BaseSettings):
     # borderline-priced product). Raise toward 1.0 for more varied phrasing.
     LLM_TEMPERATURE: float = 0.2
     EMBEDDING_MODEL: str = "text-embedding-3-small"
+    # Embeddings are decoupled from the chat provider (#96). Empty EMBEDDING_PROVIDER follows
+    # LLM_PROVIDER, exactly as before; otherwise openai | azure | openai_compatible | replay.
+    # EMBEDDING_BASE_URL / EMBEDDING_API_KEY, when set, replace LLM_BASE_URL / OPENAI_API_KEY for
+    # embeddings only. EMBEDDING_DIM must equal the vector(N) column (see scripts/reset_embeddings.py).
+    EMBEDDING_PROVIDER: str = ""
+    EMBEDDING_BASE_URL: str = ""
+    EMBEDDING_API_KEY: str = ""
+    EMBEDDING_DIM: int = 1536
     OPENAI_API_KEY: str = ""
 
     AZURE_OPENAI_ENDPOINT: str = ""

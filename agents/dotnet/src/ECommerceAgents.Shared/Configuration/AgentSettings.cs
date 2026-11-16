@@ -136,6 +136,28 @@ public sealed record AgentSettings
     /// <summary>USD ceiling for a single agent run; null disables the ceiling.</summary>
     public double? CostBudgetUsdPerRun { get; init; }
     public string EmbeddingModel { get; init; } = "text-embedding-3-small";
+
+    /// <summary>
+    /// <c>EMBEDDING_PROVIDER</c>: "openai" | "azure" | "openai_compatible" | "replay"; empty follows
+    /// <see cref="LlmProvider"/>, exactly as before. Python twin: <c>shared/embedding_config.py</c>.
+    /// </summary>
+    public string EmbeddingProvider { get; init; } = "";
+
+    /// <summary><c>EMBEDDING_BASE_URL</c>: replaces <c>LLM_BASE_URL</c> (or the Azure endpoint) for embeddings only.</summary>
+    public string EmbeddingBaseUrl { get; init; } = "";
+
+    /// <summary><c>EMBEDDING_API_KEY</c>: replaces the chat key for embeddings only. Never logged.</summary>
+    public string EmbeddingApiKey { get; init; } = "";
+
+    /// <summary>
+    /// <c>EMBEDDING_DIM</c>: the width of every vector; must equal the <c>vector(N)</c> columns
+    /// (<c>scripts/reset_embeddings.py</c> changes them; <see cref="Agents.EmbeddingDimensionCheck"/> verifies).
+    /// </summary>
+    public int EmbeddingDim { get; init; } = DefaultEmbeddingDim;
+
+    /// <summary>The baseline's column width (text-embedding-3-small).</summary>
+    public const int DefaultEmbeddingDim = 1536;
+
     public string OpenAiApiKey { get; init; } = "";
 
     /// <summary>

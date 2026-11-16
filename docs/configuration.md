@@ -285,6 +285,63 @@ ANTHROPIC_MODEL=claude-sonnet-5-5     # default. Others: claude-opus-5-5, claude
 | Cost | The repo documents no Claude prices, so none were invented: Claude models are **unpriced**, and the cost module logs one fixed line and estimates at its default (gpt-4.1) entry. Treat cost figures as meaningless for Claude until a maintainer adds the entries from Anthropic's pricing page |
 | Tested | A stub-`HttpMessageHandler` test: request shape, a canned `tool_use` → tool execution → `tool_result` follow-up, and usage mapping. It does **not** prove tool-choice quality, prompt caching, real error shapes (rate limits, overload, bad key) or streaming edge cases, and it has never run against the live API |
 
+## Embeddings are configured separately
+
+Semantic search needs an embedding model. It used to follow `LLM_PROVIDER` and assume 1536
+dimensions everywhere. It is now its own setting group — which also matters for providers with no
+embeddings API (Claude), and for running chat and embeddings on different endpoints.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `EMBEDDING_PROVIDER` | empty = follow `LLM_PROVIDER` | `openai`, `azure`, `openai_compatible` (any `/embeddings` endpoint: Ollama, vLLM, LM Studio) or `replay` (offline hashing vectors) |
+| `EMBEDDING_BASE_URL` | empty | Endpoint for embeddings only. Required for `openai_compatible`. Following `openai`, empty falls back to `LLM_BASE_URL` as before; an explicit `EMBEDDING_PROVIDER=openai` means api.openai.com |
+| `EMBEDDING_API_KEY` | empty | Replaces `OPENAI_API_KEY` (or the Azure key) for embeddings only. `openai_compatible` needs none |
+| `EMBEDDING_MODEL` | `text-embedding-3-small` | Model, or the Azure deployment when `AZURE_EMBEDDING_DEPLOYMENT` is set |
+| `EMBEDDING_DIM` | `1536` | Width of every vector. Must equal the `vector(N)` columns — see below |
+
+With none of these set, nothing changes: embeddings follow the chat provider, 1536 dimensions.
+`dimensions=EMBEDDING_DIM` is sent to the models that accept it (OpenAI's `text-embedding-3-*`);
+for any other model a vector of the wrong size is refused with a message instead of reaching the
+database. Under `LLM_PROVIDER=replay` the offline vectors are 1536 wide unless `EMBEDDING_DIM` says
+otherwise.
+
+**The dimension is a database property.** `product_embeddings.embedding` and
+`agent_memories.embedding` are `vector(1536)` in the frozen baseline (`init.sql`), and changing a
+vector column destroys the stored vectors — so it is an explicit operator action, not a migration:
+
+```bash
+uv run --project agents/python python scripts/reset_embeddings.py --dim 768
+```
+
+It truncates `product_embeddings`, clears (does not delete) `agent_memories.embedding` — the memory
+rows hold what users told the agents, and nothing writes that column today — retypes both columns
+and rebuilds the ivfflat index, in one transaction. It refuses anything over 2000 dimensions, which
+pgvector cannot index: ask the API for fewer with `dimensions=` (text-embedding-3-large defaults to
+3072 but accepts 1536), or store `halfvec`, which the script does not do. Afterwards set
+`EMBEDDING_DIM` to match and re-embed (the seeder, or `scripts.generate_embeddings`).
+
+**Fail fast.** The product-discovery agent, the seeder and `generate_embeddings` compare
+`EMBEDDING_DIM` with the real column types (`atttypmod`) at startup and stop with a message naming
+the fix when they differ; the .NET product-discovery service does the same. Migration
+`0008_embedding_model.sql` adds `product_embeddings.embedding_model`, which the seeder's loader and
+`generate_embeddings` fill so you can tell which model wrote a vector (`replay-hashing-vectorizer`
+for offline ones). The precomputed `product_embeddings.v1.jsonl.gz` is only loaded when its header
+model equals `EMBEDDING_MODEL` and its width equals `EMBEDDING_DIM`.
+
+### Local embeddings with Ollama (documented, not exercised here)
+
+```dotenv
+EMBEDDING_PROVIDER=openai_compatible
+EMBEDDING_BASE_URL=http://localhost:11434/v1      # http://host.docker.internal:11434/v1 in containers
+EMBEDDING_MODEL=nomic-embed-text                  # `ollama pull nomic-embed-text`
+EMBEDDING_DIM=768
+```
+
+then `scripts/reset_embeddings.py --dim 768` and `generate_embeddings` as above. This path is
+documented but **has not been run**: it needs a reachable Ollama, and the build environment had
+none. What is tested is everything around it — client construction for `openai_compatible`, the
+width checks, the reset script and the startup check against a real Postgres.
+
 ## Per-run cost ceiling (`COST_BUDGET_*`)
 
 | Variable | Default | Meaning |

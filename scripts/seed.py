@@ -48,6 +48,8 @@ from scripts.embedding_text import (
     text_hash,
 )
 from shared.demo_tour import TOUR_EMAIL, TOUR_SEED, reset_tour_user
+from shared.embedding_check import verify_embedding_dimensions
+from shared.embedding_config import embedding_dim, embedding_provider
 from shared.oauth.client_secrets import derive_client_secret
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -894,7 +896,7 @@ async def seed_product_embeddings(
 ) -> int:
     """Populate ``product_embeddings`` so semantic search works on first run (#83).
 
-    * ``LLM_PROVIDER=replay`` -- vectors from ``shared.replay_embeddings`` (the
+    * embedding provider ``replay`` (``EMBEDDING_PROVIDER``, else ``LLM_PROVIDER``) -- vectors from ``shared.replay_embeddings`` (the
       scheme the *query* side uses under replay; the two must agree or
       similarity is noise).
     * openai/azure -- load ``scripts/data/product_embeddings.v1.jsonl.gz`` if it
@@ -907,20 +909,26 @@ async def seed_product_embeddings(
     would still shift anything seeded after it and every replay fixture keyed on
     that data. Returns the number of rows inserted.
     """
-    provider = (provider if provider is not None else os.environ.get("LLM_PROVIDER", "openai")).lower()
+    provider = (provider if provider is not None else embedding_provider()).lower()
     embedding_model = embedding_model or os.environ.get("EMBEDDING_MODEL", "text-embedding-3-small")
     data_path = data_path or EMBEDDINGS_FILE
+
+    # EMBEDDING_DIM is the width of every vector written below and of the file we accept; a column
+    # of another size would fail the insert, so say so now and name the fix (reset_embeddings.py).
+    await verify_embedding_dimensions(conn)
 
     products = await conn.fetch(
         "SELECT id, name, description, category, brand, price, specs FROM products ORDER BY name"
     )
-    rows: list[tuple[uuid.UUID, str]] = []
+    rows: list[tuple[uuid.UUID, str, str]] = []
+    # What produced the vectors, recorded per row (migration 0008).
+    row_model = embedding_model
 
     if provider == "replay":
         from shared.replay_embeddings import embed_text
 
         for p in products:
-            rows.append((p["id"], json.dumps(embed_text(build_embedding_text(dict(p))))))
+            rows.append((p["id"], json.dumps(embed_text(build_embedding_text(dict(p)))), "replay-hashing-vectorizer"))
         logger.info("Embeddings: LLM_PROVIDER=replay -- generated %d hashing-vectorizer vectors", len(rows))
     elif not data_path.exists():
         logger.info(
@@ -931,7 +939,7 @@ async def seed_product_embeddings(
         return 0
     else:
         try:
-            precomputed = read_embeddings_file(data_path)
+            precomputed = read_embeddings_file(data_path, expected_dimensions=embedding_dim())
         except (EmbeddingsFileError, OSError) as exc:
             # The file is validated whole before any row is built, so nothing has been inserted.
             logger.warning("Embeddings: could not use %s (%s) -- skipping; semantic_search will use full-text only",
@@ -950,7 +958,7 @@ async def seed_product_embeddings(
             if entry is None or entry[0] != text_hash(build_embedding_text(dict(p))):
                 stale += 1
                 continue
-            rows.append((p["id"], json.dumps(entry[1])))
+            rows.append((p["id"], json.dumps(entry[1]), row_model))
         logger.info(
             "Embeddings: loaded %d vectors from %s (%d products without a matching vector)",
             len(rows), data_path.name, stale,
@@ -958,7 +966,9 @@ async def seed_product_embeddings(
 
     if not rows:
         return 0
-    await conn.executemany("INSERT INTO product_embeddings (product_id, embedding) VALUES ($1, $2)", rows)
+    await conn.executemany(
+        "INSERT INTO product_embeddings (product_id, embedding, embedding_model) VALUES ($1, $2, $3)", rows
+    )
     # idx_product_embedding was created by init.sql on an empty table, so its
     # ivfflat centroids describe nothing; rebuild now that the vectors exist.
     await conn.execute("REINDEX INDEX idx_product_embedding")

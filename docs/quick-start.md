@@ -281,6 +281,36 @@ On Ollama, the endpoint must be reachable *from inside the container*: use
 `http://host.docker.internal:11434/v1` on Docker Desktop (macOS/Windows) rather than
 `localhost`.
 
+**Local embeddings too (optional).** By default embeddings follow the chat provider, so with
+Ollama above they would be requested from your local server under the name `text-embedding-3-small`,
+which it does not have — semantic search then quietly falls back to full-text. To embed locally,
+configure embeddings on their own and change the vector size once (the columns are `vector(1536)`;
+`nomic-embed-text` produces 768):
+
+```bash
+ollama pull nomic-embed-text
+```
+
+```dotenv
+EMBEDDING_PROVIDER=openai_compatible
+EMBEDDING_BASE_URL=http://localhost:11434/v1     # host.docker.internal inside containers
+EMBEDDING_MODEL=nomic-embed-text
+EMBEDDING_DIM=768
+```
+
+```bash
+# Resize both embedding columns (this deletes any stored embeddings), then embed with your model:
+uv run --project agents/python python scripts/reset_embeddings.py --dim 768
+cd agents/python && uv run python -m scripts.generate_embeddings
+```
+
+> **Documented, not exercised in this repository.** The embeddings settings, the reset script and
+> the startup check are tested against a real Postgres and a stubbed client, but no run here has
+> embedded with Ollama. The seeder never calls an embedding API, so on a keyless install the
+> shipped precomputed file (made with `text-embedding-3-small`) is skipped for any other model, which
+> is why `generate_embeddings` is the step that fills the table. Details:
+> [Configuration](configuration.md#embeddings-are-configured-separately).
+
 ## Other commands
 
 ```bash

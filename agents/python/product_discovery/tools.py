@@ -11,6 +11,7 @@ from pydantic import Field
 
 from shared.agent_factory import create_embedding_client, get_embedding_model
 from shared.db import get_pool
+from shared.embedding_config import embedding_request_kwargs, verify_vector_length
 from shared.search import RRF_K, or_joined_tsquery
 from shared.tool_inputs import clamp_limit
 
@@ -204,8 +205,10 @@ async def semantic_search(
     embedding: list[float] | None
     try:
         client = create_embedding_client()
-        response = await client.embeddings.create(model=get_embedding_model(), input=[query])
+        model = get_embedding_model()
+        response = await client.embeddings.create(model=model, input=[query], **embedding_request_kwargs(model))
         embedding = response.data[0].embedding
+        verify_vector_length(embedding)
     except Exception as exc:
         logger.warning(
             "semantic_search: embedding call failed (%s: %s) -- falling back to full-text only", type(exc).__name__, exc

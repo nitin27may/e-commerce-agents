@@ -39,8 +39,9 @@ from pathlib import Path
 from typing import Any
 
 FILE_VERSION = 1
-# The ``product_embeddings.embedding`` column is ``vector(1536)`` (text-embedding-3-small); a file
-# of any other width cannot be inserted.
+# The default width: the baseline ``product_embeddings.embedding`` column is ``vector(1536)``
+# (text-embedding-3-small). A file of any other width cannot be inserted, so callers pass the
+# configured ``EMBEDDING_DIM`` as ``expected_dimensions`` (``scripts/seed.py`` does).
 EXPECTED_DIMENSIONS = 1536
 EMBEDDINGS_FILE = Path(__file__).resolve().parent / "data" / f"product_embeddings.v{FILE_VERSION}.jsonl.gz"
 

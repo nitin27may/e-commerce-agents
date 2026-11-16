@@ -29,8 +29,9 @@ DATABASE_URL = os.environ.get(
     "DATABASE_URL",
     "postgresql://ecommerce:ecommerce_secret@localhost:5432/ecommerce_agents",
 )
-# Embedding model dimension — must match the vectors stored in product_embeddings.
-EMBEDDING_DIM = 1536
+# Embedding model dimension — must match the vectors stored in product_embeddings. Read from the same
+# EMBEDDING_DIM the rest of the app uses (default 1536); this package cannot import ``shared``.
+EMBEDDING_DIM = int(os.environ.get("EMBEDDING_DIM", "1536"))
 
 # OAuth 2.1 resource-server mode (optional — off by default, unchanged quick-start).
 MCP_AUTH_ENABLED = os.environ.get("MCP_AUTH_ENABLED", "false").lower() == "true"

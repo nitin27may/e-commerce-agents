@@ -36,14 +36,17 @@ import math
 import re
 from dataclasses import dataclass
 
-# Matches text-embedding-3-small, so replay vectors drop into the same
-# `vector(1536)` column as real ones with no schema change.
+from shared.embedding_config import embedding_dim
+
+# The default width: matches text-embedding-3-small, so replay vectors drop into the same
+# `vector(1536)` column as real ones with no schema change. A different EMBEDDING_DIM (see
+# scripts/reset_embeddings.py) changes the width; the default behaves exactly as it always did.
 EMBEDDING_DIMENSIONS = 1536
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 
 
-def _bucket(token: str) -> tuple[int, float]:
+def _bucket(token: str, dimensions: int = EMBEDDING_DIMENSIONS) -> tuple[int, float]:
     """Map a token to (index, signed weight).
 
     The sign comes from a different byte of the same digest than the index, so
@@ -66,16 +69,17 @@ def _bucket(token: str) -> tuple[int, float]:
     fixture whose trajectory includes a semantic search.
     """
     digest = hashlib.sha256(token.encode("utf-8")).digest()
-    index = int.from_bytes(digest[:4], "big") % EMBEDDING_DIMENSIONS
+    index = int.from_bytes(digest[:4], "big") % dimensions
     sign = 1.0 if digest[4] & 1 else -1.0
     return index, sign
 
 
-def embed_text(text: str) -> list[float]:
-    """A deterministic unit vector for ``text``."""
-    vector = [0.0] * EMBEDDING_DIMENSIONS
+def embed_text(text: str, dimensions: int | None = None) -> list[float]:
+    """A deterministic unit vector for ``text``, ``EMBEDDING_DIM`` wide unless ``dimensions`` is given."""
+    dimensions = dimensions if dimensions is not None else embedding_dim()
+    vector = [0.0] * dimensions
     for token in _TOKEN_RE.findall(text.lower()):
-        index, sign = _bucket(token)
+        index, sign = _bucket(token, dimensions)
         vector[index] += sign
 
     norm = math.sqrt(sum(v * v for v in vector))
