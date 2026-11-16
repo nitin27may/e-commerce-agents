@@ -829,6 +829,12 @@ Carried forward from this wave:
 - `.env.example` sets `LLM_PROVIDER=openai`, which disables the tutorials' keyless fallback for anyone who copies it.
 - `dev.ps1` has now been edited by three steps and executed by none.
 
+### Wave 2 — in progress
+
+| Step | Outcome |
+|---|---|
+| B-3 | Python MAF core 1.14.0 → **1.22.0** (`-openai` 1.17.0, `-orchestrations` 1.3.2 — the highest that resolve under `core<1.23`). No application code changed and **nothing needed a live recording**. 57 eval fixtures and 22 tutorial fixtures were re-keyed offline: at 1.21 an error `function_result` gained an `exception` field (1 fixture); at 1.22 every `function_call` gained `"hosted": false` (56). **`fixture_drift` reported clean while the replay suite missed fixtures**: core 1.21 stamps a random `af-call-<uuid>` on each function call and 1.22 copies it to the result, so the next turn's request never matched. Both replay clients now drop those ids from the key. Tutorial 08's MCP fixture had its stored *request* rewritten to 1.21's tool-result shape while keeping the recorded *response* — a candidate for a real re-record in R0. A 1.14 checkpoint still decodes under 1.22; the reverse does not hold. `encode_/decode_checkpoint_value` are still private. Tutorial fixtures have no drift tool; they were rebuilt with an uncommitted script — worth committing one before B-6. |
+
 ---
 
 ## Workstream A — restore trust (#80, #81, #82, #83, #85, #102)

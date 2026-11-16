@@ -148,7 +148,7 @@ Separately, the orchestrator's own read of *its* conversation's history (for `Ru
 
 | Layer | Technology |
 |-------|-----------|
-| Agent Framework | MAF Python SDK — `agent-framework-core` 1.14.0, `-openai` 1.13.0, `-orchestrations` 1.1.0 (pinned in `agents/python/pyproject.toml`); MAF .NET — `Microsoft.Agents.AI` 1.28.0 (`agents/dotnet/Directory.Packages.props`, shared by the tutorials via `tutorials/Directory.Packages.props`) |
+| Agent Framework | MAF Python SDK — `agent-framework-core` 1.22.0, `-openai` 1.17.0, `-orchestrations` 1.3.2 (pinned in `agents/python/pyproject.toml`; core 1.23+ requires MCP 2.x, a separate step); MAF .NET — `Microsoft.Agents.AI` 1.28.0 (`agents/dotnet/Directory.Packages.props`, shared by the tutorials via `tutorials/Directory.Packages.props`) |
 | Agent Communication | A2A Protocol (HTTP POST to `/message:send`) |
 | LLM | OpenAI / Azure OpenAI (gpt-4.1), configurable via `LLM_PROVIDER` env var — plus any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, OpenRouter, GitHub Models) via `LLM_PROVIDER=openai` + `LLM_BASE_URL` |
 | Backend | Python 3.12, FastAPI (orchestrator), Starlette (specialist agents via agent_host) |
@@ -242,6 +242,13 @@ the recipe is in `evals/fixtures/README.md`.
 that are not missing. Serialize runs — `flock <lockfile> scripts/replay-evals.sh` — and never
 `pkill` services by name. The same symptom appears when re-seeding a database that was already
 seeded: start from a fresh one.
+
+**`fixture_drift` exit 0 does not prove the fixtures still match.** It diffs stored requests against
+what the installed MAF would serialise, but it cannot see values MAF generates at run time. Core 1.21
+began stamping a random `af-call-<uuid>` id on every function call, which lands in the next turn's
+request: the drift tool reported clean while every post-tool-call fixture missed. `replay_client`
+now strips those ids from the key. After any MAF bump, `scripts/replay-evals.sh` is the gate; the
+drift tool only tells you which kind of repair is needed.
 
 **The `full` eval suite spends real money and is human-dispatch only.** It runs on
 `workflow_dispatch` alone, never a schedule. Nothing in this repo may put a live
