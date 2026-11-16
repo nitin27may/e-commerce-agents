@@ -101,8 +101,21 @@ queried.
 ## Operating notes
 
 - **Tasks are not retained.** The SDK's in-memory store would keep every task for the life of the process; a
-  bounded store (`BoundedTaskStore`, 256 tasks) keeps the newest, each readable only by the user who made it.
-  `GetTask` on a finished task works until it is evicted.
+  bounded store (`BoundedTaskStore`, 256 tasks) keeps the newest and deletes the rest. The bound is
+  process-wide (a busy caller can push another's finished tasks out); *reading* a task is scoped to the user
+  who made it. `GetTask` on a finished task works until it is evicted.
+- **Running tasks are capped.** A task outlives the connection that started it, so a burst of slow or dropped
+  callers is a burst of concurrent model calls. `ActiveTaskLimiter` counts the tasks whose executor is
+  running, per process (`A2A_MAX_ACTIVE_TASKS`, default 32) and per forwarded user
+  (`A2A_MAX_ACTIVE_TASKS_PER_CALLER`, default 8; anonymous callers share one bucket). Over either cap,
+  `SendMessage` / `SendStreamingMessage` answer a JSON-RPC error (`Too many active tasks; retry later`, code
+  `-32603`: the spec defines no "busy" code) before any task exists; if a race slips past that pre-check the
+  executor refuses atomically and the task ends `rejected`. Nothing queues. The slot is released when the
+  executor ends, including when `CancelTask` stops it.
+- **Errors outside the executor say nothing.** An exception that is not an `A2AError` (a failing task store, a
+  bug in the handler) would be answered by the SDK's dispatcher as `InternalError(message=str(e))`. The
+  handler (`_SpecialistRequestHandler`) turns it into the SDK's fixed `Internal error` and logs the detail
+  server-side through `log_safe`.
 - **SSE and U+2028.** The SDK writes SSE JSON with raw `U+2028`, `U+2029` and `U+0085`, which its own client
   splits lines on, so a model reply holding one truncated the JSON. The dispatcher is wrapped to escape them
   (the same fault `shared/sse.py` prevents on the legacy stream). A conformance test pins it.
@@ -110,10 +123,14 @@ queried.
   `shared/a2a_client.py::root_cause` unwraps them so the orchestrator's rule is unchanged: a streamed call is
   re-sent over `SendMessage` only if the connection was never made or the specialist rejected it, and never
   after a frame has arrived (its tools may have run).
-- **A disconnect does not cancel the run.** The SDK owns a task independently of the connection that started
-  it, so a client that drops a stream leaves the specialist running to completion; on the legacy stream a
-  disconnect cancelled the run. `CancelTask` is the way to stop one, and the orchestrator does not call it
-  yet.
+- **A disconnect does not cancel the run, so the client cancels it.** The SDK owns a task independently of
+  the connection that started it; on the legacy stream a disconnect cancelled the run. Over A2A,
+  `shared/a2a_client.py::stream_events` therefore sends a best-effort `CancelTask` (3 s bound, never raises,
+  never replaces the original error) when a streamed call ends without a final state because of a transport
+  error, a read timeout, the consumer closing the iterator or the caller being cancelled. It does not change
+  the retry rule: a stream that may have run is still never re-sent. Limit: a *blocking* `SendMessage` learns
+  the task id only from its response, so a blocking call that times out cannot be cancelled by the client
+  (the per-caller cap above is what bounds those).
 - **The client only ever talks to the registry origin.** The card's interface URL comes from the request's
   `Host` header or `A2A_PUBLIC_BASE_URL`, and the client carries `X-Agent-Secret` and the forwarded user
   identity on every request. A card naming an interface whose origin (scheme, host, effective port) differs

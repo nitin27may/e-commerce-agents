@@ -34,7 +34,8 @@ import json
 import logging
 import uuid
 from collections import OrderedDict
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
+from contextlib import aclosing
 from typing import TYPE_CHECKING, Any
 
 from a2a.auth.user import User
@@ -65,6 +66,7 @@ from a2a.types.a2a_pb2 import (
     TaskStatus,
 )
 from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH, TransportProtocol
+from a2a.utils.errors import A2AError, InternalError
 from agent_framework import FunctionTool
 from fastapi import FastAPI
 from sse_starlette.sse import EventSourceResponse
@@ -115,8 +117,14 @@ _EXTENSION_DESCRIPTIONS = {
     ),
 }
 
-# The A2A endpoint is not a place to retain conversations: tasks are bounded and per caller.
+# The A2A endpoint is not a place to retain conversations: finished tasks are kept only up to a global
+# bound (the newest ones; see BoundedTaskStore). Reading a task back is scoped to the user who made it, but
+# the bound itself is process-wide: one busy caller can push another's finished tasks out. A *running*
+# task is bounded separately, by ActiveTaskLimiter, per process and per caller.
 MAX_RETAINED_TASKS = 256
+
+# What a caller is told when a specialist is already running as many tasks as it will. Fixed text.
+TOO_MANY_TASKS_TEXT = "Too many active tasks; retry later"
 
 # Message used on a task that ended in an unexpected error. Fixed text: an exception's own text may name
 # a table, a path or a prompt and must not travel to the caller.
@@ -224,6 +232,53 @@ class BoundedTaskStore(TaskStore):
         await self._inner.delete(task_id, context)
 
 
+# ─────────────────────────── active-task cap ───────────────────────────
+
+
+class TooManyActiveTasksError(A2AError):
+    """The specialist is running as many tasks as it allows (JSON-RPC ``-32603``: the spec has no busy code)."""
+
+    message = TOO_MANY_TASKS_TEXT
+
+
+class ActiveTaskLimiter:
+    """Counts the tasks whose executor is running, in total and per caller.
+
+    The SDK owns a task independently of the connection that started it, so a client that drops, times
+    out or is slow leaves the run going; without a bound a burst of them is a burst of concurrent model
+    calls and tool runs. Admission is decided twice: ``full`` is the cheap pre-check that lets the handler
+    answer with a spec error before any task exists, and ``try_acquire`` (no ``await`` between the check and
+    the count, so it is atomic on the event loop) is the real gate, taken by the executor and released in
+    its ``finally``. A caller is the forwarded user's email; anonymous callers share one bucket.
+    """
+
+    def __init__(self, *, max_total: int, max_per_caller: int) -> None:
+        self._max_total = max_total
+        self._max_per_caller = max_per_caller
+        self._by_caller: dict[str, int] = {}
+        self.total = 0
+
+    def full(self, caller: str) -> bool:
+        return self.total >= self._max_total or self._by_caller.get(caller, 0) >= self._max_per_caller
+
+    def try_acquire(self, caller: str) -> bool:
+        if self.full(caller):
+            return False
+        self._by_caller[caller] = self._by_caller.get(caller, 0) + 1
+        self.total += 1
+        return True
+
+    def release(self, caller: str) -> None:
+        held = self._by_caller.get(caller, 0)
+        if held <= 0:
+            return
+        if held == 1:
+            del self._by_caller[caller]
+        else:
+            self._by_caller[caller] = held - 1
+        self.total -= 1
+
+
 # ─────────────────────────── agent card ───────────────────────────
 
 
@@ -315,11 +370,32 @@ class SpecialistExecutor(AgentExecutor):
     events this publishes.
     """
 
-    def __init__(self, *, agent: Any, agent_name: str) -> None:
+    def __init__(self, *, agent: Any, agent_name: str, limiter: ActiveTaskLimiter | None = None) -> None:
         self._agent = agent
         self._agent_name = agent_name
+        self._limiter = limiter
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
+        from shared.context import current_user_email
+
+        limiter = self._limiter
+        caller = current_user_email.get("")
+        if limiter is not None and not limiter.try_acquire(caller):
+            # Past the handler's pre-check (a race with another task starting): refuse, never queue.
+            logger.warning("%s.a2a_task_refused", log_safe(self._agent_name))
+            task_id, context_id = context.task_id or "", context.context_id or ""
+            if context.current_task is None and context.message is not None:
+                await event_queue.enqueue_event(_initial_task(context.message, task_id, context_id))
+            updater = TaskUpdater(event_queue, task_id, context_id)
+            await updater.reject(updater.new_agent_message([Part(text=TOO_MANY_TASKS_TEXT)]))
+            return
+        try:
+            await self._execute(context, event_queue)
+        finally:
+            if limiter is not None:
+                limiter.release(caller)
+
+    async def _execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         from shared import agent_host
         from shared.agent_observability import reset_steps
         from shared.context import current_session_id
@@ -494,11 +570,92 @@ class _SafeJsonRpcDispatcher(JsonRpcDispatcher):
 # ─────────────────────────── mounting ───────────────────────────
 
 
+class _SpecialistRequestHandler(DefaultRequestHandlerV2):
+    """The SDK handler with an admission pre-check and error hygiene.
+
+    * ``SendMessage`` / ``SendStreamingMessage`` over the active-task cap answer
+      :class:`TooManyActiveTasksError` before a task exists.
+    * An exception that is not an ``A2AError`` (a task store that failed, a bug in the handler) is turned
+      into ``InternalError`` with the SDK's fixed text. The SDK's dispatcher would otherwise answer
+      ``InternalError(message=str(e))``, putting an exception's own text (a table name, a path) on the wire;
+      the detail is logged here instead.
+    """
+
+    def __init__(self, *, limiter: ActiveTaskLimiter, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.limiter = limiter
+
+    @staticmethod
+    def _masked(method: str, exc: Exception) -> A2AError:
+        logger.error("a2a.handler_error method=%s detail=%s", method, log_safe(repr(exc)), exc_info=exc)
+        return InternalError()
+
+    def _admit(self, context: ServerCallContext) -> None:
+        if self.limiter.full(context.user.user_name):
+            logger.warning("a2a.too_many_active_tasks total=%d", self.limiter.total)
+            raise TooManyActiveTasksError
+
+    async def on_message_send(self, params: Any, context: ServerCallContext) -> Any:
+        self._admit(context)
+        try:
+            return await super().on_message_send(params, context)
+        except A2AError:
+            raise
+        except Exception as exc:
+            raise self._masked("SendMessage", exc) from None
+
+    async def on_message_send_stream(self, params: Any, context: ServerCallContext) -> AsyncGenerator[Any, None]:
+        self._admit(context)
+        try:
+            async with aclosing(super().on_message_send_stream(params, context)) as events:
+                async for event in events:
+                    yield event
+        except A2AError:
+            raise
+        except Exception as exc:
+            raise self._masked("SendStreamingMessage", exc) from None
+
+    async def on_subscribe_to_task(self, params: Any, context: ServerCallContext) -> AsyncGenerator[Any, None]:
+        try:
+            async with aclosing(super().on_subscribe_to_task(params, context)) as events:
+                async for event in events:
+                    yield event
+        except A2AError:
+            raise
+        except Exception as exc:
+            raise self._masked("SubscribeToTask", exc) from None
+
+    async def on_get_task(self, params: Any, context: ServerCallContext) -> Any:
+        try:
+            return await super().on_get_task(params, context)
+        except A2AError:
+            raise
+        except Exception as exc:
+            raise self._masked("GetTask", exc) from None
+
+    async def on_list_tasks(self, params: Any, context: ServerCallContext) -> Any:
+        try:
+            return await super().on_list_tasks(params, context)
+        except A2AError:
+            raise
+        except Exception as exc:
+            raise self._masked("ListTasks", exc) from None
+
+    async def on_cancel_task(self, params: Any, context: ServerCallContext) -> Any:
+        try:
+            return await super().on_cancel_task(params, context)
+        except A2AError:
+            raise
+        except Exception as exc:
+            raise self._masked("CancelTask", exc) from None
+
+
 class A2AMount:
     """Handle returned by :func:`mount_a2a`; close it when the app shuts down."""
 
-    def __init__(self, handler: DefaultRequestHandlerV2) -> None:
+    def __init__(self, handler: DefaultRequestHandlerV2, limiter: ActiveTaskLimiter) -> None:
         self.handler = handler
+        self.limiter = limiter
 
     async def aclose(self) -> None:
         await self.handler.aclose()
@@ -512,6 +669,8 @@ def mount_a2a(
     port: int,
     description: str,
     public_base_url: str = "",
+    max_active_tasks: int | None = None,
+    max_active_tasks_per_caller: int | None = None,
 ) -> A2AMount:
     """Add the agent-card route and the JSON-RPC routes to ``app``.
 
@@ -524,8 +683,19 @@ def mount_a2a(
         description=description,
         base_url=public_base_url or f"http://{agent_name}:{port}",
     )
-    handler = DefaultRequestHandlerV2(
-        agent_executor=SpecialistExecutor(agent=agent, agent_name=agent_name),
+    from shared.config import settings
+
+    limiter = ActiveTaskLimiter(
+        max_total=max_active_tasks if max_active_tasks is not None else settings.A2A_MAX_ACTIVE_TASKS,
+        max_per_caller=(
+            max_active_tasks_per_caller
+            if max_active_tasks_per_caller is not None
+            else settings.A2A_MAX_ACTIVE_TASKS_PER_CALLER
+        ),
+    )
+    handler = _SpecialistRequestHandler(
+        limiter=limiter,
+        agent_executor=SpecialistExecutor(agent=agent, agent_name=agent_name, limiter=limiter),
         task_store=BoundedTaskStore(),
         agent_card=static_card,
         request_context_builder=SimpleRequestContextBuilder(context_id_generator=_GeneratedContextIds()),
@@ -539,11 +709,16 @@ def mount_a2a(
     app.router.routes.append(Route(AGENT_CARD_WELL_KNOWN_PATH, agent_card, methods=["GET"]))
     dispatcher = _SafeJsonRpcDispatcher(request_handler=handler, context_builder=_CallContextBuilder())
     app.router.routes.append(Route(A2A_RPC_PATH, dispatcher.handle_requests, methods=["POST"]))
-    return A2AMount(handler)
+    mount = A2AMount(handler, limiter)
+    app.state.a2a_mount = mount
+    return mount
 
 
 __all__ = [
     "A2A_PROTOCOL_VERSION",
+    "ActiveTaskLimiter",
+    "TOO_MANY_TASKS_TEXT",
+    "TooManyActiveTasksError",
     "A2A_RPC_PATH",
     "ALL_EXTENSION_URIS",
     "BoundedTaskStore",

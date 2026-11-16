@@ -256,6 +256,11 @@ class Settings(BaseSettings):
     # (scheme + Host), which is right on a compose network and for a local port; set it behind a
     # proxy that terminates TLS or rewrites the host.
     A2A_PUBLIC_BASE_URL: str = ""
+    # Concurrently *running* A2A tasks a specialist process accepts, in total and per forwarded user. Over
+    # either, a new message is refused with a JSON-RPC error instead of queueing: a task outlives the
+    # connection that started it, so this is the bound on work a slow or dropped caller can leave behind.
+    A2A_MAX_ACTIVE_TASKS: int = Field(default=32, ge=1)
+    A2A_MAX_ACTIVE_TASKS_PER_CALLER: int = Field(default=8, ge=1)
 
     # ── Telemetry ───────────────────────────────────────────────────
     OTEL_ENABLED: bool = False

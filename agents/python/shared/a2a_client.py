@@ -22,6 +22,7 @@ Failure translation matches the legacy contract so the callers' error handling d
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 import uuid
@@ -37,6 +38,7 @@ from a2a.client.errors import A2AClientError, AgentCardResolutionError
 from a2a.client.service_parameters import ServiceParametersFactory, with_a2a_extensions
 from a2a.types.a2a_pb2 import (
     AgentCard,
+    CancelTaskRequest,
     Message,
     Part,
     Role,
@@ -61,6 +63,10 @@ logger = logging.getLogger(__name__)
 # A card is read once per specialist and reused: it names the interface URL and never changes at runtime.
 _CARD_TTL_SECONDS = 300.0
 _card_cache: dict[str, tuple[float, AgentCard]] = {}
+
+# How long a best-effort CancelTask may take. It runs while a call is already failing or being abandoned,
+# so it must never hold the caller up.
+_CANCEL_TIMEOUT_SECONDS = 3.0
 
 _TERMINAL_FAILURES = frozenset(
     {TaskState.TASK_STATE_FAILED, TaskState.TASK_STATE_REJECTED, TaskState.TASK_STATE_CANCELED}
@@ -217,9 +223,7 @@ async def _open_client(
     """An SDK client for the specialist at ``url``, with the caller's credentials on every request."""
     # Never follow a redirect: a 3xx from the card URL (or from the RPC endpoint) would replay the
     # credential headers against whatever origin it names.
-    async with httpx.AsyncClient(
-        timeout=timeout, transport=transport, headers=headers, follow_redirects=False
-    ) as http:
+    async with httpx.AsyncClient(timeout=timeout, transport=transport, headers=headers, follow_redirects=False) as http:
         key = url.rstrip("/")
         cached = _card_cache.get(key)
         fresh = cached is None or time.monotonic() >= cached[0]
@@ -250,6 +254,36 @@ async def _open_client(
             yield client
         finally:
             await client.close()
+
+
+def _task_id_of(response: StreamResponse) -> str:
+    """The task id a streamed response names, or ``""``."""
+    if response.HasField("task"):
+        return response.task.id
+    if response.HasField("status_update"):
+        return response.status_update.task_id
+    if response.HasField("artifact_update"):
+        return response.artifact_update.task_id
+    return ""
+
+
+async def _cancel_quietly(client: Any, task_id: str, *, agent: str) -> None:
+    """Best-effort ``CancelTask`` for a call that is being abandoned.
+
+    The SDK owns a task independently of the connection that started it, so a stream that is dropped,
+    times out or is cancelled leaves the specialist running (and its tools running) unless it is told
+    to stop. This never raises and is bounded by :data:`_CANCEL_TIMEOUT_SECONDS`: the caller is already
+    handling a failure, and a failed cancel must neither replace that failure nor delay it. It only
+    stops work; it does not change whether the original call may be retried (that rule is the caller's).
+    """
+    try:
+        await asyncio.wait_for(
+            client.cancel_task(CancelTaskRequest(id=task_id), context=_call_context(_CANCEL_TIMEOUT_SECONDS)),
+            timeout=_CANCEL_TIMEOUT_SECONDS,
+        )
+        logger.info("a2a.task_cancelled agent=%s", log_safe(agent))
+    except (Exception, asyncio.CancelledError) as exc:
+        logger.warning("a2a.cancel_failed agent=%s reason=%s", log_safe(agent), type(exc).__name__)
 
 
 def forget_cards() -> None:
@@ -320,39 +354,50 @@ async def stream_events(
     """
     steps: list[dict[str, Any]] = []
     finished = False
+    task_id = ""
     async with _open_client(url, headers=headers, timeout=timeout, transport=transport, streaming=True) as client:
-        async for response in client.send_message(_request(message, session_id), context=_call_context(timeout)):
-            if response.HasField("artifact_update"):
-                text = "".join(p.text for p in response.artifact_update.artifact.parts if p.text)
-                if text:
-                    yield A2AEvent("delta", text=text)
-            elif response.HasField("status_update"):
-                update = response.status_update
-                metadata = _metadata_dict(update.metadata)
-                for step in _merge_steps(steps, metadata.get(STEPS_EXTENSION_URI) or {}):
-                    yield A2AEvent("step", data=step)
-                state = update.status.state
-                if state in _TERMINAL_FAILURES:
-                    _raise_if_miss(metadata)
-                usage = metadata.get(USAGE_EXTENSION_URI)
-                if isinstance(usage, dict):
-                    yield A2AEvent("usage", data=usage)
-                if state in _TERMINAL_FAILURES | _INTERRUPTED:
-                    yield A2AEvent(
-                        "failed", text=_message_text(update.status.message), data={"state": _state_name(state)}
-                    )
-                if state == TaskState.TASK_STATE_COMPLETED or state in _TERMINAL_FAILURES | _INTERRUPTED:
+        try:
+            async for response in client.send_message(_request(message, session_id), context=_call_context(timeout)):
+                task_id = task_id or _task_id_of(response)
+                if response.HasField("artifact_update"):
+                    text = "".join(p.text for p in response.artifact_update.artifact.parts if p.text)
+                    if text:
+                        yield A2AEvent("delta", text=text)
+                elif response.HasField("status_update"):
+                    update = response.status_update
+                    metadata = _metadata_dict(update.metadata)
+                    state = update.status.state
+                    # Before any yield: a consumer that stops on the terminal event must not trigger a cancel.
+                    if state == TaskState.TASK_STATE_COMPLETED or state in _TERMINAL_FAILURES | _INTERRUPTED:
+                        finished = True
+                    for step in _merge_steps(steps, metadata.get(STEPS_EXTENSION_URI) or {}):
+                        yield A2AEvent("step", data=step)
+                    if state in _TERMINAL_FAILURES:
+                        _raise_if_miss(metadata)
+                    usage = metadata.get(USAGE_EXTENSION_URI)
+                    if isinstance(usage, dict):
+                        yield A2AEvent("usage", data=usage)
+                    if state in _TERMINAL_FAILURES | _INTERRUPTED:
+                        yield A2AEvent(
+                            "failed", text=_message_text(update.status.message), data={"state": _state_name(state)}
+                        )
+                elif response.HasField("message"):
                     finished = True
-            elif response.HasField("message"):
-                text = _message_text(response.message)
-                if text:
-                    yield A2AEvent("delta", text=text)
-                finished = True
-            elif response.HasField("task"):
-                # A snapshot (the SDK may lead with one): it carries no text the deltas will not.
-                state = response.task.status.state
-                if state in _TERMINAL_FAILURES:
-                    _raise_if_miss(_metadata_dict(response.task.metadata))
+                    text = _message_text(response.message)
+                    if text:
+                        yield A2AEvent("delta", text=text)
+                elif response.HasField("task"):
+                    # A snapshot (the SDK may lead with one): it carries no text the deltas will not.
+                    state = response.task.status.state
+                    if state in _TERMINAL_FAILURES:
+                        _raise_if_miss(_metadata_dict(response.task.metadata))
+        except BaseException:
+            # A transport error, a read timeout, the consumer closing the iterator or the caller being
+            # cancelled: in every case the task may still be running on the specialist. Ask it to stop,
+            # then re-raise the original, untouched.
+            if task_id and not finished:
+                await _cancel_quietly(client, task_id, agent=url)
+            raise
     if not finished:
         logger.warning("a2a.stream_ended_early url=%s", log_safe(url))
         raise A2AStreamInterruptedError("the specialist's stream ended before the task finished")
