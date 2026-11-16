@@ -1163,6 +1163,19 @@ async def seed_hitl_requests(conn: asyncpg.Connection, user_ids: dict[str, uuid.
     logger.info("Seeded %d HITL requests (pending + approved + rejected)", len(states))
 
 
+async def reset_autonomy_log(conn: asyncpg.Connection) -> None:
+    """Clear the append-only autonomy tables, deliberately: the ONE place the seeder does it.
+
+    ``agent_decisions`` and ``store_credit_ledger`` refuse UPDATE, DELETE and (when they hold rows) TRUNCATE, and both
+    reference ``users``, so the reseed's ``TRUNCATE ... users CASCADE`` would be refused. This is a dev/demo reset, so
+    it is allowed to discard that history, but only through the migration's named ``reset_autonomy_log()`` function,
+    never by accident. Skipped on a database that has not applied migration 0012.
+    """
+    if await conn.fetchval("SELECT to_regproc('reset_autonomy_log') IS NOT NULL"):
+        await conn.execute("SELECT reset_autonomy_log()")
+        logger.info("Cleared the autonomy decision log and store-credit ledger (dev/demo reseed)")
+
+
 async def main(reset_tour_only: bool = False) -> None:
     logger.info("Connecting to database: %s", DATABASE_URL.split("@")[-1])
     conn = await connect_with_retry(DATABASE_URL)
@@ -1185,6 +1198,7 @@ async def main(reset_tour_only: bool = False) -> None:
             # state, not seed data, and are deliberately left alone — a
             # full `dev.sh --clean` volume wipe is the only thing that
             # resets those (see docs/security-guide.md).
+            await reset_autonomy_log(conn)
             await conn.execute("""
                 TRUNCATE workflow_checkpoints, hitl_requests,
                          agent_execution_steps, usage_logs, messages, conversations,

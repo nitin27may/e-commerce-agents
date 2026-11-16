@@ -104,3 +104,44 @@ BEGIN
                    OR lower(decided_by) <> lower(subject_email));
     END IF;
 END $$;
+
+-- TRUNCATE is not a row operation, so the row triggers above never see it: `TRUNCATE users CASCADE` (the seeder's
+-- reset) silently emptied both logs. A statement-level trigger now refuses a TRUNCATE that would destroy rows. An empty
+-- table is let through (nothing is lost, and every test fixture's blanket TRUNCATE keeps working). The one deliberate
+-- way to clear the logs is reset_autonomy_log() below, for the dev/demo reseed and the test fixtures; it is not called
+-- by any application path.
+CREATE OR REPLACE FUNCTION autonomy_log_reject_truncate() RETURNS trigger AS $$
+DECLARE
+    has_rows BOOLEAN;
+BEGIN
+    IF coalesce(current_setting('ecommerce.autonomy_log_reset', true), '') = 'on' THEN
+        RETURN NULL;
+    END IF;
+    EXECUTE format('SELECT EXISTS (SELECT 1 FROM %I.%I)', TG_TABLE_SCHEMA, TG_TABLE_NAME) INTO has_rows;
+    IF has_rows THEN
+        RAISE EXCEPTION '% is append-only (TRUNCATE refused; use reset_autonomy_log() for a dev/demo reset)', TG_TABLE_NAME
+            USING ERRCODE = 'restrict_violation';
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS agent_decisions_no_truncate ON agent_decisions;
+CREATE TRIGGER agent_decisions_no_truncate
+    BEFORE TRUNCATE ON agent_decisions
+    FOR EACH STATEMENT EXECUTE FUNCTION autonomy_log_reject_truncate();
+
+DROP TRIGGER IF EXISTS store_credit_ledger_no_truncate ON store_credit_ledger;
+CREATE TRIGGER store_credit_ledger_no_truncate
+    BEFORE TRUNCATE ON store_credit_ledger
+    FOR EACH STATEMENT EXECUTE FUNCTION autonomy_log_reject_truncate();
+
+-- THE one named path for clearing the append-only logs on purpose (dev/demo reseed, test fixtures). It opens the
+-- guard for this transaction only, clears both tables, and closes it again. Never call it from application code.
+CREATE OR REPLACE FUNCTION reset_autonomy_log() RETURNS void AS $$
+BEGIN
+    PERFORM set_config('ecommerce.autonomy_log_reset', 'on', true);
+    TRUNCATE store_credit_ledger, agent_decisions;
+    PERFORM set_config('ecommerce.autonomy_log_reset', 'off', true);
+END;
+$$ LANGUAGE plpgsql;

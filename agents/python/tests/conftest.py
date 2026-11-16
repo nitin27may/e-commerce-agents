@@ -125,6 +125,9 @@ async def clean_db(postgres_pool: asyncpg.Pool) -> AsyncGenerator[asyncpg.Pool, 
             """
         )
         if tables:
+            # The autonomy log is append-only and refuses a TRUNCATE that would destroy rows; clearing it between
+            # tests goes through the one named reset path, like the seeder's.
+            await conn.execute("SELECT reset_autonomy_log()")
             names = ", ".join(f'"{row["tablename"]}"' for row in tables)
             await conn.execute(f"TRUNCATE TABLE {names} RESTART IDENTITY CASCADE")
     yield postgres_pool

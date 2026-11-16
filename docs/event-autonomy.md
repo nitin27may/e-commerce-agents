@@ -72,6 +72,14 @@ Migration `0012`. `agent_decisions` and `store_credit_ledger` refuse UPDATE and 
 | `approved_execution` | staff approved an `awaiting_approval` decision and the credit ran. One per approval |
 | `reversal` | an undo, with a negating ledger entry. One per reversed row |
 
+**TRUNCATE is refused too.** A row trigger never sees `TRUNCATE`, and the seeder's `TRUNCATE ... users CASCADE` reaches both
+tables through their foreign keys, so a statement-level trigger refuses any `TRUNCATE` of either table that would destroy
+rows (an empty table is let through: nothing is lost, and the blanket `TRUNCATE` every test fixture runs keeps working).
+The one deliberate way to clear them is the migration's `reset_autonomy_log()` function, which opens the guard for its own
+transaction only. The dev/demo seeder calls it from one named function, `scripts/seed.py::reset_autonomy_log`, before its
+reset, and the Python test fixture (`clean_db`) calls it between tests; no application path does. It is a dev/demo reset
+and may discard history; it is not an escape hatch for production, where the append-only guarantee is the point.
+
 The admin page derives a state from these rows (`executed`, `awaiting_approval`, `executed_after_approval`, `rejected`,
 `expired`, `failed`, `reversed`, `no_action`). Reversal refuses (409) when nothing executed, it was already reversed, or the
 credit has since been spent. The ledger balance is the sum of a customer's entries; **nothing spends store credit yet**.
