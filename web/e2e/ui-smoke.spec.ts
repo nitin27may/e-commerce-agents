@@ -135,4 +135,17 @@ test.describe("authenticated shell", () => {
     // recharts renders an SVG surface
     await expect(page.locator("svg.recharts-surface").first()).toBeVisible();
   });
+
+  test("seller proposals page lists suggestions, blocks a limited line and shows its guard reason", async ({ page }) => {
+    await seedAuth(page, "seller");
+    await mockApi(page);
+    await page.goto("/seller/proposals");
+    await expect(page.getByRole("heading", { name: "Proposals" })).toBeVisible();
+    await expect(page.getByText("Clean Code")).toBeVisible();
+    await expect(page.getByText(/Blocked: Margin would fall below the floor/)).toBeVisible();
+    // A blocked line can only be rejected.
+    const blocked = page.getByRole("group", { name: "Decision for Sony Alpha a6700" });
+    await expect(blocked.getByRole("button", { name: "Accept" })).toBeDisabled();
+    await expect(blocked.getByRole("button", { name: "Reject" })).toHaveAttribute("aria-pressed", "true");
+  });
 });

@@ -158,6 +158,51 @@ export interface AppNotification {
   read: boolean;
 }
 
+/** One suggested change to one product. Money and quantities arrive as numbers (the backend computes in Decimal). */
+export interface ProposalLine {
+  id: string;
+  product_id: string;
+  product_name: string;
+  field: "price" | "restock_quantity";
+  current_value: number | null;
+  proposed_value: number;
+  final_value: number | null;
+  rationale: string | null;
+  evidence: Record<string, unknown>;
+  /** The guard verdict from when it was proposed; `reasons` are fixed codes such as `margin_below_floor`. */
+  guard: { ok: boolean; reasons: string[]; numbers: Record<string, string | null>; policy_version: string } | null;
+  status: "proposed" | "accepted" | "edited" | "rejected" | "blocked" | "executed" | "failed";
+  executed_at: string | null;
+}
+
+export interface SellerProposal {
+  id: string;
+  seller_email: string;
+  kind: "markdown" | "restock" | "mixed";
+  trigger: "manual" | "scheduled" | "event";
+  status: "pending_review" | "decided" | "executed" | "cancelled";
+  created_at: string;
+  updated_at: string;
+  approval_id: string | null;
+  approval_status: string | null;
+  due_at: string | null;
+  lines: ProposalLine[];
+}
+
+export type ProposalLineDecision =
+  | { line_id: string; decision: "accept" | "reject" }
+  | { line_id: string; decision: "edit"; value: string };
+
+export interface ProposalGenerateResult {
+  proposal_id: string | null;
+  approval_id: string | null;
+  kind: string | null;
+  lines: number;
+  blocked: number;
+  skipped_existing: number;
+  skipped_over_batch: number;
+}
+
 export interface NotificationsResponse {
   notifications: AppNotification[];
   unread_count: number;
@@ -901,6 +946,26 @@ class ApiClient {
 
   getSellerStats() {
     return this.request<any>("/api/seller/stats");
+  }
+
+  // Seller merchant proposals (#93)
+  getSellerProposals() {
+    return this.request<{ proposals: SellerProposal[]; total: number }>("/api/seller/proposals");
+  }
+
+  runSellerProposals() {
+    return this.request<ProposalGenerateResult>("/api/seller/proposals/run", { method: "POST", body: "{}" });
+  }
+
+  decideSellerProposal(id: string, lines: ProposalLineDecision[], note?: string) {
+    return this.request<{
+      proposal: SellerProposal;
+      approval: { id: string; status: string };
+      results: { line_id: string; status: string; reasons?: string[] }[];
+    }>(`/api/seller/proposals/${encodeURIComponent(id)}/decide`, {
+      method: "POST",
+      body: JSON.stringify({ lines, note: note ?? null }),
+    });
   }
 
   // Products

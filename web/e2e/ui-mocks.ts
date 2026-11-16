@@ -44,9 +44,44 @@ const PRODUCTS = {
   categories: ["Electronics", "Home"],
 };
 
+const PROPOSALS = {
+  proposals: [
+    {
+      id: "pr-1",
+      seller_email: "alice@example.com",
+      kind: "mixed",
+      trigger: "manual",
+      status: "pending_review",
+      created_at: "2026-11-16T10:00:00Z",
+      updated_at: "2026-11-16T10:00:00Z",
+      approval_id: "ap-1",
+      approval_status: "pending_review",
+      due_at: "2026-11-19T10:00:00Z",
+      lines: [
+        {
+          id: "l-1", product_id: "p1", product_name: "Clean Code", field: "price", current_value: 37.49,
+          proposed_value: 33.75, final_value: null, rationale: "410 units on hand, 9 sold in the last 90 days.",
+          evidence: {}, guard: { ok: true, reasons: [], numbers: {}, policy_version: "v1" }, status: "proposed", executed_at: null,
+        },
+        {
+          id: "l-2", product_id: "p2", product_name: "Nike Air Max 270", field: "restock_quantity", current_value: 250,
+          proposed_value: 24, final_value: null, rationale: "1 warehouse is below its reorder threshold.",
+          evidence: {}, guard: { ok: true, reasons: [], numbers: {}, policy_version: "v1" }, status: "proposed", executed_at: null,
+        },
+        {
+          id: "l-3", product_id: "p3", product_name: "Sony Alpha a6700", field: "price", current_value: 1399.99,
+          proposed_value: 1260, final_value: null, rationale: "300 units on hand, none sold.",
+          evidence: {}, guard: { ok: false, reasons: ["margin_below_floor"], numbers: {}, policy_version: "v1" }, status: "blocked", executed_at: null,
+        },
+      ],
+    },
+  ],
+  total: 1,
+};
+
 export async function seedAuth(
   page: Page,
-  role: "customer" | "admin" = "customer",
+  role: "customer" | "admin" | "seller" = "customer",
   theme: "light" | "dark" = "light",
 ) {
   await page.addInitScript(
@@ -66,6 +101,7 @@ export async function seedAuth(
 export async function mockApi(page: Page) {
   await page.route("**/api/**", async (route) => {
     const url = route.request().url();
+    if (url.includes("/api/seller/proposals")) return route.fulfill({ json: PROPOSALS });
     if (url.includes("/api/admin/usage")) return route.fulfill({ json: USAGE });
     if (url.includes("/api/orders")) return route.fulfill({ json: ORDERS });
     if (url.includes("/api/products")) return route.fulfill({ json: PRODUCTS });
