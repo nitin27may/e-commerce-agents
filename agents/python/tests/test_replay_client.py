@@ -143,6 +143,23 @@ def test_no_response_format_hash_unchanged() -> None:
     assert set(canonical) == {"messages", "tools", "instructions"}
 
 
+def test_framework_function_call_ids_do_not_reach_the_key() -> None:
+    """core >= 1.21 stamps ``af-call-<uuid4>`` on every function_call; that random
+    id must not make two identical requests hash differently, and a call without
+    one (every fixture recorded before 1.21) must hash the same as one with it."""
+
+    def request(call_id: str | None) -> list[Message]:
+        call = Content.from_function_call(call_id="call_1", name="get_weather", arguments={"city": "Paris"})
+        call.id = call_id
+        return [Message(role="assistant", contents=[call])]
+
+    bare = _request_hash(_canonical_request(request(None), {}))
+    assert _request_hash(_canonical_request(request("af-call-" + "a" * 32), {})) == bare
+    assert _request_hash(_canonical_request(request("af-call-" + "b" * 32), {})) == bare
+    # A provider-assigned id is not the framework's, so it still distinguishes requests.
+    assert _request_hash(_canonical_request(request("fc_provider_1"), {})) != bare
+
+
 @pytest.mark.asyncio
 async def test_streaming_replays_as_a_single_chunk_per_message(tmp_path) -> None:
     stub = _StubRecordClient(_text_response("streamed answer"))

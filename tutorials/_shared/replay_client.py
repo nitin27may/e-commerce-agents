@@ -96,6 +96,24 @@ def _response_format_key(response_format: Any) -> Any:
     return str(response_format)
 
 
+def _message_key_dict(message: Any) -> dict[str, Any]:
+    """``Message.to_dict()`` minus the framework's own per-run function-call ids.
+
+    agent-framework-core 1.21 stamps every actionable ``function_call`` that has no
+    ``id`` with ``af-call-<uuid4>`` (``_generate_function_call_occurrence_id``). The
+    id lands in the *next* turn's request, so without this the key of every turn
+    after a tool call would differ on each run, and no fixture could ever match.
+    The model never sees it (it is not sent to the provider) and corpora recorded
+    before 1.21 do not contain it, so dropping it keeps every existing key unchanged.
+    """
+    data = message.to_dict()
+    for content in data.get("contents") or []:
+        cid = content.get("id") if isinstance(content, dict) else None
+        if content.get("type") == "function_call" and isinstance(cid, str) and cid.startswith("af-call-"):
+            del content["id"]
+    return data
+
+
 def _canonical_request(messages: Any, options: dict[str, Any] | None) -> dict[str, Any]:
     """JSON-serializable, hashable view of a request: every message plus tool schemas.
 
@@ -111,7 +129,7 @@ def _canonical_request(messages: Any, options: dict[str, Any] | None) -> dict[st
         except AttributeError:
             tool_specs.append({"name": getattr(t, "name", str(t))})
     canonical: dict[str, Any] = {
-        "messages": [m.to_dict() for m in messages],
+        "messages": [_message_key_dict(m) for m in messages],
         "tools": tool_specs,
         # Agent-level system instructions travel in options, not as a message
         # — include them so "same question, different instructions" doesn't
