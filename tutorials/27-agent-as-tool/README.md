@@ -275,3 +275,9 @@ this chapter's product-lookup agent isn't.
 - Concepts: [Orchestration patterns](../../docs/concepts/06-orchestration-patterns.md)
 - Full source: [`python/`](./python/)
 - Shared: [Mermaid style guide](../_shared/mermaid-style-guide.md) · [Jargon glossary](../_shared/jargon-glossary.md)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 26 — Evals](../26-evals/) · [Series index](../README.md) · **Next:** [Chapter 28 — Reflection and Critique](../28-reflection-and-critique/)
+<!-- END GENERATED CHAPTER NAV -->

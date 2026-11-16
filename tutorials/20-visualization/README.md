@@ -187,3 +187,9 @@ Two complementary mechanisms, one static and one live:
 - Next chapter: [Chapter 20b — DevUI](../20b-devui/)
 - Full source: [`python/`](./python/) · [`dotnet/`](./dotnet/)
 - Shared: [Mermaid style guide](../_shared/mermaid-style-guide.md)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 19 — Declarative Workflows](../19-declarative-workflows/) · [Series index](../README.md) · **Next:** [Chapter 20b — DevUI: interactive dashboard for agents and workflows](../20b-devui/)
+<!-- END GENERATED CHAPTER NAV -->

@@ -177,3 +177,9 @@ The payoff is `workflow:return-replace` mode's HITL gate (Chapter 17 + this chap
 - Next chapter: [Chapter 19 — Declarative Workflows](../19-declarative-workflows/)
 - Full source: [`python/`](./python/) · [`dotnet/`](./dotnet/)
 - [MAF docs — Checkpointing](https://learn.microsoft.com/en-us/agent-framework/workflows/checkpoints/)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 17 — Human-in-the-Loop](../17-human-in-the-loop/) · [Series index](../README.md) · **Next:** [Chapter 19 — Declarative Workflows](../19-declarative-workflows/)
+<!-- END GENERATED CHAPTER NAV -->

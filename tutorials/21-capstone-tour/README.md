@@ -249,3 +249,9 @@ You've reached the end of the tutorial series proper. From here:
 - A published Python-vs-.NET parity matrix doesn't exist yet — until it does, each chapter's own
   `## Side-by-side differences` section is the closest thing, chapter by chapter.
 - Or go build something — every pattern in this repo is meant to be copied, not just read.
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 20b — DevUI: interactive dashboard for agents and workflows](../20b-devui/) · [Series index](../README.md) · **Next:** [Chapter 22 — Group-Chat Debate (Round-Table Orchestration)](../22-group-chat-debate/)
+<!-- END GENERATED CHAPTER NAV -->

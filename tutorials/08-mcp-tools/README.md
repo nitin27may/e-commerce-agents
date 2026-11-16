@@ -209,3 +209,9 @@ This isn't a toy pattern confined to the tutorial — two real MCP servers back 
 - Next chapter: [Chapter 09 — Workflow Executors and Edges](../09-workflow-executors-and-edges/)
 - Full source: [`python/`](./python/) · [`dotnet/`](./dotnet/)
 - [MAF docs — Hosted MCP Tools](https://learn.microsoft.com/en-us/agent-framework/agents/tools/hosted-mcp-tools/)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 07 — Observability with OpenTelemetry](../07-observability-otel/) · [Series index](../README.md) · **Next:** [Chapter 09 — Workflow Executors and Edges](../09-workflow-executors-and-edges/)
+<!-- END GENERATED CHAPTER NAV -->

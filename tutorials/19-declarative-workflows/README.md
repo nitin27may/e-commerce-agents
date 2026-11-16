@@ -190,3 +190,9 @@ It does not. The capstone once carried a small YAML loader of its own (`agents/p
 - Next chapter: [Chapter 20 — Visualization](../20-visualization/)
 - Full source: [`python/`](./python/) · [`dotnet/`](./dotnet/)
 - Shared: [Mermaid style guide](../_shared/mermaid-style-guide.md) · [Jargon glossary](../_shared/jargon-glossary.md)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 18 — State and Checkpoints](../18-state-and-checkpoints/) · [Series index](../README.md) · **Next:** [Chapter 20 — Workflow Visualization](../20-visualization/)
+<!-- END GENERATED CHAPTER NAV -->

@@ -294,3 +294,9 @@ today.
   path, across a whole test set, instead of inline inside a single response's revision loop
 - Full source: [`python/`](./python/)
 - Shared: [Mermaid style guide](../_shared/mermaid-style-guide.md) · [Jargon glossary](../_shared/jargon-glossary.md)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 27 — Agent-as-tool](../27-agent-as-tool/) · [Series index](../README.md) · **Next:** [Chapter 29 — Planner-Executor](../29-planner-executor/)
+<!-- END GENERATED CHAPTER NAV -->

@@ -187,3 +187,9 @@ return (
 - Next chapter: [Chapter 10 — Workflow Events and Builder](../10-workflow-events-and-builder/)
 - Full source: [`python/`](./python/) · [`dotnet/`](./dotnet/)
 - Shared: [Mermaid style guide](../_shared/mermaid-style-guide.md)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 08 — MCP Tools](../08-mcp-tools/) · [Series index](../README.md) · **Next:** [Chapter 10 — Workflow Events and Builder](../10-workflow-events-and-builder/)
+<!-- END GENERATED CHAPTER NAV -->

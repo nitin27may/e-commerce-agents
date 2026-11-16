@@ -192,3 +192,9 @@ cd tutorials/10-workflow-events-and-builder/dotnet && dotnet test
 - Next chapter: [Chapter 11 — Agents in Workflows](../11-agents-in-workflows/)
 - Full source: [`python/`](./python/) · [`dotnet/`](./dotnet/)
 - Shared: [Mermaid style guide](../_shared/mermaid-style-guide.md) · [Jargon glossary](../_shared/jargon-glossary.md)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 09 — Workflow Executors and Edges](../09-workflow-executors-and-edges/) · [Series index](../README.md) · **Next:** [Chapter 11 — Agents in Workflows](../11-agents-in-workflows/)
+<!-- END GENERATED CHAPTER NAV -->

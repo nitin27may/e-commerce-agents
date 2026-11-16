@@ -200,3 +200,9 @@ Same `client` + `instructions` + `name` triple from this chapter, plus `tools`, 
 - Full source: [`python/`](./python/) · [`dotnet/`](./dotnet/)
 - Shared: [Mermaid style guide](../_shared/mermaid-style-guide.md) · [Jargon glossary](../_shared/jargon-glossary.md)
 - [MAF docs — Your first agent](https://learn.microsoft.com/en-us/agent-framework/get-started/?pivots=programming-language-csharp)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 00 — Setup your dev environment](../00-setup/) · [Series index](../README.md) · **Next:** [Chapter 02 — Adding Tools](../02-add-tools/)
+<!-- END GENERATED CHAPTER NAV -->

@@ -191,3 +191,9 @@ Registered in the orchestrator as the `group-chat` mode alongside `tool`, `hando
 - Full source: [`python/`](./python/) · [`dotnet/`](./dotnet/)
 - Shared: [Mermaid style guide](../_shared/mermaid-style-guide.md) · [Jargon glossary](../_shared/jargon-glossary.md)
 - [Series index](../README.md) · Previous: [Chapter 14 — Handoff Orchestration](../14-handoff-orchestration/)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 14 — Handoff Orchestration](../14-handoff-orchestration/) · [Series index](../README.md) · **Next:** [Chapter 16 — Magentic Orchestration](../16-magentic-orchestration/)
+<!-- END GENERATED CHAPTER NAV -->

@@ -172,3 +172,9 @@ cd tutorials/05-context-providers/dotnet && dotnet test tests/ContextProviders.T
 - Next chapter: [Chapter 06 — Middleware](../06-middleware/) — intercepting the agent run, tool calls, and LLM calls themselves.
 - Full source: [`python/`](./python/) · [`dotnet/`](./dotnet/)
 - Shared: [Mermaid style guide](../_shared/mermaid-style-guide.md)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 04 — Sessions](../04-sessions/) · [Series index](../README.md) · **Next:** [Chapter 06 — Middleware and the Agent Pipeline](../06-middleware/)
+<!-- END GENERATED CHAPTER NAV -->

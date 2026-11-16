@@ -189,3 +189,9 @@ dotnet test tests/Streaming.Tests.csproj
 - Next chapter: [Chapter 04 — Sessions and Memory](../04-sessions/)
 - Full source: [`python/`](./python/) · [`dotnet/`](./dotnet/)
 - [MAF docs — Running agents](https://learn.microsoft.com/en-us/agent-framework/agents/running-agents)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 02 — Adding Tools](../02-add-tools/) · [Series index](../README.md) · **Next:** [Chapter 04 — Sessions](../04-sessions/)
+<!-- END GENERATED CHAPTER NAV -->

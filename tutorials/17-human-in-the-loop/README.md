@@ -182,3 +182,9 @@ Separately — and structurally unrelated despite the similar name — `agents/p
 - Next chapter: [Chapter 18 — State and Checkpoints](../18-state-and-checkpoints/)
 - Full source: [`python/`](./python/) · [`dotnet/`](./dotnet/)
 - Shared: [Mermaid style guide](../_shared/mermaid-style-guide.md) · [Jargon glossary](../_shared/jargon-glossary.md)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 16 — Magentic Orchestration](../16-magentic-orchestration/) · [Series index](../README.md) · **Next:** [Chapter 18 — State and Checkpoints](../18-state-and-checkpoints/)
+<!-- END GENERATED CHAPTER NAV -->

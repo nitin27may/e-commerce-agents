@@ -175,3 +175,9 @@ This chapter's mesh is not just a teaching example — it's the reference implem
 - Next chapter: [Chapter 15 — Group Chat Orchestration](../15-group-chat-orchestration/)
 - Full source: [`python/`](./python/) · [`dotnet/`](./dotnet/)
 - [MAF docs — Handoff Orchestration](https://learn.microsoft.com/en-us/agent-framework/workflows/orchestrations/handoff/)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 13 — Concurrent Orchestration](../13-concurrent-orchestration/) · [Series index](../README.md) · **Next:** [Chapter 15 — Group Chat Orchestration](../15-group-chat-orchestration/)
+<!-- END GENERATED CHAPTER NAV -->

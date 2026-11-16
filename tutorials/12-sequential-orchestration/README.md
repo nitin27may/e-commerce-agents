@@ -223,3 +223,9 @@ That's a five-step pipeline — eligibility check → a policy gate that pauses 
 - Full source: [`python/`](./python/) · [`dotnet/`](./dotnet/)
 - Shared: [Mermaid style guide](../_shared/mermaid-style-guide.md) · [Jargon glossary](../_shared/jargon-glossary.md)
 - [MAF docs — Sequential Orchestration](https://learn.microsoft.com/en-us/agent-framework/workflows/orchestrations/sequential/)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 11 — Agents in Workflows](../11-agents-in-workflows/) · [Series index](../README.md) · **Next:** [Chapter 13 — Concurrent Orchestration](../13-concurrent-orchestration/)
+<!-- END GENERATED CHAPTER NAV -->

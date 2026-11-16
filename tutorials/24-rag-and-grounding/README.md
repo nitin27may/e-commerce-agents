@@ -273,3 +273,9 @@ independent pass checking what the model actually wrote.
   production is a middleware hook, not a manual post-call function like this chapter's demo
 - Full source: [`python/`](./python/)
 - Shared: [Mermaid style guide](../_shared/mermaid-style-guide.md) · [Jargon glossary](../_shared/jargon-glossary.md)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 23 — A2A Protocol](../23-a2a-protocol/) · [Series index](../README.md) · **Next:** [Chapter 25 — Guardrails](../25-guardrails/)
+<!-- END GENERATED CHAPTER NAV -->

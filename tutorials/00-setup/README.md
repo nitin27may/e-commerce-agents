@@ -315,3 +315,9 @@ tutorial-only stand-in.
 - [Repository root](../../) for the full quick-start
 - [Series index](../README.md)
 - Shared: [Mermaid style guide](../_shared/mermaid-style-guide.md) · [Jargon glossary](../_shared/jargon-glossary.md)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+[Series index](../README.md) · **Next:** [Chapter 01 — Your First Agent](../01-first-agent/)
+<!-- END GENERATED CHAPTER NAV -->

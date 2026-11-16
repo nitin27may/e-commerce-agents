@@ -187,3 +187,9 @@ The first production caller of an agent-backed responder inside a MAF workflow i
 - Full source: [`python/`](./python/) · [`dotnet/`](./dotnet/)
 - Shared: [Mermaid style guide](../_shared/mermaid-style-guide.md)
 - [MAF docs — Agents in Workflows](https://learn.microsoft.com/en-us/agent-framework/workflows/agents-in-workflows/)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 10 — Workflow Events and Builder](../10-workflow-events-and-builder/) · [Series index](../README.md) · **Next:** [Chapter 12 — Sequential Orchestration](../12-sequential-orchestration/)
+<!-- END GENERATED CHAPTER NAV -->

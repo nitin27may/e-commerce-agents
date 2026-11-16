@@ -209,3 +209,9 @@ gotcha above exists to support.
 - Inject panelist behavior so the workflow is unit-testable without a live LLM.
 - Type the terminal executor `WorkflowContext[None, State]` — a forwarding type on
   the terminal stops the chain early.
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 21 — Capstone Tour](../21-capstone-tour/) · [Series index](../README.md) · **Next:** [Chapter 23 — A2A Protocol](../23-a2a-protocol/)
+<!-- END GENERATED CHAPTER NAV -->

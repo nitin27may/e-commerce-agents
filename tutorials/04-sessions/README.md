@@ -191,3 +191,9 @@ The orchestrator calls it directly: `agents/python/orchestrator/routes/chat.py:1
 - Next chapter: [Chapter 05 — Context Providers](../05-context-providers/)
 - Full source: [`python/`](./python/) · [`dotnet/`](./dotnet/)
 - Shared: [Mermaid style guide](../_shared/mermaid-style-guide.md) · [Jargon glossary](../_shared/jargon-glossary.md)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 03 — Streaming and Multi-turn](../03-streaming-and-multiturn/) · [Series index](../README.md) · **Next:** [Chapter 05 — Context Providers](../05-context-providers/)
+<!-- END GENERATED CHAPTER NAV -->

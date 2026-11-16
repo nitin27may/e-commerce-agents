@@ -237,3 +237,9 @@ just pointed at the e-commerce specialist agents instead of Researcher/Marketer/
 - Next chapter: [Chapter 17 — Human-in-the-Loop](../17-human-in-the-loop/)
 - Full source: [`python/`](./python/) · [`dotnet/`](./dotnet/)
 - [MAF docs — Magentic Orchestration](https://learn.microsoft.com/en-us/agent-framework/workflows/orchestrations/magentic/)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 15 — Group Chat Orchestration](../15-group-chat-orchestration/) · [Series index](../README.md) · **Next:** [Chapter 17 — Human-in-the-Loop](../17-human-in-the-loop/)
+<!-- END GENERATED CHAPTER NAV -->

@@ -207,3 +207,9 @@ Three specialist data-gathering steps — reviews, stock, price history — fan 
 - Next chapter: [Chapter 14 — Handoff Orchestration](../14-handoff-orchestration/)
 - Full source: [`python/`](./python/) · [`dotnet/`](./dotnet/)
 - [MAF docs — Concurrent Orchestration](https://learn.microsoft.com/en-us/agent-framework/workflows/orchestrations/concurrent/)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 12 — Sequential Orchestration](../12-sequential-orchestration/) · [Series index](../README.md) · **Next:** [Chapter 14 — Handoff Orchestration](../14-handoff-orchestration/)
+<!-- END GENERATED CHAPTER NAV -->

@@ -211,3 +211,9 @@ None of this is speculative — every agent factory in `agents/python/` calls `b
 - Full source: [`python/`](./python/) · [`dotnet/`](./dotnet/)
 - Shared: [Mermaid style guide](../_shared/mermaid-style-guide.md) · [Jargon glossary](../_shared/jargon-glossary.md)
 - [MAF docs — Middleware](https://learn.microsoft.com/en-us/agent-framework/agents/middleware/)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 05 — Context Providers](../05-context-providers/) · [Series index](../README.md) · **Next:** [Chapter 07 — Observability with OpenTelemetry](../07-observability-otel/)
+<!-- END GENERATED CHAPTER NAV -->

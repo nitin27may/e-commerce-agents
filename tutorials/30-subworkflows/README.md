@@ -189,3 +189,9 @@ This chapter is part of a batch landing alongside Chapters 28 (Reflection and Cr
 - Full source: [`python/`](./python/)
 - Shared: [Mermaid style guide](../_shared/mermaid-style-guide.md) · [Jargon glossary](../_shared/jargon-glossary.md)
 - Related concept doc: [Graphs in agent systems](../../docs/concepts/07-graphs-in-agent-systems.md)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 29 — Planner-Executor](../29-planner-executor/) · [Series index](../README.md) · **Next:** [Chapter 31 — Retry and Compensation (Saga Pattern)](../31-retry-and-compensation/)
+<!-- END GENERATED CHAPTER NAV -->

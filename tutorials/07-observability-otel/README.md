@@ -156,3 +156,9 @@ The production-grade version of this chapter is `agents/python/shared/telemetry.
 - Full source: [`python/`](./python/) · [`dotnet/`](./dotnet/)
 - Shared: [Mermaid style guide](../_shared/mermaid-style-guide.md) · [Jargon glossary](../_shared/jargon-glossary.md)
 - [MAF docs — Observability](https://learn.microsoft.com/en-us/agent-framework/agents/observability/)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 06 — Middleware and the Agent Pipeline](../06-middleware/) · [Series index](../README.md) · **Next:** [Chapter 08 — MCP Tools](../08-mcp-tools/)
+<!-- END GENERATED CHAPTER NAV -->
