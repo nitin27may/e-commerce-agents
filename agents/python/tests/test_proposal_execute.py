@@ -364,7 +364,7 @@ async def test_a_decided_approval_cannot_be_decided_again_not_even_by_the_staff_
 
     # The staff approvals API does not take proposals: they are decided on the seller page.
     staff = await _call(_as(ms.ADMIN, "admin"), "POST", f"/api/approvals/{approval_id}/decide", {"decision": "approve"})
-    assert staff.status_code == 422
+    assert staff.status_code == 404
     listing = await _call(_as(ms.ADMIN, "admin"), "GET", "/api/approvals?status=all")
     assert listing.status_code == 200 and listing.json()["approvals"] == []
     assert await _price(w, products["Overstock"]) == D("100.00")

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { ProposalCard, describeChange, editBounds, reasonText, toNumber } from "./proposal-card";
+import { ProposalCard, describeChange, editBounds, isNoChangeEdit, reasonText, toNumber } from "./proposal-card";
 import type { ProposalLine, SellerProposal } from "@/lib/api";
 
 const line = (over: Partial<ProposalLine>): ProposalLine => ({
@@ -125,6 +125,23 @@ describe("ProposalCard", () => {
     expect(screen.getByRole("button", { name: "Apply decisions" })).toBeDisabled();
     fireEvent.change(input, { target: { value: "35.00" } });
     expect(screen.getByRole("button", { name: "Apply decisions" })).toBeEnabled();
+  });
+
+  it("refuses a price edit equal to the current price, which would change nothing", () => {
+    const strings = line({ current_value: "37.49", proposed_value: "33.75" });
+    expect(isNoChangeEdit(strings, "37.49")).toBe(true);
+    expect(isNoChangeEdit(strings, "37.5")).toBe(false);
+    expect(isNoChangeEdit(line({ field: "restock_quantity", current_value: 4, proposed_value: 26 }), "4")).toBe(false);
+    render(<ProposalCard proposal={proposal([strings])} onDecide={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const input = screen.getByLabelText("Edited price for Clean Code");
+    fireEvent.change(input, { target: { value: "37.49" } });
+    expect(screen.getByRole("button", { name: "Apply decisions" })).toBeDisabled();
+    expect(screen.getByRole("note")).toHaveTextContent(/no change — reject the line instead/);
+    fireEvent.change(input, { target: { value: "37.00" } });
+    expect(screen.getByRole("button", { name: "Apply decisions" })).toBeEnabled();
+    expect(screen.queryByRole("note")).not.toBeInTheDocument();
   });
 
   it("shows the server's refusal", async () => {

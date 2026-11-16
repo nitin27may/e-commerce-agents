@@ -85,7 +85,9 @@ def replay_mode_active() -> bool:
     """
     from shared.config import settings
 
-    return settings.LLM_PROVIDER == "replay"
+    # Normalised exactly as ``Settings`` and ``get_chat_client`` do (trimmed, lower-cased), so the gate and the
+    # client the process actually builds cannot disagree about whether it is replaying. .NET: ``ReplayMiss.IsActive``.
+    return settings.LLM_PROVIDER.strip().lower() == "replay"
 
 
 def is_replay_miss_status(status_code: int) -> bool:

@@ -712,7 +712,10 @@ public sealed class ApprovalRoutesTests : IAsyncLifetime
 
         var response = await DecideAsync(client, approval.Id, new { decision, note = "why?" });
 
-        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        var missing = await DecideAsync(client, Guid.NewGuid(), new { decision, note = "why?" });
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        missing.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await response.Content.ReadAsStringAsync()).Should().Be(await missing.Content.ReadAsStringAsync());
         (await StatusAsync(approval.Id)).Should().Be("pending_review");
         (await _repo.ListEventsAsync(approval.Id)).Select(e => e.Action).Should().Equal("created");
         (await _repo.GetAsync(approval.Id))!.ClaimedBy.Should().BeNull();
@@ -727,7 +730,9 @@ public sealed class ApprovalRoutesTests : IAsyncLifetime
         {
             using var client = ClientFor(email, email == Admin ? "admin" : "seller");
             var response = await client.PostAsJsonAsync($"/api/approvals/{approval.Id}/info", new { message = "here" });
-            response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity, email);
+            var missing = await client.PostAsJsonAsync($"/api/approvals/{Guid.NewGuid()}/info", new { message = "here" });
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound, email);
+            (await response.Content.ReadAsStringAsync()).Should().Be(await missing.Content.ReadAsStringAsync(), email);
         }
         (await StatusAsync(approval.Id)).Should().Be("pending_review");
     }

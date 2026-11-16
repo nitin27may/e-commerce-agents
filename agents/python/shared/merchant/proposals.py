@@ -310,15 +310,19 @@ def select_lines(
     return restocks + markdowns + blocked
 
 
-async def _already_proposed(conn: asyncpg.Connection, seller_id: uuid.UUID) -> set[tuple[uuid.UUID, str]]:
-    """(product, field) pairs that already have an undecided line in one of the seller's open proposals."""
+async def _already_proposed(conn: asyncpg.Connection, seller_id: uuid.UUID) -> set[uuid.UUID]:
+    """Products that already have an undecided line, of either kind, in one of the seller's open proposals.
+
+    Product-level on purpose: a product gets at most one restock or one markdown, never both, and that rule has to
+    hold across open batches as well as within one.
+    """
     rows = await conn.fetch(
-        """SELECT l.product_id, l.field FROM proposal_lines l JOIN proposals p ON p.id = l.proposal_id
+        """SELECT DISTINCT l.product_id FROM proposal_lines l JOIN proposals p ON p.id = l.proposal_id
             WHERE p.seller_id = $1 AND p.status = 'pending_review'
               AND l.status IN ('proposed', 'accepted', 'edited', 'blocked')""",
         seller_id,
     )
-    return {(r["product_id"], r["field"]) for r in rows}
+    return {r["product_id"] for r in rows}
 
 
 async def _judge(
@@ -402,7 +406,7 @@ async def generate_proposal(
         existing = await _already_proposed(conn, seller_id)
         fresh: list[Candidate] = []
         for candidate in build_candidates(signals, rules):
-            if (candidate.product_id, candidate.field) in existing:
+            if candidate.product_id in existing:
                 result.skipped_existing += 1
             else:
                 fresh.append(clamp_restock(candidate, active_limits))

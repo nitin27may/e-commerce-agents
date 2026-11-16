@@ -220,6 +220,49 @@ async def test_once_a_batch_is_decided_the_same_product_can_be_proposed_again(w:
     assert again.proposal_id and again.proposal_id != first.proposal_id
 
 
+async def test_a_product_with_an_open_markdown_gets_no_restock_from_a_later_batch_and_vice_versa(
+    w: ms.World,
+) -> None:
+    marked_down = await ms.product(w, "Was overstock", price="100.00", cost="50.00", stock=(300, 300), sold=20)
+    restocked = await ms.product(w, "Was short", price="40.00", cost="20.00", stock=(2, 100), threshold=10, sold=40)
+    first = await generate_proposal(w.pool, w.seller_id)
+    assert {(ln["name"], ln["field"]) for ln in await _line_fields(w.pool, first.proposal_id)} == {
+        ("Was overstock", "price"),
+        ("Was short", "restock_quantity"),
+    }
+    # The stock picture flips while both batches are still open: each product now qualifies for the other kind.
+    await w.pool.execute("UPDATE warehouse_inventory SET quantity = 1 WHERE product_id = $1", marked_down)
+    await w.pool.execute("UPDATE warehouse_inventory SET quantity = 500 WHERE product_id = $1", restocked)
+    fresh = await ms.product(w, "Fresh overstock", price="100.00", cost="50.00", stock=(300, 300), sold=20)
+
+    second = await generate_proposal(w.pool, w.seller_id)
+
+    assert second.proposal_id is not None
+    assert {ln["name"] for ln in await _line_fields(w.pool, second.proposal_id)} == {"Fresh overstock"}
+    assert second.skipped_existing == 2  # the restock candidate and the markdown candidate, one per held product
+    held = await w.pool.fetch("SELECT product_id FROM proposal_lines GROUP BY product_id HAVING count(*) > 1")
+    assert held == [] and fresh
+
+
+async def test_a_product_whose_earlier_batch_expired_can_be_proposed_the_other_kind_again(w: ms.World) -> None:
+    product = await ms.product(w, "Overstock", price="100.00", cost="50.00", stock=(300, 300), sold=20)
+    first = await generate_proposal(w.pool, w.seller_id)
+    await w.pool.execute("UPDATE proposals SET status = 'cancelled' WHERE id = $1", uuid.UUID(first.proposal_id))
+    await w.pool.execute("UPDATE warehouse_inventory SET quantity = 1 WHERE product_id = $1", product)
+
+    again = await generate_proposal(w.pool, w.seller_id)
+
+    assert again.proposal_id and again.skipped_existing == 0
+    assert {ln["field"] for ln in await _line_fields(w.pool, again.proposal_id)} == {"restock_quantity"}
+
+
+async def _line_fields(pool: asyncpg.Pool, proposal_id: str) -> list[asyncpg.Record]:
+    return await pool.fetch(
+        "SELECT p.name, l.field FROM proposal_lines l JOIN products p ON p.id = l.product_id WHERE l.proposal_id = $1",
+        uuid.UUID(proposal_id),
+    )
+
+
 async def test_a_batch_with_nothing_the_seller_could_accept_is_not_stored(w: ms.World) -> None:
     await ms.product(w, "Thin margin", price="100.00", cost="90.00", stock=(300, 300), sold=20)
 

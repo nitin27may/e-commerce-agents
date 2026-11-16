@@ -39,8 +39,10 @@ Per active product of the seller, over a 90-day window of orders that were not c
   the percentage it was sized for.
 * Never both for one product. A batch holds every actionable restock, the 8 most urgent markdowns and
   up to 3 blocked lines (so the seller sees why something was not proposed), cut to
-  `max_lines_per_batch`. A batch with nothing the seller could accept is not stored. A (product,
-  field) that already has an open line is not proposed again, so generating twice makes one batch.
+  `max_lines_per_batch`. A batch with nothing the seller could accept is not stored. A product
+  that already has an open line of either kind in an open batch gets no new line of either kind (a product is
+  restocked or marked down, never both, across batches too), so generating twice makes one batch;
+  `skipped_existing` counts the candidates dropped for it.
 
 The numbers are the builder's heuristics (`GenerationRules`); the **limits** are in
 `merchant_limits.yaml` and are hard: margin floor, daily change cap, no change during an active
@@ -67,7 +69,7 @@ The seller's own limits are the guards, not the approval rule.
 
 Only the seller who owns the proposal, or an `admin`. Another seller's proposal is a **404**,
 identical to a missing one. Customers and `support` get 403 (`require_seller`). The staff approvals
-inbox leaves proposals out; its list omits them, its detail read is a 404 and its decide and answer-info endpoints answer 422 for every decision (both stacks), so there is one place to decide them.
+inbox leaves proposals out; its list omits them, its detail read, decide and answer-info endpoints all answer the same 404 a missing id gets, for every decision (both stacks), so there is one place to decide them.
 
 ## Deciding
 
@@ -79,7 +81,7 @@ inbox leaves proposals out; its list omits them, its detail read is a 404 and it
 | `edit` | execute at `value` (a restock quantity must be whole); recorded as approved with edits |
 | `reject` | nothing changes |
 
-**An edit can never raise a line** (the repo-wide rule). A restock quantity may be lowered, never raised above what was proposed; a price must stay between the proposed price and the price it started from (a markdown may be shallower than proposed, never deeper and never above where it began). A value outside that, past `NUMERIC(12,2)` or an INT32 quantity, not finite, or that rounds to zero is a **422** at decide time. `apply_line` checks the same rule again (`edit_beyond_proposal`) so a caller that bypasses the route cannot get past it.
+**An edit can never raise a line** (the repo-wide rule). A restock quantity may be lowered, never raised above what was proposed; a price must stay between the proposed price and the price it started from (a markdown may be shallower than proposed, never deeper and never above where it began). A value outside that, past `NUMERIC(12,2)` or an INT32 quantity, not finite, or that rounds to zero is a **422** at decide time. `apply_line` checks the same rule again (`edit_beyond_proposal`) so a caller that bypasses the route cannot get past it. A price edit equal to the price the line started from changes nothing and is a **422** ("no change — reject the line instead"; the seller card mirrors it); `apply_line` treats an unchanged price as already done (`executed`, `changed: false`) with no `UPDATE` and no `price_history` row.
 
 A line left out is rejected. A blocked line can only be rejected (422 otherwise).
 

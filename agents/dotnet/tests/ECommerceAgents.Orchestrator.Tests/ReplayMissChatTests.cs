@@ -11,6 +11,7 @@ using ECommerceAgents.TestFixtures;
 using FluentAssertions;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Net;
@@ -350,6 +351,31 @@ public sealed class ReplayMissChatTests : IAsyncLifetime
         model.Calls.Should().Be(2, "an ordinary failed tool call: the model is asked again");
         (await ContentsAsync(conversationId)).Should().Contain("tents?");
     }
+
+    [Theory]
+    [InlineData("replay")]
+    [InlineData("Replay")]
+    [InlineData("REPLAY")]
+    [InlineData(" Replay ")]
+    [InlineData("\treplay\n")]
+    public void TheGate_AgreesWithTheLoaderAndTheFactory_OnHowTheProviderIsNormalised(string raw)
+    {
+        // The loader, ChatClientFactory and the gate all trim and ignore case, so a value the process replays under
+        // is a value the gate honours (Python: test_replay_miss_gate.py, the same inputs).
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["LLM_PROVIDER"] = raw }).Build();
+
+        AgentSettingsLoader.Load(config).LlmProvider.Should().Be("replay");
+        ReplayMiss.IsActive(new AgentSettings { LlmProvider = raw }).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("openai")]
+    [InlineData("Azure")]
+    [InlineData(" anthropic ")]
+    [InlineData("replayed")]
+    [InlineData("")]
+    public void TheGate_IsFalseForAnyOtherProvider(string raw) =>
+        ReplayMiss.IsActive(new AgentSettings { LlmProvider = raw }).Should().BeFalse();
 
     [Fact]
     public void TheMissPredicates_AreFalseOutsideReplayMode()

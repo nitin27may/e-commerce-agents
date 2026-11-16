@@ -231,3 +231,29 @@ async def test_in_replay_mode_a_424_is_still_a_miss(monkeypatch: pytest.MonkeyPa
 
     with pytest.raises(SpecialistReplayMissError):
         await orch_mod.call_specialist_agent(agent_name="product-discovery", message="hi")
+
+
+# ── the gate agrees with how the provider is normalised everywhere else ──────
+
+
+@pytest.mark.parametrize("value", ["replay", "Replay", "REPLAY", " Replay ", "\treplay\n"])
+def test_the_gate_normalises_the_provider_like_the_settings_layer_and_the_factory(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    from shared.config import Settings
+    from shared.factory import get_chat_client
+    from shared.replay_client import ReplayChatClient
+    from shared.replay_miss import replay_mode_active
+
+    assert Settings(LLM_PROVIDER=value, _env_file=None).LLM_PROVIDER == "replay"  # the settings layer
+    _set(monkeypatch, "LLM_PROVIDER", value)  # a value that reached the attribute some other way
+    assert isinstance(get_chat_client(), ReplayChatClient)  # the process really is replaying ...
+    assert replay_mode_active() is True  # ... so the gate must say so
+
+
+@pytest.mark.parametrize("value", ["openai", "Azure", " anthropic ", "replayed", ""])
+def test_the_gate_is_false_for_any_other_provider(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    from shared.replay_miss import replay_mode_active
+
+    _set(monkeypatch, "LLM_PROVIDER", value)
+    assert replay_mode_active() is False

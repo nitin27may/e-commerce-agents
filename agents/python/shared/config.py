@@ -17,7 +17,7 @@ import logging
 from pathlib import Path
 from typing import Literal
 
-from pydantic import AliasChoices, Field, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
@@ -497,6 +497,12 @@ class Settings(BaseSettings):
     def cors_origins(self) -> list[str]:
         """``CORS_ALLOWED_ORIGINS`` split on commas, blanks dropped, trailing slashes trimmed."""
         return [o.strip().rstrip("/") for o in self.CORS_ALLOWED_ORIGINS.split(",") if o.strip()]
+
+    @field_validator("LLM_PROVIDER")
+    @classmethod
+    def _normalise_llm_provider(cls, value: str) -> str:
+        """Trimmed and lower-cased, as .NET reads it (loader, ``ChatClientFactory``): ``" Replay "`` is ``replay``."""
+        return value.strip().lower()
 
     @model_validator(mode="after")
     def _validate_secrets(self) -> "Settings":
