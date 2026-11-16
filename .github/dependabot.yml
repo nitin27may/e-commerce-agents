@@ -18,7 +18,14 @@
 #     are central (Directory.Packages.props), and both stacks and the tutorials
 #     must move together, so expect to finish that PR by hand.
 #     "mcp" rides in the same group: core 1.23+ requires MCP 2.x and the two have
-#     to be bumped as a pair.
+#     to be bumped as a pair. So do "a2a-sdk" (the A2A server and client are built on
+#     it, pinned exactly, and the request/response shapes are what the A2A tests and
+#     the replay fixtures see) and "httpx2" (the MCP 2.x client's HTTP stack, which
+#     shared/oauth/service_client.py builds against): each is coupled to the MAF/MCP
+#     pins, so a bump to either is a deliberate step, not part of the routine PR.
+#
+#   * The "actions" group takes minor and patch bumps only; a major version of an
+#     action is left as its own PR, like every other ecosystem here.
 #
 #   * Not covered, on purpose: agents/python/packages/* (uv workspace members,
 #     resolved by the single agents/python/uv.lock) and tutorials/20b-devui/python
@@ -51,6 +58,8 @@ updates:
         patterns:
           - "agent-framework*"
           - "mcp"
+          - "a2a-sdk"
+          - "httpx2"
       python-minor-patch:
         update-types:
           - minor
@@ -153,3 +162,6 @@ updates:
       actions:
         patterns:
           - "*"
+        update-types:
+          - minor
+          - patch
