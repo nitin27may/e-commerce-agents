@@ -131,6 +131,7 @@ SECTIONS: tuple[Section, ...] = (
             "docs/mcp-integration.md",
             "docs/telemetry.md",
             "docs/security-guide.md",
+            "docs/approvals.md",
             "docs/agent-quality.md",
             "docs/maf-best-practices.md",
             "docs/releasing.md",
