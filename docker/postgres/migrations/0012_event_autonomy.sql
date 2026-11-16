@@ -101,7 +101,7 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'approvals_no_beneficiary_decision') THEN
         ALTER TABLE approvals ADD CONSTRAINT approvals_no_beneficiary_decision
             CHECK (source = 'proposal' OR decided_by IS NULL OR subject_email IS NULL
-                   OR lower(decided_by) <> lower(subject_email));
+                   OR lower(btrim(decided_by)) <> lower(btrim(subject_email)));
     END IF;
 END $$;
 

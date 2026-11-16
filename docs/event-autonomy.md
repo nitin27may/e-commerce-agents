@@ -152,3 +152,14 @@ Web: `/admin/decisions`.
 The LLM `ops-responder` mode (`EVENT_AGENT_MODE=agent`) and its fixtures need a keyed recording session. Price-drop,
 back-in-stock and order-risk events are cut by the plan (consent UX, checkout hot path); the engine takes another event type
 by adding an `events:` entry, a parser and a handler line. No real carrier feed produces `order.shipment_delayed`.
+
+### What the TRUNCATE guard is, and is not
+
+The triggers on `agent_decisions` and `store_credit_ledger` stop accidents: a stray `UPDATE`, `DELETE` or
+`TRUNCATE` from application code, a test fixture or a console. They are not a defence against the database role the
+application itself uses, which owns the tables and may call `reset_autonomy_log()`. That function is reached only from
+the seeder (`scripts/seed.py::reset_autonomy_log`) and the test fixtures, never from an HTTP route. An audit log that
+must survive a hostile application role needs a separate role or an external sink, which this repo does not have.
+
+Migration `0012` was amended on its own branch before it reached `main` (the reviewer constraint and the TRUNCATE
+guard). A database that ran the first draft of that branch needs `./scripts/dev.sh --clean`; nothing on `main` is affected.

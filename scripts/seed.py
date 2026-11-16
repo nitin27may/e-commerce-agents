@@ -1198,20 +1198,24 @@ async def main(reset_tour_only: bool = False) -> None:
             # state, not seed data, and are deliberately left alone — a
             # full `dev.sh --clean` volume wipe is the only thing that
             # resets those (see docs/security-guide.md).
-            await reset_autonomy_log(conn)
-            await conn.execute("""
-                TRUNCATE workflow_checkpoints, hitl_requests,
-                         agent_execution_steps, usage_logs, messages, conversations,
-                         agent_permissions, access_requests, agent_catalog,
-                         restock_schedule, shipping_rates, warehouse_inventory,
-                         price_history, product_embeddings, reviews,
-                         order_status_history, order_items, returns, orders,
-                         cart_items, carts,
-                         promotions, coupons, loyalty_tiers,
-                         carriers, warehouses, products, users,
-                         oauth_clients
-                CASCADE
-            """)
+            # One transaction: the outbox worker serves this same database during `dev.sh --seed-only`, and a
+            # decision it wrote between the two statements would make the TRUNCATE refuse after the log was
+            # already cleared.
+            async with conn.transaction():
+                await reset_autonomy_log(conn)
+                await conn.execute("""
+                    TRUNCATE workflow_checkpoints, hitl_requests,
+                             agent_execution_steps, usage_logs, messages, conversations,
+                             agent_permissions, access_requests, agent_catalog,
+                             restock_schedule, shipping_rates, warehouse_inventory,
+                             price_history, product_embeddings, reviews,
+                             order_status_history, order_items, returns, orders,
+                             cart_items, carts,
+                             promotions, coupons, loyalty_tiers,
+                             carriers, warehouses, products, users,
+                             oauth_clients
+                    CASCADE
+                """)
 
         user_ids = await seed_users(conn)
         products = await seed_products(conn, user_ids)

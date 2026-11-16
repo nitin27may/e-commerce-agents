@@ -302,7 +302,7 @@ no model is called at all — that is what CI, the eval smoke suite and the tuto
 
 ## Database
 
-- Schema: `docker/postgres/init.sql` is the frozen baseline (34 tables); every change since is a numbered file in `docker/postgres/migrations/` (0002–0011 today: approval claims, refresh tokens, approvals/outbox/notifications, usage cost columns, embedding model, merchant proposals, worker leases) applied by `scripts/migrate.py` (the seeder, `dev.sh`/`dev.ps1` and every test fixture run it). Never edit an applied migration — the checksum guard fails the run; add a new one. The runner applies whatever is unapplied in numeric order, so a lower number arriving late is fine.
+- Schema: `docker/postgres/init.sql` is the frozen baseline (34 tables); every change since is a numbered file in `docker/postgres/migrations/` (0002–0012 today: approval claims, refresh tokens, approvals/outbox/notifications, usage cost columns, embedding model, merchant proposals, worker leases, event autonomy) applied by `scripts/migrate.py` (the seeder, `dev.sh`/`dev.ps1` and every test fixture run it). Never edit an applied migration — the checksum guard fails the run; add a new one. The runner applies whatever is unapplied in numeric order, so a lower number arriving late is fine.
 - All queries use parameterized `$1, $2` syntax (asyncpg)
 - All user-facing queries filter by `user_email` or `user_id`
 - Embeddings stored as `vector(1536)` with ivfflat cosine index
