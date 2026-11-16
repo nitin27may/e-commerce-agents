@@ -209,7 +209,13 @@ the same.
 **Who may decide.** Only staff; never the requester (compared case-insensitively, even for an admin deciding their
 own request); and the staff role must be at or above the approval's `assigned_role` — `support` decides what the
 policy routed to `support` (and `auto` requests still waiting for a person), `admin` decides everything including
-`manager` routes. A refusal is a `403` and changes nothing; it is checked before anything is claimed.
+`manager` routes. A refusal is a `403` and changes nothing; it is checked before anything is claimed, **and again
+after the claim is taken**, on every path (approve, reject and request-info; tool and workflow alike). The first check
+ran on an earlier read, and an SLA escalation (`support` to `manager`) can land between that read and the claim; the
+claim is what closes the window (`escalate` refuses while one is held), so the fresh row is reloaded and the same
+decider check re-run, the claim is handed back and the normal `403` returned if it now fails. Role rank is
+case-insensitive on both stacks, and a route the policy engine returns that is not `auto` / `support` / `manager`
+fails closed to a manager (logged) on both.
 
 | Caller | support route | manager route |
 |---|---|---|
@@ -228,6 +234,14 @@ policy routed to `support` (and `auto` requests still waiting for a person), `ad
   and the remaining steps executed **as the requester** with the reviewer recorded separately.
 * A decision that fails to execute is **not recorded**: the claim is handed back, the approval stays in
   `pending_review`, and the reviewer can try again.
+* **An action that ran but whose recording lost the claim is finished, not abandoned.** If the executor ran and the
+  request row is `executed` (carrying this approval's id and result) but the approval was left in `pending_review`
+  (the claim was taken over before the outcome was recorded), a retry of *approve* records the replayed result and moves
+  the approval to `executed`/`failed` instead of answering `409` forever, and the timeout handler (`expire`, which also
+  serves .NET) does the same instead of marking an executed thing `expired`. *Request information* on such a row is
+  refused (`409`): the action already happened. A request that is resolved any other way is still a `409`.
+* A claim lost while recording a *workflow* decision is a `409` ("taken over by another reviewer"), like every other
+  lost claim, on both stacks (it used to surface as a `500`).
 
 **Edits** (`approve` only) are merged only for fields on the policy's `editable_fields` for that kind; any other
 field, or a bad value, is a `422` and nothing runs. For a tool approval they merge into the tool input; for a return
@@ -298,6 +312,11 @@ the Python test then proves the worker still reads it.
   the support-to-manager escalation resume nothing and work for .NET approvals, and a .NET *tool* approval expires correctly (the
   worker only denies the request row). Until the worker can hand a .NET workflow to .NET, an unattended .NET return is closed by
   a manager's decision, not by timeout.
+* *Requests stored before that change* (PascalCase tool name, camelCase input keys) are mapped when approved: the name
+  as before, and the top-level input keys with the same snake_case rule (`orderId` becomes `order_id`; nested objects are
+  left alone). If two different keys would collapse onto one name with different values the mapping is a guess, so the
+  approve is refused with `422` before anything is claimed or executed, the approval stays `pending_review` (it can still
+  be rejected), and a `legacy_input_refused` event is written to its audit trail once.
 * *A gated .NET tool call is stored with the same name and input keys as Python* (`cancel_order`, `order_id`), not the .NET
   pipeline's `CancelOrder` / `orderId` — that is what the policy kinds, the executor and the other stack key on.
 * *Customer confirm* (`pending_confirm`) is not built on either stack.
