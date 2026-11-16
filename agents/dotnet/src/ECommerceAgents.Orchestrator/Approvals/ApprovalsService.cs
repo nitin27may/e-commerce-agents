@@ -77,6 +77,17 @@ public sealed class ApprovalsService(
         ApprovalIntake.Rank(actor.Role) >= ApprovalIntake.Rank(approval.AssignedRole ?? "admin")
         && ApprovalIntake.Rank(approval.AssignedRole ?? "admin") > 0;
 
+    /// <summary>
+    /// A merchant proposal is decided by its seller on <c>/api/seller/proposals/{id}/decide</c> (Python only), never here. Approve and reject
+    /// have no executor on this path, and <c>request_info</c> would park the batch in <c>needs_info</c> where nobody can answer it (its
+    /// requester is the system actor). 422 for every decision, the same answer Python gives.
+    /// </summary>
+    public static void RefuseProposal(Approval approval)
+    {
+        if (approval.Source == "proposal")
+            throw new ApprovalHttpException(422, "A merchant proposal is decided by its seller, not through the approvals inbox");
+    }
+
     /// <summary>Throws 403 unless <paramref name="actor"/> may decide <paramref name="approval"/>. Pure: reads nothing, changes nothing.</summary>
     public static void AuthorizeDecider(Approval approval, Actor actor)
     {
@@ -169,6 +180,7 @@ public sealed class ApprovalsService(
         string? note = null)
     {
         var approval = await LoadAsync(approvalId);
+        RefuseProposal(approval); // before anything else: not even a 403 hints at a decision path that does not exist
         AuthorizeDecider(approval, actor);
         var trimmed = (note ?? "").Trim();
         var cleanNote = trimmed.Length == 0 ? null : trimmed[..Math.Min(trimmed.Length, MaxNoteLength)];
@@ -320,6 +332,7 @@ public sealed class ApprovalsService(
     public async Task<DecideOutcome> ProvideInfoAsync(string approvalId, Actor actor, string message)
     {
         var approval = await LoadAsync(approvalId);
+        RefuseProposal(approval);
         if (!SamePerson(actor.Email, approval.RequesterEmail)) throw new ApprovalHttpException(403, "Only the requester can answer");
         var trimmed = (message ?? "").Trim();
         if (trimmed.Length == 0) throw new ApprovalHttpException(422, "message must not be empty");

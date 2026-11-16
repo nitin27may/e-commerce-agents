@@ -73,7 +73,7 @@ public static class ApprovalRoutes
         // Support sees (and may decide) what is routed to support; admin sees everything.
         var actor = ActorOfRequest();
         IReadOnlyCollection<string>? roles = ApprovalIntake.Rank(actor.Role) >= ApprovalIntake.Rank("admin") ? null : ["support"];
-        var rows = await service.Repository.ListForStaffAsync(statuses, roles, limit);
+        var rows = await service.Repository.ListForStaffAsync(statuses, roles, limit, excludeSources: ["proposal"]);
         return Results.Ok(new { approvals = rows.Select(Summary).ToList(), total = rows.Count });
     }
 
@@ -83,6 +83,8 @@ public static class ApprovalRoutes
         try
         {
             var approval = await service.LoadAsync(approvalId);
+            // Left out of the staff list, so left out here: a proposal is the seller's to read (Python's seller routes).
+            if (approval.Source == "proposal") throw new ApprovalHttpException(404, "Approval not found");
             if (!ApprovalsService.CanReview(approval, ActorOfRequest()))
                 throw new ApprovalHttpException(403, "This approval is routed to a manager");
             return Results.Ok(await service.DetailAsync(approval));

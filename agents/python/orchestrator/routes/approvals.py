@@ -104,6 +104,8 @@ async def list_approvals(
 async def get_approval(approval_id: str, user: dict[str, Any] = Depends(require_staff)) -> dict[str, Any]:
     try:
         approval = await svc.load(approval_id)
+        if approval["source"] == "proposal":  # left out of the staff list, so left out here: seller-only
+            raise ApprovalHTTPError(404, "Approval not found")
         if not svc.can_review(approval, actor_of(user)):
             raise ApprovalHTTPError(403, "This approval is routed to a manager")
         return await svc.detail(approval)
