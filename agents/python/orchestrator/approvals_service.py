@@ -118,12 +118,29 @@ def repo_rank(role: str | None) -> int:
     return intake.ROLE_RANK.get((role or "").lower(), 0)
 
 
+#: Sources whose *subject* is the intended reviewer, so the beneficiary rule below does not apply to them. A merchant
+#: proposal is about a seller's own catalogue and the seller decides it, on the seller routes
+#: (``proposals_service.decide``), never through :func:`authorize_decider` (the staff path 404s the source first, see
+#: :func:`refuse_proposal`). Every other source is decided by staff, and for those the rule is: the reviewer may never
+#: be the party who receives the money or benefit of the action. Listed explicitly, not left as an accident.
+SELLER_DECIDED_SOURCES = frozenset({"proposal"})
+
+
 def authorize_decider(approval: dict[str, Any], actor: Actor) -> None:
-    """Raise 403 unless ``actor`` may decide ``approval``. Pure: reads nothing, changes nothing."""
+    """Raise 403 unless ``actor`` may decide ``approval``. Pure: reads nothing, changes nothing.
+
+    Two "not you" rules: never the requester, and (for a staff-decided source) never the subject, the customer the
+    action is *for*. An autonomous action's requester is the system actor, so without the second rule a staff member
+    could approve a credit to their own account. Run again after the claim, like every check here.
+    """
     if repo_rank(actor.role) == 0:
         raise ApprovalHTTPError(403, "Staff access required")
     if _same_person(actor.email, approval["requester_email"]):
         raise ApprovalHTTPError(403, "You cannot approve your own request")
+    if approval.get("source") not in SELLER_DECIDED_SOURCES and _same_person(
+        actor.email, approval.get("subject_email")
+    ):
+        raise ApprovalHTTPError(403, "You cannot decide a request that is for you")
     if not can_review(approval, actor):
         raise ApprovalHTTPError(403, "This approval is routed to a manager")
 

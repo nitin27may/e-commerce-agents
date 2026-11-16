@@ -1,4 +1,5 @@
 using Dapper;
+using ECommerceAgents.Orchestrator.Approvals;
 using ECommerceAgents.Orchestrator.Routes;
 using ECommerceAgents.Shared.Approvals;
 using ECommerceAgents.Shared.Configuration;
@@ -767,6 +768,51 @@ public sealed class ApprovalRoutesTests : IAsyncLifetime
         }
         (await StatusAsync(approval.Id)).Should().Be("pending_review");
     }
+
+    // ───────────────────────────── the reviewer is never the party the action is for ─────────────────────────────
+
+    /// <summary>An autonomous-action approval as Python's engine opens it: the system actor asks, the customer is the subject.</summary>
+    private async Task<Approval> SeedEventApprovalAsync(string subject) =>
+        await _repo.CreateAsync(new NewApproval(
+            Source: "event", Kind: "autonomous_action", RequesterEmail: "autonomy@system", SourceRef: Guid.NewGuid(),
+            SubjectEmail: subject, Amount: 40m, Route: "support", AssignedRole: "support",
+            Status: S.PendingReview, ActorEmail: "autonomy@system", ActorRole: "system"));
+
+    [Theory]
+    [InlineData("approve")]
+    [InlineData("reject")]
+    [InlineData("request_info")]
+    public async Task AStaffMember_CannotDecideAnApprovalThatIsForThem_AndNothingChanges(string decision)
+    {
+        var approval = await SeedEventApprovalAsync(Support2.ToUpperInvariant());
+        using var self = SupportClient(email: Support2);
+
+        var response = await DecideAsync(self, approval.Id, new { decision, note = "mine" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await StatusAsync(approval.Id)).Should().Be("pending_review");
+        (await _repo.GetAsync(approval.Id))!.ClaimedBy.Should().BeNull();
+        (await _repo.ListEventsAsync(approval.Id)).Select(e => e.Action).Should().Equal("created");
+    }
+
+    [Fact]
+    public void TheBeneficiaryRule_AppliesToEveryStaffDecidedSource_AndExemptsOnlyTheSellerDecidedProposal()
+    {
+        ApprovalsService.SellerDecidedSources.Should().BeEquivalentTo(["proposal"]);
+        var staff = new Actor(Admin, "admin");
+        foreach (var source in new[] { "tool", "workflow", "event" })
+        {
+            var approval = TestApproval(source, "someone@example.com", Admin);
+            var act = () => ApprovalsService.AuthorizeDecider(approval, staff);
+            act.Should().Throw<ApprovalHttpException>().Which.StatusCode.Should().Be(403, source);
+        }
+        // The seller is the subject and the intended reviewer of a proposal, which is decided on the seller routes.
+        ApprovalsService.AuthorizeDecider(TestApproval("proposal", "merchant-ops@system", Admin), staff);
+    }
+
+    private static Approval TestApproval(string source, string requester, string subject) => new(
+        Guid.NewGuid(), source, null, "autonomous_action", requester, subject, null, 40m, null, "support", "support", S.PendingReview,
+        null, null, null, null, null, 0, null, null, DateTime.UtcNow, DateTime.UtcNow);
 
     // ───────────────────────────── request more information ─────────────────────────────
 

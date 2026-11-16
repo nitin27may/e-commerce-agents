@@ -37,7 +37,7 @@ from typing import Any
 import asyncpg
 
 from shared.approvals import repo
-from shared.approvals.intake import ASSIGNED_ROLE
+from shared.approvals.intake import ASSIGNED_ROLE, ROLE_RANK
 from shared.autonomy.policy import (
     AUTONOMOUS_TIERS,
     AutonomyPolicy,
@@ -68,6 +68,10 @@ ORDERS_LINK = "/orders"
 
 SCOPE_EVENT = "autonomy_event"
 SCOPE_APPROVAL = "autonomy_approval"
+
+#: Roles that review approvals. A staff member is never a beneficiary the engine may pay on its own: the credit would
+#: land on someone who also holds the power to decide it. Taken from the approvals ranking so the two cannot drift.
+STAFF_ROLES = frozenset(ROLE_RANK)
 
 #: An approval in one of these is still waiting for a person.
 _WAITING = ["pending_review", "needs_info"]
@@ -259,7 +263,7 @@ async def decide_shipment_delayed(
     if event.delay_days is None:
         return _no_action("invalid_event_delay"), context
     order = await conn.fetchrow(
-        """SELECT o.id, o.status, o.total, o.user_id, u.email
+        """SELECT o.id, o.status, o.total, o.user_id, u.email, u.role
              FROM orders o JOIN users u ON u.id = o.user_id WHERE o.id = $1""",
         event.order_id,
     )
@@ -285,6 +289,12 @@ async def decide_shipment_delayed(
         evidence=verdict_tier.evidence,
     )
     context["usage"] = None
+    if (order["role"] or "").lower() in STAFF_ROLES:
+        # Whoever produced the event (a simulator, a future carrier feed): money for a staff member is always a
+        # person's decision, and never that same person's (the decider check refuses the subject).
+        verdict.tier = "needs_approval"
+        verdict.outcome = "awaiting_approval"
+        verdict.reasons = [*verdict.reasons, "beneficiary_is_staff"]
     if verdict.tier in AUTONOMOUS_TIERS:
         usage = await read_usage(conn, budget.key, day, user_id=order["user_id"], order_id=order["id"])
         context["usage"] = usage

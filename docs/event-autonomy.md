@@ -81,6 +81,19 @@ holds. Staff approve or reject in the ordinary inbox (`POST /api/approvals/{id}/
 - an SLA breach escalates support to manager once, then expires it, **never while a decide holds the claim** (the timer
   waits), and an approved credit that ran but was never recorded is recorded, not expired.
 
+## Nobody approves a credit to themselves
+
+The approval's requester is the system actor, so "never your own request" alone would let a staff member approve money for
+their own account. Three layers close it, and the engine never relies on the simulator being well behaved:
+
+- **The decider is never the subject.** `authorize_decider` (Python) / `AuthorizeDecider` (.NET) refuse the reviewer when
+  they are the approval's `subject_email` (case-insensitive), for every staff-decided source, again after the claim.
+  Merchant proposals are the one exemption (the seller is the subject and decides on the seller routes), named in code.
+  A database CHECK (`approvals_no_beneficiary_decision`, migration 0012) says the same for every source except `proposal`.
+- **The engine never acts alone for a staff beneficiary** (`support` or `admin`, whoever produced the event): the verdict
+  is always `needs_approval` with reason `beneficiary_is_staff`, which another staff member decides.
+- **The simulator** refuses (422) an explicit order whose owner is not a `customer`, or is the acting admin.
+
 ## Admin API and page
 
 | Route | |

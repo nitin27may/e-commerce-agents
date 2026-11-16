@@ -211,7 +211,11 @@ the same.
 | `GET /api/me/approvals` | any signed-in user | Their own approvals, status only |
 
 **Who may decide.** Only staff; never the requester (compared case-insensitively, even for an admin deciding their
-own request); and the staff role must be at or above the approval's `assigned_role` — `support` decides what the
+own request); **never the subject** (the party who receives the money or benefit: an autonomous action's requester is
+the system actor, so a staff member whose own order a credit is for must not be able to approve it; `403`, every source
+except `proposal`, whose seller *is* the subject and the intended reviewer and decides on the seller routes, never
+through this check: `SELLER_DECIDED_SOURCES` in Python, `SellerDecidedSources` in .NET, named rather than silently
+exempt; a database CHECK, `approvals_no_beneficiary_decision` in migration 0012, backs it with the same exemption); and the staff role must be at or above the approval's `assigned_role` — `support` decides what the
 policy routed to `support` (and `auto` requests still waiting for a person), `admin` decides everything including
 `manager` routes. A refusal is a `403` and changes nothing; it is checked before anything is claimed, **and again
 after the claim is taken**, on every path (approve, reject and request-info; tool and workflow alike). The first check

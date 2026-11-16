@@ -90,3 +90,17 @@ DROP TRIGGER IF EXISTS store_credit_ledger_append_only ON store_credit_ledger;
 CREATE TRIGGER store_credit_ledger_append_only
     BEFORE UPDATE OR DELETE ON store_credit_ledger
     FOR EACH ROW EXECUTE FUNCTION autonomy_log_reject_mutation();
+
+-- The party a staff-decided approval is FOR never decides it. 0006 already forbids decided_by = requester; for an
+-- autonomous action the requester is the system actor, so the person who would receive the credit (subject_email) is
+-- the one a CHECK must name. A merchant proposal is the exception that proves the rule: its subject is the seller
+-- and the seller IS its reviewer (on the seller routes), so that source is left out. Tool and workflow approvals
+-- have subject = requester, so for them this restates 0006 and changes nothing.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'approvals_no_beneficiary_decision') THEN
+        ALTER TABLE approvals ADD CONSTRAINT approvals_no_beneficiary_decision
+            CHECK (source = 'proposal' OR decided_by IS NULL OR subject_email IS NULL
+                   OR lower(decided_by) <> lower(subject_email));
+    END IF;
+END $$;

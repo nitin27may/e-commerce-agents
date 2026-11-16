@@ -97,8 +97,16 @@ async def simulate(
         if isinstance(delay_days, bool) or not 0 <= delay_days <= 365:
             raise ApprovalHTTPError(422, "delay_days must be between 0 and 365")
         days = delay_days
-        if await get_pool().fetchval("SELECT 1 FROM orders WHERE id = $1", order) is None:
+        owner = await get_pool().fetchrow(
+            "SELECT u.email, u.role FROM orders o JOIN users u ON u.id = o.user_id WHERE o.id = $1", order
+        )
+        if owner is None:
             raise ApprovalHTTPError(404, "Order not found")
+        # The explicit path used to skip the scenario picker's customers-only filter: an admin could simulate an
+        # event on their own order and be the beneficiary of what staff then approve. Only a customer's order, and
+        # never the acting admin's, is a valid subject (the engine also refuses to pay staff on its own).
+        if owner["role"] != "customer" or str(owner["email"]).lower() == actor.email.strip().lower():
+            raise ApprovalHTTPError(422, "Events can only be simulated on a customer's order")
         event = event_id or f"sim-{order}-{days}"
     event = event.strip()[:200]
     key = engine.event_key(engine.TOPIC_SHIPMENT_DELAYED, event)
