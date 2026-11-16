@@ -82,6 +82,14 @@ async def _force_claim(clean_db, run_id: str, claimed_sql: str) -> None:
         f"UPDATE hitl_requests SET status = 'processing', claimed_at = {claimed_sql} WHERE workflow_run_id = $1",
         run_id,
     )
+    # A decision also holds a claim on the inbox approval, taken at the same moment with the same TTL, so a
+    # crashed or stalled resume ages both together. (Only a claim that exists is aged.)
+    await clean_db.execute(
+        f"""UPDATE approvals SET claimed_at = {claimed_sql}
+             WHERE claimed_at IS NOT NULL
+               AND id IN (SELECT approval_id FROM hitl_requests WHERE workflow_run_id = $1)""",
+        run_id,
+    )
 
 
 @pytest.mark.asyncio
