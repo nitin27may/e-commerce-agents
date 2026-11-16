@@ -32,10 +32,28 @@ public sealed class CostMetricsTests
             },
         };
 
+        // The meter is process-wide and xUnit runs test classes in parallel, so a turn
+        // recorded by another class lands in this listener too (it did, in CI, once the
+        // replay-miss tests started recording usage). A measurement callback runs
+        // synchronously on the thread that recorded it, and every act() here is
+        // synchronous, so the recording thread tells this test's measurements from
+        // anyone else's. It also keeps the list single-threaded.
+        var recordingThread = Environment.CurrentManagedThreadId;
+
         listener.SetMeasurementEventCallback<double>((inst, value, tags, _) =>
-            captured.Add(new Measurement(inst.Name, value, tags.ToArray().ToDictionary(t => t.Key, t => t.Value))));
+        {
+            if (Environment.CurrentManagedThreadId == recordingThread)
+            {
+                captured.Add(new Measurement(inst.Name, value, tags.ToArray().ToDictionary(t => t.Key, t => t.Value)));
+            }
+        });
         listener.SetMeasurementEventCallback<long>((inst, value, tags, _) =>
-            captured.Add(new Measurement(inst.Name, value, tags.ToArray().ToDictionary(t => t.Key, t => t.Value))));
+        {
+            if (Environment.CurrentManagedThreadId == recordingThread)
+            {
+                captured.Add(new Measurement(inst.Name, value, tags.ToArray().ToDictionary(t => t.Key, t => t.Value)));
+            }
+        });
 
         listener.Start();
         act();
