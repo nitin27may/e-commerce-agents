@@ -144,3 +144,18 @@ kinds:
         route: manager
         reason: Inventory commitments are a manager decision
         when: []
+
+  # A system-generated merchant proposal (price markdowns, restock orders; #93). The requester is the system, so the
+  # seller who owns the products reviews it on their own page and the usual "never your own request" rule holds.
+  # The rule below is the shape every kind needs; its route is never stored on a proposal approval, because the
+  # reviewer is the product's seller, not a staff queue (see docs/merchant-proposals.md). The kind exists for its
+  # settings: a reviewer may edit a line's final value, and a batch nobody decides in 72 hours expires.
+  merchant_proposal:
+    editable_fields: [final_value]
+    sla_hours: 72
+    on_timeout: expire
+    rules:
+      - id: owning-seller-reviews
+        route: manager
+        reason: The seller who owns the products reviews the batch
+        when: []
