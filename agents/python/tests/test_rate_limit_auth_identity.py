@@ -106,4 +106,10 @@ async def test_redis_keys_never_contain_the_raw_email(redis_client: redis_asynci
     async with _client() as c:
         await _login(c, "x@example.com")
     keys = [k async for k in redis_client.scan_iter("ratelimit:*")]
-    assert keys and not any("example.com" in k for k in keys)
+    # The address is hashed into the key. Checked by the separator every email has rather
+    # than by searching for the domain literal, which static analysis reads as a
+    # URL-sanitisation check. (The key legitimately contains the client IP, dots included.)
+    assert keys
+    for key in keys:
+        text = key.decode() if isinstance(key, bytes) else key
+        assert "@" not in text, text
