@@ -53,8 +53,7 @@ Design notes:
   this file — the production app reads credentials from
   ``shared.config.settings``, not raw ``os.environ``, so the two can't share
   a single implementation without a cross-workspace dependency this repo
-  doesn't have. Same precedent as ``tutorials/_shared/maf_bootstrap.py`` /
-  ``agents/python/patch_maf.py``. Keep the two in sync when either changes.
+  doesn't have. Keep the two in sync when either changes.
 """
 
 from __future__ import annotations

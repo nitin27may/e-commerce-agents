@@ -31,7 +31,7 @@ DEFAULT_OUT = REPO_ROOT / "docs" / "workflows"
 # Make ``shared.*`` importable when running as a plain script.
 sys.path.insert(0, str(REPO_ROOT / "agents" / "python"))
 
-from agent_framework._workflows._viz import WorkflowViz  # noqa: E402
+from agent_framework import WorkflowViz  # noqa: E402
 from shared.workflow_loader import load_workflows_directory  # noqa: E402
 
 logger = logging.getLogger("visualize_workflows")

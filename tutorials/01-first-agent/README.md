@@ -151,7 +151,7 @@ public static async Task<string> Ask(AIAgent agent, string question)
 ## Gotchas
 
 - **"API version not supported" on Azure.** If you hit this, your deployment doesn't support the Responses API. Set `LLM_PROVIDER=azure` — both examples already fall back to Chat Completions (`OpenAIChatCompletionClient` in Python, the same `GetChatClient` surface via `AzureOpenAIClient` in .NET) and default to `api_version=2024-10-21`.
-- **MAF packaging bug — now a no-op.** Older `agent-framework-core==1.0.0` wheels shipped an empty `__init__.py`. `tutorials/_shared/maf_bootstrap.py` patches it before any `agent_framework` import (every chapter's `main.py` calls `maf_bootstrap.bootstrap()` first). This repo now pins `agent-framework` 1.14.0, which fixed the bug upstream, so the patch step is defensive and does nothing on a current install — `bootstrap()` is kept mainly because it also loads the repo-root `.env`, which every chapter still needs. The capstone app has the equivalent `agents/python/patch_maf.py`, same no-op status, for the same reason (see `CLAUDE.md`'s "MAF Package Patch" note).
+- **No MAF packaging workaround is needed.** `agent-framework-core` 1.14.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
 - **Don't forget `using OpenAI.Chat;`** in .NET — the `AsAIAgent` extension lives in that namespace.
 - **`TreatWarningsAsErrors` is on** in `FirstAgent.csproj` — an unused `using` or nullable warning fails the build, not just the analyzer pass.
 

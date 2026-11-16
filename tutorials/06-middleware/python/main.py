@@ -26,7 +26,7 @@ from tutorials._shared import maf_bootstrap  # noqa: E402
 maf_bootstrap.bootstrap()
 
 from agent_framework import Agent, BaseChatClient, tool  # noqa: E402
-from agent_framework._middleware import (  # noqa: E402
+from agent_framework import (  # noqa: E402
     AgentContext,
     AgentMiddleware,
     ChatContext,

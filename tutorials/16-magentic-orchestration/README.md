@@ -181,14 +181,7 @@ replaced with a real example.
   directive instructions, as `manager_agent()` does above.
 - **Worker boundaries matter.** Keep each worker's instructions narrow (one concrete kind of
   output) so the manager can chain them reliably instead of getting overlapping, redundant answers.
-- **The old "empty `__init__.py`" packaging bug is not something you need to work around anymore.**
-  `agent-framework-core==1.0.0` shipped with an empty `__init__.py`; that's fixed upstream as of
-  1.14.0, which this repo now pins. `agents/python/patch_maf.py` (used by the capstone app) is a
-  documented no-op today — it only writes when the file is empty, which it no longer is. Tutorials
-  use a separate, still-active helper, `tutorials/_shared/maf_bootstrap.py`, which both patches
-  `agent_framework`'s `__init__.py` defensively (same no-op-if-already-patched logic) and loads the
-  repo-root `.env`; every chapter's `main.py` and tests call `maf_bootstrap.bootstrap()` before
-  importing `agent_framework`, including this one (`main.py:20-22`).
+- **No MAF packaging workaround is needed.** `agent-framework-core` 1.14.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`, including this one (`main.py:20-22`).
 
 ## Tests
 

@@ -289,11 +289,9 @@ There's no code yet, but one setup-time difference is worth knowing early:
 - **Ports 5432 / 6379 / 8080 already in use.** Only matters if you're running the
   full capstone app (`dev.sh`), not the standalone tutorial chapters. Stop any
   local Postgres/Redis or change the ports in `docker-compose.yml`.
-- **Don't chase the old "empty `agent_framework/__init__.py`" bug.** Earlier
-  builds of this repo needed `agents/python/patch_maf.py` to work around a
-  packaging bug in `agent-framework-core==1.0.0`. The repo now pins
-  `agent-framework-core>=1.14.0`, which ships a real `__init__.py`, so that patch
-  is already a no-op — you don't need to think about it.
+- **Don't chase the old "empty `agent_framework/__init__.py`" bug.** It only affected
+  `agent-framework-core==1.0.0`. The repo pins `agent-framework-core==1.14.0`, which ships a real
+  `__init__.py`, so there is nothing to patch and no workaround file in the repo.
 
 ## Tests
 

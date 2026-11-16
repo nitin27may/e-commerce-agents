@@ -50,8 +50,8 @@ transcript and forwards it; the moderator is the terminal executor that yields t
 synthesized verdict.
 
 ```python
-from agent_framework._workflows._executor import Executor, handler
-from agent_framework._workflows._workflow_context import WorkflowContext
+from agent_framework import Executor, handler
+from agent_framework import WorkflowContext
 
 class _PanelistExecutor(Executor):
     @handler

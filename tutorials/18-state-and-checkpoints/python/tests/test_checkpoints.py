@@ -17,7 +17,7 @@ from tutorials._shared import maf_bootstrap  # noqa: E402
 maf_bootstrap.bootstrap()
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
-from agent_framework._workflows._checkpoint import (  # noqa: E402
+from agent_framework import (  # noqa: E402
     FileCheckpointStorage,
     InMemoryCheckpointStorage,
 )

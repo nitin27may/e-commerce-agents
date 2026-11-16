@@ -62,8 +62,8 @@ uv run --project tutorials python tutorials/20-visualization/python/main.py
 Source: [`python/main.py`](./python/main.py). The workflow is the same three-executor pipeline used throughout the earlier workflow chapters — uppercase, then a non-empty gate, then a logger — built with the normal `WorkflowBuilder`:
 
 ```python
-from agent_framework._workflows._viz import WorkflowViz
-from agent_framework._workflows._workflow_builder import WorkflowBuilder
+from agent_framework import WorkflowViz
+from agent_framework import WorkflowBuilder
 
 def build_workflow():
     up = UppercaseExecutor()
@@ -149,7 +149,7 @@ This chapter previously shipped a .NET *stub* that printed API usage instead of 
 - **Node IDs must be unique.** Two executors sharing an `id` fail at `WorkflowBuilder.build()` time (e.g., two `ValidateExecutor()` instances both defaulting to `id="validate"`), not at visualization time — the diagram only renders once the build already succeeded, so a visualization bug is rarely actually a visualization bug.
 - **Mermaid is GitHub-native, DOT needs Graphviz.** Commit `.mmd` files and GitHub renders them inline in issues, PRs, and wikis with zero extra tooling. The `.dot` text is portable, but turning it into PNG/SVG requires a local or CI install of `graphviz`.
 - **Determinism depends on your builder, not just the renderer.** `WorkflowViz` renders whatever edge order the graph gives it. If your own code adds edges by iterating a `set` or `dict` without a stable order, the rendered output can shuffle between runs even though the *logical* graph didn't change — iterate over ordered collections (lists, tuples) when building the graph.
-- **The MAF v1.0 empty-`__init__.py` packaging bug is fixed upstream, but this chapter still patches defensively.** `tutorials/_shared/maf_bootstrap.py::bootstrap()` re-exports the public API into `agent_framework/__init__.py` if it's empty (or carries an older bootstrap patch marker) before any tutorial imports the package — every chapter's `main.py` and tests call it first. This is distinct from `agents/python/patch_maf.py`, which is the production app's copy of the same defensive fix; both are effectively no-ops against the pinned 1.14.0 wheel (which ships a real `__init__.py`), but are left in place rather than removed. There is no `shared/maf.py`.
+- **No MAF packaging workaround is needed.** `agent-framework-core` 1.14.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
 
 ## Tests
 

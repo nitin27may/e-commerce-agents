@@ -32,9 +32,9 @@ from tutorials._shared import maf_bootstrap  # noqa: E402
 
 maf_bootstrap.bootstrap()
 
-from agent_framework._workflows._executor import Executor, handler  # noqa: E402
-from agent_framework._workflows._workflow_builder import WorkflowBuilder  # noqa: E402
-from agent_framework._workflows._workflow_context import WorkflowContext  # noqa: E402
+from agent_framework import Executor, handler  # noqa: E402
+from agent_framework import WorkflowBuilder  # noqa: E402
+from agent_framework import WorkflowContext  # noqa: E402
 
 # ─────────────── Custom event payload ───────────────
 

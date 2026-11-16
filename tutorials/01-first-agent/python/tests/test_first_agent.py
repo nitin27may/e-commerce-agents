@@ -29,7 +29,7 @@ maf_bootstrap.bootstrap()
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from agent_framework import Agent, BaseChatClient, Message  # noqa: E402
-from agent_framework._types import ChatResponse, ChatResponseUpdate, ResponseStream  # noqa: E402
+from agent_framework import ChatResponse, ChatResponseUpdate, ResponseStream  # noqa: E402
 from main import FIXTURES_DIR, INSTRUCTIONS, _default_client, ask, build_agent  # noqa: E402
 
 

@@ -1,68 +1,28 @@
 """
-MAF bootstrap for tutorial chapters.
+Bootstrap for tutorial chapters.
 
-Every chapter's main.py and tests call `bootstrap()` at import time to:
-1. Patch the agent-framework v1.0 __init__.py (packaging bug — the wheel ships
-   with an empty __init__.py; we re-export the public API in-place).
-2. Load environment variables from the repo-root .env so tutorials share the
-   same OpenAI / Azure OpenAI configuration as the capstone app.
+Every chapter's main.py and tests call `bootstrap()` at import time to load
+environment variables from the repo-root .env, so tutorials share the same
+OpenAI / Azure OpenAI configuration as the capstone app.
+
+(It used to also patch an empty agent-framework __init__.py — a packaging bug
+in agent-framework-core 1.0.0 that is fixed upstream; the pinned 1.14.0 ships
+the full public API, so chapters import from `agent_framework` directly.)
 
 Usage:
     from tutorials._shared import maf_bootstrap
     maf_bootstrap.bootstrap()
 
-    from agent_framework import Agent   # now resolves
+    from agent_framework import Agent
 """
 
 from __future__ import annotations
 
-import importlib
 import os
 import pathlib
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 ENV_FILE = REPO_ROOT / ".env"
-
-_PATCH_MARKER = "# maf-v1-bootstrap-patch-v2"
-_PATCH = f'''\
-{_PATCH_MARKER}
-"""Microsoft Agent Framework — re-exports for MAF v1 tutorials."""
-__version__ = "1.0.0"
-
-from agent_framework._agents import Agent, RawAgent, BaseAgent, SupportsAgentRun
-from agent_framework._tools import tool, FunctionTool
-from agent_framework._types import (
-    Message,
-    Content,
-    Role,
-    AgentResponse,
-    AgentResponseUpdate,
-    ChatResponse,
-    ChatResponseUpdate,
-    ResponseStream,
-)
-from agent_framework._clients import BaseChatClient
-from agent_framework._sessions import (
-    AgentSession,
-    HistoryProvider,
-    InMemoryHistoryProvider,
-    ContextProvider,
-)
-'''
-
-
-def _patch_init() -> None:
-    import agent_framework
-
-    init_path = pathlib.Path(agent_framework.__file__)
-    current = init_path.read_text()
-    # Patch when empty (first run) OR when an older bootstrap installed an
-    # earlier patch that we now need to supersede with a newer export list.
-    if current.strip() == "" or (
-        _PATCH_MARKER not in current and "Microsoft Agent Framework — re-exports" in current
-    ):
-        init_path.write_text(_PATCH)
-        importlib.reload(agent_framework)
 
 
 def _load_dotenv() -> None:
@@ -83,5 +43,4 @@ def _load_dotenv() -> None:
 
 def bootstrap() -> None:
     """Idempotent — safe to call multiple times."""
-    _patch_init()
     _load_dotenv()
