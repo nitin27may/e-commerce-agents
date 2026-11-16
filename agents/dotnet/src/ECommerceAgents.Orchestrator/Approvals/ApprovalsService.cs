@@ -208,6 +208,29 @@ public sealed class ApprovalsService(
         throw new ApprovalHttpException(409, $"Request is already {current?.Status ?? "gone"}");
     }
 
+    /// <summary>
+    /// Takes the execution claim, then re-runs the decider check against the row as it is NOW. <see cref="DecideAsync"/> authorised
+    /// against an earlier read; an SLA escalation (support to manager) can land between that read and the claim, and a reviewer must not
+    /// finish what is now above their role. The claim closes the window (<c>EscalateAsync</c> refuses while one is held), so once it is
+    /// ours <c>assigned_role</c> cannot change under us. A failed fresh check hands the claim back and throws the normal 403 with nothing
+    /// executed. Returns the claim token and the fresh row.
+    /// </summary>
+    private async Task<(string Token, Approval Fresh)> ClaimAndReauthorizeAsync(Approval approval, Actor actor, params string[] statuses)
+    {
+        var token = await ClaimAsync(approval, statuses);
+        try
+        {
+            var fresh = await LoadAsync(approval.Id.ToString());
+            AuthorizeDecider(fresh, actor);
+            return (token, fresh);
+        }
+        catch
+        {
+            await ReleaseAsync(approval.Id, token);
+            throw;
+        }
+    }
+
     // Not cancellable: a request that was cancelled (client disconnect, shutdown) must still hand its claim back.
     private Task ReleaseAsync(Guid approvalId, string token) => repo.ReleaseClaimAsync(approvalId, token);
 
@@ -234,10 +257,17 @@ public sealed class ApprovalsService(
     private async Task<DecideOutcome> RequestInfoAsync(Approval approval, Actor actor, string note)
     {
         Require(approval, S.PendingReview);
-        var token = await ClaimAsync(approval, S.PendingReview);
+        var (token, fresh) = await ClaimAndReauthorizeAsync(approval, actor, S.PendingReview);
+        approval = fresh;
         var parked = false;
         try
         {
+            if (await ExecutedResultAsync(approval) is not null)
+            {
+                // The action already ran (an approve lost its claim before recording): asking the requester about it now would park a
+                // finished action. Only recording it (approve) makes sense.
+                throw new ApprovalHttpException(409, "The action already ran; approve to record it");
+            }
             if (approval.Source == "workflow" && approval.SourceRef is { } hitlId)
             {
                 await using var conn = await pool.OpenAsync();
@@ -345,7 +375,8 @@ public sealed class ApprovalsService(
 
     private async Task<DecideOutcome> RejectToolAsync(Approval approval, Actor actor, string? note)
     {
-        var token = await ClaimAsync(approval, S.PendingReview, S.NeedsInfo);
+        var (token, fresh) = await ClaimAndReauthorizeAsync(approval, actor, S.PendingReview, S.NeedsInfo);
+        approval = fresh;
         try
         {
             var resolved = await ResolveToolRequestAsync(approval.SourceRef, "denied", actor.Email, note, null);
@@ -453,17 +484,29 @@ public sealed class ApprovalsService(
         if (row is null) throw new ApprovalHttpException(409, "The request behind this approval no longer exists");
         string userEmail = row.user_email;
         string toolName = ApprovalIntake.CanonicalToolName((string)row.tool_name);
-        var toolInput = ParseJson((object?)row.tool_input) ?? EmptyObject();
-        var merged = MergeEdits(toolName, toolInput, edits); // the allowlist, before anything is claimed
+        // A request stored before the gate wrote snake_case (PascalCase tool name, camelCase input keys) is mapped the same way the name is;
+        // when two keys collapse onto one name the mapping is a guess, so the row is refused up front instead of half executed.
+        var canonical = ApprovalIntake.CanonicalToolInput(ParseJson((object?)row.tool_input) ?? EmptyObject());
+        if (canonical.AmbiguousKeys is { Count: > 0 } ambiguous)
+        {
+            await FlagLegacyInputAsync(approval, actor, ambiguous);
+            throw new ApprovalHttpException(
+                422, "This request was stored in an older format whose input cannot be mapped unambiguously; reject it and ask the customer to resubmit");
+        }
+        var merged = MergeEdits(toolName, canonical.Input, edits); // the allowlist, before anything is claimed
 
-        var token = await ClaimAsync(approval, S.PendingReview);
+        var (token, fresh) = await ClaimAndReauthorizeAsync(approval, actor, S.PendingReview);
+        approval = fresh;
         JsonElement result;
         Approval approved;
         try
         {
             result = await HitlActionExecutor.ExecuteApprovedAsync(pool, toolName, merged, userEmail, approval.Id);
             var resolved = await ResolveToolRequestAsync(reference, "approved", actor.Email, note, result);
-            if (!resolved) throw new ApprovalHttpException(409, "Request was already resolved by another admin");
+            // Not resolved but executed FOR THIS APPROVAL: an earlier attempt ran the action and then lost its claim before recording.
+            // ExecuteApprovedAsync just replayed that run's result (it is keyed by the approval id), so this attempt only records it.
+            if (!resolved && await ExecutedResultAsync(approval) is null)
+                throw new ApprovalHttpException(409, "Request was already resolved by another admin");
             approved = await RecordAsync(
                 approval, actor, token, edits.Count > 0 ? S.ApprovedWithEdits : S.Approved, "approve", note, edits);
         }
@@ -490,6 +533,33 @@ public sealed class ApprovalsService(
             });
         logger.LogInformation("approval.approved id={Id} source=tool success={Success}", approval.Id, success);
         return new DecideOutcome(final, result);
+    }
+
+    /// <summary>
+    /// The stored result of a tool request that already ran FOR THIS APPROVAL, else null. An approve that executed the action and then lost
+    /// its claim before recording leaves the request <c>executed</c> (carrying <c>approval_id</c> and the result) and the approval still
+    /// <c>pending_review</c>: a completed action, not a conflict. A retry finishes recording it, and the SLA timer (Python's worker,
+    /// <c>expire()</c>) does the same instead of expiring something that happened.
+    /// </summary>
+    private async Task<JsonElement?> ExecutedResultAsync(Approval approval)
+    {
+        if (approval.Source != "tool" || approval.SourceRef is not { } reference) return null;
+        await using var conn = await pool.OpenAsync();
+        var row = await conn.QueryFirstOrDefaultAsync(
+            "SELECT status, approval_id, execution_result FROM tool_approval_requests WHERE id = @reference", new { reference });
+        if (row is null || (string)row.status != "executed" || row.approval_id is not Guid linked || linked != approval.Id) return null;
+        return ParseJson((object?)row.execution_result) ?? EmptyObject();
+    }
+
+    /// <summary>Marks an approval whose stored input could not be mapped, once: the row stays undecided and the reason is in its audit trail.</summary>
+    private async Task FlagLegacyInputAsync(Approval approval, Actor actor, IReadOnlyCollection<string> keys)
+    {
+        var events = await repo.ListEventsAsync(approval.Id);
+        if (events.Any(e => e.Action == "legacy_input_refused")) return;
+        await repo.AppendEventAsync(
+            approval.Id, "legacy_input_refused", actor.Email, actor.Role,
+            new Dictionary<string, object?> { ["ambiguous_keys"] = keys.Order(StringComparer.Ordinal).ToList() });
+        logger.LogWarning("approval.legacy_input_refused id={Id}", approval.Id);
     }
 
     /// <summary>
@@ -603,6 +673,13 @@ public sealed class ApprovalsService(
                         DecidedBy = actor.Email,
                         Decision = detail,
                     });
+            }
+            catch (ClaimLostException)
+            {
+                // The workflow is already resumed and the claim was taken over meanwhile: the new holder owns the decision. A conflict,
+                // like every other lost claim, not a server error.
+                logger.LogWarning("approval.claim_lost id={Id}", approval.Id);
+                throw new ApprovalHttpException(409, "This approval was taken over by another reviewer");
             }
             catch (InvalidTransitionException)
             {

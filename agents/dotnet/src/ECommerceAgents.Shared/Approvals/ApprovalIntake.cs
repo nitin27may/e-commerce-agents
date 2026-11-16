@@ -77,6 +77,35 @@ public sealed class ApprovalIntake(
     public static string CanonicalToolName(string toolName) =>
         string.IsNullOrEmpty(toolName) ? toolName : JsonNamingPolicy.SnakeCaseLower.ConvertName(toolName);
 
+    /// <summary>A tool input mapped to snake_case keys; <see cref="AmbiguousKeys"/> is non-empty when two different keys collapsed onto one name.</summary>
+    public sealed record CanonicalInput(JsonElement Input, IReadOnlyCollection<string>? AmbiguousKeys);
+
+    /// <summary>
+    /// The top-level keys of a stored tool input in snake_case, the same mapping <see cref="CanonicalToolName"/> applies to the name
+    /// (<c>orderId</c> and <c>order_id</c> both become <c>order_id</c>); the gate writes new rows that way already, so only rows stored
+    /// before it did are changed. Nested objects are left alone. When two different keys collapse onto one name with different values
+    /// the mapping would be a guess: nothing is returned as the input and the colliding keys are listed in <see cref="CanonicalInput.AmbiguousKeys"/>.
+    /// </summary>
+    public static CanonicalInput CanonicalToolInput(JsonElement input)
+    {
+        if (input.ValueKind != JsonValueKind.Object) return new CanonicalInput(input, null);
+        var map = new Dictionary<string, JsonElement>();
+        var ambiguous = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (var property in input.EnumerateObject())
+        {
+            var key = JsonNamingPolicy.SnakeCaseLower.ConvertName(property.Name);
+            if (map.TryGetValue(key, out var existing))
+            {
+                if (existing.GetRawText() != property.Value.GetRawText()) ambiguous.Add(key);
+                continue;
+            }
+            map[key] = property.Value;
+        }
+        return ambiguous.Count > 0
+            ? new CanonicalInput(input, ambiguous)
+            : new CanonicalInput(JsonSerializer.SerializeToElement(map), null);
+    }
+
     // ───────────────────────────── deciding the route ─────────────────────────────
 
     /// <summary>Evaluates the policy for <paramref name="kind"/>; falls back to a manager review if it cannot decide.</summary>

@@ -840,6 +840,183 @@ public sealed class ApprovalRoutesTests : IAsyncLifetime
         (await StatusAsync(linked!.Value)).Should().Be(S.Executed);
     }
 
+    // ───────────────────────────── review fixes (W3, S1, S2, S7) ─────────────────────────────
+
+    /// <summary>
+    /// Runs <paramref name="body"/> with a trigger that escalates the approval (support to manager) in the same statement that takes the
+    /// claim: an escalation that lands between the decider check and the claim, which no request-level test can interleave by hand.
+    /// </summary>
+    private async Task WithEscalationOnClaimAsync(Func<Task> body)
+    {
+        await using var conn = await _pool.OpenAsync();
+        await conn.ExecuteAsync(
+            @"CREATE OR REPLACE FUNCTION test_escalate_on_claim() RETURNS trigger AS $$
+              BEGIN
+                IF OLD.claimed_by IS NULL AND NEW.claimed_by IS NOT NULL THEN
+                  NEW.assigned_role := 'admin'; NEW.route := 'manager';
+                END IF;
+                RETURN NEW;
+              END; $$ LANGUAGE plpgsql;
+              CREATE TRIGGER test_escalate_on_claim BEFORE UPDATE ON approvals
+                FOR EACH ROW EXECUTE FUNCTION test_escalate_on_claim();");
+        try
+        {
+            await body();
+        }
+        finally
+        {
+            await conn.ExecuteAsync("DROP TRIGGER IF EXISTS test_escalate_on_claim ON approvals");
+        }
+    }
+
+    [Theory]
+    [InlineData("approve")]
+    [InlineData("reject")]
+    [InlineData("request_info")]
+    public async Task ASupportReviewer_CannotFinishAToolDecisionEscalatedAfterTheirCheck(string decision)
+    {
+        var (_, approval) = await SeedToolApprovalAsync("cancel_order", new { order_id = _orderId.ToString() });
+        await using (var conn = await _pool.OpenAsync())
+        {
+            await conn.ExecuteAsync("UPDATE approvals SET assigned_role = 'support', route = 'support' WHERE id = @id", new { id = approval.Id });
+        }
+        using var support = SupportClient();
+
+        HttpResponseMessage? response = null;
+        await WithEscalationOnClaimAsync(async () =>
+            response = await DecideAsync(support, approval.Id, new { decision, note = "because" }));
+
+        response!.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var after = (await _repo.GetAsync(approval.Id))!;
+        after.AssignedRole.Should().Be("admin", "the escalation did land between the read and the claim");
+        after.Status.Should().Be(S.PendingReview);
+        after.ClaimedBy.Should().BeNull("refused, and the claim is handed back");
+        await using var check = await _pool.OpenAsync();
+        (await check.ExecuteScalarAsync<string>("SELECT status FROM orders WHERE id = @id", new { id = _orderId })).Should().Be("placed");
+    }
+
+    [Fact]
+    public async Task AManager_StillDecidesAfterTheSameEscalation()
+    {
+        var (_, approval) = await SeedToolApprovalAsync("cancel_order", new { order_id = _orderId.ToString() });
+        await using (var conn = await _pool.OpenAsync())
+        {
+            await conn.ExecuteAsync("UPDATE approvals SET assigned_role = 'support', route = 'support' WHERE id = @id", new { id = approval.Id });
+        }
+        using var admin = AdminClient();
+
+        HttpResponseMessage? response = null;
+        await WithEscalationOnClaimAsync(async () => response = await DecideAsync(admin, approval.Id, new { decision = "approve" }));
+
+        response!.EnsureSuccessStatusCode();
+        (await StatusAsync(approval.Id)).Should().Be(S.Executed);
+    }
+
+    [Fact]
+    public async Task ARetryAfterALostClaim_RecordsTheAlreadyExecutedAction_InsteadOfAnEndless409()
+    {
+        var (requestId, approval) = await SeedToolApprovalAsync("initiate_return", new { order_id = _orderId.ToString(), reason = "x" });
+        await using var conn = await _pool.OpenAsync();
+        await conn.ExecuteAsync("UPDATE orders SET status = 'delivered' WHERE id = @id", new { id = _orderId });
+        // The legacy record is closed (executed) in one statement; right after it, the claim is taken over: the recording then loses it.
+        await conn.ExecuteAsync(
+            @"CREATE OR REPLACE FUNCTION test_steal_claim() RETURNS trigger AS $$
+              BEGIN
+                IF NEW.status = 'executed' AND NEW.approval_id IS NOT NULL THEN
+                  UPDATE approvals SET claimed_by = 'thief' WHERE id = NEW.approval_id;
+                END IF;
+                RETURN NEW;
+              END; $$ LANGUAGE plpgsql;
+              CREATE TRIGGER test_steal_claim AFTER UPDATE ON tool_approval_requests
+                FOR EACH ROW EXECUTE FUNCTION test_steal_claim();");
+        using var admin = AdminClient();
+        HttpResponseMessage first;
+        try
+        {
+            first = await DecideAsync(admin, approval.Id, new { decision = "approve" });
+        }
+        finally
+        {
+            await conn.ExecuteAsync("DROP TRIGGER IF EXISTS test_steal_claim ON tool_approval_requests");
+        }
+        first.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await StatusAsync(approval.Id)).Should().Be(S.PendingReview, "the first attempt could not record");
+        (await conn.ExecuteScalarAsync<string>("SELECT status FROM tool_approval_requests WHERE id = @requestId", new { requestId }))
+            .Should().Be("executed", "but the action ran");
+        await conn.ExecuteAsync("UPDATE approvals SET claimed_by = NULL, claimed_at = NULL WHERE id = @id", new { id = approval.Id });
+
+        var retry = await DecideAsync(admin, approval.Id, new { decision = "approve" });
+
+        retry.EnsureSuccessStatusCode();
+        (await StatusAsync(approval.Id)).Should().Be(S.Executed);
+        (await conn.ExecuteScalarAsync<long>("SELECT count(*) FROM returns WHERE order_id = @id", new { id = _orderId }))
+            .Should().Be(1, "the retry replays the recorded run; it never acts twice");
+    }
+
+    [Fact]
+    public async Task AClaimLostWhileRecordingAWorkflowDecision_Is409NotA500()
+    {
+        var (_, _, approval) = await SeedWorkflowApprovalAsync();
+        var mode = new StubMode
+        {
+            OnResume = async () =>
+            {
+                await using var conn = await _pool.OpenAsync();
+                await conn.ExecuteAsync("UPDATE approvals SET claimed_by = 'thief' WHERE id = @id", new { id = approval.Id });
+            },
+        };
+        using var support = SupportClient(mode);
+
+        var response = await DecideAsync(support, approval.Id, new { decision = "approve" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await JsonOf(response)).GetProperty("detail").GetString().Should().Be("This approval was taken over by another reviewer");
+    }
+
+    [Fact]
+    public async Task ALegacyRequestWithPascalCaseNameAndCamelCaseKeys_IsMappedAndExecuted()
+    {
+        var (_, approval) = await SeedToolApprovalAsync("CancelOrder", new { orderId = _orderId.ToString(), Reason = "x" });
+        using var admin = AdminClient();
+
+        var response = await DecideAsync(admin, approval.Id, new { decision = "approve" });
+
+        response.EnsureSuccessStatusCode();
+        (await JsonOf(response)).GetProperty("result").GetProperty("success").GetBoolean().Should().BeTrue();
+        (await StatusAsync(approval.Id)).Should().Be(S.Executed);
+        await using var conn = await _pool.OpenAsync();
+        (await conn.ExecuteScalarAsync<string>("SELECT status FROM orders WHERE id = @id", new { id = _orderId })).Should().Be("cancelled");
+    }
+
+    [Fact]
+    public async Task ALegacyRequestWhoseKeysCollide_IsRefusedUpFront_FlaggedOnce_AndStaysDecidable()
+    {
+        var other = Guid.NewGuid().ToString();
+        var (_, approval) = await SeedToolApprovalAsync("CancelOrder", new Dictionary<string, string>
+        {
+            ["orderId"] = _orderId.ToString(),
+            ["order_id"] = other,
+        });
+        using var admin = AdminClient();
+
+        var first = await DecideAsync(admin, approval.Id, new { decision = "approve" });
+        var second = await DecideAsync(admin, approval.Id, new { decision = "approve" });
+
+        first.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        second.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        (await JsonOf(first)).GetProperty("detail").GetString().Should().Contain("cannot be mapped unambiguously");
+        var after = (await _repo.GetAsync(approval.Id))!;
+        after.Status.Should().Be(S.PendingReview, "undecided, not half executed");
+        after.ClaimedBy.Should().BeNull();
+        (await _repo.ListEventsAsync(approval.Id)).Count(e => e.Action == "legacy_input_refused").Should().Be(1, "flagged once");
+        await using var conn = await _pool.OpenAsync();
+        (await conn.ExecuteScalarAsync<string>("SELECT status FROM orders WHERE id = @id", new { id = _orderId })).Should().Be("placed");
+
+        // It can still be rejected, which is the way out.
+        (await DecideAsync(admin, approval.Id, new { decision = "reject", note = "resubmit" })).EnsureSuccessStatusCode();
+        (await StatusAsync(approval.Id)).Should().Be(S.Rejected);
+    }
+
     // ───────────────────────────── a stub for the resume itself ─────────────────────────────
 
     private sealed class StubMode : IOrchestrationMode, IResumableMode
@@ -849,6 +1026,7 @@ public sealed class ApprovalRoutesTests : IAsyncLifetime
         public TimeSpan? Delay { get; init; }
         public bool? Completed { get; init; }
         public Exception? FailWith { get; init; }
+        public Func<Task>? OnResume { get; init; }
         public string? SeenEmail { get; private set; }
         public string? SeenRole { get; private set; }
         public ReturnDecision? LastDecision { get; private set; }
@@ -871,6 +1049,7 @@ public sealed class ApprovalRoutesTests : IAsyncLifetime
             Interlocked.Increment(ref _calls);
             if (Delay is { } d) await Task.Delay(d, ct);
             if (FailWith is not null) throw FailWith;
+            if (OnResume is { } hook) await hook();
             SeenEmail = RequestContext.CurrentUserEmail;
             SeenRole = RequestContext.CurrentUserRole;
             LastDecision = decision;
