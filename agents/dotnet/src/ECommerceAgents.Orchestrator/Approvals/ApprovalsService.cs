@@ -80,12 +80,12 @@ public sealed class ApprovalsService(
     /// <summary>
     /// A merchant proposal is decided by its seller on <c>/api/seller/proposals/{id}/decide</c> (Python only), never here. Approve and reject
     /// have no executor on this path, and <c>request_info</c> would park the batch in <c>needs_info</c> where nobody can answer it (its
-    /// requester is the system actor). 422 for every decision, the same answer Python gives.
+    /// requester is the system actor). The answer is the one a missing id gets (404, same body), on every staff route, the same as Python.
     /// </summary>
     public static void RefuseProposal(Approval approval)
     {
         if (approval.Source == "proposal")
-            throw new ApprovalHttpException(422, "A merchant proposal is decided by its seller, not through the approvals inbox");
+            throw new ApprovalHttpException(404, "Approval not found");
     }
 
     /// <summary>Throws 403 unless <paramref name="actor"/> may decide <paramref name="approval"/>. Pure: reads nothing, changes nothing.</summary>

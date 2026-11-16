@@ -99,10 +99,11 @@ def refuse_proposal(approval: dict[str, Any]) -> None:
     """A merchant proposal is decided by its seller on ``/api/seller/proposals/{id}/decide``, never here.
 
     Approve and reject would have no executor on this path, and ``request_info`` would park the batch in
-    ``needs_info`` where nobody can answer it (its requester is the system actor). 422 for every decision.
+    ``needs_info`` where nobody can answer it (its requester is the system actor). The answer is the one a missing id
+    gets (404, same body), on every staff route, so staff cannot tell a proposal id from an unused one.
     """
     if approval["source"] == "proposal":
-        raise ApprovalHTTPError(422, "A merchant proposal is decided by its seller, not through the approvals inbox")
+        raise ApprovalHTTPError(404, "Approval not found")
 
 
 def can_review(approval: dict[str, Any], actor: Actor) -> bool:

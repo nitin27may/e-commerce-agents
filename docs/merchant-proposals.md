@@ -67,7 +67,7 @@ The seller's own limits are the guards, not the approval rule.
 
 Only the seller who owns the proposal, or an `admin`. Another seller's proposal is a **404**,
 identical to a missing one. Customers and `support` get 403 (`require_seller`). The staff approvals
-inbox leaves proposals out; its list omits them, its detail read is a 404 and its decide and answer-info endpoints answer 422 for every decision (both stacks), so there is one place to decide them.
+inbox leaves proposals out; its list omits them, its detail read, decide and answer-info endpoints all answer the same 404 a missing id gets, for every decision (both stacks), so there is one place to decide them.
 
 ## Deciding
 
