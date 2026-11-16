@@ -32,7 +32,12 @@ from shared.legacy_wire import normalize_steps
 from shared.log_safe import log_safe
 from shared.middleware import build_specialist_middleware
 from shared.oauth.service_client import build_a2a_headers
-from shared.replay_miss import REPLAY_MISS_EVENT, SpecialistReplayMissError, is_replay_miss_status
+from shared.replay_miss import (
+    REPLAY_MISS_EVENT,
+    SpecialistReplayMissError,
+    is_replay_miss_status,
+    replay_mode_active,
+)
 from shared.run_usage import record_usage
 from shared.sse import aiter_sse_events
 from shared.telemetry import a2a_call_span
@@ -143,8 +148,12 @@ async def call_specialist_agent(
                         async for current_event, payload in aiter_sse_events(resp.aiter_text()):
                             frames_seen += 1
                             if current_event == REPLAY_MISS_EVENT:
-                                # The specialist has no recording for its model call.
-                                raise SpecialistReplayMissError()
+                                if replay_mode_active():
+                                    # The specialist has no recording for its model call.
+                                    raise SpecialistReplayMissError()
+                                # Not replaying: a frame nobody here can have asked for. An ordinary failure of the
+                                # stream (the specialist is a stranger), never text for the user and never a miss.
+                                raise RuntimeError("a specialist sent a replay_miss frame outside replay mode")
                             if current_event in ("step", "steps"):
                                 # Merge specialist tool-call step(s) into the
                                 # shared current_steps for this request, and

@@ -87,7 +87,7 @@ public sealed class OrchestratorTools(A2AClient client, AgentSettings settings, 
             }
             return full.ToString();
         }
-        catch (SpecialistReplayMissException)
+        catch (SpecialistReplayMissException) when (ReplayMiss.IsActive(settings))
         {
             // The specialist has no recording for its model call (LLM_PROVIDER=replay). The tool loop would turn an
             // exception into a result the orchestrator's model reads and answers (and misses on again), so record the

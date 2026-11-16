@@ -176,10 +176,10 @@ public static class ChatRoutes
                 var response = await agent.RunAsync(BuildMessages(ctx.History));
                 responseText = response.Text;
                 RequestContext.RecordUsage("orchestrator", SpecialistUsage.From(response.Usage, settings.LlmModel));
-                ThrowIfASpecialistMissed();
+                ThrowIfASpecialistMissed(settings);
             }
         }
-        catch (Exception ex) when (ReplayMiss.IsMiss(ex))
+        catch (Exception ex) when (ReplayMiss.IsMiss(ex, settings))
         {
             // No recording for this prompt (here or in a specialist): a plain message, and nothing is
             // persisted. Twin of Python's `except ReplayFixtureMissingError` in chat() (#86).
@@ -382,10 +382,10 @@ public static class ChatRoutes
                     await WriteFrameAsync(null, update.Text);
                 }
 
-                ThrowIfASpecialistMissed();
+                ThrowIfASpecialistMissed(settings);
             }
         }
-        catch (Exception ex) when (ReplayMiss.IsMiss(ex))
+        catch (Exception ex) when (ReplayMiss.IsMiss(ex, settings))
         {
             replayMissed = true;
             loggers.CreateLogger("chat").LogWarning(
@@ -780,9 +780,9 @@ public static class ChatRoutes
     /// A specialist's replay miss ends the tool loop quietly (see <c>OrchestratorTools</c>) rather than throwing through
     /// it, so the run looks finished. Turn what it recorded back into the miss the route reports.
     /// </summary>
-    private static void ThrowIfASpecialistMissed()
+    private static void ThrowIfASpecialistMissed(AgentSettings settings)
     {
-        if (RequestContext.ReplayMissRecorded)
+        if (RequestContext.ReplayMissRecorded && ReplayMiss.IsActive(settings))
         {
             throw new SpecialistReplayMissException();
         }

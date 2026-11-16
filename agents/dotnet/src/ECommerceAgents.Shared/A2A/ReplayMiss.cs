@@ -1,4 +1,5 @@
 using ECommerceAgents.Shared.Agents;
+using ECommerceAgents.Shared.Configuration;
 
 namespace ECommerceAgents.Shared.A2A;
 
@@ -36,6 +37,19 @@ public static class ReplayMiss
 
     /// <summary>The structured body the browser receives: the <c>replay_miss</c> frame's data and <c>/api/chat</c>'s field.</summary>
     public static Dictionary<string, string> Payload() => new() { ["message"] = DefaultMessage };
+
+    /// <summary>
+    /// Whether THIS process's own model provider is <c>replay</c>. The one gate every miss signal on the orchestrator side passes
+    /// through (twin of Python's <c>replay_mode_active</c>). A 424 or a <c>replay_miss</c> frame means "no recording" only to a
+    /// process that is itself replaying: elsewhere a proxy's 424, or a misconfigured or hostile specialist, would make a production
+    /// orchestrator delete the user's message, drop the answer and show the demo text. Outside replay mode those signals are an
+    /// ordinary specialist failure.
+    /// </summary>
+    public static bool IsActive(AgentSettings settings) =>
+        string.Equals(settings.LlmProvider?.Trim(), "replay", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary><see cref="IsMiss(Exception?)"/>, but only for a process that is replaying (<see cref="IsActive"/>).</summary>
+    public static bool IsMiss(Exception? ex, AgentSettings settings) => IsActive(settings) && IsMiss(ex);
 
     /// <summary>True when <paramref name="ex"/>, or anything it wraps, is a replay miss (here or in a specialist).</summary>
     public static bool IsMiss(Exception? ex)

@@ -118,10 +118,14 @@ public sealed class ReplayMissChatTests : IAsyncLifetime
             Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(body, Encoding.UTF8, contentType) });
     }
 
-    private HttpClient ClientFor(IChatClient model, bool authenticated = true, HttpMessageHandler? specialist = null)
+    private HttpClient ClientFor(
+        IChatClient model, bool authenticated = true, HttpMessageHandler? specialist = null, string provider = "replay")
     {
         var settings = new AgentSettings
         {
+            // A miss is only a miss to a process that is itself replaying (ReplayMiss.IsActive); the tests that are not
+            // about replay mode say so by passing another provider.
+            LlmProvider = provider,
             AgentSharedSecret = new string('s', 48),
             JwtSecret = new string('j', 48),
             AuthMode = "local",
@@ -307,6 +311,57 @@ public sealed class ReplayMissChatTests : IAsyncLifetime
         model.Calls.Should().Be(1);
         (await ContentsAsync(conversationId)).Should().BeEquivalentTo("earlier", "ok");
         await AssertNothingPersistedAsync();
+    }
+
+    // ─────────────────────── not in replay mode: a miss signal is an ordinary failure ───────────────────────
+
+    [Fact]
+    public async Task Blocking_ANonReplayOrchestrator_KeepsTheUsersMessage_WhenASpecialistAnswers424()
+    {
+        var conversationId = await SeedConversationAsync();
+        var model = new RoutingModel();
+        using var client = ClientFor(
+            model, specialist: new StatusHandler((HttpStatusCode)424, """{"error":"replay_miss"}"""), provider: "openai");
+
+        var response = await client.PostAsJsonAsync("/api/chat", new { message = "tents?", conversation_id = conversationId });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        (!payload.TryGetProperty("replay_miss", out var miss) || miss.ValueKind == JsonValueKind.Null).Should().BeTrue();
+        payload.GetProperty("response").GetString().Should().Be("the model answered the miss as if it were a result");
+        model.LastToolResult.Should().Contain("returned an error (status 424)");
+        model.Calls.Should().Be(2, "an ordinary failed tool call: the model is asked again");
+        (await ContentsAsync(conversationId)).Should().Contain("tents?", "the user's message is kept");
+    }
+
+    [Fact]
+    public async Task Stream_ANonReplayOrchestrator_KeepsTheUsersMessage_WhenASpecialistSendsAReplayMissFrame()
+    {
+        var conversationId = await SeedConversationAsync();
+        var model = new RoutingModel();
+        var sse = "event: replay_miss\ndata: {\"error\":\"replay_miss\"}\n\ndata: [DONE]\n\n";
+        using var client = ClientFor(
+            model, specialist: new StatusHandler(HttpStatusCode.OK, sse, "text/event-stream"), provider: "openai");
+
+        var body = await (await client.PostAsJsonAsync("/api/chat/stream", new { message = "tents?", conversation_id = conversationId }))
+            .Content.ReadAsStringAsync();
+
+        body.Should().NotContain("event: replay_miss").And.NotContain("\"error\":\"replay_miss\"");
+        model.Calls.Should().Be(2, "an ordinary failed tool call: the model is asked again");
+        (await ContentsAsync(conversationId)).Should().Contain("tents?");
+    }
+
+    [Fact]
+    public void TheMissPredicates_AreFalseOutsideReplayMode()
+    {
+        var other = new AgentSettings { LlmProvider = "openai" };
+        var replay = new AgentSettings { LlmProvider = "Replay" };
+
+        ReplayMiss.IsActive(other).Should().BeFalse();
+        ReplayMiss.IsActive(replay).Should().BeTrue();
+        ReplayMiss.IsMiss(new SpecialistReplayMissException(), other).Should().BeFalse();
+        ReplayMiss.IsMiss(new SpecialistReplayMissException(), replay).Should().BeTrue();
+        ReplayMiss.IsMiss(new InvalidOperationException("x"), replay).Should().BeFalse();
     }
 
     [Fact]

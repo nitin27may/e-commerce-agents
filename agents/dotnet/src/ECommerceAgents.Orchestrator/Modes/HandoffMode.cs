@@ -151,8 +151,8 @@ public sealed class HandoffMode(AgentSettings settings, A2AClient a2a, PromptLoa
                 // A participant that dies of a replay miss (LLM_PROVIDER=replay, no recording; or a specialist's, over
                 // A2A) is reported by the workflow as an event rather than thrown, and the run then ends with an empty
                 // answer. Raise it so the chat route can tell the user what happened (ReplayMiss), as for the other modes.
-                case WorkflowErrorEvent error when ReplayMiss.IsMiss(error.Data as Exception):
-                case ExecutorFailedEvent failed when ReplayMiss.IsMiss(failed.Data):
+                case WorkflowErrorEvent error when ReplayMiss.IsMiss(error.Data as Exception, _settings):
+                case ExecutorFailedEvent failed when ReplayMiss.IsMiss(failed.Data, _settings):
                     throw new SpecialistReplayMissException();
             }
         }

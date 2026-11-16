@@ -24,11 +24,13 @@ namespace ECommerceAgents.Shared.Tests;
 /// </summary>
 public sealed class A2AReplayMissTests
 {
-    private static OrchestratorClient Client(HttpMessageHandler handler, string transport)
+    private static OrchestratorClient Client(HttpMessageHandler handler, string transport, string provider = "replay")
     {
         A2AProtocolClient.ForgetCards();
         var settings = new AgentSettings
         {
+            // Only a caller that is itself replaying honours a miss (ReplayMiss.IsActive).
+            LlmProvider = provider,
             AgentSharedSecret = ScriptedSpecialist.Secret,
             JwtSecret = new string('j', 48),
             Environment = "test",
@@ -104,6 +106,38 @@ public sealed class A2AReplayMissTests
         };
 
         await act.Should().ThrowAsync<SpecialistReplayMissException>();
+    }
+
+    [Theory]
+    [InlineData("legacy")]
+    [InlineData("a2a")]
+    public async Task Blocking_ANonReplayCaller_TreatsASpecialistsMissAsAnOrdinaryFailure(string transport)
+    {
+        await using var specialist = await ScriptedSpecialist.StartAsync(mode: "miss");
+        var client = Client(specialist.App.GetTestServer().CreateHandler(), transport, provider: "openai");
+        using var scope = Ambient.Scope(ScriptedSpecialist.User, "customer", ScriptedSpecialist.Session);
+
+        var text = await client.SendAsync("product-discovery", "http://localhost", "hi");
+
+        text.Should().Contain("returned an error").And.NotContain("replay");
+    }
+
+    [Theory]
+    [InlineData("legacy")]
+    [InlineData("a2a")]
+    public async Task Streaming_ANonReplayCaller_NeverRaisesAMiss_AndNeverShowsTheMarkerAsText(string transport)
+    {
+        await using var specialist = await ScriptedSpecialist.StartAsync(mode: "miss");
+        var client = Client(specialist.App.GetTestServer().CreateHandler(), transport, provider: "openai");
+        using var scope = Ambient.Scope(ScriptedSpecialist.User, "customer", ScriptedSpecialist.Session);
+        var text = new StringBuilder();
+
+        await foreach (var delta in client.StreamAsync("product-discovery", "http://localhost", "hi"))
+        {
+            text.Append(delta);
+        }
+
+        text.ToString().Should().NotContain("replay_miss");
     }
 
     [Theory]

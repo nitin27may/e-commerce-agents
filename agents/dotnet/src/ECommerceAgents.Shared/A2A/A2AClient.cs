@@ -348,6 +348,15 @@ public sealed class A2AClient
 
             if (eventType == ReplayMiss.EventName)
             {
+                if (!ReplayMiss.IsActive(_settings))
+                {
+                    // Not replaying: nobody here can have asked for a recording, so the frame is a stranger's. An
+                    // ordinary interrupted stream, never a miss and never text shown as if the specialist had said it.
+                    _logger.LogWarning("a2a.replay_miss_ignored target={Target}", LogSafe.Clean(agentName));
+                    yield return $"[The {agentName} agent's response was interrupted and may be incomplete.]";
+                    yield break;
+                }
+
                 // The specialist has no recording for its model call (the 200 was already sent). The chat route
                 // reports it as a miss; the frame's body is never read.
                 _logger.LogWarning("a2a.replay_miss target={Target}", LogSafe.Clean(agentName));
@@ -413,7 +422,7 @@ public sealed class A2AClient
 
         MergeReturnedSteps(agentName, reply.Steps.Select(s => s.ToExecutionStep()).ToList());
         RequestContext.RecordUsage(agentName, reply.Usage);
-        if (reply.ReplayMiss)
+        if (reply.ReplayMiss && ReplayMiss.IsActive(_settings))
         {
             // Not an A2A failure to apologise for: the chat route ends the turn as a miss (ReplayMiss.cs).
             _logger.LogWarning("a2a.replay_miss target={Target}", LogSafe.Clean(agentName));
@@ -494,7 +503,7 @@ public sealed class A2AClient
                     case A2AEvent.UsageKind:
                         RequestContext.RecordUsage(agentName, next.Usage);
                         break;
-                    case A2AEvent.Failed when next.ReplayMiss:
+                    case A2AEvent.Failed when next.ReplayMiss && ReplayMiss.IsActive(_settings):
                         _logger.LogWarning("a2a.replay_miss target={Target}", LogSafe.Clean(agentName));
                         throw new SpecialistReplayMissException();
                     case A2AEvent.Failed:
@@ -626,7 +635,7 @@ public sealed class A2AClient
                 ct
             );
 
-            if ((int)response.StatusCode == ReplayMiss.Status)
+            if ((int)response.StatusCode == ReplayMiss.Status && ReplayMiss.IsActive(_settings))
             {
                 response.Dispose();
                 throw new SpecialistReplayMissException();
