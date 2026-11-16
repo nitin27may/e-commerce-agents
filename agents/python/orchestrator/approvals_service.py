@@ -431,6 +431,12 @@ async def _reject_event(approval: dict[str, Any], actor: Actor, note: str | None
     approval_id = str(approval["id"])
     token, approval = await _claim_and_reauthorize(approval, actor, S.PENDING_REVIEW, S.NEEDS_INFO)
     try:
+        if await autonomy.executed_for_approval(get_pool(), approval_id) is not None:
+            # The credit committed on its own transaction and the approve that paid it died before recording. Closing
+            # the approval as rejected would say nothing was done while the customer keeps the money. Only approving
+            # (which replays the stored credit and records it) is truthful. The claim is exclusive and the credit is
+            # written only under it, so no approve can start paying between this check and the record below.
+            raise ApprovalHTTPError(409, "The credit was already granted; approve to record it")
         updated = await _record(approval, actor, token, S.REJECTED, "reject", note, {})
     except BaseException:
         await _release(approval_id, token)
