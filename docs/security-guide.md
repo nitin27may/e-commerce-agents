@@ -88,7 +88,7 @@ This layer is the broadest defense. Its weakness is that it is only as reliable 
 
 **Default behavior**: observe-only. Detections increment a counter, set `context.metadata["guardrail_injection_detected"]`, and log at INFO. Set `GUARDRAILS_BLOCK_ON_INJECTION=true` to log at WARNING; blocking of the request itself requires a custom middleware that reads the metadata flag.
 
-**False-positive rate**: patterns are deliberately high-precision to avoid blocking legitimate phrasing. The safety/red-team eval suite (`evals/safety_evaluator.py`) continuously measures both precision and recall.
+**False-positive rate**: patterns are deliberately high-precision to avoid blocking legitimate phrasing. The red-team suite (`evals/safety_evaluator.py`) scores the *model's* resistance, not this detector; the detector's own precision and recall are measured by `evals/guardrail_confusion.py` and committed as [`evals/results/guardrail-confusion.md`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/evals/results/guardrail-confusion.md). That is a regex detector measured against a small synthetic corpus and the repo's own bland seeded text: it shows no false positives on that text and about half of the corpus caught, and says nothing about real attackers or real review text.
 
 ### Layer 3 — Stored-injection neutralization (`OutputSanitizationMiddleware`)
 

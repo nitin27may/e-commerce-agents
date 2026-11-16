@@ -6,6 +6,9 @@
 #
 #   scripts/replay-evals.sh            # services + all suites (DB already seeded)
 #   scripts/replay-evals.sh --setup    # first migrate the schema and seed (incl. embeddings)
+#   scripts/replay-evals.sh --adversarial   # also insert the indirect-injection corpus before the
+#                                           # safety suite (or ADVERSARIAL_SEED=1). OFF by default:
+#                                           # the committed recorded safety suite does not use it.
 #
 # Needs Postgres (pgvector) and Redis reachable at $DATABASE_URL / $REDIS_URL.
 # Defaults match docker-compose.yml, so `docker compose up -d db redis` is enough.
@@ -104,6 +107,13 @@ run_suites() {
     --pass-threshold "$SMOKE_THRESH" --baseline evals/baselines/orchestrator_routing.json --max-regression 0.05 \
     --output-json eval-orchestrator.json || fail=1
   echo "::endgroup::"
+  if [[ "${ADVERSARIAL_SEED:-0}" == "1" ]]; then
+    # After every quality suite (the rows are real rows the review and product tools would
+    # return) and before the safety suite, which is the only consumer.
+    echo "::group::adversarial corpus seed"
+    uv run python -m evals.seed_adversarial || fail=1
+    echo "::endgroup::"
+  fi
   echo "::group::safety / red-team"
   uv run python -m evals.run_evals --suite safety \
     --pass-threshold 0.8 --output-json eval-safety.json || fail=1
@@ -112,7 +122,15 @@ run_suites() {
 }
 
 main() {
-  if [[ "${1:-}" == "--setup" ]]; then
+  local arg do_setup=0
+  for arg in "$@"; do
+    case "$arg" in
+      --setup) do_setup=1 ;;
+      --adversarial) export ADVERSARIAL_SEED=1 ;;
+      *) echo "unknown argument: $arg" >&2; exit 2 ;;
+    esac
+  done
+  if [[ "$do_setup" == "1" ]]; then
     setup_database || exit 1
   fi
   trap stop_specialists EXIT
