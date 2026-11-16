@@ -176,6 +176,39 @@ async def test_running_twice_creates_one_batch_not_two(w: ms.World) -> None:
     assert await w.pool.fetchval("SELECT count(*) FROM approvals") == 1
 
 
+async def test_simultaneous_generations_for_one_seller_make_one_batch(w: ms.World) -> None:
+    import asyncio
+
+    for i in range(3):
+        await ms.product(w, f"Overstock {i}", stock=(300, 300), sold=20)
+    await ms.product(w, "Short", price="40.00", cost="20.00", stock=(2, 100), threshold=10, sold=40)
+
+    results = await asyncio.gather(*(generate_proposal(w.pool, w.seller_id) for _ in range(4)))
+
+    assert [r.proposal_id for r in results].count(None) == 3  # one made the batch, the rest saw it
+    assert await w.pool.fetchval("SELECT count(*) FROM proposals") == 1
+    assert await w.pool.fetchval("SELECT count(*) FROM approvals") == 1
+    assert await w.pool.fetchval("SELECT count(*) FROM proposal_lines") == 4
+    # no product has two open lines for one field, so no restock can be ordered twice
+    dupes = await w.pool.fetchval(
+        "SELECT count(*) FROM (SELECT product_id, field FROM proposal_lines GROUP BY 1, 2 HAVING count(*) > 1) d"
+    )
+    assert dupes == 0
+
+
+async def test_generation_for_two_sellers_does_not_serialise_on_one_lock(w: ms.World) -> None:
+    import asyncio
+
+    await ms.product(w, "Mine", stock=(300, 300), sold=20)
+    await ms.product(w, "Theirs", stock=(300, 300), sold=20, seller=w.other_seller_id)
+
+    mine, theirs = await asyncio.gather(
+        generate_proposal(w.pool, w.seller_id), generate_proposal(w.pool, w.other_seller_id)
+    )
+
+    assert mine.proposal_id and theirs.proposal_id and mine.proposal_id != theirs.proposal_id
+
+
 async def test_once_a_batch_is_decided_the_same_product_can_be_proposed_again(w: ms.World) -> None:
     await ms.product(w, "Overstock", stock=(300, 300), sold=20)
     first = await generate_proposal(w.pool, w.seller_id)

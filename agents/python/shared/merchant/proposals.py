@@ -366,6 +366,13 @@ async def generate_proposal(
         seller = await conn.fetchrow("SELECT email FROM users WHERE id = $1", seller_id)
         if seller is None:
             return result
+        # One generation per seller at a time. "Already proposed?" is a read followed by an insert, so two runs
+        # (a manual click and the daily timer, or two clicks) would both see nothing and both write a batch, and a
+        # restock would then be ordered twice. The lock is per seller (others never wait on it) and held to the end
+        # of the transaction, so the second run starts after the first has committed and sees its lines.
+        # (A unique index on open lines is not expressible: a line's status does not say whether its proposal is
+        # still open -- lines of an expired batch stay "proposed" -- so the lock is the guard.)
+        await conn.execute("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", f"merchant_proposals:{seller_id}")
         signals = await collect_signals(conn, seller_id, now=clock, rules=rules)
         existing = await _already_proposed(conn, seller_id)
         fresh: list[Candidate] = []
