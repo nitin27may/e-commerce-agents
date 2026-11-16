@@ -123,6 +123,7 @@ public static class AgentSettingsLoader
             AgentSharedSecret = Get("AGENT_SHARED_SECRET", "agent-internal-secret"),
 
             AuthMode = Get("AUTH_MODE", "local").ToLowerInvariant(),
+            AuthRefreshRotation = GetBool("AUTH_REFRESH_ROTATION", true),
             AuthServerIssuer = Get("AUTH_SERVER_ISSUER", "http://localhost:8090"),
             AuthServerJwksUrl = Get("AUTH_SERVER_JWKS_URL", "http://localhost:8090/.well-known/jwks.json"),
             AuthServerTokenUrl = Get("AUTH_SERVER_TOKEN_URL", "http://localhost:8090/oauth/token"),

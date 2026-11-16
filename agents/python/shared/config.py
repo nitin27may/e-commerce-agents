@@ -169,6 +169,13 @@ class Settings(BaseSettings):
     AUTH_SERVER_TOKEN_URL: str = "http://localhost:8090/oauth/token"
     AUTH_ACCESS_TOKEN_TTL: int = 3600  # seconds
     AUTH_REFRESH_TOKEN_TTL: int = 604800  # 7 days
+    # AUTH_MODE=local only: /api/auth/refresh issues a new refresh token on
+    # every use and revokes the whole token family if an already-used one is
+    # presented again (refresh_tokens table, migration 0003). false restores
+    # the old behaviour of returning only a new access token. Has no effect
+    # in AUTH_MODE=oauth — rotation there is the auth-server's job and is not
+    # implemented (docs/parity-matrix.md).
+    AUTH_REFRESH_ROTATION: bool = True
     AUTH_JWKS_CACHE_TTL: int = 900  # resource-server JWKS cache
     AUTH_RSA_KEY_SIZE: int = 2048  # auth-server only
     AUTH_SIGNING_KEY_ENCRYPTION_KEY: str = ""  # optional KEK for the private key at rest

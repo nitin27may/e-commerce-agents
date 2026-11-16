@@ -25,7 +25,22 @@ namespace ECommerceAgents.Orchestrator.Routes;
 /// </remarks>
 public static class AuthRoutes
 {
-    public sealed record SignupRequest(string Email, string Password, string? FullName, string? Role);
+    // `Name` is what the web client and the Python stack send; `FullName` is the older .NET-only
+    // spelling, still accepted. `Role` is accepted for wire compatibility and ignored: signup
+    // always creates a customer (it used to honour it, so anyone could sign up as admin).
+    public sealed record SignupRequest(string? Email, string? Password, string? Name = null, string? FullName = null, string? Role = null);
+
+    // Same loose rule as Python's _EMAIL_RE: one "@", no whitespace, a dot in the domain.
+    private static readonly System.Text.RegularExpressions.Regex EmailPattern =
+        new(@"^[^@\s]+@[^@\s]+\.[^@\s]+$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private const int MaxPasswordBytes = 72; // bcrypt's limit
+
+    private static async Task<string> NewRefreshTokenAsync(
+        Npgsql.NpgsqlConnection conn, JwtTokenService jwt, AgentSettings settings, string email, string role
+    ) => settings.AuthRefreshRotation
+        ? (await RefreshTokenStore.IssueAsync(conn, jwt, email, role)).Token
+        : jwt.IssueRefreshToken(email, role);
     public sealed record LoginRequest(string Email, string Password);
     public sealed record RefreshRequest(string RefreshToken);
 
@@ -78,17 +93,33 @@ public static class AuthRoutes
     private static async Task<IResult> Signup(
         [FromBody] SignupRequest request,
         DatabasePool pool,
-        JwtTokenService jwt
+        JwtTokenService jwt,
+        AgentSettings settings
     )
     {
-        if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
+        // Same checks, order and messages as Python's _validate_signup (400 + {"detail": msg}).
+        var email = (request.Email ?? "").Trim().ToLowerInvariant();
+        if (email.Length > 254 || !EmailPattern.IsMatch(email))
         {
-            return Results.BadRequest(new { detail = "email and password are required" });
+            return Results.BadRequest(new { detail = "Invalid email address" });
         }
 
-        var email = request.Email.Trim().ToLowerInvariant();
-        var role = string.IsNullOrWhiteSpace(request.Role) ? "customer" : request.Role.Trim().ToLowerInvariant();
-        var passwordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
+        var password = request.Password ?? "";
+        var passwordBytes = System.Text.Encoding.UTF8.GetByteCount(password);
+        if (passwordBytes < 8 || passwordBytes > MaxPasswordBytes)
+        {
+            return Results.BadRequest(new { detail = "Password must be between 8 and 72 bytes long" });
+        }
+
+        var name = (request.Name ?? request.FullName ?? "").Trim();
+        var nameLength = name.EnumerateRunes().Count(); // code points, like Python's len(str)
+        if (nameLength < 1 || nameLength > 100)
+        {
+            return Results.BadRequest(new { detail = "Name must be between 1 and 100 characters" });
+        }
+
+        const string role = "customer";
+        var passwordHash = BCrypt.Net.BCrypt.HashPassword(password);
 
         await using var conn = await pool.OpenAsync();
         var existing = await conn.ExecuteScalarAsync<int>(
@@ -100,7 +131,6 @@ public static class AuthRoutes
             return Results.Conflict(new { detail = "email already registered" });
         }
 
-        var name = request.FullName ?? email;
         var inserted = await conn.QuerySingleAsync(
             @"INSERT INTO users (email, password_hash, name, role)
               VALUES (@email, @passwordHash, @name, @role)
@@ -110,7 +140,7 @@ public static class AuthRoutes
 
         return Results.Ok(new TokenResponse(
             AccessToken: jwt.IssueAccessToken(email, role),
-            RefreshToken: jwt.IssueRefreshToken(email, role),
+            RefreshToken: await NewRefreshTokenAsync(conn, jwt, settings, email, role),
             User: new UserInfo(
                 Id: inserted.id.ToString(),
                 Email: email,
@@ -189,7 +219,10 @@ public static class AuthRoutes
               FROM users WHERE email = @email",
             new { email }
         );
-        if (user is null || !BCrypt.Net.BCrypt.Verify(request.Password, (string)user.password_hash))
+        // An over-long attempt is a mismatch (bcrypt reads 72 bytes), never an error - same as Python's verify_password.
+        if (user is null
+            || System.Text.Encoding.UTF8.GetByteCount(request.Password) > MaxPasswordBytes
+            || !BCrypt.Net.BCrypt.Verify(request.Password, (string)user.password_hash))
         {
             return Results.Unauthorized();
         }
@@ -202,7 +235,7 @@ public static class AuthRoutes
         var role = (string)user.role;
         return Results.Ok(new TokenResponse(
             AccessToken: jwt.IssueAccessToken(email, role),
-            RefreshToken: jwt.IssueRefreshToken(email, role),
+            RefreshToken: await NewRefreshTokenAsync(conn, jwt, settings, email, role),
             User: new UserInfo(
                 Id: user.id.ToString(),
                 Email: (string)user.email,
@@ -246,12 +279,18 @@ public static class AuthRoutes
         try
         {
             var principal = jwt.Validate(request.RefreshToken);
-            var email = principal.FindFirst("email")?.Value ?? "";
+            // Python-issued refresh tokens carry only `sub`; ours carry both.
+            var email = principal.FindFirst("email")?.Value ?? principal.FindFirst("sub")?.Value ?? "";
+
+            // With rotation on, only a real refresh token is acceptable (an access token has no
+            // jti row either, but say so up front); flag off keeps the legacy leniency.
+            if (settings.AuthRefreshRotation && principal.FindFirst("type")?.Value != "refresh")
+            {
+                return Results.Unauthorized();
+            }
 
             // Mirrors Python: re-check the DB (not just the token's claims) so a
-            // deactivated or deleted account can't refresh a still-valid token,
-            // and issue only a new access_token — the refresh token itself isn't
-            // rotated (matches the existing single-refresh-token contract).
+            // deactivated or deleted account can't refresh a still-valid token.
             await using var conn = await pool.OpenAsync();
             var user = await conn.QueryFirstOrDefaultAsync(
                 "SELECT role, is_active FROM users WHERE email = @email",
@@ -266,8 +305,23 @@ public static class AuthRoutes
                 return Results.Json(new { detail = "Account is deactivated" }, statusCode: 403);
             }
 
-            var accessToken = jwt.IssueAccessToken(email, (string)user.role);
-            return Results.Ok(new { access_token = accessToken });
+            var role = (string)user.role;
+            var accessToken = jwt.IssueAccessToken(email, role);
+            if (!settings.AuthRefreshRotation)
+            {
+                return Results.Ok(new { access_token = accessToken });
+            }
+
+            // Rotation: consume this token, hand back its successor. A token already consumed
+            // (or one that predates `jti`) is rejected; reuse revokes the whole family.
+            var (next, _) = await RefreshTokenStore.RotateAsync(
+                pool, jwt, principal.FindFirst("jti")?.Value, email, role);
+            if (next is null)
+            {
+                return Results.Json(new { detail = "Invalid refresh token" }, statusCode: StatusCodes.Status401Unauthorized);
+            }
+
+            return Results.Ok(new { access_token = accessToken, refresh_token = next.Token });
         }
         catch
         {

@@ -147,6 +147,12 @@ public sealed record AgentSettings
     // JWKS. No external IdP.
     public string AuthMode { get; init; } = "local"; // "local" | "oauth"
 
+    /// <summary>
+    /// AuthMode=local only: rotate refresh tokens with reuse detection (Python's
+    /// <c>AUTH_REFRESH_ROTATION</c>). False restores "refresh returns only a new access token".
+    /// </summary>
+    public bool AuthRefreshRotation { get; init; } = true;
+
     public string AuthServerIssuer { get; init; } = "http://localhost:8090";
     public string AuthServerJwksUrl { get; init; } = "http://localhost:8090/.well-known/jwks.json";
     public string AuthServerTokenUrl { get; init; } = "http://localhost:8090/oauth/token";

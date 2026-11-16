@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
@@ -14,14 +15,26 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60
 REFRESH_TOKEN_EXPIRE_DAYS = 7
 
 
+# bcrypt only reads the first 72 bytes and bcrypt >= 5 raises on anything longer
+# (it used to truncate silently). Signup enforces the limit; login/verify must
+# treat an over-long attempt as a plain mismatch rather than a 500.
+MAX_PASSWORD_BYTES = 72
+
+
 def hash_password(password: str) -> str:
-    """Hash a password with bcrypt."""
+    """Hash a password with bcrypt (callers validate the 72-byte limit first)."""
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    """Verify a password against a bcrypt hash."""
-    return bcrypt.checkpw(password.encode(), password_hash.encode())
+    """Verify a password against a bcrypt hash. Over-long or malformed input is a mismatch, not an error."""
+    raw = password.encode()
+    if len(raw) > MAX_PASSWORD_BYTES:
+        return False
+    try:
+        return bcrypt.checkpw(raw, password_hash.encode())
+    except ValueError:
+        return False
 
 
 def create_access_token(
@@ -42,13 +55,14 @@ def create_access_token(
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=ALGORITHM)
 
 
-def create_refresh_token(email: str) -> str:
-    """Create a signed JWT refresh token."""
-    expire = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+def create_refresh_token(email: str, jti: str | None = None, expires_at: datetime | None = None) -> str:
+    """Create a signed JWT refresh token carrying a ``jti`` (the refresh_tokens row key)."""
+    expire = expires_at or datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     payload = {
         "sub": email,
         "exp": expire,
         "type": "refresh",
+        "jti": jti or str(uuid.uuid4()),
     }
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=ALGORITHM)
 

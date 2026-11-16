@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 import uuid
 from typing import Any
@@ -29,6 +30,7 @@ from shared.db import get_pool
 from shared.factory import get_token_verifier
 from shared.idempotency import idempotent
 from shared.jwt_utils import (
+    MAX_PASSWORD_BYTES,
     create_access_token,
     create_refresh_token,
     decode_token,
@@ -37,6 +39,7 @@ from shared.jwt_utils import (
 )
 from shared.oauth.service_client import request_token
 from shared.rate_limit import rate_limit_auth
+from shared.refresh_tokens import RefreshRejectedError, issue_refresh_token, rotate_refresh_token
 from shared.tool_inputs import clamp_limit
 
 logger = logging.getLogger(__name__)
@@ -185,14 +188,46 @@ async def require_seller(user: dict[str, Any] = Depends(require_auth)) -> dict[s
 
 # ── Auth Routes (PUBLIC) ──────────────────────────────────────
 
+# Deliberately loose: one "@", no spaces, a dot in the domain. Real validation is
+# the confirmation mail this demo does not send. The .NET stack uses the same rule.
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _validate_signup(body: SignupRequest) -> tuple[str, str]:
+    """Normalise and validate a signup body; 400 + ``{"detail": msg}`` on the first problem.
+
+    Messages are part of the cross-stack wire contract (AuthRoutes.cs returns the
+    same strings). Returns ``(lower-cased email, stripped name)``.
+    """
+    email = body.email.strip().lower()
+    if len(email) > 254 or not _EMAIL_RE.match(email):
+        raise HTTPException(status_code=400, detail="Invalid email address")
+    # bcrypt reads at most 72 *bytes*; bcrypt >= 5 raises ValueError beyond that,
+    # which used to surface as a 500.
+    if not 8 <= len(body.password.encode()) <= MAX_PASSWORD_BYTES:
+        raise HTTPException(status_code=400, detail="Password must be between 8 and 72 bytes long")
+    name = body.name.strip()
+    if not 1 <= len(name) <= 100:
+        raise HTTPException(status_code=400, detail="Name must be between 1 and 100 characters")
+    return email, name
+
+
+async def _new_refresh_token(pool: Any, email: str) -> str:
+    """A refresh token for a fresh login: recorded (new family) when rotation is on, plain JWT otherwise."""
+    if settings.AUTH_REFRESH_ROTATION:
+        return await issue_refresh_token(pool, email)
+    return create_refresh_token(email)
+
+
 
 @router.post("/api/auth/signup", response_model=AuthResponse)
 async def signup(body: SignupRequest, _rate_limit: None = Depends(rate_limit_auth)) -> AuthResponse:
     """Create a new user account and return tokens."""
+    email, name = _validate_signup(body)
     pool = get_pool()
 
     # Check if user already exists
-    existing = await pool.fetchrow("SELECT id FROM users WHERE email = $1", body.email)
+    existing = await pool.fetchrow("SELECT id FROM users WHERE email = $1", email)
     if existing:
         raise HTTPException(status_code=409, detail="Email already registered")
 
@@ -202,16 +237,16 @@ async def signup(body: SignupRequest, _rate_limit: None = Depends(rate_limit_aut
         """INSERT INTO users (email, password_hash, name, role, loyalty_tier)
            VALUES ($1, $2, $3, 'customer', 'bronze')
            RETURNING id, email, name, role, loyalty_tier, total_spend, created_at""",
-        body.email,
+        email,
         password_hash,
-        body.name,
+        name,
     )
 
     user_id = str(row["id"])
     access_token = create_access_token(row["email"], row["role"], user_id)
-    refresh_token = create_refresh_token(row["email"])
+    refresh_token = await _new_refresh_token(pool, row["email"])
 
-    logger.info("auth.signup email=%s user_id=%s", body.email, user_id)
+    logger.info("auth.signup email=%s user_id=%s", email, user_id)
 
     return AuthResponse(
         access_token=access_token,
@@ -238,10 +273,11 @@ async def login(body: LoginRequest, _rate_limit: None = Depends(rate_limit_auth)
     duplicate the password check. In ``local`` mode nothing changes.
     """
     pool = get_pool()
+    email = body.email.strip().lower()
 
     if settings.AUTH_MODE == "oauth":
         try:
-            token_data = await request_token("password", username=body.email, password=body.password, scope="api:chat")
+            token_data = await request_token("password", username=email, password=body.password, scope="api:chat")
         except httpx.HTTPStatusError:
             raise HTTPException(status_code=401, detail="Invalid email or password")
 
@@ -250,7 +286,7 @@ async def login(body: LoginRequest, _rate_limit: None = Depends(rate_limit_auth)
 
         row = await pool.fetchrow(
             "SELECT id, email, name, role, loyalty_tier, total_spend FROM users WHERE email = $1",
-            body.email,
+            email,
         )
         if not row:
             # The AS validated these credentials against the same `users`
@@ -260,7 +296,7 @@ async def login(body: LoginRequest, _rate_limit: None = Depends(rate_limit_auth)
         row = await pool.fetchrow(
             """SELECT id, email, password_hash, name, role, loyalty_tier, total_spend, is_active
                FROM users WHERE email = $1""",
-            body.email,
+            email,
         )
 
         if not row:
@@ -273,10 +309,10 @@ async def login(body: LoginRequest, _rate_limit: None = Depends(rate_limit_auth)
             raise HTTPException(status_code=401, detail="Invalid email or password")
 
         access_token = create_access_token(row["email"], row["role"], str(row["id"]))
-        refresh_token = create_refresh_token(row["email"])
+        refresh_token = await _new_refresh_token(pool, row["email"])
 
     user_id = str(row["id"])
-    logger.info("auth.login email=%s user_id=%s", body.email, user_id)
+    logger.info("auth.login email=%s user_id=%s", email, user_id)
 
     return AuthResponse(
         access_token=access_token,
@@ -294,7 +330,11 @@ async def login(body: LoginRequest, _rate_limit: None = Depends(rate_limit_auth)
 
 @router.post("/api/auth/refresh")
 async def refresh_token(body: RefreshRequest, _rate_limit: None = Depends(rate_limit_auth)) -> dict[str, str]:
-    """Exchange a refresh token for a new access token.
+    """Exchange a refresh token for a new access token (and, in local mode, a new refresh token).
+
+    ``AUTH_MODE=local`` rotates by default (``AUTH_REFRESH_ROTATION``, see
+    ``shared/refresh_tokens.py``): the response is ``{access_token, refresh_token}``
+    and the presented token is spent.
 
     In ``AUTH_MODE=oauth`` this relays a ``refresh_token`` grant to the
     auth-server, which does not rotate refresh tokens (see the design doc's
@@ -335,7 +375,18 @@ async def refresh_token(body: RefreshRequest, _rate_limit: None = Depends(rate_l
 
     access_token = create_access_token(email, row["role"], str(row["id"]))
 
-    return {"access_token": access_token}
+    if not settings.AUTH_REFRESH_ROTATION:
+        return {"access_token": access_token}
+
+    # Rotation: consume this token, hand back its successor. A token already
+    # consumed (or one that predates `jti`) is rejected; reuse revokes the family.
+    try:
+        new_refresh = await rotate_refresh_token(pool, payload)
+    except RefreshRejectedError as exc:
+        logger.info("auth.refresh_rejected email=%s reason=%s", email, exc.reason)
+        raise HTTPException(status_code=401, detail="Invalid refresh token") from None
+
+    return {"access_token": access_token, "refresh_token": new_refresh}
 
 
 # ── Conversation Routes ───────────────────────────────────────

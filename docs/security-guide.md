@@ -155,12 +155,14 @@ Authorization: Bearer <JWT>
 
 Paths `/health` and `/.well-known/agent-card.json` bypass auth.
 
+**Refresh tokens rotate (local mode).** `/api/auth/refresh` returns `{access_token, refresh_token}` and spends the token it was given: each refresh token has a `jti` and a row in `refresh_tokens` (migration 0003; `shared/refresh_tokens.py`, `RefreshTokenStore` on .NET). Presenting an already-spent token means a copy exists, so the whole token family is revoked and the call is a `401`. Tokens issued before this change have no `jti` and are rejected (one forced re-login). The web client single-flights its refresh within a tab and across tabs; any other client must do the same, since two parallel refreshes with one token look exactly like replay. `AUTH_REFRESH_ROTATION=false` restores the old stateless behaviour. **Not covered:** `AUTH_MODE=oauth` (see below and the [parity matrix](parity-matrix.md)). Signup validates input on both stacks with `400 {"detail": ...}`: email is lower-cased and format-checked, the password must be 8–72 bytes (bcrypt's limit — longer used to be a `500` on Python), the name 1–100 characters; signup always creates a `customer`.
+
 JWT signing uses `bcrypt` for passwords and `PyJWT` for token generation. Default `JWT_SECRET` is `change-me-in-production` — the config validator warns if this is not overridden at startup.
 
 **`AUTH_MODE=oauth`:** the orchestrator's `/api/auth/login` and `/api/auth/refresh` routes broker the request to the self-hosted Authorization Server (AS, `agents/python/auth_server/`) instead of issuing tokens locally:
 
 - **Login** relays a `password` (ROPC) grant to the AS as a confidential first-party client — the AS re-verifies the bcrypt hash from the same `users` table, so this does not duplicate the password check. The AS returns an RS256 access token (`aud=ecommerce-orchestrator`, `scope=api:chat`, `role`/`user_id` custom claims) plus an opaque refresh token.
-- **Refresh** relays a `refresh_token` grant. The AS does not rotate refresh tokens (`INCLUDE_NEW_REFRESH_TOKEN=False`) — a deliberate choice, since the frontend never re-persists a rotated refresh token.
+- **Refresh** relays a `refresh_token` grant. The AS does not rotate refresh tokens (`INCLUDE_NEW_REFRESH_TOKEN=False`) — a choice made when the frontend did not re-persist refresh tokens. It now does (for local-mode rotation), so rotating here is possible follow-up work; it is **out of scope** of #102 and recorded in the parity matrix.
 - `AgentAuthMiddleware`'s Bearer branch validates the RS256 token against the AS's published JWKS (`RS256Verifier` / `.NET`'s `JwtTokenService.ValidateOAuth` + `JwksKeyProvider`): signature, issuer, audience, expiry, and required scope.
 - Phases A–D of the OAuth work all shipped and are live-verified on both stacks. What remains — key rotation, RFC 7591 dynamic client registration, and the audit matrix — is tracked in [`.claude/plans/remaining-work.md`](https://github.com/nitin27may/e-commerce-agents/blob/main/.claude/plans/remaining-work.md).
 

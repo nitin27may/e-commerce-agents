@@ -152,6 +152,26 @@ export interface CartResponse {
   billing_same_as_shipping: boolean;
 }
 
+const STORAGE_ACCESS = "ecommerce_access_token";
+const STORAGE_REFRESH = "ecommerce_refresh_token";
+
+// localStorage can be missing or throw (SSR, private windows, blocked storage).
+function readStored(key: string): string | null {
+  try {
+    return typeof window === "undefined" ? null : localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeStored(key: string, value: string) {
+  try {
+    if (typeof window !== "undefined") localStorage.setItem(key, value);
+  } catch {
+    /* in-memory copy still works for this tab */
+  }
+}
+
 // Stale JWT → clear auth and bounce to /login. Idempotent.
 function handleUnauthorized() {
   if (typeof window === "undefined") return;
@@ -187,30 +207,67 @@ class ApiClient {
    * caller should then bounce the user to /login.
    */
   private async tryRefresh(): Promise<string | null> {
-    if (!this.refreshToken) return null;
+    if (!this.refreshToken && !readStored(STORAGE_REFRESH)) return null;
     if (this.inflightRefresh) return this.inflightRefresh;
+    // The server rotates refresh tokens: each one is single-use, and presenting
+    // a spent one revokes the whole session. So at most ONE refresh may be in
+    // flight — per tab (the promise below) and across tabs (a Web Lock, with a
+    // re-read of localStorage inside it so the second tab sends the first
+    // tab's successor rather than the token it loaded at page start).
+    const locks = typeof navigator !== "undefined" ? navigator.locks : undefined;
     this.inflightRefresh = (async () => {
       try {
-        const res = await fetch(`${API_URL}/api/auth/refresh`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ refresh_token: this.refreshToken }),
-        });
-        if (!res.ok) return null;
-        const data = (await res.json()) as { access_token?: string };
-        if (!data.access_token) return null;
-        this.token = data.access_token;
-        if (typeof window !== "undefined") {
-          localStorage.setItem("ecommerce_access_token", data.access_token);
-        }
-        return data.access_token;
-      } catch {
-        return null;
+        if (!locks) return await this.refreshOnce();
+        return await locks.request("ecommerce-refresh", () => this.refreshOnce());
       } finally {
         this.inflightRefresh = null;
       }
     })();
     return this.inflightRefresh;
+  }
+
+  private async refreshOnce(): Promise<string | null> {
+    // localStorage is the source of truth: another tab may have rotated since
+    // this one last looked.
+    const stored = readStored(STORAGE_REFRESH);
+    if (stored) this.refreshToken = stored;
+    const sent = this.refreshToken;
+    if (!sent) return null;
+    try {
+      const res = await fetch(`${API_URL}/api/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: sent }),
+      });
+      if (!res.ok) return this.adoptOtherTabsSession(sent);
+      const data = (await res.json()) as { access_token?: string; refresh_token?: string };
+      if (!data.access_token) return null;
+      this.token = data.access_token;
+      writeStored(STORAGE_ACCESS, data.access_token);
+      // `refresh_token` is absent when the server has rotation switched off
+      // (and in AUTH_MODE=oauth): keep using the one we have.
+      if (data.refresh_token) {
+        this.refreshToken = data.refresh_token;
+        writeStored(STORAGE_REFRESH, data.refresh_token);
+      }
+      return data.access_token;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * A refresh rejected with a token another tab has since replaced is not a
+   * dead session — that tab already rotated and stored the successor (and a
+   * fresh access token). Adopt them rather than logging the user out.
+   */
+  private adoptOtherTabsSession(sent: string): string | null {
+    const latest = readStored(STORAGE_REFRESH);
+    const access = readStored(STORAGE_ACCESS);
+    if (!latest || latest === sent || !access) return null;
+    this.refreshToken = latest;
+    this.token = access;
+    return access;
   }
 
   private async request<T>(
@@ -275,7 +332,7 @@ class ApiClient {
   }
 
   refresh(refreshToken: string) {
-    return this.request<{ access_token: string }>("/api/auth/refresh", {
+    return this.request<{ access_token: string; refresh_token?: string }>("/api/auth/refresh", {
       method: "POST",
       body: JSON.stringify({ refresh_token: refreshToken }),
     });
