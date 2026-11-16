@@ -21,9 +21,8 @@ PROMPTS_DIR = Path(__file__).parent.parent / "config" / "prompts"
 SHARED_DIR = PROMPTS_DIR / "_shared"
 
 
-# Providers a per-agent ``model:`` block may name. ``anthropic`` exists on the .NET stack only
-# (the Python connector needs MAF core >= 1.24) and is called out so nobody expects it here.
-MODEL_OVERRIDE_PROVIDERS = ("openai", "azure")
+# Providers a per-agent ``model:`` block may name (the same three the .NET stack accepts).
+MODEL_OVERRIDE_PROVIDERS = ("openai", "azure", "anthropic")
 _MODEL_KEYS = {"provider", "model", "temperature"}
 
 
@@ -111,10 +110,8 @@ def _parse_model_block(raw: object, source: str) -> ModelOverride | None:
     provider = raw.get("provider")
     if provider is not None:
         if not isinstance(provider, str) or provider.strip().lower() not in MODEL_OVERRIDE_PROVIDERS:
-            hint = " (anthropic is available on the .NET stack only)" if str(provider).lower() == "anthropic" else ""
             raise ValueError(
-                f"{source}: unknown model.provider {provider!r}; must be one of "
-                f"{', '.join(MODEL_OVERRIDE_PROVIDERS)}{hint}"
+                f"{source}: unknown model.provider {provider!r}; must be one of {', '.join(MODEL_OVERRIDE_PROVIDERS)}"
             )
         provider = provider.strip().lower()
     model = raw.get("model")

@@ -15,7 +15,7 @@ The first form plays back whatever is already in ``REPLAY_FIXTURES_DIR``
 chapter/test module should pass its own directory so cassettes live next to
 the test that uses them, the same way VCR-style cassette libraries do).
 The second form additionally falls through to a real call — via
-``REPLAY_RECORD_PROVIDER`` (``openai`` or ``azure``, using the same
+``REPLAY_RECORD_PROVIDER`` (``openai``, ``azure`` or ``anthropic``, using the same
 credentials ``shared.factory.get_chat_client()`` would use for that
 provider) — whenever a fixture is missing, and persists the response before
 returning it. Re-running with ``RECORD`` unset then replays deterministically
@@ -371,8 +371,20 @@ class ReplayChatClient(FunctionInvocationLayer, BaseChatClient):
                 api_key=settings.OPENAI_API_KEY,
                 base_url=settings.LLM_BASE_URL or None,
             )
+        elif provider == "anthropic":
+            from shared.anthropic_client import build_anthropic_client
+
+            if not settings.ANTHROPIC_API_KEY:
+                raise ValueError(
+                    "RECORD=true with REPLAY_RECORD_PROVIDER=anthropic requires ANTHROPIC_API_KEY in .env."
+                )
+            self._record_client = build_anthropic_client(
+                model=settings.ANTHROPIC_MODEL, api_key=settings.ANTHROPIC_API_KEY
+            )
         else:
-            raise ValueError(f"REPLAY_RECORD_PROVIDER must be 'openai' or 'azure', got {self._record_provider!r}")
+            raise ValueError(
+                f"REPLAY_RECORD_PROVIDER must be 'openai', 'azure' or 'anthropic', got {self._record_provider!r}"
+            )
         return self._record_client
 
     def _fixture_path(self, request_hash: str) -> Path:

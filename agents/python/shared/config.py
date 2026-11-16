@@ -121,7 +121,7 @@ class Settings(BaseSettings):
     CORS_ALLOWED_ORIGINS: str = "http://localhost:3000"
 
     # ── LLM ─────────────────────────────────────────────────────────
-    LLM_PROVIDER: str = "openai"  # openai | azure | replay
+    LLM_PROVIDER: str = "openai"  # openai | azure | anthropic | replay
     LLM_MODEL: str = "gpt-4.1"
     # Optional base_url override for the OpenAI-compatible `openai` provider —
     # points OpenAIChatClient at any OpenAI-compatible endpoint (GitHub Models,
@@ -140,7 +140,7 @@ class Settings(BaseSettings):
     # replay-provider settings — see shared/replay_client.py. RECORD=true makes
     # a missing fixture fall through to a real call (via REPLAY_RECORD_PROVIDER)
     # and persist the result instead of raising.
-    REPLAY_RECORD_PROVIDER: str = "openai"  # openai | azure — used only when RECORD=true
+    REPLAY_RECORD_PROVIDER: str = "openai"  # openai | azure | anthropic — used only when RECORD=true
     REPLAY_FIXTURES_DIR: str = "evals/fixtures/replay"  # relative to the process cwd (agents/python)
     RECORD: bool = False
     # The no-key demo tour (#86): suggested prompts the web UI offers as chips, and
@@ -164,6 +164,11 @@ class Settings(BaseSettings):
     EMBEDDING_API_KEY: str = ""
     EMBEDDING_DIM: int = 1536
     OPENAI_API_KEY: str = ""
+    # LLM_PROVIDER=anthropic (Claude), through MAF's agent-framework-anthropic connector. The model is
+    # ANTHROPIC_MODEL, never LLM_MODEL: the compose files forward LLM_MODEL with a gpt-4.1 default that
+    # Anthropic would reject. The default id matches the .NET stack's AgentSettings.DefaultAnthropicModel.
+    ANTHROPIC_API_KEY: str = ""
+    ANTHROPIC_MODEL: str = "claude-sonnet-5-5"
 
     AZURE_OPENAI_ENDPOINT: str = ""
 

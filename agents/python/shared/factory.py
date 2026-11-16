@@ -6,7 +6,7 @@ flags (MAF_SESSION_BACKEND, MAF_CHECKPOINT_BACKEND, etc.) swap implementations
 without touching call sites.
 
 Exports:
-    get_chat_client          — MAF chat client for OpenAI or Azure (optional per-agent model override)
+    get_chat_client          — MAF chat client for OpenAI, Azure or Anthropic (optional per-agent model override)
     agent_default_options    — the per-agent temperature, as MAF default_options
     get_embeddings_client    — async OpenAI embeddings client
     get_embedding_model      — correct model/deployment name per provider
@@ -35,6 +35,8 @@ from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient
 from shared.config import settings
 from shared.context import current_agent_model
 from shared.embedding_config import (
+    NO_EMBEDDINGS,
+    NO_EMBEDDINGS_MESSAGE,
     embedding_model_name,
     embedding_provider,
     embedding_request_kwargs,
@@ -87,6 +89,29 @@ def build_openai_client(
     return OpenAIChatClient(model=model, api_key=api_key, base_url=base_url)
 
 
+def _validate_anthropic() -> None:
+    if not settings.ANTHROPIC_API_KEY.strip():
+        raise ValueError(
+            "ANTHROPIC_API_KEY is required when LLM_PROVIDER=anthropic. Set it in .env or switch to "
+            "LLM_PROVIDER=openai or azure."
+        )
+
+
+_warned_anthropic_embeddings = False
+
+
+def _warn_anthropic_embeddings_once() -> None:
+    """Anthropic has no embeddings API: say once, at startup, what semantic search will do."""
+    global _warned_anthropic_embeddings
+    if _warned_anthropic_embeddings or not follows_chat_provider(settings):
+        return
+    _warned_anthropic_embeddings = True
+    logger.warning(
+        "LLM_PROVIDER=anthropic has no embeddings API and EMBEDDING_PROVIDER is empty: semantic search "
+        "will use full-text only. Set EMBEDDING_PROVIDER (openai, azure, openai_compatible) to enable it."
+    )
+
+
 def _resolve_override(agent_name: str | None) -> ModelOverride | None:
     """The agent's validated ``model:`` block, or ``None`` (no name, no file, or no block)."""
     if not agent_name:
@@ -123,6 +148,10 @@ def get_chat_client(agent_name: str | None = None) -> OpenAIChatClient | OpenAIC
     * ``azure``   → ``OpenAIChatCompletionClient`` (Chat Completions API —
       universally supported across Azure OpenAI deployments; the
       Responses-API variant only works on the newest Azure regions).
+    * ``anthropic`` → MAF's ``AnthropicClient`` (``agent-framework-anthropic``, Messages API) with
+      ``ANTHROPIC_API_KEY`` / ``ANTHROPIC_MODEL`` (default ``claude-sonnet-5-5``, the .NET default).
+      Stub-tested only; never run against the live API. It has no embeddings API: see
+      ``get_embeddings_client``.
     * ``replay``  → ``ReplayChatClient`` (see ``shared/replay_client.py``) —
       serves recorded fixtures with no credentials required; set
       ``RECORD=true`` to record new ones against ``REPLAY_RECORD_PROVIDER``.
@@ -144,18 +173,33 @@ def get_chat_client(agent_name: str | None = None) -> OpenAIChatClient | OpenAIC
             record_provider=settings.REPLAY_RECORD_PROVIDER,
         )
 
-    if global_provider == "anthropic":
+    if global_provider not in ("openai", "azure", "anthropic"):
         raise ValueError(
-            "LLM_PROVIDER=anthropic is available on the .NET stack only (the Python connector needs MAF core >= 1.24). "
-            "Use 'openai' or 'azure' here, or run the .NET stack."
+            f"Unknown LLM_PROVIDER: {settings.LLM_PROVIDER!r}. Must be 'openai', 'azure', 'anthropic', or 'replay'."
         )
-
-    if global_provider not in ("openai", "azure"):
-        raise ValueError(f"Unknown LLM_PROVIDER: {settings.LLM_PROVIDER!r}. Must be 'openai', 'azure', or 'replay'.")
 
     override = _resolve_override(agent_name)
     provider = (override.provider if override and override.provider else None) or global_provider
     override_model = override.model if override else None
+
+    if global_provider == "anthropic":
+        _warn_anthropic_embeddings_once()
+        if provider != "anthropic" and not override_model:
+            # With Claude global, LLM_MODEL is not meant for this agent (the compose files forward a
+            # gpt-4.1 default), so an agent moving to another provider has to name its own model.
+            raise ValueError(
+                "model.model is required when an agent switches from LLM_PROVIDER=anthropic to "
+                f"{provider} (agent {agent_name!r})"
+            )
+
+    if provider == "anthropic":
+        _validate_anthropic()
+        model = override_model or settings.ANTHROPIC_MODEL
+        logger.info("Creating Anthropic chat client (model=%s)", model)
+        current_agent_model.set(model if override_model else "")
+        from shared.anthropic_client import build_anthropic_client
+
+        return build_anthropic_client(model=model, api_key=settings.ANTHROPIC_API_KEY)
 
     if provider == "openai":
         _validate_openai()
@@ -201,6 +245,11 @@ def get_embeddings_client() -> openai.AsyncOpenAI | openai.AsyncAzureOpenAI:
     CI run at all while product-discovery still scored 92%.
     """
     provider = embedding_provider(settings)
+
+    if provider == NO_EMBEDDINGS:
+        # Say what is missing rather than falling through to an OpenAI path that would demand a key
+        # the user never meant to set. semantic_search catches this and uses its full-text arm.
+        raise ValueError(NO_EMBEDDINGS_MESSAGE)
 
     if provider == "replay":
         from shared.replay_embeddings import ReplayEmbeddingsClient

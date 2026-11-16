@@ -106,7 +106,7 @@ def test_partial_block_is_allowed(prompts_dir) -> None:
     ("block", "fragment"),
     [
         ({"provider": "gemini", "model": "x"}, "unknown model.provider"),
-        ({"provider": "anthropic", "model": "x"}, ".NET stack only"),
+        ({"provider": "cohere", "model": "x"}, "openai, azure, anthropic"),
         ({"model": ""}, "non-empty string"),
         ({"model": 7}, "non-empty string"),
         ({"temperature": 3}, "between 0 and 2"),
@@ -194,12 +194,6 @@ def test_invalid_block_fails_client_construction_naming_the_file(prompts_dir, op
     _with_model_block(prompts_dir, "orchestrator", {"provider": "bogus"})
     with pytest.raises(ValueError, match="orchestrator.yaml"):
         factory.get_chat_client("orchestrator")
-
-
-def test_anthropic_provider_points_at_the_dotnet_stack(monkeypatch) -> None:
-    _set(monkeypatch, "LLM_PROVIDER", "anthropic")
-    with pytest.raises(ValueError, match=r"\.NET stack only"):
-        factory.get_chat_client()
 
 
 def test_replay_ignores_overrides(prompts_dir, monkeypatch) -> None:
