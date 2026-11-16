@@ -336,6 +336,17 @@ class Settings(BaseSettings):
     # UTC hour (0-23) of the daily run.
     MERCHANT_OPS_RUN_HOUR_UTC: int = 6
 
+    # ── Event autonomy (#94) ─────────────────────────────────────────
+    # Events (a shipment running late) handled by the outbox worker: inside an autonomy budget the system acts
+    # alone (a goodwill store credit), outside it opens an approval. OFF by default; with it off the worker
+    # consumes an event row and does nothing. No model is called either way. docs/event-autonomy.md.
+    AUTONOMY_ENABLED: bool = False
+    # The admin-only event simulator (POST /api/admin/events/simulate). Needs AUTONOMY_ENABLED too; there is no
+    # production event producer, so with the simulator off no event reaches the engine at all.
+    AUTONOMY_SIMULATOR_ENABLED: bool = False
+    # Use this autonomy policy file instead of config/policies/autonomy.yaml (tests, demos with small caps).
+    AUTONOMY_POLICY_PATH: str = ""
+
     # ── MCP integration (optional, flag-gated) ──────────────────────
     # When enabled, specialist agents connect to MCP servers for their data
     # layer instead of calling asyncpg directly. MCP servers must be running

@@ -18,7 +18,8 @@ pytestmark = pytest.mark.integration
 migrate_mod = _load_migrate()
 VERSION = "0006_approvals_foundation"
 NEW_TABLES = ("approvals", "approval_events", "outbox", "notifications")
-# Belongs to later steps (#94 autonomy): must NOT exist yet. (The #93 merchant tables arrived in 0009.)
+# Tables 0006 itself must not create: they belong to later migrations (#93 merchant in 0009, #94 autonomy in 0012). A
+# fresh database has them by now, so this checks the migration file, not the final schema.
 LATER_TABLES = (
     "agent_decisions",
     "store_credit_ledger",
@@ -74,7 +75,8 @@ async def test_a_fresh_database_gets_the_foundation(throwaway_url: str) -> None:
     assert VERSION in applied
     tables = await _tables(throwaway_url)
     assert set(NEW_TABLES) <= tables
-    assert not set(LATER_TABLES) & tables
+    sql = (POSTGRES_DIR / "migrations" / f"{VERSION}.sql").read_text(encoding="utf-8")
+    assert not [t for t in LATER_TABLES if f"CREATE TABLE IF NOT EXISTS {t}" in sql or f"CREATE TABLE {t}" in sql]
     assert await _has_column(throwaway_url, "tool_approval_requests", "approval_id")
     assert await _has_column(throwaway_url, "hitl_requests", "approval_id")
     assert await _has_column(throwaway_url, "approvals", "claimed_at")

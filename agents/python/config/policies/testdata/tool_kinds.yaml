@@ -516,3 +516,27 @@ cases:
       rule: default-support
       reasons:
         - "Needs a support review"
+  - name: "an autonomous action over 100 needs a manager"
+    kind: autonomous_action
+    facts: { amount: 100.01 }
+    expect:
+      route: manager
+      rule: high-value-manager
+      reasons:
+        - "A credit over 100 needs a manager"
+  - name: "an autonomous action of exactly 100 goes to support"
+    kind: autonomous_action
+    facts: { amount: 100 }
+    expect:
+      route: support
+      rule: default-support
+      reasons:
+        - "Needs a support review"
+  - name: "an autonomous action with no amount is never auto and goes to support"
+    kind: autonomous_action
+    facts: {}
+    expect:
+      route: support
+      rule: default-support
+      reasons:
+        - "Needs a support review"

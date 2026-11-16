@@ -1,0 +1,120 @@
+# Golden cases for config/policies/autonomy.yaml (Python only, tests/test_autonomy_policy.py).
+#
+#   tier_cases    facts -> the tier and the rule that chose it. A fact left out is unknown; an unknown fact never
+#                 satisfies a condition, so it can only fall through towards needs_approval.
+#   budget_cases  an amount drawn on top of some usage -> allowed, or the caps that trip (exactly at a cap is allowed).
+#   credit_cases  a delay in days -> the credit it earns (null below the minimum).
+#
+# Every rule of every action must be hit by a tier case; the tests enforce it.
+
+tier_cases:
+  - name: "a 3-day delay with a 5 credit acts alone"
+    action: goodwill_credit
+    facts: { amount: 5, delay_days: 3, order_total: 80 }
+    expect: { tier: auto, rule: auto-small-credit }
+  - name: "a credit of exactly 10 is still auto"
+    action: goodwill_credit
+    facts: { amount: 10, delay_days: 2 }
+    expect: { tier: auto, rule: auto-small-credit }
+  - name: "a 10.01 credit is no longer auto"
+    action: goodwill_credit
+    facts: { amount: 10.01, delay_days: 6 }
+    expect: { tier: auto_notify, rule: notify-medium-credit }
+  - name: "a 15 credit after 6 days acts alone and tells staff"
+    action: goodwill_credit
+    facts: { amount: 15, delay_days: 6 }
+    expect: { tier: auto_notify, rule: notify-medium-credit }
+  - name: "a credit of exactly 25 acts alone and tells staff"
+    action: goodwill_credit
+    facts: { amount: 25, delay_days: 7 }
+    expect: { tier: auto_notify, rule: notify-medium-credit }
+  - name: "a 25.01 credit needs approval"
+    action: goodwill_credit
+    facts: { amount: 25.01, delay_days: 7 }
+    expect: { tier: needs_approval, rule: default-approval }
+  - name: "a 40 credit needs approval"
+    action: goodwill_credit
+    facts: { amount: 40, delay_days: 12 }
+    expect: { tier: needs_approval, rule: default-approval }
+  - name: "a 15 credit for a 3-day delay is not auto and not notify-eligible"
+    action: goodwill_credit
+    facts: { amount: 15, delay_days: 3 }
+    expect: { tier: needs_approval, rule: default-approval }
+  - name: "an unknown delay never acts alone"
+    action: goodwill_credit
+    facts: { amount: 5 }
+    expect: { tier: needs_approval, rule: default-approval }
+  - name: "an unknown amount never acts alone"
+    action: goodwill_credit
+    facts: { delay_days: 9 }
+    expect: { tier: needs_approval, rule: default-approval }
+  - name: "no facts at all needs approval"
+    action: goodwill_credit
+    facts: {}
+    expect: { tier: needs_approval, rule: default-approval }
+  - name: "a delay under 2 days is not auto even for a tiny credit"
+    action: goodwill_credit
+    facts: { amount: 1, delay_days: 1 }
+    expect: { tier: needs_approval, rule: default-approval }
+
+budget_cases:
+  - name: "an empty budget allows a credit of 5"
+    budget: goodwill_credit
+    amount: 5
+    usage: {}
+    expect: { ok: true, tripped: [] }
+  - name: "exactly the per-action cap is allowed"
+    budget: goodwill_credit
+    amount: 25
+    usage: {}
+    expect: { ok: true, tripped: [] }
+  - name: "a cent over the per-action cap trips it (and the per-customer amount cap)"
+    budget: goodwill_credit
+    amount: 25.01
+    usage: {}
+    expect: { ok: false, tripped: [per_action_amount, customer_daily_amount] }
+  - name: "a customer who already drew today trips the customer count and amount"
+    budget: goodwill_credit
+    amount: 5
+    usage: { customer_count: 1, customer_amount: 24 }
+    expect: { ok: false, tripped: [customer_daily_count, customer_daily_amount] }
+  - name: "an order already credited trips the per-order count"
+    budget: goodwill_credit
+    amount: 5
+    usage: { order_count: 1 }
+    expect: { ok: false, tripped: [order_count] }
+  - name: "the 20th global draw of the day is allowed"
+    budget: goodwill_credit
+    amount: 5
+    usage: { global_count: 19, global_amount: 95 }
+    expect: { ok: true, tripped: [] }
+  - name: "the 21st global draw trips the global count"
+    budget: goodwill_credit
+    amount: 5
+    usage: { global_count: 20, global_amount: 100 }
+    expect: { ok: false, tripped: [global_daily_count] }
+  - name: "a draw that crosses the global amount cap trips it"
+    budget: goodwill_credit
+    amount: 5
+    usage: { global_count: 3, global_amount: 196 }
+    expect: { ok: false, tripped: [global_daily_amount] }
+  - name: "a draw landing exactly on the global amount cap is allowed"
+    budget: goodwill_credit
+    amount: 5
+    usage: { global_count: 3, global_amount: 195 }
+    expect: { ok: true, tripped: [] }
+  - name: "a missing amount is never allowed"
+    budget: goodwill_credit
+    amount: null
+    usage: {}
+    expect: { ok: false, tripped: [amount_missing] }
+
+credit_cases:
+  - { delay_days: 0, credit: null }
+  - { delay_days: 1, credit: null }
+  - { delay_days: 2, credit: 5.00 }
+  - { delay_days: 4, credit: 5.00 }
+  - { delay_days: 5, credit: 15.00 }
+  - { delay_days: 9, credit: 15.00 }
+  - { delay_days: 10, credit: 40.00 }
+  - { delay_days: 90, credit: 40.00 }
