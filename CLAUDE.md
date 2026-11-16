@@ -52,8 +52,17 @@ cd agents/python && uv run uvicorn product_discovery.main:app --port 8081 --relo
 # Run frontend locally
 cd web && pnpm dev
 
-# Generate embeddings
+# Embeddings are seeded automatically (the seeder fills product_embeddings).
+# Regenerate, or export the precomputed file a keyed install loads:
 cd agents/python && uv run python -m scripts.generate_embeddings
+cd agents/python && uv run python -m scripts.generate_embeddings --export scripts/data/product_embeddings.v1.jsonl.gz
+
+# Apply schema migrations (the seeder and dev.sh do this for you)
+uv run --project agents/python python -m scripts.migrate
+
+# Replay eval suite, keyless — the same script CI runs
+scripts/replay-evals.sh --setup          # migrate + seed a fresh DB, then every suite
+cd agents/python && uv run python -m evals.fixture_drift   # 0 clean · 1 offline-fixable · 2 re-record
 
 # Lint Python
 cd agents/python && uv run ruff check .
@@ -101,9 +110,14 @@ Both chat endpoints resolve an orchestration mode (request body `mode` -> `setti
 
 `shared/agent_host.py` is a lightweight A2A-compatible FastAPI host. It does **not** implement a custom tool-calling loop — the legacy `_run_agent_with_tools()` / `_run_agent_with_tools_stream()` OpenAI chat-completions loop was removed once MAF-native execution was confirmed compatible with production Azure deployments (see the module docstring). Every request now goes through MAF's own `agent.run()` (blocking) / `agent.run(..., stream=True)` (SSE streaming); the `Agent` object owns its tools, system prompt, and context-provider chain, so `agent_host.py` just threads the A2A request into the right MAF call and (for streaming) forwards chunks over SSE.
 
-### MAF Package Patch
+### MAF imports
 
-`agents/python/patch_maf.py` — workaround for a packaging bug in `agent-framework-core==1.0.0`, whose `__init__.py` shipped empty with no public re-exports. Fixed upstream by 1.14.0 (the version this repo now pins), so `patch()` is already a no-op on a current install (it only writes when the file is empty). The Dockerfile still runs it defensively; it does nothing today.
+MAF is imported from its public surface (`agent_framework`, `agent_framework.orchestrations`, …),
+never from `agent_framework._*`. `agents/python/tests/test_no_private_maf_imports.py` enforces it with
+a two-entry allowlist (`encode_checkpoint_value` / `decode_checkpoint_value`, which are not exported
+at the pinned version and which `PostgresCheckpointStorage` needs). The old `patch_maf.py`
+workaround for the empty-`__init__` packaging bug in core 1.0.0 is gone; it had been a no-op since
+the pin moved past it.
 
 ### YAML Prompt Composition System
 
@@ -134,7 +148,7 @@ Separately, the orchestrator's own read of *its* conversation's history (for `Ru
 
 | Layer | Technology |
 |-------|-----------|
-| Agent Framework | MAF Python SDK — `agent-framework-core` 1.14.0, `-openai` 1.13.0, `-orchestrations` 1.1.0 (pinned in `agents/python/pyproject.toml`) |
+| Agent Framework | MAF Python SDK — `agent-framework-core` 1.14.0, `-openai` 1.13.0, `-orchestrations` 1.1.0 (pinned in `agents/python/pyproject.toml`); MAF .NET — `Microsoft.Agents.AI` 1.28.0 (`agents/dotnet/Directory.Packages.props`, shared by the tutorials via `tutorials/Directory.Packages.props`) |
 | Agent Communication | A2A Protocol (HTTP POST to `/message:send`) |
 | LLM | OpenAI / Azure OpenAI (gpt-4.1), configurable via `LLM_PROVIDER` env var — plus any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, OpenRouter, GitHub Models) via `LLM_PROVIDER=openai` + `LLM_BASE_URL` |
 | Backend | Python 3.12, FastAPI (orchestrator), Starlette (specialist agents via agent_host) |
@@ -184,7 +198,15 @@ AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
 AZURE_OPENAI_KEY=...
 AZURE_OPENAI_DEPLOYMENT=gpt-4.1
 AZURE_OPENAI_API_VERSION=2024-12-01-preview
+
+# Any OpenAI-compatible endpoint (Ollama, vLLM, OpenRouter, Gemini's compatible API)
+LLM_PROVIDER=openai
+LLM_BASE_URL=http://localhost:11434/v1
+LLM_API=chat_completions      # default `responses`; needed where there is no /responses route
 ```
+
+`LLM_API` is Python-only: the .NET stack always uses Chat Completions. Under `LLM_PROVIDER=replay`
+no model is called at all — that is what CI, the eval smoke suite and the tutorials' keyless path use.
 
 ## Database
 
@@ -196,7 +218,7 @@ AZURE_OPENAI_API_VERSION=2024-12-01-preview
 
 ## Testing & Evals
 
-Three traps here cost more time than anything else in the repo.
+Four traps here cost more time than anything else in the repo.
 
 **Playwright: wait on the composer's stop icon, never on status text.** A streamed
 turn is finished when the submit button stops showing the stop icon — not when
@@ -214,6 +236,12 @@ so changing what a tool *returns* changes the key and the fixture misses, which 
 harness reports as an infrastructure failure rather than a bad answer. Re-record
 after any change to a dataset, a prompt, a tool schema, or a tool's output shape;
 the recipe is in `evals/fixtures/README.md`.
+
+**Two eval runs on one machine collide.** The specialists bind fixed ports 8081–8085, so a second
+`scripts/replay-evals.sh` (or anything else on those ports) makes the first report missing fixtures
+that are not missing. Serialize runs — `flock <lockfile> scripts/replay-evals.sh` — and never
+`pkill` services by name. The same symptom appears when re-seeding a database that was already
+seeded: start from a fresh one.
 
 **The `full` eval suite spends real money and is human-dispatch only.** It runs on
 `workflow_dispatch` alone, never a schedule. Nothing in this repo may put a live
