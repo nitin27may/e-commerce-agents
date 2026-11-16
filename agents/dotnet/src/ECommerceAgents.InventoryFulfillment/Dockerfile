@@ -15,7 +15,7 @@ RUN dotnet publish src/ECommerceAgents.InventoryFulfillment/ECommerceAgents.Inve
 
 # Runtime — ship the shared YAML prompts alongside the binary so
 # PromptLoader finds them without any volume mount.
-FROM mcr.microsoft.com/dotnet/aspnet:10.0
+FROM mcr.microsoft.com/dotnet/aspnet:11.0
 # No explicit --gid/--uid: recent Ubuntu-based base images pre-bake a
 # uid/gid 1000 "ubuntu" user, which collided here.
 RUN groupadd --system dotnet \
