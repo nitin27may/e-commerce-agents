@@ -180,6 +180,7 @@ async def on_sla_breached(conn: asyncpg.Connection, row: OutboxRow) -> None:
         return
     target = _on_timeout(approval["kind"])
     executed_lines = 0
+    extra: dict[str, Any] = {}  # proposal only: how many lines had already run
     if approval["source"] == "proposal":
         # A seller's decide may be executing lines right now (it holds the claim), or may have executed some and
         # not yet recorded the decision. Expiring under it would end with prices applied, the approval expired and
@@ -199,6 +200,7 @@ async def on_sla_breached(conn: asyncpg.Connection, row: OutboxRow) -> None:
             logger.info("approval expiry deferred, a decide is in flight id=%s", log_safe(approval_id))
             return
         executed_lines = in_flight.executed
+        extra = {"executed_lines": executed_lines}
         if in_flight.unfinished:  # accepted or edited but never run: they did not happen, so say so
             await conn.execute(
                 "UPDATE proposal_lines SET status = 'failed' "
@@ -228,8 +230,8 @@ async def on_sla_breached(conn: asyncpg.Connection, row: OutboxRow) -> None:
         [ApprovalStatus.PENDING_REVIEW, ApprovalStatus.NEEDS_INFO],
         target,
         action="sla_timeout",
-        payload={"reason": "sla_breached", "on_timeout": target.value, "executed_lines": executed_lines},
-        decision={"decision": target.value, "reason": "sla_timeout", "executed_lines": executed_lines},
+        payload={"reason": "sla_breached", "on_timeout": target.value, **extra},
+        decision={"decision": target.value, "reason": "sla_timeout", **extra},
     )
     if approval["source"] == "proposal":
         # Nobody decided the batch in time: it lapses. The requester is the system actor, so it is the seller who
