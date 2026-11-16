@@ -92,8 +92,11 @@ Declared in `capabilities.extensions`, all optional. Metadata for one is only se
 The Python SDK merges a status update's metadata into `Task.metadata` (last write wins per key), which is why the terminal
 update repeats the steps: a blocking response then carries every step. **The .NET SDK does not merge it**, so the .NET
 specialist's task store (`OwnedBoundedTaskStore`) republishes the extension metadata into the stored task, and a
-blocking `SendMessage` returns the same `Task.metadata` on either stack. The .NET server also echoes the activated
-extensions in an `A2A-Extensions` response header (the SDK's own negotiation); the Python server does not yet.
+blocking `SendMessage` returns the same `Task.metadata` on either stack. Both servers echo the activated extensions in an
+`A2A-Extensions` response header (comma and space separated; the .NET SDK does it itself, the Python SDK does not, so
+`_SafeJsonRpcDispatcher` adds it): only URIs the caller listed **and** the server supports, on blocking and streaming
+responses, and no header when there are none. The order is the server's declared one on Python; the .NET SDK fixes
+none, so tests compare the set.
 
 **The legacy wire spells a step per stack.** A Python specialist writes `tool_name` / `duration_ms` (one
 `event: step` frame per step); a .NET specialist's `AgentHost` writes the framework's defaults: camelCase in a blocking

@@ -231,6 +231,30 @@ public sealed class A2AInteropTests
         reply.ReplayMiss.Should().BeTrue();
     }
 
+    [RequiresEnvTheory(UrlVar)]
+    [InlineData("SendMessage")]
+    [InlineData("SendStreamingMessage")]
+    public async Task ThePythonServer_EchoesActivatedExtensions_InTheHeaderTheDotNetServerWrites(string method)
+    {
+        string[] listed = [A2AWire.UsageExtensionUri, "https://example.com/unknown/v1", A2AWire.StepsExtensionUri, A2AWire.UsageExtensionUri];
+        using var http = Caller(extensions: false);
+        using var request = new HttpRequestMessage(HttpMethod.Post, Url(UrlVar) + "/a2a/v1")
+        {
+            Content = new StringContent(
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"" + method + "\",\"params\":{\"message\":{\"messageId\":\"m1\",\"role\":\"ROLE_USER\",\"parts\":[{\"text\":\"hi\"}]}}}",
+                System.Text.Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Add("A2A-Version", "1.0");
+        request.Headers.Add("A2A-Extensions", string.Join(", ", listed));
+
+        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+
+        response.EnsureSuccessStatusCode();
+        // The SDK fixes no order for the echo; the set and the format are what both servers share.
+        string.Join(", ", response.Headers.GetValues("A2A-Extensions")).Split(", ")
+            .Should().BeEquivalentTo([A2AWire.UsageExtensionUri, A2AWire.StepsExtensionUri]);
+    }
+
     // The orchestrator's own client, on either wire, against a Python specialist whose model has no recording: it raises
     // the miss (the chat route reports it) instead of returning an apology the orchestrator's model would answer.
     [RequiresEnvTheory(MissVar)]

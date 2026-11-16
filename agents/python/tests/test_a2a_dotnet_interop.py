@@ -333,7 +333,29 @@ async def test_a_token_mode_dotnet_specialist_refuses_an_expired_token() -> None
     assert isinstance(cause, httpx.HTTPStatusError) and cause.response.status_code == 401
 
 
-# ─────────────────────── the legacy wire: the orchestrator's own reader against a .NET specialist ───────────────────────
+@pytest.mark.parametrize("method", ["SendMessage", "SendStreamingMessage"])
+async def test_the_dotnet_server_echoes_activated_extensions_in_the_header_the_python_server_writes(
+    method: str,
+) -> None:
+    # The same request the Python conformance test sends the Python server; both must answer the same header value.
+    listed = [USAGE_EXTENSION_URI, "https://example.com/unknown/v1", STEPS_EXTENSION_URI, USAGE_EXTENSION_URI]
+    body = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": method,
+        "params": {"message": {"messageId": "m1", "role": "ROLE_USER", "parts": [{"text": "hi"}]}},
+    }
+    async with httpx.AsyncClient(timeout=30) as http:
+        resp = await http.post(
+            f"{URL}/a2a/v1", json=body, headers={**HEADERS, "A2A-Version": "1.0", "A2A-Extensions": ", ".join(listed)}
+        )
+
+    assert resp.status_code == 200
+    # The SDK fixes no order for the echo; the set and the format are what both servers share.
+    assert set(resp.headers["A2A-Extensions"].split(", ")) == {USAGE_EXTENSION_URI, STEPS_EXTENSION_URI}
+
+
+# ───────────── the legacy wire: the orchestrator's own reader against a .NET specialist ─────────────
 # The .NET host's /message:send and /message:stream spell a step their own way (camelCase, and PascalCase in a
 # plural `event: steps` frame); the Python orchestrator used to drop them, and read the steps frame as answer text.
 
