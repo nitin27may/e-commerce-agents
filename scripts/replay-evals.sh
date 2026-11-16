@@ -111,7 +111,7 @@ run_suites() {
     # After every quality suite (the rows are real rows the review and product tools would
     # return) and before the safety suite, which is the only consumer.
     echo "::group::adversarial corpus seed"
-    uv run python -m evals.seed_adversarial || fail=1
+    uv run python -m evals.seed_adversarial --yes || fail=1
     echo "::endgroup::"
   fi
   echo "::group::safety / red-team"

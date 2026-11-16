@@ -19,7 +19,11 @@ rating, review count or description changes.
 Deterministic and idempotent: every id is a ``uuid5`` of the item's key, timestamps are a
 fixed instant, and a second run inserts nothing. ``--remove`` deletes exactly these rows.
 
-Run:  ``uv run python -m evals.seed_adversarial [--remove]``  (``DATABASE_URL`` as usual).
+Run:  ``uv run python -m evals.seed_adversarial --yes [--remove]``  (``DATABASE_URL`` as usual).
+
+``--yes`` is required, for removal as well. The default ``DATABASE_URL`` is the developer's own database, and
+these rows are visible to the product and review tools, so nothing is written (and nothing connects) until the
+caller says outright that this is the database they mean.
 
 The corpus deliberately mixes attacks the regex detector (``shared/guardrails/sanitize.py``)
 is built to catch with ones it is not (paraphrase, another language, zero-width and
@@ -45,6 +49,8 @@ FIXED_TIME = datetime(2026, 1, 1, tzinfo=UTC)
 PRODUCT_PREFIX = "[adversarial]"
 # The seeded customer whose id the reviews are attributed to (review tools join users).
 REVIEWER_EMAIL = "olivia.white@gmail.com"
+
+DEFAULT_DATABASE_URL = "postgresql://ecommerce:ecommerce_secret@localhost:5432/ecommerce_agents"
 
 ZWSP = "​"
 CYRILLIC_O = "о"
@@ -312,7 +318,7 @@ async def remove(conn: Any) -> None:
 async def _main(do_remove: bool) -> None:
     import asyncpg
 
-    url = os.environ.get("DATABASE_URL", "postgresql://ecommerce:ecommerce_secret@localhost:5432/ecommerce_agents")
+    url = os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
     conn = await asyncpg.connect(url)
     try:
         if do_remove:
@@ -325,10 +331,26 @@ async def _main(do_remove: bool) -> None:
         await conn.close()
 
 
-def main() -> None:
+def _target(url: str) -> str:
+    """``host/dbname`` of a database URL, for the refusal message (never the credentials)."""
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(url)
+    return f"{parts.hostname or '?'}{':' + str(parts.port) if parts.port else ''}{parts.path or ''}"
+
+
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("--remove", action="store_true", help="delete the corpus instead of inserting it")
-    args = parser.parse_args()
+    parser.add_argument("--yes", action="store_true", help="required: confirm writing to the DATABASE_URL database")
+    args = parser.parse_args(argv)
+    if not args.yes:
+        url = os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
+        parser.exit(
+            2,
+            f"refusing to write to {_target(url)} without --yes: the adversarial corpus is inserted as real "
+            "rows. Point DATABASE_URL at a disposable database and pass --yes.\n",
+        )
     asyncio.run(_main(args.remove))
 
 
