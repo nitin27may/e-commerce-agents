@@ -25,8 +25,15 @@ _KEYS = frozenset(
         "max_change_pct_per_day",
         "block_during_active_promotion",
         "max_lines_per_batch",
+        "max_restock_quantity",
+        "max_restock_order_value",
     }
 )
+
+#: INTEGER column ceiling (``restock_schedule.expected_quantity``): no limit may be set past what the table can hold.
+INT32_MAX = 2_147_483_647
+#: NUMERIC(12,2) ceiling (``proposal_lines`` values): no order-value limit may exceed what a line can carry.
+NUMERIC_12_2_MAX = Decimal("9999999999.99")
 
 
 class MerchantLimitsError(ValueError):
@@ -40,6 +47,8 @@ class MerchantLimits:
     max_change_pct_per_day: Decimal
     block_during_active_promotion: bool
     max_lines_per_batch: int
+    max_restock_quantity: int
+    max_restock_order_value: Decimal
 
 
 def _number(raw: dict[str, Any], key: str) -> Decimal:
@@ -80,12 +89,24 @@ def parse_limits(document: Any) -> MerchantLimits:
     if isinstance(lines, bool) or not isinstance(lines, int) or lines < 1:
         raise MerchantLimitsError(f"max_lines_per_batch: expected an integer of at least 1, got {lines!r}")
 
+    quantity = document["max_restock_quantity"]
+    if isinstance(quantity, bool) or not isinstance(quantity, int) or not 1 <= quantity <= INT32_MAX:
+        raise MerchantLimitsError(f"max_restock_quantity: expected an integer from 1 to {INT32_MAX}, got {quantity!r}")
+
+    order_value = _number(document, "max_restock_order_value")
+    if not Decimal(0) < order_value <= NUMERIC_12_2_MAX:
+        raise MerchantLimitsError(
+            f"max_restock_order_value: must be above 0 and at most {NUMERIC_12_2_MAX}, got {order_value}"
+        )
+
     return MerchantLimits(
         policy_version=version,
         margin_floor_pct=floor,
         max_change_pct_per_day=cap,
         block_during_active_promotion=block,
         max_lines_per_batch=lines,
+        max_restock_quantity=quantity,
+        max_restock_order_value=order_value,
     )
 
 

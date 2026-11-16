@@ -28,7 +28,13 @@ import asyncpg
 from shared.idempotency import run_once
 from shared.log_safe import log_safe
 from shared.merchant.facts import get_product_facts
-from shared.merchant.guards import GuardResult, check_price_change, check_restock_line
+from shared.merchant.guards import (
+    GuardResult,
+    ReasonCode,
+    check_edit_bounds,
+    check_price_change,
+    check_restock_line,
+)
 from shared.merchant.limits import MerchantLimits, get_limits
 from shared.merchant.proposals import DEFAULT_RULES
 
@@ -78,7 +84,7 @@ async def apply_line(
     active_limits = limits or get_limits()
     async with pool.acquire() as conn, conn.transaction():
         line = await conn.fetchrow(
-            """SELECT l.id, l.product_id, l.field, l.status, pr.seller_id
+            """SELECT l.id, l.product_id, l.field, l.status, l.current_value, l.proposed_value, pr.seller_id
                  FROM proposal_lines l JOIN proposals pr ON pr.id = l.proposal_id
                 WHERE l.id = $1 FOR UPDATE OF l""",
             uuid.UUID(str(line_id)),
@@ -105,6 +111,33 @@ async def apply_line(
         return await _apply_restock(conn, line, product, final_value, clock, active_limits)
 
 
+def _edit_bounds(line: asyncpg.Record, final_value: Decimal, limits: MerchantLimits) -> GuardResult:
+    """The reviewer's value against what was proposed: it can never raise the line (see ``check_edit_bounds``)."""
+    return check_edit_bounds(
+        field=line["field"],
+        current_value=line["current_value"],
+        proposed_value=line["proposed_value"],
+        final_value=final_value,
+        limits=limits,
+    )
+
+
+def _moved_verdict(line: asyncpg.Record, live_price: Decimal, limits: MerchantLimits) -> GuardResult:
+    return GuardResult(
+        ok=False,
+        reasons=(ReasonCode.PRICE_MOVED,),
+        numbers={"price_when_proposed": line["current_value"], "current_price": live_price},
+        policy_version=limits.policy_version,
+    )
+
+
+def _price_moved(line: asyncpg.Record, live_price: Decimal, limits: MerchantLimits) -> GuardResult | None:
+    """A verdict when the product's price is no longer the one this line was proposed against, else None."""
+    if line["current_value"] is None or line["current_value"] == live_price:
+        return None
+    return _moved_verdict(line, live_price, limits)
+
+
 async def _apply_price(
     conn: asyncpg.Connection,
     line: asyncpg.Record,
@@ -117,6 +150,14 @@ async def _apply_price(
     if facts is None:
         await _set_status(conn, line["id"], "failed")
         return _outcome(line["id"], "failed", reason="product_not_found")
+    moved = _price_moved(line, facts.current_price, limits)
+    if moved is not None:
+        await _set_status(conn, line["id"], "blocked", moved)
+        return _outcome(line["id"], "blocked", reasons=[r.value for r in moved.reasons])
+    bounds = _edit_bounds(line, final_value, limits)
+    if bounds.blocked:
+        await _set_status(conn, line["id"], "blocked", bounds)
+        return _outcome(line["id"], "blocked", reasons=[r.value for r in bounds.reasons])
     verdict = check_price_change(
         current_price=facts.current_price,
         proposed_price=final_value,
@@ -129,7 +170,17 @@ async def _apply_price(
     if verdict.blocked:
         await _set_status(conn, line["id"], "blocked", verdict)
         return _outcome(line["id"], "blocked", reasons=[r.value for r in verdict.reasons])
-    await conn.execute("UPDATE products SET price = $2 WHERE id = $1", line["product_id"], final_value)
+    # Conditional on the price the guards just judged (the row is locked, so this is the belt to that brace).
+    changed = await conn.execute(
+        "UPDATE products SET price = $2 WHERE id = $1 AND price = $3",
+        line["product_id"],
+        final_value,
+        facts.current_price,
+    )
+    if changed != "UPDATE 1":
+        moved = _moved_verdict(line, facts.current_price, limits)
+        await _set_status(conn, line["id"], "blocked", moved)
+        return _outcome(line["id"], "blocked", reasons=[r.value for r in moved.reasons])
     await conn.execute(
         "INSERT INTO price_history (product_id, price, recorded_at) VALUES ($1, $2, $3)",
         line["product_id"],
@@ -151,7 +202,25 @@ async def _apply_restock(
 ) -> dict[str, Any]:
     whole = final_value.to_integral_value()
     quantity = int(whole) if whole == final_value else 0  # a fractional quantity is invalid, caught by the guard
+    bounds = _edit_bounds(line, final_value, limits)
+    if bounds.blocked:
+        await _set_status(conn, line["id"], "blocked", bounds)
+        return _outcome(line["id"], "blocked", reasons=[r.value for r in bounds.reasons])
     verdict = check_restock_line(quantity=quantity, unit_cost=product["unit_cost"], limits=limits)
+    if verdict.ok:
+        on_order = await conn.fetchval(
+            "SELECT COALESCE(SUM(expected_quantity), 0) FROM restock_schedule "
+            "WHERE product_id = $1 AND expected_date >= $2",
+            line["product_id"],
+            now.date(),
+        )
+        if on_order:  # the test generation uses: stock already on its way means this line would order it twice
+            verdict = GuardResult(
+                ok=False,
+                reasons=(ReasonCode.RESTOCK_ALREADY_SCHEDULED,),
+                numbers={**verdict.numbers, "incoming_units": int(on_order)},
+                policy_version=limits.policy_version,
+            )
     if verdict.blocked:
         await _set_status(conn, line["id"], "blocked", verdict)
         return _outcome(line["id"], "blocked", reasons=[r.value for r in verdict.reasons])

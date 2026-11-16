@@ -35,6 +35,14 @@ class ReasonCode(StrEnum):
     ACTIVE_PROMOTION = "active_promotion"
     INVALID_QUANTITY = "invalid_quantity"
     BATCH_TOO_LARGE = "batch_too_large"
+    RESTOCK_QUANTITY_EXCEEDED = "restock_quantity_exceeded"
+    RESTOCK_VALUE_EXCEEDED = "restock_value_exceeded"
+    #: A reviewer's value is past what was proposed (a restock raised, a price deeper or above where it started).
+    EDIT_BEYOND_PROPOSAL = "edit_beyond_proposal"
+    #: The product's price is no longer the one the line was proposed against.
+    PRICE_MOVED = "price_moved"
+    #: A restock for the product is already on order, so this line would order the same stock twice.
+    RESTOCK_ALREADY_SCHEDULED = "restock_already_scheduled"
 
 
 #: The order reasons are reported in, and so the order of ``GuardResult.reasons``.
@@ -150,18 +158,61 @@ def check_price_change(
 
 
 def check_restock_line(*, quantity: int, unit_cost: Decimal | None, limits: MerchantLimits) -> GuardResult:
-    """Judge one restock line: a positive whole quantity of a product whose cost is known.
+    """Judge one restock line: a positive whole quantity of a product whose cost is known, within the limits.
 
     The cost is required because a restock commits money at that cost; with none recorded the line
-    cannot be valued and is blocked (``MISSING_COST``) rather than assumed free.
+    cannot be valued and is blocked (``MISSING_COST``) rather than assumed free. The quantity may not pass
+    ``max_restock_quantity`` and ``quantity x unit_cost`` may not pass ``max_restock_order_value``.
     """
-    numbers: dict[str, Any] = {"quantity": quantity, "unit_cost": unit_cost}
+    numbers: dict[str, Any] = {
+        "quantity": quantity,
+        "unit_cost": unit_cost,
+        "max_restock_quantity": limits.max_restock_quantity,
+        "max_restock_order_value": limits.max_restock_order_value,
+    }
     reasons: set[ReasonCode] = set()
-    if isinstance(quantity, bool) or not isinstance(quantity, int) or quantity <= 0:
+    valid_quantity = not isinstance(quantity, bool) and isinstance(quantity, int) and quantity > 0
+    if not valid_quantity:
         reasons.add(ReasonCode.INVALID_QUANTITY)
+    elif quantity > limits.max_restock_quantity:
+        reasons.add(ReasonCode.RESTOCK_QUANTITY_EXCEEDED)
     if unit_cost is None or unit_cost < 0:
         reasons.add(ReasonCode.MISSING_COST)
+        numbers["order_value"] = None
+    elif valid_quantity:
+        order_value = unit_cost * quantity
+        numbers["order_value"] = order_value
+        if order_value > limits.max_restock_order_value:
+            reasons.add(ReasonCode.RESTOCK_VALUE_EXCEEDED)
     return _result(reasons, numbers, limits)
+
+
+def check_edit_bounds(
+    *,
+    field: str,
+    current_value: Decimal | None,
+    proposed_value: Decimal,
+    final_value: Decimal,
+    limits: MerchantLimits,
+) -> GuardResult:
+    """A reviewer's value may never raise a line past what the system proposed.
+
+    A restock quantity may be lowered, never raised. A price must stay between the proposed price and the price
+    it started from (``current_value``): a markdown may be shallower than proposed, never deeper, and never above
+    where it began. With no recorded starting price only the proposed price bounds it.
+    """
+    numbers: dict[str, Any] = {
+        "current_value": current_value,
+        "proposed_value": proposed_value,
+        "final_value": final_value,
+    }
+    if field == "restock_quantity":
+        beyond = final_value > proposed_value
+    else:
+        anchor = proposed_value if current_value is None else current_value
+        low, high = min(anchor, proposed_value), max(anchor, proposed_value)
+        beyond = not low <= final_value <= high
+    return _result({ReasonCode.EDIT_BEYOND_PROPOSAL} if beyond else set(), numbers, limits)
 
 
 def check_batch(*, line_count: int, limits: MerchantLimits) -> GuardResult:

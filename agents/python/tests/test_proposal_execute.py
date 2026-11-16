@@ -207,7 +207,7 @@ async def test_an_edited_line_runs_at_the_edited_value_and_the_approval_says_so(
     body = {
         "lines": [
             {"line_id": lines["Overstock"], "decision": "edit", "value": "95.50"},
-            {"line_id": lines["Short"], "decision": "edit", "value": 40},
+            {"line_id": lines["Short"], "decision": "edit", "value": 25},  # lowering is fine; raising is not
         ]
     }
 
@@ -216,7 +216,7 @@ async def test_an_edited_line_runs_at_the_edited_value_and_the_approval_says_so(
     assert resp.status_code == 200, resp.text
     assert await _price(w, products["Overstock"]) == D("95.50")
     (restock,) = await _restocks(w, products["Short"])
-    assert restock["expected_quantity"] == 40
+    assert restock["expected_quantity"] == 25
     line = next(x for x in resp.json()["proposal"]["lines"] if x["product_name"] == "Overstock")
     assert line["status"] == "edited" or line["status"] == "executed"
     assert line["final_value"] == 95.5 and line["proposed_value"] == 90.0
@@ -227,15 +227,23 @@ async def test_an_edited_line_runs_at_the_edited_value_and_the_approval_says_so(
 
 async def test_an_edit_past_a_hard_limit_is_blocked_by_the_guard_and_changes_nothing(w: ms.World) -> None:
     proposal_id, products, lines = await _batch(w)
-    # 30 percent off in one day: over the 10 percent cap, whatever the seller wants.
-    body = {"lines": [{"line_id": lines["Overstock"], "decision": "edit", "value": "70.00"}]}
+    # A 3 percent change was already recorded today, so 8 percent more is over the 10 percent daily cap, whatever the
+    # seller wants. (An edit below the proposed price is refused earlier: see test_merchant_review_fixes.)
+    await w.pool.execute(
+        "INSERT INTO price_history (product_id, price, recorded_at) "
+        "VALUES ($1, 100, NOW() - interval '2 days'), ($1, 97, NOW() - interval '1 second')",
+        products["Overstock"],
+    )
+    history_rows = await _history(w, products["Overstock"])
+    body = {"lines": [{"line_id": lines["Overstock"], "decision": "edit", "value": "92.00"}]}
 
     resp = await _call(_as(ms.SELLER, "seller"), "POST", f"/api/seller/proposals/{proposal_id}/decide", body)
 
     assert resp.status_code == 200
     (result,) = [r for r in resp.json()["results"] if r["status"] != "rejected"]
     assert result["status"] == "blocked" and "daily_change_cap_exceeded" in result["reasons"]
-    assert await _price(w, products["Overstock"]) == D("100.00") and await _history(w, products["Overstock"]) == 0
+    assert await _price(w, products["Overstock"]) == D("100.00")
+    assert await _history(w, products["Overstock"]) == history_rows  # nothing was added
     assert resp.json()["approval"]["status"] == "failed"
     blocked = next(x for x in resp.json()["proposal"]["lines"] if x["product_name"] == "Overstock")
     assert blocked["status"] == "blocked" and "daily_change_cap_exceeded" in blocked["guard"]["reasons"]

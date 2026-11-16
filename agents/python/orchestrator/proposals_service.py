@@ -40,10 +40,14 @@ from shared.db import get_pool
 from shared.log_safe import log_safe
 from shared.merchant import execute as merchant_execute
 from shared.merchant import proposals as merchant_proposals
+from shared.merchant.guards import check_edit_bounds
+from shared.merchant.limits import INT32_MAX, NUMERIC_12_2_MAX, get_limits
 
 logger = logging.getLogger(__name__)
 
 MAX_NOTE_LENGTH = 2000
+_MAX_EDIT_VALUE = NUMERIC_12_2_MAX
+_MAX_QUANTITY = Decimal(INT32_MAX)
 _DECISIONS = ("accept", "edit", "reject")
 _OPEN_LINE = ("proposed", "accepted", "edited")
 
@@ -222,9 +226,33 @@ def _parse_decisions(raw: list[dict[str, Any]], lines: dict[str, asyncpg.Record]
                 raise ApprovalHTTPError(422, "An edit needs a numeric value") from None
             if not value.is_finite() or value <= 0:
                 raise ApprovalHTTPError(422, "An edit needs a positive value")
-            if line["field"] == "restock_quantity" and value != value.to_integral_value():
-                raise ApprovalHTTPError(422, "A restock quantity is a whole number")
+            # Bound it before any arithmetic: a huge exponent makes quantize() raise, and a value past the column
+            # (NUMERIC(12,2) for a price, INTEGER for a quantity) would be a database error rather than a refusal.
+            if value > _MAX_EDIT_VALUE:
+                raise ApprovalHTTPError(422, "An edit value is too large")
+            if line["field"] == "restock_quantity":
+                if value != value.to_integral_value():
+                    raise ApprovalHTTPError(422, "A restock quantity is a whole number")
+                if value > _MAX_QUANTITY:
+                    raise ApprovalHTTPError(422, "An edit value is too large")
             value = value.quantize(Decimal("0.01"))
+            if value <= 0:
+                raise ApprovalHTTPError(422, "An edit needs a positive value")
+            # A reviewer's edit can never raise a line (the repo-wide rule): the same check runs again at apply time.
+            edit = check_edit_bounds(
+                field=line["field"],
+                current_value=line["current_value"],
+                proposed_value=line["proposed_value"],
+                final_value=value,
+                limits=get_limits(),
+            )
+            if edit.blocked:
+                raise ApprovalHTTPError(
+                    422,
+                    "An edit cannot raise a restock quantity above what was proposed"
+                    if line["field"] == "restock_quantity"
+                    else "An edit must stay between the proposed price and the current price",
+                )
         elif item.get("value") is not None:
             raise ApprovalHTTPError(422, "Only an edit carries a value")
         if decision != "reject" and line["status"] == "blocked":
@@ -262,7 +290,8 @@ async def decide(
     line_rows = {
         str(r["id"]): r
         for r in await pool.fetch(
-            "SELECT id, field, status, proposed_value FROM proposal_lines WHERE proposal_id = $1", proposal["id"]
+            "SELECT id, field, status, current_value, proposed_value FROM proposal_lines WHERE proposal_id = $1",
+            proposal["id"],
         )
     }
     decisions = _parse_decisions(lines, line_rows)

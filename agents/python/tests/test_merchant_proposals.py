@@ -214,6 +214,8 @@ async def test_the_batch_is_trimmed_to_the_lines_per_batch_limit_keeping_the_mos
         max_change_pct_per_day=D("10"),
         block_during_active_promotion=True,
         max_lines_per_batch=4,
+        max_restock_quantity=5000,
+        max_restock_order_value=D("50000"),
     )
 
     result = await generate_proposal(w.pool, w.seller_id, limits=limits)
