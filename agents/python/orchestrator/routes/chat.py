@@ -294,6 +294,21 @@ async def _link_run_artifacts(
             logger.exception("chat.approval_open_failed hitl=%s", hitl_id)
 
 
+async def _discard_replay_missed_message(pool: Any, conversation_id: Any, message_id: Any) -> None:
+    """Take back the user message of a turn that got no answer because replay had no recording.
+
+    The message was saved before the run. Left in place it would sit in the conversation unanswered and be
+    carried into every later turn's history, changing the replay key of prompts that are recorded. Only the
+    replay-miss path calls this: any other outcome keeps the message, as it always did.
+    """
+    if not message_id:
+        return
+    try:
+        await pool.execute("DELETE FROM messages WHERE id = $1 AND conversation_id = $2", message_id, conversation_id)
+    except Exception:
+        logger.exception("chat.replay_miss_cleanup_failed conversation=%s", conversation_id)
+
+
 @router.post("/api/chat", response_model=ChatResponse)
 async def chat(
     body: ChatRequest,
@@ -313,6 +328,7 @@ async def chat(
 
     conversation_id = body.conversation_id
     history: list[dict[str, str]] = []
+    user_message_id: Any = None
 
     if not is_anon:
         # Resolve or create conversation
@@ -343,10 +359,10 @@ async def chat(
         # insert would double it into the context sent to the LLM.
         history = await get_history_as_dicts(get_history_provider(pool=pool), conversation_id)
 
-        # Save user message
-        await pool.execute(
+        # Save user message (its id is kept only so a replay miss can take it back out)
+        user_message_id = await pool.fetchval(
             """INSERT INTO messages (conversation_id, role, content, agent_name)
-               VALUES ($1, 'user', $2, NULL)""",
+               VALUES ($1, 'user', $2, NULL) RETURNING id""",
             conversation_id,
             body.message,
         )
@@ -398,6 +414,7 @@ async def chat(
                 logger.warning("chat.replay_miss conversation=%s mode=%s", conversation_id, mode_name)
                 replay_miss = miss_payload()
                 response_text = replay_miss["message"]
+                await _discard_replay_missed_message(pool, conversation_id, user_message_id)
             except Exception:
                 logger.exception(
                     "chat.agent_error user=%s conversation=%s mode=%s", user_email, conversation_id, mode_name
@@ -465,6 +482,7 @@ async def chat_stream(
 
     conversation_id = body.conversation_id
     history: list[dict[str, str]] = []
+    user_message_id: Any = None
 
     if not is_anon:
         # Resolve or create conversation
@@ -492,10 +510,10 @@ async def chat_stream(
         # matching comment for why the ordering matters.
         history = await get_history_as_dicts(get_history_provider(pool=pool), conversation_id)
 
-        # Save user message
-        await pool.execute(
+        # Save user message (its id is kept only so a replay miss can take it back out)
+        user_message_id = await pool.fetchval(
             """INSERT INTO messages (conversation_id, role, content, agent_name)
-               VALUES ($1, 'user', $2, NULL)""",
+               VALUES ($1, 'user', $2, NULL) RETURNING id""",
             conversation_id,
             body.message,
         )
@@ -808,6 +826,7 @@ async def chat_stream(
             # No recording for this prompt: nothing to persist, and the frame
             # already told the client why. The conversation id still goes out, so a
             # brand-new conversation can be continued; nothing about the miss does.
+            await _discard_replay_missed_message(pool, conversation_id, user_message_id)
             miss_metadata = {"conversation_id": conversation_id, "agents_involved": list(agents_involved)}
             yield f"event: metadata\ndata: {json.dumps(miss_metadata)}\n\n"
             yield "data: [DONE]\n\n"
