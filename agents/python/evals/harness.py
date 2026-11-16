@@ -88,9 +88,7 @@ def _tools_called(steps: list[dict[str, Any]]) -> list[str]:
 
 
 def _tool_calls(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [
-        {"tool_name": s["tool_name"], "tool_input": s.get("tool_input")} for s in steps if s.get("tool_name")
-    ]
+    return [{"tool_name": s["tool_name"], "tool_input": s.get("tool_input")} for s in steps if s.get("tool_name")]
 
 
 def _output_field(step: dict[str, Any], key: str) -> Any:

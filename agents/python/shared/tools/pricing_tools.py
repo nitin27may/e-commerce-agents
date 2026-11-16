@@ -10,7 +10,10 @@ from pydantic import Field
 from shared.db import get_pool
 
 
-@tool(name="get_price_history", description="Get price history for a product over a specified number of days. Useful for showing price trends and identifying deals.")
+@tool(
+    name="get_price_history",
+    description="Get price history for a product over a specified number of days. Useful for showing price trends and identifying deals.",
+)
 async def get_price_history(
     product_id: Annotated[str, Field(description="UUID of the product")],
     days: Annotated[int, Field(description="Number of days of history (30, 60, or 90)")] = 30,
@@ -18,7 +21,8 @@ async def get_price_history(
     pool = get_pool()
     async with pool.acquire() as conn:
         product = await conn.fetchrow(
-            "SELECT name, price FROM products WHERE id = $1", product_id,
+            "SELECT name, price FROM products WHERE id = $1",
+            product_id,
         )
         if not product:
             return {"error": f"Product not found: {product_id}"}
@@ -28,7 +32,8 @@ async def get_price_history(
                FROM price_history
                WHERE product_id = $1 AND recorded_at >= NOW() - ($2 || ' days')::interval
                ORDER BY recorded_at""",
-            product_id, str(days),
+            product_id,
+            str(days),
         )
         if not rows:
             return {

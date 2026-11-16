@@ -177,6 +177,7 @@ def test_workflow_builder_wires_every_executor() -> None:
     ids = {getattr(e, "id", None) for e in wf.get_executors_list()}
     assert {"fan-out", "reviews", "stock", "price-history", "merge-and-ship", "synthesis"} <= ids
 
+
 # ─────────────── Partial results must look partial (plan 19 §2b) ───────────────
 #
 # This workflow shipped returning 48 characters from a four-executor fan-out:
@@ -194,6 +195,7 @@ async def test_a_missing_tool_is_recorded_rather_than_skipped_silently() -> None
     """A tool absent from the registry used to produce no error, no log and no
     completed_steps entry — indistinguishable from one that ran and found
     nothing."""
+
     # Only stock is wired; the other three are absent.
     async def _stock(product_id: str) -> dict:
         return {"in_stock": True, "total_quantity": 5}
@@ -211,6 +213,7 @@ async def test_a_missing_tool_is_recorded_rather_than_skipped_silently() -> None
 async def test_the_recommendation_names_what_it_could_not_check() -> None:
     """A short answer that admits what is missing is honest. One that quietly
     omits it reads as a complete picture, which is the actual harm."""
+
     async def _stock(product_id: str) -> dict:
         return {"in_stock": True, "total_quantity": 348}
 
@@ -246,6 +249,7 @@ async def test_all_four_contributions_produce_no_caveat() -> None:
     """The control. With every probe answering, the recommendation must not
     carry a 'could not check' clause — otherwise the caveat is noise rather
     than signal."""
+
     async def _reviews(product_id: str) -> dict:
         return {"overall_sentiment": "positive", "average_rating": 4.6}
 
@@ -258,12 +262,14 @@ async def test_all_four_contributions_produce_no_caveat() -> None:
     async def _shipping(product_id: str, destination_region: str) -> dict:
         return {"shipping_options": [{"price": 5.99, "delivery_window": "5-7 business days"}]}
 
-    workflow = PrePurchaseWorkflow({
-        "analyze_sentiment": _reviews,
-        "check_stock": _stock,
-        "get_price_history": _price,
-        "estimate_shipping": _shipping,
-    })
+    workflow = PrePurchaseWorkflow(
+        {
+            "analyze_sentiment": _reviews,
+            "check_stock": _stock,
+            "get_price_history": _price,
+            "estimate_shipping": _shipping,
+        }
+    )
     state = await workflow.execute(ResearchState(product_id="p1"))
 
     assert "could not check" not in state.recommendation
@@ -276,6 +282,7 @@ async def test_out_of_stock_records_why_shipping_was_skipped() -> None:
     """Not an error — shipping an out-of-stock item has nothing to estimate.
     Recorded so "we did not check" is distinguishable from "we checked and
     found nothing"."""
+
     async def _stock(product_id: str) -> dict:
         return {"in_stock": False, "total_quantity": 0}
 
@@ -312,12 +319,14 @@ async def test_a_probe_that_runs_but_returns_nothing_usable_is_still_reported() 
     async def _shipping_empty(product_id: str, destination_region: str) -> dict:
         return {"shipping_options": []}
 
-    workflow = PrePurchaseWorkflow({
-        "analyze_sentiment": _reviews_empty,
-        "check_stock": _stock,
-        "get_price_history": _price,
-        "estimate_shipping": _shipping_empty,
-    })
+    workflow = PrePurchaseWorkflow(
+        {
+            "analyze_sentiment": _reviews_empty,
+            "check_stock": _stock,
+            "get_price_history": _price,
+            "estimate_shipping": _shipping_empty,
+        }
+    )
     state = await workflow.execute(ResearchState(product_id="p1"))
 
     # They ran, so completed_steps lists them — which is exactly why the caveat
@@ -328,7 +337,6 @@ async def test_a_probe_that_runs_but_returns_nothing_usable_is_still_reported() 
     assert "could not check" in state.recommendation
     assert "reviews" in state.recommendation
     assert "shipping" in state.recommendation
-
 
 
 def test_the_recommendation_reads_the_keys_the_tools_actually_return() -> None:

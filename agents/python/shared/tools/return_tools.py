@@ -19,7 +19,10 @@ from shared.tool_inputs import (
 )
 
 
-@tool(name="check_return_eligibility", description="Check if an order is eligible for return. Orders must be delivered within the last 30 days.")
+@tool(
+    name="check_return_eligibility",
+    description="Check if an order is eligible for return. Orders must be delivered within the last 30 days.",
+)
 async def check_return_eligibility(
     order_id: Annotated[str, Field(description="UUID of the order to check")],
 ) -> dict:
@@ -34,7 +37,8 @@ async def check_return_eligibility(
                FROM orders o
                JOIN users u ON o.user_id = u.id
                WHERE o.id = $1 AND u.email = $2""",
-            order_id, email,
+            order_id,
+            email,
         )
         if not order:
             return {"error": f"Order not found or access denied: {order_id}"}
@@ -103,16 +107,16 @@ async def check_return_eligibility(
 async def initiate_return(
     order_id: Annotated[str, Field(description="UUID of the order to return")],
     reason: Annotated[str, Field(description="Reason for the return")],
-    refund_method: Annotated[str, Field(description="Refund method: 'original_payment' or 'store_credit'")] = "original_payment",
+    refund_method: Annotated[
+        str, Field(description="Refund method: 'original_payment' or 'store_credit'")
+    ] = "original_payment",
 ) -> dict:
     email = current_user_email.get()
     if not email:
         return {"error": "No user context available"}
 
     try:
-        validated = InitiateReturnInput(
-            order_id=order_id, reason=reason, refund_method=refund_method
-        )
+        validated = InitiateReturnInput(order_id=order_id, reason=reason, refund_method=refund_method)
     except ValidationError as exc:
         return validation_error_payload("initiate_return", exc)
     order_id = str(validated.order_id)
@@ -131,20 +135,26 @@ async def initiate_return(
                    JOIN users u ON o.user_id = u.id
                    WHERE o.id = $1 AND u.email = $2
                    FOR UPDATE OF o""",
-                order_id, email,
+                order_id,
+                email,
             )
             if not order:
                 return {"error": f"Order not found or access denied: {order_id}"}
 
             if order["status"] != "delivered":
-                return {"error": f"Cannot return order in '{order['status']}' status. Only delivered orders can be returned."}
+                return {
+                    "error": f"Cannot return order in '{order['status']}' status. Only delivered orders can be returned."
+                }
 
             existing = await conn.fetchrow(
                 "SELECT id FROM returns WHERE order_id = $1",
                 order_id,
             )
             if existing:
-                return {"error": "A return has already been initiated for this order.", "return_id": str(existing["id"])}
+                return {
+                    "error": "A return has already been initiated for this order.",
+                    "return_id": str(existing["id"]),
+                }
 
             label_token = uuid.uuid4().hex[:12]
             return_label_url = f"/api/returns/{label_token}/label"
@@ -153,7 +163,12 @@ async def initiate_return(
                 """INSERT INTO returns (order_id, user_id, reason, status, return_label_url, refund_method, refund_amount)
                    VALUES ($1, $2, $3, 'requested', $4, $5, $6)
                    RETURNING id""",
-                order_id, order["user_id"], reason, return_label_url, refund_method, order["total"],
+                order_id,
+                order["user_id"],
+                reason,
+                return_label_url,
+                refund_method,
+                order["total"],
             )
             await conn.execute(
                 "UPDATE orders SET status = 'returned' WHERE id = $1",
@@ -162,7 +177,8 @@ async def initiate_return(
             await conn.execute(
                 """INSERT INTO order_status_history (order_id, status, notes)
                    VALUES ($1, 'returned', $2)""",
-                order_id, f"Return initiated: {reason}",
+                order_id,
+                f"Return initiated: {reason}",
             )
 
         refund_timeline = "instantly" if refund_method == "store_credit" else "within 5-7 business days"
@@ -210,7 +226,8 @@ async def process_refund(
                    JOIN users u ON r.user_id = u.id
                    WHERE r.id = $1 AND u.email = $2
                    FOR UPDATE OF r""",
-                return_id, email,
+                return_id,
+                email,
             )
             if not ret:
                 return {"error": f"Return not found or access denied: {return_id}"}
@@ -254,7 +271,8 @@ async def get_return_status(
             """SELECT o.id FROM orders o
                JOIN users u ON o.user_id = u.id
                WHERE o.id = $1 AND u.email = $2""",
-            order_id, email,
+            order_id,
+            email,
         )
         if not order_check:
             return {"error": f"Order not found or access denied: {order_id}"}

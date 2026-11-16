@@ -25,9 +25,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 _CARD_FENCE_RE = re.compile(r"```(product|products|order)\s*\n(.*?)\n?```", re.DOTALL)
-_UUID_RE = re.compile(
-    r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
-)
+_UUID_RE = re.compile(r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b")
 _AMOUNT_RE = re.compile(r"\$\s?(\d{1,6}(?:\.\d{2})?)")
 _TRACKING_RE = re.compile(r"\bTRK[A-Z0-9]+\b")
 
@@ -73,13 +71,7 @@ class ExtractedClaims:
 
     @property
     def total_count(self) -> int:
-        return (
-            len(self.products)
-            + len(self.orders)
-            + len(self.bare_ids)
-            + len(self.amounts)
-            + len(self.trackings)
-        )
+        return len(self.products) + len(self.orders) + len(self.bare_ids) + len(self.amounts) + len(self.trackings)
 
 
 def extract_claims(text: str) -> ExtractedClaims:

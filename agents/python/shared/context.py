@@ -20,6 +20,4 @@ current_steps: ContextVar[list | None] = ContextVar("current_steps", default=Non
 # starting the agent run so that call_specialist_agent can push specialist
 # response chunks into it for immediate forwarding to the browser.
 # None when no stream is active (non-streaming requests, tests).
-current_stream_queue: ContextVar[asyncio.Queue | None] = ContextVar(
-    "current_stream_queue", default=None
-)
+current_stream_queue: ContextVar[asyncio.Queue | None] = ContextVar("current_stream_queue", default=None)

@@ -230,7 +230,6 @@ async def _new_refresh_token(pool: Any, email: str) -> str:
     return create_refresh_token(email)
 
 
-
 @router.post("/api/auth/signup", response_model=AuthResponse)
 async def signup(body: SignupRequest, _rate_limit: None = Depends(rate_limit_auth)) -> AuthResponse:
     """Create a new user account and return tokens."""

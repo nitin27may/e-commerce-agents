@@ -37,13 +37,15 @@ logger = logging.getLogger(__name__)
 
 # Tools that require human approval before executing.
 # Matches the @tool(approval_mode="always_require") decorators.
-HITL_GATED_TOOLS: frozenset[str] = frozenset({
-    "cancel_order",
-    "modify_order",
-    "process_refund",
-    "initiate_return",
-    "place_backorder",
-})
+HITL_GATED_TOOLS: frozenset[str] = frozenset(
+    {
+        "cancel_order",
+        "modify_order",
+        "process_refund",
+        "initiate_return",
+        "place_backorder",
+    }
+)
 
 
 # ─────────────────────── Middleware ─────────────────────────────────────────
@@ -71,11 +73,7 @@ class HITLFunctionMiddleware(FunctionMiddleware):
             return
 
         fn = getattr(context, "function", None)
-        tool_name: str = (
-            getattr(fn, "name", None)
-            or getattr(fn, "__name__", None)
-            or ""
-        )
+        tool_name: str = getattr(fn, "name", None) or getattr(fn, "__name__", None) or ""
 
         if tool_name not in HITL_GATED_TOOLS:
             await call_next()
@@ -179,6 +177,7 @@ async def _create_hitl_request(
     tool_input: dict,
 ) -> UUID:
     from shared.db import get_pool
+
     pool = get_pool()
     row = await pool.fetchrow(
         """INSERT INTO tool_approval_requests
@@ -200,6 +199,7 @@ async def list_hitl_requests(
 ) -> list[dict]:
     """Return HITL requests for the admin approval queue."""
     from shared.db import get_pool
+
     pool = get_pool()
 
     where = "WHERE status = $1" if status else ""
@@ -236,10 +236,9 @@ async def list_hitl_requests(
 
 async def get_hitl_request(request_id: str) -> dict | None:
     from shared.db import get_pool
+
     pool = get_pool()
-    row = await pool.fetchrow(
-        "SELECT * FROM tool_approval_requests WHERE id = $1", request_id
-    )
+    row = await pool.fetchrow("SELECT * FROM tool_approval_requests WHERE id = $1", request_id)
     if not row:
         return None
     return {
@@ -267,6 +266,7 @@ async def claim_hitl_request(request_id: str) -> dict | None:
     "someone else got here first" and refuse, not retry.
     """
     from shared.db import get_pool
+
     pool = get_pool()
     row = await pool.fetchrow(
         """UPDATE tool_approval_requests
@@ -302,6 +302,7 @@ async def resolve_hitl_request(
     and this returns False, same as before.
     """
     from shared.db import get_pool
+
     pool = get_pool()
     final_status = "executed" if (decision == "approved" and execution_result) else decision
     result = await pool.execute(
@@ -343,6 +344,7 @@ async def execute_approved_action(
     ``approve_hitl_request``).
     """
     from shared.db import get_pool
+
     pool = get_pool()
 
     if tool_name == "cancel_order":
@@ -445,6 +447,7 @@ async def execute_approved_action(
         order_id = tool_input.get("order_id", "")
         new_address = tool_input.get("new_address", {})
         import json as _json
+
         async with pool.acquire() as conn:
             result = await conn.execute(
                 """UPDATE orders SET shipping_address = $3::jsonb, updated_at = NOW()

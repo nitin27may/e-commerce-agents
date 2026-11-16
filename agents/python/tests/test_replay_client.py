@@ -291,16 +291,24 @@ def test_tool_results_hash_the_same_across_a_reseed():
     """The bug this fixes: a fresh DB reseed hands the same tool a payload with
     new random UUIDs and new seed-time timestamps, which changed the fixture
     key and made every affected fixture unreachable."""
-    session_a = _canonical([
-        _user_msg("What do reviews say about the Sony WH-1000XM5?"),
-        _tool_msg('{"review_id": "e9418342-8843-4b1b-ab01-e63fe2e8b8f0", '
-                  '"rating": 5, "date": "2026-05-18T21:27:13.100156+00:00"}'),
-    ])
-    session_b = _canonical([
-        _user_msg("What do reviews say about the Sony WH-1000XM5?"),
-        _tool_msg('{"review_id": "bf88ec9f-1137-4de9-b0ef-d2a50a29513d", '
-                  '"rating": 5, "date": "2026-05-19T09:02:44.881003+00:00"}'),
-    ])
+    session_a = _canonical(
+        [
+            _user_msg("What do reviews say about the Sony WH-1000XM5?"),
+            _tool_msg(
+                '{"review_id": "e9418342-8843-4b1b-ab01-e63fe2e8b8f0", '
+                '"rating": 5, "date": "2026-05-18T21:27:13.100156+00:00"}'
+            ),
+        ]
+    )
+    session_b = _canonical(
+        [
+            _user_msg("What do reviews say about the Sony WH-1000XM5?"),
+            _tool_msg(
+                '{"review_id": "bf88ec9f-1137-4de9-b0ef-d2a50a29513d", '
+                '"rating": 5, "date": "2026-05-19T09:02:44.881003+00:00"}'
+            ),
+        ]
+    )
 
     assert _request_hash(session_a) == _request_hash(session_b)
 
@@ -371,15 +379,18 @@ def test_user_messages_are_not_scrubbed():
 def test_tool_call_arguments_are_not_normalized():
     """A tool *call*'s arguments live in the assistant message and are hashed
     verbatim, so two different lookups can never collide on one fixture."""
+
     def assistant_call(order_id: str) -> dict[str, Any]:
         return {
             "role": "assistant",
-            "contents": [{
-                "type": "function_call",
-                "call_id": "call_1",
-                "name": "get_order",
-                "arguments": {"order_id": order_id},
-            }],
+            "contents": [
+                {
+                    "type": "function_call",
+                    "call_id": "call_1",
+                    "name": "get_order",
+                    "arguments": {"order_id": order_id},
+                }
+            ],
         }
 
     a = _canonical([_user_msg("track it"), assistant_call("550e8400-e29b-41d4-a716-446655440001")])
@@ -403,19 +414,27 @@ def test_calendar_month_buckets_hash_the_same_as_the_calendar_advances():
     key silently became a function of the wall-clock date. Both payloads below
     describe the same 15 reviews; only the calendar has moved.
     """
-    seven_buckets = _canonical([
-        _user_msg("How has sentiment for the Sony WH-1000XM5 changed?"),
-        _tool_msg('{"product_name": "Sony WH-1000XM5", "period_months": 6, "trend": "declining", '
-                  '"monthly_data": [{"month": "2026-02", "average_rating": 5.0, "review_count": 1}, '
-                  '{"month": "2026-03", "average_rating": 4.0, "review_count": 2}, '
-                  '{"month": "2026-08", "average_rating": 4.67, "review_count": 3}]}'),
-    ])
-    five_buckets = _canonical([
-        _user_msg("How has sentiment for the Sony WH-1000XM5 changed?"),
-        _tool_msg('{"product_name": "Sony WH-1000XM5", "period_months": 6, "trend": "stable", '
-                  '"monthly_data": [{"month": "2026-03", "average_rating": 4.5, "review_count": 2}, '
-                  '{"month": "2026-08", "average_rating": 4.67, "review_count": 3}]}'),
-    ])
+    seven_buckets = _canonical(
+        [
+            _user_msg("How has sentiment for the Sony WH-1000XM5 changed?"),
+            _tool_msg(
+                '{"product_name": "Sony WH-1000XM5", "period_months": 6, "trend": "declining", '
+                '"monthly_data": [{"month": "2026-02", "average_rating": 5.0, "review_count": 1}, '
+                '{"month": "2026-03", "average_rating": 4.0, "review_count": 2}, '
+                '{"month": "2026-08", "average_rating": 4.67, "review_count": 3}]}'
+            ),
+        ]
+    )
+    five_buckets = _canonical(
+        [
+            _user_msg("How has sentiment for the Sony WH-1000XM5 changed?"),
+            _tool_msg(
+                '{"product_name": "Sony WH-1000XM5", "period_months": 6, "trend": "stable", '
+                '"monthly_data": [{"month": "2026-03", "average_rating": 4.5, "review_count": 2}, '
+                '{"month": "2026-08", "average_rating": 4.67, "review_count": 3}]}'
+            ),
+        ]
+    )
 
     assert _request_hash(seven_buckets) == _request_hash(five_buckets)
 
@@ -428,14 +447,18 @@ def test_the_bucket_scrub_does_not_blur_different_products():
     ``monthly_data``/``trend`` still separates them — which is why this stays
     keyed rather than blanket-scrubbing numbers.
     """
-    sony = _canonical([
-        _user_msg("trend?"),
-        _tool_msg('{"product_name": "Sony WH-1000XM5", "trend": "declining", "monthly_data": []}'),
-    ])
-    dyson = _canonical([
-        _user_msg("trend?"),
-        _tool_msg('{"product_name": "Dyson V15", "trend": "declining", "monthly_data": []}'),
-    ])
+    sony = _canonical(
+        [
+            _user_msg("trend?"),
+            _tool_msg('{"product_name": "Sony WH-1000XM5", "trend": "declining", "monthly_data": []}'),
+        ]
+    )
+    dyson = _canonical(
+        [
+            _user_msg("trend?"),
+            _tool_msg('{"product_name": "Dyson V15", "trend": "declining", "monthly_data": []}'),
+        ]
+    )
 
     assert _request_hash(sony) != _request_hash(dyson)
 
@@ -461,9 +484,7 @@ def test_every_committed_fixture_rehashes_to_its_own_filename():
     fixtures = sorted(fixtures_dir.glob("*.json"))
     assert fixtures, f"no fixtures found in {fixtures_dir}"
 
-    mismatched = [
-        f.name for f in fixtures if _request_hash(json.loads(f.read_text())["request"]) != f.stem
-    ]
+    mismatched = [f.name for f in fixtures if _request_hash(json.loads(f.read_text())["request"]) != f.stem]
     assert not mismatched, (
         f"{len(mismatched)} fixture(s) no longer hash to their own filename "
         f"(first few: {mismatched[:5]}). Run: uv run python -m evals.rehash_fixtures"
@@ -512,9 +533,7 @@ def test_deterministic_product_ids_are_load_bearing_for_this_design():
             blob = json.dumps(message)
             if any(
                 version != "5"
-                for match, version in (
-                    (m.group(0), m.group(1)) for m in uuid_re.finditer(blob)
-                )
+                for match, version in ((m.group(0), m.group(1)) for m in uuid_re.finditer(blob))
                 if not match.startswith(synthetic)
             ):
                 offenders.append(f.name)

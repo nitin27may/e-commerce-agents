@@ -146,7 +146,8 @@ class CostBudgetMiddleware(ChatMiddleware):
             self.blocked += 1
             logger.warning(
                 "cost_budget.blocked run_cost_usd=%.4f budget_usd=%.4f",
-                get_run_cost(), budget,
+                get_run_cost(),
+                budget,
             )
             context.result = self._refusal_result(context)
             # Short-circuit: do NOT call call_next() — no further LLM turn
@@ -170,7 +171,9 @@ class CostBudgetMiddleware(ChatMiddleware):
             total = _add_run_cost(cost)
             logger.info(
                 "cost_budget.turn_recorded turn_cost_usd=%.4f run_cost_usd=%.4f mode=%s",
-                cost, total, settings.COST_BUDGET_MODE,
+                cost,
+                total,
+                settings.COST_BUDGET_MODE,
             )
             # Same estimate, as a counter rather than only a log line — a log
             # line cannot be alerted on without shipping and parsing logs.

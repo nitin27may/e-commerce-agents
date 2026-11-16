@@ -20,11 +20,17 @@ import pytest
 def _reload_with_env(monkeypatch, **env) -> object:
     """Reload config + factory with a scripted env snapshot."""
     for key in (
-        "LLM_PROVIDER", "OPENAI_API_KEY", "LLM_MODEL", "LLM_BASE_URL",
-        "AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_KEY", "AZURE_OPENAI_DEPLOYMENT",
+        "LLM_PROVIDER",
+        "OPENAI_API_KEY",
+        "LLM_MODEL",
+        "LLM_BASE_URL",
+        "AZURE_OPENAI_ENDPOINT",
+        "AZURE_OPENAI_KEY",
+        "AZURE_OPENAI_DEPLOYMENT",
         "AZURE_OPENAI_API_VERSION",
         "AGENT_REGISTRY",
-        "MAF_CHECKPOINT_BACKEND", "MAF_CHECKPOINT_DIR",
+        "MAF_CHECKPOINT_BACKEND",
+        "MAF_CHECKPOINT_DIR",
         "MAF_SESSION_BACKEND",
     ):
         monkeypatch.delenv(key, raising=False)
@@ -52,6 +58,7 @@ def test_get_chat_client_uses_openai_when_provider_is_openai(monkeypatch) -> Non
     )
     client = factory.get_chat_client()
     from agent_framework.openai import OpenAIChatClient
+
     assert isinstance(client, OpenAIChatClient)
 
 
@@ -201,6 +208,7 @@ def test_get_checkpoint_storage_file_backend(monkeypatch, tmp_path) -> None:
     )
     storage = factory.get_checkpoint_storage()
     from agent_framework import FileCheckpointStorage
+
     assert isinstance(storage, FileCheckpointStorage)
     assert (tmp_path / "checkpoints").is_dir()
 
@@ -209,6 +217,7 @@ def test_get_checkpoint_storage_memory_backend(monkeypatch) -> None:
     factory = _reload_with_env(monkeypatch, MAF_CHECKPOINT_BACKEND="memory")
     storage = factory.get_checkpoint_storage()
     from agent_framework import InMemoryCheckpointStorage
+
     assert isinstance(storage, InMemoryCheckpointStorage)
 
 
@@ -228,5 +237,6 @@ def test_back_compat_symbols_still_available() -> None:
     """Older code imports create_chat_client / create_embedding_client from
     shared.agent_factory; the shim must keep exporting them."""
     from shared.agent_factory import create_chat_client, create_embedding_client
+
     assert callable(create_chat_client)
     assert callable(create_embedding_client)

@@ -209,8 +209,7 @@ async def seeded_product(db_pool: asyncpg.Pool) -> dict:
 async def test_enforce_mode_strips_a_fabricated_card(monkeypatch: pytest.MonkeyPatch, db_pool: asyncpg.Pool) -> None:
     monkeypatch.setattr(settings, "GROUNDING_MODE", "enforce")
     response = _text_response(
-        "Here you go:\n"
-        f'```product\n{{"name": "Ghost Widget", "id": "{_MISSING_ID}", "price": 5.0}}\n```\nEnjoy!'
+        f'Here you go:\n```product\n{{"name": "Ghost Widget", "id": "{_MISSING_ID}", "price": 5.0}}\n```\nEnjoy!'
     )
     ctx = _agent_context(stream=False, result=response)
 
@@ -227,7 +226,9 @@ async def test_enforce_mode_strips_a_fabricated_card(monkeypatch: pytest.MonkeyP
 
 @pytest.mark.asyncio
 async def test_enforce_mode_corrects_a_wrong_price(
-    monkeypatch: pytest.MonkeyPatch, db_pool: asyncpg.Pool, seeded_product: dict,
+    monkeypatch: pytest.MonkeyPatch,
+    db_pool: asyncpg.Pool,
+    seeded_product: dict,
 ) -> None:
     monkeypatch.setattr(settings, "GROUNDING_MODE", "enforce")
     pid = str(seeded_product["id"])

@@ -83,9 +83,7 @@ async def test_full_stream_passes_through_when_under_limits() -> None:
         for word in ("hello ", "there ", "world"):
             yield word
 
-    yields, full = await _run_generator(
-        chunks(), _FakeRequest(), timeout_s=10, max_bytes=1_000_000
-    )
+    yields, full = await _run_generator(chunks(), _FakeRequest(), timeout_s=10, max_bytes=1_000_000)
     assert yields == ["hello ", "there ", "world"]
     assert "".join(full) == "hello there world"
 
@@ -97,9 +95,7 @@ async def test_client_disconnect_aborts_mid_stream() -> None:
             yield f"chunk{i} "
 
     request = _FakeRequest(disconnect_after_chunks=3)
-    yields, _ = await _run_generator(
-        chunks(), request, timeout_s=10, max_bytes=1_000_000
-    )
+    yields, _ = await _run_generator(chunks(), request, timeout_s=10, max_bytes=1_000_000)
     # We yield 3 chunks, then on the 4th iteration the disconnect probe
     # fires and the loop breaks.
     assert len(yields) == 3
@@ -115,9 +111,7 @@ async def test_wall_clock_timeout_stops_runaway_stream() -> None:
             await asyncio.sleep(0.05)
             yield f"chunk{i}"
 
-    yields, full = await _run_generator(
-        chunks(), _FakeRequest(), timeout_s=0.12, max_bytes=1_000_000
-    )
+    yields, full = await _run_generator(chunks(), _FakeRequest(), timeout_s=0.12, max_bytes=1_000_000)
     assert any("stream timed out" in y for y in yields)
     # Real chunks before the timeout marker are at most 3 (loop overhead)
     real = [y for y in yields if "stream timed out" not in y]

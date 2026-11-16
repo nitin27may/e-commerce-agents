@@ -268,9 +268,7 @@ class AgentEvaluator:
             summary.avg_correctness = sum(r.correctness_score for r in summary.results) / n
             summary.avg_completeness = sum(r.completeness_score for r in summary.results) / n
             summary.overall_score = (
-                summary.avg_groundedness * 0.4
-                + summary.avg_correctness * 0.4
-                + summary.avg_completeness * 0.2
+                summary.avg_groundedness * 0.4 + summary.avg_correctness * 0.4 + summary.avg_completeness * 0.2
             )
 
         summary.estimated_cost_usd = estimate_cost(_current_model(), summary.total_tokens_in, summary.total_tokens_out)
@@ -327,15 +325,13 @@ class AgentEvaluator:
             result.fields_found = list(case.expected_fields) if verdict.score >= 1.0 else []
             result.fields_missing = [] if verdict.score >= 1.0 else list(case.expected_fields)
         else:
-            result.completeness_score, result.fields_found, result.fields_missing = (
-                self._score_completeness_keyword(response_text, case.expected_fields)
+            result.completeness_score, result.fields_found, result.fields_missing = self._score_completeness_keyword(
+                response_text, case.expected_fields
             )
 
         # Weighted overall score
         result.overall_score = (
-            result.groundedness_score * 0.4
-            + result.correctness_score * 0.4
-            + result.completeness_score * 0.2
+            result.groundedness_score * 0.4 + result.correctness_score * 0.4 + result.completeness_score * 0.2
         )
         result.assertion_failures = self._check_assertions(case, outcome)
         result.passed = result.overall_score >= self.pass_threshold and not result.assertion_failures
@@ -478,10 +474,12 @@ def format_summary_report(summary: EvalSummary, verbose: bool = False) -> str:
         for i, r in enumerate(summary.results, 1):
             status = "PASS" if r.passed else "FAIL"
             lines.append(f"  [{status}] Case {i}: {r.input[:60]}")
-            lines.append(f"    Groundedness: {r.groundedness_score:.1%}  "
-                         f"Correctness: {r.correctness_score:.1%}  "
-                         f"Completeness: {r.completeness_score:.1%}  "
-                         f"Overall: {r.overall_score:.1%}")
+            lines.append(
+                f"    Groundedness: {r.groundedness_score:.1%}  "
+                f"Correctness: {r.correctness_score:.1%}  "
+                f"Completeness: {r.completeness_score:.1%}  "
+                f"Overall: {r.overall_score:.1%}"
+            )
             lines.append(f"    Tools called: {', '.join(r.tools_called) or '(none)'}")
             for failure in r.assertion_failures:
                 lines.append(f"    Assertion failed: {failure}")

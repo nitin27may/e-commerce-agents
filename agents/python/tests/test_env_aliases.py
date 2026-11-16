@@ -21,14 +21,23 @@ def _reload_settings(monkeypatch, **env) -> object:
     # Clear every Azure / MAF / LLM var the Settings class reads, then set
     # only what the test wants.
     for key in (
-        "LLM_PROVIDER", "OPENAI_API_KEY", "LLM_MODEL",
-        "AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_KEY", "AZURE_OPENAI_API_KEY",
-        "AZURE_OPENAI_DEPLOYMENT", "AZURE_OPENAI_DEPLOYMENT_NAME",
-        "AZURE_OPENAI_API_VERSION", "AZURE_EMBEDDING_DEPLOYMENT",
+        "LLM_PROVIDER",
+        "OPENAI_API_KEY",
+        "LLM_MODEL",
+        "AZURE_OPENAI_ENDPOINT",
+        "AZURE_OPENAI_KEY",
+        "AZURE_OPENAI_API_KEY",
+        "AZURE_OPENAI_DEPLOYMENT",
+        "AZURE_OPENAI_DEPLOYMENT_NAME",
+        "AZURE_OPENAI_API_VERSION",
+        "AZURE_EMBEDDING_DEPLOYMENT",
         "AGENT_REGISTRY",
-        "MAF_SESSION_BACKEND", "MAF_SESSION_DIR",
-        "MAF_CHECKPOINT_BACKEND", "MAF_CHECKPOINT_DIR",
-        "RETURN_HITL_THRESHOLD", "HANDOFF_AUTONOMOUS_MODE",
+        "MAF_SESSION_BACKEND",
+        "MAF_SESSION_DIR",
+        "MAF_CHECKPOINT_BACKEND",
+        "MAF_CHECKPOINT_DIR",
+        "RETURN_HITL_THRESHOLD",
+        "HANDOFF_AUTONOMOUS_MODE",
         "WORKFLOW_VISUALIZATION_ON_BUILD",
     ):
         monkeypatch.delenv(key, raising=False)
@@ -37,6 +46,7 @@ def _reload_settings(monkeypatch, **env) -> object:
 
     # Also disable the .env file so the dev's config can't leak in.
     from shared import config as config_mod
+
     importlib.reload(config_mod)
     monkeypatch.setitem(config_mod.Settings.model_config, "env_file", None)
     # monkeypatch.setattr (not a bare assignment) so the original singleton —

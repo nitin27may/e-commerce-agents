@@ -98,9 +98,7 @@ def _consumer_counts(fixtures_dir: Path) -> dict[str, int]:
     counts: dict[str, int] = {}
     for name, texts in responses.items():
         counts[name] = sum(
-            1
-            for other, blob in requests.items()
-            if other != name and any(json.dumps(t)[1:-1] in blob for t in texts)
+            1 for other, blob in requests.items() if other != name and any(json.dumps(t)[1:-1] in blob for t in texts)
         )
     return counts
 

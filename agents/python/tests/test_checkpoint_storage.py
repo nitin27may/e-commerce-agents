@@ -27,6 +27,7 @@ pytestmark = pytest.mark.asyncio
 async def storage(postgres_pool):
     """Return a PostgresCheckpointStorage backed by the testcontainer pool."""
     from shared.checkpoint_storage import PostgresCheckpointStorage
+
     # Clear any prior checkpoints from other tests. CASCADE because
     # hitl_requests now carries an FK to workflow_checkpoints (Phase 1.5).
     async with postgres_pool.acquire() as conn:
@@ -129,15 +130,14 @@ async def test_save_upserts_existing_checkpoint(storage) -> None:
     assert all_cps[0].iteration_count == 99
 
 
-async def test_factory_returns_postgres_storage_when_backend_is_postgres(
-    postgres_pool, monkeypatch
-) -> None:
+async def test_factory_returns_postgres_storage_when_backend_is_postgres(postgres_pool, monkeypatch) -> None:
     """Passing the pool explicitly bypasses shared.db.get_pool(), which
     may not be initialized in the test runner."""
     import importlib
 
     monkeypatch.setenv("MAF_CHECKPOINT_BACKEND", "postgres")
     from shared import config as config_mod, factory as factory_mod
+
     importlib.reload(config_mod)
     config_mod.Settings.model_config["env_file"] = None
     config_mod.settings = config_mod.Settings()
@@ -145,6 +145,7 @@ async def test_factory_returns_postgres_storage_when_backend_is_postgres(
 
     storage = factory_mod.get_checkpoint_storage(pool=postgres_pool)
     from shared.checkpoint_storage import PostgresCheckpointStorage
+
     assert isinstance(storage, PostgresCheckpointStorage)
 
 

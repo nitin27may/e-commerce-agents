@@ -61,14 +61,18 @@ class AgentRunLogger(AgentMiddleware):
             elapsed = (time.perf_counter() - start) * 1000
             logger.exception(
                 "agent.fail agent=%s run_id=%s elapsed_ms=%.1f",
-                agent_name, run_id, elapsed,
+                agent_name,
+                run_id,
+                elapsed,
             )
             raise
         else:
             elapsed = (time.perf_counter() - start) * 1000
             logger.info(
                 "agent.finish agent=%s run_id=%s elapsed_ms=%.1f",
-                agent_name, run_id, elapsed,
+                agent_name,
+                run_id,
+                elapsed,
             )
 
 
@@ -115,7 +119,9 @@ class ToolAuditMiddleware(FunctionMiddleware):
             self.audited.append(record)
             logger.info(
                 "tool.invoked name=%s elapsed_ms=%.1f error=%s",
-                name, elapsed, error or "-",
+                name,
+                elapsed,
+                error or "-",
             )
 
 

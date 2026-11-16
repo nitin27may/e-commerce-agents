@@ -184,9 +184,7 @@ async def test_chat_does_not_create_hitl_request_for_completed_tool_mode_run(
 
 
 @pytest.mark.asyncio
-async def test_stream_names_the_run_and_flags_a_pause_before_done(
-    clean_db, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_stream_names_the_run_and_flags_a_pause_before_done(clean_db, monkeypatch: pytest.MonkeyPatch) -> None:
     """``/api/chat/stream`` emits ``event: run`` carrying the run's id.
 
     Without it the chat thread cannot offer an approval at all: resuming

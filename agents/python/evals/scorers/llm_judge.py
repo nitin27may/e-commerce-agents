@@ -34,7 +34,7 @@ _JUDGE_INSTRUCTIONS = (
     '{"score": <float 0.0-1.0>, "reasoning": "<one sentence>", "failure_mode": <string or null>}. '
     "score 1.0 = fully relevant and complete, 0.5 = partially answers or misses some expected "
     "content, 0.0 = irrelevant or empty. failure_mode is a short label when score < 1.0 "
-    "(e.g. \"missing_field\", \"off_topic\", \"empty_response\"), else null."
+    '(e.g. "missing_field", "off_topic", "empty_response"), else null.'
 )
 
 

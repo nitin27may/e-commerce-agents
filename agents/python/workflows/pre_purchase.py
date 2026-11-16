@@ -223,9 +223,7 @@ def _build_recommendation(state: ResearchState) -> str:
         parts.append("Stock: Currently out of stock")
 
     if state.price_history.get("is_good_deal"):
-        parts.append(
-            f"Price: Good deal (below {state.price_history.get('average_price', 0):.0f} avg)"
-        )
+        parts.append(f"Price: Good deal (below {state.price_history.get('average_price', 0):.0f} avg)")
     elif state.price_history.get("trend"):
         parts.append(f"Price trend: {state.price_history['trend']}")
 

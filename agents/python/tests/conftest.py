@@ -75,6 +75,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
 # ─────────────────────── Postgres fixture ───────────────────────
 
+
 @pytest.fixture(scope="session")
 def postgres_container() -> Generator[PostgresContainer, None, None]:
     """One Postgres container per test session — fast and isolated."""
@@ -166,6 +167,7 @@ async def redis_client(redis_container: RedisContainer) -> AsyncGenerator[redis_
 
 # ─────────────────────── Fake LLM fixtures ──────────────────────
 
+
 class FakeChatClient:
     """
     Deterministic stand-in for the MAF ChatClient. Queue canned responses and
@@ -185,10 +187,7 @@ class FakeChatClient:
         self.call_count += 1
         self.received_prompts.append(messages)
         if not self._responses:
-            raise RuntimeError(
-                "FakeChatClient has no enqueued responses. "
-                "Call enqueue(...) before invoking."
-            )
+            raise RuntimeError("FakeChatClient has no enqueued responses. Call enqueue(...) before invoking.")
         return self._responses.pop(0)
 
 
@@ -198,6 +197,7 @@ def fake_chat_client() -> FakeChatClient:
 
 
 # ─────────────────────── Canary fixture ─────────────────────────
+
 
 @pytest.fixture
 def sample_env(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:

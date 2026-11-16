@@ -21,7 +21,12 @@ from shared.tool_inputs import (
 
 @tool(name="get_user_orders", description="List orders for the current user, optionally filtered by status.")
 async def get_user_orders(
-    status: Annotated[str | None, Field(description="Filter by order status: placed, confirmed, shipped, out_for_delivery, delivered, cancelled, returned")] = None,
+    status: Annotated[
+        str | None,
+        Field(
+            description="Filter by order status: placed, confirmed, shipped, out_for_delivery, delivered, cancelled, returned"
+        ),
+    ] = None,
     limit: Annotated[int, Field(description="Max number of orders to return")] = 10,
 ) -> list[dict]:
     email = current_user_email.get()
@@ -72,7 +77,10 @@ async def get_user_orders(
         ]
 
 
-@tool(name="get_order_details", description="Get full order details including line items, status history, and tracking info.")
+@tool(
+    name="get_order_details",
+    description="Get full order details including line items, status history, and tracking info.",
+)
 async def get_order_details(
     order_id: Annotated[str, Field(description="UUID of the order")],
 ) -> dict:
@@ -90,7 +98,8 @@ async def get_order_details(
                FROM orders o
                JOIN users u ON o.user_id = u.id
                WHERE o.id = $1 AND u.email = $2""",
-            order_id, email,
+            order_id,
+            email,
         )
         if not order:
             return {"error": f"Order not found or access denied: {order_id}"}
@@ -168,7 +177,8 @@ async def get_order_tracking(
                FROM orders o
                JOIN users u ON o.user_id = u.id
                WHERE o.id = $1 AND u.email = $2""",
-            order_id, email,
+            order_id,
+            email,
         )
         if not order:
             return {"error": f"Order not found or access denied: {order_id}"}
@@ -209,7 +219,9 @@ async def get_order_tracking(
                 "notes": latest["notes"],
                 "location": latest["location"],
                 "timestamp": latest["timestamp"].isoformat(),
-            } if latest else None,
+            }
+            if latest
+            else None,
             "timeline": [
                 {
                     "status": t["status"],
@@ -256,7 +268,8 @@ async def cancel_order(
                    JOIN users u ON o.user_id = u.id
                    WHERE o.id = $1 AND u.email = $2
                    FOR UPDATE OF o""",
-                order_id, email,
+                order_id,
+                email,
             )
             if not order:
                 return {"error": f"Order not found or access denied: {order_id}"}
@@ -275,7 +288,8 @@ async def cancel_order(
             await conn.execute(
                 """INSERT INTO order_status_history (order_id, status, notes)
                    VALUES ($1, 'cancelled', $2)""",
-                order_id, f"Cancelled by customer: {reason}",
+                order_id,
+                f"Cancelled by customer: {reason}",
             )
 
             return {
@@ -296,7 +310,9 @@ async def cancel_order(
 @requires_role("customer", "seller", "admin")
 async def modify_order(
     order_id: Annotated[str, Field(description="UUID of the order to modify")],
-    new_address: Annotated[dict, Field(description="New shipping address with keys: street, city, state, zip, country")],
+    new_address: Annotated[
+        dict, Field(description="New shipping address with keys: street, city, state, zip, country")
+    ],
 ) -> dict:
     email = current_user_email.get()
     if not email:
@@ -318,7 +334,8 @@ async def modify_order(
                FROM orders o
                JOIN users u ON o.user_id = u.id
                WHERE o.id = $1 AND u.email = $2""",
-            order_id, email,
+            order_id,
+            email,
         )
         if not order:
             return {"error": f"Order not found or access denied: {order_id}"}
@@ -333,14 +350,17 @@ async def modify_order(
         # Update shipping address (input was validated above by Pydantic).
         await conn.execute(
             "UPDATE orders SET shipping_address = $1 WHERE id = $2",
-            json.dumps(new_address), order_id,
+            json.dumps(new_address),
+            order_id,
         )
 
         # Record in status history
         await conn.execute(
             """INSERT INTO order_status_history (order_id, status, notes)
                VALUES ($1, $2, $3)""",
-            order_id, order["status"], "Shipping address updated by customer",
+            order_id,
+            order["status"],
+            "Shipping address updated by customer",
         )
 
         old_address = order["shipping_address"]

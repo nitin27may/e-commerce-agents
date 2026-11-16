@@ -534,7 +534,10 @@ async def chat_stream(
                 with agent_run_span("orchestrator"):
                     try:
                         async for chunk in _run_agent_native_stream(
-                            agent, body.message, history=history, metadata_box=run_metadata,
+                            agent,
+                            body.message,
+                            history=history,
+                            metadata_box=run_metadata,
                         ):
                             await queue.put(("text", chunk))
                         if "grounding" in run_metadata:

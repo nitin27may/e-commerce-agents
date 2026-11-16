@@ -28,7 +28,8 @@ async def get_product_reviews(
 
     async with pool.acquire() as conn:
         total = await conn.fetchval(
-            "SELECT COUNT(*) FROM reviews WHERE product_id = $1", product_id,
+            "SELECT COUNT(*) FROM reviews WHERE product_id = $1",
+            product_id,
         )
 
         rows = await conn.fetch(
@@ -40,11 +41,14 @@ async def get_product_reviews(
                 WHERE r.product_id = $1
                 ORDER BY {order}
                 LIMIT $2 OFFSET $3""",
-            product_id, limit, offset,
+            product_id,
+            limit,
+            offset,
         )
 
         product = await conn.fetchrow(
-            "SELECT name, rating, review_count FROM products WHERE id = $1", product_id,
+            "SELECT name, rating, review_count FROM products WHERE id = $1",
+            product_id,
         )
 
         return {
@@ -71,14 +75,18 @@ async def get_product_reviews(
         }
 
 
-@tool(name="analyze_sentiment", description="Aggregate sentiment analysis for a product: average rating, rating distribution, and pros/cons summary from review text.")
+@tool(
+    name="analyze_sentiment",
+    description="Aggregate sentiment analysis for a product: average rating, rating distribution, and pros/cons summary from review text.",
+)
 async def analyze_sentiment(
     product_id: Annotated[str, Field(description="UUID of the product to analyze")],
 ) -> dict:
     pool = get_pool()
     async with pool.acquire() as conn:
         product = await conn.fetchrow(
-            "SELECT name, rating, review_count FROM products WHERE id = $1", product_id,
+            "SELECT name, rating, review_count FROM products WHERE id = $1",
+            product_id,
         )
         if not product:
             return {"error": f"Product not found: {product_id}"}
@@ -118,8 +126,30 @@ async def analyze_sentiment(
         )
 
         # Simple keyword-based pros/cons extraction
-        positive_keywords = ["great", "excellent", "love", "perfect", "amazing", "best", "quality", "fast", "comfortable", "worth"]
-        negative_keywords = ["poor", "bad", "terrible", "broken", "slow", "cheap", "disappointed", "waste", "defective", "flimsy"]
+        positive_keywords = [
+            "great",
+            "excellent",
+            "love",
+            "perfect",
+            "amazing",
+            "best",
+            "quality",
+            "fast",
+            "comfortable",
+            "worth",
+        ]
+        negative_keywords = [
+            "poor",
+            "bad",
+            "terrible",
+            "broken",
+            "slow",
+            "cheap",
+            "disappointed",
+            "waste",
+            "defective",
+            "flimsy",
+        ]
 
         pros = []
         cons = []
@@ -162,7 +192,10 @@ async def analyze_sentiment(
         }
 
 
-@tool(name="get_sentiment_by_topic", description="Break down reviews into topics (quality, value, shipping, design, durability) with mention counts and average rating per topic.")
+@tool(
+    name="get_sentiment_by_topic",
+    description="Break down reviews into topics (quality, value, shipping, design, durability) with mention counts and average rating per topic.",
+)
 async def get_sentiment_by_topic(
     product_id: Annotated[str, Field(description="UUID of the product")],
 ) -> dict:
@@ -170,16 +203,70 @@ async def get_sentiment_by_topic(
 
     # Topic keyword mappings
     topic_keywords: dict[str, list[str]] = {
-        "quality": ["quality", "well-made", "well made", "craftsmanship", "build", "material", "sturdy", "solid", "premium"],
-        "value": ["value", "price", "worth", "money", "expensive", "cheap", "affordable", "overpriced", "bargain", "deal"],
-        "shipping": ["shipping", "delivery", "arrived", "package", "packaging", "shipped", "transit", "late", "fast delivery"],
-        "design": ["design", "look", "style", "aesthetic", "beautiful", "color", "colour", "sleek", "modern", "appearance"],
-        "durability": ["durable", "durability", "lasting", "broke", "broken", "wear", "tear", "fragile", "robust", "lifespan"],
+        "quality": [
+            "quality",
+            "well-made",
+            "well made",
+            "craftsmanship",
+            "build",
+            "material",
+            "sturdy",
+            "solid",
+            "premium",
+        ],
+        "value": [
+            "value",
+            "price",
+            "worth",
+            "money",
+            "expensive",
+            "cheap",
+            "affordable",
+            "overpriced",
+            "bargain",
+            "deal",
+        ],
+        "shipping": [
+            "shipping",
+            "delivery",
+            "arrived",
+            "package",
+            "packaging",
+            "shipped",
+            "transit",
+            "late",
+            "fast delivery",
+        ],
+        "design": [
+            "design",
+            "look",
+            "style",
+            "aesthetic",
+            "beautiful",
+            "color",
+            "colour",
+            "sleek",
+            "modern",
+            "appearance",
+        ],
+        "durability": [
+            "durable",
+            "durability",
+            "lasting",
+            "broke",
+            "broken",
+            "wear",
+            "tear",
+            "fragile",
+            "robust",
+            "lifespan",
+        ],
     }
 
     async with pool.acquire() as conn:
         product = await conn.fetchrow(
-            "SELECT name FROM products WHERE id = $1", product_id,
+            "SELECT name FROM products WHERE id = $1",
+            product_id,
         )
         if not product:
             return {"error": f"Product not found: {product_id}"}
@@ -203,9 +290,12 @@ async def get_sentiment_by_topic(
                 "mentions": mentions,
                 "average_rating": avg_rating,
                 "sentiment": (
-                    "positive" if avg_rating and avg_rating >= 3.5
-                    else "negative" if avg_rating and avg_rating < 2.5
-                    else "mixed" if avg_rating
+                    "positive"
+                    if avg_rating and avg_rating >= 3.5
+                    else "negative"
+                    if avg_rating and avg_rating < 2.5
+                    else "mixed"
+                    if avg_rating
                     else "no_data"
                 ),
             }
@@ -226,7 +316,8 @@ async def get_sentiment_trend(
     pool = get_pool()
     async with pool.acquire() as conn:
         product = await conn.fetchrow(
-            "SELECT name FROM products WHERE id = $1", product_id,
+            "SELECT name FROM products WHERE id = $1",
+            product_id,
         )
         if not product:
             return {"error": f"Product not found: {product_id}"}
@@ -240,7 +331,8 @@ async def get_sentiment_trend(
                  AND created_at >= NOW() - ($2 || ' months')::interval
                GROUP BY DATE_TRUNC('month', created_at)
                ORDER BY month ASC""",
-            product_id, str(months),
+            product_id,
+            str(months),
         )
 
         trend_data = [
@@ -254,8 +346,8 @@ async def get_sentiment_trend(
 
         # Calculate trend direction
         if len(trend_data) >= 2:
-            first_half = trend_data[:len(trend_data) // 2]
-            second_half = trend_data[len(trend_data) // 2:]
+            first_half = trend_data[: len(trend_data) // 2]
+            second_half = trend_data[len(trend_data) // 2 :]
             first_avg = sum(t["average_rating"] for t in first_half) / len(first_half)
             second_avg = sum(t["average_rating"] for t in second_half) / len(second_half)
             if second_avg > first_avg + 0.2:
@@ -276,7 +368,10 @@ async def get_sentiment_trend(
         }
 
 
-@tool(name="detect_fake_reviews", description="Detect potentially fake or suspicious reviews for a product. Checks flagged reviews, unverified 5-star ratings, and generic language patterns.")
+@tool(
+    name="detect_fake_reviews",
+    description="Detect potentially fake or suspicious reviews for a product. Checks flagged reviews, unverified 5-star ratings, and generic language patterns.",
+)
 async def detect_fake_reviews(
     product_id: Annotated[str, Field(description="UUID of the product to check")],
 ) -> dict:
@@ -298,13 +393,15 @@ async def detect_fake_reviews(
 
     async with pool.acquire() as conn:
         product = await conn.fetchrow(
-            "SELECT name FROM products WHERE id = $1", product_id,
+            "SELECT name FROM products WHERE id = $1",
+            product_id,
         )
         if not product:
             return {"error": f"Product not found: {product_id}"}
 
         total = await conn.fetchval(
-            "SELECT COUNT(*) FROM reviews WHERE product_id = $1", product_id,
+            "SELECT COUNT(*) FROM reviews WHERE product_id = $1",
+            product_id,
         )
 
         # Already flagged reviews
@@ -350,17 +447,19 @@ async def detect_fake_reviews(
             matched_patterns = [p for p in generic_patterns if p in text]
             # Short body + generic patterns + high rating = suspicious
             if matched_patterns and len(r["body"]) < 100 and r["rating"] >= 4:
-                generic_matches.append({
-                    "review_id": str(r["id"]),
-                    "rating": r["rating"],
-                    "title": r["title"],
-                    "body_preview": r["body"][:100],
-                    "verified_purchase": r["verified_purchase"],
-                    "matched_patterns": matched_patterns,
-                    "reason": "Short review with generic language",
-                    "reviewer": r["reviewer_name"],
-                    "date": r["created_at"].isoformat(),
-                })
+                generic_matches.append(
+                    {
+                        "review_id": str(r["id"]),
+                        "rating": r["rating"],
+                        "title": r["title"],
+                        "body_preview": r["body"][:100],
+                        "verified_purchase": r["verified_purchase"],
+                        "matched_patterns": matched_patterns,
+                        "reason": "Short review with generic language",
+                        "reviewer": r["reviewer_name"],
+                        "date": r["created_at"].isoformat(),
+                    }
+                )
 
         suspicious_count = len(flagged) + len(unverified_five_star) + len(generic_matches)
 
@@ -370,8 +469,10 @@ async def detect_fake_reviews(
             "total_reviews": total,
             "suspicious_count": suspicious_count,
             "risk_level": (
-                "high" if suspicious_count > total * 0.3 and total > 0
-                else "medium" if suspicious_count > total * 0.1 and total > 0
+                "high"
+                if suspicious_count > total * 0.3 and total > 0
+                else "medium"
+                if suspicious_count > total * 0.1 and total > 0
                 else "low"
             ),
             "flagged_reviews": [
@@ -410,7 +511,8 @@ async def search_reviews(
     pool = get_pool()
     async with pool.acquire() as conn:
         product = await conn.fetchrow(
-            "SELECT name FROM products WHERE id = $1", product_id,
+            "SELECT name FROM products WHERE id = $1",
+            product_id,
         )
         if not product:
             return {"error": f"Product not found: {product_id}"}
@@ -424,7 +526,8 @@ async def search_reviews(
                  AND (r.title ILIKE $2 OR r.body ILIKE $2)
                ORDER BY r.helpful_count DESC, r.created_at DESC
                LIMIT 20""",
-            product_id, f"%{keyword}%",
+            product_id,
+            f"%{keyword}%",
         )
 
         return {
@@ -448,7 +551,10 @@ async def search_reviews(
         }
 
 
-@tool(name="draft_seller_response", description="Generate a professional response template for a negative review. Returns a template the seller can customize.")
+@tool(
+    name="draft_seller_response",
+    description="Generate a professional response template for a negative review. Returns a template the seller can customize.",
+)
 @requires_role("seller", "admin")
 async def draft_seller_response(
     review_id: Annotated[str, Field(description="UUID of the review to respond to")],
@@ -515,7 +621,10 @@ async def draft_seller_response(
         }
 
 
-@tool(name="compare_product_reviews", description="Compare review metrics (average rating, review count, sentiment) across 2-3 products.")
+@tool(
+    name="compare_product_reviews",
+    description="Compare review metrics (average rating, review count, sentiment) across 2-3 products.",
+)
 async def compare_product_reviews(
     product_ids: Annotated[list[str], Field(description="List of 2-3 product UUIDs to compare")],
 ) -> dict:
@@ -527,7 +636,8 @@ async def compare_product_reviews(
     async with pool.acquire() as conn:
         for pid in product_ids:
             product = await conn.fetchrow(
-                "SELECT name, rating, review_count FROM products WHERE id = $1", pid,
+                "SELECT name, rating, review_count FROM products WHERE id = $1",
+                pid,
             )
             if not product:
                 comparisons.append({"product_id": pid, "error": "Product not found"})
@@ -569,15 +679,17 @@ async def compare_product_reviews(
             else:
                 sentiment = "very_negative"
 
-            comparisons.append({
-                "product_id": pid,
-                "product_name": product["name"],
-                "average_rating": avg,
-                "review_count": product["review_count"],
-                "sentiment": sentiment,
-                "rating_distribution": distribution,
-                "verified_reviews": verified,
-                "recent_avg_rating": round(float(recent_avg), 2) if recent_avg else None,
-            })
+            comparisons.append(
+                {
+                    "product_id": pid,
+                    "product_name": product["name"],
+                    "average_rating": avg,
+                    "review_count": product["review_count"],
+                    "sentiment": sentiment,
+                    "rating_distribution": distribution,
+                    "verified_reviews": verified,
+                    "recent_avg_rating": round(float(recent_avg), 2) if recent_avg else None,
+                }
+            )
 
     return {"comparisons": comparisons}

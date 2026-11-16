@@ -106,6 +106,7 @@ def _safe_json(data: dict | None) -> str | None:
     if data is None:
         return None
     import json
+
     try:
         return json.dumps(data, default=str)
     except (TypeError, ValueError):

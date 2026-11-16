@@ -97,9 +97,7 @@ def test_initiate_return_defaults_refund_method_to_original_payment() -> None:
 
 def test_initiate_return_rejects_unknown_refund_method() -> None:
     with pytest.raises(ValidationError):
-        InitiateReturnInput(
-            order_id=_GOOD_UUID, reason="defective", refund_method="bitcoin"
-        )
+        InitiateReturnInput(order_id=_GOOD_UUID, reason="defective", refund_method="bitcoin")
 
 
 # ─────────────────────── ProcessRefundInput ───────────────────────

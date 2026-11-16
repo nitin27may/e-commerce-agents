@@ -25,10 +25,17 @@ SORT_CLAUSES = {
 RATING_SORT = "p.rating DESC, p.review_count DESC"
 
 
-@tool(name="search_products", description="Search the product catalog using natural language. Supports filtering by category, price range, and rating.")
+@tool(
+    name="search_products",
+    description="Search the product catalog using natural language. Supports filtering by category, price range, and rating.",
+)
 async def search_products(
-    query: Annotated[str | None, Field(description="Natural language search query (optional if using category filter)")] = None,
-    category: Annotated[str | None, Field(description="Filter by category: Electronics, Clothing, Home, Sports, Books")] = None,
+    query: Annotated[
+        str | None, Field(description="Natural language search query (optional if using category filter)")
+    ] = None,
+    category: Annotated[
+        str | None, Field(description="Filter by category: Electronics, Clothing, Home, Sports, Books")
+    ] = None,
     min_price: Annotated[float | None, Field(description="Minimum price filter")] = None,
     max_price: Annotated[float | None, Field(description="Maximum price filter")] = None,
     min_rating: Annotated[float | None, Field(description="Minimum rating (1-5)")] = None,
@@ -159,21 +166,26 @@ async def compare_products(
                 pid,
             )
             if row:
-                results.append({
-                    "id": str(row["id"]),
-                    "name": row["name"],
-                    "category": row["category"],
-                    "brand": row["brand"],
-                    "price": float(row["price"]),
-                    "original_price": float(row["original_price"]) if row["original_price"] else None,
-                    "rating": float(row["rating"]),
-                    "review_count": row["review_count"],
-                    "specs": json.loads(row["specs"]) if isinstance(row["specs"], str) else dict(row["specs"]),
-                })
+                results.append(
+                    {
+                        "id": str(row["id"]),
+                        "name": row["name"],
+                        "category": row["category"],
+                        "brand": row["brand"],
+                        "price": float(row["price"]),
+                        "original_price": float(row["original_price"]) if row["original_price"] else None,
+                        "rating": float(row["rating"]),
+                        "review_count": row["review_count"],
+                        "specs": json.loads(row["specs"]) if isinstance(row["specs"], str) else dict(row["specs"]),
+                    }
+                )
     return results
 
 
-@tool(name="semantic_search", description="Search products using semantic similarity via pgvector embeddings. Best for vague or descriptive queries like 'something cozy for winter' or 'gift for a tech enthusiast'.")
+@tool(
+    name="semantic_search",
+    description="Search products using semantic similarity via pgvector embeddings. Best for vague or descriptive queries like 'something cozy for winter' or 'gift for a tech enthusiast'.",
+)
 async def semantic_search(
     query: Annotated[str, Field(description="Descriptive search query in natural language")],
     limit: Annotated[int, Field(description="Max results")] = 5,
@@ -190,8 +202,9 @@ async def semantic_search(
         response = await client.embeddings.create(model=get_embedding_model(), input=[query])
         embedding = response.data[0].embedding
     except Exception as exc:
-        logger.warning("semantic_search: embedding call failed (%s: %s) -- falling back to full-text only",
-                       type(exc).__name__, exc)
+        logger.warning(
+            "semantic_search: embedding call failed (%s: %s) -- falling back to full-text only", type(exc).__name__, exc
+        )
         embedding = None
 
     # Pull a wider candidate set from each arm than we return — fusion only has
@@ -315,7 +328,9 @@ def _semantic_rows(rows: list) -> list[dict]:
     ]
 
 
-@tool(name="find_similar_products", description="Find products similar to a given product based on embedding similarity.")
+@tool(
+    name="find_similar_products", description="Find products similar to a given product based on embedding similarity."
+)
 async def find_similar_products(
     product_id: Annotated[str, Field(description="UUID of the reference product")],
     limit: Annotated[int, Field(description="Max results")] = 5,
@@ -324,7 +339,8 @@ async def find_similar_products(
     async with pool.acquire() as conn:
         # Get the reference product's embedding
         ref = await conn.fetchrow(
-            "SELECT embedding FROM product_embeddings WHERE product_id = $1", product_id,
+            "SELECT embedding FROM product_embeddings WHERE product_id = $1",
+            product_id,
         )
         if not ref:
             # No vector for this product (embeddings not seeded, or a product

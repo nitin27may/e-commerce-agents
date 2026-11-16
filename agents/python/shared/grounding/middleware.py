@@ -80,7 +80,10 @@ class GroundingVerificationMiddleware(AgentMiddleware):
         self.unverified_total += report.unverified_count
         logger.info(
             "grounding.verified total=%d verified=%d unverified=%d mode=%s",
-            report.total_count, report.verified_count, report.unverified_count, mode,
+            report.total_count,
+            report.verified_count,
+            report.unverified_count,
+            mode,
         )
 
         if mode in ("annotate", "enforce"):

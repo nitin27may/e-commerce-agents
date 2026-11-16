@@ -11,7 +11,9 @@ from shared.context import current_user_email
 from shared.db import get_pool
 
 
-@tool(name="get_user_profile", description="Get the current user's profile including loyalty tier and spending history.")
+@tool(
+    name="get_user_profile", description="Get the current user's profile including loyalty tier and spending history."
+)
 async def get_user_profile() -> dict:
     email = current_user_email.get()
     if not email:
@@ -42,13 +44,20 @@ async def get_user_profile() -> dict:
             "member_since": row["created_at"].isoformat(),
             "tier_benefits": {
                 "discount_pct": float(tier["discount_pct"]) if tier else 0,
-                "free_shipping_threshold": float(tier["free_shipping_threshold"]) if tier and tier["free_shipping_threshold"] else None,
+                "free_shipping_threshold": float(tier["free_shipping_threshold"])
+                if tier and tier["free_shipping_threshold"]
+                else None,
                 "priority_support": tier["priority_support"] if tier else False,
-            } if tier else {},
+            }
+            if tier
+            else {},
         }
 
 
-@tool(name="get_purchase_history", description="Get the current user's recent purchase history for personalized recommendations.")
+@tool(
+    name="get_purchase_history",
+    description="Get the current user's recent purchase history for personalized recommendations.",
+)
 async def get_purchase_history(
     limit: Annotated[int, Field(description="Max number of orders to return")] = 10,
 ) -> list[dict]:
@@ -70,7 +79,8 @@ async def get_purchase_history(
                GROUP BY o.id, o.status, o.total, o.created_at
                ORDER BY o.created_at DESC
                LIMIT $2""",
-            email, limit,
+            email,
+            limit,
         )
         return [
             {

@@ -43,9 +43,7 @@ def write_baseline(path: str | Path, summary: EvalSummary) -> None:
     p.write_text(json.dumps(snapshot, indent=2) + "\n")
 
 
-def check_regression(
-    baseline: dict[str, float], summary: EvalSummary, max_regression: float
-) -> tuple[bool, str]:
+def check_regression(baseline: dict[str, float], summary: EvalSummary, max_regression: float) -> tuple[bool, str]:
     """Returns ``(regressed, human_readable_message)``.
 
     A score is a regression only when it drops by more than

@@ -23,6 +23,7 @@ from agent_framework import (
     WorkflowCheckpoint,
     WorkflowCheckpointException,
 )
+
 # Not public at agent-framework-core 1.14.0 (allowlisted in tests/test_no_private_maf_imports.py).
 from agent_framework._workflows._checkpoint_encoding import (
     decode_checkpoint_value,
@@ -71,14 +72,15 @@ class PostgresCheckpointStorage(CheckpointStorage):
             )
         if row is None:
             raise WorkflowCheckpointException(f"No checkpoint found with ID {checkpoint_id}")
-        data = decode_checkpoint_value(json.loads(row["payload"]) if isinstance(row["payload"], str) else row["payload"])
+        data = decode_checkpoint_value(
+            json.loads(row["payload"]) if isinstance(row["payload"], str) else row["payload"]
+        )
         return WorkflowCheckpoint.from_dict(data)
 
     async def list_checkpoints(self, *, workflow_name: str) -> list[WorkflowCheckpoint]:
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(
-                f"SELECT payload FROM {self._table} "
-                f"WHERE workflow_name = $1 ORDER BY created_at DESC",
+                f"SELECT payload FROM {self._table} WHERE workflow_name = $1 ORDER BY created_at DESC",
                 workflow_name,
             )
         return [WorkflowCheckpoint.from_dict(decode_checkpoint_value(_payload(r))) for r in rows]
@@ -86,8 +88,7 @@ class PostgresCheckpointStorage(CheckpointStorage):
     async def list_checkpoint_ids(self, *, workflow_name: str) -> list[CheckpointID]:
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(
-                f"SELECT checkpoint_id FROM {self._table} "
-                f"WHERE workflow_name = $1 ORDER BY created_at DESC",
+                f"SELECT checkpoint_id FROM {self._table} WHERE workflow_name = $1 ORDER BY created_at DESC",
                 workflow_name,
             )
         return [str(r["checkpoint_id"]) for r in rows]
@@ -95,8 +96,7 @@ class PostgresCheckpointStorage(CheckpointStorage):
     async def get_latest(self, *, workflow_name: str) -> WorkflowCheckpoint | None:
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
-                f"SELECT payload FROM {self._table} "
-                f"WHERE workflow_name = $1 ORDER BY created_at DESC LIMIT 1",
+                f"SELECT payload FROM {self._table} WHERE workflow_name = $1 ORDER BY created_at DESC LIMIT 1",
                 workflow_name,
             )
         if row is None:

@@ -129,9 +129,11 @@ async def test_unresolved_claim_without_pool_is_unverifiable_not_not_found() -> 
 
 @pytest.mark.asyncio
 async def test_product_verified_against_real_db(db_pool: asyncpg.Pool, seeded_product: dict) -> None:
-    claims = ExtractedClaims(products=[
-        ProductClaim(id=str(seeded_product["id"]), name="Widget", price=49.99, image_url=None),
-    ])
+    claims = ExtractedClaims(
+        products=[
+            ProductClaim(id=str(seeded_product["id"]), name="Widget", price=49.99, image_url=None),
+        ]
+    )
     report = await verify_claims(claims, None, db_pool)
     assert report.verdicts[0].status == "verified"
     assert report.verdicts[0].source == "db"
@@ -139,9 +141,11 @@ async def test_product_verified_against_real_db(db_pool: asyncpg.Pool, seeded_pr
 
 @pytest.mark.asyncio
 async def test_product_price_mismatch_against_real_db(db_pool: asyncpg.Pool, seeded_product: dict) -> None:
-    claims = ExtractedClaims(products=[
-        ProductClaim(id=str(seeded_product["id"]), name="Widget", price=1.0, image_url=None),
-    ])
+    claims = ExtractedClaims(
+        products=[
+            ProductClaim(id=str(seeded_product["id"]), name="Widget", price=1.0, image_url=None),
+        ]
+    )
     report = await verify_claims(claims, None, db_pool)
     verdict = report.verdicts[0]
     assert verdict.status == "price_mismatch"
@@ -150,9 +154,11 @@ async def test_product_price_mismatch_against_real_db(db_pool: asyncpg.Pool, see
 
 @pytest.mark.asyncio
 async def test_fabricated_product_id_is_not_found(db_pool: asyncpg.Pool) -> None:
-    claims = ExtractedClaims(products=[
-        ProductClaim(id=_MISSING_ID, name="Ghost", price=1.0, image_url=None),
-    ])
+    claims = ExtractedClaims(
+        products=[
+            ProductClaim(id=_MISSING_ID, name="Ghost", price=1.0, image_url=None),
+        ]
+    )
     report = await verify_claims(claims, None, db_pool)
     assert report.verdicts[0].status == "not_found"
 
@@ -162,25 +168,30 @@ async def test_non_uuid_id_is_not_found_without_a_db_round_trip(db_pool: asyncpg
     # A slug like "sony-wh1000xm5-001" is exactly grounding-rules.yaml's
     # documented example of a fabricated id — must fail fast, not crash on
     # an invalid ::uuid[] cast.
-    claims = ExtractedClaims(products=[
-        ProductClaim(id=_NOT_A_UUID, name="Ghost", price=1.0, image_url=None),
-    ])
+    claims = ExtractedClaims(
+        products=[
+            ProductClaim(id=_NOT_A_UUID, name="Ghost", price=1.0, image_url=None),
+        ]
+    )
     report = await verify_claims(claims, None, db_pool)
     assert report.verdicts[0].status == "not_found"
 
 
 @pytest.mark.asyncio
 async def test_order_verified_against_real_db(db_pool: asyncpg.Pool, seeded_order: dict) -> None:
-    claims = ExtractedClaims(orders=[
-        OrderClaim(id=str(seeded_order["id"]), status="shipped", total=129.50, tracking=None),
-    ])
+    claims = ExtractedClaims(
+        orders=[
+            OrderClaim(id=str(seeded_order["id"]), status="shipped", total=129.50, tracking=None),
+        ]
+    )
     report = await verify_claims(claims, None, db_pool)
     assert report.verdicts[0].status == "verified"
 
 
 @pytest.mark.asyncio
 async def test_bare_id_verified_if_it_exists_as_either_product_or_order(
-    db_pool: asyncpg.Pool, seeded_order: dict,
+    db_pool: asyncpg.Pool,
+    seeded_order: dict,
 ) -> None:
     claims = ExtractedClaims(bare_ids=[BareIdClaim(id=str(seeded_order["id"]))])
     report = await verify_claims(claims, None, db_pool)
@@ -196,7 +207,8 @@ async def test_bare_id_not_found_when_it_matches_nothing(db_pool: asyncpg.Pool) 
 
 @pytest.mark.asyncio
 async def test_ledger_match_skips_db_round_trip(
-    db_pool: asyncpg.Pool, seeded_product: dict,
+    db_pool: asyncpg.Pool,
+    seeded_product: dict,
 ) -> None:
     # Real product in the DB, but also present in the ledger with a
     # DIFFERENT price — the ledger tier must win (cheaper, checked first)
