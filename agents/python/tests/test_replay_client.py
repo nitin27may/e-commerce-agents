@@ -313,6 +313,61 @@ def test_different_questions_still_hash_differently():
     assert _request_hash(a) != _request_hash(b)
 
 
+_PROMPT = (
+    "You are an order specialist.\n"
+    "Recent orders for this user:\n"
+    "- {oid} placed {when} (shipped)\n"
+    "Always cite real order ids."
+)
+
+
+def _with_instructions(instructions: str, *, system_message: bool = False) -> dict[str, Any]:
+    messages = [_user_msg("Where is my order?")]
+    if system_message:
+        messages.insert(0, {"role": "system", "contents": [{"type": "text", "text": instructions}]})
+        return {"messages": messages, "tools": [], "instructions": None}
+    return {"messages": messages, "tools": [], "instructions": instructions}
+
+
+def test_instructions_differing_only_in_uuid_or_date_hash_equal():
+    """The recent-orders block in the system prompt carries real order ids and
+    now-relative dates, which change on every reseed (#86)."""
+    id_a, id_b = "e9418342-8843-4b1b-ab01-e63fe2e8b8f0", "bf88ec9f-1137-4de9-b0ef-d2a50a29513d"
+    a = _with_instructions(_PROMPT.format(oid=id_a, when="2026-05-18T21:27:13.100156+00:00"))
+    b = _with_instructions(_PROMPT.format(oid=id_b, when="2026-11-02T09:02:44+00:00"))
+    c = _with_instructions(_PROMPT.format(oid=id_b, when="2026-11-02"))
+
+    assert _request_hash(a) == _request_hash(b) == _request_hash(c)
+
+
+def test_system_messages_are_scrubbed_like_instructions():
+    a = _with_instructions(
+        _PROMPT.format(oid="e9418342-8843-4b1b-ab01-e63fe2e8b8f0", when="2026-05-18"), system_message=True
+    )
+    b = _with_instructions(
+        _PROMPT.format(oid="bf88ec9f-1137-4de9-b0ef-d2a50a29513d", when="2026-11-02"), system_message=True
+    )
+    assert _request_hash(a) == _request_hash(b)
+
+
+def test_instructions_with_different_prose_still_hash_differently():
+    base = _PROMPT.format(oid="e9418342-8843-4b1b-ab01-e63fe2e8b8f0", when="2026-05-18")
+    reworded = base.replace("Always cite real order ids.", "Never cite order ids.")
+
+    assert _request_hash(_with_instructions(base)) != _request_hash(_with_instructions(reworded))
+    # ...and a different *number of* ids is a different prompt, not a different value.
+    extra_line = base + "\n- e9418342-8843-4b1b-ab01-e63fe2e8b8f0 placed 2026-05-18 (shipped)"
+    assert _request_hash(_with_instructions(base)) != _request_hash(_with_instructions(extra_line))
+
+
+def test_user_messages_are_not_scrubbed():
+    """Only system text and tool results are volatile; what the user typed is the request."""
+    a = _canonical([_user_msg("Track order e9418342-8843-4b1b-ab01-e63fe2e8b8f0")])
+    b = _canonical([_user_msg("Track order bf88ec9f-1137-4de9-b0ef-d2a50a29513d")])
+
+    assert _request_hash(a) != _request_hash(b)
+
+
 def test_tool_call_arguments_are_not_normalized():
     """A tool *call*'s arguments live in the assistant message and are hashed
     verbatim, so two different lookups can never collide on one fixture."""
