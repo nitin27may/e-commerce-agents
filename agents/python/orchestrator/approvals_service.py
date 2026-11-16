@@ -560,8 +560,26 @@ async def _approve_event(
                 # ``run_once`` reports another attempt's in-progress reservation as ``{"error": ...}``, not as a
                 # failure of the credit. That is not a verdict: record nothing, hand the claim back (below), retry.
                 raise ApprovalHTTPError(409, "Another attempt to grant this credit is still running; try again shortly")
+        recorded_edits = edits
+        if result.get("success") and Decimal(result["amount"]) != amount:
+            # The credit that went out is not the one this request asked for: a first attempt's amount was replayed.
+            # The audit must say what was paid, so refuse a conflicting edit and otherwise record the real amount.
+            paid = Decimal(result["amount"])
+            if "amount" in edits:
+                raise ApprovalHTTPError(
+                    409,
+                    f"A credit of {paid:.2f} was already granted for this approval; "
+                    "approve with that amount, or without edits, to record it",
+                )
+            recorded_edits = {"amount": autonomy.money(paid)} if paid != proposed["amount"] else {}
         approved = await _record(
-            approval, actor, token, S.APPROVED_WITH_EDITS if edits else S.APPROVED, "approve", note, edits
+            approval,
+            actor,
+            token,
+            S.APPROVED_WITH_EDITS if recorded_edits else S.APPROVED,
+            "approve",
+            note,
+            recorded_edits,
         )
     except BaseException:
         # Hand the claim back so a retry can record it: the credit is keyed by this approval, so a retry replays the

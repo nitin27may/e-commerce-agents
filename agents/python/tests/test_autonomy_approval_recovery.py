@@ -198,3 +198,36 @@ async def test_r2_a_credit_that_committed_under_a_stuck_reservation_is_recorded_
     assert out["approval"]["status"] == "executed" and out["result"]["amount"] == "40.00"
     assert await aus.ledger_balance(w.pool, w.users[aus.CUSTOMER]) == D("40.00")
     assert await w.pool.fetchval("SELECT count(*) FROM agent_decisions WHERE entry_type = 'approved_execution'") == 1
+
+
+# ── R3: the recorded amount is the amount that went out ──────────────────────
+
+
+async def test_r3_a_retry_with_a_different_amount_is_refused_and_records_nothing(
+    w: aus.World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result, _ = await _paid_but_unrecorded(w, monkeypatch)  # $40 went out
+
+    with pytest.raises(svc.ApprovalHTTPError) as err:
+        await svc.decide(result["approval_id"], STAFF, decision="approve", edits={"amount": 25})
+
+    assert err.value.status_code == 409 and "40.00" in err.value.detail
+    row = await repo.get(w.pool, result["approval_id"])
+    assert (row["status"], row["claimed_by"]) == ("pending_review", None)
+    assert not [e for e in await repo.list_events(w.pool, result["approval_id"]) if e["action"] == "decided"]
+
+    out = await svc.decide(result["approval_id"], STAFF, decision="approve", edits={"amount": "40.00"})
+    assert out["result"]["amount"] == "40.00" and out["approval"]["status"] == "executed"
+
+
+async def test_r3_a_retry_without_edits_records_the_amount_the_first_attempt_edited_it_to(
+    w: aus.World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result, _ = await _paid_but_unrecorded(w, monkeypatch, amount=25)  # $25 went out, not the proposed $40
+
+    out = await svc.decide(result["approval_id"], ADMIN, decision="approve")
+
+    assert out["result"]["amount"] == "25.00"
+    decided = [e for e in await repo.list_events(w.pool, result["approval_id"]) if e["action"] == "decided"]
+    assert decided[0]["payload"]["edits"] == {"amount": "25.00"}, "the audit says what was actually paid"
+    assert await aus.ledger_balance(w.pool, w.users[aus.CUSTOMER]) == D("25.00")
