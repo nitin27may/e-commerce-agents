@@ -97,6 +97,26 @@ export interface OrchestrationMode {
   default: boolean;
 }
 
+/** One suggested prompt in the demo tour — `GET /api/demo/tour` (orchestrator/routes/demo.py). */
+export interface DemoTourChip {
+  id: string;
+  label: string;
+  prompt: string;
+  /** An `OrchestrationMode.name`. */
+  mode: string;
+  /** false = continue the previous chip's conversation (a scripted follow-up). */
+  new_conversation: boolean;
+}
+
+/** The demo tour manifest. Only a backend started as a demo serves one. */
+export interface DemoTour {
+  chips: DemoTourChip[];
+  /** Shown when a prompt has no recorded response. */
+  miss_message: string;
+  /** The seeded account the tour runs as; "Reset demo" is offered to it alone. */
+  tour_user: string;
+}
+
 /** One mode's result from `POST /api/orchestration/compare`. */
 export interface CompareModeResult {
   mode: string;
@@ -447,6 +467,14 @@ class ApiClient {
        * backend fall back to `settings.ORCHESTRATION_MODE` (default `"tool"`).
        */
       mode?: string;
+      /**
+       * Fired for `event: replay_miss` — the demo replays recorded model
+       * responses and this prompt has none (orchestrator/routes/chat.py). It is
+       * a notice for the thread, never display text, so it must not reach
+       * `onChunk` or `onOrchestrationEvent`. `message` is the tour manifest's
+       * `miss_message`; the stream carries nothing else about the miss.
+       */
+      onReplayMiss?: (miss: { message: string }) => void;
     } = {}
   ): Promise<{ conversation_id: string; agents_involved: string[] }> {
     const allowRefresh = options.allowRefresh ?? true;
@@ -553,6 +581,16 @@ class ApiClient {
             continue;
           }
 
+          if (currentEventType === "replay_miss") {
+            try {
+              const miss = JSON.parse(data) as { message?: unknown };
+              options.onReplayMiss?.({ message: typeof miss.message === "string" ? miss.message : "" });
+            } catch {
+              options.onReplayMiss?.({ message: "" });
+            }
+            continue;
+          }
+
           if (currentEventType === "grounding") {
             try {
               options.onGrounding?.(JSON.parse(data) as GroundingReport);
@@ -599,6 +637,36 @@ class ApiClient {
     }
 
     return metadata ?? { conversation_id: conversationId ?? "", agents_involved: [] };
+  }
+
+  // Demo tour (a no-key replay demo; absent on a normal install)
+
+  /**
+   * The tour manifest, or `null` when this backend is not a demo. "Not a demo"
+   * is detected here, at runtime, from the 404 the route answers with while
+   * `DEMO_TOUR_ENABLED` is off — so the build encodes nothing about the backend.
+   * Any other failure is also `null`: the tour is an extra, and a flaky fetch
+   * must not put an error where the chat's empty state is.
+   */
+  async getDemoTour(): Promise<DemoTour | null> {
+    try {
+      const res = await fetch(`${API_URL}/api/demo/tour`);
+      if (!res.ok) return null;
+      const data = (await res.json()) as Partial<DemoTour>;
+      if (!Array.isArray(data.chips) || data.chips.length === 0) return null;
+      return {
+        chips: data.chips,
+        miss_message: typeof data.miss_message === "string" ? data.miss_message : "",
+        tour_user: typeof data.tour_user === "string" ? data.tour_user : "",
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /** Put the tour user's data back as seeded. The server refuses anyone else. */
+  resetDemo() {
+    return this.request<{ status: string }>("/api/demo/reset", { method: "POST" });
   }
 
   // Orchestration modes

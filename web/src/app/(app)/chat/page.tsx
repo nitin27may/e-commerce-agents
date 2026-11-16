@@ -17,6 +17,8 @@ import { GroundingBadge } from "@/components/chat/grounding-badge";
 import { OrchestrationGraph } from "@/components/chat/orchestration-graph";
 import { ModeSwitcher } from "@/components/chat/mode-switcher";
 import { ModeComparison } from "@/components/chat/mode-comparison";
+import { DemoResetButton, DemoTourChips, ReplayMissCallout } from "@/components/chat/demo-tour-chips";
+import type { DemoTourChip } from "@/lib/demo-tour";
 import { QUICK_PROMPTS } from "@/lib/scenarios";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -80,6 +82,9 @@ interface Message {
   errorNodeIds?: string[];
   /** Server-side fact-check report from `event: grounding` (tool mode only, GROUNDING_MODE != off). */
   grounding?: GroundingReport;
+  /** Set when the demo had no recorded response for this turn (`event: replay_miss`);
+   * rendered as a callout that re-offers the tour chips instead of answer text. */
+  replayMiss?: { message: string };
 }
 
 interface Conversation {
@@ -358,6 +363,10 @@ export default function ChatPage() {
   // its usual server reload for that one transition — see that effect's
   // comment.
   const justCreatedConversationRef = useRef<string | null>(null);
+  // A tour chip that starts a new conversation clears the active id and shows its
+  // own first message in the same batch; the "no conversation -> empty thread"
+  // effect below must not wipe that message once.
+  const keepMessagesOnClearRef = useRef(false);
 
   // Cancel in-flight stream when the component unmounts (route change).
   useEffect(
@@ -406,6 +415,10 @@ export default function ChatPage() {
   // ---- Load messages when active conversation changes ----
   useEffect(() => {
     if (!activeConversationId) {
+      if (keepMessagesOnClearRef.current) {
+        keepMessagesOnClearRef.current = false;
+        return;
+      }
       setMessages([]);
       return;
     }
@@ -482,10 +495,19 @@ export default function ChatPage() {
   );
 
   // ---- Core send logic (shared by form submit and ?q= auto-send) ----
-  async function sendMessage(text: string, agentMode?: string | null) {
+  async function sendMessage(
+    text: string,
+    agentMode?: string | null,
+    /** A demo-tour chip's own mode and conversation choice, instead of the composer's. */
+    chip?: { mode: string; newConversation: boolean },
+  ) {
     if (!text.trim() || isResponding) return;
 
     const trimmed = text.trim();
+    const runMode = chip ? chip.mode : orchestrationMode;
+    const startsNew = chip?.newConversation === true;
+    const conversationId = startsNew ? null : activeConversationId;
+    if (chip) setOrchestrationMode(chip.mode);
 
     // Set initial thinking label from the selected mode
     const modeEntry = AGENT_MODES.find((m) => m.id === agentMode);
@@ -501,7 +523,15 @@ export default function ChatPage() {
       role: "user",
       content: trimmed,
     };
-    setMessages((prev) => [...prev, userMessage]);
+    if (startsNew) {
+      if (activeConversationId) {
+        keepMessagesOnClearRef.current = true;
+        setActiveConversationId(null);
+      }
+      setMessages([userMessage]);
+    } else {
+      setMessages((prev) => [...prev, userMessage]);
+    }
     setIsResponding(true);
 
     const assistantId = crypto.randomUUID();
@@ -519,7 +549,7 @@ export default function ChatPage() {
     // (e.g. the user picks a different mode for their next message while
     // this one is still streaming), but this message ran through whatever
     // was selected at send time.
-    const messageMode = orchestrationMode || "tool";
+    const messageMode = runMode || "tool";
 
     // Abort any prior stream still draining before starting a new one.
     streamAbortRef.current?.abort();
@@ -529,7 +559,7 @@ export default function ChatPage() {
     try {
       const meta = await api.chatStream(
         trimmed,
-        activeConversationId ?? undefined,
+        conversationId ?? undefined,
         (chunk) => {
           const isFirstFinalChunk = !receivedFinalText;
           receivedFinalText = true;
@@ -673,15 +703,25 @@ export default function ChatPage() {
               prev.map((m) => (m.id === assistantId ? { ...m, grounding: report } : m)),
             );
           },
-          mode: orchestrationMode || undefined,
+          onReplayMiss: (miss) => {
+            // No recording for this prompt: a callout in place of an answer.
+            assistantCreated = true;
+            setMessages((prev) => {
+              const callout = { replayMiss: miss, streaming: false };
+              return prev.some((m) => m.id === assistantId)
+                ? prev.map((m) => (m.id === assistantId ? { ...m, ...callout } : m))
+                : [...prev, { id: assistantId, role: "assistant" as const, content: "", mode: messageMode, ...callout }];
+            });
+          },
+          mode: runMode || undefined,
         },
       );
 
       // If this was the first message, a new conversation was created —
       // re-key the draft-stored mode under the real conversation id so a
       // reload still picks it up.
-      if (!activeConversationId && meta.conversation_id) {
-        storeOrchestrationMode(meta.conversation_id, orchestrationMode);
+      if (!conversationId && meta.conversation_id) {
+        storeOrchestrationMode(meta.conversation_id, runMode);
         justCreatedConversationRef.current = meta.conversation_id;
         setActiveConversationId(meta.conversation_id);
         await loadConversations();
@@ -715,6 +755,17 @@ export default function ChatPage() {
     } finally {
       setIsResponding(false);
     }
+  }
+
+  // ---- Demo tour ----
+  function handlePickChip(chip: DemoTourChip) {
+    sendMessage(chip.prompt, null, { mode: chip.mode, newConversation: chip.new_conversation });
+  }
+
+  // The server just deleted the tour user's conversations; drop them from the UI too.
+  function handleDemoReset() {
+    setConversations([]);
+    handleNewChat();
   }
 
   // ---- Render ----
@@ -819,6 +870,7 @@ export default function ChatPage() {
                   </button>
                 ))}
               </div>
+              <DemoTourChips onPick={handlePickChip} disabled={isResponding} />
             </div>
           ) : (
             <div className="mx-auto max-w-3xl px-4 py-4">
@@ -852,7 +904,13 @@ export default function ChatPage() {
                         : "bg-muted text-foreground"
                     }`}
                   >
-                    {msg.role === "assistant" ? (
+                    {msg.role === "assistant" && msg.replayMiss ? (
+                      <ReplayMissCallout
+                        message={msg.replayMiss.message}
+                        onPick={handlePickChip}
+                        disabled={isResponding}
+                      />
+                    ) : msg.role === "assistant" ? (
                       <RichMessage
                         content={msg.content}
                         streaming={msg.streaming}
@@ -905,7 +963,7 @@ export default function ChatPage() {
                       />
                     )}
 
-                    {msg.role === "assistant" && msg.mode && (
+                    {msg.role === "assistant" && msg.mode && !msg.replayMiss && (
                       <OrchestrationGraph
                         mode={msg.mode}
                         activeNodeIds={msg.activeNodeIds}
@@ -954,6 +1012,7 @@ export default function ChatPage() {
         <div className="border-t bg-background px-4 py-3">
           <div className="mx-auto max-w-3xl space-y-2">
             <div className="flex items-center justify-end gap-2">
+              <DemoResetButton onReset={handleDemoReset} disabled={isResponding} />
               <ModeComparison />
               <ModeSwitcher value={orchestrationMode} onChange={handleModeChange} disabled={isResponding} />
             </div>

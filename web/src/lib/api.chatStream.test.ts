@@ -134,4 +134,22 @@ describe("chatStream SSE parsing", () => {
 
     expect(chunks).toEqual(["item one", "\n", "a\n\nb"]);
   });
+
+  it("routes a replay_miss frame to onReplayMiss only: not chat text, not the generic hook", async () => {
+    const raw = ['event: replay_miss\ndata: {"message":"Not recorded."}', "", "data: [DONE]", ""].join("\n");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(fakeStreamResponse(raw)));
+
+    const chunks: string[] = [];
+    const generic: string[] = [];
+    const misses: Array<{ message: string }> = [];
+
+    await api.chatStream("hi", undefined, (c) => chunks.push(c), undefined, {
+      onOrchestrationEvent: (name) => generic.push(name),
+      onReplayMiss: (m) => misses.push(m),
+    });
+
+    expect(misses).toEqual([{ message: "Not recorded." }]);
+    expect(chunks).toEqual([]);
+    expect(generic).toEqual([]);
+  });
 });
