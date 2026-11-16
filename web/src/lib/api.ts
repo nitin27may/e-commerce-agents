@@ -1043,9 +1043,9 @@ class ApiClient {
   }
 
   // Event autonomy (#94), admin only
-  getAutonomyDecisions(state?: string) {
+  getAutonomyDecisions(state?: string, opts: { signal?: AbortSignal } = {}) {
     const qs = state ? `?state=${encodeURIComponent(state)}` : "";
-    return this.request<AutonomyDecisionsResponse>(`/api/admin/decisions${qs}`);
+    return this.request<AutonomyDecisionsResponse>(`/api/admin/decisions${qs}`, { signal: opts.signal });
   }
 
   reverseAutonomyDecision(id: string, note?: string) {

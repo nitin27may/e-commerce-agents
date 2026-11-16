@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Gauge, Loader2, Play } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { api, type AutonomyBudget, type AutonomyDecision, type AutonomyDecisionsResponse } from "@/lib/api";
@@ -52,20 +52,40 @@ export default function AutonomyDecisionsPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [simulating, setSimulating] = useState<string | null>(null);
 
+  // Responses can finish out of order (a slow "All" after a quick "Reversed"). Only the newest request may write
+  // data, error or loading, and starting one aborts the previous so the browser also stops waiting for it.
+  const latest = useRef(0);
+  const inflight = useRef<AbortController | null>(null);
+
   const load = useCallback(async () => {
+    const id = ++latest.current;
+    inflight.current?.abort();
+    const controller = new AbortController();
+    inflight.current = controller;
+    setError(null);
     try {
-      setError(null);
-      setData(await api.getAutonomyDecisions(filter || undefined));
+      const res = await api.getAutonomyDecisions(filter || undefined, { signal: controller.signal });
+      if (id === latest.current) setData(res);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load decisions");
+      if (id === latest.current && !(e instanceof DOMException && e.name === "AbortError")) {
+        setError(e instanceof Error ? e.message : "Failed to load decisions");
+      }
     } finally {
-      setLoading(false);
+      if (id === latest.current) setLoading(false);
     }
   }, [filter]);
 
   useEffect(() => {
     if (user && isAdmin) load();
   }, [user, isAdmin, load]);
+
+  useEffect(() => () => inflight.current?.abort(), []);
+
+  function selectFilter(value: string) {
+    if (value === filter) return;
+    setLoading(true); // the list below belongs to the previous filter until the new one answers
+    setFilter(value);
+  }
 
   async function reverse(id: string, note?: string) {
     await api.reverseAutonomyDecision(id, note);
@@ -157,7 +177,7 @@ export default function AutonomyDecisionsPage() {
             size="sm"
             variant={filter === f.value ? "default" : "outline"}
             aria-pressed={filter === f.value}
-            onClick={() => setFilter(f.value)}
+            onClick={() => selectFilter(f.value)}
           >
             {f.label}
           </Button>
