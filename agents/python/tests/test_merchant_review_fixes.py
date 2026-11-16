@@ -182,3 +182,51 @@ async def test_a_product_deleted_after_generation_is_a_clean_outcome_with_nothin
     assert done.status_code == 200, done.text
     assert await w.pool.fetchval("SELECT count(*) FROM price_history WHERE product_id = $1", kept) == 0
     assert len(await _restocks(w, kept)) == 1
+
+
+# ── W4: a stale line never overwrites a newer state ──────────────────────────
+
+
+async def test_a_price_that_moved_since_the_line_was_proposed_is_not_overwritten(w: ms.World) -> None:  # noqa: F811
+    _, products, lines = await _batch(w)
+    await w.pool.execute("UPDATE products SET price = 95.00 WHERE id = $1", products["Overstock"])
+
+    done = await merchant_execute.apply_line(w.pool, lines["Overstock"], D("90.00"))
+
+    assert done["status"] == "blocked" and done["reasons"] == ["price_moved"]
+    assert await _price(w, products["Overstock"]) == D("95.00")
+    history = await w.pool.fetchval("SELECT count(*) FROM price_history WHERE product_id = $1", products["Overstock"])
+    assert history == 0
+    stored = await w.pool.fetchval(
+        "SELECT guard_result FROM proposal_lines WHERE id = $1", uuid.UUID(lines["Overstock"])
+    )
+    assert "price_moved" in stored and "95.00" in stored
+
+
+async def test_a_moved_price_blocks_that_line_through_the_api_and_the_rest_still_runs(w: ms.World) -> None:  # noqa: F811
+    proposal_id, products, lines = await _batch(w)
+    await w.pool.execute("UPDATE products SET price = 120.00 WHERE id = $1", products["Overstock"])
+    body = {"lines": [{"line_id": line_id, "decision": "accept"} for line_id in lines.values()]}
+
+    resp = await _call(_as(ms.SELLER, "seller"), "POST", f"/api/seller/proposals/{proposal_id}/decide", body)
+
+    assert resp.status_code == 200, resp.text
+    results = {r["line_id"]: r for r in resp.json()["results"]}
+    assert results[lines["Overstock"]]["reasons"] == ["price_moved"]
+    assert results[lines["Short"]]["status"] == "executed"
+    assert await _price(w, products["Overstock"]) == D("120.00")
+
+
+async def test_a_restock_is_blocked_when_stock_is_already_on_order(w: ms.World) -> None:  # noqa: F811
+    _, products, lines = await _batch(w)
+    await w.pool.execute(
+        "INSERT INTO restock_schedule (product_id, warehouse_id, expected_quantity, expected_date) "
+        "VALUES ($1, $2, 30, CURRENT_DATE + 3)",
+        products["Short"],
+        w.warehouses[0],
+    )
+
+    done = await merchant_execute.apply_line(w.pool, lines["Short"], D("28"))
+
+    assert done["status"] == "blocked" and done["reasons"] == ["restock_already_scheduled"]
+    assert len(await _restocks(w, products["Short"])) == 1  # only the one that was already there
