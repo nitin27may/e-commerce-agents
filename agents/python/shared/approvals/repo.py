@@ -412,11 +412,20 @@ async def escalate(
         raise ValueError(f"unknown approval role: {assigned_role!r}")
     now = datetime.now(UTC)
     async with _tx(db) as conn:
-        current = await conn.fetchrow("SELECT * FROM approvals WHERE id = $1 FOR UPDATE", approval_id)
+        current = await conn.fetchrow(
+            """SELECT *, (claimed_at IS NOT NULL AND claimed_at >= NOW() - make_interval(secs => $2)) AS claim_live
+                 FROM approvals WHERE id = $1 FOR UPDATE""",
+            approval_id,
+            float(settings.HITL_CLAIM_TTL_SECONDS),
+        )
         if current is None:
             raise ApprovalNotFoundError(approval_id)
         if current["status"] != ApprovalStatus.PENDING_REVIEW.value or current["escalation_level"] != expected_level:
             raise InvalidTransitionError(f"approval {approval_id} is not a pending review at level {expected_level}")
+        if current["claim_live"]:
+            # A reviewer is mid-decision; changing who the review is routed to underneath them would let a
+            # lower tier finish a higher tier's decision. The breach timer retries once the claim is gone.
+            raise InvalidTransitionError(f"approval {approval_id} is being decided; escalation deferred")
         updated = await conn.fetchrow(
             """UPDATE approvals SET assigned_role = $2, escalation_level = escalation_level + 1,
                                     due_at = $3, updated_at = NOW()

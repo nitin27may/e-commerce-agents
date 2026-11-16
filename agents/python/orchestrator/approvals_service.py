@@ -526,30 +526,42 @@ async def _finish_workflow(
     if not approval.get("source_ref"):
         raise ApprovalHTTPError(409, "The paused run behind this approval no longer exists")
 
-    if S(approval["status"]) is S.NEEDS_INFO:
-        await _unpark_workflow(
-            approval
-        )  # a reviewer may reject while the customer is being asked; resume needs 'pending'
-    payload = await resume_workflow(str(approval["source_ref"]), return_decision, reviewer_email=actor.email)
-
-    to = S.REJECTED if not approve else (S.APPROVED_WITH_EDITS if edits else S.APPROVED)
+    # Take the approval's claim, then check the reviewer's role again against the row as it is now. The check
+    # in decide() ran on an earlier read: an SLA escalation (support -> manager) can land between that read
+    # and the resume, and a support reviewer must not finish what is now a manager's decision. The claim is
+    # what closes the window -- repo.escalate refuses while one is held.
+    statuses = (S.PENDING_REVIEW,) if approve else (S.PENDING_REVIEW, S.NEEDS_INFO)
+    token = await _claim(approval, *statuses)
     try:
-        decided = await repo.transition(
-            pool,
-            approval_id,
-            [S.PENDING_REVIEW, S.NEEDS_INFO] if not approve else [S.PENDING_REVIEW],
-            to,
-            actor_email=actor.email,
-            actor_role=actor.role,
-            action="decided",
-            payload={"decision": return_decision.decision, "note": note, "edits": edits},
-            decided_by=actor.email,
-            decision={"decision": return_decision.decision, "note": note, "edits": edits},
-        )
-    except repo.InvalidTransitionError:
-        # The workflow is already resumed; the inbox row moved under us (a concurrent expiry, say).
-        logger.warning("approval.decision_not_recorded id=%s", approval_id)
-        raise ApprovalHTTPError(409, "Request is no longer pending review") from None
+        fresh = await load(approval_id)
+        authorize_decider(fresh, actor)
+        if S(fresh["status"]) is S.NEEDS_INFO:
+            # a reviewer may reject while the customer is being asked; resume needs 'pending'
+            await _unpark_workflow(fresh)
+        payload = await resume_workflow(str(approval["source_ref"]), return_decision, reviewer_email=actor.email)
+
+        to = S.REJECTED if not approve else (S.APPROVED_WITH_EDITS if edits else S.APPROVED)
+        try:
+            decided = await repo.transition(
+                pool,
+                approval_id,
+                [S.PENDING_REVIEW, S.NEEDS_INFO] if not approve else [S.PENDING_REVIEW],
+                to,
+                actor_email=actor.email,
+                actor_role=actor.role,
+                action="decided",
+                payload={"decision": return_decision.decision, "note": note, "edits": edits},
+                claimed_by=token,
+                decided_by=actor.email,
+                decision={"decision": return_decision.decision, "note": note, "edits": edits},
+            )
+        except repo.InvalidTransitionError:
+            # The workflow is already resumed; the inbox row moved under us (a concurrent expiry, say).
+            logger.warning("approval.decision_not_recorded id=%s", approval_id)
+            raise ApprovalHTTPError(409, "Request is no longer pending review") from None
+    except BaseException:
+        await _release(approval_id, token)
+        raise
 
     final = decided
     if approve:
