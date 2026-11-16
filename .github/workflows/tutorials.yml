@@ -216,3 +216,9 @@ jobs:
       # must be regenerated, or the build fails.
       - name: Coverage table is not stale
         run: python3 scripts/check_tutorial_coverage.py --check
+
+      # Every chapter ends with a generated previous/next footer. Add, remove or
+      # retitle a chapter and the neighbours' footers must be regenerated:
+      #   python3 scripts/check_tutorial_nav.py --write
+      - name: Previous/next footers are not stale
+        run: python3 scripts/check_tutorial_nav.py --check

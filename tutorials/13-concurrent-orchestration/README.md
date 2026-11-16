@@ -162,7 +162,7 @@ No LLM call inside the aggregator — it's a deterministic reduction, so it does
 - **Parallelism is real, not simulated.** All three LLM calls fire concurrently. If your provider enforces concurrency limits (Azure OpenAI TPM/RPM quotas), a wider fan-out can hit them faster than a sequential chain would.
 - **Order is not guaranteed.** Agents complete as they finish, not in the order you listed them — don't assume `researcher`'s event arrives before `marketer`'s.
 - **Branches are isolated.** Concurrent participants never see each other's output while running; if one branch needs another's result, this is the wrong pattern — use Sequential or a custom graph instead.
-- **No MAF packaging workaround is needed.** `agent-framework-core` 1.22.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
+- **No MAF packaging workaround is needed.** `agent-framework-core` 1.26.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
 - **The .NET aggregator here is not an LLM call.** If you want a synthesizing LLM summary instead of deterministic concatenation, call an agent inside `SynthesizeReview` — the signature is on an async boundary, so awaiting is safe there.
 
 ## Tests
@@ -207,3 +207,9 @@ Three specialist data-gathering steps — reviews, stock, price history — fan 
 - Next chapter: [Chapter 14 — Handoff Orchestration](../14-handoff-orchestration/)
 - Full source: [`python/`](./python/) · [`dotnet/`](./dotnet/)
 - [MAF docs — Concurrent Orchestration](https://learn.microsoft.com/en-us/agent-framework/workflows/orchestrations/concurrent/)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 12 — Sequential Orchestration](../12-sequential-orchestration/) · [Series index](../README.md) · **Next:** [Chapter 14 — Handoff Orchestration](../14-handoff-orchestration/)
+<!-- END GENERATED CHAPTER NAV -->

@@ -21,6 +21,7 @@ import uuid
 from typing import Any
 
 import httpx
+from a2a.client.errors import A2AClientError
 from agent_framework import (
     Agent,
     BaseChatClient,
@@ -31,6 +32,9 @@ from agent_framework import (
     ResponseStream,
 )
 
+from shared.a2a_client import send_blocking
+from shared.config import settings
+from shared.context import current_session_id
 from shared.http_resilience import ResilientAsyncTransport
 from shared.log_safe import log_safe
 from shared.oauth.service_client import build_a2a_headers
@@ -84,8 +88,26 @@ class RemoteSpecialistChatClient(BaseChatClient):
         self._url = url.rstrip("/")
         self._timeout = timeout
 
+    async def _post_a2a(self, prompt: str, headers: dict[str, str]) -> str:
+        """The ``A2A_TRANSPORT=a2a`` leg of :meth:`_post`: one blocking ``SendMessage`` over A2A 1.0."""
+        reply = await send_blocking(
+            self._url,
+            prompt,
+            headers=headers,
+            session_id=current_session_id.get(""),
+            timeout=self._timeout,
+            transport=_A2A_TRANSPORT,
+        )
+        if reply.usage is not None:
+            _record_reported_usage(self._agent_name, {"usage": reply.usage})
+        if not reply.ok:
+            raise A2AClientError(f"the {self._agent_name} specialist's task ended {reply.state}")
+        return reply.text
+
     async def _post(self, prompt: str) -> str:
         headers = await build_a2a_headers()
+        if settings.A2A_TRANSPORT == "a2a":
+            return await self._post_a2a(prompt, headers)
         async with httpx.AsyncClient(timeout=self._timeout, transport=_A2A_TRANSPORT) as client:
             resp = await client.post(
                 f"{self._url}/message:send",

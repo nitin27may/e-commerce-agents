@@ -151,7 +151,7 @@ public static async Task<string> Ask(AIAgent agent, string question)
 ## Gotchas
 
 - **"API version not supported" on Azure.** If you hit this, your deployment doesn't support the Responses API. Set `LLM_PROVIDER=azure` — both examples already fall back to Chat Completions (`OpenAIChatCompletionClient` in Python, the same `GetChatClient` surface via `AzureOpenAIClient` in .NET) and default to `api_version=2024-10-21`.
-- **No MAF packaging workaround is needed.** `agent-framework-core` 1.22.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
+- **No MAF packaging workaround is needed.** `agent-framework-core` 1.26.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
 - **Don't forget `using OpenAI.Chat;`** in .NET — the `AsAIAgent` extension lives in that namespace.
 - **`TreatWarningsAsErrors` is on** in `FirstAgent.csproj` — an unused `using` or nullable warning fails the build, not just the analyzer pass.
 
@@ -200,3 +200,9 @@ Same `client` + `instructions` + `name` triple from this chapter, plus `tools`, 
 - Full source: [`python/`](./python/) · [`dotnet/`](./dotnet/)
 - Shared: [Mermaid style guide](../_shared/mermaid-style-guide.md) · [Jargon glossary](../_shared/jargon-glossary.md)
 - [MAF docs — Your first agent](https://learn.microsoft.com/en-us/agent-framework/get-started/?pivots=programming-language-csharp)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 00 — Setup your dev environment](../00-setup/) · [Series index](../README.md) · **Next:** [Chapter 02 — Adding Tools](../02-add-tools/)
+<!-- END GENERATED CHAPTER NAV -->

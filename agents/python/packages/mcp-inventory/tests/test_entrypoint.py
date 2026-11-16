@@ -107,10 +107,10 @@ def _free_port() -> int:
 
 async def _exercise(session: ClientSession) -> None:
     init = await session.initialize()
-    assert init.serverInfo.name == SERVER_NAME
+    assert init.server_info.name == SERVER_NAME
     assert {t.name for t in (await session.list_tools()).tools} == TOOL_NAMES
     result = await session.call_tool(*CALL)
-    assert not result.isError
+    assert not result.is_error
 
 
 @asynccontextmanager
@@ -147,7 +147,7 @@ async def _http_server(database_url: str) -> AsyncIterator[str]:
 async def test_console_script_serves_mcp_over_streamable_http(database_url: str, postgres_pool: asyncpg.Pool) -> None:
     async with (
         _http_server(database_url) as url,
-        streamable_http_client(url) as (read, write, _),
+        streamable_http_client(url) as (read, write),
         ClientSession(read, write) as session,
     ):
         await _exercise(session)

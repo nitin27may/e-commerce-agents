@@ -1,0 +1,51 @@
+{
+  // Codespaces / Dev Containers setup. Needs NO secrets: LLM_PROVIDER=replay plays
+  // back the recorded fixtures, so the tutorials, the Python tests and the eval
+  // smoke suite all run with no key. Add OPENAI_API_KEY as a Codespaces secret
+  // only if you want live model calls (and unset LLM_PROVIDER to use them).
+  "name": "e-commerce-agents",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bookworm",
+
+  "features": {
+    // Node + pnpm for web/. The pnpm version is pinned in postCreate.sh to the one CI uses.
+    "ghcr.io/devcontainers/features/node:1": { "version": "22" },
+    // global.json at the repo root asks for SDK 10.0.100 and rolls forward within
+    // the 10.0 feature band, so any 10.0.x SDK satisfies it.
+    "ghcr.io/devcontainers/features/dotnet:2": { "version": "10.0" },
+    // docker compose for ./scripts/dev.sh and the full stack.
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+
+  "containerEnv": {
+    "LLM_PROVIDER": "replay",
+    "EMBEDDING_PROVIDER": "replay",
+    "UV_LINK_MODE": "copy"
+  },
+
+  "forwardPorts": [3000, 18888],
+  "portsAttributes": {
+    "3000": { "label": "Web (Next.js)", "onAutoForward": "notify" },
+    "18888": { "label": "Aspire dashboard (telemetry)", "onAutoForward": "silent" }
+  },
+
+  "hostRequirements": { "cpus": 4, "memory": "8gb" },
+
+  "postCreateCommand": "bash .devcontainer/postCreate.sh",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "charliermarsh.ruff",
+        "ms-dotnettools.csharp",
+        "dbaeumer.vscode-eslint",
+        "bradlc.vscode-tailwindcss",
+        "ms-azuretools.vscode-docker"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "${workspaceFolder}/agents/python/.venv/bin/python",
+        "[python]": { "editor.defaultFormatter": "charliermarsh.ruff" }
+      }
+    }
+  }
+}

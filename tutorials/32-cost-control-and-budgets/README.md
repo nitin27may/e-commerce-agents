@@ -210,3 +210,9 @@ The per-turn dollar conversion itself — token counts to USD — is `estimate_c
 - Full source: [`python/`](./python/)
 - Concept deep dive: [`docs/concepts/13-observability-and-cost.md`](../../docs/concepts/13-observability-and-cost.md)
 - Shared: [Mermaid style guide](../_shared/mermaid-style-guide.md) · [Jargon glossary](../_shared/jargon-glossary.md)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 31 — Retry and Compensation (Saga Pattern)](../31-retry-and-compensation/) · [Series index](../README.md)
+<!-- END GENERATED CHAPTER NAV -->

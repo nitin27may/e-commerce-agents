@@ -883,8 +883,8 @@ The `trace_id` field correlates with OpenTelemetry traces in the Aspire Dashboar
 
 ## Approvals
 
-The unified approvals inbox (Python stack). Rules, the authorisation matrix and the edits allowlist are in
-[Approvals and the Routing Policy](approvals.md#the-approvals-api-python).
+The unified approvals inbox (both stacks). Rules, the authorisation matrix and the edits allowlist are in
+[Approvals and the Routing Policy](approvals.md#the-approvals-api).
 
 | Endpoint | Who | Notes |
 |---|---|---|

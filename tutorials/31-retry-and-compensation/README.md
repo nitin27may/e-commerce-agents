@@ -245,6 +245,12 @@ Be clear about what this is and isn't: it's plain error handling around a **sing
 
 ## What's next
 
-- Next chapter: Chapter 32 (landing alongside this one as part of the same batch — link will be wired up once its README merges)
+- Next chapter: [Chapter 32 — Cost Control and Budgets](../32-cost-control-and-budgets/)
 - Full source: [`python/`](./python/)
 - Shared: [Mermaid style guide](../_shared/mermaid-style-guide.md)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 30 — Subworkflows](../30-subworkflows/) · [Series index](../README.md) · **Next:** [Chapter 32 — Cost Control and Budgets](../32-cost-control-and-budgets/)
+<!-- END GENERATED CHAPTER NAV -->

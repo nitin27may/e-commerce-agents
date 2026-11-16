@@ -148,7 +148,7 @@ Workflow workflow = strategy == "prompt"
 - **The manager can loop forever.** Always set a hard round cap. This chapter pins `max_rounds=3` (Python round-robin) and `MaximumIterationCount = 3` (.NET) even on the agent-driven path, where the agent's own judgment is the primary stop condition and the cap is just the safety net.
 - **Selection functions must be safe to call repeatedly.** MAF may invoke the selector once per round; `round_robin_selector` here is a pure function of `GroupChatState.current_round`, not a closure carrying mutable iterator state — that's a deliberate choice to avoid selector state getting out of sync with the workflow's own round counter.
 - **Message visibility.** By default every participant sees the full transcript so far. That's what lets the Editor react to both the Writer's draft and the Critic's feedback without extra plumbing — but it also means prompts grow with every round, which matters for longer panels.
-- **No MAF packaging workaround is needed.** `agent-framework-core` 1.22.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
+- **No MAF packaging workaround is needed.** `agent-framework-core` 1.26.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
 
 ## Tests
 
@@ -191,3 +191,9 @@ Registered in the orchestrator as the `group-chat` mode alongside `tool`, `hando
 - Full source: [`python/`](./python/) · [`dotnet/`](./dotnet/)
 - Shared: [Mermaid style guide](../_shared/mermaid-style-guide.md) · [Jargon glossary](../_shared/jargon-glossary.md)
 - [Series index](../README.md) · Previous: [Chapter 14 — Handoff Orchestration](../14-handoff-orchestration/)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 14 — Handoff Orchestration](../14-handoff-orchestration/) · [Series index](../README.md) · **Next:** [Chapter 16 — Magentic Orchestration](../16-magentic-orchestration/)
+<!-- END GENERATED CHAPTER NAV -->

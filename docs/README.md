@@ -31,7 +31,7 @@ This folder contains the full technical documentation for E-Commerce Agents.
 ### "I want to build on top of or integrate with this"
 
 1. [API Reference](api-reference.md) — all 20 REST endpoints with request/response examples
-2. [MCP Integration](mcp-integration.md) — MCP servers (FastMCP), how to enable, how to inspect
+2. [MCP Integration](mcp-integration.md) — MCP servers (MCPServer), how to enable, how to inspect
 3. [Database Schema](database-schema.md) — 34 tables with ER diagram and gotchas
 
 ### "I care about quality, security, or observability"
@@ -49,6 +49,7 @@ This folder contains the full technical documentation for E-Commerce Agents.
 |----------|---------------|
 | [concepts/](concepts/) | Foundations layer for readers new to AI/agents — 14 pages, What/Why/When/How, each pointing at the live code |
 | [architecture.md](architecture.md) | System overview, agent architecture, A2A protocol, auth flow, data flow, technology decisions |
+| [a2a.md](a2a.md) | A2A 1.0 on the Python specialists: the agent card, `/a2a/v1`, task lifecycle, the repo's extensions, `A2A_TRANSPORT`, what is not done |
 | [adding-an-agent.md](adding-an-agent.md) | Step-by-step checklist to add a new specialist agent |
 | [api-reference.md](api-reference.md) | All 20 REST endpoints (auth, chat, products, orders, admin, marketplace) |
 | [agent-flows.md](agent-flows.md) | Five multi-agent collaboration sequence diagrams with pattern notes |
@@ -56,7 +57,7 @@ This folder contains the full technical documentation for E-Commerce Agents.
 | [deployment.md](deployment.md) | Docker Compose profiles, `dev.sh` script, environment variables, local dev, health checks |
 | [frontend.md](frontend.md) | Next.js 16 routing, theming/OKLCH, SSE streaming, agent timeline, testing |
 | [telemetry.md](telemetry.md) | OpenTelemetry instrumentation, Aspire Dashboard, Langfuse LLM observability |
-| [mcp-integration.md](mcp-integration.md) | MCP servers (FastMCP), `MCPStreamableHTTPTool` wiring, enable/disable, inspector |
+| [mcp-integration.md](mcp-integration.md) | MCP servers (MCPServer), `MCPStreamableHTTPTool` wiring, enable/disable, inspector |
 | [maf-best-practices.md](maf-best-practices.md) | MAF `@tool` patterns, middleware, prompt YAML, orchestration patterns |
 | [security-guide.md](security-guide.md) | Threat model, guardrails stack, auth/identity propagation, SQL controls, hardening |
 | [approvals.md](approvals.md) | Approval routing policy (`approvals.yaml`), default rules, golden cases, the approvals tables |

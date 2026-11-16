@@ -102,7 +102,8 @@ def can_review(approval: dict[str, Any], actor: Actor) -> bool:
 
 
 def repo_rank(role: str | None) -> int:
-    return intake.ROLE_RANK.get(role or "", 0)
+    """Rank of a staff role, 0 for anyone else. Case-insensitive, as ``ApprovalIntake.Rank`` is on .NET."""
+    return intake.ROLE_RANK.get((role or "").lower(), 0)
 
 
 def authorize_decider(approval: dict[str, Any], actor: Actor) -> None:
@@ -235,6 +236,25 @@ async def _claim(approval: dict[str, Any], *statuses: S) -> str:
     raise ApprovalHTTPError(409, f"Request is already {current['status'] if current else 'gone'}")
 
 
+async def _claim_and_reauthorize(approval: dict[str, Any], actor: Actor, *statuses: S) -> tuple[str, dict[str, Any]]:
+    """Take the execution claim, then re-run the decider check against the row as it is *now*.
+
+    ``decide()`` authorised against an earlier read. An SLA escalation (``support`` -> ``manager``) can land
+    between that read and the claim, and a reviewer must not finish what is now above their role. The claim
+    is what closes the window: ``repo.escalate`` refuses while one is held, so once it is ours the row's
+    ``assigned_role`` cannot change under us. If the fresh check fails the claim is handed back and the
+    normal 403 is raised, with nothing executed. Returns the claim token and the fresh row.
+    """
+    token = await _claim(approval, *statuses)
+    try:
+        fresh = await load(str(approval["id"]))
+        authorize_decider(fresh, actor)
+    except BaseException:
+        await _release(str(approval["id"]), token)
+        raise
+    return token, fresh
+
+
 async def _release(approval_id: str, token: str) -> None:
     # Shielded: a cancelled request (client disconnect, shutdown) must still hand its claim back.
     await asyncio.shield(repo.release_claim(get_pool(), approval_id, token))
@@ -265,8 +285,13 @@ async def _request_info(approval: dict[str, Any], actor: Actor, note: str) -> di
     _require(approval, S.PENDING_REVIEW)
     pool = get_pool()
     approval_id = str(approval["id"])
-    token = await _claim(approval, S.PENDING_REVIEW)
+    token, approval = await _claim_and_reauthorize(approval, actor, S.PENDING_REVIEW)
     parked = False
+    if await _executed_result(approval) is not None:
+        # The action already ran (an approve lost its claim before recording): asking the requester about it now
+        # would park a finished action. Only recording it (approve) makes sense.
+        await _release(approval_id, token)
+        raise ApprovalHTTPError(409, "The action already ran; approve to record it")
     try:
         if approval["source"] == "workflow" and approval.get("source_ref"):
             parked = bool(
@@ -364,7 +389,7 @@ async def _reject(approval: dict[str, Any], actor: Actor, note: str | None) -> d
 
 async def _reject_tool(approval: dict[str, Any], actor: Actor, note: str | None) -> dict[str, Any]:
     approval_id = str(approval["id"])
-    token = await _claim(approval, S.PENDING_REVIEW, S.NEEDS_INFO)
+    token, approval = await _claim_and_reauthorize(approval, actor, S.PENDING_REVIEW, S.NEEDS_INFO)
     try:
         resolved = await hitl.resolve_hitl_request(
             request_id=str(approval["source_ref"]),
@@ -440,7 +465,7 @@ async def _approve_tool(
     except hitl.InvalidEditsError as exc:
         raise ApprovalHTTPError(422, str(exc)) from None
 
-    token = await _claim(approval, S.PENDING_REVIEW)
+    token, approval = await _claim_and_reauthorize(approval, actor, S.PENDING_REVIEW)
     try:
         result = await hitl.execute_approved_action(
             tool_name=row["tool_name"],
@@ -455,8 +480,11 @@ async def _approve_tool(
             note=note,
             execution_result=result,
         )
-        if not resolved:
+        if not resolved and await _executed_result(approval) is None:
             raise ApprovalHTTPError(409, "Request was already resolved by another admin")
+        # Not resolved but executed *for this approval*: an earlier attempt ran the action and then lost its
+        # claim before recording. ``execute_approved_action`` replayed that run's result above (it is keyed by
+        # the approval id), so this attempt only has to record it.
         approved = await _record(
             approval, actor, token, S.APPROVED_WITH_EDITS if edits else S.APPROVED, "approve", note, edits
         )
@@ -478,6 +506,26 @@ async def _approve_tool(
     )
     logger.info("approval.approved id=%s source=tool success=%s", log_safe(approval_id), result.get("success"))
     return {"approval": jsonable(final), "result": result}
+
+
+async def _executed_result(approval: dict[str, Any]) -> dict[str, Any] | None:
+    """The stored result of a tool request that already ran *for this approval*, else ``None``.
+
+    An approve that executed the action and then lost its claim before recording leaves the request row
+    ``executed`` (carrying ``approval_id`` and the result) and the approval itself still ``pending_review``.
+    That is a completed action, not a conflict: a retry, and the SLA timer, must finish recording it rather
+    than answer 409 forever or mark an executed thing expired.
+    """
+    if approval.get("source") != "tool" or not approval.get("source_ref"):
+        return None
+    row = await get_pool().fetchrow(
+        "SELECT status, approval_id, approved_by, execution_result FROM tool_approval_requests WHERE id = $1",
+        approval["source_ref"],
+    )
+    if row is None or row["status"] != "executed" or str(row["approval_id"] or "") != str(approval["id"]):
+        return None
+    result = hitl._decode_jsonb(row["execution_result"])  # noqa: SLF001
+    return {"result": result or {}, "approved_by": row["approved_by"]}
 
 
 # ── workflow approvals ───────────────────────────────────────────────────────
@@ -556,6 +604,11 @@ async def _finish_workflow(
                 decided_by=actor.email,
                 decision={"decision": return_decision.decision, "note": note, "edits": edits},
             )
+        except repo.ClaimLostError:
+            # The workflow is already resumed and the claim was taken over meanwhile: the new holder owns the
+            # decision. A conflict, like every other lost claim, not a server error.
+            logger.warning("approval.claim_lost id=%s", log_safe(approval_id))
+            raise ApprovalHTTPError(409, "This approval was taken over by another reviewer") from None
         except repo.InvalidTransitionError:
             # The workflow is already resumed; the inbox row moved under us (a concurrent expiry, say).
             logger.warning("approval.decision_not_recorded id=%s", log_safe(approval_id))
@@ -723,9 +776,14 @@ async def expire(
                 reviewer_email="system",
             )
         elif approval["source"] == "tool":
-            await hitl.resolve_hitl_request(
+            resolved = await hitl.resolve_hitl_request(
                 request_id=str(approval["source_ref"]), decision="denied", admin_email="system", note=reason
             )
+            executed = None if resolved else await _executed_result(approval)
+            if executed is not None:
+                # The action already ran (an approve lost its claim before recording): finish recording it
+                # instead of expiring something that happened.
+                return await _record_recovered_execution(approval, token, executed)
         updated = await repo.transition(
             pool,
             str(approval["id"]),
@@ -739,6 +797,39 @@ async def expire(
         await _release(str(approval["id"]), token)
         raise
     return {"approval": jsonable(updated), "result": {"status": final.value}}
+
+
+async def _record_recovered_execution(approval: dict[str, Any], token: str, executed: dict[str, Any]) -> dict[str, Any]:
+    """Move an approval whose action already ran to ``approved`` then ``executed`` (or ``failed``)."""
+    pool = get_pool()
+    approval_id = str(approval["id"])
+    approver = executed.get("approved_by")
+    result = executed["result"]
+    approved = await repo.transition(
+        pool,
+        approval_id,
+        [S.PENDING_REVIEW],
+        S.APPROVED,
+        actor_email=approver,
+        actor_role="admin" if approver else None,
+        action="decided",
+        payload={"decision": "approve", "recovered": True},
+        claimed_by=token,
+        decided_by=approver,
+        decision={"decision": "approve", "note": None, "edits": {}, "recovered": True},
+    )
+    success = bool(result.get("success"))
+    final = await repo.transition(
+        pool,
+        approval_id,
+        [S(approved["status"])],
+        S.EXECUTED if success else S.FAILED,
+        actor_email=approver,
+        action="executed" if success else "execution_failed",
+        payload={"success": success, "recovered": True},
+    )
+    logger.info("approval.recovered id=%s success=%s", log_safe(approval_id), success)
+    return {"approval": jsonable(final), "result": result}
 
 
 # ─────────────────────────── legacy rows ───────────────────────────

@@ -109,18 +109,7 @@ public sealed partial class ReturnReplaceMode(DatabasePool pool, AgentSettings s
         }
     }
 
-    private static string? PolicyFile()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null)
-        {
-            var repoCopy = Path.Combine(dir.FullName, "agents", "python", "config", "policies", "approvals.yaml");
-            if (File.Exists(repoCopy)) return repoCopy;
-            dir = dir.Parent;
-        }
-        var beside = Path.Combine(AppContext.BaseDirectory, "config", "policies", "approvals.yaml");
-        return File.Exists(beside) ? beside : null;
-    }
+    private static string? PolicyFile() => ApprovalPolicyLocator.PolicyFile();
 
     private ReturnAndReplaceWorkflow NewWorkflow() => new(
         new ReturnReplaceTools(_pool, _settings),
@@ -139,9 +128,8 @@ public sealed partial class ReturnReplaceMode(DatabasePool pool, AgentSettings s
 
     /// <summary>
     /// Resumes with the reviewer's full answer — the resolution (refund / store_credit / replacement), an edited
-    /// refund amount, a note — the same <see cref="ReturnDecision"/> shape Python answers. Not on
-    /// <see cref="IResumableMode"/>: the resume route only carries approve/reject until the approvals API is
-    /// ported (D-5n).
+    /// refund amount, a note — the same <see cref="ReturnDecision"/> shape Python answers. This is what the unified
+    /// approvals service (D-5n) calls, through <see cref="IResumableMode"/>.
     /// </summary>
     public async Task<ModeRunResult> ResumeAsync(
         string sessionId,
@@ -163,7 +151,9 @@ public sealed partial class ReturnReplaceMode(DatabasePool pool, AgentSettings s
             Summarise(state),
             ["order-management", "product-discovery", "pricing-promotions"],
             state.CompletedSteps.Count,
-            NoLlmCalls: true
+            NoLlmCalls: true,
+            // An approved resume is a success only if the workflow ran through to its last step.
+            Completed: state.CompletedSteps.Contains("finalize")
         );
     }
 
@@ -207,7 +197,11 @@ public sealed partial class ReturnReplaceMode(DatabasePool pool, AgentSettings s
             RequestId: outcome.PendingRequestId,
             LatestCheckpointId: outcome.LastCheckpointId,
             SessionId: outcome.SessionId,
-            NoLlmCalls: true
+            NoLlmCalls: true,
+            Approval: outcome.ApprovalRequest is { } request
+                ? new PendingApprovalInfo(
+                    request.Route, request.Reasons ?? [], request.PolicyVersion, order.Value.Id, order.Value.Total)
+                : null
         );
     }
 

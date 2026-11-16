@@ -1,5 +1,5 @@
 """Phase D integration: a real AS-issued MCP resource token authenticating a
-real product-MCP ``JwksTokenVerifier`` + FastMCP app.
+real product-MCP ``JwksTokenVerifier`` + MCPServer app.
 
 Uses the same ``OAuthAuthorizationServer`` direct-construction harness as
 ``test_auth_server_integration.py``/``test_inter_agent_oauth_integration.py``
@@ -7,7 +7,7 @@ Uses the same ``OAuthAuthorizationServer`` direct-construction harness as
 to mint a genuine ``mcp:product``-scoped client-credentials token, then feeds
 it through the real ``ecommerce_mcp_product.auth.JwksTokenVerifier`` (JWKS
 fetch monkeypatched to the in-process AS's own signing key — same convention
-as ``test_rs256_verifier.py``) and a real (independently-built) FastMCP app.
+as ``test_rs256_verifier.py``) and a real (independently-built) MCPServer app.
 Confirms: a correctly-scoped real token authenticates; the same call with no
 token is rejected 401 + WWW-Authenticate; with ``MCP_AUTH_ENABLED=false`` the
 server behaves exactly as today (regression guard, covered by the existing
@@ -27,7 +27,7 @@ import pytest_asyncio
 from ecommerce_mcp_product.auth import JwksTokenVerifier
 from ecommerce_mcp_product.server import mcp as bare_mcp
 from mcp.server.auth.settings import AuthSettings
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from starlette.testclient import TestClient
 
 import shared.db as shared_db
@@ -103,15 +103,15 @@ async def _noop_lifespan(_server):
     yield
 
 
-def _build_test_app(verifier: JwksTokenVerifier) -> FastMCP:
-    test_mcp = FastMCP(
+def _build_test_app(verifier: JwksTokenVerifier) -> MCPServer:
+    test_mcp = MCPServer(
         "test-product-mcp",
         lifespan=_noop_lifespan,
-        host="0.0.0.0",
         token_verifier=verifier,
         auth=AuthSettings(
             issuer_url=ISSUER,
             resource_server_url="http://localhost:9000/mcp",
+            validate_token_resource=False,
             required_scopes=["mcp:product"],
         ),
     )
@@ -147,13 +147,13 @@ async def test_real_as_token_authenticates_mcp_resource_call(clean_db, server, v
     assert status == 200, body
     token = body["access_token"]
 
-    with TestClient(_build_test_app(verifier).streamable_http_app()) as client:
+    with TestClient(_build_test_app(verifier).streamable_http_app(host="0.0.0.0")) as client:
         r = client.post("/mcp", json=_INIT_BODY, headers={**_MCP_HEADERS, "Authorization": f"Bearer {token}"})
         assert r.status_code == 200
 
 
 async def test_unauthenticated_call_rejected(verifier):
-    with TestClient(_build_test_app(verifier).streamable_http_app()) as client:
+    with TestClient(_build_test_app(verifier).streamable_http_app(host="0.0.0.0")) as client:
         r = client.post("/mcp", json=_INIT_BODY, headers=_MCP_HEADERS)
         assert r.status_code == 401
         assert "WWW-Authenticate" in r.headers
@@ -176,7 +176,7 @@ async def test_wrong_audience_real_token_rejected(clean_db, server, verifier):
     assert status == 200, body
     token = body["access_token"]
 
-    with TestClient(_build_test_app(verifier).streamable_http_app()) as client:
+    with TestClient(_build_test_app(verifier).streamable_http_app(host="0.0.0.0")) as client:
         r = client.post("/mcp", json=_INIT_BODY, headers={**_MCP_HEADERS, "Authorization": f"Bearer {token}"})
         assert r.status_code == 401
 

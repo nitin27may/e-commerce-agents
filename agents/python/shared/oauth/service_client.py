@@ -11,6 +11,7 @@ import asyncio
 import time
 
 import httpx
+import httpx2
 
 from shared.config import settings
 from shared.context import current_session_id, current_user_email, current_user_role
@@ -88,7 +89,7 @@ def reset_service_token_cache_for_tests() -> None:
     _service_token_cache.clear()
 
 
-def build_mcp_http_client() -> httpx.AsyncClient:
+def build_mcp_http_client() -> httpx2.AsyncClient:
     """A dedicated ``httpx.AsyncClient`` for an ``MCPStreamableHTTPTool`` in
     oauth mode, carrying a static ``Authorization`` header that covers the
     *whole* MCP session — not just individual tool calls.
@@ -106,10 +107,12 @@ def build_mcp_http_client() -> httpx.AsyncClient:
     client, set once the token is acquired (see ``set_mcp_auth_header``),
     covers the whole session uniformly instead.
     """
-    return httpx.AsyncClient()
+    # ``httpx2``, not ``httpx``: the MCP 2.x client (and MAF's ``MCPStreamableHTTPTool.http_client``) is
+    # built on it, and an ``httpx.AsyncClient`` is not accepted there.
+    return httpx2.AsyncClient()
 
 
-def set_mcp_auth_header(client: httpx.AsyncClient, token: str) -> None:
+def set_mcp_auth_header(client: httpx2.AsyncClient, token: str) -> None:
     """Set/replace the client's default ``Authorization`` header in place."""
     client.headers["Authorization"] = f"Bearer {token}"
 

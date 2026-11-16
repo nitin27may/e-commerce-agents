@@ -9,6 +9,7 @@
 [![MAF v1](https://img.shields.io/badge/Microsoft%20Agent%20Framework-v1-5E5DF0.svg)](https://github.com/microsoft/agent-framework)
 [![PostgreSQL + pgvector](https://img.shields.io/badge/PostgreSQL-pgvector-336791.svg)](https://github.com/pgvector/pgvector)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED.svg)](https://docs.docker.com/compose/)
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/nitin27may/e-commerce-agents)
 
 A **hands-on course in [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) (MAF)** — 34 chapters in Python and .NET, with a no-key start — and the **multi-agent e-commerce platform** it builds up to. In the platform, six specialized AI agents collaborate over **A2A-style HTTP** (`/message:send`; spec conformance is tracked in [#88](https://github.com/nitin27may/e-commerce-agents/issues/88)) to handle product discovery, orders, pricing, reviews, inventory and support — with **two complete backends, Python and .NET / C#** (differences documented in the [parity matrix](docs/parity-matrix.md)), behind one Next.js frontend.
 
@@ -58,6 +59,13 @@ Copy-Item .env.minimal .env    # then set OPENAI_API_KEY in .env
 
 [WSL2](https://learn.microsoft.com/windows/wsl/install) still gives the best experience, and
 everything above works unchanged inside it.
+
+**In the browser, no install.** The Codespaces badge above opens a ready environment — Python 3.12 + `uv`,
+Node 22 + `pnpm`, the .NET 10 SDK and Docker-in-Docker — and installs the dependencies for you
+([`.devcontainer/`](./.devcontainer/)). It needs **no secrets**: `LLM_PROVIDER=replay` is set, so the
+tutorials, the Python tests and the keyless eval suite run from recorded responses. Ports 3000 (web) and
+18888 (Aspire dashboard) are forwarded. For live model calls, add `OPENAI_API_KEY` as a Codespaces secret and
+clear `LLM_PROVIDER`; for the full stack, `./scripts/dev.sh --infra-only` works inside it.
 
 Full detail — the .NET stack, WSL2 notes, running with no API key, and what to do when something
 breaks: the **[Quick Start page](https://nitinksingh.com/e-commerce-agents/getting-started/quick-start.html)**.

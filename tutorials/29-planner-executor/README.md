@@ -254,3 +254,9 @@ for the full comparison of every orchestration mode this repo *does* run in prod
 - Previous: [Chapter 27 — Agent-as-Tool](../27-agent-as-tool/)
 - Full source: [`python/`](./python/)
 - Shared: [Mermaid style guide](../_shared/mermaid-style-guide.md) · [Orchestration patterns](../../docs/concepts/06-orchestration-patterns.md)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 28 — Reflection and Critique](../28-reflection-and-critique/) · [Series index](../README.md) · **Next:** [Chapter 30 — Subworkflows](../30-subworkflows/)
+<!-- END GENERATED CHAPTER NAV -->

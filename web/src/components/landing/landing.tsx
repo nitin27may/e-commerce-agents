@@ -65,7 +65,7 @@ export function Landing() {
         <div className="flex items-center gap-2">
           <ThemeToggle />
           <Button render={<Link href={REPO_URL} />} variant="ghost" size="sm">
-            <span className="hidden sm:inline">GitHub</span>
+            <span className="max-sm:sr-only">GitHub</span>
             <ArrowRight className="size-3.5" />
           </Button>
           <Button render={<Link href="/login" />} size="sm">

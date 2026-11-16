@@ -69,8 +69,10 @@ python3 scripts/check_tutorial_coverage.py --check
   [`agents/python/evals/fixtures/README.md`](agents/python/evals/fixtures/README.md)
   and confirm zero fixture misses. It needs no key.
 - **UI smoke** (CI: `web-ui-smoke` in `tests.yml`): `cd web && pnpm exec playwright test
-  e2e/ui-smoke.spec.ts e2e/not-found.spec.ts` against `pnpm dev` or a production
-  build. Backend-free.
+  e2e/ui-smoke.spec.ts e2e/not-found.spec.ts e2e/a11y.spec.ts` against `pnpm dev` or a
+  production build. Backend-free. These three specs run on both the desktop and the
+  `mobile-chromium` project (a Pixel 7 preset); the `a11y` spec fails on any
+  serious/critical axe violation. The rest of `e2e/` runs on the desktop project only.
 - Security scanning (CodeQL, dependency review) runs on its own in CI.
 
 ## Good first issues

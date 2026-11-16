@@ -1,11 +1,11 @@
 """OAuth 2.1 resource-server mode for the inventory MCP server (Phase D).
 
 Two tiers:
-- Pure ``JwksTokenVerifier`` unit tests (no ASGI, no FastMCP) — accept/
+- Pure ``JwksTokenVerifier`` unit tests (no ASGI, no MCPServer) — accept/
   reject shapes, mirroring the main app's ``test_rs256_verifier.py``
   convention: per-test RSA keypair, JWKS fetch monkeypatched (no real
   network call).
-- Server-level tests against an independently-built ``FastMCP`` instance
+- Server-level tests against an independently-built ``MCPServer`` instance
   (not the module-level singleton in ``server.py``) so these don't depend
   on ``MCP_AUTH_ENABLED`` being set before ``ecommerce_mcp_inventory.server``
   is first imported anywhere in the test session — import order would
@@ -22,7 +22,7 @@ import jwt as pyjwt
 import pytest
 from joserfc.jwk import RSAKey
 from mcp.server.auth.settings import AuthSettings
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from starlette.testclient import TestClient
 
 from ecommerce_mcp_inventory.auth import JwksTokenVerifier
@@ -115,7 +115,7 @@ async def test_verifier_rejects_malformed_token(verifier):
     assert await verifier.verify_token("not-a-jwt") is None
 
 
-# ─────────────────────── Server-level (FastMCP + auth) ───────────────────
+# ─────────────────────── Server-level (MCPServer + auth) ───────────────────
 
 
 @asynccontextmanager
@@ -123,18 +123,15 @@ async def _noop_lifespan(_server):
     yield
 
 
-def _build_app(verifier: JwksTokenVerifier) -> FastMCP:
-    mcp = FastMCP(
+def _build_app(verifier: JwksTokenVerifier) -> MCPServer:
+    mcp = MCPServer(
         "test-inventory-mcp",
         lifespan=_noop_lifespan,
-        # Avoid FastMCP's default-host DNS-rebinding auto-protection, which
-        # only allowlists localhost/127.0.0.1/::1 (see the same fix applied
-        # in server.py) — TestClient's default Host header matches neither.
-        host="0.0.0.0",
         token_verifier=verifier,
         auth=AuthSettings(
             issuer_url=ISSUER,
             resource_server_url="http://localhost:9001/mcp",
+            validate_token_resource=False,
             required_scopes=[REQUIRED_SCOPE],
         ),
     )
@@ -147,7 +144,7 @@ def _build_app(verifier: JwksTokenVerifier) -> FastMCP:
 
 
 def _client(verifier: JwksTokenVerifier) -> TestClient:
-    return TestClient(_build_app(verifier).streamable_http_app())
+    return TestClient(_build_app(verifier).streamable_http_app(host="0.0.0.0"))
 
 
 _INIT_BODY = {
@@ -177,7 +174,8 @@ def test_protected_resource_metadata(verifier):
         assert r.status_code == 200
         body = r.json()
         assert body["resource"] == "http://localhost:9001/mcp"
-        assert body["authorization_servers"] == [f"{ISSUER}/"]
+        # mcp 2.x keeps a path-less issuer canonical (no trailing slash)
+        assert body["authorization_servers"] == [ISSUER]
         assert REQUIRED_SCOPE in body["scopes_supported"]
 
 

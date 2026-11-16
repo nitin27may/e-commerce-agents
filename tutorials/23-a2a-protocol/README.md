@@ -184,3 +184,9 @@ For the harness side of this — lifecycle, telemetry, session rehydration — s
 - Next chapter: [Chapter 24 — RAG and Grounding](../24-rag-and-grounding/)
 - Full source: [`python/`](./python/)
 - Shared: [Mermaid style guide](../_shared/mermaid-style-guide.md) · [Jargon glossary](../_shared/jargon-glossary.md)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 22 — Group-Chat Debate (Round-Table Orchestration)](../22-group-chat-debate/) · [Series index](../README.md) · **Next:** [Chapter 24 — RAG and Grounding](../24-rag-and-grounding/)
+<!-- END GENERATED CHAPTER NAV -->

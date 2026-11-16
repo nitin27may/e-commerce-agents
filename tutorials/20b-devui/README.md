@@ -165,3 +165,9 @@ whose `return Agent(...)` at `agents/python/product_discovery/agent.py:86` produ
 - Full source: [`python/`](./python/) · [`dotnet/`](./dotnet/README.md)
 - Shared: [Mermaid style guide](../_shared/mermaid-style-guide.md) · [Jargon glossary](../_shared/jargon-glossary.md)
 - [MAF docs — DevUI](https://learn.microsoft.com/en-us/agent-framework/devui/)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 20 — Workflow Visualization](../20-visualization/) · [Series index](../README.md) · **Next:** [Chapter 21 — Capstone Tour](../21-capstone-tour/)
+<!-- END GENERATED CHAPTER NAV -->

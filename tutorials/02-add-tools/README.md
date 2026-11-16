@@ -188,3 +188,9 @@ Same shape as this chapter's `get_product_price`: `@tool` with a name and descri
 - Next chapter: [Chapter 03 — Streaming and Multi-turn](../03-streaming-and-multiturn/)
 - Full source: [`python/`](./python/) · [`dotnet/`](./dotnet/)
 - Shared: [Mermaid style guide](../_shared/mermaid-style-guide.md) · [Jargon glossary](../_shared/jargon-glossary.md)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 01 — Your First Agent](../01-first-agent/) · [Series index](../README.md) · **Next:** [Chapter 03 — Streaming and Multi-turn](../03-streaming-and-multiturn/)
+<!-- END GENERATED CHAPTER NAV -->

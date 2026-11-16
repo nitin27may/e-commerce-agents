@@ -1,0 +1,167 @@
+# Dependabot version updates (issue #84).
+#
+# Shape of the policy, so a new entry does not have to rediscover it:
+#
+#   * Weekly, one PR per ecosystem for minor/patch bumps (grouped). Majors are
+#     left as individual PRs, because a major is where the breakage is and each
+#     deserves its own review.
+#
+#   * The Microsoft Agent Framework packages (agent-framework-*, Microsoft.Agents.AI*)
+#     and the MCP SDK are held in a group of their own, never mixed into the
+#     routine PR. A MAF bump is a deliberate step, not a chore: it can invalidate
+#     the replay fixtures under agents/python/evals/fixtures (the request hash
+#     covers anything MAF serialises, and MAF has changed what it generates at run
+#     time before), and `fixture_drift` exiting 0 does not prove they still match.
+#     The gate is `scripts/replay-evals.sh`; a PR from the "maf" group is not
+#     mergeable until that passes, and may need the fixtures re-recorded
+#     (evals/fixtures/README.md). The Python pins are exact (`==`), the .NET ones
+#     are central (Directory.Packages.props), and both stacks and the tutorials
+#     must move together, so expect to finish that PR by hand.
+#     "mcp" rides in the same group: core 1.23+ requires MCP 2.x and the two have
+#     to be bumped as a pair. So do "a2a-sdk" (the A2A server and client are built on
+#     it, pinned exactly, and the request/response shapes are what the A2A tests and
+#     the replay fixtures see) and "httpx2" (the MCP 2.x client's HTTP stack, which
+#     shared/oauth/service_client.py builds against): each is coupled to the MAF/MCP
+#     pins, so a bump to either is a deliberate step, not part of the routine PR.
+#
+#   * The "actions" group takes minor and patch bumps only; a major version of an
+#     action is left as its own PR, like every other ecosystem here.
+#
+#   * Not covered, on purpose: agents/python/packages/* (uv workspace members,
+#     resolved by the single agents/python/uv.lock) and tutorials/20b-devui/python
+#     (own pyproject.toml, no lockfile, not installed by CI).
+#
+# Ecosystem names (uv, npm for pnpm, nuget, docker, docker-compose, github-actions)
+# were checked against the Dependabot options reference in the github/docs sources.
+# The nuget `directories` below (one entry per Directory.Packages.props root) is NOT
+# verified against a live Dependabot run: whether it discovers every project under
+# /tutorials is only known once the first run completes.
+
+version: 2
+
+updates:
+  # ---- Python (uv) -------------------------------------------------------
+  - package-ecosystem: uv
+    directories:
+      - /agents/python
+      - /tutorials
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps(py)"
+    groups:
+      # Order matters: a dependency lands in the FIRST group it matches, so this
+      # must stay above python-minor-patch or MAF would be swept into it.
+      maf:
+        patterns:
+          - "agent-framework*"
+          - "mcp"
+          - "a2a-sdk"
+          - "httpx2"
+      python-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  # ---- Frontend (pnpm is handled by the npm ecosystem) -------------------
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps(web)"
+    groups:
+      web-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  # ---- .NET (NuGet, central package management) --------------------------
+  - package-ecosystem: nuget
+    directories:
+      - /agents/dotnet
+      - /tutorials
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps(dotnet)"
+    groups:
+      maf:
+        patterns:
+          - "Microsoft.Agents.AI*"
+          - "ModelContextProtocol*"
+      dotnet-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  # ---- Container images --------------------------------------------------
+  # Dockerfiles: agents/python (Dockerfile, Dockerfile.mcp), web, and one per
+  # .NET service.
+  - package-ecosystem: docker
+    directories:
+      - /agents/python
+      - /web
+      - /agents/dotnet/src/*
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps(docker)"
+    ignore:
+      # Runtime lines are chosen with the code (py312 / Node 22 / net10.0 in the
+      # lockfiles, ruff target and CI), not bumped by an image tag.
+      - dependency-name: "python"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "mcr.microsoft.com/dotnet/*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      docker-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  # Images named in the compose files (postgres+pgvector, redis, Aspire dashboard).
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "deps(compose)"
+    ignore:
+      # The Postgres major is a data-directory migration, not a version bump, and
+      # init.sql / the pgvector tag are pinned to it deliberately.
+      - dependency-name: "pgvector/pgvector"
+    groups:
+      compose-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  # ---- CI ----------------------------------------------------------------
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch

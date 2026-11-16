@@ -61,12 +61,50 @@ public sealed class HitlGateTests : IAsyncLifetime
 
         await using var conn = await _pool.OpenAsync();
         var row = (await conn.QueryFirstOrDefaultAsync(
-            "SELECT tool_name, agent_name, user_email, status FROM tool_approval_requests WHERE tool_name = 'CancelOrder'"
+            "SELECT tool_name, agent_name, user_email, status FROM tool_approval_requests WHERE tool_name = 'cancel_order'"
         ))!;
-        ((string)row.tool_name).Should().Be("CancelOrder");
+        // Stored snake_case, as Python stores it: the policy kinds, the executor and the other stack's approve path all key on it.
+        // (It used to be the pipeline's PascalCase name, which the executor then could not dispatch.)
+        ((string)row.tool_name).Should().Be("cancel_order");
         ((string)row.agent_name).Should().Be("order-management");
         ((string)row.user_email).Should().Be(Email);
         ((string)row.status).Should().Be("pending");
+    }
+
+    /// <summary>
+    /// D-5n: a gated call opens the inbox row beside the legacy request — kind and input in the shape the policy and Python read, routed
+    /// by the policy, linked back through <c>approval_id</c>, with the SLA timers written in the same transaction.
+    /// </summary>
+    [Fact]
+    public async Task TryGateAsync_OpensAPolicyRoutedApproval_LinkedToTheRequest_WithItsTimers()
+    {
+        RequestContext.CurrentUserEmail = Email;
+        var gate = BuildGate();
+
+        await gate.TryGateAsync("CancelOrder", "order-management", new { orderId = "not-a-real-order", reason = "x" });
+
+        await using var conn = await _pool.OpenAsync();
+        var request = await conn.QueryFirstAsync(
+            "SELECT id, tool_input::text AS input, approval_id FROM tool_approval_requests WHERE tool_name = 'cancel_order'");
+        ((string)request.input).Should().Contain("\"order_id\"", "top-level input keys are snake_case, as the executor and Python read them");
+        ((Guid?)request.approval_id).Should().NotBeNull();
+
+        var approval = await conn.QueryFirstAsync(
+            "SELECT source, source_ref, kind, requester_email, status, route, assigned_role, due_at, policy_version FROM approvals WHERE id = @id",
+            new { id = (Guid)request.approval_id });
+        ((string)approval.source).Should().Be("tool");
+        ((Guid)approval.source_ref).Should().Be((Guid)request.id);
+        ((string)approval.kind).Should().Be("cancel_order");
+        ((string)approval.requester_email).Should().Be(Email);
+        ((string)approval.status).Should().Be("pending_review");
+        ((string)approval.route).Should().BeOneOf("support", "manager");
+        ((string)approval.assigned_role).Should().BeOneOf("support", "admin");
+        ((DateTime?)approval.due_at).Should().NotBeNull();
+        ((string?)approval.policy_version).Should().NotBeNullOrEmpty();
+
+        var timers = await conn.QueryAsync<string>(
+            "SELECT topic FROM outbox WHERE aggregate_id = @id ORDER BY topic", new { id = (Guid)request.approval_id });
+        timers.Should().Equal("approval.reminder_due", "approval.sla_breached");
     }
 
     [Theory]

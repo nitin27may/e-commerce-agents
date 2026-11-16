@@ -81,7 +81,8 @@ public sealed record WorkflowRunOutcome(
     WorkflowState State,
     string? PendingRequestId,
     string SessionId,
-    string? LastCheckpointId
+    string? LastCheckpointId,
+    ReturnApprovalRequest? ApprovalRequest = null
 );
 
 public sealed class ReturnAndReplaceWorkflow
@@ -228,13 +229,15 @@ public sealed class ReturnAndReplaceWorkflow
                         // caller runs with checkpointing.
                         _pausedRuns[state.OrderId] = (run, pendingRequest);
                     }
-                    return new WorkflowRunOutcome(finalState, pendingRequestId, sessionId, lastCheckpointId);
+                    return new WorkflowRunOutcome(
+                        finalState, pendingRequestId, sessionId, lastCheckpointId, ApprovalRequestOf(pendingRequest));
                 }
             }
         }
 
         await run.DisposeAsync();
-        return new WorkflowRunOutcome(finalState, pendingRequestId, sessionId, lastCheckpointId);
+        return new WorkflowRunOutcome(
+            finalState, pendingRequestId, sessionId, lastCheckpointId, ApprovalRequestOf(pendingRequest));
     }
 
     /// <summary>
@@ -363,6 +366,10 @@ public sealed class ReturnAndReplaceWorkflow
         await paused.Run.DisposeAsync();
         return finalState;
     }
+
+    /// <summary>The gate's routing decision, read back from the request MAF raised, so the inbox is routed by what actually paused the run.</summary>
+    private static ReturnApprovalRequest? ApprovalRequestOf(ExternalRequest? request) =>
+        request is not null && request.TryGetDataAs<ReturnApprovalRequest>(out var data) ? data : null;
 
     public ReturnApprovalRequest BuildApprovalRequest(WorkflowState state) =>
         new(state.OrderId, state.OrderTotal, state.RefundAmount, state.ReplacementProducts.Count);

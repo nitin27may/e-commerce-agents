@@ -227,3 +227,9 @@ exact shape this chapter's stub `JudgeVerdict` class copies.
 - Concept deep-dive: [`docs/concepts/12-evaluation.md`](../../docs/concepts/12-evaluation.md)
 - Full source: [`python/`](./python/)
 - Shared: [Mermaid style guide](../_shared/mermaid-style-guide.md) · [Jargon glossary](../_shared/jargon-glossary.md)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 25 — Guardrails](../25-guardrails/) · [Series index](../README.md) · **Next:** [Chapter 27 — Agent-as-tool](../27-agent-as-tool/)
+<!-- END GENERATED CHAPTER NAV -->

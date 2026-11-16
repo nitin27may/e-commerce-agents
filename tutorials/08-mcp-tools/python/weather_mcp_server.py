@@ -10,9 +10,9 @@ file as a subprocess and speaks MCP over stdio.
 
 from __future__ import annotations
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
-server = FastMCP("maf-v1-ch08-weather")
+server = MCPServer("maf-v1-ch08-weather")
 
 
 @server.tool()

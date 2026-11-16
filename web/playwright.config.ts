@@ -1,4 +1,4 @@
-import { defineConfig } from "@playwright/test";
+import { defineConfig, devices } from "@playwright/test";
 
 /**
  * `BACKEND_STACK` selects which orchestrator the suite is being run against
@@ -12,6 +12,18 @@ import { defineConfig } from "@playwright/test";
  * the gate is that one suite must pass against both backends.
  */
 const backend = process.env.BACKEND_STACK === "dotnet" ? "dotnet" : "python";
+
+// Escape hatch for machines whose pre-installed Chromium is a different
+// revision from the one this Playwright pins. Unset in CI.
+const launchOptions = process.env.PW_CHROMIUM_PATH
+  ? { executablePath: process.env.PW_CHROMIUM_PATH }
+  : {};
+
+// The specs that need no backend: they stub `/api/**` and seed auth in
+// localStorage (see e2e/ui-mocks.ts). Only these run on the mobile project;
+// everything else drives a real stack through the desktop layout, and running it
+// twice would double the slowest part of the suite for no new information.
+const BACKEND_FREE_SPECS = [/ui-smoke\.spec\.ts/, /not-found\.spec\.ts/, /a11y\.spec\.ts/];
 
 export default defineConfig({
   testDir: "./e2e",
@@ -35,14 +47,14 @@ export default defineConfig({
   projects: [
     {
       name: `chromium-${backend}`,
-      use: {
-        browserName: "chromium",
-        // Escape hatch for machines whose pre-installed Chromium is a different
-        // revision from the one this Playwright pins. Unset in CI.
-        launchOptions: process.env.PW_CHROMIUM_PATH
-          ? { executablePath: process.env.PW_CHROMIUM_PATH }
-          : {},
-      },
+      use: { browserName: "chromium", launchOptions },
+    },
+    {
+      // A phone-sized viewport with touch and a mobile user agent, on Chromium
+      // (the Pixel preset is Chromium-based, so no extra browser is installed).
+      name: "mobile-chromium",
+      testMatch: BACKEND_FREE_SPECS,
+      use: { ...devices["Pixel 7"], launchOptions },
     },
   ],
 });

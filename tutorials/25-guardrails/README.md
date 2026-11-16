@@ -210,3 +210,9 @@ Both defer their actual pattern matching to `agents/python/shared/guardrails/san
 - Full source: [`python/`](./python/)
 - Concept deep dive: [`docs/concepts/10-guardrails.md`](../../docs/concepts/10-guardrails.md)
 - Shared: [Mermaid style guide](../_shared/mermaid-style-guide.md) · [Jargon glossary](../_shared/jargon-glossary.md)
+
+<!-- BEGIN GENERATED CHAPTER NAV -->
+---
+
+**Previous:** [Chapter 24 — RAG and Grounding](../24-rag-and-grounding/) · [Series index](../README.md) · **Next:** [Chapter 26 — Evals](../26-evals/)
+<!-- END GENERATED CHAPTER NAV -->

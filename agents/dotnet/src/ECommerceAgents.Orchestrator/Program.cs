@@ -1,4 +1,5 @@
 using ECommerceAgents.Orchestrator.Agent;
+using ECommerceAgents.Orchestrator.Approvals;
 using ECommerceAgents.Orchestrator.Routes;
 using ECommerceAgents.Shared.Orchestration;
 using ECommerceAgents.Orchestrator.Modes;
@@ -94,6 +95,8 @@ builder.Services.AddSingleton<IOrchestrationMode>(sp =>
 builder.Services.AddSingleton<IOrchestrationMode>(sp =>
     new GroupChatMode(settings, sp.GetRequiredService<PromptLoader>()));
 builder.Services.AddSingleton<ModeRegistry>();
+// The approvals inbox: the unified API plus the legacy resume / admin approve-deny routes all decide through one service.
+builder.Services.AddApprovals();
 
 builder.Services.AddSingleton<SlidingWindowRateLimiter>();
 builder.Services.AddSingleton<OrchestratorTools>();
@@ -147,6 +150,7 @@ app.MapSellerRoutes();
 app.MapAgentStatsRoutes();
 app.MapRunsRoutes();
 app.MapHitlRoutes();
+app.MapApprovalRoutes();
 
 var urls = Environment.GetEnvironmentVariable("ASPNETCORE_URLS");
 app.Run(string.IsNullOrWhiteSpace(urls) ? "http://0.0.0.0:8080" : urls);
