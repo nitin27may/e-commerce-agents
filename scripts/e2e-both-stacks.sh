@@ -28,9 +28,21 @@
 # whichever frontend is on :3000. Both are caught at login by
 # `assertFrontendTalksToOrchUrl` in the parity spec.
 #
+# --mixed adds the two MIXED-STACK variants (docker-compose.mixed.yml, B-11), the regression net for the A2A
+# work: one orchestrator in front of the other stack's five specialists.
+#
+#   py-net   Python orchestrator, .NET specialists
+#   net-py   .NET orchestrator, Python specialists
+#
+# Run the parity spec against all four (both pure stacks, both mixed ones):
+#   scripts/e2e-both-stacks.sh --mixed -- e2e/orchestration-parity.spec.ts
+# The Playwright run needs a live model key (C-6's recordings are Python's request hashes and cannot serve a
+# .NET specialist); the compose profile itself needs none. The stacks run serially for the same port reason.
+#
 # Usage:
 #   scripts/e2e-both-stacks.sh                  # both backends, whole suite
-#   scripts/e2e-both-stacks.sh --only dotnet    # one backend
+#   scripts/e2e-both-stacks.sh --only dotnet    # one backend (python | dotnet | py-net | net-py)
+#   scripts/e2e-both-stacks.sh --mixed          # both backends and both mixed variants
 #   scripts/e2e-both-stacks.sh -- e2e/orchestration-parity.spec.ts
 #
 set -uo pipefail
@@ -40,37 +52,71 @@ cd "$REPO_ROOT"
 
 STACKS=("python" "dotnet")
 PLAYWRIGHT_ARGS=()
+ONLY=""
+WITH_MIXED=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --only) STACKS=("$2"); shift 2 ;;
+    --only) ONLY="$2"; shift 2 ;;
+    --mixed) WITH_MIXED=1; shift ;;
     --) shift; PLAYWRIGHT_ARGS=("$@"); break ;;
     *) echo "Unknown option: $1" >&2; exit 2 ;;
   esac
 done
 
-compose_file_for() {
-  [[ "$1" == "dotnet" ]] && echo "docker-compose.dotnet.yml" || echo "docker-compose.yml"
+if [[ -n "$ONLY" ]]; then
+  STACKS=("$ONLY")
+elif [[ "$WITH_MIXED" -eq 1 ]]; then
+  STACKS=("python" "dotnet" "py-net" "net-py")
+fi
+
+# shellcheck source=lib/mixed-env.sh
+source "$REPO_ROOT/scripts/lib/mixed-env.sh"
+
+# The compose files a stack is made of, as `-f` flags in COMPOSE_FLAGS. A mixed variant also exports the
+# MIXED_* variables docker-compose.mixed.yml interpolates (scripts/lib/mixed-env.sh).
+select_stack() {
+  case "$1" in
+    python) COMPOSE_FLAGS=(-f docker-compose.yml) ;;
+    dotnet) COMPOSE_FLAGS=(-f docker-compose.dotnet.yml) ;;
+    py-net | net-py)
+      mixed_env "$1" || return 1
+      COMPOSE_FLAGS=(-f "$MIXED_BASE_FILE" -f docker-compose.mixed.yml)
+      ;;
+    *) echo "Unknown stack: $1 (python | dotnet | py-net | net-py)" >&2; return 2 ;;
+  esac
+}
+
+# The orchestrator's stack decides which recorded parity gaps apply (web/e2e/parity-gaps.ts).
+orchestrator_stack_of() {
+  case "$1" in
+    dotnet | net-py) echo dotnet ;;
+    *) echo python ;;
+  esac
 }
 
 declare -A RESULTS=()
 
 teardown() {
-  local file="$1"
-  echo "--- tearing down ($file)"
-  docker compose -f "$file" --profile seed --profile agents --profile mcp --profile frontend down --remove-orphans >/dev/null 2>&1 || true
+  local stack="$1"
+  echo "--- tearing down ($stack)"
+  (
+    select_stack "$stack" || exit 0
+    docker compose "${COMPOSE_FLAGS[@]}" --profile seed --profile agents --profile mcp --profile frontend down --remove-orphans >/dev/null 2>&1 || true
+  )
 }
 
 for stack in "${STACKS[@]}"; do
-  file="$(compose_file_for "$stack")"
+  select_stack "$stack" || { RESULTS[$stack]="UNKNOWN STACK"; continue; }
 
   echo "======================================================================"
-  echo "  $stack  ($file)"
+  echo "  $stack  (${COMPOSE_FLAGS[*]})"
   echo "======================================================================"
 
-  # Make sure the *other* stack isn't holding the ports.
-  teardown "$(compose_file_for python)"
-  teardown "$(compose_file_for dotnet)"
+  # Make sure the *other* stacks aren't holding the ports (select_stack for a mixed variant exported
+  # MIXED_*; tearing the others down re-selects, so select this stack again afterwards).
+  for other in python dotnet py-net net-py; do teardown "$other"; done
+  select_stack "$stack" || continue
 
   # Every spec logs in from the same address, and at the default
   # WEB_TRUSTED_PROXY_HOPS=0 the proxy forwards no client address, so the whole
@@ -80,7 +126,7 @@ for stack in "${STACKS[@]}"; do
   export RATE_LIMIT_AUTH_IP_MAX_REQUESTS="${RATE_LIMIT_AUTH_IP_MAX_REQUESTS:-10000}"
 
   echo "--- starting stack"
-  if ! docker compose -f "$file" --profile seed --profile agents --profile mcp --profile frontend up -d --build; then
+  if ! docker compose "${COMPOSE_FLAGS[@]}" --profile seed --profile agents --profile mcp --profile frontend up -d --build; then
     echo "!!! $stack failed to start" >&2
     RESULTS[$stack]="STACK FAILED TO START"
     continue
@@ -104,20 +150,20 @@ for stack in "${STACKS[@]}"; do
 
   if [[ "$ready" -ne 1 ]]; then
     echo "!!! $stack never became ready" >&2
-    docker compose -f "$file" ps
+    docker compose "${COMPOSE_FLAGS[@]}" ps
     RESULTS[$stack]="NEVER BECAME READY"
-    teardown "$file"
+    teardown "$stack"
     continue
   fi
 
   echo "--- running Playwright against $stack"
-  if (cd web && BACKEND_STACK="$stack" E2E_BASE_URL="$BASE_URL" npx playwright test "${PLAYWRIGHT_ARGS[@]}"); then
+  if (cd web && BACKEND_STACK="$(orchestrator_stack_of "$stack")" E2E_BASE_URL="$BASE_URL" npx playwright test "${PLAYWRIGHT_ARGS[@]}"); then
     RESULTS[$stack]="PASSED"
   else
     RESULTS[$stack]="FAILED"
   fi
 
-  teardown "$file"
+  teardown "$stack"
 done
 
 echo
