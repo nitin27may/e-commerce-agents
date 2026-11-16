@@ -159,6 +159,13 @@ public sealed record AgentSettings
     /// </summary>
     public bool AuthRefreshRotation { get; init; } = true;
 
+    /// <summary>
+    /// Absolute lifetime of a refresh-token family from the login that started it (migration 0005).
+    /// Rotation mints a fresh 7-day token each time, so without a cap a session that keeps
+    /// refreshing never ends. Mirrors Python's <c>AUTH_REFRESH_FAMILY_MAX_DAYS</c>.
+    /// </summary>
+    public int AuthRefreshFamilyMaxDays { get; init; } = 30;
+
     public string AuthServerIssuer { get; init; } = "http://localhost:8090";
     public string AuthServerJwksUrl { get; init; } = "http://localhost:8090/.well-known/jwks.json";
     public string AuthServerTokenUrl { get; init; } = "http://localhost:8090/oauth/token";

@@ -14,6 +14,11 @@ namespace ECommerceAgents.Shared.Auth;
 /// The rotation runs under <c>SELECT ... FOR UPDATE</c>, so two simultaneous refreshes with one
 /// token serialise and exactly one wins - clients must single-flight their refresh.
 /// Tokens without a <c>jti</c> (issued before this feature) are rejected: one forced re-login.
+///
+/// A family also has an absolute expiry (<c>family_expires_at</c>, migration 0005, the configured
+/// max days from the login that started it) that every successor inherits; a token's own expiry
+/// never outlives it and rotation refuses once it has passed. Rotation prunes a bounded batch of
+/// dead rows so the table does not grow forever.
 /// </remarks>
 public static class RefreshTokenStore
 {
@@ -27,15 +32,25 @@ public static class RefreshTokenStore
         JwtTokenService jwt,
         string email,
         string role,
+        int familyMaxDays,
         Guid? familyId = null,
+        DateTime? familyExpiresAt = null,
         NpgsqlTransaction? tx = null
     )
     {
         var jti = Guid.NewGuid().ToString();
-        var expires = DateTime.UtcNow.Add(jwt.RefreshTokenLifetime);
+        var now = DateTime.UtcNow;
+        // A new family gets its absolute expiry now; a successor passes the one it inherited.
+        var familyExpires = familyExpiresAt ?? now.AddDays(familyMaxDays);
+        var expires = now.Add(jwt.RefreshTokenLifetime);
+        if (expires > familyExpires)
+        {
+            expires = familyExpires;
+        }
         await conn.ExecuteAsync(
-            "INSERT INTO refresh_tokens (jti, user_email, family_id, expires_at) VALUES (@jti, @email, @family, @expires)",
-            new { jti, email, family = familyId ?? Guid.NewGuid(), expires },
+            @"INSERT INTO refresh_tokens (jti, user_email, family_id, expires_at, family_expires_at)
+              VALUES (@jti, @email, @family, @expires, @familyExpires)",
+            new { jti, email, family = familyId ?? Guid.NewGuid(), expires, familyExpires },
             tx
         );
         return new Issued(jwt.IssueRefreshToken(email, role, jti), jti);
@@ -50,7 +65,8 @@ public static class RefreshTokenStore
         JwtTokenService jwt,
         string? jti,
         string email,
-        string role
+        string role,
+        int familyMaxDays
     )
     {
         if (string.IsNullOrEmpty(jti))
@@ -62,7 +78,7 @@ public static class RefreshTokenStore
         await using var tx = await conn.BeginTransactionAsync();
 
         var row = await conn.QueryFirstOrDefaultAsync(
-            "SELECT user_email, family_id, expires_at, revoked_at FROM refresh_tokens WHERE jti = @jti FOR UPDATE",
+            "SELECT user_email, family_id, expires_at, family_expires_at, revoked_at FROM refresh_tokens WHERE jti = @jti FOR UPDATE",
             new { jti },
             tx
         );
@@ -85,19 +101,51 @@ public static class RefreshTokenStore
             return (null, RejectReason.Reuse);
         }
 
-        if ((DateTime)row.expires_at <= DateTime.UtcNow)
+        // Either this token ran out, or the session as a whole hit its absolute cap.
+        if ((DateTime)row.expires_at <= DateTime.UtcNow || (DateTime)row.family_expires_at <= DateTime.UtcNow)
         {
             await tx.RollbackAsync();
             return (null, RejectReason.Expired);
         }
 
-        var next = await IssueAsync(conn, jwt, email, role, (Guid)row.family_id, tx);
+        var next = await IssueAsync(
+            conn, jwt, email, role, familyMaxDays, (Guid)row.family_id, (DateTime)row.family_expires_at, tx);
         await conn.ExecuteAsync(
             "UPDATE refresh_tokens SET revoked_at = NOW(), replaced_by = @next WHERE jti = @jti",
             new { next = next.Jti, jti },
             tx
         );
         await tx.CommitAsync();
+        await PruneAsync(conn);
         return (next, RejectReason.None);
+    }
+
+    private const int PruneBatch = 100;
+
+    /// <summary>
+    /// Deletes a bounded batch of dead rows: expired for over a day, or in a family with no live
+    /// token. A rotated token stays until it expires (replaying it is how reuse is detected). Best
+    /// effort: a failure never surfaces to a caller whose rotation already succeeded.
+    /// </summary>
+    internal static async Task PruneAsync(NpgsqlConnection conn)
+    {
+        try
+        {
+            await conn.ExecuteAsync(
+                @"DELETE FROM refresh_tokens
+                   WHERE jti IN (
+                         SELECT r.jti FROM refresh_tokens r
+                          WHERE r.expires_at < NOW() - interval '1 day'
+                             OR (r.revoked_at IS NOT NULL
+                                 AND r.revoked_at < NOW() - interval '1 day'
+                                 AND NOT EXISTS (SELECT 1 FROM refresh_tokens x
+                                                  WHERE x.family_id = r.family_id AND x.revoked_at IS NULL))
+                          LIMIT @batch)",
+                new { batch = PruneBatch });
+        }
+        catch (Exception)
+        {
+            // Pruning is housekeeping; the next rotation tries again.
+        }
     }
 }

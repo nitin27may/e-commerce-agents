@@ -192,6 +192,11 @@ class Settings(BaseSettings):
     # in AUTH_MODE=oauth — rotation there is the auth-server's job and is not
     # implemented (docs/parity-matrix.md).
     AUTH_REFRESH_ROTATION: bool = True
+    # Absolute lifetime of a refresh-token family, counted from the login that started it
+    # (migration 0005). Rotation hands every successor a fresh 7-day token, so without a cap a
+    # session that keeps refreshing never ends; once this has passed, refresh is a 401 and the
+    # user logs in again.
+    AUTH_REFRESH_FAMILY_MAX_DAYS: int = 30
     AUTH_JWKS_CACHE_TTL: int = 900  # resource-server JWKS cache
     AUTH_RSA_KEY_SIZE: int = 2048  # auth-server only
     AUTH_SIGNING_KEY_ENCRYPTION_KEY: str = ""  # optional KEK for the private key at rest

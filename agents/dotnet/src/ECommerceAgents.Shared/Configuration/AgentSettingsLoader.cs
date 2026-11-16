@@ -138,6 +138,7 @@ public static class AgentSettingsLoader
 
             AuthMode = Get("AUTH_MODE", "local").ToLowerInvariant(),
             AuthRefreshRotation = GetBool("AUTH_REFRESH_ROTATION", true),
+            AuthRefreshFamilyMaxDays = GetInt("AUTH_REFRESH_FAMILY_MAX_DAYS", 30),
             AuthServerIssuer = Get("AUTH_SERVER_ISSUER", "http://localhost:8090"),
             AuthServerJwksUrl = Get("AUTH_SERVER_JWKS_URL", "http://localhost:8090/.well-known/jwks.json"),
             AuthServerTokenUrl = Get("AUTH_SERVER_TOKEN_URL", "http://localhost:8090/oauth/token"),

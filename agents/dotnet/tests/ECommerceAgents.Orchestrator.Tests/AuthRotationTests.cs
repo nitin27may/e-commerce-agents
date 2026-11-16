@@ -158,6 +158,73 @@ public sealed class AuthRotationTests(PostgresFixture pg) : IAsyncLifetime
         (await RefreshAsync(c, token)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    // ───────────────── absolute family lifetime and pruning (migration 0005) ─────────────────
+
+    [Fact]
+    public async Task Successors_InheritTheFamilyCap_AndNeverOutliveIt()
+    {
+        using var c = Client();
+        var first = await LoginAsync(c);
+        await using var conn = await _pool.OpenAsync();
+        await conn.ExecuteAsync("UPDATE refresh_tokens SET family_expires_at = NOW() + INTERVAL '2 hours'");
+
+        (await RefreshAsync(c, first)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        (await conn.ExecuteScalarAsync<int>("SELECT COUNT(DISTINCT family_expires_at) FROM refresh_tokens")).Should().Be(1);
+        (await conn.ExecuteScalarAsync<bool>(
+            "SELECT expires_at <= family_expires_at FROM refresh_tokens WHERE revoked_at IS NULL"))
+            .Should().BeTrue("a successor never outlives its family");
+    }
+
+    [Fact]
+    public async Task ANewLogin_GetsTheConfiguredCap()
+    {
+        using var c = Client();
+        await LoginAsync(c);
+        await using var conn = await _pool.OpenAsync();
+        var days = await conn.ExecuteScalarAsync<double>(
+            "SELECT EXTRACT(EPOCH FROM (family_expires_at - created_at)) / 86400 FROM refresh_tokens");
+        days.Should().BeInRange(29.99, 30.01);
+    }
+
+    [Fact]
+    public async Task Rotation_IsRefusedOnceTheFamilyCapHasPassed()
+    {
+        using var c = Client();
+        var token = await LoginAsync(c);
+        await using var conn = await _pool.OpenAsync();
+        // The token itself is still within its 7 days; only the session as a whole is over.
+        await conn.ExecuteAsync("UPDATE refresh_tokens SET family_expires_at = NOW() - INTERVAL '1 second'");
+
+        (await RefreshAsync(c, token)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await conn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM refresh_tokens")).Should().Be(1, "no successor is minted");
+    }
+
+    [Fact]
+    public async Task Rotation_PrunesDeadRows_ButNotLiveOrRecentlyRotatedOnes()
+    {
+        var other = Guid.NewGuid();
+        var deadFamily = Guid.NewGuid();
+        await using (var seed = await _pool.OpenAsync())
+        {
+            const string sql = @"INSERT INTO refresh_tokens (jti, user_email, family_id, expires_at, revoked_at)
+                                 VALUES (@jti, @Email, @family, {0}, {1})";
+            await seed.ExecuteAsync(string.Format(sql, "NOW() - INTERVAL '3 days'", "NULL"), new { jti = "expired-long-ago", Email, family = other });
+            await seed.ExecuteAsync(string.Format(sql, "NOW() + INTERVAL '3 days'", "NOW() - INTERVAL '2 days'"), new { jti = "revoked-dead-family", Email, family = deadFamily });
+            await seed.ExecuteAsync(string.Format(sql, "NOW() + INTERVAL '3 days'", "NOW() - INTERVAL '1 minute'"), new { jti = "rotated-just-now", Email, family = other });
+        }
+
+        using var c = Client();
+        await RefreshAsync(c, await LoginAsync(c));
+
+        await using var conn = await _pool.OpenAsync();
+        var jtis = (await conn.QueryAsync<string>("SELECT jti FROM refresh_tokens")).ToList();
+        jtis.Should().NotContain("expired-long-ago");
+        jtis.Should().NotContain("revoked-dead-family");
+        jtis.Should().Contain("rotated-just-now", "replaying a recently rotated token is how reuse is detected");
+        jtis.Should().HaveCount(3);
+    }
+
     [Fact]
     public async Task FlagOff_KeepsTheOldContract()
     {

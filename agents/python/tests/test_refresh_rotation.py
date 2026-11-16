@@ -230,3 +230,69 @@ async def test_overlong_password_on_login_is_a_401_not_a_500() -> None:
     async with _client() as c:
         resp = await c.post("/api/auth/login", json={"email": EMAIL, "password": "x" * 200})
     assert resp.status_code == 401
+
+
+# ───────────────────── absolute family lifetime and pruning (migration 0005) ─────────────────────
+
+
+async def test_successors_inherit_the_family_cap_and_never_outlive_it(clean_db: asyncpg.Pool) -> None:
+    async with _client() as c:
+        first = (await _login(c))["refresh_token"]
+        await clean_db.execute("UPDATE refresh_tokens SET family_expires_at = NOW() + INTERVAL '2 hours'")
+        resp = await _refresh(c, first)
+        assert resp.status_code == 200
+
+    rows = await clean_db.fetch("SELECT family_expires_at, expires_at, revoked_at FROM refresh_tokens")
+    assert len(rows) == 2
+    assert len({r["family_expires_at"] for r in rows}) == 1, "the cap is stamped once and inherited"
+    newest = next(r for r in rows if r["revoked_at"] is None)  # the successor
+    assert newest["expires_at"] <= newest["family_expires_at"], "a successor never outlives its family"
+
+
+async def test_a_new_login_gets_the_configured_cap(clean_db: asyncpg.Pool, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "AUTH_REFRESH_FAMILY_MAX_DAYS", 30)
+    async with _client() as c:
+        await _login(c)
+    days = await clean_db.fetchval(
+        "SELECT EXTRACT(EPOCH FROM (family_expires_at - created_at)) / 86400 FROM refresh_tokens"
+    )
+    assert 29.99 < days < 30.01
+
+
+async def test_rotation_is_refused_once_the_family_cap_has_passed(clean_db: asyncpg.Pool) -> None:
+    async with _client() as c:
+        token = (await _login(c))["refresh_token"]
+        # The token itself is still within its 7 days; only the session as a whole is over.
+        await clean_db.execute("UPDATE refresh_tokens SET family_expires_at = NOW() - INTERVAL '1 second'")
+        resp = await _refresh(c, token)
+    assert resp.status_code == 401
+    assert await clean_db.fetchval("SELECT count(*) FROM refresh_tokens") == 1, "no successor is minted"
+
+
+async def test_rotation_prunes_dead_rows_but_not_live_or_recently_rotated_ones(clean_db: asyncpg.Pool) -> None:
+    other = await clean_db.fetchval("SELECT gen_random_uuid()")
+    dead_family = await clean_db.fetchval("SELECT gen_random_uuid()")
+
+    async def insert(jti: str, family, *, expires: str, revoked: str | None) -> None:
+        await clean_db.execute(
+            f"""INSERT INTO refresh_tokens (jti, user_email, family_id, expires_at, revoked_at)
+                VALUES ($1, $2, $3, {expires}, {revoked or "NULL"})""",
+            jti,
+            EMAIL,
+            family,
+        )
+
+    await insert("expired-long-ago", other, expires="NOW() - INTERVAL '3 days'", revoked=None)
+    await insert(
+        "revoked-dead-family", dead_family, expires="NOW() + INTERVAL '3 days'", revoked="NOW() - INTERVAL '2 days'"
+    )
+    await insert("rotated-just-now", other, expires="NOW() + INTERVAL '3 days'", revoked="NOW() - INTERVAL '1 minute'")
+
+    async with _client() as c:
+        await _refresh(c, (await _login(c))["refresh_token"])
+
+    jtis = {r["jti"] for r in await clean_db.fetch("SELECT jti FROM refresh_tokens")}
+    assert "expired-long-ago" not in jtis
+    assert "revoked-dead-family" not in jtis
+    assert "rotated-just-now" in jtis, "a recently rotated token is kept: replaying it is how reuse is detected"
+    assert len(jtis) == 3  # the kept one plus the login's token and its successor

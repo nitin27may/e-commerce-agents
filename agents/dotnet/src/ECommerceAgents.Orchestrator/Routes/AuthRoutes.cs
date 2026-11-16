@@ -60,7 +60,7 @@ public static class AuthRoutes
     private static async Task<string> NewRefreshTokenAsync(
         Npgsql.NpgsqlConnection conn, JwtTokenService jwt, AgentSettings settings, string email, string role
     ) => settings.AuthRefreshRotation
-        ? (await RefreshTokenStore.IssueAsync(conn, jwt, email, role)).Token
+        ? (await RefreshTokenStore.IssueAsync(conn, jwt, email, role, settings.AuthRefreshFamilyMaxDays)).Token
         : jwt.IssueRefreshToken(email, role);
     public sealed record LoginRequest(string Email, string Password);
     public sealed record RefreshRequest(string RefreshToken);
@@ -404,7 +404,7 @@ public static class AuthRoutes
             // Rotation: consume this token, hand back its successor. A token already consumed
             // (or one that predates `jti`) is rejected; reuse revokes the whole family.
             var (next, _) = await RefreshTokenStore.RotateAsync(
-                pool, jwt, principal.FindFirst("jti")?.Value, email, role);
+                pool, jwt, principal.FindFirst("jti")?.Value, email, role, settings.AuthRefreshFamilyMaxDays);
             if (next is null)
             {
                 return Results.Json(new { detail = "Invalid refresh token" }, statusCode: StatusCodes.Status401Unauthorized);
