@@ -11,6 +11,7 @@ using ECommerceAgents.Shared.RateLimiting;
 using ECommerceAgents.Shared.Sessions;
 using ECommerceAgents.Shared.ContextProviders;
 using ECommerceAgents.Shared.Data;
+using ECommerceAgents.Shared.Health;
 using ECommerceAgents.Shared.Middleware;
 using ECommerceAgents.Shared.Prompts;
 using ECommerceAgents.Shared.Telemetry;
@@ -124,6 +125,7 @@ app.UseAgentAuth(isOrchestrator: true);
 
 app.MapGet("/", () => Results.Ok(new { status = "ok", service = "orchestrator", port = 8080 }));
 app.MapGet("/health", () => Results.Ok(new { healthy = true }));
+app.MapReadiness("orchestrator");
 
 app.MapAuthRoutes();
 app.MapChatRoutes();

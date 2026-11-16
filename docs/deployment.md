@@ -389,6 +389,10 @@ For common issues — port conflicts, missing API keys, empty data, Aspire trace
 
 Deployment-specific issues are below.
 
+### Health versus readiness
+
+`/health` is static liveness ("the process is up"). `/ready` (orchestrator and every specialist, both stacks) answers "can this service work right now": a database round trip within 2 s, a `schema_migrations` row, and Redis reported but non-fatal. It returns `{"status", "service", "checks"}` with HTTP 200 or 503. Compose healthchecks probe `/ready`, and start-up is ordered agents, then orchestrator, then frontend (`depends_on: service_healthy`). A stack started without running the seeder (which runs the migrations) therefore stays unhealthy instead of looking fine.
+
 ### Database volume out of date after schema changes
 
 **Cause**: `init.sql` only runs on the first volume creation, and it is a frozen baseline. Schema changes since then are numbered files in `docker/postgres/migrations/`, applied by `scripts/migrate.py` (the seeder runs it before seeding; `./scripts/dev.sh` runs it too). A volume that predates a migration is upgraded in place by running that script; `schema_migrations` records what has been applied, and an applied file that was edited afterwards fails the run.

@@ -135,6 +135,19 @@ services:
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }
+      product-discovery: { condition: service_healthy }
+      order-management: { condition: service_healthy }
+      pricing-promotions: { condition: service_healthy }
+      review-sentiment: { condition: service_healthy }
+      inventory-fulfillment: { condition: service_healthy }
+    # /ready (not /health): the service is up AND its database has the migrated
+    # schema. Dependents wait on this via `condition: service_healthy` (#102).
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/ready > /dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 15s
 
     environment: &agent-env
       DATABASE_URL: postgresql://ecommerce:ecommerce_secret@db:5432/ecommerce_agents
@@ -197,6 +210,14 @@ services:
     ports: ["127.0.0.1:8081:8081"]
     depends_on:
       db: { condition: service_healthy }
+    # /ready (not /health): the service is up AND its database has the migrated
+    # schema. Dependents wait on this via `condition: service_healthy` (#102).
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/ready > /dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 15s
 
     environment:
       <<: *agent-env
@@ -218,6 +239,14 @@ services:
     ports: ["127.0.0.1:8082:8082"]
     depends_on:
       db: { condition: service_healthy }
+    # /ready (not /health): the service is up AND its database has the migrated
+    # schema. Dependents wait on this via `condition: service_healthy` (#102).
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8082/ready > /dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 15s
 
     environment:
       <<: *agent-env
@@ -232,6 +261,14 @@ services:
     ports: ["127.0.0.1:8083:8083"]
     depends_on:
       db: { condition: service_healthy }
+    # /ready (not /health): the service is up AND its database has the migrated
+    # schema. Dependents wait on this via `condition: service_healthy` (#102).
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8083/ready > /dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 15s
 
     environment:
       <<: *agent-env
@@ -246,6 +283,14 @@ services:
     ports: ["127.0.0.1:8084:8084"]
     depends_on:
       db: { condition: service_healthy }
+    # /ready (not /health): the service is up AND its database has the migrated
+    # schema. Dependents wait on this via `condition: service_healthy` (#102).
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8084/ready > /dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 15s
 
     environment:
       <<: *agent-env
@@ -260,6 +305,14 @@ services:
     ports: ["127.0.0.1:8085:8085"]
     depends_on:
       db: { condition: service_healthy }
+    # /ready (not /health): the service is up AND its database has the migrated
+    # schema. Dependents wait on this via `condition: service_healthy` (#102).
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8085/ready > /dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 15s
 
     environment:
       <<: *agent-env
@@ -362,7 +415,7 @@ services:
       # address rather than a host-published one.
       ORCHESTRATOR_URL: http://orchestrator:8080
     depends_on:
-      orchestrator: { condition: service_started }
+      orchestrator: { condition: service_healthy }
     profiles: ["frontend"]
 
 volumes:

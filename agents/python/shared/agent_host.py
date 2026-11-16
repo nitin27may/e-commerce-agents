@@ -23,6 +23,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from shared.readiness import register_readiness
 from shared.sse import sse_frame
 
 logging.basicConfig(level=logging.INFO)
@@ -242,6 +243,8 @@ def create_agent_app(
     @app.get("/health")
     async def health():
         return {"status": "ok", "agent": agent_name, "port": port}
+
+    register_readiness(app, agent_name)
 
     @app.get("/.well-known/agent-card.json")
     async def agent_card():

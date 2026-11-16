@@ -20,6 +20,7 @@ from fastapi.responses import JSONResponse
 
 from orchestrator.routes import router
 from shared.db import close_db_pool, init_db_pool
+from shared.readiness import register_readiness
 from shared.telemetry import instrument_fastapi, setup_telemetry
 
 logging.basicConfig(level=logging.INFO)
@@ -78,3 +79,6 @@ async def stale_user_handler(request: Request, exc: ForeignKeyViolationError) ->
 async def health() -> dict[str, str]:
     """Health check endpoint."""
     return {"status": "ok", "service": "orchestrator"}
+
+
+register_readiness(app, "orchestrator")

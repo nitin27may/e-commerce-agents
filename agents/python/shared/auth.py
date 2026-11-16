@@ -29,7 +29,7 @@ from shared.jwt_utils import decode_token
 logger = logging.getLogger(__name__)
 
 # Paths that skip authentication
-PUBLIC_PATHS = {"/health", "/.well-known/agent-card.json"}
+PUBLIC_PATHS = {"/health", "/ready", "/.well-known/agent-card.json"}
 
 # Roles the platform recognizes. 'system' is the inter-agent sentinel used when
 # a call originates without an end user (internal / health flows).

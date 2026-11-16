@@ -27,6 +27,7 @@ public sealed class AgentAuthMiddleware
     {
         "/",
         "/health",
+        "/ready",
         "/.well-known/agent-card.json",
         "/api/auth/signup",
         "/api/auth/login",

@@ -458,12 +458,12 @@ try {
     Write-Step 'Starting agents and frontend'
     Invoke-Compose -Arguments ($RunProfiles + @('up', '-d'))
 
-    Wait-ForHttp -Name 'Orchestrator'      -Url 'http://localhost:8080/health'
-    Wait-ForHttp -Name 'Product Discovery' -Url 'http://localhost:8081/health'
-    Wait-ForHttp -Name 'Order Management'  -Url 'http://localhost:8082/health'
-    Wait-ForHttp -Name 'Pricing & Promos'  -Url 'http://localhost:8083/health'
-    Wait-ForHttp -Name 'Review & Sentiment' -Url 'http://localhost:8084/health'
-    Wait-ForHttp -Name 'Inventory & Fulfilment' -Url 'http://localhost:8085/health'
+    Wait-ForHttp -Name 'Orchestrator'      -Url 'http://localhost:8080/ready'
+    Wait-ForHttp -Name 'Product Discovery' -Url 'http://localhost:8081/ready'
+    Wait-ForHttp -Name 'Order Management'  -Url 'http://localhost:8082/ready'
+    Wait-ForHttp -Name 'Pricing & Promos'  -Url 'http://localhost:8083/ready'
+    Wait-ForHttp -Name 'Review & Sentiment' -Url 'http://localhost:8084/ready'
+    Wait-ForHttp -Name 'Inventory & Fulfilment' -Url 'http://localhost:8085/ready'
     Write-Ok 'All agents are running'
 
     Wait-ForHttp -Name 'Frontend' -Url 'http://localhost:3000' -TimeoutSeconds 90

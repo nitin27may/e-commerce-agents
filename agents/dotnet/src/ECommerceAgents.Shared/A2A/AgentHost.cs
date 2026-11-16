@@ -3,6 +3,7 @@ using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.ContextProviders;
 using ECommerceAgents.Shared.Data;
+using ECommerceAgents.Shared.Health;
 using ECommerceAgents.Shared.Middleware;
 using ECommerceAgents.Shared.Telemetry;
 using Microsoft.Agents.AI;
@@ -98,6 +99,7 @@ public static class AgentHost
 
         app.MapGet("/", () => Results.Ok(new { status = "ok", service = name, port }));
         app.MapGet("/health", () => Results.Ok(new { healthy = true, service = name }));
+        app.MapReadiness(name);
 
         app.MapGet("/.well-known/agent-card.json", () =>
             Results.Ok(new

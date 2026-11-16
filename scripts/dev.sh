@@ -416,12 +416,12 @@ fi
 step "Starting agents and frontend"
 "${COMPOSE[@]}" "${RUN_PROFILES[@]}" up -d
 
-wait_for_http "Orchestrator"      "http://localhost:8080/health"
-wait_for_http "Product Discovery" "http://localhost:8081/health"
-wait_for_http "Order Management"  "http://localhost:8082/health"
-wait_for_http "Pricing & Promos"  "http://localhost:8083/health"
-wait_for_http "Review & Sentim."  "http://localhost:8084/health"
-wait_for_http "Inventory & Ful."  "http://localhost:8085/health"
+wait_for_http "Orchestrator"      "http://localhost:8080/ready"
+wait_for_http "Product Discovery" "http://localhost:8081/ready"
+wait_for_http "Order Management"  "http://localhost:8082/ready"
+wait_for_http "Pricing & Promos"  "http://localhost:8083/ready"
+wait_for_http "Review & Sentim."  "http://localhost:8084/ready"
+wait_for_http "Inventory & Ful."  "http://localhost:8085/ready"
 
 success "All agents are running"
 
