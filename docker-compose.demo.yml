@@ -337,6 +337,33 @@ services:
       MCP_INVENTORY_AUDIENCE: ${MCP_INVENTORY_AUDIENCE:-mcp-inventory}
       MCP_INVENTORY_REQUIRED_SCOPE: ${MCP_INVENTORY_REQUIRED_SCOPE:-mcp:inventory}
 
+  # ── Outbox worker (approval reminders, SLA escalation, timeouts) ──
+  #
+  # Drains the outbox table; see docs/approvals.md. Same Python agent image,
+  # different command. Publishes no port. Waits for the seeder (it applies the migrations).
+  outbox-worker:
+    image: ghcr.io/nitin27may/e-commerce-agents/outbox-worker:${IMAGE_TAG:-latest}
+    command: uv run --no-project python -m worker.main
+    depends_on:
+      db: { condition: service_healthy }
+      seeder: { condition: service_completed_successfully }
+    # No port: the worker touches a heartbeat file every loop; healthy = it was touched in the last 2 minutes.
+    healthcheck:
+      test: ["CMD-SHELL", "find /tmp/outbox-worker.heartbeat -mmin -2 | grep -q . || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    environment:
+      DATABASE_URL: postgresql://ecommerce:ecommerce_secret@db:5432/ecommerce_agents
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      # false: the process stays up and idle and drains nothing.
+      OUTBOX_WORKER_ENABLED: ${OUTBOX_WORKER_ENABLED:-true}
+      OUTBOX_POLL_INTERVAL_SECONDS: ${OUTBOX_POLL_INTERVAL_SECONDS:-2}
+      OUTBOX_BATCH_SIZE: ${OUTBOX_BATCH_SIZE:-10}
+      OUTBOX_MAX_ATTEMPTS: ${OUTBOX_MAX_ATTEMPTS:-8}
+      OUTBOX_LEASE_SECONDS: ${OUTBOX_LEASE_SECONDS:-120}
+
   # ── MCP servers (opt-in) ──────────────────────────────────────────────────
   #
   # Kept behind a profile because MCP_ENABLED is false by default, so on the

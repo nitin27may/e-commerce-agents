@@ -231,6 +231,24 @@ agent loop. The mode stays `observe`: watch `cost_budget.would_block` (see
 [telemetry.md](telemetry.md#cost-and-usage)) before choosing `enforce`. The figure is an
 estimate from a hand-maintained price table, not a bill.
 
+## Outbox worker (`OUTBOX_*`)
+
+The `outbox-worker` service (`python -m worker.main`) drains the `outbox` table. See
+[Approvals](approvals.md#the-outbox-worker-sla-and-notifications). Compose passes the first five
+through; the rest are read from `.env` by host-run Python.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `OUTBOX_WORKER_ENABLED` | `true` | `false` keeps the process up and idle: it drains nothing, so no reminders, escalations or timeouts happen |
+| `OUTBOX_POLL_INTERVAL_SECONDS` | `2` | Sleep between polls when the table has nothing due |
+| `OUTBOX_BATCH_SIZE` | `10` | Rows claimed per tick |
+| `OUTBOX_MAX_ATTEMPTS` | `8` | Tries before a failing row is parked (`outbox.failed_at`) |
+| `OUTBOX_LEASE_SECONDS` | `120` | How long a claimed row stays owned; a crashed worker's rows are retaken after it. Also the hard timeout of one handler |
+| `OUTBOX_BACKOFF_BASE_SECONDS` | `5` | Retry delay is `base * 2^(attempts-1)` |
+| `OUTBOX_BACKOFF_MAX_SECONDS` | `600` | Ceiling on that delay |
+| `OUTBOX_WORKER_HEARTBEAT_FILE` | `/tmp/outbox-worker.heartbeat` | Touched every loop; the container healthcheck reads its age |
+| `APPROVAL_REMINDER_FRACTION` | `0.5` | The reminder fires this fraction of the way through an approval's `sla_hours` |
+
 ## One stack at a time
 
 The Python and .NET stacks publish the same host ports — 3000, 5432, 6379, 8080–8085, 8090, 18888 —

@@ -136,6 +136,16 @@ jobs:
               AGENT_NAME=inventory_fulfillment
               AGENT_PORT=8085
             smoke_module: inventory_fulfillment.main
+          # The outbox worker: AGENT_NAME=worker copies worker/ into the image (the
+          # Dockerfile copies ${AGENT_NAME}/), compose overrides the command. The smoke
+          # import is what catches a worker/ that is missing from the image.
+          - image: outbox-worker
+            context: ./agents/python
+            dockerfile: ./agents/python/Dockerfile
+            build_args: |
+              AGENT_NAME=worker
+              AGENT_PORT=8095
+            smoke_module: worker.main
           # auth-server is an agent-shaped image too (AUTH_MODE=oauth path).
           # docker-compose.yml builds it from the same Dockerfile.
           - image: auth-server

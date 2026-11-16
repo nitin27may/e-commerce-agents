@@ -58,6 +58,7 @@ jobs:
           - review-sentiment
           - inventory-fulfillment
           - auth-server
+          - outbox-worker
           - mcp-product
           - mcp-inventory
           - frontend

@@ -83,6 +83,7 @@ Docker Compose profiles control which services start. Services without a profile
 | *(none)* | `db`, `redis`, `aspire` | Always started -- infrastructure baseline |
 | `seed` | `seeder` | Populates the database with sample data. Runs once and exits. |
 | `agents` | `orchestrator`, `product-discovery`, `order-management`, `pricing-promotions`, `review-sentiment`, `inventory-fulfillment` | The 6 AI agent microservices |
+| `agents` (cont.) | `outbox-worker` | Background worker: approval reminders, SLA escalation and timeouts (no port; see [Approvals](approvals.md#the-outbox-worker-sla-and-notifications)). Built from the Python agent image with `AGENT_NAME=worker`. Disable with `OUTBOX_WORKER_ENABLED=false` |
 | `frontend` | `frontend` | Next.js web application |
 
 **Usage examples:**

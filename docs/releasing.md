@@ -115,8 +115,8 @@ Check it the way a visitor would:
 ```bash
 docker logout ghcr.io
 for i in orchestrator product-discovery order-management pricing-promotions \
-         review-sentiment inventory-fulfillment auth-server mcp-product \
-         mcp-inventory frontend; do
+         review-sentiment inventory-fulfillment auth-server outbox-worker \
+         mcp-product mcp-inventory frontend; do
   docker manifest inspect ghcr.io/nitin27may/e-commerce-agents/$i:latest >/dev/null 2>&1 \
     && echo "  public   $i" || echo "  PRIVATE  $i"
 done

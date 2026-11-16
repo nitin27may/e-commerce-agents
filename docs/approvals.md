@@ -105,3 +105,49 @@ decision.route, decision.reasons, decision.evidence, decision.version
 `gather_facts` reads who is asking from the request's identity and scopes every query to that person; for a
 stored approval (a worker has no request context) pass `subject_email=` explicitly. `evaluate` is pure: same
 facts, same decision, and `evidence` records the rule, its conditions and the facts it saw.
+
+## The outbox worker, SLA and notifications
+
+A review that nobody picks up must not sit forever. `sla_hours` and `on_timeout` in the policy file drive that,
+and a small worker process enforces it.
+
+**Scheduling.** When an approval enters `pending_review` — created there, or moved there (from `pending_confirm`,
+or back from `needs_info`) — the repository (`shared/approvals/repo.py`) sets `due_at = now + sla_hours` and enqueues
+two outbox rows in the *same transaction*: `approval.reminder_due` at `APPROVAL_REMINDER_FRACTION` of the way
+to the deadline and `approval.sla_breached` at the deadline. A timer is just an outbox row whose `available_at`
+is in the future. Scheduling lives in the repository, not in a route, so every creator gets it for free and a
+rolled-back approval leaves no timer. A kind missing from the policy file gets no deadline (and a warning).
+
+**What the handlers do** (`worker/approval_handlers.py`):
+
+| Event | Effect |
+|---|---|
+| `approval.reminder_due` | A notification to the assigned role, once (audit event `sla_reminder_sent`) |
+| `approval.sla_breached`, assigned to `support` | Escalate once to `manager` (the `admin` role): `assigned_role`, `escalation_level + 1`, a fresh deadline and timers, audit event `escalated`, a notification to managers |
+| `approval.sla_breached`, at the top level | Apply the kind's `on_timeout` (`reject` or `expire`) through a guarded transition, audit event `sla_timeout`, and tell the requester |
+
+Handlers lock the approval and ignore the event unless it is still a `pending_review` at the same escalation level
+and deadline the timer was set for. So a redelivered event, an approval that was decided meanwhile, one that went
+to `needs_info`, and a timer left from an earlier trip through review are all no-ops. State changes go through
+`repo.transition()` / `repo.escalate()`, never a bare UPDATE.
+
+**The worker** (`worker/`): an asyncio loop over `outbox` using `SELECT ... FOR UPDATE SKIP LOCKED`, so several
+workers can run safely. Each row runs in its own transaction with its handler's writes. Claiming leases the row
+(`locked_until`, `locked_by`) and counts the attempt; if the worker dies, the lease runs out and another worker
+takes the row (a worker that lost its lease cannot also finish it). A failing handler rolls back, the row records a
+fixed error class (`handler_error`, `database_error`, `timeout`, `unknown_topic` — never payload text), and is retried
+with capped exponential backoff. After `OUTBOX_MAX_ATTEMPTS` the row is **parked** (`failed_at` set, never retried);
+admins list them at `GET /api/admin/outbox/parked`. SIGTERM finishes the current row, hands the rest back and exits.
+One Python worker serves both stacks, which share the database.
+
+**Notifications.** The worker writes `notifications`, addressed to a person or to a role ("all support staff").
+`GET /api/me/notifications` returns the caller's own plus those addressed to the caller's role, newest first, with the
+unread count; `POST /api/me/notifications/{id}/read` marks one read for the caller only (404 for someone else's).
+The web sidebar shows a bell with an unread badge and a short list, polling every 30 seconds.
+
+**Run it locally.**
+
+```bash
+cd agents/python && uv run python -m worker.main        # needs DATABASE_URL and a migrated database
+docker compose --profile agents up outbox-worker        # or as part of the stack
+```
