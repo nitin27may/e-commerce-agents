@@ -153,7 +153,7 @@ services:
 
   orchestrator:
     image: ghcr.io/nitin27may/e-commerce-agents/orchestrator:${IMAGE_TAG:-latest}
-    ports: ["8080:8080"]
+    ports: ["127.0.0.1:8080:8080"]
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }

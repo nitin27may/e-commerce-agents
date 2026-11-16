@@ -171,8 +171,15 @@ brings CORS back with it.
   run sit in front of Next and append to the header. With the default, no address is forwarded and
   the orchestrator sees the frontend container: **all anonymous callers share one address-level auth
   ceiling and one chat bucket** (the per-account and per-user auth budgets are unaffected). Behind a load balancer or ingress that appends the client address, set
-  `WEB_TRUSTED_PROXY_HOPS=1` (the orchestrator's default of 1 then needs no change). An orchestrator
-  port reachable directly by clients (it is loopback-bound in compose) can have its header forged.
+  `WEB_TRUSTED_PROXY_HOPS=1` (the orchestrator's default of 1 then needs no change). The orchestrator
+  port is published **loopback-only** (`127.0.0.1:8080`) in all three compose files, like the specialists, so
+  the only way to reach it from another machine is through the frontend, whose proxy writes the
+  trusted entry. Were :8080 published on all interfaces, any caller could send their own
+  `X-Forwarded-For` and pick their rate-limit bucket (or a victim's). Consequence: `localhost:8080`
+  from the host (dev scripts, Playwright, `scripts/compose-smoke.sh`) works unchanged, but a LAN
+  address, or a devcontainer / remote-IDE port forward that targets the host's external interface,
+  no longer reaches it. Forward `127.0.0.1:8080` instead, or put your own authenticated reverse proxy in
+  front (and set `RATE_LIMIT_TRUSTED_PROXY_HOPS` to match). The frontend stays on `3000:3000`.
 
 ### 4. The .NET stack — containers yes, host no
 
