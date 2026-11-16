@@ -19,7 +19,11 @@ name: Publish MCP packages
 # SETUP REQUIRED (only the maintainer can do it), and it fails without it -- see docs/mcp-integration.md:
 #   * on pypi.org, per project, a trusted publisher: owner nitin27may, repository e-commerce-agents,
 #     workflow publish-mcp.yml, environment pypi (and the same on test.pypi.org with environment testpypi);
-#   * GitHub environments `pypi` and `testpypi` (give `pypi` a required reviewer if a click is wanted);
+#   * GitHub environments `pypi` and `testpypi`;
+#   * REQUIRED, and not fixable from inside this file: a tag ruleset for `mcp-*-v*` (maintainers only) and the
+#     `pypi` environment restricted to those tags with a required reviewer. A tag push runs the workflow file at
+#     the TAGGED commit, so the version and ancestry checks below can be deleted by whoever pushes the tag;
+#     without those settings the checks are advisory, not a control. See docs/mcp-integration.md;
 #   * the package names must be free on PyPI.
 # A project that does not exist yet needs a *pending* publisher registered first.
 

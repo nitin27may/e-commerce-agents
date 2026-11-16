@@ -319,6 +319,10 @@ triggers it, and it holds no stored token.
 5. Each package is versioned and tagged independently of the other, and of the application's `vX.Y.Z` tags
    (`release.yml` only matches `v*.*.*`).
 
+The version and ancestry checks in step 4 are a convenience that catches honest mistakes. They are **not** a
+security boundary: the tag ruleset and `pypi` environment rules in "What only the maintainer can do", step 4,
+are what make a release trustworthy.
+
 A PyPI upload cannot be replaced: to fix a bad release, yank it on PyPI and publish the next version.
 
 ### What only the maintainer can do
@@ -344,9 +348,23 @@ registered when this workflow was written.
 
    For the TestPyPI dry run, register the same on [test.pypi.org](https://test.pypi.org/manage/account/publishing/)
    with environment name `testpypi`. The two indexes are separate accounts.
-3. **Create the GitHub environments** `pypi` and `testpypi` (Settings → Environments). Give `pypi` a required
-   reviewer if you want a click between the tag and the upload, as `release.yml` does with `release`. A missing
-   environment is created empty on first use, which means no approval gate.
+3. **Create the GitHub environments** `pypi` and `testpypi` (Settings → Environments). A missing environment is
+   created empty on first use, which means no approval gate, so configure `pypi` as in the next section.
+4. **REQUIRED: protect the release path (tag ruleset and the `pypi` environment).** Without this the
+   in-workflow checks are advisory only. A tag push runs the workflow file *as it exists at the tagged commit*,
+   so whoever can push a tag can also push a commit that deletes the "version equals `pyproject.toml`" and
+   "commit is on `main`" checks and tag that commit. No edit to `publish-mcp.yml` can close this; only
+   repository settings can:
+   - **Tag ruleset** (Settings → Rules → Rulesets → New tag ruleset): target `mcp-*-v*`, enforcement *Active*,
+     enable *Restrict creations*, *Restrict updates* and *Restrict deletions*, and put only the release
+     maintainers on the bypass list. Then only they can create a release tag at all.
+   - **`pypi` environment** (Settings → Environments → `pypi`): under *Deployment branches and tags* choose
+     *Selected branches and tags* and add the tag pattern `mcp-*-v*` (and no branch); add at least one
+     *Required reviewer* who is not the person who pushed the tag, and leave *Prevent self-review* on. The
+     trusted publisher on PyPI is bound to this environment name, so a run that does not satisfy these rules
+     cannot obtain an upload token.
+   Do the same for `testpypi` if you want the dry run gated (it runs on manual dispatch, so restrict it to
+   the `main` branch instead of a tag pattern).
 
 ## Adding a new MCP server
 
