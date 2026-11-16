@@ -30,6 +30,13 @@ public static class AgentSettingsValidator
 
     public static void Validate(AgentSettings settings, ILogger logger)
     {
+        // Names the variable, never its value.
+        if (string.Equals(settings.LlmProvider, "anthropic", StringComparison.OrdinalIgnoreCase)
+            && string.IsNullOrWhiteSpace(settings.AnthropicApiKey))
+        {
+            throw new InvalidOperationException("ANTHROPIC_API_KEY is required when LLM_PROVIDER=anthropic");
+        }
+
         var isProd = !IsDevelopmentEnv(settings.Environment);
         Check("JWT_SECRET", settings.JwtSecret, isProd, logger);
         Check("AGENT_SHARED_SECRET", settings.AgentSharedSecret, isProd, logger);

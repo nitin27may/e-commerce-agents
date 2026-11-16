@@ -61,6 +61,22 @@ public sealed record AgentSettings
     /// </summary>
     public string LlmBaseUrl { get; init; } = "";
 
+    /// <summary>
+    /// <c>ANTHROPIC_API_KEY</c>, required when <c>LLM_PROVIDER=anthropic</c> (.NET only — the Python
+    /// connector needs MAF core 1.24+; see docs/parity-matrix.md). Never logged.
+    /// </summary>
+    public string AnthropicApiKey { get; init; } = "";
+
+    /// <summary>
+    /// <c>ANTHROPIC_MODEL</c>. With <c>LLM_PROVIDER=anthropic</c> the loader copies it into
+    /// <see cref="LlmModel"/> (which cost and telemetry read), instead of <c>LLM_MODEL</c> — the compose files
+    /// forward <c>LLM_MODEL</c> with a gpt-4.1 default that Anthropic would reject.
+    /// </summary>
+    public string AnthropicModel { get; init; } = DefaultAnthropicModel;
+
+    /// <summary>Other current ids, for the docs: <c>claude-opus-5-5</c>, <c>claude-haiku-5-5</c>.</summary>
+    public const string DefaultAnthropicModel = "claude-sonnet-5-5";
+
     // ── Rate limiting (issue #30) — .NET twin of Python's RATE_LIMIT_* ──
     public bool RateLimitEnabled { get; init; } = true;
     public int RateLimitMaxRequests { get; init; } = 30;

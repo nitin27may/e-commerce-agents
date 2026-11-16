@@ -1,4 +1,5 @@
 using System.ClientModel;
+using Anthropic;
 using Azure.AI.OpenAI;
 using ECommerceAgents.Shared.Configuration;
 using OpenAI;
@@ -26,7 +27,7 @@ namespace ECommerceAgents.Shared.Agents;
 public static class ChatClientFactory
 {
     /// <summary>Provider values this factory implements.</summary>
-    private static readonly string[] KnownProviders = ["openai", "azure", "replay"];
+    private static readonly string[] KnownProviders = ["openai", "azure", "anthropic", "replay"];
 
     /// <summary>
     /// Builds the chat client for the configured provider.
@@ -74,14 +75,44 @@ public static class ChatClientFactory
             IChatClient? recorder = null;
             if (settings.Record)
             {
-                recorder = CreateChatClient(settings with { LlmProvider = settings.ReplayRecordProvider })
-                    .AsIChatClient();
+                recorder = CreateProviderClient(settings with { LlmProvider = settings.ReplayRecordProvider });
             }
 
             return new ReplayChatClient(settings.ReplayFixturesDir, recorder);
         }
 
-        return CreateChatClient(settings).AsIChatClient();
+        return CreateProviderClient(settings);
+    }
+
+    private static IChatClient CreateProviderClient(AgentSettings settings) =>
+        string.Equals(settings.LlmProvider, "anthropic", StringComparison.OrdinalIgnoreCase)
+            ? CreateAnthropicClient(settings)
+            : CreateChatClient(settings).AsIChatClient();
+
+    /// <summary>
+    /// Anthropic's <c>messages</c> API requires <c>max_tokens</c> on every request; the OpenAI-shaped
+    /// providers do not. This is the default the adapter applies when a caller's options set none.
+    /// </summary>
+    public const int AnthropicDefaultMaxOutputTokens = 4096;
+
+    /// <summary>
+    /// Claude through the official <c>Anthropic</c> package's <see cref="IChatClient"/> adapter (.NET only —
+    /// the Python connector needs MAF core 1.24+). The model is <see cref="AgentSettings.LlmModel"/>, which the
+    /// loader fills from <c>ANTHROPIC_MODEL</c> (default <c>claude-sonnet-5-5</c>). <paramref name="httpClient"/>
+    /// exists so a test can put a stub handler under the real SDK.
+    /// </summary>
+    public static IChatClient CreateAnthropicClient(AgentSettings settings, HttpClient? httpClient = null)
+    {
+        if (string.IsNullOrWhiteSpace(settings.AnthropicApiKey))
+        {
+            // Names the variable only — never the value.
+            throw new InvalidOperationException("ANTHROPIC_API_KEY is required when LLM_PROVIDER=anthropic");
+        }
+
+        var client = httpClient is null
+            ? new AnthropicClient { ApiKey = settings.AnthropicApiKey }
+            : new AnthropicClient { ApiKey = settings.AnthropicApiKey, HttpClient = httpClient };
+        return client.AsIChatClient(settings.LlmModel, AnthropicDefaultMaxOutputTokens);
     }
 
     /// <summary>

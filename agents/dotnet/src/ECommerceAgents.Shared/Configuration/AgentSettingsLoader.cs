@@ -55,6 +55,9 @@ public static class AgentSettingsLoader
         string Get(string key, string fallback = "") =>
             config[key] ?? Environment.GetEnvironmentVariable(key) ?? fallback;
 
+        string AnthropicModel() =>
+            string.IsNullOrWhiteSpace(Get("ANTHROPIC_MODEL")) ? AgentSettings.DefaultAnthropicModel : Get("ANTHROPIC_MODEL").Trim();
+
         string GetWithAlias(string primary, string alias, string fallback = "")
         {
             var p = Get(primary);
@@ -109,7 +112,13 @@ public static class AgentSettingsLoader
             ReplayFixturesDir = Get("REPLAY_FIXTURES_DIR", "evals/fixtures/replay"),
             Record = Get("RECORD", "false").Equals("true", StringComparison.OrdinalIgnoreCase),
             ReplayRecordProvider = Get("REPLAY_RECORD_PROVIDER", "azure").ToLowerInvariant(),
-            LlmModel = Get("LLM_MODEL", "gpt-4.1"),
+            // With LLM_PROVIDER=anthropic the model is ANTHROPIC_MODEL (default claude-sonnet-5-5), not
+            // LLM_MODEL: the compose files forward LLM_MODEL with a gpt-4.1 default that Anthropic would reject.
+            LlmModel = Get("LLM_PROVIDER", "openai").Equals("anthropic", StringComparison.OrdinalIgnoreCase)
+                ? AnthropicModel()
+                : Get("LLM_MODEL", "gpt-4.1"),
+            AnthropicModel = AnthropicModel(),
+            AnthropicApiKey = Get("ANTHROPIC_API_KEY"),
             EmbeddingModel = Get("EMBEDDING_MODEL", "text-embedding-3-small"),
             OpenAiApiKey = Get("OPENAI_API_KEY"),
             LlmBaseUrl = Get("LLM_BASE_URL"),

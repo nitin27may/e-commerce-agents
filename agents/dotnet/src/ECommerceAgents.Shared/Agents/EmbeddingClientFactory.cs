@@ -32,6 +32,18 @@ public static class EmbeddingClientFactory
             return new ReplayEmbeddingProvider();
         }
 
+        if (string.Equals(settings.LlmProvider, "anthropic", StringComparison.OrdinalIgnoreCase))
+        {
+            // Anthropic has no embeddings API, so the chat provider cannot supply them. Say what is
+            // missing instead of falling through to an OpenAI path that would demand a key the user
+            // never meant to set.
+            const string reason =
+                "LLM_PROVIDER=anthropic has no embeddings API; configure a separate embedding provider "
+                + "(EMBEDDING_PROVIDER and its key; see docs/configuration.md)";
+            Serilog.Log.Warning("Embeddings unavailable ({Reason}); semantic search will use full-text only", reason);
+            return new UnavailableEmbeddingProvider(reason);
+        }
+
         try
         {
             return new OpenAIEmbeddingProvider(CreateEmbeddingClient(settings));

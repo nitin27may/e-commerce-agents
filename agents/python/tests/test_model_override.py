@@ -186,6 +186,12 @@ def test_invalid_block_fails_client_construction_naming_the_file(prompts_dir, op
         factory.get_chat_client("orchestrator")
 
 
+def test_anthropic_provider_points_at_the_dotnet_stack(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "anthropic")
+    with pytest.raises(ValueError, match=r"\.NET stack only"):
+        factory.get_chat_client()
+
+
 def test_replay_ignores_overrides(prompts_dir, monkeypatch) -> None:
     from shared.replay_client import ReplayChatClient
 

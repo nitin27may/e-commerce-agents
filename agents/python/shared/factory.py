@@ -137,6 +137,12 @@ def get_chat_client(agent_name: str | None = None) -> OpenAIChatClient | OpenAIC
             record_provider=settings.REPLAY_RECORD_PROVIDER,
         )
 
+    if global_provider == "anthropic":
+        raise ValueError(
+            "LLM_PROVIDER=anthropic is available on the .NET stack only (the Python connector needs MAF core >= 1.24). "
+            "Use 'openai' or 'azure' here, or run the .NET stack."
+        )
+
     if global_provider not in ("openai", "azure"):
         raise ValueError(f"Unknown LLM_PROVIDER: {settings.LLM_PROVIDER!r}. Must be 'openai', 'azure', or 'replay'.")
 

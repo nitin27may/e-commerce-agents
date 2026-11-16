@@ -164,6 +164,10 @@ services:
       # compatible API). Empty means the provider's default.
       LLM_BASE_URL: ${LLM_BASE_URL:-}
       LLM_MODEL: ${LLM_MODEL:-gpt-4.1}
+      # LLM_PROVIDER=anthropic is .NET-only: the key is required then, the model defaults to
+      # claude-sonnet-5-5 (LLM_MODEL is ignored for it). Neither is read by the Python stack.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-5-5}
       # Per-run spend ceiling. COST_BUDGET_MODE stays observe: the ceiling is only counted
       # (cost_budget.would_block), never enforced, until you set enforce yourself.
       COST_BUDGET_MODE: ${COST_BUDGET_MODE:-observe}

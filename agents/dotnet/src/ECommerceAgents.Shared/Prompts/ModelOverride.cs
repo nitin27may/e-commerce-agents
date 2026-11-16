@@ -15,7 +15,7 @@ namespace ECommerceAgents.Shared.Prompts;
 public sealed record ModelOverride(string? Provider, string? Model, double? Temperature)
 {
     /// <summary>Providers a <c>model:</c> block may name. Anthropic is .NET-only (see docs/parity-matrix.md).</summary>
-    public static readonly string[] SupportedProviders = ["openai", "azure"];
+    public static readonly string[] SupportedProviders = ["openai", "azure", "anthropic"];
 
     internal static readonly string[] AllowedKeys = ["provider", "model", "temperature"];
 
@@ -99,7 +99,16 @@ public sealed record ModelOverride(string? Provider, string? Model, double? Temp
         {
             case "azure":
                 return Model is null ? effective : effective with { AzureOpenAiDeployment = Model };
+            case "anthropic":
+                return effective with { LlmModel = Model ?? settings.AnthropicModel };
             default:
+                if (global == "anthropic" && Model is null)
+                {
+                    // LlmModel currently holds a Claude id; there is no sensible OpenAI model to fall back to.
+                    throw new InvalidOperationException(
+                        "model.model is required when an agent switches from LLM_PROVIDER=anthropic to openai");
+                }
+
                 // LLM_BASE_URL belongs to the global openai endpoint; an agent switching *to* openai
                 // from another global provider talks to api.openai.com.
                 effective = global == "openai" ? effective : effective with { LlmBaseUrl = "" };

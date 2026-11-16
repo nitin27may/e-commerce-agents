@@ -117,6 +117,18 @@ public sealed class ModelOverrideTests : IDisposable
     }
 
     [Fact]
+    public void ApplyTo_AnthropicDefaultsToTheAnthropicModelAndOpenAiFromAnthropicNeedsAModel()
+    {
+        var s = new ModelOverride("anthropic", null, null).ApplyTo(OpenAi() with { AnthropicApiKey = "k" });
+        (s.LlmProvider, s.LlmModel).Should().Be(("anthropic", "claude-sonnet-5-5"));
+
+        var global = OpenAi() with { LlmProvider = "anthropic", LlmModel = "claude-sonnet-5-5" };
+        var act = () => new ModelOverride("openai", null, null).ApplyTo(global);
+        act.Should().Throw<InvalidOperationException>().WithMessage("model.model is required*");
+        new ModelOverride("openai", "gpt-4.1-mini", null).ApplyTo(global).LlmModel.Should().Be("gpt-4.1-mini");
+    }
+
+    [Fact]
     public void ApplyTo_IsIgnoredUnderReplay()
     {
         var replay = new AgentSettings { LlmProvider = "replay" };

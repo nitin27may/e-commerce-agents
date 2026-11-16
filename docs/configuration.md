@@ -265,6 +265,26 @@ agent), `product-discovery`, `order-management`, `pricing-promotions`, `review-s
 A model change is a recording-session event for replay evals only if you also want the fixtures to
 reflect that model's answers; the replay key ignores the model.
 
+## Anthropic (Claude) — .NET stack only
+
+```dotenv
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_MODEL=claude-sonnet-5-5     # default. Others: claude-opus-5-5, claude-haiku-5-5
+```
+
+| | |
+|---|---|
+| Stacks | **.NET only.** The Python stack rejects `LLM_PROVIDER=anthropic` with a message saying so: its connector (`agent-framework-anthropic`) is beta-only and needs MAF core ≥ 1.24, and the repo is on 1.22 (a later step, tracked in [parity-matrix.md](parity-matrix.md) row 32) |
+| Client | The official [`Anthropic`](https://www.nuget.org/packages/Anthropic) NuGet package (13.8.0), through its `IChatClient` adapter in `ChatClientFactory`. It needs `Microsoft.Extensions.AI.Abstractions` ≥ 10.5.1; the solution resolves 10.11.0, so nothing was bumped |
+| Key | Required when selected; startup fails naming `ANTHROPIC_API_KEY` (never its value). The SDK sends it as `Authorization: Bearer` |
+| Model | `ANTHROPIC_MODEL`, **not** `LLM_MODEL` — the compose files forward `LLM_MODEL` with a `gpt-4.1` default that Anthropic would reject |
+| Output length | Claude's API requires `max_tokens`; the adapter applies 4096 when a request sets none |
+| Per-agent | `provider: anthropic` is valid in an agent's `model:` block ([above](#choosing-a-model-per-agent-model-in-the-prompt-yaml)); an agent moving from anthropic to `openai` must name its `model` |
+| Embeddings | **Anthropic has no embeddings API.** With this provider semantic search is unavailable until a separate embedding provider is configured ([below](#embeddings-are-configured-separately)); the stack still starts, logs what is missing, and product search falls back to full-text |
+| Cost | The repo documents no Claude prices, so none were invented: Claude models are **unpriced**, and the cost module logs one fixed line and estimates at its default (gpt-4.1) entry. Treat cost figures as meaningless for Claude until a maintainer adds the entries from Anthropic's pricing page |
+| Tested | A stub-`HttpMessageHandler` test: request shape, a canned `tool_use` → tool execution → `tool_result` follow-up, and usage mapping. It does **not** prove tool-choice quality, prompt caching, real error shapes (rate limits, overload, bad key) or streaming edge cases, and it has never run against the live API |
+
 ## Per-run cost ceiling (`COST_BUDGET_*`)
 
 | Variable | Default | Meaning |

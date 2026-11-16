@@ -12,6 +12,7 @@
     <PackageReference Include="Microsoft.Agents.AI.OpenAI" />
     <PackageReference Include="Microsoft.Agents.AI.Workflows" />
     <PackageReference Include="Azure.AI.OpenAI" />
+    <PackageReference Include="Anthropic" />
     <PackageReference Include="Azure.Identity" />
 
     <PackageReference Include="Npgsql" />
