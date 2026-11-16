@@ -184,6 +184,15 @@ approval, may only lower the amount, and draws no budget; an SLA breach never ex
 `AUTONOMY_ENABLED`**, the simulator additionally needs `AUTONOMY_SIMULATOR_ENABLED`, and no model is called. Every number in
 `autonomy.yaml` is a placeholder.
 
+Review-fix rules to keep (details in `docs/event-autonomy.md`): **a reviewer is never the approval's subject**
+(`authorize_decider` / `AuthorizeDecider`, a DB CHECK, and the engine never acts alone for a `support`/`admin` beneficiary;
+merchant proposals are the one named exemption, `SELLER_DECIDED_SOURCES`). **Lock order: budget, then order, then row locks**;
+the credit transaction locks the order and the approval row and pays only while the approval is `pending_review` and the
+decide's own claim token holds it. A credited order is `no_action: order_already_credited` (no approval). The engine never
+touches the demo tour user (its reset deletes orders that `agent_decisions` would reference). The append-only tables also
+refuse `TRUNCATE` when they hold rows; `reset_autonomy_log()` is the one named reset (seeder, `clean_db`). .NET refuses every
+decision on an `event` approval (422, "not supported on this stack").
+
 ### Auth & Identity Flow
 
 - **Roles**: `customer`, `power_user`, `seller`, `support`, `admin`. `require_staff` admits `support` and `admin`; signup always creates a `customer` on both stacks.
