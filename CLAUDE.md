@@ -68,6 +68,10 @@ cd agents/python && uv run python -m evals.fixture_drift   # 0 clean · 1 offlin
 cd agents/python && uv run ruff check .
 cd agents/python && uv run ruff format --check .
 
+# A2A 1.0 conformance (official a2a-sdk client against a real specialist app), and the replay gate over that wire
+cd agents/python && uv run pytest tests/test_a2a_conformance.py tests/test_a2a_transport.py -v
+A2A_TRANSPORT=a2a scripts/replay-evals.sh   # (from the repo root)
+
 # Run Python tests (--all-packages pulls in the MCP workspace packages, e.g. ecommerce-mcp-product)
 cd agents/python && uv sync --all-packages --extra dev
 cd agents/python && uv run pytest
@@ -148,9 +152,20 @@ One inbox, one decide path, on both stacks over the same tables (Python: `orches
 - **Inter-agent requests**: `X-Agent-Secret` header (shared secret) + `X-User-Email` / `X-User-Role` headers
 - **Identity propagation**: Auth middleware sets ContextVars (`current_user_email`, `current_user_role`, `current_session_id`) which tools read directly — no parameter passing through the call stack
 
+### A2A 1.0 (Python specialists)
+
+Every Python specialist serves two wires; `docs/a2a.md` has the detail. The legacy `/message:send` and `/message:stream` are untouched. Beside them `shared/a2a_server.py` mounts, via the official `a2a-sdk` (1.3.0, spec 1.0, JSON-RPC binding only), the agent card at `/.well-known/agent-card.json` and the JSON-RPC methods at `/a2a/v1`. `A2A_TRANSPORT=legacy|a2a` (default `legacy`) picks what the *caller* speaks (`orchestrator/agent.py::_call_over_a2a`, `shared/remote_agent.py`, both through `shared/a2a_client.py`); `a2a` works against Python specialists only until the .NET port (B-13), and a .NET specialist's stub card makes the client fail as a card problem without sending anything.
+
+- **The executor is custom, on purpose.** `SpecialistExecutor` calls `shared.agent_host._run_agent_native_stream` (looked up at call time), so the messages a specialist's model sees are identical on both wires and no replay fixture changes. Do not swap in `agent-framework-a2a`'s `A2AExecutor`: it builds a MAF session from `contextId`. `tests/test_a2a_conformance.py` pins model-input equality, including rehydrated history.
+- **`contextId` is the session id**; the `x-session-id` header is a fallback. The SDK generates a UUID `contextId` when the caller sent none, which looks like a session id, so the server's generator prefixes invented ids `a2a-ctx-` and `session_id_from_context` ignores them.
+- **Steps, usage and replay misses ride in status-update metadata under three extension URIs** (`steps/v1`, `usage/v1`, `replay-miss/v1`), sent only to a caller that listed them in `A2A-Extensions`. The SDK merges status metadata into `Task.metadata` with the last write winning per key, so steps carry an `offset` and the terminal update repeats all of them (the client merges by index).
+- **Three SDK facts that cost time:** a status update needs an initial `Task` event enqueued first; the first artifact chunk must be `append=false`; the SDK client wraps every `httpx` error in `A2AClientError`, so retry decisions go through `shared.a2a_client.root_cause`. The SDK server also writes SSE JSON with raw U+2028/U+2029/U+0085, which the SDK client splits lines on; `_SafeJsonRpcDispatcher` escapes them.
+- On the orchestrator, `_live` must be set on the very dict `current_steps` holds (as the legacy path does), because `chat.py` drains it from there; a copy sends every step to the browser twice.
+- Tasks live in a bounded, per-caller in-memory store (`BoundedTaskStore`); not a durable record.
+
 ### Conversation History Forwarding
 
-The orchestrator no longer forwards a truncated copy of the conversation history on A2A calls (that "last 10 messages, 500 chars each" window was removed — see the comment in `orchestrator/agent.py::call_specialist_agent`). Instead only the session id travels, via the `x-session-id` header; each specialist rehydrates prior context itself by querying Postgres for the session's messages (`shared/agent_host.py::_rehydrate_history_from_session`) when it needs to handle a follow-up contextually.
+The orchestrator no longer forwards a truncated copy of the conversation history on A2A calls (that "last 10 messages, 500 chars each" window was removed — see the comment in `orchestrator/agent.py::call_specialist_agent`). Instead only the session id travels, via the `x-session-id` header (the message's `contextId` on the A2A 1.0 wire); each specialist rehydrates prior context itself by querying Postgres for the session's messages (`shared/agent_host.py::_rehydrate_history_from_session`) when it needs to handle a follow-up contextually.
 
 Two details this depends on, both of which were missing until #9 — and their absence broke every browser-originated follow-up while every test passed:
 
@@ -164,7 +179,7 @@ Separately, the orchestrator's own read of *its* conversation's history (for `Ru
 | Layer | Technology |
 |-------|-----------|
 | Agent Framework | MAF Python SDK — `agent-framework-core` 1.26.0, `-openai` 1.18.2, `-orchestrations` 1.4.2 (pinned in `agents/python/pyproject.toml` and mirrored in `tutorials/pyproject.toml`), with MCP Python SDK `mcp[cli]` 2.x (`>=2.2,<3`; `FastMCP` is now `mcp.server.mcpserver.MCPServer`, and its client stack is `httpx2`); MAF .NET — `Microsoft.Agents.AI` 1.28.0 (`agents/dotnet/Directory.Packages.props`, shared by the tutorials via `tutorials/Directory.Packages.props`) |
-| Agent Communication | A2A Protocol (HTTP POST to `/message:send`) |
+| Agent Communication | A2A Protocol: A2A 1.0 JSON-RPC at `/a2a/v1` (`a2a-sdk` 1.3.0, Python specialists) and the original `POST /message:send` + `/message:stream` pair (`A2A_TRANSPORT=legacy`, the default, and all a .NET specialist serves) |
 | LLM | OpenAI / Azure OpenAI (gpt-4.1), configurable via `LLM_PROVIDER` env var — plus any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, OpenRouter, GitHub Models) via `LLM_PROVIDER=openai` + `LLM_BASE_URL` |
 | Backend | Python 3.12, FastAPI (orchestrator), Starlette (specialist agents via agent_host) |
 | Database | PostgreSQL 16 + pgvector (1536-dim embeddings for text-embedding-3-small) |

@@ -1,6 +1,6 @@
 # Architecture
 
-E-Commerce Agents is a multi-agent e-commerce platform built on Microsoft Agent Framework (MAF). Six specialized agents collaborate via A2A protocol, orchestrated by a central Customer Support agent that classifies user intent and routes requests to the right specialist.
+E-Commerce Agents is a multi-agent e-commerce platform built on Microsoft Agent Framework (MAF). Six specialized agents collaborate via A2A protocol, orchestrated by a central Customer Support agent that classifies user intent and routes requests to the right specialist. The wire is documented in [a2a.md](a2a.md): the original `/message:send` pair and, on the Python specialists, A2A 1.0 at `/a2a/v1`.
 
 ---
 

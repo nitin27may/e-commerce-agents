@@ -13,6 +13,9 @@ They are not. Each specialist is an independent service behind an
 `POST /message:stream`, `GET /.well-known/agent-card.json`), reached over HTTP even
 when both ends are containers on the same Docker network.
 
+*Update (B-12):* the Python specialists also serve the A2A 1.0 JSON-RPC binding at
+`/a2a/v1` with a spec agent card, beside those routes; see [a2a.md](../a2a.md).
+
 ## Decision
 
 Specialists are separate services and every orchestrator→specialist hop is an A2A HTTP
