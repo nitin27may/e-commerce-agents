@@ -1,0 +1,28 @@
+# Hard limits on what the merchant-ops flow may propose or apply — read by shared/merchant/guards.py.
+#
+# GROUNDWORK (#93, step M-1): nothing proposes or changes a price yet. This file and the guards
+# that read it exist so the later steps (the merchant-ops agent, batch review, execution) have one
+# place to ask "is this change allowed?". A limit here is a HARD limit: a line that breaks one is
+# marked `blocked` with a reason code, and no seller or agent can approve it past the guard.
+#
+#   margin_floor_pct               lowest margin a price may leave, as a percentage of the price:
+#                                  (price - unit_cost) / price * 100. A price exactly at the floor
+#                                  is allowed. A product with no unit_cost is blocked, never waved
+#                                  through.
+#   max_change_pct_per_day         most a product's price may move in one UTC day, counting every
+#                                  change already recorded in price_history today plus the proposed
+#                                  one, each measured as |new - old| / old * 100. Exactly at the cap
+#                                  is allowed.
+#   block_during_active_promotion  refuse price changes to a product covered by a promotion that is
+#                                  active now (promotion_products + promotions.is_active + dates).
+#   max_lines_per_batch            most lines one proposal batch may hold.
+#
+# Change a number -> bump policy_version (every guard result records the version it was judged by).
+# Loading fails loudly (MerchantLimitsError) on an unknown or missing key or a value out of range.
+
+policy_version: "2026-11-16.1"
+
+margin_floor_pct: 15
+max_change_pct_per_day: 10
+block_during_active_promotion: true
+max_lines_per_batch: 25

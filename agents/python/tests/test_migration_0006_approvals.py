@@ -18,11 +18,8 @@ pytestmark = pytest.mark.integration
 migrate_mod = _load_migrate()
 VERSION = "0006_approvals_foundation"
 NEW_TABLES = ("approvals", "approval_events", "outbox", "notifications")
-# Belongs to later steps (#93 merchant, #94 autonomy): must NOT exist yet.
+# Belongs to later steps (#94 autonomy): must NOT exist yet. (The #93 merchant tables arrived in 0009.)
 LATER_TABLES = (
-    "proposals",
-    "proposal_lines",
-    "promotion_products",
     "agent_decisions",
     "store_credit_ledger",
 )

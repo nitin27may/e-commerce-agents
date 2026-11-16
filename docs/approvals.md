@@ -151,3 +151,36 @@ The web sidebar shows a bell with an unread badge and a short list, polling ever
 cd agents/python && uv run python -m worker.main        # needs DATABASE_URL and a migrated database
 docker compose --profile agents up outbox-worker        # or as part of the stack
 ```
+
+## Merchant limits (groundwork — nothing uses them yet)
+
+> **Status: groundwork for #93.** The schema, the seed data, the limits file and the guard functions below
+> exist; **nothing proposes or changes a price yet** — no merchant-ops agent, no route, no screen calls them.
+> They are here so the later steps (merchant-ops agent, batch review, execution) share one definition of
+> "what a change may not do".
+
+`agents/python/config/policies/merchant_limits.yaml` holds the hard limits, separate from the approval
+routing policy above. A limit is *hard*: a line that breaks one is marked `blocked` with a reason code, and no
+approver can wave it through.
+
+| Key | Meaning |
+|---|---|
+| `margin_floor_pct` | Lowest margin a price may leave, `(price − unit_cost) / price × 100`. Exactly at the floor is allowed; a product with no `unit_cost` is blocked. |
+| `max_change_pct_per_day` | Most a price may move in one UTC day. Every change already in `price_history` today counts, plus the proposed one, each as `|new − old| / old × 100`. Exactly at the cap is allowed. |
+| `block_during_active_promotion` | Refuse a price change to a product covered by a promotion active now (`promotion_products`, `promotions.is_active`, start and end dates). |
+| `max_lines_per_batch` | Most lines one proposal batch may hold. |
+| `policy_version` | Recorded on every guard result. Bump it when a number changes. |
+
+`shared/merchant/guards.py` is pure: `check_price_change`, `check_restock_line` and `check_batch` take the
+proposed change plus the facts and return a `GuardResult` (`ok`, the `reasons`, the `numbers` used and the
+`policy_version`). Every applicable reason is reported, not just the first. The reason codes are fixed:
+`invalid_price`, `missing_cost`, `margin_below_floor`, `daily_change_cap_exceeded`, `active_promotion`,
+`invalid_quantity`, `batch_too_large`. `shared/merchant/facts.py` reads the facts from Postgres (current price,
+`products.unit_cost`, today's `price_history` steps, the promotions linked in `promotion_products`), and
+`shared/merchant/limits.py` validates the YAML at load time, failing loudly on an unknown key or out-of-range
+value.
+
+The schema is migration `0009_merchant_proposals.sql`: `proposals`, `proposal_lines` (per-line status
+including `blocked`, the guard result as JSONB), `promotion_products` and a nullable `products.unit_cost`. The
+seeder fills `unit_cost` from the price by a per-category ratio and links the bundle and flash-sale promotions
+to their products, in a step appended after every other one so no previously seeded value moves.

@@ -1023,6 +1023,53 @@ async def seed_support_user(conn: asyncpg.Connection) -> None:
     logger.info("Seeded support user %s", SUPPORT_EMAIL)
 
 
+# What a unit costs the seller, as a fraction of its shelf price, per category (M-1, #93). The
+# resulting margin ((price - cost) / price) is the quantity the merchant margin floor guards.
+UNIT_COST_RATIO = {
+    "Electronics": Decimal("0.78"),
+    "Clothing": Decimal("0.50"),
+    "Home": Decimal("0.62"),
+    "Sports": Decimal("0.65"),
+    "Books": Decimal("0.60"),
+}
+
+
+async def seed_merchant_data(conn: asyncpg.Connection) -> None:
+    """Give every product a unit cost and link the seeded promotions to the products they cover.
+
+    Appended after every other seed step and draws nothing from the global ``random`` stream (the
+    cost is ``price * a per-category ratio``; the links come from each promotion's own ``rules``),
+    so no value seeded before it moves and the replay fixtures keyed on that data still hit. The
+    cost is one ``UPDATE`` so rows are rewritten in the order they were stored.
+
+    Links: a promotion naming products (``rules.products``) covers those products; one naming
+    categories (``rules.categories``) covers every product in them. A promotion with a single
+    ``rules.category`` (the books deal) is a quantity discount, not a markdown of particular
+    products, and is left unlinked.
+    """
+    await conn.execute(
+        """UPDATE products p SET unit_cost = ROUND(p.price * r.ratio, 2)
+           FROM (SELECT * FROM unnest($1::text[], $2::numeric[]) AS t(category, ratio)) r
+           WHERE p.category = r.category""",
+        list(UNIT_COST_RATIO), list(UNIT_COST_RATIO.values()),
+    )
+    links = 0
+    for promo in PROMOTIONS:
+        names = [str(n) for n in promo["rules"].get("products", [])]
+        categories = [str(c) for c in promo["rules"].get("categories", [])]
+        if not names and not categories:
+            continue
+        status = await conn.execute(
+            """INSERT INTO promotion_products (promotion_id, product_id)
+               SELECT pr.id, p.id FROM promotions pr, products p
+               WHERE pr.name = $1 AND (p.name = ANY($2::text[]) OR p.category = ANY($3::text[]))
+               ON CONFLICT DO NOTHING""",
+            promo["name"], names, categories,
+        )
+        links += int(status.rsplit(" ", 1)[-1])
+    logger.info("Seeded unit costs and %d promotion-product links", links)
+
+
 async def seed_hitl_requests(conn: asyncpg.Connection, user_ids: dict[str, uuid.UUID]) -> None:
     """Create one of each HITL state so the admin pending-approvals UI
     has something to show on first login.
@@ -1160,6 +1207,7 @@ async def main(reset_tour_only: bool = False) -> None:
         await seed_product_embeddings(conn)
         await seed_tour_user(conn)
         await seed_support_user(conn)
+        await seed_merchant_data(conn)
 
         # Collect planner statistics before anyone queries this data.
         #
