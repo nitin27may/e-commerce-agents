@@ -8,7 +8,9 @@ W2  an approved credit is tied to the approval's status and to the deciding clai
 
 from __future__ import annotations
 
+import asyncio
 import uuid
+from datetime import timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -167,3 +169,130 @@ async def test_c1_a_customer_is_unaffected(w: aus.World) -> None:
     order = await aus.order(w, aus.CUSTOMER)
 
     assert (await _handle(w, order, 3, "evt-1"))["status"] == "executed"
+
+
+# ── W1: the per-order cap is serialised on the order, not only on the budget's day ──────────────────────────────
+
+
+async def _slow_usage(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Widen the window between "read what the order was paid" and "draw", so an unguarded race is always lost."""
+    real = engine.read_usage
+
+    async def slow(*args: Any, **kwargs: Any):
+        usage = await real(*args, **kwargs)
+        await asyncio.sleep(0.3)
+        return usage
+
+    monkeypatch.setattr(engine, "read_usage", slow)
+
+
+def _straddle_midnight(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The first event to start sees one UTC day, the second the next: two different budget locks."""
+    today = engine.utc_day()
+    days = iter([today, today + timedelta(days=1)])
+    monkeypatch.setattr(engine, "utc_day", lambda *_a, **_k: next(days))
+
+
+async def test_w1_two_events_for_one_order_straddling_midnight_pay_once(
+    w: aus.World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _slow_usage(monkeypatch)
+    _straddle_midnight(monkeypatch)
+    order = await aus.order(w)
+
+    results = await asyncio.gather(_handle(w, order, 3, "evt-a"), _handle(w, order, 3, "evt-b"))
+
+    assert sum(r["status"] == "executed" for r in results) == 1, results
+    assert await aus.ledger_balance(w.pool, w.users[aus.CUSTOMER]) == D("5.00")
+
+
+async def test_w1_negative_control_without_the_order_lock_both_pay(
+    w: aus.World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def no_lock(*_a: Any, **_k: Any) -> None:
+        return None
+
+    monkeypatch.setattr(engine, "lock_order", no_lock)
+    await _slow_usage(monkeypatch)
+    _straddle_midnight(monkeypatch)
+    order = await aus.order(w)
+
+    results = await asyncio.gather(_handle(w, order, 3, "evt-a"), _handle(w, order, 3, "evt-b"))
+
+    assert [r["status"] for r in results] == ["executed", "executed"]
+    assert await aus.ledger_balance(w.pool, w.users[aus.CUSTOMER]) == D("10.00")
+
+
+async def _two_open_approvals_for_one_order(w: aus.World) -> tuple[str, str]:
+    """The state a race (or an older build) can leave: two approvals waiting for the same order."""
+    order = await aus.order(w)
+    first = await _handle(w, order, 12, "evt-1")
+    await w.pool.execute("UPDATE approvals SET status = 'rejected' WHERE id = $1", uuid.UUID(first["approval_id"]))
+    second = await _handle(w, order, 12, "evt-2")
+    await w.pool.execute(
+        "UPDATE approvals SET status = 'pending_review' WHERE id = $1", uuid.UUID(first["approval_id"])
+    )
+    return first["approval_id"], second["approval_id"]
+
+
+def _slow_execution(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Widen the window between the "already paid?" read and the write of an approved credit."""
+    real = engine._insert_row  # noqa: SLF001
+
+    async def slow(conn: asyncpg.Connection, **c: Any) -> None:
+        if c.get("entry_type") == "approved_execution":
+            await asyncio.sleep(0.3)
+        await real(conn, **c)
+
+    monkeypatch.setattr(engine, "_insert_row", slow)
+
+
+async def test_w1_two_approvals_for_one_order_approved_at_once_pay_once(
+    w: aus.World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first, second = await _two_open_approvals_for_one_order(w)
+    _slow_execution(monkeypatch)
+
+    outcomes = await asyncio.gather(
+        svc.decide(first, STAFF, decision="approve"), svc.decide(second, ADMIN, decision="approve")
+    )
+
+    assert sorted(o["result"]["success"] for o in outcomes) == [False, True], outcomes
+    assert await aus.ledger_balance(w.pool, w.users[aus.CUSTOMER]) == D("40.00")
+    assert await w.pool.fetchval("SELECT count(*) FROM agent_decisions WHERE entry_type = 'approved_execution'") == 1
+
+
+async def test_w1_negative_control_without_the_order_lock_both_approvals_pay(
+    w: aus.World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def no_lock(*_a: Any, **_k: Any) -> None:
+        return None
+
+    monkeypatch.setattr(engine, "lock_order", no_lock)
+    first, second = await _two_open_approvals_for_one_order(w)
+    _slow_execution(monkeypatch)
+
+    outcomes = await asyncio.gather(
+        svc.decide(first, STAFF, decision="approve"), svc.decide(second, ADMIN, decision="approve")
+    )
+
+    assert [o["result"]["success"] for o in outcomes] == [True, True]
+    assert await aus.ledger_balance(w.pool, w.users[aus.CUSTOMER]) == D("80.00")
+
+
+async def test_w1_the_day_key_is_the_right_one_for_the_per_customer_cap(
+    w: aus.World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The per-customer cap is per UTC calendar day: draws count on, and serialise under, the day an event started.
+
+    Two different orders of one customer straddling midnight therefore each draw on their own day (that is what a
+    daily cap means); the per-ORDER cap, which is not a daily cap, is what the order lock above protects.
+    """
+    _straddle_midnight(monkeypatch)
+    one, two = await aus.order(w), await aus.order(w)
+
+    results = await asyncio.gather(_handle(w, one, 3, "evt-a"), _handle(w, two, 3, "evt-b"))
+
+    assert sorted(r["status"] for r in results) == ["executed", "executed"]
+    days = {r["budget_day"] for r in await aus.decisions(w.pool)}
+    assert len(days) == 2

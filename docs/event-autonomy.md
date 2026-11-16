@@ -48,6 +48,20 @@ for the last of a budget serialise on the lock; the second reads the first's com
 removed: both spend). The lock is per budget and day, so one budget's events never wait on another's. Cost: all draws on one
 budget serialise, which is right for a cap and fine at this scale.
 
+**The per-order cap has its own lock.** The day-keyed lock cannot serialise the one cap that is not a daily cap: two events for
+one order that start on either side of midnight UTC hold *different* budget locks, and two approvals for one order hold none,
+so both would read "this order was not paid" and both pay. The decision therefore also takes `pg_advisory_xact_lock` on the
+order, and so does executing an approved credit. **Lock order, everywhere: budget, then order, then row locks** (the approval
+row, then the decision row); the approved path takes no budget lock (a person authorised it, nothing is drawn) and follows the
+same order from the order lock on, so the two cannot deadlock. Both races have tests with a negative control (lock removed:
+both pay).
+
+**The day key and the per-customer cap.** The per-customer cap is *per UTC calendar day*: a draw counts on, and serialises
+under, the day the event started (read before the lock is awaited, so an event that waits past midnight is still booked on the
+day it arrived). One customer therefore can receive a day's cap just before and again just after midnight, which is what a
+calendar-day cap means; a rolling 24-hour window would be a different policy, not a different lock. The day key is right for
+both daily caps; the order lock is what bounds a single order.
+
 ## The log is append-only
 
 Migration `0012`. `agent_decisions` and `store_credit_ledger` refuse UPDATE and DELETE (trigger). What happens later is a new row:

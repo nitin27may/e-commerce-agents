@@ -9,7 +9,9 @@ event, and a unique index on ``agent_decisions.event_key`` behind it):
 3. An autonomous tier must also fit every budget cap. **The check and the draw are one atomic step**: the whole
    decision runs in one transaction that first takes a Postgres advisory lock on ``(budget, UTC day)``. Two
    events racing for the last of a budget serialise on that lock; the second counts the first's committed draw
-   and is turned into an approval. (The lock is per budget and day, so unrelated budgets never wait.)
+   and is turned into an approval. (The lock is per budget and day, so unrelated budgets never wait.) The decision
+   then takes a second lock on the *order* (see :func:`lock_order`: the per-order cap is not a daily cap, and a
+   day-keyed lock cannot serialise two events for one order that straddle midnight). Lock order: budget, order, rows.
 4. Autonomous: the credit, the decision row, the customer's notification (and a staff heads-up for
    ``auto_notify``) commit together. Needs approval: the approval (kind ``autonomous_action``, source ``event``)
    and the decision row commit together; nothing is done until staff decide it
@@ -166,6 +168,20 @@ async def lock_budget(conn: asyncpg.Connection, budget_key: str, day: date) -> N
     COMMITTED then sees the holder's rows: so "read the usage, then draw" cannot interleave across events.
     """
     await conn.execute("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", f"autonomy_budget:{budget_key}:{day}")
+
+
+async def lock_order(conn: asyncpg.Connection, order_id: uuid.UUID) -> None:
+    """Serialise every credit decision for ``order_id`` until the transaction ends.
+
+    The budget lock is per UTC *day*, so it cannot protect the per-order cap: two events for one order that start on
+    either side of midnight hold different budget locks, and two approvals for one order never hold a budget lock at
+    all. Both would read "this order was not paid" and both pay. This lock is per order, whatever the day.
+
+    **Lock order, everywhere: budget (:func:`lock_budget`), then order (this), then row locks** (the approval row,
+    then the decision row). :func:`_execute_approved_in_tx` takes no budget lock (a person's approval draws nothing)
+    but follows the same order from the order lock on, so the two paths cannot deadlock.
+    """
+    await conn.execute("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", f"autonomy_order:{order_id}")
 
 
 async def read_usage(
@@ -396,6 +412,8 @@ async def _decide_in_tx(
     day = utc_day()
     async with pool.acquire() as conn, conn.transaction():
         await lock_budget(conn, budget.key, day)
+        if event.order_id is not None:  # budget first, then the order: see lock_order
+            await lock_order(conn, event.order_id)
         existing = await conn.fetchrow(
             "SELECT id, tier, outcome, amount, approval_id FROM agent_decisions "
             "WHERE entry_type = 'decision' AND event_key = $1",
@@ -561,6 +579,15 @@ async def _execute_approved_in_tx(
     pool: asyncpg.Pool, approval_id: str, approver: str, amount: Decimal
 ) -> dict[str, Any]:
     async with pool.acquire() as conn, conn.transaction():
+        # Lock order: (no budget lock: a person's approval draws nothing) order, then the decision row.
+        proposed = await conn.fetchrow(
+            "SELECT order_id FROM agent_decisions WHERE entry_type = 'decision' AND approval_id = $1",
+            uuid.UUID(approval_id),
+        )
+        if proposed is None:
+            return {"success": False, "status": "failed", "reason": "decision_not_found"}
+        if proposed["order_id"] is not None:
+            await lock_order(conn, proposed["order_id"])
         decision = await conn.fetchrow(
             "SELECT * FROM agent_decisions WHERE entry_type = 'decision' AND approval_id = $1 FOR UPDATE",
             uuid.UUID(approval_id),
