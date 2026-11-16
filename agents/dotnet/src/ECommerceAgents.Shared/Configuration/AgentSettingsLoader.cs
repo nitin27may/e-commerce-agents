@@ -209,6 +209,7 @@ public static class AgentSettingsLoader
             HitlClaimTtlSeconds = GetInt("HITL_CLAIM_TTL_SECONDS", 600),
             HitlResumeTimeoutSeconds = ValidatedResumeTimeout(
                 GetInt("HITL_RESUME_TIMEOUT_SECONDS", 300), GetInt("HITL_CLAIM_TTL_SECONDS", 600)),
+            ApprovalReminderFraction = GetDouble("APPROVAL_REMINDER_FRACTION", 0.5),
         };
     }
 

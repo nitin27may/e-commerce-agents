@@ -317,4 +317,8 @@ public sealed record AgentSettings
     // resume could still be running when another approver takes its claim. Mirrors Python's
     // HITL_RESUME_TIMEOUT_SECONDS.
     public int HitlResumeTimeoutSeconds { get; init; } = 300;
+
+    // The reminder timer fires this fraction of an approval's sla_hours after it enters review.
+    // Mirrors Python's APPROVAL_REMINDER_FRACTION (shared/config.py).
+    public double ApprovalReminderFraction { get; init; } = 0.5;
 }

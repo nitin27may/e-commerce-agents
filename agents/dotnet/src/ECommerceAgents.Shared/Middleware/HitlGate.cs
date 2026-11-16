@@ -1,5 +1,7 @@
 using ECommerceAgents.Shared.Logging;
 using Dapper;
+using ECommerceAgents.Shared.Approvals;
+using ECommerceAgents.Shared.Policy;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Data;
@@ -72,12 +74,37 @@ public sealed class HitlGate
     private readonly DatabasePool _pool;
     private readonly AgentSettings _settings;
     private readonly ILogger<HitlGate>? _logger;
+    private readonly ApprovalIntake _intake;
 
-    public HitlGate(DatabasePool pool, AgentSettings settings, ILogger<HitlGate>? logger = null)
+    /// <param name="intake">
+    /// Opens the inbox <c>approvals</c> row beside each pending request. Defaults to one built over the same pool and the shared
+    /// <c>approvals.yaml</c>; a test passes its own to control the policy.
+    /// </param>
+    public HitlGate(DatabasePool pool, AgentSettings settings, ILogger<HitlGate>? logger = null, ApprovalIntake? intake = null)
     {
         _pool = pool ?? throw new ArgumentNullException(nameof(pool));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _logger = logger;
+        _intake = intake ?? new ApprovalIntake(
+            pool,
+            new ApprovalRepository(pool, settings, ApprovalPolicyLocator.Current),
+            ApprovalPolicyLocator.Current);
+    }
+
+    /// <summary>
+    /// The tool input as the shared table stores it: top-level keys in snake_case (<c>orderId</c> becomes <c>order_id</c>), which is
+    /// what the executor, the policy and Python read. The function pipeline reports .NET parameter names.
+    /// </summary>
+    internal static string SnakeCaseInput(object toolInput)
+    {
+        var element = JsonSerializer.SerializeToElement(toolInput);
+        if (element.ValueKind != JsonValueKind.Object) return element.GetRawText();
+        var map = new Dictionary<string, JsonElement>();
+        foreach (var property in element.EnumerateObject())
+        {
+            map[JsonNamingPolicy.SnakeCaseLower.ConvertName(property.Name)] = property.Value;
+        }
+        return JsonSerializer.Serialize(map);
     }
 
     /// <summary>
@@ -96,10 +123,17 @@ public sealed class HitlGate
         var label = ToolLabels.GetValueOrDefault(toolName, toolName);
 
         Guid requestId;
+        string toolInputJson;
+        var canonicalTool = ApprovalIntake.CanonicalToolName(toolName);
+        string requester;
+        Guid? sessionGuid;
         try
         {
             var email = RequestContext.CurrentUserEmail;
             Guid? sessionId = Guid.TryParse(RequestContext.CurrentSessionId, out var sid) ? sid : null;
+            requester = string.IsNullOrEmpty(email) ? "unknown" : email;
+            sessionGuid = sessionId;
+            toolInputJson = SnakeCaseInput(toolInputForAudit);
 
             await using var conn = await _pool.OpenAsync();
             requestId = await conn.ExecuteScalarAsync<Guid>(
@@ -108,11 +142,12 @@ public sealed class HitlGate
                   RETURNING id",
                 new
                 {
-                    email = string.IsNullOrEmpty(email) ? "unknown" : email,
+                    email = requester,
                     session = sessionId,
                     agent = agentName,
-                    tool = toolName,
-                    input = JsonSerializer.Serialize(toolInputForAudit),
+                    // snake_case, as Python stores it: the policy kinds, the executor and the other stack's approve path key on it.
+                    tool = canonicalTool,
+                    input = toolInputJson,
                 }
             );
         }
@@ -130,6 +165,19 @@ public sealed class HitlGate
                 message = $"Could not submit your {label} request for approval right now — " +
                     "please try again in a moment. No changes have been made.",
             };
+        }
+
+        // The inbox row, routed by the policy engine. Best effort: the request above is what executing it needs, and a missing inbox
+        // row is repaired when someone first decides (ApprovalsService.EnsureForToolRequestAsync). It must never change what the
+        // caller returns, so a failure is logged (ids only) and swallowed.
+        try
+        {
+            using var input = JsonDocument.Parse(toolInputJson);
+            await _intake.OpenToolApprovalAsync(requestId, requester, sessionGuid?.ToString(), canonicalTool, input.RootElement.Clone());
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "hitl.approval_open_failed request_id={RequestId}", requestId);
         }
 
         _logger?.LogInformation(

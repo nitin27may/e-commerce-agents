@@ -43,6 +43,11 @@ public sealed record RunContext(
 /// True when the mode makes no chat-model call (the two workflow modes), so a turn's
 /// zero tokens is a measured zero rather than "usage was not captured".
 /// </param>
+/// <param name="Approval">The gate's routing decision and the order under review, when the run paused.</param>
+/// <param name="Completed">
+/// For a resumed run: whether the workflow ran to its last step (a return that was created and finalised). Null when
+/// the mode does not say, which the approvals service reads as completed.
+/// </param>
 /// <remarks>
 /// The four pause fields are defaulted so modes that never pause are unaffected. They
 /// exist because a pause previously could not leave the mode at all: the RequestId
@@ -57,7 +62,26 @@ public sealed record ModeRunResult(
     string? RequestId = null,
     string? LatestCheckpointId = null,
     string? SessionId = null,
-    bool NoLlmCalls = false
+    bool NoLlmCalls = false,
+    PendingApprovalInfo? Approval = null,
+    bool? Completed = null
+);
+
+/// <summary>
+/// What a paused return carries to the inbox: the policy gate's own routing decision (so the approval is routed by what actually
+/// paused the run, not a second evaluation) and the order and amount under review.
+/// </summary>
+/// <param name="Route"><c>auto</c>, <c>support</c> or <c>manager</c> — the gate's decision.</param>
+/// <param name="Reasons">Why, from the matched rule.</param>
+/// <param name="PolicyVersion">The policy file's version at that moment.</param>
+/// <param name="OrderId">The order the return is for.</param>
+/// <param name="OrderTotal">The amount under review.</param>
+public sealed record PendingApprovalInfo(
+    string Route,
+    IReadOnlyList<string> Reasons,
+    string PolicyVersion,
+    string OrderId,
+    decimal OrderTotal
 );
 
 /// <summary>

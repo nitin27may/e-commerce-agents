@@ -79,7 +79,29 @@ public sealed class IdempotencyGuard(DatabasePool pool, ILogger<IdempotencyGuard
             return await operation();
         }
 
-        var key = CanonicalKey(scope, identity, arguments);
+        return await RunKeyedAsync(CanonicalKey(scope, identity, arguments), scope, operation, ct);
+    }
+
+    /// <summary>
+    /// Runs <paramref name="operation"/> at most once per <c>(scope, keyMaterial)</c> and replays its result for any repeat — Python's
+    /// <c>run_once</c>. <see cref="ExecuteAsync"/> keys on the call's arguments, which is wrong when the arguments are MEANT to differ
+    /// between attempts (an approval executed with reviewer edits): the key must be the approval's id, not a hash of its input. The
+    /// key is <c>{scope}:{sha256(keyMaterial)}</c>, the same string Python builds, so a retry that lands on the other stack still replays.
+    /// </summary>
+    public async Task<object> RunOnceAsync(
+        string scope,
+        string keyMaterial,
+        Func<Task<object>> operation,
+        CancellationToken ct = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        var key = $"{scope}:{Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(keyMaterial)))}";
+        return await RunKeyedAsync(key, scope, operation, ct);
+    }
+
+    private async Task<object> RunKeyedAsync(string key, string scope, Func<Task<object>> operation, CancellationToken ct)
+    {
         var (reserved, conflictOrCached) = await ReserveAsync(key, scope, ct);
 
         if (!reserved)

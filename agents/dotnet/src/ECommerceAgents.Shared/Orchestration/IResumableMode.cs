@@ -27,4 +27,17 @@ public interface IResumableMode
         bool approved,
         CancellationToken ct = default
     );
+
+    /// <summary>
+    /// Resumes with the reviewer's full answer — the resolution, an edited refund amount, a note — the
+    /// <see cref="Workflows.ReturnDecision"/> shape Python answers. A mode that only understands approve/reject need not override
+    /// this: edits are then dropped, and the approvals service has already validated them.
+    /// </summary>
+    Task<ModeRunResult> ResumeAsync(
+        string sessionId,
+        string checkpointId,
+        string requestId,
+        Workflows.ReturnDecision decision,
+        CancellationToken ct = default
+    ) => ResumeAsync(sessionId, checkpointId, requestId, decision.IsApproval, ct);
 }
