@@ -7,8 +7,9 @@ namespace ECommerceAgents.Orchestrator.Routes;
 /// The .NET twin of Python's <c>require_staff</c> dependency
 /// (<c>orchestrator/routes/legacy.py</c>): the caller must hold the
 /// <c>support</c> or <c>admin</c> role. Sellers and customers are never staff.
-/// Sits next to the per-file <c>RequireAdmin()</c> checks; it is not applied to
-/// any route yet — who may approve moves to staff in a later step.
+/// Guards the approvals API, the run-resume route and the admin hitl approve/deny
+/// routes (staff, then bounded by the level the approval policy assigned — see
+/// <c>ApprovalsService.AuthorizeDecider</c>). The hitl list stays admin-only.
 /// </summary>
 public static class StaffGuard
 {

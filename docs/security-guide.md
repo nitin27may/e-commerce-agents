@@ -208,7 +208,7 @@ If `GUARDRAILS_STRICT_IDENTITY=true`, anomalies result in a 401 instead of a log
 | `admin` | Platform admins | Acts as manager; everything `support` can do plus admin routes |
 | `system` | Inter-agent sentinel | A call with no end user |
 
-What each role may approve is in [Approvals and the Routing Policy](approvals.md): `support` decides approvals routed to `support`, `admin` also decides those routed to `manager`, and nobody — staff included — decides their own request (Python stack; the .NET approval routes are unchanged).
+What each role may approve is in [Approvals and the Routing Policy](approvals.md): `support` decides approvals routed to `support`, `admin` also decides those routed to `manager`, and nobody — staff included — decides their own request (both stacks).
 
 ### MCP resource-server auth (Specialists → MCP servers, optional)
 

@@ -4,11 +4,12 @@ Some actions need a person to sign off before they happen: returns, refunds, can
 a backorder. This page describes the **routing policy** that decides *who* signs off — nobody, support, or a
 manager — the foundation it sits on, and the **approvals API** staff use to decide.
 
-On the Python stack the engine is wired in: every gated tool call and every paused return opens an inbox
+On both stacks the engine is wired in: every gated tool call and every paused return opens an inbox
 `approvals` row routed by the policy, and every approval is decided through one function (see
-[The approvals API](#the-approvals-api-python)). Not built yet: the customer-confirm step, acting on an `auto`
-route for tool calls (an `auto` route is recorded but still waits for a person), and the .NET
-port of the API — .NET keeps its own admin approval routes unchanged.
+[The approvals API](#the-approvals-api)). Both stacks serve the same routes with the same JSON over the same
+tables, so the web UI calls one API whichever orchestrator is behind it. Not built yet: the customer-confirm step,
+and acting on an `auto` route for tool calls (an `auto` route is recorded but still waits for a person).
+The SLA worker is Python's only — see [The .NET stack](#the-net-stack).
 
 ## The pieces
 
@@ -190,9 +191,12 @@ including `blocked`, the guard result as JSONB), `promotion_products` and a null
 seeder fills `unit_cost` from the price by a per-category ratio and links the bundle and flash-sale promotions
 to their products, in a step appended after every other one so no previously seeded value moves.
 
-## The approvals API (Python)
+## The approvals API
 
-All of it lives in `orchestrator/routes/approvals.py`; every rule lives in `orchestrator/approvals_service.py`.
+On Python all of it lives in `orchestrator/routes/approvals.py`, every rule in `orchestrator/approvals_service.py`. On
+.NET the routes are `Routes/ApprovalRoutes.cs` and the rules are `Approvals/ApprovalsService.cs`
+(see [The .NET stack](#the-net-stack)); the paths, JSON field names, status codes and `{"detail": ...}` error bodies are
+the same.
 
 | Route | Who | What |
 |---|---|---|
@@ -260,3 +264,41 @@ then timed out.
 `POST /api/orchestration/{run_id}/resume` and `POST /api/admin/hitl/requests/{id}/approve|deny` are thin shims: they
 find (or, for a request that predates the inbox, create) the linked approval and call the same `decide`. They are
 staff-only now (they were admin-only) and keep the status codes they always returned. There is one code path.
+
+## The .NET stack
+
+The .NET orchestrator serves the same API over the same tables (`approvals`, `approval_events`, `outbox` — migrations
+`0006`+; .NET adds no schema). It is a port, so the rules above hold unchanged and each has a test in `agents/dotnet/tests/`:
+
+| Piece | Where |
+|---|---|
+| Routes | `Orchestrator/Routes/ApprovalRoutes.cs` — `/api/approvals`, `/api/approvals/{id}`, `/decide`, `/info`, `/api/me/approvals` |
+| Decide path | `Orchestrator/Approvals/ApprovalsService.cs` — authorisation, claims, edits, executing the paused work. The legacy `POST /api/orchestration/{run_id}/resume` and `POST /api/admin/hitl/requests/{id}/approve\|deny` are shims over it, and are staff (not admin-only) bounded by the assigned role, as on Python |
+| Repository | `Shared/Approvals/ApprovalRepository.cs` — create (idempotent per source), guarded `TransitionAsync`, `ClaimAsync` / `ReleaseClaimAsync` with a fencing token and TTL, `EscalateAsync` |
+| Timers | `ApprovalRepository` writes `approval.reminder_due` and `approval.sla_breached` in the same transaction as the state change (`Shared/Approvals/Outbox.cs`) |
+| Intake | `Shared/Approvals/ApprovalIntake.cs` — routes a gated tool call (`HitlGate`) or a paused return (`ChatRoutes`) through the policy and opens the row; the policy gate's own decision routes a return, not a second evaluation |
+| Executor | `Orchestrator/Routes/HitlActionExecutor.cs`, run once per approval id through `IdempotencyGuard.RunOnceAsync` |
+
+**One worker for both stacks.** The Python worker drains timers .NET wrote. The timer's dedupe key
+(`{topic}:{approval id}:{level}:{epoch ms of due_at}`), its payload (`approval_id`, `level`, `due_at`) and the way `due_at` is
+written (microsecond precision, `+00:00`) are what the worker's handlers compare, so they match what Python writes.
+`ApprovalCrossStackTests` dumps what .NET writes from Postgres and compares it to
+`agents/python/tests/data/dotnet_approval_rows.json`; `test_approval_dotnet_rows.py` loads that same file and runs the real
+worker handlers over it (reminder, escalation, a stale timer). Change the .NET write path and the .NET test fails until the
+fixture is regenerated (set `APPROVAL_DUMP_PATH` to the fixture's path and run `dotnet test --filter ApprovalCrossStackTests`);
+the Python test then proves the worker still reads it.
+
+**Known differences from Python:**
+
+* *An expiry cannot resume a paused .NET return.* When a review nobody picks up times out at the top level, the Python worker
+  resumes the paused workflow from its checkpoint with Python's `ReturnReplaceMode`; a checkpoint written by .NET's workflow is
+  MAF .NET's own JSON (`PostgresJsonCheckpointStore`), not the format Python's storage decodes, so that resume cannot succeed
+  and the row ends up retried and parked (`GET /api/admin/outbox/parked`; reasoned from the two storage implementations, not
+  run end to end). Reminders and
+  the support-to-manager escalation resume nothing and work for .NET approvals, and a .NET *tool* approval expires correctly (the
+  worker only denies the request row). Until the worker can hand a .NET workflow to .NET, an unattended .NET return is closed by
+  a manager's decision, not by timeout.
+* *A gated .NET tool call is stored with the same name and input keys as Python* (`cancel_order`, `order_id`), not the .NET
+  pipeline's `CancelOrder` / `orderId` — that is what the policy kinds, the executor and the other stack key on.
+* *Customer confirm* (`pending_confirm`) is not built on either stack.
+* *`/api/me/notifications`* has no .NET route (see the parity matrix).
