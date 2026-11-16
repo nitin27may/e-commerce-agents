@@ -50,6 +50,13 @@ public static class AuthRoutes
 
     private const int MaxPasswordBytes = 72; // bcrypt's limit
 
+    // Email lookups for credentials typed by a person: accounts created by older Python builds kept
+    // the address as typed (mixed case) and migration 0004 leaves a row alone when lower-casing it
+    // would collide, so match case-insensitively, preferring the exact spelling typed, then the
+    // oldest row. @typed is the address as typed.
+    private const string UserByTypedEmail =
+        "WHERE lower(email) = lower(@typed) ORDER BY (email = @typed) DESC, created_at LIMIT 1";
+
     private static async Task<string> NewRefreshTokenAsync(
         Npgsql.NpgsqlConnection conn, JwtTokenService jwt, AgentSettings settings, string email, string role
     ) => settings.AuthRefreshRotation
@@ -178,7 +185,7 @@ public static class AuthRoutes
 
         await using var conn = await pool.OpenAsync();
         var existing = await conn.ExecuteScalarAsync<int>(
-            "SELECT COUNT(1) FROM users WHERE email = @email",
+            "SELECT COUNT(1) FROM users WHERE lower(email) = @email",
             new { email }
         );
         if (existing > 0)
@@ -222,7 +229,8 @@ public static class AuthRoutes
             return Results.BadRequest(new { detail = "email and password are required" });
         }
 
-        var email = request.Email.Trim().ToLowerInvariant();
+        var typed = request.Email.Trim();
+        var email = typed.ToLowerInvariant();
         if (await AccountLimitAsync(http, limiter, settings, email) is { } limited)
         {
             return limited;
@@ -237,7 +245,8 @@ public static class AuthRoutes
                     "password",
                     new Dictionary<string, string>
                     {
-                        ["username"] = email,
+                        // The address as typed: the auth-server matches case-insensitively and prefers an exact spelling.
+                        ["username"] = typed,
                         ["password"] = request.Password,
                         ["scope"] = "api:chat",
                     }
@@ -250,8 +259,8 @@ public static class AuthRoutes
 
             await using var oauthConn = await pool.OpenAsync();
             var oauthUser = await oauthConn.QueryFirstOrDefaultAsync(
-                "SELECT id, email, name, role, loyalty_tier, total_spend FROM users WHERE email = @email",
-                new { email }
+                $"SELECT id, email, name, role, loyalty_tier, total_spend FROM users {UserByTypedEmail}",
+                new { typed }
             );
             // The AS validated these credentials against the same `users`
             // table; a missing row here would mean it vanished between reads.
@@ -276,9 +285,9 @@ public static class AuthRoutes
 
         await using var conn = await pool.OpenAsync();
         var user = await conn.QueryFirstOrDefaultAsync(
-            @"SELECT id, email, password_hash, name, role, loyalty_tier, total_spend, is_active
-              FROM users WHERE email = @email",
-            new { email }
+            $@"SELECT id, email, password_hash, name, role, loyalty_tier, total_spend, is_active
+              FROM users {UserByTypedEmail}",
+            new { typed }
         );
         // An over-long attempt is a mismatch (bcrypt reads 72 bytes), never an error - same as Python's verify_password.
         if (user is null
@@ -294,9 +303,12 @@ public static class AuthRoutes
         }
 
         var role = (string)user.role;
+        // The address as stored, not as normalised above: a row migration 0004 left mixed-case
+        // must keep its own spelling in the token or every later lookup by it would miss.
+        var storedEmail = (string)user.email;
         return Results.Ok(new TokenResponse(
-            AccessToken: jwt.IssueAccessToken(email, role),
-            RefreshToken: await NewRefreshTokenAsync(conn, jwt, settings, email, role),
+            AccessToken: jwt.IssueAccessToken(storedEmail, role),
+            RefreshToken: await NewRefreshTokenAsync(conn, jwt, settings, storedEmail, role),
             User: new UserInfo(
                 Id: user.id.ToString(),
                 Email: (string)user.email,

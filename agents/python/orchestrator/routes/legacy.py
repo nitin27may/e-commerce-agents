@@ -224,6 +224,13 @@ def _validate_signup(body: SignupRequest) -> tuple[str, str]:
     return email, name
 
 
+# Email lookups for credentials typed by a person. Accounts created by older Python builds kept
+# the address exactly as typed (mixed case) and migration 0004 leaves a row alone when
+# lower-casing it would collide with another, so match case-insensitively and prefer the
+# spelling the caller actually typed, then the oldest row. $1 is the address as typed.
+_USER_BY_TYPED_EMAIL = "WHERE lower(email) = lower($1) ORDER BY (email = $1) DESC, created_at LIMIT 1"
+
+
 async def _new_refresh_token(pool: Any, email: str) -> str:
     """A refresh token for a fresh login: recorded (new family) when rotation is on, plain JWT otherwise."""
     if settings.AUTH_REFRESH_ROTATION:
@@ -239,7 +246,7 @@ async def signup(request: Request, body: SignupRequest, _rate_limit: None = Depe
     pool = get_pool()
 
     # Check if user already exists
-    existing = await pool.fetchrow("SELECT id FROM users WHERE email = $1", email)
+    existing = await pool.fetchrow("SELECT id FROM users WHERE lower(email) = $1", email)
     if existing:
         raise HTTPException(status_code=409, detail="Email already registered")
 
@@ -285,12 +292,14 @@ async def login(request: Request, body: LoginRequest, _rate_limit: None = Depend
     duplicate the password check. In ``local`` mode nothing changes.
     """
     pool = get_pool()
-    email = body.email.strip().lower()
+    typed = body.email.strip()
+    email = typed.lower()
     await enforce_auth_account_limit(request, email)
 
     if settings.AUTH_MODE == "oauth":
         try:
-            token_data = await request_token("password", username=email, password=body.password, scope="api:chat")
+            # The address as typed: the auth-server matches case-insensitively and prefers an exact spelling.
+            token_data = await request_token("password", username=typed, password=body.password, scope="api:chat")
         except httpx.HTTPStatusError:
             raise HTTPException(status_code=401, detail="Invalid email or password")
 
@@ -298,8 +307,8 @@ async def login(request: Request, body: LoginRequest, _rate_limit: None = Depend
         refresh_token = token_data["refresh_token"]
 
         row = await pool.fetchrow(
-            "SELECT id, email, name, role, loyalty_tier, total_spend FROM users WHERE email = $1",
-            email,
+            f"SELECT id, email, name, role, loyalty_tier, total_spend FROM users {_USER_BY_TYPED_EMAIL}",
+            typed,
         )
         if not row:
             # The AS validated these credentials against the same `users`
@@ -307,9 +316,9 @@ async def login(request: Request, body: LoginRequest, _rate_limit: None = Depend
             raise HTTPException(status_code=401, detail="Invalid email or password")
     else:
         row = await pool.fetchrow(
-            """SELECT id, email, password_hash, name, role, loyalty_tier, total_spend, is_active
-               FROM users WHERE email = $1""",
-            email,
+            f"""SELECT id, email, password_hash, name, role, loyalty_tier, total_spend, is_active
+                FROM users {_USER_BY_TYPED_EMAIL}""",
+            typed,
         )
 
         if not row:

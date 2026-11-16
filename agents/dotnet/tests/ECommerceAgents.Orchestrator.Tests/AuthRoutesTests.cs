@@ -56,6 +56,58 @@ public sealed class AuthRoutesTests : IAsyncLifetime
         return server.CreateClient();
     }
 
+    // ─────────────────────── mixed-case rows (migration 0004 leaves collisions alone) ─
+
+    [Fact]
+    public async Task Login_ReachesAMixedCaseRow_HoweverItIsTyped_AndKeepsItsStoredSpelling()
+    {
+        await using (var conn = await _pool.OpenAsync())
+        {
+            await conn.ExecuteAsync(
+                "INSERT INTO users (email, password_hash, name, role) VALUES ('Mixed@Example.com', @h, 'M', 'customer')",
+                new { h = BCrypt.Net.BCrypt.HashPassword(Password) });
+        }
+
+        using var client = ClientFor();
+        foreach (var typed in new[] { "Mixed@Example.com", "mixed@example.com", " MIXED@EXAMPLE.COM " })
+        {
+            var response = await client.PostAsJsonAsync("/api/auth/login", new { email = typed, password = Password });
+            response.StatusCode.Should().Be(HttpStatusCode.OK, typed);
+            var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+            payload.GetProperty("user").GetProperty("email").GetString().Should().Be("Mixed@Example.com");
+        }
+    }
+
+    [Fact]
+    public async Task Login_ACollidingPairStaysReachableByExactSpelling_AndSignupRefusesACaseVariant()
+    {
+        Guid upper, lower;
+        await using (var conn = await _pool.OpenAsync())
+        {
+            var h = BCrypt.Net.BCrypt.HashPassword(Password);
+            upper = await conn.ExecuteScalarAsync<Guid>(
+                "INSERT INTO users (email, password_hash, name, role) VALUES ('Dup@Example.com', @h, 'U', 'customer') RETURNING id", new { h });
+            lower = await conn.ExecuteScalarAsync<Guid>(
+                "INSERT INTO users (email, password_hash, name, role) VALUES ('dup@example.com', @h, 'L', 'customer') RETURNING id", new { h });
+        }
+
+        using var client = ClientFor();
+        async Task<string> IdFor(string typed)
+        {
+            var r = await client.PostAsJsonAsync("/api/auth/login", new { email = typed, password = Password });
+            r.StatusCode.Should().Be(HttpStatusCode.OK, typed);
+            return (await r.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("user").GetProperty("id").GetString()!;
+        }
+
+        (await IdFor("Dup@Example.com")).Should().Be(upper.ToString());
+        (await IdFor("dup@example.com")).Should().Be(lower.ToString());
+        await IdFor("DUP@EXAMPLE.COM"); // a third spelling resolves rather than failing
+
+        var signup = await client.PostAsJsonAsync(
+            "/api/auth/signup", new { email = "DUP@example.com", password = "hunter2hunter2", name = "X" });
+        signup.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
     // ─────────────────────── local mode (default, unchanged) ─
 
     [Fact]
