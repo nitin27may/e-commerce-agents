@@ -275,7 +275,7 @@ ANTHROPIC_MODEL=claude-sonnet-5-5     # default. Others: claude-opus-5-5, claude
 
 | | |
 |---|---|
-| Stacks | **.NET only.** The Python stack rejects `LLM_PROVIDER=anthropic` with a message saying so: its connector (`agent-framework-anthropic`) is beta-only and needs MAF core ≥ 1.24, and the repo is on 1.22 (a later step, tracked in [parity-matrix.md](parity-matrix.md) row 32) |
+| Stacks | **.NET only.** The Python stack rejects `LLM_PROVIDER=anthropic` with a message saying so: its connector (`agent-framework-anthropic`) is beta-only and needs MAF core ≥ 1.24, and the repo is on 1.22 (a later step, tracked in [parity-matrix.md](parity-matrix.md) row 33) |
 | Client | The official [`Anthropic`](https://www.nuget.org/packages/Anthropic) NuGet package (13.8.0), through its `IChatClient` adapter in `ChatClientFactory`. It needs `Microsoft.Extensions.AI.Abstractions` ≥ 10.5.1; the solution resolves 10.11.0, so nothing was bumped |
 | Key | Required when selected; startup fails naming `ANTHROPIC_API_KEY` (never its value). The SDK sends it as `Authorization: Bearer` |
 | Model | `ANTHROPIC_MODEL`, **not** `LLM_MODEL` — the compose files forward `LLM_MODEL` with a `gpt-4.1` default that Anthropic would reject |
