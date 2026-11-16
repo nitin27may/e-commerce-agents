@@ -20,8 +20,6 @@ it resumes a paused ``workflow:return-replace`` run from the
 
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
 import time
 from typing import Any
@@ -29,14 +27,13 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from shared.config import settings
-from shared.context import current_user_email, current_user_role
+from shared.config import settings  # noqa: F401 - re-exported: tests patch the instance the resume path reads
 from shared.cost import usage_cost
 from shared.db import get_pool
 from shared.rate_limit import rate_limit_chat
 from shared.run_usage import tokens_from_usage
 
-from .legacy import require_admin, require_auth
+from .legacy import require_auth, require_staff
 
 logger = logging.getLogger(__name__)
 
@@ -195,152 +192,42 @@ class ResumeRequest(BaseModel):
 async def resume_run(
     run_id: str,
     body: ResumeRequest,
-    admin: dict[str, Any] = Depends(require_admin),
+    staff: dict[str, Any] = Depends(require_staff),
     _rate_limit: None = Depends(rate_limit_chat),
 ) -> dict[str, Any]:
-    """Resume a workflow paused on in-workflow HITL, from committed checkpoint state.
+    """Resume a workflow paused on in-workflow HITL — a thin shim over the unified ``decide``.
 
-    Admin only: the person who asked for a return must not be the one who
-    approves it (#92). Claims the most recent *pending* ``hitl_requests`` row
-    for ``run_id`` atomically (``pending`` -> ``processing``) *before* the
-    workflow runs, so two concurrent clicks cannot both resume and both
-    release a refund; the loser gets 409. The claim is handed back if the
-    request cannot be resumed or the resume raises, so the button stays live.
-    A claim is stamped with ``claimed_at``; if the process dies mid-resume the
-    row would otherwise stay ``processing`` forever, so a ``processing`` row
-    claimed more than ``HITL_CLAIM_TTL_SECONDS`` ago can be taken over.
-    Resumes via ``ReturnReplaceMode.resume()`` (currently the only mode with
-    anything to resume) and then marks the request resolved. A request with no
-    ``request_id``/``checkpoint_id`` predates Phase 1.5's checkpoint wiring and
-    can't be resumed this way — surfaced as 409, not silently treated as "not
-    found".
+    Staff only (support or admin, at or above the approval's assigned role): the person who asked for a return
+    must not be the one who approves it (#92), so the requester is refused with 403 before anything is claimed.
+    Finds the latest ``hitl_requests`` row for ``run_id`` (creating its inbox approval if it predates the
+    inbox) and hands the decision to ``orchestrator.approvals_service.decide``, which owns the claim / fence /
+    resume machinery: a ``pending`` -> ``processing`` claim before the workflow runs (a second click is a 409),
+    a ``claimed_at`` fencing token and TTL takeover for a crashed resume, the remaining steps executed as the
+    requester with the reviewer recorded separately, and the claim handed back if the resume fails or is
+    cancelled. A request with no ``request_id``/``checkpoint_id`` predates checkpoint wiring and is a 409.
     """
+    from orchestrator import approvals_service as svc
+
     pool = get_pool()
-    reviewer_email = str(admin.get("sub", ""))
-
-    # Claimable = pending, or 'processing' with a claim older than the TTL (a
-    # resume whose process died before releasing it; claimed_at is NULL for rows
-    # claimed before migration 0002, which are equally stale). The predicate is
-    # repeated on the outer UPDATE so two takeovers racing for the same stale row
-    # cannot both win: the loser re-evaluates it against the winner's fresh
-    # claimed_at and matches nothing.
-    claimable = (
-        "(status = 'pending' OR (status = 'processing' "
-        "AND (claimed_at IS NULL OR claimed_at < NOW() - make_interval(secs => $3))))"
+    row = await pool.fetchrow(
+        "SELECT id FROM hitl_requests WHERE workflow_run_id = $1 ORDER BY created_at DESC LIMIT 1", run_id
     )
-    hitl = await pool.fetchrow(
-        f"""UPDATE hitl_requests SET status = 'processing', claimed_at = NOW()
-           WHERE id = (
-                 SELECT id FROM hitl_requests
-                  WHERE workflow_run_id = $1 AND {claimable}
-                    AND lower(user_email) <> lower($2)
-                  ORDER BY created_at DESC LIMIT 1)
-             AND {claimable}
-           RETURNING *""",
-        run_id,
-        reviewer_email,
-        float(settings.HITL_CLAIM_TTL_SECONDS),
-    )
-    if not hitl:
-        # Nothing claimable: "never existed" is a 404, "someone already took it" a
-        # 409, and a pending request the caller raised themselves a 403 (#92).
-        latest = await pool.fetchrow(
-            "SELECT status, user_email FROM hitl_requests WHERE workflow_run_id = $1 ORDER BY created_at DESC LIMIT 1",
-            run_id,
-        )
-        if latest is None:
-            raise HTTPException(status_code=404, detail="No pending approval found for this run")
-        if latest["status"] == "pending" and latest["user_email"].lower() == reviewer_email.lower():
-            raise HTTPException(status_code=403, detail="You cannot approve your own request")
-        raise HTTPException(status_code=409, detail=f"Request is already {latest['status']}")
+    if row is None:
+        raise HTTPException(status_code=404, detail="No pending approval found for this run")
+    approval_id = await svc.ensure_for_hitl_request(str(row["id"]))
+    if approval_id is None:
+        raise HTTPException(status_code=404, detail="No pending approval found for this run")
 
-    # claimed_at is the claim's fencing token: every claim and takeover rewrites it,
-    # so "claimed_at still equals what I was handed" means "this claim is still
-    # mine". The release and the final decision are both conditional on it; a
-    # caller whose claim was taken over (it stalled past the TTL) changes nothing
-    # and gets 409, and the live claimant's decision stands.
-    claim_token = hitl["claimed_at"]
-
-    async def _release() -> None:
-        await pool.execute(
-            "UPDATE hitl_requests SET status = 'pending', claimed_at = NULL "
-            "WHERE id = $1 AND status = 'processing' AND claimed_at = $2",
-            hitl["id"],
-            claim_token,
-        )
-
-    if hitl["kind"] != "return_approval":
-        await _release()
-        raise HTTPException(status_code=400, detail=f"Resume not supported for request kind {hitl['kind']!r}")
-    if not hitl["request_id"] or not hitl["checkpoint_id"]:
-        await _release()
-        raise HTTPException(status_code=409, detail="This pending request predates checkpoint-based resume")
-
-    from orchestrator.modes.workflow_mode import ReturnReplaceMode
-
-    mode = ReturnReplaceMode()
-    final_payload: dict[str, Any] = {}
-    # The workflow's remaining steps (loyalty discount, finalize) read the
-    # request identity from ContextVars, and that is currently the approving
-    # admin. They must act for the customer who asked for the return, so run
-    # them under the stored requester's identity and restore the reviewer's
-    # afterwards. The reviewer still authorised the call (require_admin) and is
-    # recorded as ``decided_by`` below.
-    requester_email = hitl["user_email"]
-    resumed = False
-    email_token = current_user_email.set(requester_email)
-    role_token = current_user_role.set("customer")
+    actor = svc.Actor(email=str(staff.get("sub", "")), role=str(staff.get("role", "")))
     try:
-        requester_role = await pool.fetchval("SELECT role FROM users WHERE email = $1", requester_email) or "customer"
-        current_user_role.set(requester_role)
-        # Hard stop well inside the claim TTL (settings validates it is shorter), so a
-        # frozen resume ends - and releases - before anyone else may take the row over.
-        async with asyncio.timeout(settings.HITL_RESUME_TIMEOUT_SECONDS):
-            async for event in mode.resume(
-                checkpoint_id=str(hitl["checkpoint_id"]), request_id=hitl["request_id"], approved=body.approved
-            ):
-                if event.kind == "run_completed":
-                    final_payload = event.payload
-        resumed = True
-    except TimeoutError:
-        logger.warning("hitl.resume_timeout hitl_id=%s", hitl["id"])
-        raise HTTPException(status_code=504, detail="Resume timed out; the approval is still pending.") from None
-    finally:
-        current_user_role.reset(role_token)
-        current_user_email.reset(email_token)
-        if not resumed:
-            # Any way out without a completed resume, cancellation included
-            # (client disconnect, shutdown: CancelledError is not an Exception),
-            # hands the claim back so the row is not stuck in 'processing'.
-            # Shielded so a second cancel cannot interrupt the release itself.
-            await asyncio.shield(_release())
+        outcome = await svc.decide(approval_id, actor, decision="approve" if body.approved else "reject")
+    except svc.ApprovalHTTPError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from None
 
-    decided = await pool.execute(
-        """UPDATE hitl_requests
-           SET status = $1, responded_at = NOW(), response = $2::jsonb
-           WHERE id = $3 AND status = 'processing' AND claimed_at = $4""",
-        "approved" if body.approved else "rejected",
-        # No responder column exists, so the reviewer is recorded in the response.
-        json.dumps({"approved": body.approved, "decided_by": admin.get("sub")}),
-        hitl["id"],
-        claim_token,
-    )
-    if decided != "UPDATE 1":
-        # The claim was taken over while this resume ran: someone else owns the
-        # decision now. Record nothing.
-        logger.warning("hitl.claim_lost hitl_id=%s", hitl["id"])
-        raise HTTPException(status_code=409, detail="This approval was taken over by another reviewer")
-    new_checkpoint_id = final_payload.get("latest_checkpoint_id")
-    if new_checkpoint_id:
-        await pool.execute(
-            "UPDATE workflow_checkpoints SET usage_log_id = $1 WHERE checkpoint_id = $2",
-            run_id,
-            new_checkpoint_id,
-        )
-
+    result = outcome["result"]
     return {
         "run_id": run_id,
         "approved": body.approved,
-        "text": final_payload.get("text", ""),
-        "agents_involved": final_payload.get("agents_involved", []),
+        "text": result.get("text", ""),
+        "agents_involved": result.get("agents_involved", []),
     }

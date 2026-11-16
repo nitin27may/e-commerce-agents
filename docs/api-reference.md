@@ -881,6 +881,22 @@ The `trace_id` field correlates with OpenTelemetry traces in the Aspire Dashboar
 
 ---
 
+## Approvals
+
+The unified approvals inbox (Python stack). Rules, the authorisation matrix and the edits allowlist are in
+[Approvals and the Routing Policy](approvals.md#the-approvals-api-python).
+
+| Endpoint | Who | Notes |
+|---|---|---|
+| `GET /api/approvals` | staff | `?status=<status>\|all`, `?limit=`; `support` sees support-routed items, `admin` sees all |
+| `GET /api/approvals/{id}` | staff | Approval + audit `events` + policy `recommendation` + `editable_fields` + `source_detail` |
+| `POST /api/approvals/{id}/decide` | staff | `{"decision": "approve"\|"reject"\|"request_info", "edits": {...}, "note": "..."}`. `403` own request or below the assigned role, `409` already decided or being decided, `422` bad edits |
+| `POST /api/approvals/{id}/info` | requester | `{"message": "..."}`; `409` if nothing is being asked |
+| `GET /api/me/approvals` | signed in | Own approvals: `id`, `kind`, `status`, `amount`, timestamps |
+
+`POST /api/orchestration/{run_id}/resume` and `POST /api/admin/hitl/requests/{id}/approve|deny` remain, as thin
+callers of the same decide function.
+
 ## Error Response Format
 
 All error responses follow FastAPI's standard format:

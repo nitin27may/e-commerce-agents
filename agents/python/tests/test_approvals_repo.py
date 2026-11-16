@@ -306,3 +306,61 @@ async def test_concurrent_claims_have_one_winner(clean_db: asyncpg.Pool) -> None
         *(repo.claim(clean_db, str(row["id"]), f"w{i}", statuses=[ApprovalStatus.APPROVED]) for i in range(5))
     )
     assert sum(r is not None for r in results) == 1
+
+
+# ── claim-fenced transitions (D-5a) ──────────────────────────────────────────
+
+
+async def test_a_fenced_transition_clears_the_claim(clean_db: asyncpg.Pool) -> None:
+    row = await _make(clean_db, status=ApprovalStatus.PENDING_REVIEW)
+    aid = str(row["id"])
+    await repo.claim(clean_db, aid, "token-a", statuses=[ApprovalStatus.PENDING_REVIEW])
+
+    moved = await repo.transition(
+        clean_db, aid, [ApprovalStatus.PENDING_REVIEW], ApprovalStatus.APPROVED, claimed_by="token-a"
+    )
+
+    assert moved["status"] == "approved" and moved["claimed_at"] is None and moved["claimed_by"] is None
+
+
+async def test_a_fenced_transition_refuses_a_lost_claim_and_changes_nothing(clean_db: asyncpg.Pool) -> None:
+    row = await _make(clean_db, status=ApprovalStatus.PENDING_REVIEW)
+    aid = str(row["id"])
+    await repo.claim(clean_db, aid, "token-b", statuses=[ApprovalStatus.PENDING_REVIEW])  # someone took over
+
+    with pytest.raises(repo.ClaimLostError):
+        await repo.transition(
+            clean_db, aid, [ApprovalStatus.PENDING_REVIEW], ApprovalStatus.APPROVED, claimed_by="token-a"
+        )
+
+    current = await repo.get(clean_db, aid)
+    assert current["status"] == "pending_review" and current["claimed_by"] == "token-b"
+    assert [e["action"] for e in await repo.list_events(clean_db, aid)] == ["created"]
+    with pytest.raises(repo.InvalidTransitionError):  # a ClaimLostError is also an InvalidTransitionError
+        await repo.transition(clean_db, aid, [ApprovalStatus.PENDING_REVIEW], ApprovalStatus.REJECTED, claimed_by="x")
+
+
+# ── queue reads ──────────────────────────────────────────────────────────────
+
+
+async def test_list_for_staff_filters_by_status_and_assigned_role(clean_db: asyncpg.Pool) -> None:
+    mine = await _make(clean_db, status=ApprovalStatus.PENDING_REVIEW, assigned_role="support")
+    await _make(clean_db, status=ApprovalStatus.PENDING_REVIEW, assigned_role="admin")
+    await _make(clean_db, status=ApprovalStatus.REJECTED, assigned_role="support")
+
+    open_for_support = await repo.list_for_staff(
+        clean_db, statuses=[ApprovalStatus.PENDING_REVIEW], assigned_roles=["support"]
+    )
+    everything = await repo.list_for_staff(clean_db)
+
+    assert [r["id"] for r in open_for_support] == [mine["id"]]
+    assert len(everything) == 3
+
+
+async def test_list_for_requester_is_case_insensitive_and_scoped(clean_db: asyncpg.Pool) -> None:
+    row = await _make(clean_db)
+    await repo.create(clean_db, source="tool", kind="x", requester_email="someone-else@example.com")
+
+    mine = await repo.list_for_requester(clean_db, REQUESTER.upper())
+
+    assert [r["id"] for r in mine] == [row["id"]]

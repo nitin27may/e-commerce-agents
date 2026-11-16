@@ -944,105 +944,53 @@ class HITLDecisionBody(BaseModel):
     note: str | None = None
 
 
+async def _decide_tool_request(
+    request_id: str, staff: dict[str, Any], decision: str, note: str | None
+) -> dict[str, Any]:
+    """Run a legacy tool-request decision through the unified ``decide`` (orchestrator/approvals_service.py).
+
+    The approvals inbox is the one code path: this endpoint only finds (or, for a request that predates the
+    inbox, creates) the linked approval and maps the service's answers onto the status codes this route always
+    returned — 404 unknown, 403 own request, 400 already resolved, 409 lost a race.
+    """
+    from orchestrator import approvals_service as svc
+
+    try:
+        uuid.UUID(request_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="HITL request not found") from None
+    approval_id = await svc.ensure_for_tool_request(request_id)
+    if approval_id is None:
+        raise HTTPException(status_code=404, detail="HITL request not found")
+    actor = svc.Actor(email=str(staff.get("sub", "")), role=str(staff.get("role", "")))
+    try:
+        outcome = await svc.decide(approval_id, actor, decision=decision, note=note)
+    except svc.ApprovalHTTPError as exc:
+        status_code = 400 if exc.status_code == 409 and exc.detail.startswith("Request is already") else exc.status_code
+        raise HTTPException(status_code=status_code, detail=exc.detail) from None
+    logger.info("hitl.%s approval_id=%s", decision, approval_id)
+    return outcome
+
+
 @router.post("/api/admin/hitl/requests/{request_id}/approve")
 async def approve_hitl_request(
     request_id: str,
     body: HITLDecisionBody = HITLDecisionBody(),
-    admin: dict[str, Any] = Depends(require_admin),
+    staff: dict[str, Any] = Depends(require_staff),
 ) -> dict[str, Any]:
-    """Approve a pending HITL request and execute the underlying action."""
-    from shared.hitl import claim_hitl_request, execute_approved_action, get_hitl_request, resolve_hitl_request
-
-    # An approver may not approve their own request, even as admin (#92). Checked
-    # before the claim: a claim-then-refuse would strand the row in 'processing'.
-    # user_email is immutable on the row, so a read-then-claim cannot be raced
-    # into a different requester.
-    pending = await get_hitl_request(request_id)
-    admin_email = admin.get("sub", "admin")
-    if pending and pending["status"] == "pending" and pending["user_email"].lower() == admin_email.lower():
-        raise HTTPException(status_code=403, detail="You cannot approve your own request")
-
-    # Atomically claim the request (pending -> processing) BEFORE executing
-    # the underlying action — this is what closes the race two concurrent
-    # approve clicks used to hit (both would pass a pre-check read here,
-    # both would execute, and only the second write-after-execute would
-    # notice). Whoever wins this UPDATE is the only caller that proceeds.
-    req = await claim_hitl_request(request_id)
-    if not req:
-        existing = await get_hitl_request(request_id)
-        if not existing:
-            raise HTTPException(status_code=404, detail="HITL request not found")
-        raise HTTPException(status_code=400, detail=f"Request is already {existing['status']}")
-
-    try:
-        result = await execute_approved_action(
-            tool_name=req["tool_name"],
-            tool_input=req["tool_input"],
-            user_email=req["user_email"],
-        )
-    except Exception:
-        # The claim above already moved this row out of 'pending' — if we
-        # left it 'processing' on an unhandled error it could never be
-        # retried (claim_hitl_request only matches 'pending'). Revert the
-        # claim so a follow-up approve attempt is possible, then let the
-        # error surface as a 500.
-        await get_pool().execute(
-            "UPDATE tool_approval_requests SET status = 'pending' WHERE id = $1 AND status = 'processing'",
-            request_id,
-        )
-        raise
-
-    updated = await resolve_hitl_request(
-        request_id=request_id,
-        decision="approved",
-        admin_email=admin_email,
-        note=body.note,
-        execution_result=result,
-    )
-    if not updated:
-        raise HTTPException(status_code=409, detail="Request was already resolved by another admin")
-
-    logger.info(
-        "hitl.approved request_id=%s tool=%s admin=%s success=%s",
-        request_id,
-        req["tool_name"],
-        admin_email,
-        result.get("success"),
-    )
-    return {"status": "approved", "execution_result": result}
+    """Approve a pending HITL request and execute the underlying action (thin shim over ``decide``)."""
+    outcome = await _decide_tool_request(request_id, staff, "approve", body.note)
+    return {"status": "approved", "execution_result": outcome["result"]}
 
 
 @router.post("/api/admin/hitl/requests/{request_id}/deny")
 async def deny_hitl_request(
     request_id: str,
     body: HITLDecisionBody = HITLDecisionBody(),
-    admin: dict[str, Any] = Depends(require_admin),
+    staff: dict[str, Any] = Depends(require_staff),
 ) -> dict[str, Any]:
-    """Deny a pending HITL request (no action is taken)."""
-    from shared.hitl import get_hitl_request, resolve_hitl_request
-
-    req = await get_hitl_request(request_id)
-    if not req:
-        raise HTTPException(status_code=404, detail="HITL request not found")
-    if req["status"] != "pending":
-        raise HTTPException(status_code=400, detail=f"Request is already {req['status']}")
-
-    admin_email = admin.get("sub", "admin")
-    updated = await resolve_hitl_request(
-        request_id=request_id,
-        decision="denied",
-        admin_email=admin_email,
-        note=body.note,
-    )
-    if not updated:
-        raise HTTPException(status_code=409, detail="Request was already resolved by another admin")
-
-    logger.info(
-        "hitl.denied request_id=%s tool=%s admin=%s",
-        request_id,
-        req["tool_name"],
-        admin_email,
-    )
+    """Deny a pending HITL request (no action is taken; thin shim over ``decide``)."""
+    await _decide_tool_request(request_id, staff, "reject", body.note)
     return {"status": "denied"}
 
 

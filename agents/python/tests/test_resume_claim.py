@@ -57,7 +57,9 @@ async def test_a_cancelled_resume_releases_its_claim(clean_db, monkeypatch: pyte
 
     monkeypatch.setattr(ReturnReplaceMode, "resume", _hang)
 
-    task = asyncio.create_task(resume_run(run_id, ResumeRequest(approved=True), {"sub": "staff@example.com"}))
+    task = asyncio.create_task(
+        resume_run(run_id, ResumeRequest(approved=True), {"sub": "staff@example.com", "role": "admin"})
+    )
     for _ in range(100):
         if await _status(clean_db, run_id) == "processing":
             break
@@ -97,7 +99,9 @@ async def test_a_claim_records_when_it_was_taken_and_release_clears_it(
         yield  # pragma: no cover
 
     monkeypatch.setattr(ReturnReplaceMode, "resume", _hang)
-    task = asyncio.create_task(resume_run(run_id, ResumeRequest(approved=True), {"sub": "staff@example.com"}))
+    task = asyncio.create_task(
+        resume_run(run_id, ResumeRequest(approved=True), {"sub": "staff@example.com", "role": "admin"})
+    )
     for _ in range(100):
         if await _status(clean_db, run_id) == "processing":
             break

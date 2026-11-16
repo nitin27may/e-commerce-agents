@@ -97,6 +97,10 @@ class SelfApprovalError(ApprovalError):
     """``decided_by`` equals ``requester_email``: nobody decides their own request."""
 
 
+class ClaimLostError(InvalidTransitionError):
+    """The caller's execution claim was taken over (or cleared) before it finished: someone else owns the decision."""
+
+
 Db = asyncpg.Connection | asyncpg.Pool
 
 
@@ -290,9 +294,14 @@ async def transition(
     actor_role: str | None = None,
     action: str | None = None,
     payload: dict[str, Any] | None = None,
+    claimed_by: str | None = None,
     **updates: Any,
 ) -> dict[str, Any]:
     """Move an approval to ``to`` iff it is currently in one of ``from_statuses``; append an audit event.
+
+    ``claimed_by`` fences the move to the holder of the execution claim: if the stored claim is no longer
+    that token the move is refused with ``ClaimLostError`` (a stalled executor whose claim was taken over
+    must not record a decision over its successor's), and a successful move clears the claim.
 
     ``updates`` may set ``route``, ``assigned_role``, ``due_at``, ``escalation_level``, ``recommendation``,
     ``decision`` and ``decided_by`` (which also stamps ``decided_at``). Anything else is a ``TypeError``.
@@ -320,6 +329,9 @@ async def transition(
         if ApprovalStatus(current["status"]) not in sources:
             logger.info("approval transition refused id=%s from=%s to=%s", approval_id, current["status"], target.value)
             raise InvalidTransitionError(f"approval {approval_id} is {current['status']}, not one of {sorted(sources)}")
+        if claimed_by is not None and current["claimed_by"] != claimed_by:
+            logger.warning("approval transition refused, claim lost id=%s", approval_id)
+            raise ClaimLostError(f"approval {approval_id}: the execution claim is no longer held")
         decided_by = updates.get("decided_by")
         if _same_person(decided_by, current["requester_email"]):
             logger.warning("self-approval refused id=%s", approval_id)
@@ -337,6 +349,8 @@ async def transition(
             sets.append(f"{column} = ${len(args)}" + ("::jsonb" if column in _JSON_COLUMNS else ""))
         if decided_by is not None:
             sets.append("decided_at = NOW()")
+        if claimed_by is not None:
+            sets.append("claimed_at = NULL, claimed_by = NULL")
         updated = await conn.fetchrow(
             f"UPDATE approvals SET {', '.join(sets)} WHERE id = $1 RETURNING *",  # noqa: S608 - columns are a fixed set
             *args,
@@ -438,3 +452,38 @@ async def release_claim(db: Db, approval_id: str, claimed_by: str) -> bool:
         claimed_by,
     )
     return result.endswith(" 1")
+
+
+async def list_for_staff(
+    db: Db,
+    *,
+    statuses: Collection[ApprovalStatus | str] | None = None,
+    assigned_roles: Collection[str] | None = None,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """The reviewer queue: oldest deadline first. ``assigned_roles`` limits it to what a role may decide."""
+    where: list[str] = []
+    args: list[Any] = []
+    if statuses:
+        args.append([ApprovalStatus(s).value for s in statuses])
+        where.append(f"status = ANY(${len(args)}::text[])")
+    if assigned_roles is not None:
+        args.append(list(assigned_roles))
+        where.append(f"assigned_role = ANY(${len(args)}::text[])")
+    args.append(max(1, min(int(limit), 200)))
+    clause = f"WHERE {' AND '.join(where)}" if where else ""
+    rows = await db.fetch(
+        f"SELECT * FROM approvals {clause} ORDER BY due_at NULLS LAST, created_at DESC LIMIT ${len(args)}",  # noqa: S608
+        *args,
+    )
+    return [_row(r) for r in rows]
+
+
+async def list_for_requester(db: Db, requester_email: str, *, limit: int = 50) -> list[dict[str, Any]]:
+    """A requester's own approvals, newest first. Case-insensitive on the email."""
+    rows = await db.fetch(
+        "SELECT * FROM approvals WHERE lower(requester_email) = lower($1) ORDER BY created_at DESC LIMIT $2",
+        requester_email,
+        max(1, min(int(limit), 200)),
+    )
+    return [_row(r) for r in rows]

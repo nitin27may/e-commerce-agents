@@ -200,3 +200,27 @@ def idempotent(
         return wrapper
 
     return decorator
+
+
+async def run_once[T: dict](scope: str, key_material: str, fn: Callable[[], Awaitable[T]]) -> T:
+    """Run ``fn`` at most once per ``(scope, key_material)`` and replay its result for any repeat.
+
+    ``idempotent()`` keys on the call's arguments, which is wrong when the arguments are *meant* to differ
+    between attempts (an approval executed with reviewer edits): the key must be the approval's id, not a hash
+    of its input. Same reservation protocol (reserve, replay if completed, refuse a young in-progress
+    duplicate, take over a stale one, release on failure). ``fn`` must return a ``dict``.
+    """
+    from shared.db import get_pool
+
+    key = f"{scope}:{hashlib.sha256(key_material.encode()).hexdigest()}"
+    pool = get_pool()
+    reserved, conflict_or_cached = await _reserve(pool, key, scope)
+    if not reserved:
+        return conflict_or_cached  # type: ignore[return-value]
+    try:
+        result = await fn()
+    except Exception:
+        await _release(pool, key)
+        raise
+    await _complete(pool, key, result if isinstance(result, dict) else {})
+    return result

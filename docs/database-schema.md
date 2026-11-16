@@ -483,7 +483,7 @@ Two rules the reader enforces, each closing a defect that shipped:
 
 ### Approvals Foundation (migration `0006`)
 
-One inbox for every approval kind, with an audit trail and an outbox. Python repository only (`shared/approvals/repo.py`, `shared/outbox.py`); nothing in a request path writes these tables yet.
+One inbox for every approval kind, with an audit trail and an outbox. Python repository only (`shared/approvals/repo.py`, `shared/outbox.py`). `approvals` and `approval_events` are written by every gated tool call and every paused return and by the approvals API; `outbox` and `notifications` are not written by anything yet.
 
 | Table | Key Columns | Notes |
 |-------|-------------|-------|

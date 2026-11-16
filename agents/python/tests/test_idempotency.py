@@ -594,3 +594,40 @@ async def test_checkout_with_different_body_is_not_deduped(db_pool: asyncpg.Pool
         )
         assert second_resp.status_code == 400
         assert "empty" in second_resp.json()["detail"].lower()
+
+
+# ─────────────────────── 5. run_once: keyed by an id, not by the arguments ──
+
+
+@pytest.mark.asyncio
+async def test_run_once_replays_for_the_same_key_even_when_the_work_differs(db_pool: asyncpg.Pool) -> None:
+    from shared.idempotency import run_once
+
+    calls: list[int] = []
+
+    async def _work(n: int) -> dict:
+        calls.append(n)
+        return {"n": n}
+
+    first = await run_once("approval_exec", "approval-1", lambda: _work(1))
+    replay = await run_once("approval_exec", "approval-1", lambda: _work(2))  # an edited retry: different work
+    other = await run_once("approval_exec", "approval-2", lambda: _work(3))
+
+    assert (first, replay, other) == ({"n": 1}, {"n": 1}, {"n": 3})
+    assert calls == [1, 3]
+
+
+@pytest.mark.asyncio
+async def test_run_once_releases_the_key_when_the_work_raises(db_pool: asyncpg.Pool) -> None:
+    from shared.idempotency import run_once
+
+    async def _boom() -> dict:
+        raise RuntimeError("transient")
+
+    async def _ok() -> dict:
+        return {"ok": True}
+
+    with pytest.raises(RuntimeError):
+        await run_once("approval_exec", "approval-9", _boom)
+
+    assert await run_once("approval_exec", "approval-9", _ok) == {"ok": True}

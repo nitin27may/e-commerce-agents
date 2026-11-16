@@ -282,6 +282,9 @@ class ReturnReplaceMode:
                     "agents_involved": agents_involved,
                     "pending_approval": True,
                     "request_id": pending_request_id,
+                    # What the inbox approval opened beside the hitl_requests row is routed on.
+                    "order_id": order_id,
+                    "order_total": final_state.order_total,
                     "latest_checkpoint_id": latest_checkpoint_id,
                     "usage": zero_usage(),
                 },

@@ -213,7 +213,7 @@ async def _persist_assistant_turn(
         # sent any earlier: the usage_logs row is created here, several frames
         # after `metadata` has already gone out.
         run_payload_box["usage_log_id"] = usage_log_id
-        await _link_run_artifacts(pool, usage_log_id, user_email, run_payload_box)
+        await _link_run_artifacts(pool, usage_log_id, user_email, run_payload_box, conversation_id)
         if disconnected:
             logger.info(
                 "chat_stream.persisted_after_disconnect conversation=%s chars=%d",
@@ -224,7 +224,9 @@ async def _persist_assistant_turn(
         logger.exception("chat_stream.persist_error conversation=%s disconnected=%s", conversation_id, disconnected)
 
 
-async def _link_run_artifacts(pool: Any, usage_log_id: Any, user_email: str, run_payload: dict[str, Any]) -> None:
+async def _link_run_artifacts(
+    pool: Any, usage_log_id: Any, user_email: str, run_payload: dict[str, Any], conversation_id: Any = None
+) -> None:
     """Correlate a run's checkpoint + HITL pause (if any) back to its
     ``usage_logs`` row — what ``GET /api/runs/{id}/checkpoints`` and
     ``POST /api/orchestration/{run_id}/resume`` need to find them later.
@@ -245,16 +247,43 @@ async def _link_run_artifacts(pool: Any, usage_log_id: Any, user_email: str, run
             checkpoint_id,
         )
     if run_payload.get("pending_approval") and run_payload.get("request_id"):
-        await pool.execute(
+        policy = run_payload.get("approval_policy")
+        policy = policy if isinstance(policy, dict) else {}
+        hitl_id = await pool.fetchval(
             """INSERT INTO hitl_requests
                    (workflow_run_id, request_id, checkpoint_id, user_email, kind, payload, status)
-               VALUES ($1, $2, $3, $4, 'return_approval', $5::jsonb, 'pending')""",
+               VALUES ($1, $2, $3, $4, 'return_approval', $5::jsonb, 'pending')
+               RETURNING id""",
             usage_log_id,
             run_payload["request_id"],
             checkpoint_id,
             user_email,
             json.dumps({"text": run_payload.get("text", "")}, default=str),
         )
+        # The inbox row, routed by the gate's policy decision. Best effort: the hitl_requests row above
+        # is what resume needs; a missing inbox row is repaired lazily when someone first decides it.
+        try:
+            from shared.approvals.intake import open_workflow_approval, policy_for_return
+
+            if not policy:  # the run did not carry its own decision: ask the engine now
+                policy = await policy_for_return(
+                    pool,
+                    user_email=user_email,
+                    order_id=run_payload.get("order_id"),
+                    amount=run_payload.get("order_total"),
+                )
+            if not conversation_id:
+                conversation_id = await pool.fetchval("SELECT session_id FROM usage_logs WHERE id = $1", usage_log_id)
+            await open_workflow_approval(
+                pool,
+                hitl_request_id=str(hitl_id),
+                user_email=user_email,
+                conversation_id=str(conversation_id) if conversation_id else None,
+                policy=policy,
+                amount=policy.get("amount"),
+            )
+        except Exception:
+            logger.exception("chat.approval_open_failed hitl=%s", hitl_id)
 
 
 @router.post("/api/chat", response_model=ChatResponse)
@@ -388,7 +417,7 @@ async def chat(
             tool_calls_count=len(steps) if steps else max(len(agents_involved) - 1, 0),
             **usage_columns(run_payload.get("usage")),
         )
-        await _link_run_artifacts(pool, usage_log_id, user_email, run_payload)
+        await _link_run_artifacts(pool, usage_log_id, user_email, run_payload, conversation_id)
 
     return ChatResponse(
         response=response_text,

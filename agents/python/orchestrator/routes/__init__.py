@@ -14,11 +14,12 @@ from fastapi import APIRouter
 
 from shared.config import settings
 
-from . import chat, demo, legacy, notifications, orchestration
+from . import approvals, chat, demo, legacy, notifications, orchestration
 from .legacy import optional_auth, require_admin, require_auth, require_seller, require_staff
 
 router = APIRouter()
 router.include_router(legacy.router)
+router.include_router(approvals.router)
 router.include_router(chat.router)
 router.include_router(orchestration.router)
 router.include_router(demo.router)

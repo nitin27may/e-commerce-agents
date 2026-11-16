@@ -2,8 +2,13 @@
 
 Some actions need a person to sign off before they happen: returns, refunds, cancelling or changing an order,
 a backorder. This page describes the **routing policy** that decides *who* signs off — nobody, support, or a
-manager — and the foundation it sits on. The policy engine exists and is tested on both stacks; it is **not
-wired into any route, middleware or workflow yet**, so today's approval behaviour is unchanged.
+manager — the foundation it sits on, and the **approvals API** staff use to decide.
+
+On the Python stack the engine is wired in: every gated tool call and every paused return opens an inbox
+`approvals` row routed by the policy, and every approval is decided through one function (see
+[The approvals API](#the-approvals-api-python)). Not built yet: the customer-confirm step, acting on an `auto`
+route for tool calls (an `auto` route is recorded but still waits for a person), the SLA worker, and the .NET
+port of the API — .NET keeps its own admin approval routes unchanged.
 
 ## The pieces
 
@@ -184,3 +189,56 @@ The schema is migration `0009_merchant_proposals.sql`: `proposals`, `proposal_li
 including `blocked`, the guard result as JSONB), `promotion_products` and a nullable `products.unit_cost`. The
 seeder fills `unit_cost` from the price by a per-category ratio and links the bundle and flash-sale promotions
 to their products, in a step appended after every other one so no previously seeded value moves.
+
+## The approvals API (Python)
+
+All of it lives in `orchestrator/routes/approvals.py`; every rule lives in `orchestrator/approvals_service.py`.
+
+| Route | Who | What |
+|---|---|---|
+| `GET /api/approvals` | staff | The queue for the caller's role (open items by default; `?status=all` or one status). `support` sees what is routed to `support`; `admin` sees everything |
+| `GET /api/approvals/{id}` | staff, at or above the assigned role | The approval, its audit events, the policy evidence, the fields a reviewer may edit, and what it would execute |
+| `POST /api/approvals/{id}/decide` | staff | `{decision: approve \| reject \| request_info, edits?, note?}` |
+| `POST /api/approvals/{id}/info` | the requester only | `{message}` — answers a request for more information |
+| `GET /api/me/approvals` | any signed-in user | Their own approvals, status only |
+
+**Who may decide.** Only staff; never the requester (compared case-insensitively, even for an admin deciding their
+own request); and the staff role must be at or above the approval's `assigned_role` — `support` decides what the
+policy routed to `support` (and `auto` requests still waiting for a person), `admin` decides everything including
+`manager` routes. A refusal is a `403` and changes nothing; it is checked before anything is claimed.
+
+| Caller | support route | manager route |
+|---|---|---|
+| The requester (any role) | 403 | 403 |
+| Another customer or a seller | 403 | 403 |
+| `support` | allowed | 403 |
+| `admin` | allowed | allowed |
+
+**Deciding executes the action exactly once.**
+
+* *Tool approvals* take a TTL'd claim on the approval (`repo.claim`), run `execute_approved_action` keyed by the
+  **approval id** — a reviewer's edits change the tool input, so an input hash would let an edited retry run twice —
+  then record the outcome fenced by the same claim token. A second concurrent decide gets `409`.
+* *Workflow approvals* resume the paused workflow from its checkpoint (`resume_workflow`): an atomic
+  `pending -> processing` claim on the `hitl_requests` row fenced by `claimed_at`, a hard timeout inside the claim TTL,
+  and the remaining steps executed **as the requester** with the reviewer recorded separately.
+* A decision that fails to execute is **not recorded**: the claim is handed back, the approval stays in
+  `pending_review`, and the reviewer can try again.
+
+**Edits** (`approve` only) are merged only for fields on the policy's `editable_fields` for that kind; any other
+field, or a bad value, is a `422` and nothing runs. Today edits apply to tool approvals; for a workflow approval they
+arrive with the reworked return workflow.
+
+**Request more information** does not touch MAF. The approval moves to `needs_info`, the reviewer's question is
+written into the requester's conversation, and a paused workflow stays paused (its `hitl_requests` row is parked as
+`needs_info`, so it cannot be resumed meanwhile). The requester's answer (`/info`) moves it back to
+`pending_review`. A reviewer may still reject while it waits.
+
+**Expiry.** `orchestrator.approvals_service.expire(id)` — for the SLA worker — resumes a paused workflow as a
+rejection (nothing is created) or denies a tool request, and marks the approval `expired`.
+
+### The legacy endpoints
+
+`POST /api/orchestration/{run_id}/resume` and `POST /api/admin/hitl/requests/{id}/approve|deny` are thin shims: they
+find (or, for a request that predates the inbox, create) the linked approval and call the same `decide`. They are
+staff-only now (they were admin-only) and keep the status codes they always returned. There is one code path.
