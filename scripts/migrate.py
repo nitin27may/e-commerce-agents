@@ -75,6 +75,17 @@ class MigrationError(RuntimeError):
     """A migration could not be applied or the recorded history disagrees with the files."""
 
 
+def checksum_of(raw: bytes) -> str:
+    """SHA-256 of a migration file with CRLF folded to LF.
+
+    The same volume must verify from a Windows checkout (CRLF, if ``core.autocrlf`` rewrote it)
+    and from a Linux / WSL one (LF), so line endings are not part of a file's identity. Every
+    checksum recorded so far was computed over LF files, so existing rows stay valid.
+    ``.gitattributes`` also pins ``*.sql`` to LF.
+    """
+    return hashlib.sha256(raw.replace(b"\r\n", b"\n")).hexdigest()
+
+
 @dataclass(frozen=True)
 class Migration:
     version: str
@@ -86,7 +97,7 @@ class Migration:
 
     @property
     def checksum(self) -> str:
-        return hashlib.sha256(self.path.read_bytes()).hexdigest()
+        return checksum_of(self.path.read_bytes())
 
 
 async def missing_baseline_markers(conn: asyncpg.Connection) -> list[str]:

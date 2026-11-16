@@ -37,6 +37,24 @@ public sealed class PostgresFixture : IAsyncLifetime
         await Container.DisposeAsync();
     }
 
+    // Same rule as scripts/migrate.py::checksum_of: CRLF folded to LF before hashing, so a Windows
+    // checkout and a Linux one record the same checksum.
+    private static byte[] LfNormalised(byte[] raw)
+    {
+        var result = new List<byte>(raw.Length);
+        for (var i = 0; i < raw.Length; i++)
+        {
+            if (raw[i] == (byte)'\r' && i + 1 < raw.Length && raw[i + 1] == (byte)'\n')
+            {
+                continue;
+            }
+
+            result.Add(raw[i]);
+        }
+
+        return result.ToArray();
+    }
+
     private async Task ApplySchemaAsync()
     {
         // Walk up to the repo root to find docker/postgres/init.sql. Keeps the schema single-sourced.
@@ -83,7 +101,7 @@ public sealed class PostgresFixture : IAsyncLifetime
             await using var record = new Npgsql.NpgsqlCommand(
                 "INSERT INTO schema_migrations (version, checksum) VALUES (@v, @c)", conn);
             record.Parameters.AddWithValue("v", version);
-            record.Parameters.AddWithValue("c", Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant());
+            record.Parameters.AddWithValue("c", Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(LfNormalised(bytes))).ToLowerInvariant());
             await record.ExecuteNonQueryAsync();
         }
     }

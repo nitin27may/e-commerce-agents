@@ -185,3 +185,32 @@ async def test_the_baseline_markers_are_all_declared_in_init_sql() -> None:
         assert f"CREATE TABLE IF NOT EXISTS {table} " in init or f"CREATE TABLE {table} " in init, table
         if column:
             assert column in init, f"{table}.{column}"
+
+
+def test_lf_and_crlf_copies_of_a_migration_have_the_same_checksum(tmp_path: Path) -> None:
+    lf = tmp_path / "0099_x.sql"
+    crlf = tmp_path / "0098_x.sql"
+    body = "-- comment\nCREATE TABLE t (id int);\n\nSELECT 1;\n"
+    lf.write_bytes(body.encode())
+    crlf.write_bytes(body.replace("\n", "\r\n").encode())
+
+    assert migrate_mod.Migration("a", lf).checksum == migrate_mod.Migration("b", crlf).checksum
+
+
+def test_recorded_checksums_over_lf_files_are_unchanged_by_the_normalisation() -> None:
+    import hashlib
+
+    for m in migrate_mod.discover(POSTGRES_DIR):
+        raw = m.path.read_bytes()
+        assert b"\r" not in raw, f"{m.path.name} must be LF"
+        assert m.checksum == hashlib.sha256(raw).hexdigest()
+
+
+async def test_a_volume_applied_from_lf_verifies_from_a_crlf_checkout(fresh_url: str, schema_dir: Path) -> None:
+    await migrate_mod.migrate(fresh_url, schema_dir)
+    for path in (schema_dir / "migrations").glob("*.sql"):
+        path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+    init = schema_dir / "init.sql"
+    init.write_bytes(init.read_bytes().replace(b"\n", b"\r\n"))
+
+    assert await migrate_mod.migrate(fresh_url, schema_dir) == []
