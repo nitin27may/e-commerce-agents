@@ -316,6 +316,46 @@ async def test_text_survives_every_hop_even_the_awkward_characters() -> None:
     assert "".join(p.text for p in task.artifacts[0].parts) == awkward
 
 
+# ─────────────────────── the activation echo: A2A-Extensions on the response ───────────────────────
+
+
+async def _rpc_headers(method: str, extensions: list[str] | None) -> httpx.Headers:
+    app, _ = build_app()
+    headers = {**caller_headers(), "A2A-Version": "1.0"}
+    if extensions is not None:
+        headers["A2A-Extensions"] = ", ".join(extensions)
+    body = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": method,
+        "params": {"message": {"messageId": "m1", "role": "ROLE_USER", "parts": [{"text": "hi"}]}},
+    }
+    async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://specialist") as http:
+        resp = await http.post("/a2a/v1", json=body, headers=headers)
+    assert resp.status_code == 200
+    return resp.headers
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["SendMessage", "SendStreamingMessage"])
+async def test_the_response_echoes_only_the_extensions_the_caller_listed_and_the_server_supports(method: str) -> None:
+    headers = await _rpc_headers(
+        method, [USAGE_EXTENSION_URI, "https://example.com/unknown/v1", STEPS_EXTENSION_URI, USAGE_EXTENSION_URI]
+    )
+
+    # Each once, unknown ones dropped, in the server's declared order; the format the .NET server writes.
+    assert headers["A2A-Extensions"] == f"{STEPS_EXTENSION_URI}, {USAGE_EXTENSION_URI}"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["SendMessage", "SendStreamingMessage"])
+@pytest.mark.parametrize("listed", [None, [], ["https://example.com/unknown/v1"]])
+async def test_no_echo_when_nothing_listed_is_supported(method: str, listed: list[str] | None) -> None:
+    headers = await _rpc_headers(method, listed)
+
+    assert "A2A-Extensions" not in headers
+
+
 # ─────────────────────── the model sees what the legacy route showed it ───────────────────────
 
 

@@ -75,8 +75,22 @@ def miss_payload() -> dict[str, str]:
     return {"message": miss_message()}
 
 
+def replay_mode_active() -> bool:
+    """Whether THIS process's own model provider is ``replay``.
+
+    The one gate every miss signal passes through. A 424 or a ``replay_miss`` frame means "no recording" only
+    to a process that is itself replaying: elsewhere a proxy's 424, or a misconfigured or hostile specialist,
+    would make a production orchestrator delete the user's message, drop the answer and show the demo text.
+    Outside replay mode those signals are an ordinary specialist failure.
+    """
+    from shared.config import settings
+
+    return settings.LLM_PROVIDER == "replay"
+
+
 def is_replay_miss_status(status_code: int) -> bool:
-    return status_code == REPLAY_MISS_STATUS
+    """True for a miss signalled by HTTP status -- only when this process is replaying (:func:`replay_mode_active`)."""
+    return status_code == REPLAY_MISS_STATUS and replay_mode_active()
 
 
 _MISS_ERROR_TYPES = frozenset({ReplayFixtureMissingError.__name__, SpecialistReplayMissError.__name__})
@@ -88,7 +102,10 @@ def is_replay_miss_event(payload: Any) -> bool:
     A MAF workflow reports a failed executor as an event (whose message names the
     fixture hash) before it re-raises; the chat route uses this to keep that text
     off the wire and let the raised miss become the one frame the user sees.
+    Never true outside replay mode.
     """
+    if not replay_mode_active():
+        return False
     data = payload.get("data") if isinstance(payload, dict) else None
     return isinstance(data, dict) and data.get("error_type") in _MISS_ERROR_TYPES
 
@@ -142,8 +159,6 @@ def replay_miss_middleware() -> list[Any]:
 
     Returning ``[]`` for every other provider is what keeps this change from touching them.
     """
-    from shared.config import settings
-
-    if settings.LLM_PROVIDER != "replay":
+    if not replay_mode_active():
         return []
     return [_SpecialistMissFunctionMiddleware()]

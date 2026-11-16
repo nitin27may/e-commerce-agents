@@ -10,6 +10,7 @@ import {
   Bot,
   CheckCircle,
   Activity,
+  Lightbulb,
   type LucideIcon,
 } from "lucide-react";
 
@@ -50,6 +51,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Profile", href: "/profile", icon: User },
       { label: "Seller", href: "/seller", icon: BarChart3, sellerOnly: true },
+      { label: "Proposals", href: "/seller/proposals", icon: Lightbulb, sellerOnly: true },
     ],
   },
   {

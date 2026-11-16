@@ -36,6 +36,8 @@ LIMITS = MerchantLimits(
     max_change_pct_per_day=D("10"),
     block_during_active_promotion=True,
     max_lines_per_batch=25,
+    max_restock_quantity=5000,
+    max_restock_order_value=D("50000"),
 )
 
 
@@ -96,6 +98,11 @@ def test_reason_codes_are_fixed() -> None:
         "active_promotion",
         "invalid_quantity",
         "batch_too_large",
+        "restock_quantity_exceeded",
+        "restock_value_exceeded",
+        "edit_beyond_proposal",
+        "price_moved",
+        "restock_already_scheduled",
     }
 
 
@@ -122,7 +129,7 @@ def test_a_price_below_cost_is_blocked_on_margin() -> None:
 
 
 def test_the_floor_follows_the_limits_given() -> None:
-    strict = MerchantLimits("t", D("50"), D("10"), True, 25)
+    strict = MerchantLimits("t", D("50"), D("10"), True, 25, 5000, D("50000"))
     assert _price("100.00", cost="50.00", limits=strict).ok
     assert _price("100.00", cost="50.01", limits=strict).reasons == (ReasonCode.MARGIN_BELOW_FLOOR,)
 
@@ -197,7 +204,7 @@ def test_a_switched_off_promotion_does_not_count_even_inside_its_dates() -> None
 
 
 def test_the_promotion_rule_can_be_turned_off() -> None:
-    relaxed = MerchantLimits("t", D("15"), D("10"), False, 25)
+    relaxed = MerchantLimits("t", D("15"), D("10"), False, 25, 5000, D("50000"))
     promo = _promo(starts=-timedelta(days=1), ends=timedelta(days=1))
     assert _price("95.00", promotions=(promo,), limits=relaxed).ok
 
@@ -304,6 +311,8 @@ _VALID = {
     "max_change_pct_per_day": 10,
     "block_during_active_promotion": True,
     "max_lines_per_batch": 25,
+    "max_restock_quantity": 5000,
+    "max_restock_order_value": 50000,
 }
 
 
@@ -314,6 +323,8 @@ def test_the_shipped_limits_file_loads_and_is_cached() -> None:
     assert limits.max_change_pct_per_day == D("10")
     assert limits.block_during_active_promotion is True
     assert limits.max_lines_per_batch == 25
+    assert limits.max_restock_quantity == 5000
+    assert limits.max_restock_order_value == D("50000")
     assert get_limits() is get_limits()
     assert LIMITS_PATH.name == "merchant_limits.yaml"
 
@@ -335,6 +346,13 @@ def test_a_valid_document_parses() -> None:
         {"max_change_pct_per_day": float("nan")},
         {"block_during_active_promotion": "yes"},
         {"block_during_active_promotion": 1},
+        {"max_restock_quantity": 0},
+        {"max_restock_quantity": 2_147_483_648},
+        {"max_restock_quantity": 1.5},
+        {"max_restock_quantity": True},
+        {"max_restock_order_value": 0},
+        {"max_restock_order_value": 10_000_000_000},
+        {"max_restock_order_value": "lots"},
         {"max_lines_per_batch": 0},
         {"max_lines_per_batch": 2.5},
         {"max_lines_per_batch": True},

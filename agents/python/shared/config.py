@@ -327,6 +327,15 @@ class Settings(BaseSettings):
     # The reminder fires this fraction of an approval's sla_hours after it enters review.
     APPROVAL_REMINDER_FRACTION: float = 0.5
 
+    # ── Merchant proposals (#93) ─────────────────────────────────────
+    # A self-rescheduling daily run through the outbox worker that generates proposals for every seller. Off by
+    # default. The generation itself is deterministic and spends no model money today; the flag stays off so the
+    # worker never writes seller-facing data nobody asked for, and so the keyed merchant-ops agent (M-2) can be
+    # put behind the same switch later without changing what "off" means.
+    MERCHANT_OPS_SCHEDULE_ENABLED: bool = False
+    # UTC hour (0-23) of the daily run.
+    MERCHANT_OPS_RUN_HOUR_UTC: int = 6
+
     # ── MCP integration (optional, flag-gated) ──────────────────────
     # When enabled, specialist agents connect to MCP servers for their data
     # layer instead of calling asyncpg directly. MCP servers must be running

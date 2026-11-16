@@ -92,8 +92,20 @@ Declared in `capabilities.extensions`, all optional. Metadata for one is only se
 The Python SDK merges a status update's metadata into `Task.metadata` (last write wins per key), which is why the terminal
 update repeats the steps: a blocking response then carries every step. **The .NET SDK does not merge it**, so the .NET
 specialist's task store (`OwnedBoundedTaskStore`) republishes the extension metadata into the stored task, and a
-blocking `SendMessage` returns the same `Task.metadata` on either stack. The .NET server also echoes the activated
-extensions in an `A2A-Extensions` response header (the SDK's own negotiation); the Python server does not yet.
+blocking `SendMessage` returns the same `Task.metadata` on either stack. Both servers echo the activated extensions in an
+`A2A-Extensions` response header (comma and space separated; the .NET SDK does it itself, the Python SDK does not, so
+`_SafeJsonRpcDispatcher` adds it): only URIs the caller listed **and** the server supports, on blocking and streaming
+responses, and no header when there are none. The order is the server's declared one on Python; the .NET SDK fixes
+none, so tests compare the set.
+
+**The legacy wire spells a step per stack.** A Python specialist writes `tool_name` / `duration_ms` (one
+`event: step` frame per step); a .NET specialist's `AgentHost` writes the framework's defaults: camelCase in a blocking
+`/message:send` body (`toolName`, `durationMs`, a null `agent`) and PascalCase in `/message:stream`'s `event: steps`
+frame, which carries a *list*. Each orchestrator's legacy reader accepts both: `TolerantStepConverter` on .NET and
+`shared/legacy_wire.py` on Python (names compared ignoring case and underscores; a missing agent is filled with the
+specialist's name; the plural frame is split into live `step` frames). Before this, the Python orchestrator dropped a .NET
+specialist's blocking steps and read its `steps` frame as answer text. A specialist's steps are bounded on both stacks: a step keeps only its six canonical keys (Python also a bounded `provenance`), one frame or body contributes at most 50 steps and a turn collects at most 200 (`legacy_wire.MAX_STEPS_PER_*`, `A2AClient.MaxStepsPer*`). Usage needs no tolerance: both stacks name its
+fields explicitly. `scripts/a2a-interop.sh` checks it against a real .NET specialist.
 
 **Numbers on the wire.** A protobuf `Struct` (Python's metadata) writes every number as a float, so a .NET reader sees
 `5.0`, `0.0`. The .NET wire readers accept whole-valued floats; a reader that wants an integer silently dropped a
@@ -255,5 +267,17 @@ A2A_TRANSPORT=a2a scripts/replay-evals.sh --setup
 
 `input-required` for approvals, push notifications, the HTTP+JSON and gRPC bindings, the 0.3 compatibility shim in
 Python, asymmetric signing of the identity token, a golden-file contract test shared by both stacks (the live
-cross-process check replaced it), and a replay-miss path in the .NET orchestrator's chat route (the .NET stack has no
-`replay_miss` UX; the wire carries the marker and the client recognises it, the chat route does not act on it).
+cross-process check replaced it).
+
+## Replay misses
+
+**Only a replaying process acts on a miss.** Every orchestrator-side check (the 424 status, the `replay_miss` frame, the `replay-miss/v1` metadata, a workflow's miss event, the tool's catch, the chat route's discard) is gated on that orchestrator's own `LLM_PROVIDER` being `replay` (`shared.replay_miss.replay_mode_active`, `ReplayMiss.IsActive`). Elsewhere a 424 or a miss frame is an ordinary specialist failure (the "returned an error" sentence, or an interrupted stream) and the user's message is kept. The specialist side still emits the signals (they only arise under replay).
+
+Under `LLM_PROVIDER=replay` a prompt with no recording is a *miss*, on both stacks. A specialist reports it as HTTP 424
+`{"error":"replay_miss"}` (legacy `/message:send`), an `event: replay_miss` frame then `[DONE]` (legacy
+`/message:stream`), or a failed task with `replay-miss/v1` metadata (A2A 1.0). Each orchestrator's client raises it
+(`SpecialistReplayMissError` / `SpecialistReplayMissException`) rather than returning an apology the model would
+answer, the tool loop ends without another model call, and the chat route answers `replay_miss: {message}` on
+`/api/chat` or an `event: replay_miss` frame, `metadata` and `done` on the stream, saves no assistant message, logs no
+usage and deletes the unanswered user message. Both stacks do all of this; the .NET specialists' legacy routes emit the
+424 / frame too (they used to answer 500).

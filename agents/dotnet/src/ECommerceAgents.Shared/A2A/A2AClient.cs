@@ -346,6 +346,22 @@ public sealed class A2AClient
             dataLines.Clear();
             currentEvent = null;
 
+            if (eventType == ReplayMiss.EventName)
+            {
+                if (!ReplayMiss.IsActive(_settings))
+                {
+                    // Not replaying: nobody here can have asked for a recording, so the frame is a stranger's. An
+                    // ordinary interrupted stream, never a miss and never text shown as if the specialist had said it.
+                    _logger.LogWarning("a2a.replay_miss_ignored target={Target}", LogSafe.Clean(agentName));
+                    yield return $"[The {agentName} agent's response was interrupted and may be incomplete.]";
+                    yield break;
+                }
+
+                // The specialist has no recording for its model call (the 200 was already sent). The chat route
+                // reports it as a miss; the frame's body is never read.
+                _logger.LogWarning("a2a.replay_miss target={Target}", LogSafe.Clean(agentName));
+                throw new SpecialistReplayMissException();
+            }
             if (eventType == "steps")
             {
                 // Issue #16: the specialist's own captured timeline steps,
@@ -406,6 +422,13 @@ public sealed class A2AClient
 
         MergeReturnedSteps(agentName, reply.Steps.Select(s => s.ToExecutionStep()).ToList());
         RequestContext.RecordUsage(agentName, reply.Usage);
+        if (reply.ReplayMiss && ReplayMiss.IsActive(_settings))
+        {
+            // Not an A2A failure to apologise for: the chat route ends the turn as a miss (ReplayMiss.cs).
+            _logger.LogWarning("a2a.replay_miss target={Target}", LogSafe.Clean(agentName));
+            throw new SpecialistReplayMissException();
+        }
+
         if (!reply.Ok)
         {
             _logger.LogError(
@@ -480,6 +503,9 @@ public sealed class A2AClient
                     case A2AEvent.UsageKind:
                         RequestContext.RecordUsage(agentName, next.Usage);
                         break;
+                    case A2AEvent.Failed when next.ReplayMiss && ReplayMiss.IsActive(_settings):
+                        _logger.LogWarning("a2a.replay_miss target={Target}", LogSafe.Clean(agentName));
+                        throw new SpecialistReplayMissException();
                     case A2AEvent.Failed:
                         _logger.LogError("a2a.task_failed target={Target} state={State}", LogSafe.Clean(agentName), LogSafe.Clean(next.State));
                         break;
@@ -531,6 +557,12 @@ public sealed class A2AClient
         yield return await SendOverA2AAsync(agentName, baseUrl, message, ct);
     }
 
+    /// <summary>Most steps one frame or body may contribute, and most a whole turn collects from specialists (Python: <c>legacy_wire.MAX_STEPS_PER_*</c>).</summary>
+    public const int MaxStepsPerFrame = 50;
+
+    /// <inheritdoc cref="MaxStepsPerFrame"/>
+    public const int MaxStepsPerTurn = 200;
+
     private static void MergeReturnedSteps(string agentName, IReadOnlyList<ExecutionStep>? steps)
     {
         if (steps is null)
@@ -540,8 +572,15 @@ public sealed class A2AClient
 
         var writer = RequestContext.CurrentStreamWriter;
 
-        foreach (var step in steps)
+        // A specialist is not trusted to flood the timeline: the rest of an oversized frame, and anything past the turn's
+        // cap, is dropped. (A step carries only the six fields of ExecutionStep, so there is no openness in its keys.)
+        foreach (var step in steps.Take(MaxStepsPerFrame))
         {
+            if (RequestContext.CurrentSteps.Count >= MaxStepsPerTurn)
+            {
+                break;
+            }
+
             var tagged = step with { Agent = agentName };
             RequestContext.RecordStep(tagged);
 
@@ -609,6 +648,12 @@ public sealed class A2AClient
                 ct
             );
 
+            if ((int)response.StatusCode == ReplayMiss.Status && ReplayMiss.IsActive(_settings))
+            {
+                response.Dispose();
+                throw new SpecialistReplayMissException();
+            }
+
             if (!response.IsSuccessStatusCode)
             {
                 var status = (int)response.StatusCode;
@@ -618,6 +663,12 @@ public sealed class A2AClient
             }
 
             return (response, null);
+        }
+        catch (SpecialistReplayMissException)
+        {
+            // Not a failure to apologise for; the chat route ends the turn as a miss (ReplayMiss.cs).
+            _logger.LogWarning("a2a.replay_miss target={Target}", LogSafe.Clean(agentName));
+            throw;
         }
         catch (BrokenCircuitException)
         {

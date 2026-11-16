@@ -178,6 +178,7 @@ async def test_a_replay_miss_ends_the_turn_as_a_miss_not_as_text(
 ) -> None:
     app, _ = build_app("miss")
     _bind(monkeypatch, ASGITransport(app=app), transport_mode="a2a", streaming=streaming)
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "replay", raising=False)  # only a replaying caller honours a miss
 
     with pytest.raises(SpecialistReplayMissError):
         await call_specialist_agent(agent_name="product-discovery", message="hi")
@@ -284,6 +285,7 @@ async def test_the_handoff_participant_raises_on_a_replay_miss_and_a_failed_task
 ) -> None:
     miss_app, _ = build_app("miss")
     _bind(monkeypatch, ASGITransport(app=miss_app), transport_mode="a2a", streaming=False)
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "replay", raising=False)  # only a replaying caller honours a miss
     client = remote_mod.RemoteSpecialistChatClient(name="product-discovery", url="http://pd:8081")
     with pytest.raises(SpecialistReplayMissError):
         await client._post("hi")

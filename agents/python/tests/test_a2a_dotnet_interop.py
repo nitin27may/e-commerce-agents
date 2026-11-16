@@ -243,7 +243,10 @@ async def test_a_dotnet_agent_error_is_a_failed_task_without_the_error_text() ->
 
 
 @pytest.mark.skipif(not URL_MISS, reason="set DOTNET_SPECIALIST_URL_MISS")
-async def test_a_dotnet_replay_miss_is_recognised_by_the_python_client() -> None:
+async def test_a_dotnet_replay_miss_is_recognised_by_the_python_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    from shared.config import settings
+
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "replay", raising=False)  # only a replaying caller honours a miss
     with pytest.raises(SpecialistReplayMissError):
         await send_blocking(URL_MISS, "hi", headers=HEADERS)
     with pytest.raises(SpecialistReplayMissError):
@@ -331,3 +334,85 @@ async def test_a_token_mode_dotnet_specialist_refuses_an_expired_token() -> None
 
     cause = root_cause(raised.value)
     assert isinstance(cause, httpx.HTTPStatusError) and cause.response.status_code == 401
+
+
+@pytest.mark.parametrize("method", ["SendMessage", "SendStreamingMessage"])
+async def test_the_dotnet_server_echoes_activated_extensions_in_the_header_the_python_server_writes(
+    method: str,
+) -> None:
+    # The same request the Python conformance test sends the Python server; both must answer the same header value.
+    listed = [USAGE_EXTENSION_URI, "https://example.com/unknown/v1", STEPS_EXTENSION_URI, USAGE_EXTENSION_URI]
+    body = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": method,
+        "params": {"message": {"messageId": "m1", "role": "ROLE_USER", "parts": [{"text": "hi"}]}},
+    }
+    async with httpx.AsyncClient(timeout=30) as http:
+        resp = await http.post(
+            f"{URL}/a2a/v1", json=body, headers={**HEADERS, "A2A-Version": "1.0", "A2A-Extensions": ", ".join(listed)}
+        )
+
+    assert resp.status_code == 200
+    # The SDK fixes no order for the echo; the set and the format are what both servers share.
+    assert set(resp.headers["A2A-Extensions"].split(", ")) == {USAGE_EXTENSION_URI, STEPS_EXTENSION_URI}
+
+
+# ───────────── the legacy wire: the orchestrator's own reader against a .NET specialist ─────────────
+# The .NET host's /message:send and /message:stream spell a step their own way (camelCase, and PascalCase in a
+# plural `event: steps` frame); the Python orchestrator used to drop them, and read the steps frame as answer text.
+
+
+@pytest.fixture
+def _legacy_orchestrator(monkeypatch: pytest.MonkeyPatch):
+    import orchestrator.agent as orch
+    from shared.config import settings
+    from shared.context import current_session_id, current_steps, current_user_email, current_user_role
+
+    monkeypatch.setattr(orch, "AGENT_REGISTRY", {"product-discovery": URL})
+    monkeypatch.setattr(settings, "AGENT_SHARED_SECRET", SECRET, raising=False)
+    monkeypatch.setattr(settings, "A2A_TRANSPORT", "legacy", raising=False)
+    current_user_email.set(USER)
+    current_user_role.set("customer")
+    current_session_id.set(SESSION)
+    current_steps.set([])
+    return orch
+
+
+async def test_the_orchestrators_legacy_blocking_call_keeps_a_dotnet_specialists_steps_and_usage(
+    _legacy_orchestrator,
+) -> None:
+    from shared.context import current_steps, current_stream_queue
+    from shared.run_usage import begin_run_usage
+
+    current_stream_queue.set(None)
+    run_usage = begin_run_usage()
+
+    text = await _legacy_orchestrator.call_specialist_agent(agent_name="product-discovery", message="price?")
+
+    assert text == ANSWER
+    [step] = current_steps.get()
+    assert step["tool_name"] == "lookup" and step["agent"] == "product-discovery"
+    assert run_usage.by_agent["product-discovery"]["input_token_count"] == 5
+
+
+async def test_the_orchestrators_legacy_streaming_call_keeps_a_dotnet_specialists_steps_and_usage(
+    _legacy_orchestrator,
+) -> None:
+    import asyncio
+
+    from shared.context import current_steps, current_stream_queue
+    from shared.run_usage import begin_run_usage
+
+    queue: asyncio.Queue = asyncio.Queue()
+    current_stream_queue.set(queue)
+    run_usage = begin_run_usage()
+
+    text = await _legacy_orchestrator.call_specialist_agent(agent_name="product-discovery", message="price?")
+
+    assert text == ANSWER  # never the steps JSON
+    [step] = current_steps.get()
+    assert step["tool_name"] == "lookup" and step["agent"] == "product-discovery"
+    frames = [queue.get_nowait() for _ in range(queue.qsize())]
+    assert [f[1] for f in frames if f[0] == "frame"] == ["step"]
+    assert run_usage.by_agent["product-discovery"]["output_token_count"] == 2

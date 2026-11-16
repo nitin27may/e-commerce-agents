@@ -303,6 +303,7 @@ async def test_call_specialist_raises_on_a_424_from_the_stream_endpoint(monkeypa
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(REPLAY_MISS_STATUS, json={"error": "replay_miss"})
 
+    _set(monkeypatch, "LLM_PROVIDER", "replay")  # a 424 is only a miss to a replaying process (test_replay_miss_gate)
     monkeypatch.setattr(orch_mod, "AGENT_REGISTRY", {"product-discovery": "http://pd:8081"})
     monkeypatch.setattr(orch_mod, "_A2A_TRANSPORT", httpx.MockTransport(handler))
     _set(monkeypatch, "AGENT_SHARED_SECRET", "test-secret")
@@ -379,7 +380,8 @@ async def test_specialist_host_stream_emits_a_replay_miss_frame(replay_empty: Pa
     _assert_no_leak(json.dumps(events))
 
 
-def test_a_workflow_executor_miss_event_is_recognised() -> None:
+def test_a_workflow_executor_miss_event_is_recognised(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set(monkeypatch, "LLM_PROVIDER", "replay")  # a miss is only a miss to a replaying process (test_replay_miss_gate)
     assert is_replay_miss_event({"data": {"error_type": ReplayFixtureMissingError.__name__, "message": "x"}})
     assert is_replay_miss_event({"data": {"error_type": SpecialistReplayMissError.__name__}})
     assert not is_replay_miss_event({"data": {"error_type": "ValueError"}})

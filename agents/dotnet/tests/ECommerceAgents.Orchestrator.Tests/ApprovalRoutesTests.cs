@@ -690,6 +690,79 @@ public sealed class ApprovalRoutesTests : IAsyncLifetime
         mode.Calls.Should().Be(1, "the refund side effect must run exactly once");
     }
 
+    // ───────────────────────────── a merchant proposal is not the staff inbox's to decide ─────────────────────────────
+
+    /// <summary>The approval Python's merchant-proposal generator opens: system requester, the seller as subject, in review.</summary>
+    private async Task<Approval> SeedProposalApprovalAsync() =>
+        await _repo.CreateAsync(new NewApproval(
+            Source: "proposal", Kind: "merchant_proposal", RequesterEmail: "merchant-ops@system", SourceRef: Guid.NewGuid(),
+            SubjectEmail: "seller@example.com", Status: S.PendingReview, ActorEmail: "merchant-ops@system", ActorRole: "system"));
+
+    [Theory]
+    [InlineData("approve", "admin")]
+    [InlineData("reject", "admin")]
+    [InlineData("request_info", "admin")]
+    [InlineData("approve", "support")]
+    [InlineData("reject", "support")]
+    [InlineData("request_info", "support")]
+    public async Task StaffCannotDecideAProposalApproval_WithAnyDecision_AndNothingChanges(string decision, string role)
+    {
+        var approval = await SeedProposalApprovalAsync();
+        using var client = ClientFor($"{role}-reviewer@example.com", role);
+
+        var response = await DecideAsync(client, approval.Id, new { decision, note = "why?" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        (await StatusAsync(approval.Id)).Should().Be("pending_review");
+        (await _repo.ListEventsAsync(approval.Id)).Select(e => e.Action).Should().Equal("created");
+        (await _repo.GetAsync(approval.Id))!.ClaimedBy.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task TheAnswerInfoRoute_CannotTouchAProposal()
+    {
+        var approval = await SeedProposalApprovalAsync();
+
+        foreach (var email in new[] { "seller@example.com", "merchant-ops@system", Admin })
+        {
+            using var client = ClientFor(email, email == Admin ? "admin" : "seller");
+            var response = await client.PostAsJsonAsync($"/api/approvals/{approval.Id}/info", new { message = "here" });
+            response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity, email);
+        }
+        (await StatusAsync(approval.Id)).Should().Be("pending_review");
+    }
+
+    [Fact]
+    public async Task TheStaffList_AndTheStaffDetail_LeaveAProposalOut()
+    {
+        var approval = await SeedProposalApprovalAsync();
+        var tool = (await SeedToolApprovalAsync("cancel_order", new { order_id = _orderId.ToString() })).Approval;
+        using var admin = AdminClient();
+
+        var listing = await JsonOf(await admin.GetAsync("/api/approvals?status=all"));
+        var detail = await admin.GetAsync($"/api/approvals/{approval.Id}");
+
+        listing.GetProperty("approvals").EnumerateArray().Select(a => a.GetProperty("id").GetString())
+            .Should().Equal(tool.Id.ToString());
+        detail.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await JsonOf(detail)).GetProperty("detail").GetString().Should().Be("Approval not found");
+    }
+
+    [Fact]
+    public async Task TheLegacyResumeAndAdminRoutes_CannotReachAProposal()
+    {
+        var approval = await SeedProposalApprovalAsync();
+        using var admin = AdminClient();
+
+        foreach (var id in new[] { approval.Id, approval.SourceRef!.Value })
+        {
+            (await admin.PostAsJsonAsync($"/api/orchestration/{id}/resume", new { approved = true })).StatusCode.Should().Be(HttpStatusCode.NotFound);
+            (await admin.PostAsJsonAsync($"/api/admin/hitl/requests/{id}/approve", new { })).StatusCode.Should().Be(HttpStatusCode.NotFound);
+            (await admin.PostAsJsonAsync($"/api/admin/hitl/requests/{id}/deny", new { })).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+        (await StatusAsync(approval.Id)).Should().Be("pending_review");
+    }
+
     // ───────────────────────────── request more information ─────────────────────────────
 
     [Fact]

@@ -569,6 +569,20 @@ async def _escaped_events(events: AsyncIterator[Any]) -> AsyncIterator[Any]:
             await aclose()
 
 
+EXTENSIONS_HEADER = "A2A-Extensions"
+
+
+def activated_extensions(header_values: list[str]) -> list[str]:
+    """The extension URIs a caller listed in ``A2A-Extensions`` that this server supports.
+
+    The header may repeat and hold comma-separated values. Unknown URIs are not echoed (the .NET server's rule too). The
+    result is in the server's declared order (the card's), whatever order the caller listed them in: the spec gives the
+    echo no order, and the .NET SDK does not keep the caller's either.
+    """
+    listed = {part.strip() for value in header_values for part in value.split(",")}
+    return [uri for uri in ALL_EXTENSION_URIS if uri in listed]
+
+
 class _SafeJsonRpcDispatcher(JsonRpcDispatcher):
     """The SDK's JSON-RPC dispatcher with line-separator escaping on its SSE responses."""
 
@@ -576,6 +590,11 @@ class _SafeJsonRpcDispatcher(JsonRpcDispatcher):
         response = await super().handle_requests(request)
         if isinstance(response, EventSourceResponse):
             response.body_iterator = _escaped_events(response.body_iterator)
+        activated = activated_extensions(request.headers.getlist(EXTENSIONS_HEADER))
+        if activated:
+            # The spec's activation echo (the SDK server does not send it): the extensions the caller listed that this
+            # server supports, on a blocking and a streaming response alike. The headers go out before the body.
+            response.headers[EXTENSIONS_HEADER] = ", ".join(activated)
         return response
 
 

@@ -149,6 +149,13 @@ public static class AgentHost
                 return Results.Ok(new AgentResponse(
                     reply, RequestContext.CurrentSteps.ToList(), RequestContext.CurrentRunUsage.Total()));
             }
+            catch (Exception ex) when (ReplayMiss.IsMiss(ex))
+            {
+                // No recording for this request (LLM_PROVIDER=replay). Not a 500: the caller must be able to tell it
+                // from a failure, and nothing about the missed request goes on the wire or in the log.
+                logger.LogWarning("agent.replay_miss service={Service}", name);
+                return Results.Json(ReplayMiss.WireBody, statusCode: ReplayMiss.Status);
+            }
             catch (Exception ex)
             {
                 logger.LogException(ex, "agent.handler_failure service={Service}", name);
@@ -239,6 +246,15 @@ public static class AgentHost
                     await http.Response.WriteAsync(
                         $"event: usage\ndata: {usageFrame.ToWireJson()}\n\n", Encoding.UTF8);
                 }
+                await http.Response.WriteAsync("data: [DONE]\n\n", Encoding.UTF8);
+                await http.Response.Body.FlushAsync();
+            }
+            catch (Exception ex) when (ReplayMiss.IsMiss(ex))
+            {
+                // The 200 is already sent: a named frame, then [DONE], as the Python specialist does.
+                logger.LogWarning("agent.replay_miss service={Service}", name);
+                await http.Response.WriteAsync(
+                    $"event: {ReplayMiss.EventName}\ndata: {JsonSerializer.Serialize(ReplayMiss.WireBody)}\n\n", Encoding.UTF8);
                 await http.Response.WriteAsync("data: [DONE]\n\n", Encoding.UTF8);
                 await http.Response.Body.FlushAsync();
             }

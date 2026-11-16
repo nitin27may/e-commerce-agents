@@ -95,6 +95,16 @@ def _same_person(a: str | None, b: str | None) -> bool:
 # ─────────────────────────── authorisation ───────────────────────────
 
 
+def refuse_proposal(approval: dict[str, Any]) -> None:
+    """A merchant proposal is decided by its seller on ``/api/seller/proposals/{id}/decide``, never here.
+
+    Approve and reject would have no executor on this path, and ``request_info`` would park the batch in
+    ``needs_info`` where nobody can answer it (its requester is the system actor). 422 for every decision.
+    """
+    if approval["source"] == "proposal":
+        raise ApprovalHTTPError(422, "A merchant proposal is decided by its seller, not through the approvals inbox")
+
+
 def can_review(approval: dict[str, Any], actor: Actor) -> bool:
     """Whether ``actor`` may see/act on this approval's queue: staff, at or above the assigned role."""
     needed = approval.get("assigned_role") or "admin"
@@ -190,6 +200,7 @@ async def decide(
     Returns ``{"approval": <serialised row>, "result": <what executing it produced>}``.
     """
     approval = await load(approval_id)
+    refuse_proposal(approval)  # before anything else: not even a 403 hints at a decision path that does not exist
     authorize_decider(approval, actor)
     note = (note or "").strip()[:MAX_NOTE_LENGTH] or None
     edits = edits or {}
@@ -337,6 +348,7 @@ async def _unpark_workflow(approval: dict[str, Any]) -> None:
 async def provide_info(approval_id: str, actor: Actor, message: str) -> dict[str, Any]:
     """The requester's answer: ``needs_info`` -> ``pending_review``. Only the requester may answer."""
     approval = await load(approval_id)
+    refuse_proposal(approval)
     if not _same_person(actor.email, approval["requester_email"]):
         raise ApprovalHTTPError(403, "Only the requester can answer")
     message = (message or "").strip()

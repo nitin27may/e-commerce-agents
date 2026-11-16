@@ -28,10 +28,16 @@ from shared.context import (
 from shared.context_providers import ECommerceContextProvider
 from shared.factory import parse_agent_registry
 from shared.http_resilience import ResilientAsyncTransport
+from shared.legacy_wire import admit_steps, normalize_steps
 from shared.log_safe import log_safe
 from shared.middleware import build_specialist_middleware
 from shared.oauth.service_client import build_a2a_headers
-from shared.replay_miss import REPLAY_MISS_EVENT, SpecialistReplayMissError, is_replay_miss_status
+from shared.replay_miss import (
+    REPLAY_MISS_EVENT,
+    SpecialistReplayMissError,
+    is_replay_miss_status,
+    replay_mode_active,
+)
 from shared.run_usage import record_usage
 from shared.sse import aiter_sse_events
 from shared.telemetry import a2a_call_span
@@ -124,6 +130,8 @@ async def call_specialist_agent(
             # and the browser may have seen steps and text, so a failure must
             # not be retried against /message:send: that would run it again.
             frames_seen = 0
+            # Steps taken from this stream so far: the per-turn cap's count when there is no bucket to count in.
+            steps_forwarded = 0
             # True once the specialist accepted the stream (2xx). From then on the
             # agent may be running, so nothing here may fall back to /message:send.
             stream_opened = False
@@ -142,12 +150,16 @@ async def call_specialist_agent(
                         async for current_event, payload in aiter_sse_events(resp.aiter_text()):
                             frames_seen += 1
                             if current_event == REPLAY_MISS_EVENT:
-                                # The specialist has no recording for its model call.
-                                raise SpecialistReplayMissError()
-                            if current_event == "step":
-                                # Merge specialist tool-call step into the
+                                if replay_mode_active():
+                                    # The specialist has no recording for its model call.
+                                    raise SpecialistReplayMissError()
+                                # Not replaying: a frame nobody here can have asked for. An ordinary failure of the
+                                # stream (the specialist is a stranger), never text for the user and never a miss.
+                                raise RuntimeError("a specialist sent a replay_miss frame outside replay mode")
+                            if current_event in ("step", "steps"):
+                                # Merge specialist tool-call step(s) into the
                                 # shared current_steps for this request, and
-                                # forward it to the browser now rather than
+                                # forward each to the browser now rather than
                                 # letting the post-stream drain report it.
                                 #
                                 # The specialist emits these as each tool
@@ -156,9 +168,19 @@ async def call_specialist_agent(
                                 # the whole timeline appear at once, after the
                                 # answer had finished writing, which is exactly
                                 # when it is least useful.
+                                #
+                                # A Python specialist sends one `step` frame per
+                                # step; a .NET one sends `steps` frames carrying
+                                # a list, spelled its own way (shared/legacy_wire.py).
                                 try:
-                                    step_data = json.loads(payload)
-                                    bucket = current_steps.get()
+                                    wire_steps = normalize_steps(json.loads(payload), agent_name)
+                                except (json.JSONDecodeError, ValueError):
+                                    continue
+                                bucket = current_steps.get()
+                                admitted_here = len(bucket) if bucket is not None else steps_forwarded
+                                wire_steps = admit_steps(bucket, wire_steps, admitted=steps_forwarded)
+                                steps_forwarded = admitted_here + len(wire_steps)
+                                for step_data in wire_steps:
                                     if bucket is not None:
                                         bucket.append(step_data)
                                     # `_live` marks this step as already sent.
@@ -167,8 +189,6 @@ async def call_specialist_agent(
                                     # metadata as a transport detail.
                                     step_data["_live"] = True
                                     await stream_queue.put(("frame", "step", step_data))
-                                except (json.JSONDecodeError, ValueError):
-                                    pass
                                 continue
                             if current_event == "usage":
                                 # Accounting only: it goes to the turn's
@@ -237,7 +257,7 @@ async def call_specialist_agent(
                 resp.raise_for_status()
                 data = resp.json()
                 bucket = current_steps.get()
-                specialist_steps = data.get("steps") or []
+                specialist_steps = admit_steps(bucket, normalize_steps(data.get("steps") or [], agent_name))
                 if bucket is not None and specialist_steps:
                     bucket.extend(specialist_steps)
                 _record_specialist_usage(agent_name, data.get("usage"))

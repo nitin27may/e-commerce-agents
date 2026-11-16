@@ -56,7 +56,7 @@ from shared.a2a_server import (
     USAGE_EXTENSION_URI,
 )
 from shared.log_safe import log_safe
-from shared.replay_miss import SpecialistReplayMissError
+from shared.replay_miss import SpecialistReplayMissError, replay_mode_active
 
 logger = logging.getLogger(__name__)
 
@@ -309,7 +309,9 @@ def forget_cards() -> None:
 
 
 def _raise_if_miss(metadata: dict[str, Any]) -> None:
-    if REPLAY_MISS_EXTENSION_URI in metadata:
+    """A failed task carrying the replay-miss extension is a miss -- but only to a caller that is itself replaying
+    (``shared.replay_miss.replay_mode_active``); anywhere else it is an ordinary failed task."""
+    if REPLAY_MISS_EXTENSION_URI in metadata and replay_mode_active():
         raise SpecialistReplayMissError()
 
 

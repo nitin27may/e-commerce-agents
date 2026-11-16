@@ -24,6 +24,18 @@ public sealed class RequiresEnvFactAttribute : FactAttribute
     }
 }
 
+/// <summary>Skips a theory unless an environment variable names a running peer.</summary>
+public sealed class RequiresEnvTheoryAttribute : TheoryAttribute
+{
+    public RequiresEnvTheoryAttribute(string variable)
+    {
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(variable)))
+        {
+            Skip = $"set {variable} to a running peer; scripts/a2a-interop.sh starts one";
+        }
+    }
+}
+
 /// <summary>
 /// B-13 interop, .NET client to Python specialist: <see cref="OrchestratorClient"/> with <c>A2A_TRANSPORT=a2a</c>
 /// and the official A2A .NET SDK client, against a real Python specialist (a real process on a real socket, around
@@ -217,6 +229,59 @@ public sealed class A2AInteropTests
 
         reply.State.Should().Be("failed");
         reply.ReplayMiss.Should().BeTrue();
+    }
+
+    [RequiresEnvTheory(UrlVar)]
+    [InlineData("SendMessage")]
+    [InlineData("SendStreamingMessage")]
+    public async Task ThePythonServer_EchoesActivatedExtensions_InTheHeaderTheDotNetServerWrites(string method)
+    {
+        string[] listed = [A2AWire.UsageExtensionUri, "https://example.com/unknown/v1", A2AWire.StepsExtensionUri, A2AWire.UsageExtensionUri];
+        using var http = Caller(extensions: false);
+        using var request = new HttpRequestMessage(HttpMethod.Post, Url(UrlVar) + "/a2a/v1")
+        {
+            Content = new StringContent(
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"" + method + "\",\"params\":{\"message\":{\"messageId\":\"m1\",\"role\":\"ROLE_USER\",\"parts\":[{\"text\":\"hi\"}]}}}",
+                System.Text.Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Add("A2A-Version", "1.0");
+        request.Headers.Add("A2A-Extensions", string.Join(", ", listed));
+
+        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+
+        response.EnsureSuccessStatusCode();
+        // The SDK fixes no order for the echo; the set and the format are what both servers share.
+        string.Join(", ", response.Headers.GetValues("A2A-Extensions")).Split(", ")
+            .Should().BeEquivalentTo([A2AWire.UsageExtensionUri, A2AWire.StepsExtensionUri]);
+    }
+
+    // The orchestrator's own client, on either wire, against a Python specialist whose model has no recording: it raises
+    // the miss (the chat route reports it) instead of returning an apology the orchestrator's model would answer.
+    [RequiresEnvTheory(MissVar)]
+    [InlineData("legacy")]
+    [InlineData("a2a")]
+    public async Task APythonReplayMiss_RaisesFromTheOrchestratorsClient_BlockingAndStreaming(string transport)
+    {
+        A2AProtocolClient.ForgetCards();
+        // A miss is only a miss to a caller that is itself replaying (ReplayMiss.IsActive).
+        var settings = Settings() with { A2aTransport = transport, LlmProvider = "replay" };
+        var client = new OrchestratorClient(
+            new HttpClient(new SocketsHttpHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(30) },
+            settings,
+            new AuthServerClient(new HttpClient(), settings),
+            NullLogger<OrchestratorClient>.Instance);
+        using var scope = Ambient.Scope(User, "customer", Session);
+
+        var blocking = () => client.SendAsync("product-discovery", Url(MissVar), "hi");
+        await blocking.Should().ThrowAsync<ECommerceAgents.Shared.A2A.SpecialistReplayMissException>();
+
+        var streaming = async () =>
+        {
+            await foreach (var _ in client.StreamAsync("product-discovery", Url(MissVar), "hi"))
+            {
+            }
+        };
+        await streaming.Should().ThrowAsync<ECommerceAgents.Shared.A2A.SpecialistReplayMissException>();
     }
 
     // ─────────────────────── B-14: the signed user-context token, minted here and verified by Python ───────────────────────

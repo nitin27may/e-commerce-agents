@@ -306,10 +306,17 @@ public sealed class ApprovalRepository
     public async Task<IReadOnlyList<Approval>> ListForStaffAsync(
         IReadOnlyCollection<string>? statuses = null,
         IReadOnlyCollection<string>? assignedRoles = null,
-        int limit = 50)
+        int limit = 50,
+        IReadOnlyCollection<string>? excludeSources = null)
     {
         var where = new List<string>();
         var args = new DynamicParameters();
+        if (excludeSources is { Count: > 0 })
+        {
+            // Approvals that are decided somewhere other than the staff inbox (a merchant proposal is the seller's).
+            args.Add("excludeSources", excludeSources.ToArray());
+            where.Add("source <> ALL(@excludeSources::text[])");
+        }
         if (statuses is { Count: > 0 })
         {
             args.Add("statuses", statuses.ToArray());

@@ -1,3 +1,4 @@
+using ECommerceAgents.Shared.A2A;
 using ECommerceAgents.Shared.Approvals;
 using ECommerceAgents.Shared.Logging;
 using Dapper;
@@ -82,7 +83,10 @@ public static class ChatRoutes
         string Response,
         string ConversationId,
         List<string> AgentsInvolved,
-        object? Grounding = null
+        object? Grounding = null,
+        // Set instead of an answer when replay mode has no recording for this prompt: the twin of Python's
+        // ChatResponse.replay_miss (#86). Always `{"message": "..."}` when present.
+        Dictionary<string, string>? ReplayMiss = null
     );
 
     public static IEndpointRouteBuilder MapChatRoutes(this IEndpointRouteBuilder routes)
@@ -157,19 +161,34 @@ public static class ChatRoutes
         var sw = Stopwatch.StartNew();
         ModeRunResult? modeResult = null;
         string responseText;
-        if (NeedsRegistry(request.Mode))
+        try
         {
-            modeResult = await registry
-                .Get(request.Mode)
-                .RunAsync(request.Message, new RunContext(ctx.History, ctx.ConversationId));
-            responseText = modeResult.Text;
-            agentsInvolved = modeResult.AgentsInvolved.ToList();
+            if (NeedsRegistry(request.Mode))
+            {
+                modeResult = await registry
+                    .Get(request.Mode)
+                    .RunAsync(request.Message, new RunContext(ctx.History, ctx.ConversationId));
+                responseText = modeResult.Text;
+                agentsInvolved = modeResult.AgentsInvolved.ToList();
+            }
+            else
+            {
+                var response = await agent.RunAsync(BuildMessages(ctx.History));
+                responseText = response.Text;
+                RequestContext.RecordUsage("orchestrator", SpecialistUsage.From(response.Usage, settings.LlmModel));
+                ThrowIfASpecialistMissed(settings);
+            }
         }
-        else
+        catch (Exception ex) when (ReplayMiss.IsMiss(ex, settings))
         {
-            var response = await agent.RunAsync(BuildMessages(ctx.History));
-            responseText = response.Text;
-            RequestContext.RecordUsage("orchestrator", SpecialistUsage.From(response.Usage, settings.LlmModel));
+            // No recording for this prompt (here or in a specialist): a plain message, and nothing is
+            // persisted. Twin of Python's `except ReplayFixtureMissingError` in chat() (#86).
+            loggers.CreateLogger("chat").LogWarning(
+                "chat.replay_miss conversation={Conversation} mode={Mode}",
+                LogSafe.Clean(ctx.ConversationId), LogSafe.Clean(request.Mode ?? ModeRegistry.DefaultMode));
+            await DiscardReplayMissedMessageAsync(pool, ctx, loggers);
+            var miss = ReplayMiss.Payload();
+            return Results.Ok(new ChatResponse(miss["message"], ctx.ConversationId, agentsInvolved, ReplayMiss: miss));
         }
         sw.Stop();
 
@@ -308,59 +327,93 @@ public static class ChatRoutes
         ModeRunResult? modeResult = null;
         var responseText = new StringBuilder();
         List<string>? modeAgents = null;
+        var replayMissed = false;
 
-        if (NeedsRegistry(request.Mode))
+        try
         {
-            // A workflow produces its answer in one piece — its executors send
-            // messages between themselves rather than emitting model deltas —
-            // so there is nothing to stream incrementally. The whole text goes
-            // out as a single frame, which is what Python's workflow modes fall
-            // back to as well. Real per-node progress needs the normalized SSE
-            // event protocol (#33 PR 6).
-            // Forward each node event as its own SSE frame as it happens,
-            // reusing the same writer (and lock) the delta path uses so
-            // framing and ordering stay consistent.
-            //
-            // Reported synchronously rather than through Progress<T>, which
-            // queues each callback to the thread pool: for a graph animation
-            // order is the whole point, and an exit arriving before its enter
-            // leaves a node stuck lit.
-            var sink = new SynchronousProgress<OrchestrationEvent>(evt =>
-                WriteFrameAsync(OrchestrationFrameName(evt), OrchestrationFrameData(evt))
-                    .GetAwaiter()
-                    .GetResult());
-
-            modeResult = await registry
-                .Get(request.Mode)
-                .RunAsync(
-                    request.Message,
-                    new RunContext(ctx.History, ctx.ConversationId, sink),
-                    abort
-                );
-
-            responseText.Append(modeResult.Text);
-            modeAgents = modeResult.AgentsInvolved.ToList();
-            await WriteFrameAsync(null, modeResult.Text);
-        }
-        else
-        {
-            await foreach (var update in agent.RunStreamingAsync(BuildMessages(ctx.History), cancellationToken: abort))
+            if (NeedsRegistry(request.Mode))
             {
-                foreach (var content in update.Contents.OfType<UsageContent>())
+                // A workflow produces its answer in one piece — its executors send
+                // messages between themselves rather than emitting model deltas —
+                // so there is nothing to stream incrementally. The whole text goes
+                // out as a single frame, which is what Python's workflow modes fall
+                // back to as well. Real per-node progress needs the normalized SSE
+                // event protocol (#33 PR 6).
+                // Forward each node event as its own SSE frame as it happens,
+                // reusing the same writer (and lock) the delta path uses so
+                // framing and ordering stay consistent.
+                //
+                // Reported synchronously rather than through Progress<T>, which
+                // queues each callback to the thread pool: for a graph animation
+                // order is the whole point, and an exit arriving before its enter
+                // leaves a node stuck lit.
+                var sink = new SynchronousProgress<OrchestrationEvent>(evt =>
+                    WriteFrameAsync(OrchestrationFrameName(evt), OrchestrationFrameData(evt))
+                        .GetAwaiter()
+                        .GetResult());
+
+                modeResult = await registry
+                    .Get(request.Mode)
+                    .RunAsync(
+                        request.Message,
+                        new RunContext(ctx.History, ctx.ConversationId, sink),
+                        abort
+                    );
+
+                responseText.Append(modeResult.Text);
+                modeAgents = modeResult.AgentsInvolved.ToList();
+                await WriteFrameAsync(null, modeResult.Text);
+            }
+            else
+            {
+                await foreach (var update in agent.RunStreamingAsync(BuildMessages(ctx.History), cancellationToken: abort))
                 {
-                    RequestContext.RecordUsage("orchestrator", SpecialistUsage.From(content.Details, settings.LlmModel));
+                    foreach (var content in update.Contents.OfType<UsageContent>())
+                    {
+                        RequestContext.RecordUsage("orchestrator", SpecialistUsage.From(content.Details, settings.LlmModel));
+                    }
+
+                    if (string.IsNullOrEmpty(update.Text))
+                    {
+                        continue;
+                    }
+
+                    responseText.Append(update.Text);
+                    await WriteFrameAsync(null, update.Text);
                 }
 
-                if (string.IsNullOrEmpty(update.Text))
-                {
-                    continue;
-                }
-
-                responseText.Append(update.Text);
-                await WriteFrameAsync(null, update.Text);
+                ThrowIfASpecialistMissed(settings);
             }
         }
+        catch (Exception ex) when (ReplayMiss.IsMiss(ex, settings))
+        {
+            replayMissed = true;
+            loggers.CreateLogger("chat").LogWarning(
+                "chat_stream.replay_miss conversation={Conversation} mode={Mode}",
+                LogSafe.Clean(ctx.ConversationId), LogSafe.Clean(request.Mode ?? ModeRegistry.DefaultMode));
+        }
         sw.Stop();
+
+        if (replayMissed)
+        {
+            // No recording for this prompt: nothing to persist, and the frame says why. The conversation id still
+            // goes out so a brand-new conversation can be continued; the message that was never answered is taken
+            // back out (it would ride along in every later turn's history and change recorded prompts' keys).
+            // Twin of the replay_missed branch in Python's chat_stream (#86).
+            await WriteFrameAsync(ReplayMiss.EventName, JsonSerializer.Serialize(ReplayMiss.Payload()));
+            deltaChannel.Writer.Complete();
+            await forwardDeltasTask;
+            await DiscardReplayMissedMessageAsync(pool, ctx, loggers);
+            var missMetadata = JsonSerializer.Serialize(new
+            {
+                conversation_id = ctx.ConversationId,
+                agents_involved = new[] { "orchestrator" },
+            });
+            await context.Response.WriteAsync($"event: metadata\ndata: {missMetadata}\n\n", Encoding.UTF8);
+            await context.Response.WriteAsync("event: done\ndata: [DONE]\n\n");
+            await context.Response.Body.FlushAsync();
+            return;
+        }
 
         var groundingReport = await VerifyGroundingAsync(responseText.ToString(), settings, pool, loggers);
         if (groundingReport is not null)
@@ -723,7 +776,50 @@ public static class ChatRoutes
         return string.Equals(mode, "observe", StringComparison.OrdinalIgnoreCase) ? null : report;
     }
 
-    private sealed record ConversationContext(bool IsAnon, string ConversationId, Guid? UserId, List<HistoryEntry> History);
+    /// <summary>
+    /// A specialist's replay miss ends the tool loop quietly (see <c>OrchestratorTools</c>) rather than throwing through
+    /// it, so the run looks finished. Turn what it recorded back into the miss the route reports.
+    /// </summary>
+    private static void ThrowIfASpecialistMissed(AgentSettings settings)
+    {
+        if (RequestContext.ReplayMissRecorded && ReplayMiss.IsActive(settings))
+        {
+            throw new SpecialistReplayMissException();
+        }
+    }
+
+    private sealed record ConversationContext(
+        bool IsAnon, string ConversationId, Guid? UserId, List<HistoryEntry> History, Guid? UserMessageId = null);
+
+    /// <summary>
+    /// Takes back the user message of a turn that got no answer because replay had no recording.
+    /// </summary>
+    /// <remarks>
+    /// The message was saved before the run. Left in place it would sit in the conversation unanswered and be carried
+    /// into every later turn's history, changing the replay key of prompts that <em>are</em> recorded. Only the
+    /// replay-miss path calls this: any other outcome keeps the message, as it always did. Twin of Python's
+    /// <c>_discard_replay_missed_message</c>; best effort, never fails the turn.
+    /// </remarks>
+    private static async Task DiscardReplayMissedMessageAsync(DatabasePool pool, ConversationContext ctx, ILoggerFactory loggers)
+    {
+        if (ctx.UserMessageId is not { } messageId || !Guid.TryParse(ctx.ConversationId, out var conversationId))
+        {
+            return;
+        }
+
+        try
+        {
+            await using var conn = await pool.OpenAsync();
+            await conn.ExecuteAsync(
+                "DELETE FROM messages WHERE id = @id AND conversation_id = @cid",
+                new { id = messageId, cid = conversationId });
+        }
+        catch (Exception ex)
+        {
+            loggers.CreateLogger("chat").LogError(
+                ex, "chat.replay_miss_cleanup_failed conversation={Conversation}", LogSafe.Clean(ctx.ConversationId));
+        }
+    }
 
     private static bool IsAnonymousCaller() =>
         string.IsNullOrEmpty(RequestContext.CurrentUserEmail)
@@ -800,8 +896,9 @@ public static class ChatRoutes
             );
         }
 
-        await conn.ExecuteAsync(
-            "INSERT INTO messages (conversation_id, role, content, agent_name) VALUES (@cid, 'user', @content, NULL)",
+        // Its id is kept only so a replay miss can take the message back out.
+        var userMessageId = await conn.ExecuteScalarAsync<Guid>(
+            "INSERT INTO messages (conversation_id, role, content, agent_name) VALUES (@cid, 'user', @content, NULL) RETURNING id",
             new { cid = convId, content = message }
         );
 
@@ -821,7 +918,7 @@ public static class ChatRoutes
             new { cid = convId }
         )).Select(r => new HistoryEntry((string)r.role, (string)r.content)).ToList();
 
-        return (new ConversationContext(false, convId.ToString(), userId, history), null);
+        return (new ConversationContext(false, convId.ToString(), userId, history, userMessageId), null);
     }
 
     /// <summary>

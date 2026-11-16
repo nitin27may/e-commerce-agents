@@ -16,13 +16,23 @@
 #   block_during_active_promotion  refuse price changes to a product covered by a promotion that is
 #                                  active now (promotion_products + promotions.is_active + dates).
 #   max_lines_per_batch            most lines one proposal batch may hold.
+#   max_restock_quantity           most units one restock line may order. PLACEHOLDER: set it to what a
+#                                  single purchase order for your catalogue can reasonably be.
+#   max_restock_order_value        most one restock line may commit, quantity x unit_cost, in the shop's
+#                                  currency. PLACEHOLDER, same note. A restock over either is `blocked`.
+#
+# A reviewer's edit can also never raise a line past what was proposed (not a limit in this file: a rule of
+# the flow, enforced at decide time and again when the line is applied): a restock quantity may be lowered
+# but not raised, and a price edit must stay between the proposed price and the price it started from.
 #
 # Change a number -> bump policy_version (every guard result records the version it was judged by).
 # Loading fails loudly (MerchantLimitsError) on an unknown or missing key or a value out of range.
 
-policy_version: "2026-11-16.1"
+policy_version: "2026-11-16.2"
 
 margin_floor_pct: 15
 max_change_pct_per_day: 10
 block_during_active_promotion: true
 max_lines_per_batch: 25
+max_restock_quantity: 5000
+max_restock_order_value: 50000
