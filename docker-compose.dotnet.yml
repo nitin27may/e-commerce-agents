@@ -69,12 +69,11 @@ services:
     # /dev/tcp is a bash feature: CMD-SHELL runs /bin/sh, so it has to be
     # invoked through bash explicitly. The previous form ran it under sh and
     # reported the dashboard unhealthy forever.
-    healthcheck:
-      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/127.0.0.1/18888' && echo ok || exit 1"]
-      interval: 10s
-      timeout: 3s
-      retries: 10
-      start_period: 20s
+    # No healthcheck, deliberately. The dashboard image ships no shell at all
+    # (`sh`, `bash`, `curl` and `wget` are all absent), so a CMD-SHELL probe can
+    # never run: the old /dev/tcp check reported "unhealthy" on every start.
+    # Nothing may wait on `service_healthy` for this service; use
+    # `service_started`. Verified against aspire-dashboard:13.6.5.
 
   # ── Seeder (reuses the Python script; single source of truth) ──
 

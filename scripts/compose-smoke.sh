@@ -81,7 +81,10 @@ if ! $ATTACH; then
   # Same order as scripts/dev.sh. The seeder (migrate, then seed) must finish before the
   # agents start: the orchestrator's depends_on waits for every specialist's /ready, which
   # needs schema_migrations, so seeding after `up` would deadlock.
-  "${COMPOSE[@]}" up -d --build --wait db redis aspire || { dump_logs; fail "infrastructure did not become healthy"; }
+  # aspire has no healthcheck (its image has no shell to run one), so it is
+  # started without --wait; db and redis are the infrastructure that gates.
+  "${COMPOSE[@]}" up -d aspire || { dump_logs; fail "aspire did not start"; }
+  "${COMPOSE[@]}" up -d --build --wait db redis || { dump_logs; fail "infrastructure did not become healthy"; }
   "${COMPOSE[@]}" --profile seed run --rm --build seeder || { dump_logs; fail "migrate/seed failed"; }
   "${COMPOSE[@]}" --profile agents up -d --build --wait || { dump_logs; fail "agents did not become healthy"; }
 fi
