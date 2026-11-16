@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusBadge, type SemanticTone } from "@/components/ui/status-badge";
 import { formatDateTime, formatPrice } from "@/lib/format";
-import type { ProposalLine, ProposalLineDecision, SellerProposal } from "@/lib/api";
+import type { Decimalish, ProposalLine, ProposalLineDecision, SellerProposal } from "@/lib/api";
 
 type Choice = "accept" | "edit" | "reject";
 
@@ -20,6 +20,11 @@ const REASON_TEXT: Record<string, string> = {
   active_promotion: "Product is in an active promotion",
   invalid_quantity: "Not a valid quantity",
   batch_too_large: "Batch is too large",
+  restock_quantity_exceeded: "More units than one restock may order",
+  restock_value_exceeded: "Order value is over the restock limit",
+  edit_beyond_proposal: "The edit goes past what was proposed",
+  price_moved: "The price changed after this was proposed",
+  restock_already_scheduled: "Stock is already on order",
 };
 
 const LINE_TONE: Record<ProposalLine["status"], SemanticTone> = {
@@ -32,9 +37,30 @@ const LINE_TONE: Record<ProposalLine["status"], SemanticTone> = {
   failed: "destructive",
 };
 
-export function describeChange(line: ProposalLine, value: number | null = line.proposed_value): string {
-  if (line.field === "price") return `${formatPrice(line.current_value)} → ${formatPrice(value)}`;
-  return `Order ${value ?? 0} units (${line.current_value ?? 0} on hand)`;
+/** A backend decimal (a number, or a string such as "37.49") as a number; null when absent or not a finite number. */
+export function toNumber(value: Decimalish | null | undefined): number | null {
+  if (value == null) return null;
+  if (typeof value === "string" && value.trim() === "") return null;
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+export function describeChange(line: ProposalLine, value: Decimalish | null = line.proposed_value): string {
+  const to = toNumber(value);
+  if (line.field === "price") return `${formatPrice(toNumber(line.current_value))} → ${formatPrice(to)}`;
+  return `Order ${to ?? 0} units (${toNumber(line.current_value) ?? 0} on hand)`;
+}
+
+/**
+ * The values an edit may take, the same rule the server enforces: a restock quantity may be lowered, never raised;
+ * a price stays between the proposed price and the price it started from. `null` where a bound is unknown.
+ */
+export function editBounds(line: ProposalLine): { min: number; max: number } | null {
+  const proposed = toNumber(line.proposed_value);
+  if (proposed == null) return null;
+  if (line.field === "restock_quantity") return { min: 1, max: proposed };
+  const current = toNumber(line.current_value) ?? proposed;
+  return { min: Math.min(current, proposed), max: Math.max(current, proposed) };
 }
 
 export function reasonText(code: string): string {
@@ -89,8 +115,10 @@ export function ProposalCard({
 
   const invalid = proposal.lines.some((l) => {
     if (choices[l.id] !== "edit") return false;
-    const n = Number(values[l.id]);
-    return !Number.isFinite(n) || n <= 0 || (l.field === "restock_quantity" && !Number.isInteger(n));
+    const n = toNumber(values[l.id]);
+    if (n == null || n <= 0 || (l.field === "restock_quantity" && !Number.isInteger(n))) return true;
+    const bounds = editBounds(l);
+    return bounds != null && (n < bounds.min || n > bounds.max);
   });
 
   async function submit() {
@@ -164,7 +192,8 @@ export function ProposalCard({
                           <Input
                             type="number"
                             inputMode="decimal"
-                            min="0"
+                            min={editBounds(line)?.min ?? 0}
+                            max={editBounds(line)?.max}
                             step={line.field === "price" ? "0.01" : "1"}
                             aria-label={`Edited ${line.field === "price" ? "price" : "quantity"} for ${line.product_name}`}
                             value={values[line.id]}

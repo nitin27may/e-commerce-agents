@@ -158,15 +158,22 @@ export interface AppNotification {
   read: boolean;
 }
 
-/** One suggested change to one product. Money and quantities arrive as numbers (the backend computes in Decimal). */
+/**
+ * A money amount or a quantity from the backend, which computes in Decimal. Today it serialises to a JSON number, but
+ * a Decimal is a string on the wire in other serialisers, so the type admits both and every use goes through
+ * `toNumber()` rather than assuming `number`.
+ */
+export type Decimalish = number | string;
+
+/** One suggested change to one product. */
 export interface ProposalLine {
   id: string;
   product_id: string;
   product_name: string;
   field: "price" | "restock_quantity";
-  current_value: number | null;
-  proposed_value: number;
-  final_value: number | null;
+  current_value: Decimalish | null;
+  proposed_value: Decimalish;
+  final_value: Decimalish | null;
   rationale: string | null;
   evidence: Record<string, unknown>;
   /** The guard verdict from when it was proposed; `reasons` are fixed codes such as `margin_below_floor`. */
