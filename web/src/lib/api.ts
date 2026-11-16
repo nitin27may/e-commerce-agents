@@ -147,6 +147,22 @@ export interface RunStep {
   duration_ms: number;
 }
 
+export interface AppNotification {
+  id: string;
+  kind: string;
+  title: string;
+  body: string;
+  link: string | null;
+  approval_id: string | null;
+  created_at: string;
+  read: boolean;
+}
+
+export interface NotificationsResponse {
+  notifications: AppNotification[];
+  unread_count: number;
+}
+
 export interface RunEntry {
   id: string;
   agent_name: string;
@@ -782,6 +798,17 @@ class ApiClient {
 
   getUsageStats() {
     return this.request<any>("/api/admin/usage");
+  }
+
+  getNotifications(limit = 20) {
+    return this.request<NotificationsResponse>(`/api/me/notifications?limit=${limit}`);
+  }
+
+  markNotificationRead(id: string) {
+    return this.request<{ ok: boolean }>(
+      `/api/me/notifications/${encodeURIComponent(id)}/read`,
+      { method: "POST" },
+    );
   }
 
   getRuns(params?: { limit?: number; offset?: number }) {
