@@ -685,10 +685,15 @@ async def resume_workflow(hitl_id: str, decision: Any, *, reviewer_email: str) -
 # ─────────────────────────── expiry ───────────────────────────
 
 
-async def expire(approval_id: str, *, reason: str = "expired") -> dict[str, Any]:
+async def expire(
+    approval_id: str, *, reason: str = "expired", final: S = S.EXPIRED, action: str = "expired"
+) -> dict[str, Any]:
     """The SLA ran out with no decision: a workflow resumes as a REJECTION (nothing is created), a tool request
-    is denied, and the approval becomes ``expired``. Called by the outbox worker; it has no request identity.
+    is denied, and the approval becomes ``final`` (``expired``, or ``rejected`` when the policy's ``on_timeout`` is
+    ``reject``). Called by the outbox worker; it has no request identity.
     """
+    if final not in (S.EXPIRED, S.REJECTED):
+        raise ValueError("an expiry ends as expired or rejected")
     approval = await load(approval_id)
     _require(approval, S.PENDING_REVIEW, S.NEEDS_INFO)
     pool = get_pool()
@@ -712,15 +717,15 @@ async def expire(approval_id: str, *, reason: str = "expired") -> dict[str, Any]
             pool,
             str(approval["id"]),
             [S.PENDING_REVIEW, S.NEEDS_INFO],
-            S.EXPIRED,
-            action="expired",
+            final,
+            action=action,
             payload={"reason": reason},
             claimed_by=token,
         )
     except BaseException:
         await _release(str(approval["id"]), token)
         raise
-    return {"approval": jsonable(updated), "result": {"status": "expired"}}
+    return {"approval": jsonable(updated), "result": {"status": final.value}}
 
 
 # ─────────────────────────── legacy rows ───────────────────────────

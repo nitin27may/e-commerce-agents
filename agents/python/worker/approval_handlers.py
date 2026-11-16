@@ -29,12 +29,14 @@ import asyncpg
 from shared.approvals import repo
 from shared.approvals.repo import ApprovalStatus
 from shared.notifications import notify
+from shared.outbox import enqueue
 from shared.policy.loader import PolicyError, get_policy
 from worker.runner import Handler, OutboxRow
 
 logger = logging.getLogger(__name__)
 
 REVIEW_LINK = "/admin/approvals"
+TOPIC_TIMEOUT_APPLY = "approval.timeout_apply"
 _TOP_ROLE = "admin"  # "manager" in the policy file
 
 
@@ -121,6 +123,23 @@ async def on_sla_breached(conn: asyncpg.Connection, row: OutboxRow) -> None:
         )
         return
     target = _on_timeout(approval["kind"])
+    if approval["source"] in ("workflow", "tool") and approval["source_ref"]:
+        # The paused return must actually be resumed as a rejection (or the tool request denied), and that
+        # runs the workflow on its own connections - it cannot happen inside this row-locked transaction.
+        # Hand it to a follow-up row; this one only records that the deadline passed.
+        await enqueue(
+            conn,
+            TOPIC_TIMEOUT_APPLY,
+            {
+                "approval_id": approval_id,
+                "level": approval["escalation_level"],
+                "due_at": approval["due_at"].isoformat(),
+                "target": target.value,
+            },
+            dedupe_key=f"{TOPIC_TIMEOUT_APPLY}:{approval_id}:{approval['escalation_level']}",
+            aggregate_id=approval_id,
+        )
+        return
     await repo.transition(
         conn,
         approval_id,
@@ -141,8 +160,43 @@ async def on_sla_breached(conn: asyncpg.Connection, row: OutboxRow) -> None:
     )
 
 
+async def on_timeout_apply(conn: asyncpg.Connection, row: OutboxRow) -> None:
+    """Apply a top-level timeout to a workflow or tool approval through the same code a staff decision uses.
+
+    Deliberately does NOT lock the approval row (``expire`` claims it itself). If the approval was decided,
+    answered or escalated since the breach, it is left alone.
+    """
+    from orchestrator import approvals_service as svc
+
+    approval_id = str(row.payload["approval_id"])
+    current = await repo.get(conn, approval_id)
+    if (
+        current is None
+        or current["status"] != ApprovalStatus.PENDING_REVIEW.value
+        or current["escalation_level"] != row.payload.get("level")
+    ):
+        logger.info("approval timeout ignored, no longer due id=%s", approval_id)
+        return
+    target = ApprovalStatus(row.payload["target"])
+    try:
+        await svc.expire(approval_id, reason="sla_timeout", final=target, action="sla_timeout")
+    except svc.ApprovalHTTPError:
+        logger.info("approval timeout ignored, decided meanwhile id=%s", approval_id)
+        return
+    await notify(
+        conn,
+        kind="approval.timed_out",
+        title="Your request was not reviewed in time",
+        body=f"Your {current['kind']} request was closed as {target.value} because no one decided it in time.",
+        link="/orders",
+        approval_id=approval_id,
+        user_email=current["requester_email"],
+    )
+
+
 #: topic -> handler. Plain dispatch: adding a topic is adding a line here.
 HANDLERS: dict[str, Handler] = {
     repo.TOPIC_REMINDER_DUE: on_reminder_due,
     repo.TOPIC_SLA_BREACHED: on_sla_breached,
+    TOPIC_TIMEOUT_APPLY: on_timeout_apply,
 }

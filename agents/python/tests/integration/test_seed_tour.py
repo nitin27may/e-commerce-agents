@@ -209,3 +209,30 @@ async def test_reset_is_a_no_op_when_there_is_no_tour_user(clean_db: Any) -> Non
     async with clean_db.acquire() as conn:
         assert await reset_tour_user(conn) is False
     assert uuid.UUID(str(tour_order_id(DELIVERED_ORDER_KEY))) != tour_order_id(SHIPPED_ORDER_KEY)
+
+
+async def test_reset_closes_the_tour_users_open_approvals_without_deleting_history(
+    clean_db: Any, database_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from shared.approvals import repo
+
+    await _run_seed(monkeypatch, database_url)
+    mine = await repo.create(
+        clean_db, source="tool", kind="initiate_return", requester_email=TOUR_EMAIL, status="pending_review"
+    )
+    decided = await repo.create(
+        clean_db, source="tool", kind="initiate_return", requester_email=TOUR_EMAIL, status="pending_review"
+    )
+    await repo.transition(clean_db, str(decided["id"]), ["pending_review"], "rejected", decided_by="mgr@example.com")
+    other = await repo.create(
+        clean_db, source="tool", kind="initiate_return", requester_email="other@example.com", status="pending_review"
+    )
+
+    async with clean_db.acquire() as conn:
+        assert await reset_tour_user(conn) is True
+
+    assert (await repo.get(clean_db, str(mine["id"])))["status"] == "expired"
+    assert (await repo.get(clean_db, str(decided["id"])))["status"] == "rejected", "decided history is untouched"
+    assert (await repo.get(clean_db, str(other["id"])))["status"] == "pending_review", "other users are untouched"
+    actions = [e["action"] for e in await repo.list_events(clean_db, str(mine["id"]))]
+    assert actions[-1] == "expired" and "created" in actions, "the audit trail is kept and extended"

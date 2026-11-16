@@ -51,7 +51,7 @@ async def test_open_return_approvals_are_expired_and_everything_else_is_left_alo
     shutil.copytree(POSTGRES_DIR, schema)
     held_back: dict[str, Path] = {}
     for path in sorted((schema / "migrations").glob("*.sql")):
-        if path.name >= f"{VERSION}.sql":
+        if path.name == f"{VERSION}.sql":  # later-numbered migrations stay applied: 0010 arrives late
             held_back[path.name] = tmp_path / path.name
             path.rename(held_back[path.name])
     assert VERSION not in await migrate_mod.migrate(throwaway_url, schema)
@@ -96,7 +96,7 @@ async def test_open_return_approvals_are_expired_and_everything_else_is_left_alo
 
     for name, aside in held_back.items():
         shutil.copy(aside, schema / "migrations" / name)
-    assert (await migrate_mod.migrate(throwaway_url, schema))[-1] == VERSION
+    assert await migrate_mod.migrate(throwaway_url, schema) == [VERSION]
 
     conn = await asyncpg.connect(throwaway_url)
     try:

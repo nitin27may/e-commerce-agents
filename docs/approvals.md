@@ -7,7 +7,7 @@ manager — the foundation it sits on, and the **approvals API** staff use to de
 On the Python stack the engine is wired in: every gated tool call and every paused return opens an inbox
 `approvals` row routed by the policy, and every approval is decided through one function (see
 [The approvals API](#the-approvals-api-python)). Not built yet: the customer-confirm step, acting on an `auto`
-route for tool calls (an `auto` route is recorded but still waits for a person), the SLA worker, and the .NET
+route for tool calls (an `auto` route is recorded but still waits for a person), and the .NET
 port of the API — .NET keeps its own admin approval routes unchanged.
 
 ## The pieces
@@ -248,8 +248,12 @@ written into the requester's conversation, and a paused workflow stays paused (i
 `needs_info`, so it cannot be resumed meanwhile). The requester's answer (`/info`) moves it back to
 `pending_review`. A reviewer may still reject while it waits.
 
-**Expiry.** `orchestrator.approvals_service.expire(id)` — for the SLA worker — resumes a paused workflow as a
-rejection (nothing is created) or denies a tool request, and marks the approval `expired`.
+**Expiry.** At the top escalation level the worker does not just flip the row: it queues `approval.timeout_apply`,
+which calls `orchestrator.approvals_service.expire(id)` — it resumes a paused workflow as a rejection (nothing is
+created) or denies a tool request, then marks the approval `expired` (or `rejected` for `on_timeout: reject`). It runs
+as its own outbox row because resuming a workflow cannot happen inside the breach row's locked transaction. An `auto`
+route (recorded, waiting for a person, assigned to support) gets the same SLA timers: reminded, escalated to a manager,
+then timed out.
 
 ### The legacy endpoints
 

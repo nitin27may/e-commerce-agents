@@ -100,7 +100,40 @@ IDEMPOTENCY_RESET_SQL = """DELETE FROM idempotency_keys
        OR result::text LIKE ANY($2::text[])"""
 
 
+async def _close_open_approvals(conn: asyncpg.Connection) -> None:
+    """Expire the tour user's open approvals through the repository (a guarded transition + an audit event).
+
+    The inbox rows themselves cannot be deleted - ``approval_events`` is append-only - so a reset closes them
+    instead: the next tour run starts with nothing waiting, and the history of the last one stays readable.
+    """
+    from shared.approvals import repo
+
+    open_states = [
+        repo.ApprovalStatus.PENDING_CONFIRM,
+        repo.ApprovalStatus.PENDING_REVIEW,
+        repo.ApprovalStatus.NEEDS_INFO,
+    ]
+    rows = await conn.fetch(
+        "SELECT id, status FROM approvals WHERE lower(requester_email) = lower($1) AND status = ANY($2::text[])",
+        TOUR_EMAIL,
+        [s.value for s in open_states],
+    )
+    for row in rows:
+        try:
+            await repo.transition(
+                conn,
+                str(row["id"]),
+                [row["status"]],
+                repo.ApprovalStatus.EXPIRED,
+                action="expired",
+                payload={"reason": "demo tour reset"},
+            )
+        except repo.InvalidTransitionError:
+            continue  # decided between the read and the move: nothing left to close
+
+
 async def _delete_tour_data(conn: asyncpg.Connection, user_id: uuid.UUID) -> None:
+    await _close_open_approvals(conn)
     order_ids = [str(tour_order_id(k)) for k in (DELIVERED_ORDER_KEY, SHIPPED_ORDER_KEY)]
     return_ids = [str(r["id"]) for r in await conn.fetch("SELECT id FROM returns WHERE user_id = $1", user_id)]
     patterns = [f"%{i}%" for i in order_ids + return_ids]

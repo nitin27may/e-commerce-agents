@@ -405,4 +405,4 @@ def test_error_classes_are_fixed_labels() -> None:
 
 
 def test_the_worker_serves_the_approval_topics() -> None:
-    assert set(HANDLERS) == {"approval.reminder_due", "approval.sla_breached"}
+    assert set(HANDLERS) == {"approval.reminder_due", "approval.sla_breached", "approval.timeout_apply"}

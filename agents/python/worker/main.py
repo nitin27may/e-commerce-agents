@@ -24,6 +24,7 @@ from pathlib import Path
 import asyncpg
 
 from shared.config import settings
+from shared.db import use_pool
 from worker.approval_handlers import HANDLERS
 from worker.runner import Handler, run_once
 
@@ -57,6 +58,7 @@ async def run(stop: asyncio.Event, handlers: dict[str, Handler] | None = None) -
 
     worker_id = _worker_id()
     pool = await asyncpg.create_pool(settings.DATABASE_URL, min_size=1, max_size=max(2, settings.OUTBOX_BATCH_SIZE))
+    use_pool(pool)  # handlers that act on a paused workflow go through the same code as a staff decision
     logger.info("outbox worker started id=%s topics=%s", worker_id, sorted(handlers))
     try:
         while not stop.is_set():
@@ -89,6 +91,7 @@ async def run(stop: asyncio.Event, handlers: dict[str, Handler] | None = None) -
             if result.claimed == 0:
                 await _sleep_or_stop(stop, settings.OUTBOX_POLL_INTERVAL_SECONDS)
     finally:
+        use_pool(None)
         await pool.close()
         logger.info("outbox worker stopped id=%s", worker_id)
 
