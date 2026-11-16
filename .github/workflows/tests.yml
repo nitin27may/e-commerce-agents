@@ -42,6 +42,20 @@ jobs:
         # can import them; without it, collection fails with ModuleNotFoundError.
         run: uv sync --all-packages --extra dev
 
+      # Keyless and free: builds each agent (no model call) and counts its composed
+      # system prompt + tool schemas per role with tiktoken, against
+      # evals/baselines/prompt_tokens.json. Fails on >10% growth for any agent/role.
+      # After a reviewed, intended change: `uv run python -m evals.prompt_tokens --update-baseline`.
+      # tiktoken downloads its encoding file on first use (public, no credentials).
+      - name: Prompt token budget (keyless)
+        working-directory: agents/python
+        env:
+          LLM_PROVIDER: replay
+          ENVIRONMENT: test
+          JWT_SECRET: ci-eval-jwt-secret-please-rotate-32bytes
+          AGENT_SHARED_SECRET: ci-eval-agent-secret-please-rotate-32b
+        run: uv run python -m evals.prompt_tokens
+
       - name: Run pytest with coverage
         working-directory: agents/python
         run: |
