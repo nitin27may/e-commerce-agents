@@ -231,3 +231,33 @@ async def test_r3_a_retry_without_edits_records_the_amount_the_first_attempt_edi
     decided = [e for e in await repo.list_events(w.pool, result["approval_id"]) if e["action"] == "decided"]
     assert decided[0]["payload"]["edits"] == {"amount": "25.00"}, "the audit says what was actually paid"
     assert await aus.ledger_balance(w.pool, w.users[aus.CUSTOMER]) == D("25.00")
+
+
+# ── R4: an amount no database column could hold is a 422 ─────────────────────
+
+
+@pytest.mark.parametrize(
+    "amount",
+    ["1e30", "1E+999999999", "-1e30", "9" * 400, 1e30, 10**400, "1e-999999999", "Infinity", "-Infinity", "sNaN"],
+)
+async def test_r4_an_amount_beyond_decimal_precision_is_a_422_not_a_500(w: aus.World, amount: Any) -> None:
+    result = await _waiting(w)
+
+    with pytest.raises(svc.ApprovalHTTPError) as err:
+        await svc.decide(result["approval_id"], STAFF, decision="approve", edits={"amount": amount})
+
+    assert err.value.status_code == 422
+    row = await repo.get(w.pool, result["approval_id"])
+    assert (row["status"], row["claimed_by"]) == ("pending_review", None)
+    assert await aus.ledger_balance(w.pool, w.users[aus.CUSTOMER]) == 0
+
+
+@pytest.mark.parametrize("amount", [float("nan"), float("inf"), 10**400, -1])
+def test_r4_a_workflow_amount_edit_that_is_not_a_finite_number_is_a_422(amount: Any) -> None:
+    """The return-approval path takes floats: NaN compared false against every bound, and a huge int overflowed."""
+    approval = {"id": uuid.uuid4(), "amount": None}  # no ceiling under review, so only the number itself is checked
+
+    with pytest.raises(svc.ApprovalHTTPError) as err:
+        svc._workflow_decision(approval, STAFF, True, {"amount": amount}, None)  # noqa: SLF001
+
+    assert err.value.status_code == 422

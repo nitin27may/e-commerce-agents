@@ -31,6 +31,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -608,12 +609,21 @@ def _edited_amount(raw: Any, proposed: Decimal) -> Decimal:
         value = Decimal(str(raw))
     except ArithmeticError:
         raise ApprovalHTTPError(422, "amount must be a number") from None
-    if not value.is_finite() or value != value.quantize(Decimal("0.01")):
+    if not value.is_finite():
         raise ApprovalHTTPError(422, "amount must have at most two decimal places")
     if value <= 0:
         raise ApprovalHTTPError(422, "amount must be above zero")
     if value > proposed:
         raise ApprovalHTTPError(422, f"amount cannot be raised above the proposed {proposed:.2f}")
+    # Bound it first: ``quantize`` raises ``InvalidOperation`` past the context's precision (``1e30``, a long digit
+    # string), and that is a refusal, not a server error. Here ``0 < value <= proposed``, so it is small, and the guard
+    # below covers the exponent extremes anyway.
+    try:
+        two_places = value == value.quantize(Decimal("0.01"))
+    except ArithmeticError:
+        raise ApprovalHTTPError(422, "amount must have at most two decimal places") from None
+    if not two_places:
+        raise ApprovalHTTPError(422, "amount must have at most two decimal places")
     return value
 
 
@@ -716,7 +726,13 @@ def _workflow_decision(approval: dict[str, Any], actor: Actor, approve: bool, ed
     amount = edits.get("amount")
     if amount is not None:
         ceiling = float(approval["amount"]) if approval.get("amount") is not None else None
-        if isinstance(amount, bool) or not isinstance(amount, (int, float)) or amount < 0:
+        if isinstance(amount, bool) or not isinstance(amount, (int, float)):
+            raise ApprovalHTTPError(422, "amount must be a non-negative number")
+        try:  # an integer past float range raises OverflowError; NaN and infinity compare false against every bound
+            amount = float(amount)
+        except OverflowError:
+            raise ApprovalHTTPError(422, "amount must be a non-negative number") from None
+        if not math.isfinite(amount) or amount < 0:
             raise ApprovalHTTPError(422, "amount must be a non-negative number")
         if ceiling is not None and amount > ceiling:
             raise ApprovalHTTPError(422, "amount cannot exceed what is under review")
