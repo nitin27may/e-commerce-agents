@@ -58,6 +58,7 @@ from shared.agent_observability import get_steps, reset_steps
 from shared.context import current_session_id
 from shared.db import get_pool
 from shared.grounding.ledger import reset_grounding_ledger
+from shared.log_safe import log_safe
 from shared.rate_limit import rate_limit_chat
 from shared.replay_client import ReplayFixtureMissingError
 from shared.replay_miss import REPLAY_MISS_EVENT, is_replay_miss_event, miss_payload
@@ -217,11 +218,13 @@ async def _persist_assistant_turn(
         if disconnected:
             logger.info(
                 "chat_stream.persisted_after_disconnect conversation=%s chars=%d",
-                conversation_id,
+                log_safe(conversation_id),
                 len(response_text),
             )
     except Exception:
-        logger.exception("chat_stream.persist_error conversation=%s disconnected=%s", conversation_id, disconnected)
+        logger.exception(
+            "chat_stream.persist_error conversation=%s disconnected=%s", log_safe(conversation_id), disconnected
+        )
 
 
 async def _link_run_artifacts(
@@ -291,7 +294,7 @@ async def _link_run_artifacts(
                 amount=policy.get("amount"),
             )
         except Exception:
-            logger.exception("chat.approval_open_failed hitl=%s", hitl_id)
+            logger.exception("chat.approval_open_failed hitl=%s", log_safe(hitl_id))
 
 
 async def _discard_replay_missed_message(pool: Any, conversation_id: Any, message_id: Any) -> None:
@@ -306,7 +309,7 @@ async def _discard_replay_missed_message(pool: Any, conversation_id: Any, messag
     try:
         await pool.execute("DELETE FROM messages WHERE id = $1 AND conversation_id = $2", message_id, conversation_id)
     except Exception:
-        logger.exception("chat.replay_miss_cleanup_failed conversation=%s", conversation_id)
+        logger.exception("chat.replay_miss_cleanup_failed conversation=%s", log_safe(conversation_id))
 
 
 @router.post("/api/chat", response_model=ChatResponse)
@@ -411,13 +414,18 @@ async def chat(
                         agents_involved = run_payload.get("agents_involved", agents_involved)
                         steps = run_payload.get("steps", steps)
             except ReplayFixtureMissingError:
-                logger.warning("chat.replay_miss conversation=%s mode=%s", conversation_id, mode_name)
+                logger.warning(
+                    "chat.replay_miss conversation=%s mode=%s", log_safe(conversation_id), log_safe(mode_name)
+                )
                 replay_miss = miss_payload()
                 response_text = replay_miss["message"]
                 await _discard_replay_missed_message(pool, conversation_id, user_message_id)
             except Exception:
                 logger.exception(
-                    "chat.agent_error user=%s conversation=%s mode=%s", user_email, conversation_id, mode_name
+                    "chat.agent_error user=%s conversation=%s mode=%s",
+                    log_safe(user_email),
+                    log_safe(conversation_id),
+                    log_safe(mode_name),
                 )
                 response_text = "I apologize, but I encountered an issue processing your request. Please try again."
 
@@ -611,13 +619,13 @@ async def chat_stream(
                         if "grounding" in run_metadata:
                             await queue.put(("frame", "grounding", run_metadata["grounding"]))
                     except ReplayFixtureMissingError:
-                        logger.warning("chat_stream.replay_miss conversation=%s", conversation_id)
+                        logger.warning("chat_stream.replay_miss conversation=%s", log_safe(conversation_id))
                         await queue.put(("frame", REPLAY_MISS_EVENT, miss_payload()))
                     except Exception:
                         logger.exception(
                             "chat_stream.agent_error user=%s conversation=%s",
-                            user_email,
-                            conversation_id,
+                            log_safe(user_email),
+                            log_safe(conversation_id),
                         )
                         error_msg = "I apologize, but I encountered an issue. Please try again."
                         await queue.put(("text", error_msg))
@@ -695,14 +703,18 @@ async def chat_stream(
                         if miss_seen:
                             await queue.put(("frame", REPLAY_MISS_EVENT, miss_payload()))
                     except ReplayFixtureMissingError:
-                        logger.warning("chat_stream.replay_miss conversation=%s mode=%s", conversation_id, mode_name)
+                        logger.warning(
+                            "chat_stream.replay_miss conversation=%s mode=%s",
+                            log_safe(conversation_id),
+                            log_safe(mode_name),
+                        )
                         await queue.put(("frame", REPLAY_MISS_EVENT, miss_payload()))
                     except Exception:
                         logger.exception(
                             "chat_stream.mode_error user=%s conversation=%s mode=%s",
-                            user_email,
-                            conversation_id,
-                            mode_name,
+                            log_safe(user_email),
+                            log_safe(conversation_id),
+                            log_safe(mode_name),
                         )
                         await queue.put(("text", "I apologize, but I encountered an issue. Please try again."))
                 agents_involved[:] = final_agents_involved
@@ -717,7 +729,7 @@ async def chat_stream(
                     if await request.is_disconnected():
                         logger.info(
                             "chat_stream.client_disconnected conversation=%s elapsed_ms=%d",
-                            conversation_id,
+                            log_safe(conversation_id),
                             int((time.monotonic() - start_time) * 1000),
                         )
                         agent_task.cancel()
@@ -726,7 +738,7 @@ async def chat_stream(
                     if time.monotonic() > deadline:
                         logger.warning(
                             "chat_stream.timeout conversation=%s budget_s=%s",
-                            conversation_id,
+                            log_safe(conversation_id),
                             settings.MAF_STREAM_TIMEOUT_SECONDS,
                         )
                         timeout_msg = " [stream timed out — please retry]"
@@ -894,7 +906,7 @@ async def chat_stream(
         except _asyncio.CancelledError:
             raise
         except Exception:
-            logger.exception("chat.persist_failed conversation=%s", conversation_id)
+            logger.exception("chat.persist_failed conversation=%s", log_safe(conversation_id))
 
         # Name the run, now that it has an id. `pending_approval` is what lets
         # the chat thread render its own approval control instead of sending

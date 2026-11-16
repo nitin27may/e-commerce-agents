@@ -45,6 +45,7 @@ from shared.approvals.repo import ApprovalStatus as S
 from shared.config import settings
 from shared.context import current_user_email, current_user_role
 from shared.db import get_pool
+from shared.log_safe import log_safe
 
 logger = logging.getLogger(__name__)
 
@@ -377,7 +378,7 @@ async def _reject_tool(approval: dict[str, Any], actor: Actor, note: str | None)
     except BaseException:
         await _release(approval_id, token)
         raise
-    logger.info("approval.rejected id=%s source=tool", approval_id)
+    logger.info("approval.rejected id=%s source=tool", log_safe(approval_id))
     return {"approval": jsonable(updated), "result": {"status": "denied"}}
 
 
@@ -475,7 +476,7 @@ async def _approve_tool(
         action="executed" if result.get("success") else "execution_failed",
         payload={"success": bool(result.get("success"))},
     )
-    logger.info("approval.approved id=%s source=tool success=%s", approval_id, result.get("success"))
+    logger.info("approval.approved id=%s source=tool success=%s", log_safe(approval_id), result.get("success"))
     return {"approval": jsonable(final), "result": result}
 
 
@@ -557,7 +558,7 @@ async def _finish_workflow(
             )
         except repo.InvalidTransitionError:
             # The workflow is already resumed; the inbox row moved under us (a concurrent expiry, say).
-            logger.warning("approval.decision_not_recorded id=%s", approval_id)
+            logger.warning("approval.decision_not_recorded id=%s", log_safe(approval_id))
             raise ApprovalHTTPError(409, "Request is no longer pending review") from None
     except BaseException:
         await _release(approval_id, token)
@@ -576,7 +577,7 @@ async def _finish_workflow(
             action="executed" if completed else "execution_failed",
             payload={"return_id": payload.get("return_id")},
         )
-    logger.info("approval.decided id=%s source=workflow approve=%s", approval_id, approve)
+    logger.info("approval.decided id=%s source=workflow approve=%s", log_safe(approval_id), approve)
     return {
         "approval": jsonable(final),
         "result": {"text": payload.get("text", ""), "agents_involved": payload.get("agents_involved", [])},
@@ -657,7 +658,7 @@ async def resume_workflow(hitl_id: str, decision: Any, *, reviewer_email: str) -
                     final_payload = event.payload
         resumed = True
     except TimeoutError:
-        logger.warning("hitl.resume_timeout hitl_id=%s", hitl_row["id"])
+        logger.warning("hitl.resume_timeout hitl_id=%s", log_safe(hitl_row["id"]))
         raise ApprovalHTTPError(504, "Resume timed out; the approval is still pending.") from None
     finally:
         current_user_role.reset(role_token)
@@ -682,7 +683,7 @@ async def resume_workflow(hitl_id: str, decision: Any, *, reviewer_email: str) -
     )
     if decided != "UPDATE 1":
         # The claim was taken over while this resume ran: someone else owns the decision now. Record nothing.
-        logger.warning("hitl.claim_lost hitl_id=%s", hitl_row["id"])
+        logger.warning("hitl.claim_lost hitl_id=%s", log_safe(hitl_row["id"]))
         raise ApprovalHTTPError(409, "This approval was taken over by another reviewer")
     new_checkpoint_id = final_payload.get("latest_checkpoint_id")
     if new_checkpoint_id:

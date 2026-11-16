@@ -30,6 +30,7 @@ from pydantic import BaseModel
 from shared.config import settings  # noqa: F401 - re-exported: tests patch the instance the resume path reads
 from shared.cost import usage_cost
 from shared.db import get_pool
+from shared.log_safe import log_safe
 from shared.rate_limit import rate_limit_chat
 from shared.run_usage import tokens_from_usage
 
@@ -156,7 +157,7 @@ async def compare_modes(
                     agents_involved = event.payload.get("agents_involved", [])
                     usage = event.payload.get("usage")
         except Exception as exc:
-            logger.exception("compare.mode_error mode=%s", name)
+            logger.exception("compare.mode_error mode=%s", log_safe(name))
             error = str(exc)
         latency_ms = int((time.monotonic() - start) * 1000)
         est_cost = usage_cost(usage)

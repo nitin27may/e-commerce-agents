@@ -33,6 +33,7 @@ from auth_server.clients import ClientStore
 from auth_server.server import OAuthAuthorizationServer
 from shared.config import settings
 from shared.db import close_db_pool, get_pool, init_db_pool
+from shared.log_safe import log_safe
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +61,7 @@ async def lifespan(app: Starlette):
         kid=kid,
         signing_key=signing_key,
     )
-    logger.info("auth_server.ready issuer=%s kid=%s", settings.AUTH_SERVER_ISSUER, kid)
+    logger.info("auth_server.ready issuer=%s kid=%s", settings.AUTH_SERVER_ISSUER, log_safe(kid))
 
     try:
         yield
@@ -188,7 +189,7 @@ async def register_endpoint(request: Request) -> JSONResponse:
     try:
         _verify_registration_token(token)
     except _RegistrationTokenError as exc:
-        logger.warning("auth_server.register_token_rejected error=%s", exc)
+        logger.warning("auth_server.register_token_rejected error=%s", log_safe(exc))
         return _unauthorized("invalid_token", "Invalid, expired, or insufficiently-scoped token")
 
     try:

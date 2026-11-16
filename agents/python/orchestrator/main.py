@@ -21,6 +21,7 @@ from fastapi.responses import JSONResponse
 from orchestrator.routes import router
 from shared.config import settings
 from shared.db import close_db_pool, init_db_pool
+from shared.log_safe import log_safe
 from shared.prompt_loader import validate_model_overrides
 from shared.readiness import register_readiness
 from shared.telemetry import instrument_fastapi, setup_telemetry
@@ -91,12 +92,12 @@ async def stale_user_handler(request: Request, exc: ForeignKeyViolationError) ->
     # after a DB reseed. Map to 401 so the frontend clears its token.
     detail = str(exc)
     if "user_id" in detail:
-        logger.warning("stale_jwt.fk_violation path=%s", request.url.path)
+        logger.warning("stale_jwt.fk_violation path=%s", log_safe(request.url.path))
         return JSONResponse(
             status_code=401,
             content={"detail": "Session invalid — please log in again."},
         )
-    logger.exception("fk_violation.unhandled path=%s", request.url.path)
+    logger.exception("fk_violation.unhandled path=%s", log_safe(request.url.path))
     return JSONResponse(
         status_code=500,
         content={"detail": "Database constraint error"},

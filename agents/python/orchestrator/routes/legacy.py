@@ -36,6 +36,7 @@ from shared.jwt_utils import (
     hash_password,
     verify_password,
 )
+from shared.log_safe import log_safe
 from shared.oauth.service_client import request_token
 from shared.rate_limit import enforce_auth_account_limit, enforce_auth_user_limit, rate_limit_auth
 from shared.refresh_tokens import RefreshRejectedError, issue_refresh_token, rotate_refresh_token
@@ -276,7 +277,7 @@ async def signup(request: Request, body: SignupRequest, _rate_limit: None = Depe
     access_token = create_access_token(row["email"], row["role"], user_id)
     refresh_token = await _new_refresh_token(pool, row["email"])
 
-    logger.info("auth.signup user_id=%s", user_id)
+    logger.info("auth.signup user_id=%s", log_safe(user_id))
 
     return AuthResponse(
         access_token=access_token,
@@ -345,7 +346,7 @@ async def login(request: Request, body: LoginRequest, _rate_limit: None = Depend
         refresh_token = await _new_refresh_token(pool, row["email"])
 
     user_id = str(row["id"])
-    logger.info("auth.login user_id=%s", user_id)
+    logger.info("auth.login user_id=%s", log_safe(user_id))
 
     return AuthResponse(
         access_token=access_token,
@@ -425,7 +426,7 @@ async def refresh_token(
     try:
         new_refresh = await rotate_refresh_token(pool, payload)
     except RefreshRejectedError as exc:
-        logger.info("auth.refresh_rejected reason=%s", exc.reason)
+        logger.info("auth.refresh_rejected reason=%s", log_safe(exc.reason))
         raise HTTPException(status_code=401, detail="Invalid refresh token") from None
 
     return {"access_token": access_token, "refresh_token": new_refresh}
@@ -642,7 +643,7 @@ async def submit_access_request(
         body.use_case,
     )
 
-    logger.info("marketplace.request user=%s agent=%s", user.get("sub"), body.agent_name)
+    logger.info("marketplace.request user=%s agent=%s", log_safe(user.get("sub")), log_safe(body.agent_name))
 
     return {
         "id": str(row["id"]),
@@ -763,9 +764,9 @@ async def approve_request(
 
     logger.info(
         "admin.approve request=%s agent=%s admin=%s",
-        request_id,
-        req["agent_name"],
-        admin.get("sub"),
+        log_safe(request_id),
+        log_safe(req["agent_name"]),
+        log_safe(admin.get("sub")),
     )
 
     return {"status": "approved", "request_id": request_id}
@@ -802,9 +803,9 @@ async def deny_request(
 
     logger.info(
         "admin.deny request=%s agent=%s admin=%s",
-        request_id,
-        req["agent_name"],
-        admin.get("sub"),
+        log_safe(request_id),
+        log_safe(req["agent_name"]),
+        log_safe(admin.get("sub")),
     )
 
     return {"status": "denied", "request_id": request_id}
@@ -968,7 +969,7 @@ async def _decide_tool_request(
     except svc.ApprovalHTTPError as exc:
         status_code = 400 if exc.status_code == 409 and exc.detail.startswith("Request is already") else exc.status_code
         raise HTTPException(status_code=status_code, detail=exc.detail) from None
-    logger.info("hitl.%s approval_id=%s", decision, approval_id)
+    logger.info("hitl.%s approval_id=%s", log_safe(decision), log_safe(approval_id))
     return outcome
 
 

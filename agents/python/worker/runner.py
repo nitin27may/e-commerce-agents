@@ -28,6 +28,8 @@ from typing import Any
 
 import asyncpg
 
+from shared.log_safe import log_safe
+
 logger = logging.getLogger(__name__)
 
 
@@ -152,8 +154,8 @@ async def _record_failure(
     )
     logger.warning(
         "outbox row failed id=%s topic=%s class=%s attempts=%s parked=%s",
-        row.id,
-        row.topic,
+        log_safe(row.id),
+        log_safe(row.topic),
         error_class(exc),
         row.attempts,
         bool(parked),
@@ -185,7 +187,7 @@ async def process_row(
                 worker_id,
             )
             if not owned:
-                logger.info("outbox row skipped, lease lost id=%s", row.id)
+                logger.info("outbox row skipped, lease lost id=%s", log_safe(row.id))
                 return "skipped"
             async with asyncio.timeout(lease_seconds):
                 await handler(conn, row)

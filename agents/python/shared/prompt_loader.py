@@ -13,6 +13,8 @@ from pathlib import Path
 
 import yaml
 
+from shared.log_safe import log_safe
+
 logger = logging.getLogger(__name__)
 
 PROMPTS_DIR = Path(__file__).parent.parent / "config" / "prompts"
@@ -53,7 +55,7 @@ def load_prompt(agent_name: str, user_role: str = "customer") -> str:
     """
     config_path = PROMPTS_DIR / f"{agent_name}.yaml"
     if not config_path.exists():
-        logger.warning("No YAML config found for %s, using empty prompt", agent_name)
+        logger.warning("No YAML config found for %s, using empty prompt", log_safe(agent_name))
         return ""
 
     config = _load_yaml(config_path)

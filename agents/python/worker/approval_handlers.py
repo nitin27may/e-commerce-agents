@@ -28,6 +28,7 @@ import asyncpg
 
 from shared.approvals import repo
 from shared.approvals.repo import ApprovalStatus
+from shared.log_safe import log_safe
 from shared.notifications import notify
 from shared.outbox import enqueue
 from shared.policy.loader import PolicyError, get_policy
@@ -58,14 +59,14 @@ async def _current_review(
     if allow_needs_info:
         live.add(ApprovalStatus.NEEDS_INFO.value)
     if current["status"] not in live:
-        logger.info("approval timer ignored, not in review id=%s topic=%s", approval_id, row.topic)
+        logger.info("approval timer ignored, not in review id=%s topic=%s", log_safe(approval_id), log_safe(row.topic))
         return None
     if current["escalation_level"] != row.payload.get("level"):
-        logger.info("approval timer ignored, other level id=%s topic=%s", approval_id, row.topic)
+        logger.info("approval timer ignored, other level id=%s topic=%s", log_safe(approval_id), log_safe(row.topic))
         return None
     due = row.payload.get("due_at")
     if current["due_at"] is None or due is None or current["due_at"] != datetime.fromisoformat(due):
-        logger.info("approval timer ignored, superseded id=%s topic=%s", approval_id, row.topic)
+        logger.info("approval timer ignored, superseded id=%s topic=%s", log_safe(approval_id), log_safe(row.topic))
         return None
     return dict(current)
 
@@ -185,13 +186,13 @@ async def on_timeout_apply(conn: asyncpg.Connection, row: OutboxRow) -> None:
         or current["status"] not in (ApprovalStatus.PENDING_REVIEW.value, ApprovalStatus.NEEDS_INFO.value)
         or current["escalation_level"] != row.payload.get("level")
     ):
-        logger.info("approval timeout ignored, no longer due id=%s", approval_id)
+        logger.info("approval timeout ignored, no longer due id=%s", log_safe(approval_id))
         return
     target = ApprovalStatus(row.payload["target"])
     try:
         await svc.expire(approval_id, reason="sla_timeout", final=target, action="sla_timeout")
     except svc.ApprovalHTTPError:
-        logger.info("approval timeout ignored, decided meanwhile id=%s", approval_id)
+        logger.info("approval timeout ignored, decided meanwhile id=%s", log_safe(approval_id))
         return
     await notify(
         conn,

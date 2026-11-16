@@ -38,6 +38,7 @@ from typing import Any
 import asyncpg
 
 from shared.config import settings
+from shared.log_safe import log_safe
 from shared.outbox import enqueue
 from shared.policy.loader import PolicyError, get_policy
 
@@ -143,7 +144,7 @@ def _sla_hours(kind: str) -> int | None:
     try:
         return get_policy().kind(kind).sla_hours
     except PolicyError:
-        logger.warning("no sla policy for approval kind=%s; no timers scheduled", kind)
+        logger.warning("no sla policy for approval kind=%s; no timers scheduled", log_safe(kind))
         return None
 
 
@@ -300,7 +301,7 @@ async def create(
             actor_role=actor_role,
             payload={"kind": kind, "source": source, "status": status.value},
         )
-        logger.info("approval created id=%s source=%s kind=%s", row["id"], source, kind)
+        logger.info("approval created id=%s source=%s kind=%s", log_safe(row["id"]), log_safe(source), log_safe(kind))
         if status is ApprovalStatus.PENDING_REVIEW:
             await schedule_review_timers(conn, dict(row), now=now)
         return _row(row)
@@ -349,14 +350,19 @@ async def transition(
         if current is None:
             raise ApprovalNotFoundError(approval_id)
         if ApprovalStatus(current["status"]) not in sources:
-            logger.info("approval transition refused id=%s from=%s to=%s", approval_id, current["status"], target.value)
+            logger.info(
+                "approval transition refused id=%s from=%s to=%s",
+                log_safe(approval_id),
+                current["status"],
+                target.value,
+            )
             raise InvalidTransitionError(f"approval {approval_id} is {current['status']}, not one of {sorted(sources)}")
         if claimed_by is not None and current["claimed_by"] != claimed_by:
-            logger.warning("approval transition refused, claim lost id=%s", approval_id)
+            logger.warning("approval transition refused, claim lost id=%s", log_safe(approval_id))
             raise ClaimLostError(f"approval {approval_id}: the execution claim is no longer held")
         decided_by = updates.get("decided_by")
         if _same_person(decided_by, current["requester_email"]):
-            logger.warning("self-approval refused id=%s", approval_id)
+            logger.warning("self-approval refused id=%s", log_safe(approval_id))
             raise SelfApprovalError(f"approval {approval_id}: the requester cannot decide their own request")
         if target in (ApprovalStatus.PENDING_REVIEW, ApprovalStatus.NEEDS_INFO) and updates.get("due_at") is None:
             # Entering review starts a fresh clock, also when an answer returns it from needs_info; waiting
@@ -386,7 +392,7 @@ async def transition(
             actor_role=actor_role,
             payload={**(payload or {}), "from": current["status"], "to": target.value},
         )
-        logger.info("approval transition id=%s from=%s to=%s", approval_id, current["status"], target.value)
+        logger.info("approval transition id=%s from=%s to=%s", log_safe(approval_id), current["status"], target.value)
         if target is ApprovalStatus.PENDING_REVIEW:
             await schedule_review_timers(conn, dict(updated), now=now)
         elif target is ApprovalStatus.NEEDS_INFO:
@@ -445,7 +451,7 @@ async def escalate(
                 "level": updated["escalation_level"],
             },
         )
-        logger.info("approval escalated id=%s level=%s", approval_id, updated["escalation_level"])
+        logger.info("approval escalated id=%s level=%s", log_safe(approval_id), updated["escalation_level"])
         await schedule_review_timers(conn, dict(updated), now=now)
         return _row(updated)
 

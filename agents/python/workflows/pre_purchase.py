@@ -19,6 +19,8 @@ from typing import Any
 
 from agent_framework import Executor, WorkflowBuilder, WorkflowContext, handler
 
+from shared.log_safe import log_safe
+
 logger = logging.getLogger(__name__)
 
 
@@ -78,7 +80,7 @@ class _ReviewsExecutor(Executor):
                 state.completed_steps.append("reviews")
             except Exception as exc:
                 state.errors.append(f"reviews: {exc}")
-                logger.warning("pre_purchase.step_failed name=reviews error=%s", exc)
+                logger.warning("pre_purchase.step_failed name=reviews error=%s", log_safe(exc))
         await ctx.send_message(state)
 
 
@@ -101,7 +103,7 @@ class _StockExecutor(Executor):
                 state.completed_steps.append("stock")
             except Exception as exc:
                 state.errors.append(f"stock: {exc}")
-                logger.warning("pre_purchase.step_failed name=stock error=%s", exc)
+                logger.warning("pre_purchase.step_failed name=stock error=%s", log_safe(exc))
         await ctx.send_message(state)
 
 
@@ -124,7 +126,7 @@ class _PriceHistoryExecutor(Executor):
                 state.completed_steps.append("price_history")
             except Exception as exc:
                 state.errors.append(f"price_history: {exc}")
-                logger.warning("pre_purchase.step_failed name=price_history error=%s", exc)
+                logger.warning("pre_purchase.step_failed name=price_history error=%s", log_safe(exc))
         await ctx.send_message(state)
 
 
@@ -163,7 +165,7 @@ class _MergeAndShipExecutor(Executor):
                     merged.completed_steps.append("shipping")
                 except Exception as exc:
                     merged.errors.append(f"shipping: {exc}")
-                    logger.warning("pre_purchase.step_failed name=shipping error=%s", exc)
+                    logger.warning("pre_purchase.step_failed name=shipping error=%s", log_safe(exc))
 
         await ctx.send_message(merged)
 

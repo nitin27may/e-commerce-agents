@@ -20,6 +20,7 @@ from shared.config import settings
 from shared.db import get_pool
 from shared.demo_manifest import ManifestError, load_manifest
 from shared.demo_tour import TOUR_EMAIL, reset_tour_user
+from shared.log_safe import log_safe
 
 from .legacy import require_auth
 
@@ -60,7 +61,7 @@ async def demo_tour() -> TourOut:
         manifest.validate_modes(set(MODES))
     except ManifestError as exc:
         # The text names the file and field, never request data.
-        logger.error("demo.manifest_invalid reason=%s", exc)
+        logger.error("demo.manifest_invalid reason=%s", log_safe(exc))
         raise HTTPException(status_code=500, detail="Demo tour manifest is invalid") from None
     return TourOut(
         chips=[TourChipOut(**chip.model_dump()) for chip in manifest.chips],

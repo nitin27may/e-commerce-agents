@@ -16,6 +16,8 @@ from typing import Any
 
 import asyncpg
 
+from shared.log_safe import log_safe
+
 logger = logging.getLogger(__name__)
 
 Db = asyncpg.Connection | asyncpg.Pool
@@ -57,7 +59,7 @@ async def notify(
         link,
         approval_id,
     )
-    logger.info("notification created id=%s kind=%s", row["id"], kind)
+    logger.info("notification created id=%s kind=%s", log_safe(row["id"]), log_safe(kind))
     return str(row["id"])
 
 

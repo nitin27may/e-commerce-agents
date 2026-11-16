@@ -23,6 +23,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from shared.log_safe import log_safe
 from shared.prompt_loader import load_model_override, validate_model_overrides
 from shared.readiness import register_readiness
 from shared.replay_client import ReplayFixtureMissingError
@@ -187,7 +188,7 @@ async def _rehydrate_history_from_session(session_id: str) -> list[dict] | None:
         # Anonymous callers legitimately land here; so would a future call site
         # that forgot to forward identity. Log either way rather than returning
         # an empty context that reads like "this conversation had no history".
-        logger.info("session.rehydrate_skipped reason=no_identity session_id=%s", session_id)
+        logger.info("session.rehydrate_skipped reason=no_identity session_id=%s", log_safe(session_id))
         return None
 
     try:
@@ -222,7 +223,7 @@ async def _rehydrate_history_from_session(session_id: str) -> list[dict] | None:
             caller,
         )
     except Exception:
-        logger.exception("session.rehydrate_failed session_id=%s", session_id)
+        logger.exception("session.rehydrate_failed session_id=%s", log_safe(session_id))
         return None
 
     history: list[dict] = []
@@ -261,7 +262,7 @@ def create_agent_app(
         validate_model_overrides()
         if on_startup:
             await on_startup(app)
-        logger.info("%s.started port=%d", agent_name, port)
+        logger.info("%s.started port=%d", log_safe(agent_name), port)
         yield
         if on_shutdown:
             await on_shutdown()
@@ -323,10 +324,10 @@ def create_agent_app(
 
         except ReplayFixtureMissingError:
             # Replay mode only: tell the caller this is a missing recording, not a failure.
-            logger.warning("%s.replay_miss", agent_name)
+            logger.warning("%s.replay_miss", log_safe(agent_name))
             return JSONResponse(REPLAY_MISS_BODY, status_code=REPLAY_MISS_STATUS)
         except Exception:
-            logger.exception("%s.message_error", agent_name)
+            logger.exception("%s.message_error", log_safe(agent_name))
             return JSONResponse(
                 {"error": "Agent processing failed"},
                 status_code=500,
@@ -354,7 +355,7 @@ def create_agent_app(
                 if session_id:
                     history = await _rehydrate_history_from_session(session_id)
         except Exception:
-            logger.exception("%s.message_stream_parse_error", agent_name)
+            logger.exception("%s.message_stream_parse_error", log_safe(agent_name))
             return StreamingResponse(
                 iter([sse_frame("[ERROR: bad request]")]),
                 media_type="text/event-stream",
@@ -400,12 +401,12 @@ def create_agent_app(
                         yield sse_frame(chunk)
                 except ReplayFixtureMissingError:
                     # The 200 is already sent, so the miss is an explicit frame.
-                    logger.warning("%s.replay_miss", agent_name)
+                    logger.warning("%s.replay_miss", log_safe(agent_name))
                     yield sse_frame(json.dumps(REPLAY_MISS_BODY), event=REPLAY_MISS_EVENT)
                     yield sse_frame("[DONE]")
                     return
                 except Exception:
-                    logger.exception("%s.message_stream_error", agent_name)
+                    logger.exception("%s.message_stream_error", log_safe(agent_name))
                     yield sse_frame("[ERROR: agent processing failed]")
 
             # Anything that completed after the final chunk — a tool whose

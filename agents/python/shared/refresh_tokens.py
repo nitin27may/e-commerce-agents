@@ -34,6 +34,7 @@ import asyncpg
 
 from shared.config import settings
 from shared.jwt_utils import REFRESH_TOKEN_EXPIRE_DAYS, create_refresh_token
+from shared.log_safe import log_safe
 
 logger = logging.getLogger(__name__)
 
@@ -137,7 +138,7 @@ async def rotate_refresh_token(pool: asyncpg.Pool, payload: dict[str, Any]) -> s
                     row["family_id"],
                 )
                 rejected = "reuse"
-                logger.warning("auth.refresh_reuse family=%s — family revoked", row["family_id"])
+                logger.warning("auth.refresh_reuse family=%s — family revoked", log_safe(row["family_id"]))
             elif row["expires_at"] <= datetime.now(UTC) or row["family_expires_at"] <= datetime.now(UTC):
                 # Either this token ran out, or the session as a whole hit its absolute cap.
                 rejected = "expired"

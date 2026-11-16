@@ -12,6 +12,7 @@ from pydantic import Field
 from shared.agent_factory import create_embedding_client, get_embedding_model
 from shared.db import get_pool
 from shared.embedding_config import embedding_request_kwargs, verify_vector_length
+from shared.log_safe import log_safe
 from shared.search import RRF_K, or_joined_tsquery
 from shared.tool_inputs import clamp_limit
 
@@ -211,7 +212,9 @@ async def semantic_search(
         verify_vector_length(embedding)
     except Exception as exc:
         logger.warning(
-            "semantic_search: embedding call failed (%s: %s) -- falling back to full-text only", type(exc).__name__, exc
+            "semantic_search: embedding call failed (%s: %s) -- falling back to full-text only",
+            type(exc).__name__,
+            log_safe(exc),
         )
         embedding = None
 
@@ -357,7 +360,7 @@ async def find_similar_products(
             source = await conn.fetchrow("SELECT category FROM products WHERE id = $1", product_id)
             if not source:
                 return [{"error": f"No embedding found for product {product_id}"}]
-            logger.info("find_similar_products: no embedding for %s -- same-category fallback", product_id)
+            logger.info("find_similar_products: no embedding for %s -- same-category fallback", log_safe(product_id))
             rows = await conn.fetch(
                 """SELECT id, name, category, brand, price, rating
                    FROM products

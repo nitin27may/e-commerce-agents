@@ -22,6 +22,7 @@ from typing import Any
 import asyncpg
 
 from shared.approvals import repo
+from shared.log_safe import log_safe
 from shared.policy import PolicyDecision, PolicyError, evaluate, get_policy
 from shared.policy.facts import gather_facts
 
@@ -58,7 +59,7 @@ async def decide_route(
         facts = await gather_facts(order_id, amount=amount, subject_email=subject_email, db=db)
         return evaluate(kind, facts)
     except (PolicyError, ValueError, asyncpg.PostgresError):
-        logger.warning("approval policy could not decide kind=%s", kind)
+        logger.warning("approval policy could not decide kind=%s", log_safe(kind))
         return fallback_decision()
 
 

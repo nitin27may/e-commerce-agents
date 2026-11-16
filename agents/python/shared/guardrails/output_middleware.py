@@ -22,6 +22,7 @@ from shared.config import settings
 from shared.function_results import rewrap_function_result, unwrap_function_result
 from shared.guardrails.config import SANITIZE_TOOLS
 from shared.guardrails.sanitize import neutralize_value
+from shared.log_safe import log_safe
 
 logger = logging.getLogger(__name__)
 
@@ -61,12 +62,12 @@ class OutputSanitizationMiddleware(FunctionMiddleware):
         try:
             cleaned = neutralize_value(unwrapped, fields=self.tools[name])
         except Exception:
-            logger.exception("guardrails.output_sanitize_failed tool=%s", name)
+            logger.exception("guardrails.output_sanitize_failed tool=%s", log_safe(name))
             if settings.GUARDRAILS_FAIL_OPEN:
                 return
             raise
 
         if cleaned != unwrapped:
             self.sanitized += 1
-            logger.info("guardrails.output_sanitized tool=%s", name)
+            logger.info("guardrails.output_sanitized tool=%s", log_safe(name))
         context.result = rewrap_function_result(original, cleaned)

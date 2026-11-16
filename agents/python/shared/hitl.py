@@ -32,6 +32,7 @@ from agent_framework import FunctionInvocationContext, FunctionMiddleware
 from shared.config import settings
 from shared.context import current_session_id, current_user_email
 from shared.idempotency import idempotent, run_once
+from shared.log_safe import log_safe
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +102,7 @@ class HITLFunctionMiddleware(FunctionMiddleware):
                 tool_input=raw_args,
             )
         except Exception:
-            logger.exception("hitl: failed to create approval request for %s", tool_name)
+            logger.exception("hitl: failed to create approval request for %s", log_safe(tool_name))
             # Fail CLOSED — a high-stakes tool (cancel_order, process_refund,
             # initiate_return, modify_order, place_backorder) must never
             # execute unapproved just because the approval record couldn't
@@ -119,9 +120,9 @@ class HITLFunctionMiddleware(FunctionMiddleware):
 
         logger.info(
             "hitl.pending tool=%s user=%s request_id=%s",
-            tool_name,
-            user_email,
-            request_id,
+            log_safe(tool_name),
+            log_safe(user_email),
+            log_safe(request_id),
         )
 
         label = tool_name.replace("_", " ")
@@ -206,7 +207,7 @@ async def _create_hitl_request(
             tool_input=tool_input,
         )
     except Exception:
-        logger.exception("hitl: could not open the inbox approval for request %s", request_id)
+        logger.exception("hitl: could not open the inbox approval for request %s", log_safe(request_id))
     return request_id
 
 

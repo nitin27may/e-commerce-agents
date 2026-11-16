@@ -32,6 +32,7 @@ from agent_framework import (
 )
 
 from shared.config import settings
+from shared.log_safe import log_safe
 
 logger = logging.getLogger(__name__)
 
@@ -54,14 +55,14 @@ class AgentRunLogger(AgentMiddleware):
             context.metadata.setdefault("run_id", run_id)
 
         start = time.perf_counter()
-        logger.info("agent.start agent=%s run_id=%s", agent_name, run_id)
+        logger.info("agent.start agent=%s run_id=%s", log_safe(agent_name), run_id)
         try:
             await call_next()
         except Exception:
             elapsed = (time.perf_counter() - start) * 1000
             logger.exception(
                 "agent.fail agent=%s run_id=%s elapsed_ms=%.1f",
-                agent_name,
+                log_safe(agent_name),
                 run_id,
                 elapsed,
             )
@@ -70,7 +71,7 @@ class AgentRunLogger(AgentMiddleware):
             elapsed = (time.perf_counter() - start) * 1000
             logger.info(
                 "agent.finish agent=%s run_id=%s elapsed_ms=%.1f",
-                agent_name,
+                log_safe(agent_name),
                 run_id,
                 elapsed,
             )
@@ -119,9 +120,9 @@ class ToolAuditMiddleware(FunctionMiddleware):
             self.audited.append(record)
             logger.info(
                 "tool.invoked name=%s elapsed_ms=%.1f error=%s",
-                name,
+                log_safe(name),
                 elapsed,
-                error or "-",
+                log_safe(error or "-"),
             )
 
 

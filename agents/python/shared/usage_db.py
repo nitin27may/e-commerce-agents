@@ -14,6 +14,7 @@ from uuid import UUID
 
 from shared.cost import usage_cost, usage_model
 from shared.db import get_pool
+from shared.log_safe import log_safe
 from shared.run_usage import tokens_from_usage
 from shared.telemetry import get_current_trace_id
 
@@ -68,7 +69,7 @@ async def log_agent_usage(
         )
         return row["id"] if row else None
     except Exception:
-        logger.exception("Failed to log agent usage for %s", agent_name)
+        logger.exception("Failed to log agent usage for %s", log_safe(agent_name))
         return None
 
 
@@ -118,7 +119,7 @@ async def log_execution_step(
             duration_ms,
         )
     except Exception:
-        logger.exception("Failed to log execution step %s for %s", step_index, tool_name)
+        logger.exception("Failed to log execution step %s for %s", log_safe(step_index), log_safe(tool_name))
 
 
 class UsageTimer:
