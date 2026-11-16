@@ -21,3 +21,8 @@ current_steps: ContextVar[list | None] = ContextVar("current_steps", default=Non
 # response chunks into it for immediate forwarding to the browser.
 # None when no stream is active (non-streaming requests, tests).
 current_stream_queue: ContextVar[asyncio.Queue | None] = ContextVar("current_stream_queue", default=None)
+
+# The model the most recently built chat client in this context was configured with (set by
+# ``shared.factory.get_chat_client``). Cost pricing falls back to it when a provider response
+# names no model; a response that does name one always wins. Empty until a client is built.
+current_agent_model: ContextVar[str] = ContextVar("current_agent_model", default="")

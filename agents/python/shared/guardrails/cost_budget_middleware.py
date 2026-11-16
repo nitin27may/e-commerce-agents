@@ -66,6 +66,7 @@ from agent_framework import (
 )
 
 from shared.config import settings
+from shared.context import current_agent_model
 from shared.cost import estimate_cost
 from shared.metrics import record_llm_turn_cost, record_would_block
 
@@ -98,6 +99,8 @@ def _current_model() -> str:
     Duplicated rather than imported: ``evals`` depends on ``shared``, not the
     other way around, so ``shared.guardrails`` can't import from ``evals``.
     """
+    if current_agent_model.get():  # per-agent override from the agent's YAML
+        return current_agent_model.get()
     if settings.LLM_PROVIDER.lower() == "azure":
         return settings.AZURE_OPENAI_DEPLOYMENT
     return settings.LLM_MODEL

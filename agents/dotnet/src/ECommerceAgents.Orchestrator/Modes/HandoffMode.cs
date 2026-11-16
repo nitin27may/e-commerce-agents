@@ -183,7 +183,7 @@ public sealed class HandoffMode(AgentSettings settings, A2AClient a2a, PromptLoa
     /// it does not have and it would answer directly instead of handing off.
     /// </remarks>
     private AIAgent BuildTriageAgent() =>
-        ECommerceAgents.Shared.Agents.ChatClientFactory.Create(_settings).AsAIAgent(
+        ECommerceAgents.Shared.Agents.ChatClientFactory.Create(_settings, "handoff-triage", _prompts).AsAIAgent(
             instructions: _prompts.Load("handoff-triage"),
             name: "orchestrator",
             description: "Triage agent that routes the conversation to a specialist.");

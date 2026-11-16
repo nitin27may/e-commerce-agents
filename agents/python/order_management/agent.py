@@ -10,7 +10,7 @@ from order_management.tools import (
     get_user_orders,
     modify_order,
 )
-from shared.agent_factory import create_chat_client
+from shared.agent_factory import agent_default_options, create_chat_client
 from shared.context import current_user_role
 from shared.context_providers import ECommerceContextProvider
 from shared.middleware import build_specialist_middleware
@@ -57,7 +57,8 @@ AGENT_TOOLS = [
 def create_order_management_agent() -> Agent:
     """Create the Order Management ChatAgent with all tools."""
     return Agent(
-        client=create_chat_client(),
+        client=create_chat_client("order-management"),
+        default_options=agent_default_options("order-management"),
         name="order-management",
         description="Order tracking, cancellation, modification, returns, and refund processing.",
         instructions=get_system_prompt(current_user_role.get() or "customer"),

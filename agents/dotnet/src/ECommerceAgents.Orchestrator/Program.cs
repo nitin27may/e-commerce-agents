@@ -121,6 +121,7 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+app.Services.GetRequiredService<PromptLoader>().ValidateModelOverrides(); // fail at startup, naming the file
 
 app.UseCors();
 app.UseAgentAuth(isOrchestrator: true);

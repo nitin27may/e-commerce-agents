@@ -4,6 +4,7 @@ using ECommerceAgents.Shared.Configuration;
 using OpenAI;
 using Microsoft.Extensions.AI;
 using OpenAI.Chat;
+using ECommerceAgents.Shared.Prompts;
 
 namespace ECommerceAgents.Shared.Agents;
 
@@ -30,9 +31,26 @@ public static class ChatClientFactory
     /// <summary>
     /// Builds the chat client for the configured provider.
     /// </summary>
-    public static IChatClient Create(AgentSettings settings)
+    /// <remarks>
+    /// <paramref name="agentName"/> (a <c>config/prompts/&lt;agentName&gt;.yaml</c> stem) plus
+    /// <paramref name="prompts"/> selects that agent's optional <c>model:</c> block; anything it leaves
+    /// out, and every agent without one, uses <paramref name="settings"/>. Under <c>replay</c> the block
+    /// is ignored. Python twin: <c>get_chat_client(agent_name)</c>.
+    /// </remarks>
+    public static IChatClient Create(AgentSettings settings, string? agentName = null, PromptLoader? prompts = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
+
+        var agentOverride = agentName is null ? null : prompts?.LoadModelOverride(agentName);
+        if (agentOverride is not null)
+        {
+            var client = Create(agentOverride.ApplyTo(settings));
+            return agentOverride.Temperature is { } t
+                // Applied as the request leaves, so it also beats the agent's own ChatOptions.Temperature
+                // (SpecialistAgentFactory sets that from LLM_TEMPERATURE).
+                ? client.AsBuilder().ConfigureOptions(o => o.Temperature = (float)t).Build()
+                : client;
+        }
 
         var provider = settings.LlmProvider?.Trim().ToLowerInvariant() ?? "openai";
         if (!KnownProviders.Contains(provider))

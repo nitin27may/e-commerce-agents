@@ -16,7 +16,7 @@ from inventory_fulfillment.tools import (
     get_tracking_status,
     place_backorder,
 )
-from shared.agent_factory import create_chat_client
+from shared.agent_factory import agent_default_options, create_chat_client
 from shared.config import settings
 from shared.context import current_user_role
 from shared.context_providers import ECommerceContextProvider
@@ -76,7 +76,8 @@ def create_inventory_fulfillment_agent() -> Agent:
         tools = AGENT_TOOLS  # type: ignore[assignment]
 
     return Agent(
-        client=create_chat_client(),
+        client=create_chat_client("inventory-fulfillment"),
+        default_options=agent_default_options("inventory-fulfillment"),
         name="inventory-fulfillment",
         description="Real-time inventory tracking, shipping estimation, carrier comparison, and backorder management.",
         instructions=get_system_prompt(current_user_role.get() or "customer"),

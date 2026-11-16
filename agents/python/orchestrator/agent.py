@@ -12,7 +12,7 @@ from agent_framework import Agent, tool
 from pydantic import Field
 
 from orchestrator.prompts import get_system_prompt
-from shared.agent_factory import create_chat_client
+from shared.agent_factory import agent_default_options, create_chat_client
 from shared.config import settings
 from shared.context import (
     current_steps,
@@ -267,7 +267,8 @@ ORCHESTRATOR_TOOLS = [call_specialist_agent]
 def create_orchestrator_agent() -> Agent:
     """Create the Customer Support orchestrator ChatAgent."""
     return Agent(
-        client=create_chat_client(),
+        client=create_chat_client("orchestrator"),
+        default_options=agent_default_options("orchestrator"),
         name="orchestrator",
         description="Customer support orchestrator that routes requests to specialist agents.",
         instructions=get_system_prompt(current_user_role.get() or "customer"),

@@ -231,7 +231,7 @@ def tool_mode_with_missing_specialist(
         _text("SHOULD NEVER BE GENERATED"),
     )
     paths: list[str] = []
-    monkeypatch.setattr(orch_mod, "create_chat_client", lambda: client)
+    monkeypatch.setattr(orch_mod, "create_chat_client", lambda *_a, **_k: client)
     monkeypatch.setattr(orch_mod, "AGENT_REGISTRY", {"product-discovery": "http://pd:8081"})
     monkeypatch.setattr(orch_mod, "_A2A_TRANSPORT", _miss_transport(paths))
     _set(monkeypatch, "AGENT_SHARED_SECRET", "test-secret")

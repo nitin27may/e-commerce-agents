@@ -49,7 +49,11 @@ def _as_int(value: Any) -> int:
 def configured_model_name() -> str:
     """The model/deployment name this process sends requests to."""
     from shared.config import settings
+    from shared.context import current_agent_model
 
+    # A per-agent ``model:`` override (config/prompts/<agent>.yaml) wins over the global setting.
+    if current_agent_model.get():
+        return current_agent_model.get()
     if settings.LLM_PROVIDER == "azure":
         return settings.AZURE_OPENAI_DEPLOYMENT or settings.LLM_MODEL
     return settings.LLM_MODEL

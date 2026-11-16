@@ -219,6 +219,52 @@ stack always uses Chat Completions and has no such setting. All three compose fi
 `LLM_BASE_URL` to the agents, and the two that run the Python stack forward `LLM_API` as well, so
 the setting works the same in a container as it does for host-run Python.
 
+## Choosing a model per agent (`model:` in the prompt YAML)
+
+By default every agent uses the one model in `LLM_MODEL` (or `AZURE_OPENAI_DEPLOYMENT`). Any
+agent can override it with an optional `model:` block in its own
+`agents/python/config/prompts/<agent>.yaml` — the files the .NET stack reads too:
+
+```yaml
+# agents/python/config/prompts/orchestrator.yaml
+model:
+  model: gpt-4.1-mini     # routing is a cheap decision
+  temperature: 0.0
+# agents/python/config/prompts/pricing-promotions.yaml
+model:
+  model: gpt-4.1          # arithmetic and policy reasoning deserve the stronger model
+```
+
+All three keys are optional; anything left out falls back to the global setting.
+
+| Key | Meaning |
+|---|---|
+| `provider` | `openai` or `azure`. Defaults to `LLM_PROVIDER`. A different provider needs that provider's own credentials (`OPENAI_API_KEY`, or the three `AZURE_OPENAI_*` variables); the global `LLM_BASE_URL` is never inherited by an agent that switches *to* `openai` |
+| `model` | Model id (`openai`) or deployment name (`azure`) |
+| `temperature` | 0–2; replaces `LLM_TEMPERATURE` for this agent |
+
+Agent names are the file stems: `orchestrator`, `handoff-triage` (the handoff mode's triage
+agent), `product-discovery`, `order-management`, `pricing-promotions`, `review-sentiment`,
+`inventory-fulfillment`. Other agents' files are untouched.
+
+- **No shipped file has a `model:` block.** The mechanism is off until you add one, so behaviour,
+  scores and replay fixtures are exactly as before.
+- **The block never reaches the model.** `load_prompt` composes only `system_prompt`, and replay
+  fixtures are keyed by the instructions, so the composed prompt is byte-identical with or without
+  it (a test proves it).
+- **Validated at startup.** An unknown key, unknown provider or out-of-range temperature stops the
+  service at startup with a message naming the file. (`anthropic` is a valid provider on the .NET
+  stack only; see [parity-matrix.md](parity-matrix.md).)
+- **Replay ignores it.** Under `LLM_PROVIDER=replay` the replay client answers regardless of model.
+- **Cost.** A response that names the model it served is priced as that model. Where it names none,
+  pricing falls back to the model the agent's client was built with (`current_agent_model`), then
+  to the global setting. A model absent from `shared/cost.py`'s table is priced at the default
+  entry and logged once. On .NET, cost uses the model the provider reports and otherwise the global
+  `LLM_MODEL`; the per-agent model is not yet threaded through the .NET cost fallback.
+
+A model change is a recording-session event for replay evals only if you also want the fixtures to
+reflect that model's answers; the replay key ignores the model.
+
 ## Per-run cost ceiling (`COST_BUDGET_*`)
 
 | Variable | Default | Meaning |

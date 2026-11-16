@@ -9,6 +9,7 @@ code should import from `shared.factory` directly.
 from __future__ import annotations
 
 from shared.factory import (
+    agent_default_options,
     create_chat_client,
     create_embedding_client,
     get_chat_client,
@@ -17,6 +18,7 @@ from shared.factory import (
 )
 
 __all__ = [
+    "agent_default_options",
     "create_chat_client",
     "create_embedding_client",
     "get_chat_client",

@@ -6,7 +6,8 @@ flags (MAF_SESSION_BACKEND, MAF_CHECKPOINT_BACKEND, etc.) swap implementations
 without touching call sites.
 
 Exports:
-    get_chat_client          — MAF chat client for OpenAI or Azure
+    get_chat_client          — MAF chat client for OpenAI or Azure (optional per-agent model override)
+    agent_default_options    — the per-agent temperature, as MAF default_options
     get_embeddings_client    — async OpenAI embeddings client
     get_embedding_model      — correct model/deployment name per provider
     parse_agent_registry     — validate an A2A endpoint map (raises, never degrades)
@@ -32,6 +33,8 @@ import openai
 from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient
 
 from shared.config import settings
+from shared.context import current_agent_model
+from shared.prompt_loader import ModelOverride, load_model_override
 
 logger = logging.getLogger(__name__)
 
@@ -77,8 +80,32 @@ def build_openai_client(
     return OpenAIChatClient(model=model, api_key=api_key, base_url=base_url)
 
 
-def get_chat_client() -> OpenAIChatClient | OpenAIChatCompletionClient | Any:
+def _resolve_override(agent_name: str | None) -> ModelOverride | None:
+    """The agent's validated ``model:`` block, or ``None`` (no name, no file, or no block)."""
+    if not agent_name:
+        return None
+    return load_model_override(agent_name)
+
+
+def agent_default_options(agent_name: str | None) -> dict[str, Any] | None:
+    """MAF ``Agent(default_options=...)`` carrying the agent's configured temperature, else ``None``.
+
+    ``None`` is exactly ``Agent``'s own default, so an agent with no override is unchanged.
+    """
+    override = _resolve_override(agent_name)
+    if override is None or override.temperature is None:
+        return None
+    return {"temperature": override.temperature}
+
+
+def get_chat_client(agent_name: str | None = None) -> OpenAIChatClient | OpenAIChatCompletionClient | Any:
     """Return a MAF chat client configured for the active LLM_PROVIDER.
+
+    ``agent_name`` (the ``config/prompts/<agent_name>.yaml`` stem) selects an optional per-agent
+    ``model:`` block (provider / model / temperature); anything it leaves out, and every agent
+    without one, uses the global settings. Under ``LLM_PROVIDER=replay`` the replay client is
+    always returned — fixtures are keyed by request, not model — and no block is applied.
+    ``shared.context.current_agent_model`` is set to the model in effect so cost pricing uses it.
 
     * ``openai``  → ``OpenAIChatClient`` (Responses API — public OpenAI
       supports it on every model). Honors ``LLM_BASE_URL`` for any
@@ -96,39 +123,9 @@ def get_chat_client() -> OpenAIChatClient | OpenAIChatCompletionClient | Any:
     This matches the decision documented in the Ch01/Ch07 tutorial code —
     see docs/architecture.md for the full rationale.
     """
-    provider = settings.LLM_PROVIDER.lower()
+    global_provider = settings.LLM_PROVIDER.lower()
 
-    if provider == "openai":
-        _validate_openai()
-        logger.info(
-            "Creating OpenAI chat client (api=%s, model=%s, base_url=%s)",
-            settings.LLM_API,
-            settings.LLM_MODEL,
-            settings.LLM_BASE_URL,
-        )
-        return build_openai_client(
-            model=settings.LLM_MODEL,
-            api_key=settings.OPENAI_API_KEY,
-            base_url=settings.LLM_BASE_URL or None,
-        )
-
-    if provider == "azure":
-        _validate_azure()
-        api_version = settings.AZURE_OPENAI_API_VERSION
-        logger.info(
-            "Creating Azure OpenAI chat-completions client (deployment=%s, endpoint=%s, api_version=%s)",
-            settings.AZURE_OPENAI_DEPLOYMENT,
-            settings.AZURE_OPENAI_ENDPOINT,
-            api_version,
-        )
-        return OpenAIChatCompletionClient(
-            model=settings.AZURE_OPENAI_DEPLOYMENT,
-            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
-            api_key=settings.AZURE_OPENAI_KEY,
-            api_version=api_version,
-        )
-
-    if provider == "replay":
+    if global_provider == "replay":
         from shared.replay_client import ReplayChatClient
 
         logger.info(
@@ -140,7 +137,39 @@ def get_chat_client() -> OpenAIChatClient | OpenAIChatCompletionClient | Any:
             record_provider=settings.REPLAY_RECORD_PROVIDER,
         )
 
-    raise ValueError(f"Unknown LLM_PROVIDER: {settings.LLM_PROVIDER!r}. Must be 'openai', 'azure', or 'replay'.")
+    if global_provider not in ("openai", "azure"):
+        raise ValueError(f"Unknown LLM_PROVIDER: {settings.LLM_PROVIDER!r}. Must be 'openai', 'azure', or 'replay'.")
+
+    override = _resolve_override(agent_name)
+    provider = (override.provider if override and override.provider else None) or global_provider
+    override_model = override.model if override else None
+
+    if provider == "openai":
+        _validate_openai()
+        model = override_model or settings.LLM_MODEL
+        # LLM_BASE_URL belongs to the global openai endpoint; an agent that switches *to* openai
+        # from another global provider talks to api.openai.com.
+        base_url = (settings.LLM_BASE_URL or None) if global_provider == "openai" else None
+        logger.info("Creating OpenAI chat client (api=%s, model=%s, base_url=%s)", settings.LLM_API, model, base_url)
+        current_agent_model.set(model if override_model else "")
+        return build_openai_client(model=model, api_key=settings.OPENAI_API_KEY, base_url=base_url)
+
+    _validate_azure()
+    deployment = override_model or settings.AZURE_OPENAI_DEPLOYMENT
+    api_version = settings.AZURE_OPENAI_API_VERSION
+    logger.info(
+        "Creating Azure OpenAI chat-completions client (deployment=%s, endpoint=%s, api_version=%s)",
+        deployment,
+        settings.AZURE_OPENAI_ENDPOINT,
+        api_version,
+    )
+    current_agent_model.set(deployment if override_model else "")
+    return OpenAIChatCompletionClient(
+        model=deployment,
+        azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+        api_key=settings.AZURE_OPENAI_KEY,
+        api_version=api_version,
+    )
 
 
 def get_embeddings_client() -> openai.AsyncOpenAI | openai.AsyncAzureOpenAI:

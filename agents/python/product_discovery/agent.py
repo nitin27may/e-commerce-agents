@@ -16,7 +16,7 @@ from product_discovery.tools import (
     search_products,
     semantic_search,
 )
-from shared.agent_factory import create_chat_client
+from shared.agent_factory import agent_default_options, create_chat_client
 from shared.config import settings
 from shared.context import current_user_role
 from shared.context_providers import ECommerceContextProvider
@@ -83,7 +83,8 @@ def create_product_discovery_agent() -> Agent:
         tools = AGENT_TOOLS  # type: ignore[assignment]
 
     return Agent(
-        client=create_chat_client(),
+        client=create_chat_client("product-discovery"),
+        default_options=agent_default_options("product-discovery"),
         name="product-discovery",
         description="Natural language product search, semantic similarity, recommendations, and price tracking.",
         instructions=get_system_prompt(current_user_role.get() or "customer"),

@@ -23,6 +23,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from shared.prompt_loader import load_model_override, validate_model_overrides
 from shared.readiness import register_readiness
 from shared.replay_client import ReplayFixtureMissingError
 from shared.replay_miss import (
@@ -60,14 +61,22 @@ def _history_as_maf_messages(history: list[dict] | None, user_message: str) -> l
     return messages
 
 
-def _run_options() -> dict[str, Any]:
+def _run_options(agent: Any = None) -> dict[str, Any]:
     """Per-run chat options applied to every agent. Pins the sampling
     temperature so the same query yields consistent answers (the provider
     default of ~1.0 makes identical prompts diverge — see LLM_TEMPERATURE).
+
+    Run-level options win over an ``Agent``'s ``default_options``, so an agent's own
+    ``model: {temperature}`` block (config/prompts/<agent>.yaml) is applied here, by the
+    agent's name, rather than left to ``default_options``.
     """
     from shared.config import settings
 
-    return {"temperature": settings.LLM_TEMPERATURE}
+    temperature = settings.LLM_TEMPERATURE
+    override = load_model_override(str(getattr(agent, "name", "") or ""))
+    if override is not None and override.temperature is not None:
+        temperature = override.temperature
+    return {"temperature": temperature}
 
 
 async def _run_agent_native(
@@ -88,7 +97,7 @@ async def _run_agent_native(
     """
     messages = _history_as_maf_messages(history, user_message)
     begin_miss_tracking()
-    response = await agent.run(messages, options=_run_options())
+    response = await agent.run(messages, options=_run_options(agent))
     raise_if_specialist_missed()
     if metadata_box is not None:
         metadata_box.update(getattr(response, "additional_properties", None) or {})
@@ -119,7 +128,7 @@ async def _run_agent_native_stream(
     """
     messages = _history_as_maf_messages(history, user_message)
     begin_miss_tracking()
-    stream = agent.run(messages, stream=True, options=_run_options())
+    stream = agent.run(messages, stream=True, options=_run_options(agent))
     async for update in stream:
         text = getattr(update, "text", None)
         if text:
@@ -248,6 +257,8 @@ def create_agent_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # A malformed per-agent ``model:`` block fails at startup, naming the file — not on request 1.
+        validate_model_overrides()
         if on_startup:
             await on_startup(app)
         logger.info("%s.started port=%d", agent_name, port)

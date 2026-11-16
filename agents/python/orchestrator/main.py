@@ -21,6 +21,7 @@ from fastapi.responses import JSONResponse
 from orchestrator.routes import router
 from shared.config import settings
 from shared.db import close_db_pool, init_db_pool
+from shared.prompt_loader import validate_model_overrides
 from shared.readiness import register_readiness
 from shared.telemetry import instrument_fastapi, setup_telemetry
 
@@ -31,6 +32,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup: telemetry + DB pool. Shutdown: close pool."""
+    validate_model_overrides()  # a malformed per-agent ``model:`` block fails here, naming the file
     setup_telemetry("ecommerce.orchestrator")
     instrument_fastapi(app)
     await init_db_pool()

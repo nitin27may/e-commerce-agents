@@ -13,7 +13,7 @@ from review_sentiment.tools import (
     get_sentiment_trend,
     search_reviews,
 )
-from shared.agent_factory import create_chat_client
+from shared.agent_factory import agent_default_options, create_chat_client
 from shared.context import current_user_role
 from shared.context_providers import ECommerceContextProvider
 from shared.middleware import build_specialist_middleware
@@ -41,7 +41,8 @@ AGENT_TOOLS = [
 def create_review_sentiment_agent() -> Agent:
     """Create the Review & Sentiment ChatAgent with all tools."""
     return Agent(
-        client=create_chat_client(),
+        client=create_chat_client("review-sentiment"),
+        default_options=agent_default_options("review-sentiment"),
         name="review-sentiment",
         description=(
             "Product review analysis with sentiment breakdown, topic insights, trend tracking, "
