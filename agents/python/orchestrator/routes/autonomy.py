@@ -56,9 +56,12 @@ async def simulate_event(body: SimulateBody, user: dict[str, Any] = Depends(requ
 
 @router.get("/api/admin/decisions")
 async def list_decisions(
-    state: str | None = None, limit: int = 100, _user: dict[str, Any] = Depends(require_admin)
+    state: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+    _user: dict[str, Any] = Depends(require_admin),
 ) -> dict[str, Any]:
-    return await svc.list_decisions(state=state, limit=limit)
+    return await svc.list_decisions(state=state, limit=limit, offset=offset)
 
 
 @router.get("/api/admin/decisions/{decision_id}")

@@ -563,3 +563,74 @@ async def test_an_approved_execution_is_reversible_exactly_when_the_policy_says(
             await engine.reverse(w.pool, waiting["decision_id"], actor_email=aus.ADMIN)
         assert err.value.status_code == 409
         assert await aus.ledger_balance(w.pool, w.users[aus.CUSTOMER]) == D("40.00")
+
+
+# ── suggestion: the decisions list filters by state in SQL and paginates ────────────────────────────────────────
+
+
+async def _bulk_no_action(w: aus.World, n: int) -> None:
+    await w.pool.executemany(
+        """INSERT INTO agent_decisions (entry_type, event_key, action, tier, outcome)
+           VALUES ('decision', $1, 'none', 'no_action', 'no_action')""",
+        [(f"order.shipment_delayed:bulk-{i}",) for i in range(n)],
+    )
+
+
+async def test_an_old_awaiting_approval_decision_stays_findable_behind_many_newer_rows(w: aus.World) -> None:
+    order = await aus.order(w)
+    waiting = await _handle(w, order, 12, "evt-old")  # the oldest row
+    await _bulk_no_action(w, 520)  # more than the old 500-row window
+
+    found = await engine.list_decisions(w.pool, state="awaiting_approval")
+    everything = await engine.list_decisions(w.pool, limit=200)
+
+    assert [d["id"] for d in found] == [waiting["decision_id"]]
+    assert len(everything) == 200 and waiting["decision_id"] not in {d["id"] for d in everything}
+    assert await engine.count_decisions(w.pool, state="awaiting_approval") == 1
+    assert await engine.count_decisions(w.pool) == 521
+
+
+async def test_the_list_paginates_newest_first_without_gaps_or_repeats(w: aus.World) -> None:
+    await _bulk_no_action(w, 25)
+
+    pages = [await engine.list_decisions(w.pool, limit=10, offset=o) for o in (0, 10, 20, 30)]
+
+    ids = [d["id"] for page in pages for d in page]
+    assert [len(p) for p in pages] == [10, 10, 5, 0]
+    assert len(set(ids)) == 25
+    stamps = [d["created_at"] for page in pages for d in page]
+    assert stamps == sorted(stamps, reverse=True)
+
+
+async def test_the_sql_state_filter_agrees_with_the_derived_state_for_every_state(w: aus.World) -> None:
+    from orchestrator.approvals_service import Actor  # noqa: F401  (documents who decides below)
+
+    ok = await _handle(w, await aus.order(w, aus.CUSTOMER), 3, "s-executed")
+    reversed_ = await _handle(w, await aus.order(w, aus.OTHER), 3, "s-reversed")
+    await engine.reverse(w.pool, reversed_["decision_id"], actor_email=aus.ADMIN)
+    approved = await _handle(w, await aus.order(w, aus.THIRD), 12, "s-approved")
+    await svc.decide(approved["approval_id"], STAFF, decision="approve")
+    for email, event in (("a@example.com", "s-rejected"), ("b@example.com", "s-expired"), ("c@example.com", "s-wait")):
+        w.users[email] = await aus.user(w.pool, email)
+    rejected = await _handle(w, await aus.order(w, "a@example.com"), 12, "s-rejected")
+    await svc.decide(rejected["approval_id"], STAFF, decision="reject")
+    expired = await _handle(w, await aus.order(w, "b@example.com"), 12, "s-expired")
+    await w.pool.execute("UPDATE approvals SET status = 'expired' WHERE id = $1", uuid.UUID(expired["approval_id"]))
+    waiting = await _handle(w, await aus.order(w, "c@example.com"), 12, "s-wait")
+    await _handle(w, await aus.order(w, aus.CUSTOMER), 0, "s-none")  # delay below the minimum
+
+    expected = {
+        ok["decision_id"]: "executed",
+        reversed_["decision_id"]: "reversed",
+        approved["decision_id"]: "executed_after_approval",
+        rejected["decision_id"]: "rejected",
+        expired["decision_id"]: "expired",
+        waiting["decision_id"]: "awaiting_approval",
+    }
+    everything = {d["id"]: d["state"] for d in await engine.list_decisions(w.pool)}
+    assert {k: everything[k] for k in expected} == expected
+    assert "no_action" in everything.values()
+    for state in set(everything.values()):
+        filtered = await engine.list_decisions(w.pool, state=state)
+        assert {d["id"] for d in filtered} == {k for k, v in everything.items() if v == state}, state
+        assert await engine.count_decisions(w.pool, state=state) == len(filtered)

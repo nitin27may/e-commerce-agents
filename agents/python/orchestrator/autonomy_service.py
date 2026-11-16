@@ -138,12 +138,14 @@ async def simulate(
     }
 
 
-async def list_decisions(*, state: str | None = None, limit: int = 100) -> dict[str, Any]:
+async def list_decisions(*, state: str | None = None, limit: int = 100, offset: int = 0) -> dict[str, Any]:
     pool = get_pool()
-    decisions = await engine.list_decisions(pool, state=state, limit=limit)
+    decisions = await engine.list_decisions(pool, state=state, limit=limit, offset=offset)
     return {
         "decisions": decisions,
-        "total": len(decisions),
+        "total": await engine.count_decisions(pool, state=state),  # every match, not just this page
+        "limit": max(1, min(int(limit), 200)),
+        "offset": max(0, int(offset)),
         "budgets": await engine.budget_overview(pool),
         "enabled": settings.AUTONOMY_ENABLED,
         "simulator_enabled": settings.AUTONOMY_ENABLED and settings.AUTONOMY_SIMULATOR_ENABLED,

@@ -815,15 +815,25 @@ async def reverse(pool: asyncpg.Pool, decision_id: str, *, actor_email: str, not
 
 # ── reading ──────────────────────────────────────────────────────────────────
 
-#: How many of the newest decisions a state filter looks through.
-_WINDOW = 500
+#: ``state_of`` in SQL, so a state filter and its count run in the database over every row, not over a window.
+#: ``test_the_sql_state_filter_agrees_with_the_derived_state_for_every_state`` pins the two together.
+_STATE_CASE = f"""CASE
+    WHEN r.id IS NOT NULL THEN 'reversed'
+    WHEN d.tier = 'no_action' THEN 'no_action'
+    WHEN d.tier IN ({", ".join(f"'{t}'" for t in sorted(AUTONOMOUS_TIERS))}) THEN 'executed'
+    WHEN x.id IS NOT NULL THEN 'executed_after_approval'
+    WHEN a.status IN ('approved', 'approved_with_edits') THEN 'approving'
+    WHEN a.status IN ('rejected', 'expired', 'failed') THEN a.status
+    ELSE 'awaiting_approval'
+END"""
 
-_STATE_SQL = """
+_STATE_SQL = f"""
 SELECT d.id, d.event_key, d.event_type, d.action, d.budget_key, d.order_id, d.amount, d.tier, d.outcome,
        d.reasons, d.input, d.budget, d.policy_version, d.approval_id, d.reversible, d.created_at,
-       u.email AS customer_email,
+       u.email AS customer_email, {_STATE_CASE} AS sql_state,
        a.status AS approval_status, a.assigned_role AS approval_role,
-       x.id AS execution_id, x.reversible AS execution_reversible, x.amount AS applied_amount, x.actor_email AS approved_by,
+       x.id AS execution_id, x.reversible AS execution_reversible, x.amount AS applied_amount,
+       x.actor_email AS approved_by,
        r.id AS reversal_id, r.created_at AS reversed_at, r.actor_email AS reversed_by, r.note AS reversal_note
   FROM agent_decisions d
   LEFT JOIN users u ON u.id = d.user_id
@@ -886,16 +896,40 @@ def _present(row: asyncpg.Record) -> dict[str, Any]:
     }
 
 
-async def list_decisions(
-    db: asyncpg.Pool | asyncpg.Connection, *, state: str | None = None, limit: int = 100
-) -> list[dict[str, Any]]:
-    """Recent decisions, newest first, each with the state derived from its follow-up rows.
+_MAX_PAGE = 200
 
-    ``state`` filters after the state is derived, over the newest ``_WINDOW`` rows; ``limit`` then caps the page.
+
+def _page(limit: int, offset: int) -> tuple[int, int]:
+    return max(1, min(int(limit), _MAX_PAGE)), max(0, int(offset))
+
+
+async def list_decisions(
+    db: asyncpg.Pool | asyncpg.Connection, *, state: str | None = None, limit: int = 100, offset: int = 0
+) -> list[dict[str, Any]]:
+    """Decisions, newest first, each with the state derived from its follow-up rows.
+
+    ``state`` is filtered in SQL over **all** rows (an old ``awaiting_approval`` decision stays findable however many
+    newer rows there are); ``limit`` (at most 200) and ``offset`` page the result.
     """
-    rows = await db.fetch(f"{_STATE_SQL} ORDER BY d.created_at DESC, d.id LIMIT $1", _WINDOW)  # noqa: S608
-    items = [_present(r) for r in rows]
-    return [i for i in items if state is None or i["state"] == state][: max(1, min(int(limit), 200))]
+    size, skip = _page(limit, offset)
+    rows = await db.fetch(
+        f"SELECT * FROM ({_STATE_SQL}) s WHERE ($1::text IS NULL OR s.sql_state = $1) "  # noqa: S608
+        "ORDER BY s.created_at DESC, s.id LIMIT $2 OFFSET $3",
+        state,
+        size,
+        skip,
+    )
+    return [_present(r) for r in rows]
+
+
+async def count_decisions(db: asyncpg.Pool | asyncpg.Connection, *, state: str | None = None) -> int:
+    """How many decisions match ``state`` (all of them when None): the total behind a paged list."""
+    return int(
+        await db.fetchval(
+            f"SELECT count(*) FROM ({_STATE_SQL}) s WHERE ($1::text IS NULL OR s.sql_state = $1)",  # noqa: S608
+            state,
+        )
+    )
 
 
 async def get_decision(db: asyncpg.Pool | asyncpg.Connection, decision_id: str) -> dict[str, Any] | None:
