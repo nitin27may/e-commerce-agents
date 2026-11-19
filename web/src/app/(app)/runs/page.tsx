@@ -191,7 +191,9 @@ function RunRow({
 
   const { isAdmin } = useAuth();
   const hitl = checkpointData?.hitl_request;
-  const pendingApproval = hitl?.status === "pending";
+  // A carrier-scan wait is pending too, but nobody approves it: the carrier's scan answers it.
+  const waitingForCarrier = hitl?.kind === "carrier_scan";
+  const pendingApproval = hitl?.status === "pending" && !waitingForCarrier;
 
   return (
     <Card className={cn("overflow-hidden", pendingApproval && "ring-1 ring-amber-400/60")}>
@@ -280,10 +282,14 @@ function RunRow({
           {hitl && (
             <div className="space-y-2 border-t px-4 py-3 text-xs">
               <p className="font-medium text-foreground">
-                Return approval — {hitl.status}
+                {waitingForCarrier ? "Carrier scan" : "Return approval"} — {hitl.status}
                 {hitl.payload?.order_id ? ` (order ${hitl.payload.order_id})` : ""}
               </p>
-              {pendingApproval && !isAdmin ? (
+              {waitingForCarrier && hitl.status === "pending" ? (
+                <p className="text-muted-foreground">
+                  Approved. Waiting for the carrier to scan the package.
+                </p>
+              ) : pendingApproval && !isAdmin ? (
                 // Only staff can decide (#92); the backend 403s anyone else.
                 <p className="text-muted-foreground">Awaiting staff review</p>
               ) : pendingApproval ? (

@@ -148,6 +148,57 @@ describe("RunsPage — checkpoint resume", () => {
     expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
   });
 
+  it("shows a return waiting for the carrier as a wait, with nothing to approve", async () => {
+    vi.spyOn(api, "getRuns").mockResolvedValue({ entries: [PENDING_RUN], total: 1, limit: 20, offset: 0 });
+    vi.spyOn(api, "getRunCheckpoints").mockResolvedValue({
+      run_id: "run-1",
+      checkpoints: [],
+      hitl_request: {
+        id: "hitl-2",
+        kind: "carrier_scan",
+        status: "pending",
+        payload: { order_id: "order-abc", return_id: "ret-1" },
+        response: null,
+        created_at: new Date().toISOString(),
+        responded_at: null,
+      },
+    });
+
+    render(<RunsPage />);
+    await waitFor(() => expect(screen.getByText("return order abc")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("return order abc"));
+
+    await waitFor(() => expect(screen.getByText(/Carrier scan — pending/)).toBeInTheDocument());
+    expect(screen.getByText(/Waiting for the carrier to scan the package/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reject" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Awaiting staff review")).not.toBeInTheDocument();
+  });
+
+  it("shows a resolved carrier scan as resolved", async () => {
+    vi.spyOn(api, "getRuns").mockResolvedValue({ entries: [PENDING_RUN], total: 1, limit: 20, offset: 0 });
+    vi.spyOn(api, "getRunCheckpoints").mockResolvedValue({
+      run_id: "run-1",
+      checkpoints: [],
+      hitl_request: {
+        id: "hitl-2",
+        kind: "carrier_scan",
+        status: "completed",
+        payload: { order_id: "order-abc" },
+        response: { received: true },
+        created_at: new Date().toISOString(),
+        responded_at: new Date().toISOString(),
+      },
+    });
+
+    render(<RunsPage />);
+    await waitFor(() => expect(screen.getByText("return order abc")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("return order abc"));
+
+    await waitFor(() => expect(screen.getByText(/Carrier scan — completed/)).toBeInTheDocument());
+    expect(screen.getByText(/Resolved/)).toBeInTheDocument();
+  });
+
   it("shows a resume error inline without crashing", async () => {
     vi.spyOn(api, "getRuns").mockResolvedValue({ entries: [PENDING_RUN], total: 1, limit: 20, offset: 0 });
     vi.spyOn(api, "getRunCheckpoints").mockResolvedValue({

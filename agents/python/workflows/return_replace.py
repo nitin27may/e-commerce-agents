@@ -3,6 +3,12 @@
 Step chain: check-eligibility → policy-gate → initiate-return → search-replacements →
 apply-discount → finalize.
 
+With ``RETURN_LIFECYCLE_ENABLED`` the chain gains a wait between the discount and ``finalize``:
+``… → apply-discount → await-carrier-scan → finalize``. The label already exists (``initiate-return`` issues it),
+so the return waits for the carrier's first scan, which can be days away, and resumes from its checkpoint when the
+scan arrives (``ScanEvent``). The flag is read when the graph is built; a checkpoint belongs to the graph that
+wrote it, so change the flag only while no return is paused.
+
 Nothing is created before the gate: the ``returns`` row, the label and the order's ``returned`` status all
 come from ``initiate-return``, which runs only once the policy has said ``auto`` or a reviewer has approved.
 A rejected (or expired) request therefore leaves no return row and the order untouched.
@@ -67,6 +73,11 @@ class WorkflowState:
     approval_id: "str | None" = None
     decided_by: "str | None" = None
 
+    # Lifecycle (RETURN_LIFECYCLE_ENABLED): what the return is waiting for, and what it has learned so far
+    label_url: "str | None" = None
+    awaiting: "str | None" = None  # None | "carrier_scan"
+    scan: "dict | None" = None
+
     # Execution tracking
     completed_steps: list = field(default_factory=list)
     errors: list = field(default_factory=list)
@@ -103,6 +114,28 @@ class ReturnDecision:
     note: str = ""
     decided_by: str = ""
     approval_id: str = ""
+
+
+@dataclass
+class AwaitCarrierScan:
+    """Emitted when an approved return has its label and is waiting for the carrier's first scan."""
+
+    return_id: str
+    order_id: str
+    label_url: "str | None"
+    state: WorkflowState
+    timeout_days: int = 14
+
+
+@dataclass
+class ScanEvent:
+    """The answer to :class:`AwaitCarrierScan`. ``received=False`` means the wait ran out with no scan."""
+
+    received: bool = True
+    carrier: str = ""
+    tracking: str = ""
+    scanned_at: str = ""
+    note: str = ""
 
 
 PolicyFn = Callable[[WorkflowState], Awaitable[PolicyDecision | None]]
@@ -284,6 +317,7 @@ class _InitiateReturnExecutor(Executor):
             return
 
         state.return_id = result.get("return_id")
+        state.label_url = result.get("return_label_url")
         state.refund_amount = float(result.get("refund_amount", 0.0))
         state.completed_steps.append("initiate_return")
 
@@ -357,6 +391,45 @@ class _ApplyDiscountExecutor(Executor):
         await ctx.send_message(state)
 
 
+class _AwaitCarrierScanExecutor(Executor):
+    """Pauses until the carrier's first scan; the return, its label and the order are already in place."""
+
+    def __init__(self, timeout_days: int) -> None:
+        super().__init__(id="await-carrier-scan")
+        self._timeout_days = timeout_days
+
+    @handler
+    async def run(self, state: WorkflowState, ctx: WorkflowContext[WorkflowState, WorkflowState]) -> None:
+        if not state.return_id:  # nothing was created, so there is nothing to wait for
+            await ctx.send_message(state)
+            return
+        state.awaiting = "carrier_scan"
+        # A snapshot for whoever watches the stream, before request_info pauses it (as the policy gate does).
+        await ctx.yield_output(state)
+        await ctx.request_info(
+            AwaitCarrierScan(
+                return_id=state.return_id,
+                order_id=state.order_id,
+                label_url=state.label_url,
+                state=state,
+                timeout_days=self._timeout_days,
+            ),
+            response_type=ScanEvent,
+        )
+
+    @response_handler(request=AwaitCarrierScan, response=ScanEvent)
+    async def on_scan(self, original_request, response, ctx) -> None:
+        state = _restore_state(original_request.state)
+        state.awaiting = None
+        if not response.received:
+            state.errors.append(f"carrier_scan: {response.note or 'no scan arrived before the return expired'}")
+            await ctx.yield_output(state)
+            return
+        state.scan = {"carrier": response.carrier, "tracking": response.tracking, "scanned_at": response.scanned_at}
+        state.completed_steps.append("carrier_scan")
+        await ctx.send_message(state)
+
+
 class _FinalizeExecutor(Executor):
     def __init__(self) -> None:
         super().__init__(id="finalize")
@@ -390,15 +463,19 @@ class ReturnAndReplaceWorkflow:
         discount = _ApplyDiscountExecutor(self._tools)
         finalize = _FinalizeExecutor()
 
-        return (
+        builder = (
             WorkflowBuilder(start_executor=check, name="return-and-replace")
             .add_edge(check, gate)
             .add_edge(gate, initiate)
             .add_edge(initiate, search)
             .add_edge(search, discount)
-            .add_edge(discount, finalize)
-            .build()
         )
+        if settings.RETURN_LIFECYCLE_ENABLED:
+            wait_for_scan = _AwaitCarrierScanExecutor(int(settings.RETURN_SCAN_TIMEOUT_DAYS))
+            builder = builder.add_edge(discount, wait_for_scan).add_edge(wait_for_scan, finalize)
+        else:
+            builder = builder.add_edge(discount, finalize)
+        return builder.build()
 
     async def execute(self, state: WorkflowState) -> WorkflowState:
         """Run the workflow and return the final state snapshot.

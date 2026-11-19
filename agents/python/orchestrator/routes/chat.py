@@ -249,6 +249,17 @@ async def _link_run_artifacts(
             usage_log_id,
             checkpoint_id,
         )
+    wait = run_payload.get("pending_wait")
+    if wait and checkpoint_id:
+        # An auto-approved return went straight to the carrier wait: there is no approval to open, only the wait.
+        try:
+            from shared.return_lifecycle import open_scan_wait
+
+            await open_scan_wait(
+                pool, workflow_run_id=usage_log_id, user_email=user_email, wait=wait, checkpoint_id=checkpoint_id
+            )
+        except Exception:
+            logger.exception("chat.scan_wait_open_failed run=%s", log_safe(usage_log_id))
     if run_payload.get("pending_approval") and run_payload.get("request_id"):
         policy = run_payload.get("approval_policy")
         policy = policy if isinstance(policy, dict) else {}

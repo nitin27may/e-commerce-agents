@@ -952,7 +952,9 @@ class ApiClient {
       checkpoints: { checkpoint_id: string; workflow_name: string; created_at: string }[];
       hitl_request: {
         id: string;
-        status: "pending" | "approved" | "rejected" | "timeout";
+        // return_approval is a staff decision; carrier_scan is a wait for the carrier (#95), nobody decides it.
+        kind?: "return_approval" | "carrier_scan"; // absent on the .NET stack: treat as return_approval
+        status: "pending" | "processing" | "approved" | "rejected" | "completed" | "timeout";
         payload: Record<string, unknown>;
         response: Record<string, unknown> | null;
         created_at: string;
