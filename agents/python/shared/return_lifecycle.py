@@ -3,8 +3,11 @@
 A paused return is a ``hitl_requests`` row (MAF's resume token and the checkpoint to resume from) plus, for a wait
 that can run out, an outbox timer. This module opens those rows; ``worker/return_handlers.py`` answers them.
 
-* **carrier scan** — ``kind = 'carrier_scan'``. Opened when an approved return has its label. Answered by an
+* **carrier scan** — ``kind = 'carrier_scan'``. Opened when an approved return has its label. Answered by a
   ``return.carrier_scanned`` outbox event, or expired by ``return.scan_timeout``.
+* **inspection** — ``kind = 'return_inspection'``. Opened once the carrier has scanned the package. Answered by support
+  through ``POST /api/staff/returns/{id}/inspect``. Its timer, ``return.inspection_timeout``, only nudges staff: a
+  customer's return is never denied because support was slow.
 
 A wait is found by the return it belongs to (``payload->>'return_id'``), never by scanning a user's rows.
 
@@ -28,14 +31,18 @@ from shared.outbox import enqueue
 logger = logging.getLogger(__name__)
 
 KIND_CARRIER_SCAN = "carrier_scan"
+KIND_INSPECTION = "return_inspection"
+TOPIC_INSPECTION_TIMEOUT = "return.inspection_timeout"
 TOPIC_CARRIER_SCANNED = "return.carrier_scanned"
 TOPIC_SCAN_TIMEOUT = "return.scan_timeout"
 
 #: Where a customer follows a return (the /runs page shows the run and its timeline).
 RUNS_LINK = "/runs"
+#: Where support inspects returns.
+INSPECTIONS_LINK = "/admin/returns"
 
 
-async def open_scan_wait(
+async def open_wait(
     pool: asyncpg.Pool,
     *,
     workflow_run_id: Any,
@@ -43,20 +50,29 @@ async def open_scan_wait(
     wait: dict[str, Any],
     checkpoint_id: Any,
 ) -> str:
-    """Record that a return is waiting for the carrier's first scan; return the ``hitl_requests`` id.
+    """Record that a return is waiting (``wait["kind"]``); return the ``hitl_requests`` id.
 
-    One transaction: the wait row, its expiry timer and the customer's "label ready" notification commit together,
-    so a wait never exists without a timer that will eventually close it. Idempotent per request id: opening the same
-    wait twice returns the row that is already there.
+    One transaction: the wait row, its timer and the notification commit together, so a wait never exists without a
+    timer. Idempotent per request id: opening the same wait twice returns the row that is already there.
     """
+    kind = str(wait["kind"])
+    if kind not in (KIND_CARRIER_SCAN, KIND_INSPECTION):
+        raise ValueError(f"unknown return wait kind {kind!r}")
     return_id = str(wait["return_id"])
-    timeout_days = int(wait.get("timeout_days") or settings.RETURN_SCAN_TIMEOUT_DAYS)
+    inspecting = kind == KIND_INSPECTION
+    default_days = settings.RETURN_INSPECTION_TIMEOUT_DAYS if inspecting else settings.RETURN_SCAN_TIMEOUT_DAYS
+    timeout_days = int(wait.get("timeout_days") or default_days)
     payload = {
         "return_id": return_id,
         "order_id": wait.get("order_id"),
         "label_url": wait.get("label_url"),
+        "refund_amount": wait.get("refund_amount"),
         "timeout_days": timeout_days,
-        "text": f"Waiting for the carrier to scan return {return_id}.",
+        "text": (
+            f"Waiting for support to inspect return {return_id}."
+            if inspecting
+            else f"Waiting for the carrier to scan return {return_id}."
+        ),
     }
     async with pool.acquire() as conn, conn.transaction():
         existing = await conn.fetchval(
@@ -75,37 +91,41 @@ async def open_scan_wait(
             wait["request_id"],
             checkpoint_id,
             user_email,
-            KIND_CARRIER_SCAN,
+            kind,
             json.dumps(payload, default=str),
         )
+        topic = TOPIC_INSPECTION_TIMEOUT if inspecting else TOPIC_SCAN_TIMEOUT
         await enqueue(
             conn,
-            TOPIC_SCAN_TIMEOUT,
+            topic,
             {"hitl_id": str(hitl_id), "return_id": return_id},
             available_at=datetime.now(UTC) + timedelta(days=timeout_days),
-            dedupe_key=f"{TOPIC_SCAN_TIMEOUT}:{hitl_id}",
+            dedupe_key=f"{topic}:{hitl_id}",
             aggregate_id=return_id,
         )
-        await notify(
-            conn,
-            kind="return.label_ready",
-            title="Your return label is ready",
-            body=(
-                f"Return {return_id} is approved. Send the package back; "
-                "we update this return when the carrier scans it."
-            ),
-            link=RUNS_LINK,
-            user_email=user_email,
-        )
-    logger.info("return.scan_wait_opened hitl=%s return=%s", log_safe(hitl_id), log_safe(return_id))
+        if inspecting:
+            await notify(
+                conn,
+                kind="return.awaiting_inspection",
+                title="A return is waiting for inspection",
+                body=f"The carrier has return {return_id}. Inspect it and decide the refund.",
+                link=INSPECTIONS_LINK,
+                role="support",
+            )
+        else:
+            await notify(
+                conn,
+                kind="return.label_ready",
+                title="Your return label is ready",
+                body=(
+                    f"Return {return_id} is approved. Send the package back; "
+                    "we update this return when the carrier scans it."
+                ),
+                link=RUNS_LINK,
+                user_email=user_email,
+            )
+    logger.info("return.wait_opened kind=%s hitl=%s return=%s", kind, log_safe(hitl_id), log_safe(return_id))
     return str(hitl_id)
-
-
-async def open_scan_wait_row(pool: asyncpg.Pool, hitl_id: str) -> asyncpg.Record | None:
-    """The still-pending carrier-scan wait with this id, or ``None``."""
-    return await pool.fetchrow(
-        "SELECT * FROM hitl_requests WHERE id = $1 AND kind = $2 AND status = 'pending'", hitl_id, KIND_CARRIER_SCAN
-    )
 
 
 async def pending_scan_wait_for_return(pool: asyncpg.Pool, return_id: str) -> asyncpg.Record | None:

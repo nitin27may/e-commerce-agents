@@ -913,9 +913,18 @@ async def resume_workflow(
             # Shielded so a second cancel cannot interrupt the release itself.
             await asyncio.shield(_release_hitl())
 
-    from workflows.return_replace import ScanEvent
+    from workflows.return_replace import InspectionResult, ScanEvent
 
-    if isinstance(decision, ScanEvent):
+    if isinstance(decision, InspectionResult):
+        accepted = str(decision.outcome).lower() == "accept"
+        recorded_status = "completed" if accepted else "rejected"
+        recorded = {
+            "outcome": "accept" if accepted else "reject",
+            "resolution": decision.resolution if accepted else None,
+            "amount": decision.amount,
+            "decided_by": reviewer_email,
+        }
+    elif isinstance(decision, ScanEvent):
         # A carrier scan is an event, not a decision: it is `completed` when the package arrived, `timeout` when
         # the wait ran out. Neither is an approval or a rejection.
         recorded_status = "completed" if decision.received else "timeout"
@@ -948,9 +957,9 @@ async def resume_workflow(
     wait = final_payload.get("pending_wait")
     if wait and new_checkpoint_id:
         # The approved return was created and now waits on the carrier: open that wait, as the first run does.
-        from shared.return_lifecycle import open_scan_wait
+        from shared.return_lifecycle import open_wait
 
-        await open_scan_wait(
+        await open_wait(
             pool,
             workflow_run_id=hitl_row["workflow_run_id"],
             user_email=requester_email,

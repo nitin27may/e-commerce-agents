@@ -372,6 +372,39 @@ function retryAfterSeconds(res: Response): number | null {
   return Number.isFinite(n) && n > 0 ? Math.ceil(n) : null;
 }
 
+export interface RunTimelineEntry {
+  at: string;
+  kind: string;
+  title: string;
+  detail?: string | null;
+  actor?: string | null;
+}
+
+export interface RunTimeline {
+  run_id: string;
+  entries: RunTimelineEntry[];
+}
+
+export interface ReturnInspection {
+  return_id: string;
+  order_id: string | null;
+  customer_email: string;
+  customer_name: string;
+  reason: string;
+  refund_amount: number;
+  scanned_at: string | null;
+  waiting_since: string;
+  overdue_after_days: number;
+}
+
+export interface InspectReturnBody {
+  outcome: "accept" | "reject";
+  resolution?: "refund" | "store_credit" | "replacement";
+  amount?: number;
+  condition?: string;
+  note?: string;
+}
+
 class ApiClient {
   private token: string | null = null;
   private refreshToken: string | null = null;
@@ -953,7 +986,7 @@ class ApiClient {
       hitl_request: {
         id: string;
         // return_approval is a staff decision; carrier_scan is a wait for the carrier (#95), nobody decides it.
-        kind?: "return_approval" | "carrier_scan"; // absent on the .NET stack: treat as return_approval
+        kind?: "return_approval" | "carrier_scan" | "return_inspection"; // absent on the .NET stack: return_approval
         status: "pending" | "processing" | "approved" | "rejected" | "completed" | "timeout";
         payload: Record<string, unknown>;
         response: Record<string, unknown> | null;
@@ -961,6 +994,24 @@ class ApiClient {
         responded_at: string | null;
       } | null;
     }>(`/api/runs/${runId}/checkpoints`);
+  }
+
+  /** What happened to a return run, oldest first (the lifecycle's waits, the approval's audit and checkpoints). */
+  getRunTimeline(runId: string) {
+    return this.request<RunTimeline>(`/api/runs/${encodeURIComponent(runId)}/timeline`);
+  }
+
+  /** Staff: returns the carrier has delivered that nobody has inspected yet. */
+  getReturnInspections() {
+    return this.request<{ inspections: ReturnInspection[]; total: number }>("/api/staff/returns/inspections");
+  }
+
+  /** Staff: accept (and how) or reject a delivered return. The amount can only go down from the original. */
+  inspectReturn(returnId: string, body: InspectReturnBody) {
+    return this.request<{ return_id: string; status: string; resolution: string | null; paid: number }>(
+      `/api/staff/returns/${encodeURIComponent(returnId)}/inspect`,
+      { method: "POST", body: JSON.stringify(body) },
+    );
   }
 
   resumeRun(runId: string, approved: boolean) {

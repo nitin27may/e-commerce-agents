@@ -19,7 +19,7 @@ from typing import Any
 import asyncpg
 import pytest
 
-from orchestrator.modes.workflow_mode import _scan_wait
+from orchestrator.modes.workflow_mode import _pending_wait
 from shared import db as shared_db
 from shared.checkpoint_storage import PostgresCheckpointStorage
 from shared.config import settings
@@ -27,7 +27,7 @@ from shared.policy import PolicyDecision
 from shared.return_lifecycle import (
     TOPIC_CARRIER_SCANNED,
     TOPIC_SCAN_TIMEOUT,
-    open_scan_wait,
+    open_wait,
     request_scan,
 )
 from tests.test_return_replace_workflow import _tools
@@ -104,11 +104,9 @@ async def _paused_return(pool: asyncpg.Pool) -> dict[str, Any]:
             request_id, request = event.request_id, event.data
     assert isinstance(request, AwaitCarrierScan)
     checkpoint_id = (await storage.list_checkpoint_ids(workflow_name="return-and-replace"))[0]  # newest first
-    wait = _scan_wait(final, request_id, request)
+    wait = _pending_wait(final, request_id, request)
     assert wait is not None
-    hitl_id = await open_scan_wait(
-        pool, workflow_run_id=run_id, user_email=CUSTOMER, wait=wait, checkpoint_id=checkpoint_id
-    )
+    hitl_id = await open_wait(pool, workflow_run_id=run_id, user_email=CUSTOMER, wait=wait, checkpoint_id=checkpoint_id)
     return {
         "return_id": return_id,
         "hitl_id": hitl_id,
@@ -149,13 +147,13 @@ async def test_a_paused_return_has_a_wait_a_timer_and_tells_the_customer(pool_bo
 async def test_opening_the_same_wait_twice_adds_nothing(pool_bound) -> None:
     pool = pool_bound
     p = await _paused_return(pool)
-    wait = _scan_wait(
+    wait = _pending_wait(
         WorkflowState(user_email=CUSTOMER, order_id="o", awaiting="carrier_scan", return_id=p["return_id"]),
         p["request_id"],
         None,
     )
 
-    again = await open_scan_wait(
+    again = await open_wait(
         pool, workflow_run_id=p["run_id"], user_email=CUSTOMER, wait=wait, checkpoint_id=p["checkpoint_id"]
     )
 
@@ -176,7 +174,10 @@ async def test_a_carrier_scan_resumes_the_return_and_marks_it_shipped_back(pool_
     assert wait["status"] == "completed" and json.loads(wait["response"])["carrier"] == "UPS"
     ret = await pool.fetchrow("SELECT status, scanned_at FROM returns WHERE id = $1::uuid", p["return_id"])
     assert ret["status"] == "shipped_back" and ret["scanned_at"] is not None
-    assert await _notes(pool) == ["return.label_ready", "return.carrier_scanned"]
+    # The resumed run did not finish: it paused again, now for support to inspect what the carrier delivered.
+    inspection = await pool.fetchrow("SELECT status, user_email FROM hitl_requests WHERE kind = 'return_inspection'")
+    assert inspection["status"] == "pending" and inspection["user_email"] == CUSTOMER
+    assert sorted(await _notes(pool)) == ["return.awaiting_inspection", "return.carrier_scanned", "return.label_ready"]
 
 
 async def test_a_second_scan_for_the_same_return_is_ignored(pool_bound) -> None:
@@ -255,47 +256,71 @@ async def test_a_return_approval_cannot_be_answered_with_a_scan_and_a_scan_wait_
     assert (await _tick(pool_bound)).done == 1
 
 
-async def test_kill_and_restart_a_fresh_interpreter_resumes_the_waiting_return(pool_bound, database_url: str) -> None:
-    """Pause here, drop every object, and resume in a new process that has only the database to go on."""
+async def test_kill_and_restart_two_fresh_interpreters_carry_a_return_through_scan_and_inspection(
+    pool_bound, database_url: str
+) -> None:
+    """Pause here, drop every object, then resume the scan in one new process and the inspection in another."""
     pool = pool_bound
     p = await _paused_return(pool)
     script = (
         "import asyncio, json, sys\n"
         "import asyncpg\n"
+        "from shared import db\n"
         "from shared.checkpoint_storage import PostgresCheckpointStorage\n"
         "from shared.config import settings\n"
+        "from shared.return_ops import resolve_return\n"
         "settings.RETURN_LIFECYCLE_ENABLED = True\n"
-        "from workflows.return_replace import ReturnAndReplaceWorkflow, ScanEvent, WorkflowState\n"
-        "async def main(url, request_id, checkpoint_id):\n"
+        "from workflows.return_replace import (InspectionResult, ReturnAndReplaceWorkflow, ScanEvent, WorkflowState)\n"
+        "async def main(step, url, request_id, checkpoint_id):\n"
         "    pool = await asyncpg.create_pool(url, min_size=1, max_size=2)\n"
-        "    wf = ReturnAndReplaceWorkflow({})._build_maf_workflow()\n"
-        "    final = None\n"
-        "    async for e in wf.run(responses={request_id: ScanEvent(received=True, carrier='UPS')},\n"
-        "                          checkpoint_id=checkpoint_id, checkpoint_storage=PostgresCheckpointStorage(pool),\n"
-        "                          stream=True):\n"
+        "    db.use_pool(pool)\n"
+        "    storage = PostgresCheckpointStorage(pool)\n"
+        "    wf = ReturnAndReplaceWorkflow({'resolve_return': resolve_return})._build_maf_workflow()\n"
+        "    answer = (ScanEvent(received=True, carrier='UPS') if step == 'scan'\n"
+        "              else InspectionResult(outcome='accept', resolution='store_credit', amount=50.0,\n"
+        "                                    inspected_by='staff@example.com'))\n"
+        "    final, next_request = None, None\n"
+        "    async for e in wf.run(responses={request_id: answer}, checkpoint_id=checkpoint_id,\n"
+        "                          checkpoint_storage=storage, stream=True):\n"
         "        if getattr(e, 'type', None) == 'output' and isinstance(e.data, WorkflowState):\n"
         "            final = e.data\n"
+        "        if getattr(e, 'type', None) == 'request_info':\n"
+        "            next_request = e.request_id\n"
+        "    latest = (await storage.list_checkpoint_ids(workflow_name='return-and-replace'))[0]\n"
         "    await pool.close()\n"
-        "    print(json.dumps({'steps': final.completed_steps, 'return_id': final.return_id,\n"
-        "                      'errors': final.errors, 'scan': final.scan}))\n"
-        "asyncio.run(main(*sys.argv[1:4]))\n"
+        "    print(json.dumps({'steps': final.completed_steps, 'awaiting': final.awaiting, 'errors': final.errors,\n"
+        "                      'return_id': final.return_id, 'next_request': next_request, 'checkpoint': str(latest),\n"
+        "                      'paid': final.refund_amount, 'resolution': final.resolution}))\n"
+        "asyncio.run(main(*sys.argv[1:5]))\n"
     )
 
-    out = subprocess.run(  # noqa: S603 - fixed argv, our own interpreter and script
-        [sys.executable, "-c", script, database_url, p["request_id"], str(p["checkpoint_id"])],
-        cwd=PYTHON_DIR,
-        capture_output=True,
-        text=True,
-        timeout=120,
-        check=False,
-    )
+    def run(step: str, request_id: str, checkpoint_id: str) -> dict[str, Any]:
+        out = subprocess.run(  # noqa: S603 - fixed argv, our own interpreter and script
+            [sys.executable, "-c", script, step, database_url, request_id, checkpoint_id],
+            cwd=PYTHON_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+        assert out.returncode == 0, out.stderr[-2000:]
+        return json.loads(out.stdout.strip().splitlines()[-1])
 
-    assert out.returncode == 0, out.stderr[-2000:]
-    result = json.loads(out.stdout.strip().splitlines()[-1])
-    assert result["errors"] == []
-    assert "carrier_scan" in result["steps"] and "finalize" in result["steps"]
-    assert result["return_id"] == p["return_id"]  # the return created before the pause, restored from Postgres
-    assert result["scan"]["carrier"] == "UPS"
+    scanned = run("scan", p["request_id"], str(p["checkpoint_id"]))
+    assert scanned["errors"] == [] and scanned["awaiting"] == "inspection"  # paused again, for support
+    assert "carrier_scan" in scanned["steps"] and "finalize" not in scanned["steps"]
+    assert scanned["return_id"] == p["return_id"]  # the return created before the first pause, restored from Postgres
+
+    inspected = run("inspect", scanned["next_request"], scanned["checkpoint"])  # a different process again
+    assert inspected["errors"] == [] and inspected["awaiting"] is None
+    assert "inspection" in inspected["steps"] and "finalize" in inspected["steps"]
+    assert inspected["resolution"] == "store_credit" and inspected["paid"] == 50.0
+    ret = await pool.fetchrow(
+        "SELECT status, resolution, refund_amount FROM returns WHERE id = $1::uuid", p["return_id"]
+    )
+    assert (ret["status"], ret["resolution"], float(ret["refund_amount"])) == ("refunded", "store_credit", 50.0)
+    credit = await pool.fetchval("SELECT sum(amount) FROM store_credit_ledger")
+    assert float(credit) == 50.0
 
 
 # ── the admin simulator route ────────────────────────────────────────────────────────────────────────────────

@@ -201,10 +201,13 @@ in the approving request, `docs/return-lifecycle.md`. The graph gains `await-car
 opened in one transaction by `shared/return_lifecycle.py::open_scan_wait`. `return.carrier_scanned` (only the admin
 simulator `POST /api/admin/returns/{id}/simulate-scan` produces it) resumes the run through
 `approvals_service.resume_workflow(kind="carrier_scan")`, the same claim/fence/run-as-requester machinery a reviewer's
-decision uses; `worker/return_handlers.py` serves both topics. **A scan wait is not an approval**: no inbox row, and each path
-refuses the other's kind (400). The flag is read when the graph is built and a checkpoint belongs to the graph that wrote it,
-so flip it only with no return paused. D-9b (inspection, resolution, `/runs` timeline) is not built; migration 0013 holds its
-columns. .NET: parity row 41, not ported.
+decision uses; `worker/return_handlers.py` serves both topics. **A wait is not an approval**: no inbox row, and each path
+refuses the other's kind (400). After the scan the run pauses again for **inspection** (`kind='return_inspection'`),
+decided by staff through `/admin/returns` (`POST /api/staff/returns/{id}/inspect`), never by the customer; accepting pays out
+once through `shared/return_ops.py::resolve_return` (refund, store credit or replacement, the amount only ever lowered), and a
+slow inspection only nudges the admins, it never denies the customer. `GET /api/runs/{id}/timeline` feeds the `/runs`
+timeline. The flag is read when the graph is built and a checkpoint belongs to the graph that wrote it, so flip it only with
+no return paused. .NET: parity row 41, not ported.
 
 ### Auth & Identity Flow
 
