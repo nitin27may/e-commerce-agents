@@ -61,6 +61,7 @@ This folder contains the full technical documentation for E-Commerce Agents.
 | [maf-best-practices.md](maf-best-practices.md) | MAF `@tool` patterns, middleware, prompt YAML, orchestration patterns |
 | [security-guide.md](security-guide.md) | Threat model, guardrails stack, auth/identity propagation, SQL controls, hardening |
 | [event-autonomy.md](event-autonomy.md) | Event autonomy: autonomy budgets, the append-only decision log, reversal, the event simulator, how an over-budget action becomes an approval |
+| [devui.md](devui.md) | Browse the specialists and workflows in MAF DevUI: how to run it without touching the lock, the bound identity, the guard rails |
 | [return-lifecycle.md](return-lifecycle.md) | The return lifecycle after approval: waiting for the carrier's scan across restarts, the expiry timer, the admin scan simulator |
 | [merchant-proposals.md](merchant-proposals.md) | Seller merchant proposals: deterministic markdown/restock suggestions, review through the approvals machinery, idempotent execution, the daily run |
 | [approvals.md](approvals.md) | Approval routing policy (`approvals.yaml`), default rules, golden cases, the approvals tables |
