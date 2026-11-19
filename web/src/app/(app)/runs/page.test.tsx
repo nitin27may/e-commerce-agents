@@ -175,6 +175,93 @@ describe("RunsPage — checkpoint resume", () => {
     expect(screen.queryByText("Awaiting staff review")).not.toBeInTheDocument();
   });
 
+  it("shows a return waiting for inspection, with the timeline and no buttons", async () => {
+    vi.spyOn(api, "getRuns").mockResolvedValue({ entries: [PENDING_RUN], total: 1, limit: 20, offset: 0 });
+    vi.spyOn(api, "getRunCheckpoints").mockResolvedValue({
+      run_id: "run-1",
+      checkpoints: [],
+      hitl_request: {
+        id: "hitl-3",
+        kind: "return_inspection",
+        status: "pending",
+        payload: { order_id: "order-abc", return_id: "ret-1" },
+        response: null,
+        created_at: new Date().toISOString(),
+        responded_at: null,
+      },
+    });
+    const timeline = vi.spyOn(api, "getRunTimeline").mockResolvedValue({
+      run_id: "run-1",
+      entries: [
+        { at: "2026-11-15T10:00:00Z", kind: "run", title: "Return requested" },
+        { at: "2026-11-15T10:01:00Z", kind: "carrier_scan", title: "The carrier scanned the package" },
+        { at: "2026-11-15T10:02:00Z", kind: "checkpoint", title: "State saved", detail: "return-and-replace" },
+        { at: "2026-11-15T10:03:00Z", kind: "return_inspection", title: "Waiting for inspection" },
+      ],
+    });
+
+    render(<RunsPage />);
+    await waitFor(() => expect(screen.getByText("return order abc")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("return order abc"));
+
+    await waitFor(() => expect(screen.getByText(/Inspection — pending/)).toBeInTheDocument());
+    expect(screen.getByText(/Waiting for support to inspect it/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+    const list = await screen.findByRole("list", { name: "Return timeline" });
+    expect(list).toHaveTextContent("Return requested");
+    expect(list).toHaveTextContent("The carrier scanned the package");
+    expect(list).not.toHaveTextContent("State saved"); // checkpoints are noise to a reader
+    expect(timeline).toHaveBeenCalledWith("run-1");
+  });
+
+  it("does not fetch a timeline for a plain approval", async () => {
+    vi.spyOn(api, "getRuns").mockResolvedValue({ entries: [PENDING_RUN], total: 1, limit: 20, offset: 0 });
+    vi.spyOn(api, "getRunCheckpoints").mockResolvedValue({
+      run_id: "run-1",
+      checkpoints: [],
+      hitl_request: {
+        id: "hitl-1",
+        status: "pending",
+        payload: {},
+        response: null,
+        created_at: new Date().toISOString(),
+        responded_at: null,
+      },
+    });
+    const timeline = vi.spyOn(api, "getRunTimeline");
+
+    render(<RunsPage />);
+    await waitFor(() => expect(screen.getByText("return order abc")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("return order abc"));
+    await waitFor(() => expect(screen.getByText(/Return approval — pending/)).toBeInTheDocument());
+
+    expect(timeline).not.toHaveBeenCalled();
+  });
+
+  it("shows a timeline failure inline", async () => {
+    vi.spyOn(api, "getRuns").mockResolvedValue({ entries: [PENDING_RUN], total: 1, limit: 20, offset: 0 });
+    vi.spyOn(api, "getRunCheckpoints").mockResolvedValue({
+      run_id: "run-1",
+      checkpoints: [],
+      hitl_request: {
+        id: "hitl-2",
+        kind: "carrier_scan",
+        status: "pending",
+        payload: {},
+        response: null,
+        created_at: new Date().toISOString(),
+        responded_at: null,
+      },
+    });
+    vi.spyOn(api, "getRunTimeline").mockRejectedValue(new Error("Run not found"));
+
+    render(<RunsPage />);
+    await waitFor(() => expect(screen.getByText("return order abc")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("return order abc"));
+
+    await waitFor(() => expect(screen.getByText("Run not found")).toBeInTheDocument());
+  });
+
   it("shows a resolved carrier scan as resolved", async () => {
     vi.spyOn(api, "getRuns").mockResolvedValue({ entries: [PENDING_RUN], total: 1, limit: 20, offset: 0 });
     vi.spyOn(api, "getRunCheckpoints").mockResolvedValue({

@@ -81,8 +81,9 @@ async def test_the_scan_resumes_the_run_from_a_fresh_workflow_and_keeps_its_stat
             final = event.data
 
     assert final is not None
-    assert "finalize" in final.completed_steps and "carrier_scan" in final.completed_steps
-    assert final.awaiting is None and not final.errors
+    # The scan does not finish the return: it moves on to the inspection wait (D-9b).
+    assert "carrier_scan" in final.completed_steps and "finalize" not in final.completed_steps
+    assert final.awaiting == "inspection" and not final.errors
     assert final.return_id == "ret-99"  # restored from the checkpoint, not recreated
     assert [n for n, _ in calls] == []  # nothing before the wait ran again
     assert final.scan == {"carrier": "UPS", "tracking": "1Z9", "scanned_at": "2026-11-19"}

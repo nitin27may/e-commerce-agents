@@ -24,9 +24,11 @@ from shared.config import settings
 from shared.log_safe import log_safe
 from shared.notifications import notify
 from shared.return_lifecycle import (
+    INSPECTIONS_LINK,
     KIND_CARRIER_SCAN,
     RUNS_LINK,
     TOPIC_CARRIER_SCANNED,
+    TOPIC_INSPECTION_TIMEOUT,
     TOPIC_SCAN_TIMEOUT,
 )
 from worker.runner import Handler, OutboxRow
@@ -128,5 +130,37 @@ async def on_scan_timeout(conn: asyncpg.Connection, row: OutboxRow) -> None:
     logger.info("return.scan_timeout id=%s return=%s", log_safe(row.id), log_safe(return_id))
 
 
+async def on_inspection_timeout(conn: asyncpg.Connection, row: OutboxRow) -> None:
+    """Support has not inspected a return in time. Tell the admins; never decide for them.
+
+    Unlike the scan wait this does not resume anything. A package the carrier delivered is not the customer's
+    fault, so an overdue inspection must not deny it: it is escalated to ``admin`` and stays pending. One nudge per
+    wait (the timer's dedupe key), so a slow queue does not become a stream of notifications.
+    """
+    if not settings.RETURN_LIFECYCLE_ENABLED:
+        logger.info("inspection timeout ignored, lifecycle disabled id=%s", log_safe(row.id))
+        return
+    still_waiting = await conn.fetchval(
+        "SELECT 1 FROM hitl_requests WHERE id = $1::uuid AND kind = 'return_inspection' AND status = 'pending'",
+        str(row.payload["hitl_id"]),
+    )
+    if not still_waiting:
+        return  # inspected in time
+    return_id = str(row.payload["return_id"])
+    await notify(
+        conn,
+        kind="return.inspection_overdue",
+        title="A return has waited too long for inspection",
+        body=f"Return {return_id} has been waiting {settings.RETURN_INSPECTION_TIMEOUT_DAYS} days for inspection.",
+        link=INSPECTIONS_LINK,
+        role="admin",
+    )
+    logger.info("return.inspection_overdue id=%s return=%s", log_safe(row.id), log_safe(return_id))
+
+
 #: topic -> handler.
-HANDLERS: dict[str, Handler] = {TOPIC_CARRIER_SCANNED: on_carrier_scanned, TOPIC_SCAN_TIMEOUT: on_scan_timeout}
+HANDLERS: dict[str, Handler] = {
+    TOPIC_CARRIER_SCANNED: on_carrier_scanned,
+    TOPIC_SCAN_TIMEOUT: on_scan_timeout,
+    TOPIC_INSPECTION_TIMEOUT: on_inspection_timeout,
+}

@@ -3,11 +3,12 @@
 Step chain: check-eligibility → policy-gate → initiate-return → search-replacements →
 apply-discount → finalize.
 
-With ``RETURN_LIFECYCLE_ENABLED`` the chain gains a wait between the discount and ``finalize``:
-``… → apply-discount → await-carrier-scan → finalize``. The label already exists (``initiate-return`` issues it),
-so the return waits for the carrier's first scan, which can be days away, and resumes from its checkpoint when the
-scan arrives (``ScanEvent``). The flag is read when the graph is built; a checkpoint belongs to the graph that
-wrote it, so change the flag only while no return is paused.
+With ``RETURN_LIFECYCLE_ENABLED`` the chain gains two waits between the discount and ``finalize``:
+``… → apply-discount → await-carrier-scan → await-inspection → finalize``. The label already exists
+(``initiate-return`` issues it), so the return waits for the carrier's first scan, which can be days away, and
+resumes from its checkpoint when the scan arrives (``ScanEvent``); support then inspects what came back
+(``InspectionResult``) and the return is paid out or denied. The flag is read when the graph is built; a checkpoint
+belongs to the graph that wrote it, so change the flag only while no return is paused.
 
 Nothing is created before the gate: the ``returns`` row, the label and the order's ``returned`` status all
 come from ``initiate-return``, which runs only once the policy has said ``auto`` or a reviewer has approved.
@@ -75,8 +76,9 @@ class WorkflowState:
 
     # Lifecycle (RETURN_LIFECYCLE_ENABLED): what the return is waiting for, and what it has learned so far
     label_url: "str | None" = None
-    awaiting: "str | None" = None  # None | "carrier_scan"
+    awaiting: "str | None" = None  # None | "carrier_scan" | "inspection"
     scan: "dict | None" = None
+    inspection: "dict | None" = None
 
     # Execution tracking
     completed_steps: list = field(default_factory=list)
@@ -136,6 +138,34 @@ class ScanEvent:
     tracking: str = ""
     scanned_at: str = ""
     note: str = ""
+
+
+@dataclass
+class AwaitInspection:
+    """Emitted once the carrier has scanned the package: support inspects it and decides what the customer gets."""
+
+    return_id: str
+    order_id: str
+    refund_amount: float
+    state: WorkflowState
+    timeout_days: int = 7
+
+
+@dataclass
+class InspectionResult:
+    """Support's answer. ``outcome`` is ``accept`` or ``reject``; anything else counts as a rejection.
+
+    On accept, ``resolution`` is ``refund`` / ``store_credit`` / ``replacement`` and ``amount`` an optional lower
+    amount (it can never raise what the return was created for).
+    """
+
+    outcome: str = "reject"
+    resolution: str = "refund"
+    amount: "float | None" = None
+    condition: str = ""
+    note: str = ""
+    inspected_by: str = ""
+    approval_id: str = ""
 
 
 PolicyFn = Callable[[WorkflowState], Awaitable[PolicyDecision | None]]
@@ -430,6 +460,74 @@ class _AwaitCarrierScanExecutor(Executor):
         await ctx.send_message(state)
 
 
+class _AwaitInspectionExecutor(Executor):
+    """Pauses for support to inspect the returned package, then pays the return out or denies it."""
+
+    def __init__(self, tools: dict, timeout_days: int) -> None:
+        super().__init__(id="await-inspection")
+        self._tools = tools
+        self._timeout_days = timeout_days
+
+    @handler
+    async def run(self, state: WorkflowState, ctx: WorkflowContext[WorkflowState, WorkflowState]) -> None:
+        state.awaiting = "inspection"
+        await ctx.yield_output(state)
+        await ctx.request_info(
+            AwaitInspection(
+                return_id=state.return_id or "",
+                order_id=state.order_id,
+                refund_amount=state.refund_amount,
+                state=state,
+                timeout_days=self._timeout_days,
+            ),
+            response_type=InspectionResult,
+        )
+
+    @response_handler(request=AwaitInspection, response=InspectionResult)
+    async def on_inspection(self, original_request, response, ctx) -> None:
+        state = _restore_state(original_request.state)
+        state.awaiting = None
+        state.approval_id = response.approval_id or state.approval_id
+        accepted = str(response.outcome).lower() == "accept"
+        state.inspection = {
+            "outcome": "accept" if accepted else "reject",
+            "condition": response.condition,
+            "note": response.note,
+            "inspected_by": response.inspected_by,
+        }
+        resolve = self._tools.get("resolve_return")
+        if resolve is None:
+            state.errors.append("inspection: resolve_return tool not available")
+            await ctx.yield_output(state)
+            return
+        try:
+            result = await resolve(
+                state.return_id,
+                outcome=state.inspection["outcome"],
+                resolution=response.resolution if accepted else "",
+                amount=response.amount,
+                inspection=state.inspection,
+                approval_id=state.approval_id,
+            )
+        except Exception as exc:
+            state.errors.append(f"inspection: {exc}")
+            await ctx.yield_output(state)
+            return
+        if not result.get("success"):
+            state.errors.append(f"inspection: {result.get('error', 'could not settle the return')}")
+            await ctx.yield_output(state)
+            return
+        if not accepted:
+            state.errors.append("inspection: return denied after inspection")
+            await ctx.yield_output(state)
+            return
+        if response.resolution in RESOLUTIONS:
+            state.resolution = response.resolution
+        state.refund_amount = float(result.get("paid", state.refund_amount))
+        state.completed_steps.append("inspection")
+        await ctx.send_message(state)
+
+
 class _FinalizeExecutor(Executor):
     def __init__(self) -> None:
         super().__init__(id="finalize")
@@ -472,7 +570,10 @@ class ReturnAndReplaceWorkflow:
         )
         if settings.RETURN_LIFECYCLE_ENABLED:
             wait_for_scan = _AwaitCarrierScanExecutor(int(settings.RETURN_SCAN_TIMEOUT_DAYS))
-            builder = builder.add_edge(discount, wait_for_scan).add_edge(wait_for_scan, finalize)
+            inspect = _AwaitInspectionExecutor(self._tools, int(settings.RETURN_INSPECTION_TIMEOUT_DAYS))
+            builder = (
+                builder.add_edge(discount, wait_for_scan).add_edge(wait_for_scan, inspect).add_edge(inspect, finalize)
+            )
         else:
             builder = builder.add_edge(discount, finalize)
         return builder.build()

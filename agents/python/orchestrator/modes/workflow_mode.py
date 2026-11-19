@@ -189,16 +189,23 @@ class PrePurchaseMode:
         )
 
 
-def _scan_wait(state: Any, request_id: str | None, request: Any) -> dict[str, Any] | None:
-    """What a persisting caller needs to open the carrier-scan wait, or ``None`` if the run is not waiting for one."""
-    if getattr(state, "awaiting", None) != "carrier_scan" or not request_id:
+def _pending_wait(state: Any, request_id: str | None, request: Any) -> dict[str, Any] | None:
+    """What a persisting caller needs to open the wait a return is paused on, or ``None`` if it is not waiting.
+
+    ``kind`` is the ``hitl_requests`` kind: ``carrier_scan`` (waiting for the package to be scanned) or
+    ``return_inspection`` (waiting for support to inspect it).
+    """
+    awaiting = getattr(state, "awaiting", None)
+    kind = {"carrier_scan": "carrier_scan", "inspection": "return_inspection"}.get(awaiting or "")
+    if kind is None or not request_id:
         return None
     return {
-        "kind": "carrier_scan",
+        "kind": kind,
         "request_id": request_id,
         "return_id": getattr(request, "return_id", None) or state.return_id,
         "order_id": state.order_id,
         "label_url": getattr(request, "label_url", None) or state.label_url,
+        "refund_amount": getattr(request, "refund_amount", None),
         "timeout_days": getattr(request, "timeout_days", None),
     }
 
@@ -222,7 +229,7 @@ class ReturnReplaceMode:
         if self._tools is not None:
             return self._tools
         from product_discovery.tools import search_products
-        from shared.return_ops import adjust_return_amount
+        from shared.return_ops import adjust_return_amount, resolve_return
         from shared.tools.loyalty_tools import get_loyalty_tier
         from shared.tools.return_tools import check_return_eligibility, initiate_return
 
@@ -233,6 +240,8 @@ class ReturnReplaceMode:
             "get_loyalty_tier": getattr(get_loyalty_tier, "func", get_loyalty_tier),
             # Not an @tool: applies a reviewer's edited amount after initiate_return (workflows/return_replace.py).
             "adjust_return_amount": adjust_return_amount,
+            # Not an @tool either: pays out or denies a return once support has inspected it (the lifecycle).
+            "resolve_return": resolve_return,
         }
 
     async def run(self, message: str, ctx: RunContext) -> AsyncIterator[OrchestrationEvent]:
@@ -289,7 +298,7 @@ class ReturnReplaceMode:
         agents_involved = list(final_state.completed_steps) or ["return-replace"]
         latest_checkpoint_id = recorder.saved[-1] if recorder and recorder.saved else None
 
-        wait = _scan_wait(final_state, pending_request_id, pending_request)
+        wait = _pending_wait(final_state, pending_request_id, pending_request)
         if wait is not None:
             # Approved (or auto-approved) and waiting for the carrier: the return exists, the label is out.
             text = (
@@ -417,15 +426,21 @@ class ReturnReplaceMode:
                     )
                 seen += len(new_ids)
 
-        wait = _scan_wait(final_state, next_request_id, next_request) if final_state is not None else None
+        wait = _pending_wait(final_state, next_request_id, next_request) if final_state is not None else None
         if final_state is None:
             text = "Resume did not produce a terminal state."
             agents_involved: list[str] = []
         elif wait is not None and not final_state.errors:
-            text = (
-                f"Return {wait['return_id']} for order {final_state.order_id} is approved. "
-                "It updates when the carrier scans the package."
-            )
+            if wait["kind"] == "return_inspection":
+                text = (
+                    f"The carrier has return {wait['return_id']} for order {final_state.order_id}. "
+                    "Support will inspect it and decide the refund."
+                )
+            else:
+                text = (
+                    f"Return {wait['return_id']} for order {final_state.order_id} is approved. "
+                    "It updates when the carrier scans the package."
+                )
             agents_involved = list(final_state.completed_steps)
         elif final_state.errors:
             text = "; ".join(final_state.errors)

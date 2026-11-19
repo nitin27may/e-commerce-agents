@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, type RunEntry } from "@/lib/api";
+import { api, type RunEntry, type RunTimelineEntry } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -191,9 +191,33 @@ function RunRow({
 
   const { isAdmin } = useAuth();
   const hitl = checkpointData?.hitl_request;
-  // A carrier-scan wait is pending too, but nobody approves it: the carrier's scan answers it.
+  // A carrier-scan or inspection wait is pending too, but nobody approves it here: the carrier's scan answers the
+  // first, and support answers the second from the staff returns page.
   const waitingForCarrier = hitl?.kind === "carrier_scan";
-  const pendingApproval = hitl?.status === "pending" && !waitingForCarrier;
+  const waitingForInspection = hitl?.kind === "return_inspection";
+  const isLifecycleWait = waitingForCarrier || waitingForInspection;
+  const pendingApproval = hitl?.status === "pending" && !isLifecycleWait;
+
+  // The timeline is only fetched once a return has a lifecycle row, and only when the row is opened.
+  const [timeline, setTimeline] = useState<RunTimelineEntry[] | null>(null);
+  const [timelineError, setTimelineError] = useState<string | null>(null);
+  const wantsTimeline = open && isLifecycleWait;
+  useEffect(() => {
+    if (!wantsTimeline) return;
+    let cancelled = false;
+    api
+      .getRunTimeline(entry.id)
+      .then((res) => {
+        if (!cancelled) setTimeline(res.entries.filter((e) => e.kind !== "checkpoint"));
+      })
+      .catch((e) => {
+        if (!cancelled) setTimelineError(e instanceof Error ? e.message : "Could not load the timeline.");
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Reload when the wait moves on (a new status or kind is a new chapter of the story).
+  }, [wantsTimeline, entry.id, hitl?.status, hitl?.kind]);
 
   return (
     <Card className={cn("overflow-hidden", pendingApproval && "ring-1 ring-amber-400/60")}>
@@ -282,12 +306,17 @@ function RunRow({
           {hitl && (
             <div className="space-y-2 border-t px-4 py-3 text-xs">
               <p className="font-medium text-foreground">
-                {waitingForCarrier ? "Carrier scan" : "Return approval"} — {hitl.status}
+                {waitingForCarrier ? "Carrier scan" : waitingForInspection ? "Inspection" : "Return approval"} —{" "}
+                {hitl.status}
                 {hitl.payload?.order_id ? ` (order ${hitl.payload.order_id})` : ""}
               </p>
               {waitingForCarrier && hitl.status === "pending" ? (
                 <p className="text-muted-foreground">
                   Approved. Waiting for the carrier to scan the package.
+                </p>
+              ) : waitingForInspection && hitl.status === "pending" ? (
+                <p className="text-muted-foreground">
+                  The carrier has your package. Waiting for support to inspect it and decide the refund.
                 </p>
               ) : pendingApproval && !isAdmin ? (
                 // Only staff can decide (#92); the backend 403s anyone else.
@@ -320,6 +349,19 @@ function RunRow({
                   Resolved {hitl.responded_at ? new Date(hitl.responded_at).toLocaleString() : ""}
                 </p>
               )}
+              {isLifecycleWait && timeline && timeline.length > 0 && (
+                <ol className="mt-2 space-y-1 border-l pl-3" aria-label="Return timeline">
+                  {timeline.map((e, i) => (
+                    <li key={`${e.at}-${i}`} className="text-muted-foreground">
+                      <span className="text-foreground">{e.title}</span>
+                      {e.detail ? ` — ${e.detail}` : ""}
+                      {e.actor ? ` (${e.actor})` : ""}
+                      <span className="ml-2 text-[11px]">{new Date(e.at).toLocaleString()}</span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+              {isLifecycleWait && timelineError && <p className="text-destructive">{timelineError}</p>}
             </div>
           )}
 
