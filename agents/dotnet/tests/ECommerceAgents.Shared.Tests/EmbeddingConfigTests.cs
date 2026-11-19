@@ -9,6 +9,7 @@ namespace ECommerceAgents.Shared.Tests;
 /// <summary>
 /// P-6: embeddings configured apart from the chat provider — the twin of <c>tests/test_embedding_decoupling.py</c>.
 /// </summary>
+[Collection(nameof(ProcessEnvironmentCollection))]
 public sealed class EmbeddingConfigTests
 {
     private static AgentSettings Base() => new()

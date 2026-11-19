@@ -14,6 +14,7 @@ namespace ECommerceAgents.Shared.Tests;
 /// was silently never picked up. Mirrors <see cref="AgentSettings.DatabaseUrl"/>'s
 /// existing (and already-correct) precedence.
 /// </summary>
+[Collection(nameof(ProcessEnvironmentCollection))]
 public sealed class AgentSettingsLoaderTests
 {
     [Fact]
