@@ -95,6 +95,9 @@ cd web && pnpm lint
 cd web && pnpm exec playwright test
 cd web && pnpm exec playwright test e2e/chat-all-users.spec.ts
 
+# Browse the specialists and workflows in MAF DevUI (dev only; added to the run, not the lock: docs/devui.md)
+uv run --project agents/python --with agent-framework-devui==1.0.0b261112 python -m scripts.devui
+
 # Open Aspire Dashboard (telemetry visualization)
 open http://localhost:18888
 ```
