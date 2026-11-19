@@ -37,7 +37,7 @@ carries the per-issue checklist. What the check found:
 
 | Item | Issue | State |
 |---|---|---|
-| D-9a/D-9b carrier scan, inspection, timeline | #95 | No `carrier_scan` or inspection step anywhere in `workflows/` or `shared/`. The return workflow only gained the approval gate (D-8). |
+| D-9b inspection, resolution, timeline | #95 | Not built. **D-9a (carrier scan) was built 2026-11-19**, behind `RETURN_LIFECYCLE_ENABLED`: `await-carrier-scan`, `shared/return_lifecycle.py`, `worker/return_handlers.py`, the admin scan simulator, migration 0013 (which already holds D-9b's columns) and the `/runs` wait display; `docs/return-lifecycle.md`. No `issue-label` executor: `initiate_return` already issues the label. |
 | B-15 history compaction, B-19 typed card frames, B-17 DevUI entry point | #98 | None found. B-10 (declarative loader removed) is done. |
 | B-16 `GroupChatBuilder`, D-5b customer confirm, M-2, V-1 `ops-responder`, E-3b, E-4, E-7, E-8 | #98 #92 #93 #94 #97 | **Not on main and on no remote branch.** The "held on their branches until R1" wording below was wrong: the only remote branches were already merged and are deleted. Treat them as unbuilt, not parked. |
 | E-9 `docs/eval-scorecard.md`, E-10, P-7 model scorecard, P-8 `docs/model-providers.md` | #97 #96 | Files do not exist. |

@@ -189,6 +189,20 @@ class PrePurchaseMode:
         )
 
 
+def _scan_wait(state: Any, request_id: str | None, request: Any) -> dict[str, Any] | None:
+    """What a persisting caller needs to open the carrier-scan wait, or ``None`` if the run is not waiting for one."""
+    if getattr(state, "awaiting", None) != "carrier_scan" or not request_id:
+        return None
+    return {
+        "kind": "carrier_scan",
+        "request_id": request_id,
+        "return_id": getattr(request, "return_id", None) or state.return_id,
+        "order_id": state.order_id,
+        "label_url": getattr(request, "label_url", None) or state.label_url,
+        "timeout_days": getattr(request, "timeout_days", None),
+    }
+
+
 class ReturnReplaceMode:
     name = "workflow:return-replace"
     label = "Return & Replace (sequential + in-workflow HITL)"
@@ -275,6 +289,27 @@ class ReturnReplaceMode:
         agents_involved = list(final_state.completed_steps) or ["return-replace"]
         latest_checkpoint_id = recorder.saved[-1] if recorder and recorder.saved else None
 
+        wait = _scan_wait(final_state, pending_request_id, pending_request)
+        if wait is not None:
+            # Approved (or auto-approved) and waiting for the carrier: the return exists, the label is out.
+            text = (
+                f"Return {wait['return_id']} is approved for order {order_id}. "
+                "Print your return label and send the package; this return updates when the carrier scans it."
+            )
+            yield OrchestrationEvent(
+                kind="run_completed",
+                payload={
+                    "text": text,
+                    "agents_involved": agents_involved,
+                    "pending_approval": False,
+                    "pending_wait": wait,
+                    "return_id": wait["return_id"],
+                    "latest_checkpoint_id": latest_checkpoint_id,
+                    "usage": zero_usage(),
+                },
+            )
+            return
+
         if final_state.hitl_requested and final_state.hitl_approved is None:
             reasons = list(getattr(pending_request, "reasons", None) or [])
             why = reasons[0] if reasons else "it is over the auto-approval threshold"
@@ -355,6 +390,8 @@ class ReturnReplaceMode:
         seen = 0
 
         final_state: WorkflowState | None = None
+        next_request_id: str | None = None
+        next_request: Any = None
         async for event in maf_workflow.run(
             responses={request_id: decision},
             checkpoint_id=checkpoint_id,
@@ -368,6 +405,9 @@ class ReturnReplaceMode:
                 data = getattr(event, "data", None)
                 if isinstance(data, WorkflowState):
                     final_state = data
+            if getattr(event, "type", None) == "request_info":
+                next_request_id = getattr(event, "request_id", None)
+                next_request = getattr(event, "data", None)
             if recorder is not None:
                 new_ids = drain_new_checkpoint_ids(recorder, seen)
                 for cid in new_ids:
@@ -377,9 +417,16 @@ class ReturnReplaceMode:
                     )
                 seen += len(new_ids)
 
+        wait = _scan_wait(final_state, next_request_id, next_request) if final_state is not None else None
         if final_state is None:
             text = "Resume did not produce a terminal state."
             agents_involved: list[str] = []
+        elif wait is not None and not final_state.errors:
+            text = (
+                f"Return {wait['return_id']} for order {final_state.order_id} is approved. "
+                "It updates when the carrier scans the package."
+            )
+            agents_involved = list(final_state.completed_steps)
         elif final_state.errors:
             text = "; ".join(final_state.errors)
             agents_involved = list(final_state.completed_steps)
@@ -398,11 +445,12 @@ class ReturnReplaceMode:
             text = "Return could not be completed."
             agents_involved = list(final_state.completed_steps)
 
+        # "completed" is whether the approved action ran: finished, or created and now waiting on the carrier.
         completed = bool(
             final_state is not None
             and final_state.hitl_approved
             and not final_state.errors
-            and "finalize" in final_state.completed_steps
+            and ("finalize" in final_state.completed_steps or wait is not None)
         )
         yield OrchestrationEvent(
             kind="run_completed",
@@ -410,6 +458,7 @@ class ReturnReplaceMode:
                 "text": text,
                 "agents_involved": agents_involved or ["return-replace"],
                 "pending_approval": False,
+                "pending_wait": wait,
                 "completed": completed,
                 "return_id": final_state.return_id if final_state is not None else None,
                 "latest_checkpoint_id": recorder.saved[-1] if recorder and recorder.saved else None,

@@ -377,6 +377,13 @@ class Settings(BaseSettings):
     # Threshold (USD) above which the return/replace workflow pauses for a
     # human approval via HITL.
     RETURN_HITL_THRESHOLD: float = 500.0
+    # The return lifecycle after approval (#95): label, then wait for the carrier's first scan, then an inspection.
+    # Off, a return finishes at `finalize` exactly as before (graph, fixtures and .NET parity unchanged). The graph
+    # is part of a checkpoint, so flip this only with no return paused.
+    RETURN_LIFECYCLE_ENABLED: bool = False
+    # How long a return may wait for the carrier's scan, and for support to inspect it, before it expires.
+    RETURN_SCAN_TIMEOUT_DAYS: int = 14
+    RETURN_INSPECTION_TIMEOUT_DAYS: int = 7
 
     # When true, handoff between specialists happens without intermediate
     # user events (mirrors today's behavior). false → emit a handoff event

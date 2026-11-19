@@ -204,6 +204,7 @@ async def test_get_run_checkpoints_lists_saves_and_hitl_summary(clean_db, monkey
     assert len(data["checkpoints"]) > 0
     assert all(cp["workflow_name"] == "return-and-replace" for cp in data["checkpoints"])
     assert data["hitl_request"]["status"] == "pending"
+    assert data["hitl_request"]["kind"] == "return_approval"  # the page tells an approval from a carrier wait by this
     assert isinstance(data["hitl_request"]["payload"], dict)
 
 

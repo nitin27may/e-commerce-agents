@@ -193,6 +193,19 @@ touches the demo tour user (its reset deletes orders that `agent_decisions` woul
 refuse `TRUNCATE` when they hold rows; `reset_autonomy_log()` is the one named reset (seeder, `clean_db`). .NET refuses every
 decision on an `event` approval (422, "not supported on this stack").
 
+### Return lifecycle (#95, Python only)
+
+With `RETURN_LIFECYCLE_ENABLED` (off by default) an approved return waits for the carrier's first scan instead of finishing
+in the approving request, `docs/return-lifecycle.md`. The graph gains `await-carrier-scan` before `finalize`; the pause is a
+`hitl_requests` row (`kind='carrier_scan'`, MAF's resume token and checkpoint) plus an outbox timer (`return.scan_timeout`),
+opened in one transaction by `shared/return_lifecycle.py::open_scan_wait`. `return.carrier_scanned` (only the admin
+simulator `POST /api/admin/returns/{id}/simulate-scan` produces it) resumes the run through
+`approvals_service.resume_workflow(kind="carrier_scan")`, the same claim/fence/run-as-requester machinery a reviewer's
+decision uses; `worker/return_handlers.py` serves both topics. **A scan wait is not an approval**: no inbox row, and each path
+refuses the other's kind (400). The flag is read when the graph is built and a checkpoint belongs to the graph that wrote it,
+so flip it only with no return paused. D-9b (inspection, resolution, `/runs` timeline) is not built; migration 0013 holds its
+columns. .NET: parity row 41, not ported.
+
 ### Auth & Identity Flow
 
 - **Roles**: `customer`, `power_user`, `seller`, `support`, `admin`. `require_staff` admits `support` and `admin`; signup always creates a `customer` on both stacks.

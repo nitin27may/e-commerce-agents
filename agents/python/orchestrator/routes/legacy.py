@@ -1231,7 +1231,7 @@ async def get_run_checkpoints(run_id: str, user: dict[str, Any] = Depends(requir
         run_id,
     )
     hitl = await pool.fetchrow(
-        """SELECT id, status, payload, response, created_at, responded_at
+        """SELECT id, kind, status, payload, response, created_at, responded_at
            FROM hitl_requests WHERE workflow_run_id = $1
            ORDER BY created_at DESC LIMIT 1""",
         run_id,
@@ -1250,6 +1250,7 @@ async def get_run_checkpoints(run_id: str, user: dict[str, Any] = Depends(requir
         "hitl_request": (
             {
                 "id": str(hitl["id"]),
+                "kind": hitl["kind"],
                 "status": hitl["status"],
                 # asyncpg returns JSONB as raw str with no codec configured
                 # (shared/db.py registers none) — verified directly, not

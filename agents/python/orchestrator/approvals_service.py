@@ -821,7 +821,9 @@ async def _finish_workflow(
     }
 
 
-async def resume_workflow(hitl_id: str, decision: Any, *, reviewer_email: str) -> dict[str, Any]:
+async def resume_workflow(
+    hitl_id: str, decision: Any, *, reviewer_email: str, kind: str = _WORKFLOW_KIND
+) -> dict[str, Any]:
     """Resume a paused ``workflow:return-replace`` run from its checkpoint with a ``ReturnDecision``.
 
     This is the claim / fence / resume machinery ``POST /api/orchestration/{run_id}/resume`` used to hold inline,
@@ -834,6 +836,10 @@ async def resume_workflow(hitl_id: str, decision: Any, *, reviewer_email: str) -
       resume whose claim was taken over changes nothing;
     * runs the remaining steps as the *requester* (tools read identity from ContextVars), restores the
       reviewer's identity afterwards, and hands the claim back if anything but a completed resume leaves.
+
+    ``kind`` is the kind of wait this call may answer. It defaults to the approval gate, so the staff routes can only
+    ever answer an approval with a ``ReturnDecision``; the lifecycle worker passes ``carrier_scan`` to answer a
+    carrier-scan wait with a ``ScanEvent``. A row of any other kind is refused (400), never resumed.
 
     Returns the mode's ``run_completed`` payload. Raises ``ApprovalHTTPError`` (404/409/400/504).
     """
@@ -865,7 +871,7 @@ async def resume_workflow(hitl_id: str, decision: Any, *, reviewer_email: str) -
             claim_token,
         )
 
-    if hitl_row["kind"] != _WORKFLOW_KIND:
+    if hitl_row["kind"] != kind:
         await _release_hitl()
         raise ApprovalHTTPError(400, f"Resume not supported for request kind {hitl_row['kind']!r}")
     if not hitl_row["request_id"] or not hitl_row["checkpoint_id"]:
@@ -907,14 +913,24 @@ async def resume_workflow(hitl_id: str, decision: Any, *, reviewer_email: str) -
             # Shielded so a second cancel cannot interrupt the release itself.
             await asyncio.shield(_release_hitl())
 
-    approved = str(getattr(decision, "decision", "")).lower() == "approve"
+    from workflows.return_replace import ScanEvent
+
+    if isinstance(decision, ScanEvent):
+        # A carrier scan is an event, not a decision: it is `completed` when the package arrived, `timeout` when
+        # the wait ran out. Neither is an approval or a rejection.
+        recorded_status = "completed" if decision.received else "timeout"
+        recorded = {"received": decision.received, "carrier": decision.carrier, "decided_by": reviewer_email}
+    else:
+        approved = str(getattr(decision, "decision", "")).lower() == "approve"
+        recorded_status = "approved" if approved else "rejected"
+        # No responder column exists, so the reviewer is recorded in the response.
+        recorded = {"approved": approved, "decided_by": reviewer_email}
     decided = await pool.execute(
         """UPDATE hitl_requests
            SET status = $1, responded_at = NOW(), response = $2::jsonb
            WHERE id = $3 AND status = 'processing' AND claimed_at = $4""",
-        "approved" if approved else "rejected",
-        # No responder column exists, so the reviewer is recorded in the response.
-        json.dumps({"approved": approved, "decided_by": reviewer_email}),
+        recorded_status,
+        json.dumps(recorded),
         hitl_row["id"],
         claim_token,
     )
@@ -928,6 +944,18 @@ async def resume_workflow(hitl_id: str, decision: Any, *, reviewer_email: str) -
             "UPDATE workflow_checkpoints SET usage_log_id = $1 WHERE checkpoint_id = $2",
             hitl_row["workflow_run_id"],
             new_checkpoint_id,
+        )
+    wait = final_payload.get("pending_wait")
+    if wait and new_checkpoint_id:
+        # The approved return was created and now waits on the carrier: open that wait, as the first run does.
+        from shared.return_lifecycle import open_scan_wait
+
+        await open_scan_wait(
+            pool,
+            workflow_run_id=hitl_row["workflow_run_id"],
+            user_email=requester_email,
+            wait=wait,
+            checkpoint_id=new_checkpoint_id,
         )
     return final_payload
 
