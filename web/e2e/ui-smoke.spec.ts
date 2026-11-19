@@ -147,6 +147,22 @@ test.describe("authenticated shell", () => {
     await expect(page.getByRole("button", { name: /large delay/ })).toBeVisible();
   });
 
+  test("returns to inspect lists a delivered return and refuses an amount above the original", async ({ page }) => {
+    await seedAuth(page, "admin");
+    await mockApi(page);
+    await page.goto("/admin/returns");
+    await expect(page.getByRole("heading", { name: "Returns to inspect" })).toBeVisible();
+    const card = page.getByTestId("inspection-card");
+    await expect(card.getByText(/Alice Johnson/)).toBeVisible();
+    await expect(card.getByText(/Arrived with a cracked screen/)).toBeVisible();
+    await expect(card.getByRole("button", { name: "Accept" })).toBeEnabled();
+    await expect(card.getByRole("button", { name: "Reject" })).toBeEnabled();
+    // The amount can only go down; the page says so before asking the server.
+    await card.getByLabel("Amount").fill("200");
+    await card.getByRole("button", { name: "Accept" }).click();
+    await expect(card.getByRole("alert")).toContainText("cannot be higher than the original $129.95");
+  });
+
   test("seller proposals page lists suggestions, blocks a limited line and shows its guard reason", async ({ page }) => {
     await seedAuth(page, "seller");
     await mockApi(page);

@@ -87,6 +87,8 @@ wait with nothing to approve, and the timeline.
   while no return is paused, or a paused return will not resume.
 - **A scan and the timer can race.** Whichever claims the wait first wins; the other finds it answered (409) and is
   dropped, not retried. A scan arriving after the timer is ignored and the return stays `expired`.
+- **A finished wait leaves its timer behind.** Answering a wait does not cancel its expiry timer; when it fires it finds the wait
+  answered and does nothing. The row sits in the outbox until then (14 days for a scan, 7 for an inspection).
 - **A second scan for the same return is one event** (`dedupe_key = return.carrier_scanned:<return_id>`).
 - **No `issue-label` step.** The plan listed one, but `initiate_return` already issues the label, so a separate step
   would only duplicate it. The label URL is kept in the workflow state and the wait.

@@ -112,6 +112,23 @@ const DECISIONS = {
   scenarios: { small: 3, medium: 6, large: 12 },
 };
 
+const INSPECTIONS = {
+  inspections: [
+    {
+      return_id: "aaaaaaaa-1111-2222-3333-444444444444",
+      order_id: "bbbbbbbb-1111-2222-3333-444444444444",
+      customer_email: "alice@example.com",
+      customer_name: "Alice Johnson",
+      reason: "Arrived with a cracked screen",
+      refund_amount: 129.95,
+      scanned_at: "2026-11-17T09:00:00Z",
+      waiting_since: "2026-11-17T09:05:00Z",
+      overdue_after_days: 7,
+    },
+  ],
+  total: 1,
+};
+
 export async function seedAuth(
   page: Page,
   role: "customer" | "admin" | "seller" = "customer",
@@ -136,6 +153,7 @@ export async function mockApi(page: Page) {
     const url = route.request().url();
     if (url.includes("/api/admin/decisions")) return route.fulfill({ json: DECISIONS });
     if (url.includes("/api/seller/proposals")) return route.fulfill({ json: PROPOSALS });
+    if (url.includes("/api/staff/returns/inspections")) return route.fulfill({ json: INSPECTIONS });
     if (url.includes("/api/admin/usage")) return route.fulfill({ json: USAGE });
     if (url.includes("/api/orders")) return route.fulfill({ json: ORDERS });
     if (url.includes("/api/products")) return route.fulfill({ json: PRODUCTS });
