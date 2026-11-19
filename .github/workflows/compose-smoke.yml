@@ -1,11 +1,12 @@
 # Keyless boot smoke for both compose stacks (A-9, #85).
 #
 # Boots each stack with LLM_PROVIDER=replay, waits for /ready on the orchestrator and every
-# specialist, logs in as a seeded customer and lists products. No secrets are referenced by this
-# file, and the first step fails the job if any *_API_KEY is present: nothing that costs money may
-# sit behind an automatic trigger (see evals.yml). Recording stays a human running a script.
+# specialist, logs in as a seeded customer, lists products and runs one real chat turn through the
+# return workflow (which makes no model call). No secrets are referenced by this file, and the first
+# step fails the job if any *_API_KEY is present: nothing that costs money may sit behind an automatic
+# trigger (see evals.yml). Recording stays a human running a script.
 #
-# Not covered: a chat turn (needs replay fixtures for that path) and the frontend image.
+# Not covered: a chat turn that needs a model (needs replay fixtures for that path) and the frontend image.
 name: Compose smoke
 
 on:

@@ -8,8 +8,11 @@
 # may sit behind an automatic trigger (see evals.yml).
 #
 # What it proves: every image builds and starts, the migrated schema is visible to every
-# service (/ready), the seeder's data is there, and login + a read route work end to end. What
-# it does not prove: a chat turn (that needs fixtures for the replay path) or the frontend.
+# service (/ready), the seeder's data is there, login + a read route work end to end, and one
+# real chat turn runs through the HTTP path, the mode registry and the database-backed tools.
+# That turn uses the return workflow, which makes no model call, so it needs no recorded
+# fixture. What it does not prove: a turn that needs a model (that needs fixtures for the
+# replay path) or the frontend.
 #
 # Usage:
 #   scripts/compose-smoke.sh                                   # Python stack
@@ -137,5 +140,62 @@ body = json.loads(sys.argv[1])
 assert len(body["products"]) > 0 and body["total"] > 0, body
 print(f"products ok ({len(body['products'])} returned, {body['total']} total)")
 PY
+
+# ── One real chat turn, no model ─────────────────────────────
+# The return workflow (mode workflow:return-replace) calls no model: it checks eligibility, asks the
+# approval policy and pauses or proceeds. A turn through /api/chat therefore exercises the route, auth,
+# the mode registry, the workflow engine and the database tools for real, keyless. It would have caught
+# a mode that is dead in every image. The seeded customer whose latest order is delivered is found by
+# asking the API, so the check does not depend on one fixed user.
+# >>> chat-turn
+python3 - "$ORCH_URL" "$SMOKE_PASSWORD" <<'PY' || { dump_logs; fail "the keyless chat turn (workflow:return-replace) failed"; }
+import json, sys, urllib.error, urllib.request
+
+base, password = sys.argv[1], sys.argv[2]
+# The seeder's customers (scripts/seed.py USERS); all share one password.
+CUSTOMERS = [
+    "alice.johnson", "bob.smith", "carol.davis", "dave.wilson", "emma.brown", "frank.miller", "grace.lee",
+    "henry.taylor", "iris.chen", "jack.anderson", "kate.martinez", "leo.garcia", "mia.robinson",
+]
+REFUSALS = ("Order must be in", "Return window expired", "A return already exists", "No orders found")
+
+
+def call(method, path, token=None, body=None):
+    req = urllib.request.Request(
+        base + path,
+        method=method,
+        data=json.dumps(body).encode() if body is not None else None,
+        headers={"Content-Type": "application/json", **({"Authorization": f"Bearer {token}"} if token else {})},
+    )
+    with urllib.request.urlopen(req, timeout=60) as res:
+        return json.load(res)
+
+
+for name in CUSTOMERS:
+    email = f"{name}@gmail.com"
+    try:
+        token = call("POST", "/api/auth/login", body={"email": email, "password": password})["access_token"]
+        orders = call("GET", "/api/orders?limit=1", token)
+    except urllib.error.URLError:
+        continue
+    newest = orders.get("orders", [])[:1]  # newest first, on both stacks
+    if not newest or newest[0].get("status") != "delivered":
+        continue
+    turn = call("POST", "/api/chat", token, {
+        "message": "I want to return my most recent order, it arrived damaged",
+        "mode": "workflow:return-replace",
+    })
+    text = turn.get("response") or ""
+    steps = turn.get("agents_involved") or []
+    assert text, f"empty response: {turn}"
+    assert not turn.get("replay_miss"), f"unexpected replay miss: {turn}"
+    assert not any(r in text for r in REFUSALS), f"the workflow refused the return instead of running: {text!r}"
+    assert len(steps) >= 2, f"the workflow ran fewer than two steps: {steps}"
+    print(f"chat   ok ({email}, workflow:return-replace, steps={steps})")
+    break
+else:
+    raise SystemExit("no seeded customer has a delivered latest order to return")
+PY
+# <<< chat-turn
 
 echo "PASS: $COMPOSE_FILE boots keyless and serves /ready, login and products"

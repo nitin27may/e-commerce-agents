@@ -1,0 +1,30 @@
+name: Dependency review
+
+# Blocks a pull request that adds or bumps a dependency to a version with a known high or critical
+# vulnerability (GitHub's advisory database, via the dependency graph, which is on for this public repo).
+# It looks only at what the PR changes, so existing findings never block unrelated work; CodeQL and the
+# Dependabot version updates cover what is already on main. No secrets, no model key, no cost.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: Dependency review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Review the dependency changes
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
