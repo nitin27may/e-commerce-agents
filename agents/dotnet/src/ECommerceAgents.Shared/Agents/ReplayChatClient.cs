@@ -45,7 +45,10 @@ public sealed class ReplayChatClient : IChatClient
     {
         _fixturesDir = fixturesDir;
         _recorder = recorder;
-        Directory.CreateDirectory(_fixturesDir);
+        // The directory is created when a recording is written (RecordAsync), never here. Replaying only
+        // reads, and the replay path must not touch the file system: a container's non-root user cannot
+        // create /app/evals, and the orchestrator builds this client on its first chat request, so a
+        // constructor that creates it turns that first request into a 500 under LLM_PROVIDER=replay.
     }
 
     /// <summary>Thrown when no recording matches — never a silently wrong answer.</summary>
@@ -130,6 +133,7 @@ public sealed class ReplayChatClient : IChatClient
             request = Canonical(messages, options),
             response = Serialize(response),
         };
+        Directory.CreateDirectory(_fixturesDir);
         await File.WriteAllTextAsync(
             Path.Combine(_fixturesDir, $"{key}.json"),
             JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true }),

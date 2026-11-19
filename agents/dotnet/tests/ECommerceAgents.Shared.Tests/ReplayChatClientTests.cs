@@ -32,6 +32,41 @@ public sealed class ReplayChatClientTests : IDisposable
     }
 
     [Fact]
+    public void ConstructingAReplayClientDoesNotTouchTheFileSystem()
+    {
+        // The orchestrator builds this client on its first chat request. In a container the fixtures path
+        // (/app/evals/...) does not exist and the non-root user cannot create it, so a constructor that created
+        // the directory made that first request a 500 under LLM_PROVIDER=replay.
+        _ = new ReplayChatClient(_dir);
+
+        Directory.Exists(_dir).Should().BeFalse("replaying reads fixtures; only recording writes them");
+    }
+
+    [Fact]
+    public async Task ReplayingAMissWithNoDirectoryIsAMissNotAFileSystemError()
+    {
+        var client = new ReplayChatClient(_dir);
+
+        var act = () => client.GetResponseAsync(new[] { new ChatMessage(ChatRole.User, "anything") });
+
+        await act.Should().ThrowAsync<ReplayChatClient.FixtureMissingException>();
+        Directory.Exists(_dir).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task RecordingCreatesTheDirectoryItNeeds()
+    {
+        var client = new ReplayChatClient(_dir);
+
+        await client.RecordAsync(
+            new[] { new ChatMessage(ChatRole.User, "hello") }, null,
+            new ChatResponse(new ChatMessage(ChatRole.Assistant, "hi")));
+
+        Directory.Exists(_dir).Should().BeTrue();
+        Directory.GetFiles(_dir, "*.json").Should().HaveCount(1);
+    }
+
+    [Fact]
     public async Task ARecordedAnswerIsReplayed()
     {
         var client = new ReplayChatClient(_dir);
