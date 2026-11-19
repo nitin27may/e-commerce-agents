@@ -72,6 +72,13 @@ async def _due(pool: asyncpg.Pool, topic: str) -> None:
     )
 
 
+async def _not_due(pool: asyncpg.Pool, topic: str) -> None:
+    """The dump's timestamps are absolute, so its later timers fall into the past as the calendar moves on."""
+    await pool.execute(
+        "UPDATE outbox SET available_at = NOW() + interval '1 hour' WHERE topic = $1 AND processed_at IS NULL", topic
+    )
+
+
 async def test_the_fixture_is_what_the_dotnet_stack_writes(clean_db: asyncpg.Pool) -> None:
     dump = await _load_dotnet_rows(clean_db)
     approval = await repo.get(clean_db, dump["approval"]["id"])
@@ -94,6 +101,8 @@ async def test_python_worker_sends_the_reminder_dotnet_scheduled(clean_db: async
     dump = await _load_dotnet_rows(clean_db)
     approval_id = dump["approval"]["id"]
     await _due(clean_db, "approval.reminder_due")
+    # Only the reminder is under test; the breach timer in the dump is a fixed 2026-11-16 instant, long past by now.
+    await _not_due(clean_db, "approval.sla_breached")
 
     result = await run_once(clean_db, HANDLERS, "w1", **TICK)
 
