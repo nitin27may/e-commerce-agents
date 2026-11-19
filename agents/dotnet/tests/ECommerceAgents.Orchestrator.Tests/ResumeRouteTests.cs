@@ -308,10 +308,13 @@ public sealed class ResumeRouteTests : IAsyncLifetime
         // Held path: the stamp is visible while the workflow is running.
         var (held, _) = await SeedPendingAsync();
         DateTime? seenDuringResume = null;
-        var mode = new StubResumableMode(delay: TimeSpan.FromMilliseconds(300));
+        // The workflow outlives the polling deadline's first look, so a slow runner cannot finish the resume (and clear the stamp)
+        // before the test has had a chance to see it.
+        var mode = new StubResumableMode(delay: TimeSpan.FromSeconds(2));
         using var c2 = ClientFor(mode);
         var inFlight = c2.PostAsJsonAsync($"/api/orchestration/{held}/resume", new { approved = true });
-        for (var i = 0; i < 40 && seenDuringResume is null; i++)
+        var deadline = DateTime.UtcNow + PollDeadline;
+        while (seenDuringResume is null && DateTime.UtcNow < deadline)
         {
             await Task.Delay(25);
             seenDuringResume = await ClaimedAtAsync(held);
@@ -332,7 +335,8 @@ public sealed class ResumeRouteTests : IAsyncLifetime
         // A claims and freezes.
         using var clientA = ClientFor(mode, email: "a@example.com");
         var aInFlight = clientA.PostAsJsonAsync($"/api/orchestration/{runId}/resume", new { approved = true });
-        for (var i = 0; i < 80 && mode.Calls == 0; i++)
+        var callDeadline = DateTime.UtcNow + PollDeadline;
+        while (mode.Calls == 0 && DateTime.UtcNow < callDeadline)
         {
             await Task.Delay(25);
         }
@@ -360,6 +364,9 @@ public sealed class ResumeRouteTests : IAsyncLifetime
     }
 
     // ─────────────────────── helpers ────────────────────────
+
+    // A fixed iteration count made these tests a race against the CI runner; a deadline only costs time when something is wrong.
+    private static readonly TimeSpan PollDeadline = TimeSpan.FromSeconds(20);
 
     private async Task ForceClaimAsync(Guid runId, string claimedAtSql)
     {
