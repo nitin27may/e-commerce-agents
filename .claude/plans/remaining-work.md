@@ -8,7 +8,7 @@
 > [`docs/roadmap.md`](../../docs/roadmap.md). This file is the working detail behind it: blockers,
 > acceptance criteria, and the constraints that have already cost us time.
 
-**Status: 2026-11-15.** **The LangGraph backend (LG1–LG3) is parked** by maintainer decision; the
+**Status: 2026-11-19 (reconciled; see below).** **The LangGraph backend (LG1–LG3) is parked** by maintainer decision; the
 LG rows below are kept for the record only. [Part IV](#part-iv--the-november-2026-audit-everything-that-needs-no-azure) is new: a
 full audit produced issues #80–#104, and that part plans every one that needs no Azure resource.
 Parts I–III below are as of 2026-09-01. **Phase A is done** — see below. v1.3.0 is cut and both backends are live.
@@ -25,6 +25,39 @@ Foundry-to-LangGraph **A2A** interop pattern, which is the architecture ADR 0001
 to. Azure therefore stopped being a competing priority and became the substrate the comparison runs
 on. Build Azure first and the third backend inherits a deployment target; build the third backend
 first and the deployment story gets written twice.
+
+
+## Reconciliation, 2026-11-19
+
+Checked against `main` at `4ea66a7`, not against this file's own "built" headings. Issues #81, #83, #84, #88 and
+#104 were closed with evidence; #80, #82 and #102 were already closed. [#103](https://github.com/nitin27may/e-commerce-agents/issues/103)
+carries the per-issue checklist. What the check found:
+
+**Still to build (each verified absent in the code)**
+
+| Item | Issue | State |
+|---|---|---|
+| D-9a/D-9b carrier scan, inspection, timeline | #95 | No `carrier_scan` or inspection step anywhere in `workflows/` or `shared/`. The return workflow only gained the approval gate (D-8). |
+| B-15 history compaction, B-19 typed card frames, B-17 DevUI entry point | #98 | None found. B-10 (declarative loader removed) is done. |
+| B-16 `GroupChatBuilder`, D-5b customer confirm, M-2, V-1 `ops-responder`, E-3b, E-4, E-7, E-8 | #98 #92 #93 #94 #97 | **Not on main and on no remote branch.** The "held on their branches until R1" wording below was wrong: the only remote branches were already merged and are deleted. Treat them as unbuilt, not parked. |
+| E-9 `docs/eval-scorecard.md`, E-10, P-7 model scorecard, P-8 `docs/model-providers.md` | #97 #96 | Files do not exist. |
+| B-18 Aspire AppHost | #90 | No `AppHost` project. |
+| Azure: Bicep, `azure.yaml`, Foundry | #89 #91 | Not started (phases B-E). |
+| C-18 capstone `run.sh`, C-20 notebooks, new chapters | #100 | Neither file exists. |
+| Hero GIF and demo video | #87 | Only PNG screenshots exist. |
+| Secret scanning job | #85 | CodeQL, ruff and the Playwright smoke exist; no secret scan. |
+| Static hosted preview | #99 | Not confirmed. Error boundaries and `e2e/a11y.spec.ts` exist. |
+
+**Plan names that differ from what was built** (the feature exists; the path in the table rows is wrong):
+`web/e2e/a11y.spec.ts` (not `a11y-smoke.spec.ts`), `web/src/app/(app)/admin/approvals/page.tsx` (not
+`/approvals`), `docker-compose.demo.yml` + `scripts/dev.sh --demo` and the `Boot (replay, keyless)` job in
+`compose-smoke.yml` (there is no `docker-compose.nokey.yml`, `demo/` directory or `demo-tour.yml`; confirm
+before relying on C-7 and C-8 being built).
+
+**Process lesson.** Dependabot major bumps that each edit `web/pnpm-lock.yaml` do not compose when merged
+back to back: three web PRs passed CI individually and broke `main`'s frozen install together (fixed in #151).
+Merge one, let the next rebase, wait for green. Two timing-dependent tests were also fixed that day (#148
+a fixture date, #149 and #150 racing `.NET` tests); a fixture with an absolute timestamp is a time bomb.
 
 ---
 
@@ -675,7 +708,7 @@ otherwise.
 | **2 — first upgrade, demo surface, approvals core** | | B-3 (core 1.22), C-4 → C-5, D-2 → D-3 → D-4 → D-5a, D-7, D-8, E-2c → E-2d, E-5, P-2, P-4, P-6, M-1, X-1 | none |
 | **R0** | Record the tour | C-6, A-6b | **yes** |
 | **3 — the demo ships** | | C-7 → C-8 → C-9, C-10 → C-11, C-13, C-18, B-11 (build only; its run needs a key) | none |
-| **4 — second upgrade, real A2A, flows** | | B-6 (core 1.26 + MCP 2) → B-7, B-8, B-12 → B-13 → B-14, B-15, B-18, B-19, D-5n, D-6, D-9a → D-9b, M-3 → M-4, V-1 → V-2, B-17, P-3, P-5, P-8, C-20. **Built but held on their branches until R1:** D-5b, B-16, M-2's dataset, E-3b, E-4, E-6, E-7, E-8 — each invalidates or needs fixtures, so it merges with its recording, not before | none for what merges |
+| **4 — second upgrade, real A2A, flows** | | B-6 (core 1.26 + MCP 2) → B-7, B-8, B-12 → B-13 → B-14, B-15, B-18, B-19, D-5n, D-6, D-9a → D-9b, M-3 → M-4, V-1 → V-2, B-17, P-3, P-5, P-8, C-20. **Not built (an earlier revision said "held on their branches"; no such branches exist, see the Reconciliation section). Each needs R1 recordings:** D-5b, B-16, M-2's dataset, E-3b, E-4, E-6, E-7, E-8 — each invalidates or needs fixtures, so it merges with its recording, not before | none for what merges |
 | **R1** | Record everything else | see §3 | **yes** |
 | **5 — publish the numbers** | | E-9, E-10, P-7 (after R2), new tutorial chapters from #100 | R2 for P-7 |
 
