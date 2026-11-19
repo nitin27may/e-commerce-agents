@@ -32,6 +32,20 @@ def _replay(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("shared.config.settings.LLM_PROVIDER", "replay")
 
 
+@pytest.fixture(autouse=True)
+def _restore_identity():
+    """``bind_dev_identity`` sets ContextVars, and a sync test shares its context with every test after it.
+
+    Left bound, a later test that expects no signed-in user (the return workflow's "needs a signed-in user" path)
+    would see this one's and go on to the database.
+    """
+    before = (current_user_email.get(), current_user_role.get(), current_session_id.get())
+    yield
+    current_user_email.set(before[0])
+    current_user_role.set(before[1])
+    current_session_id.set(before[2])
+
+
 def test_it_registers_the_five_specialists_and_the_two_workflows(devui: ModuleType) -> None:
     devui.bind_dev_identity("alice.johnson@gmail.com", "customer")
 
@@ -126,3 +140,10 @@ def test_without_devui_installed_it_says_how_to_run_it(
 
     assert devui.main([]) == 2
     assert "--with agent-framework-devui==1.0.0b261112" in capsys.readouterr().err
+
+
+def test_binding_an_identity_does_not_leak_into_the_next_test(devui: ModuleType) -> None:
+    """Guards the fixture above: the identity a test bound is gone by the time the next one starts."""
+    # test_the_bound_identity_is_what_the_tools_read binds seller.demo@gmail.com; nothing may remain bound here.
+    assert current_user_email.get() != "seller.demo@gmail.com"
+    assert current_user_email.get() != "x@example.com"
