@@ -25,6 +25,7 @@ namespace ECommerceAgents.Shared.Tests;
 /// that the canned JSON matches what api.anthropic.com really returns byte for byte — it matches the published
 /// schema, which is the assumption. A live smoke run with a real key is still owed (R2 in the plan).
 /// </remarks>
+[Collection(nameof(ProcessEnvironmentCollection))]
 public sealed class AnthropicChatClientTests
 {
     private sealed class StubHandler : HttpMessageHandler

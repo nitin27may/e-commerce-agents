@@ -6,6 +6,7 @@ using Xunit;
 namespace ECommerceAgents.Shared.Tests;
 
 /// <summary>The A2A settings: the same names, defaults and validation as Python's <c>shared/config.py</c>.</summary>
+[Collection(nameof(ProcessEnvironmentCollection))]
 public sealed class A2ASettingsTests
 {
     private static AgentSettings Load(params (string Key, string Value)[] values) =>

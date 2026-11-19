@@ -15,6 +15,7 @@ namespace ECommerceAgents.Shared.Tests;
 /// <c>A2A_IDENTITY</c> mode and each transport, and that a real specialist host in each mode accepts exactly what
 /// the matching client sends: the token for the specialist's own name, the headers only where they are allowed.
 /// </summary>
+[Collection(nameof(ProcessEnvironmentCollection))]
 public sealed class A2AClientIdentityTests
 {
     private static AgentSettings Settings(string identity, string transport) => new()
