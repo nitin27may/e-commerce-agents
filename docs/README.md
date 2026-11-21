@@ -67,6 +67,7 @@ This folder contains the full technical documentation for E-Commerce Agents.
 | [merchant-proposals.md](merchant-proposals.md) | Seller merchant proposals: deterministic markdown/restock suggestions, review through the approvals machinery, idempotent execution, the daily run |
 | [approvals.md](approvals.md) | Approval routing policy (`approvals.yaml`), default rules, golden cases, the approvals tables |
 | [agent-quality.md](agent-quality.md) | Eval methodology, datasets, red-team scenarios, scoring, CI gate |
+| [eval-scorecard.md](eval-scorecard.md) | Generated table of the committed eval baselines per agent, with the replay-fixture caveat |
 | [agent-audit-matrix.md](agent-audit-matrix.md) | Per-agent security posture matrix and open hardening items |
 | [parity-matrix.md](parity-matrix.md) | Python vs .NET feature parity — honest per-concept status, priority, and tracking issue |
 | [troubleshooting.md](troubleshooting.md) | Common local-stack issues and fixes |
