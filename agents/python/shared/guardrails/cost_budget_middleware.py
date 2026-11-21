@@ -73,12 +73,21 @@ from shared.metrics import record_llm_turn_cost, record_would_block
 logger = logging.getLogger(__name__)
 
 current_run_cost_usd: ContextVar[float | None] = ContextVar("current_run_cost_usd", default=None)
+# True once a turn in this run was served by a model the pricing file does not list: the run's
+# cost is then unknown, and an enforcing budget cannot vouch for it.
+current_run_unpriced: ContextVar[bool] = ContextVar("current_run_unpriced", default=False)
 
 
 def reset_run_cost() -> float:
     """Begin capture for the current request/run; returns the fresh baseline (0.0)."""
     current_run_cost_usd.set(0.0)
+    current_run_unpriced.set(False)
     return 0.0
+
+
+def run_has_unpriced_turn() -> bool:
+    """Whether any turn in this run was on an unpriced model (its cost is unknown)."""
+    return current_run_unpriced.get()
 
 
 def get_run_cost() -> float:
@@ -117,7 +126,7 @@ def _served_model(response: Any) -> str:
     return model if isinstance(model, str) and model else _current_model()
 
 
-def _turn_cost(response: Any) -> tuple[float, int, int] | None:
+def _turn_cost(response: Any) -> tuple[float | None, int, int] | None:
     """Estimate this turn's USD cost from a ``ChatResponse``'s ``usage_details``.
 
     Returns ``None`` when no usage is available (e.g. a replay fixture that
@@ -127,7 +136,8 @@ def _turn_cost(response: Any) -> tuple[float, int, int] | None:
     Returns the token counts alongside the price so the caller can emit both
     without re-reading ``usage_details``: the metric records tokens as well,
     because cost is derived from them via a hand-maintained price table and
-    only the raw counts can tell you which of the two moved.
+    only the raw counts can tell you which of the two moved. The price is
+    ``None`` when the model is not in ``config/pricing/models.yaml``.
     """
     usage = getattr(response, "usage_details", None)
     if not usage:
@@ -141,6 +151,12 @@ def _turn_cost(response: Any) -> tuple[float, int, int] | None:
 BUDGET_REFUSAL_MESSAGE = (
     "This run has been stopped because it exceeded its configured cost budget. "
     "Start a new request, or raise COST_BUDGET_USD_PER_RUN if this ceiling is too low."
+)
+
+UNPRICED_REFUSAL_MESSAGE = (
+    "This run has been stopped because its model has no price on file, so its cost budget cannot be "
+    "enforced. Add the model to config/pricing/models.yaml (or PRICING_OVERRIDES_FILE), or set "
+    "COST_BUDGET_MODE=observe."
 )
 
 
@@ -165,6 +181,13 @@ class CostBudgetMiddleware(ChatMiddleware):
             return
 
         budget = settings.COST_BUDGET_USD_PER_RUN
+        if mode == "enforce" and budget is not None and run_has_unpriced_turn():
+            # Fail closed: a budget that cannot price a turn cannot promise the ceiling holds.
+            self.blocked += 1
+            logger.warning("cost_budget.blocked_unpriced budget_usd=%.4f", budget)
+            context.result = self._refusal_result(context, UNPRICED_REFUSAL_MESSAGE)
+            return
+
         if mode == "enforce" and budget is not None and get_run_cost() > budget:
             self.blocked += 1
             logger.warning(
@@ -172,7 +195,7 @@ class CostBudgetMiddleware(ChatMiddleware):
                 get_run_cost(),
                 budget,
             )
-            context.result = self._refusal_result(context)
+            context.result = self._refusal_result(context, BUDGET_REFUSAL_MESSAGE)
             # Short-circuit: do NOT call call_next() — no further LLM turn
             # is made once the run is already over budget.
             return
@@ -199,34 +222,48 @@ class CostBudgetMiddleware(ChatMiddleware):
 
     def _record_from_response(self, response: Any) -> Any:
         priced = _turn_cost(response)
-        if priced is not None:
-            cost, tokens_in, tokens_out = priced
-            self.turns_recorded += 1
-            total = _add_run_cost(cost)
-            logger.info(
-                "cost_budget.turn_recorded turn_cost_usd=%.4f run_cost_usd=%.4f mode=%s",
-                cost,
-                total,
-                settings.COST_BUDGET_MODE,
-            )
-            # Same estimate, as a counter rather than only a log line — a log
-            # line cannot be alerted on without shipping and parsing logs.
-            # Emitted here because this is the only place that prices *every*
-            # LLM turn, including each specialist's; the orchestrator's
-            # usage_logs row sees one aggregate per run and would miss where
-            # the spend actually went.
+        if priced is None:
+            return response
+        cost, tokens_in, tokens_out = priced
+        if cost is None:
+            current_run_unpriced.set(True)
+            logger.info("cost_budget.turn_unpriced mode=%s", settings.COST_BUDGET_MODE)
+            # Tokens are still counted: they are the record of truth a later price is applied to.
             record_llm_turn_cost(
-                cost,
+                None,
                 model=_served_model(response),
                 tokens_in=tokens_in,
                 tokens_out=tokens_out,
                 agent=settings.OTEL_SERVICE_NAME,
                 mode=settings.COST_BUDGET_MODE,
             )
+            return response
+        self.turns_recorded += 1
+        total = _add_run_cost(cost)
+        logger.info(
+            "cost_budget.turn_recorded turn_cost_usd=%.4f run_cost_usd=%.4f mode=%s",
+            cost,
+            total,
+            settings.COST_BUDGET_MODE,
+        )
+        # Same estimate, as a counter rather than only a log line — a log
+        # line cannot be alerted on without shipping and parsing logs.
+        # Emitted here because this is the only place that prices *every*
+        # LLM turn, including each specialist's; the orchestrator's
+        # usage_logs row sees one aggregate per run and would miss where
+        # the spend actually went.
+        record_llm_turn_cost(
+            cost,
+            model=_served_model(response),
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            agent=settings.OTEL_SERVICE_NAME,
+            mode=settings.COST_BUDGET_MODE,
+        )
         return response
 
     @staticmethod
-    def _refusal_result(context: ChatContext) -> ChatResponse | ResponseStream:
+    def _refusal_result(context: ChatContext, message: str) -> ChatResponse | ResponseStream:
         """Build a refusal result matching the invocation shape (streaming vs not).
 
         Mirrors ``InjectionDetectionChatMiddleware._refusal_result``.
@@ -236,12 +273,12 @@ class CostBudgetMiddleware(ChatMiddleware):
             async def _refusal_stream():
                 yield ChatResponseUpdate(
                     role="assistant",
-                    contents=[Content.from_text(text=BUDGET_REFUSAL_MESSAGE)],
+                    contents=[Content.from_text(text=message)],
                 )
 
             return ResponseStream(_refusal_stream())
 
         return ChatResponse(
-            messages=[Message(role="assistant", contents=[BUDGET_REFUSAL_MESSAGE])],
+            messages=[Message(role="assistant", contents=[message])],
             finish_reason="length",
         )

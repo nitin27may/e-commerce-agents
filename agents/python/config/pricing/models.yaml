@@ -1,0 +1,103 @@
+# Model prices: the one place a price lives. Both stacks read this file
+# (Python: shared/cost.py, .NET: Shared/Cost/CostEstimator.cs). No price is written in code.
+#
+# Anyone may correct a price or add a model. How:
+#   1. Copy the numbers from the provider's own pricing page, in USD per 1M tokens
+#      (the unit providers publish; do not convert to per-1K).
+#   2. Set `source` to that page and `as_of` to the date you read it (YYYY-MM-DD).
+#   3. Set `verified: true` only if you read the price on that page yourself today.
+#   4. Run the pricing tests on both stacks (commands in CLAUDE.md, "Model pricing").
+#
+# Keys are matched case-insensitively against the model a provider reports (or the configured
+# LLM_MODEL / AZURE_OPENAI_DEPLOYMENT). A dated snapshot prices as its base key:
+# `gpt-4.1-2025-04-14` uses `gpt-4.1`; `gpt-4.1-mini` never does (only `-<digit>` counts).
+# An Azure deployment with a custom name needs its own entry under that name.
+#
+# A model that is not listed has an UNKNOWN cost (reported as null), never a guess.
+# With COST_BUDGET_MODE=enforce and a budget set, a turn on an unpriced model stops the run.
+#
+# Private additions (a local model priced at 0, a negotiated rate) belong in a file named by
+# PRICING_OVERRIDES_FILE, merged over this one entry by entry, so they never need a repo change.
+#
+# cached_input_per_1m: the provider's cached-input rate. Leave it null when you have not read it:
+# cached tokens are then billed as ordinary input, so the estimate errs high, never low.
+
+version: 1
+currency: USD
+unit: per_1m_tokens
+
+models:
+  gpt-4.1:
+    provider: openai
+    input_per_1m: 2.00
+    output_per_1m: 8.00
+    cached_input_per_1m: null
+    source: https://openai.com/api/pricing/
+    as_of: null
+    verified: false
+  gpt-4.1-mini:
+    provider: openai
+    input_per_1m: 0.40
+    output_per_1m: 1.60
+    cached_input_per_1m: null
+    source: https://openai.com/api/pricing/
+    as_of: null
+    verified: false
+  gpt-4.1-nano:
+    provider: openai
+    input_per_1m: 0.10
+    output_per_1m: 0.40
+    cached_input_per_1m: null
+    source: https://openai.com/api/pricing/
+    as_of: null
+    verified: false
+  gpt-5.1:
+    provider: openai
+    input_per_1m: 1.25
+    output_per_1m: 10.00
+    cached_input_per_1m: null
+    source: https://openai.com/api/pricing/
+    as_of: null
+    verified: false
+    note: Placeholder until checked against a real Azure deployment (the Azure default chat model).
+  gpt-5.1-mini:
+    provider: openai
+    input_per_1m: 0.25
+    output_per_1m: 2.00
+    cached_input_per_1m: null
+    source: https://openai.com/api/pricing/
+    as_of: null
+    verified: false
+    note: A plausible deployment name, not a confirmed model id.
+  gpt-4o:
+    provider: openai
+    input_per_1m: 2.50
+    output_per_1m: 10.00
+    cached_input_per_1m: null
+    source: https://openai.com/api/pricing/
+    as_of: null
+    verified: false
+  gpt-4o-mini:
+    provider: openai
+    input_per_1m: 0.15
+    output_per_1m: 0.60
+    cached_input_per_1m: null
+    source: https://openai.com/api/pricing/
+    as_of: null
+    verified: false
+  text-embedding-3-small:
+    provider: openai
+    input_per_1m: 0.02
+    output_per_1m: 0.00
+    cached_input_per_1m: null
+    source: https://openai.com/api/pricing/
+    as_of: null
+    verified: false
+  text-embedding-3-large:
+    provider: openai
+    input_per_1m: 0.13
+    output_per_1m: 0.00
+    cached_input_per_1m: null
+    source: https://openai.com/api/pricing/
+    as_of: null
+    verified: false

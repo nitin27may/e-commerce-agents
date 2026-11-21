@@ -122,6 +122,13 @@ public static class SpecialistPipeline
             var ceiling = settings.CostBudgetUsdPerRun;
             var enforcing = string.Equals(settings.CostBudgetMode, "enforce", StringComparison.OrdinalIgnoreCase);
 
+            if (enforcing && ceiling is not null && RunHasUnpricedTurn)
+            {
+                logger.LogWarning("cost_budget.refused_unpriced ceiling_usd={Ceiling:F4}", ceiling);
+                RequestContext.SetGuardrailFlag("cost_budget_exceeded", true);
+                return new AgentResponse(new ChatMessage(ChatRole.Assistant, UnpricedRefusal));
+            }
+
             if (enforcing && ceiling is { } limit && RequestContext.CurrentRunCostUsd >= limit)
             {
                 logger.LogWarning(
@@ -166,6 +173,18 @@ public static class SpecialistPipeline
         }
     }
 
+    /// <summary>Guardrail flag set when a turn in this run was on a model the pricing file does not list.</summary>
+    public const string UnpricedFlag = "cost_unpriced";
+
+    /// <summary>The reply when an enforcing budget meets a run whose cost is unknown. Twin of Python's.</summary>
+    public const string UnpricedRefusal =
+        "This run has been stopped because its model has no price on file, so its cost budget cannot be "
+        + "enforced. Add the model to config/pricing/models.yaml (or PRICING_OVERRIDES_FILE), or set "
+        + "COST_BUDGET_MODE=observe.";
+
+    private static bool RunHasUnpricedTurn =>
+        RequestContext.CurrentGuardrailFlags.TryGetValue(UnpricedFlag, out var unpriced) && unpriced;
+
     /// <summary>The model a provider reports having served, when the raw response says; else the configured one.</summary>
     private static string ServedModel(object? raw, string fallback) =>
         raw is ChatResponse { ModelId: { Length: > 0 } served } ? served : fallback;
@@ -187,13 +206,25 @@ public static class SpecialistPipeline
         var tokensOut = usage.OutputTokenCount ?? 0;
         var turnCost = CostEstimator.Estimate(
             model, (int)tokensIn, (int)tokensOut, (int)(usage.CachedInputTokenCount ?? 0), logger);
-        var spent = RequestContext.AddRunCost(turnCost);
+        if (turnCost is null)
+        {
+            // Unknown, not free: the run is marked so an enforcing budget fails closed, and the
+            // tokens are still counted, since they are what a later price is applied to.
+            RequestContext.SetGuardrailFlag(UnpricedFlag, true);
+            logger.LogInformation("cost_budget.turn_unpriced mode={Mode}", settings.CostBudgetMode);
+            CostMetrics.RecordTurn(
+                null, model, tokensIn, tokensOut,
+                agent: settings.OtelServiceName, mode: settings.CostBudgetMode);
+            return;
+        }
+
+        var spent = RequestContext.AddRunCost(turnCost.Value);
 
         // The same estimate as a counter rather than only a log line, which
         // cannot be alerted on without shipping and parsing logs. Emitted
         // here because this is the only place that prices *every* turn.
         CostMetrics.RecordTurn(
-            turnCost, model, tokensIn, tokensOut,
+            turnCost.Value, model, tokensIn, tokensOut,
             agent: settings.OtelServiceName, mode: settings.CostBudgetMode);
 
         if (ceiling is { } cap && spent >= cap)
@@ -235,6 +266,14 @@ public static class SpecialistPipeline
     {
         var ceiling = settings.CostBudgetUsdPerRun;
         var enforcing = string.Equals(settings.CostBudgetMode, "enforce", StringComparison.OrdinalIgnoreCase);
+
+        if (enforcing && ceiling is not null && RunHasUnpricedTurn)
+        {
+            logger.LogWarning("cost_budget.refused_unpriced ceiling_usd={Ceiling:F4}", ceiling);
+            RequestContext.SetGuardrailFlag("cost_budget_exceeded", true);
+            yield return new AgentResponseUpdate(ChatRole.Assistant, UnpricedRefusal);
+            yield break;
+        }
 
         if (enforcing && ceiling is { } limit && RequestContext.CurrentRunCostUsd >= limit)
         {

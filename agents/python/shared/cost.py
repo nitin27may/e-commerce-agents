@@ -1,76 +1,125 @@
-"""Token-based cost estimation — a model -> price table any caller can read.
+"""Token-based cost estimation, priced from ``config/pricing/models.yaml``.
 
-Before this, the only cost estimate anywhere in the app was
-``evals/evaluator.py``'s own hardcoded ``COST_PER_1K_INPUT``/
-``COST_PER_1K_OUTPUT`` constants, priced for GPT-4.1 only and unusable
-anywhere else. This is the single source both the eval report and runtime
-usage logging (``shared/usage_db.py``) should read from.
+**No price lives in code.** Every price is a row in the pricing file, which both stacks read
+(the .NET twin is ``Shared/Cost/CostEstimator.cs``) and anyone may correct or extend; the file
+says how. ``PRICING_FILE`` points at another file, and ``PRICING_OVERRIDES_FILE`` names one merged
+over it entry by entry (a local model priced at 0, a negotiated rate) so private additions never
+need a repo change.
 
-Prices are USD per 1K tokens and go stale — update ``_PRICING`` when a
-provider changes pricing. Unknown models fall back to the app's own
-default (``LLM_MODEL``'s GPT-4.1 pricing) rather than raising, since a cost
-estimate should degrade gracefully, not break a request; the fallback is
-logged once per process (fixed text, no request data) so a mispriced
-deployment name is visible rather than silent.
+A model that is not in the file has an **unknown** cost: ``estimate_cost`` returns ``None`` and
+logs once per process (fixed text, no request data). There is no fallback price: an earlier
+revision priced every unknown model as gpt-4.1, so an Ollama or Gemini run reported invented
+dollars. A file that is missing or invalid is logged and treated as empty, so every cost is
+unknown and an enforcing budget fails closed rather than open.
 
-Cached input: a provider bills the cached part of a prompt at a lower rate.
-``ModelPricing.cached_input_per_1k`` is that rate; where it is ``None`` the
-cached tokens are billed as ordinary input, which *overstates* cost for a
-cache-heavy workload — the estimate errs high, never low.
+Cached input: ``cached_input_per_1m`` is the provider's cached rate; where it is null the cached
+tokens are billed as ordinary input, which overstates cost for a cache-heavy workload (the
+estimate errs high, never low).
 """
 
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
+
+import yaml
 
 from shared.run_usage import NO_LLM_CALLS_KEY
 
 logger = logging.getLogger(__name__)
 
+PRICING_PATH = Path(__file__).resolve().parents[1] / "config" / "pricing" / "models.yaml"
+
+
+class PricingError(ValueError):
+    """The pricing file is not valid."""
+
 
 @dataclass(frozen=True)
 class ModelPricing:
-    input_per_1k: float
-    output_per_1k: float
+    """USD per 1M tokens for one model, as the provider publishes it."""
+
+    input_per_1m: float
+    output_per_1m: float
     # None = no cached-input rate on file: cached tokens are billed as input.
-    cached_input_per_1k: float | None = None
+    cached_input_per_1m: float | None = None
 
 
-# USD per 1K tokens, as of this writing. Keep keys lowercase — callers pass
-# through whatever LLM_MODEL/AZURE_OPENAI_DEPLOYMENT string is configured,
-# and deployment names are conventionally lowercase already.
-#
-# ``cached_input_per_1k`` is deliberately unset for every entry below: the repo
-# documents no cached-input rate or discount ratio, and a price is not something
-# to infer. A maintainer fills it in from the provider's own pricing page (the
-# "cached input" column of OpenAI's API pricing, or Azure OpenAI's pricing page
-# for an Azure deployment) — one number per model, then the cost estimate for
-# cache-heavy traffic stops overstating.
-_PRICING: dict[str, ModelPricing] = {
-    "gpt-4.1": ModelPricing(input_per_1k=0.002, output_per_1k=0.008),
-    "gpt-4.1-mini": ModelPricing(input_per_1k=0.0004, output_per_1k=0.0016),
-    "gpt-4.1-nano": ModelPricing(input_per_1k=0.0001, output_per_1k=0.0004),
-    # ESTIMATES, not confirmed list prices: gpt-5.1 is the Azure default (#89) and these are
-    # placeholders until the provider's pricing page is checked against a real deployment. A
-    # snapshot such as gpt-5.1-2025-11-13 resolves to the gpt-5.1 row. "gpt-5.1-mini" is a
-    # plausible deployment name, not a confirmed model id.
-    "gpt-5.1": ModelPricing(input_per_1k=0.00125, output_per_1k=0.01),
-    "gpt-5.1-mini": ModelPricing(input_per_1k=0.00025, output_per_1k=0.002),
-    "gpt-4o": ModelPricing(input_per_1k=0.0025, output_per_1k=0.01),
-    "gpt-4o-mini": ModelPricing(input_per_1k=0.00015, output_per_1k=0.0006),
-    "text-embedding-3-small": ModelPricing(input_per_1k=0.00002, output_per_1k=0.0),
-    "text-embedding-3-large": ModelPricing(input_per_1k=0.00013, output_per_1k=0.0),
-}
+def _rate(model: str, field: str, value: Any, *, optional: bool = False) -> float | None:
+    if value is None and optional:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(value) or value < 0:
+        raise PricingError(f"{model}.{field} must be a non-negative number, got {value!r}")
+    return float(value)
 
-# gpt-4.1 pricing — matches shared/config.py's own LLM_MODEL default, so an
-# unrecognized/custom deployment name still gets a reasonable estimate
-# instead of silently pricing at zero.
-_DEFAULT_PRICING = _PRICING["gpt-4.1"]
 
-_fallback_logged = False
+def parse_pricing(data: Any) -> dict[str, ModelPricing]:
+    """Validate a parsed pricing document and return its price table (keys lower-cased)."""
+    if not isinstance(data, Mapping):
+        raise PricingError("pricing file must be a mapping")
+    if data.get("version") != 1:
+        raise PricingError(f"unsupported pricing file version {data.get('version')!r}")
+    if data.get("unit", "per_1m_tokens") != "per_1m_tokens":
+        raise PricingError("unit must be per_1m_tokens")
+    models = data.get("models") or {}
+    if not isinstance(models, Mapping):
+        raise PricingError("models must be a mapping")
+    table: dict[str, ModelPricing] = {}
+    for raw_name, entry in models.items():
+        name = str(raw_name).strip().lower()
+        if not name or not isinstance(entry, Mapping):
+            raise PricingError(f"model entry {raw_name!r} is invalid")
+        if name in table:
+            raise PricingError(f"model {name!r} is listed twice")
+        table[name] = ModelPricing(
+            input_per_1m=_rate(name, "input_per_1m", entry.get("input_per_1m")),  # type: ignore[arg-type]
+            output_per_1m=_rate(name, "output_per_1m", entry.get("output_per_1m")),  # type: ignore[arg-type]
+            cached_input_per_1m=_rate(name, "cached_input_per_1m", entry.get("cached_input_per_1m"), optional=True),
+        )
+    return table
+
+
+def load_pricing_file(path: str | Path) -> dict[str, ModelPricing]:
+    """Read and validate one pricing file. Raises ``PricingError`` or ``OSError``."""
+    with open(path, encoding="utf-8") as handle:
+        try:
+            data = yaml.safe_load(handle)
+        except yaml.YAMLError as exc:
+            raise PricingError(f"pricing file is not valid YAML: {exc}") from exc
+    return parse_pricing(data)
+
+
+@lru_cache(maxsize=1)
+def _pricing() -> dict[str, ModelPricing]:
+    from shared.config import settings
+
+    path = settings.PRICING_FILE or str(PRICING_PATH)
+    try:
+        table = load_pricing_file(path)
+    except (OSError, PricingError):
+        # Fixed text: the exception may quote file content. Every cost is unknown until fixed.
+        logger.error("cost.pricing_file_invalid — every model is unpriced until it is fixed")
+        return {}
+    overrides = settings.PRICING_OVERRIDES_FILE
+    if overrides:
+        try:
+            table = {**table, **load_pricing_file(overrides)}
+        except (OSError, PricingError):
+            logger.error("cost.pricing_overrides_invalid — overrides ignored")
+    return table
+
+
+def reload_pricing() -> None:
+    """Forget the loaded table (tests, or after editing the file in a long-running process)."""
+    _pricing.cache_clear()
+
+
+_unpriced_logged = False
 
 
 def _lookup(model: str) -> ModelPricing | None:
@@ -83,70 +132,74 @@ def _lookup(model: str) -> ModelPricing | None:
     name = (model or "").strip().lower()
     if not name:
         return None
-    if name in _PRICING:
-        return _PRICING[name]
-    for key in sorted(_PRICING, key=len, reverse=True):
+    table = _pricing()
+    if name in table:
+        return table[name]
+    for key in sorted(table, key=len, reverse=True):
         rest = name[len(key) :]
         if name.startswith(key) and len(rest) > 1 and rest[0] == "-" and rest[1].isdigit():
-            return _PRICING[key]
+            return table[key]
     return None
 
 
-def pricing_for(model: str) -> ModelPricing:
-    """Price entry for ``model``; falls back to the default (logged once) when unknown."""
-    global _fallback_logged
+def pricing_for(model: str) -> ModelPricing | None:
+    """Price entry for ``model``, or ``None`` when the pricing file does not list it (logged once)."""
+    global _unpriced_logged
 
     found = _lookup(model)
-    if found is not None:
-        return found
-    if not _fallback_logged:
-        _fallback_logged = True
-        logger.warning("cost.model_unpriced — using the default price entry")
-    return _DEFAULT_PRICING
+    if found is None and not _unpriced_logged:
+        _unpriced_logged = True
+        logger.warning("cost.model_unpriced — cost is unknown; add the model to config/pricing/models.yaml")
+    return found
 
 
-def _reset_fallback_log_for_tests() -> None:
-    global _fallback_logged
-    _fallback_logged = False
+def _reset_unpriced_log_for_tests() -> None:
+    global _unpriced_logged
+    _unpriced_logged = False
 
 
-def estimate_cost(model: str, tokens_in: int, tokens_out: int, cached_in: int = 0) -> float:
-    """Estimate USD cost for a single call. Never raises on an unknown model.
+def estimate_cost(model: str, tokens_in: int, tokens_out: int, cached_in: int = 0) -> float | None:
+    """Estimate USD cost for a single call; ``None`` when the model is unpriced. Never raises.
 
     ``tokens_in`` is the *total* input (cached included), as providers report it;
     ``cached_in`` is the cached share of it. Cost = uncached input + cached input
     (at the cached rate when one is on file, else as input) + output.
     """
     pricing = pricing_for(model)
+    if pricing is None:
+        return None
     cached = min(max(cached_in, 0), max(tokens_in, 0))
     uncached = max(tokens_in, 0) - cached
-    cached_rate = pricing.cached_input_per_1k if pricing.cached_input_per_1k is not None else pricing.input_per_1k
+    cached_rate = pricing.cached_input_per_1m if pricing.cached_input_per_1m is not None else pricing.input_per_1m
     return (
-        (uncached / 1000) * pricing.input_per_1k
-        + (cached / 1000) * cached_rate
-        + (tokens_out / 1000) * pricing.output_per_1k
-    )
+        uncached * pricing.input_per_1m + cached * cached_rate + max(tokens_out, 0) * pricing.output_per_1m
+    ) / 1_000_000
 
 
 def usage_cost(usage: Mapping[str, Any] | None) -> float | None:
     """USD for a ``run_completed.usage`` value (``{total, by_agent}``), priced per agent's model.
 
-    ``None`` when nothing was captured (absent, or an empty accumulator); ``0.0`` for the
-    explicit zero of a mode that makes no LLM call (``shared.run_usage.zero_usage``).
+    ``None`` when nothing was captured (absent, or an empty accumulator) or when any agent's model
+    is unpriced; ``0.0`` for the explicit zero of a mode that makes no LLM call
+    (``shared.run_usage.zero_usage``).
     """
     by_agent = (usage or {}).get("by_agent") or {}
     # An empty accumulator that is not marked as a mode with no LLM calls captured nothing.
     if usage is None or (not by_agent and not usage.get(NO_LLM_CALLS_KEY)):
         return None
-    return sum(
-        estimate_cost(
+    total = 0.0
+    for slot in by_agent.values():
+        cost = estimate_cost(
             str(slot.get("model") or ""),
             int(slot.get("input_token_count") or 0),
             int(slot.get("output_token_count") or 0),
             int(slot.get("cached_input_token_count") or 0),
         )
-        for slot in by_agent.values()
-    )
+        if cost is None:
+            # One unpriced agent makes the run's total unknown: a partial sum would read as the whole.
+            return None
+        total += cost
+    return total
 
 
 def usage_model(usage: Mapping[str, Any] | None) -> str | None:

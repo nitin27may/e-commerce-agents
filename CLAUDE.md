@@ -323,6 +323,28 @@ LLM_API=chat_completions      # default `responses`; needed where there is no /r
 
 **Embeddings are configured separately** — `EMBEDDING_PROVIDER`, `EMBEDDING_BASE_URL`, `EMBEDDING_API_KEY`, `EMBEDDING_MODEL`, `EMBEDDING_DIM` — defaulting to the chat provider. The configured dimension is checked against the column type at startup; changing it is an explicit operator step (`uv run --project agents/python python scripts/reset_embeddings.py --dim N`), because it discards stored vectors.
 
+### Model pricing
+
+**No price is written in code, on either stack.** Every price is a row in
+`agents/python/config/pricing/models.yaml`, read by Python (`shared/cost.py`) and .NET
+(`Shared/Cost/CostEstimator.cs`). The file's own header is the how-to; in short:
+
+- **Update or add a model:** copy the numbers from the provider's pricing page in **USD per 1M tokens**
+  (the unit providers publish; never convert), set `source` to that page and `as_of` to the date read,
+  and `verified: true` only if you read the page yourself. A custom Azure deployment name needs its own row;
+  a dated snapshot (`gpt-4.1-2025-04-14`) already uses its base row. Leave `cached_input_per_1m` null unless
+  you read the cached rate.
+- **Run both stacks' pricing tests** after any edit: `cd agents/python && uv run pytest tests/test_cost.py`
+  and `cd agents/dotnet && dotnet test tests/ECommerceAgents.Shared.Tests --filter FullyQualifiedName~CostEstimator`.
+  The golden cases in `config/pricing/testdata/` are shared; change them only when the pricing *rules* change.
+- **Private prices** (a local model at 0, a negotiated rate) go in a file named by `PRICING_OVERRIDES_FILE`,
+  never in the shipped file. `PRICING_FILE` replaces the shipped file. Both are read by host-run processes;
+  containers use the copy built into the image (rebuild after editing).
+- **An unlisted model's cost is unknown (null), never a guess.** Do not reintroduce a fallback price: the old
+  gpt-4.1 fallback made every Ollama, Gemini and custom-deployment run report invented dollars. Under
+  `COST_BUDGET_MODE=enforce` with a ceiling, an unpriced turn stops the run (fail closed).
+- `tests/test_cost.py::test_no_price_is_written_in_code` fails if a float price literal appears in `shared/cost.py`.
+
 `LLM_API` is Python-only: the .NET stack always uses Chat Completions. Under `LLM_PROVIDER=replay`
 no model is called at all — that is what CI, the eval smoke suite and the tutorials' keyless path use.
 

@@ -75,7 +75,7 @@ public static class CostMetrics
     /// through a price table that is edited by hand. When spend jumps, the first question is
     /// whether the traffic changed or the table did, and only the raw counts can answer it.
     /// </remarks>
-    public static void RecordTurn(double costUsd, string model, long tokensIn, long tokensOut, string agent = "", string mode = "")
+    public static void RecordTurn(double? costUsd, string model, long tokensIn, long tokensOut, string agent = "", string mode = "")
     {
         var tags = new TagList { { "model", string.IsNullOrEmpty(model) ? "unknown" : model } };
         if (!string.IsNullOrEmpty(agent))
@@ -87,7 +87,11 @@ public static class CostMetrics
             tags.Add("mode", mode);
         }
 
-        CostUsd.Add(costUsd, tags);
+        // Null for an unpriced model: tokens are recorded, the cost counter is left alone (unknown is not zero).
+        if (costUsd is { } usd)
+        {
+            CostUsd.Add(usd, tags);
+        }
 
         var inputTags = tags;
         inputTags.Add("direction", "input");

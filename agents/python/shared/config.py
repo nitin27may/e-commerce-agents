@@ -505,6 +505,13 @@ class Settings(BaseSettings):
     # matching this repo's other guardrail flags' default-off posture.
     COST_BUDGET_USD_PER_RUN: float | None = None
 
+    # ── Model pricing (config/pricing/models.yaml) ───────────────────
+    # No price lives in code: shared/cost.py reads the pricing file. Empty means the shipped
+    # file. PRICING_OVERRIDES_FILE is merged over it entry by entry (a local model at 0, a
+    # negotiated rate). An unlisted model's cost is unknown (null), never a guess.
+    PRICING_FILE: str = ""
+    PRICING_OVERRIDES_FILE: str = ""
+
     # ── Output moderation (Phase 6.4) ────────────────────────────────
     # shared/guardrails/output_middleware.py's OutputSanitizationMiddleware
     # defangs adversarial *instructions* hiding in untrusted tool output —

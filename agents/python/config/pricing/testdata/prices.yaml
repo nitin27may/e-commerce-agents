@@ -1,0 +1,33 @@
+# Fixed prices for the golden cases in cases.json. Never edit to match code: both stacks must agree with it.
+version: 1
+currency: USD
+unit: per_1m_tokens
+models:
+  model-a:
+    input_per_1m: 2.00
+    output_per_1m: 8.00
+    cached_input_per_1m: null
+    source: test
+    as_of: 2026-01-01
+    verified: false
+  model-a-mini:
+    input_per_1m: 0.40
+    output_per_1m: 1.60
+    cached_input_per_1m: null
+    source: test
+    as_of: 2026-01-01
+    verified: false
+  cached-model:
+    input_per_1m: 1000.0
+    output_per_1m: 2000.0
+    cached_input_per_1m: 250.0
+    source: test
+    as_of: 2026-01-01
+    verified: false
+  local-free:
+    input_per_1m: 0
+    output_per_1m: 0
+    cached_input_per_1m: null
+    source: local
+    as_of: null
+    verified: false

@@ -1,0 +1,17 @@
+{
+  "_comment": "Golden pricing cases run by both stacks against prices.yaml. cost_usd null means unknown (unpriced).",
+  "cases": [
+    {"name": "priced model", "model": "model-a", "tokens_in": 1000, "tokens_out": 1000, "cached_in": 0, "cost_usd": 0.010},
+    {"name": "case-insensitive", "model": "MODEL-A", "tokens_in": 500, "tokens_out": 0, "cached_in": 0, "cost_usd": 0.001},
+    {"name": "dated snapshot prices as its base", "model": "model-a-2025-04-14", "tokens_in": 1000, "tokens_out": 1000, "cached_in": 0, "cost_usd": 0.010},
+    {"name": "a longer key is not a snapshot", "model": "model-a-mini", "tokens_in": 1000, "tokens_out": 1000, "cached_in": 0, "cost_usd": 0.002},
+    {"name": "snapshot of the longer key", "model": "model-a-mini-2025-04-14", "tokens_in": 1000, "tokens_out": 1000, "cached_in": 0, "cost_usd": 0.002},
+    {"name": "cached rate applies", "model": "cached-model", "tokens_in": 1000, "tokens_out": 500, "cached_in": 600, "cost_usd": 1.55},
+    {"name": "cached share is capped at input", "model": "cached-model", "tokens_in": 1000, "tokens_out": 0, "cached_in": 5000, "cost_usd": 0.25},
+    {"name": "no cached rate bills cached as input", "model": "model-a", "tokens_in": 1000, "tokens_out": 0, "cached_in": 900, "cost_usd": 0.002},
+    {"name": "explicit zero price is free, not unknown", "model": "local-free", "tokens_in": 1000, "tokens_out": 1000, "cached_in": 0, "cost_usd": 0.0},
+    {"name": "unlisted model is unknown", "model": "qwen2.5:14b", "tokens_in": 1000, "tokens_out": 1000, "cached_in": 0, "cost_usd": null},
+    {"name": "empty model is unknown", "model": "", "tokens_in": 10, "tokens_out": 10, "cached_in": 0, "cost_usd": null},
+    {"name": "zero tokens on a priced model", "model": "model-a", "tokens_in": 0, "tokens_out": 0, "cached_in": 0, "cost_usd": 0.0}
+  ]
+}

@@ -20,45 +20,24 @@ from shared.guardrails.cost_budget_middleware import (
 from shared.run_usage import ORCHESTRATOR, RunUsage, zero_usage
 from shared.usage_db import log_agent_usage, usage_columns
 
-# ─────────────────────── cached-input pricing ───────────────────────
-
-
-def test_cached_input_billed_as_input_when_no_cached_rate_is_on_file() -> None:
-    """No cached price is documented, so the estimate must not invent a discount."""
-    assert cost.pricing_for("gpt-4.1").cached_input_per_1k is None
-    assert cost.estimate_cost("gpt-4.1", 1000, 0, cached_in=900) == cost.estimate_cost("gpt-4.1", 1000, 0)
-
-
-def test_cached_input_uses_the_cached_rate_when_one_is_set(monkeypatch: pytest.MonkeyPatch) -> None:
-    priced = cost.ModelPricing(input_per_1k=1.0, output_per_1k=2.0, cached_input_per_1k=0.25)
-    monkeypatch.setitem(cost._PRICING, "test-model", priced)
-
-    # 1000 in of which 600 cached, 500 out: 400*1.0/1000 + 600*0.25/1000 + 500*2.0/1000
-    assert cost.estimate_cost("test-model", 1000, 500, cached_in=600) == pytest.approx(0.4 + 0.15 + 1.0)
-
-
-def test_cached_tokens_are_clamped_to_total_input(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setitem(cost._PRICING, "test-model", cost.ModelPricing(1.0, 0.0, 0.5))
-    assert cost.estimate_cost("test-model", 1000, 0, cached_in=5000) == pytest.approx(0.5)
-
-
-# ─────────────────────── which price applies ───────────────────────
-
-
-def test_a_dated_snapshot_prices_as_its_base_model() -> None:
-    assert cost.estimate_cost("gpt-4.1-2025-04-14", 1000, 1000) == cost.estimate_cost("gpt-4.1", 1000, 1000)
-    # ...and a different model that merely shares a prefix does not.
-    assert cost.estimate_cost("gpt-4.1-mini-2025-04-14", 1000, 1000) == cost.estimate_cost("gpt-4.1-mini", 1000, 1000)
-    assert cost.estimate_cost("gpt-4.1-mini", 1000, 1000) != cost.estimate_cost("gpt-4.1", 1000, 1000)
+# Cached-input rates, snapshots and unknown models are covered by the golden cases in
+# tests/test_cost.py (config/pricing/testdata/cases.json), which .NET runs too.
 
 
 def test_an_unpriced_model_logs_a_fixed_line_once(caplog: pytest.LogCaptureFixture) -> None:
-    cost._reset_fallback_log_for_tests()
+    cost._reset_unpriced_log_for_tests()
     with caplog.at_level(logging.WARNING, logger="shared.cost"):
         cost.estimate_cost("my-private-deployment", 10, 10)
         cost.estimate_cost("my-private-deployment", 10, 10)
     lines = [r.getMessage() for r in caplog.records if r.name == "shared.cost"]
-    assert lines == ["cost.model_unpriced — using the default price entry"]
+    assert lines == ["cost.model_unpriced — cost is unknown; add the model to config/pricing/models.yaml"]
+
+
+def test_one_unpriced_agent_makes_the_run_cost_unknown() -> None:
+    usage = RunUsage()
+    usage.add(ORCHESTRATOR, {"input_token_count": 1000, "output_token_count": 0}, model="gpt-4.1")
+    usage.add("product-discovery", {"input_token_count": 1000, "output_token_count": 0}, model="my-private-deployment")
+    assert cost.usage_cost(usage.snapshot()) is None
 
 
 def test_usage_cost_prices_each_agent_at_its_own_model() -> None:

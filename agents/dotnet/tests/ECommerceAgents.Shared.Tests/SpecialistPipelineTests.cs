@@ -217,7 +217,23 @@ public sealed class SpecialistPipelineTests
         await wrapped.RunAsync("hi");
 
         RequestContext.CurrentRunCostUsd.Should().BeApproximately(
-            ECommerceAgents.Shared.Cost.CostEstimator.Estimate("gpt-4.1", 1000, 0), 1e-9);
+            ECommerceAgents.Shared.Cost.CostEstimator.Estimate("gpt-4.1", 1000, 0)!.Value, 1e-9);
+    }
+
+    [Fact]
+    public async Task CostGate_Enforce_FailsClosedAfterATurnOnAnUnpricedModel()
+    {
+        // A budget that cannot price a turn cannot promise its ceiling holds, so the next turn is refused.
+        using var scope = RequestContext.Scope("u@example.com", "customer", "sess-cost-unpriced");
+        var chat = new FakeChatClient { Usage = OneThousandIn }.EnqueueResponse("first").EnqueueResponse("second");
+        var inner = chat.AsAIAgent(instructions: "be helpful", name: "test-agent");
+        var settings = new AgentSettings { LlmModel = "a-model-nobody-priced", CostBudgetMode = "enforce", CostBudgetUsdPerRun = 100 };
+
+        var wrapped = SpecialistPipeline.Apply(inner, settings, BuildServices(), "test-agent");
+        (await wrapped.RunAsync("hi")).Text.Should().Be("first");
+        RequestContext.CurrentRunCostUsd.Should().Be(0);
+
+        (await wrapped.RunAsync("again")).Text.Should().Be(SpecialistPipeline.UnpricedRefusal);
     }
 
     [Fact]
@@ -234,7 +250,7 @@ public sealed class SpecialistPipelineTests
         }
 
         RequestContext.CurrentRunCostUsd.Should().BeApproximately(
-            ECommerceAgents.Shared.Cost.CostEstimator.Estimate("gpt-4.1", 1000, 0), 1e-9);
+            ECommerceAgents.Shared.Cost.CostEstimator.Estimate("gpt-4.1", 1000, 0)!.Value, 1e-9);
     }
 
     [Fact]

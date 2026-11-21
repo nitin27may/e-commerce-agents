@@ -435,7 +435,32 @@ verified Azure run. `LLM_PROVIDER=replay` and `openai` ignore both variables; re
 `0.50` is a demo default, large enough for a normal turn and small enough to catch a runaway
 agent loop. The mode stays `observe`: watch `cost_budget.would_block` (see
 [telemetry.md](telemetry.md#cost-and-usage)) before choosing `enforce`. The figure is an
-estimate from a hand-maintained price table, not a bill.
+estimate from the pricing file below, not a bill.
+
+### Model prices (`PRICING_*`)
+
+No price is written in code. Both stacks read `agents/python/config/pricing/models.yaml`: one entry per
+model, in USD per 1M tokens (the unit providers publish), each with its `source`, `as_of` date and a
+`verified` flag. A dated snapshot such as `gpt-4.1-2025-04-14` uses its base entry. An Azure deployment
+with a custom name needs an entry under that name.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `PRICING_FILE` | the shipped file | Use another pricing file instead |
+| `PRICING_OVERRIDES_FILE` | none | A file merged over the pricing file entry by entry: a local model at 0, a negotiated rate |
+
+A model the file does not list has an **unknown** cost: `usage_logs.cost_usd`, `est_cost_usd` and the
+eval report show null or "unknown", never a guessed figure. Under `COST_BUDGET_MODE=enforce` with a
+ceiling set, a turn on an unpriced model stops the run, because the ceiling can no longer be checked.
+An invalid file is logged (`cost.pricing_file_invalid`) and makes every cost unknown.
+
+Both variables are read by host-run processes. Containers use the copy of the file built into the
+image, so rebuild after editing it.
+
+To correct a price or add a model: copy the numbers from the provider's pricing page, set `source` and
+`as_of`, set `verified: true` only if you read the page yourself, and run the pricing tests on both
+stacks (`uv run pytest tests/test_cost.py` in `agents/python`; `dotnet test
+tests/ECommerceAgents.Shared.Tests --filter FullyQualifiedName~CostEstimator` in `agents/dotnet`).
 
 ## Outbox worker (`OUTBOX_*`)
 
