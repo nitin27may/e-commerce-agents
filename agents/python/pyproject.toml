@@ -36,6 +36,8 @@ dependencies = [
     # HTTP & LLM
     "httpx>=0.28",
     "openai>=1.60",
+    # Managed identity for Azure OpenAI (AZURE_OPENAI_AUTH=identity, #89 P3); sync credentials only, so no aiohttp.
+    "azure-identity>=1.19",
     "tiktoken>=0.8",
     # Telemetry (from day 1)
     "opentelemetry-sdk>=1.28",

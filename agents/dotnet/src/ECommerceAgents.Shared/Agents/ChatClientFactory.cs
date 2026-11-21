@@ -1,6 +1,7 @@
 using System.ClientModel;
 using Anthropic;
 using Azure.AI.OpenAI;
+using Azure.Core;
 using ECommerceAgents.Shared.Configuration;
 using OpenAI;
 using Microsoft.Extensions.AI;
@@ -119,7 +120,14 @@ public static class ChatClientFactory
     /// The concrete OpenAI SDK client, kept for callers that need SDK-specific surface.
     /// Prefer <see cref="Create"/>.
     /// </summary>
-    public static ChatClient CreateChatClient(AgentSettings settings)
+    public static ChatClient CreateChatClient(AgentSettings settings) => CreateChatClient(settings, null, null);
+
+    /// <summary>
+    /// <paramref name="credential"/> and <paramref name="options"/> exist so a test can put a fake
+    /// <see cref="TokenCredential"/> and a stub transport under the real SDK; production passes neither.
+    /// </summary>
+    public static ChatClient CreateChatClient(
+        AgentSettings settings, TokenCredential? credential, AzureOpenAIClientOptions? options)
     {
         if (string.Equals(settings.LlmProvider, "azure", StringComparison.OrdinalIgnoreCase))
         {
@@ -128,10 +136,11 @@ public static class ChatClientFactory
                 throw new InvalidOperationException("AZURE_OPENAI_ENDPOINT is required when LLM_PROVIDER=azure");
             }
 
-            if (string.IsNullOrWhiteSpace(settings.AzureOpenAiKey))
+            if (!AzureIdentity.IsIdentity(settings) && string.IsNullOrWhiteSpace(settings.AzureOpenAiKey))
             {
                 throw new InvalidOperationException(
-                    "AZURE_OPENAI_KEY (or AZURE_OPENAI_API_KEY) is required when LLM_PROVIDER=azure"
+                    "AZURE_OPENAI_KEY (or AZURE_OPENAI_API_KEY) is required when LLM_PROVIDER=azure "
+                    + "(or set AZURE_OPENAI_AUTH=identity)"
                 );
             }
 
@@ -142,10 +151,11 @@ public static class ChatClientFactory
                 );
             }
 
-            var azureClient = new AzureOpenAIClient(
-                new Uri(settings.AzureOpenAiEndpoint),
-                new ApiKeyCredential(settings.AzureOpenAiKey)
-            );
+            var endpoint = new Uri(settings.AzureOpenAiEndpoint);
+            var azureClient = AzureIdentity.IsIdentity(settings)
+                // No key is read or sent: the SDK asks the credential for a bearer token.
+                ? new AzureOpenAIClient(endpoint, credential ?? AzureIdentity.CreateCredential(settings), options)
+                : new AzureOpenAIClient(endpoint, new ApiKeyCredential(settings.AzureOpenAiKey), options);
             return azureClient.GetChatClient(settings.AzureOpenAiDeployment);
         }
 

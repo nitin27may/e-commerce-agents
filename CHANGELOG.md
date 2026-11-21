@@ -29,6 +29,10 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
   `nbclient` (also a step in the `tutorials-keyless` job) and fails if a committed notebook carries outputs;
   `scripts/strip_notebook_outputs.py` cleans one. `nbclient`, `nbformat` and `ipykernel` join the tutorials `dev`
   extra; the lock change is additions only.
+- **Managed identity for Azure OpenAI** (#89, P3; both stacks). `AZURE_OPENAI_AUTH=identity` (default `key`) sends
+  a Microsoft Entra token for chat and Azure embeddings instead of `AZURE_OPENAI_KEY`, which is then not required;
+  `AZURE_CLIENT_ID` selects a user-assigned identity, else `DefaultAzureCredential`. Adds `azure-identity` on Python
+  (no existing dependency moves). Tested with a fake credential only; the default is not flipped. Parity row 49.
 - **Runtime knobs for managed hosting** (#89, P2; both stacks). `LLM_TEMPERATURE` set empty sends no
   temperature (gpt-5.x rejects it; default `0.2` unchanged, replay keys unaffected).
   `DB_POOL_MIN_SIZE` / `DB_POOL_MAX_SIZE` bound the connection pool (Python defaults `5`/`20` as before;

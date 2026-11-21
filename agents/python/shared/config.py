@@ -191,6 +191,11 @@ class Settings(BaseSettings):
     )
 
     AZURE_OPENAI_API_VERSION: str = "2025-03-01-preview"
+    # key (default): AZURE_OPENAI_KEY. identity: no key at all, a Microsoft Entra token for the managed identity
+    # (AZURE_CLIENT_ID picks a user-assigned one; empty uses DefaultAzureCredential). Needs the
+    # "Cognitive Services OpenAI User" role on the resource.
+    AZURE_OPENAI_AUTH: Literal["key", "identity"] = "key"
+    AZURE_CLIENT_ID: str = ""
     AZURE_EMBEDDING_DEPLOYMENT: str = ""
 
     # ── Auth ────────────────────────────────────────────────────────
@@ -558,6 +563,14 @@ class Settings(BaseSettings):
         if self.DB_POOL_MIN_SIZE > self.DB_POOL_MAX_SIZE:
             raise ValueError("DB_POOL_MIN_SIZE must not exceed DB_POOL_MAX_SIZE")
         return self
+
+    @field_validator("AZURE_OPENAI_AUTH", mode="before")
+    @classmethod
+    def _normalise_azure_auth(cls, value: object) -> object:
+        """Trimmed and lower-cased; blank is the default, ``key``."""
+        if isinstance(value, str):
+            return value.strip().lower() or "key"
+        return value
 
     @field_validator("LLM_PROVIDER")
     @classmethod
