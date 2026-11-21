@@ -14,6 +14,41 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ## [Unreleased]
 
+### Added since 1.3.0
+
+- **A2A 1.0 on both stacks** (#88). Every specialist serves the A2A 1.0 JSON-RPC binding at
+  `/a2a/v1` and an agent card at `/.well-known/agent-card.json`, beside the unchanged
+  `/message:send` wire. `A2A_TRANSPORT=legacy|a2a` (default `legacy`) picks what the caller
+  speaks, and `A2A_IDENTITY` lets the user's identity travel as a signed, short-lived
+  `X-User-Context` token. Python uses the official `a2a-sdk`, .NET the official A2A SDK
+  (a preview, pinned exactly). Interop is tested in both directions by `scripts/a2a-interop.sh`.
+  See `docs/a2a.md`.
+- **Approvals** (#92). One inbox and one decide path on both stacks, routed by
+  `config/policies/approvals.yaml`, with an append-only audit trail, claim fencing against
+  double execution, and an outbox worker that sends reminders, escalates on an SLA breach and
+  applies the timeout. See `docs/approvals.md`.
+- **Merchant proposals** (#93, Python). Deterministic seller markdown and restock suggestions,
+  decided line by line through the approvals machinery and applied at most once. See
+  `docs/merchant-proposals.md`.
+- **Event autonomy** (#94, Python). Budgets for what the system may do on its own when an event
+  arrives, with an append-only decision log and ledger. An action over budget becomes an
+  approval. Off unless `AUTONOMY_ENABLED`. See `docs/event-autonomy.md`.
+- **Return lifecycle** (#95, Python). An approved return waits for the carrier's first scan across
+  restarts, then for support's inspection, and pays out once. Off unless
+  `RETURN_LIFECYCLE_ENABLED`. See `docs/return-lifecycle.md`.
+- **Anthropic provider and separate embeddings configuration** (#96). `LLM_PROVIDER=anthropic` on
+  both stacks (tested against a stubbed transport; never run live), and `EMBEDDING_*` settings
+  independent of the chat provider.
+- **MAF DevUI entry point** (#98). `scripts/devui.py` browses the specialists and workflows
+  without changing the lock file. See `docs/devui.md`.
+
+### Changed since 1.3.0
+
+- The Compose Redis image is `redis:8-alpine` (CI still runs `redis:7`).
+- The MCP servers moved to `mcp` 2.x with the MAF upgrade.
+
+### Azure pre-work
+
 Azure pre-work. Two application-code blockers that would each have stopped a deployment, neither of
 them about Azure services. Both are contract changes any additional backend inherits, which is why
 they landed before the infrastructure work rather than during it.

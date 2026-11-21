@@ -65,7 +65,7 @@ Postgres not ready or not seeded. `docker compose ps` (db healthy?), then
 ## Embeddings missing (semantic search empty)
 
 ```bash
-cd agents/python && uv run python -m scripts.generate_embeddings
+uv run --project agents/python python -m scripts.generate_embeddings
 ```
 
 ## `products.search_vector does not exist`

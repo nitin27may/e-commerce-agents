@@ -100,7 +100,7 @@ Packages published by a workflow in a **public** repository inherit that reposit
 so they are created public and are anonymously pullable straight away. Nothing to click.
 
 This was verified rather than assumed: `auth-server`, `mcp-product` and `mcp-inventory` had never
-been built by CI before the ten-image matrix landed, and on their very first publish an anonymous
+been built by CI before the eleven-image matrix landed, and on their very first publish an anonymous
 `docker manifest inspect` — with `docker logout ghcr.io` first, no stored credentials — succeeded
 for all three.
 
@@ -125,7 +125,7 @@ done
 ### Retention — already automated
 
 GHCR has no built-in retention setting, so `.github/workflows/package-cleanup.yml` is the policy.
-It runs weekly across all ten packages, keeps the most recent 20 versions, and never touches
+It runs weekly across all eleven packages, keeps the most recent 20 versions, and never touches
 `:latest`, `:main`, or any `:vX.Y.Z` tag.
 
 Two things would otherwise accumulate without limit: one `:sha-<7>` tag per commit on `main`, and

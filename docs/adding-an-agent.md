@@ -16,28 +16,41 @@ agents/python/your_agent/
 ├── agent.py      # create_your_agent() -> Agent
 ├── tools.py      # @tool-decorated async functions
 ├── prompts.py    # SYSTEM_PROMPT loaded from YAML
-└── main.py       # A2AAgentHost entry point
+└── main.py       # create_agent_app() entry point
 ```
 
 ### main.py
 
 ```python
-from agent_framework_a2a import A2AAgentHost
-from shared.telemetry import setup_telemetry
-from shared.db import create_pool
-from .agent import create_your_agent
+from shared.agent_host import create_agent_app
+from shared.auth import AgentAuthMiddleware
+from shared.db import close_db_pool, init_db_pool
+from shared.telemetry import instrument_fastapi, setup_telemetry
+from your_agent.agent import create_your_agent
 
-app = A2AAgentHost(
-    agent_factory=create_your_agent,
-    host="0.0.0.0",
-    port=8086,   # pick the next available port
-).app
+agent = create_your_agent()
 
-@app.on_event("startup")
-async def startup():
-    setup_telemetry(service_name="ecommerce.your-agent")
-    await create_pool()
+
+async def on_startup(app):
+    setup_telemetry("ecommerce.your-agent")
+    instrument_fastapi(app)
+    await init_db_pool()
+
+
+app = create_agent_app(
+    agent=agent,
+    agent_name="your-agent",  # hyphenated; matches the prompt YAML and the registry
+    port=8086,                # pick the next available port
+    description="One line on what this specialist does.",
+    on_startup=on_startup,
+    on_shutdown=close_db_pool,
+)
+app.add_middleware(AgentAuthMiddleware, agent_name="your-agent")
 ```
+
+`create_agent_app` serves the legacy `/message:send` and `/message:stream` routes, the A2A 1.0
+JSON-RPC binding at `/a2a/v1` and the agent card at `/.well-known/agent-card.json`. See
+[a2a.md](a2a.md). The real example is `agents/python/product_discovery/main.py`.
 
 ### agent.py
 
@@ -255,7 +268,7 @@ open http://localhost:18888
 - **ContextVars reset between requests** — don't store user identity in module-level state; always read it fresh from `current_user_email.get()` per tool call.
 - **Connection pool per agent** — each agent has its own pool (initialized in the lifespan). Don't share pools between processes.
 - **Prompt YAML is loaded per-request** — `load_prompt()` re-reads the YAML on each call, making prompts hot-reloadable without restarts. This means YAML syntax errors surface as runtime errors, not startup failures.
-- **Health endpoint is free** — `A2AAgentHost` registers `/health` automatically; you don't need to add it.
+- **Health endpoint is free** — `create_agent_app` registers `/health` (and `/ready`) automatically; you don't need to add it.
 - **Agent names in `AGENT_REGISTRY` use hyphens** — the orchestrator prompt uses `your-agent` (hyphenated), while the Python module uses `your_agent` (underscored). These are different things; don't mix them.
 
 ---

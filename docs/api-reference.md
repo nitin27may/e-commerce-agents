@@ -1,6 +1,6 @@
 # API Reference
 
-E-Commerce Agents exposes 20 REST endpoints through the orchestrator service (FastAPI, port 8080). All endpoints are prefixed with `/api/`.
+The orchestrator service (FastAPI, port 8080) serves about 70 routes, all prefixed with `/api/` except `/health`. The sections below give request and response examples for the original core surface (auth, chat, conversations, products, orders, profile, marketplace, admin). Routes added since are listed in tables further down: [Approvals](#approvals), [Notifications](#notifications), [Merchant proposals](#merchant-proposals), [Event autonomy](#event-autonomy), [Return lifecycle](#return-lifecycle) and [Other routes](#other-routes). The source of truth is `agents/python/orchestrator/routes/*.py`; the .NET orchestrator serves the same routes except where [parity-matrix.md](parity-matrix.md) says otherwise.
 
 ## Route Overview
 
@@ -896,6 +896,69 @@ The unified approvals inbox (both stacks). Rules, the authorisation matrix and t
 
 `POST /api/orchestration/{run_id}/resume` and `POST /api/admin/hitl/requests/{id}/approve|deny` remain, as thin
 callers of the same decide function.
+
+## Notifications
+
+`agents/python/orchestrator/routes/notifications.py`. The bell in the web sidebar reads these.
+
+| Endpoint | Who | Notes |
+|---|---|---|
+| `GET /api/me/notifications` | signed in | `?limit=` (1-100, default 30). The caller's own notifications, newest first, plus the unread count. Notifications addressed to a role (for example all `support` staff) appear for anyone holding the role |
+| `POST /api/me/notifications/{id}/read` | signed in | Marks one read for the caller only. `404` for an id that is not theirs, the same as for one that does not exist |
+| `GET /api/admin/outbox/parked` | admin | `?limit=` (1-200, default 50). Outbox rows the worker gave up on: id, topic, subject, attempts and the error class. Never the payload |
+
+## Merchant proposals
+
+Python only; see [merchant-proposals.md](merchant-proposals.md). Seller or admin. A proposal that is not the caller's is a `404`, the same as one that does not exist. These are never in the staff approvals inbox.
+
+| Endpoint | Notes |
+|---|---|
+| `GET /api/seller/proposals` | `?status=`, `?limit=`. The caller's proposals with their lines (an admin sees all) |
+| `POST /api/seller/proposals/run` | `{"seller_email": "..."}` optional. Generates a proposal now; a seller can only generate for themselves |
+| `GET /api/seller/proposals/{id}` | One proposal with its lines |
+| `POST /api/seller/proposals/{id}/decide` | `{"lines": [{...}], "note": "..."}`. Accept, edit or reject each line; accepted lines execute once. An edit can never raise a line |
+
+## Event autonomy
+
+Python only, admin only; see [event-autonomy.md](event-autonomy.md). The feature is off unless `AUTONOMY_ENABLED`.
+
+| Endpoint | Notes |
+|---|---|
+| `POST /api/admin/events/simulate` | `{"scenario", "order_id", "delay_days", "event_id"}`, all optional. Injects a seeded demo event (`order.shipment_delayed`). `404` for everyone unless `AUTONOMY_SIMULATOR_ENABLED`, answered before the admin check so a `401`/`403` cannot reveal the route |
+| `GET /api/admin/decisions` | `?state=`, `?limit=` (default 100), `?offset=`. What the system decided, with its budget use and state |
+| `GET /api/admin/decisions/{id}` | One decision |
+| `POST /api/admin/decisions/{id}/reverse` | `{"note": "..."}` optional. Undoes an executed action with a new log row and a negating ledger entry; it does not return the day's budget |
+
+An over-budget action opens an approval of kind `autonomous_action`, decided through `POST /api/approvals/{id}/decide`. The .NET stack answers `422` ("not supported on this stack") to every decision on an `event` approval.
+
+## Return lifecycle
+
+Python only; see [return-lifecycle.md](return-lifecycle.md). All four answer `404` unless `RETURN_LIFECYCLE_ENABLED`, except the timeline.
+
+| Endpoint | Who | Notes |
+|---|---|---|
+| `POST /api/admin/returns/{return_id}/simulate-scan` | admin | `{"carrier": "SIM", "tracking": ""}`. Announces the carrier's first scan of a waiting return; the outbox worker resumes the paused run. `409` if the return is not waiting for a scan. There is no carrier integration, so this is the only producer of `return.carrier_scanned` |
+| `GET /api/staff/returns/inspections` | staff | Returns the carrier has delivered, waiting for inspection |
+| `POST /api/staff/returns/{return_id}/inspect` | staff | `{"outcome": "accept"\|"reject", "resolution": "refund"\|"store_credit"\|"replacement", "amount", "condition", "note"}`. The amount can only be lowered. Pays out once. Never decided by the customer the return is for |
+| `GET /api/runs/{run_id}/timeline` | signed in | What happened to a return run, oldest first: waits, approval events and checkpoints. Admins see any run, everyone else their own (`404` otherwise). Staff see who acted; a customer sees only the role |
+
+## Other routes
+
+Routes without a detailed section above. Auth is signed in unless stated.
+
+| Endpoint | Notes |
+|---|---|
+| `POST /api/chat/stream` | The SSE form of `POST /api/chat`. Event names are listed in [frontend.md](frontend.md) and `orchestrator/routes/chat.py` |
+| `GET /api/orchestration/modes`, `GET /api/orchestration/modes/{name}/graph`, `POST /api/orchestration/compare`, `POST /api/orchestration/{run_id}/resume` | Orchestration mode introspection, comparison, and resume of a paused run (staff only to resume; a thin caller of the approvals decide function) |
+| `GET /api/runs`, `GET /api/runs/{run_id}/checkpoints` | The caller's runs and a run's checkpoints, including a pending `hitl_request` |
+| `GET /api/agents/stats` | Per-agent statistics |
+| `GET /api/admin/hitl/requests`, `POST /api/admin/hitl/requests/{id}/approve`, `POST /api/admin/hitl/requests/{id}/deny` | Legacy tool-approval routes (admin); callers of the approvals decide function |
+| `POST /api/orders/{order_id}/cancel`, `POST /api/orders/{order_id}/return`, `GET /api/returns/{label_token}/label` | Order cancellation, return request and return label |
+| `GET /api/cart`, `POST /api/cart/items`, `PUT` / `DELETE /api/cart/items/{item_id}`, `POST` / `DELETE /api/cart/coupon`, `PUT /api/cart/address`, `POST /api/checkout` | Cart and checkout |
+| `GET /api/user/memories`, `DELETE /api/user/memories/{memory_id}` | The caller's stored agent memories |
+| `GET /api/seller/products`, `GET /api/seller/orders`, `GET /api/seller/stats` | Seller views (seller or admin) |
+| `GET /api/demo/tour`, `POST /api/demo/reset` | Demo tour; `404` unless `DEMO_TOUR_ENABLED` |
+| `GET /health` | Static liveness, no auth |
 
 ## Error Response Format
 

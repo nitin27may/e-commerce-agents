@@ -11,7 +11,7 @@
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED.svg)](https://docs.docker.com/compose/)
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/nitin27may/e-commerce-agents)
 
-A **hands-on course in [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) (MAF)** — 34 chapters in Python and .NET, with a no-key start — and the **multi-agent e-commerce platform** it builds up to. In the platform, six specialized AI agents collaborate over **A2A-style HTTP** (`/message:send`; spec conformance is tracked in [#88](https://github.com/nitin27may/e-commerce-agents/issues/88)) to handle product discovery, orders, pricing, reviews, inventory and support — with **two complete backends, Python and .NET / C#** (differences documented in the [parity matrix](docs/parity-matrix.md)), behind one Next.js frontend.
+A **hands-on course in [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) (MAF)** — 34 chapters in Python and .NET, with a no-key start — and the **multi-agent e-commerce platform** it builds up to. In the platform, six specialized AI agents collaborate over **A2A** (A2A 1.0 JSON-RPC at `/a2a/v1` plus the original `/message:send` wire, on both stacks; see [docs/a2a.md](docs/a2a.md)) to handle product discovery, orders, pricing, reviews, inventory and support — with **two complete backends, Python and .NET / C#** (differences documented in the [parity matrix](docs/parity-matrix.md)), behind one Next.js frontend.
 
 ### Learn
 
@@ -47,7 +47,7 @@ which is the difference between roughly **one minute and roughly twelve**. Image
 if you have changed any code:
 
 ```bash
-./scripts/dev.sh              # builds all ten images locally, then seeds and starts
+./scripts/dev.sh              # builds all eleven images locally, then seeds and starts
 ```
 
 **On Windows**, use `scripts/dev.ps1` — the PowerShell twin of the bash script, same flags:
@@ -72,7 +72,7 @@ breaks: the **[Quick Start page](https://nitinksingh.com/e-commerce-agents/getti
 
 **Generative UI, not raw JSON.** The chat surface never dumps a tool result as text or a code block. Every agent response is inspected by shape and rendered as the right interactive component: a single detailed result becomes a card, a list becomes a table, a distribution or trend becomes a chart, a status becomes a tone-coded badge — see it live in the [screens gallery](https://nitinksingh.com/e-commerce-agents/getting-started/demo-guide.html) (review sentiment: rating distribution + 6-month trend, rendered from the same data an LLM would otherwise only describe in prose).
 
-**Pick your stack:** [`agents/python/`](./agents/python/) or [`agents/dotnet/`](./agents/dotnet/) — same schema, same prompts, same frontend for either (`./scripts/dev.sh --dotnet`, or `docker-compose.dotnet.yml` directly). Parity is enforced by a dual-backend test gate, and [`docs/parity-matrix.md`](./docs/parity-matrix.md) lists the remaining differences row by row.
+**Pick your stack:** [`agents/python/`](./agents/python/) or [`agents/dotnet/`](./agents/dotnet/) — same schema, same prompts, same frontend for either (`./scripts/dev.sh --dotnet`, or `docker-compose.dotnet.yml` directly). Parity is checked by a dual-backend test gate you run locally (`scripts/e2e-both-stacks.sh`; it is not in CI yet), and [`docs/parity-matrix.md`](./docs/parity-matrix.md) lists the remaining differences row by row.
 
 **Full documentation:** **[nitinksingh.com/e-commerce-agents](https://nitinksingh.com/e-commerce-agents/)** — the concepts library, all 34 tutorial chapters, and the architecture reference, with every diagram rendered.
 
@@ -131,7 +131,7 @@ graph TB
 
     subgraph Infrastructure["Shared Infrastructure"]
         PG[("PostgreSQL 16<br/>+ pgvector")]
-        RD[("Redis 7")]
+        RD[("Redis 8")]
         ASP["Aspire Dashboard<br/>:18888"]
     end
 
@@ -191,12 +191,12 @@ graph TB
     style AZ fill:#fbbf24,stroke:#f59e0b,color:#78350f
 ```
 
-Six agents — five specialists behind one orchestrator — over A2A-style HTTP, with the same schema and the
+Six agents — five specialists behind one orchestrator — over A2A (1.0 JSON-RPC and the legacy HTTP wire, [docs/a2a.md](docs/a2a.md)), with the same schema and the
 same frontend for either backend. Full detail — request flow, agent internals, the database schema
 and the API surface — is in **[Architecture](https://nitinksingh.com/e-commerce-agents/architecture/)**.
 
 **Pick your stack:** [`agents/python/`](./agents/python/) or [`agents/dotnet/`](./agents/dotnet/) —
-switch with `./scripts/dev.sh --dotnet`. Parity is enforced by a dual-backend test gate, and
+switch with `./scripts/dev.sh --dotnet`. Parity is checked by a dual-backend test gate you run locally (`scripts/e2e-both-stacks.sh`; it is not in CI yet), and
 [`docs/parity-matrix.md`](./docs/parity-matrix.md) lists the remaining differences row by row.
 
 ---
@@ -214,11 +214,11 @@ only on the site.
 | **[Concepts](https://nitinksingh.com/e-commerce-agents/concepts/)** | 14 pages for readers new to agents — what an agent is, the agentic loop, tools, harnesses, why multi-agent, orchestration patterns, graphs, state and memory, grounding, guardrails, HITL, evaluation, observability and cost, production concerns |
 | **[Tutorials](https://nitinksingh.com/e-commerce-agents/tutorials/)** | 34 chapters. Every chapter that ships code ships both Python and .NET, and every one is gated in CI — the tests replay fixtures (Python) or drive a scripted client (.NET), so the whole suite runs with no key and no network |
 | **[Architecture](https://nitinksingh.com/e-commerce-agents/architecture/)** | [System design](docs/architecture.md) · [agent flows](docs/agent-flows.md) · [database schema](docs/database-schema.md) · [API reference](docs/api-reference.md) · [frontend](docs/frontend.md) · [workflows](docs/workflows/README.md) |
-| **[Guides](https://nitinksingh.com/e-commerce-agents/guides/)** | [Adding an agent](docs/adding-an-agent.md) · [MCP integration](docs/mcp-integration.md) · [telemetry](docs/telemetry.md) · [security](docs/security-guide.md) · [agent quality and evals](docs/agent-quality.md) · [MAF best practices](docs/maf-best-practices.md) · [releasing](docs/releasing.md) |
+| **[Guides](https://nitinksingh.com/e-commerce-agents/guides/)** | [Adding an agent](docs/adding-an-agent.md) · [A2A 1.0](docs/a2a.md) · [approvals](docs/approvals.md) · [merchant proposals](docs/merchant-proposals.md) · [event autonomy](docs/event-autonomy.md) · [return lifecycle](docs/return-lifecycle.md) · [DevUI](docs/devui.md) · [MCP integration](docs/mcp-integration.md) · [telemetry](docs/telemetry.md) · [security](docs/security-guide.md) · [agent quality and evals](docs/agent-quality.md) · [MAF best practices](docs/maf-best-practices.md) · [releasing](docs/releasing.md) |
 | **[Getting Started](https://nitinksingh.com/e-commerce-agents/getting-started/)** | [Quick start](docs/quick-start.md) · [configuration](docs/configuration.md) · [deployment](docs/deployment.md) · [troubleshooting](docs/troubleshooting.md) |
-| **[Reference](https://nitinksingh.com/e-commerce-agents/reference/)** | [Python vs .NET parity matrix](docs/parity-matrix.md) · [agent audit matrix](docs/agent-audit-matrix.md) · [glossary](tutorials/_shared/jargon-glossary.md) · [Mermaid style guide](tutorials/_shared/mermaid-style-guide.md) |
-| **[Demo guide](https://nitinksingh.com/e-commerce-agents/getting-started/demo-guide.html)** | Test users, the agent catalog, scenarios to try, and the screens gallery |
-| **[Roadmap](https://nitinksingh.com/e-commerce-agents/getting-started/roadmap.html)** | What shipped, what is in progress, and what is deliberately not done |
+| **[Reference](https://nitinksingh.com/e-commerce-agents/reference/)** | [Python vs .NET parity matrix](docs/parity-matrix.md) · [agent audit matrix](docs/agent-audit-matrix.md) · [orchestration benchmark](docs/orchestration-benchmark.md) · [reported vs actual](docs/reported-vs-actual.md) · [glossary](tutorials/_shared/jargon-glossary.md) · [Mermaid style guide](tutorials/_shared/mermaid-style-guide.md) |
+| **[Demo guide](https://nitinksingh.com/e-commerce-agents/getting-started/demo-guide.html)** | Test users, the agent catalog, scenarios to try, and the screens gallery ([source](docs/demo-guide.md)) |
+| **[Roadmap](https://nitinksingh.com/e-commerce-agents/getting-started/roadmap.html)** | What shipped, what is in progress, and what is deliberately not done ([source](docs/roadmap.md)) |
 
 Contributor-facing docs stay in the repo rather than on the site:
 [CONTRIBUTING.md](CONTRIBUTING.md) (setup, conventions, testing policy, PR checklist),
@@ -231,10 +231,10 @@ Contributor-facing docs stay in the repo rather than on the site:
 | Layer | Technology |
 |-------|-----------|
 | Agent framework | [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) v1 — Python (`agent-framework-core`) **and** .NET (`Microsoft.Agents.AI`) |
-| Agent communication | A2A-style HTTP (`/message:send`), plus optional MCP for product and inventory data (flag-gated, `MCP_ENABLED`) |
+| Agent communication | A2A 1.0 JSON-RPC (`/a2a/v1`, agent card at `/.well-known/agent-card.json`) and the legacy `/message:send` wire, on both stacks ([a2a.md](docs/a2a.md)), plus optional MCP for product and inventory data (flag-gated, `MCP_ENABLED`) |
 | LLM | OpenAI / Azure OpenAI, or any OpenAI-compatible endpoint (Ollama, vLLM, OpenRouter) |
 | Backend | Python 3.12 + FastAPI · .NET 10 + ASP.NET Core |
-| Data | PostgreSQL 16 + pgvector · Redis 7 |
+| Data | PostgreSQL 16 + pgvector · Redis 8 |
 | Frontend | Next.js 16, React 19, Tailwind 4, shadcn/ui |
 | Telemetry | OpenTelemetry → .NET Aspire Dashboard |
 
@@ -282,6 +282,6 @@ This project is licensed under the [MIT License](LICENSE).
 
 ---
 
-Built with [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) and the [A2A protocol](https://google.github.io/A2A/) as its wire-format reference (conformance: [#88](https://github.com/nitin27may/e-commerce-agents/issues/88)).
+Built with [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) and the [A2A protocol](https://google.github.io/A2A/) as its wire format (A2A 1.0 on both stacks, [docs/a2a.md](docs/a2a.md)).
 
 **Built by [Nitin Singh](https://github.com/nitin27may)** &middot; [Documentation](https://nitinksingh.com/e-commerce-agents/) &middot; [More projects](https://nitinksingh.com/projects/)

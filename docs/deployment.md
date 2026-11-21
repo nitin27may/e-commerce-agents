@@ -20,14 +20,14 @@ Optional for local (non-Docker) development:
 
 ## 2. Docker Compose Architecture
 
-The platform runs 11 services organized into 4 profile groups. Services without a profile start by default.
+The platform runs 15 services organized into 5 profile groups (`docker-compose.yml`). Services without a profile start by default.
 
 ```mermaid
 graph TB
     subgraph defaultGroup["Default (always start)"]
         style defaultGroup fill:#f8fafc,stroke:#e2e8f0,stroke-width:2px
         db["PostgreSQL 16 + pgvector<br/>:5432"]
-        redis["Redis 7<br/>:6379"]
+        redis["Redis 8<br/>:6379"]
         aspire["Aspire Dashboard<br/>:18888"]
     end
 
@@ -44,6 +44,14 @@ graph TB
         pricing["Pricing & Promotions<br/>:8083"]
         review["Review & Sentiment<br/>:8084"]
         inventory["Inventory & Fulfillment<br/>:8085"]
+        authsrv["Auth Server<br/>:8090"]
+        worker["Outbox Worker<br/>(no port)"]
+    end
+
+    subgraph mcp_profile["Profile: mcp"]
+        style mcp_profile fill:#f8fafc,stroke:#e2e8f0,stroke-width:2px
+        mcpproduct["MCP Product<br/>:9000"]
+        mcpinventory["MCP Inventory<br/>:9001"]
     end
 
     subgraph frontend_profile["Profile: frontend"]
@@ -66,6 +74,10 @@ graph TB
     inventory -->|depends_on| db
     inventory -->|depends_on| aspire
     frontend -->|depends_on| orchestrator
+    authsrv -->|depends_on| db
+    worker -->|depends_on| db
+    mcpproduct -->|depends_on| db
+    mcpinventory -->|depends_on| db
 
     orchestrator -- "A2A Protocol" --> product
     orchestrator -- "A2A Protocol" --> order
@@ -83,7 +95,9 @@ Docker Compose profiles control which services start. Services without a profile
 | *(none)* | `db`, `redis`, `aspire` | Always started -- infrastructure baseline |
 | `seed` | `seeder` | Populates the database with sample data. Runs once and exits. |
 | `agents` | `orchestrator`, `product-discovery`, `order-management`, `pricing-promotions`, `review-sentiment`, `inventory-fulfillment` | The 6 AI agent microservices |
+| `agents` (cont.) | `auth-server` | The self-hosted OAuth 2.1 authorization server (:8090, see [Security Guide](security-guide.md)) |
 | `agents` (cont.) | `outbox-worker` | Background worker: approval reminders, SLA escalation and timeouts (no port; see [Approvals](approvals.md#the-outbox-worker-sla-and-notifications)). Built from the Python agent image with `AGENT_NAME=worker`. Disable with `OUTBOX_WORKER_ENABLED=false` |
+| `mcp` | `mcp-product`, `mcp-inventory` | The two MCP servers (:9000 and :9001). Used when `MCP_ENABLED` is set; `dev.sh --dotnet` always adds this profile (the .NET MCP inventory host). See [MCP Integration](mcp-integration.md) |
 | `frontend` | `frontend` | Next.js web application |
 
 **Usage examples:**
@@ -98,6 +112,9 @@ docker compose --profile agents up -d
 # Everything
 docker compose --profile agents --profile frontend up -d
 
+# Everything, with the MCP servers
+docker compose --profile agents --profile mcp --profile frontend up -d
+
 # Run the seeder
 docker compose --profile seed run --rm seeder
 ```
@@ -108,7 +125,7 @@ The `scripts/dev.sh` script is the recommended way to start the development envi
 
 **On Windows, use `scripts/dev.ps1`** — a PowerShell script with identical behaviour: same profiles,
 same ordering, same health gates, and the same flags in PowerShell form (`--clean` → `-Clean`,
-`--seed-only` → `-SeedOnly`, `--infra-only` → `-InfraOnly`, `--dotnet` → `-Dotnet`). It also runs on
+`--seed-only` → `-SeedOnly`, `--infra-only` → `-InfraOnly`, `--dotnet` → `-Dotnet`, `--demo` → `-Demo`, `--switch` → `-SwitchStack`). It also runs on
 macOS and Linux under PowerShell 7, though `dev.sh` is the more idiomatic choice there. Everything
 documented in this section applies to both.
 
@@ -120,6 +137,9 @@ documented in this section applies to both.
 | `--clean` | Nuclear option: removes all containers, volumes (including DB data), and orphans, then does a full rebuild |
 | `--seed-only` | Ensures infrastructure is running, then re-runs the seeder against the existing database. Useful after schema changes or to reset sample data. |
 | `--infra-only` | Starts only `db`, `redis`, and `aspire`. Does not start agents or frontend. Use this when running agents locally via `uvicorn`. |
+| `--dotnet` | Targets the .NET backend: composes with `docker-compose.dotnet.yml` and adds the `mcp` profile. Combines with the other flags, e.g. `--clean --dotnet`. |
+| `--demo` | Skips the local build and pulls the prebuilt images from GHCR (`docker-compose.demo.yml`, tag from `IMAGE_TAG`, default `latest`). Cannot be combined with `--dotnet`: no prebuilt .NET images are published. |
+| `--switch` | Tears the other stack down first, volumes included, so changing between Python and .NET is one command (`./scripts/dev.sh --dotnet --switch`). Without it, the script stops and tells you the other stack is running. |
 | `--help`, `-h` | Prints usage information |
 
 ### Script Flow
@@ -163,10 +183,10 @@ flowchart TD
 
 ## 5. Environment Configuration
 
-Copy `.env.example` to `.env` and configure:
+Copy `.env.minimal` to `.env` and set the model key. `.env.example` is the full reference of every variable:
 
 ```bash
-cp .env.example .env
+cp .env.minimal .env
 ```
 
 ### LLM Provider
@@ -326,10 +346,9 @@ DATABASE_URL=postgresql://ecommerce:ecommerce_secret@localhost:5432/ecommerce_ag
 **Generate embeddings locally:**
 
 ```bash
-cd agents
 DATABASE_URL=postgresql://ecommerce:ecommerce_secret@localhost:5432/ecommerce_agents \
 OPENAI_API_KEY=sk-your-key \
-  uv run python -m scripts.generate_embeddings
+  uv run --project agents/python python -m scripts.generate_embeddings
 ```
 
 ## 8. Port Map
@@ -338,13 +357,16 @@ OPENAI_API_KEY=sk-your-key \
 |------|---------|----------|-------|
 | 3000 | Next.js Frontend | HTTP | Browser-facing UI |
 | 5432 | PostgreSQL | TCP | pgvector enabled |
-| 6379 | Redis | TCP | Session cache (rate limiting is not implemented yet — planned) |
+| 6379 | Redis | TCP | Rate-limit buckets and cache. The limiter (`shared/rate_limit.py`, `RATE_LIMIT_*`) fails open when Redis is down |
 | 8080 | Orchestrator (Customer Support Agent) | HTTP | API gateway -- all user requests enter here |
 | 8081 | Product Discovery Agent | HTTP | A2A endpoint, called by orchestrator |
 | 8082 | Order Management Agent | HTTP | A2A endpoint, called by orchestrator |
 | 8083 | Pricing & Promotions Agent | HTTP | A2A endpoint, called by orchestrator |
 | 8084 | Review & Sentiment Agent | HTTP | A2A endpoint, called by orchestrator |
 | 8085 | Inventory & Fulfillment Agent | HTTP | A2A endpoint, called by orchestrator |
+| 8090 | Auth Server | HTTP | OAuth 2.1 authorization server (`agents` profile) |
+| 9000 | MCP Product server | HTTP | `mcp` profile |
+| 9001 | MCP Inventory server | HTTP | `mcp` profile |
 | 18888 | Aspire Dashboard | HTTP | OpenTelemetry traces and logs UI |
 | 18890 | Aspire OTLP Receiver | gRPC | Mapped from container port 18889 |
 

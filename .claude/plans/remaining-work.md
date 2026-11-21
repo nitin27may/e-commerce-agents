@@ -610,7 +610,9 @@ servers — all on both stacks. The design and per-phase notes for what shipped 
       from a secret store in any real deployment; the `OAUTH_SEED_KEY` dev default must never ship.
       **Phase B forces this** — Key Vault is in the Bicep either way, so rotation stops being
       theoretical the moment there is a secret store to rotate into.
-- [ ] **RFC 7591 dynamic client registration** — scoped and gated, not open registration.
+- [x] **RFC 7591 dynamic client registration** — done: `auth_server/register.py`, opt-in with
+      `AUTH_ALLOW_DYNAMIC_REGISTRATION`, scope-limited to `client_credentials` and the two MCP read
+      scopes, behind a `client:register` bearer. Not open registration.
 - [ ] **Audit matrix** covering which routes accept which token type.
 
 ## 16. Blocked, waiting on upstream

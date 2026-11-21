@@ -50,7 +50,7 @@ There are two paths, and the difference is roughly a minute versus twelve.
 ./scripts/dev.ps1 -Demo          # Windows PowerShell
 ```
 
-This pulls the ten released images, seeds the database, starts everything, and waits until the
+This pulls the eleven released images, seeds the database, starts everything, and waits until the
 orchestrator and frontend actually answer before printing the summary. Nothing is compiled.
 
 `--demo` uses `docker-compose.demo.yml`, which pins `:latest` — the newest tagged release, gated by
@@ -94,7 +94,7 @@ moving parts. Everything works exactly as documented for macOS and Linux — the
 wsl                                   # drop into your Linux distro
 git clone https://github.com/nitin27may/e-commerce-agents.git
 cd e-commerce-agents
-cp .env.example .env
+cp .env.minimal .env
 ./scripts/dev.sh
 ```
 
@@ -148,7 +148,7 @@ health check. The first run builds images, so expect a few minutes before anythi
 
 | Instead of | Use |
 |---|---|
-| `cp .env.example .env` | `Copy-Item .env.example .env` |
+| `cp .env.minimal .env` | `Copy-Item .env.minimal .env` |
 | `\` at end of line (continuation) | a backtick `` ` ``, or put it all on one line |
 | `./scripts/dev.sh --clean` | `./scripts/dev.ps1 -Clean` — or `docker compose down -v`, then re-run |
 | `./scripts/dev.sh --seed-only` | `./scripts/dev.ps1 -SeedOnly` — or `docker compose --profile seed run --rm seeder` |
@@ -301,7 +301,7 @@ EMBEDDING_DIM=768
 ```bash
 # Resize both embedding columns (this deletes any stored embeddings), then embed with your model:
 uv run --project agents/python python scripts/reset_embeddings.py --dim 768
-cd agents/python && uv run python -m scripts.generate_embeddings
+uv run --project agents/python python -m scripts.generate_embeddings
 ```
 
 > **Documented, not exercised in this repository.** The embeddings settings, the reset script and

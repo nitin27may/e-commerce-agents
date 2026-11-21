@@ -164,7 +164,7 @@ JWT signing uses `bcrypt` for passwords and `PyJWT` for token generation. Defaul
 - **Login** relays a `password` (ROPC) grant to the AS as a confidential first-party client — the AS re-verifies the bcrypt hash from the same `users` table, so this does not duplicate the password check. The AS returns an RS256 access token (`aud=ecommerce-orchestrator`, `scope=api:chat`, `role`/`user_id` custom claims) plus an opaque refresh token.
 - **Refresh** relays a `refresh_token` grant. The AS does not rotate refresh tokens (`INCLUDE_NEW_REFRESH_TOKEN=False`) — a choice made when the frontend did not re-persist refresh tokens. It now does (for local-mode rotation), so rotating here is possible follow-up work; it is **out of scope** of #102 and recorded in the parity matrix.
 - `AgentAuthMiddleware`'s Bearer branch validates the RS256 token against the AS's published JWKS (`RS256Verifier` / `.NET`'s `JwtTokenService.ValidateOAuth` + `JwksKeyProvider`): signature, issuer, audience, expiry, and required scope.
-- Phases A–D of the OAuth work all shipped and are live-verified on both stacks. What remains — key rotation, RFC 7591 dynamic client registration, and the audit matrix — is tracked in [`.claude/plans/remaining-work.md`](https://github.com/nitin27may/e-commerce-agents/blob/main/.claude/plans/remaining-work.md).
+- Phases A–D of the OAuth work all shipped and are live-verified on both stacks. RFC 7591 dynamic client registration is built (opt-in, below). What remains — key rotation and the audit matrix — is tracked in [`.claude/plans/remaining-work.md`](https://github.com/nitin27may/e-commerce-agents/blob/main/.claude/plans/remaining-work.md).
 
 ### Inter-agent requests (Orchestrator → Specialists)
 

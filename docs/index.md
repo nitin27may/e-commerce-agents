@@ -19,7 +19,7 @@ Docker is the only requirement — no Python, .NET or Node needed, and
 ```bash
 git clone https://github.com/nitin27may/e-commerce-agents.git
 cd e-commerce-agents
-cp .env.example .env          # add your OPENAI_API_KEY (or Azure OpenAI credentials)
+cp .env.minimal .env          # set OPENAI_API_KEY (Azure OpenAI and the rest: .env.example)
 ./scripts/dev.sh              # builds, seeds, and starts everything
 ```
 
@@ -65,21 +65,22 @@ Each explains the same ideas at a different depth, and each says where to go nex
 
 ## Where the project is
 
-**v1.1.** Both backends are live and stable; the pause-and-resume approval loop, server-side grounding, idempotency on money-moving actions, rate limiting and the five orchestration modes all ship on Python and .NET.
+**v1.3 is the latest release.** Both backends are live and stable; the pause-and-resume approval loop, server-side grounding, idempotency on money-moving actions, rate limiting and the five orchestration modes all ship on Python and .NET.
 
-### Recently shipped
+### Shipped since 1.3.0
 
-- Follow-up questions keep their context. Specialists had been receiving *no* conversation history on any browser-originated turn — deterministically, while every test passed.
-- .NET runs now appear in the Aspire GenAI view; they were invisible there because the span naming didn't match the convention Aspire selects on.
-- Semantic search works. It was dead under replay mode, and beneath that sat a production bug: an IVFFlat index built on an empty table, returning unrelated products.
-- Promotions apply. The seeder and the reader disagreed about `promotions.rules` key names, so no promotion had ever applied correctly.
-- This site is indexable — per-page metadata, and an accessible title on every one of the 71 diagrams.
+On `main`, not yet in a tagged release (see the [roadmap]({{ site.baseurl }}/getting-started/roadmap.html) for the full entries):
+
+- **A2A 1.0** on both stacks: JSON-RPC at `/a2a/v1`, an agent card, and a signed user-context token, beside the original wire.
+- **Approvals**: one inbox and one decide path, routed by policy, with SLA timers run by an outbox worker.
+- **Merchant proposals, event autonomy and the return lifecycle** (Python): what the system may do on its own, under budgets, with every action logged and reversible.
+- **An Anthropic provider** and a separately configured embeddings provider.
+- **A DevUI entry point** for browsing the specialists and workflows.
 
 ### Coming next
 
+- **Azure** — a Container Apps deployment path and Foundry as a model provider. There is no Azure path today.
+- **The dual-backend parity gate in CI** — it runs locally today (`scripts/e2e-both-stacks.sh`).
 - **.NET eval suite** — 6 of 7 datasets ported; the recording run, baselines and CI gate remain.
-- **.NET tutorial coverage** — chapters 12–19 have code but no tests, and 22–32 have no `dotnet/` yet.
-- **Composer UX** — contextual prompt suggestions, and a collapsed mode selector.
-- **Search** — `search_products` is still `ILIKE`; full-text and hybrid retrieval are planned.
 
 The full list, including gaps this page doesn't claim to cover, is in [`.claude/plans/remaining-work.md`](https://github.com/nitin27may/e-commerce-agents/blob/main/.claude/plans/remaining-work.md).
