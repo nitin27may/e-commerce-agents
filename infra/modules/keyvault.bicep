@@ -1,0 +1,81 @@
+@description('Vault name, 3-24 chars, globally unique.')
+param name string
+param location string
+param tags object
+@description('Principal that reads secrets at runtime (the user-assigned identity).')
+param readerPrincipalId string
+@description('Deploying user or pipeline; gets Secrets Officer. Empty to skip.')
+param deployerPrincipalId string = ''
+param enablePurgeProtection bool
+@minValue(7)
+@maxValue(90)
+param softDeleteRetentionDays int
+
+@secure()
+param postgresAdminPassword string
+@secure()
+param jwtSecret string
+@secure()
+param agentSharedSecret string
+
+var secretsUserRoleId = '4633458b-17de-408a-b874-0f5e9c3b6f6c'
+var secretsOfficerRoleId = 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7'
+
+resource vault 'Microsoft.KeyVault/vaults@2025-05-01' = {
+  name: name
+  location: location
+  tags: tags
+  properties: {
+    tenantId: tenant().tenantId
+    sku: { family: 'A', name: 'standard' }
+    enableRbacAuthorization: true
+    enableSoftDelete: true
+    softDeleteRetentionInDays: softDeleteRetentionDays
+    // Once true it can never be set back to false, so the demo profile omits it.
+    enablePurgeProtection: enablePurgeProtection ? true : null
+    publicNetworkAccess: 'Enabled'
+  }
+}
+
+resource readerRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(vault.id, readerPrincipalId, secretsUserRoleId)
+  scope: vault
+  properties: {
+    principalId: readerPrincipalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', secretsUserRoleId)
+  }
+}
+
+resource deployerRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(deployerPrincipalId)) {
+  name: guid(vault.id, deployerPrincipalId, secretsOfficerRoleId)
+  scope: vault
+  properties: {
+    principalId: deployerPrincipalId
+    principalType: 'User'
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', secretsOfficerRoleId)
+  }
+}
+
+// Written through the ARM control plane, so the deployment itself needs no
+// data-plane role.
+resource pgPasswordSecret 'Microsoft.KeyVault/vaults/secrets@2025-05-01' = {
+  parent: vault
+  name: 'postgres-admin-password'
+  properties: { value: postgresAdminPassword }
+}
+
+resource jwtSecretEntry 'Microsoft.KeyVault/vaults/secrets@2025-05-01' = {
+  parent: vault
+  name: 'jwt-secret'
+  properties: { value: jwtSecret }
+}
+
+resource agentSecretEntry 'Microsoft.KeyVault/vaults/secrets@2025-05-01' = {
+  parent: vault
+  name: 'agent-shared-secret'
+  properties: { value: agentSharedSecret }
+}
+
+output name string = vault.name
+output uri string = vault.properties.vaultUri

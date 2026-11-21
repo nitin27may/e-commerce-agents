@@ -1,0 +1,17 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": { "value": "${AZURE_ENV_NAME}" },
+    "location": { "value": "${AZURE_LOCATION}" },
+    "openAiLocation": { "value": "${AZURE_OPENAI_LOCATION=${AZURE_LOCATION}}" },
+    "principalId": { "value": "${AZURE_PRINCIPAL_ID}" },
+    "profile": { "value": "${DEPLOY_PROFILE=demo}" },
+    "chatModelName": { "value": "${AZURE_CHAT_MODEL=gpt-5.1}" },
+    "chatModelVersion": { "value": "${AZURE_CHAT_MODEL_VERSION=2025-11-13}" },
+    "deployMiniModel": { "value": "${DEPLOY_MINI_MODEL=false}" },
+    "postgresAdminPassword": { "value": "${POSTGRES_ADMIN_PASSWORD}" },
+    "jwtSecret": { "value": "${JWT_SECRET}" },
+    "agentSharedSecret": { "value": "${AGENT_SHARED_SECRET}" }
+  }
+}

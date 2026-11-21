@@ -1,0 +1,17 @@
+{
+  "logAnalytics": { "dailyQuotaGb": 1, "retentionDays": 30 },
+  "keyVault": { "enablePurgeProtection": false, "softDeleteRetentionDays": 7 },
+  "postgres": {
+    "tier": "Burstable",
+    "skuName": "Standard_B1ms",
+    "storageSizeGB": 32,
+    "highAvailability": "Disabled",
+    "backupRetentionDays": 7,
+    "geoRedundantBackup": "Disabled",
+    "allowAzureServices": true
+  },
+  "openAi": { "chatCapacity": 50, "embeddingCapacity": 20, "miniCapacity": 50 },
+  "budget": { "monthlyAmount": 150, "alertThresholdPercent": 80 },
+  "containerApps": { "minReplicas": 0, "maxReplicas": 2, "orchestratorMinReplicas": 1 },
+  "redis": { "minReplicas": 1, "maxReplicas": 1 }
+}
