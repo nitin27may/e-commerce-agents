@@ -17,6 +17,14 @@ param postgresAdminPassword string
 param jwtSecret string
 @secure()
 param agentSharedSecret string
+@secure()
+param a2aIdentityKey string
+@secure()
+param oauthSeedKey string
+@secure()
+param authSigningKeyEncryptionKey string
+@secure()
+param seedStaffPassword string
 
 var secretsUserRoleId = '4633458b-17de-408a-b874-0f5e9c3b6f6c'
 var secretsOfficerRoleId = 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7'
@@ -75,6 +83,30 @@ resource agentSecretEntry 'Microsoft.KeyVault/vaults/secrets@2025-05-01' = {
   parent: vault
   name: 'agent-shared-secret'
   properties: { value: agentSharedSecret }
+}
+
+resource a2aKeyEntry 'Microsoft.KeyVault/vaults/secrets@2025-05-01' = {
+  parent: vault
+  name: 'a2a-identity-key'
+  properties: { value: a2aIdentityKey }
+}
+
+resource oauthSeedEntry 'Microsoft.KeyVault/vaults/secrets@2025-05-01' = {
+  parent: vault
+  name: 'oauth-seed-key'
+  properties: { value: oauthSeedKey }
+}
+
+resource signingKeyEntry 'Microsoft.KeyVault/vaults/secrets@2025-05-01' = {
+  parent: vault
+  name: 'auth-signing-key-encryption-key'
+  properties: { value: authSigningKeyEncryptionKey }
+}
+
+resource staffPasswordEntry 'Microsoft.KeyVault/vaults/secrets@2025-05-01' = {
+  parent: vault
+  name: 'seed-staff-password'
+  properties: { value: seedStaffPassword }
 }
 
 output name string = vault.name
