@@ -164,9 +164,19 @@ public sealed record AgentSettings
     /// Sampling temperature pinned on every agent run so identical prompts
     /// yield consistent answers (the provider default of ~1.0 makes them
     /// diverge). Mirrors Python's <c>LLM_TEMPERATURE</c>
-    /// (<c>shared/config.py</c>), same env var name and default.
+    /// (<c>shared/config.py</c>), same env var name and default. <c>null</c>
+    /// (<c>LLM_TEMPERATURE</c> set but empty) sends no temperature at all: gpt-5.x
+    /// models reject the parameter.
     /// </summary>
-    public double Temperature { get; init; } = 0.2;
+    public double? Temperature { get; init; } = 0.2;
+
+    /// <summary>
+    /// <c>DB_POOL_MIN_SIZE</c> / <c>DB_POOL_MAX_SIZE</c>: Npgsql pool bounds per process. <c>null</c>
+    /// leaves Npgsql's own defaults (0 and 100), which is what every install had before the knobs.
+    /// </summary>
+    public int? DbPoolMinSize { get; init; }
+
+    public int? DbPoolMaxSize { get; init; }
 
     public string AzureOpenAiEndpoint { get; init; } = "";
 
