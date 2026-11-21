@@ -1,17 +1,19 @@
 # A2A 1.0 on both stacks
 
+A2A (Agent2Agent) is an open protocol for one agent to call another over HTTP. This page is for anyone running,
+calling or extending the specialists: the wires they serve, how identity travels, and the limits to know about.
+
 Every specialist, Python and .NET, serves two wires on the same port:
 
 | Wire | Where | Status |
 |---|---|---|
 | **A2A 1.0**, JSON-RPC binding | `POST /a2a/v1`, card at `GET /.well-known/agent-card.json` | On both stacks. What the official `a2a-sdk` / A2A .NET SDK client, and any other 1.0 client, speaks |
-| **Legacy** | `POST /message:send`, `POST /message:stream` | The original look-alike: a bare `{"message": "..."}` body. Unchanged on both stacks, byte for byte |
+| **Legacy** | `POST /message:send`, `POST /message:stream` | The original look-alike: a bare `{"message": "..."}` body. Identical on both stacks, byte for byte |
 
 The caller picks one with `A2A_TRANSPORT=legacy|a2a` (default `legacy`), on **both** orchestrators. It applies to the
 orchestrator's `call_specialist_agent` / `OrchestratorTools.CallSpecialistAgent` and to the handoff mesh's remote
-participant (`RemoteSpecialistChatClient` on each stack). Nothing about the legacy routes changed, so an
-orchestrator on `legacy` talks to a specialist of either stack exactly as before. The legacy routes retire one
-release after both stacks default to `a2a`.
+participant (`RemoteSpecialistChatClient` on each stack). An orchestrator on `legacy` can call a specialist of
+either stack. The legacy routes retire one release after both stacks default to `a2a`.
 
 Because both stacks serve and speak the same wire, **any orchestrator can call any specialist over `a2a`**: Python to
 .NET, .NET to Python, and each to its own kind. That is checked, not assumed (see *Interop between the stacks*).
@@ -23,7 +25,7 @@ Because both stacks serve and speak the same wire, **any orchestrator can call a
 | | Python | .NET |
 |---|---|---|
 | Package | `a2a-sdk` **1.3.0** (`PROTOCOL_VERSION_CURRENT == "1.0"`), pinned exactly in `agents/python/pyproject.toml` | `A2A` and `A2A.AspNetCore` **1.0.0-preview4** (the official `a2aproject/a2a-dotnet` SDK, spec 1.0), pinned exactly in `agents/dotnet/Directory.Packages.props` |
-| Release state | stable | **preview**: pinned exactly and grouped with the other protocol packages in Dependabot (plan decision B-d6) |
+| Release state | stable | **preview**: pinned exactly and grouped with the other protocol packages in Dependabot |
 | Server | `DefaultRequestHandlerV2` + a custom `SpecialistExecutor` | `A2AServer` subclassed (`SpecialistA2AServer`) + a custom `IAgentHandler` (`SpecialistA2AExecutor`) mapped with `MapA2A` |
 | Client | the SDK client (`shared/a2a_client.py`) | the SDK client (`A2AProtocolClient`, behind `A2AClient`) |
 
@@ -32,7 +34,7 @@ Because both stacks serve and speak the same wire, **any orchestrator can call a
   compatibility shim is **not** switched on in Python: nothing in this repo needs it, and an untested path is not a feature.
 - JSON-RPC only. 1.0's HTTP+JSON binding puts `POST /message:send` at the root, the paths the legacy routes occupy with
   an incompatible body, so both cannot be mounted. Everything the spec defines lives under `/a2a/v1`; gRPC is not
-  mounted either (plan decision B-d2). The .NET SDK's `MapHttpA2A` is deliberately not used.
+  mounted either. The .NET SDK's `MapHttpA2A` is deliberately not used.
 
 ## What is served
 
@@ -58,7 +60,7 @@ audience-bound `X-User-Context` token** minted by the orchestrator. See *Identit
 ## Lifecycle
 
 `submitted` → `working` → `completed` | `failed`. `input-required` and `auth-required` are reserved for cross-agent
-approvals (workstream D) and never produced. A message with no text is `rejected` and never reaches the model.
+approvals and never produced. A message with no text is `rejected` and never reaches the model.
 
 A streamed task's first event is the `Task` in `submitted`, then status updates and artifact chunks, and the last event
 is the single terminal status update. A blocking `SendMessage` returns the finished `Task`.
@@ -103,13 +105,12 @@ none, so tests compare the set.
 `/message:send` body (`toolName`, `durationMs`, a null `agent`) and PascalCase in `/message:stream`'s `event: steps`
 frame, which carries a *list*. Each orchestrator's legacy reader accepts both: `TolerantStepConverter` on .NET and
 `shared/legacy_wire.py` on Python (names compared ignoring case and underscores; a missing agent is filled with the
-specialist's name; the plural frame is split into live `step` frames). Before this, the Python orchestrator dropped a .NET
-specialist's blocking steps and read its `steps` frame as answer text. A specialist's steps are bounded on both stacks: a step keeps only its six canonical keys (Python also a bounded `provenance`), one frame or body contributes at most 50 steps and a turn collects at most 200 (`legacy_wire.MAX_STEPS_PER_*`, `A2AClient.MaxStepsPer*`). Usage needs no tolerance: both stacks name its
+specialist's name; the plural frame is split into live `step` frames). A specialist's steps are bounded on both stacks: a step keeps only its six canonical keys (Python also a bounded `provenance`), one frame or body contributes at most 50 steps and a turn collects at most 200 (`legacy_wire.MAX_STEPS_PER_*`, `A2AClient.MaxStepsPer*`). Usage needs no tolerance: both stacks name its
 fields explicitly. `scripts/a2a-interop.sh` checks it against a real .NET specialist.
 
 **Numbers on the wire.** A protobuf `Struct` (Python's metadata) writes every number as a float, so a .NET reader sees
-`5.0`, `0.0`. The .NET wire readers accept whole-valued floats; a reader that wants an integer silently dropped a
-Python specialist's steps and usage until the cross-process check found it.
+`5.0`, `0.0`. The .NET wire readers accept whole-valued floats; a reader that insists on an integer would silently drop a
+Python specialist's steps and usage.
 
 ## What the specialist's model sees
 
@@ -122,14 +123,15 @@ legacy streaming route uses (`agent_host._run_agent_native_stream` in Python,
 are equal on both wires (`test_a2a_conformance.py`, `TheModelSeesTheSameMessages_OnBothWires`), including rehydrated
 history in Python.
 
-History is rehydrated from Postgres by the `contextId`, scoped to the forwarded caller exactly as before. A `contextId`
+History is rehydrated from Postgres by the `contextId`, scoped to the forwarded caller exactly as on the legacy wire. A `contextId`
 the server invented (the caller sent none: an anonymous user) is never queried: Python prefixes its invented ids
 `a2a-ctx-`; the .NET SDK mints a GUID, so the executor uses the SDK's `ClientProvidedContextId` flag instead.
 
 ## Identity: the signed user-context token
 
-Until B-14 a specialist trusted `X-User-Email` / `X-User-Role` / `X-Session-Id` from anyone holding the shared
-`X-Agent-Secret`: the credential says which *agent* is calling, and nothing bound the second claim (which *user*) to it.
+With headers alone, a specialist trusts `X-User-Email` / `X-User-Role` / `X-Session-Id` from anyone holding the shared
+`X-Agent-Secret`: the credential says which *agent* is calling, and nothing binds the second claim (which *user*) to it.
+The signed token is that binding.
 
 `A2A_IDENTITY` (both stacks):
 
@@ -157,7 +159,7 @@ default setup, and the same on both stacks.
 **What it buys, and what it does not.** The key is symmetric: a specialist can verify a token and could also mint one,
 so a *compromised specialist* is not stopped by this. It adds: a request cannot be replayed at *another* specialist or
 after it expires; and a header forged beside a valid token is refused. A caller that holds only `X-Agent-Secret` (a
-leaked compose file, an SSRF) can no longer choose its user **only when both** hold: `A2A_IDENTITY=token` **and**
+leaked compose file, an SSRF) is stopped from choosing its user **only when both** hold: `A2A_IDENTITY=token` **and**
 `A2A_IDENTITY_KEY` set to a value **different from** the shared secret. Under the default `both`, a caller that omits
 the token and sends forged `X-User-*` headers is believed (that is what keeps a half-upgraded deployment working), and
 with no distinct key the shared secret is also the signing key, so holding it is holding the key. Starting in `token`
@@ -171,9 +173,9 @@ at most 15). `jti` is for audit correlation only today. A replay cache (bounded,
 the compromised-specialist case; it needs key distribution this repo does not have outside `AUTH_MODE=oauth`.
 
 **Default and rollout**: `both`. Moving the default to `token` is the next release's step, once the mixed-stack
-compose runs (`scripts/e2e-both-stacks.sh --mixed`) pass with it; the compose smoke paths were not runnable where this
-was built. The plan row asked for an auth-server RFC 8693 token exchange verified against JWKS; the auth-server only
-runs in `AUTH_MODE=oauth`, so that design would have put it into the default topology. The orchestrator mints instead.
+compose runs (`scripts/e2e-both-stacks.sh --mixed`) pass with it; those runs have not been executed yet. The
+orchestrator mints the token itself. An auth-server RFC 8693 token exchange verified against JWKS is not used, because
+the auth-server only runs in `AUTH_MODE=oauth` and an exchange would put it into the default topology.
 
 ## Operating notes
 
@@ -212,8 +214,8 @@ runs in `AUTH_MODE=oauth`, so that design would have put it into the default top
   and after a frame has arrived it is never re-sent (its tools may have run). The SDKs differ in how they surface
   transport errors (Python wraps every `httpx` error in `A2AClientError`, unwrapped by `shared.a2a_client.root_cause`;
   .NET's SDK client throws `HttpRequestException` directly) but `A2AProtocolClient.NeverRan` and the Python
-  `_request_never_ran` implement the same rule. The legacy .NET client never fell back from stream to blocking and
-  still does not; its Polly retry covers establishing the connection.
+  `_request_never_ran` implement the same rule. The legacy .NET client does not fall back from stream to blocking;
+  its Polly retry covers establishing the connection.
 - **A disconnect does not cancel the run, so the client cancels it.** The SDK owns a task independently of the connection
   that started it, so on either stack a streamed call that is abandoned, times out or fails sends a bounded (3 s)
   best-effort `CancelTask` that never raises and never replaces the original error. A *blocking* `SendMessage` learns
@@ -223,7 +225,7 @@ runs in `AUTH_MODE=oauth`, so that design would have put it into the default top
   or `A2A_PUBLIC_BASE_URL`, and the client carries `X-Agent-Secret` and the forwarded identity on every request. A card
   naming an interface whose origin (scheme, host, effective port) differs from the `AGENT_REGISTRY` entry is refused as
   a card problem: no message and no credential is sent to that origin, and the card is not cached. Redirects are never
-  followed (the .NET client refuses any 3xx, and the orchestrator's named HTTP client no longer follows them on either wire).
+  followed (the .NET client refuses any 3xx, and the orchestrator's named HTTP client does not follow them on either wire).
   Consequence: `A2A_PUBLIC_BASE_URL` must name the same origin the registry uses to reach the specialist.
 - The client caches each specialist's card for five minutes.
 
@@ -259,7 +261,7 @@ cd agents/python
 uv run pytest tests/test_a2a_conformance.py tests/test_a2a_transport.py tests/test_identity_token.py -v
 cd ../dotnet && dotnet test tests/ECommerceAgents.Shared.Tests --filter "FullyQualifiedName~A2A|FullyQualifiedName~UserContextToken"
 cd ../.. && scripts/a2a-interop.sh        # both directions, across processes
-# The replay gate over the new wire (zero missing fixtures, scores equal to the baselines):
+# The replay gate over the A2A 1.0 wire (zero missing fixtures, scores equal to the baselines):
 A2A_TRANSPORT=a2a scripts/replay-evals.sh --setup
 ```
 
@@ -267,7 +269,7 @@ A2A_TRANSPORT=a2a scripts/replay-evals.sh --setup
 
 `input-required` for approvals, push notifications, the HTTP+JSON and gRPC bindings, the 0.3 compatibility shim in
 Python, asymmetric signing of the identity token, a golden-file contract test shared by both stacks (the live
-cross-process check replaced it).
+cross-process check covers that ground).
 
 ## Replay misses
 
@@ -280,4 +282,4 @@ Under `LLM_PROVIDER=replay` a prompt with no recording is a *miss*, on both stac
 answer, the tool loop ends without another model call, and the chat route answers `replay_miss: {message}` on
 `/api/chat` or an `event: replay_miss` frame, `metadata` and `done` on the stream, saves no assistant message, logs no
 usage and deletes the unanswered user message. Both stacks do all of this; the .NET specialists' legacy routes emit the
-424 / frame too (they used to answer 500).
+424 / frame too.

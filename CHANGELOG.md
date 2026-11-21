@@ -14,6 +14,24 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ## [Unreleased]
 
+### Documentation
+
+- **The roadmap is reorganised for a visitor:** what is next, what each release shipped, what is
+  not planned. It said there was no Azure path and that a third model provider was still to come;
+  both were out of date.
+- **The parity matrix has a summary by status** (27 of 48 rows at full parity) ahead of the table,
+  and its rows state the current position first. One row had a stray cell that left its status
+  empty.
+- **Two new pages:** `docs/checkpoints-and-resume.md` (how a workflow run pauses for approval and
+  resumes in a later request) and `docs/replay-mode.md` (how the project runs with no API key, and
+  what a replay miss is).
+- **Guides say what is true now,** without plan codes or history. Corrected along the way: the
+  approvals page said merchant limits were unused (they are enforced), the telemetry page said
+  export was OTLP over HTTP only (gRPC is tried first), the frontend page said Playwright never
+  runs in CI (a UI smoke subset does), and the security guide's list of unauthenticated paths
+  lacked `/ready`.
+- `CONTRIBUTING.md` gains prerequisites, a keyless test section and a PR checklist.
+
 ## [1.4.0] - 2026-11-21
 
 Three months of work on `main` reach a release: A2A 1.0 on both stacks, one approvals inbox routed

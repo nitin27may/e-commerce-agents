@@ -20,6 +20,7 @@ This folder contains the full technical documentation for E-Commerce Agents.
 1. [Project README → Run it](../README.md#run-it)
 2. [Deployment Guide](deployment.md) — Docker Compose profiles, `dev.sh` flags, environment variables
 3. [Troubleshooting](troubleshooting.md) — if something doesn't start
+4. [Replay mode](replay-mode.md) — how the tutorials, tests, evals and demo run without an API key
 
 ### "I want to understand how the agents work"
 
@@ -34,7 +35,8 @@ This folder contains the full technical documentation for E-Commerce Agents.
 2. [Orchestration benchmark](orchestration-benchmark.md) — the same question routed five ways, with latency and cost
 3. [Architecture → Orchestration modes](architecture.md#orchestration-modes) — how a request reaches a mode
 4. [Approvals](approvals.md) — the human-in-the-loop pause, the routing policy, and resume from a checkpoint
-5. [Python vs .NET parity](parity-matrix.md) — what each backend covers
+5. [Checkpoints and resume](checkpoints-and-resume.md) — how a paused workflow run is stored and continued in a later request
+6. [Python vs .NET parity](parity-matrix.md) — what each backend covers
 
 ### "I want to build on top of or integrate with this"
 
@@ -76,6 +78,8 @@ This folder contains the full technical documentation for E-Commerce Agents.
 | [durable-task-spike.md](durable-task-spike.md) | Write-up: would the Durable Task extension replace the return lifecycle's checkpoints and outbox timers (recommendation: no) |
 | [merchant-proposals.md](merchant-proposals.md) | Seller merchant proposals: deterministic markdown/restock suggestions, review through the approvals machinery, idempotent execution, the daily run |
 | [approvals.md](approvals.md) | Approval routing policy (`approvals.yaml`), default rules, golden cases, the approvals tables |
+| [checkpoints-and-resume.md](checkpoints-and-resume.md) | How a workflow run pauses and resumes: checkpoints, the `workflow_checkpoints` and `hitl_requests` tables, timeout, the .NET differences |
+| [replay-mode.md](replay-mode.md) | Running without an API key: what `LLM_PROVIDER=replay` does, where it is used, replay misses, when to re-record |
 | [agent-quality.md](agent-quality.md) | Eval methodology, datasets, red-team scenarios, scoring, CI gate |
 | [eval-scorecard.md](eval-scorecard.md) | Generated table of the committed eval baselines per agent, with the replay-fixture caveat |
 | [agent-audit-matrix.md](agent-audit-matrix.md) | Per-agent security posture matrix and open hardening items |

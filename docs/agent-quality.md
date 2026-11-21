@@ -1,6 +1,19 @@
 # Agent Quality & Evaluation
 
-Evaluation methodology, dataset structure, scoring model, red-team suite, and the CI gate for the E-Commerce Agents platform.
+This page explains how the project measures whether its agents answer correctly and resist attacks: what is scored, on which datasets, and what CI enforces. It is for anyone who wants to judge the agents' quality, run the evals, or add a case.
+
+**Where the scores stand.** Six quality datasets of five or six cases each are scored on groundedness, correctness and completeness. The committed overall scores run from 0.51 to 1.00:
+
+| Agent | Overall |
+|-------|--------:|
+| review-sentiment | 1.00 |
+| product-discovery | 0.97 |
+| inventory-fulfillment | 0.82 |
+| orchestrator (routing) | 0.80 |
+| pricing-promotions | 0.68 |
+| order-management | 0.51 |
+
+These scores come from replayed recordings, not a live model run. Every case is answered from a response recorded on `gpt-4.1-2025-04-14`, and the scorer is deterministic. A score says the recorded answers still pass the current code and prompts; it does not say how a model would do today. The [eval scorecard](eval-scorecard.md) has the per-dimension numbers and the full caveat, and [replay mode](replay-mode.md) explains the recordings.
 
 See [`docs/agent-audit-matrix.md`](agent-audit-matrix.md) for the per-agent security posture and [`docs/security-guide.md`](security-guide.md) for the guardrails architecture this suite validates.
 
@@ -152,9 +165,18 @@ Two deterministic pieces sit beside the model-facing suite, neither calling a mo
 
 ## Running Evals
 
+**Without a key.** This is the command CI's `smoke` job runs. It replays the committed recordings, calls no model and costs nothing:
+
 ```bash
-# Prerequisites: running PostgreSQL + seeded data + valid OPENAI_API_KEY
-# (live runs only; the keyless replay suite is scripts/replay-evals.sh --setup)
+docker compose up -d db redis
+scripts/replay-evals.sh --setup      # migrate and seed a fresh database, then run every suite
+```
+
+Start from a fresh database, and run one at a time: the specialists bind fixed ports 8081 to 8085.
+
+**Against a live model.** This needs a running PostgreSQL, seeded data and a valid `OPENAI_API_KEY`, and it spends money:
+
+```bash
 ./scripts/dev.sh --infra-only        # PowerShell: ./scripts/dev.ps1 -InfraOnly
 cd agents/python && uv run python -m scripts.seed
 
@@ -206,7 +228,7 @@ Evals are **not** in the unit-test workflow `tests.yml`. `.github/workflows/eval
 The `full` job:
 
 1. Spins up PostgreSQL 16 (pgvector) and Redis 7 as GitHub Actions services.
-2. Loads the schema from `docker/postgres/init.sql` and seeds with `scripts/seed.py` (deterministic: `random.seed(42)`).
+2. Loads the schema with `scripts/migrate.py` (the `docker/postgres/init.sql` baseline plus the migrations) and seeds with `scripts/seed.py` (deterministic: `random.seed(42)`).
 3. Generates embeddings for semantic search.
 4. Runs all six quality evals in sequence, then the safety suite (threshold 0.8).
 5. Fails if any eval exits non-zero.

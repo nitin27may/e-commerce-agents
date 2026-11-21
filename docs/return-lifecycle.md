@@ -4,7 +4,7 @@ By default an approved return finishes in the request that approved it. With `RE
 outlives the request: it waits for the carrier's first scan, which can be days away, then for support to inspect
 what came back, and is paid out or denied. Each wait resumes from its checkpoint. Python only; the .NET stack has no equivalent (parity matrix row 41).
 
-Off by default. With it off the graph, the replay fixtures and the .NET parity gate are exactly as before.
+Off by default. With it off, the graph, the replay fixtures and the .NET parity gate are unaffected.
 
 ```mermaid
 flowchart LR
@@ -90,7 +90,7 @@ wait with nothing to approve, and the timeline.
 - **A finished wait leaves its timer behind.** Answering a wait does not cancel its expiry timer; when it fires it finds the wait
   answered and does nothing. The row sits in the outbox until then (14 days for a scan, 7 for an inspection).
 - **A second scan for the same return is one event** (`dedupe_key = return.carrier_scanned:<return_id>`).
-- **No `issue-label` step.** The plan listed one, but `initiate_return` already issues the label, so a separate step
+- **No `issue-label` step.** `initiate_return` already issues the label, so a separate step
   would only duplicate it. The label URL is kept in the workflow state and the wait.
 - **A wait is not an approval.** It has no inbox row. The approval routes refuse to resume
   one (400), and the worker refuses to resume an approval, so none of them can answer another's wait.

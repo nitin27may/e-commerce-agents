@@ -1,15 +1,14 @@
 # Approvals and the Routing Policy
 
 Some actions need a person to sign off before they happen: returns, refunds, cancelling or changing an order,
-a backorder. This page describes the **routing policy** that decides *who* signs off — nobody, support, or a
-manager — the foundation it sits on, and the **approvals API** staff use to decide.
+a backorder. This page describes the **routing policy** that decides *who* signs off (nobody, support, or a
+manager), the inbox and worker behind it, and the **approvals API** staff use to decide. It is for anyone
+changing the policy, calling the API or reading how a decision is executed.
 
-On both stacks the engine is wired in: every gated tool call and every paused return opens an inbox
-`approvals` row routed by the policy, and every approval is decided through one function (see
-[The approvals API](#the-approvals-api)). Both stacks serve the same routes with the same JSON over the same
-tables, so the web UI calls one API whichever orchestrator is behind it. Not built yet: the customer-confirm step,
-and acting on an `auto` route for tool calls (an `auto` route is recorded but still waits for a person).
-The SLA worker is Python's only — see [The .NET stack](#the-net-stack).
+Every gated tool call and every paused return opens an inbox `approvals` row routed by the policy, and every
+approval is decided through one function (see [The approvals API](#the-approvals-api)). Both stacks serve the
+same routes with the same JSON over the same tables, so the web UI calls one API whichever orchestrator is
+behind it. The gaps are listed under [What is not built](#what-is-not-built).
 
 ## The pieces
 
@@ -158,12 +157,10 @@ cd agents/python && uv run python -m worker.main        # needs DATABASE_URL and
 docker compose --profile agents up outbox-worker        # or as part of the stack
 ```
 
-## Merchant limits (groundwork — nothing uses them yet)
+## Merchant limits
 
-> **Status: groundwork for #93.** The schema, the seed data, the limits file and the guard functions below
-> exist; **nothing proposes or changes a price yet** — no merchant-ops agent, no route, no screen calls them.
-> They are here so the later steps (merchant-ops agent, batch review, execution) share one definition of
-> "what a change may not do".
+[Merchant proposals](merchant-proposals.md) (Python only) judge every proposed line against these limits, when
+it is generated (`shared/merchant/proposals.py`) and again when it is applied (`shared/merchant/execute.py`).
 
 `agents/python/config/policies/merchant_limits.yaml` holds the hard limits, separate from the approval
 routing policy above. A limit is *hard*: a line that breaks one is marked `blocked` with a reason code, and no
@@ -188,7 +185,7 @@ proposed change plus the facts and return a `GuardResult` (`ok`, the `reasons`, 
 `shared/merchant/limits.py` validates the YAML at load time, failing loudly on an unknown key or out-of-range
 value.
 
-**A merchant proposal is not the staff inbox's to decide, on both stacks.** Every staff route answers **404 `Approval not found`** for source `proposal`, byte-for-byte what a missing id gets, so staff cannot tell a proposal id from an unused one: `decide()` and the answer-info route (for every decision, including `request_info`, which used to park the batch in `needs_info` where its system-actor requester can never answer) and `GET /api/approvals/{id}`, matching the staff list that leaves it out (.NET's list excludes it too); the legacy resume and admin approve/deny routes cannot reach one. The seller decides on `/api/seller/proposals/{id}/decide` (Python only). An SLA breach never expires a proposal under a decide in flight: see [merchant proposals](merchant-proposals.md#sla-expiry-and-a-decide-in-flight).
+**A merchant proposal is not the staff inbox's to decide, on both stacks.** Every staff route answers **404 `Approval not found`** for source `proposal`, byte-for-byte what a missing id gets, so staff cannot tell a proposal id from an unused one: `decide()` and the answer-info route (for every decision, including `request_info`: a batch parked in `needs_info` could never be answered by its system-actor requester) and `GET /api/approvals/{id}`, matching the staff list that leaves it out (.NET's list excludes it too); the legacy resume and admin approve/deny routes cannot reach one. The seller decides on `/api/seller/proposals/{id}/decide` (Python only). An SLA breach never expires a proposal under a decide in flight: see [merchant proposals](merchant-proposals.md#sla-expiry-and-a-decide-in-flight).
 
 The schema is migration `0009_merchant_proposals.sql`: `proposals`, `proposal_lines` (per-line status
 including `blocked`, the guard result as JSONB), `promotion_products` and a nullable `products.unit_cost`. The
@@ -255,11 +252,11 @@ fails closed to a manager (logged) on both.
   progress") and records the amount that **actually went out**: a retry's conflicting amount edit is `409`, and a retry
   without edits records `{"amount": "<paid>"}`. A `run_once` reservation held by another live attempt is `409` with the
   claim handed back, never a `failed` approval. The SLA handler records such a credit instead of expiring it. Tool and
-  workflow approvals were already safe: their reject is a `409` once the request row is `executed`/resolved.
+  workflow approvals are safe the same way: their reject is a `409` once the request row is `executed`/resolved.
 * An `amount` edit that is not a finite number a database column could hold (`1e30`, a 400-digit string, NaN, an integer
   past float range) is a `422`, never a `500`.
 * A claim lost while recording a *workflow* decision is a `409` ("taken over by another reviewer"), like every other
-  lost claim, on both stacks (it used to surface as a `500`).
+  lost claim, on both stacks.
 
 **Edits** (`approve` only) are merged only for fields on the policy's `editable_fields` for that kind; any other
 field, or a bad value, is a `422` and nothing runs. For a tool approval they merge into the tool input; for a return
@@ -276,8 +273,8 @@ the `returns` row, the label and the order's `returned` status all come from `in
 
 The pause carries the whole `WorkflowState` and is answered with a `ReturnDecision` (`decision`, `resolution`,
 `amount`, `note`, `decided_by`, `approval_id`), so the resumed run restores everything and runs as the requester.
-`RETURN_HITL_THRESHOLD` is only the fallback when the engine cannot decide. Migration `0010` expired the returns that
-were paused under the previous graph: their checkpoints cannot be resumed under the new response type.
+`RETURN_HITL_THRESHOLD` is only the fallback when the engine cannot decide. Migration `0010` expires returns paused
+before the policy gate existed: their checkpoints cannot be resumed with the `ReturnDecision` response type.
 
 **Request more information** does not touch MAF. The approval moves to `needs_info`, the reviewer's question is
 written into the requester's conversation, and a paused workflow stays paused (its `hitl_requests` row is parked as
@@ -295,7 +292,14 @@ then timed out.
 
 `POST /api/orchestration/{run_id}/resume` and `POST /api/admin/hitl/requests/{id}/approve|deny` are thin shims: they
 find (or, for a request that predates the inbox, create) the linked approval and call the same `decide`. They are
-staff-only now (they were admin-only) and keep the status codes they always returned. There is one code path.
+staff-only, bounded by the assigned role, and keep their own status codes. There is one code path.
+
+## What is not built
+
+* *Customer confirm* (`pending_confirm`), on either stack.
+* *Acting on an `auto` route for tool calls.* The route is recorded, and the request still waits for a person.
+* *A .NET SLA worker.* The Python worker serves both stacks; see [The .NET stack](#the-net-stack) for the one case
+  it cannot finish.
 
 ## The .NET stack
 
@@ -305,7 +309,7 @@ The .NET orchestrator serves the same API over the same tables (`approvals`, `ap
 | Piece | Where |
 |---|---|
 | Routes | `Orchestrator/Routes/ApprovalRoutes.cs` — `/api/approvals`, `/api/approvals/{id}`, `/decide`, `/info`, `/api/me/approvals` |
-| Decide path | `Orchestrator/Approvals/ApprovalsService.cs` — authorisation, claims, edits, executing the paused work. The legacy `POST /api/orchestration/{run_id}/resume` and `POST /api/admin/hitl/requests/{id}/approve\|deny` are shims over it, and are staff (not admin-only) bounded by the assigned role, as on Python |
+| Decide path | `Orchestrator/Approvals/ApprovalsService.cs` — authorisation, claims, edits, executing the paused work. The legacy `POST /api/orchestration/{run_id}/resume` and `POST /api/admin/hitl/requests/{id}/approve\|deny` are shims over it, and are staff routes bounded by the assigned role, as on Python |
 | Repository | `Shared/Approvals/ApprovalRepository.cs` — create (idempotent per source), guarded `TransitionAsync`, `ClaimAsync` / `ReleaseClaimAsync` with a fencing token and TTL, `EscalateAsync` |
 | Timers | `ApprovalRepository` writes `approval.reminder_due` and `approval.sla_breached` in the same transaction as the state change (`Shared/Approvals/Outbox.cs`) |
 | Intake | `Shared/Approvals/ApprovalIntake.cs` — routes a gated tool call (`HitlGate`) or a paused return (`ChatRoutes`) through the policy and opens the row; the policy gate's own decision routes a return, not a second evaluation |
@@ -341,5 +345,9 @@ the Python test then proves the worker still reads it.
   be rejected), and a `legacy_input_refused` event is written to its audit trail once.
 * *A gated .NET tool call is stored with the same name and input keys as Python* (`cancel_order`, `order_id`), not the .NET
   pipeline's `CancelOrder` / `orderId` — that is what the policy kinds, the executor and the other stack key on.
-* *Customer confirm* (`pending_confirm`) is not built on either stack.
+* *A stored request in the .NET spelling* (PascalCase tool name, camelCase input keys) is mapped when approved: the name
+  and the top-level input keys to snake_case (`orderId` becomes `order_id`; nested objects are left alone). If two
+  different keys would collapse onto one name with different values the mapping is a guess. The approve is then refused
+  with `422` before anything is claimed or executed, the approval stays `pending_review` (it can still be rejected), and
+  a `legacy_input_refused` event is written to its audit trail once.
 * *`/api/me/notifications`* has no .NET route (see the parity matrix).

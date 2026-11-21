@@ -1,6 +1,6 @@
 # Telemetry & Observability
 
-E-Commerce Agents uses OpenTelemetry to export traces, metrics, and logs to the .NET Aspire Dashboard. Every agent calls `setup_telemetry(service_name)` during its lifespan startup, which configures providers, exporters, and auto-instrumentation in a single call.
+E-Commerce Agents uses OpenTelemetry to export traces, metrics, and logs to the .NET Aspire Dashboard. Every agent calls `setup_telemetry(service_name)` during its lifespan startup, which configures providers, exporters, and auto-instrumentation in a single call. This page is for anyone reading those traces or adding another exporter.
 
 ## Telemetry Pipeline
 
@@ -18,7 +18,7 @@ graph LR
 
     subgraph Export
         style Export fill:#f59e0b,stroke:#d97706,color:#fff
-        OTLP[OTLP HTTP<br/>port 18889]
+        OTLP[OTLP receiver<br/>port 18889]
     end
 
     subgraph Dashboard
@@ -36,7 +36,7 @@ graph LR
     OTLP --> ASPIRE
 ```
 
-All telemetry is exported via OTLP/HTTP (not gRPC) to the Aspire Dashboard's receiver endpoint. The dashboard provides a unified UI for traces, structured logs, and metrics without requiring Jaeger, Prometheus, or Grafana.
+All telemetry is exported via OTLP to the Aspire Dashboard's receiver endpoint: gRPC when the gRPC exporter packages are installed (they are a dependency), HTTP otherwise. The dashboard provides a unified UI for traces, structured logs, and metrics without requiring Jaeger, Prometheus, or Grafana.
 
 ---
 
@@ -253,7 +253,7 @@ All telemetry settings are managed via environment variables, loaded through Pyd
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `OTEL_ENABLED` | `false` | Master toggle. When `false`, `setup_telemetry()` returns immediately and no instrumentation is loaded. |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:18889` | Base URL for the OTLP HTTP receiver. The code appends `/v1/traces`, `/v1/metrics`, and `/v1/logs` automatically. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:18889` | Base URL of the OTLP receiver. On the HTTP fallback the code appends `/v1/traces`, `/v1/metrics`, and `/v1/logs`. |
 | `OTEL_SERVICE_NAME` | `ecommerce` | Fallback service name. Overridden by each agent's `setup_telemetry(service_name)` call. |
 | `ENVIRONMENT` | `development` | Mapped to `deployment.environment` resource attribute. |
 
@@ -302,7 +302,7 @@ where real customer data flows.
 | Port | Service |
 |------|---------|
 | `18888` | Aspire Dashboard UI |
-| `18889` (mapped to `18890` on host) | OTLP HTTP receiver inside the container |
+| `18889` (mapped to `18890` on host) | OTLP receiver inside the container |
 
 Inside the Docker network, agents connect to `http://aspire:18889`. From the host, the receiver is accessible at `http://localhost:18890`.
 
@@ -363,8 +363,6 @@ Everything above describes `agents/python`. The .NET stack (`agents/dotnet`) exp
 
 Both stacks name agent-invocation spans `invoke_agent <agent-name>` and tag them `gen_ai.operation.name = invoke_agent`. This is not cosmetic. Aspire's **GenAI** view selects on that convention, so a span named anything else still appears in the raw trace list but is invisible in the view built for reading agent runs.
 
-.NET emitted `agent.run <name>` with `gen_ai.operation.name = chat` until #19, which is why the GenAI view looked empty when running the .NET backend while working normally on Python.
-
 The resulting hierarchy is the same on both stacks:
 
 ```
@@ -380,7 +378,7 @@ invoke_agent orchestrator          INTERNAL, orchestrator process
 
 Spans carry `enduser.id`, `enduser.role`, `session.id` and `gen_ai.conversation.id`. The last is what Aspire groups a conversation's LLM calls by, and it is set from the same value as `session.id`.
 
-Worth knowing when reading older traces: that value was empty for all browser traffic on both stacks until #9, because the session id was only ever populated from an inbound header the web client never sent. Conversation grouping therefore never worked in practice before that fix, regardless of these attributes being present.
+The web client sends no session header, so each orchestrator's chat route sets the session id from the conversation it resolved. Without that, the value is empty for browser traffic and nothing groups.
 
 ---
 
