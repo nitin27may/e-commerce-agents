@@ -17,7 +17,7 @@ import logging
 from pathlib import Path
 from typing import Literal
 
-from pydantic import AliasChoices, Field, field_validator, model_validator
+from pydantic import AliasChoices, Field, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
@@ -539,6 +539,18 @@ class Settings(BaseSettings):
         """``LLM_TEMPERATURE=`` (set, empty) omits the option; compose passes it through as ''."""
         if isinstance(value, str) and not value.strip():
             return None
+        return value
+
+    @field_validator("DB_POOL_MIN_SIZE", "DB_POOL_MAX_SIZE", mode="before")
+    @classmethod
+    def _blank_pool_size_is_default(cls, value: object, info: ValidationInfo) -> object:
+        """A set-but-empty pool size means 'use the default'.
+
+        The .NET compose file passes ``DB_POOL_MIN_SIZE: ${DB_POOL_MIN_SIZE:-}`` (empty means Npgsql's own
+        default there), and in the mixed ``net-py`` stack that empty string reaches the Python specialists.
+        """
+        if isinstance(value, str) and not value.strip():
+            return cls.model_fields[str(info.field_name)].default
         return value
 
     @model_validator(mode="after")

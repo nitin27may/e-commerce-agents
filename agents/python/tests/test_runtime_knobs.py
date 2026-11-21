@@ -79,3 +79,14 @@ def test_gpt_5_1_has_its_own_price_rows() -> None:
     assert estimate_cost("gpt-5.1", 1000, 0) != estimate_cost("gpt-4.1", 1000, 0)
     assert estimate_cost("gpt-5.1-2025-11-13", 1000, 1000) == estimate_cost("gpt-5.1", 1000, 1000)
     assert estimate_cost("gpt-5.1-mini", 1000, 1000) < estimate_cost("gpt-5.1", 1000, 1000)
+
+
+def test_blank_pool_sizes_fall_back_to_the_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The .NET compose file passes DB_POOL_*_SIZE as '' and the mixed net-py stack hands that to Python."""
+    from shared.config import Settings
+
+    monkeypatch.setenv("DB_POOL_MIN_SIZE", "")
+    monkeypatch.setenv("DB_POOL_MAX_SIZE", "  ")
+    settings = Settings()
+    assert settings.DB_POOL_MIN_SIZE == 5
+    assert settings.DB_POOL_MAX_SIZE == 20
