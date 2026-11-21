@@ -166,13 +166,13 @@ With `MCP_AUTH_ENABLED=false` (the default):
 
 ## Known issues
 
-These came out of reading the code for this page. None is fixed here.
+These came out of reading the code for this page. The return-label match is fixed; the rest are not.
 
-- **The return-label route is a capability URL with a loose match.** `GET /api/returns/{label_token}/label`
-  takes no credential and finds the return with `WHERE r.return_label_url LIKE '%<token>%'`, passing the path
-  segment into the pattern unescaped. A segment of `%` (or `_`) is a wildcard, so it can match a label that is
-  not the caller's, and the PDF carries the customer's name, email and shipping address. Worth an exact match
-  on the token, or a login and an ownership check. Reasoned from the query, not exercised against a database.
+- **The return-label route is a capability URL.** `GET /api/returns/{label_token}/label` takes no credential;
+  the 12-character token in the path is the only guard. It used to match with `LIKE '%<token>%'`, so a `%` or
+  `_` segment returned another customer's label (fixed in #167: the segment must be exactly 12 lowercase hex
+  characters and the lookup is an equality match, on both stacks). Still open: the token is 48 bits
+  (`uuid4().hex[:12]`) and unknown-token 404s are not rate limited.
 - **`MCP_AUTH_ENABLED=false` leaves `/mcp` open.** That is the documented default for local use; anything that can
   reach the port can call the tools. Network policy is the only guard until the flag is on.
 - **Under `A2A_IDENTITY=both` (the default) a caller holding only the agent secret can pick its user** by
