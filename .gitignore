@@ -103,3 +103,6 @@ _site/
 
 # Result files scripts/replay-evals.sh writes next to the suites it runs.
 agents/python/eval-*.json
+
+# azd environment store (per-developer, holds environment values)
+.azure/

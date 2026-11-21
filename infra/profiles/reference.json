@@ -1,0 +1,17 @@
+{
+  "logAnalytics": { "dailyQuotaGb": 5, "retentionDays": 90 },
+  "keyVault": { "enablePurgeProtection": true, "softDeleteRetentionDays": 90 },
+  "postgres": {
+    "tier": "GeneralPurpose",
+    "skuName": "Standard_D2ds_v5",
+    "storageSizeGB": 128,
+    "highAvailability": "ZoneRedundant",
+    "backupRetentionDays": 35,
+    "geoRedundantBackup": "Enabled",
+    "allowAzureServices": false
+  },
+  "openAi": { "chatCapacity": 100, "embeddingCapacity": 50, "miniCapacity": 100 },
+  "budget": { "monthlyAmount": 800, "alertThresholdPercent": 80 },
+  "containerApps": { "minReplicas": 2, "maxReplicas": 6, "orchestratorMinReplicas": 2 },
+  "redis": { "minReplicas": 1, "maxReplicas": 1 }
+}
