@@ -55,12 +55,22 @@ setup_database() {
 
 SPECIALIST_PIDS=()
 
+# util-linux `setsid` is absent on macOS. Fall back to a tiny Python exec that
+# calls os.setsid() first, so the process-group cleanup below works the same.
+run_in_new_session() {
+  if command -v setsid > /dev/null 2>&1; then
+    setsid "$@"
+  else
+    python3 -c 'import os, sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])' "$@"
+  fi
+}
+
 start_specialists() {
   cd "$PY_DIR" || return 1
   for svc in product_discovery:8081 order_management:8082 pricing_promotions:8083 review_sentiment:8084 inventory_fulfillment:8085; do
     name="${svc%%:*}"; port="${svc##*:}"
     AGENT_NAME="$name" AGENT_PORT="$port" \
-      setsid nohup uv run --no-project uvicorn "${name}.main:app" --host 0.0.0.0 --port "$port" \
+      run_in_new_session nohup uv run --no-project uvicorn "${name}.main:app" --host 0.0.0.0 --port "$port" \
       > "$LOG_DIR/${name}.log" 2>&1 &
     SPECIALIST_PIDS+=("$!")
   done
@@ -79,7 +89,7 @@ start_specialists() {
 
 # A job should stop what it starts: left running, the specialists hold the uv
 # cache open and hang CI's post-steps. Each service runs in its own session
-# (setsid), so killing the process group also takes the uvicorn child that
+# (setsid, or its macOS fallback), so killing the process group also takes the uvicorn child that
 # `uv run` spawns — and only ours, never another checkout's services.
 stop_specialists() {
   local pid
