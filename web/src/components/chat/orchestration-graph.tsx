@@ -3,25 +3,64 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 
-// House Mermaid palette — tutorials/_shared/mermaid-style-guide.md. `core`
-// is the default (unvisited) node state; `active`/`success`/`error` are
-// live overlays applied per node id as SSE events arrive.
-const MERMAID_INIT = `%%{init: {'theme':'base', 'themeVariables': {
+// House Mermaid palette (tutorials/_shared/mermaid-style-guide.md): blue core,
+// amber active, green done, red error. `core` is the default (unvisited) node
+// state; `active`/`success`/`error` are live overlays applied per node id as SSE
+// events arrive. Each theme gets its own line, text and stroke colours so edges
+// and labels stay legible on the dark card; node fills are shared, and the
+// green and red are dark enough for white text at 4.5:1.
+type GraphTheme = "light" | "dark";
+
+const PALETTE: Record<GraphTheme, { line: string; text: string; strokes: Record<"core" | "active" | "success" | "error", string> }> = {
+  light: {
+    line: "#475569",
+    text: "#0f172a",
+    strokes: { core: "#1e40af", active: "#b45309", success: "#065f46", error: "#991b1b" },
+  },
+  dark: {
+    line: "#94a3b8",
+    text: "#e2e8f0",
+    strokes: { core: "#93c5fd", active: "#fcd34d", success: "#6ee7b7", error: "#fca5a5" },
+  },
+};
+
+function mermaidInit(theme: GraphTheme): string {
+  const p = PALETTE[theme];
+  return `%%{init: {'theme':'base', 'themeVariables': {
   'primaryColor': '#2563eb',
   'primaryTextColor': '#ffffff',
-  'primaryBorderColor': '#1e40af',
-  'lineColor': '#64748b',
+  'primaryBorderColor': '${p.strokes.core}',
+  'lineColor': '${p.line}',
+  'textColor': '${p.text}',
   'secondaryColor': '#f59e0b',
-  'tertiaryColor': '#10b981',
+  'tertiaryColor': '#047857',
   'background': 'transparent'
 }}}%%`;
+}
 
-const CLASS_DEFS = [
-  "classDef core fill:#2563eb,stroke:#1e40af,color:#ffffff",
-  "classDef active fill:#f59e0b,stroke:#b45309,color:#000000",
-  "classDef success fill:#10b981,stroke:#047857,color:#ffffff",
-  "classDef error fill:#ef4444,stroke:#b91c1c,color:#ffffff",
-].join("\n");
+function classDefs(theme: GraphTheme): string {
+  const s = PALETTE[theme].strokes;
+  return [
+    `classDef core fill:#2563eb,stroke:${s.core},color:#ffffff`,
+    `classDef active fill:#f59e0b,stroke:${s.active},color:#000000`,
+    `classDef success fill:#047857,stroke:${s.success},color:#ffffff`,
+    `classDef error fill:#dc2626,stroke:${s.error},color:#ffffff`,
+  ].join("\n");
+}
+
+/** Follows the `dark` class the root layout puts on <html>, and re-renders when it toggles. */
+function useGraphTheme(): GraphTheme {
+  const [theme, setTheme] = useState<GraphTheme>("light");
+  useEffect(() => {
+    const root = document.documentElement;
+    const read = () => setTheme(root.classList.contains("dark") ? "dark" : "light");
+    read();
+    const observer = new MutationObserver(read);
+    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
+  return theme;
+}
 
 let diagramCounter = 0;
 
@@ -89,6 +128,7 @@ export function OrchestrationGraph({
   const [source, setSource] = useState<string | null>(null);
   const [renderedSvg, setRenderedSvg] = useState<string | null>(null);
   const diagramIdRef = useRef(`orchestration-graph-${diagramCounter++}`);
+  const theme = useGraphTheme();
 
   useEffect(() => {
     let cancelled = false;
@@ -116,7 +156,7 @@ export function OrchestrationGraph({
       .map((id) => `  class ${id} ${resolveClass(id, active, done, error)}`)
       .join("\n");
 
-    const fullSource = [MERMAID_INIT, source, CLASS_DEFS, classLines].join("\n");
+    const fullSource = [mermaidInit(theme), source, classDefs(theme), classLines].join("\n");
 
     import("mermaid").then(async ({ default: mermaid }) => {
       if (cancelled) return;
@@ -135,7 +175,7 @@ export function OrchestrationGraph({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source, activeNodeIds.join(","), doneNodeIds.join(","), errorNodeIds.join(",")]);
+  }, [source, theme, activeNodeIds.join(","), doneNodeIds.join(","), errorNodeIds.join(",")]);
 
   if (!renderedSvg) return null;
 
