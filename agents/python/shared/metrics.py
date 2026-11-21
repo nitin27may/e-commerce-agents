@@ -84,7 +84,7 @@ def _get_instruments() -> dict[str, Any] | None:
 
 
 def record_llm_turn_cost(
-    cost_usd: float,
+    cost_usd: float | None,
     *,
     model: str,
     tokens_in: int,
@@ -97,7 +97,8 @@ def record_llm_turn_cost(
     Tokens are recorded alongside the dollar figure because cost is *derived*
     from them through a price table that is edited by hand. When spend jumps,
     the first question is whether the traffic changed or the table did, and
-    only tokens can answer it.
+    only tokens can answer it. ``cost_usd`` is ``None`` for an unpriced model: the
+    tokens are recorded and the cost counter is left alone (an unknown is not a zero).
     """
     instruments = _get_instruments()
     if not instruments:
@@ -110,7 +111,8 @@ def record_llm_turn_cost(
         attributes["mode"] = mode
 
     try:
-        instruments["cost"].add(cost_usd, attributes)
+        if cost_usd is not None:
+            instruments["cost"].add(cost_usd, attributes)
         instruments["tokens"].add(tokens_in, {**attributes, "direction": "input"})
         instruments["tokens"].add(tokens_out, {**attributes, "direction": "output"})
     except Exception:

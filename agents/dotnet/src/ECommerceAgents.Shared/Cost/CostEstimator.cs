@@ -3,60 +3,187 @@ using Microsoft.Extensions.Logging;
 namespace ECommerceAgents.Shared.Cost;
 
 /// <summary>
-/// USD per 1K tokens for one model. <paramref name="CachedInputPer1K"/> is the provider's
-/// cached-input rate; <c>null</c> means none is on file and cached tokens are billed as input
-/// (the estimate then errs high, never low).
+/// USD per 1M tokens for one model, as the provider publishes it. <paramref name="CachedInputPer1M"/>
+/// is the provider's cached-input rate; <c>null</c> means none is on file and cached tokens are billed
+/// as input (the estimate then errs high, never low).
 /// </summary>
-public readonly record struct ModelPricing(double InputPer1K, double OutputPer1K, double? CachedInputPer1K = null);
+public readonly record struct ModelPricing(double InputPer1M, double OutputPer1M, double? CachedInputPer1M = null);
+
+/// <summary>The pricing file is not valid.</summary>
+public sealed class PricingException(string message) : Exception(message);
 
 /// <summary>
-/// Token-to-dollar estimation — the .NET twin of Python's <c>shared/cost.py</c>.
+/// Token-to-dollar estimation, priced from <c>agents/python/config/pricing/models.yaml</c>: the same file
+/// Python's <c>shared/cost.py</c> reads. <b>No price lives in code.</b> <c>PRICING_FILE</c> names another
+/// file; <c>PRICING_OVERRIDES_FILE</c> names one merged over it entry by entry.
 ///
-/// .NET already recorded <c>tokens_in</c>/<c>tokens_out</c> via
-/// <c>UsageRecorder</c>, but had no way to turn them into money: no pricing
-/// table, and so no ceiling either. That left an agentic loop on the .NET side
-/// with no spend limit at all (issue #30).
+/// A model the file does not list has an <b>unknown</b> cost (<c>null</c>), never a guess: an earlier
+/// revision priced every unknown model as gpt-4.1. A missing or invalid file is logged and treated as
+/// empty, so every cost is unknown and an enforcing budget fails closed.
 /// </summary>
 public static class CostEstimator
 {
-    // Keys lowercase — callers pass through whatever LLM_MODEL or
-    // AZURE_OPENAI_DEPLOYMENT is configured, and deployment names are
-    // conventionally lowercase. Kept in sync with shared/cost.py.
-    //
-    // CachedInputPer1K is deliberately unset on every entry: the repo documents no cached-input
-    // rate or discount ratio, and a price is not something to infer. A maintainer fills it in
-    // from the provider's pricing page (the "cached input" column of OpenAI's API pricing, or
-    // Azure OpenAI's pricing page for an Azure deployment), one number per model.
-    private static readonly IReadOnlyDictionary<string, ModelPricing> Pricing =
-        new Dictionary<string, ModelPricing>(StringComparer.OrdinalIgnoreCase)
+    private static readonly object Gate = new();
+    private static IReadOnlyDictionary<string, ModelPricing>? _table;
+    private static int _unpricedLogged;
+
+    /// <summary>The shipped file: the repo copy found by walking up from the binaries, else one beside them.</summary>
+    public static string? DefaultPricingFile()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
         {
-            ["gpt-4.1"] = new(0.002, 0.008),
-            ["gpt-4.1-mini"] = new(0.0004, 0.0016),
-            ["gpt-4.1-nano"] = new(0.0001, 0.0004),
-            // ESTIMATES, not confirmed list prices (placeholders until checked against a real
-            // deployment); "gpt-5.1-mini" is a plausible name, not a confirmed model id.
-            ["gpt-5.1"] = new(0.00125, 0.01),
-            ["gpt-5.1-mini"] = new(0.00025, 0.002),
-            ["gpt-4o"] = new(0.0025, 0.01),
-            ["gpt-4o-mini"] = new(0.00015, 0.0006),
-            ["text-embedding-3-small"] = new(0.00002, 0.0),
-            ["text-embedding-3-large"] = new(0.00013, 0.0),
-        };
+            var repoCopy = Path.Combine(dir.FullName, "agents", "python", "config", "pricing", "models.yaml");
+            if (File.Exists(repoCopy)) return repoCopy;
+            dir = dir.Parent;
+        }
+        var beside = Path.Combine(AppContext.BaseDirectory, "config", "pricing", "models.yaml");
+        return File.Exists(beside) ? beside : null;
+    }
 
-    // gpt-4.1 pricing, matching AgentSettings.LlmModel's own default — an
-    // unrecognized or custom deployment name still gets a reasonable estimate
-    // rather than silently pricing at zero, which would make a budget ceiling
-    // quietly unenforceable.
-    private static readonly ModelPricing DefaultPricing = Pricing["gpt-4.1"];
+    /// <summary>Reads and validates one pricing file. Throws <see cref="PricingException"/> or an IO exception.</summary>
+    public static IReadOnlyDictionary<string, ModelPricing> LoadFile(string path) => Parse(File.ReadAllText(path));
 
-    private static int _fallbackLogged;
+    /// <summary>Validates a pricing document and returns its table (keys lower-cased).</summary>
+    public static IReadOnlyDictionary<string, ModelPricing> Parse(string yaml)
+    {
+        object? doc;
+        try
+        {
+            doc = new YamlDotNet.Serialization.DeserializerBuilder().Build().Deserialize<object?>(yaml);
+        }
+        catch (YamlDotNet.Core.YamlException ex)
+        {
+            throw new PricingException($"pricing file is not valid YAML: {ex.Message}");
+        }
+
+        if (doc is not IDictionary<object, object> root)
+        {
+            throw new PricingException("pricing file must be a mapping");
+        }
+        if (Scalar(root, "version") != "1")
+        {
+            throw new PricingException("unsupported pricing file version");
+        }
+        if (Scalar(root, "unit") is { } unit && unit != "per_1m_tokens")
+        {
+            throw new PricingException("unit must be per_1m_tokens");
+        }
+
+        var table = new Dictionary<string, ModelPricing>(StringComparer.Ordinal);
+        if (!root.TryGetValue("models", out var modelsNode) || modelsNode is null)
+        {
+            return table;
+        }
+        if (modelsNode is not IDictionary<object, object> models)
+        {
+            throw new PricingException("models must be a mapping");
+        }
+
+        foreach (var (rawName, rawEntry) in models)
+        {
+            var name = (rawName?.ToString() ?? string.Empty).Trim().ToLowerInvariant();
+            if (name.Length == 0 || rawEntry is not IDictionary<object, object> entry)
+            {
+                throw new PricingException($"model entry '{rawName}' is invalid");
+            }
+            if (!table.TryAdd(name, new ModelPricing(
+                    Rate(name, entry, "input_per_1m") ?? throw new PricingException($"{name}.input_per_1m is required"),
+                    Rate(name, entry, "output_per_1m") ?? throw new PricingException($"{name}.output_per_1m is required"),
+                    Rate(name, entry, "cached_input_per_1m"))))
+            {
+                throw new PricingException($"model '{name}' is listed twice");
+            }
+        }
+        return table;
+    }
+
+    private static string? Scalar(IDictionary<object, object> map, string key) =>
+        map.TryGetValue(key, out var value) ? value?.ToString() : null;
+
+    // YamlDotNet's untyped deserializer yields strings for scalars, so quoting is checked on the raw text:
+    // a quoted number ('2') or a boolean is refused, exactly as Python refuses it.
+    private static double? Rate(string model, IDictionary<object, object> entry, string field)
+    {
+        if (!entry.TryGetValue(field, out var raw) || raw is null)
+        {
+            return null;
+        }
+        var text = raw.ToString()!;
+        if (text is "null" or "~" or "")
+        {
+            return null;
+        }
+        if (!double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var value)
+            || !double.IsFinite(value) || value < 0)
+        {
+            throw new PricingException($"{model}.{field} must be a non-negative number, got '{text}'");
+        }
+        return value;
+    }
+
+    private static IReadOnlyDictionary<string, ModelPricing> Table()
+    {
+        lock (Gate)
+        {
+            return _table ??= LoadConfigured();
+        }
+    }
+
+    private static IReadOnlyDictionary<string, ModelPricing> LoadConfigured()
+    {
+        var path = Environment.GetEnvironmentVariable("PRICING_FILE");
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            path = DefaultPricingFile();
+        }
+
+        Dictionary<string, ModelPricing> table;
+        try
+        {
+            if (path is null) throw new FileNotFoundException("pricing file not found");
+            table = new Dictionary<string, ModelPricing>(LoadFile(path), StringComparer.Ordinal);
+        }
+        catch (Exception ex) when (ex is PricingException or IOException or UnauthorizedAccessException)
+        {
+            // Fixed text: the exception may quote file content. Every cost is unknown until fixed.
+            Serilog.Log.Error("cost.pricing_file_invalid — every model is unpriced until it is fixed");
+            return new Dictionary<string, ModelPricing>();
+        }
+
+        var overrides = Environment.GetEnvironmentVariable("PRICING_OVERRIDES_FILE");
+        if (!string.IsNullOrWhiteSpace(overrides))
+        {
+            try
+            {
+                foreach (var (name, pricing) in LoadFile(overrides))
+                {
+                    table[name] = pricing;
+                }
+            }
+            catch (Exception ex) when (ex is PricingException or IOException or UnauthorizedAccessException)
+            {
+                Serilog.Log.Error("cost.pricing_overrides_invalid — overrides ignored");
+            }
+        }
+        return table;
+    }
+
+    /// <summary>Forget the loaded table (tests, or after editing the file in a long-running process).</summary>
+    public static void ReloadPricing()
+    {
+        lock (Gate)
+        {
+            _table = null;
+        }
+    }
 
     /// <summary>
     /// Exact match, else the longest priced key the model is a dated snapshot of
     /// (<c>gpt-4.1-2025-04-14</c> prices as <c>gpt-4.1</c>; only a <c>-&lt;digit&gt;</c> suffix
     /// counts, so <c>gpt-4.1-mini</c> never resolves to <c>gpt-4.1</c>).
     /// </summary>
-    private static ModelPricing? Lookup(string? model)
+    public static ModelPricing? Lookup(string? model)
     {
         var name = model?.Trim().ToLowerInvariant();
         if (string.IsNullOrEmpty(name))
@@ -64,19 +191,20 @@ public static class CostEstimator
             return null;
         }
 
-        if (Pricing.TryGetValue(name, out var exact))
+        var table = Table();
+        if (table.TryGetValue(name, out var exact))
         {
             return exact;
         }
 
-        foreach (var key in Pricing.Keys.OrderByDescending(k => k.Length))
+        foreach (var key in table.Keys.OrderByDescending(k => k.Length))
         {
             if (name.StartsWith(key, StringComparison.Ordinal)
                 && name.Length > key.Length + 1
                 && name[key.Length] == '-'
                 && char.IsAsciiDigit(name[key.Length + 1]))
             {
-                return Pricing[key];
+                return table[key];
             }
         }
 
@@ -84,49 +212,63 @@ public static class CostEstimator
     }
 
     /// <summary>
-    /// Estimated USD for a single call. Never throws on an unknown model: it prices at the
-    /// default entry and, when a logger is given, says so once per process (fixed text, no
-    /// request data).
+    /// Estimated USD for a single call, or <c>null</c> when the model is not in the pricing file. Never
+    /// throws; when a logger is given, an unpriced model is reported once per process (fixed text).
     /// </summary>
     /// <param name="tokensIn">Total input, cached included, as providers report it.</param>
     /// <param name="cachedIn">The cached share of <paramref name="tokensIn"/>.</param>
-    public static double Estimate(
+    public static double? Estimate(
         string? model, int tokensIn, int tokensOut, int cachedIn = 0,
         Microsoft.Extensions.Logging.ILogger? logger = null)
     {
         var pricing = Lookup(model);
         if (pricing is null)
         {
-            if (logger is not null && Interlocked.Exchange(ref _fallbackLogged, 1) == 0)
+            if (logger is not null && Interlocked.Exchange(ref _unpricedLogged, 1) == 0)
             {
-                logger.LogWarning("cost.model_unpriced — using the default price entry");
+                logger.LogWarning("cost.model_unpriced — cost is unknown; add the model to config/pricing/models.yaml");
             }
 
-            pricing = DefaultPricing;
+            return null;
         }
 
         var cached = Math.Clamp(cachedIn, 0, Math.Max(tokensIn, 0));
         var uncached = Math.Max(tokensIn, 0) - cached;
-        var cachedRate = pricing.Value.CachedInputPer1K ?? pricing.Value.InputPer1K;
-        return (uncached / 1000.0 * pricing.Value.InputPer1K)
-            + (cached / 1000.0 * cachedRate)
-            + (tokensOut / 1000.0 * pricing.Value.OutputPer1K);
+        var cachedRate = pricing.Value.CachedInputPer1M ?? pricing.Value.InputPer1M;
+        return ((double)uncached * pricing.Value.InputPer1M
+            + (double)cached * cachedRate
+            + (double)Math.Max(tokensOut, 0) * pricing.Value.OutputPer1M) / 1_000_000;
     }
 
     /// <summary>Test hook: forget that the unpriced-model line was already logged.</summary>
-    public static void ResetFallbackLogForTests() => Interlocked.Exchange(ref _fallbackLogged, 0);
+    public static void ResetUnpricedLogForTests() => Interlocked.Exchange(ref _unpricedLogged, 0);
 
-    /// <summary>Estimated USD for one run, each agent priced at the model it reported.</summary>
-    public static double EstimateRun(IReadOnlyDictionary<string, ECommerceAgents.Shared.Context.SpecialistUsage> byAgent) =>
-        byAgent.Values.Sum(u => Estimate(
-            u.Model,
-            (int)Math.Min(u.InputTokenCount, int.MaxValue),
-            (int)Math.Min(u.OutputTokenCount, int.MaxValue),
-            (int)Math.Min(u.CachedInputTokenCount, int.MaxValue)));
+    /// <summary>
+    /// Estimated USD for one run, each agent priced at the model it reported; <c>null</c> when any agent's
+    /// model is unpriced (a partial sum would read as the whole).
+    /// </summary>
+    public static double? EstimateRun(IReadOnlyDictionary<string, ECommerceAgents.Shared.Context.SpecialistUsage> byAgent)
+    {
+        var total = 0d;
+        foreach (var u in byAgent.Values)
+        {
+            var cost = Estimate(
+                u.Model,
+                (int)Math.Min(u.InputTokenCount, int.MaxValue),
+                (int)Math.Min(u.OutputTokenCount, int.MaxValue),
+                (int)Math.Min(u.CachedInputTokenCount, int.MaxValue));
+            if (cost is null)
+            {
+                return null;
+            }
+            total += cost.Value;
+        }
+        return total;
+    }
 
     /// <summary>What a run's <c>usage_logs</c> row records beyond token counts.</summary>
     /// <remarks>
-    /// All three are <c>null</c> when nothing was captured; a mode that makes no LLM call
+    /// All three are <c>null</c> when nothing was captured (and the cost alone when a model is unpriced); a mode that makes no LLM call
     /// (<paramref name="noLlmCalls"/>) yields an explicit cost of 0 — so "free" and "unknown"
     /// are different rows. Twin of Python's <c>shared/usage_db.py::usage_columns</c>.
     /// </remarks>

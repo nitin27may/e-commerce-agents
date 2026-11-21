@@ -103,7 +103,8 @@ class EvalSummary:
     total_latency_ms: int = 0
     total_tokens_in: int = 0
     total_tokens_out: int = 0
-    estimated_cost_usd: float = 0.0
+    # None when the model is not in config/pricing/models.yaml (cost unknown, not zero).
+    estimated_cost_usd: float | None = 0.0
     results: list[EvalResult] = field(default_factory=list)
 
     @property
@@ -135,7 +136,7 @@ class EvalSummary:
             "total_latency_ms": self.total_latency_ms,
             "total_tokens_in": self.total_tokens_in,
             "total_tokens_out": self.total_tokens_out,
-            "estimated_cost_usd": round(self.estimated_cost_usd, 4),
+            "estimated_cost_usd": None if self.estimated_cost_usd is None else round(self.estimated_cost_usd, 4),
             "missing_fixtures": self.missing_fixtures,
             "assertion_failures": self.assertion_failures,
             "results": [
@@ -466,7 +467,10 @@ def format_summary_report(summary: EvalSummary, verbose: bool = False) -> str:
     lines.append(f"  Total latency: {summary.total_latency_ms:,}ms")
     lines.append(f"  Tokens (in):   {summary.total_tokens_in:,}")
     lines.append(f"  Tokens (out):  {summary.total_tokens_out:,}")
-    lines.append(f"  Est. cost:     ${summary.estimated_cost_usd:.4f}")
+    if summary.estimated_cost_usd is None:
+        lines.append("  Est. cost:     unknown (model not in config/pricing/models.yaml)")
+    else:
+        lines.append(f"  Est. cost:     ${summary.estimated_cost_usd:.4f}")
     lines.append("=" * 70)
 
     if verbose:

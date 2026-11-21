@@ -22,10 +22,13 @@ from shared.config import settings
 from shared.cost import estimate_cost
 from shared.guardrails.cost_budget_middleware import (
     BUDGET_REFUSAL_MESSAGE,
+    UNPRICED_REFUSAL_MESSAGE,
     CostBudgetMiddleware,
     current_run_cost_usd,
+    current_run_unpriced,
     get_run_cost,
     reset_run_cost,
+    run_has_unpriced_turn,
 )
 
 
@@ -62,8 +65,10 @@ def _reset_state(monkeypatch):
     monkeypatch.setattr(settings, "COST_BUDGET_MODE", "observe")
     monkeypatch.setattr(settings, "COST_BUDGET_USD_PER_RUN", None)
     current_run_cost_usd.set(None)
+    current_run_unpriced.set(False)
     yield
     current_run_cost_usd.set(None)
+    current_run_unpriced.set(False)
 
 
 def _model() -> str:
@@ -345,3 +350,54 @@ async def test_a_turn_with_no_usage_emits_nothing(monkeypatch) -> None:
         assert "ecommerce.llm.cost.usd" not in names
     finally:
         cost_metrics._reset_for_tests()
+
+
+# ─────────────────────── unpriced models ───────────────────────
+
+
+class _UnpricedResponse(_FakeResponse):
+    def __init__(self, tokens_in: int, tokens_out: int) -> None:
+        super().__init__(tokens_in, tokens_out)
+        self.model = "a-model-nobody-priced"
+
+
+async def test_an_unpriced_turn_adds_no_cost_but_marks_the_run(monkeypatch) -> None:
+    reset_run_cost()
+    mw = CostBudgetMiddleware()
+    await _run_one_turn(mw, _Ctx(), _UnpricedResponse(1000, 1000))
+    assert get_run_cost() == 0.0
+    assert run_has_unpriced_turn()
+    assert mw.turns_recorded == 0
+
+
+async def test_enforce_fails_closed_after_an_unpriced_turn(monkeypatch) -> None:
+    """A budget that cannot price a turn cannot promise the ceiling holds, so it stops the run."""
+    monkeypatch.setattr(settings, "COST_BUDGET_MODE", "enforce")
+    monkeypatch.setattr(settings, "COST_BUDGET_USD_PER_RUN", 100.0)
+    reset_run_cost()
+    mw = CostBudgetMiddleware()
+    ctx = _Ctx()
+
+    first = await _run_one_turn(mw, ctx, _UnpricedResponse(10, 10))
+    assert first["count"] == 1
+    second = await _run_one_turn(mw, ctx, _FakeResponse(10, 10))
+    assert second["count"] == 0
+    assert mw.blocked == 1
+    assert UNPRICED_REFUSAL_MESSAGE in ctx.result.text
+
+
+async def test_observe_never_blocks_on_an_unpriced_turn(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "COST_BUDGET_USD_PER_RUN", 100.0)
+    reset_run_cost()
+    mw = CostBudgetMiddleware()
+    ctx = _Ctx()
+    await _run_one_turn(mw, ctx, _UnpricedResponse(10, 10))
+    calls = await _run_one_turn(mw, ctx, _FakeResponse(10, 10))
+    assert calls["count"] == 1
+    assert mw.blocked == 0
+
+
+def test_reset_clears_the_unpriced_mark() -> None:
+    current_run_unpriced.set(True)
+    reset_run_cost()
+    assert not run_has_unpriced_turn()

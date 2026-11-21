@@ -137,7 +137,7 @@ public sealed class RuntimeKnobsTests
         CostEstimator.Estimate("gpt-5.1", 1000, 0).Should().NotBe(CostEstimator.Estimate("gpt-4.1", 1000, 0));
         CostEstimator.Estimate("gpt-5.1-2025-11-13", 1000, 1000)
             .Should().Be(CostEstimator.Estimate("gpt-5.1", 1000, 1000));
-        CostEstimator.Estimate("gpt-5.1-mini", 1000, 1000)
-            .Should().BeLessThan(CostEstimator.Estimate("gpt-5.1", 1000, 1000));
+        CostEstimator.Estimate("gpt-5.1-mini", 1000, 1000)!.Value
+            .Should().BeLessThan(CostEstimator.Estimate("gpt-5.1", 1000, 1000)!.Value);
     }
 }

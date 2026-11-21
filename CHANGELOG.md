@@ -14,6 +14,17 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ## [Unreleased]
 
+### Changed
+
+- **No model price is written in code any more.** Both stacks read one file,
+  `agents/python/config/pricing/models.yaml`, in USD per 1M tokens, with a source, a date and a
+  `verified` flag on every row. Anyone can correct a price or add a model there; `PRICING_OVERRIDES_FILE`
+  adds private entries without a repo change. Shared golden cases keep the two stacks pricing identically.
+- **An unknown model's cost is now unknown, not gpt-4.1's.** Both stacks used to price any unlisted model
+  (an Ollama model, a Gemini model, a custom Azure deployment name) as gpt-4.1, so cost columns and eval
+  reports showed invented dollars. They now show null. With `COST_BUDGET_MODE=enforce` and a ceiling, a
+  turn on an unpriced model stops the run instead of letting the ceiling pass unchecked.
+
 ### Documentation
 
 - **The roadmap is reorganised for a visitor:** what is next, what each release shipped, what is

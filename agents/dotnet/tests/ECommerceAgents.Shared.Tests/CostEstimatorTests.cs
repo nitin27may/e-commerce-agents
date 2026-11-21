@@ -1,3 +1,4 @@
+using System.Text.Json;
 using ECommerceAgents.Shared.Cost;
 using FluentAssertions;
 using Xunit;
@@ -5,71 +6,152 @@ using Xunit;
 namespace ECommerceAgents.Shared.Tests;
 
 /// <summary>
-/// Issue #30 — .NET logged tokens but had no way to price them, so a budget
-/// ceiling was not expressible. Values mirror <c>shared/cost.py</c>.
+/// Prices come only from <c>agents/python/config/pricing/models.yaml</c>, the file Python reads. The golden
+/// cases in <c>config/pricing/testdata/cases.json</c> are run by both stacks, so the two cannot price the
+/// same tokens differently. Tests that point <c>PRICING_FILE</c> elsewhere share one collection so they
+/// never race the process-wide table.
 /// </summary>
-public sealed class CostEstimatorTests
+[Collection(PricingCollection.Name)]
+public sealed class CostEstimatorTests : IDisposable
 {
-    [Fact]
-    public void Estimate_UsesPerModelPricing()
+    private static readonly string PricingDir = Path.GetDirectoryName(CostEstimator.DefaultPricingFile()!)!;
+    private static readonly string TestData = Path.Combine(PricingDir, "testdata");
+
+    public CostEstimatorTests()
     {
-        // gpt-4.1: $0.002 / 1K in, $0.008 / 1K out
-        CostEstimator.Estimate("gpt-4.1", 1000, 1000).Should().BeApproximately(0.010, 1e-9);
-        CostEstimator.Estimate("gpt-4.1", 500, 0).Should().BeApproximately(0.001, 1e-9);
+        Environment.SetEnvironmentVariable("PRICING_FILE", null);
+        Environment.SetEnvironmentVariable("PRICING_OVERRIDES_FILE", null);
+        CostEstimator.ReloadPricing();
+    }
+
+    public void Dispose()
+    {
+        Environment.SetEnvironmentVariable("PRICING_FILE", null);
+        Environment.SetEnvironmentVariable("PRICING_OVERRIDES_FILE", null);
+        CostEstimator.ReloadPricing();
+    }
+
+    public static TheoryData<string> GoldenCaseNames()
+    {
+        var data = new TheoryData<string>();
+        foreach (var c in LoadCases())
+        {
+            data.Add(c.GetProperty("name").GetString()!);
+        }
+        return data;
+    }
+
+    private static IEnumerable<JsonElement> LoadCases()
+    {
+        var path = Path.Combine(Path.GetDirectoryName(CostEstimator.DefaultPricingFile()!)!, "testdata", "cases.json");
+        using var doc = JsonDocument.Parse(File.ReadAllText(path));
+        return doc.RootElement.GetProperty("cases").EnumerateArray().Select(e => e.Clone()).ToList();
+    }
+
+    [Theory]
+    [MemberData(nameof(GoldenCaseNames))]
+    public void GoldenPricingCase(string name)
+    {
+        Environment.SetEnvironmentVariable("PRICING_FILE", Path.Combine(TestData, "prices.yaml"));
+        CostEstimator.ReloadPricing();
+        var c = LoadCases().Single(e => e.GetProperty("name").GetString() == name);
+
+        var got = CostEstimator.Estimate(
+            c.GetProperty("model").GetString(),
+            c.GetProperty("tokens_in").GetInt32(),
+            c.GetProperty("tokens_out").GetInt32(),
+            c.GetProperty("cached_in").GetInt32());
+
+        var expected = c.GetProperty("cost_usd");
+        if (expected.ValueKind == JsonValueKind.Null)
+        {
+            got.Should().BeNull();
+        }
+        else
+        {
+            got.Should().NotBeNull();
+            got!.Value.Should().BeApproximately(expected.GetDouble(), 1e-12);
+        }
     }
 
     [Fact]
-    public void Estimate_IsCaseInsensitive_BecauseDeploymentNamesVary()
+    public void TheShippedFile_PricesTheModelsTheStackDefaultsTo()
     {
-        // Callers pass through whatever LLM_MODEL or AZURE_OPENAI_DEPLOYMENT is
-        // configured, and those are free-form strings.
-        CostEstimator.Estimate("GPT-4.1", 1000, 1000)
-            .Should().Be(CostEstimator.Estimate("gpt-4.1", 1000, 1000));
-    }
-
-    /// <summary>
-    /// An unknown model must not price at zero — that would make a ceiling
-    /// silently unenforceable for exactly the custom deployment names this
-    /// repo encourages (Ollama, LM Studio, OpenRouter via LLM_BASE_URL).
-    /// </summary>
-    [Fact]
-    public void Estimate_UnknownModel_FallsBackToDefaultPricingRatherThanZero()
-    {
-        var unknown = CostEstimator.Estimate("qwen2.5:14b", 1000, 1000);
-
-        unknown.Should().BeGreaterThan(0);
-        unknown.Should().Be(CostEstimator.Estimate("gpt-4.1", 1000, 1000));
+        foreach (var model in new[] { "gpt-4.1", "gpt-5.1", "text-embedding-3-small" })
+        {
+            CostEstimator.Lookup(model).Should().NotBeNull(model);
+        }
     }
 
     [Fact]
-    public void Estimate_EmbeddingModels_ChargeInputOnly()
+    public void AnUnlistedModel_IsUnknown_NotAGuess()
     {
-        CostEstimator.Estimate("text-embedding-3-small", 1000, 1000)
-            .Should().BeApproximately(0.00002, 1e-9, "embeddings have no output tokens to bill");
+        CostEstimator.Estimate("qwen2.5:14b", 1000, 1000).Should().BeNull();
     }
 
     [Fact]
-    public void Estimate_ZeroTokens_IsFree()
+    public void Overrides_AreMergedOverTheReferenceFile()
     {
-        CostEstimator.Estimate("gpt-4.1", 0, 0).Should().Be(0);
+        Environment.SetEnvironmentVariable("PRICING_FILE", Path.Combine(TestData, "prices.yaml"));
+        var extra = Path.Combine(Path.GetTempPath(), $"pricing-{Guid.NewGuid():N}.yaml");
+        File.WriteAllText(extra,
+            "version: 1\nmodels:\n"
+            + "  qwen2.5:14b: {input_per_1m: 0, output_per_1m: 0, source: local, as_of: null, verified: false}\n"
+            + "  model-a: {input_per_1m: 1.0, output_per_1m: 1.0, source: negotiated, as_of: null, verified: false}\n");
+        try
+        {
+            Environment.SetEnvironmentVariable("PRICING_OVERRIDES_FILE", extra);
+            CostEstimator.ReloadPricing();
+
+            CostEstimator.Estimate("qwen2.5:14b", 1000, 1000).Should().Be(0.0);
+            CostEstimator.Estimate("model-a", 1_000_000, 0)!.Value.Should().BeApproximately(1.0, 1e-12);
+            CostEstimator.Estimate("model-a-mini", 1000, 1000)!.Value.Should().BeApproximately(0.002, 1e-12);
+        }
+        finally
+        {
+            File.Delete(extra);
+        }
     }
 
-    // ─────────────────────── E-2d: cached input, snapshots, run summary ───────────────────────
-
     [Fact]
-    public void Estimate_CachedInput_IsBilledAsInput_WhenNoCachedRateIsOnFile()
+    public void AnInvalidFile_MakesEveryCostUnknown()
     {
-        // No cached rate is documented in the repo, so none is invented: the estimate errs high.
-        CostEstimator.Estimate("gpt-4.1", 1000, 0, cachedIn: 900)
-            .Should().Be(CostEstimator.Estimate("gpt-4.1", 1000, 0));
+        var bad = Path.Combine(Path.GetTempPath(), $"pricing-{Guid.NewGuid():N}.yaml");
+        File.WriteAllText(bad, "version: 1\nmodels:\n  m: {input_per_1m: -1, output_per_1m: 0}\n");
+        try
+        {
+            Environment.SetEnvironmentVariable("PRICING_FILE", bad);
+            CostEstimator.ReloadPricing();
+            CostEstimator.Estimate("gpt-4.1", 1000, 1000).Should().BeNull();
+        }
+        finally
+        {
+            File.Delete(bad);
+        }
+    }
+
+    [Theory]
+    [InlineData("version: 2\nmodels: {}\n")]
+    [InlineData("version: 1\nunit: per_1k_tokens\nmodels: {}\n")]
+    [InlineData("version: 1\nmodels:\n  m: {input_per_1m: true, output_per_1m: 1}\n")]
+    [InlineData("version: 1\nmodels:\n  m: {output_per_1m: 1}\n")]
+    [InlineData("version: 1\nmodels:\n  M: {input_per_1m: 1, output_per_1m: 1}\n  m: {input_per_1m: 1, output_per_1m: 1}\n")]
+    public void InvalidDocuments_AreRefused(string yaml)
+    {
+        var act = () => CostEstimator.Parse(yaml);
+        act.Should().Throw<PricingException>();
     }
 
     [Fact]
-    public void Estimate_DatedSnapshot_PricesAsItsBaseModel_ButNeverAsADifferentModel()
+    public void Estimate_UnpricedModel_LogsAFixedLineOnce()
     {
-        CostEstimator.Estimate("gpt-4.1-2025-04-14", 1000, 1000).Should().Be(CostEstimator.Estimate("gpt-4.1", 1000, 1000));
-        CostEstimator.Estimate("gpt-4.1-mini-2025-04-14", 1000, 1000).Should().Be(CostEstimator.Estimate("gpt-4.1-mini", 1000, 1000));
-        CostEstimator.Estimate("gpt-4.1-mini", 1000, 1000).Should().NotBe(CostEstimator.Estimate("gpt-4.1", 1000, 1000));
+        CostEstimator.ResetUnpricedLogForTests();
+        var logger = new CapturingLogger();
+
+        CostEstimator.Estimate("my-private-deployment", 10, 10, logger: logger);
+        CostEstimator.Estimate("my-private-deployment", 10, 10, logger: logger);
+
+        logger.Messages.Should().Equal("cost.model_unpriced — cost is unknown; add the model to config/pricing/models.yaml");
     }
 
     [Fact]
@@ -84,19 +166,16 @@ public sealed class CostEstimatorTests
         var columns = CostEstimator.SummarizeRun(run, noLlmCalls: false);
         columns.Model.Should().Be("gpt-4.1");
         columns.TokensCachedIn.Should().Be(200);
-        columns.CostUsd.Should().BeApproximately(CostEstimator.Estimate("gpt-4.1", 500, 50, 200), 1e-12);
+        columns.CostUsd!.Value.Should().BeApproximately(CostEstimator.Estimate("gpt-4.1", 500, 50, 200)!.Value, 1e-12);
     }
 
     [Fact]
-    public void Estimate_UnpricedModel_LogsAFixedLineOnce()
+    public void OneUnpricedAgent_MakesTheRunCostUnknown()
     {
-        CostEstimator.ResetFallbackLogForTests();
-        var logger = new CapturingLogger();
-
-        CostEstimator.Estimate("my-private-deployment", 10, 10, logger: logger);
-        CostEstimator.Estimate("my-private-deployment", 10, 10, logger: logger);
-
-        logger.Messages.Should().Equal("cost.model_unpriced — using the default price entry");
+        var run = new ECommerceAgents.Shared.Context.RunUsage();
+        run.Add("orchestrator", new ECommerceAgents.Shared.Context.SpecialistUsage(1000, 0, 0, "gpt-4.1"));
+        run.Add("product-discovery", new ECommerceAgents.Shared.Context.SpecialistUsage(1000, 0, 0, "my-private-deployment"));
+        CostEstimator.EstimateRun(run.ByAgent).Should().BeNull();
     }
 
     private sealed class CapturingLogger : Microsoft.Extensions.Logging.ILogger
@@ -112,4 +191,11 @@ public sealed class CostEstimatorTests
             TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
             Messages.Add(formatter(state, exception));
     }
+}
+
+/// <summary>Serializes every test that changes the process-wide pricing table.</summary>
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class PricingCollection
+{
+    public const string Name = "pricing";
 }
