@@ -1759,7 +1759,7 @@ only on a laptop.
 | `Azure.AI.OpenAI` 2.9.0-beta.1 (user approved; conflict with #191 resolved in `ChatClientFactory.CreateChatClient`) | #180 | merged |
 | Release 1.4.0: version bump, changelog with a "Known limits" section | #193, tag `v1.4.0` at `9d83d45` | tag pushed, **release run waiting for approval** |
 | Chapter pointers by symbol instead of line number, enforced by `scripts/check_tutorial_readmes.py`; status table labels from `scripts/check_tutorial_coverage.py`; chapter template refreshed | #196 | merged |
-| Roadmap and parity matrix reorganised for visitors, ten guides cleaned of plan codes and history, new `docs/checkpoints-and-resume.md` and `docs/replay-mode.md` | #195 | merged with this section |
+| Roadmap and parity matrix reorganised for visitors, ten guides cleaned of plan codes and history, new `docs/checkpoints-and-resume.md` and `docs/replay-mode.md` | #195 | merged |
 | Discussion "Which orchestration pattern should I use?" | Discussions #188 | posted |
 | Starter issues | #181 (closed by #196), #182, #183 (closed by #195) | see below |
 
