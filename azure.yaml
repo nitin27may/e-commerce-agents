@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+#
+# `azd up` provisions infra/ (Bicep, subscription scope) and runs the hooks below. There are no
+# `services:`: the container images are built and published by .github/workflows/build-images.yml and
+# pulled from GHCR at the pinned IMAGE_TAG, so there is nothing for azd to build or deploy.
+# Use scripts/azure-up.sh, which wraps this with the prerequisite checks. docs/azure-deployment.md.
+name: e-commerce-agents
+metadata:
+  template: e-commerce-agents@1.0.0
+
+infra:
+  provider: bicep
+  path: infra
+  module: main
+
+hooks:
+  preprovision:
+    posix:
+      shell: sh
+      run: bash scripts/azure/preprovision.sh
+      interactive: false
+      continueOnError: false
+    windows:
+      shell: pwsh
+      run: scripts/azure/preprovision.ps1
+      interactive: false
+      continueOnError: false
+  postprovision:
+    posix:
+      shell: sh
+      run: bash scripts/azure/postprovision.sh
+      interactive: false
+      continueOnError: false
+    windows:
+      shell: pwsh
+      run: scripts/azure/postprovision.ps1
+      interactive: false
+      continueOnError: false

@@ -203,6 +203,20 @@ switch with `./scripts/dev.sh --dotnet`. Parity is checked by a dual-backend tes
 
 ---
 
+## Deploy to Azure
+
+Draft, Python stack only, **not yet deployed to a real subscription**. The Bicep, the azd hooks and the scripts are written and checked offline; the first real deploy is still to come, so expect fix-forward changes.
+
+```bash
+az login && azd auth login
+scripts/azure-up.sh --env demo1 --location eastus2 --image-tag v1.4.0   # PowerShell: scripts/azure-up.ps1
+scripts/azure-down.sh --env demo1                                        # removes everything, checks nothing is soft-deleted
+```
+
+It creates a Container Apps environment (frontend, orchestrator, five specialists, outbox worker, Redis), PostgreSQL with pgvector, an Azure OpenAI account (gpt-5.1) and Key Vault, and runs a database job. The frontend is reachable only from your public IP by default, and a demo costs roughly $4 to $12 a day while it is up. Prerequisites, the wiring, costs, assumptions and the failure catalogue are in [docs/azure-deployment.md](docs/azure-deployment.md) and [docs/troubleshooting.md](docs/troubleshooting.md#azure-deployment-first-run-failure-catalogue).
+
+---
+
 ## Documentation
 
 Everything below is published, searchable and cross-linked at

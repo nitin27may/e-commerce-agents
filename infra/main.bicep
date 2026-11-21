@@ -15,6 +15,27 @@ param profile string = 'demo'
 param chatModelName string = 'gpt-5.1'
 param chatModelVersion string = '2025-11-13'
 param deployMiniModel bool = false
+@description('Azure OpenAI API version the apps call. gpt-5.1 tool calling on the Responses API is unverified; see docs/azure-deployment.md.')
+param openAiApiVersion string = '2025-04-01-preview'
+@allowed(['key', 'identity'])
+@description('key: apps read the account key from Key Vault. identity: Entra ID through the user-assigned identity (needs Azure P3 in the image) and local auth is disabled on the account.')
+param openAiAuth string = 'key'
+
+@description('GHCR repository prefix the images are pulled from.')
+param imageRegistry string = 'ghcr.io/nitin27may/e-commerce-agents'
+@minLength(1)
+@description('Pinned image tag (release or sha-<7>). No default on purpose.')
+param imageTag string
+
+@allowed(['restricted', 'open'])
+@description('restricted (default): the frontend accepts only the deployer IP and ALLOWED_IPS. open: anyone, an open spend tap.')
+param publicAccess string = 'restricted'
+@description('Deployer public IPv4 (set by preprovision). Allowed through the frontend ingress when restricted.')
+param deployerIp string = ''
+@description('Extra CIDR ranges, comma separated, allowed through the frontend ingress when restricted.')
+param allowedIps string = ''
+param deployAuthServer bool = false
+param deployMcp bool = false
 
 @secure()
 param postgresAdminPassword string
@@ -22,6 +43,14 @@ param postgresAdminPassword string
 param jwtSecret string
 @secure()
 param agentSharedSecret string
+@secure()
+param a2aIdentityKey string
+@secure()
+param oauthSeedKey string
+@secure()
+param authSigningKeyEncryptionKey string
+@secure()
+param seedStaffPassword string
 
 var profiles = {
   demo: loadJsonContent('profiles/demo.json')
@@ -77,6 +106,10 @@ module keyVault 'modules/keyvault.bicep' = {
     postgresAdminPassword: postgresAdminPassword
     jwtSecret: jwtSecret
     agentSharedSecret: agentSharedSecret
+    a2aIdentityKey: a2aIdentityKey
+    oauthSeedKey: oauthSeedKey
+    authSigningKeyEncryptionKey: authSigningKeyEncryptionKey
+    seedStaffPassword: seedStaffPassword
   }
 }
 
@@ -112,6 +145,63 @@ module openAi 'modules/openai.bicep' = {
     embeddingCapacity: cfg.openAi.embeddingCapacity
     deployMiniModel: deployMiniModel
     miniCapacity: cfg.openAi.miniCapacity
+    disableLocalAuth: openAiAuth == 'identity'
+  }
+}
+
+// Secrets that only exist once Postgres and the OpenAI account do.
+module derivedSecrets 'modules/keyvault-secrets.bicep' = {
+  scope: rg
+  name: 'keyvault-secrets'
+  params: {
+    vaultName: keyVault.outputs.name
+    databaseUrl: 'postgresql://${postgres.outputs.administratorLogin}:${postgresAdminPassword}@${postgres.outputs.fqdn}:5432/${postgres.outputs.databaseName}?sslmode=require'
+    openAiAccountName: openAiAuth == 'key' ? openAi.outputs.name : ''
+  }
+}
+
+module cae 'modules/cae.bicep' = {
+  scope: rg
+  name: 'cae'
+  params: {
+    name: 'cae-${resourceToken}'
+    location: location
+    tags: tags
+    logAnalyticsName: monitoring.outputs.logAnalyticsName
+    appInsightsName: monitoring.outputs.appInsightsName
+  }
+}
+
+var frontendAllowedIps = concat(
+  empty(deployerIp) ? [] : ['${deployerIp}/32'],
+  empty(allowedIps) ? [] : split(replace(allowedIps, ' ', ''), ',')
+)
+
+module apps 'modules/apps.bicep' = {
+  scope: rg
+  name: 'apps'
+  dependsOn: [derivedSecrets]
+  params: {
+    location: location
+    tags: tags
+    environmentId: cae.outputs.id
+    defaultDomain: cae.outputs.defaultDomain
+    identityId: identity.outputs.id
+    identityClientId: identity.outputs.clientId
+    keyVaultUri: keyVault.outputs.uri
+    imageRegistry: imageRegistry
+    imageTag: imageTag
+    openAiEndpoint: openAi.outputs.endpoint
+    chatDeployment: openAi.outputs.chatDeploymentName
+    embeddingDeployment: openAi.outputs.embeddingDeploymentName
+    chatModelName: chatModelName
+    openAiApiVersion: openAiApiVersion
+    openAiAuth: openAiAuth
+    scale: cfg.containerApps
+    publicAccess: publicAccess
+    allowedIpRanges: frontendAllowedIps
+    deployAuthServer: deployAuthServer
+    deployMcp: deployMcp
   }
 }
 
@@ -139,3 +229,12 @@ output POSTGRES_USER string = postgres.outputs.administratorLogin
 output AZURE_OPENAI_ENDPOINT string = openAi.outputs.endpoint
 output AZURE_OPENAI_CHAT_DEPLOYMENT string = openAi.outputs.chatDeploymentName
 output AZURE_OPENAI_EMBEDDING_DEPLOYMENT string = openAi.outputs.embeddingDeploymentName
+output AZURE_CHAT_DEPLOYMENT string = openAi.outputs.chatDeploymentName
+output AZURE_POSTGRES_FQDN string = postgres.outputs.fqdn
+output APPLICATIONINSIGHTS_NAME string = monitoring.outputs.appInsightsName
+output AZURE_CONTAINER_APPS_ENVIRONMENT string = cae.outputs.name
+output FRONTEND_URL string = apps.outputs.frontendUrl
+output ORCHESTRATOR_INTERNAL_URL string = apps.outputs.orchestratorInternalUrl
+output DB_INIT_JOB_NAME string = apps.outputs.dbInitJobName
+output ADMIN_LOGIN_EMAIL string = 'admin.demo@gmail.com'
+output SUPPORT_LOGIN_EMAIL string = 'support.demo@gmail.com'

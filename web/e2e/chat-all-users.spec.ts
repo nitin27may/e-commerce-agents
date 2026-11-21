@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { staffPassword } from "./credentials";
 
 /**
  * Chat E2E tests for all user roles.
@@ -7,10 +8,10 @@ import { test, expect, type Page } from "@playwright/test";
 
 const USERS = [
   { email: "alice.johnson@gmail.com", password: "customer123", name: "Alice Johnson", role: "customer" },
-  { email: "admin.demo@gmail.com", password: "admin123", name: "Admin User", role: "admin" },
+  { email: "admin.demo@gmail.com", password: staffPassword("admin123"), name: "Admin User", role: "admin" },
   { email: "bob.smith@gmail.com", password: "customer123", name: "Bob Smith", role: "customer" },
   { email: "power.demo@gmail.com", password: "power123", name: "Power User", role: "power_user" },
-  { email: "seller.demo@gmail.com", password: "seller123", name: "Acme Store", role: "seller" },
+  { email: "seller.demo@gmail.com", password: staffPassword("seller123"), name: "Acme Store", role: "seller" },
 ];
 
 // Increase timeout for LLM responses

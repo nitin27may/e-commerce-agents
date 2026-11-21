@@ -11,6 +11,8 @@ param embeddingModelVersion string = '1'
 param embeddingCapacity int
 @allowed(['GlobalStandard', 'Standard', 'DataZoneStandard'])
 param embeddingSkuName string = 'GlobalStandard'
+@description('False while the apps authenticate with the account key (Azure P3 not merged); true once AZURE_OPENAI_AUTH=identity is the default.')
+param disableLocalAuth bool = false
 param deployMiniModel bool = false
 param miniModelName string = 'gpt-5.1-mini'
 param miniModelVersion string = '2025-11-13'
@@ -27,7 +29,7 @@ resource account 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
   properties: {
     customSubDomainName: name
     publicNetworkAccess: 'Enabled'
-    disableLocalAuth: true
+    disableLocalAuth: disableLocalAuth
   }
 }
 

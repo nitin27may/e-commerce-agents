@@ -2,16 +2,74 @@
   "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentParameters.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "environmentName": { "value": "${AZURE_ENV_NAME}" },
-    "location": { "value": "${AZURE_LOCATION}" },
-    "openAiLocation": { "value": "${AZURE_OPENAI_LOCATION=${AZURE_LOCATION}}" },
-    "principalId": { "value": "${AZURE_PRINCIPAL_ID}" },
-    "profile": { "value": "${DEPLOY_PROFILE=demo}" },
-    "chatModelName": { "value": "${AZURE_CHAT_MODEL=gpt-5.1}" },
-    "chatModelVersion": { "value": "${AZURE_CHAT_MODEL_VERSION=2025-11-13}" },
-    "deployMiniModel": { "value": "${DEPLOY_MINI_MODEL=false}" },
-    "postgresAdminPassword": { "value": "${POSTGRES_ADMIN_PASSWORD}" },
-    "jwtSecret": { "value": "${JWT_SECRET}" },
-    "agentSharedSecret": { "value": "${AGENT_SHARED_SECRET}" }
+    "environmentName": {
+      "value": "${AZURE_ENV_NAME}"
+    },
+    "location": {
+      "value": "${AZURE_LOCATION}"
+    },
+    "openAiLocation": {
+      "value": "${AZURE_OPENAI_LOCATION=${AZURE_LOCATION}}"
+    },
+    "principalId": {
+      "value": "${AZURE_PRINCIPAL_ID}"
+    },
+    "profile": {
+      "value": "${DEPLOY_PROFILE=demo}"
+    },
+    "chatModelName": {
+      "value": "${AZURE_CHAT_MODEL=gpt-5.1}"
+    },
+    "chatModelVersion": {
+      "value": "${AZURE_CHAT_MODEL_VERSION=2025-11-13}"
+    },
+    "deployMiniModel": {
+      "value": "${DEPLOY_MINI_MODEL=false}"
+    },
+    "postgresAdminPassword": {
+      "value": "${POSTGRES_ADMIN_PASSWORD}"
+    },
+    "jwtSecret": {
+      "value": "${JWT_SECRET}"
+    },
+    "agentSharedSecret": {
+      "value": "${AGENT_SHARED_SECRET}"
+    },
+    "openAiApiVersion": {
+      "value": "${AZURE_OPENAI_API_VERSION=2025-04-01-preview}"
+    },
+    "openAiAuth": {
+      "value": "${AZURE_OPENAI_AUTH=key}"
+    },
+    "imageTag": {
+      "value": "${IMAGE_TAG}"
+    },
+    "publicAccess": {
+      "value": "${PUBLIC_ACCESS=restricted}"
+    },
+    "deployerIp": {
+      "value": "${DEPLOYER_IP}"
+    },
+    "allowedIps": {
+      "value": "${ALLOWED_IPS=}"
+    },
+    "deployAuthServer": {
+      "value": "${DEPLOY_AUTH_SERVER=false}"
+    },
+    "deployMcp": {
+      "value": "${DEPLOY_MCP=false}"
+    },
+    "a2aIdentityKey": {
+      "value": "${A2A_IDENTITY_KEY}"
+    },
+    "oauthSeedKey": {
+      "value": "${OAUTH_SEED_KEY}"
+    },
+    "authSigningKeyEncryptionKey": {
+      "value": "${AUTH_SIGNING_KEY_ENCRYPTION_KEY}"
+    },
+    "seedStaffPassword": {
+      "value": "${SEED_STAFF_PASSWORD}"
+    }
   }
 }

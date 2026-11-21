@@ -1,13 +1,14 @@
 import { test, expect, type Page } from "@playwright/test";
+import { staffPassword } from "./credentials";
 
 const API_URL = "http://localhost:8080";
 
 // Test users from seed data
 const USERS = {
   customer: { email: "alice.johnson@gmail.com", password: "customer123", name: "Alice Johnson", role: "customer" },
-  admin: { email: "admin.demo@gmail.com", password: "admin123", name: "Admin User", role: "admin" },
+  admin: { email: "admin.demo@gmail.com", password: staffPassword("admin123"), name: "Admin User", role: "admin" },
   powerUser: { email: "power.demo@gmail.com", password: "power123", name: "Power User", role: "power_user" },
-  seller: { email: "seller.demo@gmail.com", password: "seller123", name: "Acme Store", role: "seller" },
+  seller: { email: "seller.demo@gmail.com", password: staffPassword("seller123"), name: "Acme Store", role: "seller" },
   customer2: { email: "bob.smith@gmail.com", password: "customer123", name: "Bob Smith", role: "customer" },
 };
 

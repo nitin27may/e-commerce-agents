@@ -12,6 +12,13 @@
   },
   "openAi": { "chatCapacity": 100, "embeddingCapacity": 50, "miniCapacity": 100 },
   "budget": { "monthlyAmount": 800, "alertThresholdPercent": 80 },
-  "containerApps": { "minReplicas": 2, "maxReplicas": 6, "orchestratorMinReplicas": 2 },
+  "containerApps": {
+    "minReplicas": 2,
+    "maxReplicas": 6,
+    "orchestratorMinReplicas": 2,
+    "orchestratorMaxReplicas": 10,
+    "workerMinReplicas": 1,
+    "httpConcurrency": 20
+  },
   "redis": { "minReplicas": 1, "maxReplicas": 1 }
 }

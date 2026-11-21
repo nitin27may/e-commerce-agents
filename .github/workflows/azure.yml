@@ -1,0 +1,184 @@
+name: Azure
+
+# Offline on every pull request; a real deployment only when a human dispatches it.
+#
+#   pull_request        offline checks. No Azure credentials, no secrets, nothing talks to Azure.
+#   workflow_dispatch   mode=what-if          `azd provision --preview` against a subscription
+#                       mode=deploy-and-test  deploy, smoke test, ALWAYS tear down, assert nothing is left
+#
+# Both dispatch jobs run in the `azure-deploy` environment, which must be configured (Settings, Environments)
+# with required reviewers and these environment variables (federated credentials, no client secret):
+#   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
+# plus a federated credential on that app registration for `repo:<owner>/<repo>:environment:azure-deploy`.
+# The identity needs Owner (or Contributor plus User Access Administrator) on a dedicated test subscription.
+#
+# There is deliberately no `schedule:` trigger and none may be added: a deployment spends money.
+# See docs/releasing.md ("Azure workflow") and docs/azure-deployment.md.
+
+on:
+  pull_request:
+    paths:
+      - "infra/**"
+      - "azure.yaml"
+      - "scripts/azure/**"
+      - "scripts/azure-*.sh"
+      - "scripts/azure-*.ps1"
+      - "scripts/test-azure-secrets.sh"
+      - "agents/python/tests/test_infra_bicep.py"
+      - "agents/python/tests/test_azure_smoke.py"
+      - ".github/workflows/azure.yml"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "what-if (preview only) or deploy-and-test (creates real resources and removes them)"
+        type: choice
+        options: [what-if, deploy-and-test]
+        default: what-if
+      image_tag:
+        description: "Published GHCR image tag to deploy (vX.Y.Z or sha-xxxxxxx; never latest or main)"
+        type: string
+        required: true
+      location:
+        description: "Azure region"
+        type: string
+        default: eastus2
+
+permissions:
+  contents: read
+
+jobs:
+  offline:
+    name: Offline checks (no Azure)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the Bicep CLI
+        run: |
+          curl -fsSLo bicep https://github.com/Azure/bicep/releases/latest/download/bicep-linux-x64
+          chmod +x bicep
+          sudo mv bicep /usr/local/bin/bicep
+          bicep --version
+      - name: Build and lint main.bicep, every module and every profile combination
+        working-directory: infra
+        run: |
+          bicep build main.bicep --stdout > /dev/null
+          bicep lint main.bicep
+          for f in modules/*.bicep; do bicep lint "$f"; done
+          for f in ci/*.bicepparam; do
+            echo "== $f"
+            bicep build-params "$f" --stdout > /dev/null
+          done
+      - name: shellcheck
+        run: |
+          sudo apt-get install -y --no-install-recommends shellcheck
+          shellcheck -x scripts/azure/*.sh scripts/azure/lib/*.sh scripts/azure-up.sh scripts/azure-down.sh scripts/test-azure-secrets.sh
+      - name: PowerShell scripts parse
+        shell: pwsh
+        run: |
+          foreach ($f in Get-ChildItem scripts -Recurse -Filter *.ps1 | Where-Object { $_.FullName -match 'azure' }) {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$null, [ref]$errors) | Out-Null
+            if ($errors) { $errors | ForEach-Object { Write-Error "$($f.Name): $_" }; exit 1 }
+            Write-Host "parsed $($f.Name)"
+          }
+      - name: Secret generation and dry runs (no Azure)
+        run: |
+          scripts/test-azure-secrets.sh
+          scripts/azure-up.sh --env ci --location eastus2 --image-tag v0.0.0-ci --dry-run > /dev/null
+          scripts/azure-down.sh --env ci --dry-run > /dev/null
+      - name: azure.yaml parses and has no schedule anywhere in this workflow
+        run: |
+          python3 -c "import sys, yaml; d = yaml.safe_load(open('azure.yaml')); assert d['hooks']['preprovision']['posix'] and d['hooks']['postprovision']['windows']"
+          python3 -c "import yaml; d = yaml.safe_load(open('.github/workflows/azure.yml')); assert 'schedule' not in (d.get(True) or d.get('on'))"
+      - uses: astral-sh/setup-uv@v5
+      - name: Offline infra and smoke tests
+        working-directory: agents/python
+        run: uv run --extra dev pytest tests/test_infra_bicep.py tests/test_azure_smoke.py -v
+
+  what-if:
+    name: What-if (azd provision --preview)
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'what-if'
+    needs: offline
+    runs-on: ubuntu-latest
+    environment: azure-deploy
+    timeout-minutes: 30
+    concurrency: azure-deploy
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AZURE_ENV_NAME: ci-whatif-${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Azure/setup-azd@v2
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: azd login (federated)
+        run: azd auth login --client-id "${{ vars.AZURE_CLIENT_ID }}" --federated-credential-provider github --tenant-id "${{ vars.AZURE_TENANT_ID }}"
+      - name: Preview
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          scripts/azure/prereqs.sh --location "${{ inputs.location }}" --env "$AZURE_ENV_NAME"
+          azd env new "$AZURE_ENV_NAME" --location "${{ inputs.location }}" --subscription "$AZURE_SUBSCRIPTION_ID" --no-prompt
+          azd env set IMAGE_TAG "${{ inputs.image_tag }}"
+          azd env set AZURE_LOCATION "${{ inputs.location }}"
+          # Hooks generate the secrets and detect this runner's IP; nothing is created by --preview.
+          azd provision --preview --no-prompt
+      - name: Remove the local azd environment
+        if: always()
+        run: azd env delete "$AZURE_ENV_NAME" --force --yes || true
+
+  deploy-and-test:
+    name: Deploy, smoke test, tear down
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'deploy-and-test'
+    needs: offline
+    runs-on: ubuntu-latest
+    environment: azure-deploy
+    timeout-minutes: 90
+    concurrency: azure-deploy
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AZURE_ENV_NAME: ci-e2e-${{ github.run_id }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: Azure/setup-azd@v2
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: azd login (federated)
+        run: azd auth login --client-id "${{ vars.AZURE_CLIENT_ID }}" --federated-credential-provider github --tenant-id "${{ vars.AZURE_TENANT_ID }}"
+      - name: Deploy (azd up; the postprovision hook runs the quick smoke test)
+        run: |
+          scripts/azure-up.sh --env "$AZURE_ENV_NAME" --location "${{ inputs.location }}" --image-tag "${{ inputs.image_tag }}"
+      - name: Full smoke test (keyed chat turn, approval, SSE timing)
+        run: |
+          export FRONTEND_URL="$(azd env get-value FRONTEND_URL)"
+          export AZURE_RESOURCE_GROUP="$(azd env get-value AZURE_RESOURCE_GROUP)"
+          export DB_INIT_JOB_NAME="$(azd env get-value DB_INIT_JOB_NAME)"
+          export E2E_STAFF_PASSWORD="$(azd env get-value SEED_STAFF_PASSWORD)"
+          echo "::add-mask::$E2E_STAFF_PASSWORD"
+          scripts/azure/smoke.sh
+      # Always: a failed deploy still created resources, and a deployment left up spends money.
+      - name: Tear down
+        if: always()
+        run: scripts/azure-down.sh --env "$AZURE_ENV_NAME"
+      - name: Assert nothing is left
+        if: always()
+        run: |
+          exists="$(az group exists --name "rg-$AZURE_ENV_NAME")"
+          [ "$exists" = "false" ] || { echo "::error::resource group rg-$AZURE_ENV_NAME still exists"; exit 1; }
+          left="$(az keyvault list-deleted --query "length([?contains(to_string(properties.vaultId), 'rg-$AZURE_ENV_NAME')])" -o tsv)"
+          [ "${left:-0}" = "0" ] || { echo "::error::$left soft-deleted Key Vault(s) remain"; exit 1; }
+          echo "clean"

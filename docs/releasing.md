@@ -171,6 +171,18 @@ than a bad release.
 **`:latest` points at a bad release** — cut the fix as a new release. `:latest` moves forward with
 the next successful release; it is never moved backwards by hand.
 
+## Azure workflow
+
+`.github/workflows/azure.yml` is separate from the release pipeline and never publishes anything.
+
+| Trigger | What runs | Credentials |
+|---|---|---|
+| Pull request touching `infra/`, `azure.yaml`, `scripts/azure*` | `offline`: Bicep build and lint for every module and every `infra/ci/*.bicepparam` combination, shellcheck, PowerShell parse, the secret-generation test, script dry runs, `test_infra_bicep.py`, `test_azure_smoke.py` | none, and no secrets are referenced |
+| Manual dispatch, `mode=what-if` | `offline`, then `azd provision --preview` | OIDC, `azure-deploy` environment |
+| Manual dispatch, `mode=deploy-and-test` | `offline`, deploy, full `smoke.sh`, then `azure-down.sh` in an `always()` step and an assertion that the resource group and any soft-deleted Key Vault are gone | OIDC, `azure-deploy` environment |
+
+There is **no schedule** and none may be added: a deployment spends money (a CI deploy-and-test run is a few dollars). The `azure-deploy` environment needs required reviewers and the variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID` (an app registration with a federated credential for `environment:azure-deploy`, Owner on a dedicated test subscription; no client secret). The deployed `image_tag` must be a published tag from the pipeline above (`vX.Y.Z` or `sha-<7>`), never `latest` or `main`: cut or pick the release first, then dispatch. The dispatch jobs have never run against a real subscription.
+
 ## Related
 
 - [Configuration](configuration.md) — where settings come from
