@@ -26,6 +26,9 @@ Do not put these in the repo root (no top-level `plans/` folder) or rely on glob
 Keeping them under the repo-local `.claude/` means they are committed with the project and travel
 with it.
 
+Resuming after a break, or in a new session (local or cloud)? Read `.claude/HANDOVER.md` first: current state,
+what is blocked and on whom, the procedures that took time to learn, and a progress log to keep updated.
+
 ## Key Commands
 
 ```bash
