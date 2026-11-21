@@ -197,7 +197,7 @@ export default function AdminApprovalsPage() {
       {/* Header */}
       <div className="border-b bg-card">
         <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <div className="flex size-10 items-center justify-center rounded-lg bg-primary">
                 <CheckCircle className="size-5 text-primary-foreground" />

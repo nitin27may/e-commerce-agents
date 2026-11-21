@@ -49,7 +49,7 @@ export default function ShopLayout({ children }: { children: React.ReactNode }) 
               <input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="Search products…"
+                placeholder="Search…"
                 aria-label="Search products"
                 className="h-9 w-full rounded-lg border bg-muted/40 pl-9 pr-3 text-sm outline-none transition-colors focus:border-ring focus:bg-background"
               />

@@ -90,9 +90,9 @@ export function Landing() {
           <span className="text-primary">e-commerce</span>
         </h1>
         <p className="mx-auto mt-4 max-w-xl text-pretty text-base text-muted-foreground sm:text-lg">
-          Product discovery, orders, pricing, reviews, inventory, and support —
-          specialist AI agents that collaborate over the A2A protocol, built on
-          the Microsoft Agent Framework.
+          Product discovery, orders, pricing, reviews, inventory, and support,
+          handled by specialist AI agents that collaborate over the A2A
+          protocol and are built on the Microsoft Agent Framework.
         </p>
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
           <Button render={<Link href="/shop" />} size="lg">
