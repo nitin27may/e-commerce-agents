@@ -9,7 +9,7 @@ In this chapter we add **one** function: a canned-data product-price lookup back
 ## Prerequisites
 
 - Completed [Chapter 01 — Your First Agent](../01-first-agent/)
-- Repo-root `.env` with a working LLM provider (`OPENAI_API_KEY`, or `AZURE_OPENAI_ENDPOINT` + `AZURE_OPENAI_KEY` + `AZURE_OPENAI_DEPLOYMENT`)
+- No API key needed: with none set, `main.py` replays recorded responses and prints one line saying so. To use a live model instead, put `OPENAI_API_KEY` (or the `AZURE_OPENAI_*` variables) in the repo-root `.env`
 
 ## The concept
 

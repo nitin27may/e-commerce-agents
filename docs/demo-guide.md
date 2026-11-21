@@ -35,7 +35,7 @@ Pre-seeded accounts for testing different roles:
 | `alice.johnson@gmail.com` | customer123 | Customer | Gold |
 | `bob.smith@gmail.com` | customer123 | Customer | Silver |
 
-`support` is a staff role: it reviews approvals that policy routes to support (`admin` acts as manager and can do everything support can). It does not yet change who may approve a paused return; that arrives with the unified approvals API. `power.demo@gmail.com` / `power123` is a `power_user` (a customer variant with access to every agent).
+`support` is a staff role: it reviews approvals that policy routes to support (`admin` acts as manager and can do everything support can). `power.demo@gmail.com` / `power123` is a `power_user` (a customer variant with access to every agent).
 
 ---
 
@@ -64,6 +64,27 @@ Try these in the chat after logging in:
 6. **Review Analysis**: "What do people think about the Dyson V15?"
 7. **Stock Check**: "Is the Dyson V15 Detect in stock?"
 8. **Multi-Intent**: "Return my jacket and find me a warmer one under $200"
+
+### Switch the orchestration pattern
+
+The same orchestrator can coordinate the specialists five different ways. These three scenarios are
+the quickest way to see what that means:
+
+9. **Change the mode.** Above the chat composer, open the **Mode** dropdown and pick **Handoff Mesh**,
+   then ask "Where's my latest order?". Pick **Pre-Purchase Research** and ask "Should I buy the Sony
+   WH-1000XM5?". The mode's graph is drawn with the answer and highlights each node as it runs.
+10. **Compare modes on one prompt.** Click **Compare** beside the dropdown, enter one prompt and
+    select several modes. Each gets a result card with its answer, latency, tokens and estimated
+    cost, and the graph it took. Measured numbers are in the
+    [orchestration benchmark](orchestration-benchmark.md).
+11. **Approve a paused return.** As `alice.johnson@gmail.com`, pick **Return & Replace** and
+    ask "I want to return my last order". The run pauses at the approval gate and the chat shows
+    "Awaiting staff review". Sign in as `support.demo@gmail.com` in another browser, open
+    **Runs**, expand the run marked "Needs approval", and approve or reject (an admin also has the
+    full inbox under **Admin → Approvals**). The run resumes from its checkpoint
+    and finishes as the customer; a rejected return leaves no return row behind. A high-value
+    return is routed to a manager by `approvals.yaml`, so use `admin.demo@gmail.com` if support is
+    told it cannot decide. See [approvals](approvals.md).
 
 ---
 

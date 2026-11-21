@@ -15,8 +15,7 @@ chapter focuses on the mechanics of building the eval loop itself.
 ## Prerequisites
 
 - Completed [Chapter 02 — Add Tools](../02-add-tools/)
-- Repo-root `.env` with a working LLM provider (`OPENAI_API_KEY`, or `AZURE_OPENAI_ENDPOINT` +
-  `AZURE_OPENAI_KEY` + `AZURE_OPENAI_DEPLOYMENT`)
+- No API key needed: with none set, `main.py` replays recorded responses and prints one line saying so. To use a live model instead, put `OPENAI_API_KEY` (or the `AZURE_OPENAI_*` variables) in the repo-root `.env`
 
 ## The concept
 

@@ -9,7 +9,7 @@ An agentic loop that keeps calling tools and re-prompting the model has no natur
 ## Prerequisites
 
 - Completed [Chapter 06 — Middleware and the Agent Pipeline](../06-middleware/) — this chapter assumes you already know the three middleware kinds and how `call_next()` works
-- Repo-root `.env` with a working LLM provider (`OPENAI_API_KEY`, or `AZURE_OPENAI_ENDPOINT` + `AZURE_OPENAI_KEY` + `AZURE_OPENAI_DEPLOYMENT`)
+- No API key needed: with none set, `main.py` replays recorded responses and prints one line saying so. To use a live model instead, put `OPENAI_API_KEY` (or the `AZURE_OPENAI_*` variables) in the repo-root `.env`
 - Skim [`docs/concepts/13-observability-and-cost.md`](../../docs/concepts/13-observability-and-cost.md) for the tokens-as-cost-unit background — this chapter doesn't re-derive that, it builds the runtime enforcement on top of it
 
 ## The concept

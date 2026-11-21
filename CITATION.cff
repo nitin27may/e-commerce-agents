@@ -3,7 +3,7 @@ message: "If you use this repository in your work, please cite it using the meta
 title: "E-Commerce Agents"
 abstract: >-
   A multi-agent e-commerce platform built with the Microsoft Agent Framework.
-  Six specialist agents collaborate over the A2A protocol (A2A 1.0 JSON-RPC plus a legacy HTTP wire) to handle
+  An orchestrator and five specialist agents collaborate in five selectable orchestration modes over the A2A protocol (A2A 1.0 JSON-RPC plus a legacy HTTP wire) to handle
   product discovery, orders, pricing, reviews, inventory and customer support,
   with Python and .NET backends.
 type: software

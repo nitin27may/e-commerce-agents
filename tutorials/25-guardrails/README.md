@@ -9,7 +9,7 @@ Every previous chapter assumed tool results are trustworthy. They aren't. A prod
 ## Prerequisites
 
 - Completed [Chapter 06 — Middleware and the Agent Pipeline](../06-middleware/) — this chapter assumes you already know the three middleware kinds (agent/function/chat) and how `call_next()` works
-- Repo-root `.env` with a working LLM provider (`OPENAI_API_KEY`, or `AZURE_OPENAI_ENDPOINT` + `AZURE_OPENAI_KEY` + `AZURE_OPENAI_DEPLOYMENT`)
+- No API key needed: with none set, `main.py` replays recorded responses and prints one line saying so. To use a live model instead, put `OPENAI_API_KEY` (or the `AZURE_OPENAI_*` variables) in the repo-root `.env`
 - Read [`docs/concepts/10-guardrails.md`](../../docs/concepts/10-guardrails.md) for the full threat model — this chapter is deliberately narrower and mechanical
 
 ## The concept

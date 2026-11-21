@@ -10,7 +10,7 @@ Despite being the backbone of the whole app, A2A has had zero tutorial coverage 
 
 - Completed [Chapter 02 — Adding Tools](../02-add-tools/) (tools are how a coordinator agent triggers an A2A call)
 - Familiar with the harness concepts in [docs/concepts/04-agent-harness.md](../../docs/concepts/04-agent-harness.md) — this chapter teaches the A2A transport/identity shapes that document introduces
-- Environment variables set: `OPENAI_API_KEY` (or `AZURE_OPENAI_*`) and `LLM_MODEL`
+- No API key needed: with none set, `main.py` replays recorded responses and prints one line saying so. To use a live model instead, put `OPENAI_API_KEY` (or the `AZURE_OPENAI_*` variables) in the repo-root `.env`
 
 ## The concept
 

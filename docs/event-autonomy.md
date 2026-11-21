@@ -1,8 +1,8 @@
 # Event autonomy
 
-Issue [#94](https://github.com/nitin27may/e-commerce-agents/issues/94), plan rows V-1 and V-2. When an event arrives (a
-shipment running late), the system may act **on its own inside a budget**, and must **ask a person outside it**. Python
-only ([parity row 40](parity-matrix.md)). **Off by default** (`AUTONOMY_ENABLED=false`) and it makes **no model call**:
+When an event arrives (a shipment running late), the system may act **on its own inside a budget**, and must
+**ask a person outside it**. Python only ([parity row 40](parity-matrix.md); tracked in
+[#94](https://github.com/nitin27may/e-commerce-agents/issues/94)). **Off by default** (`AUTONOMY_ENABLED=false`) and it makes **no model call**:
 the rule is deterministic and the customer text is a template.
 
 ## The flow

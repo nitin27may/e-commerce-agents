@@ -116,6 +116,9 @@ cd e-commerce-agents
 cp .env.example .env
 ```
 
+No API key yet? Set `LLM_PROVIDER=replay` in `.env` (the example file ships `LLM_PROVIDER=openai`
+with a placeholder key). The chapters then replay recorded responses.
+
 `.env` at the repo root is read by every tutorial chapter and by the capstone app
 alike. `LLM_PROVIDER` selects the block: `openai`, `azure`, or `replay`. The tutorials'
 rule for keys is the same in every chapter: an explicit `LLM_PROVIDER` wins; otherwise a
@@ -221,6 +224,11 @@ One script checks everything:
 ```bash
 ./scripts/verify-setup.sh
 ```
+
+It checks what the full application needs, which is more than the chapters need. For the Python
+side of chapters 01 to 20 you need only `uv` and Python 3.12+; the .NET side adds the .NET 10 SDK
+(the chapter projects target `net10.0`). A failed Docker, Node or pnpm check does not block you
+until the capstone.
 
 It checks, in order: `uv` present, Python 3.12+, a .NET SDK (9 or 10), Docker,
 Docker Compose v2, Node 20+, pnpm, that `.env` exists and has a real (non-placeholder)

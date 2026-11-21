@@ -9,7 +9,7 @@ Canonical example in this chapter: **Writer → Critic → Editor** drafting a m
 ## Prerequisites
 
 - Completed [Chapter 14 — Handoff Orchestration](../14-handoff-orchestration/)
-- Repo-root `.env` with one LLM provider configured:
+- No API key needed: with none set, `main.py` replays recorded responses and prints one line saying so. To use a live model instead, put `OPENAI_API_KEY` (or the `AZURE_OPENAI_*` variables) in the repo-root `.env`:
 
 | Provider | Required | Optional |
 |----------|----------|----------|

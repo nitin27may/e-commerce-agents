@@ -11,7 +11,46 @@
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED.svg)](https://docs.docker.com/compose/)
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/nitin27may/e-commerce-agents)
 
-A **hands-on course in [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) (MAF)** — 34 chapters in Python and .NET, with a no-key start — and the **multi-agent e-commerce platform** it builds up to. In the platform, six specialized AI agents collaborate over **A2A** (A2A 1.0 JSON-RPC at `/a2a/v1` plus the original `/message:send` wire, on both stacks; see [docs/a2a.md](docs/a2a.md)) to handle product discovery, orders, pricing, reviews, inventory and support — with **two complete backends, Python and .NET / C#** (differences documented in the [parity matrix](docs/parity-matrix.md)), behind one Next.js frontend.
+**A complete multi-agent e-commerce application built on [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) (MAF), in Python and .NET, and a 34-chapter course that teaches every piece of it.**
+
+This is a working application, end to end, not a sample that stops at "the agent replied". A
+storefront with sign-in and roles sits in front of an orchestrator and five specialist agents that
+handle product search, orders, pricing, reviews and inventory, backed by PostgreSQL, with human
+approvals, guardrails, evals, tracing and deployment around them. The course starts from a first
+agent and builds up to it one mechanism at a time; chapter 1 runs with no API key and no Docker.
+
+![Chat with a side-by-side product comparison, the Compare button and the orchestration mode switcher](docs/images/flow-product-search.png)
+
+### What is in the box
+
+| Layer | What runs |
+|---|---|
+| **Web app** | Next.js storefront, cart, checkout and orders; streaming chat that renders product cards, tables and charts; seller and admin dashboards; an approvals inbox |
+| **Orchestration** | One orchestrator, five selectable modes (below), a live graph of the run and a side-by-side compare view |
+| **Agents** | Five specialists as separate services, talking A2A 1.0, with optional MCP servers for product and inventory data |
+| **Data** | PostgreSQL with pgvector for semantic search, numbered migrations, a deterministic seeder, Redis for rate limiting |
+| **Identity** | JWT sign-in, five roles (customer, power user, seller, support, admin), identity carried to every agent and tool |
+| **Safety** | Policy-routed human approval, checkpoints and resume, guardrails, grounding checks, idempotency on money-moving actions |
+| **Quality** | An eval suite that replays without a key in CI, a red-team set, more than 30 CI checks per pull request |
+| **Operations** | OpenTelemetry into the Aspire dashboard, per-request token and cost tracking, Docker Compose with prebuilt images, a draft Azure Container Apps deployment |
+| **Two backends** | All of the above in Python, and in .NET / C# behind the same frontend and database, with the differences listed in the [parity matrix](docs/parity-matrix.md) |
+
+### One orchestrator, five orchestration modes
+
+Most agent samples show one orchestration pattern in isolation. Here the orchestrator runs the same
+request through any of five, selected per request in the chat box, so "which one should I use?" has a measured answer:
+
+| Mode | How the agents are coordinated | p50 latency | Model calls |
+|---|---|---|---|
+| `tool` (default) | The orchestrator's model picks a specialist and calls it as a tool | 10.6 s | orchestrator + specialist |
+| `handoff` | A triage agent hands the conversation to a specialist, which can hand it on | 5.1 s | triage + specialist |
+| `group-chat` | Two specialists debate, then a moderator answers | 3.2 s | 2 panelists + moderator |
+| `workflow:pre-purchase` | A fixed graph fans out to several specialists at once and merges the results | 0.26 s | none |
+| `workflow:return-replace` | A fixed sequential graph that pauses for human approval before anything is created | 0.10 s | none |
+
+The two workflow modes call no model, so they are doing less work, not the same work faster.
+Method, token and cost figures: [orchestration benchmark](docs/orchestration-benchmark.md)
+(gpt-4.1, 40 requests). How each pattern works: [orchestration patterns](docs/concepts/06-orchestration-patterns.md).
 
 ### Learn
 
@@ -39,11 +78,11 @@ cp .env.minimal .env          # set OPENAI_API_KEY — the only variable a first
 Then open **http://localhost:3000** and sign in as `alice.johnson@gmail.com` / `customer123`.
 Docker is the only requirement — no Python, .NET or Node needed.
 
-`--demo` pulls the ten released images from GitHub Container Registry instead of building them,
+`--demo` pulls the eleven released images from GitHub Container Registry instead of building them,
 which is the difference between roughly **one minute and roughly twelve**. Images are published for
 `linux/amd64` and `linux/arm64`, so Apple Silicon runs natively.
 
-**No API key?** `./scripts/dev.sh --demo --no-key` (PowerShell: `./scripts/dev.ps1 -Demo -NoKey`) plays back recorded model responses; see [docs/quick-start.md](docs/quick-start.md#run-without-a-paid-api-key).
+**No API key?** `./scripts/dev.sh --demo --no-key` (PowerShell: `./scripts/dev.ps1 -Demo -NoKey`) starts the whole stack with no model behind it: browsing, search, cart and checkout work, and chat replays recorded answers for the suggested prompts. Those recordings are not in the released images yet, so until they are, chat prompts report "not recorded"; the tutorials are the fully keyless path today. A local model through Ollama also needs no paid key: see [docs/quick-start.md](docs/quick-start.md#run-without-a-paid-api-key).
 
 **Building from source instead** — drop the flag. This is the contributor path, and the one to use
 if you have changed any code:
@@ -74,8 +113,6 @@ breaks: the **[Quick Start page](https://nitinksingh.com/e-commerce-agents/getti
 
 **Generative UI, not raw JSON.** The chat surface never dumps a tool result as text or a code block. Every agent response is inspected by shape and rendered as the right interactive component: a single detailed result becomes a card, a list becomes a table, a distribution or trend becomes a chart, a status becomes a tone-coded badge — see it live in the [screens gallery](https://nitinksingh.com/e-commerce-agents/getting-started/demo-guide.html) (review sentiment: rating distribution + 6-month trend, rendered from the same data an LLM would otherwise only describe in prose).
 
-**Pick your stack:** [`agents/python/`](./agents/python/) or [`agents/dotnet/`](./agents/dotnet/) — same schema, same prompts, same frontend for either (`./scripts/dev.sh --dotnet`, or `docker-compose.dotnet.yml` directly). Parity is checked by a dual-backend test gate you run locally (`scripts/e2e-both-stacks.sh`; it is not in CI yet), and [`docs/parity-matrix.md`](./docs/parity-matrix.md) lists the remaining differences row by row.
-
 **Full documentation:** **[nitinksingh.com/e-commerce-agents](https://nitinksingh.com/e-commerce-agents/)** — the concepts library, all 34 tutorial chapters, and the architecture reference, with every diagram rendered.
 
 Companion demo repo for the AI article series on [nitinksingh.com](https://nitinksingh.com):
@@ -85,8 +122,6 @@ Companion demo repo for the AI article series on [nitinksingh.com](https://nitin
 (the original Python-only walkthrough). The articles are optional background — this repo and its
 [documentation site](https://nitinksingh.com/e-commerce-agents/) are the canonical, always-current source.
 
-![AI shopping assistant with product cards](docs/images/shop-ai-assistant.png)
-
 ---
 
 ## Where to start
@@ -95,6 +130,7 @@ Companion demo repo for the AI article series on [nitinksingh.com](https://nitin
 |---|---|
 | **Learn MAF step by step** — start with no key | [tutorials/README.md](./tutorials/README.md) — 34 chapters; [run chapter 1](#learn) now |
 | **Just run it** | [Run it](#run-it) above — Docker, one command |
+| **Choose an orchestration pattern** | [The five modes](#one-orchestrator-five-orchestration-modes) · [benchmark](docs/orchestration-benchmark.md) · [orchestration patterns](docs/concepts/06-orchestration-patterns.md) |
 | Run the .NET backend, or Windows, or with no API key | [Quick Start](https://nitinksingh.com/e-commerce-agents/getting-started/quick-start.html) |
 | Configure it | [Configuration](docs/configuration.md) — one `.env`, and how it reaches each service |
 | Read the documentation | **[nitinksingh.com/e-commerce-agents](https://nitinksingh.com/e-commerce-agents/)** — rendered and searchable |
@@ -118,7 +154,7 @@ graph TB
     subgraph Orchestrator["Orchestrator Agent :8080"]
         FA["FastAPI + MAF"]
         AUTH["JWT Auth + RBAC"]
-        ROUTER["Intent Router"]
+        ROUTER["Orchestration modes<br/>tool · handoff · workflows · group chat"]
         CONV["Conversation Mgmt"]
         MKT["Marketplace API"]
     end
@@ -166,8 +202,8 @@ graph TB
     Specialists --> OAI
     Specialists -.-> AZ
 
-    style Client fill:#6366f1,stroke:#4f46e5,stroke-width:2px,color:#fff
-    style FE fill:#818cf8,stroke:#6366f1,color:#fff
+    style Client fill:#475569,stroke:#334155,stroke-width:2px,color:#fff
+    style FE fill:#94a3b8,stroke:#64748b,color:#1e293b
 
     style Orchestrator fill:#0891b2,stroke:#0e7490,stroke-width:2px,color:#fff
     style FA fill:#22d3ee,stroke:#06b6d4,color:#0c4a6e
@@ -193,7 +229,7 @@ graph TB
     style AZ fill:#fbbf24,stroke:#f59e0b,color:#78350f
 ```
 
-Six agents — five specialists behind one orchestrator — over A2A (1.0 JSON-RPC and the legacy HTTP wire, [docs/a2a.md](docs/a2a.md)), with the same schema and the
+Six agents — five specialists behind one orchestrator, which coordinates them in any of the [five modes](#one-orchestrator-five-orchestration-modes) — over A2A (1.0 JSON-RPC and the legacy HTTP wire, [docs/a2a.md](docs/a2a.md)), with the same schema and the
 same frontend for either backend. Full detail — request flow, agent internals, the database schema
 and the API surface — is in **[Architecture](https://nitinksingh.com/e-commerce-agents/architecture/)**.
 
@@ -220,8 +256,8 @@ It creates a Container Apps environment (frontend, orchestrator, five specialist
 ## Documentation
 
 Everything below is published, searchable and cross-linked at
-**[nitinksingh.com/e-commerce-agents](https://nitinksingh.com/e-commerce-agents/)** — with all
-71 Mermaid diagrams rendered as diagrams. The site is generated from this repository by
+**[nitinksingh.com/e-commerce-agents](https://nitinksingh.com/e-commerce-agents/)** — with every
+Mermaid diagram rendered as a diagram. The site is generated from this repository by
 `scripts/build_docs_site.py`, so the files here are always the source of truth; nothing lives
 only on the site.
 
@@ -267,7 +303,7 @@ checkboxes and the reasoning for the order, is on the
 
 | Next | What it is |
 |---|---|
-| **Azure and Microsoft Foundry** | The biggest gap today: there is no Azure path at all. Not one deployment — the same six agents in **three topologies** (Container Apps, Foundry as model provider, Foundry Hosted Agents), with what each one costs you. One deployment is a tutorial; three with trade-offs is a reference |
+| **Azure and Microsoft Foundry** | A Container Apps deployment is written and checked offline ([Deploy to Azure](#deploy-to-azure)) but has not yet run against a real subscription; that first deploy is next. After it: the same six agents in two more topologies (Foundry as model provider, Foundry Hosted Agents), with what each one costs you |
 | **Finish the gates** | The dual-backend parity suite runs locally but not in CI, and the .NET eval suite needs its baselines. Every parity claim this repo makes rests on a gate nobody runs automatically |
 | **Retrieval and tooling** | A typed filter DSL for `search_products`, the two MCP servers published to PyPI, and prompt caching — now measurable, because the cost counter ships |
 
@@ -298,6 +334,6 @@ This project is licensed under the [MIT License](LICENSE).
 
 ---
 
-Built with [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) and the [A2A protocol](https://google.github.io/A2A/) as its wire format (A2A 1.0 on both stacks, [docs/a2a.md](docs/a2a.md)).
+Built with [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) and the [A2A protocol](https://a2a-protocol.org/) as its wire format (A2A 1.0 on both stacks, [docs/a2a.md](docs/a2a.md)).
 
 **Built by [Nitin Singh](https://github.com/nitin27may)** &middot; [Documentation](https://nitinksingh.com/e-commerce-agents/) &middot; [More projects](https://nitinksingh.com/projects/)

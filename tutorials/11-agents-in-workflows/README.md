@@ -11,7 +11,7 @@ This is the same shape the capstone uses for real work — an agent embedded as 
 ## Prerequisites
 
 - Completed [Chapter 10 — Workflow Events and Builder](../10-workflow-events-and-builder/)
-- Repo-root `.env` with working LLM credentials — either OpenAI (`OPENAI_API_KEY`, optional `LLM_MODEL`, default `gpt-4.1`) or Azure OpenAI (`AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_KEY`, `AZURE_OPENAI_DEPLOYMENT`, optional `AZURE_OPENAI_API_VERSION`, default `2024-10-21`)
+- No API key needed: with none set, `main.py` replays recorded responses and prints one line saying so. To use a live model instead, put `OPENAI_API_KEY` (or the `AZURE_OPENAI_*` variables) in the repo-root `.env`
 
 ## The concept
 

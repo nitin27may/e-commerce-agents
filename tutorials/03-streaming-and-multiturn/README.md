@@ -12,7 +12,7 @@ These are independent concepts, but in practice every interactive chat UI needs 
 ## Prerequisites
 
 - Completed [Chapter 02 — Adding Tools](../02-add-tools/)
-- `.env` at the repo root with working credentials (`OPENAI_API_KEY`, or `AZURE_OPENAI_ENDPOINT` / `AZURE_OPENAI_KEY` / `AZURE_OPENAI_DEPLOYMENT`)
+- No API key needed: with none set, `main.py` replays recorded responses and prints one line saying so. To use a live model instead, put `OPENAI_API_KEY` (or the `AZURE_OPENAI_*` variables) in the repo-root `.env`
 
 ## The concept
 

@@ -6,7 +6,7 @@
 |------|----------------|-------|
 | Docker | 24+ | Desktop or Engine |
 | Docker Compose | v2 | Bundled with Docker Desktop; verify with `docker compose version` |
-| OpenAI API key **or** Azure OpenAI credentials | -- | At least one LLM provider must be configured |
+| OpenAI API key **or** Azure OpenAI credentials | -- | Needed for live chat. Not needed with `./scripts/dev.sh --no-key` (recorded responses) or a local OpenAI-compatible model such as Ollama; see [Quick Start](quick-start.md#run-without-a-paid-api-key) |
 | Git | 2.x | For cloning the repo |
 
 Optional for local (non-Docker) development:

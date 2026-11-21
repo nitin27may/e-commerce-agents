@@ -21,8 +21,7 @@ for the deeper "why models fabricate" material this chapter leans on rather than
 - Completed [Chapter 02 — Adding Tools](../02-add-tools/) (tool decorators, `Annotated` params)
 - Read [`docs/concepts/09-grounding-and-rag.md`](../../docs/concepts/09-grounding-and-rag.md) —
   this chapter is the hands-on companion, not a restatement
-- Repo-root `.env` with a working LLM provider (`OPENAI_API_KEY`, or `AZURE_OPENAI_ENDPOINT` +
-  `AZURE_OPENAI_KEY` + `AZURE_OPENAI_DEPLOYMENT`)
+- No API key needed: with none set, `main.py` replays recorded responses and prints one line saying so. To use a live model instead, put `OPENAI_API_KEY` (or the `AZURE_OPENAI_*` variables) in the repo-root `.env`
 
 ## The concept
 

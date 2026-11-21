@@ -1,6 +1,6 @@
 # Architecture
 
-E-Commerce Agents is a multi-agent e-commerce platform built on Microsoft Agent Framework (MAF). Six specialized agents collaborate via A2A protocol, orchestrated by a central Customer Support agent that classifies user intent and routes requests to the right specialist. The wire is documented in [a2a.md](a2a.md): the original `/message:send` pair and, on both stacks, A2A 1.0 JSON-RPC at `/a2a/v1` with an agent card at `/.well-known/agent-card.json`.
+E-Commerce Agents is a multi-agent e-commerce platform built on Microsoft Agent Framework (MAF). Six agents collaborate over the A2A protocol: five specialists and a central Customer Support orchestrator, which coordinates them in one of [five orchestration modes](#orchestration-modes), by default classifying the user's intent and routing to the right specialist. The wire is documented in [a2a.md](a2a.md): the original `/message:send` pair and, on both stacks, A2A 1.0 JSON-RPC at `/a2a/v1` with an agent card at `/.well-known/agent-card.json`.
 
 ---
 
@@ -271,6 +271,52 @@ flowchart TD
     style RETURN fill:#10b981,stroke:#059669,color:#fff
 ```
 
+### Orchestration modes
+
+"Orchestrator" here is not one routing strategy. Every chat request resolves an orchestration mode
+(request body `mode`, else `ORCHESTRATION_MODE`, else `tool`) and the orchestrator dispatches through
+it. Five are registered, on both stacks, and the web UI can switch between them per conversation,
+draw the selected mode's graph while it runs, and run one prompt through several modes side by side.
+
+```mermaid
+flowchart LR
+    REQ["POST /api/chat<br/>mode = ..."] --> REG{"Mode registry"}
+    REG --> TOOL["tool (default)<br/>model picks a specialist<br/>and calls it as a tool"]
+    REG --> HAND["handoff<br/>triage agent hands the<br/>conversation to a specialist"]
+    REG --> PRE["workflow:pre-purchase<br/>fixed graph, concurrent<br/>fan-out and fan-in"]
+    REG --> RET["workflow:return-replace<br/>fixed sequential graph<br/>with an approval gate"]
+    REG --> GC["group-chat<br/>two panelists debate,<br/>a moderator answers"]
+    RET -.->|"pauses"| HITL["Human approval<br/>checkpoint + resume"]
+    TOOL & HAND & PRE & RET & GC --> SPEC["Specialist agents<br/>over A2A"]
+
+    style REQ fill:#94a3b8,stroke:#64748b,color:#1e293b
+    style REG fill:#0891b2,stroke:#0e7490,color:#fff
+    style TOOL fill:#2dd4bf,stroke:#14b8a6,color:#134e4a
+    style HAND fill:#2dd4bf,stroke:#14b8a6,color:#134e4a
+    style PRE fill:#2dd4bf,stroke:#14b8a6,color:#134e4a
+    style RET fill:#2dd4bf,stroke:#14b8a6,color:#134e4a
+    style GC fill:#2dd4bf,stroke:#14b8a6,color:#134e4a
+    style HITL fill:#fca5a5,stroke:#f87171,color:#7f1d1d
+    style SPEC fill:#fbbf24,stroke:#f59e0b,color:#78350f
+```
+
+| Mode | Who decides the next step | Good for |
+|---|---|---|
+| `tool` | The orchestrator's model, one tool call at a time | Open-ended questions where the route is not known in advance |
+| `handoff` | The agent currently holding the conversation | Conversations that settle on one specialist |
+| `workflow:pre-purchase` | A fixed graph: reviews, alternatives and pricing gathered concurrently | A known process whose steps are independent |
+| `workflow:return-replace` | A fixed graph: check, policy gate, return, search, discount, finalize | A known process with an irreversible step that needs sign-off |
+| `group-chat` | A fixed speaking order, then a moderator | Trade-off questions that benefit from two opposing views |
+
+The workflow modes save a checkpoint at every step. When the return workflow reaches its policy
+gate it pauses before anything is created, and a staff decision resumes it from the checkpoint,
+in a later request and a different process if need be. The rest of this page describes the `tool`
+mode in detail because it is the default. For the others see
+[orchestration patterns](concepts/06-orchestration-patterns.md) (how each works),
+[the benchmark](orchestration-benchmark.md) (latency and cost of each on the same prompts),
+[approvals](approvals.md) (the pause, the policy and the decision) and
+[workflows](workflows/README.md).
+
 ---
 
 ## 5. Auth Flow
@@ -464,7 +510,7 @@ flowchart LR
 | **User Context** | Python ContextVars | Request-scoped state (email, role) set by auth middleware, read by any `@tool` function. No need to pass user info through function parameters. |
 | **DB Access** | asyncpg (raw SQL) | Maximum control over queries. No ORM overhead. Parameterized `$1, $2` syntax prevents SQL injection. Connection pool (5-20) per agent. |
 | **Telemetry** | OpenTelemetry -> .NET Aspire Dashboard | Auto-instrumented: httpx (LLM + A2A calls), asyncpg (DB queries), FastAPI (HTTP). Custom spans for A2A calls and tool execution. All correlate via trace_id. |
-| **Cache** | Redis 7 | Session data and conversation state caching. Alpine image for minimal footprint. |
+| **Cache** | Redis 8 | Sliding-window rate limiting on the chat endpoints. Alpine image for minimal footprint. |
 | **Frontend** | Next.js 16 + React 19 + Tailwind + shadcn/ui | Server Components by default, `pnpm` for package management. Minimal client-side JS. |
 | **Containerization** | Docker Compose + multi-target Dockerfile | All 6 agents share one Dockerfile with `ARG AGENT_NAME`. Each agent is a separate service with its own port. Single `docker compose up --build` to start everything. |
 | **Package Management** | `uv` (Python) + `pnpm` (Node) | `uv` for fast dependency resolution and virtual environment management. `pnpm` for disk-efficient node_modules. |

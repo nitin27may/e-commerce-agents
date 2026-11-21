@@ -28,11 +28,20 @@ This folder contains the full technical documentation for E-Commerce Agents.
 3. [MAF Best Practices](maf-best-practices.md) — `@tool` idioms, middleware, prompt YAML, ContextVars
 4. [Adding an Agent](adding-an-agent.md) — step-by-step checklist to scaffold a new specialist
 
+### "I want to choose an orchestration pattern"
+
+1. [Orchestration patterns](concepts/06-orchestration-patterns.md) — the five modes this app runs, and when each fits
+2. [Orchestration benchmark](orchestration-benchmark.md) — the same question routed five ways, with latency and cost
+3. [Architecture → Orchestration modes](architecture.md#orchestration-modes) — how a request reaches a mode
+4. [Approvals](approvals.md) — the human-in-the-loop pause, the routing policy, and resume from a checkpoint
+5. [Python vs .NET parity](parity-matrix.md) — what each backend covers
+
 ### "I want to build on top of or integrate with this"
 
 1. [API Reference](api-reference.md) — about 70 REST routes; request/response examples for the core surface, tables for the rest
-2. [MCP Integration](mcp-integration.md) — MCP servers (MCPServer), how to enable, how to inspect
-3. [Database Schema](database-schema.md) — 45 tables (34 baseline plus 11 from migrations) with ER diagram and gotchas
+2. [A2A](a2a.md) — the A2A 1.0 endpoint and agent card every specialist serves, and cross-stack interop
+3. [MCP Integration](mcp-integration.md) — MCP servers (MCPServer), how to enable, how to inspect
+4. [Database Schema](database-schema.md) — 45 tables (34 baseline plus 11 from migrations) with ER diagram and gotchas
 
 ### "I care about quality, security, or observability"
 
@@ -80,9 +89,12 @@ This folder contains the full technical documentation for E-Commerce Agents.
 | [roadmap.md](roadmap.md) | What shipped, what is next, what is deliberately not planned |
 | [orchestration-benchmark.md](orchestration-benchmark.md) | The same question routed five ways, with latency and cost |
 | [reported-vs-actual.md](reported-vs-actual.md) | Bugs that turned out bigger than the report said, and how each was found |
+| [azure-deployment.md](azure-deployment.md) | Draft Container Apps deployment: topology, scripts, costs, assumptions still to confirm |
+| [workflows/](workflows/README.md) | The workflow graphs behind the two workflow modes |
+| [adr/](adr/README.md) | Architecture decision records |
 
 ---
 
 ## Diagrams
 
-37 Mermaid diagrams are embedded across these docs (they render as diagrams on the published site). The static system architecture image is [`architecture.png`](architecture.png) (editable source: [`architecture.drawio`](architecture.drawio)). Screenshots of the running application are in [`images/`](images/).
+Mermaid diagrams are embedded across these docs (they render as diagrams on the published site). The static system architecture image is [`architecture.png`](architecture.png) (editable source: [`architecture.drawio`](architecture.drawio)). Screenshots of the running application are in [`images/`](images/).
