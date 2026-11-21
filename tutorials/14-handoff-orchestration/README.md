@@ -175,13 +175,13 @@ The .NET tests ([`dotnet/tests/HandoffTests.cs`](./dotnet/tests/HandoffTests.cs)
 
 ## How this shows up in the capstone
 
-In the capstone, handoff is one of the ways the orchestrator can get a shopper's question to the right specialist agent (product discovery, orders, pricing, and so on): control passes to the specialist, whose answer is the answer. It is one of the application's selectable orchestration modes, `handoff`, and both stacks have it: `HandoffMode` at `agents/python/orchestrator/modes/handoff_mode.py:28` and `agents/dotnet/src/ECommerceAgents.Orchestrator/Modes/HandoffMode.cs`.
+In the capstone, handoff is one of the ways the orchestrator can get a shopper's question to the right specialist agent (product discovery, orders, pricing, and so on): control passes to the specialist, whose answer is the answer. It is one of the application's selectable orchestration modes, `handoff`, and both stacks have it: `HandoffMode` in `agents/python/orchestrator/modes/handoff_mode.py` and `agents/dotnet/src/ECommerceAgents.Orchestrator/Modes/HandoffMode.cs`.
 
 To watch it handle a real request, pick "Handoff Mesh" from the Mode dropdown above the chat box in the running application.
 
-- `build_orchestrator_handoff_workflow()` at `agents/python/orchestrator/handoff.py:89` builds the `HandoffBuilder` mesh. The orchestrator is the start agent, with one edge to each remote specialist (`agents/python/orchestrator/handoff.py:120`) and a handoff back to the orchestrator from each specialist (`agents/python/orchestrator/handoff.py:121-122`).
+- `build_orchestrator_handoff_workflow()` in `agents/python/orchestrator/handoff.py` builds the `HandoffBuilder` mesh. The orchestrator is the start agent, with one edge to each remote specialist (`builder.add_handoff(orchestrator, specialists)`) and a handoff back to the orchestrator from each specialist (`builder.add_handoff(specialist, [orchestrator])`).
 - Every specialist is a `RemoteSpecialistChatClient` (`agents/python/shared/remote_agent.py`) wrapped in an `Agent`. Handoffs therefore still travel over A2A, the agent-to-agent HTTP protocol the specialists are served on. Handoff is the routing mechanism; A2A stays the transport.
-- `HandoffMode.run()` (`agents/python/orchestrator/modes/handoff_mode.py:42`) reads the workflow's event stream the way this chapter's `ask()` does: it assembles text per executor id from `output` events.
+- `HandoffMode.run()` (`agents/python/orchestrator/modes/handoff_mode.py`) reads the workflow's event stream the way this chapter's `ask()` does: it assembles text per executor id from `output` events.
 - The default mode is `tool`, where the orchestrator's LLM calls a `call_specialist_agent` tool. `handoff` runs only when a request selects it (`mode="handoff"` on `/api/chat`) or the deployment sets `ORCHESTRATION_MODE=handoff`.
 
 ## What's next

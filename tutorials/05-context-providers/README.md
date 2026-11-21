@@ -185,9 +185,9 @@ The Python unit tests prove that the injected name, tier and email reach the cha
 
 In the full application, context providers are how every agent knows the logged-in shopper's name, loyalty tier and recent orders without the shopper repeating them.
 
-- `agents/python/shared/context_providers.py:35` defines `UserProfileProvider`, the application's version of this chapter's example. It looks up the `users` row for the current request's email (`shared.context.current_user_email`) and calls `context.extend_instructions("user-profile", ...)` with name, role, loyalty tier and total spend.
+- `agents/python/shared/context_providers.py` defines `UserProfileProvider`, the application's version of this chapter's example. It looks up the `users` row for the current request's email (`shared.context.current_user_email`) and calls `context.extend_instructions("user-profile", ...)` with name, role, loyalty tier and total spend.
 - The same file defines `RecentOrdersProvider` and `AgentMemoriesProvider`, which compose the same way, and `ECommerceContextProvider`, a composite that runs all three and also assembles their output into one `state["user_context"]` string.
-- `agents/python/product_discovery/agent.py:92` passes `context_providers=[ECommerceContextProvider()]` to `Agent(...)`. The orchestrator and the other specialist agents pass the same argument, the way this chapter's `build_agent()` does.
+- `create_product_discovery_agent()` in `agents/python/product_discovery/agent.py` passes `context_providers=[ECommerceContextProvider()]` to `Agent(...)`. The orchestrator and the other specialist agents pass the same argument, the way this chapter's `build_agent()` does.
 
 ## What's next
 

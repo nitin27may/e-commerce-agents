@@ -173,45 +173,43 @@ because that is the only way to tell a round-table from a fan-out.
 - **You look for a `max_rounds` setting and there is none.** Chapter 15's
   manager-driven group chat needs a cap to stop a selector that might never terminate.
   This workflow has no loop to cap. `GroupChatWorkflow._build()`
-  (`agents/python/workflows/group_chat.py:117-126`) wires a straight chain,
+  (`agents/python/workflows/group_chat.py`) wires a straight chain,
   `panelist[0] -> panelist[1] -> ... -> moderator`, from the order of the `panelists`
   list. The debate is always exactly `len(panelists)` turns long. To get more turns,
   add another `(name, responder)` pair.
 - **A panelist's turn reads "(name could not respond: ...)" and the run still
-  succeeds.** `_PanelistExecutor.run()` (`agents/python/workflows/group_chat.py:69-84`)
+  succeeds.** `_PanelistExecutor.run()` (`agents/python/workflows/group_chat.py`)
   wraps the responder call in `try/except`. On failure it logs
   `group_chat.panelist_failed`, appends `"({name} could not respond: {exc})"` as that
   panelist's turn, and lets the chain continue, so the moderator still gives a verdict.
   A broken panelist (a bad prompt, an LLM timeout) therefore raises no error to the
   caller. Check the logs or look for the placeholder text. The one exception is a
   missing replay recording, which is re-raised. See `test_panelist_failure_is_contained`
-  (`agents/python/tests/test_workflow_group_chat.py:41-48`).
+  (`agents/python/tests/test_workflow_group_chat.py`).
 - **A coroutine object shows up in the transcript instead of text.** That is what an
   `async` responder would produce if nothing awaited it. `Responder` accepts sync or
   async callables, and `_PanelistExecutor.run()` checks `inspect.isawaitable(result)`
-  before awaiting (`agents/python/workflows/group_chat.py:72-73`). An agent-backed
+  before awaiting. An agent-backed
   panelist, an `async def` closure that calls `agent.run()`, therefore fits without
   `workflows/group_chat.py` knowing anything about MAF `Agent` objects.
   `test_async_responder_is_awaited`
-  (`agents/python/tests/test_workflow_group_chat.py:61-76`) guards this.
+  (`agents/python/tests/test_workflow_group_chat.py`) guards this.
 
 ## How this shows up in the capstone
 
 In the capstone, a user picks **group-chat** in the chat UI's mode switcher and gets a
 verdict that a value panelist and a quality panelist have argued over first. The class
 behind it is the one this chapter runs: `GroupChatWorkflow`
-(`agents/python/workflows/group_chat.py:105`). Both
+(`agents/python/workflows/group_chat.py`). Both
 `tutorials/22-group-chat-debate/python/main.py` and
 `agents/python/tests/test_workflow_group_chat.py` import it from
 `workflows.group_chat`. No second copy of the pattern lives under `tutorials/`.
 
 The application's caller is `GroupChatMode`
-(`agents/python/orchestrator/modes/group_chat_mode.py:74`), registered in the
+(`agents/python/orchestrator/modes/group_chat_mode.py`), registered in the
 orchestrator as the `group-chat` mode. It uses the same two panelist names as this
-chapter's demo, `value` and `quality` (`_PANEL_PROMPTS` at
-`agents/python/orchestrator/modes/group_chat_mode.py:33`). In place of the plain
-callables above, `_make_agent_responder()`
-(`agents/python/orchestrator/modes/group_chat_mode.py:45-71`) builds an `Agent` per
+chapter's demo, `value` and `quality` (`_PANEL_PROMPTS` in the same file). In place of the plain
+callables above, `_make_agent_responder()` builds an `Agent` per
 panelist and awaits `agent.run(...)`. That is the case the async-responder gotcha
 describes.
 

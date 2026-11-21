@@ -176,7 +176,7 @@ The aggregator makes no LLM call, so it adds no latency on top of the slowest br
 - **Rate-limit errors appear sooner than with a sequential chain.** All three LLM calls fire at the same moment. If your provider enforces concurrency limits (Azure OpenAI TPM/RPM quotas), a wider fan-out reaches them faster.
 - **Responses arrive in a different order on each run.** Agents complete as they finish, not in the order you listed them. Do not assume `researcher`'s event arrives before `marketer`'s; key on the executor id.
 - **One agent cannot see another's answer.** Concurrent participants never see each other's output while running. If one branch needs another's result, use Sequential or a custom graph.
-- **The .NET summary is a plain concatenation, not a written synthesis.** The aggregator here makes no LLM call. If you want an LLM-written summary, call an agent inside `SynthesizeReview` — the signature is on an async boundary, so awaiting is safe there.
+- **The .NET summary is a plain concatenation, not a written synthesis.** The aggregator here makes no LLM call, and it cannot await one: `BuildConcurrent` takes a synchronous `Func<IList<List<ChatMessage>>, List<ChatMessage>>`, and `SynthesizeReview` returns its list directly. If you want an LLM-written summary, run a summarising agent as a separate step on the aggregated messages after the fan-in.
 
 ## Tests
 
@@ -193,11 +193,11 @@ The .NET tests ([`dotnet/tests/ConcurrentTests.cs`](./dotnet/tests/ConcurrentTes
 
 ## How this shows up in the capstone
 
-In the capstone, concurrent orchestration answers "should I buy this?": it looks up a product's reviews, stock and price history at the same time, then writes one recommendation. It is one of the application's selectable orchestration modes, `workflow:pre-purchase`, and both stacks have it: `PrePurchaseMode` at `agents/python/orchestrator/modes/workflow_mode.py:96` and `agents/dotnet/src/ECommerceAgents.Orchestrator/Modes/PrePurchaseMode.cs`.
+In the capstone, concurrent orchestration answers "should I buy this?": it looks up a product's reviews, stock and price history at the same time, then writes one recommendation. It is one of the application's selectable orchestration modes, `workflow:pre-purchase`, and both stacks have it: `PrePurchaseMode` in `agents/python/orchestrator/modes/workflow_mode.py` and `agents/dotnet/src/ECommerceAgents.Orchestrator/Modes/PrePurchaseMode.cs`.
 
 To watch it handle a real request, pick "Pre-Purchase Research (fan-out/fan-in)" from the Mode dropdown above the chat box in the running application.
 
-The Python workflow is in `agents/python/workflows/pre_purchase.py`. Its `_build_maf_workflow()` method (`agents/python/workflows/pre_purchase.py:291`) builds the fan-out and fan-in with `WorkflowBuilder` instead of `ConcurrentBuilder`:
+The Python workflow is in `agents/python/workflows/pre_purchase.py`. Its `_build_maf_workflow()` method builds the fan-out and fan-in with `WorkflowBuilder` instead of `ConcurrentBuilder`:
 
 ```python
 return (

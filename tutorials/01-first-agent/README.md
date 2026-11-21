@@ -198,7 +198,7 @@ In both languages a stub chat client (`CannedChatClient` in Python, `StubChatCli
 
 ## How this shows up in the capstone
 
-Every agent in the full application in this repo (the capstone) is built this way. The orchestrator, the agent that receives each shopper's chat message and routes it to a specialist, is constructed at `agents/python/orchestrator/agent.py:415`:
+Every agent in the full application in this repo (the capstone) is built this way. The orchestrator, the agent that receives each shopper's chat message and routes it to a specialist, is constructed by `create_orchestrator_agent()` in `agents/python/orchestrator/agent.py`:
 
 ```python
 def create_orchestrator_agent() -> Agent:
@@ -216,7 +216,7 @@ def create_orchestrator_agent() -> Agent:
     )
 ```
 
-It is the same `client`, `instructions` and `name` from this chapter, plus `tools`, `context_providers` and `middleware`, which later chapters teach one at a time. Every specialist agent has the same shape; `agents/python/product_discovery/agent.py:85` is one example.
+It is the same `client`, `instructions` and `name` from this chapter, plus `tools`, `context_providers` and `middleware`, which later chapters teach one at a time. Every specialist agent has the same shape; `create_product_discovery_agent()` in `agents/python/product_discovery/agent.py` is one example.
 
 ## What's next
 

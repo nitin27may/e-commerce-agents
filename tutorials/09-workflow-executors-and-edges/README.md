@@ -189,9 +189,9 @@ Both suites ([`python/tests/test_workflow.py`](./python/tests/test_workflow.py),
 
 The capstone's pre-purchase research uses executors and edges to answer "should I buy this?": it looks up reviews, stock and price history at the same time, then writes one recommendation. The graph is wider than this chapter's chain. It fans out (sends one message to several executors at once) and fans in (waits for all of them before continuing).
 
-`agents/python/workflows/pre_purchase.py` defines one `Executor` subclass per parallel data source: `_ReviewsExecutor` (`agents/python/workflows/pre_purchase.py:60`), `_StockExecutor` (`agents/python/workflows/pre_purchase.py:87`) and `_PriceHistoryExecutor` (`agents/python/workflows/pre_purchase.py:110`). `_MergeAndShipExecutor` (`agents/python/workflows/pre_purchase.py:133`) is the fan-in step and `_SynthesisExecutor` (`agents/python/workflows/pre_purchase.py:173`) is the last node.
+`agents/python/workflows/pre_purchase.py` defines one `Executor` subclass per parallel data source: `_ReviewsExecutor`, `_StockExecutor` and `_PriceHistoryExecutor`. `_MergeAndShipExecutor` is the fan-in step and `_SynthesisExecutor` is the last node.
 
-`PrePurchaseWorkflow._build_maf_workflow()` (`agents/python/workflows/pre_purchase.py:291`) wires them with two edge helpers this chapter's demo does not need:
+`PrePurchaseWorkflow._build_maf_workflow()`, in the same file, wires them with two edge helpers this chapter's demo does not need:
 
 ```python
 return (

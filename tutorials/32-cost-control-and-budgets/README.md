@@ -236,18 +236,18 @@ The Python tests drive the middleware directly with a hand-built context. They p
 
 Every specialist agent and the orchestrator in the application run with a cost budget middleware. It adds up the estimated cost of each model call in a request and, in `enforce` mode, stops the request with a refusal message once it passes the configured ceiling.
 
-That middleware is `CostBudgetMiddleware`, at `agents/python/shared/guardrails/cost_budget_middleware.py:147`. Its `process()` method (`agents/python/shared/guardrails/cost_budget_middleware.py:161`) is the check-before, record-after pattern this chapter teaches. The one structural difference is the accumulator. The application reads and writes `current_run_cost_usd`, a `ContextVar` (`agents/python/shared/guardrails/cost_budget_middleware.py:75`), so concurrent requests never see each other's running total.
+That middleware is `CostBudgetMiddleware`, in `agents/python/shared/guardrails/cost_budget_middleware.py`. Its `process()` method is the check-before, record-after pattern this chapter teaches. The one structural difference is the accumulator. The application reads and writes `current_run_cost_usd`, a `ContextVar` in the same file, so concurrent requests never see each other's running total.
 
-It joins the standard middleware stack in `build_specialist_middleware()` (`agents/python/shared/middleware.py:186`), gated on the mode flag at `agents/python/shared/middleware.py:234-235`:
+It joins the standard middleware stack in `build_specialist_middleware()` (`agents/python/shared/middleware.py`), gated on the mode flag:
 
 ```python
 if settings.COST_BUDGET_MODE != "off":
     stack.append(CostBudgetMiddleware())
 ```
 
-Both settings live in `agents/python/shared/config.py`: `COST_BUDGET_MODE: str = "observe"` at `agents/python/shared/config.py:491`, and `COST_BUDGET_USD_PER_RUN: float | None = None` at `agents/python/shared/config.py:496`.
+Both settings live in `agents/python/shared/config.py`: `COST_BUDGET_MODE` (default `"observe"`) and `COST_BUDGET_USD_PER_RUN` (default `None`).
 
-The conversion from token counts to dollars is `estimate_cost()` at `agents/python/shared/cost.py:107`, which this chapter's `estimate_cost_usd()` reduces to one model's pricing. `agents/python/tests/test_cost_budget.py` is the application's test suite for the middleware, and this chapter's middleware tests follow its shape.
+The conversion from token counts to dollars is `estimate_cost()` in `agents/python/shared/cost.py`, which this chapter's `estimate_cost_usd()` reduces to one model's pricing. `agents/python/tests/test_cost_budget.py` is the application's test suite for the middleware, and this chapter's middleware tests follow its shape.
 
 ## What's next
 

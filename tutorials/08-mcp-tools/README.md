@@ -219,8 +219,8 @@ The .NET tests ([`dotnet/tests/McpToolsTests.cs`](./dotnet/tests/McpToolsTests.c
 In the capstone, two specialist agents can read product and inventory data through MCP servers instead of querying the database themselves, so the same tools are available to any other MCP client.
 
 - `agents/python/packages/mcp-product/src/ecommerce_mcp_product/server.py` and `agents/python/packages/mcp-inventory/src/ecommerce_mcp_inventory/server.py` are `MCPServer` apps. They expose product search, details and pricing, and inventory and warehouse data, over **Streamable HTTP** instead of stdio, because they run as standalone services: `mcp-product` on port 9000 and `mcp-inventory` on port 9001 (the `mcp` profile in `docker-compose.yml`).
-- `agents/python/product_discovery/agent.py:68` builds an `MCPStreamableHTTPTool` pointed at `settings.MCP_PRODUCT_SERVER_URL` when `settings.MCP_ENABLED` is true. It passes the tool into the agent's `tools` list next to locally defined tools such as `semantic_search` and `check_stock`. That is the pattern from this chapter's Python client, over HTTP instead of stdio. With `settings.MCP_AUTH_ENABLED`, the server also requires an OAuth 2.1 access token, which `shared/oauth/service_client.py` supplies.
-- `agents/python/inventory_fulfillment/agent.py` makes the same choice between MCP and direct tools for the inventory domain.
+- `create_product_discovery_agent()` in `agents/python/product_discovery/agent.py` builds an `MCPStreamableHTTPTool` pointed at `settings.MCP_PRODUCT_SERVER_URL` when `settings.MCP_ENABLED` is true. It passes the tool into the agent's `tools` list next to locally defined tools such as `semantic_search` and `check_stock`. That is the pattern from this chapter's Python client, over HTTP instead of stdio. With `settings.MCP_AUTH_ENABLED`, the server also requires an OAuth 2.1 access token, which `shared/oauth/service_client.py` supplies.
+- `create_inventory_fulfillment_agent()` in `agents/python/inventory_fulfillment/agent.py` makes the same choice between MCP and direct tools for the inventory domain.
 
 ## What's next
 
