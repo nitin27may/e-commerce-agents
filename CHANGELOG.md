@@ -140,6 +140,13 @@ they landed before the infrastructure work rather than during it.
 
 ### Fixed
 
+- **.NET Azure OpenAI chat threw `MissingMethodException` at request time.** `Azure.AI.OpenAI` 2.1.0 was pinned
+  next to the much newer `OpenAI` 2.14.0 that `Microsoft.Agents.AI.OpenAI` brings in, and
+  `AzureChatClient.PostfixSwapMaxTokens` called `ChatCompletionOptions.get_SerializedAdditionalRawData`, which no
+  longer exists. Any call through the SDK's native `ChatClient` that set a max token count failed before the request
+  was sent, in key mode as well. `Azure.AI.OpenAI` is now `2.9.0-beta.1` (no stable release is newer than 2.1.0).
+  `ChatClientFactory.CreateChatClient` takes an optional `HttpClient` so `AzureOpenAiChatClientTests` can drive the
+  real SDK against a stub handler. Not exercised: a live call to Azure.
 - **`AGENT_REGISTRY` degraded silently instead of failing.** Filed as "hardcoded host:port"; the
   actual problem was larger. A validating parser already existed on both stacks, was tested, and
   **no production call site used it** — all four sites re-parsed the JSON by hand, and three

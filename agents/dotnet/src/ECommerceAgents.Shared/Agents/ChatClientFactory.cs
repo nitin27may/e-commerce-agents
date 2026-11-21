@@ -1,4 +1,5 @@
 using System.ClientModel;
+using System.ClientModel.Primitives;
 using Anthropic;
 using Azure.AI.OpenAI;
 using Azure.Core;
@@ -118,16 +119,29 @@ public static class ChatClientFactory
 
     /// <summary>
     /// The concrete OpenAI SDK client, kept for callers that need SDK-specific surface.
-    /// Prefer <see cref="Create"/>.
+    /// Prefer <see cref="Create"/>. <paramref name="httpClient"/> exists so a test can put a stub handler
+    /// under the real SDK.
     /// </summary>
-    public static ChatClient CreateChatClient(AgentSettings settings) => CreateChatClient(settings, null, null);
+    public static ChatClient CreateChatClient(AgentSettings settings) =>
+        CreateChatClient(settings, null, null, null);
+
+    /// <summary>The same client over a caller-supplied <see cref="HttpClient"/> (a stub handler in tests).</summary>
+    public static ChatClient CreateChatClient(AgentSettings settings, HttpClient? httpClient) =>
+        CreateChatClient(settings, null, null, httpClient);
 
     /// <summary>
     /// <paramref name="credential"/> and <paramref name="options"/> exist so a test can put a fake
     /// <see cref="TokenCredential"/> and a stub transport under the real SDK; production passes neither.
     /// </summary>
     public static ChatClient CreateChatClient(
-        AgentSettings settings, TokenCredential? credential, AzureOpenAIClientOptions? options)
+        AgentSettings settings, TokenCredential? credential, AzureOpenAIClientOptions? options) =>
+        CreateChatClient(settings, credential, options, null);
+
+    private static ChatClient CreateChatClient(
+        AgentSettings settings,
+        TokenCredential? credential,
+        AzureOpenAIClientOptions? options,
+        HttpClient? httpClient)
     {
         if (string.Equals(settings.LlmProvider, "azure", StringComparison.OrdinalIgnoreCase))
         {
@@ -151,11 +165,17 @@ public static class ChatClientFactory
                 );
             }
 
+            var azureOptions = options ?? new AzureOpenAIClientOptions();
+            if (httpClient is not null)
+            {
+                azureOptions.Transport = new HttpClientPipelineTransport(httpClient);
+            }
+
             var endpoint = new Uri(settings.AzureOpenAiEndpoint);
             var azureClient = AzureIdentity.IsIdentity(settings)
                 // No key is read or sent: the SDK asks the credential for a bearer token.
-                ? new AzureOpenAIClient(endpoint, credential ?? AzureIdentity.CreateCredential(settings), options)
-                : new AzureOpenAIClient(endpoint, new ApiKeyCredential(settings.AzureOpenAiKey), options);
+                ? new AzureOpenAIClient(endpoint, credential ?? AzureIdentity.CreateCredential(settings), azureOptions)
+                : new AzureOpenAIClient(endpoint, new ApiKeyCredential(settings.AzureOpenAiKey), azureOptions);
             return azureClient.GetChatClient(settings.AzureOpenAiDeployment);
         }
 
@@ -170,6 +190,11 @@ public static class ChatClientFactory
         // but the SDK still requires a non-empty one, hence the check above
         // applying either way.
         var openAiOptions = new OpenAIClientOptions();
+        if (httpClient is not null)
+        {
+            openAiOptions.Transport = new HttpClientPipelineTransport(httpClient);
+        }
+
         if (!string.IsNullOrWhiteSpace(settings.LlmBaseUrl))
         {
             openAiOptions.Endpoint = new Uri(settings.LlmBaseUrl);
