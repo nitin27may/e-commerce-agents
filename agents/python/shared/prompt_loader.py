@@ -42,6 +42,22 @@ def _load_yaml(path: Path) -> dict:
         return yaml.safe_load(f) or {}
 
 
+def load_raw_prompt(name: str) -> str:
+    """Return the ``prompt:`` string of ``config/prompts/{name}.yaml`` verbatim.
+
+    For prompts that are not agent system prompts (group-chat panelists, the eval judge). Unlike
+    ``load_prompt`` nothing is composed in (no grounding rules, schema context or role text), because
+    replay fixtures are keyed by the exact instruction text. Raises if the file or key is missing.
+    """
+    path = PROMPTS_DIR / f"{name}.yaml"
+    if not path.exists():
+        raise FileNotFoundError(f"No raw prompt file at {path}")
+    text = _load_yaml(path).get("prompt")
+    if not isinstance(text, str) or not text:
+        raise ValueError(f"{path.name}: expected a non-empty 'prompt' string")
+    return text
+
+
 def load_prompt(agent_name: str, user_role: str = "customer") -> str:
     """Load and compose the system prompt for an agent.
 

@@ -49,6 +49,27 @@ public sealed class PromptLoader
         _promptsRoot = promptsRoot;
     }
 
+    /// <summary>
+    /// The <c>prompt:</c> string of <c>config/prompts/{name}.yaml</c>, verbatim: nothing is composed in
+    /// (no grounding rules, schema context or role text). For group-chat panelists and the like, whose
+    /// text must match the Python stack exactly. Python twin: <c>load_raw_prompt</c>.
+    /// </summary>
+    public string LoadRaw(string name)
+    {
+        var path = Path.Combine(_promptsRoot, $"{name}.yaml");
+        if (!File.Exists(path))
+        {
+            throw new FileNotFoundException($"No raw prompt file for '{name}' at '{path}'.");
+        }
+
+        var config = _yaml.Deserialize<Dictionary<string, object>>(File.ReadAllText(path))
+                     ?? new Dictionary<string, object>();
+        var text = ExtractString(config, "prompt");
+        return string.IsNullOrEmpty(text)
+            ? throw new InvalidOperationException($"{name}.yaml: expected a non-empty 'prompt' string.")
+            : text;
+    }
+
     /// <summary>Compose the full system prompt for <paramref name="agentName"/> in <paramref name="userRole"/>.</summary>
     public string Load(string agentName, string? userRole = null)
     {

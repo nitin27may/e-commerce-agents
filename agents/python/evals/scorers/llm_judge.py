@@ -23,19 +23,11 @@ import logging
 
 from pydantic import BaseModel, Field, ValidationError
 
+from shared.prompt_loader import load_raw_prompt
+
 logger = logging.getLogger(__name__)
 
-_JUDGE_INSTRUCTIONS = (
-    "You are grading an AI shopping assistant's response for relevance and completeness. "
-    "Given the user's question, the fields it was expected to cover, and the assistant's "
-    "actual response, judge substance, not phrasing — a response that conveys a price "
-    "without the literal word 'price' still counts. "
-    "Reply with ONLY a JSON object, no other text: "
-    '{"score": <float 0.0-1.0>, "reasoning": "<one sentence>", "failure_mode": <string or null>}. '
-    "score 1.0 = fully relevant and complete, 0.5 = partially answers or misses some expected "
-    "content, 0.0 = irrelevant or empty. failure_mode is a short label when score < 1.0 "
-    '(e.g. "missing_field", "off_topic", "empty_response"), else null.'
-)
+_JUDGE_INSTRUCTIONS = load_raw_prompt("_eval/completeness-judge")
 
 
 class JudgeVerdict(BaseModel):

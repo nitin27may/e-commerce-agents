@@ -25,25 +25,19 @@ namespace ECommerceAgents.Orchestrator.Modes;
 /// The builder's round-robin manager is designed for agents conversing until a
 /// termination condition, whereas this is a fixed two-panelists-then-moderator shape
 /// whose value is being explainable — matching Python's implementation, which made the
-/// same choice for the same reason. The panel prompts are copied from it verbatim so
-/// both stacks answer a question the same way.
+/// same choice for the same reason. The panel prompts are read from the same
+/// YAML files (<c>group-chat-*.yaml</c>), so both stacks answer a question the same way.
 /// </remarks>
 public sealed class GroupChatMode(AgentSettings settings, PromptLoader prompts) : IOrchestrationMode
 {
     private readonly AgentSettings _settings = settings;
     private readonly PromptLoader _prompts = prompts;
 
-    /// <summary>Panelist name → its angle. Copied from Python's <c>_PANEL_PROMPTS</c>.</summary>
-    private static readonly (string Name, string Instructions)[] Panel =
+    /// <summary>Panelist name → its angle, from the same YAML Python reads (<c>group-chat-{name}.yaml</c>).</summary>
+    private readonly (string Name, string Instructions)[] _panel =
     [
-        ("value",
-            "You are the value/pricing panelist on a purchase-decision round-table. "
-            + "Given the question and what's been said so far, give a short (2-3 sentence) "
-            + "take from a price-and-value angle only. Don't repeat prior speakers."),
-        ("quality",
-            "You are the quality/reviews panelist on a purchase-decision round-table. "
-            + "Given the question and what's been said so far, give a short (2-3 sentence) "
-            + "take from a build-quality-and-reviews angle only. Don't repeat prior speakers."),
+        ("value", prompts.LoadRaw("group-chat-value")),
+        ("quality", prompts.LoadRaw("group-chat-quality")),
     ];
 
     private const string ModeratorInstructions =
@@ -81,7 +75,7 @@ public sealed class GroupChatMode(AgentSettings settings, PromptLoader prompts) 
         var transcript = new List<(string Speaker, string Text)>();
         var spoke = new List<string>();
 
-        foreach (var (name, instructions) in Panel)
+        foreach (var (name, instructions) in _panel)
         {
             ctx.Events?.Report(OrchestrationEvent.NodeEnter($"panel-{name}"));
 
