@@ -265,6 +265,7 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={isDisabled}
+                    aria-label="Attach image"
                     className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
                   >
                     <Paperclip className="h-4 w-4" />
@@ -305,7 +306,7 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
                       disabled={isDisabled}
                       aria-haspopup="listbox"
                       aria-expanded={modeMenuOpen}
-                      aria-label="Specialist"
+                      aria-label={`Specialist: ${currentMode.label}`}
                       className={cn(
                         "flex h-8 items-center gap-1 rounded-full px-2.5 text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-40",
                         agentMode === null
@@ -361,7 +362,7 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
               </div>
 
               {/* Keyboard hint */}
-              <span className="hidden select-none text-xs text-muted-foreground/50 sm:block">
+              <span className="hidden select-none text-xs text-muted-foreground sm:block">
                 Enter to send · Shift+Enter newline
               </span>
 
@@ -372,12 +373,13 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
                     type="button"
                     onClick={handleSubmit}
                     disabled={!hasContent && !isLoading}
+                    aria-label={isLoading ? "Stop" : "Send message"}
                     whileTap={{ scale: 0.88 }}
                     transition={{ type: "spring", stiffness: 400, damping: 17 }}
                     className={cn(
                       "flex h-8 w-8 items-center justify-center rounded-full transition-all duration-200",
                       isLoading
-                        ? "bg-red-500 text-white hover:bg-red-600"
+                        ? "bg-destructive text-white hover:bg-destructive/90"
                         : hasContent
                           ? "bg-teal-600 text-white hover:bg-teal-700"
                           : "bg-muted text-muted-foreground"

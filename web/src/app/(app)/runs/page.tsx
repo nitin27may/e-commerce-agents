@@ -257,7 +257,7 @@ function RunRow({
               <span>{entry.tokens_in + entry.tokens_out} tokens</span>
             )}
             {agentsInvolved.length > 0 && (
-              <span className="text-muted-foreground/60">
+              <span className="text-muted-foreground">
                 {agentsInvolved.join(" → ")}
               </span>
             )}
