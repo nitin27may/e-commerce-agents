@@ -1,0 +1,45 @@
+name: Infra (offline)
+
+# Compiles and lints the Bicep under infra/ and runs the offline pytest. No
+# Azure credentials, no `az login`, no deployment, no what-if: nothing here
+# talks to Azure.
+
+on:
+  pull_request:
+    paths:
+      - "infra/**"
+      - "agents/python/tests/test_infra_bicep.py"
+      - ".github/workflows/infra-offline.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  bicep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the Bicep CLI
+        run: |
+          curl -fsSLo bicep https://github.com/Azure/bicep/releases/latest/download/bicep-linux-x64
+          chmod +x bicep
+          sudo mv bicep /usr/local/bin/bicep
+          bicep --version
+      - name: Build and lint main.bicep and every module
+        working-directory: infra
+        run: |
+          bicep build main.bicep --stdout > /dev/null
+          bicep lint main.bicep
+          for f in modules/*.bicep; do bicep lint "$f"; done
+      - name: Build every profile combination (demo/reference, mini model on/off)
+        working-directory: infra
+        run: |
+          for f in ci/*.bicepparam; do
+            echo "== $f"
+            bicep build-params "$f" --stdout > /dev/null
+          done
+      - uses: astral-sh/setup-uv@v5
+      - name: Offline infra tests
+        working-directory: agents/python
+        run: uv run --extra dev pytest tests/test_infra_bicep.py -v
