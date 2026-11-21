@@ -1,9 +1,5 @@
 # Observability and cost
 
-> **New to this?** [Observability](https://nitinksingh.com/ai-resources/02-agents/observability/) on the AI Knowledge Hub covers the
-> same ground from scratch, vendor-neutral, with a lab you can run locally for free.
-> This page assumes the concept and shows how it is built *here*.
-
 ## What it is
 
 Observability, here, means being able to answer "what actually happened during this request" after
@@ -58,7 +54,7 @@ invoke_agent orchestrator            ← agent_run_span, in the orchestrator's o
 this process did. `a2a_call_span(source_agent, target_agent, target_url)` wraps the
 network call *between* two agents — `SpanKind.CLIENT`, deliberately so a distributed trace
 correctly shows "the orchestrator was waiting on a network call here," not just "the orchestrator
-was busy." Both use the same `invoke_agent {name}` naming convention (lines 245, 271), which is
+was busy." Both use the same `invoke_agent {name}` naming convention, which is
 what lets Aspire nest them correctly instead of showing three unrelated-looking spans.
 `enrich_span_with_session()` tags the active span with `gen_ai.conversation.id` so every
 span from the same conversation — across every service it touched — can be grouped together in
@@ -94,5 +90,7 @@ flowchart LR
   class otlp,aspire infra
 ```
 
-Next: [production concerns](14-production-concerns.md) — idempotency, retries, rate limits, and an
-honest look at which of these this repo actually has.
+**Build it yourself:** [Chapter 07: observability with OpenTelemetry](../../tutorials/07-observability-otel/README.md) and [Chapter 32: cost control and budgets](../../tutorials/32-cost-control-and-budgets/README.md). **In the application:** `agents/python/shared/telemetry.py` and `agents/python/shared/cost.py`.
+
+Next: [production concerns](14-production-concerns.md) — idempotency, retries, rate limits, and where
+each one lives in this repo.

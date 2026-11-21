@@ -51,3 +51,8 @@ still stand.
 
 The 34 tables are the frozen baseline; migrations add 11 more, 45 in all. See
 [database-schema.md](../database-schema.md).
+
+The tool count is now 57, not forty-six: 56 domain tools plus the orchestrator's
+`call_specialist_agent`. That is every `@tool`-decorated function under `agents/python`,
+excluding tests, docstring examples and the two MCP server packages (which expose 10 more
+tools of their own). The decision and its cost are unchanged.

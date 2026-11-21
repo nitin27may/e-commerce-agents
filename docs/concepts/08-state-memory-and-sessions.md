@@ -1,9 +1,5 @@
 # State, memory, and sessions
 
-> **New to this?** [Context engineering](https://nitinksingh.com/ai-resources/02-agents/context-engineering/) on the AI Knowledge Hub covers the
-> same ground from scratch, vendor-neutral, with a lab you can run locally for free.
-> This page assumes the concept and shows how it is built *here*.
-
 ## What it is
 
 Three genuinely different mechanisms get called "memory" in casual conversation about agents, and
@@ -45,14 +41,14 @@ never pauses doesn't need them.
 
 ## How it works here — three mechanisms, three files
 
-**Session history** — [`shared/session.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/session.py) (250 lines). A MAF `AgentSession` is a lightweight
+**Session history** — [`shared/session.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/session.py). A MAF `AgentSession` is a lightweight
 state holder; `HistoryProvider` subclasses read and write the actual conversation turns, invoked
-automatically via `before_run`/`after_run` hooks (module docstring, lines 1-19) — the agent code
+automatically via `before_run`/`after_run` hooks — the agent code
 never manually fetches history, it just happens. Three swappable backends selected by
 `settings.MAF_SESSION_BACKEND`: `postgres` (the real `messages`/`conversations` tables — what
 production actually uses), `file` (JSONL, dev only), `memory` (in-process, tests only).
 
-**Long-term memory** — [`shared/tools/memory_tools.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/tools/memory_tools.py) (80 lines), and it's *not* automatic — it's
+**Long-term memory** — [`shared/tools/memory_tools.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/tools/memory_tools.py), and it's *not* automatic — it's
 two ordinary tools the model chooses to call, following the exact `@tool` +
 `Annotated[..., Field(...)]` pattern from [tools](03-tools.md):
 
@@ -72,10 +68,9 @@ remembering (or worth recalling before answering) by calling these tools, exactl
 to call `search_products`. This is the piece that survives past the conversation that created it —
 a fact stored today is available in a conversation next week.
 
-**Checkpoints** — [`shared/checkpoint_storage.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/checkpoint_storage.py) (175 lines), `PostgresCheckpointStorage`. Reads and writes a real `workflow_checkpoints` table, encoding each checkpoint with MAF's
+**Checkpoints** — [`shared/checkpoint_storage.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/checkpoint_storage.py), `PostgresCheckpointStorage`. Reads and writes a real `workflow_checkpoints` table, encoding each checkpoint with MAF's
 own `encode_checkpoint_value` so the wire format matches what MAF's file-based checkpoint storage
-would have written — this repo just keeps it in Postgres instead of on disk (module docstring,
-lines 1-10). This is what makes `workflow:return-replace`'s in-workflow approval pause (see
+would have written — this repo just keeps it in Postgres instead of on disk. This is what makes `workflow:return-replace`'s in-workflow approval pause (see
 [human-in-the-loop](11-human-in-the-loop.md)) actually durable: the paused workflow's exact
 execution position is written to Postgres, and a *completely different* HTTP request — possibly
 served by a different process — can resume it later by reading that checkpoint back, not by
@@ -111,6 +106,8 @@ flowchart LR
 All three end up in the same Postgres database, which is exactly why it's worth being precise
 about which one you mean — they're different tables, different lifecycles, and different code
 paths, not three names for the same row.
+
+**Build it yourself:** [Chapter 04: sessions](../../tutorials/04-sessions/README.md) and [Chapter 18: state and checkpoints](../../tutorials/18-state-and-checkpoints/README.md). **In the application:** `agents/python/shared/session.py` and `agents/python/shared/checkpoint_storage.py`.
 
 Next: [grounding and RAG](09-grounding-and-rag.md) — why a model can produce a confident-sounding
 answer that's still wrong, and what this repo checks before trusting one.

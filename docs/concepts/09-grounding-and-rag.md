@@ -1,9 +1,5 @@
 # Grounding and RAG
 
-> **New to this?** [Retrieval](https://nitinksingh.com/ai-resources/02-agents/retrieval/) on the AI Knowledge Hub covers the
-> same ground from scratch, vendor-neutral, with a lab you can run locally for free.
-> This page assumes the concept and shows how it is built *here*.
-
 ## What it is
 
 A language model produces the most statistically plausible next words given everything it's seen
@@ -40,7 +36,7 @@ below.
 
 ## How it works here
 
-`product_discovery/tools.py::semantic_search` (lines 159-196) is the retrieval half: it embeds the
+`product_discovery/tools.py::semantic_search` is the retrieval half: it embeds the
 user's query and runs a pgvector cosine-similarity search against `product_embeddings`
 (`ORDER BY pe.embedding <=> $1::vector`) — real data, handed to the model as a tool result, for
 descriptive queries a plain keyword search would miss ("something cozy for winter").
@@ -96,6 +92,8 @@ flowchart LR
   class verified1,verified2 success
   class mismatch,notfound error
 ```
+
+**Build it yourself:** [Chapter 24: RAG and grounding](../../tutorials/24-rag-and-grounding/README.md). **In the application:** `agents/python/shared/grounding/`.
 
 Next: [guardrails](10-guardrails.md) — grounding catches fabricated *facts*; guardrails are the
 separate layer that catches malicious or unauthorized *inputs*.

@@ -1,11 +1,15 @@
 # Workflow diagrams
 
-Auto-generated from the MAF `WorkflowBuilder` graphs the orchestrator actually
-runs — [`pre_purchase.py`](../../agents/python/workflows/pre_purchase.py) and
+This directory holds the diagrams of the application's two workflow graphs: the pre-purchase
+fan-out (reviews, stock and price history checked concurrently, then merged) and the
+return-and-replace sequence with an approval gate. They are two of the application's
+[five orchestration modes](../architecture.md#orchestration-modes).
+
+The files are generated from the MAF `WorkflowBuilder` graphs the orchestrator runs —
+[`pre_purchase.py`](../../agents/python/workflows/pre_purchase.py) and
 [`return_replace.py`](../../agents/python/workflows/return_replace.py) — by
-[`scripts/visualize_workflows.py`](../../scripts/visualize_workflows.py). Do not edit
-files in this directory by hand — they're overwritten on every run of
-the generator.
+[`scripts/visualize_workflows.py`](../../scripts/visualize_workflows.py). Do not edit them by
+hand: the generator overwrites them on every run.
 
 ## Regenerate
 
@@ -14,7 +18,7 @@ cd agents/python
 uv run python ../../scripts/visualize_workflows.py
 ```
 
-Commits the refreshed `.mmd` and `.dot` files. GitHub renders the
+Commit the refreshed `.mmd` and `.dot` files. GitHub renders the
 Mermaid inline in PRs and wikis; pipe the DOT through Graphviz to
 produce PNG/SVG for architecture docs.
 

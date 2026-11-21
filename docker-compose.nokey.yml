@@ -14,22 +14,23 @@
 #
 # The base files read most settings as ${NAME:-default}, which an exported
 # shell variable or a line in .env overrides. That is right for a keyed run and
-# wrong here: a replay fixture is keyed by a hash of the exact request (system
-# prompt, tool schemas, model name), so anything that changes a prompt or a
-# schema -- MCP_ENABLED, the role-aware prompt blocks, HANDOFF_AUTONOMOUS_MODE,
-# AGENT_REGISTRY, the guardrail flags -- turns every recorded answer into a
-# miss. Literals in an overlay beat the base file's interpolation no matter
-# what the caller's shell exports. That is the whole point of this file
-# (plan N9). Do not rewrite them as ${VAR:-...}.
+# wrong here: a replay fixture is keyed by a hash of the exact request (every
+# message, the agent instructions, the tool schemas and, when set, the response
+# format; not the model name or sampling parameters), so anything that changes
+# a prompt or a schema -- MCP_ENABLED, the role-aware prompt blocks,
+# HANDOFF_AUTONOMOUS_MODE, AGENT_REGISTRY, the guardrail flags -- turns every
+# recorded answer into a miss. Literals in an overlay beat the base file's
+# interpolation no matter what the caller's shell exports. That is the whole
+# point of this file. Do not rewrite them as ${VAR:-...}.
 #
 # Keys, secrets and ports stay with the base file; nothing here is a secret.
 #
 # ── Fixtures ────────────────────────────────────────────────────────────────
 #
-# REPLAY_FIXTURES_DIR points at /app/demo/fixtures/replay inside the image. That
-# directory is filled by the R0 recording session and baked in by a
-# `COPY demo/ demo/` in agents/python/Dockerfile (added with the recording).
-# Until it exists the directory is simply absent, which is a supported state:
+# REPLAY_FIXTURES_DIR points at /app/demo/fixtures/replay inside the image. The
+# recordings are not made yet: agents/python/demo/ does not exist and
+# agents/python/Dockerfile has no `COPY demo/ demo/` (both arrive together).
+# Until then the directory is simply absent, which is a supported state:
 # every model call is a replay miss, the orchestrator reports it in chat as a
 # prompt that was not recorded, and the stack stays up. Browsing, search, cart
 # and checkout never call a model and work either way.
@@ -53,7 +54,7 @@ x-nokey-env: &nokey-env
   REPLAY_FIXTURES_DIR: /app/demo/fixtures/replay
   RECORD: "false"
   DEMO_TOUR_ENABLED: "true"
-  # N9: prompt- and schema-shaping configuration, pinned.
+  # Prompt- and schema-shaping configuration, pinned.
   MCP_ENABLED: "false"
   MCP_AUTH_ENABLED: "false"
   HANDOFF_AUTONOMOUS_MODE: "true"

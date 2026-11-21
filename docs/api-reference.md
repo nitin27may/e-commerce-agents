@@ -1,6 +1,17 @@
 # API Reference
 
-The orchestrator service (FastAPI, port 8080) serves about 70 routes, all prefixed with `/api/` except `/health`. The sections below give request and response examples for the original core surface (auth, chat, conversations, products, orders, profile, marketplace, admin). Routes added since are listed in tables further down: [Approvals](#approvals), [Notifications](#notifications), [Merchant proposals](#merchant-proposals), [Event autonomy](#event-autonomy), [Return lifecycle](#return-lifecycle) and [Other routes](#other-routes). The source of truth is `agents/python/orchestrator/routes/*.py`; the .NET orchestrator serves the same routes except where [parity-matrix.md](parity-matrix.md) says otherwise.
+This is the HTTP API the web frontend calls: about 70 routes for sign-in, chat, the catalog, orders, the marketplace, approvals and administration. The orchestrator (FastAPI) serves it on port 8080, all under `/api/` except `/health`. The Python and .NET orchestrators serve the same routes, except where [parity-matrix.md](parity-matrix.md) says otherwise. To authenticate, send the access token from `POST /api/auth/login` as `Authorization: Bearer <token>`.
+
+The sections from auth to admin give request and response examples; the rest list their routes in tables. The source of truth is `agents/python/orchestrator/routes/*.py`.
+
+| Area | Sections |
+|---|---|
+| Sign-in | [Authentication](#authentication), [Auth (Public)](#auth-public) |
+| Chat and orchestration | [Chat](#chat), [Conversations](#conversations), [Orchestration](#orchestration) |
+| Shopping | [Products](#products), [Orders](#orders), [Profile](#profile) |
+| Marketplace and admin | [Marketplace](#marketplace), [Admin](#admin) |
+| Approvals and operations | [Approvals](#approvals), [Notifications](#notifications), [Merchant proposals](#merchant-proposals), [Event autonomy](#event-autonomy), [Return lifecycle](#return-lifecycle) |
+| Everything else | [Other routes](#other-routes), [Error Response Format](#error-response-format) |
 
 ## Route Overview
 
@@ -179,16 +190,19 @@ Send a message to the orchestrator agent. The orchestrator routes to specialist 
 
 | Field | Value |
 |-------|-------|
-| Auth  | JWT Required |
+| Auth  | JWT optional. An anonymous caller reaches product discovery only, and no conversation is stored. Rate limited |
 
 **Request Body**
 
 ```json
 {
   "message": "What are the best noise-cancelling headphones under $350?",
-  "conversation_id": null
+  "conversation_id": null,
+  "mode": null
 }
 ```
+
+`mode` is optional and names one of the [orchestration modes](#orchestration) (`tool`, `handoff`, `workflow:pre-purchase`, `workflow:return-replace`, `group-chat`). Omitted, the server uses `ORCHESTRATION_MODE`, which defaults to `tool`.
 
 `conversation_id` is optional. Omit or pass `null` to start a new conversation. Pass an existing ID to continue a conversation (loads the last 50 messages as context).
 
@@ -203,8 +217,10 @@ Send a message to the orchestrator agent. The orchestrator routes to specialist 
 ```
 
 **Errors**
-- `401` Missing/invalid token
+- `400` Unknown `mode`
+- `401` Invalid token
 - `404` Conversation not found (if `conversation_id` is provided but doesn't belong to the user)
+- `429` Rate limit exceeded
 
 ---
 
@@ -881,6 +897,19 @@ The `trace_id` field correlates with OpenTelemetry traces in the Aspire Dashboar
 
 ---
 
+## Orchestration
+
+`agents/python/orchestrator/routes/orchestration.py`. The five modes are described in
+[architecture.md](architecture.md#orchestration-modes). A chat turn picks its mode with the `mode` field of
+`POST /api/chat` and `POST /api/chat/stream`.
+
+| Endpoint | Who | Notes |
+|---|---|---|
+| `GET /api/orchestration/modes` | public | A list of `{name, label, description, capabilities, default}`. `capabilities` is `{streams, supports_hitl, supports_checkpoints, is_graph}` |
+| `GET /api/orchestration/modes/{name}/graph` | public | `{"name": "...", "mermaid": "..."}`. `mermaid` is `null` for a mode with no diagram (`tool`, `handoff`). `404` unknown mode |
+| `POST /api/orchestration/compare` | signed in | `{"message": "...", "modes": ["tool", "handoff"]}`, one to five modes (`400` otherwise). Runs the prompt through each mode in turn, outside any conversation and with no history. Returns `{message, results}`; each result has `mode`, `label`, `text`, `latency_ms`, `agents_involved`, `step_count`, `graph_mermaid`, `tokens_in`, `tokens_out`, `est_cost_usd` and `error`. A `null` token or cost field means not captured. A mode that fails, or an unknown name, is reported in its own `error`. Rate limited |
+| `POST /api/orchestration/{run_id}/resume` | staff | `{"approved": true\|false}`. Approves or rejects the paused approval of that run, as a thin caller of the approvals decide function. Returns `{run_id, approved, text, agents_involved}`. `404` no pending approval for the run; `403` and `409` as for `decide` below. Rate limited |
+
 ## Approvals
 
 The unified approvals inbox (both stacks). Rules, the authorisation matrix and the edits allowlist are in
@@ -949,7 +978,6 @@ Routes without a detailed section above. Auth is signed in unless stated.
 | Endpoint | Notes |
 |---|---|
 | `POST /api/chat/stream` | The SSE form of `POST /api/chat`. Event names are listed in [frontend.md](frontend.md) and `orchestrator/routes/chat.py` |
-| `GET /api/orchestration/modes`, `GET /api/orchestration/modes/{name}/graph`, `POST /api/orchestration/compare`, `POST /api/orchestration/{run_id}/resume` | Orchestration mode introspection, comparison, and resume of a paused run (staff only to resume; a thin caller of the approvals decide function) |
 | `GET /api/runs`, `GET /api/runs/{run_id}/checkpoints` | The caller's runs and a run's checkpoints, including a pending `hitl_request` |
 | `GET /api/agents/stats` | Per-agent statistics |
 | `GET /api/admin/hitl/requests`, `POST /api/admin/hitl/requests/{id}/approve`, `POST /api/admin/hitl/requests/{id}/deny` | Legacy tool-approval routes (admin); callers of the approvals decide function |

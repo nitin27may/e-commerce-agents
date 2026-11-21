@@ -1,6 +1,8 @@
 # Database Schema
 
-E-Commerce Agents uses PostgreSQL 16 with the **pgvector** extension for embedding-based semantic search and **pgcrypto** for UUID generation. The frozen baseline (`docker/postgres/init.sql`) has 34 tables in 12 logical groups. Migrations `0003`, `0006`, `0009`, `0011` and `0012` add 11 more (45 in all), described in the sections for refresh tokens, approvals, merchant proposals and event autonomy below. Migrations `0002`, `0004`, `0005`, `0007`, `0008`, `0010` and `0013` only alter or backfill existing tables.
+This page is the table-by-table reference for the application's one PostgreSQL database, for anyone writing a query, a tool or a migration against it. Both stacks share it.
+
+It is PostgreSQL 16 with the **pgvector** extension for embedding-based semantic search and **pgcrypto** for UUID generation. The frozen baseline (`docker/postgres/init.sql`) has 34 tables in 12 logical groups. Migrations `0003`, `0006`, `0009`, `0011` and `0012` add 11 more (45 in all), described in the sections for refresh tokens, approvals, merchant proposals and event autonomy below. Migrations `0002`, `0004`, `0005`, `0007`, `0008`, `0010`, `0013` and `0014` only alter or backfill existing tables.
 
 ## Entity-Relationship Diagram
 
@@ -337,10 +339,10 @@ erDiagram
 
 ### `promotions.rules` schema
 
-`rules` is untyped JSONB, which for a long time meant *undocumented* rather than
-flexible: `scripts/seed.py` wrote one set of key names and
-`pricing_promotions/tools.py::optimize_cart` read another, so **no promotion had
-ever applied correctly** (#51). Only one of the three failed loudly.
+`rules` is untyped JSONB, so this table is the contract between the writer
+(`scripts/seed.py`) and the reader (`pricing_promotions/tools.py::optimize_cart`).
+A key name outside it means the promotion does not apply, and it usually fails
+silently.
 
 | type | Accepted keys | Meaning |
 |---|---|---|
@@ -352,15 +354,15 @@ ever applied correctly** (#51). Only one of the three failed loudly.
 Both singular (`category`) and plural (`categories`) are accepted, because the
 seeded rows use both.
 
-Two rules the reader enforces, each closing a defect that shipped:
+Two rules the reader enforces:
 
-- **An empty requirement list never matches.** A `bundle` with no `products` and
-  no `product_ids` used to match *every* cart, because `all([])` is `True`. It
-  then contributed £0 — silent noise on every cart-optimisation call.
+- **An empty requirement list never matches.** Without this rule a `bundle` with
+  no `products` and no `product_ids` matches *every* cart, because `all([])` is
+  `True`, and contributes £0 to each.
 - **Unparseable rules are skipped, not guessed at.** A `buy_x_get_y` row
-  describing neither shape used to leave `buy_quantity` and `free_quantity` at
-  `0`, making `quantity >= 0 + 0` always true and dividing by zero on the next
-  line. A discount outside 0–100% is treated as a data error and ignored rather
+  describing neither shape would otherwise read `buy_quantity` and
+  `free_quantity` as `0`, making `quantity >= 0 + 0` always true and dividing by
+  zero on the next line. A discount outside 0–100% is treated as a data error and ignored rather
   than applied.
 
 > **Gotcha — an IVFFlat index must be built *after* the vectors exist.**
@@ -379,7 +381,7 @@ Two rules the reader enforces, each closing a defect that shipped:
 > | exact scan | Sony WH-1000XM5 | 0.420 |
 >
 > Nothing errors. Semantic search simply returns unrelated products, which is
-> why this survived: it looks like a weak embedding model rather than a broken
+> why it is easy to miss: it looks like a weak embedding model rather than a broken
 > index. Two defences are in place — `scripts/generate_embeddings.py` runs
 > `REINDEX INDEX idx_product_embedding` after writing, and `semantic_search` /
 > `find_similar_products` raise `ivfflat.probes` for their own query so
@@ -528,7 +530,7 @@ Present only when `AUTH_MODE=oauth`; the default `local` mode never touches thes
 | Table | Key Columns | Notes |
 |-------|-------------|-------|
 | **oauth_clients** | `client_id` (PK), `client_secret_hash`, `client_name`, `is_confidential`, `allowed_grant_types` (TEXT[]), `allowed_scopes` (TEXT[]), `allowed_audiences` (TEXT[]), `token_endpoint_auth_method` | Secrets are hashed, never stored raw. The three array columns are what make cross-scope and cross-audience token requests refusable. |
-| **oauth_signing_keys** | `kid` (PK), `alg` (default RS256), `public_jwk` (JSONB), `private_pem_enc` (BYTEA), `is_active`, `retired_at` | The private key is Fernet-encrypted at rest; only `public_jwk` is served from the JWKS endpoint. `retired_at` supports rotation without invalidating tokens still in flight. |
+| **oauth_signing_keys** | `kid` (PK), `alg` (default RS256), `public_jwk` (JSONB), `private_pem_enc` (BYTEA), `is_active`, `not_after`, `retired_at` | The private key is Fernet-encrypted at rest; only `public_jwk` is served from the JWKS endpoint. A rotated-out key stays in the JWKS until `not_after` (migration `0014`), so tokens still in flight keep verifying; `retired_at` records when it was dropped. A unique index allows one active key. |
 | **oauth_tokens** | `id` (PK), `client_id` (FK -> oauth_clients), `subject`, `token_type`, `token_hash`, `scope`, `audience`, `expires_at`, `revoked` | Only refresh tokens are persisted, and only as a SHA-256 digest — the raw token is never stored. `subject` is the user's email for password-grant tokens and NULL for client-credentials service tokens. |
 
 ---
@@ -539,7 +541,7 @@ The seeder (`scripts/seed.py`) populates the database with deterministic data (`
 
 | Table | Count | Details |
 |-------|-------|---------|
-| users | 20 | 1 admin, 2 power users, 2 sellers, 15 customers |
+| users | 22 | 1 admin, 2 power users, 2 sellers, 15 customers, plus 1 support staff user and the demo-tour customer (`tour@example.com`) appended after them |
 | products | 50 | 10 per category (Electronics, Clothing, Home, Sports, Books) |
 | product_embeddings | 50 under `LLM_PROVIDER=replay`; otherwise 0 until `scripts/data/product_embeddings.v1.jsonl.gz` exists | Filled by the seeder (replay vectors, or the precomputed file when its model matches `EMBEDDING_MODEL`); `scripts/generate_embeddings.py` regenerates, `--export` writes the file |
 | orders | 200 | Distributed across statuses (placed through delivered/cancelled) |

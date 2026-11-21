@@ -1,9 +1,5 @@
 # Why multi-agent
 
-> **New to this?** [The harness](https://nitinksingh.com/ai-resources/02-agents/the-harness/) on the AI Knowledge Hub covers the
-> same ground from scratch, vendor-neutral, with a lab you can run locally for free.
-> This page assumes the concept and shows how it is built *here*.
-
 ## What it is
 
 A multi-agent system is more than one agent, each with its own narrower instructions and tool
@@ -63,7 +59,7 @@ The orchestrator doesn't have domain tools at all — its only tool is
 where a named specialist actually lives via `AGENT_REGISTRY`
 (`agents/python/orchestrator/agent.py`), a flat `name -> base URL` map — parsed from
 `shared.config.settings.AGENT_REGISTRY`, a JSON string set in the environment
-(`.env.example:165`):
+(`.env.example`):
 
 ```json
 {
@@ -108,5 +104,7 @@ flowchart LR
 The orchestrator picking exactly one specialist per turn, via a tool call it decides to make, is
 only *one* way to organize a multi-agent system — the next page covers the others this repo
 actually implements and when each one wins.
+
+**Build it yourself:** [Chapter 27: agent-as-tool](../../tutorials/27-agent-as-tool/README.md). **In the application:** `agents/python/orchestrator/agent.py`.
 
 Next: [orchestration patterns](06-orchestration-patterns.md).

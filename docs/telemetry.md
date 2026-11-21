@@ -115,7 +115,7 @@ graph TD
 
     subgraph Specialist["Specialist Processing"]
         style Specialist fill:#0ea5e9,stroke:#0284c7,color:#fff
-        E["Starlette request span<br/><i>auto-span on specialist</i>"]
+        E["FastAPI request span<br/><i>auto-span on specialist</i>"]
     end
 
     subgraph LLM2["Specialist LLM (auto)"]

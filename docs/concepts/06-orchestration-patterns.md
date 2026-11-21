@@ -1,13 +1,5 @@
 # Orchestration patterns
 
-This is the centerpiece page. If you read nothing else in this concepts library, read this one —
-it's the question practitioners actually have ("when do I use a router vs. a handoff vs. a
-workflow?"), and it's unanswerable from a single isolated sample of any one pattern.
-
-> **New to this?** [The harness](https://nitinksingh.com/ai-resources/02-agents/the-harness/) on the AI Knowledge Hub covers the
-> same ground from scratch, vendor-neutral, with a lab you can run locally for free.
-> This page assumes the concept and shows how it is built *here*.
-
 ## What it is
 
 An orchestration pattern is *how* a multi-agent system decides who does what, and in what order.
@@ -59,9 +51,8 @@ call and what to tell them — see [why multi-agent](05-why-multi-agent.md) for 
 mechanism. This is the most flexible pattern and the least predictable: the model is making a
 real decision every time, which is exactly right when the right specialist genuinely depends on
 what the user asked, and exactly wrong when you need a guarantee that step B always follows step
-A. [`orchestrator/modes/tool_router.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/orchestrator/modes/tool_router.py) describes it as wrapping "exactly what the chat route
-did directly before this module existed" — it's the simplest mode, and the one every other mode
-is compared against.
+A. It is the simplest mode ([`orchestrator/modes/tool_router.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/orchestrator/modes/tool_router.py)), and the one every
+other mode is compared against.
 
 **Use it when:** the right next step depends on free-form user intent and the set of possible
 next steps is open-ended. **Don't use it when:** you need a guarantee about what runs, in what
@@ -97,9 +88,9 @@ actually needs to vary by request.
 
 ### `workflow:return-replace` — a sequential graph with a hard pause built in
 
-Another fixed MAF workflow, this time sequential rather than fan-out: eligibility check, return
-initiation, replacement search, an in-workflow approval gate for high-value returns, then loyalty
-discount and finalize ([`orchestrator/modes/workflow_mode.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/orchestrator/modes/workflow_mode.py)). The approval gate is worth
+Another fixed MAF workflow, this time sequential rather than fan-out: eligibility check, an approval gate
+that the approval policy controls, return initiation, replacement search, then loyalty discount
+and finalize ([`orchestrator/modes/workflow_mode.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/orchestrator/modes/workflow_mode.py)). The approval gate is worth
 its own page — see [human-in-the-loop](11-human-in-the-loop.md), which contrasts this mechanism
 directly against [`shared/hitl.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/hitl.py)'s middleware-based approach.
 
@@ -126,9 +117,9 @@ signal.
 ### What's missing
 
 **Magentic** (a planner-executor pattern where a lead agent dynamically plans and assigns work to
-a team, adjusting the plan as it learns) is not implemented in this repo yet. The mode registry's
-own docstring flags this: `get_mode()` raises a clear, named error for `"magentic"` rather than
-pretending it exists. It's tracked as a later addition, not silently missing.
+a team, adjusting the plan as it learns) is not one of the application's modes. `get_mode()`
+raises a named error for `"magentic"` rather than pretending it exists.
+[Chapter 16](../../tutorials/16-magentic-orchestration/README.md) builds the pattern on its own.
 
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': {
@@ -149,6 +140,8 @@ flowchart LR
   class q success
   class tool,handoff,fanout,seq,gc core
 ```
+
+**Build it yourself:** [Chapter 12: sequential](../../tutorials/12-sequential-orchestration/README.md), [Chapter 13: concurrent](../../tutorials/13-concurrent-orchestration/README.md), [Chapter 14: handoff](../../tutorials/14-handoff-orchestration/README.md) and [Chapter 15: group chat](../../tutorials/15-group-chat-orchestration/README.md). **In the application:** `agents/python/orchestrator/modes/`.
 
 Next: [graphs in agent systems](07-graphs-in-agent-systems.md) — how a fixed workflow like
 `workflow:pre-purchase` is actually built and rendered.

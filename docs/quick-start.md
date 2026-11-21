@@ -1,30 +1,44 @@
 # Quick Start
 
-Get the whole platform — six agents, Postgres, Redis, and the web UI — running locally.
-**Docker is the only hard requirement.** You do not need Python, .NET, Node, or a paid API key
-installed to run it.
+This page gets the whole platform (six agents, Postgres, Redis and the web UI) running on your
+machine. It is for anyone trying the project for the first time. **Docker is the only hard
+requirement.** You do not need Python, .NET or Node installed, and a paid API key is optional.
 
-Pick the section for your machine. macOS and Linux can use the helper script; **Windows should use
-the Docker Compose commands directly**, since `scripts/dev.sh` is a bash script.
-
-## 1. Get the code and configure it
-
-Identical everywhere:
+## The shortest path
 
 ```bash
 git clone https://github.com/nitin27may/e-commerce-agents.git
 cd e-commerce-agents
-cp .env.minimal .env
+cp .env.minimal .env             # then open .env and set OPENAI_API_KEY
+./scripts/dev.sh --demo          # macOS and Linux
 ```
 
-On Windows PowerShell, the last line is `copy .env.minimal .env`.
+On Windows PowerShell, the last two lines are `Copy-Item .env.minimal .env` (or
+`copy .env.minimal .env`) and `./scripts/dev.ps1 -Demo`.
+
+The first run takes about a minute. It pulls the eleven released images, seeds the database, starts
+everything, and waits until the orchestrator and frontend answer before printing the summary.
+Nothing is compiled.
+
+Then open <http://localhost:3000> and sign in as `alice.johnson@gmail.com` / `customer123`.
+
+Other ways to run it:
+
+| If you | Go to |
+|---|---|
+| have no API key | [Run without a paid API key](#run-without-a-paid-api-key) |
+| changed code and need to build it | [From source](#from-source) |
+| are on Windows | [Windows](#windows) |
+| want the .NET backend | [Run the .NET backend instead](#run-the-net-backend-instead) |
+
+## 1. Configure it
 
 `.env.minimal` is one variable. `.env.example` is the complete surface — every auth mode, MCP,
 OAuth, telemetry and guardrail setting — and is reference material rather than a starting point.
 [Configuration](configuration.md) explains how that one file reaches containers, host-run Python,
 the frontend and the .NET stack, which do not all read it the same way.
 
-Then open `.env` and set a model provider. Any one of these works — see
+Open `.env` and set a model provider. Any one of these works — see
 [Run without a paid API key](#run-without-a-paid-api-key) if you would rather not use a paid one:
 
 ```dotenv
@@ -49,9 +63,6 @@ There are two paths, and the difference is roughly a minute versus twelve.
 ./scripts/dev.sh --demo          # macOS and Linux
 ./scripts/dev.ps1 -Demo          # Windows PowerShell
 ```
-
-This pulls the eleven released images, seeds the database, starts everything, and waits until the
-orchestrator and frontend actually answer before printing the summary. Nothing is compiled.
 
 `--demo` uses `docker-compose.demo.yml`, which pins `:latest` — the newest tagged release, gated by
 the full test suite. To run the tip of `main` instead:
@@ -80,8 +91,8 @@ job, then starts the agents and the frontend. It also prints a summary of every 
 
 ### Windows
 
-`scripts/dev.sh` is a bash script and will not run in PowerShell or `cmd`. You have two paths, and
-they are not equal — pick based on whether you want WSL2 on your machine.
+`scripts/dev.sh` is a bash script and will not run in PowerShell or `cmd`. Use WSL2 with `dev.sh`,
+or PowerShell with `scripts/dev.ps1`. Both work; WSL2 is faster.
 
 #### Recommended: WSL2
 
@@ -111,13 +122,13 @@ but only WSL2 gives you a real Linux filesystem, so container startup is much fa
 
 #### Not using WSL2? PowerShell works fine
 
-There is a PowerShell script that does everything `dev.sh` does — same profiles, same ordering,
-same health checks, same flags:
+`scripts/dev.ps1` does everything `dev.sh` does — same profiles, same ordering, same health checks,
+same flags:
 
 ```powershell
 git clone https://github.com/nitin27may/e-commerce-agents.git
 cd e-commerce-agents
-Copy-Item .env.example .env
+Copy-Item .env.minimal .env
 notepad .env                  # set OPENAI_API_KEY, then save and close
 
 ./scripts/dev.ps1
@@ -208,8 +219,8 @@ docker compose -f docker-compose.dotnet.yml \
   --profile seed --profile agents --profile mcp --profile frontend up --build
 ```
 
-On Windows PowerShell, put the whole command on one line, or use a backtick (`` ` ``) for line
-continuation instead of the backslash.
+On Windows PowerShell, run `./scripts/dev.ps1 -Dotnet`. For the Compose command, put it all on one
+line, or use a backtick (`` ` ``) for line continuation instead of the backslash.
 
 ### Or under Aspire
 

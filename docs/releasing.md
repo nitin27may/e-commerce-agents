@@ -1,20 +1,27 @@
 # Releasing
 
-How a version gets cut, and what has to be true before an image reaches anyone.
+This page is for maintainers. It describes how a version is cut, which tests gate each published
+image, and the one-time repository setup the pipeline depends on. To run a published image, see
+[Quick Start](quick-start.md).
 
 ## What runs when
 
 | Trigger | Tests | Images | Published as |
 |---|---|---|---|
 | Pull request | Full suite, plus evals and tutorials | Built, loaded, smoke-tested, **discarded** | nothing |
-| Push to `main` | Full suite | Built and pushed **after** all four test jobs pass | `:main`, `:sha-<7>` |
+| Push to `main` | Full suite | Built and pushed **after** the six lint and test jobs pass | `:main`, `:sha-<7>` |
 | Tag `vX.Y.Z` | Full suite, re-run against the tagged commit | Built and pushed after tests **and a human approval** | `:vX.Y.Z`, `:latest` |
 | Tag `vX.Y.Z-rc.N` | Same | Same | `:vX.Y.Z-rc.N` only — `:latest` does not move |
 
 `.github/workflows/build-images.yml` has no `push` or tag trigger of its own. It exposes
 `workflow_call`, and publishing is granted by whoever calls it — `tests.yml` for `main`,
-`release.yml` for a tag. That is what makes the gate real: before this, a semver tag published
-images with no dependency on any test job, so a tag on a red commit shipped.
+`release.yml` for a tag. That is what makes the gate real: GitHub Actions has no cross-workflow
+`needs:`, so a build workflow with its own tag trigger would publish from a red commit.
+
+The workflow builds **twelve images**. Eleven are the services `docker-compose.demo.yml` runs:
+the orchestrator, five specialists, `auth-server`, `outbox-worker`, `mcp-product`, `mcp-inventory`
+and `frontend`. The twelfth is `db-init`, a one-shot database bootstrap job used only by the
+[Azure deployment](azure-deployment.md).
 
 ## Image tags
 
@@ -99,10 +106,9 @@ indicate a gate was expected.
 Packages published by a workflow in a **public** repository inherit that repository's visibility,
 so they are created public and are anonymously pullable straight away. Nothing to click.
 
-This was verified rather than assumed: `auth-server`, `mcp-product` and `mcp-inventory` had never
-been built by CI before the eleven-image matrix landed, and on their very first publish an anonymous
-`docker manifest inspect` — with `docker logout ghcr.io` first, no stored credentials — succeeded
-for all three.
+This is verified, not assumed: on the first CI publish of `auth-server`, `mcp-product` and
+`mcp-inventory`, an anonymous `docker manifest inspect` (after `docker logout ghcr.io`, no stored
+credentials) succeeded for all three.
 
 The advice you will find elsewhere, that GHCR packages start private and each needs flipping by
 hand, applies to packages published from a **private** repo or with a personal access token. It
@@ -116,7 +122,7 @@ Check it the way a visitor would:
 docker logout ghcr.io
 for i in orchestrator product-discovery order-management pricing-promotions \
          review-sentiment inventory-fulfillment auth-server outbox-worker \
-         mcp-product mcp-inventory frontend; do
+         mcp-product mcp-inventory db-init frontend; do
   docker manifest inspect ghcr.io/nitin27may/e-commerce-agents/$i:latest >/dev/null 2>&1 \
     && echo "  public   $i" || echo "  PRIVATE  $i"
 done
@@ -125,8 +131,8 @@ done
 ### Retention — already automated
 
 GHCR has no built-in retention setting, so `.github/workflows/package-cleanup.yml` is the policy.
-It runs weekly across all eleven packages, keeps the most recent 20 versions, and never touches
-`:latest`, `:main`, or any `:vX.Y.Z` tag.
+It runs weekly across the eleven demo packages, keeps the most recent 20 versions, and never touches
+`:latest`, `:main`, or any `:vX.Y.Z` tag. `db-init` is not in its matrix, so that package is not pruned.
 
 Two things would otherwise accumulate without limit: one `:sha-<7>` tag per commit on `main`, and
 untagged versions — a multi-arch build pushes a manifest list plus one image manifest per platform,
@@ -146,9 +152,8 @@ Semantic versioning. The **git tag is the source of truth**; the three version f
 it by `scripts/bump_version.py`, and `release.yml`'s `version-check` job fails the release if they
 drift.
 
-That check exists because they did drift: `pyproject.toml` said `0.1.0`, the only tag said
-`v1.0.0`, and the README said v1.1 — a version that shipped but was never tagged, and therefore
-never existed as an artifact anyone could pull.
+Without that check the files drift from the tag, and a version named in the README but never
+tagged does not exist as an artifact anyone can pull.
 
 CI runs the same check:
 
@@ -187,4 +192,4 @@ There is **no schedule** and none may be added: a deployment spends money (a CI 
 
 - [Configuration](configuration.md) — where settings come from
 - [Deployment](deployment.md) — running the stack
-- [`.claude/plans/remaining-work.md`](https://github.com/nitin27may/e-commerce-agents/blob/main/.claude/plans/remaining-work.md) — the consolidated plan; the build-and-release design that produced this pipeline shipped in v1.2.0 and lives in git history
+- [Azure deployment](azure-deployment.md) — what the Azure workflow deploys

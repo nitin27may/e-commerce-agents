@@ -7,11 +7,13 @@ it is used.
 
 Every page follows the same shape:
 
-- **What it is** — plain language, one honest analogy, no jargon in the definition itself.
+- **What it is** — plain language, one analogy, no jargon in the definition itself.
 - **Why it matters** — the concrete problem it solves, and what breaks if you skip it.
 - **When to use it — and when not to.** Explicit non-use cases.
 - **How it works here** — the pattern running in *this* application, with a link to the real
   source file and the symbol named in prose, plus a diagram of the real path.
+- **Build it yourself** — a closing pointer to the tutorial chapter that builds the idea from
+  scratch, and to the place in the application where it runs.
 
 The repository is the source of truth for these ideas. Nothing here depends on an external
 article — read this, then read the file it points at, and you have the whole picture.
@@ -35,6 +37,9 @@ article — read this, then read the file it points at, and you have the whole p
 6. [Orchestration patterns](06-orchestration-patterns.md)
 7. [Graphs in agent systems](07-graphs-in-agent-systems.md)
 
+Page 6, orchestration patterns, is the centerpiece: it answers when to use a router, a handoff or
+a workflow, which no single sample of one pattern can. Short on time? Read 01, 05 and 06.
+
 By page 7 you have the full vocabulary this repo uses, and you can either keep going below or
 jump straight to [`docs/architecture.md`](../architecture.md) to see how the six agents in this
 codebase are actually wired together.
@@ -53,7 +58,7 @@ individual pages here when a term needs unpacking.
 | [11 — Human-in-the-loop](11-human-in-the-loop.md) | Why some actions must never run unsupervised, and two different ways to gate them |
 | [12 — Evaluation](12-evaluation.md) | Why "it looked right in the demo" isn't evidence, and what to measure instead |
 | [13 — Observability and cost](13-observability-and-cost.md) | Tracing a request across six services, and tokens as the unit of cost |
-| [14 — Production concerns](14-production-concerns.md) | Idempotency, retries, rate limits — what turns a demo into a system (and an honest look at what this repo does and doesn't have yet) |
+| [14 — Production concerns](14-production-concerns.md) | Idempotency, retries, rate limits — what turns a demo into a system, and where each one lives in this repo |
 
 ## How this fits together with the rest of the repo
 

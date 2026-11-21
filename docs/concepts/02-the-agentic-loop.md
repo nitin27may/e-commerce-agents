@@ -1,9 +1,5 @@
 # The agentic loop
 
-> **New to this?** [The agent loop](https://nitinksingh.com/ai-resources/02-agents/the-agent-loop/) on the AI Knowledge Hub covers the
-> same ground from scratch, vendor-neutral, with a lab you can run locally for free.
-> This page assumes the concept and shows how it is built *here*.
-
 ## What it is
 
 The agentic loop is the cycle that runs every time you call `agent.run(...)`: the model **thinks**
@@ -46,10 +42,9 @@ the model improvise one.
 
 ## How it works here
 
-This repo doesn't implement its own version of the loop — it deliberately doesn't. An earlier
-version of this codebase had a hand-rolled OpenAI chat-completions loop; it was removed once the
-Microsoft Agent Framework's native `agent.run()` was confirmed to handle everything it needs,
-including streaming and Azure. The loop itself lives inside the `agent_framework` package, not
+This repo doesn't implement its own version of the loop, on purpose: the Microsoft Agent
+Framework's native `agent.run()` handles everything it needs, including streaming and Azure. The
+loop itself lives inside the `agent_framework` package, not
 this repo — what you can see here is the boundary: where the loop is invoked, and where its
 result lands.
 
@@ -101,6 +96,8 @@ flowchart LR
   class think1,think2,think3 core
   class call1,call2 external
 ```
+
+**Build it yourself:** [Chapter 02: adding tools](../../tutorials/02-add-tools/README.md) and [Chapter 03: streaming and multi-turn](../../tutorials/03-streaming-and-multiturn/README.md). **In the application:** `agents/python/shared/agent_host.py`.
 
 Next: [tools](03-tools.md) — what actually makes a Python function something the model is allowed
 to call in the first place.

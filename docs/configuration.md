@@ -1,10 +1,20 @@
 # Configuration
 
-Every configurable value in this repository comes from **one file: `.env` at the repository root.**
-There is no second location, no per-service env file, and no per-stack override file.
+This page is for anyone running the application who needs to change a setting. Every configurable
+value comes from **one file: `.env` at the repository root.** There is no second location, no
+per-service env file, and no per-stack override file.
 
-This page explains how that one file reaches four very different consumers, why it lives at the
-root and not somewhere tidier, and what you have to touch when you add a new variable.
+Most people only ever touch these:
+
+| You want to | Do this | Details |
+|---|---|---|
+| Use a hosted model | Set `LLM_PROVIDER` (`openai`, `azure` or `anthropic`) and that provider's key, for example `OPENAI_API_KEY` | [Wire API](#choosing-the-openai-wire-api-llm_api), [Azure auth](#azure-openai-authentication-azure_openai_auth), [Anthropic](#anthropic-claude--python-and-net-stacks) |
+| Use a local or OpenAI-compatible model | Set `LLM_BASE_URL` and `LLM_MODEL`, usually with `LLM_API=chat_completions` | [Wire API](#choosing-the-openai-wire-api-llm_api), [Embeddings](#embeddings-are-configured-separately) |
+| Run with no key | Nothing in `.env`. Start with `./scripts/dev.sh --no-key` (Python only), which sets `LLM_PROVIDER=replay` and plays back recorded responses | [No-key mode](demo-guide.md#no-key-mode) |
+| Choose the stack | Nothing in `.env`. `./scripts/dev.sh` runs Python and `./scripts/dev.sh --dotnet` runs .NET | [One stack at a time](#one-stack-at-a-time) |
+
+The rest of the page explains how that one file reaches four very different consumers, lists the
+settings by area, and says what you have to touch when you add a variable.
 
 ## The three files
 
@@ -100,15 +110,15 @@ _ENV_FILE = _REPO_ROOT / ".env"
 ```
 
 This is why `cd agents/python && uv run uvicorn product_discovery.main:app` picks up the root
-`.env` even though the working directory is two levels down. It is deliberate, and it carries two
-fixed bugs worth knowing about, both documented in the source:
+`.env` even though the working directory is two levels down. It is deliberate, and two
+details of the path resolution matter, both documented in the source:
 
-- The repo root is **three** levels above `config.py`, not two. An earlier `parents[2]` resolved to
-  `<repo>/agents`, which contains no `.env`, so Pydantic's `env_file` loading never fired and every
-  setting silently fell back to its default even with a real `.env` present.
+- The repo root is **three** levels above `config.py`, not two. `parents[2]` is `<repo>/agents`,
+  which contains no `.env`: with that path Pydantic's `env_file` loading never fires and every
+  setting silently falls back to its default even with a real `.env` present.
 - Inside the Docker image, `config.py` is copied flatly to `/app/shared/config.py` — the build
-  context is `./agents/python`, so that path depth does not exist. `parents[3]` raised `IndexError`
-  and crashed every container at import time. `_resolve_repo_root` falls back to the immediate
+  context is `./agents/python`, so that path depth does not exist and a bare `parents[3]` raises
+  `IndexError` at import time. `_resolve_repo_root` falls back to the immediate
   parent there, which contains no `.env` — correct, because containers get their config from the
   compose `environment:` block.
 
@@ -133,10 +143,10 @@ So `cd web && pnpm dev` works with no configuration at all, as long as the orche
 server-side and read per request, so changing it means restarting the container, not rebuilding the
 image — and the orchestrator needs no public ingress and no CORS configuration.
 
-This used to be `NEXT_PUBLIC_API_URL`, which Next **inlines at build time**. Two consequences are
-recorded elsewhere in this repo and both are now gone: a second `next dev` started against a warm
-build directory served the *first* one's API URL, and a cloud deployment could not know its own API
-URL before the infrastructure that assigns it existed. `NEXT_PUBLIC_API_URL` is still honoured by
+A `NEXT_PUBLIC_API_URL` would not do this job, because Next **inlines it at build time**: a
+second `next dev` started against a warm build directory serves the *first* one's API URL, and a
+cloud deployment cannot know its own API URL before the infrastructure that assigns it exists.
+`NEXT_PUBLIC_API_URL` is still honoured by
 `web/src/lib/api.ts` as an escape hatch for calling an orchestrator directly, which works and
 brings CORS back with it.
 
@@ -163,7 +173,7 @@ brings CORS back with it.
 - **Client address.** The orchestrator takes the entry `RATE_LIMIT_TRUSTED_PROXY_HOPS` (default 1)
   places from the **right** of `X-Forwarded-For`; anything to its left is caller-supplied and ignored.
   The Next proxy writes that entry. **Limitation:** a Next 16 route handler cannot know the client
-  address — `NextRequest.ip` was removed in 15 and the socket is not exposed; Next only fills
+  address — there is no `NextRequest.ip` and the socket is not exposed; Next only fills
   `X-Forwarded-For` from the socket when the header is absent, so a browser-supplied value is
   indistinguishable from a real one (and behind Docker's published port the socket is the bridge
   gateway anyway). The proxy therefore strips the browser's `X-Forwarded-For`/`X-Real-IP`/`Forwarded`
@@ -178,7 +188,7 @@ brings CORS back with it.
   `X-Forwarded-For` and pick their rate-limit bucket (or a victim's). Consequence: `localhost:8080`
   from the host (dev scripts, Playwright, `scripts/compose-smoke.sh`) works unchanged, but a LAN
   address, or a devcontainer / remote-IDE port forward that targets the host's external interface,
-  no longer reaches it. Forward `127.0.0.1:8080` instead, or put your own authenticated reverse proxy in
+  does not reach it. Forward `127.0.0.1:8080` instead, or put your own authenticated reverse proxy in
   front (and set `RATE_LIMIT_TRUSTED_PROXY_HOPS` to match). The frontend stays on `3000:3000`.
 
 ### 4. The .NET stack — containers yes, host no
@@ -244,7 +254,7 @@ EMBEDDING_BASE_URL=<an embeddings endpoint>
 - **Tested** only by `tests/test_gemini_compat_endpoint.py`, a stubbed transport: the request goes to
   `<LLM_BASE_URL>chat/completions` with the key as bearer credential, and a canned `tool_calls`
   response runs a tool and is answered with a `tool` message. That proves this repo's wiring, not
-  Gemini's behaviour, and no live call has been made. A model scorecard run (P-7) is where Gemini
+  Gemini's behaviour, and no live call has been made. A model scorecard run is where Gemini
   would be measured.
 
 ## Choosing a model per agent (`model:` in the prompt YAML)
@@ -275,8 +285,8 @@ Agent names are the file stems: `orchestrator`, `handoff-triage` (the handoff mo
 agent), `product-discovery`, `order-management`, `pricing-promotions`, `review-sentiment`,
 `inventory-fulfillment`. Other agents' files are untouched.
 
-- **No shipped file has a `model:` block.** The mechanism is off until you add one, so behaviour,
-  scores and replay fixtures are exactly as before.
+- **No shipped file has a `model:` block.** The mechanism is off until you add one, so it changes no behaviour,
+  score or replay fixture.
 - **The block never reaches the model.** `load_prompt` composes only `system_prompt`, and replay
   fixtures are keyed by the instructions, so the composed prompt is byte-identical with or without
   it (a test proves it).
@@ -302,7 +312,7 @@ EMBEDDING_PROVIDER=openai             # Claude has no embeddings API: see the Em
 ```
 
 > **Never run against the live API.** Both stacks are wired and proven with stubbed-transport
-> tests only. A smoke run with a real key is still owed (R2 in the plan); until then treat Claude
+> tests only. No smoke run with a real key has been done; until one has, treat Claude
 > support as untested against real responses.
 
 | | Python | .NET |
@@ -325,9 +335,9 @@ Claude, and nothing may put an Anthropic key behind an automatic trigger.
 
 ## Embeddings are configured separately
 
-Semantic search needs an embedding model. It used to follow `LLM_PROVIDER` and assume 1536
-dimensions everywhere. It is now its own setting group — which also matters for providers with no
-embeddings API (Claude), and for running chat and embeddings on different endpoints.
+Semantic search needs an embedding model. It has its own setting group, separate from the chat
+provider, which matters for providers with no embeddings API (Claude) and for running chat and
+embeddings on different endpoints.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -382,14 +392,14 @@ width checks, the reset script and the startup check against a real Postgres.
 
 ## Runtime knobs for managed hosting
 
-Added for the Azure Container Apps deployment (#89), harmless anywhere else; every default is the
-pre-existing behaviour.
+These exist for the Azure Container Apps deployment and are harmless anywhere else; the defaults
+suit a local run.
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `LLM_TEMPERATURE` | `0.2` | Sampling temperature on every agent run. **Set but empty omits the option entirely** on both stacks: gpt-5.x models reject `temperature` with a 400. Unset is not empty. A per-agent `model: {temperature}` block still applies to that agent |
 | `DB_POOL_MIN_SIZE`, `DB_POOL_MAX_SIZE` | Python `5` / `20`; .NET unset (Npgsql `0` / `100`) | Connection pool bounds per process. Every service holds its own pool, so six services plus the worker multiply them against Postgres `max_connections`; the Azure demo runs `1` / `4`. Min above max, or max below 1, fails at startup on both stacks |
-| `DATABASE_URL` `?sslmode=` | unset | .NET now honours `disable`, `allow`, `prefer`, `require`, `verify-ca` and `verify-full` (mapped to Npgsql's `SslMode`); an unknown value fails at startup. Python's asyncpg always did. Azure Database for PostgreSQL requires TLS, so use `?sslmode=require` |
+| `DATABASE_URL` `?sslmode=` | unset | .NET honours `disable`, `allow`, `prefer`, `require`, `verify-ca` and `verify-full` (mapped to Npgsql's `SslMode`); an unknown value fails at startup. Python's asyncpg does too. Azure Database for PostgreSQL requires TLS, so use `?sslmode=require` |
 
 Gotchas:
 
@@ -469,8 +479,8 @@ every deployment. Logs are JSON lines; any failure exits non-zero.
 | `SEED_STAFF_PASSWORD` | *(empty)* | When set, the seeded `admin`, `support` and `seller` accounts get this password instead of the published demo ones. Customers and the tour user are unchanged. Set it in any shared or public environment |
 | `SEED_CLOCK_OFFSET_DAYS` | `0` | Shifts every seeded timestamp back by this many days |
 
-Neither new variable changes any seeded row other than the staff password hashes, so replay fixtures are
-unaffected.
+`SEED_MODE` and `SEED_STAFF_PASSWORD` change no seeded row other than the staff password hashes, so replay
+fixtures are unaffected.
 
 ## Signing-key rotation (`AUTH_KEY_*`)
 
@@ -489,7 +499,7 @@ Verifiers (every specialist, the orchestrator, both MCP servers, the .NET servic
 The Python and .NET stacks publish the same host ports — 3000, 5432, 6379, 8080–8085, 8090, 18888 —
 so **only one runs at a time**. This is deliberate rather than a limitation waiting to be fixed.
 
-Running both simultaneously would need a second published port set. It no longer needs a second
+Running both simultaneously would need a second published port set. It would not need a second
 frontend build — one image addresses either orchestrator through `ORCHESTRATOR_URL` — but the port
 collision is reason enough for a case that does not arise in normal use: you compare the stacks by
 switching, not by running both.

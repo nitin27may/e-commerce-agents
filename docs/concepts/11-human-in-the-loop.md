@@ -1,9 +1,5 @@
 # Human-in-the-loop
 
-> **New to this?** [The harness](https://nitinksingh.com/ai-resources/02-agents/the-harness/) on the AI Knowledge Hub covers the
-> same ground from scratch, vendor-neutral, with a lab you can run locally for free.
-> This page assumes the concept and shows how it is built *here*.
-
 ## What it is
 
 Human-in-the-loop (HITL) means a specific action requires an explicit human approval before it's
@@ -41,9 +37,9 @@ given mode uses matters for understanding what actually happens when a gate fire
 `HITL_GATED_TOOLS`: `cancel_order`, `process_refund`, `initiate_return`, `modify_order`,
 `place_backorder` — are intercepted by `HITLFunctionMiddleware` *before* they execute. The
 docstring is explicit about what happens next: "the tool does NOT execute". A
-`hitl_requests` row is written with `status="pending"`, and the agent's tool call returns
+`tool_approval_requests` row is written with `status="pending"`, and the agent's tool call returns
 immediately with a `pending_approval` result — the LLM's turn ends there, having been told the
-action is awaiting approval. When an admin later approves it, a *separate* code path,
+action is awaiting approval. When a staff reviewer later approves it, a *separate* code path,
 `execute_approved_action()`, runs the underlying database operation directly. **The
 original LLM loop is never resumed.** The approval doesn't continue the conversation — it just
 performs the action the model asked for, outside the conversation entirely.
@@ -92,6 +88,8 @@ flowchart LR
   class block,pause error
   class cp infra
 ```
+
+**Build it yourself:** [Chapter 17: human-in-the-loop](../../tutorials/17-human-in-the-loop/README.md). **In the application:** `agents/python/shared/hitl.py` and `agents/python/workflows/return_replace.py`.
 
 Next: [evaluation](12-evaluation.md) — how to know any of this — grounding, guardrails, HITL gates
 — is actually working, instead of just looking right in a demo.
