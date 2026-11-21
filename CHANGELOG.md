@@ -14,6 +14,53 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-21
+
+Three months of work on `main` reach a release: A2A 1.0 on both stacks, one approvals inbox routed
+by a policy file, an Anthropic provider, a no-key demo mode, and a first Azure deployment path.
+It also fixes an unauthenticated route that could show another customer's return label, which is
+the reason to upgrade even if you want none of the rest.
+
+Several things in this release are written and tested but have not run against the real service
+they target. They are listed under "Known limits" so nobody discovers them the hard way.
+
+### Known limits
+
+- **The Azure deployment has never run against a real subscription.** The Bicep, the azd hooks and
+  the scripts build, lint and pass offline tests. The first real deploy is still to come. The GHCR
+  packages must be public for that path, and `db-init` is a twelfth image.
+- **Azure managed identity (`AZURE_OPENAI_AUTH=identity`) was tested against a fake credential
+  only.** The default stays `key`.
+- **`Azure.AI.OpenAI` is on a prerelease, 2.9.0-beta.1,** on the .NET stack. No stable version is
+  compatible with the OpenAI package the agent framework pulls in.
+- **The Anthropic provider is covered by stubbed-transport tests on both stacks and has never made
+  a live call.**
+- **The .NET Aspire AppHost has not been booted.**
+- **The eval scorecard is replay-only.** No live-model eval run has been recorded for this release.
+- **`--no-key` starts the stack, but the recorded chat answers are not in the released images
+  yet,** so chat prompts report "not recorded". Browsing, search, cart and checkout work. The
+  tutorials are the fully keyless path.
+- **An unattended .NET return still cannot auto-expire** (parity matrix row 36). The Python worker
+  cannot expire it and the .NET timeout worker is not in this release.
+
+### Documentation
+
+- **The README, the docs landing page and the repository description now lead with what this is:**
+  a complete multi-agent application with a course that builds up to it. The README gains a
+  "What is in the box" table and the five orchestration modes with the benchmark's latency figures.
+  Before this, neither the README nor the description mentioned that the orchestrator runs one
+  request five ways.
+- **Orchestration modes are documented where a reader looks for them:** a section and diagram in
+  `docs/architecture.md`, three scenarios in `docs/demo-guide.md` (switch mode, compare modes,
+  approve a paused return), and a chapter-to-mode map in the tutorial index.
+- **Pages that said an API key was mandatory no longer do,** `scripts/verify-setup.sh` accepts
+  `LLM_PROVIDER=replay`, and twelve chapters dropped a key prerequisite their own code did not need.
+- **All 34 tutorial chapters were edited for learners.** Each opens with what you will be able to
+  do, shows the real output of its first keyless run, and names the keyless .NET path. Four
+  chapters documented a run as keyless that fails without a key (03, 06, 15, 25); chapter 12 listed
+  the return workflow's steps in the wrong order; chapter 14 gave the wrong .NET handoff tool
+  names. Stale file and line references into the application are corrected.
+
 ### Security
 
 - **Return label route matched tokens with `LIKE '%<segment>%'`** (both stacks). `GET /api/returns/{label_token}/label`
@@ -178,6 +225,7 @@ they landed before the infrastructure work rather than during it.
   add-to-cart flow selected product-grid anchors that stopped existing when those cards moved to
   `onClick` + `router.push`, so it burned its full 90-second timeout on an element that cannot
   exist. All three now assert presence, which is the criterion the parity gate already states.
+
 
 ## [1.3.0] - 2026-08-27
 

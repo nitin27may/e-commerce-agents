@@ -66,11 +66,11 @@ Each explains the same ideas at a different depth, and each says where to go nex
 
 ## Where the project is
 
-**v1.3 is the latest release.** Both backends are live and stable; the pause-and-resume approval loop, server-side grounding, idempotency on money-moving actions, rate limiting and the five orchestration modes all ship on Python and .NET.
+**v1.4 is the latest release.** Both backends are live and stable; the pause-and-resume approval loop, server-side grounding, idempotency on money-moving actions, rate limiting and the five orchestration modes all ship on Python and .NET.
 
-### Shipped since 1.3.0
+### New in 1.4
 
-On `main`, not yet in a tagged release (see the [roadmap]({{ site.baseurl }}/getting-started/roadmap.html) for the full entries):
+See the [roadmap]({{ site.baseurl }}/getting-started/roadmap.html) and the [changelog](https://github.com/nitin27may/e-commerce-agents/blob/main/CHANGELOG.md) for the full entries:
 
 - **A2A 1.0** on both stacks: JSON-RPC at `/a2a/v1`, an agent card, and a signed user-context token, beside the original wire.
 - **Approvals**: one inbox and one decide path, routed by policy, with SLA timers run by an outbox worker.
