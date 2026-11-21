@@ -336,12 +336,20 @@ public sealed class ProductTools(DatabasePool pool, IEmbeddingProvider embedding
         // tops a single arm, and neither arm's raw scores need a comparable scale.
         var sql = $@"
             WITH vec AS (
-                SELECT pe.product_id,
-                       1 - (pe.embedding <=> @vector::vector) AS similarity,
-                       ROW_NUMBER() OVER (ORDER BY pe.embedding <=> @vector::vector) AS rank
-                FROM product_embeddings pe
-                JOIN products p ON pe.product_id = p.id
-                WHERE p.is_active = TRUE
+                SELECT product_id, similarity,
+                       ROW_NUMBER() OVER (ORDER BY similarity DESC, rating DESC, name) AS rank
+                FROM (
+                    -- Rounded to 6 places before ranking and display: pgvector accumulates float32
+                    -- distances in a CPU-dependent (SIMD) order, so near-equal products differ in the
+                    -- 8th digit between machines and swap places. Ties then fall to rating and name,
+                    -- which are data, not hardware. Mirrors Python's semantic_search.
+                    SELECT pe.product_id, p.rating, p.name,
+                           ROUND((1 - (pe.embedding <=> @vector::vector))::numeric, 6) AS similarity
+                    FROM product_embeddings pe
+                    JOIN products p ON pe.product_id = p.id
+                    WHERE p.is_active = TRUE
+                ) scored
+                ORDER BY rank
                 LIMIT @candidates
             ),
             fts AS (
@@ -382,7 +390,12 @@ public sealed class ProductTools(DatabasePool pool, IEmbeddingProvider embedding
         Rating: (decimal)r.rating,
         // Null when only the text arm matched — the product has no embedding
         // row, or ranked outside the vector candidate window.
-        Similarity: r.similarity is null ? null : Math.Round((double)r.similarity, 3),
+        // The vector arm hands back a 6-place numeric; 3 places is a half-up round on the decimal
+        // (Python: Decimal.quantize ROUND_HALF_UP). A binary-double Math.Round is half-even on the
+        // float value, so an exact 0.0625 would show 0.062 where another CPU's float32 said 0.063.
+        Similarity: r.similarity is null
+            ? null
+            : (double)Math.Round(Convert.ToDecimal(r.similarity), 3, MidpointRounding.AwayFromZero),
         Score: Math.Round((double)r.score, 5),
         ImageUrl: (string?)r.image_url
     );
