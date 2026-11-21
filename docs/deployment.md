@@ -1,5 +1,9 @@
 # Deployment & Development
 
+How to run the stack with Docker Compose, and how to run individual services outside it for
+development. It is for anyone starting the project locally or changing how its services are
+built, configured and started.
+
 ## 1. Prerequisites
 
 | Tool | Minimum Version | Notes |

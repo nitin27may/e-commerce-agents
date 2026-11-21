@@ -1,8 +1,9 @@
-# DevUI (dev only, Python only)
+# DevUI
 
+A development-only, Python-only way to try one specialist or workflow without the orchestrator in front of it.
 [MAF DevUI](https://learn.microsoft.com/agent-framework/) is Microsoft Agent Framework's local web harness: pick an
 agent or workflow, chat with it, and watch the traces and tool calls live. `scripts/devui.py` registers this repo's five
-specialists and two workflows in it, so you can poke one specialist without the orchestrator in front of it.
+specialists and two workflows in it.
 
 ```bash
 ./scripts/dev.sh --infra-only          # database and redis
@@ -10,6 +11,9 @@ specialists and two workflows in it, so you can poke one specialist without the 
 uv run --project agents/python --with agent-framework-devui==1.0.0b261112 python -m scripts.devui
 # http://127.0.0.1:8090
 ```
+
+Port 8090 is also the host port the compose `auth-server` publishes (the `agents` profile). With that stack running,
+add `--port 8091` (any free port) to the command.
 
 What you get: `product-discovery`, `order-management`, `pricing-promotions`, `review-sentiment`,
 `inventory-fulfillment`, and the `pre-purchase` and `return-and-replace` workflows with their real tools.

@@ -1,12 +1,14 @@
 # Merchant proposals
 
-A seller's copilot for the catalogue (#93): the system looks at stock and recent sales, **proposes**
+A seller's copilot for the catalogue: the system looks at stock and recent sales, **proposes**
 price markdowns and restock orders, and the seller reviews them line by line. Nothing changes until
-the seller accepts it, and nothing the seller accepts can break a hard limit.
+the seller accepts it, and nothing the seller accepts can break a hard limit. Python only.
 
-It is built without a model. Proposal generation is plain, deterministic code over the seeded data;
-the model-driven merchant-ops agent and its eval dataset (plan rows M-2) need a recording session
-with a key and are not part of this.
+**Built:** proposal generation, the hard limits, line-by-line review, execution, the seller page and
+an optional daily run. Generation is plain, deterministic code over the seeded data; no model is called.
+
+**Not built:** a model-driven merchant-ops agent and its eval dataset. Recording them needs a model key.
+Tracked in [#93](https://github.com/nitin27may/e-commerce-agents/issues/93).
 
 ## The flow
 
@@ -25,7 +27,7 @@ generate  ──►  proposals + proposal_lines  ──►  one approvals row  �
 | Execution of one line | `agents/python/shared/merchant/execute.py` |
 | List, generate, decide | `agents/python/orchestrator/proposals_service.py`, `routes/proposals.py` |
 | Daily run, SLA reminder/expiry | `agents/python/worker/merchant_handlers.py`, `worker/approval_handlers.py` |
-| Hard limits (M-1) | `config/policies/merchant_limits.yaml`, `shared/merchant/guards.py` |
+| Hard limits | `config/policies/merchant_limits.yaml`, `shared/merchant/guards.py` |
 | Seller page | `web/src/app/(app)/seller/proposals/page.tsx` |
 
 ## What is proposed
@@ -87,8 +89,8 @@ A line left out is rejected. A blocked line can only be rejected (422 otherwise)
 
 Execution, per accepted line (`execute_line`, run once under key `proposal_line:{id}`):
 
-1. lock the line and the product; refuse (`failed`, `not_owner`) if the product no longer belongs to
-   the proposal's seller;
+1. lock the line and the product; refuse (`failed`, `not_owner`) if the product does not belong to
+   the proposal's seller any more;
 2. **re-run the guards against the facts as they are now**: a price that moved, a promotion that
    started or a change already made today since the batch was proposed all count. A failing line
    becomes `blocked` and changes nothing, whatever the seller typed;
@@ -114,15 +116,16 @@ crash leaves it open and a retry finishes without repeating anything, two concur
 | `GET /api/seller/proposals/{id}` | owner, admin; others 404 |
 | `POST /api/seller/proposals/{id}/decide` | owner, admin; others 404 |
 
-## The daily run (M-4)
+
+## The daily run
 
 `merchant.daily_run_due` is a self-rescheduling outbox timer, **off by default**
 (`MERCHANT_OPS_SCHEDULE_ENABLED=false`; run hour `MERCHANT_OPS_RUN_HOUR_UTC`, default 6). The worker
 books the next run at start when enabled. Each run generates for every seller with products, each in
 its own savepoint (one failing seller does not stop the others), then books the next day in the same
 transaction under a per-date dedupe key. With the flag off a stray row does nothing and does not
-reschedule. The flag exists because the keyed merchant-ops agent (M-2), when it lands, will spend
-model money on a scheduled run; today's generation costs nothing.
+reschedule. The flag exists because a model-driven merchant-ops agent would spend model money on a
+scheduled run; today's generation costs nothing.
 
 ### SLA expiry and a decide in flight
 
@@ -133,11 +136,11 @@ approval `expired`, proposal `cancelled`, nothing executed, the seller told.
 
 ## Not done here, and parity
 
-* **M-2** (merchant-ops `Agent`, `merchant-ops.yaml`, `propose_markdown` / `propose_restock` tools,
-  `evals/datasets/merchant_ops.json`) needs a recording session. No `@tool` was added, so no existing
-  agent's tool schema, prompt or replay fixture changed. When M-2 wraps `generate_proposal`, its tool
-  output carries seller-authored product names and so needs a sanitizer entry.
-* Python-only by recorded decision (parity matrix row 39): the .NET stack has no proposal routes. Its
+* **The merchant-ops agent** (an `Agent`, `merchant-ops.yaml`, `propose_markdown` / `propose_restock` tools,
+  `evals/datasets/merchant_ops.json`) needs a recording session with a model key. No `@tool` exists for it, so
+  no existing agent's tool schema, prompt or replay fixture is affected. A tool that wraps `generate_proposal`
+  returns seller-authored product names, so it needs a sanitizer entry.
+* Python only (parity matrix, row 39): the .NET stack has no proposal routes. Its
   approvals inbox shares the database and would list a proposal approval, but refuses to decide it.
 
 ### A shortfall above the restock limits

@@ -125,7 +125,7 @@ credit under a still-pending approval, so every later path must *record* it:
   without edits records `{"amount": "<paid>"}` (status `approved_with_edits` when it differs from the proposal);
 - a `run_once` reservation held by another live attempt is `409`, claim handed back, nothing recorded: only a result with a
   `success` key is a verdict, so a `{"error": ...}` shape can never close the approval as `failed`;
-- the SLA handler records it (it already did); `request_info` is refused for event approvals;
+- the SLA handler records it; `request_info` is refused for event approvals;
 - an `amount` edit that is not finite or beyond decimal precision is `422`, not `500`.
 
 Web: the decisions page pages 50 at a time (`limit`/`offset`, "Showing N of TOTAL", "Load older decisions"; the state
@@ -152,10 +152,10 @@ their own account. Three layers close it, and the engine never relies on the sim
 `SET NULL` and `CASCADE` anyway), and the demo reset (`shared/demo_tour.py`) runs `DELETE FROM orders WHERE user_id = ...`.
 One decision row referencing the tour user's order would make every later reset fail. So the engine records
 `no_action: demo_user_excluded` for the tour user **without any user or order id on the row**, the scenario picker skips the
-account, and an explicit simulate on its order is a 422. Every other `DELETE FROM` in application code was checked against
-the new tables: they touch cart items, messages, checkpoints, idempotency keys, refresh tokens, embeddings and the eval
-seeder's products and reviews, none of which `agent_decisions` or `store_credit_ledger` reference. The seeder's
-`TRUNCATE ... users CASCADE` is the other path, handled below.
+account, and an explicit simulate on its order is a 422. Every other `DELETE FROM` in application code touches cart
+items, messages, checkpoints, idempotency keys, refresh tokens, embeddings or the eval seeder's products and reviews,
+none of which `agent_decisions` or `store_credit_ledger` reference. The seeder's `TRUNCATE ... users CASCADE` is the
+other path; see *The log is append-only*.
 
 ## Admin API and page
 
@@ -170,8 +170,8 @@ Web: `/admin/decisions`.
 ## Not built
 
 The LLM `ops-responder` mode (`EVENT_AGENT_MODE=agent`) and its fixtures need a keyed recording session. Price-drop,
-back-in-stock and order-risk events are cut by the plan (consent UX, checkout hot path); the engine takes another event type
-by adding an `events:` entry, a parser and a handler line. No real carrier feed produces `order.shipment_delayed`.
+back-in-stock and order-risk events are out of scope (they need consent UX or sit on the checkout hot path); the engine
+takes another event type by adding an `events:` entry, a parser and a handler line. No real carrier feed produces `order.shipment_delayed`.
 
 ### What the TRUNCATE guard is, and is not
 
@@ -180,6 +180,3 @@ The triggers on `agent_decisions` and `store_credit_ledger` stop accidents: a st
 application itself uses, which owns the tables and may call `reset_autonomy_log()`. That function is reached only from
 the seeder (`scripts/seed.py::reset_autonomy_log`) and the test fixtures, never from an HTTP route. An audit log that
 must survive a hostile application role needs a separate role or an external sink, which this repo does not have.
-
-Migration `0012` was amended on its own branch before it reached `main` (the reviewer constraint and the TRUNCATE
-guard). A database that ran the first draft of that branch needs `./scripts/dev.sh --clean`; nothing on `main` is affected.

@@ -1,9 +1,11 @@
 # Microsoft Agent Framework — Patterns & Best Practices
 
-How this repo uses Microsoft Agent Framework (MAF v1.0) for agents and workflows,
+How this repo uses Microsoft Agent Framework (MAF v1) for agents and workflows,
 which orchestration pattern fits which problem, and the conventions that keep the
 code testable and portable across OpenAI / Azure OpenAI — and, via `LLM_BASE_URL`,
-any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, OpenRouter).
+any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, OpenRouter). It is for a
+developer who knows what an agent is and wants the patterns this codebase follows.
+The exact package versions are pinned in `agents/python/pyproject.toml`.
 
 ## Agent execution
 
@@ -22,8 +24,8 @@ Agent(
 ```
 
 Requests run through MAF's native path — `agent.run(messages)` /
-`agent.run(messages, stream=True)` in `shared/agent_host.py`. The legacy custom
-chat-completions loop was retired once Azure compatibility was confirmed.
+`agent.run(messages, stream=True)` in `shared/agent_host.py`. There is no custom
+chat-completions loop.
 
 **Conventions**
 
@@ -54,8 +56,9 @@ class MyExecutor(Executor):
         # or: await ctx.yield_output(state)   # emit a terminal result
 ```
 
-- Import from the public `agent_framework` package (pinned at 1.26.0). Private
-  `agent_framework._*` modules are blocked by `tests/test_no_private_maf_imports.py`.
+- Import from the public `agent_framework` package (version pinned in
+  `agents/python/pyproject.toml`). Private `agent_framework._*` modules are blocked
+  by `tests/test_no_private_maf_imports.py`.
 - A forwarding executor is typed `WorkflowContext[In, Out]`; a terminal executor
   that only yields is typed `WorkflowContext[None, Out]`.
 - Build with `WorkflowBuilder(start_executor=..., name=...)` then `.add_edge(a, b)`
@@ -133,15 +136,20 @@ unit-testable without an LLM; production wires panelists to agents. See
 
 ### Handoff & tool-routing — orchestration
 
-The orchestrator routes user requests to specialists. Multiple interchangeable modes
-live behind `orchestrator/modes/` (see `GET /api/orchestration/modes`); as of this
-writing:
+The orchestrator routes user requests to specialists. Five interchangeable modes are
+registered in `orchestrator/modes/__init__.py` (`MODES`) and listed by
+`GET /api/orchestration/modes`:
 
-- **Tool routing (default):** the orchestrator LLM calls the `call_specialist_agent`
-  tool over A2A. Simple, observable, and what the routing eval scores.
-- **MAF Handoff (`mode=handoff`, or `ORCHESTRATION_MODE=handoff` as the default):**
-  a `HandoffBuilder` mesh where the orchestrator mechanically hands control to a
-  specialist and back.
+- **Tool routing (`tool`, the default):** the orchestrator LLM calls the
+  `call_specialist_agent` tool over A2A. Simple, observable, and what the routing eval scores.
+- **MAF Handoff (`handoff`):** a `HandoffBuilder` mesh where the orchestrator
+  mechanically hands control to a specialist and back.
+- **`workflow:pre-purchase`:** the concurrent fan-out / fan-in graph above.
+- **`workflow:return-replace`:** the sequential graph with the approval gate above.
+- **`group-chat`:** the round-table debate above.
+
+Any of them can be the default through `ORCHESTRATION_MODE`. An unregistered name
+(`magentic`, a declarative-YAML mode) raises a named `UnknownModeError`.
 
 Per-request selection takes priority over the `ORCHESTRATION_MODE` env default —
 see `orchestrator/modes/__init__.py::get_mode` for the resolution order.

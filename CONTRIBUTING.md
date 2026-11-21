@@ -4,6 +4,20 @@ Thanks for your interest. This is a showcase repo for the Microsoft Agent
 Framework (MAF) v1 multi-agent pattern; PRs that improve clarity, tests, or the
 demo experience are welcome.
 
+This page is enough to make a first contribution: what to install, how to run the tests
+without an API key, what a PR must pass, and where to find a first issue.
+
+## Prerequisites
+
+| Tool | Version | Needed for |
+|------|---------|------------|
+| Docker with Compose v2 | 24+ | The full stack, and the Postgres containers the Python integration tests start |
+| `uv` | latest | Everything Python (3.12) |
+| Node.js and `pnpm` | 22+ and 9+ | The frontend |
+| .NET SDK | 10.0 | Only if you touch `agents/dotnet/` or a tutorial's .NET half |
+
+No API key is needed to build, test or open a PR.
+
 ## Setup
 
 ```bash
@@ -14,14 +28,28 @@ cd agents/python && uv sync --extra dev      # Python (uv, not pip/poetry)
 cd web && pnpm install                        # frontend (pnpm, not npm/yarn)
 ```
 
-Requires Docker, `uv` and `pnpm`. Tests and the eval `smoke` suite run with no key on
-`LLM_PROVIDER=replay` (committed recordings of real model responses, available on both
-stacks). A real `OPENAI_API_KEY` (or `AZURE_OPENAI_*`) in `.env` is only needed for live
-runs against a model.
+Tests and the eval `smoke` suite run with no key on `LLM_PROVIDER=replay` (committed
+recordings of real model responses, available on both stacks). A real `OPENAI_API_KEY`
+(or `AZURE_OPENAI_*`) in `.env` is only needed for live runs against a model.
+
+## Run the tests without an API key
+
+```bash
+cd agents/python && uv sync --all-packages --extra dev && uv run pytest   # Python
+uv run --project tutorials pytest tutorials/ -m "not integration"         # tutorials
+cd web && pnpm test                                                       # frontend
+cd agents/dotnet && dotnet test ECommerceAgents.sln                       # .NET
+docker compose up -d db redis && scripts/replay-evals.sh --setup          # eval suites, replayed
+```
+
+None of these calls a model. [`docs/replay-mode.md`](docs/replay-mode.md) explains how the
+recordings work and when one has to be re-made.
 
 ## Conventions
 
-Conventions live in [`CLAUDE.md`](./CLAUDE.md) (the canonical guide). Highlights:
+The highlights are below. [`CLAUDE.md`](./CLAUDE.md) holds the detailed architecture
+notes: it is written for the AI coding assistant used on this repo, and it is useful to
+people too when you need to know why a module is shaped the way it is.
 
 - **Python**: type hints everywhere, `async`, `asyncpg` (no ORM), `httpx` (not
   `requests`), Pydantic Settings, ContextVars for request state, MAF `@tool`
@@ -88,7 +116,13 @@ start so two people do not pick up the same one.
 
 ## PRs
 
-- Branch off `main`; keep PRs focused.
-- Describe what changed and how you verified it (commands + results).
-- Update docs when behavior changes; add/adjust tests.
-- CI (`.github/workflows/tests.yml`) must be green.
+Checklist before you ask for review:
+
+- [ ] Branched off `main`; the PR does one thing.
+- [ ] Tests added or adjusted for the change.
+- [ ] The definition-of-done commands above pass for the parts you touched.
+- [ ] If you changed a prompt, a tool schema or a tool's output: the replay eval suite
+      runs with zero fixture misses.
+- [ ] Docs updated when behavior changes.
+- [ ] The description says what changed and how you verified it (commands + results).
+- [ ] CI (`.github/workflows/tests.yml`) is green.

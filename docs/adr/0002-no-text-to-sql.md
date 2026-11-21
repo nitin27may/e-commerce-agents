@@ -46,3 +46,8 @@ A read-only replica with row-level security enforced by the *database* rather th
 application code would remove the scoping argument, since the model could no longer
 express a query that crosses a tenant boundary. The injection and audit arguments would
 still stand.
+
+## Update (2026-11-21)
+
+The 34 tables are the frozen baseline; migrations add 11 more, 45 in all. See
+[database-schema.md](../database-schema.md).

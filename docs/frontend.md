@@ -1,5 +1,9 @@
 # Frontend Architecture
 
+How the web app in [`web/`](../web) is put together: routes, theming, the chat
+stream, the orchestration UI and the tests. It is for a developer changing the
+frontend or wiring a client to the same API.
+
 Next.js 16 (App Router) · React 19 · Tailwind CSS 4 · shadcn/ui · framer-motion ·
 recharts. Source in [`web/`](../web). All backend calls go through the typed
 client `web/src/lib/api.ts`.
@@ -92,7 +96,12 @@ sequenceDiagram
 
 ## Orchestration modes, live graph and runs
 
-The chat page (`app/(app)/chat/page.tsx`) exposes the orchestrator's modes and what they did.
+In the chat composer the user picks how the orchestrator should handle the next message: one of
+its five orchestration modes. While a workflow mode runs, a diagram of that mode's graph lights up
+node by node. A compare dialog sends one prompt through several modes and shows the answers side by
+side, and the `/runs` page lists past runs and lets staff approve or reject a paused one.
+
+The chat page is `app/(app)/chat/page.tsx`. The pieces:
 
 - **Mode switcher** (`components/chat/mode-switcher.tsx`). A composer control fed by
   `GET /api/orchestration/modes`. The selection travels as the `mode` option of
@@ -122,7 +131,11 @@ The chat page (`app/(app)/chat/page.tsx`) exposes the orchestrator's modes and w
 - Unit/component: **vitest + React Testing Library** (`pnpm test`, jsdom).
 - E2E: **Playwright** under `web/e2e/`. `ui-smoke.spec.ts` runs backend-free
   (mocked auth via localStorage + `page.route('**/api/**')`); the other specs
-  need the full live stack. Playwright is intentionally not run in CI.
+  need the full live stack.
+- In CI, the `web-ui-smoke` job in `.github/workflows/tests.yml` runs three backend-free
+  specs (`ui-smoke`, `not-found`, `a11y`) against a production build, on the desktop and
+  `mobile-chromium` projects. The rest of `web/e2e/` is not run in CI: it needs the live
+  stack. Run it locally with `cd web && pnpm exec playwright test`.
 
 ## Related
 

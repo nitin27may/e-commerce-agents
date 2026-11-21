@@ -13,9 +13,6 @@ They are not. Each specialist is an independent service behind an
 `POST /message:stream`, `GET /.well-known/agent-card.json`), reached over HTTP even
 when both ends are containers on the same Docker network.
 
-*Update (B-12):* the Python specialists also serve the A2A 1.0 JSON-RPC binding at
-`/a2a/v1` with a spec agent card, beside those routes; see [a2a.md](../a2a.md).
-
 ## Decision
 
 Specialists are separate services and every orchestrator→specialist hop is an A2A HTTP
@@ -55,3 +52,9 @@ call would have failed at compile time.
 If the orchestrator and specialists were ever deployed as one unit with no independent
 scaling or independent failure, the HTTP hop would be pure overhead and this should be
 revisited. That is not the case today and is not planned.
+
+## Update (2026-11-21)
+
+The decision stands. Every specialist, on both the Python and .NET stacks, now also serves
+the A2A 1.0 JSON-RPC binding at `/a2a/v1`, beside the `/message:send` and `/message:stream`
+routes named above. See [a2a.md](../a2a.md).

@@ -3,7 +3,7 @@
 E-Commerce Agents ships two standalone MCP servers as independently publishable Python packages.
 They expose product and inventory data over the [Model Context Protocol](https://modelcontextprotocol.io)
 streamable HTTP transport so any MCP-compatible client can consume them without knowing anything
-about this codebase.
+about this codebase. This page is for anyone connecting a client to them or switching the agents to MCP mode.
 
 ## What this demonstrates
 
@@ -36,7 +36,7 @@ Only the data access layer changes.
 | `mcp-product` | 9000 | Product search, details, comparison, trending, price history | `packages/mcp-product` |
 | `mcp-inventory` | 9001 | Stock levels, warehouses, shipping, carriers | `packages/mcp-inventory` |
 
-Both use `MCPServer` from the [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) 2.x (called `FastMCP`, in `mcp.server.fastmcp`, before 2.0) and expose the MCP streamable
+Both use `MCPServer` from the [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) 2.x (the class named `FastMCP`, in `mcp.server.fastmcp`, in SDK 1.x) and expose the MCP streamable
 HTTP transport at `/mcp`. MAF's `MCPStreamableHTTPTool` connects to that endpoint.
 
 ## Enabling MCP mode
@@ -106,16 +106,16 @@ docker compose restart auth-server
   — the MCP Python SDK auto-mounts `GET /.well-known/oauth-protected-resource/mcp` and wraps
   `POST /mcp` in `RequireAuthMiddleware`. An unauthenticated or wrong-scope call gets `401` plus a
   spec-shaped header: `WWW-Authenticate: Bearer error="invalid_token", error_description="...", resource_metadata="http://.../.well-known/oauth-protected-resource/mcp"`.
-- `validate_token_resource=False` keeps the 1.x behaviour: the vendored verifier checks the audience
-  itself, so the SDK's RFC 8707 resource-indicator check (it defaults to on in SDK 3.0, and warns when
-  unset) is off. Note too that 2.x preserves a path-less issuer exactly, so the protected-resource
+- `validate_token_resource=False` turns off the SDK's RFC 8707 resource-indicator check, because the vendored
+  verifier checks the audience itself. The check defaults to on in SDK 3.0, and 2.x warns when the setting is
+  unset. Note too that 2.x preserves a path-less issuer exactly, so the protected-resource
   metadata lists `authorization_servers` without a trailing slash.
 - Each app is built with `mcp.streamable_http_app(host="0.0.0.0")` explicitly (in 2.x `host` moved from
   the constructor to this call). **Gotcha**: MCPServer auto-enables
   DNS-rebinding Host-header protection whenever `host` is left at its default `"127.0.0.1"`,
   allowlisting only `localhost`/`127.0.0.1`/`::1` — which would silently `421` every real call over
-  the Docker network (e.g. `http://mcp-product:9000/mcp`), auth or no auth. This is fixed in both
-  `server.py` files; don't remove the explicit `host` argument.
+  the Docker network (e.g. `http://mcp-product:9000/mcp`), auth or no auth. Both `server.py` files pass it;
+  do not remove the explicit `host` argument.
 - The OAuth-mode client (`shared/oauth/service_client.py::build_mcp_http_client`) returns an
   `httpx2.AsyncClient`: the 2.x client stack, and so MAF's `MCPStreamableHTTPTool(http_client=...)`,
   does not accept an `httpx.AsyncClient`. Core 1.25+ also imports `tenacity` for MCP catalog recovery
@@ -161,7 +161,7 @@ The .NET MCP host (`ECommerceAgents.Mcp`) uses the official `ModelContextProtoco
 (real JSON-RPC over streamable HTTP at `POST /mcp`, same transport shape as the Python MCPServer
 servers) with its own bearer-token gate (`GET /.well-known/oauth-protected-resource`, the same
 `WWW-Authenticate` shape on 401) implemented as ASP.NET Core middleware ahead of the SDK's own
-routing, reusing the same `JwtTokenService`/`JwksKeyProvider` the Phase B/C auth paths use.
+routing, reusing the `JwtTokenService`/`JwksKeyProvider` that validate user and inter-agent tokens.
 
 ### Getting credentials as a third-party MCP client (dynamic registration)
 
@@ -185,8 +185,8 @@ single-worker server tries to fetch its own JWKS from within its own request han
 
 ### Flag off (`MCP_AUTH_ENABLED=false`, the default)
 
-Both MCP servers behave exactly as before this feature — no auth surface at all, byte-for-byte
-regression-guarded by `tests/test_mcp_oauth_integration.py::test_mcp_auth_disabled_is_unchanged_regression_guard`.
+Both MCP servers have no auth surface at all. A test guards that byte for byte:
+`tests/test_mcp_oauth_integration.py::test_mcp_auth_disabled_is_unchanged_regression_guard`.
 
 ## Inspect with MCP Inspector
 
@@ -291,89 +291,42 @@ DATABASE_URL=postgresql://... uvx ecommerce-mcp-product                       # 
 DATABASE_URL=postgresql://... uvx ecommerce-mcp-product --transport stdio     # for clients that launch it
 ```
 
-### What CI checks on every change
+Maintainers: the checks CI runs and the release steps are under
+[Releasing the packages](#releasing-the-packages-maintainers) at the end of this page.
 
-The `MCP packages · smoke tests` job in `tests.yml` builds the sdist and wheel of each package
-(`uv build`), runs `twine check --strict` on them, installs the wheel into an empty virtualenv and starts the
-console script with `--help`. The integration job starts the real console script against the test Postgres and
-speaks MCP to it — `initialize`, `tools/list` and a tool call — once over streamable HTTP and once over stdio
-(`tests/test_entrypoint.py` in each package). Nothing is uploaded.
+## Using from external MCP clients
 
-### Release procedure
+Because these are standard MCP servers, any MCP-compatible client can connect. Clients that launch the
+server themselves use the stdio transport (`--transport stdio`); the console script's default is streamable
+HTTP, which is what `MCPStreamableHTTPTool` and the LangChain adapter below connect to:
 
-Releases are cut by pushing a tag. `.github/workflows/publish-mcp.yml` runs **only** on tags matching
-`mcp-product-v*` / `mcp-inventory-v*` and on a manual dispatch; an ordinary push or pull request never
-triggers it, and it holds no stored token.
+```json
+// Claude Desktop — claude_desktop_config.json
+{
+  "mcpServers": {
+    "ecommerce-product": {
+      "command": "uvx",
+      "args": ["ecommerce-mcp-product", "--transport", "stdio"],
+      "env": { "DATABASE_URL": "postgresql://..." }
+    },
+    "ecommerce-inventory": {
+      "command": "uvx",
+      "args": ["ecommerce-mcp-inventory", "--transport", "stdio"],
+      "env": { "DATABASE_URL": "postgresql://..." }
+    }
+  }
+}
+```
 
-1. **Bump the version** in the package's `pyproject.toml` (`agents/python/packages/mcp-<domain>/`) and merge
-   it to `main` through a normal pull request. Dependencies are resolved from the workspace `uv.lock`; if you
-   change a dependency range, run `uv lock` in `agents/python` and commit the result.
-2. **Dry run on TestPyPI (recommended for the first release of each package):** Actions → *Publish MCP
-   packages* → *Run workflow*, choose the package. It builds and checks, then uploads to TestPyPI through the
-   `testpypi` environment. TestPyPI refuses to overwrite a version, so a retry needs a new version number.
-   Check the page, then `uvx --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/
-   ecommerce-mcp-product --help`.
-3. **Tag the merge commit** and push the tag — the tag is `mcp-<domain>-v<version>`, and the version must be the
-   one in `pyproject.toml`:
+```python
+# LangGraph / LangChain
+from langchain_mcp_adapters.client import MultiServerMCPClient
 
-   ```bash
-   git tag mcp-product-v0.1.0 && git push origin mcp-product-v0.1.0
-   ```
-
-4. The workflow then, for that one package only: refuses to continue unless the tag's version equals the
-   package's `pyproject.toml` version and the tagged commit is on `main`; runs the package's non-integration
-   tests; builds sdist + wheel; runs `twine check`; installs the wheel into an empty environment; and uploads
-   to PyPI via trusted publishing (`pypa/gh-action-pypi-publish`, `id-token: write`, environment `pypi`).
-   A mismatch fails the run before anything is uploaded.
-5. Each package is versioned and tagged independently of the other, and of the application's `vX.Y.Z` tags
-   (`release.yml` only matches `v*.*.*`).
-
-The version and ancestry checks in step 4 are a convenience that catches honest mistakes. They are **not** a
-security boundary: the tag ruleset and `pypi` environment rules in "What only the maintainer can do", step 4,
-are what make a release trustworthy.
-
-A PyPI upload cannot be replaced: to fix a bad release, yank it on PyPI and publish the next version.
-
-### What only the maintainer can do
-
-The workflow cannot do these, and it fails at the upload step until they are done. Nothing was published or
-registered when this workflow was written.
-
-1. **Confirm the package names are free.** `ecommerce-mcp-product` and `ecommerce-mcp-inventory` have not been
-   checked against PyPI — name availability could not be verified reliably when this was written. Look at
-   `https://pypi.org/project/<name>/` (a 404 means unclaimed; PyPI also rejects names too similar to an existing
-   one at upload time). If a name is taken, rename the package in its `pyproject.toml`, in `publish-mcp.yml`'s
-   `dist_name` check and in its README.
-2. **Register a trusted publisher for each project** on [pypi.org](https://pypi.org/manage/account/publishing/).
-   Neither project exists yet, so add it as a *pending publisher*, with:
-
-   | Field | Value |
-   |-------|-------|
-   | PyPI project name | `ecommerce-mcp-product` (then `ecommerce-mcp-inventory`) |
-   | Owner | `nitin27may` |
-   | Repository name | `e-commerce-agents` |
-   | Workflow name | `publish-mcp.yml` |
-   | Environment name | `pypi` |
-
-   For the TestPyPI dry run, register the same on [test.pypi.org](https://test.pypi.org/manage/account/publishing/)
-   with environment name `testpypi`. The two indexes are separate accounts.
-3. **Create the GitHub environments** `pypi` and `testpypi` (Settings → Environments). A missing environment is
-   created empty on first use, which means no approval gate, so configure `pypi` as in the next section.
-4. **REQUIRED: protect the release path (tag ruleset and the `pypi` environment).** Without this the
-   in-workflow checks are advisory only. A tag push runs the workflow file *as it exists at the tagged commit*,
-   so whoever can push a tag can also push a commit that deletes the "version equals `pyproject.toml`" and
-   "commit is on `main`" checks and tag that commit. No edit to `publish-mcp.yml` can close this; only
-   repository settings can:
-   - **Tag ruleset** (Settings → Rules → Rulesets → New tag ruleset): target `mcp-*-v*`, enforcement *Active*,
-     enable *Restrict creations*, *Restrict updates* and *Restrict deletions*, and put only the release
-     maintainers on the bypass list. Then only they can create a release tag at all.
-   - **`pypi` environment** (Settings → Environments → `pypi`): under *Deployment branches and tags* choose
-     *Selected branches and tags* and add the tag pattern `mcp-*-v*` (and no branch); add at least one
-     *Required reviewer* who is not the person who pushed the tag, and leave *Prevent self-review* on. The
-     trusted publisher on PyPI is bound to this environment name, so a run that does not satisfy these rules
-     cannot obtain an upload token.
-   Do the same for `testpypi` if you want the dry run gated (it runs on manual dispatch, so restrict it to
-   the `main` branch instead of a tag pattern).
+client = MultiServerMCPClient({
+    "product": {"url": "http://localhost:9000/mcp", "transport": "streamable_http"},
+    "inventory": {"url": "http://localhost:9001/mcp", "transport": "streamable_http"},
+})
+```
 
 ## Adding a new MCP server
 
@@ -416,39 +369,93 @@ members = ["packages/mcp-product", "packages/mcp-inventory", "packages/mcp-<doma
 
 8. Wire `MCPStreamableHTTPTool` into the relevant agent factory.
 
-## Using from external MCP clients
+## Releasing the packages (maintainers)
 
-Because these are standard MCP servers, any MCP-compatible client can connect. Clients that launch the
-server themselves use the stdio transport (`--transport stdio`); the console script's default is streamable
-HTTP, which is what `MCPStreamableHTTPTool` and the LangChain adapter below connect to:
+For whoever cuts a release of the two MCP packages. Nothing here is needed to run or connect to a server.
 
-```json
-// Claude Desktop — claude_desktop_config.json
-{
-  "mcpServers": {
-    "ecommerce-product": {
-      "command": "uvx",
-      "args": ["ecommerce-mcp-product", "--transport", "stdio"],
-      "env": { "DATABASE_URL": "postgresql://..." }
-    },
-    "ecommerce-inventory": {
-      "command": "uvx",
-      "args": ["ecommerce-mcp-inventory", "--transport", "stdio"],
-      "env": { "DATABASE_URL": "postgresql://..." }
-    }
-  }
-}
-```
+### What CI checks on every change
 
-```python
-# LangGraph / LangChain
-from langchain_mcp_adapters.client import MultiServerMCPClient
+The `MCP packages · smoke tests` job in `tests.yml` builds the sdist and wheel of each package
+(`uv build`), runs `twine check --strict` on them, installs the wheel into an empty virtualenv and starts the
+console script with `--help`. The integration job starts the real console script against the test Postgres and
+speaks MCP to it — `initialize`, `tools/list` and a tool call — once over streamable HTTP and once over stdio
+(`tests/test_entrypoint.py` in each package). Nothing is uploaded.
 
-client = MultiServerMCPClient({
-    "product": {"url": "http://localhost:9000/mcp", "transport": "streamable_http"},
-    "inventory": {"url": "http://localhost:9001/mcp", "transport": "streamable_http"},
-})
-```
+### Release procedure
+
+Releases are cut by pushing a tag. `.github/workflows/publish-mcp.yml` runs **only** on tags matching
+`mcp-product-v*` / `mcp-inventory-v*` and on a manual dispatch; an ordinary push or pull request never
+triggers it, and it holds no stored token.
+
+1. **Bump the version** in the package's `pyproject.toml` (`agents/python/packages/mcp-<domain>/`) and merge
+   it to `main` through a normal pull request. Dependencies are resolved from the workspace `uv.lock`; if you
+   change a dependency range, run `uv lock` in `agents/python` and commit the result.
+2. **Dry run on TestPyPI (recommended for the first release of each package):** Actions → *Publish MCP
+   packages* → *Run workflow*, choose the package. It builds and checks, then uploads to TestPyPI through the
+   `testpypi` environment. TestPyPI refuses to overwrite a version, so a retry needs a new version number.
+   Check the page, then `uvx --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/
+   ecommerce-mcp-product --help`.
+3. **Tag the merge commit** and push the tag — the tag is `mcp-<domain>-v<version>`, and the version must be the
+   one in `pyproject.toml`:
+
+   ```bash
+   git tag mcp-product-v0.1.0 && git push origin mcp-product-v0.1.0
+   ```
+
+4. The workflow then, for that one package only: refuses to continue unless the tag's version equals the
+   package's `pyproject.toml` version and the tagged commit is on `main`; runs the package's non-integration
+   tests; builds sdist + wheel; runs `twine check`; installs the wheel into an empty environment; and uploads
+   to PyPI via trusted publishing (`pypa/gh-action-pypi-publish`, `id-token: write`, environment `pypi`).
+   A mismatch fails the run before anything is uploaded.
+5. Each package is versioned and tagged independently of the other, and of the application's `vX.Y.Z` tags
+   (`release.yml` only matches `v*.*.*`).
+
+The version and ancestry checks in step 4 are a convenience that catches mistakes. They are **not** a
+security boundary: the tag ruleset and `pypi` environment rules in "What only the maintainer can do", step 4,
+are what make a release trustworthy.
+
+A PyPI upload cannot be replaced: to fix a bad release, yank it on PyPI and publish the next version.
+
+### What only the maintainer can do
+
+The workflow cannot do these, and it fails at the upload step until they are done. As far as this repo records,
+nothing is published or registered yet.
+
+1. **Confirm the package names are free.** `ecommerce-mcp-product` and `ecommerce-mcp-inventory` have not been
+   checked against PyPI. Look at
+   `https://pypi.org/project/<name>/` (a 404 means unclaimed; PyPI also rejects names too similar to an existing
+   one at upload time). If a name is taken, rename the package in its `pyproject.toml`, in `publish-mcp.yml`'s
+   `dist_name` check and in its README.
+2. **Register a trusted publisher for each project** on [pypi.org](https://pypi.org/manage/account/publishing/).
+   Neither project exists yet, so add it as a *pending publisher*, with:
+
+   | Field | Value |
+   |-------|-------|
+   | PyPI project name | `ecommerce-mcp-product` (then `ecommerce-mcp-inventory`) |
+   | Owner | `nitin27may` |
+   | Repository name | `e-commerce-agents` |
+   | Workflow name | `publish-mcp.yml` |
+   | Environment name | `pypi` |
+
+   For the TestPyPI dry run, register the same on [test.pypi.org](https://test.pypi.org/manage/account/publishing/)
+   with environment name `testpypi`. The two indexes are separate accounts.
+3. **Create the GitHub environments** `pypi` and `testpypi` (Settings → Environments). A missing environment is
+   created empty on first use, which means no approval gate, so configure `pypi` as in the next section.
+4. **REQUIRED: protect the release path (tag ruleset and the `pypi` environment).** Without this the
+   in-workflow checks are advisory only. A tag push runs the workflow file *as it exists at the tagged commit*,
+   so whoever can push a tag can also push a commit that deletes the "version equals `pyproject.toml`" and
+   "commit is on `main`" checks and tag that commit. No edit to `publish-mcp.yml` can close this; only
+   repository settings can:
+   - **Tag ruleset** (Settings → Rules → Rulesets → New tag ruleset): target `mcp-*-v*`, enforcement *Active*,
+     enable *Restrict creations*, *Restrict updates* and *Restrict deletions*, and put only the release
+     maintainers on the bypass list. Then only they can create a release tag at all.
+   - **`pypi` environment** (Settings → Environments → `pypi`): under *Deployment branches and tags* choose
+     *Selected branches and tags* and add the tag pattern `mcp-*-v*` (and no branch); add at least one
+     *Required reviewer* who is not the person who pushed the tag, and leave *Prevent self-review* on. The
+     trusted publisher on PyPI is bound to this environment name, so a run that does not satisfy these rules
+     cannot obtain an upload token.
+   Do the same for `testpypi` if you want the dry run gated (it runs on manual dispatch, so restrict it to
+   the `main` branch instead of a tag pattern).
 
 ## Related
 

@@ -4,6 +4,8 @@ title: Azure deployment (draft)
 
 # Azure deployment (draft)
 
+Bicep templates and scripts that deploy the Python stack to Azure Container Apps, for anyone who wants to run the demo in their own subscription.
+
 **Status: written, compiled and linted, never deployed.** Everything here was checked offline: the Bicep builds and lints, the compiled wiring is asserted by `agents/python/tests/test_infra_bicep.py`, the scripts pass `bash -n` and a dry run, and the secret generator has its own test. **Nothing has run against a real subscription**, and every behaviour that needs one is listed under [Assumptions to confirm](#assumptions-to-confirm-on-a-real-subscription). Python stack only: the .NET images are not published. For local and Compose paths see [deployment.md](deployment.md).
 
 ## Deploy
@@ -90,7 +92,7 @@ Images come from `ghcr.io/nitin27may/e-commerce-agents/<service>:<imageTag>`. Th
 
 ## Profiles
 
-`infra/profiles/demo.json` and `reference.json` carry the SKUs and counts; pick one with `DEPLOY_PROFILE` (default `demo`). The reference profile still deploys the same Container Apps topology: the VNet, private Postgres and Managed Redis are later PRs.
+`infra/profiles/demo.json` and `reference.json` carry the SKUs and counts; pick one with `DEPLOY_PROFILE` (default `demo`). The reference profile still deploys the same Container Apps topology: the VNet, private Postgres and Managed Redis are not built.
 
 | | demo | reference |
 |---|---|---|
@@ -116,7 +118,7 @@ Set by `azure-up` or by hand with `azd env set`.
 | `DEPLOYER_IP`, `ALLOWED_IPS` | detected, empty | `/32` allowed through the frontend ingress; extra CIDRs, comma separated. Restricted with neither allows nobody |
 | `AZURE_CHAT_MODEL`, `AZURE_CHAT_MODEL_VERSION` | `gpt-5.1`, `2025-11-13` | gpt-4.1 is deprecated and closed to new customers |
 | `AZURE_OPENAI_API_VERSION` | `2025-04-01-preview` | API version the apps call |
-| `AZURE_OPENAI_AUTH` | `key` | `key` or `identity` (needs Azure P3 in the image; disables local auth on the account) |
+| `AZURE_OPENAI_AUTH` | `key` | `key` or `identity` (needs an image built with `AZURE_OPENAI_AUTH` support; disables local auth on the account) |
 | `DEPLOY_MINI_MODEL`, `DEPLOY_AUTH_SERVER`, `DEPLOY_MCP` | `false` | opt-in model deployment and apps |
 | `POSTGRES_ADMIN_PASSWORD`, `JWT_SECRET`, `AGENT_SHARED_SECRET`, `A2A_IDENTITY_KEY`, `OAUTH_SEED_KEY`, `AUTH_SIGNING_KEY_ENCRYPTION_KEY`, `SEED_STAFF_PASSWORD` | generated | `preprovision` creates each only if unset and never overwrites. Postgres password: 32 alphanumerics with three character classes (no URL encoding in `DATABASE_URL`). Staff password: 20 alphanumerics. The rest: 64 hex characters, `A2A_IDENTITY_KEY` distinct from `AGENT_SHARED_SECRET` |
 
@@ -151,7 +153,7 @@ scripts/azure-up.sh --env demo1 --location eastus2 --image-tag v1.4.0 --dry-run 
 ## Assumptions to confirm on a real subscription
 
 - gpt-5.1 `2025-11-13` accepts the requested capacity in the region; a `gpt-5.1-mini` name exists for `DEPLOY_MINI_MODEL`. text-embedding-3-small `1` accepts `GlobalStandard` (else set `embeddingSkuName`).
-- The apps are built with Azure P2 (`LLM_TEMPERATURE` empty omits the field, `DB_POOL_*`) and an image tag that contains it. Without P2 an empty `LLM_TEMPERATURE` fails settings validation.
+- The image tag contains the settings these templates rely on: an empty `LLM_TEMPERATURE` omits the field, and `DB_POOL_*`. An older image fails settings validation on an empty `LLM_TEMPERATURE`.
 - `AZURE_OPENAI_API_VERSION` `2025-04-01-preview` supports gpt-5.1 tool calling on the Responses API.
 - An empty environment-variable value is accepted by Container Apps (`LLM_TEMPERATURE`).
 - `Microsoft.App/managedEnvironments@2025-02-02-preview` accepts `appInsightsConfiguration` and `openTelemetryConfiguration`, and the Python SDK's exporter accepts the endpoint the agent injects.
