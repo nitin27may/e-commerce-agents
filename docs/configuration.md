@@ -436,6 +436,18 @@ every deployment. Logs are JSON lines; any failure exits non-zero.
 Neither new variable changes any seeded row other than the staff password hashes, so replay fixtures are
 unaffected.
 
+## Signing-key rotation (`AUTH_KEY_*`)
+
+Only meaningful under `AUTH_MODE=oauth`; `AUTH_MODE=local` has no auth-server and ignores both. Compose passes
+`AUTH_KEY_RETIRE_AFTER_SECONDS` to the `auth-server` service. Runbook: [Security guide](security-guide.md#signing-key-rotation-runbook).
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `AUTH_KEY_RETIRE_AFTER_SECONDS` | `0` | How long a rotated-out key stays published in the JWKS. `0` derives it as `AUTH_ACCESS_TOKEN_TTL` + `AUTH_KEY_CLOCK_SKEW_SECONDS` (3600 + 300 = 4200 s by default): until the last token that key signed has expired and a verifier with a skewed clock would also agree. Set it explicitly only to lengthen the overlap. If you raise `AUTH_ACCESS_TOKEN_TTL`, the derived value follows; an explicit value does not |
+| `AUTH_KEY_CLOCK_SKEW_SECONDS` | `300` | The skew allowance in the derived value. Host-run Python only; not passed through by compose |
+
+Verifiers (every specialist, the orchestrator, both MCP servers, the .NET services) need no setting: they refetch the JWKS once, at most every 30 seconds, when a token names a `kid` they have not cached.
+
 ## One stack at a time
 
 The Python and .NET stacks publish the same host ports — 3000, 5432, 6379, 8080–8085, 8090, 18888 —

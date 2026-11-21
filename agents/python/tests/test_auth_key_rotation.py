@@ -9,7 +9,7 @@ import jwt as pyjwt
 import pytest
 from joserfc.jwk import RSAKey
 
-from auth_server import keys
+from auth_server import cli, keys
 from auth_server.token import AccessTokenGenerator
 from shared.config import settings
 from tests.conftest import POSTGRES_DIR
@@ -172,6 +172,21 @@ async def test_migration_0014_is_idempotent(clean_db: asyncpg.Pool) -> None:
         )
     }
     assert {"not_after", "retired_at", "is_active"} <= columns
+
+
+async def test_cli_rotates_and_sweeps(clean_db: asyncpg.Pool, database_url: str, capsys) -> None:
+    first, _ = await keys.ensure_active_key(clean_db)
+
+    assert await cli.run(database_url) == 0
+    out = capsys.readouterr().out
+    assert "new active kid=" in out and f"previous kid={first}" in out
+    assert await clean_db.fetchval("SELECT count(*) FROM oauth_signing_keys WHERE is_active") == 1
+
+    await clean_db.execute("UPDATE oauth_signing_keys SET not_after = now() - interval '1 second' WHERE NOT is_active")
+    assert await cli.run(database_url, sweep_only=True) == 0
+    assert f"retired kid={first}" in capsys.readouterr().out
+    assert [k["kid"] for k in (await keys.get_jwks(clean_db))["keys"]] != []
+    assert first not in {k["kid"] for k in (await keys.get_jwks(clean_db))["keys"]}
 
 
 def test_a_token_minted_before_a_switch_keeps_its_own_kid() -> None:

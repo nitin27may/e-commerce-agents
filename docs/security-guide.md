@@ -164,7 +164,7 @@ JWT signing uses `bcrypt` for passwords and `PyJWT` for token generation. Defaul
 - **Login** relays a `password` (ROPC) grant to the AS as a confidential first-party client — the AS re-verifies the bcrypt hash from the same `users` table, so this does not duplicate the password check. The AS returns an RS256 access token (`aud=ecommerce-orchestrator`, `scope=api:chat`, `role`/`user_id` custom claims) plus an opaque refresh token.
 - **Refresh** relays a `refresh_token` grant. The AS does not rotate refresh tokens (`INCLUDE_NEW_REFRESH_TOKEN=False`) — a choice made when the frontend did not re-persist refresh tokens. It now does (for local-mode rotation), so rotating here is possible follow-up work; it is **out of scope** of #102 and recorded in the parity matrix.
 - `AgentAuthMiddleware`'s Bearer branch validates the RS256 token against the AS's published JWKS (`RS256Verifier` / `.NET`'s `JwtTokenService.ValidateOAuth` + `JwksKeyProvider`): signature, issuer, audience, expiry, and required scope.
-- Phases A–D of the OAuth work all shipped and are live-verified on both stacks. RFC 7591 dynamic client registration is built (opt-in, below). What remains — key rotation and the audit matrix — is tracked in [`.claude/plans/remaining-work.md`](https://github.com/nitin27may/e-commerce-agents/blob/main/.claude/plans/remaining-work.md).
+- Phases A–D of the OAuth work all shipped and are live-verified on both stacks. RFC 7591 dynamic client registration is built (opt-in, below). Signing-key rotation and the [route/credential matrix](auth-route-matrix.md) have since shipped; what remains (scheduled rotation) is tracked in [`.claude/plans/remaining-work.md`](https://github.com/nitin27may/e-commerce-agents/blob/main/.claude/plans/remaining-work.md).
 
 ### Inter-agent requests (Orchestrator → Specialists)
 
@@ -318,20 +318,67 @@ else:
 | Enable HTTPS everywhere | TLS termination at the AKS ingress; no plain HTTP between pods |
 | Network policy | Restrict specialist ports (8081–8085) to orchestrator pod only |
 | Complete role enforcement | Add `@requires_role` on open items in the [audit matrix](agent-audit-matrix.md) |
-| Enable the self-hosted OAuth server | `AUTH_MODE=oauth` — user login via ROPC brokered by the orchestrator, client-credentials service tokens for A2A and MCP, RS256 signing via a JWKS (single active key per `kid`, no automatic rotation yet — see Known Issues); retires `JWT_SECRET` and `AGENT_SHARED_SECRET` (rejected outright, not just unused). Set `AUTH_SIGNING_KEY_ENCRYPTION_KEY` and per-service `OAUTH_CLIENT_SECRET` from your secret store; never ship the `OAUTH_SEED_KEY` dev default. Remaining OAuth work is tracked in [`.claude/plans/remaining-work.md`](https://github.com/nitin27may/e-commerce-agents/blob/main/.claude/plans/remaining-work.md) |
+| Enable the self-hosted OAuth server | `AUTH_MODE=oauth` — user login via ROPC brokered by the orchestrator, client-credentials service tokens for A2A and MCP, RS256 signing via a JWKS (one active key, rotated on demand with overlap: see the [rotation runbook](#signing-key-rotation-runbook)); retires `JWT_SECRET` and `AGENT_SHARED_SECRET` (rejected outright, not just unused). Set `AUTH_SIGNING_KEY_ENCRYPTION_KEY` and per-service `OAUTH_CLIENT_SECRET` from your secret store; never ship the `OAUTH_SEED_KEY` dev default. Remaining OAuth work is tracked in [`.claude/plans/remaining-work.md`](https://github.com/nitin27may/e-commerce-agents/blob/main/.claude/plans/remaining-work.md) |
 | Protect MCP servers | `MCP_AUTH_ENABLED=true` (requires `MCP_ENABLED=true`) — both Python MCP servers and the .NET MCP host validate the auth-server's RS256 bearer tokens (audience + scope, one resource-specific scope per server) against its JWKS, expose `.well-known/oauth-protected-resource`, and reject unauthenticated or wrong-scope calls with `401` + `WWW-Authenticate` |
 
 ---
 
+## Signing-key rotation runbook
+
+`AUTH_MODE=oauth` only. The auth-server signs every access token with one RS256 key; rotation replaces it without invalidating a token already issued.
+
+**How it works.** `keys.rotate()` runs one transaction under an advisory lock: the current key is demoted (`is_active = FALSE`, `not_after = now() + AUTH_KEY_RETIRE_AFTER_SECONDS`) and a new active key is inserted. A unique partial index allows exactly one active key. The JWKS (`/.well-known/jwks.json`) publishes the active key plus every demoted key whose `not_after` has not passed, so tokens signed before the rotation keep validating until they expire. Once `not_after` passes the key leaves the JWKS (by the database clock, with no sweep needed) and `retired_at` is stamped by the next sweep. Tokens are signed with the newest active key only, and carry its `kid`.
+
+```mermaid
+sequenceDiagram
+    participant Op as Operator
+    participant DB as oauth_signing_keys
+    participant AS as auth-server
+    participant RS as Resource server
+    Op->>DB: rotate: demote K1 (not_after = now + window), insert K2 active
+    AS->>DB: maintenance pass (every 30 s): K2 is active now
+    AS-->>RS: new tokens carry kid=K2
+    RS->>AS: unknown kid K2, refetch JWKS once (max every 30 s)
+    AS-->>RS: JWKS = K1 + K2
+    Note over RS: K1 tokens still validate until the window ends
+    DB->>DB: not_after passes: K1 leaves the JWKS, retired_at set
+```
+
+**Rotate.**
+
+```bash
+# same DATABASE_URL and AUTH_SIGNING_KEY_ENCRYPTION_KEY the auth-server runs with
+uv run --project agents/python python -m scripts.rotate_signing_key
+# or inside the running auth-server container (the image has auth_server/ but not scripts/)
+docker compose exec auth-server uv run --no-project python -m auth_server.cli
+```
+
+It prints the new `kid`, the previous `kid` and when the previous key leaves the JWKS. Nothing restarts: a running auth-server notices the new key within 30 seconds (`KEY_MAINTENANCE_INTERVAL_SECONDS`) and every validator fetches it on the first token that names it. `--retire-after SECONDS` overrides the window for one rotation; `--sweep-only` just retires expired keys.
+
+**Check.** `curl <issuer>/.well-known/jwks.json` lists two `kid`s straight after a rotation and one after the window. Fetch a fresh token and confirm its header `kid` is the new one.
+
+**Window.** `AUTH_KEY_RETIRE_AFTER_SECONDS` defaults to access-token TTL plus 300 s of skew (4200 s at the default 3600 s TTL). It must not be shorter than the longest-lived token the key signed. Refresh tokens are opaque rows, not JWTs, so they do not depend on the key.
+
+**Emergency rotation (key compromised).** A key you no longer trust must leave the JWKS at once, not after the window. Rotate, then end the old key's window by hand: `UPDATE oauth_signing_keys SET not_after = now() WHERE NOT is_active AND retired_at IS NULL;` and run `--sweep-only`. Then **restart the validators** (orchestrator, specialists, MCP servers): a Python process keeps every key it has resolved for as long as it runs, and a .NET one keeps its JWKS for `AUTH_JWKS_CACHE_TTL` (900 s), so removing the key from the JWKS alone does not stop a validator that already trusts it. After the restart every token the old key signed is refused. Users and services get new tokens on their next login or client-credentials call.
+
+**Gotchas.**
+
+- Validators refetch on an unknown `kid` at most once per 30 s per process. A key rotated in twice inside 30 s can take up to 30 s to be found on a process that just spent its refetch; it fails closed (401) meanwhile and recovers by itself.
+- The refetch is only for an *unknown* `kid`. A key *removed* from the JWKS stays trusted by a validator that already cached it: until restart on Python (resolved keys are cached per `kid` for the process lifetime), until `AUTH_JWKS_CACHE_TTL` on .NET. Fine for a routine rotation, since the window has already outlasted every token; the reason the emergency path above says to restart.
+- Two rotations in quick succession leave three published keys; that is fine.
+- `AUTH_SIGNING_KEY_ENCRYPTION_KEY` must be the same one the key was written with, or the new key cannot be read back after a restart. Rotating does not re-encrypt older rows.
+- Nothing schedules rotation. Run it from your own scheduler (a Kubernetes CronJob, an Azure DevOps pipeline) at whatever cadence your policy sets.
+
 ## Known Issues (self-hosted OAuth server, optional feature)
 
-- **No signing-key rotation.** `auth_server/keys.py::ensure_active_key` bootstraps one RSA keypair idempotently and reuses it for the process lifetime — there is no scheduled rotation or multi-key overlap window. A `kid` header is stamped on every token so a future rotation mechanism can add keys to the JWKS without immediately invalidating outstanding tokens, but nothing generates a second key today.
+- **Signing-key rotation is on demand, not scheduled.** `scripts/rotate_signing_key.py` rotates; nothing runs it on a timer, so a key lives until an operator rotates it. See the runbook below.
 - **.NET specialists and the .NET MCP host are now containerized.** Each of the 5 specialists and `ECommerceAgents.Mcp` has its own `Dockerfile` (mirroring the orchestrator's), and `docker-compose.dotnet.yml` composes all of them (`mcp-inventory` under the `mcp` profile). Live-verified: `docker compose -f docker-compose.dotnet.yml --profile agents --profile mcp --profile seed up --build` brings up all 8 services healthy, and a real chat turn (real Azure OpenAI, real login) correctly routes through `AGENT_REGISTRY` to a real specialist and back. One asymmetry remains: there is still no .NET equivalent of Python's `mcp-product` server — only `mcp-inventory` has a .NET port, matching the single `ECommerceAgents.Mcp` project that exists today.
 - **Dynamic client registration (RFC 7591) is opt-in and scope-limited.** `POST /oauth/register` exists (`auth_server/register.py` + `auth_server/main.py`), gated behind `AUTH_ALLOW_DYNAMIC_REGISTRATION` (default `false`). Even when enabled, registering requires a bearer token scoped `client:register` (obtained via `client_credentials` by the seeded `auth-admin` client — a credential kept separate from `orchestrator`'s broader trust). Registered clients are capped to `client_credentials` only and to the two MCP read scopes (`mcp:product`, `mcp:inventory`) — the endpoint cannot mint a client that could ever request `agent:invoke`, `api:chat`, or `client:register` itself. First-party services still come from `scripts/seed.py`'s static list; this only covers third-party MCP consumers.
   - **A real bug found only by live-testing this against the actual running server, not by unit tests alone**: the first implementation verified the registration bearer token by reusing `shared/oauth/verifier.py::RS256Verifier` — the same JWKS-over-HTTP verifier every *other* resource server uses. That deadlocked in practice: the AS is a single-worker asyncio process, and its own request handler synchronously fetching its own JWKS over HTTP blocks the same event loop that would need to service that very inbound connection, timing out every time. No other resource server hits this because none of them is handling a request *from itself* while fetching JWKS. Fixed by verifying entirely in-process instead — the AS already holds its own signing key in memory (`auth_server/main.py::_verify_registration_token`), so there's no network round trip at all, just local signature verification plus manual `iss`/`aud`/`scope`/`exp` claim checks (`joserfc`'s `decode` only verifies the signature, unlike PyJWT's `jwt.decode`).
 
 ## Related documents
 
+- [`docs/auth-route-matrix.md`](auth-route-matrix.md) — which routes accept which credential, kept honest by a test
 - [`docs/agent-audit-matrix.md`](agent-audit-matrix.md) — per-agent security status and open items
 - [`docs/agent-quality.md`](agent-quality.md) — eval methodology and red-team suite
 - [`docs/maf-best-practices.md`](maf-best-practices.md) — MAF idioms used across all agents
