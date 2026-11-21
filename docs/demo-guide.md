@@ -80,7 +80,8 @@ the quickest way to see what that means:
 11. **Approve a paused return.** As `alice.johnson@gmail.com`, pick **Return & Replace** and
     ask "I want to return my last order". The run pauses at the approval gate and the chat shows
     "Awaiting staff review". Sign in as `support.demo@gmail.com` in another browser, open
-    **Admin → Approvals** (or **Runs**), and approve or reject. The run resumes from its checkpoint
+    **Runs**, expand the run marked "Needs approval", and approve or reject (an admin also has the
+    full inbox under **Admin → Approvals**). The run resumes from its checkpoint
     and finishes as the customer; a rejected return leaves no return row behind. A high-value
     return is routed to a manager by `approvals.yaml`, so use `admin.demo@gmail.com` if support is
     told it cannot decide. See [approvals](approvals.md).
