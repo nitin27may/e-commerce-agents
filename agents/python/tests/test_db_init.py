@@ -21,6 +21,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from scripts import db_init  # noqa: E402
 from scripts import seed as seed_mod  # noqa: E402
 
+from shared.demo_tour import TOUR_EMAIL  # noqa: E402
+
 
 async def _no_embeddings(conn: asyncpg.Connection) -> int:
     return 0
@@ -119,7 +121,7 @@ async def test_staff_password_applies_to_staff_only_and_leaves_other_data_identi
     for email, (role, stored) in hashes.items():
         if email in staff:
             assert _matches("Chang3d-Staff-Pw", stored), email
-        elif role == "customer":
+        elif role == "customer" and email != TOUR_EMAIL:
             assert _matches("customer123", stored), email
 
 
