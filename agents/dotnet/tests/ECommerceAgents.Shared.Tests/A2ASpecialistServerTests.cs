@@ -17,6 +17,7 @@ namespace ECommerceAgents.Shared.Tests;
 /// Mirrors the Python <c>tests/test_a2a_conformance.py</c> case for case, because the two stacks share one
 /// wire contract (docs/a2a.md).
 /// </summary>
+[Collection(nameof(ProcessEnvironmentCollection))]
 public sealed class A2ASpecialistServerTests
 {
     // ─────────────────────── the agent card ───────────────────────
