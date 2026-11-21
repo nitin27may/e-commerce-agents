@@ -246,10 +246,13 @@ something the repo already says.
 
 ### Blocked, waiting on upstream
 
-- [ ] **MCP 2.x migration** — blocked on `agent-framework-core`. Listed so the blocker stays visible;
-      an item that vanishes looks like a decision nobody made.
-- [ ] **OAuth later phases** — Phases A–D ship and are live-verified on both stacks. What remains is
-      key rotation, RFC 7591 dynamic client registration, and an audit matrix — real future work, not a gap.
+Nothing is blocked on upstream today. The MCP 2.x migration that used to be listed here shipped
+with the MAF upgrade (`agent-framework-core` 1.26 requires `mcp>=2.2`); see the MCP 2.x notes in `CLAUDE.md`.
+
+- [ ] **OAuth later phases** — Phases A–D ship and are live-verified on both stacks, and RFC 7591
+      dynamic client registration is built (`auth_server/register.py`, opt-in with
+      `AUTH_ALLOW_DYNAMIC_REGISTRATION`, scope-limited). What remains is key rotation and an audit
+      matrix — real future work, not a gap.
 
 ### What is deliberately not planned
 
@@ -328,6 +331,18 @@ Legend: `- [x]` shipped · `- [ ]` planned or in progress.
 - [x] **In-chat approval card** — done. The pause-and-resume loop already worked on both stacks, but the only control that could release a pause lived on `/runs`, so the user who caused it had no way to act without knowing a separate page existed. The blocker was that no streaming client ever learned the run's id: it *is* the `usage_logs` row, created during persistence, after `event: metadata` has gone out. Both stacks now emit `event: run` (`{run_id, pending_approval}`) once persistence lands and before `[DONE]`, and the chat thread renders Approve/Reject inline. Fixing this also surfaced that .NET wrote `[DONE]` before persisting — the race Python fixed as #9 — so the two stacks disagreed on whether a finished turn was durable.
 - [x] **Cost metrics as first-class counters** — done. `shared/telemetry.py` had exposed `get_meter()` since telemetry was wired up and nothing had ever called it, so every metric on the dashboard came from MAF's or FastAPI's instrumentation and the one number this application knows — what a run costs — existed only as a log line. Both stacks already price every turn to enforce a budget ceiling; that estimate is now emitted as `ecommerce.llm.cost.usd`, with tokens split by direction beside it, because cost is derived from tokens through a hand-edited price table and only the raw counts say which of the two moved. Same instrument and meter names on Python and .NET, so one dashboard covers both. Nothing user-scoped is attached to the attributes.
 - [x] **Streaming tool calls end-to-end** — done. Both stacks batched their timeline steps until after the last text chunk, so the timeline snapped into place once the answer had finished writing — precisely when it stops being useful. In a MAF tool loop the tools resolve first and the prose narrating them comes second, so both specialist hosts now drain steps before each chunk and both orchestrators forward them live. Not done, deliberately: rendering cards from those payloads as well, since the answer text already carries ```product fences for the same data and a client drawing from both would show every card twice.
+
+### Shipped since 1.3.0
+
+Merged to `main` and listed under *Unreleased* in the [changelog](../CHANGELOG.md); not yet in a tagged release.
+
+- [x] **A2A 1.0 on both stacks** ([#88](https://github.com/nitin27may/e-commerce-agents/issues/88)) — every specialist serves the A2A 1.0 JSON-RPC binding at `/a2a/v1` and an agent card at `/.well-known/agent-card.json` beside the original `/message:send` wire. `A2A_TRANSPORT=legacy|a2a` picks what the caller speaks; user identity can travel as a signed, short-lived `X-User-Context` token (`A2A_IDENTITY`). Cross-process interop runs keyless in both directions (`scripts/a2a-interop.sh`). The .NET side rides a preview SDK, pinned exactly. See [a2a.md](a2a.md).
+- [x] **Approvals** ([#92](https://github.com/nitin27may/e-commerce-agents/issues/92)) — one inbox and one decide path on both stacks, routed by a policy file rather than a prompt, with an append-only audit trail, claim fencing, and SLA reminders, escalation and timeouts driven by an outbox worker. See [approvals.md](approvals.md).
+- [x] **Merchant proposals** ([#93](https://github.com/nitin27may/e-commerce-agents/issues/93), Python) — deterministic markdown and restock suggestions per seller, reviewed line by line through the approvals machinery and executed at most once. See [merchant-proposals.md](merchant-proposals.md).
+- [x] **Event autonomy** ([#94](https://github.com/nitin27may/e-commerce-agents/issues/94), Python) — budgets for what the system may do on its own when an event arrives, an append-only decision log, reversal, and a path from an over-budget action to an approval. Off unless `AUTONOMY_ENABLED`. See [event-autonomy.md](event-autonomy.md).
+- [x] **Return lifecycle** ([#95](https://github.com/nitin27may/e-commerce-agents/issues/95), Python) — an approved return waits for the carrier's first scan across restarts, then for support's inspection, then pays out once. Off unless `RETURN_LIFECYCLE_ENABLED`. See [return-lifecycle.md](return-lifecycle.md).
+- [x] **Anthropic provider and a separate embeddings provider** ([#96](https://github.com/nitin27may/e-commerce-agents/issues/96)) — `LLM_PROVIDER=anthropic` on both stacks (stubbed-transport tests only; it has never made a live call), and `EMBEDDING_PROVIDER` / `EMBEDDING_*` configured independently of the chat provider. See [configuration.md](configuration.md).
+- [x] **MAF DevUI entry point** ([#98](https://github.com/nitin27may/e-commerce-agents/issues/98)) — browse the specialists and workflows in DevUI without touching the lock file. See [devui.md](devui.md).
 
 ### In progress
 
