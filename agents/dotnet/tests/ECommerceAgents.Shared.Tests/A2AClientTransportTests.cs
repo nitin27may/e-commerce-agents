@@ -24,6 +24,7 @@ namespace ECommerceAgents.Shared.Tests;
 /// registry origin ever receives a request, redirects are never followed, an abandoned stream is cancelled, and
 /// the retry-only-if-it-never-ran rule.
 /// </summary>
+[Collection(nameof(ProcessEnvironmentCollection))]
 public sealed class A2AClientTransportTests
 {
     private const string Registry = "http://specialist";

@@ -22,6 +22,7 @@ namespace ECommerceAgents.Shared.Tests;
 /// does; A2A 1.0: a failed task carrying <c>replay-miss/v1</c>), and the orchestrator's client raises
 /// <see cref="SpecialistReplayMissException"/> instead of returning an apology the model would answer.
 /// </summary>
+[Collection(nameof(ProcessEnvironmentCollection))]
 public sealed class A2AReplayMissTests
 {
     private static OrchestratorClient Client(HttpMessageHandler handler, string transport, string provider = "replay")
