@@ -219,6 +219,11 @@ class Settings(BaseSettings):
     AUTH_JWKS_CACHE_TTL: int = 900  # resource-server JWKS cache
     AUTH_RSA_KEY_SIZE: int = 2048  # auth-server only
     AUTH_SIGNING_KEY_ENCRYPTION_KEY: str = ""  # optional KEK for the private key at rest
+    # Signing-key rotation (auth-server only, AUTH_MODE=oauth): how long a rotated-out key stays published in the
+    # JWKS. 0 (default) derives it as AUTH_ACCESS_TOKEN_TTL + AUTH_KEY_CLOCK_SKEW_SECONDS, i.e. until the last
+    # token it signed has expired and any verifier's clock skew has passed. Set it explicitly only to lengthen it.
+    AUTH_KEY_RETIRE_AFTER_SECONDS: int = 0
+    AUTH_KEY_CLOCK_SKEW_SECONDS: int = 300
 
     # Per-service OAuth client identity (client-credentials grant).
     OAUTH_CLIENT_ID: str = ""  # defaults to the service name when empty

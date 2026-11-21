@@ -60,7 +60,7 @@ class OAuthAuthorizationServer(_BaseAuthorizationServer):
         self.client_store = client_store
         self.pool = pool
 
-        token_generator = AccessTokenGenerator(
+        self._token_generator = token_generator = AccessTokenGenerator(
             issuer=issuer,
             kid=kid,
             signing_key=signing_key,
@@ -71,6 +71,10 @@ class OAuthAuthorizationServer(_BaseAuthorizationServer):
         self.register_grant(ClientCredentialsGrant)
         self.register_grant(ResourceOwnerPasswordCredentialsGrant)
         self.register_grant(RefreshTokenGrant)
+
+    def use_signing_key(self, kid: str, signing_key) -> None:
+        """Switch token signing to a freshly rotated key."""
+        self._token_generator.use_signing_key(kid, signing_key)
 
     # ── framework integration ───────────────────────────────────────
 

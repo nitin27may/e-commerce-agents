@@ -16,8 +16,9 @@ from __future__ import annotations
 import os
 
 import jwt
-from jwt import PyJWKClient
 from mcp.server.auth.provider import AccessToken, TokenVerifier
+
+from ecommerce_mcp_product.jwks import RotationAwareJWKClient
 
 AUTH_SERVER_JWKS_URL = os.environ.get("AUTH_SERVER_JWKS_URL", "http://localhost:8090/.well-known/jwks.json")
 AUTH_SERVER_ISSUER = os.environ.get("AUTH_SERVER_ISSUER", "http://localhost:8090")
@@ -36,7 +37,7 @@ class JwksTokenVerifier(TokenVerifier):
         audience: str = MCP_PRODUCT_AUDIENCE,
         required_scope: str = MCP_PRODUCT_REQUIRED_SCOPE,
     ) -> None:
-        self._jwks_client = PyJWKClient(jwks_url, cache_keys=True)
+        self._jwks_client = RotationAwareJWKClient(jwks_url, cache_keys=True)
         self._issuer = issuer
         self._audience = audience
         self._required_scope = required_scope
