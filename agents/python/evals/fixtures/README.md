@@ -207,6 +207,21 @@ later turns were recorded against one specific trajectory. It keeps the
 sibling with the most consumers; keeping the wrong one strands every fixture
 downstream of the discarded trajectory.
 
+**Tutorial fixtures** (`tutorials/*/python/tests/fixtures/replay/`) use their own copy of the
+replay client, `tutorials/_shared/replay_client.py`, whose key has no normalisation. After
+a MAF bump that changes how a message serialises (the stored `request` is rewritten first, as
+`fixture_drift --fix` does for the eval corpus), re-key them with the same script:
+
+```bash
+cd agents/python
+uv run python -m evals.rehash_fixtures --tutorials --dry-run
+uv run python -m evals.rehash_fixtures --tutorials
+```
+
+`--tutorials` walks every tutorial's fixtures directory and re-keys it with the tutorials' own
+`_request_hash`; responses are never touched. `tests/test_rehash_tutorial_fixtures.py` also fails
+if any committed tutorial fixture is not named by its current hash.
+
 Verified by seeding a throwaway database from scratch twice and running all
 seven suites against each: identical scores, zero missing fixtures. Every
 suite matched its committed baseline exactly.
