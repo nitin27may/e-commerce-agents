@@ -70,7 +70,7 @@ public static class McpEndpoints
             var token = authHeader["Bearer ".Length..];
             try
             {
-                var signingKeys = await jwks.GetSigningKeysAsync(http.RequestAborted);
+                var signingKeys = await jwks.GetSigningKeysForTokenAsync(token, http.RequestAborted);
                 jwt.ValidateOAuth(token, signingKeys, settings.McpAudience, requiredScope: settings.McpRequiredScope);
                 await next(http);
             }

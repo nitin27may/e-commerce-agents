@@ -1,0 +1,357 @@
+{
+  "orchestrator": {
+    "DELETE /api/cart/coupon": {
+      "credential": "user_jwt"
+    },
+    "DELETE /api/cart/items/{item_id}": {
+      "credential": "user_jwt"
+    },
+    "DELETE /api/conversations/{conversation_id}": {
+      "credential": "user_jwt"
+    },
+    "DELETE /api/user/memories/{memory_id}": {
+      "credential": "user_jwt"
+    },
+    "GET /api/admin/audit": {
+      "credential": "user_jwt",
+      "min_role": "admin"
+    },
+    "GET /api/admin/decisions": {
+      "credential": "user_jwt",
+      "min_role": "admin"
+    },
+    "GET /api/admin/decisions/{decision_id}": {
+      "credential": "user_jwt",
+      "min_role": "admin"
+    },
+    "GET /api/admin/hitl/requests": {
+      "credential": "user_jwt",
+      "min_role": "admin"
+    },
+    "GET /api/admin/outbox/parked": {
+      "credential": "user_jwt",
+      "min_role": "admin"
+    },
+    "GET /api/admin/requests": {
+      "credential": "user_jwt",
+      "min_role": "admin"
+    },
+    "GET /api/admin/usage": {
+      "credential": "user_jwt",
+      "min_role": "admin"
+    },
+    "GET /api/agents/stats": {
+      "credential": "user_jwt"
+    },
+    "GET /api/approvals": {
+      "credential": "user_jwt",
+      "min_role": "staff"
+    },
+    "GET /api/approvals/{approval_id}": {
+      "credential": "user_jwt",
+      "min_role": "staff"
+    },
+    "GET /api/cart": {
+      "credential": "user_jwt"
+    },
+    "GET /api/conversations": {
+      "credential": "user_jwt"
+    },
+    "GET /api/conversations/{conversation_id}": {
+      "credential": "user_jwt"
+    },
+    "GET /api/demo/tour": {
+      "credential": "none",
+      "note": "Public like the storefront; 404 unless DEMO_TOUR_ENABLED."
+    },
+    "GET /api/marketplace/agents": {
+      "credential": "user_jwt"
+    },
+    "GET /api/marketplace/my-agents": {
+      "credential": "user_jwt"
+    },
+    "GET /api/me/approvals": {
+      "credential": "user_jwt",
+      "note": "Own approvals only, status only."
+    },
+    "GET /api/me/notifications": {
+      "credential": "user_jwt"
+    },
+    "GET /api/orchestration/modes": {
+      "credential": "none",
+      "note": "Public mode list."
+    },
+    "GET /api/orchestration/modes/{name}/graph": {
+      "credential": "none",
+      "note": "Public diagram source."
+    },
+    "GET /api/orders": {
+      "credential": "user_jwt"
+    },
+    "GET /api/orders/{order_id}": {
+      "credential": "user_jwt"
+    },
+    "GET /api/products": {
+      "credential": "user_jwt_optional",
+      "note": "Anonymous browse allowed; a present-but-invalid token is still 401."
+    },
+    "GET /api/products/{product_id}": {
+      "credential": "user_jwt_optional",
+      "note": "Anonymous browse allowed; a present-but-invalid token is still 401."
+    },
+    "GET /api/profile": {
+      "credential": "user_jwt"
+    },
+    "GET /api/returns/{label_token}/label": {
+      "credential": "none",
+      "note": "Unauthenticated; the label token in the path is the only guard. See Known issues."
+    },
+    "GET /api/runs": {
+      "credential": "user_jwt"
+    },
+    "GET /api/runs/{run_id}/checkpoints": {
+      "credential": "user_jwt"
+    },
+    "GET /api/runs/{run_id}/timeline": {
+      "credential": "user_jwt"
+    },
+    "GET /api/seller/orders": {
+      "credential": "user_jwt",
+      "min_role": "seller"
+    },
+    "GET /api/seller/products": {
+      "credential": "user_jwt",
+      "min_role": "seller"
+    },
+    "GET /api/seller/proposals": {
+      "credential": "user_jwt",
+      "min_role": "seller"
+    },
+    "GET /api/seller/proposals/{proposal_id}": {
+      "credential": "user_jwt",
+      "min_role": "seller"
+    },
+    "GET /api/seller/stats": {
+      "credential": "user_jwt",
+      "min_role": "seller"
+    },
+    "GET /api/staff/returns/inspections": {
+      "credential": "user_jwt",
+      "min_role": "staff"
+    },
+    "GET /api/user/memories": {
+      "credential": "user_jwt"
+    },
+    "GET /docs": {
+      "credential": "none",
+      "note": "FastAPI default; public."
+    },
+    "GET /docs/oauth2-redirect": {
+      "credential": "none",
+      "note": "FastAPI default; public."
+    },
+    "GET /health": {
+      "credential": "none"
+    },
+    "GET /openapi.json": {
+      "credential": "none",
+      "note": "FastAPI default; public."
+    },
+    "GET /ready": {
+      "credential": "none"
+    },
+    "GET /redoc": {
+      "credential": "none",
+      "note": "FastAPI default; public."
+    },
+    "POST /api/admin/decisions/{decision_id}/reverse": {
+      "credential": "user_jwt",
+      "min_role": "admin"
+    },
+    "POST /api/admin/events/simulate": {
+      "credential": "user_jwt",
+      "min_role": "admin",
+      "note": "404 for everyone unless AUTONOMY_SIMULATOR_ENABLED (checked before the role)."
+    },
+    "POST /api/admin/hitl/requests/{request_id}/approve": {
+      "credential": "user_jwt",
+      "min_role": "staff",
+      "note": "Staff, not admin only: calls the approvals decide function."
+    },
+    "POST /api/admin/hitl/requests/{request_id}/deny": {
+      "credential": "user_jwt",
+      "min_role": "staff",
+      "note": "Staff, not admin only: calls the approvals decide function."
+    },
+    "POST /api/admin/requests/{request_id}/approve": {
+      "credential": "user_jwt",
+      "min_role": "admin"
+    },
+    "POST /api/admin/requests/{request_id}/deny": {
+      "credential": "user_jwt",
+      "min_role": "admin"
+    },
+    "POST /api/admin/returns/{return_id}/simulate-scan": {
+      "credential": "user_jwt",
+      "min_role": "admin",
+      "note": "404 for everyone unless RETURN_LIFECYCLE_ENABLED."
+    },
+    "POST /api/approvals/{approval_id}/decide": {
+      "credential": "user_jwt",
+      "min_role": "staff"
+    },
+    "POST /api/approvals/{approval_id}/info": {
+      "credential": "user_jwt",
+      "note": "In-service: only the approval's requester may answer."
+    },
+    "POST /api/auth/login": {
+      "credential": "none",
+      "note": "Credentials in the body (brokered to the auth-server by the orchestrator under oauth). Rate limited."
+    },
+    "POST /api/auth/refresh": {
+      "credential": "none",
+      "note": "Refresh token in the body. Rate limited."
+    },
+    "POST /api/auth/signup": {
+      "credential": "none",
+      "note": "Credentials in the body. Per-address rate limit. Always creates a customer."
+    },
+    "POST /api/cart/coupon": {
+      "credential": "user_jwt"
+    },
+    "POST /api/cart/items": {
+      "credential": "user_jwt"
+    },
+    "POST /api/chat": {
+      "credential": "user_jwt_optional",
+      "note": "Anonymous callers reach product discovery only; identity is empty. Rate limited."
+    },
+    "POST /api/chat/stream": {
+      "credential": "user_jwt_optional",
+      "note": "Anonymous callers reach product discovery only; identity is empty. Rate limited."
+    },
+    "POST /api/checkout": {
+      "credential": "user_jwt"
+    },
+    "POST /api/demo/reset": {
+      "credential": "user_jwt",
+      "note": "In-handler: only the demo tour user; 404 unless DEMO_TOUR_ENABLED."
+    },
+    "POST /api/marketplace/request": {
+      "credential": "user_jwt"
+    },
+    "POST /api/me/notifications/{notification_id}/read": {
+      "credential": "user_jwt"
+    },
+    "POST /api/orchestration/compare": {
+      "credential": "user_jwt"
+    },
+    "POST /api/orchestration/{run_id}/resume": {
+      "credential": "user_jwt",
+      "min_role": "staff",
+      "note": "Staff, never the run's requester; reviewer role must meet the policy's level."
+    },
+    "POST /api/orders/{order_id}/cancel": {
+      "credential": "user_jwt"
+    },
+    "POST /api/orders/{order_id}/return": {
+      "credential": "user_jwt"
+    },
+    "POST /api/seller/proposals/run": {
+      "credential": "user_jwt",
+      "min_role": "seller"
+    },
+    "POST /api/seller/proposals/{proposal_id}/decide": {
+      "credential": "user_jwt",
+      "min_role": "seller"
+    },
+    "POST /api/staff/returns/{return_id}/inspect": {
+      "credential": "user_jwt",
+      "min_role": "staff",
+      "note": "404 unless RETURN_LIFECYCLE_ENABLED."
+    },
+    "PUT /api/cart/address": {
+      "credential": "user_jwt"
+    },
+    "PUT /api/cart/items/{item_id}": {
+      "credential": "user_jwt"
+    }
+  },
+  "specialist": {
+    "GET /.well-known/agent-card.json": {
+      "credential": "none",
+      "note": "Public card; lists only tools the customer role may call."
+    },
+    "GET /docs": {
+      "credential": "inter_agent",
+      "note": "FastAPI default, behind the middleware: needs a credential."
+    },
+    "GET /docs/oauth2-redirect": {
+      "credential": "inter_agent",
+      "note": "FastAPI default, behind the middleware: needs a credential."
+    },
+    "GET /health": {
+      "credential": "none",
+      "note": "Liveness."
+    },
+    "GET /openapi.json": {
+      "credential": "inter_agent",
+      "note": "FastAPI default, behind the middleware: needs a credential."
+    },
+    "GET /ready": {
+      "credential": "none",
+      "note": "Readiness; cached, no detail beyond status."
+    },
+    "GET /redoc": {
+      "credential": "inter_agent",
+      "note": "FastAPI default, behind the middleware: needs a credential."
+    },
+    "POST /a2a/v1": {
+      "credential": "inter_agent",
+      "note": "A2A 1.0 JSON-RPC. Same credentials and forwarded identity as the legacy pair."
+    },
+    "POST /message:send": {
+      "credential": "inter_agent",
+      "note": "Legacy A2A. Needs a credential plus the forwarded user identity (headers or X-User-Context)."
+    },
+    "POST /message:stream": {
+      "credential": "inter_agent",
+      "note": "Legacy A2A SSE. Same as /message:send."
+    }
+  },
+  "auth_server": {
+    "GET /.well-known/jwks.json": {
+      "credential": "none",
+      "note": "Public keys only: the active key plus rotated-out keys inside their window."
+    },
+    "GET /.well-known/oauth-authorization-server": {
+      "credential": "none",
+      "note": "RFC 8414 metadata."
+    },
+    "GET /health": {
+      "credential": "none"
+    },
+    "POST /oauth/register": {
+      "credential": "service_token_register",
+      "note": "403 unless AUTH_ALLOW_DYNAMIC_REGISTRATION; then a bearer token from this auth-server with scope client:register."
+    },
+    "POST /oauth/token": {
+      "credential": "client_credentials",
+      "note": "client_secret_basic or client_secret_post; the password grant also needs the user's password, the refresh grant a refresh token."
+    }
+  },
+  "mcp_auth_on": {
+    "ANY /mcp": {
+      "credential": "oauth_service_token"
+    },
+    "GET /.well-known/oauth-protected-resource/mcp": {
+      "credential": "none"
+    }
+  },
+  "mcp_auth_off": {
+    "ANY /mcp": {
+      "credential": "none",
+      "note": "MCP_AUTH_ENABLED is false: the endpoint is open to anything that can reach it."
+    }
+  }
+}

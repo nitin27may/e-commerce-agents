@@ -249,10 +249,11 @@ something the repo already says.
 Nothing is blocked on upstream today. The MCP 2.x migration that used to be listed here shipped
 with the MAF upgrade (`agent-framework-core` 1.26 requires `mcp>=2.2`); see the MCP 2.x notes in `CLAUDE.md`.
 
-- [ ] **OAuth later phases** — Phases A–D ship and are live-verified on both stacks, and RFC 7591
+- [ ] **OAuth later phases** — Phases A–D ship and are live-verified on both stacks. RFC 7591
       dynamic client registration is built (`auth_server/register.py`, opt-in with
-      `AUTH_ALLOW_DYNAMIC_REGISTRATION`, scope-limited). What remains is key rotation and an audit
-      matrix — real future work, not a gap.
+      `AUTH_ALLOW_DYNAMIC_REGISTRATION`, scope-limited). Signing-key rotation (on demand, with an
+      overlap window) and the route/credential matrix have shipped; what remains is scheduled
+      rotation — real future work, not a gap.
 
 ### What is deliberately not planned
 

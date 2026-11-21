@@ -21,7 +21,7 @@ from contextlib import asynccontextmanager
 import httpx
 import joserfc.errors as jose_errors
 from joserfc import jwt as joserfc_jwt
-from joserfc.jwk import RSAKey
+from joserfc.jwk import KeySet, RSAKey
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -39,6 +39,35 @@ logger = logging.getLogger(__name__)
 
 _server: OAuthAuthorizationServer | None = None
 _signing_key: RSAKey | None = None
+# Every published public key (active plus rotated-out ones inside their window), so a registration token signed
+# just before a rotation still verifies. None until the lifespan has loaded it.
+_verify_keys: KeySet | None = None
+
+# How often a running auth-server looks for a rotation made by another process (scripts/rotate_signing_key.py)
+# and sweeps expired keys. Bounds how long a rotation takes to start signing, never how long old tokens validate.
+KEY_MAINTENANCE_INTERVAL_SECONDS = 30.0
+
+
+async def _maintain_keys_once(pool) -> None:
+    """One pass: sweep keys past ``not_after``, adopt a new signer if another process rotated, reload verify keys."""
+    global _signing_key, _verify_keys
+    await keys.retire_expired(pool)
+    kid, key, changed = await keys.refresh_active_key(pool)
+    if changed and _server is not None:
+        _server.use_signing_key(kid, key)
+        logger.info("auth_server.signing_key_switched kid=%s", log_safe(kid))
+    _signing_key = key
+    _verify_keys = await keys.get_verification_keys(pool)
+
+
+async def _key_maintenance_loop(pool) -> None:
+    while True:
+        await asyncio.sleep(KEY_MAINTENANCE_INTERVAL_SECONDS)
+        try:
+            await _maintain_keys_once(pool)
+        except Exception:
+            # A transient DB error must not kill the loop; the next pass retries.
+            logger.exception("auth_server.key_maintenance_failed")
 
 
 @asynccontextmanager
@@ -52,8 +81,9 @@ async def lifespan(app: Starlette):
     client_store = ClientStore()
     await client_store.load(pool)
 
-    global _server, _signing_key
+    global _server, _signing_key, _verify_keys
     _signing_key = signing_key
+    _verify_keys = await keys.get_verification_keys(pool)
     _server = OAuthAuthorizationServer(
         client_store=client_store,
         pool=pool,
@@ -63,9 +93,12 @@ async def lifespan(app: Starlette):
     )
     logger.info("auth_server.ready issuer=%s kid=%s", settings.AUTH_SERVER_ISSUER, log_safe(kid))
 
+    # The auth-server only runs under AUTH_MODE=oauth; AUTH_MODE=local never starts it, so never reaches this.
+    maintenance = asyncio.create_task(_key_maintenance_loop(pool))
     try:
         yield
     finally:
+        maintenance.cancel()
         await close_db_pool()
 
 
@@ -92,11 +125,12 @@ def _verify_registration_token(token: str) -> None:
     signature verification plus manual claim checks (joserfc's ``decode``
     only verifies the signature; it does not check iss/aud/scope/exp).
     """
-    if _signing_key is None:
+    verify_with = _verify_keys if _verify_keys is not None else _signing_key
+    if verify_with is None:
         raise _RegistrationTokenError("auth-server not initialized")
 
     try:
-        decoded = joserfc_jwt.decode(token, _signing_key)
+        decoded = joserfc_jwt.decode(token, verify_with)
     except jose_errors.JoseError as exc:
         raise _RegistrationTokenError(str(exc)) from exc
 

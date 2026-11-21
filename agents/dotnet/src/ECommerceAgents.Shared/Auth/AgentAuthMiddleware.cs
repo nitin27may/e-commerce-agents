@@ -201,7 +201,7 @@ public sealed class AgentAuthMiddleware
                 // the actual end-user identity still travels via the
                 // forwarded X-User-* headers, exactly as the shared-secret
                 // path above.
-                var signingKeys = await _jwksKeyProvider.GetSigningKeysAsync(context.RequestAborted);
+                var signingKeys = await _jwksKeyProvider.GetSigningKeysForTokenAsync(token, context.RequestAborted);
                 _jwtTokenService.ValidateOAuth(
                     token,
                     signingKeys,
@@ -227,7 +227,7 @@ public sealed class AgentAuthMiddleware
             System.Security.Claims.ClaimsPrincipal principal;
             if (_settings.AuthMode == "oauth")
             {
-                var signingKeys = await _jwksKeyProvider.GetSigningKeysAsync(context.RequestAborted);
+                var signingKeys = await _jwksKeyProvider.GetSigningKeysForTokenAsync(token, context.RequestAborted);
                 principal = _jwtTokenService.ValidateOAuth(
                     token,
                     signingKeys,

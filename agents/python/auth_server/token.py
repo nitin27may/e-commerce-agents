@@ -49,11 +49,20 @@ class AccessTokenGenerator(JWTBearerTokenGenerator):
 
     def __init__(self, issuer: str, kid: str, signing_key: RSAKey, refresh_token_generator=None):
         super().__init__(issuer=issuer, alg="RS256", refresh_token_generator=refresh_token_generator)
-        self._kid = kid
-        self._signing_key = signing_key
+        # One tuple, swapped by a single assignment: a token minted in a worker thread while a rotation lands
+        # never pairs one key's kid with another key's signature.
+        self._current: tuple[str, RSAKey] = (kid, signing_key)
+
+    def use_signing_key(self, kid: str, signing_key: RSAKey) -> None:
+        """Sign with a new key from now on (called after a rotation). Tokens already issued are unaffected."""
+        self._current = (kid, signing_key)
+
+    @property
+    def kid(self) -> str:
+        return self._current[0]
 
     def get_jwks(self):
-        return self._signing_key
+        return self._current[1]
 
     def get_audiences(self, client, user, scope) -> str | list[str]:
         requested = (scope or "").split()
@@ -88,5 +97,6 @@ class AccessTokenGenerator(JWTBearerTokenGenerator):
         }
         token_data.update(self.get_extra_claims(client, grant_type, user, scope))
 
-        header = {"alg": self.alg, "typ": "at+jwt", "kid": self._kid}
-        return joserfc_jwt.encode(header, token_data, key=self._signing_key)
+        kid, signing_key = self._current
+        header = {"alg": self.alg, "typ": "at+jwt", "kid": kid}
+        return joserfc_jwt.encode(header, token_data, key=signing_key)

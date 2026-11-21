@@ -60,6 +60,7 @@ This folder contains the full technical documentation for E-Commerce Agents.
 | [mcp-integration.md](mcp-integration.md) | MCP servers (MCPServer), `MCPStreamableHTTPTool` wiring, enable/disable, inspector |
 | [maf-best-practices.md](maf-best-practices.md) | MAF `@tool` patterns, middleware, prompt YAML, orchestration patterns |
 | [security-guide.md](security-guide.md) | Threat model, guardrails stack, auth/identity propagation, SQL controls, hardening |
+| [auth-route-matrix.md](auth-route-matrix.md) | Which routes accept which credential (user JWT, agent secret, service token, none), kept honest by a test |
 | [event-autonomy.md](event-autonomy.md) | Event autonomy: autonomy budgets, the append-only decision log, reversal, the event simulator, how an over-budget action becomes an approval |
 | [devui.md](devui.md) | Browse the specialists and workflows in MAF DevUI: how to run it without touching the lock, the bound identity, the guard rails |
 | [return-lifecycle.md](return-lifecycle.md) | The return lifecycle after approval: waiting for the carrier's scan across restarts, the expiry timer, the admin scan simulator |

@@ -10,16 +10,16 @@ is untouched; this is the parallel RS256 path selected via
 from __future__ import annotations
 
 import jwt
-from jwt import PyJWKClient
 
 from shared.config import settings
+from shared.oauth.jwks_client import RotationAwareJWKClient
 
 
 class RS256Verifier:
     """Validates RS256 access tokens against the auth-server's published JWKS."""
 
     def __init__(self) -> None:
-        self._jwks_client = PyJWKClient(
+        self._jwks_client = RotationAwareJWKClient(
             settings.AUTH_SERVER_JWKS_URL,
             cache_keys=True,
             lifespan=settings.AUTH_JWKS_CACHE_TTL,
