@@ -1,26 +1,32 @@
 # Chapter 19 — Declarative Workflows
 
-Define a workflow in YAML and load it at runtime. Config-driven orchestration — no recompile to tweak the graph.
+Define a workflow in YAML and load it at runtime, so you can change the graph without changing code.
+
+**You will learn to:**
+
+- Describe a workflow's executors and edges in a YAML file
+- Write a loader that turns that file into a real MAF `Workflow`
+- Map op names in the file to functions through a small registry
 
 ## Why this chapter
 
-Code-built workflows are great when engineers own the graph. Declarative workflows shine when:
+Code-built workflows work well when engineers own the graph. A declarative workflow, one described in data instead of code, fits better when:
 
-- Non-engineers tweak step ordering (ops, support, compliance).
-- You want GitOps — workflow diffs show up in PRs as YAML changes, not code changes.
-- You need to swap a pipeline's shape without a deploy, because the graph lives in a config file instead of compiled code.
+- Non-engineers adjust step ordering (ops, support, compliance).
+- You want workflow changes to show up in pull requests as YAML diffs, not code diffs.
+- You need to change a pipeline's shape without a deploy, because the graph lives in a config file.
 
-MAF ships a built-in declarative schema (`Microsoft.Agents.AI.Workflows.Declarative` on .NET; a Python equivalent exists too), but the simplest way to *understand* the pattern is to roll your own minimal loader. This chapter does exactly that, and notes where the capstone stands on the idea (it deliberately has no declarative loader).
+MAF ships a built-in declarative schema (`Microsoft.Agents.AI.Workflows.Declarative` on .NET; a Python equivalent exists too). The simplest way to *understand* the pattern is to write a minimal loader yourself, which is what this chapter does.
 
 ## Prerequisites
 
 - Completed [Chapter 18 — State and Checkpoints](../18-state-and-checkpoints/)
 - Familiar with YAML
-- Environment variables: none — this chapter uses built-in string-transformation ops, no LLM calls
+- No API key needed. The ops are plain string transformations and call no model
 
 ## The concept
 
-A workflow spec names executors, the behavior each one runs (an op + optional config), and the edges between them. A loader reads the YAML and emits the same `Workflow` object you'd get from hand-wired `WorkflowBuilder` calls in Chapter 9 — the graph shape moved from Python/C# source into data.
+A workflow spec names the executors (the nodes of the workflow graph), the behavior each one runs (an op plus optional config), and the edges between them. A loader reads the YAML and produces the same `Workflow` object you would get from the hand-wired `WorkflowBuilder` calls in Chapter 9. The graph's shape has moved from Python or C# source into data.
 
 ```yaml
 name: text-pipeline
@@ -40,7 +46,7 @@ edges:
     to: log
 ```
 
-Each `op` name resolves to a small pure function (`upper`, `non_empty`, `prefix`, …) via a registry. The loader instantiates one real `Executor` subclass per YAML entry and wires them with `WorkflowBuilder.add_edge(...)`, exactly like the code-built version — the only difference is *where* the graph topology comes from.
+Each `op` name resolves to a small pure function (`upper`, `non_empty`, `prefix`, …) through a registry. The loader creates one real `Executor` instance per YAML entry and wires them with `WorkflowBuilder.add_edge(...)`, as the code-built version does. The only difference is *where* the graph's shape comes from.
 
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': {
@@ -75,11 +81,33 @@ flowchart LR
   class out success
 ```
 
-The loader never sees your business logic directly — it only sees op names and config. The graph topology is data; the op registry is where actual behavior lives.
+The loader never sees your business logic. It sees only op names and config. The graph's shape is data; the behavior lives in the op registry.
 
 ## Python
 
-Source: [`python/main.py`](./python/main.py) + [`python/workflow.yaml`](./python/workflow.yaml).
+Source: [`python/main.py`](./python/main.py) and [`python/workflow.yaml`](./python/workflow.yaml). Run from the repo root:
+
+```bash
+uv sync --project tutorials
+uv run --project tutorials python tutorials/19-declarative-workflows/python/main.py "hello world"
+uv run --project tutorials python tutorials/19-declarative-workflows/python/main.py ""
+```
+
+You should see, for the two commands in turn:
+
+```
+spec: workflow.yaml
+input: 'hello world'
+output: 'LOGGED: HELLO WORLD'
+```
+
+```
+spec: workflow.yaml
+input: ''
+output: '[skipped: empty input]'
+```
+
+The second run stops at `validate`, because the input is blank. The op functions and the executor that runs them:
 
 ```python
 def _build_op(op: str, config: dict[str, Any]) -> Callable[[str], tuple[str | None, str | None]]:
@@ -113,31 +141,13 @@ class DeclarativeExecutor(Executor):
             await ctx.send_message(forward)
 ```
 
-`load_workflow()` parses the YAML, builds one `DeclarativeExecutor` per entry, and wires them with `WorkflowBuilder.add_edge(...)` — mirroring Chapter 9's hand-built graph but driven entirely by `workflow.yaml`.
-
-Run from the repo root using the shared `tutorials/` uv project (one `uv sync` covers every chapter):
-
-```bash
-uv sync --project tutorials
-uv run --project tutorials python tutorials/19-declarative-workflows/python/main.py "hello world"
-uv run --project tutorials python tutorials/19-declarative-workflows/python/main.py ""
-```
-
-```
-$ uv run --project tutorials python tutorials/19-declarative-workflows/python/main.py "hello world"
-spec: workflow.yaml
-input: 'hello world'
-output: 'LOGGED: HELLO WORLD'
-
-$ uv run --project tutorials python tutorials/19-declarative-workflows/python/main.py ""
-spec: workflow.yaml
-input: ''
-output: '[skipped: empty input]'
-```
+`load_workflow()` parses the YAML, builds one `DeclarativeExecutor` per entry, and wires them with `WorkflowBuilder.add_edge(...)`. The result matches Chapter 9's hand-built graph, but `workflow.yaml` drives all of it.
 
 ## .NET
 
-[`dotnet/Program.cs`](./dotnet/Program.cs) mirrors the Python shape: a `WorkflowSpec` record deserialized by YamlDotNet, an `OpRegistry` that maps op names to functions, and a `DeclarativeWorkflowLoader` that builds the `Workflow` from the spec. For the officially supported full declarative schema (agent invocation, human-in-the-loop, control flow, Power Fx expressions) see `Microsoft.Agents.AI.Workflows.Declarative` and `DeclarativeWorkflowBuilder.Build<TInput>(path, options)` — this chapter's loader rolls its own minimal version for pedagogy.
+[`dotnet/Program.cs`](./dotnet/Program.cs) has the same shape as the Python side: a `WorkflowSpec` record deserialized by YamlDotNet, an `OpRegistry` that maps op names to functions, and a `DeclarativeWorkflowLoader` that builds the `Workflow` from the spec. This loader is a minimal one written for teaching. For the supported full schema (agent invocation, human-in-the-loop, control flow, Power Fx expressions), see `Microsoft.Agents.AI.Workflows.Declarative` and `DeclarativeWorkflowBuilder.Build<TInput>(path, options)`.
+
+No key is needed. From the repo root:
 
 ```bash
 cd tutorials/19-declarative-workflows/dotnet
@@ -157,33 +167,26 @@ dotnet run -- "maf rocks"  # happy path
 
 ## Gotchas
 
-- **Schema freedom is a tax.** Every declarative system is a small language; validate aggressively. This chapter's loader raises on unknown `op` values, duplicate executor ids, and edges referencing undeclared executors — do the same in any loader you write.
-- **Executors aren't free.** Each YAML entry builds a real `Executor` subclass instance. For very large specs, lazy-instantiate.
-- **Custom ops must live somewhere.** This chapter embeds them inline in `main.py` and exposes `register_op(name, factory)` so new ops can be added without touching the loader itself.
-- **No MAF packaging workaround is needed.** `agent-framework-core` 1.26.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. [`tutorials/_shared/maf_bootstrap.py`](../_shared/maf_bootstrap.py)`::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
-- **`dotnet test` isn't wired up for this chapter yet.** `Declarative.csproj` already excludes a `tests/**/*.cs` glob and lists `InternalsVisibleTo="Declarative.Tests"`, but no `tests/` directory exists on disk in this chapter — unlike Chapter 9's `dotnet/tests/`. Treat the Python suite as the chapter's test coverage for now.
+- **A typo in the YAML fails at run time with an unhelpful error.** A spec file is a small language that no compiler checks, so the loader must validate it. The .NET loader rejects an unknown `op`, a duplicate executor id and an edge that names an undeclared executor, each with a message naming the problem. The Python loader is smaller: it raises a clear error for an unknown `op`, but an undeclared edge target surfaces as a bare `KeyError` and a duplicate id silently replaces the earlier entry. Add those checks to any loader you write.
+- **Every YAML entry costs an object.** Each one builds a real `Executor` instance. For very large specs, create them lazily.
+- **A new op means editing the registry.** In Python, ops are an `if` chain inside `_build_op` in `main.py`, so you add a branch. In .NET, `OpRegistry.Register(name, factory)` adds one without touching the loader.
 
 ## Tests
 
-
-Python ships a full suite covering the op registry, the loader, and end-to-end YAML runs: [`python/tests/test_declarative.py`](./python/tests/test_declarative.py) exercises every built-in op (`upper`, `lower`, `reverse`, `non_empty`, `prefix`), the unknown-op error path, `load_workflow()` wiring the correct executor ids, and the YAML-driven pipeline matching the code-built equivalent for both the happy path and the empty-input short-circuit.
-
 ```bash
-uv sync --project tutorials
 uv run --project tutorials pytest tutorials/19-declarative-workflows/python/tests -v
+dotnet test tutorials/19-declarative-workflows/dotnet/tests/Declarative.Tests.csproj
 ```
 
-The .NET side ships [`dotnet/tests/DeclarativeTests.cs`](./dotnet/tests/DeclarativeTests.cs) — twenty-two tests, no LLM:
+Run both from the repo root. Neither calls a model.
 
-```bash
-cd tutorials/19-declarative-workflows/dotnet && dotnet test tests/Declarative.Tests.csproj
-```
+The Python tests in [`python/tests/test_declarative.py`](./python/tests/test_declarative.py) exercise every built-in op and the unknown-op error. They also check that the YAML-driven pipeline gives the same result as the code-built one, for normal input and for blank input.
 
-Most of them are validation, because the whole premise of a declarative loader is that a config file can be wrong — and a loader whose errors are unhelpful is worse than no loader, since the failure surfaces at runtime in a file the compiler never checked. Each error test asserts the message names the thing that is actually wrong; "workflow spec invalid" would technically satisfy all of them.
+The .NET tests in [`dotnet/tests/DeclarativeTests.cs`](./dotnet/tests/DeclarativeTests.cs) are mostly about validation, because a config file can be wrong and its errors surface at run time. Each error test asserts that the message names the thing that is wrong. A generic "workflow spec invalid" would not pass.
 
 ## How this shows up in the capstone
 
-It does not. The capstone once carried a small YAML loader of its own (`agents/python/shared/workflow_loader.py`, with a single toy `text-pipeline` spec) and a .NET twin; nothing in the running app ever used either, so both were removed (#98). The capstone's two production workflows — return/replace and pre-purchase — are hand-coded MAF `WorkflowBuilder` graphs (`agents/python/workflows/return_replace.py:259`, `agents/python/workflows/pre_purchase.py:300`), not YAML specs. This chapter is self-contained: its loader and its `workflow.yaml` live in `python/` and `dotnet/` here, and it imports nothing from `agents/`. Don't take it as evidence the production workflows are YAML-driven.
+The capstone (the full application in this repo) has no declarative loader, so nothing a user does there runs a YAML-defined workflow. Its two workflows, return/replace and pre-purchase, are hand-coded MAF `WorkflowBuilder` graphs (`agents/python/workflows/return_replace.py:565`, `agents/python/workflows/pre_purchase.py:300`). This chapter is self-contained: its loader and its `workflow.yaml` live in `python/` and `dotnet/` here, and it imports nothing from `agents/`.
 
 ## What's next
 

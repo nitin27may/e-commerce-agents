@@ -1,26 +1,36 @@
 # Chapter 29 — Planner-Executor
 
+This chapter splits a multi-step request between two agents. A planner turns the request into an ordered list of steps before anything runs, and an executor then carries out the steps one at a time.
+
+**You will learn to:**
+
+- Get a plan from a model as structured output (a Pydantic model) instead of free text
+- Run each plan step through an executor agent that shares one session across steps
+- Show the whole plan to a user or a log before the first tool call
+- Choose between planning up front and deciding one tool call at a time
+
 ## Why this chapter
 
-Most of this series' orchestration chapters (02, 12+, and this repo's own default `tool`
-orchestration mode) have the LLM decide **one tool call at a time**, reactively, based on
-whatever it currently knows. That's simple and adaptive, but for a multi-step shopping request —
-"help me put together a birthday gift for someone who likes photography under $200" — it means
-you never see the whole plan before the agent starts acting. You can't approve it, estimate its
-cost, or debug where it went wrong until it's already three tool calls deep.
+Most orchestration chapters in this series have the model decide **one tool call at a time**,
+based on what it currently knows. So does the default `tool` mode of the capstone (the full
+application in this repo). That is simple and adaptive. For a multi-step shopping request such as
+"help me put together a birthday gift for someone who likes photography under $200", it also means
+you never see the whole plan before the agent starts acting. You cannot approve it, estimate its
+cost, or find where it went wrong until it is three tool calls deep.
 
-Planner-executor flips the order: decompose the request into an ordered list of concrete steps
-**up front** — the "plan," produced as structured output, not free text — and only then run each
-step in sequence. The plan is inspectable before a single tool fires. This chapter builds a
-minimal planner-executor pair for the e-commerce domain: a planner agent that turns a shopping
-request into a `Plan` of ordered `PlanStep`s, and an executor agent that runs each step, calling
-an in-memory `search_products` tool when a step needs catalog data and reasoning directly over
-earlier results otherwise.
+Planner-executor reverses the order. The request is decomposed into an ordered list of concrete
+steps **up front**, as structured output, and only then does each step run. You can inspect the
+plan before a single tool fires.
+
+This chapter builds a minimal pair for the e-commerce domain. A planner agent turns a shopping
+request into a `Plan` of ordered `PlanStep`s. An executor agent runs each step. It calls an
+in-memory `search_products` tool when a step needs catalog data, and reasons over earlier results
+otherwise.
 
 ## Prerequisites
 
 - Completed [Chapter 02 — Adding Tools](../02-add-tools/) (the `@tool` decorator shape reused here)
-- Familiar with [Chapter 04 — Sessions](../04-sessions/) (`AgentSession` — the executor shares one across steps)
+- Familiar with [Chapter 04 — Sessions](../04-sessions/) (`AgentSession`, which the executor shares across steps)
 - No API key needed: with none set, `main.py` replays recorded responses and prints one line saying so. To use a live model instead, put `OPENAI_API_KEY` (or the `AZURE_OPENAI_*` variables) in the repo-root `.env`
 
 ## The concept
@@ -29,27 +39,28 @@ A planner-executor system is two agents (or two roles played by one model) with 
 between them:
 
 1. **The planner** sees only the user's request. It never touches a tool. Its one job is to
-   produce a `Plan` — an ordered list of `PlanStep`s — as **structured output** (a Pydantic model
-   passed as `response_format`), not prose the rest of the code would have to parse with regex.
+   produce a `Plan`, an ordered list of `PlanStep`s, as **structured output**: a Pydantic model
+   passed as `response_format`, not prose that other code would have to parse with a regex.
 2. **The executor** never sees the original request, only one step at a time. For each step it
    either calls a tool (if the step names a catalog search) or reasons over what earlier steps
-   already produced, then returns a result. The plan itself never changes mid-run — no step
-   result feeds back into re-deciding what step 3 should be.
+   produced, then returns a result. The plan never changes mid-run. No step result feeds back
+   into deciding what step 3 should be.
 
-This is the deliberate trade-off: **predictable and inspectable, at the cost of adaptability.**
-The router/tool pattern (Chapter 02, and this repo's `tool` orchestration mode) has the opposite
-trade-off — the LLM decides the very next action every turn, so it reacts instantly to a
-surprising tool result, but there's no plan to show a user before execution starts, and no single
-point to log "here's everything this run intends to do" for approval or cost estimation. Use
-planner-executor when seeing the whole plan up front has real value (approval gates, cost
-estimates before execution, step-by-step debugging); use reactive tool-calling when the task is
-usually one hop and a full plan would be ceremony.
+The trade-off is deliberate: **predictable and inspectable, at the cost of adaptability.**
+Reactive tool-calling (Chapter 02, and the application's `tool` mode) makes the opposite trade.
+The model decides the next action every turn, so it reacts at once to a surprising tool result.
+But there is no plan to show a user before execution starts, and no single place to log what the
+run intends to do.
 
-Note what this chapter does **not** build: automatic re-planning. If step 2's search comes back
-empty, the executor still tries to run steps 3 and 4 as written. A production planner-executor
-usually adds a loop that re-invokes the planner when a step's result invalidates the rest of the
-plan — this repo's `docs/concepts/06-orchestration-patterns.md` names that adaptive version
-**Magentic**, and it is explicitly **not implemented in this repo yet** (see Gotchas).
+Use planner-executor when seeing the whole plan first has value: approval gates, cost estimates
+before execution, step-by-step debugging. Use reactive tool-calling when the task is usually one
+hop and a full plan would be ceremony.
+
+This chapter does **not** build automatic re-planning. If step 2's search comes back empty, the
+executor still runs steps 3 and 4 as written. A fuller planner-executor adds a loop that calls the
+planner again when a step's result invalidates the rest of the plan.
+[`docs/concepts/06-orchestration-patterns.md`](../../docs/concepts/06-orchestration-patterns.md)
+calls that adaptive version **Magentic**. The application does not implement it (see Gotchas).
 
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': {
@@ -81,16 +92,42 @@ flowchart LR
   class results success
 ```
 
-The plan is fully formed — and printable — before the executor runs its first step. Nothing about
+The plan is fully formed, and printable, before the executor runs its first step. Nothing about
 step 2 depends on the planner reconsidering step 1.
 
 ## Python
 
-Run from the repo root using the shared `tutorials/` uv project (one `uv sync` covers every chapter):
+Run from the repo root. The shared `tutorials/` uv project covers every chapter, so one `uv sync` is enough:
 
 ```bash
 uv sync --project tutorials
 uv run --project tutorials python tutorials/29-planner-executor/python/main.py
+```
+
+You should see the plan's goal first, then each step with its result:
+
+```text
+No LLM key found - replaying the recorded fixture (set OPENAI_API_KEY or the AZURE_OPENAI_* variables for a live run).
+Request: Help me put together a birthday gift for someone who likes photography, under $200.
+
+Plan: Select a photography-related birthday gift under $200.
+
+1. Search for photography-related products.
+   -> Here are the photography-related products found:
+
+- Compact Mirrorless Camera ($189)
+- 50mm Prime Lens ($129)
+...
+
+2. Filter the results to items priced under $200.
+   -> The following photography-related products are priced under $200:
+...
+
+3. Pick the best-suited items for a birthday gift from the filtered results.
+...
+
+4. Summarize a top recommendation for a photography gift within the budget.
+   -> Top Recommendation: The Compact Mirrorless Camera ($189) is the best photography gift within your $200 budget. ...
 ```
 
 Source: [`python/main.py`](./python/main.py). The plan is a Pydantic model, not free text:
@@ -110,8 +147,8 @@ class Plan(BaseModel):
     steps: list[PlanStep] = Field(description="Ordered steps that together satisfy the goal.")
 ```
 
-The planner call asks for that shape directly via `response_format`, and `response.value` returns
-an already-parsed `Plan` — no manual JSON parsing in this chapter's code:
+The planner call asks for that shape through `response_format`, and `response.value` returns
+an already-parsed `Plan`. There is no manual JSON parsing in this chapter's code:
 
 ```python
 async def make_plan(planner: Agent, request: str) -> Plan:
@@ -123,7 +160,7 @@ async def make_plan(planner: Agent, request: str) -> Plan:
 ```
 
 The executor runs one step at a time on a **shared session**, so step 2 ("filter by price") can
-see step 1's search results without the caller re-stating them:
+see step 1's search results without the caller restating them:
 
 ```python
 async def run_plan(request: str) -> tuple[Plan, list[str]]:
@@ -135,27 +172,28 @@ async def run_plan(request: str) -> tuple[Plan, list[str]]:
     return plan, results
 ```
 
-`main()` prints the plan's goal and every step's action *before* printing any result, then walks
-the results in order — the plan is visible as a distinct artifact, not folded silently into the
-final answer.
-
 ## .NET
 
 Source: [`dotnet/Program.cs`](./dotnet/Program.cs).
 
 ```bash
+# From the repo root. Needs no API key.
+dotnet test tutorials/29-planner-executor/dotnet/tests/PlannerExecutor.Tests.csproj
+
+# Needs an API key in the repo-root .env. Note the cd.
 cd tutorials/29-planner-executor/dotnet
 dotnet run
-dotnet test tests/PlannerExecutor.Tests.csproj
 ```
 
-Structured output uses the generic `RunAsync<T>` overload rather than Python's `response_format=`:
+`dotnet run` calls a live model, so it needs `OPENAI_API_KEY` or the `AZURE_OPENAI_*` variables. Run the tests first if you have no key.
+
+Structured output uses the generic `RunAsync<T>` overload where Python uses `response_format=`:
 
 ```csharp
 var response = await planner.RunAsync<Plan>(request, serializerOptions: AIJsonUtilities.DefaultOptions);
 ```
 
-`AgentResponse<T>.Result` deserializes lazily and throws on bad JSON, so `MakePlanAsync` catches it and rethrows with the raw text quoted — turning "the model ignored the schema" into one actionable message instead of a `JsonException` from somewhere inside the framework. Executing a half-parsed plan is worse than not executing one.
+`AgentResponse<T>.Result` deserializes lazily and throws on bad JSON. `MakePlanAsync` catches that and rethrows with the raw text quoted. "The model ignored the schema" then arrives as one actionable message, not a `JsonException` from inside the framework. Executing a half-parsed plan is worse than not executing one.
 
 The session is `AgentSession`, created once and reused across every step:
 
@@ -167,91 +205,76 @@ foreach (PlanStep step in plan.Steps)
 }
 ```
 
-Two properties carry the pattern and neither is visible from the API:
+Two properties carry the pattern, and neither is visible from the API:
 
 - **The planner has no tools.** `The_Planner_Is_Given_No_Tools` asserts it. Give it any and it will search instead of planning, and you get a reactive agent that also emits a plan it has already stopped following.
-- **Every step shares one session.** The failure mode without this is not an error: step 3 sees an empty conversation, has nothing to pick from, and invents a plausible recommendation. `All_Steps_Share_One_Session_So_Later_Steps_See_Earlier_Results` asserts the conversation grows, which is the only way to catch it.
+- **Every step shares one session.** Without this there is no error: step 3 sees an empty conversation, has nothing to pick from, and invents a plausible recommendation. `All_Steps_Share_One_Session_So_Later_Steps_See_Earlier_Results` asserts the conversation grows, which is the only way to catch it.
 
 ## Gotchas
 
-- **`response_format` goes on `run()`, not on `Agent()`.** `Agent(client, response_format=Plan, ...)` is not a
-  thing — pass it per-call: `agent.run(request, options={"response_format": Plan})`. `response.value` does
-  the JSON parsing; `response.text` still gives you the raw model output if parsing fails.
-- **A missing or malformed structured response surfaces as `response.value is None`,** not an
-  exception at call time — `make_plan()` in this chapter raises explicitly with the raw text
-  attached so a bad plan fails loudly instead of the executor silently iterating zero steps.
-- **The executor's `AgentSession` is shared across all steps, on purpose.** Building a fresh
-  executor (or a fresh session) per step would lose step 1's search results by the time step 2
-  runs — `InMemoryHistoryProvider()` on `build_executor_agent()` is what makes "filter the results
-  from step 1" resolvable without re-passing them.
-- **No re-planning.** If a step's tool result contradicts what the plan assumed (e.g., a search
-  step returns zero matches), the executor still executes the remaining steps as literally
-  written. This repo's `docs/concepts/06-orchestration-patterns.md` names the adaptive,
-  re-planning version of this pattern **Magentic** — "a planner-executor pattern where a lead
-  agent dynamically plans and assigns work to a team, adjusting the plan as it learns" — and is
-  explicit that it's **not implemented in this repo yet**: `orchestrator/modes/get_mode()` raises
-  a named `UnknownModeError` for `"magentic"` rather than silently pretending it exists (see
-  `agents/python/orchestrator/modes/__init__.py:55`). This chapter is a standalone teaching
-  implementation of the general pattern — it is deliberately **not** wired into
-  `orchestrator/modes/` as a new production mode, to avoid a second, divergent implementation
-  that would need reconciling once a real `magentic` mode eventually lands there.
-- **Multiple LLM turns means multiple fixture files.** A run with a 4-step plan produces one
-  planner fixture plus one executor fixture per step (more if a step drives a tool-call round
-  trip) — `ReplayChatClient` keys each fixture on the exact request (messages + tools +
-  instructions), so the planner and executor never collide even though they share one
+- **`Agent(client, response_format=Plan, ...)` does not work.** `response_format` goes on `run()`,
+  per call: `agent.run(request, options={"response_format": Plan})`. `response.value` does the
+  JSON parsing, and `response.text` still gives you the raw model output if parsing fails.
+- **The executor runs zero steps and nothing fails.** A missing or malformed structured response
+  shows up as `response.value is None`, not as an exception. `make_plan()` raises explicitly with
+  the raw text attached, so a bad plan fails loudly.
+- **A later step invents results it never saw.** That happens when each step gets a fresh executor
+  or a fresh session, which loses step 1's search results before step 2 runs. The executor's
+  `AgentSession` is shared across all steps on purpose. `InMemoryHistoryProvider()` on
+  `build_executor_agent()` is what makes "filter the results from step 1" resolvable.
+- **The executor carries on after a step comes back empty.** There is no re-planning. If a search
+  step returns zero matches, the remaining steps still run as written. The adaptive version of the
+  pattern is Magentic, which the application does not implement: `get_mode()` raises an
+  `UnknownModeError` that names `magentic` as not implemented
+  (`agents/python/orchestrator/modes/__init__.py:54`).
+- **One run produces several fixture files.** A 4-step plan needs one planner fixture plus at
+  least one executor fixture per step. `ReplayChatClient` keys each fixture on the exact request
+  (messages, tools and instructions), so the planner and executor never collide in the shared
   `FIXTURES_DIR`.
 
 ## Tests
 
 ```bash
 uv run --project tutorials pytest tutorials/29-planner-executor/python/tests -v
+dotnet test tutorials/29-planner-executor/dotnet/tests/PlannerExecutor.Tests.csproj
 ```
 
-`tutorials/29-planner-executor/python/tests/test_planner_executor.py` covers, structurally:
+Run both from the repo root. Neither needs an API key.
 
-1. **Unit tests against the tool and models directly** — `search_products` keyword matching and
-   price filtering, `PlanStep`/`Plan` construction and ordering — no LLM involved.
-2. **Agent wiring** — `search_products` shows up in `build_executor_agent()`'s registered tools;
-   `build_planner_agent()` builds with no tools at all (it only ever returns structured output).
-3. **A replay test** (`test_replay_plans_and_executes`) that plays back committed fixtures in
-   `tests/fixtures/replay/` — no network or credentials required, safe for CI. It `pytest.skip()`s
-   gracefully if no fixtures have been recorded yet.
-4. **Real-LLM integration tests**, skipped unless usable credentials are present — one asserts the
-   planner returns a `Plan` with sequentially numbered steps, the other asserts every step in a
-   full run produces a non-empty result including real catalog data.
-
-Fixtures for this chapter were recorded against Azure OpenAI credentials found in the repo-root
-`.env`:
-
-```bash
-LLM_PROVIDER=replay RECORD=true REPLAY_RECORD_PROVIDER=azure \
-  uv run --project tutorials python tutorials/29-planner-executor/python/main.py
-```
+The tests prove that the planner is built with no tools, that the executor holds `search_products`,
+and that the tool filters by keyword and price. A replay test plans and executes the full request
+against recorded model responses. Tests against a live model are skipped unless credentials are
+present.
 
 ## How this shows up in the capstone
 
-The executor's `search_products` tool is a toy version of the real thing. `agents/python/product_discovery/tools.py:16`
-defines the production `search_products`:
+The application does not run planner-executor as an orchestration mode. Its default `tool` mode is
+the reactive alternative described above, and the nearest thing to this chapter in it is the tool
+the executor calls. `agents/python/product_discovery/tools.py:31` defines the application's
+`search_products`, which answers a shopper's catalog questions in chat:
 
 ```python
-@tool(name="search_products", description="Search the product catalog using natural language. Supports filtering by category, price range, and rating.")
+@tool(
+    name="search_products",
+    description=(
+        "Search the product catalog using natural language. Supports filtering by category, price range, and rating."
+    ),
+)
 async def search_products(
 ```
 
-Same `@tool` + `Annotated` shape as this chapter's version — production adds `async`, real
-Postgres full-text search via `get_pool()`, and several more filter parameters, but the mechanics
-of "the LLM decides when to call this and what arguments to pass" are unchanged.
+It has the same `@tool` and `Annotated` shape as this chapter's version. The application's adds
+`async`, Postgres full-text search through `get_pool()`, and more filter parameters. The model
+still decides when to call it and with what arguments.
 
-The planner-executor pattern itself, however, is **not** wired into the capstone's live
-orchestrator. `agents/python/orchestrator/modes/__init__.py:55` is where `get_mode()` raises a
-named `UnknownModeError` for `"magentic"` — the production-grade, re-planning generalization of
-what this chapter builds — confirming it's tracked as a later addition rather than silently
-missing. See [`docs/concepts/06-orchestration-patterns.md`](../../docs/concepts/06-orchestration-patterns.md)
-for the full comparison of every orchestration mode this repo *does* run in production.
+`agents/python/orchestrator/modes/__init__.py:54` is where `get_mode()` rejects an unknown mode
+name and states that `magentic`, the re-planning form of this pattern, is not implemented. See
+[`docs/concepts/06-orchestration-patterns.md`](../../docs/concepts/06-orchestration-patterns.md)
+for a comparison of the modes the application does run.
 
 ## What's next
 
-- Previous: [Chapter 27 — Agent-as-Tool](../27-agent-as-tool/)
+- Related: [Chapter 27 — Agent-as-Tool](../27-agent-as-tool/)
 - Full source: [`python/`](./python/)
 - Shared: [Mermaid style guide](../_shared/mermaid-style-guide.md) · [Orchestration patterns](../../docs/concepts/06-orchestration-patterns.md)
 

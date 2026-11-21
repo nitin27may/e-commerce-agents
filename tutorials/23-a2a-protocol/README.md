@@ -1,28 +1,43 @@
 # Chapter 23 — A2A Protocol
 
+This chapter puts an agent behind three HTTP endpoints and calls it from a second agent that never imports its code. A2A (agent-to-agent) is the name for that kind of call between agent processes.
+
+**You will learn to:**
+
+- Serve an agent over HTTP with an identity document, a blocking endpoint and a streaming endpoint
+- Call that agent from another agent's tool, using nothing but an HTTP client
+- Read a Server-Sent Events (SSE) reply and tell a finished stream from a failed one
+- Decide when a process boundary between two agents is worth its cost
+
 ## Why this chapter
 
-Every specialist agent in this capstone — product discovery, order management, pricing, reviews, inventory — runs as its own FastAPI process, on its own port, deployed and scaled independently. None of that is MAF. It's a plain HTTP convention this repo calls A2A (agent-to-agent): a tiny manifest so one agent can discover another, and two HTTP shapes so one agent can call another's `Agent.run()` without importing it. The orchestrator's single most important tool, `call_specialist_agent` (`agents/python/orchestrator/agent.py:40`), is nothing but this convention wired to `httpx`. Every other chapter in this series builds an `Agent` in one process and calls `.run()` on it directly — this is the first chapter where the caller and the agent are different processes, and that gap is the entire subject.
+Every other chapter in this series builds an `Agent` in one process and calls `.run()` on it directly. In the capstone (the full application in this repo) that is not possible. Each specialist agent — product discovery, order management, pricing, reviews, inventory — runs as its own FastAPI process on its own port, deployed and scaled independently.
 
-Despite being the backbone of the whole app, A2A has had zero tutorial coverage until now — the largest gap in this curriculum. This chapter closes it.
+The orchestrator reaches them over HTTP. Its main tool, `call_specialist_agent` (`agents/python/orchestrator/agent.py:93`), is an HTTP call wrapped in a tool. This is the first chapter where the caller and the agent are different processes, and that gap is the subject.
+
+The application serves two wires on every specialist. One is the standard A2A 1.0 protocol, JSON-RPC at `/a2a/v1`, built on the official SDKs. The other is a simpler pair of endpoints, `POST /message:send` and `POST /message:stream`, which is what the orchestrator speaks by default. This chapter teaches the simple pair, because you can build both sides of it by hand in one file and see every byte.
 
 ## Prerequisites
 
-- Completed [Chapter 02 — Adding Tools](../02-add-tools/) (tools are how a coordinator agent triggers an A2A call)
-- Familiar with the harness concepts in [docs/concepts/04-agent-harness.md](../../docs/concepts/04-agent-harness.md) — this chapter teaches the A2A transport/identity shapes that document introduces
+- Completed [Chapter 02 — Adding Tools](../02-add-tools/). A tool is how the coordinator agent triggers the A2A call.
+- Read [docs/concepts/04-agent-harness.md](../../docs/concepts/04-agent-harness.md), which introduces the transport and identity shapes this chapter builds.
 - No API key needed: with none set, `main.py` replays recorded responses and prints one line saying so. To use a live model instead, put `OPENAI_API_KEY` (or the `AZURE_OPENAI_*` variables) in the repo-root `.env`
 
 ## The concept
 
-A2A, as this repo uses it, is a lightweight HTTP convention for one agent process to discover and call another agent process. It is not a special SDK feature of MAF — `Agent` objects don't know anything about A2A. It's three plain HTTP endpoints that `agents/python/shared/agent_host.py::create_agent_app()` puts in front of every specialist's `Agent`, and a `RemoteSpecialistChatClient` / `call_specialist_agent` on the calling side that know how to talk to them.
+The wire in this chapter is three plain HTTP endpoints in front of an `Agent`, plus a caller that knows their shapes. MAF's `Agent` class knows nothing about any of it. In the application, `agents/python/shared/agent_host.py::create_agent_app()` puts these endpoints in front of every specialist, and `call_specialist_agent` is the calling side.
 
-**Identity.** Every specialist serves `GET /.well-known/agent-card.json` (`agent_host.py:216`) — a small JSON manifest (name, description, url, version) a caller can fetch to confirm who it's about to talk to before sending real traffic. This chapter's demo specialist serves the same document, verbatim shape, at the same well-known path.
+**Identity.** Every specialist serves `GET /.well-known/agent-card.json`. The agent card is a JSON document a caller fetches to confirm who it is about to talk to before sending real traffic. This chapter's specialist serves a four-field card (name, description, url, version) at the same well-known path. The application's card is the fuller A2A 1.0 document, which also lists the agent's interfaces, capabilities and skills.
 
-**Transport — two shapes.** `POST /message:send` (`agent_host.py:225`) is blocking request/response: send `{"message": "...", "history": [...]}`, get back `{"response": "...", "steps": [...]}` once the specialist's `agent.run()` finishes. `POST /message:stream` (`agent_host.py:263`) is the streaming twin: same request body, but the reply arrives as Server-Sent Events — one `data: <chunk>` frame per piece of text, an `event: step` frame per tool call the specialist made, and a final `data: [DONE]` sentinel (or `data: [ERROR...]` on failure). The orchestrator's `call_specialist_agent` (`agents/python/orchestrator/agent.py:40-138`) actually speaks both: it opens the streaming endpoint when a live SSE connection to the browser is active (forwarding chunks in real time) and falls back to the blocking endpoint otherwise, parsing exactly those sentinels.
+**Transport, in two shapes.** `POST /message:send` (`agents/python/shared/agent_host.py:302`) is blocking request/response. You send `{"message": "..."}` and get back `{"response": "...", "steps": [...]}` once the specialist's `agent.run()` finishes.
 
-**Why this matters.** A2A is what lets each specialist run as an independent, separately-scaled, separately-deployed service instead of one giant agent with every tool bolted on — the same reason microservices exist, applied to agents. The product-discovery agent can be redeployed, scaled to three replicas, or rewritten in a different language without the orchestrator's code changing at all — it only ever depends on the HTTP contract, never on the specialist's internals.
+`POST /message:stream` (`agents/python/shared/agent_host.py:351`) takes the same request body and replies with Server-Sent Events. Each piece of text is a `data: <chunk>` frame, each tool call the specialist made is an `event: step` frame, and the stream ends with `data: [DONE]`. A failure arrives as `data: [ERROR...]`.
 
-**When to use it — and when not to.** Reach for A2A at a real process boundary: cross-service, cross-team, cross-language, or "this needs to scale/deploy independently." It costs you a network hop, JSON (de)serialization, and a new failure mode (the callee can be down, slow, or unreachable — see the timeout/error handling in `call_specialist_agent`). If two agents will always live in the same process and the same deployment, that cost buys nothing — `Agent.as_tool()` (Chapter 27, in progress) wraps a second agent as an in-process tool call with none of the HTTP overhead. Use A2A when the boundary is real; use an in-process tool when it isn't.
+The orchestrator's `call_specialist_agent` speaks both. It opens the streaming endpoint when the browser has a live SSE connection, and forwards chunks as they arrive. Otherwise it uses the blocking endpoint.
+
+**Why this matters.** A process boundary lets each specialist run as an independent, separately scaled, separately deployed service, instead of one large agent holding every tool. You can redeploy the product-discovery agent, run three replicas of it, or rewrite it in another language, and the orchestrator's code does not change. The orchestrator depends on the HTTP contract and nothing else.
+
+**When to use it, and when not to.** Use A2A at a real process boundary: another service, another team, another language, or a component that must scale or deploy on its own. It costs a network hop, JSON serialization, and a new failure mode, because the callee can be down, slow or unreachable. If two agents always live in the same process and the same deployment, that cost buys nothing. `Agent.as_tool()` ([Chapter 27](../27-agent-as-tool/)) wraps a second agent as an in-process tool call with no HTTP at all.
 
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': {
@@ -44,22 +59,35 @@ sequenceDiagram
   C-->>C: LLM folds result into final answer
 ```
 
-The coordinator never imports the specialist's code. It only knows an HTTP address and the shape of two endpoints — the same relationship the real orchestrator has with every one of its five specialists.
+The coordinator never imports the specialist's code. It knows an HTTP address and the shape of the endpoints, which is the same relationship the application's orchestrator has with each of its five specialists.
 
 ## Python
 
-Run from the repo root using the shared `tutorials/` uv project (one `uv sync` covers every chapter):
+Run from the repo root. The shared `tutorials/` uv project covers every chapter, so one `uv sync` is enough:
 
 ```bash
 uv sync --project tutorials
 uv run --project tutorials python tutorials/23-a2a-protocol/python/main.py
 ```
 
+You should see:
+
+```text
+No LLM key found - replaying the recorded fixture (set OPENAI_API_KEY or the AZURE_OPENAI_* variables for a live run).
+Q: What's the status of order ORD-1001?
+A: Order ORD-1001 has been shipped and is scheduled to arrive on 2026-08-22.
+
+Agent card: {'name': 'order-lookup', 'description': 'Looks up order status by order id.', 'url': 'http://order-lookup.local', 'version': '1.0'}
+Streamed frames: ['Shipped, arriving 2026-08-22.']
+```
+
+The answer comes from the model calling `call_order_specialist`, which makes an A2A round trip to the specialist app. The last two lines are a raw agent-card fetch and a raw streamed call, so you can see both transport shapes without the model in the way.
+
 Source: [`python/main.py`](./python/main.py).
 
 ### Why an in-process transport
 
-The real capstone binds a real TCP port per specialist and calls it with a real `httpx.AsyncClient`. Spinning up an actual `uvicorn` server inside a tutorial's test suite invites exactly the kind of flakiness (port collisions, startup races, leaked sockets between test runs) this repo's testing conventions avoid — every other chapter's tests are deterministic and network-free. So this chapter's specialist is still a real ASGI app — real Starlette routing, real JSON encoding, real SSE framing — but it's driven through `httpx.ASGITransport`, which calls the app in-process instead of opening a socket:
+The application binds a real TCP port per specialist and calls it with a real `httpx.AsyncClient`. Starting a `uvicorn` server inside a tutorial's tests invites port collisions, startup races and leaked sockets. So this chapter's specialist is a real ASGI app, with real Starlette routing, JSON encoding and SSE framing, driven through `httpx.ASGITransport`. That transport calls the app in-process instead of opening a socket:
 
 ```python
 def _specialist_client() -> httpx.AsyncClient:
@@ -67,7 +95,7 @@ def _specialist_client() -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=transport, base_url=SPECIALIST_BASE_URL, timeout=10)
 ```
 
-Every request still goes through Starlette's full routing and (de)serialization stack — only the socket is skipped. The request/response *shapes* on the wire are identical to what `agent_host.py` actually serves; only the "wire" itself is swapped for an in-process call.
+Every request still goes through Starlette's full routing and serialization. The request and response shapes match what `agent_host.py` serves; only the socket is skipped.
 
 ### The specialist: real A2A endpoints
 
@@ -82,7 +110,7 @@ def build_specialist_app() -> Starlette:
     )
 ```
 
-Same three routes, same paths, as `agents/python/shared/agent_host.py::create_agent_app()`. `_message_send` returns `{"response": ..., "steps": []}`; `_message_stream` yields `data: <chunk>` frames and finishes with `data: [DONE]` — the same sentinel `orchestrator/agent.py::call_specialist_agent` looks for.
+These are the same three paths every specialist in the application serves. `_message_send` returns `{"response": ..., "steps": []}`. `_message_stream` yields `data: <chunk>` frames and finishes with `data: [DONE]`, the sentinel `call_specialist_agent` looks for.
 
 ### The coordinator's tool: the A2A call
 
@@ -97,21 +125,24 @@ async def call_order_specialist(message: Annotated[str, Field(description="...")
         return str(data.get("response", resp.text))
 ```
 
-This is `orchestrator/agent.py`'s blocking path, minus the streaming branch and the registry lookup — build a body, `POST /message:send`, read `response`. The LLM decides to call this tool the same way it decided to call Chapter 02's `get_product_price`; the difference is what the tool *does* once called — a real (if in-process) HTTP round trip instead of a dictionary lookup.
-
-Run it and ask an order question — the LLM calls `call_order_specialist`, which does a real A2A round trip to the specialist app, and the answer folds the order's status into a sentence. `main()` also prints the raw agent-card fetch and a raw streamed call afterward, so you can see both transport shapes outside of the LLM's tool-calling loop.
+This is the blocking path of `orchestrator/agent.py`, without the streaming branch and the registry lookup: build a body, `POST /message:send`, read `response`. The model decides to call this tool the same way it decided to call Chapter 02's `get_product_price`. The difference is what the tool does once called: an HTTP round trip instead of a dictionary lookup.
 
 ## .NET
 
 Source: [`dotnet/Program.cs`](./dotnet/Program.cs).
 
 ```bash
+# From the repo root. Needs no API key.
+dotnet test tutorials/23-a2a-protocol/dotnet/tests/A2AProtocol.Tests.csproj
+
+# Needs an API key in the repo-root .env. Note the cd.
 cd tutorials/23-a2a-protocol/dotnet
 dotnet run
-dotnet test tests/A2AProtocol.Tests.csproj
 ```
 
-**No A2A SDK is involved, and that is the point.** A2A is a protocol — three endpoints and an SSE frame format — so the .NET specialist is ordinary ASP.NET Core minimal APIs:
+`dotnet run` calls a live model, so it needs `OPENAI_API_KEY` or the `AZURE_OPENAI_*` variables. Run the tests first if you have no key.
+
+**The chapter's wire needs no SDK.** It is three endpoints and an SSE frame format, so the .NET specialist is ordinary ASP.NET Core minimal APIs:
 
 ```csharp
 app.MapGet("/.well-known/agent-card.json", () => Results.Json(Card));
@@ -122,62 +153,64 @@ app.MapPost("/message:send", (A2ARequest request) =>
         : Results.Json(new A2AResponse(LookupOrder(request.Message), Array.Empty<string>())));
 ```
 
-A `A2A` NuGet package does exist, but only as `1.0.0-preview2`. Depending on a preview to demonstrate plain HTTP would teach the wrong lesson: any language with an HTTP client can be an A2A caller, and any web framework can host an A2A agent.
+Any language with an HTTP client can be the caller, and any web framework can host the agent. The official A2A .NET SDK is a preview release, and the application uses it only for its A2A 1.0 wire.
 
-The in-process transport is `Microsoft.AspNetCore.TestHost` — the direct counterpart to Python's `httpx.ASGITransport`. Real routing, real model binding, real SSE writing, no socket. Same trade-off, same reason: spawning a server and polling a port makes the chapter's setup longer than its subject.
+The in-process transport is `Microsoft.AspNetCore.TestHost`, the counterpart to Python's `httpx.ASGITransport`. You get real routing, real model binding and real SSE writing, with no socket.
 
 ### The asymmetry between the two transports
 
-`/message:send` can reject an empty message with a `400`. `/message:stream` **cannot** — `200 OK` went out before anything went wrong, so the failure has to travel in-band as a frame:
+`/message:send` can reject an empty message with a `400`. `/message:stream` **cannot**: `200 OK` went out before anything went wrong, so the failure has to travel in-band as a frame:
 
 ```csharp
 await context.Response.WriteAsync("data: [ERROR: no message]\n\n");
 ```
 
-A caller that only checks the status code sees a successful, empty answer. That is why the SSE reader treats an `[ERROR` prefix as a failure and the `[DONE]` sentinel as termination, and why both are asserted.
+A caller that only checks the status code sees a successful, empty answer. That is why the SSE reader treats an `[ERROR` prefix as a failure and the `[DONE]` sentinel as termination, and why the tests assert both.
 
 ## Side-by-side differences
 
-| Aspect | This chapter | Real capstone (`agents/python/`) |
+| Aspect | This chapter | The application (`agents/python/`) |
 |--------|--------------|-----------------------------------|
 | Transport | `httpx.ASGITransport` (in-process, no socket) | Real TCP, `httpx.AsyncClient` over the network |
 | Specialist host | `Starlette` app built ad hoc in `main.py` | `shared/agent_host.py::create_agent_app()`, one per specialist microservice |
-| Identity | Same `/.well-known/agent-card.json` shape | Same endpoint, same shape |
-| Blocking call | `POST /message:send`, same body/response shape | Same endpoint (`orchestrator/agent.py:116-129`) |
-| Streaming call | `POST /message:stream`, same SSE framing | Same endpoint (`orchestrator/agent.py:68-113`), forwarded live to the browser |
-| Auth headers | None — same process, no trust boundary to cross | `X-Agent-Secret` + `X-User-Email`/`X-User-Role` (`build_a2a_headers()`) |
+| Identity | Four-field card at `/.well-known/agent-card.json` | Same path, full A2A 1.0 card (`shared/a2a_server.py`) |
+| Blocking call | `POST /message:send`, same body/response shape | Same endpoint (`orchestrator/agent.py:248-265`) |
+| Streaming call | `POST /message:stream`, same SSE framing | Same endpoint (`orchestrator/agent.py:126-211`), forwarded live to the browser |
+| Standard A2A 1.0 | Not shown | JSON-RPC at `/a2a/v1` on every specialist, chosen by the caller with `A2A_TRANSPORT=a2a` |
+| Auth headers | None: same process, no trust boundary to cross | `X-Agent-Secret` plus the user's identity (`build_a2a_headers()`) |
 
 ## Gotchas
 
-- **A2A is a convention, not a MAF feature.** There's no `agent_framework.a2a` module to import. It's plain HTTP — a JSON manifest and two POST endpoints — which is exactly why it's easy to reproduce faithfully in a tutorial: nothing here is a simplified stand-in for a hidden SDK mechanism.
-- **The blocking and streaming endpoints are genuinely different code paths, not one wrapping the other.** `call_specialist_agent` picks one based on whether an SSE connection to the browser is already open (`stream_queue is not None`), and falls back from streaming to blocking on any exception — see `orchestrator/agent.py:111-113`. Don't assume "streaming" is just "blocking, but chunked."
-- **The `[DONE]` / `[ERROR...]` sentinels are string prefixes on the SSE payload, not a structured field.** Forgetting to check for `[ERROR` before treating a frame as real content means an upstream failure silently becomes a garbage answer instead of a caught error — see `demo_stream_call()`'s `raise RuntimeError(payload)` for the check this chapter's demo makes.
-- **`ASGITransport` is a testing/demo convenience, not what production does.** It proves the request/response *shapes* are real without a live server; it does not exercise real network failure modes (timeouts, connection resets, DNS) the way `agents/python/orchestrator/agent.py`'s `httpx.TimeoutException` / `httpx.HTTPStatusError` handling has to.
-- **No auth headers in this demo.** The real orchestrator attaches `X-Agent-Secret` and user-identity headers to every A2A call (`build_a2a_headers()` in `shared/oauth/service_client.py`) because the specialist is a genuine trust boundary. This chapter's coordinator and specialist are the same trusted process, so that's intentionally left out — don't copy that omission into a real cross-service call.
+- **A stream that ends with no text may be a failure.** `[DONE]` and `[ERROR...]` are string prefixes on the SSE payload, not a structured field. If you skip the `[ERROR` check, an upstream failure becomes an empty or garbage answer instead of a caught error. `demo_stream_call()` raises `RuntimeError(payload)` for this case.
+- **A failed streaming call is not always safe to retry on the blocking endpoint.** The two endpoints are separate code paths. Once the specialist has accepted a stream, its tools may already have run, so the application retries on `/message:send` only when the request provably never started (`_request_never_ran` in `orchestrator/agent.py`).
+- **Tests pass but the real call times out.** `ASGITransport` proves the request and response shapes without a live server. It does not exercise timeouts, connection resets or DNS, which the application's `httpx.TimeoutException` / `httpx.HTTPStatusError` handling has to cover.
+- **Copying this demo into a real service leaves the call unauthenticated.** The coordinator and specialist here are one trusted process, so no auth headers are sent. The application attaches `X-Agent-Secret` and the user's identity to every call (`build_a2a_headers()` in `shared/oauth/service_client.py`), because a specialist is a real trust boundary.
+- **This chapter's wire is not the standard A2A 1.0 protocol.** A standard A2A client expects JSON-RPC and the full agent card, and cannot talk to these endpoints. For that wire, see the application's `/a2a/v1` surface in [docs/a2a.md](../../docs/a2a.md).
 
 ## Tests
 
 ```bash
 uv run --project tutorials pytest tutorials/23-a2a-protocol/python/tests -v
+dotnet test tutorials/23-a2a-protocol/dotnet/tests/A2AProtocol.Tests.csproj
 ```
 
-`tutorials/23-a2a-protocol/python/tests/test_a2a_protocol.py` covers, structurally:
+Run both from the repo root. Neither needs an API key.
 
-1. **Order-lookup unit tests** — canned status for a known order id, a clean fallback for an unknown one, a clean fallback when no order id is present, and case-insensitivity — no LLM, no HTTP.
-2. **A2A transport unit tests** — the agent-card endpoint returns the expected identity document, the tool's `.func(...)` performs a real (in-process) `/message:send` round trip and gets the right status back, and `/message:stream` both emits the `[DONE]` sentinel on success and raises on an `[ERROR...]` frame. All of this runs through the real Starlette app via `ASGITransport` — no LLM, no real socket.
-3. **Agent wiring** — `call_order_specialist` shows up in `build_agent()`'s registered tools.
-4. **A replay test** (`test_replay_calls_order_specialist`) that plays back a committed fixture in `tests/fixtures/replay/` — no network to a real LLM, no credentials required.
-5. **Real-LLM integration tests**, skipped unless usable credentials are present — one asserts the LLM calls `call_order_specialist` for an order question, the other asserts it does *not* leak canned order data into an unrelated answer.
+The tests drive the real Starlette app through `ASGITransport`. They prove the agent card, the blocking round trip, and the stream's `[DONE]` and `[ERROR` handling, then replay a recorded model conversation in which the coordinator calls the specialist. Tests against a live model are skipped unless credentials are present.
 
 ## How this shows up in the capstone
 
-This chapter's demo is a small-scale, faithful replica of three real pieces of the capstone:
+Every specialist in the application is served this way, so each chat request you send in the web UI reaches a specialist over one of these calls. The specialists serve two wires side by side, on both the Python and .NET stacks:
 
-- `agents/python/shared/agent_host.py:216` — `GET /.well-known/agent-card.json`, the identity endpoint every real specialist serves. `agents/python/shared/agent_host.py:225` and `agents/python/shared/agent_host.py:263` are the real `/message:send` and `/message:stream` handlers this chapter's `_message_send`/`_message_stream` mirror.
-- `agents/python/orchestrator/agent.py:40` — `call_specialist_agent`, the orchestrator's real A2A-calling tool. It builds the same `{"message": ...}` body, opens an `a2a_call_span` for tracing, and speaks both transport shapes this chapter teaches — streaming when an SSE context is live, blocking otherwise, with the same `[DONE]`/`[ERROR` sentinel handling `demo_stream_call()` reproduces.
-- `agents/python/shared/remote_agent.py:39` — `RemoteSpecialistChatClient`, a second real A2A caller in this codebase: it wraps a specialist as a MAF `BaseChatClient` (rather than a plain tool function) so `HandoffBuilder` can route to a remote specialist as if it were a local `Agent` participant. Same `/message:send` shape underneath, different caller-side wrapping.
+- **A2A 1.0, the standard protocol.** `agents/python/shared/a2a_server.py:715` is `mount_a2a`, which adds the agent card at `/.well-known/agent-card.json` and the JSON-RPC routes at `/a2a/v1`, using the official `a2a-sdk`. The .NET specialists do the same with the official A2A .NET SDK. [docs/a2a.md](../../docs/a2a.md) has the detail.
+- **The pair this chapter teaches.** `agents/python/shared/agent_host.py:302` and `agents/python/shared/agent_host.py:351` are the `/message:send` and `/message:stream` handlers that this chapter's `_message_send` and `_message_stream` mirror.
 
-For the harness side of this — lifecycle, telemetry, session rehydration — see [docs/concepts/04-agent-harness.md](../../docs/concepts/04-agent-harness.md), which this chapter deliberately doesn't re-explain.
+The caller picks the wire with `A2A_TRANSPORT`, which defaults to `legacy`, the `/message:send` pair. Setting it to `a2a` switches the orchestrator to A2A 1.0.
+
+- `agents/python/orchestrator/agent.py:93` is `call_specialist_agent`, the orchestrator's A2A-calling tool. It builds the same `{"message": ...}` body and opens an `a2a_call_span` for tracing. It streams when the browser has an SSE connection and blocks otherwise, with the `[DONE]`/`[ERROR` handling that `demo_stream_call()` reproduces. With `A2A_TRANSPORT=a2a` it hands the call to `_call_over_a2a` (`agents/python/orchestrator/agent.py:293`) instead.
+- `agents/python/shared/remote_agent.py:71` is `RemoteSpecialistChatClient`, a second caller. It wraps a specialist as a MAF `BaseChatClient` so `HandoffBuilder` can route to a remote specialist as if it were a local `Agent`.
+
+For the harness side — lifecycle, telemetry, session rehydration — see [docs/concepts/04-agent-harness.md](../../docs/concepts/04-agent-harness.md).
 
 ## What's next
 

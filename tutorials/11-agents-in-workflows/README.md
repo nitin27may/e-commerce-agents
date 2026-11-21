@@ -1,12 +1,20 @@
 # Chapter 11 — Agents in Workflows
 
+Put an agent inside a workflow as one of its steps, so a single graph can mix plain code with model calls.
+
+**You will learn to:**
+
+- Wrap an agent as a workflow executor (a unit of work in the graph)
+- Adapt the workflow's plain input and output to the request and response types agent steps exchange
+- Chain two agents so the first one's reply becomes the second one's input
+
 ## Why this chapter
 
-Chapters 09–10 built raw executors that transform plain data — strings in, strings out, no LLM involved. This chapter replaces one of those executors with an **agent**: an LLM-powered step that takes a message and produces another. The result is a workflow that can mix deterministic steps (validation, enrichment, merging) with LLM steps (translation, summarization, judgment) in the same graph, without the graph itself caring which is which.
+Chapters 09–10 built executors that transform plain data: strings in, strings out, no model involved. This chapter replaces an executor with an **agent**, a step that takes a message, calls an LLM, and produces another message. The result is a workflow that mixes deterministic steps (validation, enrichment, merging) with LLM steps (translation, summarization, judgment). The graph does not care which is which.
 
-The running example is deliberately simple so the wiring stays visible: **English → French → Spanish** translation. Each arrow in the graph is a real LLM call; the workflow's job is only to pass the previous agent's output as the next agent's input, with zero glue code in between.
+The example is **English → French → Spanish** translation, kept small so the wiring stays visible. Each arrow is one LLM call. The workflow only passes the previous agent's output to the next agent, with no glue code in between.
 
-This is the same shape the capstone uses for real work — an agent embedded as one node in a bigger pipeline, its output consumed by whatever comes next. See "How this shows up in the capstone" below for the production example.
+The capstone (the full application in this repo) uses the same shape: an agent is one node in a larger pipeline, and whatever comes next consumes its output.
 
 ## Prerequisites
 
@@ -15,12 +23,12 @@ This is the same shape the capstone uses for real work — an agent embedded as 
 
 ## The concept
 
-An **agent-executor** is a workflow node whose `run()` handler doesn't transform data directly — it hands the incoming message to an `Agent`, awaits the LLM call, and forwards the agent's response downstream. Two ways to get there:
+An **agent-executor** is a workflow node whose handler does not transform data itself. It hands the incoming message to an `Agent`, awaits the LLM call, and forwards the agent's response downstream. There are two ways to build one:
 
-- **Manual adapter pattern** (what Python's `main.py` and .NET's `--manual` mode do): you write plain `Executor` subclasses. An `InputAdapter` coerces the workflow's raw input into whatever shape the agent step expects; the agent step calls the LLM; an `OutputAdapter` unwraps the agent's response back into a plain value the workflow can yield. Explicit, verbose, and exactly what production code does when a workflow mixes agents with non-agent steps (see the capstone pointer).
-- **Convenience builder** (.NET's default `--sequential` mode, via `AgentWorkflowBuilder.BuildSequential`): when every step in the chain is an agent and they just run in sequence, the framework wires the input/output adapters for you. One call instead of four classes.
+- **Adapters you write yourself.** Python's `main.py` and .NET's `--manual` mode do this. An `InputAdapter` turns the workflow's raw input into the shape the agent step expects. The agent step calls the LLM. An `OutputAdapter` unwraps the agent's response into a plain value the workflow can yield. It is more code, and it is what you need when a workflow mixes agents with non-agent steps.
+- **A convenience builder.** .NET's default `--sequential` mode uses `AgentWorkflowBuilder.BuildSequential`. When every step is an agent and they run one after another, the framework wires the adapters for you: one call instead of four classes.
 
-Either way, the key discipline is the same: agent steps pass structured request/response types internally (Python's `AgentExecutorRequest`/`AgentExecutorResponse` when using the framework's own `AgentExecutor`, or your own DTOs in the manual pattern) — you adapt at the workflow's boundaries so the graph's public input and output stay plain, testable types.
+Either way, agent steps pass structured request and response types between themselves. In Python these are `AgentExecutorRequest` and `AgentExecutorResponse` when you use the framework's `AgentExecutor`; with hand-written agent steps they are your own types. You adapt at the workflow's edges so its public input and output stay plain types that are easy to test.
 
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': {
@@ -60,16 +68,24 @@ flowchart LR
   class output success
 ```
 
-Two real LLM calls happen inside this graph — the French translator's output becomes the Spanish translator's input with no application code touching the string in between.
+Two LLM calls happen inside this graph. The French translator's output becomes the Spanish translator's input, and no application code touches the string in between.
 
 ## Python
 
-Run from the repo root using the shared `tutorials/` uv project (one `uv sync` covers every chapter):
+Run from the repo root. The shared `tutorials/` uv project covers every chapter, so one `uv sync` is enough:
 
 ```bash
 uv sync --project tutorials
 uv run --project tutorials python tutorials/11-agents-in-workflows/python/main.py
 uv run --project tutorials pytest tutorials/11-agents-in-workflows/python/tests -v
+```
+
+You should see:
+
+```
+No LLM key found - replaying the recorded fixture (set OPENAI_API_KEY or the AZURE_OPENAI_* variables for a live run).
+English input: Hello, how are you?
+Spanish output: Hola, ¿cómo estás?
 ```
 
 `tutorials/11-agents-in-workflows/python/main.py` uses the framework's built-in `AgentExecutor` to wrap each translator, plus two hand-written adapters at the boundaries:
@@ -106,14 +122,11 @@ def build_workflow():
     )
 ```
 
-`OutputAdapter` is the mirror image — it unwraps the final `AgentExecutorResponse` and yields `response.agent_response.text` as the workflow's plain-string output. Running the demo prints:
-
-```
-English input: Hello, how are you?
-Spanish output: Hola, ¿cómo estás?
-```
+`OutputAdapter` is the mirror image. It unwraps the final `AgentExecutorResponse` and yields `response.agent_response.text` as the workflow's plain-string output.
 
 ## .NET
+
+`dotnet run` calls a live model in both modes, so it needs `OPENAI_API_KEY` (or the `AZURE_OPENAI_*` variables) in the repo-root `.env`. Without a key, run `dotnet test tutorials/11-agents-in-workflows/dotnet/tests/AgentsInWorkflows.Tests.csproj` from the repo root. The commands below start at the repo root and change into the chapter's `dotnet` directory:
 
 ```bash
 cd tutorials/11-agents-in-workflows/dotnet
@@ -123,7 +136,7 @@ dotnet run -- --manual     "Hello, how are you?"   # manual adapter pattern
 dotnet test
 ```
 
-`tutorials/11-agents-in-workflows/dotnet/Program.cs` teaches both patterns side by side. The convenience path (`SequentialAgentWorkflow`, the `--sequential` default) hands two `AIAgent`s straight to `AgentWorkflowBuilder.BuildSequential`:
+`tutorials/11-agents-in-workflows/dotnet/Program.cs` shows both patterns. The convenience path (`SequentialAgentWorkflow`, the `--sequential` default) hands two `AIAgent`s straight to `AgentWorkflowBuilder.BuildSequential`:
 
 ```csharp
 AIAgent enToFr = Program.TranslationAgent(chatClient, "French", id: "en-to-fr");
@@ -142,7 +155,7 @@ await using StreamingRun run = await InProcessExecution.RunStreamingAsync(workfl
 await run.TrySendMessageAsync(new TurnToken(emitEvents: true));
 ```
 
-The `--manual` path (`ManualAdapterWorkflow`) builds the graph from custom `[MessageHandler]` executors — `InputAdapter`, two `TranslationAgentExecutor`s, and `OutputAdapter` — wired with the same raw `WorkflowBuilder.AddEdge` calls Chapters 09–10 used. It exists to show what `BuildSequential` is doing under the hood, and it's the pattern you drop down to once a graph mixes agents with non-agent steps.
+The `--manual` path (`ManualAdapterWorkflow`) builds the graph from custom `[MessageHandler]` executors: `InputAdapter`, two `TranslationAgentExecutor`s and `OutputAdapter`. It wires them with the same `WorkflowBuilder.AddEdge` calls Chapters 09–10 used. Read it to see what `BuildSequential` does for you; it is also the pattern to use once a graph mixes agents with non-agent steps.
 
 ## Side-by-side differences
 
@@ -153,33 +166,32 @@ The `--manual` path (`ManualAdapterWorkflow`) builds the graph from custom `[Mes
 | Trigger to run the LLM | `should_respond=True` on `AgentExecutorRequest` | `TurnToken` sent into the running workflow |
 | Request/response types | `AgentExecutorRequest` / `AgentExecutorResponse` | `List<ChatMessage>` in, `AgentResponseUpdate` events out (convenience path) |
 
-Python's explicit boundary executors are more verbose but make the data shape obvious in tests. .NET's convenience builder is faster once you're past the basics, and its manual mode maps onto the exact same shape as Python's.
+Python's explicit adapters are more code and make the data shape obvious in tests. .NET's convenience builder is quicker to write, and its manual mode has the same shape as Python's.
 
 ## Gotchas
 
-- **Don't mix input types across agent-executors.** The framework's `AgentExecutor` communicates in `AgentExecutorRequest`/`AgentExecutorResponse` — sending a raw string to one directly (skipping `InputAdapter`) fails at runtime, not at build time.
-- **`should_respond=True` matters** (Python). When `False`, the wrapped agent appends the message to its history but doesn't call the LLM — useful for pre-seeding context across a multi-turn workflow, easy to forget and end up with a silent no-op step.
-- **.NET's `TurnToken` is easy to miss.** `BuildSequential` wires the graph, but nothing calls the LLM until you send a `TurnToken` into the running `StreamingRun` — omit it and the workflow just sits there.
-- **No MAF packaging workaround is needed.** `agent-framework-core` 1.26.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
+- **A runtime failure when a message reaches an agent-executor.** The framework's `AgentExecutor` exchanges `AgentExecutorRequest` and `AgentExecutorResponse`. Sending it a raw string (skipping `InputAdapter`) fails when the workflow runs, not when it is built.
+- **An agent step runs but produces nothing (Python).** Check `should_respond=True` on the `AgentExecutorRequest`. When it is `False`, the wrapped agent adds the message to its history and does not call the LLM. That is useful for seeding context in a multi-turn workflow, and easy to leave set by mistake.
+- **The .NET workflow starts and then sits there.** `BuildSequential` wires the graph, but nothing calls the LLM until you send a `TurnToken` into the running `StreamingRun`.
 
 ## Tests
 
-Python ships one workflow-wiring unit test (asserts all four executor IDs are present in the built graph, no LLM call) plus a replay-based integration test (`tutorials/11-agents-in-workflows/python/tests/fixtures/replay/*.json` — recorded once against a real LLM, replayed with `LLM_PROVIDER=replay`, no network or credentials needed) and three real-LLM integration tests gated on `OPENAI_API_KEY`/Azure credentials being present:
-
 ```bash
 uv run --project tutorials pytest tutorials/11-agents-in-workflows/python/tests -v
+cd tutorials/11-agents-in-workflows/dotnet && dotnet test
 ```
 
-.NET ships wiring tests against a scripted fake `IChatClient` (asserts the final output string and that both agent-executors fire in order) plus real-LLM integration tests skipped without credentials:
+Run the first from the repo root; the second changes into the chapter's `dotnet` directory. Neither needs a key.
 
-```bash
-cd tutorials/11-agents-in-workflows/dotnet
-dotnet test
-```
+The Python tests check that the built graph contains all four executors, then run the whole chain against responses recorded from a real model (`python/tests/fixtures/replay/`, replayed with `LLM_PROVIDER=replay`), which proves the French output reaches the Spanish translator. The .NET tests do the same with a scripted fake `IChatClient` and also assert that both agent-executors fire in order. On both sides, the tests that call a live model are skipped without credentials.
 
 ## How this shows up in the capstone
 
-The first production caller of an agent-backed responder inside a MAF workflow is `agents/python/orchestrator/modes/group_chat_mode.py:65` — `_make_agent_responder()` constructs a MAF `Agent` per panelist and calls `agent.run(prompt)` inside an `async` closure. That closure is passed as the `Responder` for `agents/python/workflows/group_chat.py`'s `_PanelistExecutor`, which `await`s it if it's awaitable (`agents/python/workflows/group_chat.py:69`) — the same manual-adapter shape this chapter teaches, except the "adapter" is a plain async closure instead of a full `Executor` subclass, because `group_chat.py` was written to stay LLM-agnostic and only `orchestrator/modes/group_chat_mode.py` knows about `Agent`. The workflow itself (panelists take turns over a shared transcript, then a moderator synthesizes a verdict) is reachable in the running app via `mode=group-chat` in `/api/chat`.
+In the capstone, the Group Chat orchestration mode runs agents as steps of a workflow: two panelists take turns over a shared transcript to debate a purchase, then a moderator writes a verdict.
+
+`_make_agent_responder()` at `agents/python/orchestrator/modes/group_chat_mode.py:45` constructs a MAF `Agent` per panelist and calls `agent.run(prompt)` inside an `async` closure. That closure is passed as the `Responder` to `_PanelistExecutor` in `agents/python/workflows/group_chat.py`, which awaits the result when it is awaitable (`agents/python/workflows/group_chat.py:73`).
+
+This is the write-your-own-adapter shape from this chapter. The adapter is a plain async closure instead of an `Executor` subclass, which keeps `group_chat.py` free of any LLM dependency: only `orchestrator/modes/group_chat_mode.py` knows about `Agent`. In the running application you reach this workflow with `mode=group-chat` on `/api/chat`.
 
 ## What's next
 

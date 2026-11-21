@@ -1,17 +1,25 @@
 # Chapter 13 — Concurrent Orchestration
 
+Send one input to several agents at the same time, collect every answer, and optionally reduce the answers to a single result.
+
+**You will learn to:**
+
+- Run a fixed set of agents in parallel on the same input with `ConcurrentBuilder` (Python) or `BuildConcurrent` (.NET)
+- Collect each agent's response from the event stream
+- Combine the responses with an aggregator function
+
 ## Why this chapter
 
-If Sequential (Chapter 12) is an assembly line, Concurrent is a panel. Send one input to N independent agents at the same time, collect N perspectives, then — optionally — reduce them to a single output with an aggregator. Use it whenever the agents don't depend on each other's output and you want wall-clock latency bounded by the slowest branch, not the sum of all of them.
+If Sequential (Chapter 12) is an assembly line, Concurrent is a panel. One input goes to N independent agents at once, you collect N perspectives, and an aggregator can reduce them to one output. Use it when the agents do not depend on each other's output and you want the total time to be that of the slowest branch, not the sum of all of them.
 
-Worked example: a product-idea review. Researcher checks market fit, Marketer proposes a positioning angle, Legal flags one regulatory concern — all three fire at once instead of waiting on each other.
+The example is a product-idea review. A Researcher checks market fit, a Marketer proposes a positioning angle, and Legal flags one regulatory concern. All three run at once.
 
-This is not a toy pattern invented for the tutorial. The capstone app runs a real concurrent fan-out/fan-in workflow in production — see [How this shows up in the capstone](#how-this-shows-up-in-the-capstone) below.
+The capstone (the full application in this repo) runs the same fan-out and fan-in to research a product before purchase. See [How this shows up in the capstone](#how-this-shows-up-in-the-capstone).
 
 ## Prerequisites
 
 - Completed [Chapter 12 — Sequential Orchestration](../12-sequential-orchestration/)
-- Repo-root `.env` with one LLM provider configured:
+- For a live run, a repo-root `.env` with one LLM provider configured:
 
 | Provider | Required | Optional |
 |----------|----------|----------|
@@ -22,9 +30,9 @@ This is not a toy pattern invented for the tutorial. The capstone app runs a rea
 
 ## The concept
 
-Concurrent orchestration fans one input out to a fixed set of participants, runs them in parallel, and fans the results back in. There's no coordination between branches while they run — each agent sees only the original input, not its siblings' output — so the pattern only fits problems that are genuinely independent per-branch. If branch B needs branch A's answer, that's Sequential (or a custom graph), not Concurrent.
+Concurrent orchestration fans one input out to a fixed set of participants (sends it to all of them at once), runs them in parallel, and fans the results back in (waits for all of them). The branches do not coordinate while they run. Each agent sees only the original input, not its siblings' output, so the pattern fits only problems where each branch is independent. If branch B needs branch A's answer, use Sequential or a custom graph.
 
-The fan-in side is where the two SDKs differ in default behavior. Python's `ConcurrentBuilder` collects every participant's response into a list by default and only reduces it to one value if you attach `.with_aggregator(fn)`. .NET's `AgentWorkflowBuilder.BuildConcurrent` takes the aggregator as a constructor argument up front — in this chapter's demo it's a deterministic string-concatenation aggregator, not another LLM call, so wall-clock time still tracks the slowest of the three branches.
+The two SDKs differ on the fan-in side. Python's `ConcurrentBuilder` collects every participant's response into a list, and reduces it to one value only if you attach `.with_aggregator(fn)`. .NET's `AgentWorkflowBuilder.BuildConcurrent` takes the aggregator as an argument up front. In this chapter's .NET demo the aggregator concatenates strings and makes no LLM call, so the total time still tracks the slowest of the three branches.
 
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': {
@@ -63,18 +71,26 @@ flowchart LR
   class summary success
 ```
 
-Three fan-out branches hit the same LLM concurrently; the aggregator only runs once all three have returned, so total latency tracks `max(researcher, marketer, legal)`, not their sum.
+The three branches call the same LLM concurrently. The aggregator runs only once all three have returned, so total latency tracks `max(researcher, marketer, legal)`, not their sum.
 
 ## Python
 
-Source: [`python/main.py`](./python/main.py).
+Source: [`python/main.py`](./python/main.py). Run from the repo root. `main.py` needs a key, because its default prompt has no recorded responses. If you have no key, run the tests first; they replay a recorded prompt:
 
 ```bash
 uv sync --project tutorials
+uv run --project tutorials pytest tutorials/13-concurrent-orchestration/python/tests -m "not integration"
+```
+
+With a key in the repo-root `.env`:
+
+```bash
 uv run --project tutorials python tutorials/13-concurrent-orchestration/python/main.py
 ```
 
-`build_workflow()` wires the three participants with `ConcurrentBuilder` (no aggregator — the demo collects each agent's raw response instead of reducing it):
+It prints each agent's verdict and the wall-clock time, so you can see that the three calls overlap instead of queueing.
+
+`build_workflow()` wires the three participants with `ConcurrentBuilder`. It attaches no aggregator; the demo collects each agent's raw response:
 
 ```python
 def build_workflow():
@@ -104,18 +120,16 @@ async def analyze(idea: str) -> tuple[dict[str, str], float]:
     return per_agent, elapsed
 ```
 
-`main.py` prints each agent's verdict plus the wall-clock time, so you can see the three calls overlap rather than queue up.
-
 ## .NET
 
-Source: [`dotnet/Program.cs`](./dotnet/Program.cs).
+Source: [`dotnet/Program.cs`](./dotnet/Program.cs). `dotnet run` calls a live model, so it needs a key in the repo-root `.env`. Without a key, run `dotnet test tutorials/13-concurrent-orchestration/dotnet/tests/Concurrent.Tests.csproj` from the repo root. The commands below start at the repo root and change into the chapter's `dotnet` directory:
 
 ```bash
 cd tutorials/13-concurrent-orchestration/dotnet
 dotnet run
 ```
 
-`AgentWorkflowBuilder.BuildConcurrent` takes the aggregator up front, unlike Python's opt-in `.with_aggregator(fn)`:
+`AgentWorkflowBuilder.BuildConcurrent` takes the aggregator up front, where Python makes it optional with `.with_aggregator(fn)`:
 
 ```csharp
 Workflow workflow = AgentWorkflowBuilder.BuildConcurrent(
@@ -123,7 +137,7 @@ Workflow workflow = AgentWorkflowBuilder.BuildConcurrent(
     aggregator: SynthesizeReview);
 ```
 
-`SynthesizeReview` receives one `List<ChatMessage>` per agent, in call order, and reduces them to a single message that surfaces as the workflow's terminal `WorkflowOutputEvent`:
+`SynthesizeReview` receives one `List<ChatMessage>` per agent, in call order. It reduces them to a single message, which arrives as the workflow's final `WorkflowOutputEvent`:
 
 ```csharp
 private static List<ChatMessage> SynthesizeReview(IList<List<ChatMessage>> perAgentMessages)
@@ -146,7 +160,7 @@ private static List<ChatMessage> SynthesizeReview(IList<List<ChatMessage>> perAg
 }
 ```
 
-No LLM call inside the aggregator — it's a deterministic reduction, so it doesn't add latency on top of the slowest branch.
+The aggregator makes no LLM call, so it adds no latency on top of the slowest branch.
 
 ## Side-by-side differences
 
@@ -154,41 +168,36 @@ No LLM call inside the aggregator — it's a deterministic reduction, so it does
 |--------|--------|------|
 | Build | `ConcurrentBuilder(participants=[...]).build()` | `AgentWorkflowBuilder.BuildConcurrent(agents, aggregator: fn)` |
 | Aggregator | Opt-in via `.with_aggregator(fn)` — default is a raw list of responses | Passed as a constructor argument; this demo's aggregator is deterministic string reduction |
-| Per-agent response | `executor_completed` events carry a `list` payload keyed by `executor_id` | One `AgentResponseEvent` per agent, then a `WorkflowOutputEvent` for the aggregator's result |
+| Per-agent response | `executor_completed` events carry a `list` payload keyed by `executor_id` | `AgentResponseUpdateEvent` chunks per agent while streaming, then a `WorkflowOutputEvent` for the aggregator's result. `AgentResponseEvent` is *not* emitted on this path. |
 | Streaming | `workflow.run(message, stream=True)` | `InProcessExecution.RunStreamingAsync` + `run.WatchStreamAsync()` |
 
 ## Gotchas
 
-- **Parallelism is real, not simulated.** All three LLM calls fire concurrently. If your provider enforces concurrency limits (Azure OpenAI TPM/RPM quotas), a wider fan-out can hit them faster than a sequential chain would.
-- **Order is not guaranteed.** Agents complete as they finish, not in the order you listed them — don't assume `researcher`'s event arrives before `marketer`'s.
-- **Branches are isolated.** Concurrent participants never see each other's output while running; if one branch needs another's result, this is the wrong pattern — use Sequential or a custom graph instead.
-- **No MAF packaging workaround is needed.** `agent-framework-core` 1.26.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
-- **The .NET aggregator here is not an LLM call.** If you want a synthesizing LLM summary instead of deterministic concatenation, call an agent inside `SynthesizeReview` — the signature is on an async boundary, so awaiting is safe there.
+- **Rate-limit errors appear sooner than with a sequential chain.** All three LLM calls fire at the same moment. If your provider enforces concurrency limits (Azure OpenAI TPM/RPM quotas), a wider fan-out reaches them faster.
+- **Responses arrive in a different order on each run.** Agents complete as they finish, not in the order you listed them. Do not assume `researcher`'s event arrives before `marketer`'s; key on the executor id.
+- **One agent cannot see another's answer.** Concurrent participants never see each other's output while running. If one branch needs another's result, use Sequential or a custom graph.
+- **The .NET summary is a plain concatenation, not a written synthesis.** The aggregator here makes no LLM call. If you want an LLM-written summary, call an agent inside `SynthesizeReview` — the signature is on an async boundary, so awaiting is safe there.
 
 ## Tests
 
-
-`tutorials/13-concurrent-orchestration/python/tests/` holds `test_concurrent.py`, structured around a `ReplayChatClient` fixture pattern (`tests/fixtures/replay/`) so most of the suite runs without live credentials:
-
-- a wiring check that `build_workflow()` constructs without error
-- a replay-based test asserting all three agents (`researcher`, `marketer`, `legal`) respond, using recorded fixtures — no network call
-- three `@pytest.mark.integration` tests, skipped unless real LLM credentials are present, that hit a live provider to confirm responses arrive, that wall-clock stays under 6s (parallel, not serial), and that the three perspectives are genuinely distinct strings
-
 ```bash
 uv run --project tutorials pytest tutorials/13-concurrent-orchestration/python/tests -v
-```
-
-The .NET side ships [`dotnet/tests/ConcurrentTests.cs`](./dotnet/tests/ConcurrentTests.cs) — eight tests, no key, no network:
-
-```bash
 cd tutorials/13-concurrent-orchestration/dotnet && dotnet test tests/Concurrent.Tests.csproj
 ```
 
-The one that matters is `The_Three_Calls_Overlap_In_Time`. It asserts concurrency from recorded per-call start/end timestamps rather than from total elapsed time — a wall-clock threshold would flake the first time CI got busy, and "it finished quickly" is not the same claim as "they ran at once". Chapter 12 makes the same assertion and expects the opposite answer.
+Run the first from the repo root; the second changes into the chapter's `dotnet` directory. Neither needs a key or the network.
+
+The Python tests (`python/tests/test_concurrent.py`) check that the workflow builds, then replay recorded responses from `tests/fixtures/replay/` and check that all three agents respond. Tests marked `@pytest.mark.integration` call a live model and are skipped without credentials.
+
+The .NET tests ([`dotnet/tests/ConcurrentTests.cs`](./dotnet/tests/ConcurrentTests.cs)) use a scripted chat client. The one to read is `The_Three_Calls_Overlap_In_Time`. It asserts concurrency from recorded start and end timestamps for each call, not from total elapsed time: a wall-clock threshold fails on a busy machine, and "it finished quickly" is a different claim from "they ran at once". Chapter 12 makes the same assertion and expects the opposite answer.
 
 ## How this shows up in the capstone
 
-`agents/python/workflows/pre_purchase.py` is a live production concurrent fan-out/fan-in workflow, not a hypothetical. Its `_build_maf_workflow()` method (`agents/python/workflows/pre_purchase.py:229`) does exactly what this chapter teaches, with `WorkflowBuilder` instead of `ConcurrentBuilder`:
+In the capstone, concurrent orchestration answers "should I buy this?": it looks up a product's reviews, stock and price history at the same time, then writes one recommendation. It is one of the application's selectable orchestration modes, `workflow:pre-purchase`, and both stacks have it: `PrePurchaseMode` at `agents/python/orchestrator/modes/workflow_mode.py:96` and `agents/dotnet/src/ECommerceAgents.Orchestrator/Modes/PrePurchaseMode.cs`.
+
+To watch it handle a real request, pick "Pre-Purchase Research (fan-out/fan-in)" from the Mode dropdown above the chat box in the running application.
+
+The Python workflow is in `agents/python/workflows/pre_purchase.py`. Its `_build_maf_workflow()` method (`agents/python/workflows/pre_purchase.py:291`) builds the fan-out and fan-in with `WorkflowBuilder` instead of `ConcurrentBuilder`:
 
 ```python
 return (
@@ -200,7 +209,7 @@ return (
 )
 ```
 
-Three specialist data-gathering steps — reviews, stock, price history — fan out in parallel, fan in to a merge step (which runs a sequential shipping estimate if stock allows), then a synthesis step produces the final recommendation. It's wired live in the orchestrator as `PrePurchaseMode` (`agents/python/orchestrator/modes/workflow_mode.py:89`), reachable in the running app as `mode=workflow:pre-purchase` — contrast it against `tool` mode, which would make the same three calls one at a time, serially.
+Three lookups (reviews, stock, price history) fan out in parallel and fan in to a merge step, which adds a shipping estimate if the product is in stock. A synthesis step then produces the recommendation. Compare it with the default `tool` mode, which makes the same lookups one at a time.
 
 ## What's next
 

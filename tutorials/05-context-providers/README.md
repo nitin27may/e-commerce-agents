@@ -1,23 +1,32 @@
 # Chapter 05 — Context Providers
 
+Tell an agent who it is talking to on every run, with a context provider: an object that runs before each LLM call and adds to what the model sees.
+
+**You will learn to:**
+
+- Write a context provider that adds per-user instructions before each run
+- Register it on an agent in Python and in .NET
+- Share what the provider loaded with your tools through the run's `state` (Python)
+
 ## Why this chapter
 
-You want your agent to know *who* it's talking to without hard-coding "the user is Alice" into the system prompt. That doesn't scale past a demo — the moment you have more than one user, string-formatting a prompt per request turns into ad-hoc glue code scattered across every agent. A `ContextProvider` gives you a clean hook instead: run some code before every LLM call, add instructions (or messages, or tools) to the context, and let the framework wire it in. One provider per concern, composed in a list, reused across every agent that needs it.
+You want your agent to know *who* it is talking to without hard-coding "the user is Alice" into the system prompt. Once you have more than one user, formatting a prompt string per request becomes glue code scattered across every agent. A `ContextProvider` gives you one hook instead: run some code before every LLM call, add instructions (or messages, or tools) to the context, and let the framework apply it. You write one provider per concern, compose them in a list, and reuse them across agents.
 
-This is exactly the primitive the capstone's specialist agents run on. Every one of the six agents (product discovery, orders, pricing, reviews, inventory, support) is built with a `context_providers=[...]` argument that injects the logged-in user's profile, recent orders, and long-term memories before the LLM ever sees the request — see `agents/python/shared/context_providers.py` for the real implementation.
+The agents in the full application in this repo (the capstone) depend on this. Each is built with a `context_providers=[...]` argument that injects the logged-in user's profile, recent orders and long-term memories before the LLM sees the request. The implementation is in `agents/python/shared/context_providers.py`.
 
 ## Prerequisites
 
 - Completed [Chapter 04 — Sessions](../04-sessions/)
 - Repo-root `.env` with working LLM credentials (`OPENAI_API_KEY`, or the `AZURE_OPENAI_*` set)
+- `main.py` needs those credentials: its default prompt has no recorded response. With no key, run the chapter's tests, which replay their own recorded prompt: `uv run --project tutorials pytest tutorials/05-context-providers/python/tests -m "not integration"`.
 
 ## The concept
 
-**Python**: subclass `agent_framework.ContextProvider` and override `before_run(*, agent, session, context, state)`. Call `context.extend_instructions("source-id", "...")` to append to the system prompt for that run only, and optionally stash structured data in the `state` dict so your tools (Chapter 02's pattern) can read it too. Register the provider via `Agent(..., context_providers=[...])`.
+**Python**: subclass `agent_framework.ContextProvider` and override `before_run(*, agent, session, context, state)`. Call `context.extend_instructions("source-id", "...")` to append to the system prompt for that run only. You can also put structured data in the `state` dict so your tools (Chapter 02) can read it. Register the provider with `Agent(..., context_providers=[...])`.
 
-**.NET**: subclass `Microsoft.Agents.AI.AIContextProvider` and override the protected `ProvideAIContextAsync(InvokingContext, CancellationToken)`. Return an `AIContext { Instructions = "..." }`. Register via `ChatClientAgentOptions.AIContextProviders`.
+**.NET**: subclass `Microsoft.Agents.AI.AIContextProvider` and override the protected `ProvideAIContextAsync(InvokingContext, CancellationToken)`. Return an `AIContext { Instructions = "..." }`. Register it through `ChatClientAgentOptions.AIContextProviders`.
 
-Both fire on every `agent.run(...)` / `agent.RunAsync(...)` — before the request reaches the LLM. The provider is free to read from a database, call an API, check a feature flag, whatever the current request needs. It's the same shape as ASP.NET middleware or an Express interceptor, just scoped to "the next LLM call" instead of "the next HTTP request."
+Both run on every `agent.run(...)` / `agent.RunAsync(...)`, before the request reaches the LLM. The provider can read from a database, call an API or check a feature flag, whatever the current request needs. It resembles ASP.NET middleware or an Express interceptor, scoped to "the next LLM call" instead of "the next HTTP request."
 
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': {
@@ -51,14 +60,20 @@ flowchart LR
   class answer success
 ```
 
-The provider never talks to the LLM directly — it only shapes what the agent sends on the *next* call. The LLM sees a single, already-composed system prompt; it has no idea a provider ran.
+The provider never talks to the LLM. It only shapes what the agent sends on the *next* call. The LLM sees one composed system prompt and cannot tell a provider ran.
 
 ## Python
 
-Run from the repo root using the shared `tutorials/` uv project (one `uv sync` covers every chapter):
+`main.py` needs an API key. With no key, start with the tests, from the repo root:
 
 ```bash
-uv sync --project tutorials
+uv sync --project tutorials --extra dev
+uv run --project tutorials pytest tutorials/05-context-providers/python/tests -m "not integration"
+```
+
+With a key in the repo-root `.env`, run the script from the repo root:
+
+```bash
 uv run --project tutorials python tutorials/05-context-providers/python/main.py
 # Uses the default user (Alice). Pass email / name / tier to swap:
 uv run --project tutorials python tutorials/05-context-providers/python/main.py bob@example.com Bob gold
@@ -91,9 +106,9 @@ class UserProfileProvider(ContextProvider):
         state["user"] = {"email": self.email, "name": self.name, "loyalty_tier": self.loyalty_tier}
 ```
 
-`build_agent()` wires it in with `context_providers=[provider]`, and `main()` reads email/name/tier from `sys.argv` so you can run the same script for different users without touching code. `main.py` follows the series key rule — an explicit `LLM_PROVIDER` (`openai`, `azure`, `replay`), else a key in the environment, else replay of the committed fixtures — see `tutorials/_shared/llm.py` for the switch. Note that its *default* prompt has no recorded fixture, so a keyless `python main.py` replays a miss; the tests' recorded prompt is the keyless path.
+`build_agent()` registers it with `context_providers=[provider]`. `main()` reads email, name and tier from `sys.argv`, so you can run the same script for different users without editing code.
 
-The `source_id` argument to both `super().__init__(...)` and `extend_instructions(...)` lets MAF dedupe and debug which provider injected what when several are chained together (as the capstone does — see below).
+The `source_id` argument to both `super().__init__(...)` and `extend_instructions(...)` identifies which provider injected what when several are chained, as the full application does (see below).
 
 ## .NET
 
@@ -101,6 +116,8 @@ The `source_id` argument to both `super().__init__(...)` and `extend_instruction
 cd tutorials/05-context-providers/dotnet
 dotnet run
 ```
+
+The command changes into the chapter's `dotnet` folder first. `dotnet run` calls a live model, so it needs a key in the repo-root `.env`. With no key, run `dotnet test tutorials/05-context-providers/dotnet/tests/ContextProviders.Tests.csproj` from the repo root instead.
 
 The equivalent provider in [`dotnet/Program.cs`](./dotnet/Program.cs):
 
@@ -130,7 +147,7 @@ public sealed class UserProfileProvider : AIContextProvider
 }
 ```
 
-`BuildAgent()` registers it via `ChatClientAgentOptions.AIContextProviders = new[] { provider }`, and `Program.Main` reads the same email/name/tier positional args from the command line as the Python version, so both sides of the chapter are runnable the same way.
+`BuildAgent()` registers it with `ChatClientAgentOptions.AIContextProviders = new[] { provider }`. `Program.Main` reads the same email, name and tier arguments as the Python version.
 
 ## Side-by-side differences
 
@@ -145,27 +162,32 @@ public sealed class UserProfileProvider : AIContextProvider
 
 ## Gotchas
 
-- **Python requires `source_id`** on both `__init__` (via `super().__init__(source_id=...)`) and `extend_instructions(source_id, text)`. Forgetting either raises at instantiation / call time, not silently.
-- **.NET's override point is `ProvideAIContextAsync`, not `InvokingAsync`.** `InvokingAsync` is the base class's own pipeline method that calls into your override internally — trying to override it directly is the wrong extension point; use the protected `ProvideAIContextAsync` shown above.
-- **Provider state is per-*provider*, not global.** In Python, the `state` dict passed to `before_run` is scoped to whichever provider chain the agent was built with. When you chain multiple providers (as `ECommerceContextProvider` does — see below), later providers can read fields earlier ones set, but only within that same run's `state` dict.
-- **No MAF packaging workaround is needed.** `agent-framework-core` 1.26.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
+- **Python raises when you create the provider or call `extend_instructions`.** `source_id` is required in both places: `super().__init__(source_id=...)` and `extend_instructions(source_id, text)`.
+- **.NET: overriding `InvokingAsync` is the wrong hook.** Override the protected `ProvideAIContextAsync` shown above. `InvokingAsync` is the base class's own pipeline method, which calls your override.
+- **A value you put in `state` is missing elsewhere.** In Python, the `state` dict passed to `before_run` is scoped to the provider chain the agent was built with, and to one run. When you chain providers, as `ECommerceContextProvider` does (see below), later ones can read fields earlier ones set, but only within that run.
+- **A keyless `main.py` fails with `ReplayFixtureMissingError`.** Its default prompt has no recorded response. Set a key, or run the tests.
 
 ## Tests
 
+Both commands run from the repo root and need no key:
+
 ```bash
+# Python
 uv run --project tutorials pytest tutorials/05-context-providers/python/tests -v
-cd tutorials/05-context-providers/dotnet && dotnet test tests/ContextProviders.Tests.csproj
+
+# .NET
+dotnet test tutorials/05-context-providers/dotnet/tests/ContextProviders.Tests.csproj
 ```
 
-`tutorials/05-context-providers/python/tests/test_context_provider.py` covers: a unit test asserting the injected instructions reach a fake `CannedChatClient` (name, tier, email all present), a unit test asserting `before_run` populates `state["user"]` for downstream tools, a unit test proving two independently-built agents never leak each other's user context, a replay-based test that plays back a recorded fixture (no network or credentials needed, safe for CI), and an integration test gated on real LLM credentials being present in `.env`.
-
-`tutorials/05-context-providers/dotnet/tests/ContextProvidersTests.cs` mirrors that shape: three fast unit facts against the provider and `BuildAgent()`, plus two `[Trait("Category", "Integration")]` tests that hit a real LLM and are skipped (not failed) when no credentials are configured.
+The Python unit tests prove that the injected name, tier and email reach the chat client, that `before_run` fills `state["user"]`, and that two separately built agents never see each other's user. A replay test then plays back a recorded run in which the model uses the injected name. The .NET tests check the provider's fields without a model. Tests that call a real LLM are skipped in Python, and return early in .NET, when no credentials are configured.
 
 ## How this shows up in the capstone
 
-- `agents/python/shared/context_providers.py:35` — `UserProfileProvider`, the production equivalent of this chapter's example: it queries `users` by the current request's email (`shared.context.current_user_email`) and calls `context.extend_instructions("user-profile", ...)` with name, role, loyalty tier, and total spend.
-- The same file also defines `RecentOrdersProvider` and `AgentMemoriesProvider` (composable in the same way), and `ECommerceContextProvider` — a back-compat composite that chains all three and reassembles their output into a single `state["user_context"]` string for the legacy tool loop.
-- `agents/python/product_discovery/agent.py:92` — `context_providers=[ECommerceContextProvider()]` is the argument passed into every specialist agent's `Agent(...)` constructor. Every one of the six specialist agents wires context providers the same way this chapter's `build_agent()` does.
+In the full application, context providers are how every agent knows the logged-in shopper's name, loyalty tier and recent orders without the shopper repeating them.
+
+- `agents/python/shared/context_providers.py:35` defines `UserProfileProvider`, the application's version of this chapter's example. It looks up the `users` row for the current request's email (`shared.context.current_user_email`) and calls `context.extend_instructions("user-profile", ...)` with name, role, loyalty tier and total spend.
+- The same file defines `RecentOrdersProvider` and `AgentMemoriesProvider`, which compose the same way, and `ECommerceContextProvider`, a composite that runs all three and also assembles their output into one `state["user_context"]` string.
+- `agents/python/product_discovery/agent.py:92` passes `context_providers=[ECommerceContextProvider()]` to `Agent(...)`. The orchestrator and the other specialist agents pass the same argument, the way this chapter's `build_agent()` does.
 
 ## What's next
 
