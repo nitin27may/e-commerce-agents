@@ -87,6 +87,7 @@ SECTIONS: tuple[Section, ...] = (
         (
             "docs/quick-start.md",
             "docs/configuration.md",
+            "docs/model-providers.md",
             "docs/demo-guide.md",
             "docs/deployment.md",
             "docs/troubleshooting.md",
