@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { staffPassword } from "./credentials";
 
 /**
  * UI Feature tests for the enhanced E-Commerce Agents frontend.
@@ -9,8 +10,8 @@ test.setTimeout(60_000);
 
 const USERS = {
   customer: { email: "alice.johnson@gmail.com", password: "customer123" },
-  admin: { email: "admin.demo@gmail.com", password: "admin123" },
-  seller: { email: "seller.demo@gmail.com", password: "seller123" },
+  admin: { email: "admin.demo@gmail.com", password: staffPassword("admin123") },
+  seller: { email: "seller.demo@gmail.com", password: staffPassword("seller123") },
 };
 
 async function login(page: Page, email: string, password: string) {

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { staffPassword } from "./credentials";
 
 // Shared login helper
 async function login(page: Page, email: string, password: string) {
@@ -131,7 +132,7 @@ test.describe("Customer Shopping Flow", () => {
 // ============================================================
 test.describe("Seller Role", () => {
   test("should see seller dashboard and products", async ({ page }) => {
-    await login(page, "seller.demo@gmail.com", "seller123");
+    await login(page, "seller.demo@gmail.com", staffPassword("seller123"));
     // Navigate to seller dashboard
     await page.goto("/seller");
     await page.waitForTimeout(3000);
@@ -149,21 +150,21 @@ test.describe("Seller Role", () => {
 // ============================================================
 test.describe("Admin Role", () => {
   test("should see admin dashboard and usage stats", async ({ page }) => {
-    await login(page, "admin.demo@gmail.com", "admin123");
+    await login(page, "admin.demo@gmail.com", staffPassword("admin123"));
     await page.goto("/admin");
     await page.waitForTimeout(3000);
     await page.screenshot({ path: "e2e/screenshots/admin-dashboard.png" });
   });
 
   test("should see admin access requests", async ({ page }) => {
-    await login(page, "admin.demo@gmail.com", "admin123");
+    await login(page, "admin.demo@gmail.com", staffPassword("admin123"));
     await page.goto("/admin/requests");
     await page.waitForTimeout(3000);
     await page.screenshot({ path: "e2e/screenshots/admin-requests.png" });
   });
 
   test("should see admin usage stats", async ({ page }) => {
-    await login(page, "admin.demo@gmail.com", "admin123");
+    await login(page, "admin.demo@gmail.com", staffPassword("admin123"));
     await page.goto("/admin/usage");
     await page.waitForTimeout(3000);
     await page.screenshot({ path: "e2e/screenshots/admin-usage.png" });
