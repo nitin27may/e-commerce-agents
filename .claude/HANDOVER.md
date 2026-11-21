@@ -220,6 +220,7 @@ Time sinks: `uv lock` with a different local uv version rewrites unrelated marke
 
 Append newest first. One line per landed change: date, PR, what, and anything left unverified.
 
+- 2026-11-21: same block reframed around the goal "any provider, a trustworthy eval for it; Azure opt-in" (tiers 0-2; EV-10 to EV-14, RP-6 added; EV-6 provider-neutral). Found: `shared/cost.py` prices unknown models as gpt-4.1 (EV-12).
 - 2026-11-21: plan block "Azure track, evals and run profiles" added (workstreams EV, AZ, RP; decisions D-6 Foundry hosting scope and D-7 judge model opened). Plan only, no code.
 - 2026-11-21 (docs session): #198 merged, third docs pass (quick start, concepts, configuration, schema, API reference, benchmark, audit matrix, releasing); it fixed four of the previously suspected mismatches and corrected `docs/concepts/14` (idempotency, retry and rate limiting do exist). #195 was merged before its CI finished (an `--auto` merge fired at once); every workflow on that commit later passed on `main`. The 1.4.0 release run is still waiting on the maintainer's approval; no announcement posted yet. Not started: #182 screenshots and GIF.
 - 2026-11-21 (docs session): issue #183 closed by #195; a third docs pass is starting on branch `docs/third-pass` (concept pages, configuration, database schema, API reference, quick start, troubleshooting, releasing, benchmark, reported-vs-actual, audit matrix, plus verifying the suspected mismatches in section 9).
