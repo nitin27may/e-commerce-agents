@@ -1740,3 +1740,88 @@ P-4, E-3a, E-2d → P-7. E-9 after R1.
 | E-d7 | Anthropic on .NET | The raw `Anthropic` SDK now; move to `Microsoft.Agents.AI.Anthropic` later |
 | E-d8 | .NET red-team suite | Record as a gap |
 | E-d9 | #101 | X-1 go; X-2 and X-3 no-go, revisit X-2 after B-6 |
+
+---
+
+# Part IV — Documentation lane: handover, 2026-11-21
+
+Written so a fresh session (local or cloud) can resume the documentation and release work without
+the conversation that produced it. Everything named here is on `main` or on GitHub; nothing lives
+only on a laptop.
+
+## What was done on 2026-11-21
+
+| Item | Where | State |
+|---|---|---|
+| GitHub About description and topics rewritten (application first, course second; `python`, `agent-framework`, `agent-orchestration`, `mcp`, `agentic-ai`, `human-in-the-loop`, `tutorial` added) | repo settings | live |
+| README, `docs/index.md`, architecture, demo guide, agent flows: lead with the complete application and the five orchestration modes; keyless claims made true | #179 | merged |
+| All 34 tutorial chapter READMEs edited for learners ("You will learn to", real "You should see" output, keyless paths, facts corrected) | #190 | merged |
+| `Azure.AI.OpenAI` 2.9.0-beta.1 (user approved; conflict with #191 resolved in `ChatClientFactory.CreateChatClient`) | #180 | merged |
+| Release 1.4.0: version bump, changelog with a "Known limits" section | #193, tag `v1.4.0` at `9d83d45` | tag pushed, **release run waiting for approval** |
+| Chapter pointers by symbol instead of line number, enforced by `scripts/check_tutorial_readmes.py`; status table labels from `scripts/check_tutorial_coverage.py`; chapter template refreshed | #196 | merged |
+| Roadmap and parity matrix reorganised for visitors, ten guides cleaned of plan codes and history, new `docs/checkpoints-and-resume.md` and `docs/replay-mode.md` | #195 | merged with this section |
+| Discussion "Which orchestration pattern should I use?" | Discussions #188 | posted |
+| Starter issues | #181 (closed by #196), #182, #183 (closed by #195) | see below |
+
+## Open, in order
+
+1. **Approve the 1.4.0 release.** `release.yml` run
+   <https://github.com/nitin27may/e-commerce-agents/actions/runs/44931300199> passed every gate and
+   waits on the `release` environment. This is a human click (Review deployments → `release` →
+   approve); it was deliberately not approved through the API. After it publishes, do step 7 of
+   `docs/releasing.md` (anonymous pull of `orchestrator:latest`, both architectures; `db-init` is
+   a twelfth package and must be public).
+2. **Post the release announcement** in Discussions, category Announcements, once the GitHub
+   release exists. Lead with the security fix (return label route) and the Known limits. Pin it,
+   and pin #188.
+3. **Screenshots and a README GIF** (#182, also #87): Mode dropdown, live graph, Compare dialog,
+   the approvals flow, one Aspire trace. Needs a running stack and a model key. Blocked on
+   2026-11-21 because the local Docker daemon was wedged (`docker ps` hung). The README hero is
+   `docs/images/flow-product-search.png` until then.
+4. **Click through demo-guide scenarios 9 to 11** (switch mode, compare, approve a paused return).
+   They were written from the code, not run in a browser. Staff decide from **Runs**; the
+   **Admin → Approvals** nav item is admin-only.
+5. **Ship the `--no-key` recordings.** `agents/python/demo/fixtures/replay/` is empty, so the
+   no-key stack answers every chat prompt with "not recorded". README, quick start, demo guide,
+   `docs/replay-mode.md` and the 1.4.0 changelog all say so; remove those caveats when it ships.
+
+## Suspected, not verified (left as they were)
+
+- `docs/maf-best-practices.md` names only OpenAI and Azure OpenAI as providers; Anthropic is wired.
+- `docs/adr/0002` says "forty-six tools"; the eval scorecard's per-agent counts sum higher.
+- `docs/telemetry.md` shows a "Starlette request span" on a specialist the page calls a FastAPI app.
+- Parity matrix rows 29 and 33 have priorities that do not match their status.
+- `docker-compose.nokey.yml` has a comment saying the fixture key includes the model name;
+  `shared/replay_client.py` hashes messages, tools, instructions and response format only.
+- Python `ReturnReplaceMode.capabilities` has `supports_checkpoints=False` although the mode
+  checkpoints every run (.NET says `true`). Code, not docs.
+- `docs/images/flow-guest-browse.png` (12 MB) and `flow-guest-product.png` are referenced nowhere.
+
+## Known limits of the new tooling
+
+- The symbol check passes a path if any backticked identifier in the same paragraph or list item
+  occurs in the file; it does not pair symbols to paths one to one.
+- `web/src/app/(app)/runs/page.tsx` is not checked (the path pattern rejects parentheses).
+
+## How the wording was done, for whoever continues it
+
+Reader-facing pages follow these rules: say what is true now (history goes in `CHANGELOG.md`); no
+plan or lane codes and no pointers into `.claude/plans/`; open with what the page is and who it is
+for; payoff before caveats, caveats kept; no fact changed without checking the code; second
+person, present tense, no sentence much over 35 words. "Course" for the chapters, "complete
+application" for the app; "tutorial" only as a search topic.
+
+Checks to run after any docs change:
+
+```bash
+python3 scripts/build_docs_site.py --check
+python3 scripts/check_tutorial_readmes.py --check
+python3 scripts/check_tutorial_coverage.py --check
+python3 scripts/check_tutorial_nav.py --check
+python3 scripts/run_tutorials_keyless.py            # after uv sync --project tutorials
+cd agents/python && uv run pytest tests/test_check_tutorial_readmes.py tests/test_check_tutorial_coverage.py -q
+```
+
+Things that cost time: `uv lock` with a different local uv version rewrites unrelated markers in
+`agents/python/uv.lock` (for a version bump, edit the one `version =` line); the parity matrix and
+`CHANGELOG.md` are the files every lane touches, so merge `main` just before pushing.
