@@ -156,9 +156,9 @@ The tests in `python/tests/test_main.py` need a key and skip without one. They a
 
 ## How this shows up in the capstone
 
-The capstone ships a launcher, [`scripts/devui.py`](../../scripts/devui.py), that registers the application's five specialist agents and two workflows with DevUI, so a developer can test one specialist without the orchestrator in front of it. It is a development tool only: no user-facing part of the application depends on DevUI. [`docs/devui.md`](../../docs/devui.md) has the command and the setup it needs.
+The capstone ships a launcher, [`scripts/devui.py`](../../scripts/devui.py), whose `build_entities()` registers the application's five specialist agents and two workflows with DevUI, so a developer can test one specialist without the orchestrator in front of it. It is a development tool only: no user-facing part of the application depends on DevUI. [`docs/devui.md`](../../docs/devui.md) has the command and the setup it needs.
 
-Where this chapter's [`python/main.py`](./python/main.py) registers a demo agent, the launcher builds its list from the application's real agent factories. Take Product Discovery's factory at `agents/python/product_discovery/agent.py:53`:
+Where this chapter's [`python/main.py`](./python/main.py) registers a demo agent, the launcher builds its list from the application's real agent factories. Take Product Discovery's factory, `create_product_discovery_agent()` in `agents/python/product_discovery/agent.py`:
 
 ```python
 def create_product_discovery_agent() -> Agent:
@@ -168,7 +168,7 @@ def create_product_discovery_agent() -> Agent:
     """
 ```
 
-Its `return Agent(...)` at `agents/python/product_discovery/agent.py:85` produces an ordinary MAF `Agent`, the same type this chapter's `build_agent()` returns. That is why DevUI can host the real product-discovery agent, with its semantic search, price history and stock checks, without any change to the factory. The launcher adds what the real tools need around it: a database connection pool and a user identity to run as.
+Its `return Agent(...)` produces an ordinary MAF `Agent`, the same type this chapter's `build_agent()` returns. That is why DevUI can host the real product-discovery agent, with its semantic search, price history and stock checks, without any change to the factory. The launcher adds what the real tools need around it: a database connection pool and a user identity to run as.
 
 ## What's next
 

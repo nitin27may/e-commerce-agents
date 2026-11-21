@@ -214,8 +214,8 @@ The Python tests need no key. They prove that streaming yields several chunks th
 
 Every chat answer in the full application is streamed to the browser this way, and every conversation is tied to a session id so a follow-up question has its context.
 
-- [`agents/python/shared/agent_host.py:114`](../../agents/python/shared/agent_host.py): `_run_agent_native_stream` is the application's version of `stream_answer` above. It calls `agent.run(messages, stream=True, options=...)` and yields text chunks the same way. Once the stream is exhausted it calls `stream.get_final_response()` to pick up token usage and other metadata.
-- [`agents/python/shared/session.py:239`](../../agents/python/shared/session.py): `session_from_id` is the application's version of `agent.create_session()`. It builds an `AgentSession` with an existing conversation's id. The conversation's turns live in Postgres, not in the in-process session this chapter uses.
+- [`agents/python/shared/agent_host.py`](../../agents/python/shared/agent_host.py): `_run_agent_native_stream` is the application's version of `stream_answer` above. It calls `agent.run(messages, stream=True, options=...)` and yields text chunks the same way. Once the stream is exhausted it calls `stream.get_final_response()` to pick up token usage and other metadata.
+- [`agents/python/shared/session.py`](../../agents/python/shared/session.py): `session_from_id` is the application's version of `agent.create_session()`. It builds an `AgentSession` with an existing conversation's id. The conversation's turns live in Postgres, not in the in-process session this chapter uses.
 
 ## What's next
 

@@ -216,20 +216,19 @@ credentials are present.
 The application has its own eval suite at `agents/python/evals/`, which CI runs against recorded
 responses, without an API key, to catch regressions before they ship.
 
-`agents/python/evals/harness.py:136` is the `ProductionRunner` class, and
-`agents/python/evals/harness.py:159` is its `run()` method. It sends every eval case through the
+`agents/python/evals/harness.py` defines the `ProductionRunner` class and its `run()` method. It sends every eval case through the
 dispatch a live request uses: `orchestrator.modes.get_mode("tool").run(...)` for the orchestrator
 and `shared.agent_host._run_agent_native()` for each specialist. These are the entry points
 [Chapter 21](../21-capstone-tour/) tours, so a passing eval means the deployed system passed.
 
 The two scorer tiers this chapter mirrors are modules there:
 
-- `agents/python/evals/scorers/db_groundedness.py:26` is `score_from_report()`, the deterministic
+- `agents/python/evals/scorers/db_groundedness.py` defines `score_from_report()`, the deterministic
   tier. It computes `verified_claims / total_claims` from the `GroundingReport` the grounding
   middleware already produced during the run, so it costs no extra database round trip.
-- `agents/python/evals/scorers/llm_judge.py:49` is `judge_response()`, the LLM-judge tier. It
+- `agents/python/evals/scorers/llm_judge.py` defines `judge_response()`, the LLM-judge tier. It
   sends the question, the expected fields and the response to a second model, and parses the
-  result into the `JudgeVerdict` Pydantic model at `agents/python/evals/scorers/llm_judge.py:33`.
+  result into the `JudgeVerdict` Pydantic model in the same file.
   This chapter's stub `JudgeVerdict` copies that shape.
 
 ## What's next

@@ -42,7 +42,7 @@ covers the first and the third. Side by side:
 
 - **A2A-as-tool** is cross-process. It is the default `tool` orchestration mode of the capstone
   (the full application in this repo). The orchestrator's model calls `call_specialist_agent`
-  (`agents/python/orchestrator/agent.py:93`), which sends an HTTP request to a specialist. The
+  (`agents/python/orchestrator/agent.py`), which sends an HTTP request to a specialist. The
   callee is a separate running service with its own port, its own process and its own failure
   modes, such as timeouts and refused connections. It only *looks* like a tool call from the
   model's point of view.
@@ -262,7 +262,7 @@ implementation differs in one respect. The application's specialists are separat
 tool is an A2A call over HTTP, not an in-process `Agent.as_tool()` wrapper. The application does
 not call `as_tool()` anywhere.
 
-`agents/python/orchestrator/agent.py:93` is `call_specialist_agent`, the tool the orchestrator's
+`agents/python/orchestrator/agent.py` defines `call_specialist_agent`, the tool the orchestrator's
 model calls:
 
 ```python
@@ -277,7 +277,7 @@ async def call_specialist_agent(
 From the model's point of view it has the same shape as this chapter's `product_lookup` tool:
 text in, text out, and control returns to the caller. Everything after
 `url = AGENT_REGISTRY.get(...)` is a network request to another process
-(`agents/python/orchestrator/agent.py:117-119` and the streaming and blocking paths below it), not
+(the `a2a_call_span` block of `call_specialist_agent`, with its streaming and blocking paths), not
 an in-process `agent.run()`.
 
 So the two versions share a tool-shaped interface and differ underneath. Use `as_tool()` when both

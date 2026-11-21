@@ -219,19 +219,19 @@ One Python test replays a recorded run, with no key, and confirms that the agent
 
 In the full application, one middleware stack runs around every agent. It is what masks a shopper's card number before the model sees it, audits each tool call and pauses risky actions for a person to approve.
 
-Every specialist and the orchestrator get that stack from `build_specialist_middleware()` at `agents/python/shared/middleware.py:186`. It composes more than three layers:
+Every specialist and the orchestrator get that stack from `build_specialist_middleware()` in `agents/python/shared/middleware.py`. It composes more than three layers:
 
-- `AgentRunLogger` (agent middleware, `agents/python/shared/middleware.py:43`): run timing and a correlation id. Always on.
-- `ToolAuditMiddleware` (function middleware, `agents/python/shared/middleware.py:83`): a structured audit log for every tool call. Always on.
+- `AgentRunLogger` (agent middleware, `agents/python/shared/middleware.py`): run timing and a correlation id. Always on.
+- `ToolAuditMiddleware` (function middleware, `agents/python/shared/middleware.py`): a structured audit log for every tool call. Always on.
 - `InjectionDetectionChatMiddleware` (chat middleware, on when `settings.GUARDRAILS_ENABLED`): flags inbound prompt injection.
-- `PiiRedactionMiddleware` (chat middleware, `agents/python/shared/middleware.py:136`): the card and SSN redaction this chapter teaches. Always on, whatever the guardrails flag says.
+- `PiiRedactionMiddleware` (chat middleware, `agents/python/shared/middleware.py`): the card and SSN redaction this chapter teaches. Always on, whatever the guardrails flag says.
 - `OutputSanitizationMiddleware` (function middleware, on when `settings.GUARDRAILS_ENABLED`): defangs stored injection in tool output.
 - `HITLFunctionMiddleware` (function middleware, on when `settings.HITL_ENABLED`): a human-in-the-loop (HITL) gate. A gated tool call does not run until a person approves it.
 - Grounding middleware (`GROUNDING_LEDGER_MIDDLEWARE` and `GroundingVerificationMiddleware`, on unless `settings.GROUNDING_MODE` is `"off"`): grounding means checking the answer against real data. These record the product and order facts tools returned during the run and verify the final text against them.
 - `CostBudgetMiddleware` and `OutputModerationMiddleware` (chat middleware, each off when its mode setting is `"off"`): track or cap per-run cost, and classify the model's own output.
 - `STEP_MIDDLEWARE` (from `shared.agent_observability`, on by default through `include_steps=True`): captures each step for the run explorer UI.
 
-The chapter's three classes (`LoggingAgentMiddleware`, `ArgValidatorMiddleware`, `PiiRedactionChatMiddleware`) have the same shape, without the guardrail, grounding and HITL layers. `AgentAuthMiddleware` at `agents/python/shared/auth.py:123` is a different kind of middleware: HTTP middleware (Starlette `BaseHTTPMiddleware`) that wraps the web request before it reaches the agent.
+The chapter's three classes (`LoggingAgentMiddleware`, `ArgValidatorMiddleware`, `PiiRedactionChatMiddleware`) have the same shape, without the guardrail, grounding and HITL layers. `AgentAuthMiddleware` in `agents/python/shared/auth.py` is a different kind of middleware: HTTP middleware (Starlette `BaseHTTPMiddleware`) that wraps the web request before it reaches the agent.
 
 ## What's next
 

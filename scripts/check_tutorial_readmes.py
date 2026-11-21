@@ -10,8 +10,16 @@ have, and have *for real* (not just a heading with nothing under it):
 3. A Run command whose target path exists on disk.
 4. A Walkthrough — an inline code block showing real source, not just the
    run command.
-5. A capstone-pointer section containing a `path:line` that resolves to a
-   real file with at least that many lines.
+5. A capstone-pointer section that points into the application by path plus
+   symbol: a repo-rooted path to a file that exists, with a backticked symbol
+   name in the same paragraph or list item that occurs in that file, e.g.
+
+       `build_orchestrator_handoff_workflow()` in `agents/python/orchestrator/handoff.py`
+
+   Prefer this form. A symbol survives edits to the file and the check fails
+   the day it is renamed or removed; a line number drifts silently. The older
+   `path:LINE` form is still accepted (the file must have that many lines),
+   but do not write new ones.
 6. A Gotchas section with at least one bullet.
 7. No dead relative links (repo-internal paths that don't exist).
 
@@ -41,16 +49,25 @@ TUTORIALS_DIR = REPO_ROOT / "tutorials"
 _MERMAID_RE = re.compile(r"```mermaid\b")
 _CODE_BLOCK_RE = re.compile(r"```([a-zA-Z0-9_+-]*)\n(.*?)```", re.DOTALL)
 _HEADING_RE = re.compile(r"^##\s+(.+)$", re.MULTILINE)
-_PATH_LINE_RE = re.compile(r"`?([a-zA-Z0-9_./-]+\.(?:py|cs|tsx?|ts))(?::(\d+))?`?")
+_PATH_LINE_RE = re.compile(r"(?<![\w./()-])`?([a-zA-Z0-9_./-]+\.(?:py|cs|tsx?|ts))(?::(\d+))?`?")
 _RELATIVE_LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
+_FENCE_RE = re.compile(r"^[ \t]*```.*?^[ \t]*```[ \t]*$", re.MULTILINE | re.DOTALL)
+_BACKTICK_RE = re.compile(r"`([^`\n]+)`")
+# `name`, `name()`, `Class.method()`, `settings.FLAG` — an identifier, not an expression.
+_SYMBOL_RE = re.compile(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*")
+# A backticked `workflow.yaml` or `main.py` is a file name, not a symbol.
+_FILE_SUFFIXES = {
+    "py", "cs", "ts", "tsx", "js", "json", "yaml", "yml", "md", "sql", "sh", "toml",
+    "mmd", "dot", "csproj", "props", "ipynb", "txt",
+}  # fmt: skip
 _MIN_CONCEPT_CHARS = 200
 
 # Checks not applicable to structurally different chapters. A check name
 # absent from a chapter's override set still runs normally.
 CHAPTER_OVERRIDES: dict[str, set[str]] = {
     "00-setup": {"walkthrough", "run_command", "capstone_pointer"},
-    # 21-capstone-tour's whole body IS the capstone mapping (a table of
-    # many file:line pointers per Phase 4.4's plan), not a single labeled
+    # 21-capstone-tour's whole body IS the capstone mapping (tables of
+    # file-and-symbol pointers), not a single labeled
     # "## How this shows up in the capstone" section — the dedicated check
     # doesn't fit its actual planned shape.
     "21-capstone-tour": {"walkthrough", "run_command", "capstone_pointer"},
@@ -142,25 +159,135 @@ def check_walkthrough(text: str, result: ChapterResult) -> None:
     )
 
 
+_LIST_ITEM_RE = re.compile(r"\s*(?:[-*+]|\d+\.)\s+")
+
+
+def _pointer_blocks(section: str) -> list[str]:
+    """Split a section into paragraphs and list items.
+
+    Code fences and Markdown link targets are dropped first: a pointer is the
+    path written in the prose, not the `../../` href behind it. A symbol
+    vouches for a path only inside the same block, so a symbol named in one
+    bullet cannot make a bare path in another bullet pass. The one exception
+    is a paragraph ending in a colon: it introduces the list under it ("The
+    setup is in `path`:"), so that list's items are read as part of it.
+    """
+    prose = _FENCE_RE.sub("", section)
+    prose = re.sub(r"\]\([^)\n]*\)", "]", prose)
+    blocks: list[str] = []
+    current: list[str] = []
+    for line in prose.splitlines():
+        if (not line.strip() or _LIST_ITEM_RE.match(line)) and current:
+            blocks.append("\n".join(current))
+            current = []
+        if line.strip():
+            current.append(line)
+    if current:
+        blocks.append("\n".join(current))
+
+    merged: list[str] = []
+    for i, block in enumerate(blocks):
+        if block.rstrip().endswith(":") and not _LIST_ITEM_RE.match(block):
+            items: list[str] = []
+            for following in blocks[i + 1 :]:
+                if not _LIST_ITEM_RE.match(following):
+                    break
+                items.append(following)
+            block = "\n".join([block, *items])
+        merged.append(block)
+    return merged
+
+
+def _symbols(block: str) -> list[str]:
+    """Backticked identifiers in a block, in order, without a trailing `()`."""
+    found: list[str] = []
+    for span in _BACKTICK_RE.findall(block):
+        name = span.strip().removesuffix("()")
+        if not _SYMBOL_RE.fullmatch(name) or name.rsplit(".", 1)[-1] in _FILE_SUFFIXES:
+            continue
+        if name not in found:
+            found.append(name)
+    return found
+
+
+def _occurs(symbol: str, source: str) -> bool:
+    """True if every dotted part of the symbol is a whole word in the source."""
+    return all(re.search(rf"(?<!\w){re.escape(part)}(?!\w)", source) for part in symbol.split("."))
+
+
+def _is_repo_rooted(rel_path: str) -> bool:
+    # `agents/python/shared/auth.py` is a pointer into the repo. `main.py`,
+    # `./python/main.py` and `shared/context.py` are mentions of a file relative
+    # to something else, and are not checked.
+    head = rel_path.split("/", 1)[0]
+    return "/" in rel_path and not head.startswith(".") and (REPO_ROOT / head).is_dir()
+
+
 def check_capstone_pointer(text: str, result: ChapterResult) -> None:
+    """Every repo-rooted path in the capstone section must be a real pointer.
+
+    A path passes when, in at least one paragraph or list item that cites it, a
+    backticked symbol occurs in the file. A path written with the older
+    `:LINE` suffix and no matching symbol passes if the file is that long.
+    """
     section = _section(text, "How this shows up in the capstone")
     if section is None:
         result.failures.append("no '## How this shows up in the capstone' section")
         return
-    matches = [(p, ln) for p, ln in _PATH_LINE_RE.findall(section) if ln]
-    if not matches:
-        result.failures.append("capstone section has no `path/to/file.py:LINE` pointer")
+
+    # Per cited path: was it vouched for by a symbol, which symbols stood
+    # beside it (for the failure message), and which line numbers it carried.
+    vouched: dict[str, bool] = {}
+    beside: dict[str, list[str]] = {}
+    lines: dict[str, list[int]] = {}
+    for block in _pointer_blocks(section):
+        symbols = _symbols(block)
+        for rel_path, line_str in _PATH_LINE_RE.findall(block):
+            target = REPO_ROOT / rel_path
+            if not target.is_file():
+                missing = f"capstone pointer '{rel_path}' does not exist"
+                if (line_str or _is_repo_rooted(rel_path)) and missing not in result.failures:
+                    result.failures.append(missing)
+                continue
+            source = target.read_text(encoding="utf-8", errors="replace")
+            vouched[rel_path] = vouched.get(rel_path, False) or any(_occurs(s, source) for s in symbols)
+            seen = beside.setdefault(rel_path, [])
+            seen.extend([s for s in symbols if s not in seen])
+            if line_str:
+                lines.setdefault(rel_path, []).append(int(line_str))
+
+    if not vouched:
+        result.failures.append(
+            "capstone section has no pointer into the application — write a repo-rooted path plus a "
+            "backticked symbol from that file, e.g. `create_orchestrator_agent()` in "
+            "`agents/python/orchestrator/agent.py` (not a line number: those drift)"
+        )
         return
-    for rel_path, line_str in matches:
-        target = REPO_ROOT / rel_path
-        if not target.exists():
-            result.failures.append(f"capstone pointer '{rel_path}' does not exist")
+
+    for rel_path, ok in vouched.items():
+        if ok:
             continue
-        line_no = int(line_str)
-        line_count = sum(1 for _ in target.open(encoding="utf-8", errors="replace"))
-        if line_count < line_no:
+        if rel_path in lines:
+            # Legacy form. Accepted so an old pointer does not break the build,
+            # but it only proves the file is long enough.
+            line_count = len((REPO_ROOT / rel_path).read_text(encoding="utf-8", errors="replace").splitlines())
+            for line_no in lines[rel_path]:
+                if line_count < line_no:
+                    result.failures.append(
+                        f"capstone pointer '{rel_path}:{line_no}' exceeds the file's {line_count} lines — "
+                        "name a symbol from the file instead of a line number"
+                    )
+        elif beside[rel_path]:
+            named = ", ".join(f"`{s}`" for s in beside[rel_path])
             result.failures.append(
-                f"capstone pointer '{rel_path}:{line_no}' exceeds the file's {line_count} lines"
+                f"capstone pointer '{rel_path}': none of the symbols named beside it ({named}) occurs in "
+                "that file — name a function, class or constant that is in it"
+            )
+        else:
+            result.failures.append(
+                f"capstone pointer '{rel_path}' names no symbol — write the path plus a backticked "
+                "function, class or constant from that file, e.g. `create_orchestrator_agent()` in "
+                "`agents/python/orchestrator/agent.py`"
             )
 
 
@@ -210,7 +337,6 @@ def check_chapter(chapter: str) -> ChapterResult:
         check_dead_links(text, chapter_dir, result)
 
     return result
-
 
 
 # ---------------------------------------------------------------------------

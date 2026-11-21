@@ -195,7 +195,7 @@ The tests run the inner workflow on its own and nested, through the same approve
 
 ## How this shows up in the capstone
 
-The application does not nest one workflow inside another. The nearest thing in it is one step of the `workflow:return-replace` orchestration mode, which looks for replacement products while handling a customer's return. `agents/python/workflows/return_replace.py:378` defines that step, `_SearchReplacementsExecutor`:
+The application does not nest one workflow inside another. The nearest thing in it is one step of the `workflow:return-replace` orchestration mode, which looks for replacement products while handling a customer's return. `agents/python/workflows/return_replace.py` defines that step, `_SearchReplacementsExecutor`:
 
 ```python
 class _SearchReplacementsExecutor(Executor):
@@ -210,7 +210,7 @@ class _SearchReplacementsExecutor(Executor):
 
 It is a single tool call, one `search_products` invocation with no sub-graph of its own, so it does not need `WorkflowExecutor`.
 
-The application also has a small multi-step research workflow, `agents/python/workflows/pre_purchase.py`. It fans out to reviews, stock and price history, then merges the results (see [Chapter 09's capstone section](../09-workflow-executors-and-edges/README.md#how-this-shows-up-in-the-capstone)). Suppose the replacement search needed that same research for each *candidate replacement*. Nesting the pre-purchase workflow inside the return workflow with `WorkflowExecutor` is the mechanism this chapter teaches.
+The application also has a small multi-step research workflow, `PrePurchaseWorkflow` in `agents/python/workflows/pre_purchase.py`. It fans out to reviews, stock and price history, then merges the results (see [Chapter 09's capstone section](../09-workflow-executors-and-edges/README.md#how-this-shows-up-in-the-capstone)). Suppose the replacement search needed that same research for each *candidate replacement*. Nesting the pre-purchase workflow inside the return workflow with `WorkflowExecutor` is the mechanism this chapter teaches.
 
 ## What's next
 

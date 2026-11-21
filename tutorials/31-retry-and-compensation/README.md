@@ -234,7 +234,7 @@ The tests prove the three behaviours in the output above and check each backend'
 
 ## How this shows up in the capstone
 
-The application has no saga and no compensating actions. What it does have is the retry half of this chapter, around the calls the orchestrator makes to specialist agents on a user's behalf. `agents/python/orchestrator/agent.py:248` is the blocking path of that call:
+The application has no saga and no compensating actions. What it does have is the retry half of this chapter, around the calls the orchestrator makes to specialist agents on a user's behalf. The blocking path of that call is in `call_specialist_agent` (`agents/python/orchestrator/agent.py`):
 
 ```python
 try:
@@ -261,7 +261,7 @@ except Exception:
     return f"Failed to reach the {agent_name} agent. Please try again later."
 ```
 
-`_A2A_TRANSPORT` is a `ResilientAsyncTransport` (`agents/python/shared/http_resilience.py:160`). It retries a request that fails to connect or returns a transient status (such as 503 or 429) up to three times with jittered exponential backoff, behind a circuit breaker. A `4xx` client error is not retried, which is this chapter's transient-versus-genuine rule. Once the attempts are spent, the `except` blocks log the failure and return a message for the user.
+`_A2A_TRANSPORT` is a `ResilientAsyncTransport` (`agents/python/shared/http_resilience.py`). It retries a request that fails to connect or returns a transient status (such as 503 or 429) up to three times with jittered exponential backoff, behind a circuit breaker. A `4xx` client error is not retried, which is this chapter's transient-versus-genuine rule. Once the attempts are spent, the `except` blocks log the failure and return a message for the user.
 
 Nothing is unwound, because this is a **single** HTTP call. It is not one step of a multi-step transaction, so there is no earlier step to compensate. A saga would become necessary if checkout grew into three separate calls: reserve stock through one specialist, charge through another, ship through a third.
 

@@ -198,7 +198,7 @@ The unit tests call the tool function directly, with no LLM: a known SKU, an unk
 
 ## How this shows up in the capstone
 
-Tools are how every specialist agent in the full application reaches real data. When a shopper asks for "wireless headphones under $100", the product-discovery agent's model calls `search_products`, defined at `agents/python/product_discovery/tools.py:31`:
+Tools are how every specialist agent in the full application reaches real data. When a shopper asks for "wireless headphones under $100", the product-discovery agent's model calls `search_products`, defined in `agents/python/product_discovery/tools.py`:
 
 ```python
 @tool(

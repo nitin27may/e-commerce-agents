@@ -12,12 +12,17 @@ This script makes the claim true. It walks the chapter directories, derives each
 chapter's status from files that actually exist, and rewrites the table between
 the markers in tutorials/README.md.
 
-Status is derived, never declared:
+Status is derived from disk. The two things a directory listing cannot show are
+declared in small tables below, each entry with its reason:
 
-    Runnable · tested in CI   code + a test project/dir
-    Runnable · tests pending  code, no tests
-    Not ported                no code for that language
-    Guide only                the chapter ships no runnable code by design
+    Runnable · tested in CI      code + a test project/dir
+    Runnable · tests pending     code, no tests
+    Status stub · tested in CI   a project that builds and has tests, but is a
+                                 placeholder for the chapter, not a port of it
+                                 (STATUS_STUBS; "· tests pending" without tests)
+    Not ported                   no code for that language
+    Guide only                   a finished written guide that ships no chapter
+                                 code by design (GUIDE_ONLY)
 
 Usage:
     python scripts/check_tutorial_coverage.py            # print the table
@@ -42,23 +47,41 @@ END_MARKER = "<!-- END GENERATED COVERAGE TABLE -->"
 
 TESTED = "Runnable · tested in CI"
 UNTESTED = "Runnable · tests pending"
+STUB_TESTED = "Status stub · tested in CI"
+STUB_UNTESTED = "Status stub · tests pending"
 NOT_PORTED = "Not ported"
-GUIDE_ONLY = "Guide only"
-PLANNED = "Planned"
+GUIDE = "Guide only"
 
-# Chapters that ship no runnable code on purpose. Everything else is judged by
-# what is on disk, so a chapter cannot quietly claim coverage it does not have.
-NO_CODE_BY_DESIGN = {
-    "00-setup": GUIDE_ONLY,
-    "21-capstone-tour": PLANNED,
+# Every label a language cell can carry, in the order the summary reports them.
+# tutorials/README.md's legend must describe each one (--check verifies it).
+CODE_STATUSES = (TESTED, UNTESTED, STUB_TESTED, STUB_UNTESTED, NOT_PORTED)
+
+# Chapters that are finished written guides and ship no chapter code on purpose.
+# Both language cells read "Guide only". Everything else is judged by what is
+# on disk, so a chapter cannot quietly claim coverage it does not have.
+GUIDE_ONLY: dict[str, str] = {
+    # Installs the toolchain and checks the environment; there is nothing to port.
+    "00-setup": "environment setup",
+    # Tours the running application by file and symbol. Its run.sh starts the
+    # app; the empty python/ and dotnet/ folders hold only a .gitkeep.
+    "21-capstone-tour": "tour of the application",
 }
 
-# Chapters whose .NET side is qualified by an SDK gap rather than by our own
-# backlog. The footnote is attached regardless of the derived status, because
-# the gap is the thing a reader needs to know — chapter 16 HAS a .NET project
-# and tests, and the project is a status stub while the tests are a tripwire
-# that fails the day Magentic ships for .NET.
-DOCUMENTED_STUBS = {
+# (chapter, language) pairs where a project exists, builds and has tests, but is
+# a placeholder rather than the chapter's example. On disk these look exactly
+# like a tested port, which is why they are declared. An entry only relabels
+# code that is there: delete the project and the cell falls back to "Not ported".
+STATUS_STUBS: dict[tuple[str, str], str] = {
+    # dotnet/Program.cs prints "not yet ported, run the Python version" and
+    # dotnet/tests only assert that the Magentic types exist in the pinned SDK.
+    # Remove this entry when the chapter is ported onto MagenticWorkflowBuilder.
+    ("16-magentic-orchestration", "dotnet"): "placeholder program; tests only pin that the SDK types exist",
+}
+
+# Footnotes attached to a chapter's .NET cell whatever its status, because the
+# reason is the thing a reader needs. The footnote text lives in
+# tutorials/README.md under the table.
+DOTNET_FOOTNOTES = {
     "16-magentic-orchestration": "magentic",
     "20b-devui": "devui",
 }
@@ -98,9 +121,11 @@ def _has_dotnet_tests(chapter_dir: Path) -> bool:
     return tests.is_dir() and any(tests.glob("*.Tests.csproj"))
 
 
-def _status(has_code: bool, has_tests: bool) -> str:
+def _status(slug: str, language: str, has_code: bool, has_tests: bool) -> str:
     if not has_code:
         return NOT_PORTED
+    if (slug, language) in STATUS_STUBS:
+        return STUB_TESTED if has_tests else STUB_UNTESTED
     return TESTED if has_tests else UNTESTED
 
 
@@ -128,17 +153,18 @@ def discover() -> list[Chapter]:
 
         slug = chapter_dir.name
 
-        if slug in NO_CODE_BY_DESIGN:
-            status = NO_CODE_BY_DESIGN[slug]
-            chapters.append(Chapter(slug, _title(chapter_dir), status, status))
+        if slug in GUIDE_ONLY:
+            chapters.append(Chapter(slug, _title(chapter_dir), GUIDE, GUIDE))
             continue
 
-        chapters.append(Chapter(
-            slug,
-            _title(chapter_dir),
-            _status(_has_python_code(chapter_dir), _has_python_tests(chapter_dir)),
-            _status(_has_dotnet_code(chapter_dir), _has_dotnet_tests(chapter_dir)),
-        ))
+        chapters.append(
+            Chapter(
+                slug,
+                _title(chapter_dir),
+                _status(slug, "python", _has_python_code(chapter_dir), _has_python_tests(chapter_dir)),
+                _status(slug, "dotnet", _has_dotnet_code(chapter_dir), _has_dotnet_tests(chapter_dir)),
+            )
+        )
 
     return chapters
 
@@ -151,31 +177,56 @@ def render(chapters: list[Chapter]) -> str:
 
     for chapter in chapters:
         dotnet = chapter.dotnet
-        if chapter.slug in DOCUMENTED_STUBS:
-            dotnet = f"{dotnet} [^{DOCUMENTED_STUBS[chapter.slug]}]"
+        if chapter.slug in DOTNET_FOOTNOTES:
+            dotnet = f"{dotnet} [^{DOTNET_FOOTNOTES[chapter.slug]}]"
 
-        lines.append(
-            f"| {chapter.number} | [{chapter.title}](./{chapter.slug}/) "
-            f"| {chapter.python} | {dotnet} |"
-        )
+        lines.append(f"| {chapter.number} | [{chapter.title}](./{chapter.slug}/) | {chapter.python} | {dotnet} |")
 
     return "\n".join(lines)
 
 
-def summarize(chapters: list[Chapter]) -> str:
-    def count(attr: str, status: str) -> int:
-        return sum(1 for c in chapters if getattr(c, attr) == status)
+_SUMMARY_WORDS = {
+    TESTED: "tested",
+    UNTESTED: "untested",
+    STUB_TESTED: "status stub (tested)",
+    STUB_UNTESTED: "status stub (untested)",
+    NOT_PORTED: "not ported",
+}
 
-    with_code = [c for c in chapters if c.slug not in NO_CODE_BY_DESIGN]
+
+def _counts(chapters: list[Chapter], attr: str) -> dict[str, int]:
+    return {status: sum(1 for c in chapters if getattr(c, attr) == status) for status in CODE_STATUSES}
+
+
+def summarize(chapters: list[Chapter]) -> str:
+    """One line whose per-language counts add up to the chapters that ship code."""
+    with_code = [c for c in chapters if c.slug not in GUIDE_ONLY]
+
+    def side(attr: str) -> str:
+        counts = _counts(with_code, attr)
+        if sum(counts.values()) != len(with_code):
+            raise SystemExit(f"internal error: {attr} statuses do not add up to {len(with_code)}: {counts}")
+        # Always report the three basic counts; a stub count only when there is one.
+        always = (TESTED, UNTESTED, NOT_PORTED)
+        return ", ".join(
+            f"{counts[status]} {_SUMMARY_WORDS[status]}"
+            for status in CODE_STATUSES
+            if status in always or counts[status]
+        )
 
     return (
         f"{len(chapters)} chapters — "
-        f"Python: {count('python', TESTED)} tested, {count('python', UNTESTED)} untested, "
-        f"{count('python', NOT_PORTED)} not ported · "
-        f".NET: {count('dotnet', TESTED)} tested, {count('dotnet', UNTESTED)} untested, "
-        f"{count('dotnet', NOT_PORTED)} not ported "
-        f"(of {len(with_code)} chapters that ship code)"
+        f"Python: {side('python')} · "
+        f".NET: {side('dotnet')} "
+        f"(of {len(with_code)} chapters that ship code; {len(chapters) - len(with_code)} guide only)"
     )
+
+
+def legend_gaps(readme_text: str, chapters: list[Chapter]) -> list[str]:
+    """Labels the table uses that the prose above it never explains."""
+    prose = readme_text.split(BEGIN_MARKER, 1)[0]
+    used = {c.python for c in chapters} | {c.dotnet for c in chapters}
+    return sorted(label for label in used if f"**{label}**" not in prose)
 
 
 def _splice(text: str, table: str) -> str:
@@ -218,6 +269,15 @@ def main() -> int:
             print(f"{README.relative_to(REPO_ROOT)} already up to date")
         print(summarize(chapters))
         return 0
+
+    gaps = legend_gaps(current, chapters)
+    if gaps:
+        print(
+            "tutorials/README.md's legend (above the coverage table) does not explain: "
+            + ", ".join(repr(g) for g in gaps),
+            file=sys.stderr,
+        )
+        return 1
 
     if updated != current:
         print(

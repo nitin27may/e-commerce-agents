@@ -161,9 +161,10 @@ public static class Program
     /// <remarks>
     /// This runs after every concurrent branch has completed. No LLM call;
     /// the function is deterministic so the wall-clock stays dominated by
-    /// the slowest agent. If you want a synthesising LLM summary instead,
-    /// call an agent inside this function — the signature is an async
-    /// boundary, so it's safe to await.
+    /// the slowest agent. The aggregator delegate is synchronous
+    /// (Func&lt;IList&lt;List&lt;ChatMessage&gt;&gt;, List&lt;ChatMessage&gt;&gt;), so an agent cannot be
+    /// awaited here. For an LLM-written summary, run a summarising agent as
+    /// a separate step on the aggregated messages.
     /// </remarks>
     internal static List<ChatMessage> SynthesizeReview(IList<List<ChatMessage>> perAgentMessages)
     {

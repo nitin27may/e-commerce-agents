@@ -226,7 +226,7 @@ Two properties carry the pattern, and neither is visible from the API:
   step returns zero matches, the remaining steps still run as written. The adaptive version of the
   pattern is Magentic, which the application does not implement: `get_mode()` raises an
   `UnknownModeError` that names `magentic` as not implemented
-  (`agents/python/orchestrator/modes/__init__.py:54`).
+  (`agents/python/orchestrator/modes/__init__.py`).
 - **One run produces several fixture files.** A 4-step plan needs one planner fixture plus at
   least one executor fixture per step. `ReplayChatClient` keys each fixture on the exact request
   (messages, tools and instructions), so the planner and executor never collide in the shared
@@ -250,7 +250,7 @@ present.
 
 The application does not run planner-executor as an orchestration mode. Its default `tool` mode is
 the reactive alternative described above, and the nearest thing to this chapter in it is the tool
-the executor calls. `agents/python/product_discovery/tools.py:31` defines the application's
+the executor calls. `agents/python/product_discovery/tools.py` defines the application's
 `search_products`, which answers a shopper's catalog questions in chat:
 
 ```python
@@ -267,7 +267,7 @@ It has the same `@tool` and `Annotated` shape as this chapter's version. The app
 `async`, Postgres full-text search through `get_pool()`, and more filter parameters. The model
 still decides when to call it and with what arguments.
 
-`agents/python/orchestrator/modes/__init__.py:54` is where `get_mode()` rejects an unknown mode
+`agents/python/orchestrator/modes/__init__.py` is where `get_mode()` rejects an unknown mode
 name and states that `magentic`, the re-planning form of this pattern, is not implemented. See
 [`docs/concepts/06-orchestration-patterns.md`](../../docs/concepts/06-orchestration-patterns.md)
 for a comparison of the modes the application does run.

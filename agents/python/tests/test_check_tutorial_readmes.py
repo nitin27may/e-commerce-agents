@@ -117,26 +117,101 @@ def test_check_capstone_pointer_fails_without_section() -> None:
     assert result.failures
 
 
-def test_check_capstone_pointer_fails_for_nonexistent_file() -> None:
+_CAPSTONE = "## How this shows up in the capstone\n\n"
+
+
+def _capstone_failures(body: str) -> list[str]:
     result = ChapterResult(chapter="t")
-    text = "## How this shows up in the capstone\n\nSee `agents/python/no_such_file.py:10`.\n"
-    check_capstone_pointer(text, result)
-    assert result.failures and "does not exist" in result.failures[0]
+    check_capstone_pointer(_CAPSTONE + body, result)
+    return result.failures
+
+
+def test_check_capstone_pointer_fails_for_nonexistent_file() -> None:
+    failures = _capstone_failures("See `agents/python/no_such_file.py:10`.\n")
+    assert failures and "does not exist" in failures[0]
+
+
+def test_check_capstone_pointer_passes_for_a_path_plus_a_symbol_in_that_file() -> None:
+    # The recommended form: a repo-rooted path and a backticked symbol that the file defines.
+    assert _capstone_failures("`check_capstone_pointer()` in `scripts/check_tutorial_readmes.py` does it.\n") == []
+
+
+def test_check_capstone_pointer_accepts_the_symbol_on_either_side_and_dotted() -> None:
+    assert _capstone_failures("`scripts/check_tutorial_readmes.py` defines `ChapterResult.passed`.\n") == []
+
+
+def test_check_capstone_pointer_fails_when_the_symbol_is_not_in_the_file() -> None:
+    failures = _capstone_failures("`no_such_function_anywhere()` in `scripts/check_tutorial_coverage.py` does it.\n")
+    assert len(failures) == 1
+    assert "none of the symbols" in failures[0] and "`no_such_function_anywhere`" in failures[0]
+
+
+def test_check_capstone_pointer_fails_for_an_existing_path_with_no_symbol_and_no_line() -> None:
+    failures = _capstone_failures("The check lives in `scripts/check_tutorial_coverage.py`.\n")
+    assert len(failures) == 1
+    assert "names no symbol" in failures[0]
+
+
+def test_check_capstone_pointer_fails_when_a_dotted_symbol_is_only_half_there() -> None:
+    # `ChapterResult` is in the file, `no_such_member` is not: both parts must be.
+    failures = _capstone_failures("`ChapterResult.no_such_member` in `scripts/check_tutorial_coverage.py`.\n")
+    assert failures and "none of the symbols" in failures[0]
+
+
+def test_check_capstone_pointer_symbol_in_another_bullet_does_not_vouch() -> None:
+    body = "- `discover()` builds the list.\n- `scripts/check_tutorial_coverage.py` is the script.\n"
+    failures = _capstone_failures(body)
+    assert failures and "names no symbol" in failures[0]
+
+
+def test_check_capstone_pointer_intro_paragraph_is_vouched_for_by_its_list() -> None:
+    body = "The script is `scripts/check_tutorial_coverage.py`:\n\n- `discover()` builds the list.\n"
+    assert _capstone_failures(body) == []
+
+
+def test_check_capstone_pointer_ignores_link_targets_fences_and_relative_mentions() -> None:
+    body = (
+        "[`scripts/check_tutorial_coverage.py`](../../scripts/check_tutorial_coverage.py) has `discover()`, "
+        "like this chapter's `python/main.py`.\n\n"
+        "```python\n# scripts/no_such_file.py\n```\n"
+    )
+    assert _capstone_failures(body) == []
+
+
+def test_check_capstone_pointer_fails_with_no_pointer_at_all() -> None:
+    failures = _capstone_failures("The application does this too, in `main.py`.\n")
+    assert failures and "no pointer into the application" in failures[0]
+
+
+def test_check_capstone_pointer_failure_messages_recommend_a_symbol() -> None:
+    for body in ("Nothing here.\n", "See `scripts/check_tutorial_coverage.py`.\n"):
+        assert "backticked" in _capstone_failures(body)[0]
+    assert "`path:LINE`" in (_module.__doc__ or "") and "path plus" in (_module.__doc__ or "")
+
+
+def test_check_capstone_pointer_still_accepts_a_legacy_line_number() -> None:
+    # Kept so an old `path:LINE` pointer does not break the build.
+    assert _capstone_failures("See `scripts/check_tutorial_readmes.py:1`.\n") == []
 
 
 def test_check_capstone_pointer_fails_when_line_exceeds_file_length() -> None:
-    result = ChapterResult(chapter="t")
     # scripts/check_tutorial_readmes.py itself is real but nowhere near 999999 lines.
-    text = "## How this shows up in the capstone\n\nSee `scripts/check_tutorial_readmes.py:999999`.\n"
-    check_capstone_pointer(text, result)
-    assert result.failures and "exceeds" in result.failures[0]
+    failures = _capstone_failures("See `scripts/check_tutorial_readmes.py:999999`.\n")
+    assert failures and "exceeds" in failures[0]
 
 
-def test_check_capstone_pointer_passes_for_a_real_pointer() -> None:
-    result = ChapterResult(chapter="t")
-    text = "## How this shows up in the capstone\n\nSee `scripts/check_tutorial_readmes.py:1`.\n"
-    check_capstone_pointer(text, result)
-    assert result.failures == []
+def test_no_chapter_cites_application_code_by_line_number() -> None:
+    # The chapters were moved from `path:LINE` to path plus symbol. The legacy form
+    # is still parsed, but none should come back.
+    import re
+
+    cite = re.compile(r"[A-Za-z0-9_./-]+\.(?:py|cs|tsx?|ts):\d+")
+    offenders = {
+        chapter: found
+        for chapter in discover_chapters()
+        if (found := cite.findall((REPO_ROOT / "tutorials" / chapter / "README.md").read_text(encoding="utf-8")))
+    }
+    assert offenders == {}
 
 
 def test_check_gotchas_fails_without_bullets() -> None:

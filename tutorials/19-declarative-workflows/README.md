@@ -186,7 +186,7 @@ The .NET tests in [`dotnet/tests/DeclarativeTests.cs`](./dotnet/tests/Declarativ
 
 ## How this shows up in the capstone
 
-The capstone (the full application in this repo) has no declarative loader, so nothing a user does there runs a YAML-defined workflow. Its two workflows, return/replace and pre-purchase, are hand-coded MAF `WorkflowBuilder` graphs (`agents/python/workflows/return_replace.py:565`, `agents/python/workflows/pre_purchase.py:300`). This chapter is self-contained: its loader and its `workflow.yaml` live in `python/` and `dotnet/` here, and it imports nothing from `agents/`.
+The capstone (the full application in this repo) has no declarative loader, so nothing a user does there runs a YAML-defined workflow. Its two workflows, return/replace and pre-purchase, are hand-coded MAF `WorkflowBuilder` graphs (`_build_maf_workflow()` in `agents/python/workflows/return_replace.py` and in `agents/python/workflows/pre_purchase.py`). This chapter is self-contained: its loader and its `workflow.yaml` live in `python/` and `dotnet/` here, and it imports nothing from `agents/`.
 
 ## What's next
 

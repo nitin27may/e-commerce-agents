@@ -28,7 +28,7 @@ Both languages follow the same three steps:
 2. Register the MAF instrumentation sources on that provider.
 3. Run an agent. Spans are emitted automatically, with no manual `span.start()` calls in your own code.
 
-Python opts in with one call, `enable_instrumentation()`, which turns on MAF's built-in instrumentation. .NET's tracing model (`System.Diagnostics.Activity`) has no single global switch, so you add MAF's `ActivitySource` names to the tracer provider to tell it which sources to listen to.
+Python opts in with one call, `enable_instrumentation()`, which turns on MAF's built-in instrumentation. .NET's tracing model (`System.Diagnostics.Activity`) has no single global switch, so you add `ActivitySource` names to the tracer provider to tell it which sources to listen to.
 
 One agent run produces a small tree of nested spans. The agent invocation is the parent, and the LLM call and any tool calls are its children:
 
@@ -137,7 +137,7 @@ Both produce the same data. Swap the exporter for an OTLP one and point it at As
 ## Gotchas
 
 - **A second `TracerProvider` in Python is ignored.** Python sets one provider per process. A second call to `trace.set_tracer_provider()` logs a warning and the first provider stays. The tests in [`test_observability.py`](./python/tests/test_observability.py) install one module-level `InMemorySpanExporter` and call `exporter.clear()` between tests instead of rebuilding the provider.
-- **No spans appear in .NET.** .NET needs explicit `ActivitySource` names. MAF v1.1 emits under `Microsoft.Agents.AI` and `Microsoft.Extensions.AI`. Adding `"*"` also picks up ambient HTTP-client spans (DNS, TLS handshake, the POST itself), so you see the full network hop.
+- **No spans appear in .NET.** .NET needs explicit `ActivitySource` names. This chapter's `ActivitySources` array subscribes to three: `Microsoft.Agents.AI`, `Microsoft.Extensions.AI` and the wildcard `"*"`. The wildcard is what picks up ambient HTTP-client spans (DNS, TLS handshake, the POST itself), so you see the full network hop. The chapter's tests assert that a live run exports at least one span and that one carries an HTTP tag; they do not check which source a span came from.
 - **Prompts and answers show up in your traces.** `enable_instrumentation(enable_sensitive_data=True)` includes the full prompt and response text as span attributes. That is fine for a local trace. Against real user data, leave it at the default (`False`) or put it behind an environment flag. `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` in `docker-compose.yml` controls the same choice for the full application.
 - **Trace volume is too high under load.** Both SDKs sample everything by default. For a high-throughput service, configure a `TraceIdRatioBased` sampler in either language.
 - **No spans reach the Aspire Dashboard.** Its OTLP port is not the OTel default of `4317`. The `aspire` service in `docker-compose.yml` maps the dashboard UI to host `18888` and the OTLP receiver to host `18890` (container port `18889`). Point the exporter at `http://localhost:18890` from the host, or `http://aspire:18889` from inside the compose network, which is the value `docker-compose.yml` sets for the orchestrator's `OTEL_EXPORTER_OTLP_ENDPOINT`.
@@ -162,9 +162,9 @@ In the full application, every chat request produces one connected trace across 
 
 The setup is in `agents/python/shared/telemetry.py`:
 
-- `setup_telemetry()` at `agents/python/shared/telemetry.py:31` configures OTLP exporters and auto-instrumentation for the OpenAI client, `httpx`, `asyncpg` and logging. This chapter's example is the same idea with a console exporter and none of the extra instrumentation.
-- `agent_run_span()` at `agents/python/shared/telemetry.py:233` wraps one agent invocation with the same `gen_ai.operation.name` / `invoke_agent` convention this chapter uses.
-- `a2a_call_span()` at `agents/python/shared/telemetry.py:272` wraps an outbound agent-to-agent call with `SpanKind.CLIENT`, so the orchestrator → specialist hop is one connected span tree instead of two separate traces.
+- `setup_telemetry()` configures OTLP exporters and auto-instrumentation for the OpenAI client, `httpx`, `asyncpg` and logging. This chapter's example is the same idea with a console exporter and none of the extra instrumentation.
+- `agent_run_span()` wraps one agent invocation with the same `gen_ai.operation.name` / `invoke_agent` convention this chapter uses.
+- `a2a_call_span()` wraps an outbound agent-to-agent call with `SpanKind.CLIENT`, so the orchestrator → specialist hop is one connected span tree instead of two separate traces.
 
 The `aspire` service in `docker-compose.yml` (dashboard on `:18888`, OTLP receiver on `:18890`/`18889`) receives those spans and renders the orchestrator → A2A → specialist → tool → LLM call tree.
 

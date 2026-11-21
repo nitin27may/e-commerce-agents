@@ -189,7 +189,7 @@ The Python tests check that the built graph contains all four executors, then ru
 
 In the capstone, the Group Chat orchestration mode runs agents as steps of a workflow: two panelists take turns over a shared transcript to debate a purchase, then a moderator writes a verdict.
 
-`_make_agent_responder()` at `agents/python/orchestrator/modes/group_chat_mode.py:45` constructs a MAF `Agent` per panelist and calls `agent.run(prompt)` inside an `async` closure. That closure is passed as the `Responder` to `_PanelistExecutor` in `agents/python/workflows/group_chat.py`, which awaits the result when it is awaitable (`agents/python/workflows/group_chat.py:73`).
+`_make_agent_responder()` in `agents/python/orchestrator/modes/group_chat_mode.py` constructs a MAF `Agent` per panelist and calls `agent.run(prompt)` inside an `async` closure. That closure is passed as the `Responder` to `_PanelistExecutor` in `agents/python/workflows/group_chat.py`, which awaits the result when it is awaitable (in its `run()` handler).
 
 This is the write-your-own-adapter shape from this chapter. The adapter is a plain async closure instead of an `Executor` subclass, which keeps `group_chat.py` free of any LLM dependency: only `orchestrator/modes/group_chat_mode.py` knows about `Agent`. In the running application you reach this workflow with `mode=group-chat` on `/api/chat`.
 

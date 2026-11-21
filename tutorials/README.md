@@ -159,15 +159,18 @@ to evaluate the result, then the application that uses them.
 
 ## Every chapter
 
-**Every chapter below is complete and its code is gated in CI.** The status columns describe the
+**Every chapter below is written, and every example that ships is gated in CI.** The one port still open is chapter 16's .NET side. The status columns describe the
 runnable examples, not the write-ups.
 
 - **Runnable · tested in CI** — a working example with tests that run on every pull request
   (`.github/workflows/tutorials.yml`).
 - **Runnable · tests pending** — working code, tests not written yet.
+- **Status stub · tested in CI** — a project that builds and is tested, but is a placeholder for the
+  chapter, not a port of it (chapter 16's .NET side; see the footnote). **Status stub · tests
+  pending** is the same without tests.
 - **Not ported** — no equivalent in that language yet.
-- **Guide only** / **Planned** — a written guide with no chapter code of its own (chapters 00 and
-  21; the capstone tours the running application instead).
+- **Guide only** — a finished written guide with no chapter code of its own, by design (chapter 00
+  sets up your environment; chapter 21 tours the running application).
 
 Each chapter's own `README.md` is the canonical, always-current source.
 
@@ -190,13 +193,13 @@ Each chapter's own `README.md` is the canonical, always-current source.
 | 13 | [Concurrent Orchestration](./13-concurrent-orchestration/) | Runnable · tested in CI | Runnable · tested in CI |
 | 14 | [Handoff Orchestration](./14-handoff-orchestration/) | Runnable · tested in CI | Runnable · tested in CI |
 | 15 | [Group Chat Orchestration](./15-group-chat-orchestration/) | Runnable · tested in CI | Runnable · tested in CI |
-| 16 | [Magentic Orchestration](./16-magentic-orchestration/) | Runnable · tested in CI | Runnable · tested in CI [^magentic] |
+| 16 | [Magentic Orchestration](./16-magentic-orchestration/) | Runnable · tested in CI | Status stub · tested in CI [^magentic] |
 | 17 | [Human-in-the-Loop](./17-human-in-the-loop/) | Runnable · tested in CI | Runnable · tested in CI |
 | 18 | [State and Checkpoints](./18-state-and-checkpoints/) | Runnable · tested in CI | Runnable · tested in CI |
 | 19 | [Declarative Workflows](./19-declarative-workflows/) | Runnable · tested in CI | Runnable · tested in CI |
 | 20 | [Workflow Visualization](./20-visualization/) | Runnable · tested in CI | Runnable · tested in CI |
 | 20b | [DevUI: interactive dashboard for agents and workflows](./20b-devui/) | Runnable · tested in CI | Not ported [^devui] |
-| 21 | [Capstone Tour](./21-capstone-tour/) | Planned | Planned |
+| 21 | [Capstone Tour](./21-capstone-tour/) | Guide only | Guide only |
 | 22 | [Group-Chat Debate (Round-Table Orchestration)](./22-group-chat-debate/) | Runnable · tested in CI | Runnable · tested in CI |
 | 23 | [A2A Protocol](./23-a2a-protocol/) | Runnable · tested in CI | Runnable · tested in CI |
 | 24 | [RAG and Grounding](./24-rag-and-grounding/) | Runnable · tested in CI | Runnable · tested in CI |
@@ -297,19 +300,19 @@ Both sides of every chapter produce equivalent observable behavior. If they don'
 
 ### The status table is generated
 
-**The status table is the source of truth, and it really is generated.**
-`scripts/check_tutorial_coverage.py` derives every cell from files on disk — a chapter counts as
-tested because a test project exists, not because someone wrote that it does — and CI fails if the
-committed table has drifted from reality. It used to say it was generated while being maintained by
-hand, which is how it came to describe chapters as ported that were not.
+`scripts/check_tutorial_coverage.py` writes the status table from what is on disk: a chapter counts
+as tested because a test project exists. CI fails if the committed table differs from what the
+script produces, so regenerate it after adding or removing chapter code or tests.
 
-The one remaining gap is chapter 20b, and it is Microsoft's rather than ours: see the footnote under
-the table.
+Two things a directory listing cannot show are declared in the script, each with a comment giving
+the reason: `GUIDE_ONLY` (chapters that are written guides with no chapter code, 00 and 21) and
+`STATUS_STUBS` (a project that builds and is tested but is a placeholder, chapter 16's .NET side).
+Remove a chapter from `STATUS_STUBS` when you port it. The footnotes under the table are
+hand-written; the legend above it must explain every label the table uses, and `--check` fails if
+it does not.
 
-Adding a test project to a chapter is all it takes to move that chapter's cell — there is no
-second place to update, and CI fails if you forget to regenerate.
-
-### Regenerating the status table
+Chapter 20b has no .NET side because DevUI has no stable .NET package; see the footnote under the
+table.
 
 ```bash
 python scripts/check_tutorial_coverage.py            # print what's on disk
@@ -319,36 +322,41 @@ python scripts/check_tutorial_coverage.py --check    # what CI runs
 
 ### Authoring and checking chapters
 
-`tutorials/_template/PLAN.md` is a template for authoring new chapters; individual chapters do not
-ship their own. `python scripts/check_tutorial_readmes.py --check` enforces each README's shape, and
-`python scripts/run_tutorials_keyless.py` runs every chapter with no key (its skip-list carries a
-reason per entry).
+Start a chapter's README from `tutorials/_template/README.md`. `tutorials/_template/PLAN.md` is a
+planning checklist for a new chapter; chapters do not ship their own.
+
+- `python scripts/check_tutorial_readmes.py --check` enforces each README's shape. A chapter's
+  "How this shows up in the capstone" section must point into the application by path plus symbol:
+  a repo-rooted path to a file that exists and a backticked function, class or constant that is in
+  it. Do not cite line numbers.
+- `python scripts/check_tutorial_nav.py --write` regenerates the previous/next footer on every
+  chapter; `--check` is what CI runs.
+- `python scripts/run_tutorials_keyless.py` runs every chapter's `main.py` with no key. Its
+  skip-list carries a reason per entry.
 
 The docs site's tutorials section is built from the learning paths above by
 `scripts/build_docs_site.py`; change the paths here and its `TIERS` structure in the same commit.
 
-### Design notes on how the chapters are scoped
+### How the chapters are scoped
 
-- **Chapter 22** is a sixth orchestration pattern — round-table group chat — added after the
-  capstone. The two language sides differ here, deliberately: Python imports the production
-  `workflows/group_chat.py` module and tours real shipped code, while .NET reimplements the same
-  shape standalone, because production's .NET round-table lives inside
-  `Orchestrator.Modes.GroupChatMode` as an LLM-backed loop rather than a reusable class. Same
-  behaviour; one is a tour and the other is a faithful model.
-- **Chapters 23–27** (A2A protocol, RAG/grounding, guardrails, evals, agent-as-tool) are patterns
-  already live in this repo's production code but never taught. Each stands alone with its own
-  dependency-free runnable example, and each cross-links the matching `docs/concepts/` page instead
-  of re-deriving the "why."
+- **Chapter 22** is a sixth orchestration pattern, round-table group chat. Its two language sides
+  differ on purpose: Python imports the application's `workflows/group_chat.py` module and tours
+  that code, while .NET reimplements the same shape standalone, because the application's .NET
+  round-table lives inside `Orchestrator.Modes.GroupChatMode` as an LLM-backed loop, not a
+  reusable class. The behaviour is the same.
+- **Chapters 23–27** (A2A protocol, RAG/grounding, guardrails, evals, agent-as-tool) teach patterns
+  the application runs. Each stands alone with its own dependency-free runnable example, and each
+  links the matching `docs/concepts/` page instead of re-deriving the "why."
 - **Chapters 28–31** (reflection/critique, planner-executor, subworkflows, retry/compensation) are
-  taught as standalone, dependency-free examples rather than new orchestrator modes, since the mode
-  registry's per-mode SSE/UI/test surface makes a 6th or 7th live mode disproportionate to a single
-  chapter. Ch 29 explicitly cross-references the still-unbuilt Magentic mode as the eventual
-  production version of the planner-executor idea, so a bespoke production planner never has to be
-  reconciled against it later. Ch 30 teaches MAF's real nesting primitive — `WorkflowExecutor` in
-  Python, `SubworkflowBinding` in .NET — and is honest that `return_replace.py` doesn't use it
-  today. Ch 31 is genuinely greenfield — no saga/compensation code exists anywhere in this repo yet.
-- **Chapter 32** is the one exception to that standalone-only rule. Light, proportionate production
-  code — `CostBudgetMiddleware` (`agents/python/shared/guardrails/cost_budget_middleware.py`) —
-  closes a real gap (`estimate_cost()` previously had no runtime consumer, only a post-hoc eval
-  reporter) without adding a new orchestration mode or any UI/SSE surface, so it fit inside one
-  chapter's scope.
+  standalone, dependency-free examples, not orchestrator modes: a new mode needs its own SSE, UI
+  and test surface, which is more than one chapter should carry. The application does not
+  implement these patterns:
+  - Chapter 29 points to Magentic, which the application does not have, as the re-planning form of
+    planner-executor.
+  - Chapter 30 teaches MAF's nesting primitive, `WorkflowExecutor` in Python and
+    `SubworkflowBinding` in .NET. The application's `return_replace.py` does not use it.
+  - Chapter 31's saga and compensation code exists only in the chapter.
+- **Chapter 32** is the exception to the standalone rule: it is backed by application code,
+  `CostBudgetMiddleware` (`agents/python/shared/guardrails/cost_budget_middleware.py`), which is
+  the runtime consumer of `estimate_cost()`. It adds no orchestration mode and no UI or SSE
+  surface.

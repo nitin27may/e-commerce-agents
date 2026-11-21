@@ -194,9 +194,9 @@ Both suites (`tutorials/10-workflow-events-and-builder/python/tests/test_events.
 
 In the capstone, a normalized event stream is what lets the chat page show which step of a workflow is running, and light up the nodes of its diagram, while the answer is still being produced.
 
-- `agents/python/orchestrator/events.py:52` defines `OrchestrationEvent`, one event shape (`kind`, `node_id`, `agent`, `payload`, `ts_ms`) for workflow events, agent-run events and tool-call steps. The web UI consumes that single protocol.
-- `_build_maf_workflow()` at `agents/python/workflows/pre_purchase.py:291` is a `WorkflowBuilder` graph that fans out and back in. `add_fan_out_edges(fan_out, [reviews, stock, price])` runs the reviews, stock and price-history executors concurrently, then `add_fan_in_edges([reviews, stock, price], merge)` joins them before `synthesis`.
-- `execute()` (`agents/python/workflows/pre_purchase.py:307`) streams that workflow with `workflow.run(state, stream=True)` and filters on `event.type == "output"`. This chapter's `run_with_events()` uses the same loop, with a progress/output split where the capstone has a single `ResearchState` output.
+- `agents/python/orchestrator/events.py` defines `OrchestrationEvent`, one event shape (`kind`, `node_id`, `agent`, `payload`, `ts_ms`) for workflow events, agent-run events and tool-call steps. The web UI consumes that single protocol.
+- `_build_maf_workflow()` in `agents/python/workflows/pre_purchase.py` is a `WorkflowBuilder` graph that fans out and back in. `add_fan_out_edges(fan_out, [reviews, stock, price])` runs the reviews, stock and price-history executors concurrently, then `add_fan_in_edges([reviews, stock, price], merge)` joins them before `synthesis`.
+- `execute()` (`agents/python/workflows/pre_purchase.py`) streams that workflow with `workflow.run(state, stream=True)` and filters on `event.type == "output"`. This chapter's `run_with_events()` uses the same loop, with a progress/output split where the capstone has a single `ResearchState` output.
 
 ## What's next
 
