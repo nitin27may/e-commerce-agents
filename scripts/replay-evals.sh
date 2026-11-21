@@ -58,10 +58,13 @@ SPECIALIST_PIDS=()
 # util-linux `setsid` is absent on macOS. Fall back to a tiny Python exec that
 # calls os.setsid() first, so the process-group cleanup below works the same.
 run_in_new_session() {
+  # `exec` matters: this function runs in the backgrounded subshell, so without it $! is the
+  # subshell's pid while the new session's group id is its child's. stop_specialists signals
+  # `-$!`, so it would miss the group and leave the specialists (and the lock they inherit) running.
   if command -v setsid > /dev/null 2>&1; then
-    setsid "$@"
+    exec setsid "$@"
   else
-    python3 -c 'import os, sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])' "$@"
+    exec python3 -c 'import os, sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])' "$@"
   fi
 }
 
