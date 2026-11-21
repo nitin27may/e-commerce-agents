@@ -73,6 +73,7 @@ This folder contains the full technical documentation for E-Commerce Agents.
 | [troubleshooting.md](troubleshooting.md) | Common local-stack issues and fixes |
 | [quick-start.md](quick-start.md) | First run: the no-key path, the demo images, from source, Windows, the .NET stack |
 | [configuration.md](configuration.md) | One `.env`, how it reaches each service, every provider and embedding setting |
+| [model-providers.md](model-providers.md) | How to run each model provider, what is verified versus untested, known caveats |
 | [demo-guide.md](demo-guide.md) | Test users, the agent catalog, scenarios to try, the screens gallery |
 | [releasing.md](releasing.md) | Cutting a release: version bump, images on GHCR, retention |
 | [roadmap.md](roadmap.md) | What shipped, what is next, what is deliberately not planned |
