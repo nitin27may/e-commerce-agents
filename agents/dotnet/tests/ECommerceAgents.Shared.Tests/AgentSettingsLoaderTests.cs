@@ -143,6 +143,7 @@ public sealed class AgentSettingsLoaderTests
             ["CorsAllowedOrigins"] = "CORS_ALLOWED_ORIGINS",
             ["CostBudgetMode"] = "COST_BUDGET_MODE",
             ["GroundingMode"] = "GROUNDING_MODE",
+            ["HistoryCompactionKeepLastGroups"] = "HISTORY_COMPACTION_KEEP_LAST_GROUPS",
         };
 
         var unbound = envBacked

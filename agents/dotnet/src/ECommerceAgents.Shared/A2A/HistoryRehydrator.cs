@@ -45,7 +45,13 @@ public static class HistoryRehydrator
     /// the LIMIT, so fifty rows containing any non-user/assistant message
     /// yielded fewer than fifty usable ones.
     /// </remarks>
-    public static async Task<List<HistoryEntry>?> RehydrateAsync(DatabasePool pool, string sessionId)
+    /// <param name="pool">Database pool.</param>
+    /// <param name="sessionId">Conversation UUID.</param>
+    /// <param name="keepLastGroups">
+    /// B-15: trim to the last N message groups (<see cref="HistoryCompaction"/>); 0 (default) returns the rows untouched.
+    /// </param>
+    public static async Task<List<HistoryEntry>?> RehydrateAsync(
+        DatabasePool pool, string sessionId, int keepLastGroups = 0)
     {
         if (string.IsNullOrEmpty(sessionId) || !Guid.TryParse(sessionId, out var conversationId))
         {
@@ -78,9 +84,10 @@ public static class HistoryRehydrator
                   ORDER BY created_at ASC",
                 new { id = conversationId, limit = SessionHistoryLimit, caller }
             );
-            return rows
+            var history = rows
                 .Select(r => new HistoryEntry((string)r.role, (string)r.content))
                 .ToList();
+            return HistoryCompaction.Compact(history, keepLastGroups);
         }
         catch
         {
