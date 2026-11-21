@@ -220,6 +220,7 @@ Time sinks: `uv lock` with a different local uv version rewrites unrelated marke
 
 Append newest first. One line per landed change: date, PR, what, and anything left unverified.
 
+- 2026-11-21: maintainer decisions recorded in the plan: D-1 not yet (tier-2 infra parked; keyed evals on the existing Azure OpenAI key still allowed), all providers supported with Azure gpt-5.1 + OpenAI direct as reference baselines, D-6 all six agents on Foundry (staged route), D-7 one fixed judge.
 - 2026-11-21: EV-12 first half on `claude/new-session-ytrmq5`: prices moved out of `shared/cost.py` and `CostEstimator.cs` into `config/pricing/models.yaml` (D-8 = a), unknown model costs null, enforce fails closed when unpriced, CLAUDE.md "Model pricing". Python and .NET cost tests pass; DB-backed tests on both stacks need Docker (not available in the cloud container) and were not run. Two `test_azure_identity_auth.py` failures predate the change.
 - 2026-11-21: same block reframed around the goal "any provider, a trustworthy eval for it; Azure opt-in" (tiers 0-2; EV-10 to EV-14, RP-6 added; EV-6 provider-neutral). Found: `shared/cost.py` prices unknown models as gpt-4.1 (EV-12).
 - 2026-11-21: plan block "Azure track, evals and run profiles" added (workstreams EV, AZ, RP; decisions D-6 Foundry hosting scope and D-7 judge model opened). Plan only, no code.
