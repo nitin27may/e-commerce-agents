@@ -6,6 +6,7 @@ import {
   useRef,
   useCallback,
   useMemo,
+  useSyncExternalStore,
 } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
@@ -113,6 +114,11 @@ function loadStoredOrchestrationMode(conversationId: string | null): string {
   } catch {
     return "";
   }
+}
+
+// Storage changes only through this tab's own writes, which also set component state.
+function subscribeNever(): () => void {
+  return () => {};
 }
 
 function storeOrchestrationMode(conversationId: string | null, mode: string): void {
@@ -325,7 +331,20 @@ export default function ChatPage() {
   const [isResponding, setIsResponding] = useState(false);
   const [thinkingLabel, setThinkingLabel] = useState<string>("Routing to specialists...");
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [orchestrationMode, setOrchestrationMode] = useState<string>("");
+  // The mode remembered for the active conversation comes from localStorage, which the server
+  // cannot read: useSyncExternalStore renders "" on the server and during hydration, then the
+  // stored value. A pick made in this session (or a demo chip's mode) overrides it for the
+  // conversation it was made in only, so a new conversation falls back to what was stored for it.
+  const storedOrchestrationMode = useSyncExternalStore(
+    subscribeNever,
+    () => loadStoredOrchestrationMode(activeConversationId),
+    () => "",
+  );
+  const [modeOverride, setModeOverride] = useState<{ conversationId: string | null; mode: string } | null>(null);
+  const orchestrationMode =
+    modeOverride && modeOverride.conversationId === activeConversationId
+      ? modeOverride.mode
+      : storedOrchestrationMode;
 
   const searchParams = useSearchParams();
   const pendingQueryRef = useRef<string | null>(null);
@@ -438,14 +457,9 @@ export default function ChatPage() {
     loadMessages(activeConversationId);
   }, [activeConversationId]);
 
-  // ---- Restore the orchestration mode remembered for this conversation ----
-  useEffect(() => {
-    setOrchestrationMode(loadStoredOrchestrationMode(activeConversationId));
-  }, [activeConversationId]);
-
   const handleModeChange = useCallback(
     (mode: string) => {
-      setOrchestrationMode(mode);
+      setModeOverride({ conversationId: activeConversationId, mode });
       storeOrchestrationMode(activeConversationId, mode);
     },
     [activeConversationId],
@@ -508,7 +522,7 @@ export default function ChatPage() {
     const runMode = chip ? chip.mode : orchestrationMode;
     const startsNew = chip?.newConversation === true;
     const conversationId = startsNew ? null : activeConversationId;
-    if (chip) setOrchestrationMode(chip.mode);
+    if (chip) setModeOverride({ conversationId: activeConversationId, mode: chip.mode });
 
     // Set initial thinking label from the selected mode
     const modeEntry = AGENT_MODES.find((m) => m.id === agentMode);

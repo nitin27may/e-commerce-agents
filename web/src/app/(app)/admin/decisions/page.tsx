@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Gauge, Loader2, Play, RefreshCw } from "lucide-react";
+import { useLoadEffect } from "@/lib/use-load-effect";
 import { useAuth } from "@/lib/auth-context";
 import { api, type AutonomyBudget, type AutonomyDecision, type AutonomyDecisionsResponse } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -129,9 +130,7 @@ export default function AutonomyDecisionsPage() {
     }
   }
 
-  useEffect(() => {
-    if (user && isAdmin) load();
-  }, [user, isAdmin, load]);
+  useLoadEffect(load, Boolean(user && isAdmin));
 
   useEffect(() => () => inflight.current?.abort(), []);
 

@@ -63,9 +63,13 @@ export function ModeComparison({ initialPrompt = "" }: ModeComparisonProps) {
       .catch(() => setModes([]));
   }, [open]);
 
-  useEffect(() => {
+  // Seed the prompt when the dialog opens or the suggested prompt changes (adjusting state
+  // during render, not in an effect).
+  const [seed, setSeed] = useState({ open, initialPrompt });
+  if (seed.open !== open || seed.initialPrompt !== initialPrompt) {
+    setSeed({ open, initialPrompt });
     if (open) setPrompt(initialPrompt);
-  }, [open, initialPrompt]);
+  }
 
   function toggleMode(name: string) {
     setSelected((prev) => (prev.includes(name) ? prev.filter((m) => m !== name) : [...prev, name]));

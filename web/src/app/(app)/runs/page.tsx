@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, type RunEntry, type RunTimelineEntry } from "@/lib/api";
+import { useLoadEffect } from "@/lib/use-load-effect";
 import { useAuth } from "@/lib/auth-context";
 import { asArray, asNumber } from "@/lib/guards";
 import { ErrorState } from "@/components/error-state";
@@ -37,7 +38,8 @@ export default function RunsPage() {
   const [checkpoints, setCheckpoints] = useState<Record<string, CheckpointData>>({});
   const limit = 20;
 
-  useEffect(() => {
+  const loadRuns = useCallback(() => {
+    void reloadKey; // bumping it re-runs this loader
     setLoading(true);
     api
       .getRuns({ limit, offset: page * limit })
@@ -63,6 +65,7 @@ export default function RunsPage() {
         setLoading(false);
       });
   }, [page, reloadKey]);
+  useLoadEffect(loadRuns, true);
 
   function refreshCheckpoints(runId: string) {
     api

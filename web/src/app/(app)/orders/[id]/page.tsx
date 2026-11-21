@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
+import { useLoadEffect } from "@/lib/use-load-effect";
 import { useAuth } from "@/lib/auth-context";
 import { api, apiUrl, type OrderDetail, type OrderLine as OrderItem, type OrderReturn as ReturnInfo } from "@/lib/api";
 
@@ -280,9 +281,7 @@ export default function OrderDetailPage() {
     }
   }, [orderId]);
 
-  useEffect(() => {
-    if (user && orderId) loadOrder();
-  }, [user, orderId, loadOrder]);
+  useLoadEffect(loadOrder, Boolean(user && orderId));
 
   const handleCancelOrder = async () => {
     if (!cancelReason.trim()) return;

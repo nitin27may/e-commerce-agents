@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useLoadEffect } from "@/lib/use-load-effect";
 import { useAuth } from "@/lib/auth-context";
 import { api, type SellerOrder, type SellerStats } from "@/lib/api";
 import { asArray, asNumber } from "@/lib/guards";
@@ -72,9 +73,7 @@ export default function SellerDashboardPage() {
     }
   }, []);
 
-  useEffect(() => {
-    if (user && isSeller) loadData();
-  }, [user, isSeller, loadData]);
+  useLoadEffect(loadData, Boolean(user && isSeller));
 
   if (authLoading) return null;
 

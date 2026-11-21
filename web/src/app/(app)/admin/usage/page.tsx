@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useLoadEffect } from "@/lib/use-load-effect";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
 import { Separator } from "@/components/ui/separator";
@@ -190,9 +191,7 @@ export default function AdminUsagePage() {
     }
   }, []);
 
-  useEffect(() => {
-    if (user && isAdmin) loadStats();
-  }, [user, isAdmin, loadStats]);
+  useLoadEffect(loadStats, Boolean(user && isAdmin));
 
   if (authLoading) return null;
 

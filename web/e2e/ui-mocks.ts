@@ -21,17 +21,17 @@ const USAGE = {
     { agent_name: "orchestrator", request_count: 5200, tokens_in: 1800000, tokens_out: 520000, avg_duration_ms: 1450 },
     { agent_name: "product_discovery", request_count: 3100, tokens_in: 980000, tokens_out: 240000, avg_duration_ms: 980 },
   ],
-  daily: [
-    { date: "2026-05-27", request_count: 1890, tokens_in: 680000, tokens_out: 188000 },
-    { date: "2026-05-28", request_count: 2360, tokens_in: 820000, tokens_out: 230000 },
-    { date: "2026-05-29", request_count: 2410, tokens_in: 500000, tokens_out: 152000 },
+  daily_trend: [
+    { day: "2026-05-27", request_count: 1890, unique_users: 40 },
+    { day: "2026-05-28", request_count: 2360, unique_users: 40 },
+    { day: "2026-05-29", request_count: 2410, unique_users: 40 },
   ],
 };
 
 const ORDERS = {
   orders: [
-    { id: "a1b2c3d4e5", status: "delivered", total: 329.98, created_at: "2026-05-20" },
-    { id: "f6g7h8i9j0", status: "shipped", total: 89.5, created_at: "2026-05-26" },
+    { id: "a1b2c3d4e5", status: "delivered", total: 329.98, date: "2026-05-20" },
+    { id: "f6g7h8i9j0", status: "shipped", total: 89.5, date: "2026-05-26" },
   ],
 };
 

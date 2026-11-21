@@ -2,14 +2,12 @@
 
 import {
   createContext,
-  useCallback,
   useContext,
-  useEffect,
   useMemo,
-  useState,
+  useSyncExternalStore,
 } from "react";
-import { api, type CartResponse } from "@/lib/api";
-import { useAuth } from "@/lib/auth-context";
+import { type CartResponse } from "@/lib/api";
+import { cartStore } from "@/lib/cart-store";
 
 interface CartContextValue {
   cart: CartResponse | null;
@@ -24,70 +22,23 @@ interface CartContextValue {
 const CartContext = createContext<CartContextValue | null>(null);
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuth();
-  const [cart, setCart] = useState<CartResponse | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-
-  const refreshCart = useCallback(async () => {
-    if (!isAuthenticated) {
-      setCart(null);
-      return;
-    }
-    try {
-      const data = await api.getCart();
-      setCart(data);
-    } catch {
-      // Silently fail — cart is non-critical
-    }
-  }, [isAuthenticated]);
-
-  // Load cart when auth changes
-  useEffect(() => {
-    if (isAuthenticated) {
-      setIsLoading(true);
-      refreshCart().finally(() => setIsLoading(false));
-    } else {
-      setCart(null);
-    }
-  }, [isAuthenticated, refreshCart]);
-
-  const addItem = useCallback(
-    async (productId: string, quantity: number = 1) => {
-      await api.addToCart(productId, quantity);
-      await refreshCart();
-    },
-    [refreshCart]
+  const { cart, isLoading } = useSyncExternalStore(
+    cartStore.subscribe,
+    cartStore.getSnapshot,
+    cartStore.getServerSnapshot,
   );
-
-  const updateItem = useCallback(
-    async (itemId: string, quantity: number) => {
-      await api.updateCartItem(itemId, quantity);
-      await refreshCart();
-    },
-    [refreshCart]
-  );
-
-  const removeItem = useCallback(
-    async (itemId: string) => {
-      await api.removeCartItem(itemId);
-      await refreshCart();
-    },
-    [refreshCart]
-  );
-
-  const itemCount = cart?.item_count ?? 0;
 
   const value = useMemo<CartContextValue>(
     () => ({
       cart,
-      itemCount,
+      itemCount: cart?.item_count ?? 0,
       isLoading,
-      addItem,
-      updateItem,
-      removeItem,
-      refreshCart,
+      addItem: cartStore.addItem,
+      updateItem: cartStore.updateItem,
+      removeItem: cartStore.removeItem,
+      refreshCart: cartStore.refreshCart,
     }),
-    [cart, itemCount, isLoading, addItem, updateItem, removeItem, refreshCart]
+    [cart, isLoading],
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;

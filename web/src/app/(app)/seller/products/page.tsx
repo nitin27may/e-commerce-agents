@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useLoadEffect } from "@/lib/use-load-effect";
 import { useAuth } from "@/lib/auth-context";
 import { api, type SellerProduct } from "@/lib/api";
 import {
@@ -63,9 +64,7 @@ export default function SellerProductsPage() {
     }
   }, []);
 
-  useEffect(() => {
-    if (user && isSeller) loadProducts();
-  }, [user, isSeller, loadProducts]);
+  useLoadEffect(loadProducts, Boolean(user && isSeller));
 
   if (authLoading) return null;
 

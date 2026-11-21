@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useLoadEffect } from "@/lib/use-load-effect";
 import { useAuth } from "@/lib/auth-context";
 import { api, type UserProfile as Profile } from "@/lib/api";
 import { Separator } from "@/components/ui/separator";
@@ -143,12 +144,8 @@ export default function ProfilePage() {
     }
   }, []);
 
-  useEffect(() => {
-    if (user) {
-      loadProfile();
-      loadMemories();
-    }
-  }, [user, loadProfile, loadMemories]);
+  useLoadEffect(loadProfile, Boolean(user));
+  useLoadEffect(loadMemories, Boolean(user));
 
   async function handleDeleteMemory(id: string) {
     setDeletingId(id);

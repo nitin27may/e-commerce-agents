@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
+import { useLoadEffect } from "@/lib/use-load-effect";
 import { useAuth } from "@/lib/auth-context";
 import { useCart } from "@/lib/cart-context";
 import { api, type ProductDetail } from "@/lib/api";
@@ -215,9 +216,7 @@ export default function ProductDetailPage() {
     }
   }, [productId]);
 
-  useEffect(() => {
-    if (user && productId) loadProduct();
-  }, [user, productId, loadProduct]);
+  useLoadEffect(loadProduct, Boolean(user && productId));
 
   if (authLoading || !user) return null;
 

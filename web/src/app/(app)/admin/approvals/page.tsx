@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useLoadEffect } from "@/lib/use-load-effect";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
 import { toast } from "@/lib/toast";
@@ -127,9 +128,7 @@ export default function AdminApprovalsPage() {
     }
   }, [filter]);
 
-  useEffect(() => {
-    if (user && isAdmin) load();
-  }, [user, isAdmin, load]);
+  useLoadEffect(load, Boolean(user && isAdmin));
 
   async function handleApprove(req: HitlRequest) {
     setProcessing((p) => new Set(p).add(req.id));

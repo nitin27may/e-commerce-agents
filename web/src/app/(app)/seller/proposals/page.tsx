@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { Lightbulb, Loader2, Sparkles } from "lucide-react";
+import { useLoadEffect } from "@/lib/use-load-effect";
 import { useAuth } from "@/lib/auth-context";
 import { api, type ProposalLineDecision, type SellerProposal } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -29,9 +30,7 @@ export default function SellerProposalsPage() {
     }
   }, []);
 
-  useEffect(() => {
-    if (user && isSeller) load();
-  }, [user, isSeller, load]);
+  useLoadEffect(load, Boolean(user && isSeller));
 
   async function generate() {
     setGenerating(true);
