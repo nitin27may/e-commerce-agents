@@ -367,6 +367,63 @@ OPENAI_API_KEY=sk-your-key \
   uv run --project agents/python python -m scripts.generate_embeddings
 ```
 
+## Running under Aspire (alternative to compose)
+
+`agents/dotnet/src/ECommerceAgents.AppHost` runs the same stack under [Aspire](https://aspire.dev) instead of
+`docker-compose.yml`. Compose stays the reference path (CI, `dev.sh`, the published images); the AppHost
+is for the Aspire dashboard's resource graph, one-command local debugging of the .NET projects, and
+mixing stacks per service. It reads the same variable names with the same defaults as compose
+(`EnvironmentContract.cs` copies them), and the two never share a data volume.
+
+**Prerequisites:** the .NET 10 SDK, Docker (Postgres, Redis, the seeder and the auth-server are containers),
+`uv` (a single `uv sync` of `agents/python` feeds the Python processes), Node and `pnpm` (the frontend runs as
+`pnpm dev`). No Aspire workload or CLI is needed: the AppHost is a normal project.
+
+```bash
+# .NET orchestrator and specialists (default)
+dotnet run --project agents/dotnet/src/ECommerceAgents.AppHost
+
+# Python orchestrator and specialists, run as uvicorn apps
+AgentStack=python dotnet run --project agents/dotnet/src/ECommerceAgents.AppHost
+
+# One service on the other stack (a third way to run a mixed stack, beside docker-compose.mixed.yml)
+AgentStackOverrides__order-management=python dotnet run --project agents/dotnet/src/ECommerceAgents.AppHost
+```
+
+Settings are plain configuration, so an environment variable, `--Name=value` after `--`, or user secrets all
+work: `AgentStack` (`dotnet` | `python`), `AgentStackOverrides:<specialist>`, `Seed` (default `true`; `false` skips
+the seeder) and `Mcp` (default `false`; adds the MCP servers, like compose profile `mcp`). Keys such as
+`OPENAI_API_KEY` and `LLM_PROVIDER` are read from the AppHost's own environment and passed on, the way
+`${VAR:-default}` does in compose. The dashboard is at http://localhost:15888 (`Properties/launchSettings.json`).
+
+| Resource | What it is |
+|----------|-----------|
+| `postgres`, `ecommerce-agents` | `pgvector/pgvector:pg16`, database `ecommerce_agents`, volume `e-commerce-agents-aspire-pgdata` |
+| `redis` | Redis |
+| `migrate`, `seeder` | One-shot containers built from `agents/python/Dockerfile`. `scripts/migrate.py` is still the only migration runner (no `init.sql` mount); the seeder waits for it |
+| `auth-server` | The shared Python auth-server container on :8090 |
+| `orchestrator` (:8080), five specialists (:8081 to :8085) | .NET projects, or uvicorn apps under `AgentStack=python`; `AGENT_REGISTRY` is built from their endpoints |
+| `outbox-worker` | The Python worker, on both stacks |
+| `frontend` | `pnpm dev` on :3000 with `ORCHESTRATOR_URL` set |
+| `python-deps` | One `uv sync --frozen` in `agents/python`, awaited by every Python process |
+
+Tests: `dotnet test agents/dotnet/tests/ECommerceAgents.AppHost.Tests` builds the application model with
+`DistributedApplicationTestingBuilder` and inspects it. Nothing is started, so no Docker is needed.
+
+### Gotchas
+
+- **It binds the compose ports** (8080 to 8085, 8090, 3000), so stop compose first.
+- **Aspire is pinned to 13.6.5 on purpose.** 17.0.0 is newer on nuget.org but marks `Aspire.AppHost.Sdk` and
+  the `ProjectReference` resource model obsolete (ASPIRE012) and moves to the Aspire CLI bundle. Moving to it
+  means `AddDotnetProject` and a new test harness; it is a separate piece of work.
+- The AppHost project sets `CentralPackageTransitivePinningEnabled=false`, because Aspire needs newer
+  `Microsoft.Extensions.*` than the repo-wide pins; the services themselves keep the pins.
+- Host-side processes reach the auth-server at `http://localhost:8090`, which is also its issuer; containers
+  reach it by resource name.
+- **A real boot is not covered by CI.** The model tests prove names, wiring and the env contract. Port binding
+  of the uvicorn apps, `WithPnpm()` and the first-run image builds have not been exercised by a test.
+- Secrets are skipped when publishing a manifest. The AppHost is a local-development tool, not a deployment path.
+
 ## 8. Port Map
 
 | Port | Service | Protocol | Notes |

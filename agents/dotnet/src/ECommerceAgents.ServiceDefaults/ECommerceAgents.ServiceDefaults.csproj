@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <Description>Shared service defaults for ECommerceAgents processes run under the Aspire AppHost: telemetry (delegates to TelemetrySetup) and a liveness check.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="..\ECommerceAgents.Shared\ECommerceAgents.Shared.csproj" />
+  </ItemGroup>
+</Project>
