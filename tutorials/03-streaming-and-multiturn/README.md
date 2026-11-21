@@ -1,24 +1,30 @@
 # Chapter 03 — Streaming and Multi-turn
 
+Print an agent's answer as the model produces it, and keep one conversation going across several questions.
+
+**You will learn to:**
+
+- Stream an answer chunk by chunk instead of waiting for the whole response
+- Carry conversation history across turns with an `AgentSession`
+- Start a fresh conversation by creating a new session
+
 ## Why this chapter
 
-Two small upgrades to the Chapter 01 agent:
+This chapter makes two small upgrades to the Chapter 01 agent:
 
-1. **Streaming** — tokens appear in the terminal as the LLM produces them, instead of all at once when the response is done. For interactive UX this is the difference between "felt broken" and "felt fast". It's exactly what powers the capstone's chat UI: the orchestrator's `/api/chat/stream` endpoint sends the same kind of incremental chunks over SSE as a customer watches an answer about their order status build up word by word.
-2. **Multi-turn** — a *session* (`AgentSession` in both languages) carries conversation history between `.run()` calls. Ask *"What's Python?"* and then *"How old is it?"* — the second turn resolves "it" correctly because both turns share one session. In the capstone, a shopper asking "is it in stock?" right after "tell me about the wireless headphones" only works because the specialist agent rehydrates that same conversation history.
-
-These are independent concepts, but in practice every interactive chat UI needs both, so we teach them together.
+1. **Streaming.** Tokens appear in the terminal as the LLM produces them, instead of all at once when the response is done. In an interactive UI this is what makes a slow answer feel fast. The chat UI of the full application in this repo (the capstone) works this way: the orchestrator's `/api/chat/stream` endpoint sends incremental chunks over SSE (server-sent events), and a customer watches an answer about their order build up word by word.
+2. **Multi-turn.** A *session* (`AgentSession` in both languages) carries conversation history between `.run()` calls. Ask *"What's Python?"* and then *"How old is it?"*, and the second turn resolves "it" correctly because both turns share one session. In the full application, a shopper can ask "is it in stock?" right after "tell me about the wireless headphones" because the specialist agent reloads that conversation's history.
 
 ## Prerequisites
 
 - Completed [Chapter 02 — Adding Tools](../02-add-tools/)
-- No API key needed: with none set, `main.py` replays recorded responses and prints one line saying so. To use a live model instead, put `OPENAI_API_KEY` (or the `AZURE_OPENAI_*` variables) in the repo-root `.env`
+- No API key needed: with none set, `main.py` replays recorded responses and prints one line saying so. The recordings cover the two questions shown under Python below. To ask your own, put `OPENAI_API_KEY` (or the `AZURE_OPENAI_*` variables) in the repo-root `.env`.
 
 ## The concept
 
-**Streaming** switches from `agent.run(q)` (one `AgentResponse`, returned after the model finishes) to `agent.run(q, stream=True)` (an async iterator of `AgentResponseUpdate` objects). Each update carries a fragment of text; concatenating them produces the full answer. Nothing about *what* the model returns changes — only how quickly you can start showing it to a user.
+**Streaming** switches from `agent.run(q)` to `agent.run(q, stream=True)`. The first returns one `AgentResponse` after the model finishes. The second returns an async iterator of `AgentResponseUpdate` objects. Each update carries a fragment of text, and concatenating them produces the full answer. *What* the model returns does not change, only how soon you can start showing it to a user.
 
-**Sessions** are an opaque container of conversation state. Create one, pass it to every `.run(...)` call for that conversation, and the model sees the accumulated history on each turn. Throw it away (or create a new one) to reset context — that's exactly what a "new conversation" button does in a chat UI.
+**Sessions** are an opaque container of conversation state. Create one, pass it to every `.run(...)` call for that conversation, and the model sees the accumulated history on each turn. Create a new one to reset the context. That is what a "new conversation" button does in a chat UI.
 
 The diagram below shows both: tokens streaming back within a single turn, and history accumulating across two turns of one session.
 
@@ -51,23 +57,37 @@ sequenceDiagram
   A->>S: append turn 2 (Q + A)
 ```
 
-The second question never mentions Python by name — the agent answers correctly only because the session carried turn 1's history into turn 2's prompt.
+The second question never mentions Python by name. The agent answers correctly only because the session carried turn 1's history into turn 2's prompt.
 
 ## Python
 
 Source: [`python/main.py`](./python/main.py).
 
+Run from the repo root. Pass the questions as arguments; each one is a turn on the same session:
+
 ```bash
 uv sync --project tutorials
-uv run --project tutorials python tutorials/03-streaming-and-multiturn/python/main.py
-```
-
-Pass questions as arguments for a scripted one-shot run, or omit them for an interactive REPL:
-
-```bash
 uv run --project tutorials python tutorials/03-streaming-and-multiturn/python/main.py \
   "What is Python in one line?" \
-  "How old is it? Answer with a year only."
+  "What year was it first released? Answer with the year only."
+```
+
+You should see:
+
+```text
+No LLM key found - replaying the recorded fixture (set OPENAI_API_KEY or the AZURE_OPENAI_* variables for a live run).
+
+Q: What is Python in one line?
+A: Python is a high-level, interpreted programming language known for its readability, simplicity, and versatility across various applications.
+
+Q: What year was it first released? Answer with the year only.
+A: 1991
+```
+
+With a key you can ask anything, or omit the arguments for an interactive prompt (an empty line quits):
+
+```bash
+uv run --project tutorials python tutorials/03-streaming-and-multiturn/python/main.py
 ```
 
 The core of the chapter is two small functions in `main.py`:
@@ -99,17 +119,17 @@ async def chat(agent: Agent, questions: list[str]) -> list[list[str]]:
     return all_chunks
 ```
 
-`session = agent.create_session()` happens once, outside the loop; every question in `chat()` reuses it. `stream_answer` never sees the session's contents directly — it just hands it to `agent.run(..., stream=True, session=session)` and MAF handles reading and appending history around the call.
+`session = agent.create_session()` runs once, outside the loop, and every question in `chat()` reuses it. `stream_answer` never looks inside the session. It hands it to `agent.run(..., stream=True, session=session)`, and MAF (Microsoft Agent Framework) reads and appends the history around the call.
 
 ## Notebook
 
-`tutorials/03-streaming-and-multiturn/python/notebook.ipynb` walks through the same code one cell at a time: it streams two turns on one session and counts the chunks per turn. Every cell imports the chapter's own `main.py` (its instructions, tools and helpers), and every prompt is the exact string the replay fixtures were recorded with, so it runs with no key.
+`tutorials/03-streaming-and-multiturn/python/notebook.ipynb` walks through the same code one cell at a time. It streams two turns on one session and counts the chunks per turn. The cells import the chapter's own `main.py` and use the exact prompts the replay fixtures were recorded with, so the notebook runs with no key.
 
 ```bash
 uv sync --project tutorials --extra dev   # installs ipykernel, nbclient and nbformat
 ```
 
-Open the notebook in VS Code or JupyterLab and pick the `tutorials/.venv` interpreter as the kernel. To run it headless, the way CI does: `uv run --project tutorials pytest tutorials/tests/test_notebooks.py -v`. Committed notebooks carry no outputs; `uv run --project tutorials python scripts/strip_notebook_outputs.py` cleans one before you commit. Edit a prompt in a cell and a replay run reports a missing fixture, because the prompt is part of the fixture's key; set `OPENAI_API_KEY` (or the Azure variables) to try your own wording live.
+Open the notebook in VS Code or JupyterLab and pick the `tutorials/.venv` interpreter as the kernel. If you edit a prompt, a replay run reports a missing fixture, because the prompt is part of the fixture's key. Set `OPENAI_API_KEY` (or the Azure variables) to try your own wording live.
 
 ## .NET
 
@@ -120,7 +140,9 @@ cd tutorials/03-streaming-and-multiturn/dotnet
 dotnet run -- "What is Python in one line?" "How old is it? Answer with a year only."
 ```
 
-The equivalent shape:
+The command changes into the chapter's `dotnet` folder first. `dotnet run` calls a live model, so it needs a key in the repo-root `.env`. The .NET tests (`dotnet test tutorials/03-streaming-and-multiturn/dotnet/tests/Streaming.Tests.csproj`, from the repo root) need no key, but without one they return early, so use the Python side for a keyless run.
+
+The equivalent code:
 
 ```csharp
 public static async Task<List<string>> StreamAnswer(AIAgent agent, string question, AgentSession thread)
@@ -152,7 +174,7 @@ public static async Task<List<List<string>>> Chat(AIAgent agent, IReadOnlyList<s
 }
 ```
 
-Same behavior as the Python version: one `AgentSession` created before the loop, reused across every `StreamAnswer` call.
+The behavior matches the Python version: one `AgentSession` is created before the loop and reused across every `StreamAnswer` call.
 
 ## Side-by-side differences
 
@@ -164,35 +186,36 @@ Same behavior as the Python version: one `AgentSession` created before the loop,
 | Session creation | `agent.create_session()` (sync) | `await agent.CreateSessionAsync()` (async) |
 | Session type | `AgentSession` | `AgentSession` |
 
-The .NET side needs `await` on session creation because `CreateSessionAsync` reaches the service for providers that store sessions server-side (e.g., the Assistants API). In Python the same call is synchronous for the in-process case.
+The .NET side needs `await` on session creation because `CreateSessionAsync` reaches the service for providers that store sessions server-side (for example the Assistants API). In Python the same call is synchronous for the in-process case.
 
 ## Gotchas
 
-- **Don't print updates with a trailing newline.** `update.text` is meant to be concatenated; each chunk is a partial fragment, not a full line — printing with `end=""` (Python) or `Console.Write` (.NET) is deliberate, not an oversight.
-- **One session per conversation.** Creating a new session every turn silently degrades you back to single-turn behavior. That's sometimes what you want (a new user → a fresh session), but it's easy to do by accident inside a loop.
-- **`update.text` can be empty.** Some updates carry tool-call information or metadata only. Skip empty strings when printing or accumulating.
-- **Custom `BaseChatClient` subclasses must use `_build_response_stream`, not a bare `ResponseStream(...)`.** This chapter's `LLM_PROVIDER=replay` mode runs through `ReplayChatClient` (`tutorials/_shared/replay_client.py`), a `BaseChatClient` subclass. Its `_inner_get_response` returns `self._build_response_stream(_gen())` rather than constructing `ResponseStream(_gen())` directly — skipping `_build_response_stream` wires no finalizer, which works for a plain `async for update in agent.run(stream=True)` loop but breaks any MAF-internal caller that needs `ResponseStream.get_final_response()` (e.g., an `AgentExecutor` inside a `WorkflowBuilder`). If you write your own chat client for testing or replay, use `_build_response_stream`.
-- **.NET `AgentSession` disposal.** Not shown above for brevity — in production, wrap creation in `await using` to release resources deterministically.
+- **The answer prints one word per line.** Each `update.text` is a partial fragment meant to be concatenated, not a full line. Print with `end=""` (Python) or `Console.Write` (.NET).
+- **The agent forgets the previous question.** You created a new session for that turn. Use one session per conversation. A fresh session is right for a new user, but it is easy to create one by accident inside a loop.
+- **Blank chunks in your output or chunk list.** `update.text` can be empty: some updates carry only tool-call information or metadata. Skip empty strings when printing or accumulating.
+- **A custom chat client streams in a plain loop but fails inside a workflow.** If you write your own `BaseChatClient` subclass for testing or replay, return `self._build_response_stream(_gen())` from `_inner_get_response`, not a bare `ResponseStream(_gen())`. The bare form wires no finalizer. A plain `async for update in agent.run(stream=True)` loop still works, but any MAF-internal caller that needs `ResponseStream.get_final_response()` breaks, for example an `AgentExecutor` inside a `WorkflowBuilder`. `ReplayChatClient` in `tutorials/_shared/replay_client.py` shows the correct form.
+- **.NET session resources are not released.** The code above omits disposal for brevity. In production, wrap `AgentSession` creation in `await using`.
 
 ## Tests
 
+Both commands run from the repo root. The Python command needs pytest from the dev extras; install them once with `uv sync --project tutorials --extra dev`:
+
 ```bash
-# Python — unit tests against a streaming-capable canned client, a replay
-# test with a committed fixture, and a real-LLM integration test.
+# Python
 uv run --project tutorials pytest tutorials/03-streaming-and-multiturn/python/tests -v
 
-# .NET — integration tests only (streaming/session behavior is hard to fake
-# without reimplementing MAF internals), skip cleanly without credentials.
-cd tutorials/03-streaming-and-multiturn/dotnet
-dotnet test tests/Streaming.Tests.csproj
+# .NET
+dotnet test tutorials/03-streaming-and-multiturn/dotnet/tests/Streaming.Tests.csproj
 ```
 
-`python/tests/test_streaming.py` covers: streaming yields multiple chunks, chunks concatenate to the full answer, a second turn's message list is longer than the first (proving the session accumulated history), and a replay-fixture test that asserts the second turn resolves "it" to Python without a live LLM call. `dotnet/tests/StreamingTests.cs` covers the same multi-turn/streaming assertions plus one proving two separate sessions don't share context — all three run only when real credentials are present in `.env`.
+The Python tests need no key. They prove that streaming yields several chunks that concatenate to the full answer, that a second turn sends a longer message list than the first, and, from a recorded run, that the second turn resolves "it" to Python. The .NET tests make the same streaming and multi-turn checks against a live model, plus one that two separate sessions do not share context. They only exercise anything when credentials are in `.env`.
 
 ## How this shows up in the capstone
 
-- [`agents/python/shared/agent_host.py:87`](../../agents/python/shared/agent_host.py) — `_run_agent_native_stream` (lines 87-115) is the production version of `stream_answer` above: it drives `agent.run(messages, stream=True, options=...)` and yields text chunks the same way, then calls `stream.get_final_response()` once the generator is exhausted to pick up usage/grounding metadata.
-- [`agents/python/shared/session.py:224`](../../agents/python/shared/session.py) — `session_from_id` is the production version of `agent.create_session()`: it builds an `AgentSession` bound to a conversation row so a specialist agent can rehydrate a shopper's prior turns from Postgres instead of the in-process session this chapter uses.
+Every chat answer in the full application is streamed to the browser this way, and every conversation is tied to a session id so a follow-up question has its context.
+
+- [`agents/python/shared/agent_host.py:114`](../../agents/python/shared/agent_host.py): `_run_agent_native_stream` is the application's version of `stream_answer` above. It calls `agent.run(messages, stream=True, options=...)` and yields text chunks the same way. Once the stream is exhausted it calls `stream.get_final_response()` to pick up token usage and other metadata.
+- [`agents/python/shared/session.py:239`](../../agents/python/shared/session.py): `session_from_id` is the application's version of `agent.create_session()`. It builds an `AgentSession` with an existing conversation's id. The conversation's turns live in Postgres, not in the in-process session this chapter uses.
 
 ## What's next
 

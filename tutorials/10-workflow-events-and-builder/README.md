@@ -1,23 +1,29 @@
 # Chapter 10 — Workflow Events and Builder
 
-Two kinds of workflow events — automatic lifecycle events and the values your own executors yield — flow through the same stream. This chapter builds a live progress indicator on top of that stream, in Python and .NET, and shows a Python/​.NET API split worth knowing about before you build anything real on it.
+A workflow run streams two kinds of events: lifecycle events the framework emits on its own, and values your executors yield. This chapter builds a live progress indicator on that stream, in Python and .NET, and shows where the two APIs differ.
+
+**You will learn to:**
+
+- Stream a workflow run and read its events as they arrive
+- Report progress from inside an executor while the run is still going
+- Tell progress events apart from the final output, in Python and in .NET
 
 ## Why this chapter
 
-A workflow that takes 30 seconds to finish needs to tell the caller *what it's doing* for those 30 seconds — not just hand back a final answer. `Workflow.run(..., stream=True)` (Python) and `InProcessExecution.RunStreamingAsync(...)` (.NET) already emit lifecycle events for every executor invocation and superstep; the interesting part is layering your own progress payloads into that same ordered stream so a caller can render a progress bar instead of staring at a spinner. In the capstone, this is exactly what backs the live "reviews / stock / price-history" progress the frontend shows while `workflow:pre-purchase` fans a request out to three specialist agents concurrently.
+A workflow that takes 30 seconds needs to tell the caller *what it is doing* for those 30 seconds, not only hand back an answer at the end. `Workflow.run(..., stream=True)` (Python) and `InProcessExecution.RunStreamingAsync(...)` (.NET) already emit lifecycle events for every executor invocation and every superstep (one round of the scheduler). You add your own progress payloads to the same ordered stream, and the caller can draw a progress bar instead of a spinner. The capstone (the full application in this repo) does this to show which step of a workflow is running while its `workflow:pre-purchase` mode looks up reviews, stock and price history in parallel.
 
-The two SDKs solve this the same way at a conceptual level but with a real API difference underneath — Python retired the "call `ctx.add_event()` with an arbitrary payload" pattern in favor of a build-time output designation, while .NET still emits distinct event subclasses directly. Knowing which one you're in matters the moment you copy a snippet from one language's docs into the other.
+The two SDKs agree on the idea and differ in the API. In Python, every executor calls `ctx.yield_output()`, and the builder decides at build time whether that executor's yields count as progress or as output. In .NET, you emit your own event subclass with a separate call. Know which one you are in before you copy a snippet from one language's docs into the other.
 
 ## Prerequisites
 
 - Completed [Chapter 09 — Workflow Executors and Edges](../09-workflow-executors-and-edges/)
-- Environment variables: none. This chapter's executors are pure order-id transformations — no LLM calls, no `OPENAI_API_KEY` needed.
+- No API key or environment variables needed. The executors only transform an order id and call no model
 
 ## The concept
 
-Every workflow run streams a sequence of `WorkflowEvent`s (Python) / `WorkflowEvent` subclasses (.NET). Some are automatic — `ExecutorInvokedEvent`, `ExecutorCompletedEvent`, `SuperStepStartedEvent`, and so on, one per executor per step, emitted by the framework whether you ask for them or not. Others are yours — values your executor produces mid-run that aren't the workflow's final answer, but that a caller still wants to see as they happen.
+Every workflow run streams a sequence of `WorkflowEvent`s (Python) or `WorkflowEvent` subclasses (.NET). Some are automatic: `ExecutorInvokedEvent`, `ExecutorCompletedEvent`, `SuperStepStartedEvent` and so on, one per executor per step, emitted whether you ask for them or not. Others are yours: values an executor produces mid-run that are not the workflow's final answer, but that a caller still wants to see as they happen.
 
-The three-executor pipeline from Chapter 09 (`NormalizeOrder -> ValidateOrder -> LogOrder`) is extended here so each executor reports a `ProgressPayload(step, percent)` before it does its real work. The final executor's actual output ("ORDER LOGGED: ...") flows through the same stream, distinguished from the progress payloads by shape, not by a separate channel.
+This chapter extends the three-executor pipeline from Chapter 09 (`NormalizeOrder -> ValidateOrder -> LogOrder`) so each executor reports a `ProgressPayload(step, percent)` before it does its work. The last executor's output ("ORDER LOGGED: ...") travels on the same stream. You tell it from the progress payloads by its shape; there is no separate channel.
 
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': {
@@ -53,11 +59,11 @@ flowchart LR
   class caller success
 ```
 
-WorkflowBuilder assembles the executor graph; each executor's `yield_output` calls land on the same ordered stream the caller iterates, interleaved with the framework's own lifecycle events.
+`WorkflowBuilder` assembles the executor graph. Each executor's `yield_output` calls land on the same ordered stream the caller iterates, interleaved with the framework's lifecycle events.
 
 ## Python
 
-Run from the repo root using the shared `tutorials/` uv project (one `uv sync` covers every chapter):
+Run from the repo root. The shared `tutorials/` uv project covers every chapter, so one `uv sync` is enough:
 
 ```bash
 uv sync --project tutorials
@@ -65,7 +71,17 @@ uv run --project tutorials python tutorials/10-workflow-events-and-builder/pytho
 uv run --project tutorials pytest tutorials/10-workflow-events-and-builder/python/tests -v
 ```
 
-The current Python SDK (`agent-framework-core==1.26.0`, pinned in `tutorials/pyproject.toml`) does **not** use the `ctx.add_event(WorkflowEvent.emit(...))` pattern you may see in older MAF examples — that path is deprecated (`WorkflowEvent.emit()` raises a `DeprecationWarning` telling you to use `ctx.yield_output()` with `intermediate_output_from` instead, and `ctx.add_event()` now actively rejects/warns if an executor tries to emit an `output`/`intermediate`-typed event directly). `python/main.py` uses the current pattern — every executor calls `ctx.yield_output(...)`, and `WorkflowBuilder` decides whether a given executor's yields surface as `type="output"` or `type="intermediate"`:
+You should see:
+
+```
+input: 'ord-8842'
+  progress: normalize-order → 33%
+  progress: validate-order → 66%
+  progress: log-order → 100%
+output: 'ORDER LOGGED: ORD-8842'
+```
+
+In [`python/main.py`](./python/main.py), every executor calls `ctx.yield_output(...)`, and `WorkflowBuilder` decides whether a given executor's yields surface as `type="output"` or `type="intermediate"`:
 
 ```python
 def build_workflow():
@@ -84,7 +100,9 @@ def build_workflow():
     )
 ```
 
-`NormalizeOrderExecutor` and `ValidateOrderExecutor` are listed under `intermediate_output_from`, so every `yield_output()` call they make surfaces as `type="intermediate"` — that's the progress channel. `LogOrderExecutor` is listed under `output_from`, so its yields surface as `type="output"` — the pipeline's real result. This designation is fixed per executor at build time, not chosen per call — which is why `ValidateOrderExecutor`'s early-exit `yield_output("[rejected: empty order id]")` still comes through as `type="intermediate"` even though it's really the terminal message for that run. The consumer tells progress from results by payload shape (`isinstance(data, ProgressPayload)`), not by the event's type label:
+`NormalizeOrderExecutor` and `ValidateOrderExecutor` are listed under `intermediate_output_from`, so every `yield_output()` call they make surfaces as `type="intermediate"`. That is the progress channel. `LogOrderExecutor` is listed under `output_from`, so its yields surface as `type="output"`, the pipeline's result.
+
+The label is fixed per executor at build time, not chosen per call. That is why `ValidateOrderExecutor`'s early-exit `yield_output("[rejected: empty order id]")` still arrives as `type="intermediate"`, although it is the last message of that run. The consumer therefore tells progress from results by payload shape (`isinstance(data, ProgressPayload)`), not by the event's type label:
 
 ```python
 async for event in workflow.run(text, stream=True):
@@ -98,17 +116,11 @@ async for event in workflow.run(text, stream=True):
         outputs.append(data)
 ```
 
-Running it:
-
-```
-input: 'ord-8842'
-  progress: normalize-order → 33%
-  progress: validate-order → 66%
-  progress: log-order → 100%
-output: 'ORDER LOGGED: ORD-8842'
-```
+Older MAF examples emit progress with `ctx.add_event(WorkflowEvent.emit(...))`. In the pinned SDK (`agent-framework-core==1.26.0`, set in `tutorials/pyproject.toml`) that path is deprecated. `WorkflowEvent.emit()` raises a `DeprecationWarning`, and `ctx.add_event()` refuses an `output` or `intermediate` event that an executor tries to emit directly.
 
 ## .NET
+
+No API key is needed. The commands start at the repo root and change into the chapter's `dotnet` directory:
 
 ```bash
 cd tutorials/10-workflow-events-and-builder/dotnet
@@ -116,7 +128,7 @@ dotnet run
 dotnet test
 ```
 
-.NET keeps the "define your own event subclass" model. `ProgressEvent` subclasses `WorkflowEvent` directly, and executors emit it with `context.AddEventAsync(...)` — a genuinely separate call from `YieldOutputAsync`, unlike Python where progress and output both go through `yield_output` and only the build-time designation tells them apart:
+In .NET you define your own event subclass. `ProgressEvent` subclasses `WorkflowEvent`, and executors emit it with `context.AddEventAsync(...)`. That is a separate call from `YieldOutputAsync`. In Python, progress and output both go through `yield_output`, and only the build-time lists tell them apart.
 
 ```csharp
 internal sealed class ProgressEvent(string step, int percent)
@@ -148,7 +160,7 @@ await foreach (WorkflowEvent evt in run.WatchStreamAsync())
 }
 ```
 
-`WorkflowFactory.Build()` uses `.WithOutputFrom(validate, log)` — either executor can be the source of the final workflow output, since `ValidateOrderExecutor` short-circuits on an empty order id and `LogOrderExecutor` is the normal terminal step.
+`WorkflowFactory.Build()` uses `.WithOutputFrom(validate, log)`. Either executor can produce the final workflow output: `ValidateOrderExecutor` ends the run early on an empty order id, and `LogOrderExecutor` is the normal last step.
 
 ## Side-by-side differences
 
@@ -162,30 +174,29 @@ await foreach (WorkflowEvent evt in run.WatchStreamAsync())
 
 ## Gotchas
 
-- **Don't port the Python `add_event()` pattern from older examples or blog posts.** `WorkflowEvent.emit()` triggers a `DeprecationWarning` and `ctx.add_event()` now silently drops (and logs a warning for) any executor-origin event typed `output`/`intermediate` — use `ctx.yield_output()` with `intermediate_output_from`/`output_from` instead.
-- **The output/intermediate label is fixed per executor, not per call.** Every `yield_output()` call from a given executor carries the same label, decided by which list (`output_from` / `intermediate_output_from`) that executor was passed to at `WorkflowBuilder` construction time. You can't have one executor emit some yields as progress and others as final output — see `ValidateOrderExecutor`'s short-circuit case in `python/main.py`, which still yields `type="intermediate"` even though `"[rejected: empty order id]"` is really the terminal message for that run.
-- **Short-circuited branches drop downstream progress.** If `ValidateOrderExecutor` yields its short-circuit output and returns without calling `send_message`, `LogOrderExecutor` never runs, and its 100% progress event never fires. `test_short_circuit_stops_at_validate_before_log_progress` (Python) and `Empty_Order_Id_Short_Circuits_Before_Log_Emits_Progress` (.NET) lock that in.
-- **Filter by payload shape in Python, not by type label alone** — both `ProgressPayload` and a plain-string result can carry `type="intermediate"` (see `ValidateOrderExecutor`'s short-circuit above), so `isinstance()` on the payload is the reliable discriminator, not the event's `type`.
+- **A `DeprecationWarning`, or progress events that never arrive (Python).** You copied the `add_event()` pattern from an older example. `WorkflowEvent.emit()` is deprecated, and `ctx.add_event()` drops any `output` or `intermediate` event an executor emits directly and logs a warning. Use `ctx.yield_output()` with `intermediate_output_from` / `output_from`.
+- **One executor cannot emit both progress and final output (Python).** Every `yield_output()` call from an executor carries the same label, set by the list (`output_from` or `intermediate_output_from`) the executor was passed to when the `WorkflowBuilder` was constructed. `ValidateOrderExecutor`'s early exit in `python/main.py` shows the effect: `"[rejected: empty order id]"` arrives as `type="intermediate"`.
+- **A result is mistaken for progress, or the reverse (Python).** Filter by payload shape, not by type label alone. A `ProgressPayload` and a plain-string result can both carry `type="intermediate"`, so `isinstance()` on the payload is the reliable test.
+- **The progress bar stops short of 100%.** A branch that ends early drops downstream progress. If `ValidateOrderExecutor` yields its early output and returns without calling `send_message`, `LogOrderExecutor` never runs and its 100% event never fires. Both test suites cover this case.
 
 ## Tests
-
-Both languages ship unit tests exercising the same five behaviors — see `tutorials/10-workflow-events-and-builder/python/tests/test_events.py` and `tutorials/10-workflow-events-and-builder/dotnet/tests/EventsTests.cs`:
-
-1. Progress events emit in pipeline order with the expected percentages.
-2. Progress events carry the structured `ProgressPayload` (not a raw string).
-3. Empty order id short-circuits at `validate-order`, so `log-order`'s progress event never fires.
-4. The final output arrives after the last progress event, not before it.
-5. Events stream incrementally rather than batching — the .NET suite adds a sixth test asserting lifecycle and custom events interleave in true arrival order (`Lifecycle_Events_Interleave_With_Custom_Events_In_Arrival_Order`).
 
 ```bash
 uv run --project tutorials pytest tutorials/10-workflow-events-and-builder/python/tests -v
 cd tutorials/10-workflow-events-and-builder/dotnet && dotnet test
 ```
 
+Run the first from the repo root; the second changes into the chapter's `dotnet` directory. Neither needs a key.
+
+Both suites (`tutorials/10-workflow-events-and-builder/python/tests/test_events.py` and `tutorials/10-workflow-events-and-builder/dotnet/tests/EventsTests.cs`) check that progress events arrive in pipeline order with the expected percentages and carry a structured `ProgressPayload`. They also check that the final output arrives after the last progress event, that an empty order id stops at `validate-order`, and that events stream one by one instead of in a batch. The .NET suite also asserts that lifecycle events and custom events interleave in arrival order.
+
 ## How this shows up in the capstone
 
-- `agents/python/orchestrator/events.py` defines `OrchestrationEvent`, the normalized event shape (`kind`, `node_id`, `agent`, `payload`, `ts_ms`) that unifies workflow events, agent-run events, and tool-router steps into one protocol the web UI consumes — see the class docstring around `agents/python/orchestrator/events.py:44`.
-- `agents/python/workflows/pre_purchase.py:229`'s `_build_maf_workflow()` is a real `WorkflowBuilder` fan-out/fan-in graph in production: `add_fan_out_edges(fan_out, [reviews, stock, price])` runs the reviews, stock, and price-history executors concurrently, then `add_fan_in_edges([reviews, stock, price], merge)` joins them before `synthesis`. `execute()` (`agents/python/workflows/pre_purchase.py:245`) streams that workflow with `workflow.run(state, stream=True)` and filters on `event.type == "output"` — the same pattern this chapter's `run_with_events()` uses, just with a single `ResearchState` output instead of a progress/output split.
+In the capstone, a normalized event stream is what lets the chat page show which step of a workflow is running, and light up the nodes of its diagram, while the answer is still being produced.
+
+- `agents/python/orchestrator/events.py:52` defines `OrchestrationEvent`, one event shape (`kind`, `node_id`, `agent`, `payload`, `ts_ms`) for workflow events, agent-run events and tool-call steps. The web UI consumes that single protocol.
+- `_build_maf_workflow()` at `agents/python/workflows/pre_purchase.py:291` is a `WorkflowBuilder` graph that fans out and back in. `add_fan_out_edges(fan_out, [reviews, stock, price])` runs the reviews, stock and price-history executors concurrently, then `add_fan_in_edges([reviews, stock, price], merge)` joins them before `synthesis`.
+- `execute()` (`agents/python/workflows/pre_purchase.py:307`) streams that workflow with `workflow.run(state, stream=True)` and filters on `event.type == "output"`. This chapter's `run_with_events()` uses the same loop, with a progress/output split where the capstone has a single `ResearchState` output.
 
 ## What's next
 

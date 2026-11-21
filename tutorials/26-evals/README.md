@@ -1,16 +1,25 @@
 # Chapter 26 — Evals
 
+This chapter builds a small eval suite: a list of test prompts, each paired with a fact a script can check, run against an agent and scored the same way every time.
+
+**You will learn to:**
+
+- Write an eval case as a prompt plus a fact a script can check
+- Score a response deterministically, with a substring check that is free to run on every commit
+- Shape an LLM-judge verdict so a stub and a real judge are interchangeable
+- Spot a scorer that reports good numbers while measuring nothing
+
 ## Why this chapter
 
 Every prior chapter ends the same way: run the script, read the answer, decide by eye whether it
-looks right. That's fine for learning a mechanic, but it doesn't scale — "I tried a prompt and it
-looked correct" tells you nothing about the other cases you didn't try, and it doesn't survive a
-prompt change, a model upgrade, or someone else re-running your code six months later. This
-chapter turns "looks right" into a number: a small set of test cases, each with a fact a script
-can check, run automatically and scored the same way every time. For the deeper argument on why a
-demo isn't evidence — and a worked example of a scorer that *looked* rigorous but measured the
-wrong thing — see [`docs/concepts/12-evaluation.md`](../../docs/concepts/12-evaluation.md); this
-chapter focuses on the mechanics of building the eval loop itself.
+looks right. That works for learning a mechanic, but it does not scale. "I tried a prompt and it
+looked correct" tells you nothing about the cases you did not try. It also does not survive a
+prompt change, a model upgrade, or someone else re-running your code six months later.
+
+This chapter turns "looks right" into a number. For the argument on why a demo is not evidence,
+and a worked example of a scorer that looked rigorous but measured the wrong thing, see
+[`docs/concepts/12-evaluation.md`](../../docs/concepts/12-evaluation.md). This chapter covers the
+mechanics of the eval loop itself.
 
 ## Prerequisites
 
@@ -20,30 +29,30 @@ chapter focuses on the mechanics of building the eval loop itself.
 ## The concept
 
 A good eval case is a **prompt plus a checkable fact**, not a prompt plus a vibe. "Ask about the
-Wireless Mouse and see if the answer sounds reasonable" isn't an eval case — there's nothing a
-script can assert. "Ask about the Wireless Mouse and check that `24.99` appears in the response"
-is: it's a prompt (`EvalCase.prompt`) paired with an `expected_facts` list a scorer can grep for.
-That's the whole shape this chapter's `EVAL_CASES` list uses, and it's the same shape a real eval
-suite needs — a case that can't fail is not testing anything.
+Wireless Mouse and see if the answer sounds reasonable" is not an eval case, because there is
+nothing a script can assert. "Ask about the Wireless Mouse and check that `24.99` appears in the
+response" is one. It pairs a prompt (`EvalCase.prompt`) with an `expected_facts` list a scorer can
+search for. This chapter's `EVAL_CASES` list uses that shape. A case that cannot fail tests
+nothing.
 
-Once you have checkable cases, scoring splits into two tiers. **Deterministic scoring** —
-`score_deterministic()` in this chapter's `main.py` — is a mechanical substring check: did the
-expected fact appear, yes or no. It's free, exact, and safe to run in CI on every commit, but it
-can only check what's mechanically checkable; it says nothing about whether the surrounding prose
-makes sense. **LLM-judge scoring** asks a second model call to grade something that doesn't have a
-mechanically checkable answer — did the response actually address what was asked, in substance.
-It costs money and isn't perfectly reproducible between two runs of the identical input, so it's
-reserved for what deterministic checks can't reach, not run on everything by default.
+Scoring then splits into two tiers.
 
-This repo's own eval harness has an instructive history worth naming directly. The original
-version (`evaluator.py`'s `_run_agent()`) hand-rolled its own OpenAI tool-calling loop, calling
-undecorated tool functions directly instead of running the agent through `agent.run()`. That loop
-never went through `agent_host.py`'s real MAF execution path — no guardrail middleware, no
-grounding verification, none of the machinery the production app actually runs on every live
-request. The eval suite could report a clean pass while testing a system that wasn't the one users
-were talking to. `agents/python/evals/harness.py`'s `ProductionRunner` (see below) exists
-specifically to close that gap: it drives every eval case through the same dispatch a live request
-uses, so a passing eval means the deployed system passed, not a simulation of it.
+**Deterministic scoring** is `score_deterministic()` in this chapter's `main.py`: a mechanical
+substring check. Did the expected fact appear, yes or no. It is free, exact, and safe to run in CI
+on every commit. It can only check what is mechanically checkable, and says nothing about whether
+the surrounding prose makes sense.
+
+**LLM-judge scoring** asks a second model call to grade something with no mechanical answer, such
+as whether the response addressed what was asked. It costs money and is not perfectly reproducible
+between two runs of the same input. Reserve it for what deterministic checks cannot reach.
+
+One rule sits above both tiers: an eval must run the same code path a live request runs. Suppose
+a harness calls the agent's tool functions through its own loop instead of going through
+`agent.run()`. It skips the guardrail middleware, the grounding verification (the check that an
+answer's facts match the data), and everything else the application runs on each request. That
+suite can report a clean pass while testing a system that is not the one users talk to. The
+`ProductionRunner` in the capstone (the full application in this repo) exists to prevent this, and
+the last section shows where it lives.
 
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': {
@@ -77,17 +86,32 @@ flowchart LR
   class card success
 ```
 
-The two scorers run over the same response — one is cheap and exact, the other catches what the
-first one structurally can't.
+The two scorers run over the same response. One is cheap and exact; the other catches what the
+first cannot.
 
 ## Python
 
-Run from the repo root using the shared `tutorials/` uv project (one `uv sync` covers every
-chapter):
+Run from the repo root. The shared `tutorials/` uv project covers every chapter, so one `uv sync`
+is enough:
 
 ```bash
 uv sync --project tutorials
 uv run --project tutorials python tutorials/26-evals/python/main.py
+```
+
+You should see:
+
+```
+No LLM key found - replaying the recorded fixture (set OPENAI_API_KEY or the AZURE_OPENAI_* variables for a live run).
+Case                      Deterministic  Judge   Notes
+--------------------------------------------------------------------------------
+mouse-price               1.00           1.00    Response covers every expected fact.
+keyboard-stock            1.00           1.00    Response covers every expected fact.
+hub-out-of-stock          1.00           1.00    Response covers every expected fact.
+headphones-price          1.00           1.00    Response covers every expected fact.
+charger-price-and-stock   1.00           1.00    Response covers every expected fact.
+--------------------------------------------------------------------------------
+5/5 cases fully grounded (deterministic score == 1.0)
 ```
 
 Source: [`python/main.py`](./python/main.py). The demo agent is a small e-commerce Q&A assistant
@@ -105,124 +129,113 @@ def search_catalog(
     return f"{product_name.title()}: ${item['price']:.2f}, {item['stock']} units ({availability})."
 ```
 
-Five `EvalCase` entries pair a prompt with the exact fact(s) the answer must contain — a price, a
-stock count, or an "out of stock" phrase. `run_eval_suite()` asks the agent each question, then
-scores the response two ways: `score_deterministic()` checks whether every expected fact appears
-as a literal substring (case-insensitive), and `judge_response_stub()` returns a structured
-`JudgeVerdict` (`score`, `reasoning`, `failure_mode`) — the same shape the real
-`evals/scorers/llm_judge.py::JudgeVerdict` uses, computed here with a cheap heuristic instead of a
-second live LLM call, since spending one extra model call per case isn't worth it for a five-case
-teaching demo with a fixed replay fixture set. Swap that function's body for a real
-`judge.run(...)` call and nothing else in the loop changes. `main()` runs the suite once and prints
-a scorecard:
+Each `EvalCase` pairs a prompt with the exact facts the answer must contain: a price, a stock
+count, or an "out of stock" phrase. `run_eval_suite()` asks the agent each question, then scores
+the response two ways:
 
-```
-Case                      Deterministic  Judge   Notes
---------------------------------------------------------------------------------
-mouse-price               1.00           1.00    Response covers every expected fact.
-keyboard-stock            1.00           1.00    Response covers every expected fact.
-hub-out-of-stock          1.00           1.00    Response covers every expected fact.
-headphones-price          1.00           1.00    Response covers every expected fact.
-charger-price-and-stock   1.00           1.00    Response covers every expected fact.
---------------------------------------------------------------------------------
-5/5 cases fully grounded (deterministic score == 1.0)
-```
+- `score_deterministic()` checks that every expected fact appears as a literal substring,
+  ignoring case.
+- `judge_response_stub()` returns a structured `JudgeVerdict` (`score`, `reasoning`,
+  `failure_mode`). It has the same shape as `evals/scorers/llm_judge.py::JudgeVerdict` in the
+  application, computed here with a cheap heuristic instead of a second model call.
+
+Swap the stub's body for a real `judge.run(...)` call and nothing else in the loop changes.
+`main()` runs the suite once and prints the scorecard above.
 
 ## .NET
 
 Source: [`dotnet/Program.cs`](./dotnet/Program.cs).
 
 ```bash
+# From the repo root. Needs no API key.
+dotnet test tutorials/26-evals/dotnet/tests/Evals.Tests.csproj
+
+# Needs an API key in the repo-root .env. Note the cd.
 cd tutorials/26-evals/dotnet
 dotnet run
-dotnet test tests/Evals.Tests.csproj
 ```
 
-Same two tiers, same structured `JudgeVerdict` shape, so the stub judge and a real one are drop-in replacements:
+`dotnet run` calls a live model, so it needs `OPENAI_API_KEY` or the `AZURE_OPENAI_*` variables.
+Run the tests first if you have no key.
+
+The same two tiers and the same structured `JudgeVerdict` shape, so the stub judge and a real one are drop-in replacements:
 
 ```csharp
 public sealed record JudgeVerdict(double Score, string Reasoning, string? FailureMode = null);
 ```
 
-`Main` returns non-zero when any case fails, so it is usable as a CI gate rather than a report nobody reads.
+`Main` returns non-zero when any case fails, so you can use it as a CI gate.
 
-Testing an eval harness means scoring the scorer, which is worth doing precisely because a broken scorer does not look broken — it reports numbers, the numbers look reasonable, and the suite goes green while measuring nothing. So the tests target the ways a scorer lies:
+Testing an eval harness means scoring the scorer. A broken scorer does not look broken: it reports numbers, the numbers look reasonable, and the suite goes green while measuring nothing. So the tests target the ways a scorer lies:
 
 - a case with no expected facts scores `1.0` (defensible, and a trap — a suite of empty cases reports a perfect pass rate)
 - the deterministic tier passes an answer that is rude and off-topic as long as the number appears in it
 - `"15"` matches inside `"150"`
 - the stub judge agrees with the deterministic tier *by construction*, which is exactly what a real judge must not do — two scorers that always agree are one scorer costing twice as much
 
-Two guard the suite against itself: every case must have at least one checkable fact, and case ids must be unique.
+Two more tests guard the suite against itself: every case must have at least one checkable fact, and case ids must be unique.
 
 ## Gotchas
 
-- **A scorer that doesn't check the thing it claims to check is worse than no scorer.** The
-  original version of `AgentEvaluator._score_groundedness` returned `1.0` whenever any tool was
-  called, without comparing the response's actual words to what the tool returned — a fabricated
-  price scored identically to a real one. `evals/scorers/db_groundedness.py::score_from_report()`
-  fixes this by scoring `verified_claims / total_claims` against the real grounding report, not
-  "a tool fired." This chapter's `score_deterministic()` is the same idea in miniature: it checks
-  for the literal fact string, not "a tool was called."
-- **Eval evidence is only as good as the code path it exercises.** Routing eval cases around
-  production middleware (the mistake this repo's own harness made and then fixed — see "The
-  concept" above) can make a red-team or safety case "pass" without ever exercising the guardrails
-  it was supposed to be testing. Always ask what code path an eval actually runs through, not just
-  whether it reports green.
-- **Deterministic scoring needs a genuinely checkable fact.** `EVAL_CASES` in this chapter's
-  `main.py` deliberately uses exact numbers (`"24.99"`, `"15"`) or an unambiguous phrase
-  (`"out of stock"`) as `expected_facts` — a vaguer target like "mentions the mouse" would pass
-  even for a wrong price.
-- **The judge stub is not a substitute for the real judge.** `judge_response_stub()` is clearly
-  labeled as a heuristic stand-in so this chapter's replay fixture set stays small (5 cases, one
-  LLM round trip each, instead of 10). Production code should call the real
-  `evals/scorers/llm_judge.py::judge_response()`, which actually asks a model.
-- **Replay fixtures are keyed per request, not per case.** With tool-calling in play, each eval
-  case can produce more than one LLM call (one where the model decides to call `search_catalog`,
-  one where it composes the final answer from the tool result) — expect more fixture files than
-  eval cases; that's normal, not a bug.
+- **A fabricated answer scores the same as a real one.** That is what you get from a scorer that
+  does not check the thing it claims to check, such as a groundedness score of `1.0` whenever any
+  tool was called. In the application, `evals/scorers/db_groundedness.py::score_from_report()`
+  scores `verified_claims / total_claims` from the grounding report instead. This chapter's
+  `score_deterministic()` is the same idea in miniature: it checks for the literal fact string,
+  not "a tool was called".
+- **A safety case passes without exercising the guardrail.** Eval evidence is only as good as the
+  code path it runs. An eval routed around production middleware can report green for a red-team
+  case that never met the guardrails. Ask what code path an eval runs through, not only whether it
+  passes.
+- **A wrong price still passes.** That happens when the expected fact is vague. `EVAL_CASES` uses
+  exact numbers (`"24.99"`, `"15"`) or an unambiguous phrase (`"out of stock"`). A target like
+  "mentions the mouse" would pass for any price.
+- **The judge column always agrees with the deterministic column.** `judge_response_stub()` is a
+  heuristic stand-in that keeps this chapter's recorded fixtures small. It is not a judge. Real
+  code should call `evals/scorers/llm_judge.py::judge_response()`, which asks a model.
+- **There are more fixture files than eval cases.** Replay fixtures are keyed per request, not per
+  case. With a tool in play, each case makes more than one model call: one where the model decides
+  to call `search_catalog`, one where it writes the answer from the tool result.
 
 ## Tests
 
 ```bash
 uv run --project tutorials pytest tutorials/26-evals/python/tests -v
+dotnet test tutorials/26-evals/dotnet/tests/Evals.Tests.csproj
 ```
 
-`tutorials/26-evals/python/tests/test_evals.py` covers, structurally:
+Run both from the repo root. Neither needs an API key.
 
-1. **Unit tests against `search_catalog` and both scorers directly** — canned catalog data, an
-   out-of-stock item, an unknown product, case-insensitivity, full/partial/zero deterministic
-   matches, and the judge stub's three coverage bands — no LLM involved.
-2. **Agent wiring** — `search_catalog` shows up in `build_agent()`'s registered tools, and every
-   `EVAL_CASES` entry actually has a checkable fact.
-3. **A replay test** (`test_replay_runs_full_eval_suite`) that plays back the committed fixtures in
-   `tests/fixtures/replay/` — no network or credentials required, safe for CI.
-4. **Real-LLM integration tests**, skipped unless usable credentials are present — one asserts
-   every eval case scores fully grounded against a real model, the other asserts an unrelated
-   question doesn't leak canned catalog numbers.
+The tests score the scorers: full, partial and zero matches for the deterministic tier, and the
+stub judge's coverage bands. They also check that every eval case has a checkable fact, and replay
+the whole suite against recorded model responses. Tests against a live model are skipped unless
+credentials are present.
 
 ## How this shows up in the capstone
 
-The real eval harness lives at `agents/python/evals/`. `agents/python/evals/harness.py:90`'s
-`ProductionRunner` class, and its `agents/python/evals/harness.py:110` `run()` method, route every
-eval case through the exact dispatch a live request uses — `orchestrator.modes.get_mode("tool")
-.run(...)` for the orchestrator, `shared.agent_host._run_agent_native()` for each specialist — the
-same production entry points [Chapter 21](../21-capstone-tour/) tours, not a parallel simulation.
-That's the direct fix for the bypass-the-middleware mistake described in "The concept" above.
+The application has its own eval suite at `agents/python/evals/`, which CI runs against recorded
+responses, without an API key, to catch regressions before they ship.
 
-The two scorer tiers this chapter's `score_deterministic()` and `judge_response_stub()` mirror are
-real modules: `agents/python/evals/scorers/db_groundedness.py:26`'s `score_from_report()` is the
-deterministic tier, computing `verified_claims / total_claims` from the same `GroundingReport` the
-production grounding middleware already produced during the run — free, no extra DB round trip.
-`agents/python/evals/scorers/llm_judge.py:57`'s `judge_response()` is the LLM-judge tier, sending
-the question, the expected fields, and the response to a second model and parsing the result into
-the `JudgeVerdict` Pydantic model defined at `agents/python/evals/scorers/llm_judge.py:41` — the
-exact shape this chapter's stub `JudgeVerdict` class copies.
+`agents/python/evals/harness.py:136` is the `ProductionRunner` class, and
+`agents/python/evals/harness.py:159` is its `run()` method. It sends every eval case through the
+dispatch a live request uses: `orchestrator.modes.get_mode("tool").run(...)` for the orchestrator
+and `shared.agent_host._run_agent_native()` for each specialist. These are the entry points
+[Chapter 21](../21-capstone-tour/) tours, so a passing eval means the deployed system passed.
+
+The two scorer tiers this chapter mirrors are modules there:
+
+- `agents/python/evals/scorers/db_groundedness.py:26` is `score_from_report()`, the deterministic
+  tier. It computes `verified_claims / total_claims` from the `GroundingReport` the grounding
+  middleware already produced during the run, so it costs no extra database round trip.
+- `agents/python/evals/scorers/llm_judge.py:49` is `judge_response()`, the LLM-judge tier. It
+  sends the question, the expected fields and the response to a second model, and parses the
+  result into the `JudgeVerdict` Pydantic model at `agents/python/evals/scorers/llm_judge.py:33`.
+  This chapter's stub `JudgeVerdict` copies that shape.
 
 ## What's next
 
-- Next chapter: [Chapter 21 — Capstone Tour](../21-capstone-tour/) for a guided walk through where
-  every chapter's pattern lives in the real app.
+- Related: [Chapter 21 — Capstone Tour](../21-capstone-tour/) for a guided walk through where
+  every chapter's pattern lives in the application.
 - Concept deep-dive: [`docs/concepts/12-evaluation.md`](../../docs/concepts/12-evaluation.md)
 - Full source: [`python/`](./python/)
 - Shared: [Mermaid style guide](../_shared/mermaid-style-guide.md) · [Jargon glossary](../_shared/jargon-glossary.md)

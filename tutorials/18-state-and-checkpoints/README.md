@@ -1,21 +1,35 @@
 # Chapter 18 — State and Checkpoints
 
+Save a workflow's state as it runs, so a different process can pick the run up later from where it stopped.
+
+**You will learn to:**
+
+- Give an executor save and restore hooks so its state is included in each checkpoint
+- Attach a checkpoint storage backend to a workflow run
+- Resume a run from a checkpoint in a fresh workflow instance
+
 ## Why this chapter
 
-Long-running workflows — a multi-day return, an overnight research report, a paused human-in-the-loop approval (Chapter 17) — need to survive a process restart. If the workflow only lives in memory, a redeploy or a crash mid-run loses whatever state it was carrying. MAF's answer is `CheckpointStorage`: the framework snapshots every executor's state at each superstep boundary and hands it to a storage backend — `InMemoryCheckpointStorage` for tests, `FileCheckpointStorage` for durable local runs, and a Postgres/Cosmos-backed implementation for production. You don't write the serialization protocol; you implement two hooks per executor that say what to save and how to restore it, and the framework does the rest.
+Long-running workflows need to survive a process restart: a multi-day return, an overnight research report, an approval paused for a human (Chapter 17). If the workflow lives only in memory, a redeploy or a crash mid-run loses its state.
 
-This is not academic. This repo has a real production checkpoint store, and the `workflow:return-replace` orchestration mode uses it to make a paused approval durable *across separate HTTP requests, possibly served by different processes* — see [How this shows up in the capstone](#how-this-shows-up-in-the-capstone).
+MAF's answer is `CheckpointStorage`. A checkpoint is a saved snapshot of the workflow's state. The framework snapshots every executor (a node in the workflow graph) and hands the result to a storage backend: `InMemoryCheckpointStorage` for tests, `FileCheckpointStorage` for durable local runs, and a Postgres- or Cosmos-backed implementation for production. You don't write the serialization protocol. You implement two hooks per executor that say what to save and how to restore it.
+
+The full application in this repo depends on this. Its `workflow:return-replace` mode uses a Postgres checkpoint store to keep a paused approval alive across separate HTTP requests, which different processes may serve. See [How this shows up in the capstone](#how-this-shows-up-in-the-capstone).
 
 ## Prerequisites
 
 - Completed [Chapter 17 — Human-in-the-Loop](../17-human-in-the-loop/)
-- No LLM needed — this chapter uses a return-refund accumulation, not agents
+- No API key needed. The example adds up refund amounts and calls no model
 
 ## The concept
 
-An executor opts into checkpointing by implementing two hooks: `on_checkpoint_save` / `on_checkpoint_restore` in Python, `OnCheckpointingAsync` / `OnCheckpointRestoredAsync` in .NET. At the end of every superstep — the point where all executors have processed their current batch of messages and the workflow is about to move on — MAF calls `on_checkpoint_save` (or queues state via `QueueStateUpdateAsync` in .NET) on every executor that defines it, bundles the results with whatever messages are still in flight, and hands the bundle to the storage backend. Resuming later means pointing a *fresh* workflow instance at a `checkpoint_id`: MAF rehydrates each executor's state through the restore hook before replaying the pending messages.
+An executor opts into checkpointing by implementing two hooks: `on_checkpoint_save` and `on_checkpoint_restore` in Python, `OnCheckpointingAsync` and `OnCheckpointRestoredAsync` in .NET.
 
-The important part is what checkpointing does *not* require: the process that resumes doesn't need to be the process that paused. That's what makes it useful for HITL — you can pause a workflow, return an HTTP response, let the container recycle, and resume from a completely different request days later as long as the checkpoint made it to durable storage.
+MAF saves at the end of every superstep. A superstep is one round of the workflow scheduler: every executor processes its current batch of messages, then the workflow moves on. At that point MAF calls the save hook on every executor that defines one (in .NET the hook queues state with `QueueStateUpdateAsync`). It bundles the results with the messages still in flight and hands the bundle to the storage backend.
+
+To resume, you point a *fresh* workflow instance at a `checkpoint_id`. MAF restores each executor's state through the restore hook, then replays the pending messages.
+
+The process that resumes does not need to be the process that paused. That is what makes checkpoints useful for human-in-the-loop (HITL) approvals. You can pause a workflow, return an HTTP response, let the container recycle, and resume days later from a different request, as long as the checkpoint reached durable storage.
 
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': {
@@ -39,19 +53,29 @@ stateDiagram-v2
   Running --> [*]: yield_output
 ```
 
-The checkpoint written at `SuperstepEnd` is the only thing that has to survive the gap — a new process rebuilds every executor from scratch and trusts the snapshot over any constructor default.
+The checkpoint written at `SuperstepEnd` is the only thing that has to survive the gap. A new process rebuilds every executor from scratch and takes the snapshot's values over any constructor default.
 
 ## Python
 
-Source: [`python/main.py`](./python/main.py).
+Source: [`python/main.py`](./python/main.py). Run from the repo root:
 
 ```bash
 uv sync --project tutorials
 uv run --project tutorials python tutorials/18-state-and-checkpoints/python/main.py
-uv run --project tutorials pytest tutorials/18-state-and-checkpoints/python/tests -v
 ```
 
-Two executors, standing in for a slice of a return-request pipeline: `ReturnRequestExecutor` holds a running refund amount, seeded with an initial refund and incremented as return line items get processed, then forwards it to a stateless `FinalizeReturnExecutor`, which yields the refund total as the workflow's output. `ReturnRequestExecutor`'s state round-trips through its two hooks:
+You should see (the checkpoint id differs on every run):
+
+```
+Phase 1: initial_refund=10.0, item_refund=5.0
+Phase 1 result: refund_amount = 15.0
+
+3 checkpoint file(s) on disk.
+Resuming from be6c00c0… with initial_refund=999.0
+Phase 2 result: refund_amount = 15.0 (expected 15.0)
+```
+
+The workflow has two executors, standing in for part of a return-request pipeline. `ReturnRequestExecutor` holds a running refund amount. It starts from an initial refund and grows as return line items are processed. It forwards the amount to a stateless `FinalizeReturnExecutor`, which yields the refund total as the workflow's output. `ReturnRequestExecutor`'s state round-trips through its two hooks:
 
 ```python
 class ReturnRequestExecutor(Executor):
@@ -71,7 +95,7 @@ class ReturnRequestExecutor(Executor):
         self.refund_amount = float(state.get("refund_amount", 0.0))
 ```
 
-The demo's real proof is in `demo()`: run the workflow end to end with `FileCheckpointStorage`, grab the *first* checkpoint (superstep 1, before FinalizeReturn emitted output), then build a **second** `ReturnRequestExecutor` seeded with an initial refund of `999.0` — a deliberately wrong value — and resume from that checkpoint:
+The proof is in `demo()`. It runs the workflow end to end with `FileCheckpointStorage` and takes the *first* checkpoint (superstep 1, before `FinalizeReturnExecutor` emits output). Then it builds a **second** `ReturnRequestExecutor` seeded with an initial refund of `999.0`, a deliberately wrong value, and resumes from that checkpoint:
 
 ```python
 wrong_initial_refund = 999.0
@@ -81,19 +105,18 @@ replayed = await resume_from_checkpoint(
 print(f"Phase 2 result: refund_amount = {replayed} (expected {result})")
 ```
 
-If the replayed refund_amount matches the original run instead of reflecting `resume_initial_refund=999.0`, the checkpoint — not the constructor — was the actual source of truth. `main.py` accepts `initial_refund` and `item_refund` as CLI args (`python main.py 10.0 5.0`, default `10.0 5.0` → refund_amount `15.0`).
+The replayed `refund_amount` matches the original run instead of reflecting `resume_initial_refund=999.0`. So the checkpoint, not the constructor, is the source of truth. `main.py` accepts `initial_refund` and `item_refund` as CLI arguments. The defaults are `10.0 5.0`, which gives a `refund_amount` of `15.0`.
 
 ## .NET
 
-Source: [`dotnet/Program.cs`](./dotnet/Program.cs).
+Source: [`dotnet/Program.cs`](./dotnet/Program.cs). No key is needed. From the repo root:
 
 ```bash
 cd tutorials/18-state-and-checkpoints/dotnet
 dotnet run
-dotnet test
 ```
 
-Same two-executor shape, but .NET's checkpoint API is store-and-manager based rather than a single object: `FileSystemJsonCheckpointStore` writes one JSON file per checkpoint plus an index, and `CheckpointManager.CreateJson(store)` wraps it with the JSON marshaller MAF's workflow engine talks to.
+The shape is the same two executors, but .NET splits the checkpoint API into a store and a manager. `FileSystemJsonCheckpointStore` writes one JSON file per checkpoint plus an index. `CheckpointManager.CreateJson(store)` wraps it with the JSON marshaller the workflow engine talks to.
 
 ```csharp
 var store = new FileSystemJsonCheckpointStore(checkpointDir);
@@ -117,7 +140,7 @@ protected override async ValueTask OnCheckpointRestoredAsync(
 }
 ```
 
-Resuming builds a fresh `Workflow` (`BuildWorkflow(initialRefund)` again, same initial refund this time — the .NET demo doesn't deliberately poison the seed the way Python's does) and calls `InProcessExecution.ResumeStreamingAsync(workflow2, firstCheckpoint, checkpointManager)`. The program exits `0` if the replayed refund_amount matches the first run, `2` if it doesn't — a cheap smoke-test contract for `dotnet run` itself, not just `dotnet test`.
+Resuming builds a fresh `Workflow` with `BuildWorkflow(initialRefund)` and calls `InProcessExecution.ResumeStreamingAsync(workflow2, firstCheckpoint, checkpointManager)`. The .NET demo reuses the same initial refund; it does not seed a wrong value the way Python's does. The program exits `0` if the replayed `refund_amount` matches the first run and `2` if it doesn't, so `dotnet run` works as a quick check on its own.
 
 ## Side-by-side differences
 
@@ -131,46 +154,36 @@ Resuming builds a fresh `Workflow` (`BuildWorkflow(initialRefund)` again, same i
 
 ## Gotchas
 
-- **Resume can't take a new message.** Passing `checkpoint_id=` to `workflow.run()` continues from the saved superstep's pending messages; you don't (and can't) also pass a fresh `message=` to kick it off differently.
-- **The workflow needs a stable `name`.** Python's `storage.list_checkpoints(workflow_name=...)` and the .NET `sessionId` used with `RetrieveIndexAsync` are both how you find checkpoints later — lose the name/session id and the checkpoints are still on disk but unreachable through the normal API.
-- **State must round-trip through the backend's serializer.** Python's `on_checkpoint_save` returns a plain `dict` that has to survive JSON; .NET's `QueueStateUpdateAsync` is generic but still bound by what `CheckpointManager.CreateJson` can marshal. Custom objects need explicit (de)serialization — don't hand back something with, say, an open file handle or a live DB connection.
-- **Checkpoints pile up.** Neither `FileCheckpointStorage` nor `FileSystemJsonCheckpointStore` auto-deletes old snapshots. A production backend needs its own retention policy — see the `workflow_checkpoints` table note below.
-- **No MAF packaging workaround is needed.** `agent-framework-core` 1.26.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
+- **You can't pass a new message when you resume.** Passing `checkpoint_id=` to `workflow.run()` continues from the saved superstep's pending messages. You can't also pass a fresh `message=` to start it differently.
+- **Checkpoints are on disk but you can't find them.** You look them up by the workflow's `name` in Python (`storage.list_checkpoints(workflow_name=...)`) and by `sessionId` in .NET (`RetrieveIndexAsync`). Keep both stable. Without them the files exist but the normal API cannot reach them.
+- **A custom object in your state does not survive a checkpoint.** State must round-trip through the backend's serializer. Python's `on_checkpoint_save` returns a plain `dict` that has to survive JSON. .NET's `QueueStateUpdateAsync` is generic, but bound by what `CheckpointManager.CreateJson` can marshal. Serialize custom objects explicitly, and never return an open file handle or a live database connection.
+- **The checkpoint directory keeps growing.** Neither `FileCheckpointStorage` nor `FileSystemJsonCheckpointStore` deletes old snapshots. A production backend needs its own retention policy.
+- **.NET throws "already in use by another process" from your own process.** `FileSystemJsonCheckpointStore` takes an exclusive lock on its directory and does not release it when the run ends. Constructing a second store over the same directory fails, even after the first run has finished.
 
 ## Tests
 
-
-`tutorials/18-state-and-checkpoints/python/tests/test_checkpoints.py` has 8 tests exercising the hooks and the file-backed round trip directly (no LLM, deterministic):
-
-- `on_checkpoint_save` / `on_checkpoint_restore` round-trip `refund_amount` correctly, including that restore overwrites whatever initial refund the constructor set and defaults sanely when the key is missing
-- running the workflow actually writes checkpoint files to disk (`FileCheckpointStorage`)
-- `list_checkpoints` returns a non-empty list after a run
-- resuming from a checkpoint into a **fresh** workflow instance restores the pre-resume state (the core proof of durability)
-- `InMemoryCheckpointStorage` produces the same replay result as the file-backed store
-- a plain wiring check that `build_workflow()` builds with checkpoint storage attached
-
 ```bash
 uv run --project tutorials pytest tutorials/18-state-and-checkpoints/python/tests -v
-cd tutorials/18-state-and-checkpoints/dotnet && dotnet test
+dotnet test tutorials/18-state-and-checkpoints/dotnet/tests/Checkpoints.Tests.csproj
 ```
 
-The .NET side ships [`dotnet/tests/CheckpointsTests.cs`](./dotnet/tests/CheckpointsTests.cs) — ten tests, no LLM:
+Run both from the repo root. Neither calls a model.
 
-```bash
-cd tutorials/18-state-and-checkpoints/dotnet && dotnet test tests/Checkpoints.Tests.csproj
-```
+The Python tests in [`python/tests/test_checkpoints.py`](./python/tests/test_checkpoints.py) check that the two hooks round-trip `refund_amount`, that a run writes checkpoint files, and that resuming into a fresh workflow instance restores the saved state. They also check that `InMemoryCheckpointStorage` gives the same replay result as the file-backed store.
 
-`The_Restored_Total_Is_Not_Merely_The_Constructor_Seed` is the one doing real work. The resumed run builds a fresh executor seeded with the initial refund, so a no-op `OnCheckpointRestoredAsync` produces exactly `10.0` — a plausible number that passes any assertion looser than this one, with no exception and no warning.
-
-A second test pins a constraint that reads like a bug when you hit it: `FileSystemJsonCheckpointStore` takes an exclusive lock on its directory and does not release it when the run ends, so constructing a second store over the same directory throws "already in use by another process" — from the *same* process, after the first run finished.
+In the .NET tests ([`dotnet/tests/CheckpointsTests.cs`](./dotnet/tests/CheckpointsTests.cs)), `The_Restored_Total_Is_Not_Merely_The_Constructor_Seed` matters most. The resumed run builds a fresh executor seeded with the initial refund, so a restore hook that does nothing produces exactly `10.0`: a plausible number, with no exception and no warning. Another test pins the directory lock described in Gotchas.
 
 ## How this shows up in the capstone
 
-This chapter's toy is a narrow approximation: one stateful executor, one checkpoint, torn down and resumed. The real `workflow:return-replace` chain (`agents/python/workflows/return_replace.py`) is a much bigger thing — six executors carrying a full `WorkflowState` dataclass (order id, refund amount, replacement products, HITL flags, completed-steps list) through `check-eligibility → policy-gate → initiate-return → search-replacements → apply-discount → finalize`. This chapter doesn't rebuild that chain at toy scale; it isolates and teaches the one mechanic all of it depends on — a stateful executor's checkpoint save/restore hooks — so the bigger workflow below reads as a scaled-up version of exactly this, not a different trick.
+In the capstone (the full application in this repo), checkpoints are what let a staff member approve a customer's paused return hours later, from a different request, and have the return carry on from where it stopped.
 
-This chapter's toy example uses `FileCheckpointStorage`. The capstone runs a real one: `agents/python/shared/checkpoint_storage.py:34` defines `PostgresCheckpointStorage`, a `CheckpointStorage` implementation backed by `asyncpg` that reads and writes the `workflow_checkpoints` table (`docker/postgres/init.sql`), encoding each snapshot through MAF's own `encode_checkpoint_value` so the wire format matches what `FileCheckpointStorage` writes to disk — Postgres is just where it's kept. It's selected by `shared.factory.get_checkpoint_storage()` when `MAF_CHECKPOINT_BACKEND=postgres` (the production default), and every attached run is wrapped in `RecordingCheckpointStorage` so each save surfaces as its own `kind="checkpoint"` event on the SSE stream — MAF's own event stream never mentions a save otherwise (`agents/python/orchestrator/modes/workflow_mode.py:132`).
+The workflow involved is `workflow:return-replace` (`agents/python/workflows/return_replace.py`). It is larger than this chapter's example: six executors carry a `WorkflowState` dataclass through `check-eligibility → policy-gate → initiate-return → search-replacements → apply-discount → finalize`. The state holds the order id, refund amount, replacement products, HITL flags and a completed-steps list. The mechanic underneath is the one this chapter isolates: state saved at a superstep boundary and restored into a fresh workflow.
 
-The payoff is `workflow:return-replace` mode's HITL gate (Chapter 17 + this chapter combined): when the workflow pauses on `ctx.request_info`, the orchestrator records the paused checkpoint against a `hitl_requests` row. `ReturnReplaceMode.resume()` (`agents/python/orchestrator/modes/workflow_mode.py:299`), reached from `POST /api/orchestration/{run_id}/resume` (`agents/python/orchestrator/routes/orchestration.py:174`), builds a **fresh** `Workflow` object — there's no live one to reuse, since the one that paused lived in a prior request's process memory — and resumes purely from `checkpoint_id` plus the human's approval, exactly like this chapter's Phase 2. `GET /api/runs/{run_id}/checkpoints` (`agents/python/orchestrator/routes/legacy.py:1117`) surfaces pending approvals to the UI, and `web/src/app/(app)/runs/page.tsx` renders Approve/Reject buttons that call it — you can watch this exact mechanism resume a paused return in the live `/runs` page, not just in a unit test.
+Where this chapter uses `FileCheckpointStorage`, the capstone uses Postgres. `agents/python/shared/checkpoint_storage.py:36` defines `PostgresCheckpointStorage`, a `CheckpointStorage` implementation backed by `asyncpg` that reads and writes the `workflow_checkpoints` table (`docker/postgres/init.sql`). It encodes each snapshot with MAF's own `encode_checkpoint_value`, so the format matches what `FileCheckpointStorage` writes to disk. `shared.factory.get_checkpoint_storage()` selects it when `MAF_CHECKPOINT_BACKEND=postgres`, the default. Every run wraps the storage in `RecordingCheckpointStorage` (`agents/python/orchestrator/modes/workflow_mode.py:140`), so each save appears as its own `kind="checkpoint"` event on the stream sent to the browser. MAF's own event stream does not mention a save.
+
+The approval gate from Chapter 17 depends on this. When the workflow pauses on `ctx.request_info`, the orchestrator records the paused checkpoint against a `hitl_requests` row. `POST /api/orchestration/{run_id}/resume` (`agents/python/orchestrator/routes/orchestration.py:192`) reaches `ReturnReplaceMode.resume()` (`agents/python/orchestrator/modes/workflow_mode.py:370`). It builds a **fresh** `Workflow` object, because the one that paused lived in an earlier request's process memory. It then resumes from `checkpoint_id` plus the reviewer's decision, as this chapter's Phase 2 does.
+
+`GET /api/runs/{run_id}/checkpoints` (`agents/python/orchestrator/routes/legacy.py:1199`) tells the UI which runs have a pending approval. `web/src/app/(app)/runs/page.tsx` reads it and shows Approve and Reject buttons that call the resume endpoint, so you can watch a paused return resume on the `/runs` page.
 
 ## What's next
 
