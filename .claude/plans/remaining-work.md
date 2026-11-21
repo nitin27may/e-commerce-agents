@@ -253,6 +253,21 @@ Checked against `main` at `4339a2f`. **This block supersedes Part I phases C, D 
 "Azure track" proposal: what that proposal got right is here; what it got wrong is under *Rejected* so it is
 not proposed again.
 
+### Goal
+
+**Any developer runs the repo with any LLM provider and gets an eval result they can trust for that
+provider. Azure (Foundry, the AI gateway) is an option to explore, never a requirement.** Three tiers, each
+complete on its own:
+
+| Tier | Who | Needs | Gets |
+|---|---|---|---|
+| 0 Keyless | anyone | Docker | the app on replay, replay regression, detector recall |
+| 1 Any provider, local | anyone with a key or a local model (OpenAI, Azure OpenAI, Anthropic, Gemini, Ollama, any OpenAI-compatible endpoint) | a profile + key | the app on that model, and a **live eval of that model** with a capability check, cost and a comparison to reference and to their own last run |
+| 2 Azure, opt-in | Azure developers | a subscription | tier 1 plus Container Apps, Foundry project (evals, tracing), AI gateway, Foundry-hosted agents |
+
+Tier 1 is the product; tier 2 builds on it and never forks it. Every eval feature lands provider-neutral first
+and gets an Azure variant second. A tier-2 item that changes a tier-1 code path is a design error.
+
 ### The model: three independent switches
 
 Every way of running this repo is one choice on each axis. Code branches on none of the combinations.
@@ -301,12 +316,17 @@ or model change merges on replay alone. Keyless work that *is* a real eval: dete
 | EV-0 | Rename the smoke job "replay regression"; gate on misses + deterministic assertions; keep its score out of anything that reads as a quality badge (scorecard wording with the docs session) | — | 2h |
 | EV-1 | Run records: every run writes JSONL in Foundry's field names (`query`, `response`, `context`, `tool_calls`, `ground_truth`, plus `setup`, `model`, `tokens`, `latency_ms`, `cost_usd`); `--records-out`; `--rescore <records>` scores stored runs with no model call | — | 6h |
 | EV-2 | `http` target: drive `POST /api/chat/stream` on any orchestrator as a seeded eval user (JWT), collect text and `step` frames. Same runner for Python, .NET, mixed, Container Apps and Foundry mixes. Validated keyless against a compose stack under replay. This **is** the B2 parity gate's runner | — | 10h |
-| EV-3 | Judge config: `JUDGE_PROVIDER` / `JUDGE_MODEL` / `JUDGE_*` endpoint, never defaulting to the system under test; a ~30-item human-labelled set and judge agreement reported with every judged run | key for calibration | 6h |
+| EV-3 | Judge config: `JUDGE_PROVIDER` / `JUDGE_MODEL` / `JUDGE_*` endpoint on **any** provider, never defaulting to the system under test; a ~30-item human-labelled set and judge agreement reported with every judged run. A developer with one local model can still judge with it, but the report labels the run "self-judged" and weights deterministic scorers (tool calls, arguments, routing, DB groundedness, canaries), which carry most of the score anyway | key for calibration | 6h |
 | EV-4 | Repeats (`--repeats k`, default 3 for live), mean and spread per suite, regression gate scaled to sample size instead of a flat 0.05 | — | 4h |
 | EV-5 | Datasets to 30–50 cases per agent, multi-turn (absorbs E-3b), ~50 adversarial: direct, indirect through `seed_adversarial` (recorded cases scoring its canaries), and benign-but-suspicious for false positives; red-team judge (absorbs E-4 and the §12 bullet) | key, **one R1 sitting** | 3 d |
-| EV-6 | `full` job rebuilt: `workflow_dispatch` only, OIDC to Azure OpenAI (identity, no stored key), gpt-5.1 default with provider as an input, `http` target against the CI compose stack, required-reviewer environment, `COST_BUDGET_MODE=enforce` | Azure (OIDC app) | 5h |
+| EV-6 | `full` job rebuilt: `workflow_dispatch` only, **provider and model as inputs** (openai, azure, anthropic, any OpenAI-compatible URL; each reads its own secret, Azure through OIDC with no stored key), `http` target against the CI compose stack, required-reviewer environment, `COST_BUDGET_MODE=enforce`, `--estimate` printed first. Forks run it with their own secrets | a key for each provider used | 5h |
 | EV-7 | Deployed evals inside `azure.yml` deploy-and-test: `http` target at the deployed orchestrator, variants for gateway on/off and a Foundry-hosted specialist; tear-down stays `always()` | Azure | 4h |
 | EV-8 | Foundry adapter behind an optional extra (`foundry-evals`, `azure-ai-evaluation`): map EV-1 records onto Foundry evaluators (groundedness, intent resolution, tool-call accuracy, task adherence, indirect attack); optional results sink to the project. **The core eval path imports no Azure package** | Azure (project) | 1 d |
+| EV-10 | Provider capability check before any live eval (`python -m evals.provider_check`, also run by `scripts.doctor`): tool calling, parallel tool calls, tool choice, streaming with tools, JSON output, context length against our largest prompt, embeddings present. A failed capability is reported as "provider cannot do X" and the affected suites are marked *not applicable*, never scored as low quality. This is what makes a small local model's result honest | — (stub-tested; live per provider) | 1 d |
+| EV-11 | Baselines for a model nobody recorded: (a) committed **reference** baselines for a few models, each with its records and setup; (b) absolute floors per suite (the 0.7 quality floor today); (c) a personal baseline in a git-ignored `evals/.local/` so a developer compares prompt edits against their own previous run on their own model. The report always shows which of the three it compared against | key for (a) | 6h |
+| EV-12 | Cost and rate limits for any provider: move `_PRICING` out of `shared/cost.py` into `config/pricing.yaml` with user overrides; an **unknown model reports cost as unknown (null), not gpt-4.1's price** (today it falls back to gpt-4.1, so an Ollama or Gemini run reports invented dollars); `--estimate` prints tokens and cost before a live run, using token counts stored in the replay fixtures × repeats × the model's price; `--concurrency` and retry/backoff on 429 for free tiers | — | 6h |
+| EV-13 | Setup key carries everything that changes a score: stack, target, chat provider + model, **embedding provider + model** (no embeddings means full-text search, so discovery scores move for a reason unrelated to the chat model), judge model, gateway. Printed at the top of every report and stored in each record | — | 2h |
+| EV-14 | Shareable results: a developer can submit `records.jsonl` + setup for their model (PR into `evals/community/`, validated by a script); the model scorecard (P-7) reads reference and community results, labelled as such | — | 6h |
 | EV-9 | Prompt Shields comparison: a second detector behind the guardrail seam, both scored by `guardrail_confusion.py` over the EV-5 adversarial set, precision and recall published | EV-5, Azure | 6h |
 
 Baselines are keyed by setup: `evals/baselines/<stack>-<target>-<model>[-gw]/`. Re-recorded per setup, never
@@ -317,8 +337,8 @@ Where each mode runs, and what it may cost:
 | Mode | Target | Model | Scorers | Trigger |
 |---|---|---|---|---|
 | Replay regression | inproc | replay | deterministic | every PR (free) |
-| Local live | inproc or http | your key | + judge | by hand |
-| CI live | http, CI compose stack | Azure, OIDC | + judge, optional Foundry sink | `workflow_dispatch` only |
+| Local live | inproc or http | any provider (your key or local model) | capability check, + judge | by hand |
+| CI live | http, CI compose stack | any provider (input) | capability check, + judge, optional Foundry sink | `workflow_dispatch` only |
 | Deployed | http, Container Apps / Foundry mix | Azure | + judge | `azure.yml` dispatch only |
 | Foundry | the same records | — | Foundry evaluators | by hand |
 
@@ -349,19 +369,22 @@ actually using. Profiles are small overlays on `.env`, not copies of it.
 
 | ID | Work | Size |
 |---|---|---|
-| RP-1 | `config/profiles/<name>.env` overlays: `keyless`, `openai`, `azure-key`, `azure-identity`, `gemini`, `ollama`, `anthropic`, `azure-gateway`, `foundry-evals`; `dev.sh --profile <name>` / `dev.ps1 -Profile`; `.env` still wins for secrets | 6h |
+| RP-1 | `config/profiles/<name>.env` overlays: tier 0 `keyless`; tier 1 `openai`, `azure-key`, `azure-identity`, `anthropic`, `gemini`, `ollama`, `openai-compatible`; tier 2 `azure-gateway`, `foundry-evals`. Each sets chat, embeddings and a suggested judge together, so no profile silently leaves search on full-text. `dev.sh --profile <name>` / `dev.ps1 -Profile`, and the same `--profile` on `scripts/replay-evals.sh` and the eval CLI so the app and its eval use one setup; `.env` still wins for secrets | 6h |
 | RP-2 | `python -m scripts.doctor`: effective configuration with secrets redacted, validation errors, reachability of the model endpoint, database, Redis and each registry entry, and the "verified how" status for the chosen provider (read from one source shared with `model-providers.md`) | 6h |
 | RP-3 | One startup log line per service: provider, endpoint host, gateway on/off, where it runs, `A2A_TRANSPORT`, `A2A_IDENTITY`. No secrets | 2h |
-| RP-4 | `docs/run-profiles.md`: profile × where it runs × key needed × cost × verified status × which evals apply; links into the existing pages instead of repeating them. Index and README links agreed with the docs session (it owns landing pages) | 4h |
+| RP-6 | Stack coverage per profile: which profiles work on .NET (`LLM_API` is Python-only; .NET is Chat Completions always), stated in the profile file and the doc, and checked by the doctor | 2h |
+| RP-4 | `docs/run-profiles.md`: profile × tier × stack × key needed × cost × verified status × which evals apply, plus a two-command path per profile (`dev.sh --profile X`, then the eval); links into the existing pages instead of repeating them. Index and README links agreed with the docs session (it owns landing pages) | 4h |
 | RP-5 | Drift test: every key in every profile exists in `Settings` and `.env.example`, and the profile list in the doc matches the files | 2h |
 
 ### Order
 
-1. **Keyless, start now:** EV-0, EV-1, EV-2, EV-4, AZ-4, AZ-2, RP-1 to RP-5, and EV-3's config half. EV-2 then
-   becomes the runner B2 needs.
+1. **Tier 1 foundations, keyless, start now:** EV-0, EV-1, EV-2, EV-4, EV-12, EV-13, EV-10 (stub-tested),
+   EV-3's config half, RP-1 to RP-6. EV-2 then becomes the runner B2 needs. AZ-4 and AZ-2 can run alongside
+   (offline, touch no tier-1 behaviour).
 2. **One keyed R1 sitting** (folded into the existing R1, so nothing is recorded twice): EV-5, EV-3 calibration,
-   live baselines for `python-http-gpt-5.1` and `dotnet-http-gpt-5.1`.
-3. **Azure, once D-1 is set:** I5, AZ-1, AZ-3, EV-6, EV-7, EV-8, then AZ-5, AZ-6 (after D-6), EV-9, I6, AZ-7.
+   EV-11 reference baselines on at least two providers (Azure gpt-5.1 and one non-Azure model, so "any
+   provider" is demonstrated rather than claimed), EV-10 run live on each, EV-6, then EV-14.
+3. **Tier 2, once D-1 is set:** I5, AZ-1, AZ-3, EV-7, EV-8, then AZ-5, AZ-6 (after D-6), EV-9, I6, AZ-7.
 
 ### Rejected, so it is not proposed again
 
