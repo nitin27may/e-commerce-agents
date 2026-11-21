@@ -20,7 +20,7 @@
 # AZURE_RESOURCE_GROUP, DB_INIT_JOB_NAME, SMOKE_FIRST_FRAME_SECONDS (15), SMOKE_MIN_FRAMES (10).
 # Not verified against a real subscription; the Azure-only steps (1) are the least certain.
 set -uo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/../.."
+cd "$(dirname "${BASH_SOURCE[0]}")/../.." || exit 1
 
 QUICK=0 LOCAL=0
 while [ $# -gt 0 ]; do
