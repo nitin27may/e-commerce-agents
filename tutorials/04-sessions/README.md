@@ -100,6 +100,16 @@ def _save(session: AgentSession, path: pathlib.Path) -> None:
 
 Note that `main.py`'s `save`/`load` argument is cosmetic — both branches call the exact same `ask_and_save()`. The behavior that actually differs is whether `session.json` exists yet: the first invocation creates it, the second finds it and loads prior turns. There's also a third mode, `reset`, that deletes `session.json` so you can start over without hunting for the file by hand.
 
+## Notebook
+
+`tutorials/04-sessions/python/notebook.ipynb` walks through the same code one cell at a time: it round-trips a session through JSON, then answers a follow-up on a brand-new agent. Every cell imports the chapter's own `main.py` (its instructions, tools and helpers), and every prompt is the exact string the replay fixtures were recorded with, so it runs with no key.
+
+```bash
+uv sync --project tutorials --extra dev   # installs ipykernel, nbclient and nbformat
+```
+
+Open the notebook in VS Code or JupyterLab and pick the `tutorials/.venv` interpreter as the kernel. To run it headless, the way CI does: `uv run --project tutorials pytest tutorials/tests/test_notebooks.py -v`. Committed notebooks carry no outputs; `uv run --project tutorials python scripts/strip_notebook_outputs.py` cleans one before you commit. Edit a prompt in a cell and a replay run reports a missing fixture, because the prompt is part of the fixture's key; set `OPENAI_API_KEY` (or the Azure variables) to try your own wording live.
+
 ## .NET
 
 ```bash

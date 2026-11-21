@@ -51,6 +51,9 @@ prerequisites. For a fast route through the whole course, see [Short on time](#s
 *At the end you can:* build an agent that calls your own functions, streams its reply, and keeps a
 conversation going across turns.
 
+Each of these four chapters also has a Jupyter notebook (`<chapter>/python/notebook.ipynb`) that runs the
+chapter's own code one cell at a time, keyless, against the same recorded fixtures.
+
 ### Inside an agent (05–08)
 
 *For:* readers with a working agent who want to control what it sees, how its calls are handled, and

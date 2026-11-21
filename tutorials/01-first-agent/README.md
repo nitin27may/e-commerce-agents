@@ -94,6 +94,16 @@ async def ask(agent: Agent, question: str) -> str:
 
 `build_agent()` accepts an optional pre-built client so the test suite can inject a canned one instead of hitting a real LLM. The third provider, `replay` — what the no-key fallback selects — is backed by `tutorials/_shared/replay_client.py`; it plays back a committed fixture from `tests/fixtures/replay/`, which is how the test suite gets a "real answer" assertion without network access or credentials.
 
+## Notebook
+
+`tutorials/01-first-agent/python/notebook.ipynb` walks through the same code one cell at a time: it builds the agent and asks the chapter's default question plus the city-name-only prompt. Every cell imports the chapter's own `main.py` (its instructions, tools and helpers), and every prompt is the exact string the replay fixtures were recorded with, so it runs with no key.
+
+```bash
+uv sync --project tutorials --extra dev   # installs ipykernel, nbclient and nbformat
+```
+
+Open the notebook in VS Code or JupyterLab and pick the `tutorials/.venv` interpreter as the kernel. To run it headless, the way CI does: `uv run --project tutorials pytest tutorials/tests/test_notebooks.py -v`. Committed notebooks carry no outputs; `uv run --project tutorials python scripts/strip_notebook_outputs.py` cleans one before you commit. Edit a prompt in a cell and a replay run reports a missing fixture, because the prompt is part of the fixture's key; set `OPENAI_API_KEY` (or the Azure variables) to try your own wording live.
+
 ## .NET
 
 Source: [`dotnet/Program.cs`](./dotnet/Program.cs).

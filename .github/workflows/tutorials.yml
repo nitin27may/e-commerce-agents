@@ -115,6 +115,12 @@ jobs:
       - name: Run every chapter with no key
         run: python3 scripts/run_tutorials_keyless.py
 
+      # Chapters 01-04 ship a notebook that reuses the chapter's own prompts, so it
+      # replays the same fixtures. nbclient runs every cell in an ipykernel; the
+      # committed notebooks carry no outputs.
+      - name: Execute the chapter 01-04 notebooks with no key
+        run: uv run --project tutorials pytest tutorials/tests/test_notebooks.py -v
+
   tutorials-lint:
     name: Tutorials · ruff check
     runs-on: ubuntu-latest

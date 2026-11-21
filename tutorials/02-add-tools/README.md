@@ -95,6 +95,16 @@ def build_agent(client: object | None = None) -> Agent:
 
 Run it and ask a price question — the LLM calls `get_product_price("SKU-001")`, reads the canned string, and folds it into a natural-language response. Ask something unrelated and it answers directly without touching the tool; `INSTRUCTIONS` tells the LLM explicitly when the tool applies.
 
+## Notebook
+
+`tutorials/02-add-tools/python/notebook.ipynb` walks through the same code one cell at a time: it prints the tool's schema, calls the tool directly, then lets the model call it. Every cell imports the chapter's own `main.py` (its instructions, tools and helpers), and every prompt is the exact string the replay fixtures were recorded with, so it runs with no key.
+
+```bash
+uv sync --project tutorials --extra dev   # installs ipykernel, nbclient and nbformat
+```
+
+Open the notebook in VS Code or JupyterLab and pick the `tutorials/.venv` interpreter as the kernel. To run it headless, the way CI does: `uv run --project tutorials pytest tutorials/tests/test_notebooks.py -v`. Committed notebooks carry no outputs; `uv run --project tutorials python scripts/strip_notebook_outputs.py` cleans one before you commit. Edit a prompt in a cell and a replay run reports a missing fixture, because the prompt is part of the fixture's key; set `OPENAI_API_KEY` (or the Azure variables) to try your own wording live.
+
 ## .NET
 
 ```bash
