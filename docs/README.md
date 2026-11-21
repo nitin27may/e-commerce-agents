@@ -32,7 +32,7 @@ This folder contains the full technical documentation for E-Commerce Agents.
 
 1. [API Reference](api-reference.md) — all 20 REST endpoints with request/response examples
 2. [MCP Integration](mcp-integration.md) — MCP servers (MCPServer), how to enable, how to inspect
-3. [Database Schema](database-schema.md) — 34 tables with ER diagram and gotchas
+3. [Database Schema](database-schema.md) — 45 tables (34 baseline plus 11 from migrations) with ER diagram and gotchas
 
 ### "I care about quality, security, or observability"
 
@@ -53,7 +53,7 @@ This folder contains the full technical documentation for E-Commerce Agents.
 | [adding-an-agent.md](adding-an-agent.md) | Step-by-step checklist to add a new specialist agent |
 | [api-reference.md](api-reference.md) | All 20 REST endpoints (auth, chat, products, orders, admin, marketplace) |
 | [agent-flows.md](agent-flows.md) | Five multi-agent collaboration sequence diagrams with pattern notes |
-| [database-schema.md](database-schema.md) | 34 tables in 12 logical groups, ER diagram, indexing, gotchas |
+| [database-schema.md](database-schema.md) | 45 tables (34 baseline in 12 groups, 11 from migrations), ER diagram, indexing, gotchas |
 | [deployment.md](deployment.md) | Docker Compose profiles, `dev.sh` script, environment variables, local dev, health checks |
 | [frontend.md](frontend.md) | Next.js 16 routing, theming/OKLCH, SSE streaming, agent timeline, testing |
 | [telemetry.md](telemetry.md) | OpenTelemetry instrumentation, Aspire Dashboard, Langfuse LLM observability |

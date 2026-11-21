@@ -1,6 +1,6 @@
 # Database Schema
 
-E-Commerce Agents uses PostgreSQL 16 with the **pgvector** extension for embedding-based semantic search and **pgcrypto** for UUID generation. The schema contains 34 tables organized into 12 logical groups.
+E-Commerce Agents uses PostgreSQL 16 with the **pgvector** extension for embedding-based semantic search and **pgcrypto** for UUID generation. The frozen baseline (`docker/postgres/init.sql`) has 34 tables in 12 logical groups. Migrations `0003`, `0006`, `0009`, `0011` and `0012` add 11 more (45 in all), described in the sections for refresh tokens, approvals, merchant proposals and event autonomy below. Migrations `0002`, `0004`, `0005`, `0007`, `0008`, `0010` and `0013` only alter or backfill existing tables.
 
 ## Entity-Relationship Diagram
 
@@ -318,6 +318,7 @@ erDiagram
 | Table | Key Columns | Notes |
 |-------|-------------|-------|
 | **users** | `id` (PK), `email` (unique), `password_hash`, `name`, `role`, `loyalty_tier`, `total_spend`, `is_active` | Roles: `customer`, `power_user`, `seller`, `admin`. Loyalty tiers: `bronze`, `silver`, `gold`. Passwords hashed with bcrypt. |
+| **refresh_tokens** (`0003`) | `jti` (PK), `user_email` (FK -> users.email, cascades), `family_id`, `expires_at`, `revoked_at`, `replaced_by`, `family_expires_at` (`0005`) | One row per refresh token. Rotation revokes the presented token and records its successor in `replaced_by`. `family_expires_at` is stamped when a login starts a family and every successor inherits it, so a session cannot refresh forever (`AUTH_REFRESH_FAMILY_MAX_DAYS`, default 30). |
 
 ### Product Catalog
 
@@ -483,16 +484,42 @@ Two rules the reader enforces, each closing a defect that shipped:
 
 ### Approvals Foundation (migration `0006`)
 
-One inbox for every approval kind, with an audit trail and an outbox. Python repository only (`shared/approvals/repo.py`, `shared/outbox.py`). `approvals` and `approval_events` are written by every gated tool call and every paused return and by the approvals API; `outbox` and `notifications` are not written by anything yet.
+One inbox for every approval kind, with an audit trail and an outbox. Python repository only (`shared/approvals/repo.py`, `shared/outbox.py`). `approvals` and `approval_events` are written by every gated tool call and every paused return and by the approvals API; `outbox` and `notifications` are written too: entering `pending_review` enqueues a reminder and an SLA timer in the approval's transaction (`shared/outbox.py`), and the worker in `agents/python/worker/` claims those rows (migration `0011` adds `locked_by`, `failed_at` and role-addressed notifications) and writes `notifications` (`shared/notifications.py`).
 
 | Table | Key Columns | Notes |
 |-------|-------------|-------|
 | **approvals** | `id` (PK), `source` (`tool` \| `workflow` \| `proposal` \| `event`), `source_ref`, `kind`, `requester_email`, `subject_email`, `amount`, `policy_version`, `route` (`auto` \| `support` \| `manager`), `assigned_role`, `status`, `recommendation` / `decision` (JSONB), `decided_by`, `due_at`, `escalation_level`, `claimed_at` / `claimed_by` | Status: `pending_confirm`, `pending_review`, `needs_info`, `approved`, `approved_with_edits`, `rejected`, `expired`, `executed`, `failed`. The CHECK `approvals_no_self_approval` forbids `decided_by = requester_email` (case-insensitive); the repository refuses it first. `claimed_at` fences whoever executes a decision. One row per `(source, source_ref)`. |
 | **approval_events** | `id` (BIGSERIAL PK), `approval_id` (FK, `ON DELETE RESTRICT`), `actor_email`, `actor_role`, `action`, `payload` (JSONB) | Append-only: a trigger refuses UPDATE and DELETE. |
 | **outbox** | `id` (BIGSERIAL PK), `topic`, `aggregate_id`, `payload` (JSONB), `dedupe_key` (UNIQUE), `available_at`, `attempts`, `locked_until`, `processed_at`, `last_error` | Events and timers (a timer is a future `available_at`). `enqueue()` runs on the caller's connection so it joins that transaction. |
-| **notifications** | `id` (PK), `user_email`, `kind`, `title`, `body`, `link`, `approval_id` (FK, `ON DELETE SET NULL`), `read_at` | |
+| **notifications** | `id` (PK), `user_email` (nullable), `role` (`support` \| `admin`, nullable), `kind`, `title`, `body`, `link`, `approval_id` (FK, `ON DELETE SET NULL`), `read_at` | Addressed to a person or to a role, never both (`notifications_one_addressee`, migration `0011`). |
+| **notification_reads** (`0011`) | `(notification_id, user_email)` (PK), `read_at` | Per-reader read state for role-addressed notifications, where one row has many readers. |
 
 `tool_approval_requests` and `hitl_requests` each gained a nullable `approval_id` pointing at `approvals`; they stay as the per-source execution records.
+
+### Merchant proposals (migration `0009`)
+
+Seller markdown and restock suggestions ([merchant-proposals.md](merchant-proposals.md)). Python only. One `approvals` row per batch (source `proposal`); these tables hold the batch and its lines.
+
+| Table | Key Columns | Notes |
+|-------|-------------|-------|
+| **proposals** | `id` (PK), `seller_id` (FK -> users), `kind` (`markdown` \| `restock` \| `mixed`), `trigger` (`manual` \| `scheduled` \| `event`), `status` (`pending_review` \| `decided` \| `executed` \| `cancelled`) | One batch per generation run. |
+| **proposal_lines** | `id` (PK), `proposal_id` (FK, cascades), `product_id` (FK), `field` (`price` \| `restock_quantity`), `current_value`, `proposed_value`, `final_value`, `rationale`, `evidence` / `guard_result` (JSONB), `status` (`proposed`, `accepted`, `edited`, `rejected`, `blocked`, `executed`, `failed`), `executed_at` | Unique on `(proposal_id, product_id, field)`. A line executes at most once. |
+| **promotion_products** | `(promotion_id, product_id)` (PK) | Which products a promotion applies to. The same migration adds `products.unit_cost` (nullable, `>= 0`). |
+
+### Event autonomy (migration `0012`)
+
+What the system did on its own when an event arrived ([event-autonomy.md](event-autonomy.md)). Python only. Both tables are append-only: a trigger refuses `UPDATE` and `DELETE`, and refuses `TRUNCATE` while they hold rows (`reset_autonomy_log()` is the one named reset).
+
+| Table | Key Columns | Notes |
+|-------|-------------|-------|
+| **agent_decisions** | `id` (PK), `entry_type` (`decision` \| `approved_execution` \| `reversal`), `event_key`, `event_type`, `outbox_id`, `action`, `budget_key`, `budget_day`, `user_id`, `order_id`, `amount`, `tier` (`auto`, `auto_notify`, `needs_approval`, `no_action`), `outcome` (`executed`, `awaiting_approval`, `no_action`, `reversed`), `reasons` / `input` / `budget` (JSONB), `policy_version`, `approval_id`, `reversible`, `reverses_id`, `actor_email` | Unique `event_key` per decision (an event acts once), unique `reverses_id` (a reversal happens once) and unique `approval_id` per approved execution. A reversal is a new row and does not return the day's budget. |
+| **store_credit_ledger** | `id` (PK), `user_id` (FK), `amount` (signed, non-zero), `reason`, `decision_id` (FK -> agent_decisions) | Credit is positive, a reversal a negating entry. Unique per `decision_id`. |
+
+Migration `0012` also adds the CHECK `approvals_no_beneficiary_decision`: a reviewer is never the approval's subject (merchant proposals are the named exemption).
+
+### Return lifecycle columns (migration `0013`)
+
+`returns` gains `approval_id`, `resolution` (`refund` \| `store_credit` \| `replacement`), `scanned_at` and `inspection` (JSONB). The two waits are `hitl_requests` rows with `kind` `carrier_scan` / `return_inspection`, so there is no new table ([return-lifecycle.md](return-lifecycle.md)).
 
 ### OAuth2 Authorization Server
 
