@@ -1,4 +1,5 @@
 using System.ClientModel;
+using System.ClientModel.Primitives;
 using Anthropic;
 using Azure.AI.OpenAI;
 using ECommerceAgents.Shared.Configuration;
@@ -117,9 +118,10 @@ public static class ChatClientFactory
 
     /// <summary>
     /// The concrete OpenAI SDK client, kept for callers that need SDK-specific surface.
-    /// Prefer <see cref="Create"/>.
+    /// Prefer <see cref="Create"/>. <paramref name="httpClient"/> exists so a test can put a stub handler
+    /// under the real SDK.
     /// </summary>
-    public static ChatClient CreateChatClient(AgentSettings settings)
+    public static ChatClient CreateChatClient(AgentSettings settings, HttpClient? httpClient = null)
     {
         if (string.Equals(settings.LlmProvider, "azure", StringComparison.OrdinalIgnoreCase))
         {
@@ -142,9 +144,16 @@ public static class ChatClientFactory
                 );
             }
 
+            var azureOptions = new AzureOpenAIClientOptions();
+            if (httpClient is not null)
+            {
+                azureOptions.Transport = new HttpClientPipelineTransport(httpClient);
+            }
+
             var azureClient = new AzureOpenAIClient(
                 new Uri(settings.AzureOpenAiEndpoint),
-                new ApiKeyCredential(settings.AzureOpenAiKey)
+                new ApiKeyCredential(settings.AzureOpenAiKey),
+                azureOptions
             );
             return azureClient.GetChatClient(settings.AzureOpenAiDeployment);
         }
@@ -160,6 +169,11 @@ public static class ChatClientFactory
         // but the SDK still requires a non-empty one, hence the check above
         // applying either way.
         var openAiOptions = new OpenAIClientOptions();
+        if (httpClient is not null)
+        {
+            openAiOptions.Transport = new HttpClientPipelineTransport(httpClient);
+        }
+
         if (!string.IsNullOrWhiteSpace(settings.LlmBaseUrl))
         {
             openAiOptions.Endpoint = new Uri(settings.LlmBaseUrl);
