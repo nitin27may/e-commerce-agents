@@ -278,7 +278,7 @@ Recorded so these are not rediscovered as oversights:
 
 ## What has shipped
 
-This is v1.3. Both backends are live and stable. Remaining work is consolidated in
+This is v1.4. Both backends are live and stable. Remaining work is consolidated in
 [`.claude/plans/remaining-work.md`](https://github.com/nitin27may/e-commerce-agents/blob/main/.claude/plans/remaining-work.md) — including the gaps
 this section does not claim to cover.
 
@@ -333,9 +333,9 @@ Legend: `- [x]` shipped · `- [ ]` planned or in progress.
 - [x] **Cost metrics as first-class counters** — done. `shared/telemetry.py` had exposed `get_meter()` since telemetry was wired up and nothing had ever called it, so every metric on the dashboard came from MAF's or FastAPI's instrumentation and the one number this application knows — what a run costs — existed only as a log line. Both stacks already price every turn to enforce a budget ceiling; that estimate is now emitted as `ecommerce.llm.cost.usd`, with tokens split by direction beside it, because cost is derived from tokens through a hand-edited price table and only the raw counts say which of the two moved. Same instrument and meter names on Python and .NET, so one dashboard covers both. Nothing user-scoped is attached to the attributes.
 - [x] **Streaming tool calls end-to-end** — done. Both stacks batched their timeline steps until after the last text chunk, so the timeline snapped into place once the answer had finished writing — precisely when it stops being useful. In a MAF tool loop the tools resolve first and the prose narrating them comes second, so both specialist hosts now drain steps before each chunk and both orchestrators forward them live. Not done, deliberately: rendering cards from those payloads as well, since the answer text already carries ```product fences for the same data and a client drawing from both would show every card twice.
 
-### Shipped since 1.3.0
+### Shipped in v1.4
 
-Merged to `main` and listed under *Unreleased* in the [changelog](../CHANGELOG.md); not yet in a tagged release.
+Released as 1.4.0; the [changelog](../CHANGELOG.md) has the full entries and the known limits.
 
 - [x] **A2A 1.0 on both stacks** ([#88](https://github.com/nitin27may/e-commerce-agents/issues/88)) — every specialist serves the A2A 1.0 JSON-RPC binding at `/a2a/v1` and an agent card at `/.well-known/agent-card.json` beside the original `/message:send` wire. `A2A_TRANSPORT=legacy|a2a` picks what the caller speaks; user identity can travel as a signed, short-lived `X-User-Context` token (`A2A_IDENTITY`). Cross-process interop runs keyless in both directions (`scripts/a2a-interop.sh`). The .NET side rides a preview SDK, pinned exactly. See [a2a.md](a2a.md).
 - [x] **Approvals** ([#92](https://github.com/nitin27may/e-commerce-agents/issues/92)) — one inbox and one decide path on both stacks, routed by a policy file rather than a prompt, with an append-only audit trail, claim fencing, and SLA reminders, escalation and timeouts driven by an outbox worker. See [approvals.md](approvals.md).
