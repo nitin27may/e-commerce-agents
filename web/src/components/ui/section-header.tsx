@@ -8,6 +8,8 @@ export interface SectionHeaderProps {
   /** Right-aligned slot, e.g. a button or filter. */
   action?: React.ReactNode;
   className?: string;
+  /** Heading element. Defaults to h2; a page with no other h1 passes "h1". Size is the same either way. */
+  as?: "h1" | "h2";
 }
 
 /** Consistent header for page/section blocks across the app shell. */
@@ -17,6 +19,7 @@ export function SectionHeader({
   eyebrow,
   action,
   className,
+  as: Heading = "h2",
 }: SectionHeaderProps) {
   return (
     <div className={cn("mb-4 flex items-start justify-between gap-4", className)}>
@@ -26,9 +29,9 @@ export function SectionHeader({
             {eyebrow}
           </p>
         )}
-        <h2 className="font-heading text-lg font-semibold tracking-tight">
+        <Heading className="font-heading text-lg font-semibold tracking-tight">
           {title}
-        </h2>
+        </Heading>
         {description && (
           <p className="text-sm text-muted-foreground">{description}</p>
         )}

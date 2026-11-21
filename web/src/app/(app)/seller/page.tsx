@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
+import { asArray, asNumber } from "@/lib/guards";
+import { ErrorState } from "@/components/error-state";
 import {
   Card,
   CardHeader,
@@ -52,8 +54,15 @@ export default function SellerDashboardPage() {
         api.getSellerStats(),
         api.getSellerOrders(),
       ]);
-      setStats(statsRes);
-      setOrders(ordersRes.orders);
+      // An empty or reshaped response must not reach the render as undefined fields.
+      setStats({
+        ...(statsRes && !Array.isArray(statsRes) ? statsRes : {}),
+        product_count: asNumber(statsRes?.product_count),
+        total_revenue: asNumber(statsRes?.total_revenue),
+        order_count: asNumber(statsRes?.order_count),
+        avg_rating: asNumber(statsRes?.avg_rating),
+      });
+      setOrders(asArray(ordersRes?.orders));
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to load dashboard data",
@@ -118,9 +127,7 @@ export default function SellerDashboardPage() {
 
         {/* Error */}
         {error && (
-          <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-            {error}
-          </div>
+          <ErrorState inline onRetry={loadData} message={error} homeHref="/home" homeLabel="Back to dashboard" />
         )}
 
         {!loading && !error && stats && (

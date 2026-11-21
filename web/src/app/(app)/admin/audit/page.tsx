@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
+import { asArray, asNumber } from "@/lib/guards";
+import { ErrorState } from "@/components/error-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -202,7 +204,7 @@ function StepDetail({ step }: { step: AuditStep }) {
     <div className="rounded-lg border border-border bg-card px-3 py-2">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="inline-flex size-5 items-center justify-center rounded bg-muted text-[10px] font-medium text-muted-foreground">
+          <span className="inline-flex size-5 items-center justify-center rounded bg-muted text-xs font-medium text-muted-foreground">
             {step.step_index + 1}
           </span>
           <span className="font-mono text-xs font-semibold text-foreground/80">
@@ -211,7 +213,7 @@ function StepDetail({ step }: { step: AuditStep }) {
           {step.status === "error" && (
             <Badge
               variant="outline"
-              className="border-red-200 bg-red-50 text-[10px] text-red-700"
+              className="border-red-200 bg-red-50 text-xs text-red-700"
             >
               error
             </Badge>
@@ -222,12 +224,12 @@ function StepDetail({ step }: { step: AuditStep }) {
         </span>
       </div>
       {inputStr && (
-        <pre className="mt-1.5 max-h-24 overflow-auto rounded bg-muted/60 px-2 py-1 pl-7 text-[10px] leading-relaxed text-foreground/70">
+        <pre className="mt-1.5 max-h-24 overflow-auto rounded bg-muted/60 px-2 py-1 pl-7 text-xs leading-relaxed text-foreground/70">
           {inputStr}
         </pre>
       )}
       {outputStr && (
-        <pre className="mt-1 max-h-24 overflow-auto rounded bg-muted/40 px-2 py-1 pl-7 text-[10px] leading-relaxed text-muted-foreground">
+        <pre className="mt-1 max-h-24 overflow-auto rounded bg-muted/40 px-2 py-1 pl-7 text-xs leading-relaxed text-muted-foreground">
           {outputStr}
         </pre>
       )}
@@ -281,8 +283,9 @@ export default function AdminAuditPage() {
         status: statusFilter || undefined,
         search: debouncedSearch || undefined,
       });
-      setEntries(data?.entries ?? []);
-      setTotal(data?.total ?? 0);
+      const list = asArray<AuditEntry>(data?.entries).map((e) => ({ ...e, steps: asArray<AuditEntry["steps"][number]>(e.steps) }));
+      setEntries(list);
+      setTotal(asNumber(data?.total, list.length));
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to load audit log",
@@ -403,9 +406,7 @@ export default function AdminAuditPage() {
           )}
 
           {error && (
-            <div className="mx-4 mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-              {error}
-            </div>
+            <ErrorState inline onRetry={loadAudit} message={error} homeHref="/home" homeLabel="Back to dashboard" />
           )}
 
           {!loading && !error && entries.length === 0 && (

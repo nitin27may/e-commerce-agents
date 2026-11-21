@@ -68,4 +68,20 @@ describe("OrchestrationGraph", () => {
     rerender(<OrchestrationGraph mode="workflow:return-replace" />);
     await waitFor(() => expect(api.getModeGraph).toHaveBeenCalledWith("workflow:return-replace"));
   });
+
+  it("uses light-on-dark line and text colours when the root has the dark class", async () => {
+    document.documentElement.classList.add("dark");
+    try {
+      vi.spyOn(api, "getModeGraph").mockResolvedValue({ name: "workflow:pre-purchase", mermaid: SAMPLE_GRAPH });
+      const { container } = render(<OrchestrationGraph mode="workflow:pre-purchase" activeNodeIds={["fan-out"]} />);
+      await waitFor(() => {
+        const encoded = container.querySelector("svg")?.getAttribute("data-source");
+        expect(encoded && decodeURIComponent(encoded)).toContain("'lineColor': '#94a3b8'");
+      });
+      const source = decodeURIComponent(container.querySelector("svg")!.getAttribute("data-source")!);
+      expect(source).toContain("class fan_out active");
+    } finally {
+      document.documentElement.classList.remove("dark");
+    }
+  });
 });

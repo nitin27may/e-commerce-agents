@@ -129,6 +129,88 @@ const INSPECTIONS = {
   total: 1,
 };
 
+// One run whose return is paused on a staff decision, so /runs renders the
+// "Needs approval" badge, plus one plain run.
+const RUNS = {
+  entries: [
+    {
+      id: "run-1",
+      agent_name: "orchestrator",
+      user_email: "alice@example.com",
+      user_name: "Alice Johnson",
+      input_summary: "Return my headphones, they arrived damaged",
+      tokens_in: 1200,
+      tokens_out: 340,
+      tool_calls_count: 0,
+      duration_ms: 2100,
+      status: "success",
+      trace_id: null,
+      created_at: "2026-11-16T10:00:00Z",
+      steps: [],
+    },
+    {
+      id: "run-2",
+      agent_name: "orchestrator",
+      user_email: "alice@example.com",
+      user_name: "Alice Johnson",
+      input_summary: "Find noise cancelling headphones under 300",
+      tokens_in: 900,
+      tokens_out: 410,
+      tool_calls_count: 1,
+      duration_ms: 1500,
+      status: "success",
+      trace_id: null,
+      created_at: "2026-11-16T09:00:00Z",
+      steps: [
+        {
+          step_index: 0,
+          tool_name: "product-discovery:search_products",
+          tool_input: { query: "headphones" },
+          tool_output: { count: 2 },
+          status: "success",
+          duration_ms: 320,
+        },
+      ],
+    },
+  ],
+  total: 2,
+  limit: 20,
+  offset: 0,
+};
+
+const PENDING_CHECKPOINTS = {
+  run_id: "run-1",
+  checkpoints: [{ checkpoint_id: "cp-1", workflow_name: "return-replace", created_at: "2026-11-16T10:00:01Z" }],
+  hitl_request: {
+    id: "h-1",
+    kind: "return_approval",
+    status: "pending",
+    payload: { order_id: "a1b2c3d4e5" },
+    response: null,
+    created_at: "2026-11-16T10:00:01Z",
+    responded_at: null,
+  },
+};
+
+const HITL = {
+  requests: [
+    {
+      id: "hq-1",
+      user_email: "alice@example.com",
+      agent_name: "order-management",
+      tool_name: "cancel_order",
+      tool_input: { order_id: "a1b2c3d4e5", reason: "Ordered by mistake" },
+      status: "pending",
+      admin_note: null,
+      approved_by: null,
+      execution_result: null,
+      created_at: "2026-11-16T10:00:00Z",
+      resolved_at: null,
+    },
+  ],
+  total: 1,
+};
+
 export async function seedAuth(
   page: Page,
   role: "customer" | "admin" | "seller" = "customer",
@@ -155,6 +237,14 @@ export async function mockApi(page: Page) {
     if (url.includes("/api/seller/proposals")) return route.fulfill({ json: PROPOSALS });
     if (url.includes("/api/staff/returns/inspections")) return route.fulfill({ json: INSPECTIONS });
     if (url.includes("/api/admin/usage")) return route.fulfill({ json: USAGE });
+    if (url.includes("/api/admin/hitl/requests")) return route.fulfill({ json: HITL });
+    if (url.includes("/api/runs/") && url.includes("/checkpoints")) {
+      const pending = url.includes("/api/runs/run-1/");
+      return route.fulfill({
+        json: pending ? PENDING_CHECKPOINTS : { run_id: "run-2", checkpoints: [], hitl_request: null },
+      });
+    }
+    if (url.includes("/api/runs")) return route.fulfill({ json: RUNS });
     if (url.includes("/api/orders")) return route.fulfill({ json: ORDERS });
     if (url.includes("/api/products")) return route.fulfill({ json: PRODUCTS });
     if (url.includes("/api/cart"))
@@ -165,7 +255,9 @@ export async function mockApi(page: Page) {
     // sidebar assertions failed against a page that never rendered — nothing to
     // do with the backend under test.
     if (url.includes("/api/orchestration/modes"))
-      return route.fulfill({ json: { modes: [{ name: "tool", label: "Tool Router", description: "", is_graph: false }] } });
+      return route.fulfill({
+        json: [{ name: "tool", label: "Tool Router", description: "", capabilities: { streams: true, supports_hitl: false, supports_checkpoints: false, is_graph: false }, default: true }],
+      });
     // Anything unmatched gets an empty ARRAY rather than an empty object: most
     // of this app's endpoints return collections, and {} is the shape most
     // likely to throw in a .map().

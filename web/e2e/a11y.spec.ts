@@ -14,6 +14,9 @@ import { seedAuth, mockApi } from "./ui-mocks";
  * scope it goes in KNOWN_EXCLUSIONS below, scoped to one selector, with the
  * reason and what would remove it. The list is empty today.
  *
+ * /chat is scanned in its empty state (no stream is mocked); /runs includes a
+ * pending hitl_request so the Needs approval badge is on the page.
+ *
  * Both themes are covered for the authenticated pages: colour contrast is where
  * a dark theme regresses first. Runs on the desktop and the mobile project
  * (see playwright.config.ts).
@@ -78,6 +81,9 @@ test.describe("authenticated shell", () => {
       ["admin decisions", "/admin/decisions", "admin"],
       ["admin returns", "/admin/returns", "admin"],
       ["seller proposals", "/seller/proposals", "seller"],
+      ["chat", "/chat", "customer"],
+      ["runs", "/runs", "customer"],
+      ["admin approvals", "/admin/approvals", "admin"],
     ] as const) {
       test(`${name} (${theme}) has no serious or critical violations`, async ({ page }) => {
         await seedAuth(page, role, theme);
@@ -85,10 +91,27 @@ test.describe("authenticated shell", () => {
         await page.goto(path);
         await page.waitForLoadState("networkidle");
         await expect(page.getByRole("main")).toBeVisible();
+        // A page that crashed into the error boundary has no violations to find, so rule it out first.
+        await expect(page.getByRole("heading", { name: "Something went wrong" })).toHaveCount(0);
         await scan(page, `${name} (${theme})`);
       });
     }
   }
+
+  test("runs shows the Needs approval badge for a paused return", async ({ page }) => {
+    await seedAuth(page);
+    await mockApi(page);
+    await page.goto("/runs");
+    await expect(page.getByText("Needs approval")).toBeVisible();
+  });
+
+  test("chat message list is a named live log", async ({ page }) => {
+    await seedAuth(page);
+    await mockApi(page);
+    await page.goto("/chat");
+    await expect(page.getByRole("log", { name: "Conversation" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Chat" })).toBeAttached();
+  });
 
   test("skip link is the first tab stop and moves focus to the main content", async ({
     page,

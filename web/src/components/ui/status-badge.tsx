@@ -28,6 +28,18 @@ export const TONE_TEXT_CLASS: Record<SemanticTone, string> = {
   neutral: "text-muted-foreground",
 };
 
+/**
+ * Chip classes for categories and roles, which are labels rather than status
+ * signals: `primary` (blue), `teal` (the chart-2 hue) and `slate` (secondary).
+ * Light text is mixed toward black so it clears 4.5:1 on the tinted fill; dark
+ * mode uses the raw token.
+ */
+export const CHIP_CLASS = {
+  primary: "bg-primary/10 text-primary border-primary/30 dark:bg-primary/15 dark:text-[color-mix(in_oklab,var(--primary)_65%,white)]",
+  teal: "bg-chart-2/10 text-[color-mix(in_oklab,var(--chart-2)_55%,black)] dark:text-chart-2 border-chart-2/30 dark:bg-chart-2/15",
+  slate: "bg-secondary text-secondary-foreground border-border",
+} as const;
+
 export interface StatusBadgeProps {
   label: string;
   tone: SemanticTone;

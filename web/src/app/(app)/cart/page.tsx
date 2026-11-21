@@ -282,7 +282,7 @@ export default function CartPage() {
                             </div>
                             <Badge
                               variant="outline"
-                              className="shrink-0 text-[10px] font-normal"
+                              className="shrink-0 text-xs font-normal"
                             >
                               {item.category}
                             </Badge>

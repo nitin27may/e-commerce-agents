@@ -123,25 +123,25 @@ export function ChatInventoryCard({ data, onAction }: ChatInventoryCardProps) {
 
         {data.warehouses && data.warehouses.length > 0 && (
           <div>
-            <p className="text-[11px] font-medium text-muted-foreground mb-1">By warehouse</p>
+            <p className="text-xs font-medium text-muted-foreground mb-1">By warehouse</p>
             <DataTable columns={WAREHOUSE_COLUMNS} rows={data.warehouses} />
           </div>
         )}
 
         {data.upcoming_restocks && data.upcoming_restocks.length > 0 && (
           <div>
-            <p className="text-[11px] font-medium text-muted-foreground mb-1">Upcoming restocks</p>
+            <p className="text-xs font-medium text-muted-foreground mb-1">Upcoming restocks</p>
             <DataTable columns={RESTOCK_COLUMNS} rows={data.upcoming_restocks} />
           </div>
         )}
 
         {data.next_restock && (!data.upcoming_restocks || data.upcoming_restocks.length === 0) && (
-          <p className="text-[11px] text-muted-foreground">Next restock: {data.next_restock}</p>
+          <p className="text-xs text-muted-foreground">Next restock: {data.next_restock}</p>
         )}
 
         {data.shipping_options && data.shipping_options.length > 0 && (
           <div>
-            <p className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground mb-1">
+            <p className="flex items-center gap-1 text-xs font-medium text-muted-foreground mb-1">
               <Truck className="size-3" />
               Shipping options
               {data.ships_from?.warehouse && ` — ships from ${data.ships_from.warehouse}`}
@@ -158,7 +158,7 @@ export function ChatInventoryCard({ data, onAction }: ChatInventoryCardProps) {
                       {opt.speed_tier && <span className="text-muted-foreground"> · {opt.speed_tier}</span>}
                     </div>
                     {opt.delivery_window && (
-                      <div className="text-[10px] text-muted-foreground">{opt.delivery_window}</div>
+                      <div className="text-xs text-muted-foreground">{opt.delivery_window}</div>
                     )}
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
@@ -167,7 +167,7 @@ export function ChatInventoryCard({ data, onAction }: ChatInventoryCardProps) {
                       <Button
                         size="sm"
                         variant="outline"
-                        className="h-6 text-[11px] px-2"
+                        className="h-6 text-xs px-2"
                         onClick={() =>
                           onAction(
                             `I'll go with ${opt.carrier}${opt.speed_tier ? ` (${opt.speed_tier})` : ""} shipping for ${formatPrice(opt.price)}${opt.delivery_window ? `, ${opt.delivery_window}` : ""}.`

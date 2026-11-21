@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { api, type RunEntry, type RunTimelineEntry } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { asArray, asNumber } from "@/lib/guards";
+import { ErrorState } from "@/components/error-state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,6 +28,7 @@ export default function RunsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
+  const [reloadKey, setReloadKey] = useState(0);
   // Keyed by run id. Fetched eagerly for every visible row, not lazily on
   // expand — a lazy fetch means the "Needs approval" badge below can't
   // show until a row has already been opened once, defeating its purpose
@@ -39,15 +42,17 @@ export default function RunsPage() {
     api
       .getRuns({ limit, offset: page * limit })
       .then((r) => {
-        setEntries(r.entries);
-        setTotal(r.total);
+        // `[]` or a reshaped body is an empty list, not a crash.
+        const list = asArray<RunEntry>(r?.entries).map((e) => ({ ...e, steps: asArray<RunEntry["steps"][number]>(e.steps) }));
+        setEntries(list);
+        setTotal(asNumber(r?.total, list.length));
         setLoading(false);
         setCheckpoints({});
-        Promise.allSettled(r.entries.map((e) => api.getRunCheckpoints(e.id))).then((results) => {
+        Promise.allSettled(list.map((e) => api.getRunCheckpoints(e.id))).then((results) => {
           setCheckpoints((prev) => {
             const next = { ...prev };
             results.forEach((res, i) => {
-              if (res.status === "fulfilled") next[r.entries[i].id] = res.value;
+              if (res.status === "fulfilled") next[list[i].id] = res.value;
             });
             return next;
           });
@@ -57,7 +62,7 @@ export default function RunsPage() {
         setError("Failed to load runs");
         setLoading(false);
       });
-  }, [page]);
+  }, [page, reloadKey]);
 
   function refreshCheckpoints(runId: string) {
     api
@@ -91,11 +96,10 @@ export default function RunsPage() {
       )}
 
       {error && (
-        <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
-            {error}
-          </CardContent>
-        </Card>
+        <ErrorState inline onRetry={() => {
+          setError(null);
+          setReloadKey((k) => k + 1);
+        }} message={error} homeHref="/home" homeLabel="Back to dashboard" />
       )}
 
       {!loading && !error && entries.length === 0 && (
@@ -220,7 +224,7 @@ function RunRow({
   }, [wantsTimeline, entry.id, hitl?.status, hitl?.kind]);
 
   return (
-    <Card className={cn("overflow-hidden", pendingApproval && "ring-1 ring-amber-400/60")}>
+    <Card className={cn("overflow-hidden", pendingApproval && "ring-1 ring-warning/60")}>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -228,7 +232,7 @@ function RunRow({
       >
         <div className="mt-0.5 shrink-0">
           {entry.status === "success" ? (
-            <Check className="size-4 text-emerald-500" />
+            <Check className="size-4 text-success" />
           ) : (
             <X className="size-4 text-destructive" />
           )}
@@ -253,7 +257,7 @@ function RunRow({
               <span>{entry.tokens_in + entry.tokens_out} tokens</span>
             )}
             {agentsInvolved.length > 0 && (
-              <span className="text-muted-foreground/60">
+              <span className="text-muted-foreground">
                 {agentsInvolved.join(" → ")}
               </span>
             )}
@@ -273,7 +277,7 @@ function RunRow({
 
         <div className="flex shrink-0 items-center gap-2">
           {pendingApproval && (
-            <Badge className="bg-amber-500 text-white text-xs">Needs approval</Badge>
+            <Badge className="bg-warning text-warning-foreground text-xs">Needs approval</Badge>
           )}
           {hasSteps && (
             <Badge variant="outline" className="text-xs">
@@ -356,7 +360,7 @@ function RunRow({
                       <span className="text-foreground">{e.title}</span>
                       {e.detail ? ` — ${e.detail}` : ""}
                       {e.actor ? ` (${e.actor})` : ""}
-                      <span className="ml-2 text-[11px]">{new Date(e.at).toLocaleString()}</span>
+                      <span className="ml-2 text-xs">{new Date(e.at).toLocaleString()}</span>
                     </li>
                   ))}
                 </ol>
@@ -412,7 +416,7 @@ function StepDetailRow({ step }: { step: RunEntry["steps"][number] }) {
         {step.status === "error" ? (
           <X className="size-3 shrink-0 text-destructive" />
         ) : (
-          <Check className="size-3 shrink-0 text-emerald-500" />
+          <Check className="size-3 shrink-0 text-success" />
         )}
         <span className="ml-auto shrink-0 text-muted-foreground">{step.duration_ms}ms</span>
       </button>
@@ -440,7 +444,7 @@ function JsonBlock({ label, value }: { label: string; value: unknown }) {
   return (
     <div>
       <p className="mb-0.5 text-xs font-medium text-muted-foreground">{label}</p>
-      <pre className="max-h-48 overflow-auto rounded bg-background/60 p-2 text-[10px] leading-relaxed text-foreground/80 ring-1 ring-border/60">
+      <pre className="max-h-48 overflow-auto rounded bg-background/60 p-2 text-xs leading-relaxed text-foreground/80 ring-1 ring-border/60">
         {display}
       </pre>
     </div>

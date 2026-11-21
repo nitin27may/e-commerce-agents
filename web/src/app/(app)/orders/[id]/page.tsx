@@ -7,6 +7,7 @@ import { api, apiUrl } from "@/lib/api";
 import { toastOrderCancelled, toastReturnInitiated } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { CHIP_CLASS, TONE_BADGE_CLASS } from "@/components/ui/status-badge";
 import { Separator } from "@/components/ui/separator";
 import {
   Card,
@@ -154,38 +155,38 @@ const STATUS_CONFIG: Record<
   { color: string; dotColor: string; icon: React.ElementType; label: string }
 > = {
   placed: {
-    color: "border-blue-200 bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300 dark:border-blue-500/30",
-    dotColor: "bg-blue-500",
+    color: TONE_BADGE_CLASS.info,
+    dotColor: "bg-info",
     icon: Clock,
     label: "Placed",
   },
   confirmed: {
-    color: "border-indigo-200 bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300 dark:border-indigo-500/30",
-    dotColor: "bg-indigo-500",
+    color: CHIP_CLASS.primary,
+    dotColor: "bg-primary",
     icon: CheckCircle,
     label: "Confirmed",
   },
   shipped: {
-    color: "border-amber-200 bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/30",
-    dotColor: "bg-amber-500",
+    color: TONE_BADGE_CLASS.warning,
+    dotColor: "bg-warning",
     icon: Truck,
     label: "Shipped",
   },
   delivered: {
-    color: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30",
-    dotColor: "bg-emerald-500",
+    color: TONE_BADGE_CLASS.success,
+    dotColor: "bg-success",
     icon: CheckCircle,
     label: "Delivered",
   },
   returned: {
-    color: "border-orange-200 bg-orange-50 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300 dark:border-orange-500/30",
-    dotColor: "bg-orange-500",
+    color: TONE_BADGE_CLASS.neutral,
+    dotColor: "bg-muted-foreground",
     icon: RotateCcw,
     label: "Returned",
   },
   cancelled: {
-    color: "border-red-200 bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-300 dark:border-red-500/30",
-    dotColor: "bg-red-500",
+    color: TONE_BADGE_CLASS.destructive,
+    dotColor: "bg-destructive",
     icon: XCircle,
     label: "Cancelled",
   },
@@ -425,7 +426,7 @@ export default function OrderDetailPage() {
                   <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
                     <DialogTrigger
                       render={
-                        <Button variant="outline" className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700">
+                        <Button variant="outline" className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive">
                           <Ban className="mr-1.5 size-4" />
                           Cancel Order
                         </Button>
@@ -447,7 +448,7 @@ export default function OrderDetailPage() {
                           />
                         </div>
                         <Button
-                          className="w-full bg-red-600 text-white hover:bg-red-700"
+                          className="w-full bg-destructive text-white hover:bg-destructive/90"
                           disabled={cancelling || !cancelReason.trim()}
                           onClick={handleCancelOrder}
                         >
@@ -463,7 +464,7 @@ export default function OrderDetailPage() {
                   <Dialog open={returnOpen} onOpenChange={setReturnOpen}>
                     <DialogTrigger
                       render={
-                        <Button variant="outline" className="border-orange-200 text-orange-600 hover:bg-orange-50 hover:text-orange-700">
+                        <Button variant="outline" className="border-warning/40 text-[color-mix(in_oklab,var(--warning)_45%,black)] dark:text-warning hover:bg-warning/10">
                           <RotateCcw className="mr-1.5 size-4" />
                           Return Order
                         </Button>
@@ -508,7 +509,7 @@ export default function OrderDetailPage() {
                           </div>
                         </div>
                         <Button
-                          className="w-full bg-orange-600 text-white hover:bg-orange-700"
+                          className="w-full bg-warning text-warning-foreground hover:bg-warning/90"
                           disabled={returning || !returnReason.trim()}
                           onClick={handleReturnOrder}
                         >
@@ -527,15 +528,15 @@ export default function OrderDetailPage() {
 
       {/* Order Placed Confirmation Banner */}
       {justPlaced && !loading && !error && order && (
-        <div className="border-b border-emerald-200 bg-emerald-50">
+        <div className="border-b border-success/30 bg-success/10">
           <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
             <div className="flex items-center gap-3">
-              <CheckCircle className="size-5 text-emerald-600 shrink-0" />
+              <CheckCircle className="size-5 text-[color-mix(in_oklab,var(--success)_62%,black)] dark:text-success shrink-0" />
               <div>
-                <p className="font-medium text-emerald-800">
+                <p className="font-medium text-[color-mix(in_oklab,var(--success)_62%,black)] dark:text-success">
                   Order placed successfully!
                 </p>
-                <p className="text-sm text-emerald-600">
+                <p className="text-sm text-[color-mix(in_oklab,var(--success)_62%,black)] dark:text-success">
                   Your order is being processed.
                 </p>
               </div>
@@ -543,7 +544,7 @@ export default function OrderDetailPage() {
             <Button
               variant="outline"
               size="sm"
-              className="shrink-0 border-emerald-300 text-emerald-700 hover:bg-emerald-100"
+              className="shrink-0 border-success/40 text-[color-mix(in_oklab,var(--success)_62%,black)] dark:text-success hover:bg-success/15"
               onClick={() => router.push("/products")}
             >
               Continue Shopping
@@ -616,7 +617,7 @@ export default function OrderDetailPage() {
                           <TableCell>
                             <Badge
                               variant="outline"
-                              className="text-[10px] font-normal"
+                              className="text-xs font-normal"
                             >
                               {item.category}
                             </Badge>
@@ -725,7 +726,7 @@ export default function OrderDetailPage() {
                   {order.discount > 0 && (
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">Discount</span>
-                      <span className="text-emerald-600">
+                      <span className="text-[color-mix(in_oklab,var(--success)_62%,black)] dark:text-success">
                         -{formatPrice(order.discount)}
                       </span>
                     </div>
@@ -747,7 +748,7 @@ export default function OrderDetailPage() {
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <RotateCcw className="size-4 text-orange-500" />
+                      <RotateCcw className="size-4 text-[color-mix(in_oklab,var(--warning)_45%,black)] dark:text-warning" />
                       Return Information
                     </CardTitle>
                   </CardHeader>
@@ -763,7 +764,7 @@ export default function OrderDetailPage() {
                         <span className="text-muted-foreground">Status</span>
                         <Badge
                           variant="outline"
-                          className="border-orange-200 bg-orange-50 text-orange-700"
+                          className="border-warning/30 bg-warning/10 text-[color-mix(in_oklab,var(--warning)_45%,black)] dark:text-warning"
                         >
                           {(order["return"] as ReturnInfo).status}
                         </Badge>
@@ -777,7 +778,7 @@ export default function OrderDetailPage() {
                       {(order["return"] as ReturnInfo).refund_amount != null && (
                         <div className="flex items-center justify-between text-sm">
                           <span className="text-muted-foreground">Refund Amount</span>
-                          <span className="font-medium text-emerald-600">
+                          <span className="font-medium text-[color-mix(in_oklab,var(--success)_62%,black)] dark:text-success">
                             {formatPrice((order["return"] as ReturnInfo).refund_amount!)}
                           </span>
                         </div>
@@ -815,7 +816,7 @@ export default function OrderDetailPage() {
                         <div className="space-y-2">
                           <Button
                             variant="outline"
-                            className="w-full border-orange-200 text-orange-700 hover:bg-orange-50"
+                            className="w-full border-warning/40 text-[color-mix(in_oklab,var(--warning)_45%,black)] dark:text-warning hover:bg-warning/10"
                             onClick={() => {
                               const url = (order["return"] as ReturnInfo).return_label_url || "";
                               window.open(apiUrl(url), "_blank");

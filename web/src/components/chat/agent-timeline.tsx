@@ -120,7 +120,7 @@ function JsonBlock({ label, value }: { label: string; value: unknown }) {
   return (
     <div>
       <p className="mb-0.5 font-medium text-muted-foreground">{label}</p>
-      <pre className="max-h-40 overflow-auto rounded bg-background/60 p-2 text-[10px] leading-relaxed text-foreground/80 ring-1 ring-border/60">
+      <pre className="max-h-40 overflow-auto rounded bg-background/60 p-2 text-xs leading-relaxed text-foreground/80 ring-1 ring-border/60">
         {display}
       </pre>
     </div>

@@ -19,6 +19,7 @@ export default function AgentsIndexPage() {
       className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8"
     >
       <SectionHeader
+        as="h1"
         eyebrow="Multi-agent platform"
         title="Specialist Agents"
       />

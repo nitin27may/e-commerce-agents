@@ -9,6 +9,7 @@ import {
 } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { asArray } from "@/lib/guards";
 import { useCart } from "@/lib/cart-context";
 import { api, type AgentStep, type GroundingReport } from "@/lib/api";
 import { RichMessage } from "@/components/chat/rich-message";
@@ -184,7 +185,7 @@ function MessageActions({
       <button
         type="button"
         onClick={handleCopy}
-        className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+        className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
       >
         {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
         {copied ? "Copied" : "Copy"}
@@ -192,7 +193,7 @@ function MessageActions({
       <button
         type="button"
         onClick={onRetry}
-        className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+        className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
       >
         <RotateCcw className="size-3" />
         Retry
@@ -200,7 +201,7 @@ function MessageActions({
       <button
         type="button"
         onClick={handleShare}
-        className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+        className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
       >
         {shared ? <Check className="size-3" /> : <Share2 className="size-3" />}
         {shared ? "Copied link" : "Share"}
@@ -406,7 +407,7 @@ export default function ChatPage() {
   async function loadConversations() {
     try {
       const data = await api.getConversations();
-      setConversations(data);
+      setConversations(asArray<Conversation>(data));
     } catch {
       // Silently handle -- empty list is fine on first load
     }
@@ -453,7 +454,7 @@ export default function ChatPage() {
   async function loadMessages(conversationId: string) {
     try {
       const data = await api.getConversation(conversationId);
-      setMessages(data.messages ?? []);
+      setMessages(asArray<Message>(data?.messages));
     } catch {
       setMessages([]);
     }
@@ -784,6 +785,7 @@ export default function ChatPage() {
 
       {/* -------- Main chat area -------- */}
       <div className="flex flex-1 flex-col overflow-hidden">
+        <h1 className="sr-only">Chat</h1>
         {/* ---- Top bar ---- */}
         <div className="flex h-11 items-center gap-2 border-b px-3">
           {/* Mobile conversation list toggle */}
@@ -794,6 +796,7 @@ export default function ChatPage() {
                   variant="ghost"
                   size="icon-sm"
                   className="lg:hidden"
+                  aria-label="Open conversations"
                 />
               }
             >
@@ -838,13 +841,21 @@ export default function ChatPage() {
             className="lg:hidden"
             onClick={handleNewChat}
             title="New chat"
+            aria-label="New chat"
           >
             <MessageSquarePlusIcon className="size-4" />
           </Button>
         </div>
 
         {/* ---- Messages ---- */}
-        <div className="flex-1 overflow-y-auto">
+        {/* aria-busy holds the announcement until a streamed reply finishes, so a screen reader does not read every token. */}
+        <div
+          role="log"
+          aria-live="polite"
+          aria-label="Conversation"
+          aria-busy={isResponding}
+          className="flex-1 overflow-y-auto"
+        >
           {messages.length === 0 && !isResponding ? (
             <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center">
               <div className="flex size-14 items-center justify-center rounded-full bg-primary/10">
@@ -898,6 +909,11 @@ export default function ChatPage() {
                   </Avatar>
 
                   <div
+                    role={
+                      msg.role === "assistant" && msg.content.startsWith("Error: ")
+                        ? "alert"
+                        : undefined
+                    }
                     className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
                       msg.role === "user"
                         ? "bg-primary text-primary-foreground"
@@ -926,7 +942,7 @@ export default function ChatPage() {
                           <Badge
                             key={agent}
                             variant="outline"
-                            className="text-[10px] font-normal"
+                            className="text-xs font-normal"
                           >
                             {agent}
                           </Badge>

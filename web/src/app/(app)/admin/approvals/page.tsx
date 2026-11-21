@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
 import { toast } from "@/lib/toast";
 import { Badge } from "@/components/ui/badge";
+import { TONE_BADGE_CLASS } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -52,19 +53,19 @@ const TOOL_LABELS: Record<string, string> = {
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   pending: {
     label: "Pending",
-    className: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400",
+    className: TONE_BADGE_CLASS.warning,
   },
   approved: {
     label: "Approved",
-    className: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-400",
+    className: TONE_BADGE_CLASS.success,
   },
   executed: {
     label: "Executed",
-    className: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-400",
+    className: TONE_BADGE_CLASS.success,
   },
   denied: {
     label: "Denied",
-    className: "border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400",
+    className: TONE_BADGE_CLASS.destructive,
   },
 };
 
@@ -196,7 +197,7 @@ export default function AdminApprovalsPage() {
       {/* Header */}
       <div className="border-b bg-card">
         <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <div className="flex size-10 items-center justify-center rounded-lg bg-primary">
                 <CheckCircle className="size-5 text-primary-foreground" />
@@ -205,7 +206,7 @@ export default function AdminApprovalsPage() {
                 <h1 className="text-xl font-bold">
                   Approval Queue
                   {pendingCount > 0 && (
-                    <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-sm font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-400">
+                    <span className="ml-2 rounded-full bg-warning/15 px-2 py-0.5 text-sm font-medium text-[color-mix(in_oklab,var(--warning)_45%,black)] dark:text-warning">
                       {pendingCount} pending
                     </span>
                   )}
@@ -252,7 +253,7 @@ export default function AdminApprovalsPage() {
 
         {!loading && requests.length === 0 && (
           <div className="py-20 text-center">
-            <CheckCircle className="mx-auto size-12 text-emerald-500" />
+            <CheckCircle className="mx-auto size-12 text-success" />
             <p className="mt-3 text-sm font-medium text-foreground">
               {filter === "pending" ? "No pending approvals" : "No requests yet"}
             </p>
@@ -278,11 +279,11 @@ export default function AdminApprovalsPage() {
                     {/* Icon */}
                     <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
                       {isPending ? (
-                        <Clock className="size-4 text-amber-500" />
+                        <Clock className="size-4 text-warning" />
                       ) : req.status === "denied" ? (
                         <XCircle className="size-4 text-destructive" />
                       ) : (
-                        <CheckCircle className="size-4 text-emerald-500" />
+                        <CheckCircle className="size-4 text-success" />
                       )}
                     </div>
 
@@ -326,14 +327,14 @@ export default function AdminApprovalsPage() {
                         <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
                           Show input
                         </summary>
-                        <pre className="mt-1.5 max-h-32 overflow-auto rounded bg-muted/60 px-2 py-1.5 text-[10px] leading-relaxed text-foreground/70">
+                        <pre className="mt-1.5 max-h-32 overflow-auto rounded bg-muted/60 px-2 py-1.5 text-xs leading-relaxed text-foreground/70">
                           {JSON.stringify(req.tool_input, null, 2)}
                         </pre>
                       </details>
 
                       {/* Execution result */}
                       {req.execution_result && (
-                        <div className="mt-2 rounded-md bg-emerald-50 px-3 py-1.5 text-xs text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+                        <div className="mt-2 rounded-md bg-success/10 px-3 py-1.5 text-xs text-[color-mix(in_oklab,var(--success)_62%,black)] dark:text-success">
                           {String(req.execution_result.message ?? JSON.stringify(req.execution_result))}
                         </div>
                       )}
@@ -347,7 +348,7 @@ export default function AdminApprovalsPage() {
                           variant="outline"
                           disabled={isProcessing}
                           onClick={() => handleDeny(req)}
-                          className="gap-1.5 border-red-200 text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-400"
+                          className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10"
                         >
                           {isProcessing ? (
                             <Loader2 className="size-3.5 animate-spin" />
@@ -360,7 +361,7 @@ export default function AdminApprovalsPage() {
                           size="sm"
                           disabled={isProcessing}
                           onClick={() => handleApprove(req)}
-                          className="gap-1.5 bg-emerald-600 text-white hover:bg-emerald-700"
+                          className="gap-1.5 bg-[color-mix(in_oklab,var(--success)_72%,black)] text-white hover:bg-[color-mix(in_oklab,var(--success)_62%,black)]"
                         >
                           {isProcessing ? (
                             <Loader2 className="size-3.5 animate-spin" />

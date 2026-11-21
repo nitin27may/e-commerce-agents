@@ -47,7 +47,7 @@ export function ProductGridCard({ product }: { product: ShopProduct }) {
             className="size-full object-cover transition-transform duration-300 group-hover/card:scale-105"
           />
           {discount > 0 && (
-            <span className="absolute left-2 top-2 rounded-full bg-destructive px-2 py-0.5 text-[11px] font-semibold text-white">
+            <span className="absolute left-2 top-2 rounded-full bg-destructive px-2 py-0.5 text-xs font-semibold text-white">
               -{discount}%
             </span>
           )}
