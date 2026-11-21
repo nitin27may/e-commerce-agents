@@ -1,10 +1,16 @@
-# Keyless boot smoke for both compose stacks (A-9, #85).
+# Keyless boot smoke for the compose stacks (A-9, #85).
 #
 # Boots each stack with LLM_PROVIDER=replay, waits for /ready on the orchestrator and every
 # specialist, logs in as a seeded customer, lists products and runs one real chat turn through the
 # return workflow (which makes no model call). No secrets are referenced by this file, and the first
 # step fails the job if any *_API_KEY is present: nothing that costs money may sit behind an automatic
 # trigger (see evals.yml). Recording stays a human running a script.
+#
+# The two MIXED stacks (docker-compose.mixed.yml: py-net = Python orchestrator in front of .NET
+# specialists, net-py = the reverse) are booted too, once on the legacy wire and once with
+# A2A_TRANSPORT=a2a and A2A_IDENTITY=token (the script generates a distinct A2A_IDENTITY_KEY per run).
+# The turn is the same keyless return workflow, so a mixed pair that cannot talk to each other fails
+# here without a model key.
 #
 # Not covered: a chat turn that needs a model (needs replay fixtures for that path) and the frontend image.
 name: Compose smoke
@@ -15,6 +21,7 @@ on:
       - "docker-compose*.yml"
       - "docker/**"
       - "agents/**"
+      - "scripts/lib/mixed-env.sh"
       - "scripts/migrate.py"
       - "scripts/seed.py"
       - "scripts/compose-smoke.sh"
@@ -24,6 +31,8 @@ on:
     paths:
       - "docker-compose*.yml"
       - "docker/**"
+      - "agents/**"
+      - "scripts/lib/mixed-env.sh"
       - "scripts/migrate.py"
       - "scripts/compose-smoke.sh"
   workflow_dispatch:
@@ -37,17 +46,29 @@ concurrency:
 
 jobs:
   boot:
-    name: Boot (${{ matrix.stack }}, replay, keyless)
+    name: Boot (${{ matrix.stack }}${{ matrix.wire && format(', {0}', matrix.wire) || '' }}, replay, keyless)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
         include:
           - stack: python
-            compose: docker-compose.yml
+            args: --compose-file docker-compose.yml
           - stack: dotnet
-            compose: docker-compose.dotnet.yml
+            args: --compose-file docker-compose.dotnet.yml
+          - stack: py-net
+            args: --mixed py-net
+          - stack: net-py
+            args: --mixed net-py
+          - stack: py-net
+            wire: a2a + token identity
+            args: --mixed py-net
+            transport: a2a
+          - stack: net-py
+            wire: a2a + token identity
+            args: --mixed net-py
+            transport: a2a
     steps:
       # First step, deliberately: no later step can run with a credential in scope.
       - name: Refuse to run with any API key set
@@ -63,4 +84,7 @@ jobs:
       - name: Boot the stack and smoke it
         env:
           LLM_PROVIDER: replay
-        run: scripts/compose-smoke.sh --compose-file "${{ matrix.compose }}"
+          # Empty on the legacy rows: compose falls back to its own defaults (legacy, both).
+          A2A_TRANSPORT: ${{ matrix.transport }}
+          A2A_IDENTITY: ${{ matrix.transport && 'token' || '' }}
+        run: scripts/compose-smoke.sh ${{ matrix.args }}

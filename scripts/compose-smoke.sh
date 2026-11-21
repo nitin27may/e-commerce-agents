@@ -17,6 +17,10 @@
 # Usage:
 #   scripts/compose-smoke.sh                                   # Python stack
 #   scripts/compose-smoke.sh --compose-file docker-compose.dotnet.yml
+#   scripts/compose-smoke.sh --mixed py-net                    # Python orchestrator, .NET specialists
+#   scripts/compose-smoke.sh --mixed net-py                    # .NET orchestrator, Python specialists
+#   A2A_TRANSPORT=a2a A2A_IDENTITY=token scripts/compose-smoke.sh --mixed py-net
+#                                                              # (a distinct A2A_IDENTITY_KEY is generated)
 #   scripts/compose-smoke.sh --attach                          # services already running: only
 #                                                              # wait, log in, list products
 #   scripts/compose-smoke.sh --keep                            # leave the stack up afterwards
@@ -29,6 +33,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 COMPOSE_FILE="docker-compose.yml"
+MIXED_VARIANT=""
 ATTACH=false
 KEEP=false
 READY_TIMEOUT="${READY_TIMEOUT:-240}"
@@ -43,9 +48,10 @@ SMOKE_PASSWORD="${SMOKE_PASSWORD:-customer123}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --compose-file) COMPOSE_FILE="$2"; shift 2 ;;
+    --mixed) MIXED_VARIANT="$2"; shift 2 ;;
     --attach) ATTACH=true; shift ;;
     --keep) KEEP=true; shift ;;
-    -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,28p' "$0"; exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -65,7 +71,25 @@ export AGENT_SHARED_SECRET="${AGENT_SHARED_SECRET:-$(gen)}"
 export OAUTH_SEED_KEY="${OAUTH_SEED_KEY:-$(gen)}"
 export ENVIRONMENT="${ENVIRONMENT:-development}"
 
-COMPOSE=(docker compose -f "$COMPOSE_FILE")
+# A mixed variant layers docker-compose.mixed.yml over the base stack of its orchestrator
+# (scripts/lib/mixed-env.sh exports the build variables that overlay interpolates).
+if [[ -n "$MIXED_VARIANT" ]]; then
+  # shellcheck source=lib/mixed-env.sh
+  source "$REPO_ROOT/scripts/lib/mixed-env.sh"
+  mixed_env "$MIXED_VARIANT" || fail "unknown mixed variant: $MIXED_VARIANT"
+  COMPOSE_FILE="$MIXED_BASE_FILE + docker-compose.mixed.yml"
+  COMPOSE=(docker compose -f "$MIXED_BASE_FILE" -f docker-compose.mixed.yml)
+else
+  COMPOSE=(docker compose -f "$COMPOSE_FILE")
+fi
+
+# Token identity needs a key of its own: under the default the key falls back to AGENT_SHARED_SECRET, which
+# every caller already holds, so the token would prove nothing (docs/a2a.md). Generated per run, never stored.
+if [[ "${A2A_IDENTITY:-both}" == "token" ]]; then
+  export A2A_IDENTITY_KEY="${A2A_IDENTITY_KEY:-$(gen)}"
+  [[ "$A2A_IDENTITY_KEY" != "$AGENT_SHARED_SECRET" ]] || fail "A2A_IDENTITY_KEY must differ from AGENT_SHARED_SECRET"
+fi
+echo "--- wire: A2A_TRANSPORT=${A2A_TRANSPORT:-legacy} A2A_IDENTITY=${A2A_IDENTITY:-both}"
 
 dump_logs() {
   $ATTACH && return 0

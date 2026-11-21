@@ -73,7 +73,10 @@ python3 scripts/check_tutorial_coverage.py --check
   production build. Backend-free. These three specs run on both the desktop and the
   `mobile-chromium` project (a Pixel 7 preset); the `a11y` spec fails on any
   serious/critical axe violation. The rest of `e2e/` runs on the desktop project only.
-- Security scanning (CodeQL) runs on its own in CI; a dependency-review workflow is planned.
+- Security scanning runs on its own in CI: CodeQL (`codeql.yml`) and a gitleaks secret scan
+  (`secret-scan.yml`, allowlist in `.gitleaks.toml`). A secret-scan hit on a genuine test
+  fixture is allowlisted in `.gitleaks.toml`, not ignored. A dependency-review workflow
+  needs the repository's dependency graph and Dependabot alerts enabled, so it is not added yet.
 
 ## Good first issues
 

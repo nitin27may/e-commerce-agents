@@ -42,6 +42,10 @@ jobs:
         # can import them; without it, collection fails with ModuleNotFoundError.
         run: uv sync --all-packages --extra dev
 
+      # The README's MAF version badge must equal the pinned agent-framework-core. Stdlib only.
+      - name: README MAF badge matches the pin
+        run: python3 scripts/check_maf_badge.py --check
+
       # Keyless and free: builds each agent (no model call) and counts its composed
       # system prompt + tool schemas per role with tiktoken, against
       # evals/baselines/prompt_tokens.json. Fails on >10% growth for any agent/role.

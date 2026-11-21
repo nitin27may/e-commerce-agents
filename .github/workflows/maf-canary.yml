@@ -1,0 +1,132 @@
+# MAF canary: does the repo still work against the NEWEST Microsoft Agent Framework packages?
+#
+# Weekly, and on demand. In a scratch copy it relaxes the exact agent-framework-* pins to >=, re-locks
+# to the latest releases, then runs pytest, the keyless replay eval suite and the fixture-drift check.
+# The real pins and uv.lock in the repo are never touched; a human bumps them after reading the result.
+# On failure it opens (or comments on) one GitHub issue, using GITHUB_TOKEN only.
+#
+# Cron note: codeql.yml and package-cleanup.yml also run weekly. This is the only scheduled job that
+# resolves dependencies, and it is safe to schedule because it is keyless: the first step fails the
+# job if any model-provider credential is in the environment, and this file references no secret.
+# Nothing in this repo may put a live LLM key behind an automatic trigger (see evals.yml).
+name: MAF canary
+
+on:
+  schedule:
+    - cron: "43 5 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: maf-canary
+  cancel-in-progress: false
+
+env:
+  LLM_PROVIDER: replay
+  REPLAY_FIXTURES_DIR: evals/fixtures/replay
+  DATABASE_URL: postgresql://ecommerce:ecommerce_secret@localhost:5432/ecommerce_agents
+  REDIS_URL: redis://localhost:6379
+  ENVIRONMENT: test
+  JWT_SECRET: ci-eval-jwt-secret-please-rotate-32bytes
+  AGENT_SHARED_SECRET: ci-eval-agent-secret-please-rotate-32b
+
+jobs:
+  canary:
+    name: Latest MAF, replay, keyless
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ecommerce
+          POSTGRES_PASSWORD: ecommerce_secret
+          POSTGRES_DB: ecommerce_agents
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ecommerce"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+
+    steps:
+      # First step, deliberately: no later step can run with a credential in scope.
+      - name: Refuse to run with any LLM key set
+        run: |
+          leaked="$(env | grep -E '^[A-Za-z0-9_]*(_API_KEY|AZURE_OPENAI_KEY)=.+' | cut -d= -f1 || true)"
+          if [ -n "$leaked" ]; then
+            echo "::error::credentials present in the environment: $leaked"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install Python 3.12
+        run: uv python install 3.12
+
+      # A scratch copy: the checkout stays pristine, and the relaxed pins never reach a commit.
+      - name: Make a scratch copy and re-lock to the latest MAF
+        id: relock
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/canary"
+          tar --exclude=.git --exclude=node_modules --exclude=./web --exclude=./agents/dotnet -cf - . | tar -xf - -C "$RUNNER_TEMP/canary"
+          cd "$RUNNER_TEMP/canary/agents/python"
+          before="$(grep -E '^ *"agent-framework-[a-z]+==' pyproject.toml | tr -d ' ",' | tr '\n' ' ')"
+          sed -i -E 's/"(agent-framework-[a-z]+)==([^"]+)"/"\1>=\2"/' pyproject.toml
+          uv lock --upgrade-package agent-framework-core --upgrade-package agent-framework-openai \
+            --upgrade-package agent-framework-orchestrations --upgrade-package agent-framework-anthropic
+          uv sync --all-packages --extra dev
+          after="$(uv pip list --format freeze | grep -E '^agent-framework-' | tr '\n' ' ')"
+          {
+            echo "### MAF packages"
+            echo "pinned: $before"
+            echo "canary: $after"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "canary=$after" >> "$GITHUB_OUTPUT"
+
+      - name: pytest
+        working-directory: ${{ runner.temp }}/canary/agents/python
+        run: uv run pytest -q
+
+      - name: Replay evals (migrate, seed, every suite)
+        working-directory: ${{ runner.temp }}/canary
+        run: scripts/replay-evals.sh --setup
+
+      - name: Fixture drift
+        working-directory: ${{ runner.temp }}/canary/agents/python
+        run: uv run python -m evals.fixture_drift
+
+      - name: Stop specialist services
+        if: always()
+        run: pkill -f "uvicorn .*\.main:app" || true
+
+      - name: Open an issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CANARY: ${{ steps.relock.outputs.canary }}
+        run: |
+          set -euo pipefail
+          title="MAF canary failed against the latest agent-framework"
+          body="The weekly canary failed. Run: ${RUN_URL}
+
+          Versions tried: ${CANARY:-the re-lock itself failed}
+
+          The repo's pins are unchanged. Read the failing step, then either fix forward or leave the pin where it is.
+          fixture_drift exit 1 means offline-fixable; 2 means re-record (agents/python/evals/fixtures/README.md)."
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
+          fi

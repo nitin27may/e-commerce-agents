@@ -1,0 +1,15 @@
+# Extends gitleaks' default ruleset; only fixtures that were found by a local run are allowed.
+# Do not widen these: a new hit is meant to fail the check and be looked at.
+title = "e-commerce-agents gitleaks config"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Signed user-context token test vectors (HS256 tokens signed with a published test key); both stacks assert on them"
+paths = ['''agents/python/config/identity/testdata/user-context\.v1\.json''']
+
+[[allowlists]]
+description = "Throwaway JWT secret for the container smoke test in build-images.yml"
+paths = ['''\.github/workflows/build-images\.yml''']
+regexes = ['''test-jwt-secret-32-bytes-padding''']
