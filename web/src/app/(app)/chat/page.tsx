@@ -796,6 +796,7 @@ export default function ChatPage() {
                   variant="ghost"
                   size="icon-sm"
                   className="lg:hidden"
+                  aria-label="Open conversations"
                 />
               }
             >
@@ -840,6 +841,7 @@ export default function ChatPage() {
             className="lg:hidden"
             onClick={handleNewChat}
             title="New chat"
+            aria-label="New chat"
           >
             <MessageSquarePlusIcon className="size-4" />
           </Button>
