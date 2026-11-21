@@ -347,6 +347,13 @@ class Settings(BaseSettings):
     # Use this autonomy policy file instead of config/policies/autonomy.yaml (tests, demos with small caps).
     AUTONOMY_POLICY_PATH: str = ""
 
+    # ── History compaction (B-15) ────────────────────────────────────
+    # Keep only the last N message groups (a user turn with its assistant/tool messages) of the rehydrated
+    # conversation history, in the specialist host and in the orchestrator's RunContext.history. 0 = off, and
+    # with it off the history (and so the model request and its replay key) is exactly what it was.
+    HISTORY_COMPACTION_KEEP_LAST_GROUPS: int = 0
+    # ── end History compaction ───────────────────────────────────────
+
     # ── MCP integration (optional, flag-gated) ──────────────────────
     # When enabled, specialist agents connect to MCP servers for their data
     # layer instead of calling asyncpg directly. MCP servers must be running

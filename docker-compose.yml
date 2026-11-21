@@ -219,6 +219,8 @@ services:
       # so toggling RETURN_HITL_THRESHOLD / etc. required editing the
       # running container. (Audit fix #6.)
       MAF_SESSION_BACKEND: ${MAF_SESSION_BACKEND:-postgres}
+      # B-15: keep only the last N message groups of rehydrated history. 0 = off. Python services only.
+      HISTORY_COMPACTION_KEEP_LAST_GROUPS: ${HISTORY_COMPACTION_KEEP_LAST_GROUPS:-0}
       MAF_CHECKPOINT_BACKEND: ${MAF_CHECKPOINT_BACKEND:-postgres}
       ORCHESTRATION_MODE: ${ORCHESTRATION_MODE:-tool}
       RETURN_HITL_THRESHOLD: ${RETURN_HITL_THRESHOLD:-500}
