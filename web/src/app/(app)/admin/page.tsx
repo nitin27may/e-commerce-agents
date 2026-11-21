@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useLoadEffect } from "@/lib/use-load-effect";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
 import { Separator } from "@/components/ui/separator";
@@ -112,27 +113,27 @@ export default function AdminDashboardPage() {
       setError(null);
       const raw = await api.getUsageStats();
       // Map API response to frontend UsageStats shape
-      const overall = raw.overall || {};
+      const overall = raw.overall;
       setStats({
         total_invocations: overall.total_requests ?? 0,
         total_tokens_in: overall.total_tokens_in ?? 0,
         total_tokens_out: overall.total_tokens_out ?? 0,
-        active_agents: raw.by_agent?.length ?? 0,
-        pending_requests: overall.pending_requests ?? 0,
+        active_agents: raw.by_agent.length,
+        pending_requests: 0, // the usage route reports no pending-request count
         avg_duration_ms: overall.avg_duration_ms ?? 0,
-        per_agent: (raw.by_agent || []).map((a: Record<string, unknown>) => ({
+        per_agent: raw.by_agent.map((a) => ({
           agent_id: a.agent_name,
-          agent_name: a.agent_name as string,
-          invocations: (a.request_count ?? 0) as number,
-          tokens_in: (a.tokens_in ?? 0) as number,
-          tokens_out: (a.tokens_out ?? 0) as number,
-          avg_duration_ms: (a.avg_duration_ms ?? 0) as number,
+          agent_name: a.agent_name,
+          invocations: a.request_count,
+          tokens_in: a.tokens_in,
+          tokens_out: a.tokens_out,
+          avg_duration_ms: a.avg_duration_ms,
         })),
-        daily_trend: (raw.daily || []).map((d: Record<string, unknown>) => ({
-          date: d.date as string,
-          invocations: (d.request_count ?? 0) as number,
-          tokens_in: (d.tokens_in ?? 0) as number,
-          tokens_out: (d.tokens_out ?? 0) as number,
+        daily_trend: raw.daily_trend.map((d) => ({
+          date: d.day,
+          invocations: d.request_count,
+          tokens_in: 0,
+          tokens_out: 0,
         })),
       });
     } catch (err) {
@@ -142,9 +143,7 @@ export default function AdminDashboardPage() {
     }
   }, []);
 
-  useEffect(() => {
-    if (user && isAdmin) loadStats();
-  }, [user, isAdmin, loadStats]);
+  useLoadEffect(loadStats, Boolean(user && isAdmin));
 
   if (authLoading) return null;
 

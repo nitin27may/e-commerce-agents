@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useLoadEffect } from "@/lib/use-load-effect";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
 import { asArray, asNumber } from "@/lib/guards";
@@ -263,10 +264,13 @@ export default function AdminAuditPage() {
     return () => clearTimeout(t);
   }, [search]);
 
-  // Reset page when filters change
-  useEffect(() => {
+  // Reset page when filters change (adjusting state during render, not in an effect).
+  const filterKey = `${agentFilter}|${statusFilter}|${debouncedSearch}`;
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
+  if (prevFilterKey !== filterKey) {
+    setPrevFilterKey(filterKey);
     setPage(0);
-  }, [agentFilter, statusFilter, debouncedSearch]);
+  }
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -295,9 +299,7 @@ export default function AdminAuditPage() {
     }
   }, [page, agentFilter, statusFilter, debouncedSearch]);
 
-  useEffect(() => {
-    if (user && isAdmin) loadAudit();
-  }, [user, isAdmin, loadAudit]);
+  useLoadEffect(loadAudit, Boolean(user && isAdmin));
 
   function toggleExpanded(id: string) {
     setExpandedIds((prev) => {

@@ -1,9 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
+import { useLoadEffect } from "@/lib/use-load-effect";
 import { useAuth } from "@/lib/auth-context";
-import { api, apiUrl } from "@/lib/api";
+import { api, apiUrl, type OrderDetail, type OrderLine as OrderItem, type OrderReturn as ReturnInfo } from "@/lib/api";
+
+type StatusHistoryEntry = OrderDetail["status_history"][number];
 import { toastOrderCancelled, toastReturnInitiated } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -51,68 +54,6 @@ import { productImageUrl } from "@/lib/images";
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-interface StatusHistoryEntry {
-  status: string;
-  timestamp: string;
-  notes?: string;
-  location?: string;
-}
-
-interface OrderItem {
-  product_id: string;
-  name: string;
-  category: string;
-  image_url?: string;
-  quantity: number;
-  unit_price: number;
-  subtotal: number;
-}
-
-interface ShippingInfo {
-  street: string;
-  city: string;
-  state: string;
-  zip: string;
-  carrier?: string;
-  tracking_number?: string;
-}
-
-interface ReturnInfo {
-  id: string;
-  reason: string;
-  status: string;
-  refund_method: string;
-  refund_amount: number | null;
-  created_at?: string;
-  resolved_at?: string | null;
-  return_label_url?: string;
-}
-
-interface BillingAddress {
-  street: string;
-  city: string;
-  state: string;
-  zip: string;
-  name?: string;
-  country?: string;
-}
-
-interface OrderDetail {
-  id: string;
-  date: string;
-  status: string;
-  items: OrderItem[];
-  status_history: StatusHistoryEntry[];
-  shipping_address: ShippingInfo;
-  billing_address?: BillingAddress | null;
-  carrier?: string;
-  tracking?: string;
-  discount: number;
-  total: number;
-  return?: ReturnInfo | null;
-  [key: string]: unknown;
-}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -340,9 +281,7 @@ export default function OrderDetailPage() {
     }
   }, [orderId]);
 
-  useEffect(() => {
-    if (user && orderId) loadOrder();
-  }, [user, orderId, loadOrder]);
+  useLoadEffect(loadOrder, Boolean(user && orderId));
 
   const handleCancelOrder = async () => {
     if (!cancelReason.trim()) return;

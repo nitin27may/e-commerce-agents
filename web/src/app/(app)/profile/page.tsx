@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useLoadEffect } from "@/lib/use-load-effect";
 import { useAuth } from "@/lib/auth-context";
-import { api } from "@/lib/api";
+import { api, type UserProfile as Profile } from "@/lib/api";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { CHIP_CLASS, TONE_BADGE_CLASS } from "@/components/ui/status-badge";
@@ -34,25 +35,6 @@ import {
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-interface TierBenefits {
-  discount_pct: number;
-  free_shipping_threshold: number | null;
-  priority_support: boolean;
-}
-
-interface Profile {
-  id: string;
-  email: string;
-  name: string;
-  role: string;
-  loyalty_tier: string;
-  total_spend: number;
-  member_since: string;
-  order_count: number;
-  review_count: number;
-  tier_benefits: TierBenefits;
-}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -162,12 +144,8 @@ export default function ProfilePage() {
     }
   }, []);
 
-  useEffect(() => {
-    if (user) {
-      loadProfile();
-      loadMemories();
-    }
-  }, [user, loadProfile, loadMemories]);
+  useLoadEffect(loadProfile, Boolean(user));
+  useLoadEffect(loadMemories, Boolean(user));
 
   async function handleDeleteMemory(id: string) {
     setDeletingId(id);

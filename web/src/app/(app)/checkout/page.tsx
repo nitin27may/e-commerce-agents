@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useLoadEffect } from "@/lib/use-load-effect";
 import { useAuth } from "@/lib/auth-context";
 import { useCart } from "@/lib/cart-context";
 import { api, type CartResponse, type Address } from "@/lib/api";
@@ -208,9 +209,7 @@ export default function CheckoutPage() {
     }
   }, []);
 
-  useEffect(() => {
-    if (user) loadCart();
-  }, [user, loadCart]);
+  useLoadEffect(loadCart, Boolean(user));
 
   if (authLoading || !user) return null;
 

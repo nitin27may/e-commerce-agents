@@ -1,5 +1,6 @@
 "use client";
 
+import type { ComponentProps } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { motion } from "framer-motion";
@@ -59,56 +60,56 @@ export function RichMessage({ content, streaming, onAction }: RichMessageProps) 
         if (seg.type === "product" && seg.data) {
           return (
             <CardMotion key={i}>
-              <ChatProductCard data={seg.data as any} onAction={onAction} />
+              <ChatProductCard data={seg.data} onAction={onAction} />
             </CardMotion>
           );
         }
         if (seg.type === "order" && seg.data) {
           return (
             <CardMotion key={i}>
-              <ChatOrderCard data={seg.data as any} onAction={onAction} />
+              <ChatOrderCard data={seg.data} onAction={onAction} />
             </CardMotion>
           );
         }
         if (seg.type === "checkout" && seg.data) {
           return (
             <CardMotion key={i}>
-              <ChatCheckoutCard data={seg.data as any} />
+              <ChatCheckoutCard data={seg.data} />
             </CardMotion>
           );
         }
         if (seg.type === "return" && seg.data) {
           return (
             <CardMotion key={i}>
-              <ChatReturnCard data={seg.data as any} />
+              <ChatReturnCard data={seg.data} />
             </CardMotion>
           );
         }
         if (seg.type === "comparison" && seg.data) {
           return (
             <CardMotion key={i}>
-              <ComparisonCard products={seg.data as any} onAction={onAction} />
+              <ComparisonCard products={seg.data} onAction={onAction} />
             </CardMotion>
           );
         }
         if (seg.type === "sentiment" && seg.data) {
           return (
             <CardMotion key={i}>
-              <ChatSentimentCard data={seg.data as any} />
+              <ChatSentimentCard data={seg.data} />
             </CardMotion>
           );
         }
         if (seg.type === "inventory" && seg.data) {
           return (
             <CardMotion key={i}>
-              <ChatInventoryCard data={seg.data as any} onAction={onAction} />
+              <ChatInventoryCard data={seg.data} onAction={onAction} />
             </CardMotion>
           );
         }
         if (seg.type === "pricing" && seg.data) {
           return (
             <CardMotion key={i}>
-              <ChatPricingCard data={seg.data as any} />
+              <ChatPricingCard data={seg.data} />
             </CardMotion>
           );
         }
@@ -127,11 +128,25 @@ export function RichMessage({ content, streaming, onAction }: RichMessageProps) 
 
 // ─── Types ────────────────────────────────────────────────────────────
 
-export interface Segment {
-  type: string;
-  text: string;
-  data?: Record<string, unknown>;
-}
+type CardData<C extends (props: never) => unknown> = Parameters<C>[0] extends { data: infer D } ? D : never;
+type ProductCardData = CardData<typeof ChatProductCard>;
+type ProductPair = ComponentProps<typeof ComparisonCard>["products"];
+
+/**
+ * One piece of a parsed message. Card segments carry the data their component
+ * accepts; `parseCodeBlocks` produces it through `validateCard`, the plain-text
+ * fallbacks build it from regex captures.
+ */
+export type Segment =
+  | { type: "text"; text: string; data?: undefined }
+  | { type: "product"; text: string; data?: ProductCardData }
+  | { type: "order"; text: string; data?: CardData<typeof ChatOrderCard> }
+  | { type: "checkout"; text: string; data?: CardData<typeof ChatCheckoutCard> }
+  | { type: "return"; text: string; data?: CardData<typeof ChatReturnCard> }
+  | { type: "comparison"; text: string; data?: ProductPair }
+  | { type: "sentiment"; text: string; data?: CardData<typeof ChatSentimentCard> }
+  | { type: "inventory"; text: string; data?: CardData<typeof ChatInventoryCard> }
+  | { type: "pricing"; text: string; data?: CardData<typeof ChatPricingCard> };
 
 // ─── Streaming helper: drop a trailing unclosed structured fence ─────
 //
@@ -164,6 +179,14 @@ function stripUnclosedFence(content: string): string {
 
 // ─── 1. Fenced Code Block Parser (primary path) ──────────────────────
 
+// validateCard's zod output is passthrough-typed; each card component narrows it
+// to the fields it reads, so the hand-off is typed once here per kind.
+function validatedSegment(kind: CardKind, raw: unknown): Segment | null {
+  const validated = validateCard(kind, raw);
+  if (!validated) return null;
+  return { type: kind, text: "", data: validated } as Segment;
+}
+
 function parseCodeBlocks(content: string): Segment[] | null {
   // The newline after the fence marker is OPTIONAL: the streaming transport
   // frames a lone "\n" LLM token as an empty SSE data line, so it gets dropped
@@ -189,7 +212,7 @@ function parseCodeBlocks(content: string): Segment[] | null {
         if (data.length === 2) {
           const [p1, p2] = data.map((d: unknown) => validateCard("product", d));
           if (p1 && p2) {
-            segments.push({ type: "comparison", text: "", data: [p1, p2] as any });
+            segments.push({ type: "comparison", text: "", data: [p1, p2] });
           } else {
             // Fallback: render as individual cards
             data.forEach((d: unknown) => {
@@ -207,9 +230,9 @@ function parseCodeBlocks(content: string): Segment[] | null {
         }
       } else {
         const kind = match[1] as CardKind;
-        const validated = validateCard(kind, data);
-        if (validated) {
-          segments.push({ type: kind, text: "", data: validated });
+        const segment = validatedSegment(kind, data);
+        if (segment) {
+          segments.push(segment);
         } else {
           // Schema rejected the payload — drop the fence rather than
           // showing the raw JSON, matching the "products" array branch's
@@ -380,7 +403,7 @@ function parseOrderInText(content: string): Segment[] | null {
   const segments: Segment[] = [];
   const introText = paragraphs.slice(0, startIdx).join("\n\n").trim();
   if (introText) segments.push({ type: "text", text: introText });
-  segments.push({ type: "order", text: "", data: orderData as any });
+  segments.push({ type: "order", text: "", data: orderData });
   const outroText = paragraphs.slice(endIdx + 1).join("\n\n").trim();
   if (outroText) segments.push({ type: "text", text: outroText });
   return segments;
@@ -482,7 +505,7 @@ function parseProductsInText(content: string): Segment[] | null {
     const product = tryParseProductParagraph(para.trim());
     if (product) {
       productCount++;
-      segments.push({ type: "product", text: "", data: product as any });
+      segments.push({ type: "product", text: "", data: product });
     } else {
       const text = para.trim();
       if (text) segments.push({ type: "text", text });

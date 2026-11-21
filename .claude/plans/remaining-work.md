@@ -624,16 +624,11 @@ servers — all on both stacks. The design and per-phase notes for what shipped 
 
 ## 17. Known debt
 
-- [ ] **Frontend type/lint debt.** Two ESLint rules are downgraded to warnings in
-      `web/eslint.config.mjs` so the gate stays meaningful; the suppressions come off by fixing the
-      root causes, not by re-raising the rules. **Type the API layer** — replace `any` in
-      `web/src/lib/api.ts` and its consumers with real interfaces (consider extending the Zod types
-      in `web/src/lib/chat-schemas.ts`), then restore `@typescript-eslint/no-explicit-any` to
-      `error`. **Auth/cart store refactor** — move `lib/auth-context.tsx` and `lib/cart-context.tsx`
-      off mount-effect `setState` to a `useSyncExternalStore`-backed store, then restore
-      `react-hooks/set-state-in-effect` to `error`. Also clear the remaining `next/no-img-element`
-      warnings where `next/image` is practical. **Phase A touches this file set** — the `/api/*`
-      proxy lands in the same layer, so typing the API layer is cheapest done alongside it.
+- [ ] **Frontend lint debt.** `no-explicit-any` and `react-hooks/set-state-in-effect` are errors again
+      (API layer typed in `web/src/lib/api.ts`; auth and cart are `useSyncExternalStore` stores in
+      `auth-store.ts` / `cart-store.ts`, page loaders go through `useLoadEffect`). What is left is the
+      `@next/next/no-img-element` warnings (use `next/image` where practical) and a handful of unused
+      imports.
 - [ ] **The chat page hard-crashes on an unexpected API shape.** Found during plan 20's UI
       verification; unowned. **Blocks nothing until LG1**, at which point a second framework starts
       producing payloads and an unexpected shape stops being hypothetical.

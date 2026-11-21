@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Loader2, PackageCheck, RefreshCw } from "lucide-react";
+import { useLoadEffect } from "@/lib/use-load-effect";
 import { useAuth } from "@/lib/auth-context";
 import { api, type ReturnInspection } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -173,9 +174,7 @@ export default function ReturnInspectionsPage() {
     }
   }, []);
 
-  useEffect(() => {
-    if (user && isStaff) void load();
-  }, [user, isStaff, load]);
+  useLoadEffect(load, Boolean(user && isStaff));
 
   async function refresh() {
     setRefreshing(true);

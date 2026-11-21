@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useLoadEffect } from "@/lib/use-load-effect";
 import { useAuth } from "@/lib/auth-context";
-import { api } from "@/lib/api";
+import { api, type OrderSummary as Order } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { CHIP_CLASS, TONE_BADGE_CLASS } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
@@ -28,16 +29,6 @@ import {
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-interface Order {
-  id: string;
-  date: string;
-  status: string;
-  item_count: number;
-  total: number;
-  carrier?: string;
-  tracking?: string;
-}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -175,9 +166,7 @@ export default function OrdersPage() {
     }
   }, [activeStatus]);
 
-  useEffect(() => {
-    if (user) loadOrders();
-  }, [user, loadOrders]);
+  useLoadEffect(loadOrders, Boolean(user));
 
   if (authLoading || !user) return null;
 

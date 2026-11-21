@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
+import { useLoadEffect } from "@/lib/use-load-effect";
 import { useAuth } from "@/lib/auth-context";
 import { useCart } from "@/lib/cart-context";
-import { api } from "@/lib/api";
+import { api, type ProductDetail } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -42,41 +43,6 @@ import { productImageUrl } from "@/lib/images";
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-interface Review {
-  id: string;
-  reviewer: string;
-  rating: number;
-  title: string;
-  body: string;
-  date: string;
-  verified: boolean;
-}
-
-interface WarehouseStock {
-  name: string;
-  region: string;
-  quantity: number;
-}
-
-interface ProductDetail {
-  id: string;
-  name: string;
-  brand: string;
-  category: string;
-  price: number;
-  original_price?: number;
-  image_url?: string;
-  rating: number;
-  review_count: number;
-  description: string;
-  specs?: Record<string, string>;
-  in_stock: boolean;
-  total_stock: number;
-  warehouses?: WarehouseStock[];
-  rating_distribution?: Record<string, number>;
-  reviews?: Review[];
-}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -250,9 +216,7 @@ export default function ProductDetailPage() {
     }
   }, [productId]);
 
-  useEffect(() => {
-    if (user && productId) loadProduct();
-  }, [user, productId, loadProduct]);
+  useLoadEffect(loadProduct, Boolean(user && productId));
 
   if (authLoading || !user) return null;
 

@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useLoadEffect } from "@/lib/use-load-effect";
 import { useAuth } from "@/lib/auth-context";
-import { api } from "@/lib/api";
+import { api, type SellerOrder, type SellerStats } from "@/lib/api";
 import { asArray, asNumber } from "@/lib/guards";
 import { ErrorState } from "@/components/error-state";
 import {
@@ -39,8 +40,8 @@ export default function SellerDashboardPage() {
   const router = useRouter();
   const { user, isLoading: authLoading, isAdmin } = useAuth();
 
-  const [stats, setStats] = useState<any>(null);
-  const [orders, setOrders] = useState<any[]>([]);
+  const [stats, setStats] = useState<SellerStats | null>(null);
+  const [orders, setOrders] = useState<SellerOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -72,9 +73,7 @@ export default function SellerDashboardPage() {
     }
   }, []);
 
-  useEffect(() => {
-    if (user && isSeller) loadData();
-  }, [user, isSeller, loadData]);
+  useLoadEffect(loadData, Boolean(user && isSeller));
 
   if (authLoading) return null;
 
@@ -224,7 +223,7 @@ export default function SellerDashboardPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {recentOrders.map((order: any) => (
+                      {recentOrders.map((order) => (
                         <TableRow key={order.id}>
                           <TableCell className="font-mono text-xs text-muted-foreground">
                             #{order.id?.slice(0, 8)}

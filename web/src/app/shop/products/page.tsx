@@ -1,9 +1,10 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
+import { useLoadEffect } from "@/lib/use-load-effect";
 import { ProductGridCard, type ShopProduct } from "@/components/shop/product-grid-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -16,7 +17,7 @@ function Catalog() {
   const [products, setProducts] = useState<ShopProduct[] | null>(null);
   const [categories, setCategories] = useState<string[]>([]);
 
-  useEffect(() => {
+  const loadProducts = useCallback(() => {
     setProducts(null);
     api
       .getProducts({ search: search || undefined, category: category || undefined, sort: "rating" })
@@ -26,6 +27,7 @@ function Catalog() {
       })
       .catch(() => setProducts([]));
   }, [search, category]);
+  useLoadEffect(loadProducts, true);
 
   const heading = search
     ? `Results for “${search}”`

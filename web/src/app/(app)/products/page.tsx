@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useLoadEffect } from "@/lib/use-load-effect";
 import { useAuth } from "@/lib/auth-context";
 import { useCart } from "@/lib/cart-context";
 import { api } from "@/lib/api";
@@ -200,9 +201,7 @@ export default function ProductsPage() {
     }
   }, [debouncedSearch, activeCategory, sortBy]);
 
-  useEffect(() => {
-    if (user) loadProducts();
-  }, [user, loadProducts]);
+  useLoadEffect(loadProducts, Boolean(user));
 
   if (authLoading || !user) return null;
 
