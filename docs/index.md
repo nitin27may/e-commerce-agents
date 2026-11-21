@@ -1,6 +1,6 @@
 # E-Commerce Agents
 
-A multi-agent e-commerce platform built on **Microsoft Agent Framework**, in **Python and .NET**, with the concepts written out in full beside the code that runs them.
+A complete, end-to-end multi-agent e-commerce application built on **Microsoft Agent Framework**, in **Python and .NET**, and a 34-chapter course that teaches every piece of it. It is a working application with a storefront, sign-in and roles, a database, approvals, evals and tracing, with the concepts written out in full beside the code that runs them.
 
 An orchestrator and five specialist agents collaborate over the A2A protocol to handle product discovery, orders, pricing, reviews, inventory and support. Five orchestration patterns are selectable at runtime from the same chat box, so you can watch the same question routed five different ways and compare what each costs.
 

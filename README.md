@@ -11,19 +11,34 @@
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED.svg)](https://docs.docker.com/compose/)
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/nitin27may/e-commerce-agents)
 
-**One e-commerce problem, solved five ways with [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) (MAF), in Python and .NET.**
+**A complete multi-agent e-commerce application built on [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) (MAF), in Python and .NET, and a 34-chapter course that teaches every piece of it.**
 
-An orchestrator and five specialist agents handle product search, orders, pricing, reviews and
-inventory. You pick the orchestration pattern from the chat box, watch the graph run live, and
-compare what each pattern costs on the same question. A 34-chapter course builds up to it, and
-chapter 1 runs with no API key and no Docker.
+This is a working application, end to end, not a sample that stops at "the agent replied". A
+storefront with sign-in and roles sits in front of an orchestrator and five specialist agents that
+handle product search, orders, pricing, reviews and inventory, backed by PostgreSQL, with human
+approvals, guardrails, evals, tracing and deployment around them. The course starts from a first
+agent and builds up to it one mechanism at a time; chapter 1 runs with no API key and no Docker.
 
 ![Chat with a side-by-side product comparison, the Compare button and the orchestration mode switcher](docs/images/flow-product-search.png)
 
+### What is in the box
+
+| Layer | What runs |
+|---|---|
+| **Web app** | Next.js storefront, cart, checkout and orders; streaming chat that renders product cards, tables and charts; seller and admin dashboards; an approvals inbox |
+| **Orchestration** | One orchestrator, five selectable modes (below), a live graph of the run and a side-by-side compare view |
+| **Agents** | Five specialists as separate services, talking A2A 1.0, with optional MCP servers for product and inventory data |
+| **Data** | PostgreSQL with pgvector for semantic search, numbered migrations, a deterministic seeder, Redis for rate limiting |
+| **Identity** | JWT sign-in, five roles (customer, power user, seller, support, admin), identity carried to every agent and tool |
+| **Safety** | Policy-routed human approval, checkpoints and resume, guardrails, grounding checks, idempotency on money-moving actions |
+| **Quality** | An eval suite that replays without a key in CI, a red-team set, more than 30 CI checks per pull request |
+| **Operations** | OpenTelemetry into the Aspire dashboard, per-request token and cost tracking, Docker Compose with prebuilt images, a draft Azure Container Apps deployment |
+| **Two backends** | All of the above in Python, and in .NET / C# behind the same frontend and database, with the differences listed in the [parity matrix](docs/parity-matrix.md) |
+
 ### One orchestrator, five orchestration modes
 
-Most agent samples show one pattern in isolation. Here the orchestrator runs the same request
-through any of five, selected per request, so "which one should I use?" has a measured answer:
+Most agent samples show one orchestration pattern in isolation. Here the orchestrator runs the same
+request through any of five, selected per request in the chat box, so "which one should I use?" has a measured answer:
 
 | Mode | How the agents are coordinated | p50 latency | Model calls |
 |---|---|---|---|
@@ -36,14 +51,6 @@ through any of five, selected per request, so "which one should I use?" has a me
 The two workflow modes call no model, so they are doing less work, not the same work faster.
 Method, token and cost figures: [orchestration benchmark](docs/orchestration-benchmark.md)
 (gpt-4.1, 40 requests). How each pattern works: [orchestration patterns](docs/concepts/06-orchestration-patterns.md).
-
-Around the orchestrator, the parts samples usually skip:
-
-- **Human approval** on returns and risky tool calls, routed by a policy file, with checkpoints so a paused run resumes after a restart ([approvals](docs/approvals.md)).
-- **A2A 1.0** between agents on both stacks, so a Python orchestrator can call .NET specialists and the reverse ([A2A](docs/a2a.md)).
-- **Two complete backends**, Python and .NET / C#, behind one Next.js frontend, with every remaining difference listed in the [parity matrix](docs/parity-matrix.md).
-- **Grounding, guardrails and evals** that run on the production path, plus OpenTelemetry traces in the Aspire dashboard ([agent quality](docs/agent-quality.md), [telemetry](docs/telemetry.md)).
-- **MCP servers** for product and inventory data ([MCP integration](docs/mcp-integration.md)).
 
 ### Learn
 

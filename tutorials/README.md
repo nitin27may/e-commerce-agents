@@ -2,7 +2,8 @@
 
 A hands-on course in **Microsoft Agent Framework**, taught chapter by chapter with runnable examples
 in both Python and .NET, from a first agent up to the multi-agent e-commerce application in this
-repo. It is for developers who can read Python or C# and want to build agents, workflows and
+repo. That application is real and complete (web app, five agent services, database, approvals,
+evals, telemetry), so every chapter ends by pointing at where its idea does production work. It is for developers who can read Python or C# and want to build agents, workflows and
 multi-agent systems, not just read about them.
 
 ## Run chapter 1 now, no key
