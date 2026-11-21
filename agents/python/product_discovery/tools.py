@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Annotated
 
 from agent_framework import tool
@@ -228,12 +229,21 @@ async def semantic_search(
     # arm, and neither arm's raw scores need to be on a comparable scale.
     sql = f"""
         WITH vec AS (
-            SELECT pe.product_id,
-                   1 - (pe.embedding <=> $1::vector) AS similarity,
-                   ROW_NUMBER() OVER (ORDER BY pe.embedding <=> $1::vector) AS rank
-            FROM product_embeddings pe
-            JOIN products p ON pe.product_id = p.id
-            WHERE p.is_active = TRUE
+            SELECT product_id, similarity,
+                   ROW_NUMBER() OVER (ORDER BY similarity DESC, rating DESC, name) AS rank
+            FROM (
+                -- Rounded to 6 places *before* ranking and display: pgvector accumulates float32
+                -- distances in an order that depends on the CPU's SIMD (NEON on arm64, AVX on
+                -- x86-64), so two near-equal products differ in the 8th digit from one machine to
+                -- the next and swap places. Six places keeps every real difference and drops that
+                -- noise; ties then fall to rating and name, which are data, not hardware.
+                SELECT pe.product_id, p.rating, p.name,
+                       ROUND((1 - (pe.embedding <=> $1::vector))::numeric, 6) AS similarity
+                FROM product_embeddings pe
+                JOIN products p ON pe.product_id = p.id
+                WHERE p.is_active = TRUE
+            ) scored
+            ORDER BY rank
             LIMIT $3
         ),
         fts AS (
@@ -331,7 +341,12 @@ def _semantic_rows(rows: list) -> list[dict]:
             "rating": float(r["rating"]),
             # None when only the text arm matched -- the product has no embedding
             # row, or ranked outside the vector candidate window.
-            "similarity": round(float(r["similarity"]), 3) if r["similarity"] is not None else None,
+            # The vector arm hands back a 6-place numeric; 3 places here is a half-up round on the
+            # decimal. A float round() is half-even on the binary value, so an exact 0.0625 became
+            # 0.062 where a CPU whose float32 landed a hair above it said 0.063.
+            "similarity": float(Decimal(str(r["similarity"])).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP))
+            if r["similarity"] is not None
+            else None,
             "score": round(float(r["score"]), 5),
             "image_url": r["image_url"],
         }
