@@ -507,6 +507,13 @@ The caller authenticates with `X-Agent-Secret` and says which user the call is f
 
 The orchestrator forwards the last 10 conversation turns (each truncated to 500 characters) in `history`. This gives specialists enough context for follow-up questions without unbounded payload growth.
 
+History compaction (B-15): the history a specialist rehydrates from Postgres, and the orchestrator's own
+`RunContext.history`, is capped at the last 50 rows. With `HISTORY_COMPACTION_KEEP_LAST_GROUPS=N` (default `0`, off)
+both are further trimmed to the last N message groups, where a group is a user turn with the assistant and tool
+messages that follow it. A group is kept or dropped whole, so a tool result never loses its call. Off, the request
+the model sees (and so its replay key) is unchanged. `shared/history_compaction.py` does the trim; MAF's
+`SlidingWindowStrategy` is public at 1.26.0 but counts single messages, not turns. Python only for now (parity row 43).
+
 ### Authentication headers
 
 | Header | Value | Purpose |

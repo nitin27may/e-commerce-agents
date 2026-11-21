@@ -36,6 +36,10 @@ public static class SanitizeToolsConfig
         ["CompareProductReviews"] = ["Title", "Body", "Summary", "Comment", "ProductName"],
         ["DraftSellerResponse"] = ["ReviewTitle", "ReviewBody", "Reviewer", "ResponseTemplate"],
 
+        // shared user context: stored memory text and the signup display name are replayed into later prompts
+        ["RecallMemories"] = ["Content"],
+        ["GetUserProfile"] = ["Name", "Preferences"],
+
         // product-discovery: descriptions/specs are seller-editable free text
         ["SearchProducts"] = ["Name", "Description", "Specs", "Features"],
         ["GetProductDetails"] = ["Name", "Description", "Specs", "Features"],

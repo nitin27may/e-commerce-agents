@@ -262,4 +262,8 @@ async def get_history_as_dicts(provider: HistoryProvider, session_id: str | None
     exactly as every route already does them.
     """
     messages = await provider.get_messages(session_id)
-    return [{"role": str(m.role), "content": m.text} for m in messages if m.text]
+    history = [{"role": str(m.role), "content": m.text} for m in messages if m.text]
+    # B-15: a no-op unless HISTORY_COMPACTION_KEEP_LAST_GROUPS > 0.
+    from shared.history_compaction import compact_history_from_settings
+
+    return compact_history_from_settings(history) or history

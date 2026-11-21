@@ -22,6 +22,11 @@ SANITIZE_TOOLS: dict[str, set[str] | None] = {
     "draft_seller_response": {"review_title", "review_body", "reviewer", "response_template"},
     # body_preview is the first 100 chars of the review body, i.e. review text.
     "detect_fake_reviews": {"title", "body", "body_preview", "comment", "reviewer", "reviewer_name"},
+    # shared user context: a memory's content is text the model (or the user) stored earlier, and a display name
+    # is chosen at signup, so both are replayed into a later prompt (SAN-2). "preferences" is not returned today;
+    # it is listed so a profile field added later is covered by default.
+    "recall_memories": {"content"},
+    "get_user_profile": {"name", "preferences"},
     # product-discovery: descriptions/specs are seller-editable free text
     "search_products": {"name", "description", "specs", "features"},
     "get_product_details": {"name", "description", "specs", "features"},
@@ -46,10 +51,8 @@ NO_SANITIZE: set[str] = {
     "check_stock",
     "get_warehouse_availability",
     "get_price_history",
-    "get_user_profile",
     "get_purchase_history",
     "store_memory",
-    "recall_memories",
     # order-management: mutations, returns, cart
     "cancel_order",
     "modify_order",

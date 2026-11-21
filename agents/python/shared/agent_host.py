@@ -233,7 +233,10 @@ async def _rehydrate_history_from_session(session_id: str) -> list[dict] | None:
         content = row["content"]
         if role in ("user", "assistant") and content:
             history.append({"role": role, "content": content})
-    return history
+    # B-15: a no-op unless HISTORY_COMPACTION_KEEP_LAST_GROUPS > 0.
+    from shared.history_compaction import compact_history_from_settings
+
+    return compact_history_from_settings(history) or history
 
 
 # ─────────────────────── FastAPI host ───────────────────────

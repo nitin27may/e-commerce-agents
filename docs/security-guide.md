@@ -99,7 +99,7 @@ This layer is the broadest defense. Its weakness is that it is only as reliable 
 1. **Strip** — removes C0 control characters (except TAB/LF/CR), DEL, zero-width Unicode marks, line/paragraph separators, and BOM. These are common hidden-payload carriers.
 2. **Defang** — replaces pattern matches with `[neutralized]`, preserving the structure and length so downstream analysis (fake-review detection, sentiment) can still see that something was there.
 
-Only the tools whose results carry user-generated free text are in `SANITIZE_TOOLS`. Each entry optionally specifies a field allowlist so structured fields (prices, SKUs) are never mangled.
+Only the tools whose results carry user-generated free text are in `SANITIZE_TOOLS`. That includes `recall_memories` (`content`) and `get_user_profile` (`name`, `preferences`): a memory is text stored in an earlier turn, and a display name is chosen at signup, so both are replayed into later prompts (SAN-2). Each entry optionally specifies a field allowlist so structured fields (prices, SKUs) are never mangled.
 
 **Fail behavior**: controlled by `GUARDRAILS_FAIL_OPEN` (default `true`). On an unexpected exception, the raw result is returned and the error is logged. Set `GUARDRAILS_FAIL_OPEN=false` for fail-closed behavior in high-security deployments.
 
