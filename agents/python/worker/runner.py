@@ -78,7 +78,13 @@ def backoff_seconds(attempts: int, base: float, cap: float) -> float:
 async def claim(
     pool: asyncpg.Pool, worker_id: str, *, batch_size: int, lease_seconds: float, max_attempts: int
 ) -> list[OutboxRow]:
-    """Lease up to ``batch_size`` due rows to ``worker_id``, counting one attempt on each."""
+    """Lease up to ``batch_size`` due rows to ``worker_id``, counting one attempt on each.
+
+    ``approval.timeout_apply`` for a paused return a .NET orchestrator opened (``approvals.recommendation->>'stack'
+    = 'dotnet'``, workflow source) is never claimed here: only that stack can resume its own checkpoint, and its
+    hosted service (``ApprovalTimeoutWorker``) drains those rows. Excluded in the claim, not in the handler, so the
+    row stays unprocessed for its owner instead of being marked done.
+    """
     rows = await pool.fetch(
         """UPDATE outbox SET locked_until = NOW() + make_interval(secs => $2), locked_by = $1,
                              attempts = attempts + 1
@@ -86,6 +92,10 @@ async def claim(
                           WHERE processed_at IS NULL AND failed_at IS NULL
                             AND available_at <= NOW() AND attempts < $4
                             AND (locked_until IS NULL OR locked_until < NOW())
+                            AND NOT (topic = 'approval.timeout_apply' AND EXISTS (
+                                  SELECT 1 FROM approvals a
+                                   WHERE a.id = outbox.aggregate_id AND a.source = 'workflow'
+                                     AND a.recommendation->>'stack' = 'dotnet'))
                           ORDER BY available_at, id
                           LIMIT $3
                             FOR UPDATE SKIP LOCKED)

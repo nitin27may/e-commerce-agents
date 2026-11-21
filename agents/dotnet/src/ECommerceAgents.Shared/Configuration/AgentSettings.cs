@@ -385,4 +385,15 @@ public sealed record AgentSettings
     // The reminder timer fires this fraction of an approval's sla_hours after it enters review.
     // Mirrors Python's APPROVAL_REMINDER_FRACTION (shared/config.py).
     public double ApprovalReminderFraction { get; init; } = 0.5;
+
+    // ── Outbox: the .NET consumer of approval.timeout_apply ─────
+    // The Python worker's OUTBOX_* settings, same names and defaults (shared/config.py). The .NET hosted service drains ONLY
+    // approval.timeout_apply rows whose approval a .NET workflow created (parity row 36).
+    public bool DotnetTimeoutWorkerEnabled { get; init; } = true;
+    public double OutboxPollIntervalSeconds { get; init; } = 2.0;
+    public int OutboxBatchSize { get; init; } = 10;
+    public int OutboxMaxAttempts { get; init; } = 8;
+    public int OutboxLeaseSeconds { get; init; } = 120;
+    public double OutboxBackoffBaseSeconds { get; init; } = 5.0;
+    public double OutboxBackoffMaxSeconds { get; init; } = 600.0;
 }

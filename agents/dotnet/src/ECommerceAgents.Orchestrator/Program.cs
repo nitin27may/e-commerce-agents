@@ -102,6 +102,8 @@ builder.Services.AddSingleton<IOrchestrationMode>(sp =>
 builder.Services.AddSingleton<ModeRegistry>();
 // The approvals inbox: the unified API plus the legacy resume / admin approve-deny routes all decide through one service.
 builder.Services.AddApprovals();
+// Applies the SLA timeout to a paused return this stack opened (the Python worker cannot resume a .NET checkpoint; parity row 36).
+builder.Services.AddApprovalTimeoutWorker();
 
 builder.Services.AddSingleton<SlidingWindowRateLimiter>();
 builder.Services.AddSingleton<OrchestratorTools>();
