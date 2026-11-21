@@ -19,7 +19,7 @@ const SUGGESTIONS = [
 ];
 
 const openPicker = async (user: ReturnType<typeof userEvent.setup>) => {
-  await user.click(screen.getByRole("button", { name: "Specialist" }));
+  await user.click(screen.getByRole("button", { name: /^Specialist/ }));
   return screen.getByRole("listbox", { name: "Specialist" });
 };
 
@@ -40,7 +40,7 @@ describe("PromptInputBox — specialist picker", () => {
     // top third of the composer to expose a control most turns never touch.
     render(<PromptInputBox onSend={() => {}} />);
 
-    expect(screen.getByRole("button", { name: "Specialist" })).toHaveTextContent("Auto");
+    expect(screen.getByRole("button", { name: /^Specialist/ })).toHaveTextContent("Auto");
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
     for (const mode of AGENT_MODES.slice(1)) {
       expect(screen.queryByRole("button", { name: mode.label })).not.toBeInTheDocument();
@@ -65,7 +65,7 @@ describe("PromptInputBox — specialist picker", () => {
     const listbox = await openPicker(user);
     await user.click(within(listbox).getByRole("option", { name: "Orders" }));
 
-    expect(screen.getByRole("button", { name: "Specialist" })).toHaveTextContent("Orders");
+    expect(screen.getByRole("button", { name: /^Specialist/ })).toHaveTextContent("Orders");
     await expectGone("listbox");
   });
 
