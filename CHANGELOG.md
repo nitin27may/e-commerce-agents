@@ -23,6 +23,12 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ### Added since 1.3.0
 
+- **Notebooks for tutorial chapters 01 to 04** (C-20, #100). `tutorials/0N-*/python/notebook.ipynb` walks each chapter
+  one cell at a time, importing the chapter's own `main.py` and reusing the exact prompts its replay fixtures were
+  recorded with, so they run with no key. `tutorials/tests/test_notebooks.py` executes all four headlessly with
+  `nbclient` (also a step in the `tutorials-keyless` job) and fails if a committed notebook carries outputs;
+  `scripts/strip_notebook_outputs.py` cleans one. `nbclient`, `nbformat` and `ipykernel` join the tutorials `dev`
+  extra; the lock change is additions only.
 - **A2A 1.0 on both stacks** (#88). Every specialist serves the A2A 1.0 JSON-RPC binding at
   `/a2a/v1` and an agent card at `/.well-known/agent-card.json`, beside the unchanged
   `/message:send` wire. `A2A_TRANSPORT=legacy|a2a` (default `legacy`) picks what the caller

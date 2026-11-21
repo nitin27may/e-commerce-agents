@@ -59,6 +59,11 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "ruff==0.17.5",
+    # Chapters 01-04 notebooks: executed headlessly by
+    # tutorials/tests/test_notebooks.py (nbclient runs the cells in an ipykernel).
+    "nbclient>=0.10,<1",
+    "nbformat>=5.10,<6",
+    "ipykernel>=6.29,<8",
 ]
 
 [tool.uv]

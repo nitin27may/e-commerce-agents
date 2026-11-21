@@ -101,6 +101,16 @@ async def chat(agent: Agent, questions: list[str]) -> list[list[str]]:
 
 `session = agent.create_session()` happens once, outside the loop; every question in `chat()` reuses it. `stream_answer` never sees the session's contents directly — it just hands it to `agent.run(..., stream=True, session=session)` and MAF handles reading and appending history around the call.
 
+## Notebook
+
+`tutorials/03-streaming-and-multiturn/python/notebook.ipynb` walks through the same code one cell at a time: it streams two turns on one session and counts the chunks per turn. Every cell imports the chapter's own `main.py` (its instructions, tools and helpers), and every prompt is the exact string the replay fixtures were recorded with, so it runs with no key.
+
+```bash
+uv sync --project tutorials --extra dev   # installs ipykernel, nbclient and nbformat
+```
+
+Open the notebook in VS Code or JupyterLab and pick the `tutorials/.venv` interpreter as the kernel. To run it headless, the way CI does: `uv run --project tutorials pytest tutorials/tests/test_notebooks.py -v`. Committed notebooks carry no outputs; `uv run --project tutorials python scripts/strip_notebook_outputs.py` cleans one before you commit. Edit a prompt in a cell and a replay run reports a missing fixture, because the prompt is part of the fixture's key; set `OPENAI_API_KEY` (or the Azure variables) to try your own wording live.
+
 ## .NET
 
 Source: [`dotnet/Program.cs`](./dotnet/Program.cs).
