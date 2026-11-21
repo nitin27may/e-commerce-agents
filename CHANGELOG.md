@@ -63,6 +63,14 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
   The recorded demo fixtures are not in the images yet (the recording session adds them); until then
   every model call is a reported replay miss and the stack stays up. The key preflight now points at
   `--no-key`, and `--demo --clean` also clears the demo stack's volumes.
+- **Aspire AppHost** (B-18, #90, .NET). `agents/dotnet/src/ECommerceAgents.AppHost` runs the stack under
+  Aspire as an alternative to compose, which stays the reference path: pgvector Postgres, Redis, the repo's
+  own `scripts/migrate.py` and seeder as one-shot containers, the auth-server, the orchestrator and
+  five specialists, the outbox worker and the pnpm frontend, with `AGENT_REGISTRY` built from endpoint
+  references. `AgentStack=python` swaps the orchestrator and specialists to uvicorn apps, and
+  `AgentStackOverrides:<name>=python` moves one. `ECommerceAgents.ServiceDefaults` reuses `TelemetrySetup`.
+  `AppHostModelTests` build the model without starting it. Pinned to Aspire 13.6.5; 17.0.0 exists but obsoletes
+  the SDK and the project-resource model. See `docs/deployment.md`.
 
 ### Changed since 1.3.0
 

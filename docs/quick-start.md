@@ -211,6 +211,19 @@ docker compose -f docker-compose.dotnet.yml \
 On Windows PowerShell, put the whole command on one line, or use a backtick (`` ` ``) for line
 continuation instead of the backslash.
 
+### Or under Aspire
+
+If you have the .NET 10 SDK, `uv` and `pnpm`, the Aspire AppHost starts the same stack with a resource
+dashboard instead of compose. Docker still runs Postgres, Redis, the seeder and the auth-server.
+
+```bash
+dotnet run --project agents/dotnet/src/ECommerceAgents.AppHost
+AgentStack=python dotnet run --project agents/dotnet/src/ECommerceAgents.AppHost   # Python backend
+```
+
+It binds the same ports as compose, so stop that first. Details and caveats are in
+[deployment.md](deployment.md#running-under-aspire-alternative-to-compose).
+
 ## Run without a paid API key
 
 **No key at all: `--no-key`.** Plays back recorded model responses, so nothing calls a model.

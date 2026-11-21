@@ -1,0 +1,31 @@
+<Project Sdk="Aspire.AppHost.Sdk/13.6.5">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <CentralPackageTransitivePinningEnabled>false</CentralPackageTransitivePinningEnabled>
+    <Description>Aspire AppHost: an alternative to docker compose for running the stack. Compose stays the reference path.</Description>
+    <UserSecretsId>ecommerce-agents-apphost</UserSecretsId>
+    <!-- ASPIRE010: the optional Aspire CLI bundle is not used; nothing here depends on its extra features. -->
+    <NoWarn>$(NoWarn);ASPIRE010</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.PostgreSQL" />
+    <PackageReference Include="Aspire.Hosting.Redis" />
+    <PackageReference Include="Aspire.Hosting.Python" />
+    <PackageReference Include="Aspire.Hosting.JavaScript" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ECommerceAgents.Orchestrator\ECommerceAgents.Orchestrator.csproj" />
+    <ProjectReference Include="..\ECommerceAgents.ProductDiscovery\ECommerceAgents.ProductDiscovery.csproj" />
+    <ProjectReference Include="..\ECommerceAgents.OrderManagement\ECommerceAgents.OrderManagement.csproj" />
+    <ProjectReference Include="..\ECommerceAgents.PricingPromotions\ECommerceAgents.PricingPromotions.csproj" />
+    <ProjectReference Include="..\ECommerceAgents.ReviewSentiment\ECommerceAgents.ReviewSentiment.csproj" />
+    <ProjectReference Include="..\ECommerceAgents.InventoryFulfillment\ECommerceAgents.InventoryFulfillment.csproj" />
+    <ProjectReference Include="..\ECommerceAgents.Mcp\ECommerceAgents.Mcp.csproj" />
+  </ItemGroup>
+</Project>
