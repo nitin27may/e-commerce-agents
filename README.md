@@ -6,7 +6,7 @@
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12+-3776AB.svg)](https://python.org)
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4.svg)](https://dotnet.microsoft.com)
 [![Next.js 16](https://img.shields.io/badge/Next.js-16-000000.svg)](https://nextjs.org)
-[![MAF v1](https://img.shields.io/badge/Microsoft%20Agent%20Framework-v1-5E5DF0.svg)](https://github.com/microsoft/agent-framework)
+[![MAF 1.26.0](https://img.shields.io/badge/Microsoft%20Agent%20Framework-1.26.0-5E5DF0.svg)](https://github.com/microsoft/agent-framework)
 [![PostgreSQL + pgvector](https://img.shields.io/badge/PostgreSQL-pgvector-336791.svg)](https://github.com/pgvector/pgvector)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED.svg)](https://docs.docker.com/compose/)
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/nitin27may/e-commerce-agents)
