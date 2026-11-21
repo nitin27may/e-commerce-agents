@@ -1,9 +1,5 @@
 # Graphs in agent systems
 
-> **New to this?** [The agent loop](https://nitinksingh.com/ai-resources/02-agents/the-agent-loop/) on the AI Knowledge Hub covers the
-> same ground from scratch, vendor-neutral, with a lab you can run locally for free.
-> This page assumes the concept and shows how it is built *here*.
-
 ## What it is
 
 A graph, in this context, is a fixed structure of **nodes** (units of work — here, "executors":
@@ -81,7 +77,7 @@ workflow — no hidden branching, nothing else going on.
 This graph isn't just internal structure — it's rendered live. `PrePurchaseMode.graph_mermaid()`
 ([`orchestrator/modes/workflow_mode.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/orchestrator/modes/workflow_mode.py)) returns a Mermaid string built from the *same*
 executor ids used at runtime, and the web UI ([`web/src/components/chat/orchestration-graph.tsx`](https://github.com/nitin27may/e-commerce-agents/blob/main/web/src/components/chat/orchestration-graph.tsx))
-fetches that string and re-applies the house palette client-side (lines 20-23) to animate nodes
+fetches that string and re-applies the house palette client-side to animate nodes
 from idle → active → done as real `event: node` SSE frames arrive during a run. The id convention
 that makes this correlation possible — dashes in an executor id become underscores in the Mermaid
 node id, and back — is implemented on both sides deliberately, not by coincidence:
@@ -89,14 +85,13 @@ node id, and back — is implemented on both sides deliberately, not by coincide
 ([`orchestration-graph.tsx`](https://github.com/nitin27may/e-commerce-agents/blob/main/web/src/components/chat/orchestration-graph.tsx)) is the client-side half.
 
 **Not every mode has a graph.** `is_graph=True`/`False` on each mode's `capabilities`
-([`orchestrator/modes/base.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/orchestrator/modes/base.py)) is an honest signal, not a formality: `tool` mode
-(`tool_router.py`) and `handoff` mode (`handoff_mode.py`) both set `is_graph=True` or
-`False` correctly, but only three of the five registered modes — `workflow:pre-purchase`,
-`workflow:return-replace`, and `group-chat` — actually implement `graph_mermaid()` with real
-output. `tool_router.py` and `handoff_mode.py` both return `None`: a plain LLM tool
-router has no fixed graph to draw (the "graph" is different on every request, since the model
-decides it), and `handoff`'s mesh doesn't render a live diagram yet even though its topology is
-fixed — a real gap, not a design choice, tracked rather than glossed over.
+([`orchestrator/modes/base.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/orchestrator/modes/base.py)) says whether a mode has a fixed shape: `tool` mode (`tool_router.py`)
+sets `is_graph=False` and the other four set it `True`. Only three of the five registered modes —
+`workflow:pre-purchase`, `workflow:return-replace`, and `group-chat` — implement
+`graph_mermaid()` with real output. `tool_router.py` and `handoff_mode.py` both return `None`: a
+plain LLM tool router has no fixed graph to draw (the "graph" is different on every request,
+since the model decides it), and `handoff`'s mesh has no live diagram even though its topology is
+fixed. That one is a gap, not a design choice.
 
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': {
@@ -118,6 +113,8 @@ flowchart LR
   class fanout,synth success
   class reviews,stock,price,merge core
 ```
+
+**Build it yourself:** [Chapter 09: workflow executors and edges](../../tutorials/09-workflow-executors-and-edges/README.md) and [Chapter 20: workflow visualization](../../tutorials/20-visualization/README.md). **In the application:** `agents/python/workflows/pre_purchase.py`.
 
 Next: [state, memory, and sessions](08-state-memory-and-sessions.md) — including how a paused
 graph like `workflow:return-replace`'s survives past the request that paused it.

@@ -1,11 +1,12 @@
 # Reported vs actual
 
 Every entry below is a bug that turned out to be **bigger than the report said**, and in
-every case the difference was found by *running* something rather than reading it.
+every case the difference was found by *running* something rather than reading it. The page
+is for anyone deciding how much to trust green tests and healthy containers in an agent system.
 
 ## The short version
 
-Nine cases so far. Three that give the shape of it:
+Nine cases. Three that give the shape of it:
 
 - **418 tests passed while the .NET orchestrator could not route a single request.** Its
   context provider returned a fresh `AIContext`, discarding the caller's messages and
@@ -19,10 +20,6 @@ Nine cases so far. Three that give the shape of it:
 What connects all nine: **a healthy-looking system is the normal presentation of a broken
 one.** Twelve containers reported healthy throughout the first of those.
 
-This page exists because it is the most useful artifact this project produces and it has
-been invisible — it lived in `.claude/plans/remaining-work.md`, linked once, from the
-roadmap. It is kept because the pattern has not stopped repeating.
-
 ## The table
 
 | Filed as | Actually |
@@ -32,10 +29,10 @@ roadmap. It is kept because the pattern has not stopped repeating.
 | ".NET tests only for ch01–11" ([#20](https://github.com/nitin27may/e-commerce-agents/issues/20)) | **No CI job built any** of the 31 tutorial projects; ch08 was fully broken |
 | "`semantic_search` dead under replay" ([#52](https://github.com/nitin27may/e-commerce-agents/issues/52)) | Also a **production** IVFFlat bug returning unrelated products |
 | "`optimize_cart` divides by zero" ([#51](https://github.com/nitin27may/e-commerce-agents/issues/51)) | **No promotion had ever applied correctly**, in any environment |
-| "`--dotnet` needs a look" (plan 16) | The .NET orchestrator **could not reach any specialist**; 39 of 46 tools were registered under a name the shared prompt corpus never uses |
+| "`--dotnet` needs a look" | The .NET orchestrator **could not reach any specialist**; 39 of 46 tools were registered under a name the shared prompt corpus never uses |
 | "`handoff` mode is slow and verbose" | It **never handed off at all** — 5,403 streamed updates, 23,637 characters, no specialist invoked |
 | "`workflow:pre-purchase` discards its own work" | The synthesis was faithful; **two of its four inputs were silently missing** |
-| "`AGENT_REGISTRY` is hardcoded host:port" (Azure pre-work) | A **validating parser already existed and was tested** on both stacks, and **neither production call site used it** — all four sites re-parsed by hand and swallowed a malformed value into "no specialists configured" |
+| "`AGENT_REGISTRY` is hardcoded host:port" | A **validating parser already existed and was tested** on both stacks, and **neither production call site used it** — all four sites re-parsed by hand and swallowed a malformed value into "no specialists configured" |
 
 ## What the pattern is
 
@@ -67,7 +64,7 @@ Four of the entries above were invisible to code review by construction:
 - **The tutorial CI gap** was a workflow that built nothing. The file existed and the jobs
   were green.
 
-Two of the five original entries were found *only because a gate was switched on*. That
+Two of the first five entries were found *only because a gate was switched on*. That
 is the argument for building gates before content.
 
 ## What this costs
@@ -75,7 +72,7 @@ is the argument for building gates before content.
 The parity gate that catches this class — `web/e2e/orchestration-parity.spec.ts` run
 against both backends — **is not in CI**. It needs a full stack and a real API key, which
 is impractical on every push, so it runs by hand. That is the standing weakness, recorded
-in [ADR 0005](adr/0005-dual-stack-parity.md) rather than smoothed over.
+in [ADR 0005](adr/0005-dual-stack-parity.md).
 
 It is also why the numbers here keep growing.
 

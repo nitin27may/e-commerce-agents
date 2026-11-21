@@ -1,9 +1,5 @@
 # Guardrails
 
-> **New to this?** [Safety and failure modes](https://nitinksingh.com/ai-resources/02-agents/safety/) on the AI Knowledge Hub covers the
-> same ground from scratch, vendor-neutral, with a lab you can run locally for free.
-> This page assumes the concept and shows how it is built *here*.
-
 ## What it is
 
 Guardrails are the layer that defends against inputs trying to make the agent do something it
@@ -40,7 +36,7 @@ Guardrails are not optional for anything that touches untrusted text or user-sco
 in a customer-facing agent, is nearly everything. The real design decision isn't *whether* to run
 these checks but **what each layer does when it catches something**: refuse outright, sanitize and
 continue, or just log and continue (observe-only). Getting that wrong in the strict direction
-breaks legitimate use (a customer whose honest question happens to contain a flagged phrase gets
+breaks legitimate use (a customer whose ordinary question happens to contain a flagged phrase gets
 refused for no reason); getting it wrong in the loose direction means detection without protection.
 This repo defaults several layers to observe-only specifically so the false-positive rate can be
 measured before anything is set to block — see the caveat below.
@@ -64,8 +60,8 @@ if settings.GROUNDING_MODE != "off":
     stack.append(GroundingVerificationMiddleware())     # see grounding and RAG
 ```
 
-Each layer maps directly onto one part of the threat model above, and each one has an honest
-limit worth knowing:
+Each layer maps directly onto one part of the threat model above, and each one has a limit
+worth knowing:
 
 - **`InjectionDetectionChatMiddleware`** ([`shared/guardrails/injection_middleware.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/guardrails/injection_middleware.py)) scans
   inbound messages for high-precision injection phrasing before they reach the model. By default
@@ -112,6 +108,8 @@ flowchart LR
   class model core
   class ground infra
 ```
+
+**Build it yourself:** [Chapter 25: guardrails](../../tutorials/25-guardrails/README.md). **In the application:** `agents/python/shared/middleware.py` and `agents/python/shared/guardrails/`.
 
 Next: [human-in-the-loop](11-human-in-the-loop.md) — the layer for actions no amount of guardrail
 confidence should let run unsupervised.

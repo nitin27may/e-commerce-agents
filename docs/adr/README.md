@@ -1,12 +1,14 @@
 # Architecture Decision Records
 
-Five decisions that shaped this repository, each one argued somewhere in the prose
-already — in `CLAUDE.md`, `docs/architecture.md`, `docs/roadmap.md`, or a module
-docstring — and none of them anywhere a reader would think to look.
+An architecture decision record (ADR) is a short note that states one design decision, what it
+rules out and what would make it wrong. These five record the decisions that shaped this
+repository, each as it was taken at the time. Where the system has since moved on, the record
+carries a dated update note instead of being rewritten.
 
-That is the gap these records close. A decision recorded only as a passing sentence
-inside a 500-line document is indistinguishable from an accident, and the most common
-consequence is someone "fixing" it later at some cost.
+Each decision is also argued somewhere in the prose — `docs/architecture.md`,
+`docs/roadmap.md` or a module docstring — but nowhere a reader would think to look. A decision
+recorded only as a passing sentence inside a 500-line document is indistinguishable from an
+accident, and the most common consequence is someone "fixing" it later at some cost.
 
 Each record states what was decided, what it rules out, and — most usefully — **what
 would make it wrong**. A decision with no stated reversal condition is dogma.
@@ -21,6 +23,5 @@ would make it wrong**. A decision with no stated reversal condition is dogma.
 
 ## Format
 
-Deliberately short. These are records, not designs — the design lives in
-`.claude/plans/`. Anything longer than a page here goes unread, which defeats the
-purpose.
+Deliberately short. These are records, not designs. Anything longer than a page here goes
+unread, which defeats the purpose.

@@ -31,6 +31,18 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
   runs in CI (a UI smoke subset does), and the security guide's list of unauthenticated paths
   lacked `/ready`.
 - `CONTRIBUTING.md` gains prerequisites, a keyless test section and a PR checklist.
+- **Quick start leads with the shortest path** and no longer tells Windows users to drive Docker
+  Compose by hand; `scripts/dev.ps1` takes the same flags.
+- **Concept pages each end with the chapter that builds the idea and where it runs in the
+  application.** The production-concerns page said the application had no idempotency, retry or
+  rate limiting; it has all three, and the page now describes them. The orchestration page had the
+  return workflow's gate after the return instead of before it.
+- **API reference documents the orchestration endpoints** (modes, graph, compare, resume) with
+  their shapes, and no longer says `POST /api/chat` requires a token (anonymous callers reach
+  product discovery only).
+- **Corrected against the code:** the audit matrix said .NET has no stored-injection defense; the
+  benchmark said only `tool` mode records usage; releasing said eleven images and four gating jobs
+  (twelve and six); the database schema page omitted migration 0014 and two seeded users.
 
 ## [1.4.0] - 2026-11-21
 

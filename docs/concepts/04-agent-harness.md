@@ -1,9 +1,5 @@
 # The agent harness
 
-> **New to this?** [The harness](https://nitinksingh.com/ai-resources/02-agents/the-harness/) on the AI Knowledge Hub covers the
-> same ground from scratch, vendor-neutral, with a lab you can run locally for free.
-> This page assumes the concept and shows how it is built *here*.
-
 ## What it is
 
 The harness is everything that turns "an `Agent` object in a Python process" into a real,
@@ -41,27 +37,27 @@ Every specialist in this repo is hosted the same way, by the same shared module:
 agent with:
 
 - **Transport** — `POST /message:send` (request/response) and `POST /message:stream`
-  (Server-Sent Events) — the two shapes any other agent or the orchestrator can call
-  into this one.
+  (Server-Sent Events), the two shapes any other agent or the orchestrator can call
+  into this one. The same host also serves the standard A2A 1.0 JSON-RPC endpoint at
+  `/a2a/v1` ([a2a.md](../a2a.md)).
 - **Identity** — `GET /.well-known/agent-card.json`, an A2A-convention discovery
   document any caller can fetch to confirm who they're talking to before sending real traffic.
-- **Lifecycle** — a `lifespan` async context manager (lines 201-208) running `on_startup`/
+- **Lifecycle** — a `lifespan` async context manager running `on_startup`/
   `on_shutdown` callbacks, so a specialist doesn't accept traffic before it's actually ready and
   cleans up connections on the way out.
-- **History** — `_rehydrate_history_from_session()` (lines 128-172), which reads recent
+- **History** — `_rehydrate_history_from_session()`, which reads recent
   conversation turns straight from Postgres so a specialist picks up mid-conversation context
   instead of starting cold every message. (This is the *session* piece of
   [state, memory, and sessions](08-state-memory-and-sessions.md) — the harness is where it gets
   wired in, not where the concept itself lives.)
-- **Telemetry** — every request is wrapped in `agent_run_span(agent_name)` (lines 247, 298 — see
+- **Telemetry** — every request is wrapped in `agent_run_span(agent_name)` (see
   [observability and cost](13-observability-and-cost.md) for what that buys you), and per-request
-  state like the step recorder and grounding ledger is reset at the top of each handler
-  (lines 245-246, 296-297) so one request's data never leaks into the next.
+  state like the step recorder and grounding ledger is reset at the top of each handler so one request's data never leaks into the next.
 
 The other half of the harness is *which* model this agent actually talks to, which is a separate
-concern from hosting it: `agents/python/shared/factory.py::get_chat_client()` (lines 64-120)
-picks the concrete client — `OpenAIChatClient`, Azure's `OpenAIChatCompletionClient`, or a
-recorded-fixture `ReplayChatClient` for keyless testing — based on `LLM_PROVIDER`. Every
+concern from hosting it: `agents/python/shared/factory.py::get_chat_client()`
+picks the concrete client — OpenAI, Azure OpenAI, Anthropic, or a recorded-fixture
+`ReplayChatClient` that needs no API key — based on `LLM_PROVIDER`. Every
 `create_*_agent()` factory calls this (via a thin re-export, `create_chat_client()`, in
 [`agents/python/shared/agent_factory.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/agent_factory.py)) rather than constructing a client inline, so swapping
 providers is a config change, not a code change, across all six agents at once.
@@ -89,6 +85,8 @@ flowchart LR
   class history infra
   class card,otel infra
 ```
+
+**Build it yourself:** [Chapter 23: A2A protocol](../../tutorials/23-a2a-protocol/README.md). **In the application:** `agents/python/shared/agent_host.py`.
 
 Next: [why multi-agent](05-why-multi-agent.md) — what a single agent, hosted well, still isn't
 good at, and what splitting into several buys you.

@@ -1,6 +1,8 @@
 # Orchestration mode benchmark
 
-The same question, routed five ways, with numbers attached.
+The same question, routed five ways, with numbers attached. This page is for anyone choosing
+between the five orchestration modes, or checking the claim that the choice has measurable
+consequences.
 
 ## The short version
 
@@ -15,14 +17,15 @@ The same question, routed five ways, with numbers attached.
 `tool` mode is the only one that logged usage: **7,106 tokens and $0.0167 per run** at
 gpt-4.1 rates. Reproducing the whole table costs roughly **$0.50**.
 
-**The two workflow modes make no LLM call at all.** Reading 0.26 s against `tool`'s 10.6 s
-as "forty times faster" would therefore be wrong — they are doing different work, and one
-of them is doing less of it. That caveat matters more than any row above it, and reporting
-the other four modes as `$0.00` would have made this table look complete and been a lie.
+**What to take from this.** Use `tool` when the model should decide the route. Use `handoff`
+when the conversation settles on one specialist. Use the concurrent workflow
+(`workflow:pre-purchase`) when the steps are known and independent. Use the sequential workflow
+with an approval gate (`workflow:return-replace`) when the process is known and one step is
+irreversible. Use `group-chat` for a trade-off question.
 
-This repository's thesis is that one domain can be orchestrated five different ways and
-that the choice has real consequences. That claim has been asserted here for a long time
-and never measured. This page is the measurement.
+**The two workflow modes make no LLM call.** They do different work from the other three, so
+0.26 s against `tool`'s 10.6 s is not "forty times faster". In this run the other four modes
+report tokens and cost as *not captured*, which is not the same as zero.
 
 ## Conditions
 
@@ -55,14 +58,11 @@ instantly, which makes latency meaningless.
 
 ## Read the last two rows carefully
 
-**The workflow modes make no LLM call at all.** They are deterministic graphs over tool
-calls, and their "recommendation" is a formatted string, not generated prose. Comparing
-0.26 s against `tool`'s 10.6 s and concluding that workflows are forty times faster would
-be wrong — they are doing different work. What the number honestly says is: *when the
-answer can be assembled from tool output without a model, it costs milliseconds.*
-
-That is a genuinely useful result. It is not a latency win over `tool` mode; it is an
-argument for noticing when you did not need a model.
+**The workflow modes are deterministic graphs over tool calls.** Their "recommendation" is
+a formatted string, not generated prose. What the
+number says is: *when the answer can be assembled from tool output without a model, it
+costs milliseconds.* That is not a latency win over `tool` mode; it is an argument for
+noticing when you did not need a model.
 
 **`workflow:return-replace` only reached `check_eligibility`.** The seeded order used by
 the return prompt is in `shipped` status, and returns require `delivered` — so the
@@ -71,13 +71,11 @@ rejection, not a return flow. The number is real; it is not representative.
 
 ## Tokens and cost are mostly absent, deliberately
 
-Only `tool` mode logged usage rows: **7,106 tokens and $0.0167 per run at gpt-4.1 rates**.
-Every other mode reports *not captured*, which the harness distinguishes from zero because
-they are very different claims.
-
-The gap is real: modes that stream through MAF workflow events do not currently write
-`usage_logs` rows the way the tool router does. Reporting them as `$0.00` would have made
-this table look complete and been a lie. Closing it is tracked as its own piece of work.
+Every mode except `tool` reports *not captured*, which the harness distinguishes from
+zero because they are different claims. At the measured commit, modes that stream through
+MAF workflow events did not write `usage_logs` rows the way the tool router does. The
+current code records usage for `handoff` and `group-chat` and an explicit zero for the two
+workflow modes, but this table has not been re-measured.
 
 ## What actually changed while measuring this
 

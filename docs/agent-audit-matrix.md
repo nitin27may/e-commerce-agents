@@ -1,8 +1,13 @@
 # Agent Security Audit Matrix
 
-Per-agent snapshot of the current security posture and the remaining hardening targets.
-This matrix is the anchor reference for [`docs/security-guide.md`](security-guide.md) and
-[`docs/agent-quality.md`](agent-quality.md).
+This matrix shows, for each agent and each MCP server, which security controls are in place and
+which are still open. It is for anyone reviewing the project's security posture or adding a tool to
+an agent. [`security-guide.md`](security-guide.md) explains the controls themselves and
+[`agent-quality.md`](agent-quality.md) explains the evals.
+
+**How to read it.** Each agent has one table: a row per dimension (defined below), a status, and
+the code or dataset that backs it. `N/A` means the dimension does not apply to that agent. The
+[summary table](#summary-table) at the end puts every agent on one screen.
 
 **Legend**
 
@@ -19,7 +24,7 @@ This matrix is the anchor reference for [`docs/security-guide.md`](security-guid
 | # | Dimension | What it covers |
 |---|-----------|---------------|
 | 1 | **Injection defense — inbound** | `InjectionDetectionChatMiddleware` scanning user messages before they reach the model |
-| 2 | **Injection defense — stored** | `OutputSanitizationMiddleware` neutralizing tool results that carry user-generated text before it re-enters the model. **Python-only** — there is no .NET equivalent; the .NET stack has no stored-injection defense at all |
+| 2 | **Injection defense — stored** | `OutputSanitizationMiddleware` neutralizing tool results that carry user-generated text before it re-enters the model. The .NET twin is `OutputSanitizer` with the `SanitizeToolsConfig` allowlist ([parity matrix](parity-matrix.md), row 5) |
 | 3 | **Role enforcement** | `@requires_role` / `ensure_role` checks on destructive or privileged tools |
 | 4 | **Eval dataset** | Named dataset file under `agents/python/evals/datasets/` |
 | 5 | **Red-team coverage** | Attack vectors from `red_team.json` that target this agent |
@@ -101,7 +106,7 @@ This matrix is the anchor reference for [`docs/security-guide.md`](security-guid
 | Dimension | Status | Detail |
 |-----------|--------|--------|
 | Inbound injection detection | Done | `InjectionDetectionChatMiddleware` — highest-risk agent for inbound injection because user input can request review text |
-| Stored-content sanitization | Done | All read tools (`get_product_reviews`, `analyze_sentiment`, `compare_reviews`, `detect_fake_reviews`, `get_review_trends`) covered in `SANITIZE_TOOLS` with explicit field allowlists |
+| Stored-content sanitization | Done | All read tools (`get_product_reviews`, `analyze_sentiment`, `search_reviews`, `get_sentiment_by_topic`, `get_sentiment_trend`, `compare_product_reviews`, `detect_fake_reviews`) covered in `SANITIZE_TOOLS` with explicit field allowlists |
 | Role enforcement | Done | `draft_seller_response` gated `@requires_role("seller", "admin")` (Python) / `RoleGuard.Ensure` in `ReviewTools.cs` (.NET) |
 | Eval dataset | Done | `datasets/review_sentiment.json` |
 | Red-team coverage | Done | `red_team.json`: two injection attacks — direct system-prompt dump via review request; indirect via embedded "follow it" instruction in review content |
@@ -135,7 +140,7 @@ This matrix is the anchor reference for [`docs/security-guide.md`](security-guid
 | Eval dataset | N/A | No LLM in this surface — pure data tools |
 | Red-team coverage | N/A | Not part of the LLM red-team suite; covered by `packages/*/tests/test_auth.py`'s reject-shapes instead |
 
-**Target**: None open — `MCP_AUTH_ENABLED=false` (default) is a byte-for-byte regression guard against pre-existing behavior; `=true` is fully unit- and integration-tested (real RS256 crypto, real in-process AS).
+**Target**: None open — `MCP_AUTH_ENABLED=false` (default) leaves the servers' unauthenticated behavior byte-for-byte unchanged; `=true` is fully unit- and integration-tested (real RS256 crypto, real in-process AS).
 
 ---
 
@@ -165,7 +170,7 @@ This matrix is the anchor reference for [`docs/security-guide.md`](security-guid
 | review-sentiment | Done | Done | Done | Done | Done | Done |
 | inventory-fulfillment | Done | N/A | Done | Done | Done | Done |
 | mcp-product / mcp-inventory | N/A | N/A | N/A | N/A | N/A | Done |
-| .NET port | — | — | Done (5 tools, `RoleGuard`) | — | — | Done (auth code + deployability) |
+| .NET port | — | Done (`OutputSanitizer`, parity matrix row 5) | Done (5 tools, `RoleGuard`) | — | — | Done (auth code + deployability) |
 
 **Open items (priority order)**
 

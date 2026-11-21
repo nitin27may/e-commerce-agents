@@ -2,9 +2,10 @@
 
 How this repo uses Microsoft Agent Framework (MAF v1) for agents and workflows,
 which orchestration pattern fits which problem, and the conventions that keep the
-code testable and portable across OpenAI / Azure OpenAI — and, via `LLM_BASE_URL`,
-any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, OpenRouter). It is for a
-developer who knows what an agent is and wants the patterns this codebase follows.
+code testable and portable across providers. `LLM_PROVIDER` selects OpenAI, Azure OpenAI,
+Anthropic (Claude) or `replay` (recorded responses, no model call), and `LLM_BASE_URL` points
+the OpenAI provider at any compatible endpoint (Ollama, LM Studio, vLLM, OpenRouter). It is for
+a developer who knows what an agent is and wants the patterns this codebase follows.
 The exact package versions are pinned in `agents/python/pyproject.toml`.
 
 ## Agent execution
@@ -14,7 +15,7 @@ Every specialist and the orchestrator is a MAF `Agent` built by a
 
 ```python
 Agent(
-    client=create_chat_client(),          # OpenAI or Azure OpenAI (shared.factory)
+    client=create_chat_client(),          # per LLM_PROVIDER (shared.factory)
     name="product-discovery",
     instructions=SYSTEM_PROMPT,            # composed from YAML (shared.prompt_loader)
     tools=AGENT_TOOLS,                     # @tool functions

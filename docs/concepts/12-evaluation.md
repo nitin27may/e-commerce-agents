@@ -1,9 +1,5 @@
 # Evaluation
 
-> **New to this?** [Evaluation](https://nitinksingh.com/ai-resources/02-agents/evaluation/) on the AI Knowledge Hub covers the
-> same ground from scratch, vendor-neutral, with a lab you can run locally for free.
-> This page assumes the concept and shows how it is built *here*.
-
 ## What it is
 
 Evaluation is running a set of known test cases through the agent and scoring the results
@@ -44,9 +40,9 @@ production code path, not a stand-in. `evals/harness.py::ProductionRunner.run()`
 requests through the exact same dispatch a live user's request would use — `orchestrator.modes`
 for the orchestrator, the real specialist entry point for each specialist — so the full guardrail,
 HITL, and grounding middleware stack from [guardrails](10-guardrails.md) actually runs during
-evaluation. An earlier version of this harness hand-rolled its own simplified tool-calling loop
-that bypassed all of that middleware — which meant a red-team safety case could "pass" without
-ever exercising the guardrails that were supposed to be the thing being tested. That's the
+evaluation. A harness that hand-rolls its own simplified tool-calling loop bypasses all of that
+middleware, so a red-team safety case can "pass" without ever exercising the guardrails it is
+supposed to test. That's the
 practical version of "a scorer that doesn't check the thing it claims to check": routing evals
 around production code doesn't just risk missing bugs, it actively hides whether your defenses are
 wired in at all.
@@ -85,6 +81,8 @@ flowchart LR
   class det success
   class judge external
 ```
+
+**Build it yourself:** [Chapter 26: evals](../../tutorials/26-evals/README.md). **In the application:** `agents/python/evals/`.
 
 Next: [observability and cost](13-observability-and-cost.md) — once a request has run, how to see
 what actually happened inside it, and what it cost.

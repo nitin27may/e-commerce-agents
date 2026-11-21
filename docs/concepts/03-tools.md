@@ -1,9 +1,5 @@
 # Tools
 
-> **New to this?** [Tool calling](https://nitinksingh.com/ai-resources/02-agents/tool-calling/) on the AI Knowledge Hub covers the
-> same ground from scratch, vendor-neutral, with a lab you can run locally for free.
-> This page assumes the concept and shows how it is built *here*.
-
 ## What it is
 
 A tool is a normal function that the model has been told about — its name, a description of what
@@ -107,6 +103,8 @@ flowchart LR
   class schema,fn core
   class db infra
 ```
+
+**Build it yourself:** [Chapter 02: adding tools](../../tutorials/02-add-tools/README.md). **In the application:** each specialist's `tools.py`, for example `agents/python/product_discovery/tools.py`.
 
 Next: [the agent harness](04-agent-harness.md) — what it actually takes to run one of these
 agents as a real, reachable service, not just a script.

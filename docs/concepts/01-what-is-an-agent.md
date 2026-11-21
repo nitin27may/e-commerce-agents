@@ -18,7 +18,7 @@ tools but no loop can make one tool call and stop; it can't chain "search for th
 check if it's in stock, then answer" into a single turn. And a model with a loop but no
 instructions doesn't know what it's for.
 
-The honest analogy: an agent is not a chatbot with extra steps, and it is not "a really good
+An analogy: an agent is not a chatbot with extra steps, and it is not "a really good
 prompt." It's closer to giving an intern a job description, a specific set of tools they're
 allowed to use (a search box, a phone, a specific database view), and a manager who keeps
 checking "are you done, or do you need to do something else first?" until the intern says
@@ -122,6 +122,8 @@ flowchart LR
   class agent core
   class model external
 ```
+
+**Build it yourself:** [Chapter 01: your first agent](../../tutorials/01-first-agent/README.md). **In the application:** `agents/python/product_discovery/agent.py`.
 
 Next: [the agentic loop](02-the-agentic-loop.md) — what actually happens when you call
 `agent.run(...)` on this object.
