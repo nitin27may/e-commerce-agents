@@ -297,15 +297,31 @@ or model change merges on replay alone. Keyless work that *is* a real eval: dete
 
 ### Decisions
 
-- **D-1 (spend ceiling)** still gates every item marked *Azure*.
-- **D-6, new: how much moves to Foundry hosting.** The 2026-09 plan said all six agents. Recommended instead:
-  one specialist first (`review-sentiment`, the same pick LG1 made: fewest tools, no money moves, no HITL),
-  the rest on Container Apps over A2A. A hybrid is how a real migration runs and is the honest A2A interop demo.
-  All six only after AZ-1 proves egress and AZ-6 answers how checkpoints and HITL resume work on a host we do
-  not run. *Needs the maintainer's call.*
-- **D-7, new: the judge model.** Pinned, separate from the model under test, recorded in every result. Default
-  proposal: a different model from the system under test, accepted only once its agreement with the EV-3
-  human-labelled set is measured (a cheaper tier of the same family is allowed if it calibrates).
+Settled with the maintainer on 2026-11-21:
+
+- **D-1 (Azure spend ceiling): not yet.** Every tier-2 item that creates Azure infrastructure stays parked
+  (I5 to I7, AZ-1, AZ-3, AZ-5, AZ-6, AZ-7, EV-7, EV-9, and EV-8's Foundry-project sink). This does **not**
+  block keyed eval runs on the owner's existing Azure OpenAI key: that is token spend, not infrastructure,
+  and is decided per recording sitting. Offline tier-2 prep (AZ-2 Bicep, AZ-4 headers) may still land.
+- **Providers: every one is supported, not every one is a reference.** Supported means a profile, a
+  capability check, documentation and stubbed tests, so any developer can run and evaluate it: OpenAI,
+  Azure OpenAI, Gemini (OpenAI-compatible API), Anthropic, Ollama, and any OpenAI-compatible server
+  (OpenRouter, llama.cpp `llama-server`, vLLM, LM Studio, LiteLLM). Reference means committed baselines
+  that must be re-recorded whenever a dataset or tool output changes, so it costs a recording on every
+  such change. **Reference set:** Azure gpt-5.1 plus OpenAI direct; one more family (Gemini or Claude) is
+  added once EV-14 community results show demand. Everything else is shown as community results, labelled.
+  `docs/model-providers.md`'s verified-versus-untested table stays the honest record; Anthropic has never
+  run live, so its first live eval is also its first verification.
+- **D-6 (Foundry hosting scope): all six agents** (the 2026-09 decision stands). The end state is all six
+  on Foundry; the *route* is still staged, because two unknowns decide whether it works at all: AZ-1 (can
+  Foundry-hosted agents reach each other, the MCP servers and Postgres) and a design for checkpoints, HITL
+  resume and the outbox worker on a host we do not run. AZ-6 becomes: design note, then one agent to prove
+  the path, then the other five. If AZ-1 fails, the decision comes back to the maintainer with the reason.
+- **D-7 (judge): one fixed judge for every reference run, on any provider.** Pinned in configuration (model,
+  version, provider) and recorded in every result; developers may override it and the report then says the
+  run is not comparable to the reference. Which model is chosen in the R1 sitting by calibrating two
+  candidates against the EV-3 human-labelled set; a judge from the same family as a model under test is
+  flagged in that run's report, since any fixed judge favours its own family somewhat.
 - **D-8, decided 2026-11-21: (a).** The repo ships a dated reference file,
   `agents/python/config/pricing/models.yaml`, that anyone may correct or extend; no price lives in code.
   CLAUDE.md "Model pricing" says how to update it.
@@ -375,6 +391,7 @@ actually using. Profiles are small overlays on `.env`, not copies of it.
 | RP-1 | `config/profiles/<name>.env` overlays: tier 0 `keyless`; tier 1 `openai`, `azure-key`, `azure-identity`, `anthropic`, `gemini`, `ollama`, `openai-compatible`; tier 2 `azure-gateway`, `foundry-evals`. Each sets chat, embeddings and a suggested judge together, so no profile silently leaves search on full-text. `dev.sh --profile <name>` / `dev.ps1 -Profile`, and the same `--profile` on `scripts/replay-evals.sh` and the eval CLI so the app and its eval use one setup; `.env` still wins for secrets | 6h |
 | RP-2 | `python -m scripts.doctor`: effective configuration with secrets redacted, validation errors, reachability of the model endpoint, database, Redis and each registry entry, and the "verified how" status for the chosen provider (read from one source shared with `model-providers.md`) | 6h |
 | RP-3 | One startup log line per service: provider, endpoint host, gateway on/off, where it runs, `A2A_TRANSPORT`, `A2A_IDENTITY`. No secrets | 2h |
+| RP-7 | Profiles for every supported provider, including `openrouter` and `llama-cpp` (`LLM_BASE_URL` + `LLM_API=chat_completions`), each with its capability-check result and a "verified how" line kept in step with `docs/model-providers.md` | 4h |
 | RP-6 | Stack coverage per profile: which profiles work on .NET (`LLM_API` is Python-only; .NET is Chat Completions always), stated in the profile file and the doc, and checked by the doctor | 2h |
 | RP-4 | `docs/run-profiles.md`: profile × tier × stack × key needed × cost × verified status × which evals apply, plus a two-command path per profile (`dev.sh --profile X`, then the eval); links into the existing pages instead of repeating them. Index and README links agreed with the docs session (it owns landing pages) | 4h |
 | RP-5 | Drift test: every key in every profile exists in `Settings` and `.env.example`, and the profile list in the doc matches the files | 2h |
@@ -384,10 +401,12 @@ actually using. Profiles are small overlays on `.env`, not copies of it.
 1. **Tier 1 foundations, keyless, start now:** EV-0, EV-1, EV-2, EV-4, EV-12, EV-13, EV-10 (stub-tested),
    EV-3's config half, RP-1 to RP-6. EV-2 then becomes the runner B2 needs. AZ-4 and AZ-2 can run alongside
    (offline, touch no tier-1 behaviour).
-2. **One keyed R1 sitting** (folded into the existing R1, so nothing is recorded twice): EV-5, EV-3 calibration,
-   EV-11 reference baselines on at least two providers (Azure gpt-5.1 and one non-Azure model, so "any
-   provider" is demonstrated rather than claimed), EV-10 run live on each, EV-6, then EV-14.
-3. **Tier 2, once D-1 is set:** I5, AZ-1, AZ-3, EV-7, EV-8, then AZ-5, AZ-6 (after D-6), EV-9, I6, AZ-7.
+2. **One keyed R1 sitting** (folded into the existing R1, so nothing is recorded twice): EV-5, EV-3 calibration
+   and the D-7 judge choice, EV-11 reference baselines on Azure gpt-5.1 and OpenAI direct, EV-10 run live on
+   each supported provider a key or local model is available for, EV-6, then EV-14. EV-8's evaluator adapter
+   can run here without a Foundry project (evaluators run locally; only the project sink needs Azure).
+3. **Tier 2, parked until D-1 is set:** I5, AZ-1, AZ-3, EV-7, EV-8's sink, then AZ-5, AZ-6 (design note, one
+   agent, then five), EV-9, I6, AZ-7.
 
 ### Rejected, so it is not proposed again
 
