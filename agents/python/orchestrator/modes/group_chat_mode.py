@@ -25,21 +25,14 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 
 from orchestrator.events import OrchestrationEvent, adapt_workflow_event
 from shared.grounding.ledger import reset_grounding_ledger
+from shared.prompt_loader import load_raw_prompt
 from shared.run_usage import begin_run_usage, record_usage
 
 from .base import ModeCapabilities, RunContext
 
 _PANEL_PROMPTS = {
-    "value": (
-        "You are the value/pricing panelist on a purchase-decision round-table. "
-        "Given the question and what's been said so far, give a short (2-3 sentence) "
-        "take from a price-and-value angle only. Don't repeat prior speakers."
-    ),
-    "quality": (
-        "You are the quality/reviews panelist on a purchase-decision round-table. "
-        "Given the question and what's been said so far, give a short (2-3 sentence) "
-        "take from a build-quality-and-reviews angle only. Don't repeat prior speakers."
-    ),
+    "value": load_raw_prompt("group-chat-value"),
+    "quality": load_raw_prompt("group-chat-quality"),
 }
 
 

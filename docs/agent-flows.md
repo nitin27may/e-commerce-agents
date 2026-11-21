@@ -436,6 +436,7 @@ sequenceDiagram
 - **Shared tools**: Agents can call tools outside their primary domain. Product Discovery calls `check_stock()` (shared inventory tool) to avoid recommending out-of-stock items. This reduces unnecessary A2A round-trips.
 - **Sequential A2A**: The Orchestrator calls specialists one at a time. Each response informs the next call's message. This is intentional -- later agents need context from earlier results (e.g., Pricing needs to know which products were recommended).
 - **LLM synthesis**: The Orchestrator's LLM doesn't just concatenate specialist responses. It synthesizes them into a natural, coherent message with clear structure and actionable next steps.
+- **Group-chat panelist prompts**: the `group-chat` mode's two panelist prompts live in `agents/python/config/prompts/group-chat-{value,quality}.yaml`, loaded raw (no composed grounding rules) by both stacks; parity row 46.
 - **Identity propagation**: User identity flows via `X-User-Email` and `X-User-Role` headers on every A2A call, then into ContextVars. Every tool query filters by user -- there's no data leakage between customers.
 
 ---
