@@ -60,6 +60,11 @@ jobs:
           AGENT_SHARED_SECRET: ci-eval-agent-secret-please-rotate-32b
         run: uv run python -m evals.prompt_tokens
 
+      # docs/eval-scorecard.md is generated from evals/baselines/. Stdlib only, no model call.
+      # Fix: `uv run --project agents/python python -m scripts.build_eval_scorecard`.
+      - name: Eval scorecard page is current
+        run: python3 -m scripts.build_eval_scorecard --check
+
       - name: Run pytest with coverage
         working-directory: agents/python
         run: |
