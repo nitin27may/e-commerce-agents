@@ -163,10 +163,10 @@ flowchart TD
 
 ## 5. Environment Configuration
 
-Copy `.env.example` to `.env` and configure:
+Copy `.env.minimal` to `.env` and set the model key. `.env.example` is the full reference of every variable:
 
 ```bash
-cp .env.example .env
+cp .env.minimal .env
 ```
 
 ### LLM Provider
@@ -326,10 +326,9 @@ DATABASE_URL=postgresql://ecommerce:ecommerce_secret@localhost:5432/ecommerce_ag
 **Generate embeddings locally:**
 
 ```bash
-cd agents
 DATABASE_URL=postgresql://ecommerce:ecommerce_secret@localhost:5432/ecommerce_agents \
 OPENAI_API_KEY=sk-your-key \
-  uv run python -m scripts.generate_embeddings
+  uv run --project agents/python python -m scripts.generate_embeddings
 ```
 
 ## 8. Port Map

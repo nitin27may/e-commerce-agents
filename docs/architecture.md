@@ -1,6 +1,6 @@
 # Architecture
 
-E-Commerce Agents is a multi-agent e-commerce platform built on Microsoft Agent Framework (MAF). Six specialized agents collaborate via A2A protocol, orchestrated by a central Customer Support agent that classifies user intent and routes requests to the right specialist. The wire is documented in [a2a.md](a2a.md): the original `/message:send` pair and, on the Python specialists, A2A 1.0 at `/a2a/v1`.
+E-Commerce Agents is a multi-agent e-commerce platform built on Microsoft Agent Framework (MAF). Six specialized agents collaborate via A2A protocol, orchestrated by a central Customer Support agent that classifies user intent and routes requests to the right specialist. The wire is documented in [a2a.md](a2a.md): the original `/message:send` pair and, on both stacks, A2A 1.0 JSON-RPC at `/a2a/v1` with an agent card at `/.well-known/agent-card.json`.
 
 ---
 
@@ -28,7 +28,7 @@ graph TB
 
     subgraph Infra["Infrastructure"]
         PG[("PostgreSQL 16<br/>+ pgvector")]
-        RD[("Redis 7")]
+        RD[("Redis 8")]
         ASPIRE[".NET Aspire Dashboard<br/>:18888"]
     end
 
@@ -101,7 +101,7 @@ sequenceDiagram
     participant FE as Next.js Frontend
     participant ORCH as Orchestrator<br/>(FastAPI :8080)
     participant LLM as OpenAI / Azure OpenAI
-    participant AGENT as Specialist Agent<br/>(A2AAgentHost)
+    participant AGENT as Specialist Agent<br/>(create_agent_app)
     participant DB as PostgreSQL + pgvector
 
     User->>FE: Sends chat message
@@ -137,12 +137,12 @@ sequenceDiagram
 
 ## 3. Agent Architecture
 
-Every specialist agent follows a consistent four-file structure. The Orchestrator is the only agent that uses FastAPI directly -- all specialists use `A2AAgentHost` from the MAF A2A library.
+Every specialist agent follows a consistent four-file structure. The Orchestrator is the only agent that uses FastAPI directly -- all specialists are built by `shared.agent_host.create_agent_app()`, which also mounts the A2A endpoints.
 
 ```mermaid
 graph TB
     subgraph AgentHost["Specialist Agent (e.g., product_discovery/)"]
-        MAIN["main.py<br/>A2AAgentHost entry point<br/>Lifespan: telemetry + DB pool"]
+        MAIN["main.py<br/>create_agent_app() entry point<br/>Lifespan: telemetry + DB pool"]
         AGENTPY["agent.py<br/>create_*_agent() -> ChatAgent<br/>Registers tools + context providers"]
         TOOLS["tools.py<br/>@tool decorated functions<br/>Domain-specific DB queries"]
         PROMPTS["prompts.py<br/>SYSTEM_PROMPT constant<br/>Agent persona + instructions"]
@@ -455,15 +455,15 @@ flowchart LR
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| **Agent Framework** | Microsoft Agent Framework (MAF) Python SDK | First-class `ChatAgent` abstraction with `@tool` decorators, `ContextProvider`, and built-in A2A support. Avoids hand-rolling function-calling loops. |
-| **Inter-Agent Protocol** | A2A via `agent-framework-a2a` | Standard protocol for agent-to-agent communication. Each specialist exposes `/message:send`. Decoupled from transport -- could swap HTTP for gRPC later. |
+| **Agent Framework** | Microsoft Agent Framework (MAF) Python SDK | First-class `ChatAgent` abstraction with `@tool` decorators, `ContextProvider`, and hosting through `shared/agent_host.py`. Avoids hand-rolling function-calling loops. |
+| **Inter-Agent Protocol** | A2A 1.0 (official `a2a-sdk` on Python, A2A .NET SDK on .NET) plus the legacy `/message:send` wire | Each specialist serves both: the legacy pair and A2A 1.0 JSON-RPC at `/a2a/v1`, selected by `A2A_TRANSPORT` on the caller. See [a2a.md](a2a.md). |
 | **LLM Provider** | OpenAI / Azure OpenAI (configurable) | Single `ChatClient` interface via MAF. Swap with `LLM_PROVIDER` env var. Azure for production (managed identity, RBAC); OpenAI for local dev — or any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, OpenRouter) via `LLM_BASE_URL` for a fully local, zero-cost dev loop. |
 | **Database** | PostgreSQL 16 + pgvector | Single database for relational data and vector embeddings. `text-embedding-3-small` (1536 dims) for semantic product search. IVFFlat index for fast cosine similarity. |
-| **Web Framework** | FastAPI (orchestrator) + Starlette (specialists) | FastAPI for the orchestrator because it needs REST endpoints (auth, chat, marketplace, admin). Specialists use the lighter `A2AAgentHost` which wraps Starlette. |
+| **Web Framework** | FastAPI (orchestrator and specialists) | FastAPI for the orchestrator because it needs REST endpoints (auth, chat, marketplace, admin). Specialists use `create_agent_app()`, a smaller FastAPI app with only the A2A, health and readiness routes. |
 | **Auth** | Self-contained JWT (HS256) + bcrypt | No external IdP dependency for the demo. Access tokens (60 min) + refresh tokens (7 days). Inter-agent auth via shared secret header. |
 | **User Context** | Python ContextVars | Request-scoped state (email, role) set by auth middleware, read by any `@tool` function. No need to pass user info through function parameters. |
 | **DB Access** | asyncpg (raw SQL) | Maximum control over queries. No ORM overhead. Parameterized `$1, $2` syntax prevents SQL injection. Connection pool (5-20) per agent. |
-| **Telemetry** | OpenTelemetry -> .NET Aspire Dashboard | Auto-instrumented: httpx (LLM + A2A calls), asyncpg (DB queries), FastAPI/Starlette (HTTP). Custom spans for A2A calls and tool execution. All correlate via trace_id. |
+| **Telemetry** | OpenTelemetry -> .NET Aspire Dashboard | Auto-instrumented: httpx (LLM + A2A calls), asyncpg (DB queries), FastAPI (HTTP). Custom spans for A2A calls and tool execution. All correlate via trace_id. |
 | **Cache** | Redis 7 | Session data and conversation state caching. Alpine image for minimal footprint. |
 | **Frontend** | Next.js 16 + React 19 + Tailwind + shadcn/ui | Server Components by default, `pnpm` for package management. Minimal client-side JS. |
 | **Containerization** | Docker Compose + multi-target Dockerfile | All 6 agents share one Dockerfile with `ARG AGENT_NAME`. Each agent is a separate service with its own port. Single `docker compose up --build` to start everything. |
@@ -473,15 +473,21 @@ flowchart LR
 
 ## 8. A2A Protocol
 
-All inter-agent communication uses the A2A (Agent-to-Agent) protocol. The orchestrator calls each specialist via an HTTP POST to `/message:send`. There is no message broker or event bus — calls are synchronous HTTP within the Docker network.
+All inter-agent communication uses the A2A (Agent-to-Agent) protocol. Every specialist, Python and .NET, serves two wires: the original `POST /message:send` / `/message:stream` pair, and the A2A 1.0 JSON-RPC binding at `/a2a/v1` with the agent card at `/.well-known/agent-card.json`. `A2A_TRANSPORT=legacy|a2a` (default `legacy`) picks which one the orchestrator speaks. There is no message broker or event bus — calls are synchronous HTTP within the Docker network. [a2a.md](a2a.md) has the full detail (task lifecycle, extensions, interop between the stacks).
 
-### Endpoint
+### Endpoints
 
 ```
-POST http://{agent-host}:{port}/message:send
+POST http://{agent-host}:{port}/message:send      # legacy wire (the format below)
+POST http://{agent-host}:{port}/a2a/v1           # A2A 1.0 JSON-RPC
+GET  http://{agent-host}:{port}/.well-known/agent-card.json
 ```
 
-Each specialist registers this endpoint automatically via `A2AAgentHost` from `agent-framework-a2a`. The host, port, and service name come from the `AGENT_REGISTRY` env var, which the orchestrator reads at startup.
+Every specialist registers these through `create_agent_app()` (Python) or `AgentHost.Build` (.NET). The sections below describe the legacy request and response format. The host, port, and service name come from the `AGENT_REGISTRY` env var, which the orchestrator reads at startup.
+
+### Identity
+
+The caller authenticates with `X-Agent-Secret` and says which user the call is for. With `A2A_IDENTITY=both` (the default) that is the `X-User-Email` / `X-User-Role` / `X-Session-Id` headers plus a signed, short-lived, audience-bound `X-User-Context` token; `token` mode drops the headers. The token format and the limits of the symmetric key are in [a2a.md](a2a.md#identity-the-signed-user-context-token).
 
 ### Request format
 

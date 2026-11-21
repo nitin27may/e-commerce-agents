@@ -19,7 +19,7 @@ Docker is the only requirement — no Python, .NET or Node needed, and
 ```bash
 git clone https://github.com/nitin27may/e-commerce-agents.git
 cd e-commerce-agents
-cp .env.example .env          # add your OPENAI_API_KEY (or Azure OpenAI credentials)
+cp .env.minimal .env          # set OPENAI_API_KEY (Azure OpenAI and the rest: .env.example)
 ./scripts/dev.sh              # builds, seeds, and starts everything
 ```
 

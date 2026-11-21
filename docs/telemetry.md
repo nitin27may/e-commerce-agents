@@ -46,10 +46,10 @@ The following libraries are auto-instrumented with zero code changes in agent lo
 
 | Library | Instrumentor | What It Captures |
 |---------|-------------|------------------|
-| **httpx** | `HTTPXClientInstrumentor` | All outbound HTTP calls: OpenAI/Azure OpenAI API requests, inter-agent A2A calls. Captures URL, method, status code, duration. |
+| **httpx** | `HTTPXClientInstrumentor` | All outbound HTTP calls: OpenAI/Azure OpenAI API requests, inter-agent A2A calls (legacy `/message:send` or A2A 1.0 `/a2a/v1`, see [a2a.md](a2a.md)). Captures URL, method, status code, duration. |
 | **asyncpg** | `AsyncPGInstrumentor` | All PostgreSQL queries. Captures SQL text, database name, duration. Parameterized queries show `$1, $2` placeholders (no sensitive data leakage). |
 | **FastAPI** | `FastAPIInstrumentor` | Orchestrator HTTP request/response spans. Captures route, method, status code, request duration. Applied via `instrument_fastapi(app)`. |
-| **Starlette** | `StarletteInstrumentor` | Specialist agent HTTP spans (A2AAgentHost runs on Starlette). Applied via `instrument_starlette(app)`. |
+| **Starlette** | `StarletteInstrumentor` | Available as `instrument_starlette(app)`, but the specialists are FastAPI apps built by `create_agent_app()` and call `instrument_fastapi(app)` like the orchestrator. |
 | **Python logging** | `LoggingInstrumentor` | Bridges Python log records into OTel log pipeline with trace/span ID correlation. `set_logging_format=False` preserves existing log format. |
 
 ---
@@ -110,7 +110,7 @@ graph TD
 
     subgraph A2AHTTP["A2A HTTP (auto)"]
         style A2AHTTP fill:#f59e0b,stroke:#d97706,color:#fff
-        D["POST http://product-discovery:8081/a2a<br/><i>httpx auto-span</i>"]
+        D["POST http://product-discovery:8081/message:send<br/>or /a2a/v1 under A2A_TRANSPORT=a2a<br/><i>httpx auto-span</i>"]
     end
 
     subgraph Specialist["Specialist Processing"]
@@ -149,8 +149,8 @@ Two custom span types are manually instrumented beyond what auto-instrumentation
 Created by the `a2a_call_span()` context manager in the orchestrator when calling a specialist agent.
 
 ```python
-with a2a_call_span("orchestrator", "product-discovery", "http://product-discovery:8081/a2a"):
-    result = await a2a_client.send(task)
+with a2a_call_span("orchestrator", "product-discovery", url):
+    ...  # legacy POST /message:send, or the A2A 1.0 client when A2A_TRANSPORT=a2a
 ```
 
 **Attributes:**
@@ -159,7 +159,7 @@ with a2a_call_span("orchestrator", "product-discovery", "http://product-discover
 |-----------|---------|
 | `agent.source` | `orchestrator` |
 | `agent.target` | `product-discovery` |
-| `agent.target_url` | `http://product-discovery:8081/a2a` |
+| `agent.target_url` | the specialist URL the orchestrator calls, e.g. `http://product-discovery:8081/message:send` |
 
 On exception, the span records the exception and sets `StatusCode.ERROR`.
 
@@ -355,7 +355,7 @@ Everything above describes `agents/python`. The .NET stack (`agents/dotnet`) exp
 |---|---|---|
 | Traces | `BatchSpanProcessor` → OTLP | OTel SDK default batching → OTLP |
 | Auto-instrumentation | ASP.NET-equivalent (FastAPI), httpx, asyncpg, OpenAI | ASP.NET Core, `HttpClient`, Npgsql |
-| Metrics | auto-instrumentation only — **no custom metrics** | auto-instrumentation only |
+| Metrics | auto-instrumentation plus three counters in `shared/metrics.py` (`ecommerce.llm.cost.usd`, `ecommerce.llm.tokens`, `cost_budget.would_block`, meter `ecommerce.cost`) | auto-instrumentation only |
 | Logs | `LoggingHandler` bridge → OTLP | `ILogger` → `AddOpenTelemetry()` → OTLP |
 | Langfuse sink | optional, additive | not implemented |
 
