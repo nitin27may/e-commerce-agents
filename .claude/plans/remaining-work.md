@@ -246,11 +246,142 @@ Each PR carries its own Tests, UI, Seed, Env and Docs lines: P1 `configuration.m
 
 28 drift findings, 8 README gaps. High: README, `CITATION.cff` and others say "A2A-style ... #88" though A2A 1.0 shipped (D-6); `docs/adding-an-agent.md` teaches a nonexistent `A2AAgentHost` instead of `shared.agent_host.create_agent_app` (D-7); `architecture.md` and `telemetry.md` repeat it and omit `/a2a/v1`, the agent card and the identity token (D-8). Medium: migration range and table count (D-1 to D-3), Redis 7 versus 8 (D-5), metrics and deployment doc claims (D-9, D-10), env-var catalogue (D-11), API route counts (D-14), docs missing from the site nav and README table (D-16), stale `docs/index.md` and `roadmap.md` and `CHANGELOG` (D-18 to D-20), `generate_embeddings` run from the wrong directory (D-25). README gaps: no table of contents, features, project layout, testing or configuration section; no hero GIF (#87); diagram and MAF badge use indigo; no release badge; `CODE_OF_CONDUCT` and `SECURITY` not linked. Missing community files: `SUPPORT.md`, a dependency-review workflow (CONTRIBUTING claims one), a secret-scan job. Fix order: the three high items, then the medium group as one docs-sync PR, then the README restructure after the hero GIF exists. The README follows an open-source layout (pitch, badges, hero GIF, table of contents, features, architecture diagram in the house palette, quick start with prerequisites and the keyless path, configuration, project layout, testing, docs index, roadmap, contributing, security, license, support).
 
+## Azure track, evals and run profiles, 2026-11-21
+
+Checked against `main` at `4339a2f`. **This block supersedes Part I phases C, D and E, the red-team bullet in
+§12, and the CI half of B2.** Phase B (I5 to I7) stays as written above. It folds in a review of an outside
+"Azure track" proposal: what that proposal got right is here; what it got wrong is under *Rejected* so it is
+not proposed again.
+
+### The model: three independent switches
+
+Every way of running this repo is one choice on each axis. Code branches on none of the combinations.
+
+| Axis | Choices | Seam that selects it |
+|---|---|---|
+| A. Where agents run | compose · Container Apps · Foundry-hosted (some or all) | `AGENT_REGISTRY` (a hosted specialist is a registry entry) |
+| B. How models are called | direct · through the APIM AI gateway | the endpoint (`AZURE_OPENAI_ENDPOINT` / `LLM_BASE_URL`), never a provider |
+| C. How evals run | target × model source × scorer × results sink | `evals` CLI flags (EV-1, EV-2) |
+
+Facts this rests on, verified in the code: `get_chat_client` is the one place model clients are built;
+Azure already supports `AZURE_OPENAI_AUTH=identity`; `infra/modules/openai.bicep` creates an `AIServices`
+account (that *is* the Foundry resource) but **no Foundry project** (`accounts/projects`); App Insights already
+receives traces through the managed OTel agent; `evals/harness.py` runs agents **in-process**, so no eval can
+reach a deployed system; .NET has its own separate in-process runner; datasets hold 5 to 8 cases each (40
+total); `scorers/llm_judge.py` calls `get_chat_client()`, so the model under test grades itself; the `full`
+job hard-codes `openai` + `gpt-4.1` + `OPENAI_API_KEY`; `evals/seed_adversarial.py` already holds an
+indirect-injection corpus with canaries (off by default, scored only by `guardrail_confusion.py`).
+
+### What keyless evals are for
+
+Replay is a **regression test of the code**, not a measure of agent quality (the smoke job already says its
+score is "a property of the recording session"). It stays the PR gate, gated on fixture misses and deterministic
+assertions only. Quality claims (a prompt is better, gpt-5.1 is as good as gpt-4.1) need a live run: no prompt
+or model change merges on replay alone. Keyless work that *is* a real eval: detector recall
+(`guardrail_confusion.py`), scorer unit tests, and re-scoring stored live records (EV-1).
+
+### Decisions
+
+- **D-1 (spend ceiling)** still gates every item marked *Azure*.
+- **D-6, new: how much moves to Foundry hosting.** The 2026-09 plan said all six agents. Recommended instead:
+  one specialist first (`review-sentiment`, the same pick LG1 made: fewest tools, no money moves, no HITL),
+  the rest on Container Apps over A2A. A hybrid is how a real migration runs and is the honest A2A interop demo.
+  All six only after AZ-1 proves egress and AZ-6 answers how checkpoints and HITL resume work on a host we do
+  not run. *Needs the maintainer's call.*
+- **D-7, new: the judge model.** Pinned, separate from the model under test, recorded in every result. Default
+  proposal: a different model from the system under test, accepted only once its agreement with the EV-3
+  human-labelled set is measured (a cheaper tier of the same family is allowed if it calibrates).
+- **Stack order is not open:** Python first on Azure (it is what Bicep deploys; .NET images are unpublished).
+  .NET follows once images publish; the `http` eval target (EV-2) evaluates it with no second runner.
+
+### Workstream EV — evals that mean something, anywhere
+
+| ID | Work | Needs | Size |
+|---|---|---|---|
+| EV-0 | Rename the smoke job "replay regression"; gate on misses + deterministic assertions; keep its score out of anything that reads as a quality badge (scorecard wording with the docs session) | — | 2h |
+| EV-1 | Run records: every run writes JSONL in Foundry's field names (`query`, `response`, `context`, `tool_calls`, `ground_truth`, plus `setup`, `model`, `tokens`, `latency_ms`, `cost_usd`); `--records-out`; `--rescore <records>` scores stored runs with no model call | — | 6h |
+| EV-2 | `http` target: drive `POST /api/chat/stream` on any orchestrator as a seeded eval user (JWT), collect text and `step` frames. Same runner for Python, .NET, mixed, Container Apps and Foundry mixes. Validated keyless against a compose stack under replay. This **is** the B2 parity gate's runner | — | 10h |
+| EV-3 | Judge config: `JUDGE_PROVIDER` / `JUDGE_MODEL` / `JUDGE_*` endpoint, never defaulting to the system under test; a ~30-item human-labelled set and judge agreement reported with every judged run | key for calibration | 6h |
+| EV-4 | Repeats (`--repeats k`, default 3 for live), mean and spread per suite, regression gate scaled to sample size instead of a flat 0.05 | — | 4h |
+| EV-5 | Datasets to 30–50 cases per agent, multi-turn (absorbs E-3b), ~50 adversarial: direct, indirect through `seed_adversarial` (recorded cases scoring its canaries), and benign-but-suspicious for false positives; red-team judge (absorbs E-4 and the §12 bullet) | key, **one R1 sitting** | 3 d |
+| EV-6 | `full` job rebuilt: `workflow_dispatch` only, OIDC to Azure OpenAI (identity, no stored key), gpt-5.1 default with provider as an input, `http` target against the CI compose stack, required-reviewer environment, `COST_BUDGET_MODE=enforce` | Azure (OIDC app) | 5h |
+| EV-7 | Deployed evals inside `azure.yml` deploy-and-test: `http` target at the deployed orchestrator, variants for gateway on/off and a Foundry-hosted specialist; tear-down stays `always()` | Azure | 4h |
+| EV-8 | Foundry adapter behind an optional extra (`foundry-evals`, `azure-ai-evaluation`): map EV-1 records onto Foundry evaluators (groundedness, intent resolution, tool-call accuracy, task adherence, indirect attack); optional results sink to the project. **The core eval path imports no Azure package** | Azure (project) | 1 d |
+| EV-9 | Prompt Shields comparison: a second detector behind the guardrail seam, both scored by `guardrail_confusion.py` over the EV-5 adversarial set, precision and recall published | EV-5, Azure | 6h |
+
+Baselines are keyed by setup: `evals/baselines/<stack>-<target>-<model>[-gw]/`. Re-recorded per setup, never
+copied (existing rule). The current flat files become `python-inproc-replay/`.
+
+Where each mode runs, and what it may cost:
+
+| Mode | Target | Model | Scorers | Trigger |
+|---|---|---|---|---|
+| Replay regression | inproc | replay | deterministic | every PR (free) |
+| Local live | inproc or http | your key | + judge | by hand |
+| CI live | http, CI compose stack | Azure, OIDC | + judge, optional Foundry sink | `workflow_dispatch` only |
+| Deployed | http, Container Apps / Foundry mix | Azure | + judge | `azure.yml` dispatch only |
+| Foundry | the same records | — | Foundry evaluators | by hand |
+
+**No row is ever scheduled.** The rule in `evals.yml` (no live key behind an automatic trigger) covers
+Foundry runs too; "nightly" was proposed and is rejected.
+
+### Workstream AZ — Azure, Foundry and the gateway
+
+| ID | Work | Needs | Size |
+|---|---|---|---|
+| AZ-1 | Spike right after I5: can a Foundry-hosted agent reach a Container Apps specialist (A2A) and the MCP servers (OAuth)? Which hosted-agent SDKs exist for Python and .NET at the pinned MAF, and do they serve A2A or need an adapter? | Azure | 0.5 d |
+| AZ-2 | Bicep: Foundry project (`accounts/projects`) and its App Insights connection, behind `deployFoundryProject`; offline tests in `test_infra_bicep.py` | — (offline) | 5h |
+| AZ-3 | Foundry as model provider = the `azure` provider pointed at the `AIServices` account, documented, no code. `LLM_PROVIDER=foundry` is added **only** for what that cannot do (non-OpenAI catalogue models or the project-based Agent Service client), and only once a concrete need exists. Replaces Phase C's provider bullet; the hosted web-search tool on `review-sentiment` moves to AZ-6 | Azure to verify | 3h |
+| AZ-4 | Gateway-ready headers: `get_chat_client` attaches `x-agent-name`, `x-run-id`, `x-eval-run-id` from ContextVars on every model call, both stacks; harmless without a gateway; replay keys unaffected (verify with `fixture_drift` + zero misses) | — | 5h |
+| AZ-5 | APIM AI gateway module behind `deployGateway` (off by default): token limit per agent, token-metric emission, per-app managed identities in the reference profile (the demo's one shared identity makes header attribution untrusted), tokens reconciled against `usage_logs`. **Before writing: verify which tiers support the token policies, provisioning time and price** | Azure | 1.5 d |
+| AZ-6 | One Foundry-hosted specialist behind `AGENT_REGISTRY` (D-6), with a design note on checkpoints, HITL resume and the outbox worker under a host we do not control | AZ-1, D-6 | 3 d |
+| AZ-7 | Publish (old E): topologies compose · Container Apps · + gateway · + Foundry project · Foundry-hosted mix, each with **measured** cost, and a "which host, when" guide | everything above | 2 d |
+
+MCP servers keep external ingress defended by OAuth tokens. Internal-only ingress was proposed and is rejected:
+it would make them unreachable from a Foundry-hosted agent, which is why they are OAuth resource servers.
+
+### Workstream RP — run profiles and the docs that explain them
+
+The provider and variable reference already exists (`docs/configuration.md`, `docs/model-providers.md`,
+`docs/replay-mode.md`, `.env.example`). What is missing is the **combination**: which settings together make
+"local Gemini", "Azure through the gateway" or "Foundry evals", and a way to see what a running stack is
+actually using. Profiles are small overlays on `.env`, not copies of it.
+
+| ID | Work | Size |
+|---|---|---|
+| RP-1 | `config/profiles/<name>.env` overlays: `keyless`, `openai`, `azure-key`, `azure-identity`, `gemini`, `ollama`, `anthropic`, `azure-gateway`, `foundry-evals`; `dev.sh --profile <name>` / `dev.ps1 -Profile`; `.env` still wins for secrets | 6h |
+| RP-2 | `python -m scripts.doctor`: effective configuration with secrets redacted, validation errors, reachability of the model endpoint, database, Redis and each registry entry, and the "verified how" status for the chosen provider (read from one source shared with `model-providers.md`) | 6h |
+| RP-3 | One startup log line per service: provider, endpoint host, gateway on/off, where it runs, `A2A_TRANSPORT`, `A2A_IDENTITY`. No secrets | 2h |
+| RP-4 | `docs/run-profiles.md`: profile × where it runs × key needed × cost × verified status × which evals apply; links into the existing pages instead of repeating them. Index and README links agreed with the docs session (it owns landing pages) | 4h |
+| RP-5 | Drift test: every key in every profile exists in `Settings` and `.env.example`, and the profile list in the doc matches the files | 2h |
+
+### Order
+
+1. **Keyless, start now:** EV-0, EV-1, EV-2, EV-4, AZ-4, AZ-2, RP-1 to RP-5, and EV-3's config half. EV-2 then
+   becomes the runner B2 needs.
+2. **One keyed R1 sitting** (folded into the existing R1, so nothing is recorded twice): EV-5, EV-3 calibration,
+   live baselines for `python-http-gpt-5.1` and `dotnet-http-gpt-5.1`.
+3. **Azure, once D-1 is set:** I5, AZ-1, AZ-3, EV-6, EV-7, EV-8, then AZ-5, AZ-6 (after D-6), EV-9, I6, AZ-7.
+
+### Rejected, so it is not proposed again
+
+- A second plan file under `docs/` for this track (CLAUDE.md: one plan).
+- "Define four seams" as new work: model client, guard and telemetry seams exist; the eval seam is EV-1/EV-2.
+- Internal-only ingress for MCP servers (breaks AZ-6).
+- Nightly Foundry or live evals (no automatic trigger may spend a key).
+- A monthly cost estimate in the README: estimates already sit in `docs/azure-deployment.md`; the goal is measured numbers (AZ-7).
+- The gateway ahead of Foundry: it is an optional add-on for this audience, after the Foundry items.
+- `LLM_PROVIDER=foundry` as a duplicate of `azure` for OpenAI models.
+- A Prompt Shields comparison on the current 8 red-team cases: noise, so it waits for EV-5.
+
 ---
 
 # Part I — The sequence
 
 Ordered. Each phase states what it unblocks, so an item that moves shows what it drags with it.
+
+> **Phases C, D and E are superseded** by [Azure track, evals and run profiles, 2026-11-21](#azure-track-evals-and-run-profiles-2026-11-21)
+> (AZ-3, AZ-6, AZ-7). B2's runner is EV-2 there. Kept below for the record.
 
 | # | Phase | Size | Gate to start | Runs in parallel with |
 |---|---|---|---|---|
@@ -590,7 +721,7 @@ The dual-backend gate moved out of this section into **B2**. What is left:
 - [ ] **An eval gate for the MCP path** — run each dataset twice, native tools versus MCP, and fail
       CI if the MCP run scores below the native baseline. MCP is offered as an alternative
       data-access layer with nothing measuring whether it is as good.
-- [ ] **A red-team evaluator.** `red_team.json` is scored by keyword matching, which means very
+- [ ] **A red-team evaluator** (now EV-5 in the 2026-11-21 block). `red_team.json` is scored by keyword matching, which means very
       little; it needs its own schema and judge.
 
 ## 13. Retrieval and the tool surface
