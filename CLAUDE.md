@@ -31,8 +31,10 @@ with it.
 ```bash
 # Start everything from scratch (one command)
 ./scripts/dev.sh
+./scripts/dev.sh --demo       # pull the prebuilt GHCR images instead of building (not with --dotnet)
+./scripts/dev.sh --dotnet --switch   # tear the other stack down first, volumes and all
 ./scripts/dev.ps1              # PowerShell equivalent — same flags, PascalCase
-                               # (-Clean / -SeedOnly / -InfraOnly / -Dotnet)
+                               # (-Clean / -SeedOnly / -InfraOnly / -Dotnet / -Demo / -SwitchStack)
 
 # Clean rebuild (nuke volumes, rebuild images)
 ./scripts/dev.sh --clean
@@ -54,8 +56,8 @@ cd web && pnpm dev
 
 # Embeddings are seeded automatically (the seeder fills product_embeddings).
 # Regenerate, or export the precomputed file a keyed install loads:
-cd agents/python && uv run python -m scripts.generate_embeddings
-cd agents/python && uv run python -m scripts.generate_embeddings --export scripts/data/product_embeddings.v1.jsonl.gz
+uv run --project agents/python python -m scripts.generate_embeddings
+uv run --project agents/python python -m scripts.generate_embeddings --export scripts/data/product_embeddings.v1.jsonl.gz
 
 # Apply schema migrations (the seeder and dev.sh do this for you)
 uv run --project agents/python python -m scripts.migrate
@@ -112,7 +114,7 @@ Each specialist agent runs as an independent microservice with its own port and 
 
 ### Orchestrator route layout
 
-`orchestrator/routes/` is a package, not a single file: `chat.py` holds `/api/chat` + `/api/chat/stream`, `orchestration.py` holds the mode-introspection endpoints (`/api/orchestration/modes`, `.../graph`, `.../compare` — real as of Phase 1.6c, runs one prompt through several modes sequentially and reports per-mode text/latency/steps/graph; each result carries `tokens_in`/`tokens_out`/`est_cost_usd`, null meaning "not captured" and an explicit zero for the two workflow modes, which call no model; `grounding` is not in the response — and `.../{run_id}/resume`, real as of Phase 1.5), and `legacy.py` holds everything else (auth, marketplace, admin, cart, checkout, orders, seller, and — Phase 1.5 — `GET /api/runs/{id}/checkpoints`) — the pre-split monolith, kept together since the split's purpose was isolating chat, not fully decomposing the route surface. Three smaller modules sit beside them: `approvals.py` (the staff approvals inbox and decide endpoint — see *Approvals* below), `notifications.py` (`/api/me/notifications`, the parked-outbox admin list) and `demo.py` (`/api/demo/tour`, `/api/demo/reset`, only when `DEMO_TOUR_ENABLED`). `orchestrator/routes/__init__.py` combines them all into the single `router` `orchestrator/main.py` includes, and re-exports `optional_auth`/`require_auth`/`require_admin`/`require_staff`/`require_seller`/`settings` so existing import sites are unaffected.
+`orchestrator/routes/` is a package, not a single file: `chat.py` holds `/api/chat` + `/api/chat/stream`, `orchestration.py` holds the mode-introspection endpoints (`/api/orchestration/modes`, `.../graph`, `.../compare` — real as of Phase 1.6c, runs one prompt through several modes sequentially and reports per-mode text/latency/steps/graph; each result carries `tokens_in`/`tokens_out`/`est_cost_usd`, null meaning "not captured" and an explicit zero for the two workflow modes, which call no model; `grounding` is not in the response — and `.../{run_id}/resume`, real as of Phase 1.5), and `legacy.py` holds everything else (auth, marketplace, admin, cart, checkout, orders, seller, and — Phase 1.5 — `GET /api/runs/{id}/checkpoints`) — the pre-split monolith, kept together since the split's purpose was isolating chat, not fully decomposing the route surface. Six smaller modules sit beside them: `approvals.py` (the staff approvals inbox and decide endpoint — see *Approvals* below), `notifications.py` (`/api/me/notifications`, the parked-outbox admin list), `demo.py` (`/api/demo/tour`, `/api/demo/reset`, only when `DEMO_TOUR_ENABLED`), `autonomy.py` (`/api/admin/events/simulate`, `/api/admin/decisions*`, see *Event autonomy*), `proposals.py` (`/api/seller/proposals*`, see *Merchant proposals*) and `returns_lifecycle.py` (`simulate-scan`, `/api/staff/returns/*`, `/api/runs/{id}/timeline`, see *Return lifecycle*). `orchestrator/routes/__init__.py` combines them all into the single `router` `orchestrator/main.py` includes, and re-exports `optional_auth`/`require_auth`/`require_admin`/`require_staff`/`require_seller`/`settings` so existing import sites are unaffected.
 
 **Web UI (Phase 1.6).** `web/src/components/chat/mode-switcher.tsx` (1.6a) is a composer control fed by `GET /api/orchestration/modes`, threading the selected mode through `api.ts::chatStream()`'s `mode` option and persisting it per conversation in localStorage. `orchestration-graph.tsx` (1.6b) renders a mode's `graph_mermaid()` output client-side (house palette applied client-side — the backend's generated source carries no styling) and animates nodes live from the `onOrchestrationEvent` hook's `node`/`error` frames; correlating a live `node_id` to a diagram node relies on a deliberate backend convention — every workflow mode's `graph_mermaid()` uses the real executor id with dashes swapped for underscores as the Mermaid node id (see `PrePurchaseMode.graph_mermaid()`'s comment in `workflow_mode.py`). `mode-comparison.tsx` (1.6c) is a standalone dialog (not tied to the active conversation) that calls `POST /api/orchestration/compare` and renders a result card per mode, reusing `orchestration-graph.tsx` in a static (non-live) rendering by passing the mode's `agents_involved` as `doneNodeIds`.
 
@@ -253,7 +255,7 @@ Separately, the orchestrator's own read of *its* conversation's history (for `Ru
 | LLM | OpenAI / Azure OpenAI (gpt-4.1) / Anthropic Claude (`claude-sonnet-5-5`, stub-tested only), configurable via `LLM_PROVIDER` env var — plus any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, OpenRouter, GitHub Models) via `LLM_PROVIDER=openai` + `LLM_BASE_URL` |
 | Backend | Python 3.12, FastAPI (orchestrator), Starlette (specialist agents via agent_host) |
 | Database | PostgreSQL 16 + pgvector (1536-dim embeddings for text-embedding-3-small) |
-| Cache | Redis 7 |
+| Cache | Redis 8 |
 | Frontend | Next.js 16, React 19, Tailwind CSS 4, shadcn/ui |
 | Auth | Self-contained JWT (PyJWT + bcrypt), no external IdP |
 | Telemetry | OpenTelemetry -> .NET Aspire Dashboard (:18888) |
@@ -321,7 +323,7 @@ no model is called at all — that is what CI, the eval smoke suite and the tuto
 
 ## Database
 
-- Schema: `docker/postgres/init.sql` is the frozen baseline (34 tables); every change since is a numbered file in `docker/postgres/migrations/` (0002–0012 today: approval claims, refresh tokens, approvals/outbox/notifications, usage cost columns, embedding model, merchant proposals, worker leases, event autonomy) applied by `scripts/migrate.py` (the seeder, `dev.sh`/`dev.ps1` and every test fixture run it). Never edit an applied migration — the checksum guard fails the run; add a new one. The runner applies whatever is unapplied in numeric order, so a lower number arriving late is fine.
+- Schema: `docker/postgres/init.sql` is the frozen baseline (34 tables; the 11 added by migrations bring it to 45); every change since is a numbered file in `docker/postgres/migrations/` (0002–0013 today: approval claims, refresh tokens, lower-cased user emails, refresh-family expiry, approvals/outbox/notifications, usage cost columns, embedding model, merchant proposals, expiry of pre-policy return approvals, worker leases, event autonomy, return lifecycle columns) applied by `scripts/migrate.py` (the seeder, `dev.sh`/`dev.ps1` and every test fixture run it). Never edit an applied migration — the checksum guard fails the run; add a new one. The runner applies whatever is unapplied in numeric order, so a lower number arriving late is fine.
 - All queries use parameterized `$1, $2` syntax (asyncpg)
 - All user-facing queries filter by `user_email` or `user_id`
 - Embeddings stored as `vector(1536)` with ivfflat cosine index
@@ -329,7 +331,7 @@ no model is called at all — that is what CI, the eval smoke suite and the tuto
 
 ## Testing & Evals
 
-Four traps here cost more time than anything else in the repo.
+Five traps here cost more time than anything else in the repo.
 
 **Playwright: wait on the composer's stop icon, never on status text.** A streamed
 turn is finished when the submit button stops showing the stop icon — not when
