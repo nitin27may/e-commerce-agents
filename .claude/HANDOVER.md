@@ -23,10 +23,9 @@ Last updated: 2026-11-21, main at `9ba0a9b`, release `v1.4.0` tagged at `9d83d45
   `e-commerce-agents-ac` (landing pages, docs wording, the release). Coordinate with `SendMessage` to
   `uds:/tmp/cc-socks/58881.sock` (check `ListAgents` for the current address). It owns README, docs
   landing pages, `docs/roadmap.md`, `docs/parity-matrix.md` wording and the release procedure
-  (`docs/releasing.md`); ask before restructuring those. **Its own handover is "Part IV: Documentation
-  lane" at the end of `.claude/plans/remaining-work.md`** (arrives with PR #195): the doc/code mismatches
-  it suspects but has not verified, the wording rules, and the checks to run after any docs change. Read
-  it before touching docs.
+  (`docs/releasing.md`); ask before restructuring those. Its handover is folded into
+  section 9 below (the doc/code mismatches it suspects but has not verified, the wording rules, and the
+  checks to run after any docs change). Read it before touching docs.
 
 ## 2. What exists now (high level)
 
@@ -154,9 +153,72 @@ down. Only the owner can restart it; CI on GitHub is the fallback for .NET and P
    Click through `demo-guide` scenarios 9 to 11 once the stack runs.
 6. The keyed features in section 3, recorded in one sitting.
 
+## 9. Documentation lane (folded in from the docs session)
+
+Everything here is on `main` or GitHub. Done on 2026-11-21 by the docs session: GitHub About description
+and topics rewritten (application first, course second); README, `docs/index.md`, architecture, demo
+guide and agent flows lead with the complete application and the five orchestration modes (#179); all 34
+tutorial chapter READMEs rewritten for learners (#190); chapter pointers by symbol instead of line
+number, enforced by `scripts/check_tutorial_readmes.py`, plus a status table and a refreshed chapter
+template (#196); roadmap and parity matrix reorganised for visitors, ten guides cleaned of plan codes,
+new `docs/checkpoints-and-resume.md` and `docs/replay-mode.md` (#195); release 1.4.0 with a "Known limits"
+section in the changelog (#193); Discussion "Which orchestration pattern should I use?" is #188.
+
+**Open, in order:**
+1. Approve the 1.4.0 release run (Review deployments, `release`, approve). It is the maintainer's click;
+   it was deliberately not done through the API. Then step 7 of `docs/releasing.md`: an anonymous pull of
+   `orchestrator:latest` on both architectures (`db-init` is a twelfth package and must be public).
+2. Post the release announcement in Discussions (Announcements) once the GitHub release exists. Lead with
+   the return-label security fix and the Known limits; pin it and pin #188.
+3. Screenshots and a README GIF (#182, also #87): Mode dropdown, live graph, Compare dialog, the
+   approvals flow, one Aspire trace. Needs a running stack and a key. The README hero is
+   `docs/images/flow-product-search.png` until then.
+4. Click through `demo-guide` scenarios 9 to 11 (switch mode, compare, approve a paused return). They were
+   written from the code, not run in a browser. Staff decide from **Runs**; **Admin, Approvals** is
+   admin-only.
+5. Ship the `--no-key` recordings. `agents/python/demo/fixtures/replay/` is empty, so the no-key stack
+   answers every chat prompt with "not recorded". README, quick start, demo guide, `docs/replay-mode.md`
+   and the 1.4.0 changelog all say so; remove those caveats when it ships.
+
+**Suspected, not verified (left as they were):** `docs/maf-best-practices.md` names only OpenAI and Azure
+OpenAI as providers although Anthropic is wired; `docs/adr/0002` says "forty-six tools" but the eval
+scorecard's per-agent counts sum higher; `docs/telemetry.md` shows a "Starlette request span" on a
+specialist the page calls a FastAPI app; parity rows 29 and 33 have priorities that do not match their
+status; a comment in `docker-compose.nokey.yml` says the fixture key includes the model name, but
+`shared/replay_client.py` hashes messages, tools, instructions and response format only; Python
+`ReturnReplaceMode.capabilities` has `supports_checkpoints=False` although the mode checkpoints every run
+(.NET says `true`; that one is code, not docs); `docs/images/flow-guest-browse.png` (12 MB) and
+`flow-guest-product.png` are referenced nowhere.
+
+**Limits of the new tutorial checks:** the symbol check passes a path if any backticked identifier in the
+same paragraph or list item occurs in the file (no one-to-one pairing); `web/src/app/(app)/runs/page.tsx`
+is not checked because the path pattern rejects parentheses.
+
+**Wording rules used for reader-facing pages:** say what is true now (history goes in `CHANGELOG.md`); no
+plan or lane codes and no pointers into `.claude/plans/`; open with what the page is and who it is for;
+payoff before caveats, caveats kept; no fact changed without checking the code; second person, present
+tense, no sentence much over 35 words. "Course" for the chapters, "complete application" for the app;
+"tutorial" only as a search topic.
+
+**Checks to run after any docs change:**
+
+```bash
+python3 scripts/build_docs_site.py --check
+python3 scripts/check_tutorial_readmes.py --check
+python3 scripts/check_tutorial_coverage.py --check
+python3 scripts/check_tutorial_nav.py --check
+python3 scripts/run_tutorials_keyless.py            # after uv sync --project tutorials
+cd agents/python && uv run pytest tests/test_check_tutorial_readmes.py tests/test_check_tutorial_coverage.py -q
+```
+
+Time sinks: `uv lock` with a different local uv version rewrites unrelated markers in
+`agents/python/uv.lock` (for a version bump, edit the one `version =` line); the parity matrix and
+`CHANGELOG.md` are touched by every lane, so merge `main` just before pushing.
+
 ## Progress log
 
 Append newest first. One line per landed change: date, PR, what, and anything left unverified.
 
+- 2026-11-21 (docs session): issue #183 closed by #195; a third docs pass is starting on branch `docs/third-pass` (concept pages, configuration, database schema, API reference, quick start, troubleshooting, releasing, benchmark, reported-vs-actual, audit matrix, plus verifying the suspected mismatches in section 9).
 - 2026-11-21: #194 .NET approval-timeout worker (row 36 Full); v1.4.0 tagged; handover document added.
 - 2026-11-21: #158 to #193: see the plan's Progress block for the list.
