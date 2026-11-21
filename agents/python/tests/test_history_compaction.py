@@ -7,8 +7,8 @@ from typing import Any
 
 import pytest
 
+from shared import config as _config
 from shared.agent_host import _rehydrate_history_from_session, _run_agent_native
-from shared.config import settings
 from shared.context import current_user_email
 from shared.history_compaction import compact_history, group_history
 
@@ -102,7 +102,8 @@ async def test_rehydrated_history_reaches_the_model_trimmed(
     clean_db, monkeypatch: pytest.MonkeyPatch, keep: int, expected_history: int
 ) -> None:
     monkeypatch.setattr("shared.db.get_pool", lambda: clean_db)
-    monkeypatch.setattr(settings, "HISTORY_COMPACTION_KEEP_LAST_GROUPS", keep)
+    # Resolved at call time: test_env_aliases reloads shared.config, orphaning an import-time `settings`.
+    monkeypatch.setattr(_config.settings, "HISTORY_COMPACTION_KEEP_LAST_GROUPS", keep)
     conversation_id, email = await _seed(clean_db, 60)
     current_user_email.set(email)
 
