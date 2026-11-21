@@ -211,9 +211,9 @@ The orchestrator, the agent that receives each chat message, reads history throu
 - `FileSessionHistoryProvider`: local development, JSONL files under `settings.MAF_SESSION_DIR`.
 - `InMemorySessionHistoryProvider`: tests.
 
-`get_history_provider()` at `agents/python/shared/session.py:216` picks the backend by name. It is the same idea as this chapter's `_load_or_new` / `LoadOrNew`, with three interchangeable stores instead of one file.
+`get_history_provider()` in `agents/python/shared/session.py` picks the backend by name. It is the same idea as this chapter's `_load_or_new` / `LoadOrNew`, with three interchangeable stores instead of one file.
 
-`agents/python/orchestrator/routes/chat.py:374` is where the orchestrator calls it: `history = await get_history_as_dicts(get_history_provider(pool=pool), conversation_id)`. The read happens before the current turn's user message is inserted. Otherwise that message would appear twice, because `shared/agent_host.py` appends the current message itself. Writes differ from this chapter's single `_save()` call: each route does its own `INSERT`, because it stores `agent_name`, `agents_involved` and `metadata` alongside the role and content that a generic history provider saves.
+The `chat()` route in `agents/python/orchestrator/routes/chat.py` is where the orchestrator calls it: `history = await get_history_as_dicts(get_history_provider(pool=pool), conversation_id)`. The read happens before the current turn's user message is inserted. Otherwise that message would appear twice, because `shared/agent_host.py` appends the current message itself. Writes differ from this chapter's single `_save()` call: each route does its own `INSERT`, because it stores `agent_name`, `agents_involved` and `metadata` alongside the role and content that a generic history provider saves.
 
 ## What's next
 

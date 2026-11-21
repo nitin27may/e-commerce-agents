@@ -37,4 +37,21 @@ public static class ApprovalServiceCollectionExtensions
             sp.GetRequiredService<ILogger<ApprovalsService>>()));
         return services;
     }
+
+    /// <summary>
+    /// Registers the hosted service that applies SLA timeouts to approvals a .NET workflow opened (parity row 36). Separate from
+    /// <see cref="AddApprovals"/> so a test host can have the inbox without a poll loop. The loop itself idles when
+    /// <c>DOTNET_TIMEOUT_WORKER_ENABLED=false</c>. Needs <see cref="AddApprovals"/>.
+    /// </summary>
+    public static IServiceCollection AddApprovalTimeoutWorker(this IServiceCollection services)
+    {
+        services.AddSingleton(sp => new ApprovalTimeoutProcessor(
+            sp.GetRequiredService<DatabasePool>(),
+            sp.GetRequiredService<ApprovalRepository>(),
+            sp.GetRequiredService<ApprovalsService>(),
+            sp.GetRequiredService<AgentSettings>(),
+            sp.GetRequiredService<ILogger<ApprovalTimeoutProcessor>>()));
+        services.AddHostedService<ApprovalTimeoutWorker>();
+        return services;
+    }
 }

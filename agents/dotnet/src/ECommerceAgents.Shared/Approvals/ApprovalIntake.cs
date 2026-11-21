@@ -133,13 +133,28 @@ public sealed class ApprovalIntake(
 
     private static DateTime? DueAt(ApprovalRepository repo, string kind) => repo.Deadline(kind, DateTime.UtcNow);
 
-    private static Dictionary<string, object?> RecommendationJson(RoutedPolicy p) => new()
+    /// <summary>
+    /// The key in <c>approvals.recommendation</c> naming the stack that opened a paused workflow approval. A paused workflow can only be
+    /// resumed by the stack whose checkpoint store wrote it, and two consumers share the <c>approval.timeout_apply</c> topic, so the tag
+    /// is what routes each timeout (Python's claim query skips <c>dotnet</c>; the .NET hosted service takes only it). No schema change.
+    /// </summary>
+    public const string StackKey = "stack";
+
+    /// <summary>The value this stack writes under <see cref="StackKey"/>.</summary>
+    public const string DotnetStack = "dotnet";
+
+    private static Dictionary<string, object?> RecommendationJson(RoutedPolicy p, string? stack = null)
     {
-        ["route"] = p.Route,
-        ["reasons"] = p.Reasons,
-        ["evidence"] = p.Evidence,
-        ["policy_version"] = p.PolicyVersion,
-    };
+        var json = new Dictionary<string, object?>
+        {
+            ["route"] = p.Route,
+            ["reasons"] = p.Reasons,
+            ["evidence"] = p.Evidence,
+            ["policy_version"] = p.PolicyVersion,
+        };
+        if (stack is not null) json[StackKey] = stack;
+        return json;
+    }
 
     private async Task<Guid?> ExistingConversationAsync(string? candidate)
     {
@@ -150,7 +165,8 @@ public sealed class ApprovalIntake(
 
     /// <summary>Creates the routed approval (<c>pending_review</c>) and its audit events. Idempotent per source record.</summary>
     private async Task<Approval> OpenApprovalAsync(
-        string source, Guid sourceRef, string kind, string requesterEmail, RoutedPolicy routed, decimal? amount, string? conversationId)
+        string source, Guid sourceRef, string kind, string requesterEmail, RoutedPolicy routed, decimal? amount, string? conversationId,
+        string? stack = null)
     {
         var existing = await repo.FindBySourceAsync(source, sourceRef);
         if (existing is not null) return existing;
@@ -168,7 +184,7 @@ public sealed class ApprovalIntake(
             Route: route,
             AssignedRole: AssignedRole[route],
             Status: ApprovalStatus.PendingReview,
-            Recommendation: RecommendationJson(routed with { Route = route }),
+            Recommendation: RecommendationJson(routed with { Route = route }, stack),
             DueAt: DueAt(repo, kind)));
         await repo.AppendEventAsync(
             approval.Id,
@@ -239,7 +255,7 @@ public sealed class ApprovalIntake(
         var reasons = policy.Reasons.Count > 0 ? policy.Reasons : [FallbackReason];
         var routed = policy with { Route = route, Reasons = reasons };
         var approval = await OpenApprovalAsync(
-            "workflow", hitlRequestId, "return_approval", userEmail, routed, policy.Amount, conversationId);
+            "workflow", hitlRequestId, "return_approval", userEmail, routed, policy.Amount, conversationId, DotnetStack);
         await using var conn = await pool.OpenAsync();
         await conn.ExecuteAsync(
             "UPDATE hitl_requests SET approval_id = @approvalId WHERE id = @hitlRequestId AND approval_id IS NULL",

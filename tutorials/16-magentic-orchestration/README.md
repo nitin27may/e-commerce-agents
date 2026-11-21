@@ -116,7 +116,7 @@ Source: [`python/main.py`](./python/main.py). The three workers and the manager 
 `Agent` instances. The manager's instructions are what make it a *planner*, not a special type:
 
 ```python
-# tutorials/16-magentic-orchestration/python/main.py:62-84
+# tutorials/16-magentic-orchestration/python/main.py: manager_agent() and build_workflow()
 def manager_agent() -> Agent:
     """A planning LLM the Magentic manager uses to decompose and delegate."""
     return Agent(
@@ -142,7 +142,7 @@ def build_workflow():
     ).build()
 ```
 
-`plan()` (`main.py:101-125`) drives the streamed run and separates two kinds of events. A
+`plan()` (in `main.py`) drives the streamed run and separates two kinds of events. A
 `group_chat` event whose payload is a `GroupChatRequestSentEvent` is the manager dispatching to a
 named worker. An `output` event carries the final synthesized answer. Sample output from a live
 run (yours will differ):
@@ -221,8 +221,8 @@ points at the Python example. A rename or removal in a later SDK version fails t
 ## How this shows up in the capstone
 
 The capstone (the full application in this repo) does not use Magentic: no orchestration mode
-runs it, so a user of the application never reaches this pattern. The mode registry in
-`agents/python/orchestrator/modes/__init__.py:27` lists five modes: `tool`, `handoff`,
+runs it, so a user of the application never reaches this pattern. The mode registry, `MODES` in
+`agents/python/orchestrator/modes/__init__.py`, lists five modes: `tool`, `handoff`,
 `workflow:pre-purchase`, `workflow:return-replace` and `group-chat`. Calling `get_mode("magentic")`
 raises a named `UnknownModeError` instead of falling through to a default. The "What's missing"
 section of `docs/concepts/06-orchestration-patterns.md` says the same from the application side.
@@ -230,7 +230,7 @@ section of `docs/concepts/06-orchestration-patterns.md` says the same from the a
 This chapter's own code is therefore the reference example of the pattern:
 
 ```
-tutorials/16-magentic-orchestration/python/main.py:75-84
+tutorials/16-magentic-orchestration/python/main.py (build_workflow)
 ```
 
 `build_workflow()` wraps three workers in a `StandardMagenticManager`. A Magentic mode in

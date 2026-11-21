@@ -253,7 +253,7 @@ responses, and tests against a live model are skipped unless credentials are pre
 
 The application does not run a reflection loop as an orchestration mode. The nearest thing in it
 is a tool that drafts text once, with no critic: `draft_seller_response`, which gives a seller a
-starting reply to a customer review. It is at `agents/python/review_sentiment/tools.py:563`:
+starting reply to a customer review. It is in `agents/python/review_sentiment/tools.py`:
 
 ```python
 @tool(

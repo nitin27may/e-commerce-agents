@@ -204,7 +204,7 @@ The .NET tests ([`dotnet/tests/SequentialTests.cs`](./dotnet/tests/SequentialTes
 
 ## How this shows up in the capstone
 
-In the capstone, a sequential workflow handles "return this order and find me a replacement": it checks eligibility, gets approval if the policy asks for it, starts the return, and suggests a replacement with a discount. It is one of the application's selectable orchestration modes, `workflow:return-replace`, and both stacks have it: `ReturnReplaceMode` at `agents/python/orchestrator/modes/workflow_mode.py:213` and `agents/dotnet/src/ECommerceAgents.Orchestrator/Modes/ReturnReplaceMode.cs`.
+In the capstone, a sequential workflow handles "return this order and find me a replacement": it checks eligibility, gets approval if the policy asks for it, starts the return, and suggests a replacement with a discount. It is one of the application's selectable orchestration modes, `workflow:return-replace`, and both stacks have it: `ReturnReplaceMode` in `agents/python/orchestrator/modes/workflow_mode.py` and `agents/dotnet/src/ECommerceAgents.Orchestrator/Modes/ReturnReplaceMode.cs`.
 
 To watch it handle a real request, pick "Return & Replace (sequential + in-workflow HITL)" from the Mode dropdown above the chat box in the running application.
 

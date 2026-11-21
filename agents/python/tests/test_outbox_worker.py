@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import uuid
 from types import SimpleNamespace
 from typing import Any
 
@@ -436,6 +437,56 @@ async def test_stop_hands_unstarted_rows_back(clean_db: asyncpg.Pool) -> None:
     assert result.claimed == 3 and result.done == 0
     rows = await _outbox(clean_db)
     assert all(r["locked_by"] is None and r["attempts"] == 0 for r in rows)
+
+
+async def test_the_worker_leaves_dotnet_timeouts_for_the_dotnet_service_and_runs_its_own(
+    clean_db: asyncpg.Pool,
+) -> None:
+    """NET-36: a paused return tagged ``stack: dotnet`` is the .NET service's, not this worker's."""
+    theirs = await _review(
+        clean_db,
+        source="workflow",
+        source_ref=str(uuid.uuid4()),
+        recommendation={"route": "support", "stack": "dotnet"},
+    )
+    mine = await _review(clean_db, source="workflow", source_ref=str(uuid.uuid4()), recommendation={"route": "support"})
+    for approval in (theirs, mine):
+        await clean_db.execute(
+            "INSERT INTO outbox (topic, aggregate_id, payload, available_at) "
+            "VALUES ('approval.timeout_apply', $1, '{}'::jsonb, NOW() - interval '1 second')",
+            approval["id"],
+        )
+    seen: list[str] = []
+
+    async def handler(conn: asyncpg.Connection, row: OutboxRow) -> None:
+        seen.append(str(row.aggregate_id))
+
+    result = await _tick(clean_db, {"approval.timeout_apply": handler})
+
+    assert seen == [str(mine["id"])]
+    assert result.claimed == 1 and result.done == 1
+    left = await clean_db.fetchrow(
+        "SELECT * FROM outbox WHERE aggregate_id = $1 AND topic = 'approval.timeout_apply'", theirs["id"]
+    )
+    assert left["processed_at"] is None and left["locked_by"] is None and left["attempts"] == 0
+
+
+async def test_a_dotnet_tag_on_another_topic_or_source_does_not_hide_the_row(clean_db: asyncpg.Pool) -> None:
+    """The exclusion is exactly (timeout_apply, workflow, dotnet): a tool approval's timeout stays Python's."""
+    tool = await _review(clean_db, source="tool", source_ref=str(uuid.uuid4()), recommendation={"stack": "dotnet"})
+    await clean_db.execute(
+        "INSERT INTO outbox (topic, aggregate_id, payload, available_at) "
+        "VALUES ('approval.timeout_apply', $1, '{}'::jsonb, NOW() - interval '1 second')",
+        tool["id"],
+    )
+    await _enqueue(clean_db, "test.x")
+
+    async def handler(conn: asyncpg.Connection, row: OutboxRow) -> None:
+        return None
+
+    result = await _tick(clean_db, {"approval.timeout_apply": handler, "test.x": handler})
+
+    assert result.claimed == 2 and result.done == 2
 
 
 def test_backoff_doubles_and_is_capped() -> None:

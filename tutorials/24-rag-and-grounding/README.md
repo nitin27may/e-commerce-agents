@@ -246,7 +246,7 @@ unless credentials are present.
 When you ask the application's chat about a product, a search tool fetches rows from the database.
 A badge under the reply then tells you how many of its facts were checked against that database.
 
-`agents/python/product_discovery/tools.py:190` is the retrieval half: `semantic_search`, a
+`agents/python/product_discovery/tools.py` holds the retrieval half: `semantic_search`, a
 pgvector cosine-similarity search over `product_embeddings`. It handles descriptive queries a
 keyword match would miss ("something cozy for winter"):
 
@@ -264,7 +264,7 @@ async def semantic_search(
 ) -> list[dict]:
 ```
 
-`agents/python/shared/grounding/verifier.py:65` is the verification half: `verify_claims()`, which
+`agents/python/shared/grounding/verifier.py` holds the verification half: `verify_claims()`, which
 this chapter's `verify_claims()` mirrors at toy scale. It tries a ledger match first, then a
 batched database match:
 
@@ -277,7 +277,7 @@ async def verify_claims(
 ```
 
 It runs on every request through `GroundingVerificationMiddleware`
-(`agents/python/shared/grounding/middleware.py:45`). The result is visible in the web UI:
+(`agents/python/shared/grounding/middleware.py`). The result is visible in the web UI:
 `web/src/components/chat/grounding-badge.tsx` renders "N facts verified against the database, M
 unverified" under any chat message that made a checkable claim.
 

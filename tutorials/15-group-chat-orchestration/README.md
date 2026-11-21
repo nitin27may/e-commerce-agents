@@ -197,13 +197,13 @@ The .NET tests ([`dotnet/tests/GroupChatTests.cs`](./dotnet/tests/GroupChatTests
 
 ## How this shows up in the capstone
 
-In the capstone, a group chat answers "is this worth buying?": a value-and-pricing panelist and a quality-and-reviews panelist each speak, seeing what was said before them, and a moderator writes the verdict. It is one of the application's selectable orchestration modes, `group-chat`, and both stacks have it: `GroupChatMode` at `agents/python/orchestrator/modes/group_chat_mode.py:74` and `agents/dotnet/src/ECommerceAgents.Orchestrator/Modes/GroupChatMode.cs`.
+In the capstone, a group chat answers "is this worth buying?": a value-and-pricing panelist and a quality-and-reviews panelist each speak, seeing what was said before them, and a moderator writes the verdict. It is one of the application's selectable orchestration modes, `group-chat`, and both stacks have it: `GroupChatMode` in `agents/python/orchestrator/modes/group_chat_mode.py` and `agents/dotnet/src/ECommerceAgents.Orchestrator/Modes/GroupChatMode.cs`.
 
 To watch it handle a real request, pick "Group Chat (round-table debate)" from the Mode dropdown above the chat box in the running application.
 
-The capstone builds its group chat differently from this chapter. `GroupChatWorkflow` at `agents/python/workflows/group_chat.py:105` is a round-table assembled from MAF's `Executor` and `WorkflowBuilder` primitives (Chapter 09), not from `GroupChatBuilder` and a selection function. Panelists run in a fixed order with no dynamic speaker selection. Each one appends to a shared `GroupChatState.transcript` that the next one reads, and a `_ModeratorExecutor` then writes the verdict.
+The capstone builds its group chat differently from this chapter. `GroupChatWorkflow` in `agents/python/workflows/group_chat.py` is a round-table assembled from MAF's `Executor` and `WorkflowBuilder` primitives (Chapter 09), not from `GroupChatBuilder` and a selection function. Panelists run in a fixed order with no dynamic speaker selection. Each one appends to a shared `GroupChatState.transcript` that the next one reads, and a `_ModeratorExecutor` then writes the verdict.
 
-The two panelists are agents. Their prompts are loaded into `_PANEL_PROMPTS` (`agents/python/orchestrator/modes/group_chat_mode.py:33`), and `_PanelistExecutor.run()` awaits each panelist's reply when the responder is asynchronous, which an agent-backed one is.
+The two panelists are agents. Their prompts are loaded into `_PANEL_PROMPTS` (`agents/python/orchestrator/modes/group_chat_mode.py`), and `_PanelistExecutor.run()` awaits each panelist's reply when the responder is asynchronous, which an agent-backed one is.
 
 ## What's next
 

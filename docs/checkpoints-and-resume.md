@@ -183,6 +183,7 @@ same routes. The differences:
   `ReturnAndReplaceWorkflow.ResumeFromCheckpointAsync` restores the run, waits for the framework to
   raise the pending request again, and answers that. The stored `request_id` is a correlation
   check, not the source of the response.
-- **Timeout.** The outbox worker is Python only, and it cannot resume a .NET checkpoint. An
-  unattended .NET return is closed by a manager's decision, not by the timer (parity matrix,
-  row 36). The lifecycle waits are not ported (row 41).
+- **Timeout.** Only a stack can resume its own checkpoint, so the .NET orchestrator applies the
+  timeout for a paused return it opened: its `ApprovalTimeoutWorker` hosted service drains those
+  `approval.timeout_apply` rows and the Python worker skips them (parity matrix, row 36; added
+  after release 1.4.0). The lifecycle waits are not ported (row 41).
