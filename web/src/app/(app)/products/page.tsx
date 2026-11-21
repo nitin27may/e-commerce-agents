@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useCart } from "@/lib/cart-context";
 import { api } from "@/lib/api";
+import { asArray, asNumber } from "@/lib/guards";
+import { ErrorState } from "@/components/error-state";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CHIP_CLASS, TONE_BADGE_CLASS } from "@/components/ui/status-badge";
@@ -182,9 +184,10 @@ export default function ProductsPage() {
         category: activeCategory || undefined,
         sort: sortBy,
       });
-      setProducts(data.products);
-      setTotal(data.total);
-      setCategories(data.categories);
+      const list = asArray<Product>(data?.products);
+      setProducts(list);
+      setTotal(asNumber(data?.total, list.length));
+      setCategories(asArray<string>(data?.categories));
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to load products"
@@ -300,9 +303,7 @@ export default function ProductsPage() {
 
         {/* Error */}
         {error && (
-          <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-            {error}
-          </div>
+          <ErrorState inline onRetry={loadProducts} message={error} homeHref="/home" homeLabel="Back to dashboard" />
         )}
 
         {/* Empty state */}

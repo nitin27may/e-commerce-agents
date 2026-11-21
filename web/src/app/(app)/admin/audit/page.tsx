@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
+import { asArray, asNumber } from "@/lib/guards";
+import { ErrorState } from "@/components/error-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -281,8 +283,9 @@ export default function AdminAuditPage() {
         status: statusFilter || undefined,
         search: debouncedSearch || undefined,
       });
-      setEntries(data?.entries ?? []);
-      setTotal(data?.total ?? 0);
+      const list = asArray<AuditEntry>(data?.entries).map((e) => ({ ...e, steps: asArray<AuditEntry["steps"][number]>(e.steps) }));
+      setEntries(list);
+      setTotal(asNumber(data?.total, list.length));
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to load audit log",
@@ -403,9 +406,7 @@ export default function AdminAuditPage() {
           )}
 
           {error && (
-            <div className="mx-4 mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-              {error}
-            </div>
+            <ErrorState inline onRetry={loadAudit} message={error} homeHref="/home" homeLabel="Back to dashboard" />
           )}
 
           {!loading && !error && entries.length === 0 && (

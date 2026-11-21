@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, type OrchestrationMode } from "@/lib/api";
+import { asArray } from "@/lib/guards";
 import {
   Select,
   SelectContent,
@@ -38,7 +39,7 @@ export function ModeSwitcher({ value, onChange, disabled }: ModeSwitcherProps) {
     api
       .getOrchestrationModes()
       .then((data) => {
-        if (!cancelled) setModes(data);
+        if (!cancelled) setModes(asArray<OrchestrationMode>(data));
       })
       .catch(() => {
         // Modes endpoint unreachable — chat still works via the

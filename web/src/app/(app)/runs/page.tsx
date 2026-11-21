@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { api, type RunEntry, type RunTimelineEntry } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { asArray, asNumber } from "@/lib/guards";
+import { ErrorState } from "@/components/error-state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,6 +28,7 @@ export default function RunsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
+  const [reloadKey, setReloadKey] = useState(0);
   // Keyed by run id. Fetched eagerly for every visible row, not lazily on
   // expand — a lazy fetch means the "Needs approval" badge below can't
   // show until a row has already been opened once, defeating its purpose
@@ -39,15 +42,17 @@ export default function RunsPage() {
     api
       .getRuns({ limit, offset: page * limit })
       .then((r) => {
-        setEntries(r.entries);
-        setTotal(r.total);
+        // `[]` or a reshaped body is an empty list, not a crash.
+        const list = asArray<RunEntry>(r?.entries).map((e) => ({ ...e, steps: asArray<RunEntry["steps"][number]>(e.steps) }));
+        setEntries(list);
+        setTotal(asNumber(r?.total, list.length));
         setLoading(false);
         setCheckpoints({});
-        Promise.allSettled(r.entries.map((e) => api.getRunCheckpoints(e.id))).then((results) => {
+        Promise.allSettled(list.map((e) => api.getRunCheckpoints(e.id))).then((results) => {
           setCheckpoints((prev) => {
             const next = { ...prev };
             results.forEach((res, i) => {
-              if (res.status === "fulfilled") next[r.entries[i].id] = res.value;
+              if (res.status === "fulfilled") next[list[i].id] = res.value;
             });
             return next;
           });
@@ -57,7 +62,7 @@ export default function RunsPage() {
         setError("Failed to load runs");
         setLoading(false);
       });
-  }, [page]);
+  }, [page, reloadKey]);
 
   function refreshCheckpoints(runId: string) {
     api
@@ -91,11 +96,10 @@ export default function RunsPage() {
       )}
 
       {error && (
-        <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
-            {error}
-          </CardContent>
-        </Card>
+        <ErrorState inline onRetry={() => {
+          setError(null);
+          setReloadKey((k) => k + 1);
+        }} message={error} homeHref="/home" homeLabel="Back to dashboard" />
       )}
 
       {!loading && !error && entries.length === 0 && (

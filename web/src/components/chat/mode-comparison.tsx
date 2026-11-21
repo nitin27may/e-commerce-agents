@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, type CompareModeResult, type OrchestrationMode } from "@/lib/api";
+import { asArray } from "@/lib/guards";
 import {
   Dialog,
   DialogContent,
@@ -54,7 +55,8 @@ export function ModeComparison({ initialPrompt = "" }: ModeComparisonProps) {
     if (!open) return;
     api
       .getOrchestrationModes()
-      .then((data) => {
+      .then((raw) => {
+        const data = asArray<OrchestrationMode>(raw);
         setModes(data);
         setSelected((prev) => (prev.length > 0 ? prev : data.filter((m) => m.default).map((m) => m.name)));
       })

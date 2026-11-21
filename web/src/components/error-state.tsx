@@ -18,6 +18,13 @@ type ErrorStateProps = {
   error?: Error;
   /** Fill the viewport (root boundaries) instead of sitting inside a shell. */
   fullScreen?: boolean;
+  /**
+   * A failed data load inside a page that is otherwise fine: tighter padding, an
+   * h2 (the page keeps its own h1), and the copy says what failed.
+   */
+  inline?: boolean;
+  /** Replaces the inline body copy, e.g. "Runs could not be loaded." */
+  message?: string;
 };
 
 /**
@@ -33,6 +40,8 @@ export function ErrorState({
   digest,
   error,
   fullScreen = false,
+  inline = false,
+  message,
 }: ErrorStateProps) {
   useEffect(() => {
     if (error) console.error(error);
@@ -40,24 +49,26 @@ export function ErrorState({
 
   const notFound = kind === "not-found";
   const Icon = notFound ? FileQuestion : AlertTriangle;
+  const Heading = inline ? "h2" : "h1";
 
   return (
     <div
       role={notFound ? undefined : "alert"}
       className={`flex flex-col items-center justify-center px-4 text-center ${
-        fullScreen ? "min-h-screen" : "py-24"
+        fullScreen ? "min-h-screen" : inline ? "py-12" : "py-24"
       }`}
     >
       <div className="mb-4 rounded-full bg-muted p-4">
         <Icon className={`size-8 ${notFound ? "text-muted-foreground" : "text-destructive"}`} />
       </div>
-      <h1 className="text-xl font-semibold text-foreground">
-        {notFound ? "Page not found" : "Something went wrong"}
-      </h1>
+      <Heading className="text-xl font-semibold text-foreground">
+        {notFound ? "Page not found" : inline ? "Could not load this data" : "Something went wrong"}
+      </Heading>
       <p className="mt-2 max-w-sm text-sm text-muted-foreground">
         {notFound
           ? "The page you are looking for does not exist or has moved."
-          : "This page couldn't load. You can try again, or head back to the start."}
+          : (inline ? message : undefined) ??
+            "This page couldn't load. You can try again, or head back to the start."}
       </p>
       {digest && (
         <p className="mt-2 font-mono text-xs text-muted-foreground">Reference: {digest}</p>

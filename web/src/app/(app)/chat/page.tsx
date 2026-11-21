@@ -9,6 +9,7 @@ import {
 } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { asArray } from "@/lib/guards";
 import { useCart } from "@/lib/cart-context";
 import { api, type AgentStep, type GroundingReport } from "@/lib/api";
 import { RichMessage } from "@/components/chat/rich-message";
@@ -406,7 +407,7 @@ export default function ChatPage() {
   async function loadConversations() {
     try {
       const data = await api.getConversations();
-      setConversations(data);
+      setConversations(asArray<Conversation>(data));
     } catch {
       // Silently handle -- empty list is fine on first load
     }
@@ -453,7 +454,7 @@ export default function ChatPage() {
   async function loadMessages(conversationId: string) {
     try {
       const data = await api.getConversation(conversationId);
-      setMessages(data.messages ?? []);
+      setMessages(asArray<Message>(data?.messages));
     } catch {
       setMessages([]);
     }
