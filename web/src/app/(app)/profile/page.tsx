@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
+import { CHIP_CLASS, TONE_BADGE_CLASS } from "@/components/ui/status-badge";
 import {
   Card,
   CardHeader,
@@ -58,17 +59,17 @@ interface Profile {
 // ---------------------------------------------------------------------------
 
 const TIER_COLORS: Record<string, { bg: string; text: string; accent: string }> = {
-  bronze: { bg: "bg-orange-50 dark:bg-orange-500/15", text: "text-orange-800 dark:text-orange-300", accent: "#CD7F32" },
+  bronze: { bg: "bg-warning/10", text: "text-[color-mix(in_oklab,var(--warning)_45%,black)] dark:text-warning", accent: "#CD7F32" },
   silver: { bg: "bg-muted", text: "text-muted-foreground", accent: "#C0C0C0" },
-  gold: { bg: "bg-amber-50 dark:bg-amber-500/15", text: "text-amber-800 dark:text-amber-300", accent: "#FFD700" },
+  gold: { bg: "bg-warning/15", text: "text-[color-mix(in_oklab,var(--warning)_45%,black)] dark:text-warning", accent: "#FFD700" },
 };
 
 const ROLE_COLORS: Record<string, string> = {
-  customer: "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300",
-  power_user: "bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300",
-  support: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
-  seller: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
-  admin: "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300",
+  customer: CHIP_CLASS.primary,
+  power_user: CHIP_CLASS.teal,
+  support: TONE_BADGE_CLASS.warning,
+  seller: TONE_BADGE_CLASS.success,
+  admin: TONE_BADGE_CLASS.destructive,
 };
 
 const TIER_THRESHOLDS: Record<string, { next: string; amount: number } | null> = {
@@ -284,7 +285,7 @@ export default function ProfilePage() {
                   <CardTitle className="text-sm font-medium text-muted-foreground">
                     Total Spend
                   </CardTitle>
-                  <DollarSign className="size-4 text-emerald-500" />
+                  <DollarSign className="size-4 text-success" />
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold text-foreground">
@@ -299,7 +300,7 @@ export default function ProfilePage() {
                   <CardTitle className="text-sm font-medium text-muted-foreground">
                     Orders
                   </CardTitle>
-                  <Package className="size-4 text-sky-500" />
+                  <Package className="size-4 text-info" />
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold text-foreground">
@@ -314,7 +315,7 @@ export default function ProfilePage() {
                   <CardTitle className="text-sm font-medium text-muted-foreground">
                     Reviews
                   </CardTitle>
-                  <MessageSquare className="size-4 text-amber-500" />
+                  <MessageSquare className="size-4 text-warning" />
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold text-foreground">
@@ -380,8 +381,8 @@ export default function ProfilePage() {
                     <span className="flex items-center gap-1 text-sm font-medium">
                       {profile.tier_benefits.priority_support ? (
                         <>
-                          <Check className="size-4 text-emerald-500" />
-                          <span className="text-emerald-700">Included</span>
+                          <Check className="size-4 text-success" />
+                          <span className="text-[color-mix(in_oklab,var(--success)_62%,black)] dark:text-success">Included</span>
                         </>
                       ) : (
                         <>
@@ -514,13 +515,13 @@ export default function ProfilePage() {
                         <div className="flex-1 space-y-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <Badge
-                              className="border-0 bg-sky-100 text-sky-700 text-xs capitalize"
+                              className="border-0 bg-primary/10 text-primary text-xs capitalize"
                             >
                               {memory.category}
                             </Badge>
                             <span className="flex items-center gap-0.5" title={`Importance: ${memory.importance}/10`}>
                               {Array.from({ length: Math.min(5, Math.ceil(memory.importance / 2)) }).map((_, i) => (
-                                <Star key={i} className="size-3 fill-amber-400 text-amber-400" />
+                                <Star key={i} className="size-3 fill-warning text-warning" />
                               ))}
                             </span>
                           </div>

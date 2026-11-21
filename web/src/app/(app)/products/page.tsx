@@ -7,6 +7,7 @@ import { useCart } from "@/lib/cart-context";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { CHIP_CLASS, TONE_BADGE_CLASS } from "@/components/ui/status-badge";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -66,14 +67,14 @@ function StarRating({ rating, count }: { rating: number; count: number }) {
         {Array.from({ length: fullStars }).map((_, i) => (
           <Star
             key={`full-${i}`}
-            className="size-3.5 fill-amber-400 text-amber-400"
+            className="size-3.5 fill-warning text-warning"
           />
         ))}
         {hasHalf && (
           <div className="relative">
             <Star className="size-3.5 text-border" />
             <div className="absolute inset-0 overflow-hidden" style={{ width: "50%" }}>
-              <Star className="size-3.5 fill-amber-400 text-amber-400" />
+              <Star className="size-3.5 fill-warning text-warning" />
             </div>
           </div>
         )}
@@ -89,11 +90,11 @@ function StarRating({ rating, count }: { rating: number; count: number }) {
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
-  electronics: "bg-sky-50 text-sky-700 border-sky-200",
-  clothing: "bg-indigo-50 text-indigo-700 border-indigo-200",
-  home: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  sports: "bg-orange-50 text-orange-700 border-orange-200",
-  books: "bg-amber-50 text-amber-700 border-amber-200",
+  electronics: CHIP_CLASS.primary,
+  clothing: CHIP_CLASS.teal,
+  home: TONE_BADGE_CLASS.success,
+  sports: TONE_BADGE_CLASS.warning,
+  books: CHIP_CLASS.slate,
 };
 
 function getCategoryColor(category: string): string {
@@ -351,7 +352,7 @@ export default function ProductsPage() {
                       loading="lazy"
                     />
                     {product.original_price && product.original_price > product.price && (
-                      <span className="absolute top-2 left-2 rounded-md bg-red-500 px-2 py-0.5 text-xs font-semibold text-white">
+                      <span className="absolute top-2 left-2 rounded-md bg-destructive px-2 py-0.5 text-xs font-semibold text-white">
                         {Math.round((1 - product.price / product.original_price) * 100)}% OFF
                       </span>
                     )}
@@ -402,7 +403,7 @@ export default function ProductsPage() {
                       size="icon"
                       className={`shrink-0 transition-colors ${
                         addedIds.has(product.id)
-                          ? "border-emerald-300 bg-emerald-50 text-emerald-600"
+                          ? "border-success/40 bg-success/10 text-[color-mix(in_oklab,var(--success)_62%,black)] dark:text-success"
                           : "hover:border-primary/40 hover:bg-primary/10 hover:text-primary"
                       }`}
                       onClick={async (e) => {

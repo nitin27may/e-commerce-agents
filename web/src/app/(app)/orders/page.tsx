@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
+import { CHIP_CLASS, TONE_BADGE_CLASS } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -66,32 +67,32 @@ const STATUS_CONFIG: Record<
   { color: string; icon: React.ElementType; label: string }
 > = {
   placed: {
-    color: "border-blue-200 bg-blue-50 text-blue-700",
+    color: TONE_BADGE_CLASS.info,
     icon: Clock,
     label: "Placed",
   },
   confirmed: {
-    color: "border-indigo-200 bg-indigo-50 text-indigo-700",
+    color: CHIP_CLASS.primary,
     icon: CheckCircle,
     label: "Confirmed",
   },
   shipped: {
-    color: "border-amber-200 bg-amber-50 text-amber-700",
+    color: TONE_BADGE_CLASS.warning,
     icon: Truck,
     label: "Shipped",
   },
   delivered: {
-    color: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    color: TONE_BADGE_CLASS.success,
     icon: CheckCircle,
     label: "Delivered",
   },
   returned: {
-    color: "border-orange-200 bg-orange-50 text-orange-700",
+    color: TONE_BADGE_CLASS.neutral,
     icon: RotateCcw,
     label: "Returned",
   },
   cancelled: {
-    color: "border-red-200 bg-red-50 text-red-700",
+    color: TONE_BADGE_CLASS.destructive,
     icon: XCircle,
     label: "Cancelled",
   },

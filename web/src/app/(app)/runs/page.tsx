@@ -220,7 +220,7 @@ function RunRow({
   }, [wantsTimeline, entry.id, hitl?.status, hitl?.kind]);
 
   return (
-    <Card className={cn("overflow-hidden", pendingApproval && "ring-1 ring-amber-400/60")}>
+    <Card className={cn("overflow-hidden", pendingApproval && "ring-1 ring-warning/60")}>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -228,7 +228,7 @@ function RunRow({
       >
         <div className="mt-0.5 shrink-0">
           {entry.status === "success" ? (
-            <Check className="size-4 text-emerald-500" />
+            <Check className="size-4 text-success" />
           ) : (
             <X className="size-4 text-destructive" />
           )}
@@ -273,7 +273,7 @@ function RunRow({
 
         <div className="flex shrink-0 items-center gap-2">
           {pendingApproval && (
-            <Badge className="bg-amber-500 text-white text-xs">Needs approval</Badge>
+            <Badge className="bg-warning text-warning-foreground text-xs">Needs approval</Badge>
           )}
           {hasSteps && (
             <Badge variant="outline" className="text-xs">
@@ -412,7 +412,7 @@ function StepDetailRow({ step }: { step: RunEntry["steps"][number] }) {
         {step.status === "error" ? (
           <X className="size-3 shrink-0 text-destructive" />
         ) : (
-          <Check className="size-3 shrink-0 text-emerald-500" />
+          <Check className="size-3 shrink-0 text-success" />
         )}
         <span className="ml-auto shrink-0 text-muted-foreground">{step.duration_ms}ms</span>
       </button>
