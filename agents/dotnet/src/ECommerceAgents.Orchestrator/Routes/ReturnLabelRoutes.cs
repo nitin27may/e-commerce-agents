@@ -23,9 +23,22 @@ public static class ReturnLabelRoutes
         return routes;
     }
 
+    /// <summary>Tokens are minted as 12 lowercase hex characters (<c>Guid.ToString("N")[..12]</c>).</summary>
+    public static bool IsWellFormedToken(string? token)
+    {
+        if (token is null || token.Length != 12) return false;
+        foreach (var c in token)
+        {
+            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
+        }
+        return true;
+    }
+
     private static async Task<IResult> GetLabel(string labelToken, DatabasePool pool)
     {
-        if (string.IsNullOrWhiteSpace(labelToken))
+        // Public route, token is the only credential: match it whole and exactly. Malformed input (wildcards,
+        // partial or over-long tokens) gets the same 404 as an unknown token and is never echoed.
+        if (!IsWellFormedToken(labelToken))
         {
             return Results.NotFound(new { detail = "Return label not found" });
         }
@@ -39,8 +52,8 @@ public static class ReturnLabelRoutes
               FROM returns r
               JOIN orders o ON r.order_id = o.id
               JOIN users u ON r.user_id = u.id
-              WHERE r.return_label_url LIKE @pattern",
-            new { pattern = $"%{labelToken}%" }
+              WHERE r.return_label_url = @url",
+            new { url = $"/api/returns/{labelToken}/label" }
         );
         if (ret is null)
         {

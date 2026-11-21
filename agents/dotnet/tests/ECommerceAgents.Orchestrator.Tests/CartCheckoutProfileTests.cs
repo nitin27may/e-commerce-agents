@@ -389,13 +389,13 @@ public sealed class CartCheckoutProfileTests : IAsyncLifetime
             );
             await conn.ExecuteAsync(
                 @"INSERT INTO returns (order_id, user_id, reason, status, return_label_url, refund_method, refund_amount)
-                  VALUES (@o, @u, 'damaged', 'requested', '/api/returns/abc123xyz/label', 'store_credit', 25)",
+                  VALUES (@o, @u, 'damaged', 'requested', '/api/returns/abc123def456/label', 'store_credit', 25)",
                 new { o = orderId, u = _userId }
             );
         }
 
         using var client = ClientFor(r => r.MapReturnLabelRoutes());
-        var response = await client.GetAsync("/api/returns/abc123xyz/label");
+        var response = await client.GetAsync("/api/returns/abc123def456/label");
         response.EnsureSuccessStatusCode();
         response.Content.Headers.ContentType!.MediaType.Should().Be("application/pdf");
         var bytes = await response.Content.ReadAsByteArrayAsync();
@@ -408,6 +408,34 @@ public sealed class CartCheckoutProfileTests : IAsyncLifetime
     {
         using var client = ClientFor(r => r.MapReturnLabelRoutes());
         var response = await client.GetAsync("/api/returns/doesnotexist/label");
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Theory]
+    [InlineData("%")]
+    [InlineData("_")]
+    [InlineData("____________")]
+    [InlineData("abc123")]
+    [InlineData("%bc123def456")]
+    public async Task ReturnLabel_404ForWildcardOrPartialToken(string token)
+    {
+        // SEC-1: the old `LIKE '%token%'` lookup matched any return for these.
+        await using (var conn = await _pool.OpenAsync())
+        {
+            var orderId = await conn.ExecuteScalarAsync<Guid>(
+                @"INSERT INTO orders (user_id, status, total, shipping_address)
+                  VALUES (@u, 'delivered', 25, '{}'::jsonb) RETURNING id",
+                new { u = _userId }
+            );
+            await conn.ExecuteAsync(
+                @"INSERT INTO returns (order_id, user_id, reason, status, return_label_url)
+                  VALUES (@o, @u, 'damaged', 'requested', '/api/returns/abc123def456/label')",
+                new { o = orderId, u = _userId }
+            );
+        }
+
+        using var client = ClientFor(r => r.MapReturnLabelRoutes());
+        var response = await client.GetAsync($"/api/returns/{Uri.EscapeDataString(token)}/label");
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 

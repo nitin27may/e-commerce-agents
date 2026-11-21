@@ -14,6 +14,13 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ## [Unreleased]
 
+### Security
+
+- **Return label route matched tokens with `LIKE '%<segment>%'`** (both stacks). `GET /api/returns/{label_token}/label`
+  is unauthenticated, and a path segment of `%`, `_` or a partial token matched another customer's return and rendered
+  their name, email and address. The route now accepts only a full 12-character lowercase hex token, looks the return
+  up by exact equality on the stored URL, and answers one 404 for unknown and malformed tokens alike.
+
 ### Added since 1.3.0
 
 - **A2A 1.0 on both stacks** (#88). Every specialist serves the A2A 1.0 JSON-RPC binding at
