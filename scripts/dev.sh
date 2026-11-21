@@ -7,6 +7,9 @@
 #   ./scripts/dev.sh --clean      Nuke volumes, rebuild from scratch
 #   ./scripts/dev.sh --seed-only  Re-run seeder against existing DB
 #   ./scripts/dev.sh --infra-only Start db + redis + aspire only
+#   ./scripts/dev.sh --no-key     Replay recorded model responses: no API key needed
+#                                 (combines with --demo; from source it layers
+#                                 docker-compose.nokey.yml on docker-compose.yml)
 #
 # --dotnet composes with docker-compose.dotnet.yml instead of the default
 # docker-compose.yml, and adds the "mcp" profile (the .NET MCP inventory
@@ -109,6 +112,7 @@ INFRA_ONLY=false
 DOTNET=false
 DEMO=false
 SWITCH=false
+NO_KEY=false
 
 for arg in "$@"; do
     case $arg in
@@ -118,6 +122,7 @@ for arg in "$@"; do
         --dotnet)     DOTNET=true ;;
         --demo)       DEMO=true ;;
         --switch)     SWITCH=true ;;
+        --no-key)     NO_KEY=true ;;
         --help|-h)
             echo "Usage: ./scripts/dev.sh [OPTIONS]"
             echo ""
@@ -128,11 +133,16 @@ for arg in "$@"; do
             echo "  --infra-only  Start db + redis + aspire only"
             echo "  --dotnet      Target the .NET backend instead of Python"
             echo "  --switch      Tear the other stack down first, volumes and all"
+            echo "  --no-key      Play back recorded model responses; needs no API key (Python only)"
             echo "  --help        Show this help"
             echo ""
             echo "  --demo is the fast path: no local build, one command, ~2 minutes."
             echo "  Override the image tag with IMAGE_TAG (default: latest):"
             echo "    IMAGE_TAG=main ./scripts/dev.sh --demo"
+            echo ""
+            echo "  --no-key layers docker-compose.nokey.yml, which hardcodes LLM_PROVIDER=replay and the"
+            echo "  tour settings. Only the recorded demo prompts get a model answer:"
+            echo "    ./scripts/dev.sh --demo --no-key"
             echo ""
             echo "  Only one stack runs at a time — they publish the same ports."
             echo "  --switch is the clean way to change: ./scripts/dev.sh --dotnet --switch"
@@ -149,6 +159,13 @@ done
 # is no .NET demo image set, so the combination has no meaning.
 if [ "$DEMO" = true ] && [ "$DOTNET" = true ]; then
     error "--demo and --dotnet cannot be combined (no prebuilt .NET images are published)"
+    exit 1
+fi
+
+# The overlay replaces the Python stack's model with recorded responses. The
+# .NET compose file has no equivalent overlay.
+if [ "$NO_KEY" = true ] && [ "$DOTNET" = true ]; then
+    error "--no-key and --dotnet cannot be combined (the replay overlay is Python-only)"
     exit 1
 fi
 
@@ -173,6 +190,9 @@ if [ "$DOTNET" = true ]; then
     OTHER_STACK_FILE="docker-compose.yml"
 else
     COMPOSE=(docker compose)
+    # Explicit -f for the base file too: naming any -f turns off compose's
+    # default file discovery (and its docker-compose.override.yml).
+    [ "$NO_KEY" = true ] && COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.nokey.yml)
     APP_PROFILES=(--profile seed --profile agents --profile frontend)
     RUN_PROFILES=(--profile agents --profile frontend)
     PGDATA_VOLUME_PATTERN='_pgdata$'
@@ -291,7 +311,11 @@ has_llm_key() {
     [ -n "$value" ] && [ "$value" != "sk-your-openai-api-key-here" ]
 }
 
-if [ "$INFRA_ONLY" != true ] && [ "$SEED_ONLY" != true ]; then
+if [ "$NO_KEY" = true ]; then
+    # docker-compose.nokey.yml hardcodes LLM_PROVIDER=replay, so a key (or the
+    # lack of one) in .env or the shell is irrelevant here.
+    info "No-key mode: recorded model responses, LLM_PROVIDER=replay (key preflight skipped)"
+elif [ "$INFRA_ONLY" != true ] && [ "$SEED_ONLY" != true ]; then
     LLM_PROVIDER_VALUE="$(env_value LLM_PROVIDER | tr '[:upper:]' '[:lower:]')"
     LLM_PROVIDER_VALUE="${LLM_PROVIDER_VALUE:-openai}"
     LLM_KEY_MISSING=false
@@ -311,7 +335,7 @@ if [ "$INFRA_ONLY" != true ] && [ "$SEED_ONLY" != true ]; then
         echo "  Two ways forward:"
         echo "    1. Add your key to .env (OPENAI_API_KEY, or AZURE_OPENAI_KEY for LLM_PROVIDER=azure),"
         echo "       then run this again."
-        echo "    2. Set LLM_PROVIDER=replay in .env to play back recorded model responses with no key."
+        echo "    2. Run with --no-key (-NoKey on PowerShell) to play back recorded model responses."
         echo "       Only the recorded demo prompts answer; anything else says it was not recorded."
         echo ""
         exit 1
@@ -340,6 +364,7 @@ fi
 
 if [ "$DEMO" = true ]; then
     DEMO_COMPOSE=(docker compose -f docker-compose.demo.yml)
+    [ "$NO_KEY" = true ] && DEMO_COMPOSE=(docker compose -f docker-compose.demo.yml -f docker-compose.nokey.yml)
     TAG="${IMAGE_TAG:-latest}"
 
     step "Demo mode — pulling prebuilt images (tag: ${TAG})"
@@ -359,6 +384,14 @@ if [ "$DEMO" = true ]; then
     fi
     success "Images pulled"
 
+    # --clean above tears down the from-source project; the demo stack is a
+    # different compose project, so clear it too. Matters most for --no-key:
+    # re-seeding an already-seeded database makes some replay fixtures miss.
+    if [ "$CLEAN" = true ]; then
+        step "Cleaning the demo stack (volumes included)"
+        IMAGE_TAG="$TAG" "${DEMO_COMPOSE[@]}" down -v --remove-orphans
+    fi
+
     step "Starting the stack"
     IMAGE_TAG="$TAG" "${DEMO_COMPOSE[@]}" up -d
 
@@ -367,6 +400,10 @@ if [ "$DEMO" = true ]; then
 
     print_summary
     echo -e "  Sign in as ${BOLD}alice.johnson@gmail.com${NC} / ${BOLD}customer123${NC}"
+    if [ "$NO_KEY" = true ]; then
+        echo -e "  No key: model answers are recorded, so use the suggested prompts in the chat. The tour"
+        echo -e "  account is ${BOLD}tour@example.com${NC} / ${BOLD}tour123${NC} (docs/demo-guide.md, No-key mode)."
+    fi
     echo ""
     exit 0
 fi

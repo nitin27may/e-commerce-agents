@@ -32,8 +32,14 @@
     Pull prebuilt images from GHCR instead of building. The fast path: no local
     build, one command. Override the tag with $env:IMAGE_TAG (default: latest).
 
+.PARAMETER NoKey
+    Play back recorded model responses instead of calling a model, so no API key
+    is needed. Layers docker-compose.nokey.yml (LLM_PROVIDER=replay and the tour
+    settings, hardcoded) and skips the key preflight. Combines with -Demo. Python only.
+
 .EXAMPLE
     ./scripts/dev.ps1
+    ./scripts/dev.ps1 -Demo -NoKey
     ./scripts/dev.ps1 -Clean
     ./scripts/dev.ps1 -Dotnet
     ./scripts/dev.ps1 -Demo
@@ -45,6 +51,7 @@ param(
     [switch]$InfraOnly,
     [switch]$Dotnet,
     [switch]$Demo,
+    [switch]$NoKey,
     # The VARIABLE cannot be $Switch — that is a reserved automatic variable in
     # PowerShell (the switch-statement enumerator), and shadowing it is a real
     # bug waiting. The alias keeps the user-facing flag matching dev.sh's
@@ -119,6 +126,11 @@ function Set-LocalSecrets {
 #   RunProfiles — final `up -d`: agents + frontend, seed excluded because it
 #                 already ran as its own one-shot `run --rm` step
 
+if ($NoKey -and $Dotnet) {
+    Write-Err '-NoKey and -Dotnet cannot be combined (the replay overlay is Python-only)'
+    exit 1
+}
+
 if ($Dotnet) {
     $ComposeArgs        = @('compose', '-f', 'docker-compose.dotnet.yml')
     $AppProfiles        = @('--profile', 'seed', '--profile', 'agents', '--profile', 'mcp', '--profile', 'frontend')
@@ -129,7 +141,8 @@ if ($Dotnet) {
     $OtherStackName     = 'Python'
     $OtherStackFile     = 'docker-compose.yml'
 } else {
-    $ComposeArgs        = @('compose')
+    # Naming any -f turns off compose's default file discovery, so the base file is explicit.
+    $ComposeArgs        = if ($NoKey) { @('compose', '-f', 'docker-compose.yml', '-f', 'docker-compose.nokey.yml') } else { @('compose') }
     $AppProfiles        = @('--profile', 'seed', '--profile', 'agents', '--profile', 'frontend')
     $RunProfiles        = @('--profile', 'agents', '--profile', 'frontend')
     $PgDataVolumeRegex  = '_pgdata$'
@@ -373,7 +386,10 @@ try {
         param([string]$Value)
         return ($Value -ne '') -and ($Value -ne 'sk-your-openai-api-key-here')
     }
-    if (-not $InfraOnly -and -not $SeedOnly) {
+    if ($NoKey) {
+        # docker-compose.nokey.yml hardcodes LLM_PROVIDER=replay, so a key in .env or the shell is irrelevant.
+        Write-Info 'No-key mode: recorded model responses, LLM_PROVIDER=replay (key preflight skipped)'
+    } elseif (-not $InfraOnly -and -not $SeedOnly) {
         $provider = (Get-EnvValue 'LLM_PROVIDER').ToLower()
         if (-not $provider) { $provider = 'openai' }
         $keyMissing = $false
@@ -388,7 +404,7 @@ try {
             Write-Host '  Two ways forward:'
             Write-Host '    1. Add your key to .env (OPENAI_API_KEY, or AZURE_OPENAI_KEY for LLM_PROVIDER=azure),'
             Write-Host '       then run this again.'
-            Write-Host '    2. Set LLM_PROVIDER=replay in .env to play back recorded model responses with no key.'
+            Write-Host '    2. Run with -NoKey to play back recorded model responses with no key.'
             Write-Host '       Only the recorded demo prompts answer; anything else says it was not recorded.'
             Write-Host ''
             exit 1
@@ -416,7 +432,10 @@ try {
         Write-Step "Demo mode — pulling prebuilt images (tag: $tag)"
         Write-Info 'No local build. Images come from ghcr.io/nitin27may/e-commerce-agents'
 
-        & docker compose -f docker-compose.demo.yml pull
+        $demoFiles = @('-f', 'docker-compose.demo.yml')
+        if ($NoKey) { $demoFiles += @('-f', 'docker-compose.nokey.yml') }
+
+        & docker compose @demoFiles pull
         if ($LASTEXITCODE -ne 0) {
             Write-Err 'Could not pull one or more images.'
             Write-Host ''
@@ -431,8 +450,15 @@ try {
         }
         Write-Ok 'Images pulled'
 
+        # -Clean above tears down the from-source project; the demo stack is a different
+        # compose project, so clear it too (re-seeding a seeded DB makes replay fixtures miss).
+        if ($Clean) {
+            Write-Step 'Cleaning the demo stack (volumes included)'
+            & docker compose @demoFiles down -v --remove-orphans
+        }
+
         Write-Step 'Starting the stack'
-        & docker compose -f docker-compose.demo.yml up -d
+        & docker compose @demoFiles up -d
         if ($LASTEXITCODE -ne 0) { Write-Err 'Stack failed to start'; exit 1 }
 
         Wait-ForHttp -Name 'Orchestrator' -Url 'http://localhost:8080/health' -TimeoutSeconds 120
@@ -440,6 +466,10 @@ try {
 
         Show-Summary
         Write-Host '  Sign in as alice.johnson@gmail.com / customer123' -ForegroundColor White
+        if ($NoKey) {
+            Write-Host '  No key: model answers are recorded, so use the suggested prompts in the chat. The tour'
+            Write-Host '  account is tour@example.com / tour123 (docs/demo-guide.md, No-key mode).'
+        }
         Write-Host ''
         exit 0
     }

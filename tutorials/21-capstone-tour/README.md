@@ -20,8 +20,9 @@ stone required.
 
 - Completed [Chapter 00 — Setup](../00-setup/) and ideally the chapters your interests touch —
   this tour assumes the vocabulary chapters 01–20 built, it doesn't re-teach it.
-- Docker running, and a `.env` at the repo root with one LLM provider configured (same as every
-  other chapter — see Chapter 00 for the full variable reference).
+- Docker running. For live answers, a `.env` at the repo root with one LLM provider configured
+  (same as every other chapter — see Chapter 00 for the full variable reference). For the guided
+  tour with no key at all, [`run.sh`](./run.sh) below needs nothing else.
 - If you haven't read [`docs/concepts/`](../../docs/concepts/) yet, [`docs/concepts/06-orchestration-patterns.md`](../../docs/concepts/06-orchestration-patterns.md)
   is the conceptual companion to this chapter's mode table — read that first if "handoff vs.
   workflow vs. group-chat" still feels fuzzy.
@@ -124,6 +125,10 @@ yourself instead of trusting a claimed number.
 ./scripts/dev.sh                     # PowerShell: ./scripts/dev.ps1
 open http://localhost:3000
 ```
+
+No key? `./tutorials/21-capstone-tour/run.sh` is `./scripts/dev.sh --demo --no-key`: it pulls the
+prebuilt images and plays back recorded model responses, so the suggested prompts in the chat answer
+and anything else says it was not recorded. Sign in as `tour@example.com` / `tour123`.
 
 In the chat UI: pick **Compare** from the mode switcher, enter a prompt, select 2 or more modes,
 and run it. `POST /api/orchestration/compare` (`agents/python/orchestrator/routes/orchestration.py:88`)
