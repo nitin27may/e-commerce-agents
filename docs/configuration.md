@@ -380,6 +380,41 @@ documented but **has not been run**: it needs a reachable Ollama, and the build 
 none. What is tested is everything around it — client construction for `openai_compatible`, the
 width checks, the reset script and the startup check against a real Postgres.
 
+## Runtime knobs for managed hosting
+
+Added for the Azure Container Apps deployment (#89), harmless anywhere else; every default is the
+pre-existing behaviour.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `LLM_TEMPERATURE` | `0.2` | Sampling temperature on every agent run. **Set but empty omits the option entirely** on both stacks: gpt-5.x models reject `temperature` with a 400. Unset is not empty. A per-agent `model: {temperature}` block still applies to that agent |
+| `DB_POOL_MIN_SIZE`, `DB_POOL_MAX_SIZE` | Python `5` / `20`; .NET unset (Npgsql `0` / `100`) | Connection pool bounds per process. Every service holds its own pool, so six services plus the worker multiply them against Postgres `max_connections`; the Azure demo runs `1` / `4`. Min above max, or max below 1, fails at startup on both stacks |
+| `DATABASE_URL` `?sslmode=` | unset | .NET now honours `disable`, `allow`, `prefer`, `require`, `verify-ca` and `verify-full` (mapped to Npgsql's `SslMode`); an unknown value fails at startup. Python's asyncpg always did. Azure Database for PostgreSQL requires TLS, so use `?sslmode=require` |
+
+Gotchas:
+
+- In Compose, `${LLM_TEMPERATURE-0.2}` (no colon) is deliberate: `${VAR:-0.2}` would turn an empty
+  value back into `0.2` and the omission could never be requested.
+- The replay key excludes sampling parameters, so omitting the temperature changes no fixture.
+- The `gpt-5.1` and `gpt-5.1-mini` rows in `shared/cost.py` and `CostEstimator.cs` are estimates,
+  not confirmed list prices, and `gpt-5.1-mini` is a plausible deployment name rather than a
+  confirmed model id. Until checked against a real deployment, budgets on those models are rough.
+
+## Azure OpenAI authentication (`AZURE_OPENAI_AUTH`)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `AZURE_OPENAI_AUTH` | `key` | `key` sends `AZURE_OPENAI_KEY`. `identity` sends a Microsoft Entra bearer token and no key; the key is not required and never sent. Anything else fails at startup on both stacks |
+| `AZURE_CLIENT_ID` | empty | Client id of a user-assigned managed identity. Empty uses `DefaultAzureCredential` (managed identity on Azure, `az login` or environment credentials locally) |
+
+Identity mode covers chat and, with `EMBEDDING_PROVIDER=azure`, embeddings (an explicit
+`EMBEDDING_API_KEY` still wins for embeddings). The identity needs the `Cognitive Services OpenAI User`
+role on the Azure OpenAI resource. Python uses `azure-identity`'s sync credentials
+(`shared/azure_auth.py`); .NET uses `Azure.Identity` (`AzureIdentity.cs`). **The default stays `key`**: identity
+mode has been tested against a fake credential only, never a live Azure resource, and is flipped only after a
+verified Azure run. `LLM_PROVIDER=replay` and `openai` ignore both variables; recording through
+`REPLAY_RECORD_PROVIDER=azure` still needs the key.
+
 ## Per-run cost ceiling (`COST_BUDGET_*`)
 
 | Variable | Default | Meaning |
@@ -413,7 +448,7 @@ through; the rest are read from `.env` by host-run Python.
 | `MERCHANT_OPS_RUN_HOUR_UTC` | `6` | UTC hour of that daily run |
 | `AUTONOMY_ENABLED` | `false` | The worker acts on events (`order.shipment_delayed`): inside an autonomy budget it issues a goodwill credit alone, outside it opens an approval. Off, a due event row is consumed and nothing happens. Past decisions stay listed and reversible. No model is called either way. See [Event autonomy](event-autonomy.md) |
 | `AUTONOMY_SIMULATOR_ENABLED` | `false` | Also needs `AUTONOMY_ENABLED`. Enables `POST /api/admin/events/simulate` (admin only); otherwise it is a 404. There is no production event producer, so with this off no event reaches the engine |
-| `HISTORY_COMPACTION_KEEP_LAST_GROUPS` | `0` | `0` is off. `N > 0` trims the rehydrated conversation history (specialist host and orchestrator `RunContext.history`) to the last N message groups, a group being a user turn with its assistant/tool messages, kept or dropped whole. Python only; see [Architecture](architecture.md) and parity row 43 |
+| `HISTORY_COMPACTION_KEEP_LAST_GROUPS` | `0` | `0` is off. `N > 0` trims the rehydrated conversation history (specialist host and orchestrator `RunContext.history`) to the last N message groups, a group being a user turn with its assistant/tool messages, kept or dropped whole. Both stacks; see [Architecture](architecture.md) and parity row 43 |
 | `AUTONOMY_POLICY_PATH` | *(empty)* | Use this autonomy policy file instead of `config/policies/autonomy.yaml` (tests, demos with small caps). The budgets themselves are the file, not environment |
 
 The merchant hard limits are a file, not environment: `agents/python/config/policies/merchant_limits.yaml` (`margin_floor_pct`, `max_change_pct_per_day`, `block_during_active_promotion`, `max_lines_per_batch`, and the restock limits `max_restock_quantity` and `max_restock_order_value`, both placeholders to set for your catalogue). See [Approvals](approvals.md).

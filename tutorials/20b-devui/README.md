@@ -2,11 +2,19 @@
 
 > **Post:** [https://nitinksingh.com/posts/maf-v1-20b-devui/](https://nitinksingh.com/posts/maf-v1-20b-devui/) — concept, diagrams, walkthrough.
 
-DevUI is MAF's dev-only browser harness: type a prompt, watch tool calls fire, inspect OTel spans in real time. Directory discovery or programmatic registration, OpenAI-compatible Responses API on localhost. **Python-only today, C# coming soon.**
+DevUI is MAF's browser dashboard for local development: type a prompt, watch the tool calls, and inspect OpenTelemetry (OTel) trace spans as the agent runs. **This chapter is Python only.** DevUI for .NET exists only as a prerelease package; [`dotnet/README.md`](./dotnet/README.md) explains why this chapter does not use it.
+
+**You will learn to:**
+
+- Register an agent with DevUI using one `serve()` call
+- Drive the agent from a browser and watch its tool calls and trace spans
+- Decide when DevUI is the right tool, and why it must stay on your own machine
 
 ## Why this chapter
 
-Every prior chapter drives an agent from a script or a test — you never actually *see* it think. That's fine for learning one concept at a time, but it's a bad way to debug a multi-tool agent or a workflow graph: which tool fired, in what order, with what arguments, and what did the LLM see in response? DevUI answers that without you writing a single line of UI code. Point it at an agent (or a whole workflow), open a browser tab, type a prompt, and watch the tool calls and OpenTelemetry spans stream in live. It's the fastest way to iterate on prompts, tools, and context providers before wiring an agent into the real Next.js chat UI — and it's the tool you reach for when a specialist agent in the capstone (product discovery, orders, pricing, reviews, inventory, support) misbehaves and you want to poke at it in isolation.
+Every earlier chapter drives an agent from a script or a test, so you never *see* it work. That is fine for learning one concept at a time. It is a poor way to debug an agent with several tools or a workflow graph: which tool fired, in what order, with what arguments, and what did the LLM see in response?
+
+DevUI answers that without any UI code from you. Point it at an agent or a workflow, open a browser tab, type a prompt, and watch the tool calls and OTel spans arrive live. Use it to iterate on prompts and tools before you wire an agent into a real chat UI. Use it too when one specialist agent in the capstone (the full application in this repo) misbehaves and you want to test it on its own.
 
 ## Prerequisites
 
@@ -18,13 +26,19 @@ Every prior chapter drives an agent from a script or a test — you never actual
 | **OpenAI** | `OPENAI_API_KEY` | `LLM_MODEL` (default `gpt-4.1`) |
 | **Azure OpenAI** | `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_KEY`, `AZURE_OPENAI_DEPLOYMENT` | `AZURE_OPENAI_API_VERSION` (default `2024-10-21`) |
 
-This is the one Python chapter that does **not** follow the no-key rule: it is a long-running dev server that takes arbitrary prompts from a browser, and no recorded fixture can answer those, so `main.py` still needs a live key to start. It is on the skip-list in `scripts/run_tutorials_keyless.py` for that reason; its smoke tests skip when no credentials are present (see Gotchas).
+This is the one Python chapter that needs a key. It is a long-running dev server that takes arbitrary prompts from a browser, and no recorded response can answer those, so `main.py` needs a live key to start. Its smoke tests skip when no credentials are present (see Gotchas).
 
 ## The concept
 
-DevUI ships as its own package (`agent-framework-devui`, pre-release) and exposes a single entry point: `serve(entities=[...])`. Hand it a list of MAF `Agent` or `Workflow` objects and it spins up a local web server that does three things at once — serves a browser dashboard for typing prompts and watching structured tool-call/response traces, exposes an OpenAI-compatible Responses API on the same port (so any HTTP client, including a test, can drive it the same way ChatGPT-style tooling would), and streams OpenTelemetry spans into a live tracing panel as the agent runs. There's a second mode — directory discovery — where DevUI scans a folder of agent modules and registers them automatically instead of you calling `serve()` yourself; this chapter uses the simpler programmatic form since it's a single demo agent.
+DevUI ships as its own pre-release package, `agent-framework-devui`, with a single entry point: `serve(entities=[...])`. Hand it a list of MAF `Agent` or `Workflow` objects and it starts a local web server that does three things:
 
-The key thing DevUI is *not*: it's not a production surface. It has no auth, no persistence beyond the process lifetime, and no multi-tenant isolation — it's explicitly a local dev harness, the interactive counterpart to the passive Aspire Dashboard telemetry from [Chapter 07 — Observability](../07-observability-otel/) (Aspire shows you what already happened across every service; DevUI lets you drive one agent and watch it happen).
+- It serves a browser dashboard for typing prompts and watching structured tool-call and response traces.
+- It exposes an OpenAI-compatible Responses API on the same port, so any HTTP client, including a test, can drive it.
+- It streams OTel spans into a live tracing panel as the agent runs.
+
+DevUI has a second mode, directory discovery, where it scans a folder of agent modules and registers them for you. This chapter calls `serve()` directly, because it has a single demo agent.
+
+DevUI is not for production. It has no auth, no persistence beyond the life of the process, and no isolation between tenants. It is the interactive counterpart to the Aspire Dashboard from [Chapter 07 — Observability](../07-observability-otel/): Aspire shows what already happened across every service, and DevUI lets you drive one agent and watch it happen.
 
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': {
@@ -65,23 +79,22 @@ flowchart LR
   class otel infra
 ```
 
-`serve()` is the only line of glue code between an ordinary MAF `Agent` and a fully interactive browser dashboard — nothing about `build_agent()` itself changes to make it DevUI-compatible.
+`serve()` is the only code between an ordinary MAF `Agent` and the dashboard. Nothing in `build_agent()` changes to make it work with DevUI.
 
 ## Python
 
-Source: [`python/main.py`](./python/main.py).
+Source: [`python/main.py`](./python/main.py). `main.py` needs a key in the repo-root `.env`, and there is no keyless run for this chapter. From the repo root:
 
 ```bash
 cd tutorials/20b-devui/python
 uv sync
 uv run python main.py
 # → DevUI opens at http://localhost:8090 (auto-opens browser)
-uv run pytest -v
 ```
 
-This chapter is the one exception in the series to the shared `tutorials/` uv project — it ships its own `pyproject.toml` (pinning `agent-framework-devui`, a separate pre-release package) and runs with a plain `cd` + `uv sync` instead of `uv sync --project tutorials`.
+Unlike the other chapters, this one does not use the shared `tutorials/` uv project. It has its own `pyproject.toml`, which declares the separate pre-release package `agent-framework-devui`. That is why you `cd` into the chapter and run a plain `uv sync`.
 
-The agent is built exactly like any other chapter's agent — no special DevUI wiring on the `Agent` itself:
+The agent is built like any other chapter's agent, with no DevUI wiring on the `Agent` itself:
 
 ```python
 def build_agent() -> Agent:
@@ -108,46 +121,44 @@ if __name__ == "__main__":
     )
 ```
 
-`entities` accepts a list, so a real dashboard session can register several agents (or a `Workflow`) side by side and switch between them in the browser — this chapter registers just one to keep the walkthrough focused. `instrumentation_enabled=True` is what turns on the live OTel tracing tab; without it you still get the chat panel but no span stream.
+`entities` accepts a list, so you can register several agents or a `Workflow` side by side and switch between them in the browser. This chapter registers one. `instrumentation_enabled=True` turns on the live OTel tracing tab. Without it you still get the chat panel, but no spans.
 
 ## .NET
 
-DevUI C# is documented as "coming soon" by Microsoft — see [`dotnet/README.md`](./dotnet/README.md) for the tracking note and the upstream [DevUI docs](https://learn.microsoft.com/en-us/agent-framework/devui/). There is no runnable `dotnet/` code in this chapter today, only that stub; the Python example is the only executable walkthrough until Microsoft ships `Microsoft.Agents.AI.DevUI`. Because DevUI speaks the vendor-neutral OpenAI Responses API, a .NET `HttpClient` can already drive the Python-hosted server directly if you want to exercise the integration from .NET code today.
+This chapter is Python only, and `dotnet/` holds no runnable code. A `Microsoft.Agents.AI.DevUI` package exists on NuGet, but every release is a prerelease, and the other .NET chapters are pinned to the stable `Microsoft.Agents.AI` 1.28.0. [`dotnet/README.md`](./dotnet/README.md) gives the full reasoning. See also the upstream [DevUI docs](https://learn.microsoft.com/en-us/agent-framework/devui/).
+
+DevUI speaks the OpenAI Responses API, so a .NET `HttpClient` can drive the Python-hosted server if you want to exercise it from .NET code.
 
 ## Side-by-side differences
 
 | Aspect | Python | .NET |
 |--------|--------|------|
-| Package | `agent-framework-devui` (pre-release) | Not shipped — "coming soon" per Microsoft docs |
+| Package | `agent-framework-devui` (pre-release) | `Microsoft.Agents.AI.DevUI`, prerelease only; not used in this chapter |
 | Entry point | `serve(entities=[...])` | N/A |
 | Registration | Programmatic (this chapter) or directory discovery | N/A |
 | Transport | OpenAI-compatible Responses API on `localhost:8090` | Same API, reachable from .NET via `HttpClient` against the Python server |
 
 ## Gotchas
 
-- **Dev-only — never ship it.** DevUI has no auth and no tenant isolation. It's meant to run on a developer's laptop against a local `.env`, not to be exposed on a shared or public host.
-- **Port conflicts.** `serve(..., port=8090)` is hardcoded in this chapter's `main.py`. If something else on your machine already owns 8090, change the `port=` argument — DevUI doesn't auto-pick a free port.
-- **Separate pre-release package, separate lockfile.** `agent-framework-devui>=0.1.0b0` is its own dependency in [`python/pyproject.toml`](./python/pyproject.toml), not bundled with `agent-framework` core — an `uv sync --project tutorials` from the repo's shared project won't pull it in, which is exactly why this chapter keeps its own `pyproject.toml`/`uv.lock` instead of joining the shared one.
-- **Tests skip without credentials.** `python/tests/test_main.py` builds a real `Agent` via `build_agent()`, which requires a working chat client — the whole module is marked `pytest.mark.skipif` when no `OPENAI_API_KEY` / Azure trio is present, so a green run locally doesn't guarantee credentials are configured in CI.
+- **Anyone who can reach the port can use your agent.** DevUI has no auth and no tenant isolation. Run it on your own machine against a local `.env`, and never expose it on a shared or public host.
+- **The server fails to start because port 8090 is taken.** `serve(..., port=8090)` is hardcoded in this chapter's `main.py`, and DevUI does not pick a free port for you. Change the `port=` argument.
+- **The DevUI version you get depends on where you run from.** DevUI is a separate pre-release package, not part of `agent-framework` core. This chapter's own [`python/pyproject.toml`](./python/pyproject.toml) asks for the range `agent-framework-devui>=0.1.0b0`, while the shared `tutorials/pyproject.toml` pins `==1.0.0b261112`. If the dashboard differs from what you read here, check which version is installed.
+- **The tests pass but ran nothing.** `python/tests/test_main.py` builds a real `Agent` with `build_agent()`, which needs a working chat client. The whole module is skipped when neither `OPENAI_API_KEY` nor the Azure variables are set. A green run does not prove that credentials are configured.
 
 ## Tests
 
-`python/tests/test_main.py` (3 tests) are smoke tests, not integration tests against a live DevUI server — the module docstring is explicit that launching the FastAPI process inside pytest is flaky and out of scope. They assert:
-
-1. **Happy path / imports** — `agent_framework.devui.serve` and this chapter's `main` module both import cleanly, catching drift in the pre-release DevUI package.
-2. **Type assertion** — `build_agent()` returns an actual MAF `Agent` instance.
-3. **Concept assertion** — the agent is registered under the exact name `"devui-demo"`, which is what DevUI uses as the entity id in its dashboard URLs and metadata; a rename here would silently break the chapter's own instructions.
-
 ```bash
-cd tutorials/20b-devui/python
+cd tutorials/20b-devui/python   # from the repo root
 uv run pytest -v
 ```
 
+The tests in `python/tests/test_main.py` need a key and skip without one. They are smoke tests that do not start a DevUI server. They check that `agent_framework.devui.serve` and this chapter's `main` module import, that `build_agent()` returns a MAF `Agent`, and that the agent is named `"devui-demo"`. DevUI uses that name as the entity id in its dashboard URLs.
+
 ## How this shows up in the capstone
 
-DevUI is **not** wired into the production capstone app — it's a local dev tool, not a runtime dependency. Nothing under `agents/python/` or `orchestrator/` imports `agent_framework.devui`; the only references to DevUI in the whole repo are this chapter itself and the linter that checks it (`scripts/check_tutorial_readmes.py`).
+The capstone ships a launcher, [`scripts/devui.py`](../../scripts/devui.py), that registers the application's five specialist agents and two workflows with DevUI, so a developer can test one specialist without the orchestrator in front of it. It is a development tool only: no user-facing part of the application depends on DevUI. [`docs/devui.md`](../../docs/devui.md) has the command and the setup it needs.
 
-What DevUI *is* useful for against the real app: exercising one of the six production specialist agents in isolation, the same way this chapter's `serve(entities=[build_agent()])` exercises the demo agent. This chapter's own registration pattern in [`python/main.py`](./python/main.py) is the reference — there's no separate documented DevUI-plus-capstone example anywhere in `docs/` or `CLAUDE.md`, so applying it means importing a real factory instead of the demo one. For example, Product Discovery's factory — `agents/python/product_discovery/agent.py:54`:
+Where this chapter's [`python/main.py`](./python/main.py) registers a demo agent, the launcher builds its list from the application's real agent factories. Take Product Discovery's factory at `agents/python/product_discovery/agent.py:53`:
 
 ```python
 def create_product_discovery_agent() -> Agent:
@@ -157,7 +168,7 @@ def create_product_discovery_agent() -> Agent:
     """
 ```
 
-whose `return Agent(...)` at `agents/python/product_discovery/agent.py:86` produces an ordinary MAF `Agent` — the same type this chapter's `build_agent()` returns. Swapping `entities=[build_agent()]` for `entities=[create_product_discovery_agent()]` would register the real product-discovery agent (semantic search, price history, stock checks and all) with DevUI's dashboard for local debugging, with no changes to the agent factory itself.
+Its `return Agent(...)` at `agents/python/product_discovery/agent.py:85` produces an ordinary MAF `Agent`, the same type this chapter's `build_agent()` returns. That is why DevUI can host the real product-discovery agent, with its semantic search, price history and stock checks, without any change to the factory. The launcher adds what the real tools need around it: a database connection pool and a user identity to run as.
 
 ## What's next
 

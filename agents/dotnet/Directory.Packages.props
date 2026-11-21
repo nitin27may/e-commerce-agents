@@ -92,4 +92,14 @@
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.17.0" />
     <PackageVersion Include="coverlet.collector" Version="10.1.1" />
   </ItemGroup>
+  <ItemGroup Label="Aspire AppHost (alternative to docker compose; docs/deployment.md)">
+    <!-- Aspire 13.6.5, the last 13.x release. 17.0.0 is newer on nuget.org (verified 2026-11-21) but obsoletes
+         Aspire.AppHost.Sdk and the ProjectReference resource model (ASPIRE012); see docs/deployment.md. The dashboard image pinned in
+         the compose files stays on its own tag: the AppHost ships its own dashboard. -->
+    <PackageVersion Include="Aspire.Hosting.PostgreSQL" Version="13.6.5" />
+    <PackageVersion Include="Aspire.Hosting.Redis" Version="13.6.5" />
+    <PackageVersion Include="Aspire.Hosting.Python" Version="13.6.5" />
+    <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.6.5" />
+    <PackageVersion Include="Aspire.Hosting.Testing" Version="13.6.5" />
+  </ItemGroup>
 </Project>

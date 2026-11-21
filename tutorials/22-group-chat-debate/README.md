@@ -1,41 +1,45 @@
 # Chapter 22 — Group-Chat Debate (Round-Table Orchestration)
 
-A fourth MAF workflow pattern for this platform: a **round-table** where several
-agents debate a question over a shared transcript, then a moderator synthesizes a
-verdict. It complements the existing workflows:
+Run a **round-table**: several panelists debate a question over a shared transcript,
+then a moderator synthesizes a verdict. In the capstone (the full application in this
+repo) this is `group-chat`, one of the five orchestration modes it runs. The others are
+`tool`, `handoff`, `workflow:pre-purchase` and `workflow:return-replace`. The code is
+`workflows/group_chat.py`, and this chapter runs it directly.
 
-- Concurrent fan-out/fan-in — `workflows/pre_purchase.py` (Chapter 13)
-- Sequential + human-in-the-loop — `workflows/return_replace.py` (Chapter 17)
-- **Round-table group chat — `workflows/group_chat.py` (this chapter)**
+**You will learn to:**
+
+- Build a round-table workflow from an ordered list of panelists and a moderator
+- Give each panelist the transcript so far, so it can respond to earlier turns
+- Run and test the debate with plain functions in place of model calls
 
 ## Why this chapter
 
-[Chapter 15 — Group Chat Orchestration](../15-group-chat-orchestration/) already covers the
-cooperative shape of group chat: a manager (round-robin or agent-driven) picks who speaks
-next, and the roster — Writer → Critic → Editor — iteratively *refines a single artifact*
-across rounds. Every participant is working toward the same output, and the manager's job is
-to decide whose turn it is, with a hard `max_rounds` cap because the speaker-selection loop
-could otherwise run forever.
+[Chapter 15 — Group Chat Orchestration](../15-group-chat-orchestration/) covers the
+cooperative shape of group chat. A manager, round-robin or agent-driven, picks who speaks
+next, and the roster (Writer → Critic → Editor) *refines a single artifact* across rounds.
+Every participant works toward the same output. The manager decides whose turn it is, with
+a hard `max_rounds` cap because the speaker-selection loop could otherwise run forever.
 
-This chapter is a different variant of the same underlying primitive (a shared transcript
-threaded through named participants): a **debate**, not a refinement pipeline. Each panelist
-holds a fixed, named perspective for the whole run — a value/pricing voice, a quality/reviews
-voice — and never revises anyone else's turn. They see the running transcript so they can
-build on or push back against what's already been said, but their *position* doesn't change;
-only their argument accumulates context. There's no manager selecting a speaker either: the
-order is fixed at construction time (the order of the `panelists` list), so there's nothing
-to loop or cap. The moderator's job is not to smooth one artifact into its next draft — it's
-to weigh opposed-or-complementary takes that were never reconciled mid-conversation and render
-a single verdict from the tension between them. That's the real difference from Chapter 15:
-refinement of one output vs. synthesis across fixed, independent positions.
+This chapter uses the same primitive, a shared transcript passed through named
+participants, for a **debate** instead of a refinement pipeline. Each panelist holds a
+fixed, named perspective for the whole run (a value and pricing voice, a quality and
+reviews voice) and never revises anyone else's turn. Panelists see the running transcript,
+so they can build on or push back against what has been said. Their *position* does not
+change; only their argument gains context.
+
+No manager selects a speaker either. The order is fixed at construction time by the order
+of the `panelists` list, so there is nothing to loop or cap. The moderator does not polish
+one artifact into its next draft. It weighs positions that were never reconciled during
+the conversation and gives a single verdict. So Chapter 15 refines one output, and this
+chapter synthesizes across fixed, independent positions.
 
 ## When to use it
 
 Use a round-table when several perspectives must *react to each other* before a
-decision — e.g. "is this product worth buying?" weighed by a value/pricing voice
-and a quality/reviews voice. Unlike the concurrent pattern (independent probes
-merged once), each panelist sees the running transcript and can build on or
-counter prior turns.
+decision. An example is "is this product worth buying?", weighed by a value and pricing
+voice and a quality and reviews voice. In the concurrent pattern, independent checks run
+separately and are merged once. Here each panelist sees the running transcript and can
+build on or counter earlier turns.
 
 ```mermaid
 flowchart LR
@@ -45,9 +49,9 @@ flowchart LR
 
 ## How it works
 
-Each panelist is an `Executor` that appends one turn to a shared `GroupChatState`
-transcript and forwards it; the moderator is the terminal executor that yields the
-synthesized verdict.
+Each panelist is an `Executor` (a node in the workflow graph) that appends one turn to
+a shared `GroupChatState` transcript and forwards it. The moderator is the last executor
+and yields the synthesized verdict. In outline:
 
 ```python
 from agent_framework import Executor, handler
@@ -66,12 +70,35 @@ is `WorkflowContext[None, State]` and calls `ctx.yield_output(state)`.
 
 ## Prerequisites
 
-- No chat client and no key: `main.py` imports none. Its panelists and synthesizer are plain callables, so the run below makes no model call.
-- It imports the production `workflows.group_chat` module from `agents/python`, which is why the run command starts there.
+- No API key needed. `main.py` imports no chat client. Its panelists and synthesizer are plain callables, so the run below makes no model call.
+- `main.py` imports the application's `workflows.group_chat` module from `agents/python`, which is why the run command sets `PYTHONPATH`.
 
 ## Run it
 
-Panelist behavior is a plain `Responder` callable, so you can run it without an LLM:
+From the repo root:
+
+```bash
+PYTHONPATH=agents/python uv run --project tutorials python tutorials/22-group-chat-debate/python/main.py
+```
+
+You should see:
+
+```
+Transcript:
+     value: Strong price for the feature set; frequent discounts.
+   quality: Considering 1 prior point(s): reviews show excellent build quality.
+
+Moderator verdict:
+  Verdict on 'Is the Sony WH-1000XM5 worth it?': both value and quality perspectives are positive across 2 turns — recommended.
+```
+
+The `quality` line reports `1 prior point(s)`: it saw the `value` turn before it spoke.
+`workflows/group_chat.py` is the application's own module, not a copy, and it lives in
+the `agents/python` package. `PYTHONPATH=agents/python` is what lets the demo import it
+as `workflows.group_chat`.
+
+Panelist behavior is a plain `Responder` callable, so the same workflow runs without an
+LLM in a few lines:
 
 ```python
 import asyncio
@@ -87,36 +114,25 @@ for turn in state.transcript:
     print(f"  {turn['speaker']}: {turn['text']}")
 ```
 
-`workflows/group_chat.py` lives inside the `agents/python` package (it's the real
-production module, not a copy), so the runnable demo script imports it as
-`workflows.group_chat` and needs `agents/python` on the path:
-
-```bash
-cd agents/python
-uv run python ../../tutorials/22-group-chat-debate/python/main.py
-```
-
-The chapter's own tests put `agents/python` on `sys.path` themselves, so they collect
-under the `tutorials/` project like every other chapter:
+The chapter's tests put `agents/python` on `sys.path` themselves, so they run under
+the `tutorials/` project like every other chapter, also from the repo root:
 
 ```bash
 uv run --project tutorials pytest tutorials/22-group-chat-debate/python/tests -v
 ```
 
-Those tests are separate from `agents/python/tests/test_workflow_group_chat.py`, and
-the distinction is worth being clear about. That file tests the **module**. This
-chapter previously had none of its own on the reasoning that it was therefore covered
-— it was not. The demo's own panelists, its synthesizer, and the claim the chapter is
-built on (a later panelist sees earlier turns) were untested, and that claim is
-invisible from the demo's output: two panelists who happen not to reference each other
-produce the same transcript whether the state was shared or not.
+They cover this chapter's demo: its panelists, its synthesizer, and the claim that a
+later panelist sees earlier turns. `agents/python/tests/test_workflow_group_chat.py`
+is a separate file that tests the **module**. The shared-transcript claim needs its own
+test, because two panelists that never mention each other produce the same transcript
+whether or not the state is shared.
 
-In production, wire each panelist to a specialist agent (e.g. `pricing-promotions`
-and `review-sentiment`) by passing an agent-backed responder.
+In the application, each panelist is backed by a model: you pass a responder that calls
+an agent in place of the plain function.
 
 ## .NET
 
-Source: [`dotnet/Program.cs`](./dotnet/Program.cs).
+Source: [`dotnet/Program.cs`](./dotnet/Program.cs). No key is needed. From the repo root:
 
 ```bash
 cd tutorials/22-group-chat-debate/dotnet
@@ -124,15 +140,15 @@ dotnet run
 dotnet test tests/GroupChatDebate.Tests.csproj
 ```
 
-**This is the one chapter where the two language sides differ on purpose.** Python
-imports the production module above and tours real shipped code. There is no
-equivalent standalone .NET type — production's round-table lives inside
+**The two language sides of this chapter differ on purpose.** Python imports the
+application's module and runs shipped code. .NET has no equivalent standalone type: the
+application's .NET round-table lives inside
 `ECommerceAgents.Orchestrator.Modes.GroupChatMode` as an LLM-backed sequential loop,
-not a reusable workflow class — so the .NET side reimplements the same shape
-standalone, keeping the chapter self-contained like every other one in the series.
+not a reusable workflow class. So the .NET side of this chapter reimplements the same
+shape as a standalone program.
 
-The behaviour matches exactly. What differs is that one chapter is a tour and the
-other is a faithful model; worth knowing before treating them as interchangeable.
+The behaviour matches. Keep in mind that the Python side runs the application's code
+and the .NET side is a model of it.
 
 ```csharp
 public sealed record GroupChatWorkflow(
@@ -140,67 +156,64 @@ public sealed record GroupChatWorkflow(
     Func<GroupChatState, string>? Synthesizer = null);
 ```
 
-`GroupChatState` is a **class, not a record**, and deliberately so: it is passed by
-reference from executor to executor, and that shared mutable instance *is* the
-transcript. A record with value semantics would hand each panelist a private copy and
-quietly turn the round-table into a fan-out — every panelist would see an empty
-transcript, every take would become a monologue, and nothing would error.
+`GroupChatState` is a **class, not a record**, on purpose. It is passed by reference
+from executor to executor, and that shared mutable instance *is* the transcript. A
+record with value semantics would hand each panelist a private copy and turn the
+round-table into a fan-out (independent steps that never see each other). Every
+panelist would see an empty transcript, and nothing would raise an error.
 
-`Responder` returns `ValueTask<string>` so a real agent-backed panelist fits without
-changing the signature, which is the path production takes.
+`Responder` returns `ValueTask<string>`, so an agent-backed panelist fits without a
+change to the signature.
 
 The tests on both sides hand panelists a responder that *reports what it could see*,
-because that is the only way to distinguish a round-table from a fan-out.
+because that is the only way to tell a round-table from a fan-out.
 
 ## Gotchas
 
-- **There's no round cap because there's no loop.** Chapter 15's manager-driven group
-  chat needs `max_rounds` to stop a selector that might never terminate. This workflow
-  has nothing to cap: `GroupChatWorkflow._build()` (`agents/python/workflows/group_chat.py:111-120`)
-  wires a straight chain — `panelist[0] -> panelist[1] -> ... -> moderator` — from the
-  order of the `panelists` list at construction time. There's no dynamic speaker
-  selection, so the debate is exactly `len(panelists)` turns long, always; "more rounds"
-  means adding another `(name, responder)` pair, not raising a limit.
-- **A panelist that throws doesn't fail the run — it degrades silently into the
-  transcript.** `_PanelistExecutor.run()` (`agents/python/workflows/group_chat.py:69-78`)
-  wraps the responder call in `try/except`; on failure it logs
-  `group_chat.panelist_failed` and appends `"({name} could not respond: {exc})"` as that
-  panelist's turn, then lets the chain continue so the moderator still synthesizes a
-  verdict. That's good resilience for a live demo, but it means a broken panelist (bad
-  prompt, LLM timeout, whatever) won't surface as an error to the caller — you have to
-  go look at the logs or notice the placeholder text in the transcript. Covered by
-  `test_panelist_failure_is_contained` (`agents/python/tests/test_workflow_group_chat.py:41-48`).
-- **`Responder` accepts sync or async, and the executor only awaits when it has to.**
-  `_PanelistExecutor.run()` checks `inspect.isawaitable(result)` before awaiting
-  (`agents/python/workflows/group_chat.py:71-72`). This was widened specifically so an
-  agent-backed panelist (an `async def` closure calling `agent.run()`) could be dropped
-  in without teaching `workflows/group_chat.py` anything about MAF `Agent` objects — see
-  `orchestrator/modes/group_chat_mode.py`'s module docstring. If that awaitable check
-  were missing, an async responder's raw coroutine object would get threaded straight
-  into the transcript instead of its resolved text; `test_async_responder_is_awaited`
-  (`agents/python/tests/test_workflow_group_chat.py:61-76`) is a regression test for
-  exactly that.
+- **You look for a `max_rounds` setting and there is none.** Chapter 15's
+  manager-driven group chat needs a cap to stop a selector that might never terminate.
+  This workflow has no loop to cap. `GroupChatWorkflow._build()`
+  (`agents/python/workflows/group_chat.py:117-126`) wires a straight chain,
+  `panelist[0] -> panelist[1] -> ... -> moderator`, from the order of the `panelists`
+  list. The debate is always exactly `len(panelists)` turns long. To get more turns,
+  add another `(name, responder)` pair.
+- **A panelist's turn reads "(name could not respond: ...)" and the run still
+  succeeds.** `_PanelistExecutor.run()` (`agents/python/workflows/group_chat.py:69-84`)
+  wraps the responder call in `try/except`. On failure it logs
+  `group_chat.panelist_failed`, appends `"({name} could not respond: {exc})"` as that
+  panelist's turn, and lets the chain continue, so the moderator still gives a verdict.
+  A broken panelist (a bad prompt, an LLM timeout) therefore raises no error to the
+  caller. Check the logs or look for the placeholder text. The one exception is a
+  missing replay recording, which is re-raised. See `test_panelist_failure_is_contained`
+  (`agents/python/tests/test_workflow_group_chat.py:41-48`).
+- **A coroutine object shows up in the transcript instead of text.** That is what an
+  `async` responder would produce if nothing awaited it. `Responder` accepts sync or
+  async callables, and `_PanelistExecutor.run()` checks `inspect.isawaitable(result)`
+  before awaiting (`agents/python/workflows/group_chat.py:72-73`). An agent-backed
+  panelist, an `async def` closure that calls `agent.run()`, therefore fits without
+  `workflows/group_chat.py` knowing anything about MAF `Agent` objects.
+  `test_async_responder_is_awaited`
+  (`agents/python/tests/test_workflow_group_chat.py:61-76`) guards this.
 
 ## How this shows up in the capstone
 
-Unlike most chapters, this one doesn't have a separate toy implementation to compare
-against production code — it exercises the production module directly. Both
+In the capstone, a user picks **group-chat** in the chat UI's mode switcher and gets a
+verdict that a value panelist and a quality panelist have argued over first. The class
+behind it is the one this chapter runs: `GroupChatWorkflow`
+(`agents/python/workflows/group_chat.py:105`). Both
 `tutorials/22-group-chat-debate/python/main.py` and
-`agents/python/tests/test_workflow_group_chat.py` import `GroupChatWorkflow` straight
-from `workflows.group_chat` (`agents/python/workflows/group_chat.py:99`), the same class
-the live app uses. There's no parallel copy of this pattern living under `tutorials/`.
+`agents/python/tests/test_workflow_group_chat.py` import it from
+`workflows.group_chat`. No second copy of the pattern lives under `tutorials/`.
 
-The production caller is `agents/python/orchestrator/modes/group_chat_mode.py:78`'s
-`GroupChatMode`, registered in the orchestrator as the `group-chat` mode alongside
-`tool`, `handoff`, `workflow:pre-purchase`, and `workflow:return-replace` (see this
-repo's root `CLAUDE.md`, orchestrator route layout notes) — reachable from the chat
-UI's mode switcher, not just this tutorial. It wires the same two panelist names used
-in this chapter's demo — `value` and `quality` (`_PANEL_PROMPTS` at
-`agents/python/orchestrator/modes/group_chat_mode.py:32`) — to real LLM-backed
-responders instead of the plain callables above, via `_make_agent_responder()`
-(`agents/python/orchestrator/modes/group_chat_mode.py:52-75`), which builds an `Agent`
-per panelist and awaits `agent.run(...)`. That's the concrete case the async-responder
-gotcha above exists to support.
+The application's caller is `GroupChatMode`
+(`agents/python/orchestrator/modes/group_chat_mode.py:74`), registered in the
+orchestrator as the `group-chat` mode. It uses the same two panelist names as this
+chapter's demo, `value` and `quality` (`_PANEL_PROMPTS` at
+`agents/python/orchestrator/modes/group_chat_mode.py:33`). In place of the plain
+callables above, `_make_agent_responder()`
+(`agents/python/orchestrator/modes/group_chat_mode.py:45-71`) builds an `Agent` per
+panelist and awaits `agent.run(...)`. That is the case the async-responder gotcha
+describes.
 
 ## Key points
 

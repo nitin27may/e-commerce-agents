@@ -1,8 +1,8 @@
 # E-Commerce Agents
 
-A multi-agent e-commerce platform built on **Microsoft Agent Framework**, in **Python and .NET**, with the concepts written out in full beside the code that runs them.
+A complete, end-to-end multi-agent e-commerce application built on **Microsoft Agent Framework**, in **Python and .NET**, and a 34-chapter course that teaches every piece of it. It is a working application with a storefront, sign-in and roles, a database, approvals, evals and tracing, with the concepts written out in full beside the code that runs them.
 
-Six specialist agents collaborate over the A2A protocol to handle product discovery, orders, pricing, reviews, inventory and support. Five orchestration patterns are selectable at runtime from the same chat box, so you can watch the same question routed five different ways and compare what each costs.
+An orchestrator and five specialist agents collaborate over the A2A protocol to handle product discovery, orders, pricing, reviews, inventory and support. Five orchestration patterns are selectable at runtime from the same chat box, so you can watch the same question routed five different ways and compare what each costs.
 
 This site is generated from the repository. Every page here is a file you can read in the repo, and every code pointer resolves to real source.
 
@@ -20,7 +20,7 @@ Docker is the only requirement — no Python, .NET or Node needed, and
 git clone https://github.com/nitin27may/e-commerce-agents.git
 cd e-commerce-agents
 cp .env.minimal .env          # set OPENAI_API_KEY (Azure OpenAI and the rest: .env.example)
-./scripts/dev.sh              # builds, seeds, and starts everything
+./scripts/dev.sh --demo       # pulls prebuilt images, seeds, and starts everything
 ```
 
 Then open **<http://localhost:3000>** and sign in as `alice.johnson@gmail.com` / `customer123`.
@@ -29,8 +29,8 @@ Then open **<http://localhost:3000>** and sign in as `alice.johnson@gmail.com` /
 PowerShell twin instead, which takes the same flags:
 
 ```powershell
-Copy-Item .env.example .env    # then set OPENAI_API_KEY in .env
-./scripts/dev.ps1
+Copy-Item .env.minimal .env    # then set OPENAI_API_KEY in .env
+./scripts/dev.ps1 -Demo
 ```
 
 → **[Full Quick Start]({{ site.baseurl }}/getting-started/quick-start.html)** — the .NET stack,
@@ -45,6 +45,7 @@ running without an API key, WSL2 notes, and what to do when something breaks.
 | New to agents — you have not built one before | [Concepts]({{ site.baseurl }}/concepts/) — what an agent is, why more than one, what a graph means here |
 | Ready to build | [Tutorials]({{ site.baseurl }}/tutorials/) — 34 chapters, Python and .NET, each runnable without an API key |
 | Wanting to run the application | [Getting Started]({{ site.baseurl }}/getting-started/) |
+| Choosing an orchestration pattern | [Orchestration patterns]({{ site.baseurl }}/concepts/06-orchestration-patterns.html) and the [benchmark]({{ site.baseurl }}/reference/orchestration-benchmark.html): the same question routed five ways, with latency and cost |
 | Evaluating the architecture | [Architecture]({{ site.baseurl }}/architecture/) |
 | Checking what the .NET stack covers | [Parity matrix]({{ site.baseurl }}/reference/parity-matrix.html) |
 
@@ -79,8 +80,8 @@ On `main`, not yet in a tagged release (see the [roadmap]({{ site.baseurl }}/get
 
 ### Coming next
 
-- **Azure** — a Container Apps deployment path and Foundry as a model provider. There is no Azure path today.
+- **Azure** — the Container Apps deployment is written and checked offline but has not run against a real subscription yet; that first deploy, then Foundry as a model provider.
 - **The dual-backend parity gate in CI** — it runs locally today (`scripts/e2e-both-stacks.sh`).
 - **.NET eval suite** — 6 of 7 datasets ported; the recording run, baselines and CI gate remain.
 
-The full list, including gaps this page doesn't claim to cover, is in [`.claude/plans/remaining-work.md`](https://github.com/nitin27may/e-commerce-agents/blob/main/.claude/plans/remaining-work.md).
+The full list, including what is deliberately not planned, is on the [roadmap]({{ site.baseurl }}/getting-started/roadmap.html).

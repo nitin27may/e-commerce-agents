@@ -27,22 +27,47 @@ Usage::
 
     uv run python -m evals.rehash_fixtures --dry-run
     uv run python -m evals.rehash_fixtures
+    uv run python -m evals.rehash_fixtures --tutorials --dry-run   # every tutorials/*/python/tests/fixtures/replay
+
+The tutorials keep their own copy of the replay client (``tutorials/_shared/replay_client.py``,
+no hash normalisation), so ``--tutorials`` re-keys with *that* module's ``_request_hash``.
 """
 
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import sys
 from collections import defaultdict
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from shared.replay_client import _request_hash
 
+HashFn = Callable[[dict[str, Any]], str]
+
 DEFAULT_FIXTURES_DIR = Path(__file__).parent / "fixtures" / "replay"
+REPO_ROOT = Path(__file__).resolve().parents[3]
+TUTORIAL_REPLAY_CLIENT = REPO_ROOT / "tutorials" / "_shared" / "replay_client.py"
 
 
-def plan_rehash(fixtures_dir: Path) -> tuple[dict[str, list[Path]], list[Path]]:
+def tutorial_request_hash() -> HashFn:
+    """The tutorials' own ``_request_hash``, loaded by path (``tutorials/`` is not a package here)."""
+    spec = importlib.util.spec_from_file_location("tutorials_replay_client", TUTORIAL_REPLAY_CLIENT)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load {TUTORIAL_REPLAY_CLIENT}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module._request_hash  # type: ignore[no-any-return]
+
+
+def tutorial_fixture_dirs(repo_root: Path = REPO_ROOT) -> list[Path]:
+    return sorted(repo_root.glob("tutorials/*/python/tests/fixtures/replay"))
+
+
+def plan_rehash(fixtures_dir: Path, hash_fn: HashFn = _request_hash) -> tuple[dict[str, list[Path]], list[Path]]:
     """Group every fixture by its recomputed hash.
 
     Returns ``(groups, unreadable)`` where ``groups`` maps the new hash to the
@@ -54,7 +79,7 @@ def plan_rehash(fixtures_dir: Path) -> tuple[dict[str, list[Path]], list[Path]]:
     for path in sorted(fixtures_dir.glob("*.json")):
         try:
             data = json.loads(path.read_text())
-            new_hash = _request_hash(data["request"])
+            new_hash = hash_fn(data["request"])
         except (json.JSONDecodeError, KeyError, OSError):
             unreadable.append(path)
             continue
@@ -103,22 +128,13 @@ def _consumer_counts(fixtures_dir: Path) -> dict[str, int]:
     return counts
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--fixtures-dir", type=Path, default=DEFAULT_FIXTURES_DIR)
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Report what would change without touching the filesystem.",
-    )
-    args = parser.parse_args(argv)
-
-    fixtures_dir: Path = args.fixtures_dir
+def rehash_dir(fixtures_dir: Path, hash_fn: HashFn, dry_run: bool) -> int:
+    """Re-key one directory. Returns 0, or 1 when the path is not a directory."""
     if not fixtures_dir.is_dir():
         print(f"Not a directory: {fixtures_dir}", file=sys.stderr)
         return 1
 
-    groups, unreadable = plan_rehash(fixtures_dir)
+    groups, unreadable = plan_rehash(fixtures_dir, hash_fn)
     total = sum(len(p) for p in groups.values()) + len(unreadable)
 
     renames: list[tuple[Path, Path]] = []
@@ -143,7 +159,7 @@ def main(argv: list[str] | None = None) -> int:
     for path in drops:
         print(f"  drop {path.name} (duplicate of an existing request)")
 
-    if args.dry_run:
+    if dry_run:
         print("\nDry run — nothing written.")
         return 0
 
@@ -163,6 +179,31 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"\nRewrote {len(renames)} filename(s), removed {len(drops)} duplicate(s).")
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--fixtures-dir", type=Path, default=DEFAULT_FIXTURES_DIR)
+    parser.add_argument(
+        "--tutorials",
+        action="store_true",
+        help="Re-key every tutorial's fixtures with the tutorials' own replay client instead of the eval corpus.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report what would change without touching the filesystem.",
+    )
+    args = parser.parse_args(argv)
+
+    if args.tutorials:
+        hash_fn = tutorial_request_hash()
+        status = 0
+        for directory in tutorial_fixture_dirs():
+            print(f"== {directory.relative_to(REPO_ROOT)}")
+            status |= rehash_dir(directory, hash_fn, args.dry_run)
+        return status
+    return rehash_dir(args.fixtures_dir, _request_hash, args.dry_run)
 
 
 if __name__ == "__main__":

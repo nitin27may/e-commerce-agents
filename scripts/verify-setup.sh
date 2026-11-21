@@ -97,8 +97,11 @@ case "$LLM_PROVIDER" in
         fi
         check "AZURE_OPENAI_DEPLOYMENT set" "[[ -n \"\${AZURE_OPENAI_DEPLOYMENT:-}\${AZURE_OPENAI_DEPLOYMENT_NAME:-}\" ]]"
         ;;
+    replay)
+        info "replay mode: recorded responses, no key needed"
+        ;;
     *)
-        printf "  ${RED}✗${RESET} unknown LLM_PROVIDER: %s (expected 'openai' or 'azure')\n" "$LLM_PROVIDER"
+        printf "  ${RED}✗${RESET} unknown LLM_PROVIDER: %s (expected 'openai', 'azure' or 'replay')\n" "$LLM_PROVIDER"
         fail_count=$((fail_count + 1))
         ;;
 esac

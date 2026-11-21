@@ -164,9 +164,19 @@ public sealed record AgentSettings
     /// Sampling temperature pinned on every agent run so identical prompts
     /// yield consistent answers (the provider default of ~1.0 makes them
     /// diverge). Mirrors Python's <c>LLM_TEMPERATURE</c>
-    /// (<c>shared/config.py</c>), same env var name and default.
+    /// (<c>shared/config.py</c>), same env var name and default. <c>null</c>
+    /// (<c>LLM_TEMPERATURE</c> set but empty) sends no temperature at all: gpt-5.x
+    /// models reject the parameter.
     /// </summary>
-    public double Temperature { get; init; } = 0.2;
+    public double? Temperature { get; init; } = 0.2;
+
+    /// <summary>
+    /// <c>DB_POOL_MIN_SIZE</c> / <c>DB_POOL_MAX_SIZE</c>: Npgsql pool bounds per process. <c>null</c>
+    /// leaves Npgsql's own defaults (0 and 100), which is what every install had before the knobs.
+    /// </summary>
+    public int? DbPoolMinSize { get; init; }
+
+    public int? DbPoolMaxSize { get; init; }
 
     public string AzureOpenAiEndpoint { get; init; } = "";
 
@@ -177,6 +187,15 @@ public sealed record AgentSettings
     public string AzureOpenAiDeployment { get; init; } = "";
 
     public string AzureOpenAiApiVersion { get; init; } = "2025-03-01-preview";
+
+    /// <summary>
+    /// <c>AZURE_OPENAI_AUTH</c>: <c>key</c> (default) or <c>identity</c> (a Microsoft Entra token, no key).
+    /// Python twin: <c>AZURE_OPENAI_AUTH</c> in <c>shared/config.py</c>.
+    /// </summary>
+    public string AzureOpenAiAuth { get; init; } = "key";
+
+    /// <summary><c>AZURE_CLIENT_ID</c>: a user-assigned managed identity; empty uses <c>DefaultAzureCredential</c>.</summary>
+    public string AzureClientId { get; init; } = "";
     public string AzureEmbeddingDeployment { get; init; } = "";
 
     // ── Auth ────────────────────────────────────────────────────
@@ -337,6 +356,9 @@ public sealed record AgentSettings
     // ── MAF v1 feature flags (all optional, safe defaults) ──────
     public string MafSessionBackend { get; init; } = "postgres";
     public string MafSessionDir { get; init; } = "./.sessions";
+
+    /// <summary>B-15: keep only the last N message groups of rehydrated history; 0 (default) is off.</summary>
+    public int HistoryCompactionKeepLastGroups { get; init; }
     public string MafCheckpointBackend { get; init; } = "postgres";
     public string MafCheckpointDir { get; init; } = "./.checkpoints";
     public double ReturnHitlThreshold { get; init; } = 500.0;

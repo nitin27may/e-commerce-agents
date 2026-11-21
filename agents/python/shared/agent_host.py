@@ -66,7 +66,8 @@ def _history_as_maf_messages(history: list[dict] | None, user_message: str) -> l
 def _run_options(agent: Any = None) -> dict[str, Any]:
     """Per-run chat options applied to every agent. Pins the sampling
     temperature so the same query yields consistent answers (the provider
-    default of ~1.0 makes identical prompts diverge — see LLM_TEMPERATURE).
+    default of ~1.0 makes identical prompts diverge — see LLM_TEMPERATURE). An empty
+    LLM_TEMPERATURE omits the option entirely.
 
     Run-level options win over an ``Agent``'s ``default_options``, so an agent's own
     ``model: {temperature}`` block (config/prompts/<agent>.yaml) is applied here, by the
@@ -78,6 +79,9 @@ def _run_options(agent: Any = None) -> dict[str, Any]:
     override = load_model_override(str(getattr(agent, "name", "") or ""))
     if override is not None and override.temperature is not None:
         temperature = override.temperature
+    # None (LLM_TEMPERATURE set empty) sends no option: gpt-5.x rejects the parameter outright.
+    if temperature is None:
+        return {}
     return {"temperature": temperature}
 
 

@@ -68,7 +68,8 @@ public static class SpecialistAgentFactory
                 // (shared/agent_host.py::_run_options). Set once here at
                 // construction time rather than per-run since it never varies
                 // per-request in this codebase.
-                Temperature = (float)settings.Temperature,
+                // null (LLM_TEMPERATURE set empty) sends none: gpt-5.x rejects the parameter.
+                Temperature = settings.Temperature is { } temperature ? (float)temperature : null,
             },
         };
 

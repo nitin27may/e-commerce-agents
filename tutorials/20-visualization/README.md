@@ -1,25 +1,33 @@
 # Chapter 20 — Workflow Visualization
 
+Turn any `Workflow` object into a Mermaid or Graphviz diagram that you can commit and diff.
+
+**You will learn to:**
+
+- Render a workflow as Mermaid and as Graphviz DOT, in Python and in .NET
+- Commit the rendered files so a change to the graph shows up as a diff in review
+- Keep the output identical between runs by building the graph in a stable order
+
 ## Why this chapter
 
-A workflow you can't see is hard to review and impossible to reason about on-call at 3 AM. MAF ships visualization helpers that turn any `Workflow` object into Mermaid (renders inline in GitHub markdown, issues, and PRs) or Graphviz DOT (for architecture diagrams, wikis, runbooks). Both are deterministic — the same graph always produces the same bytes — so you can commit the output and diff real changes in a PR instead of eyeballing a screenshot.
+A workflow you can't see is hard to review and hard to reason about when you are on call at 3 AM. MAF ships helpers that turn any `Workflow` object into Mermaid (which GitHub renders inline in markdown, issues and PRs) or Graphviz DOT (for architecture diagrams, wikis and runbooks). Both are deterministic: the same graph always produces the same bytes. You can commit the output and diff real changes in a PR instead of comparing screenshots.
 
-This isn't just a tutorial exercise: the same pattern regenerates the diagrams for every production workflow spec in this repo (see [How this shows up in the capstone](#how-this-shows-up-in-the-capstone)), and a live variant of it drives the orchestration graph you see in the web UI while a run is in progress.
+The full application in this repo uses the same API to regenerate the diagrams of its workflows, and a live variant draws the graph you see in the web UI while a run is in progress. See [How this shows up in the capstone](#how-this-shows-up-in-the-capstone).
 
 ## Prerequisites
 
 - Completed [Chapter 19 — Declarative Workflows](../19-declarative-workflows/)
-- No LLM calls in this chapter — no API key required, it's pure graph rendering
-- Optional: `graphviz` installed locally if you want to rasterize the `.dot` output to PNG/SVG via the `dot` CLI
+- No API key needed. This chapter only renders a graph and calls no model
+- Optional: `graphviz` installed locally, if you want to turn the `.dot` output into PNG or SVG with the `dot` CLI
 
 ## The concept
 
-`WorkflowViz` (Python) and the `Workflow` extension methods (.NET) walk the executor graph you built with `WorkflowBuilder`/`WorkflowBuilder<T>` and serialize it to two formats:
+`WorkflowViz` (Python) and `WorkflowVisualizer` (.NET) walk the graph of executors (workflow nodes) you built with `WorkflowBuilder` and serialize it to two formats:
 
-- **Mermaid** — a `flowchart` block that GitHub renders inline, no extra tooling needed.
-- **Graphviz DOT** — a `digraph` you pipe through the `dot` CLI to get PNG/SVG for docs or wikis.
+- **Mermaid** is a `flowchart` block that GitHub renders inline with no extra tooling.
+- **Graphviz DOT** is a `digraph` you pipe through the `dot` CLI to get PNG or SVG for docs or wikis.
 
-Both are derived purely from the graph's structure (executor ids and edges), not from any specific run — so the diagram represents every possible path through the workflow, not just the one a particular input happened to take.
+Both come from the graph's structure (executor ids and edges), not from any one run. The diagram shows every possible path through the workflow, not only the path a particular input took.
 
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': {
@@ -47,11 +55,11 @@ flowchart LR
   class log success
 ```
 
-This is the actual `demo-pipeline` workflow rendered by this chapter's `main.py` — three executors, two edges, one deterministic diagram.
+This is the `demo-pipeline` workflow that this chapter's `main.py` renders, with the house colors added: three executors and two edges.
 
 ## Python
 
-Run from the repo root using the shared `tutorials/` uv project (one `uv sync` covers every chapter):
+Run from the repo root. The shared `tutorials/` uv project means one `uv sync` covers every chapter:
 
 ```bash
 uv sync --project tutorials
@@ -59,7 +67,20 @@ uv run --project tutorials python tutorials/20-visualization/python/main.py
 # writes workflow.mmd + workflow.dot into tutorials/20-visualization/python/
 ```
 
-Source: [`python/main.py`](./python/main.py). The workflow is the same three-executor pipeline used throughout the earlier workflow chapters — uppercase, then a non-empty gate, then a logger — built with the normal `WorkflowBuilder`:
+You should see both renderings, then the path the files were written to:
+
+```
+=== Mermaid ===
+flowchart TD
+  uppercase["uppercase (Start)"];
+...
+=== Graphviz DOT ===
+digraph Workflow {
+...
+Wrote workflow.mmd and workflow.dot to .../tutorials/20-visualization/python
+```
+
+Source: [`python/main.py`](./python/main.py). The workflow is the three-executor pipeline from the earlier workflow chapters (uppercase, then a non-empty gate, then a logger), built with the normal `WorkflowBuilder`:
 
 ```python
 from agent_framework import WorkflowViz
@@ -83,7 +104,7 @@ def render_dot() -> str:
     return WorkflowViz(build_workflow()).to_digraph()
 ```
 
-`main.py` writes both outputs to disk next to itself. The imports come from `agent_framework._workflows._viz` and `._workflow_builder` — underscore-prefixed internal modules, not the public top-level package; that's the real import path this MAF version exposes for visualization today.
+`main.py` writes both outputs to disk next to itself. `WorkflowViz` and `WorkflowBuilder` both come from the public `agent_framework` package.
 
 Rendered Mermaid (this is `workflow.mmd`, byte-for-byte):
 
@@ -114,6 +135,8 @@ digraph Workflow {
 
 ## .NET
 
+No key is needed. From the repo root:
+
 ```bash
 cd tutorials/20-visualization/dotnet
 dotnet run
@@ -131,56 +154,44 @@ File.WriteAllText("workflow.mmd", mermaid);
 File.WriteAllText("workflow.dot", dot);
 ```
 
-Note the shape: these are **static methods on `WorkflowVisualizer`**, not extension methods on `Workflow`. `workflow.ToMermaidString()` does not compile, which matters because it is what most people try first — Python wraps the workflow in a `WorkflowViz` object, and the .NET name reads like an extension.
-
-This chapter previously shipped a .NET *stub* that printed API usage instead of running any, and the usage it printed was the extension-method form that does not compile. Printed sample code is never compiled, so nothing caught it. Unlike Chapter 16, there was no SDK gap to be blocked on: `WorkflowVisualizer` has been in `Microsoft.Agents.AI.Workflows` since 1.1.0.
+These are **static methods on `WorkflowVisualizer`**, not extension methods on `Workflow`. `workflow.ToMermaidString()` does not compile. It is what most people try first, because Python wraps the workflow in a `WorkflowViz` object and the .NET name reads like an extension.
 
 ## Side-by-side differences
 
 | Aspect | Python | .NET |
 |--------|--------|------|
-| Mermaid | `WorkflowViz(workflow).to_mermaid()` | `workflow.ToMermaidString()` |
-| DOT | `WorkflowViz(workflow).to_digraph()` | `workflow.ToDotString()` |
-| Import surface | Internal module (`agent_framework._workflows._viz`) | Public extension methods on `Workflow` |
+| Mermaid | `WorkflowViz(workflow).to_mermaid()` | `WorkflowVisualizer.ToMermaidString(workflow)` |
+| DOT | `WorkflowViz(workflow).to_digraph()` | `WorkflowVisualizer.ToDotString(workflow)` |
+| Import surface | Public package (`from agent_framework import WorkflowViz`) | Public static methods on `WorkflowVisualizer` (`Microsoft.Agents.AI.Workflows`) |
 | Bitmap export | Pipe `.dot` text through the `dot` CLI | Pipe `.dot` text through the `dot` CLI (same approach both languages) |
 
 ## Gotchas
 
-- **Node IDs must be unique.** Two executors sharing an `id` fail at `WorkflowBuilder.build()` time (e.g., two `ValidateExecutor()` instances both defaulting to `id="validate"`), not at visualization time — the diagram only renders once the build already succeeded, so a visualization bug is rarely actually a visualization bug.
-- **Mermaid is GitHub-native, DOT needs Graphviz.** Commit `.mmd` files and GitHub renders them inline in issues, PRs, and wikis with zero extra tooling. The `.dot` text is portable, but turning it into PNG/SVG requires a local or CI install of `graphviz`.
-- **Determinism depends on your builder, not just the renderer.** `WorkflowViz` renders whatever edge order the graph gives it. If your own code adds edges by iterating a `set` or `dict` without a stable order, the rendered output can shuffle between runs even though the *logical* graph didn't change — iterate over ordered collections (lists, tuples) when building the graph.
-- **No MAF packaging workaround is needed.** `agent-framework-core` 1.26.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
+- **The build fails before you get a diagram.** Two executors sharing an `id` (for example two `ValidateExecutor()` instances that both default to `id="validate"`) fail at `WorkflowBuilder.build()`, not at rendering. A diagram renders only after the build succeeds, so a rendering problem is usually a graph problem.
+- **The `.dot` file doesn't display anywhere.** GitHub renders Mermaid inline in issues, PRs and wikis with no extra tooling, so commit the `.mmd` files. Turning `.dot` text into PNG or SVG needs `graphviz` installed locally or in CI.
+- **The rendered output changes between runs although the graph did not.** `WorkflowViz` renders whatever edge order the graph gives it. If your code adds edges by iterating a `set`, the order can change from run to run. Build the graph from ordered collections such as lists and tuples.
 
 ## Tests
 
-
-[`python/tests/test_visualization.py`](./python/tests/test_visualization.py) covers, without any LLM call:
-
-- Mermaid output is non-empty and starts with the `flowchart` directive
-- All three executor ids and both edges appear in the Mermaid output
-- Mermaid rendering is deterministic (`render_mermaid() == render_mermaid()`)
-- DOT output starts with `digraph` and references every node
-- DOT rendering is deterministic
-- `build_workflow()` succeeds
-
 ```bash
 uv run --project tutorials pytest tutorials/20-visualization/python/tests -v
+dotnet test tutorials/20-visualization/dotnet/tests/Visualization.Tests.csproj
 ```
 
-The .NET side ships [`dotnet/tests/VisualizationTests.cs`](./dotnet/tests/VisualizationTests.cs) — eleven tests, no LLM:
+Run both from the repo root. Neither calls a model.
 
-```bash
-cd tutorials/20-visualization/dotnet && dotnet test tests/Visualization.Tests.csproj
-```
+The Python tests in [`python/tests/test_visualization.py`](./python/tests/test_visualization.py) check that every executor id appears in the Mermaid and DOT output, that both edges appear in the Mermaid, and that rendering twice gives the same text.
 
-They compare rendered output against the actual graph topology rather than checking a non-empty string came back: a diagram listing the right nodes and the wrong arrows is worse than no diagram, because it is confidently wrong. `Rendering_Is_Deterministic` guards the stated use case — committing diagrams and diffing them in PRs only works if identical graphs render byte-identically.
+The .NET tests in [`dotnet/tests/VisualizationTests.cs`](./dotnet/tests/VisualizationTests.cs) compare the rendered output against the graph's actual nodes and edges, because a diagram with the right nodes and the wrong arrows is worse than no diagram. `Rendering_Is_Deterministic` protects the reason for committing diagrams: diffing them in PRs only works if identical graphs render to identical bytes.
 
 ## How this shows up in the capstone
 
-Two complementary mechanisms, one static and one live:
+The capstone (the full application in this repo) draws its workflows in two places: as committed diagram files under `docs/workflows/`, and as the graph beside the chat that lights up node by node while a run is in progress.
 
-- **Static, build-time.** [`scripts/visualize_workflows.py`](../../scripts/visualize_workflows.py) builds the capstone's real `pre-purchase` and `return-replace` `WorkflowBuilder` graphs and renders each with the exact same `WorkflowViz` API this chapter teaches (`scripts/visualize_workflows.py:57`). It writes `docs/workflows/{name}.mmd` and `{name}.dot`, and its `--check` flag fails CI on drift — missing files, content that no longer matches the graph, or orphaned output — when `WORKFLOW_VISUALIZATION_ON_BUILD=true` (`scripts/visualize_workflows.py:120`).
-- **Live, runtime.** `web/src/components/chat/orchestration-graph.tsx` fetches a mode's static `graph_mermaid()` output from `GET /api/orchestration/modes/{name}/graph` (`agents/python/orchestrator/routes/orchestration.py:63`) and re-renders it client-side with the house Mermaid palette, then overlays live state as SSE `node` events arrive during a run — active, done, and errored executors get different node classes (`web/src/components/chat/orchestration-graph.tsx:20`). Correlating a live `node_id` to a diagram node relies on a deliberate backend convention: every mode's `graph_mermaid()` uses the real executor id with dashes swapped for underscores as the Mermaid node id, documented on `PrePurchaseMode.graph_mermaid()` in `agents/python/orchestrator/modes/workflow_mode.py:164`. This is a different code path from `visualize_workflows.py` — one renders a fixed spec at build time and diffs it in CI, the other renders a mode's fixed topology at request time and animates it against a live run.
+- **Committed files.** [`scripts/visualize_workflows.py`](../../scripts/visualize_workflows.py) builds the application's `pre-purchase` and `return-replace` `WorkflowBuilder` graphs and renders each with the same `WorkflowViz` API this chapter teaches (`scripts/visualize_workflows.py:57`). It writes `docs/workflows/{name}.mmd` and `{name}.dot`. Its `--check` flag (`scripts/visualize_workflows.py:109`) fails on drift: missing files, content that no longer matches the graph, or leftover output. CI runs that check when `WORKFLOW_VISUALIZATION_ON_BUILD=true`.
+- **Live graph.** `web/src/components/chat/orchestration-graph.tsx` fetches a mode's `graph_mermaid()` output from `GET /api/orchestration/modes/{name}/graph` (`agents/python/orchestrator/routes/orchestration.py:54`) and renders it in the browser with the house Mermaid colors. During a run the server streams `node` events to the browser, and the component gives active, done and errored executors different node classes (`web/src/components/chat/orchestration-graph.tsx:101`). To match a live `node_id` to a diagram node, every mode's `graph_mermaid()` uses the real executor id with dashes swapped for underscores as the Mermaid node id. The comment on `PrePurchaseMode.graph_mermaid()` at `agents/python/orchestrator/modes/workflow_mode.py:172` explains why.
+
+The two are separate code paths. The script renders the graphs ahead of time and CI diffs the files. The web UI renders a mode's fixed graph on request and animates it against a live run.
 
 ## What's next
 

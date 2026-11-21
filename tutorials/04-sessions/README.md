@@ -1,10 +1,18 @@
 # Chapter 04 — Sessions
 
+Save a conversation to disk and pick it up in a new process, so an agent remembers across restarts.
+
+**You will learn to:**
+
+- Serialize an `AgentSession` to JSON and load it back
+- Continue a conversation from a second process with a brand-new agent object
+- Tell what MAF (Microsoft Agent Framework) stores for you from what your code must store
+
 ## Why this chapter
 
-Chapter 03 reused a session inside one process. That's fine for a REPL, not fine for anything that restarts — HTTP servers, background jobs, mobile clients reconnecting.
+Chapter 03 reused a session inside one process. That works for an interactive prompt, but not for anything that restarts: HTTP servers, background jobs, mobile clients reconnecting.
 
-A MAF `AgentSession` is a snapshot of everything the agent remembers about a conversation. Serialize it, write it to disk, reload it in a new process, and the agent picks up right where it left off. This chapter's demo is deliberately small — two CLI invocations of the same script, in separate process runs, proving state survived in between. The capstone app does the same thing at a larger scale: every `/api/chat` request rehydrates conversation history from Postgres rather than keeping it in memory between requests.
+A MAF `AgentSession` is a snapshot of everything the agent remembers about a conversation. Serialize it, write it to disk, reload it in a new process, and the agent continues where it left off. The demo is small: you run the same script twice, as two separate processes, and the second run knows what the first was told. The full application in this repo (the capstone) does the same at a larger scale. Every `/api/chat` request reloads the conversation history from Postgres instead of keeping it in memory between requests.
 
 ## Prerequisites
 
@@ -14,12 +22,12 @@ A MAF `AgentSession` is a snapshot of everything the agent remembers about a con
 
 ## The concept
 
-Both languages expose the same two primitives, framed slightly differently:
+Both languages expose the same two operations:
 
-- **Python**: `session.to_dict()` returns a JSON-able dict; `AgentSession.from_dict(data)` rehydrates it. Messages land in `session.state` because the agent is built with `context_providers=[InMemoryHistoryProvider()]` — without that provider, the session round-trips but carries no conversation.
-- **.NET**: `agent.SerializeSessionAsync(session)` returns a `JsonElement`; `agent.DeserializeSessionAsync(jsonElement)` rehydrates it. History handling is built into the agent, so there's no separate provider to wire up.
+- **Python**: `session.to_dict()` returns a JSON-able dict, and `AgentSession.from_dict(data)` rebuilds the session from it. Messages land in `session.state` because the agent is built with `context_providers=[InMemoryHistoryProvider()]`. A context provider is an object that runs around each agent call to add or record context; this one records the conversation. Without it, the session round-trips but carries no conversation.
+- **.NET**: `agent.SerializeSessionAsync(session)` returns a `JsonElement`, and `agent.DeserializeSessionAsync(jsonElement)` rebuilds the session. History handling is built into the agent, so there is no separate provider to add.
 
-Either way, the agent never touches the filesystem itself. Your code owns the disk I/O — read the file if it exists, hand the bytes to MAF to deserialize, run the turn, ask MAF to serialize the result, write it back. MAF owns the *shape* of what gets serialized; you own where it lives.
+In both, the agent never touches the filesystem. Your code owns the disk I/O: read the file if it exists, hand the contents to MAF to deserialize, run the turn, ask MAF to serialize the result, and write it back. MAF owns the *shape* of what is serialized; you own where it lives.
 
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': {
@@ -51,19 +59,25 @@ flowchart LR
   class answer success
 ```
 
-Two separate `Agent`/`AIAgent` objects, two separate process invocations — the only thing bridging them is the file on disk. That's the property this chapter proves: the session, not the process, is what remembers.
+There are two separate `Agent`/`AIAgent` objects in two separate processes, and the only thing connecting them is the file on disk. The session, not the process, is what remembers.
 
 ## Python
 
-Run from the repo root using the shared `tutorials/` uv project (one `uv sync` covers every chapter):
+`main.py` needs an API key, because its prompts have no recorded response. With no key, run the tests first; they replay a recorded conversation across two fresh agent objects. From the repo root:
 
 ```bash
-uv sync --project tutorials
+uv sync --project tutorials --extra dev
+uv run --project tutorials pytest tutorials/04-sessions/python/tests -m "not integration"
+```
+
+With a key in the repo-root `.env`, run the script twice from the repo root:
+
+```bash
 uv run --project tutorials python tutorials/04-sessions/python/main.py save "Remember: I want to buy SKU-4471."
 uv run --project tutorials python tutorials/04-sessions/python/main.py load "What did I say I wanted to buy? Answer with only the SKU."
 ```
 
-Source: [`python/main.py`](./python/main.py). The agent is built with a history-carrying context provider:
+Source: [`python/main.py`](./python/main.py). The agent is built with a context provider that records history:
 
 ```python
 def build_agent(client: object | None = None) -> Agent:
@@ -98,17 +112,17 @@ def _save(session: AgentSession, path: pathlib.Path) -> None:
     path.write_text(json.dumps(session.to_dict(), indent=2, default=str))
 ```
 
-Note that `main.py`'s `save`/`load` argument is cosmetic — both branches call the exact same `ask_and_save()`. The behavior that actually differs is whether `session.json` exists yet: the first invocation creates it, the second finds it and loads prior turns. There's also a third mode, `reset`, that deletes `session.json` so you can start over without hunting for the file by hand.
+The `save`/`load` argument is only a label: both call the same `ask_and_save()`. What differs is whether `session.json` exists yet. The first run creates it; the second finds it and loads the earlier turns. A third mode, `reset`, deletes `session.json` so you can start over.
 
 ## Notebook
 
-`tutorials/04-sessions/python/notebook.ipynb` walks through the same code one cell at a time: it round-trips a session through JSON, then answers a follow-up on a brand-new agent. Every cell imports the chapter's own `main.py` (its instructions, tools and helpers), and every prompt is the exact string the replay fixtures were recorded with, so it runs with no key.
+`tutorials/04-sessions/python/notebook.ipynb` walks through the same code one cell at a time. It round-trips a session through JSON, then answers a follow-up on a brand-new agent. The cells import the chapter's own `main.py` and use the exact prompts the replay fixtures were recorded with, so the notebook runs with no key.
 
 ```bash
 uv sync --project tutorials --extra dev   # installs ipykernel, nbclient and nbformat
 ```
 
-Open the notebook in VS Code or JupyterLab and pick the `tutorials/.venv` interpreter as the kernel. To run it headless, the way CI does: `uv run --project tutorials pytest tutorials/tests/test_notebooks.py -v`. Committed notebooks carry no outputs; `uv run --project tutorials python scripts/strip_notebook_outputs.py` cleans one before you commit. Edit a prompt in a cell and a replay run reports a missing fixture, because the prompt is part of the fixture's key; set `OPENAI_API_KEY` (or the Azure variables) to try your own wording live.
+Open the notebook in VS Code or JupyterLab and pick the `tutorials/.venv` interpreter as the kernel. If you edit a prompt, a replay run reports a missing fixture, because the prompt is part of the fixture's key. Set `OPENAI_API_KEY` (or the Azure variables) to try your own wording live.
 
 ## .NET
 
@@ -118,7 +132,9 @@ dotnet run -- save "Remember: I want to buy SKU-4471."
 dotnet run -- load "What did I say I wanted to buy? Answer with only the SKU."
 ```
 
-Source: [`dotnet/Program.cs`](./dotnet/Program.cs). Same load/run/save shape, async because `SerializeSessionAsync`/`DeserializeSessionAsync` support providers that hit a backing service:
+The commands change into the chapter's `dotnet` folder first. `dotnet run` calls a live model, so it needs a key in the repo-root `.env`. The .NET tests (`dotnet test tutorials/04-sessions/dotnet/tests/Sessions.Tests.csproj`, from the repo root) need no key, but without one they return early, so use the Python tests for a keyless run.
+
+Source: [`dotnet/Program.cs`](./dotnet/Program.cs). The load/run/save shape is the same. It is async because `SerializeSessionAsync` and `DeserializeSessionAsync` support providers that call a backing service:
 
 ```csharp
 public static async Task<(string Answer, string Path)> AskAndSave(
@@ -149,7 +165,7 @@ public static async Task Save(AIAgent agent, AgentSession session, string path)
 }
 ```
 
-`BuildAgent()` calls `chatClient.AsAIAgent(instructions: Instructions, name: "stateful-agent")` with no explicit history provider — history tracking is bundled into the agent itself on the .NET side. Same observable behavior as Python: run it twice, and the second run answers from what the first run said.
+`BuildAgent()` calls `chatClient.AsAIAgent(instructions: Instructions, name: "stateful-agent")` with no explicit history provider, because history tracking is built into the agent on the .NET side. The behavior matches Python: run it twice, and the second run answers from what the first was told.
 
 ## Side-by-side differences
 
@@ -161,40 +177,43 @@ public static async Task Save(AIAgent agent, AgentSession session, string path)
 | JSON work | `json.dumps(...)` / `json.loads(...)` | `JsonSerializer.Serialize(...)` / `JsonDocument.Parse(...)` |
 | New session | `agent.create_session()` | `await agent.CreateSessionAsync()` |
 
-The .NET side bundles history handling into the agent, so you don't register an explicit provider — session and agent are tightly coupled. Python keeps the two loosely coupled: swap `InMemoryHistoryProvider` for something backed by a file or a database (as the capstone does — see below) without touching the agent's construction.
+The .NET side builds history handling into the agent, so you register no provider and session and agent are tightly coupled. Python keeps the two separate: you can swap `InMemoryHistoryProvider` for one backed by a file or a database, as the full application does (see below), without changing how the agent is built.
 
 ## Gotchas
 
-- **Don't mix agents across sessions.** A session serialized from one agent's configuration isn't guaranteed to deserialize cleanly into a differently-configured agent. Treat the session as opaque: write it, load it, hand it back. Don't inspect or hand-edit the JSON.
-- **Size grows unbounded.** Every turn adds to the serialized session. For long-lived conversations you need eviction (summarize-and-replace older messages) — out of scope here, related to *state and checkpointing* in [Chapter 18](../18-state-and-checkpoints/).
-- **Python: forgetting the context provider is silent.** Drop `context_providers=[InMemoryHistoryProvider()]` from `build_agent()` and `session.json` still gets written and still round-trips its `session_id` — it just won't carry any messages. The follow-up turn behaves like a brand-new conversation even though the file exists and looks populated.
-- **.NET: don't forget `await`** on `DeserializeSessionAsync` and `SerializeSessionAsync` — both are async so providers backed by a real service (not just a local file) can do I/O.
-- **`save`/`load` is a naming convention, not a code path.** Both modes call the same `ask_and_save()` / `AskAndSave()`. If you're debugging why "load" isn't loading anything, check whether `session.json` actually exists first — a missing file silently falls back to a fresh session regardless of which mode you typed.
+- **A saved session fails to load, or loads oddly, in a different agent.** A session serialized from one agent's configuration is not guaranteed to deserialize cleanly into a differently configured agent. Treat the session as opaque: write it, load it, hand it back. Do not inspect or hand-edit the JSON.
+- **`session.json` keeps growing.** Every turn adds to the serialized session. Long-lived conversations need eviction, such as replacing older messages with a summary. That is out of scope here; [Chapter 18](../18-state-and-checkpoints/) covers the related topic of state and checkpointing.
+- **Python: the follow-up acts like a new conversation although `session.json` exists.** You dropped `context_providers=[InMemoryHistoryProvider()]` from `build_agent()`. The file is still written and still round-trips its `session_id`, but it carries no messages, and nothing warns you.
+- **.NET: a missing `await` on `DeserializeSessionAsync` or `SerializeSessionAsync`.** Both are async so that providers backed by a real service, not just a local file, can do I/O.
+- **"load" loads nothing.** `save` and `load` are labels, not code paths: both call the same `ask_and_save()` / `AskAndSave()`. Check that `session.json` exists. A missing file falls back to a fresh session without a message, whichever mode you typed.
 
 ## Tests
+
+Both commands run from the repo root:
 
 ```bash
 # Python
 uv run --project tutorials pytest tutorials/04-sessions/python/tests -v
 
 # .NET
-cd tutorials/04-sessions/dotnet
-dotnet test tests/Sessions.Tests.csproj
+dotnet test tutorials/04-sessions/dotnet/tests/Sessions.Tests.csproj
 ```
 
-`tutorials/04-sessions/python/tests/test_sessions.py` covers, structurally:
-
-1. **Unit tests against `AgentSession` directly** — round-tripping `session_id` through a dict, confirming `to_dict()` is JSON-serializable, round-tripping nested `state` values, and confirming two fresh sessions get distinct ids. No LLM involved.
-2. **A replay test** (`test_replay_session_persists_across_fresh_agent_instances`) that plays back committed fixtures in `tests/fixtures/replay/` — no network or credentials required, safe for CI.
-3. **A real-LLM integration test** (`test_session_persists_across_fresh_agent_instances`), skipped automatically when `.env` has no usable key — builds two separate `Agent` instances and confirms the second one answers from what the first one was told.
-
-`tutorials/04-sessions/dotnet/tests/SessionsTests.cs` mirrors this: `Session_Persists_Across_Fresh_Agent_Instances` and `Missing_Session_File_Starts_A_Fresh_Conversation` are tagged `[Trait("Category", "Integration")]`; `LoadOrNew_Returns_Fresh_Session_When_File_Missing` isn't tagged but still checks for credentials before running. All three no-op with a console message rather than failing when no LLM key is configured.
+The Python unit tests round-trip an `AgentSession` through a dict and JSON with no LLM. A replay test then builds two separate `Agent` instances and confirms, from recorded responses, that the second answers from what the first was told; an integration test does the same against a live model and is skipped without a key. The .NET tests check the same persistence and the missing-file fallback against a live model, and return early when no key is configured.
 
 ## How this shows up in the capstone
 
-The chapter's file-backed load/run/save loop is a good local-dev shape, but the capstone's orchestrator reads its conversation history through a pluggable abstraction instead: `agents/python/shared/session.py` defines `HistoryProvider` backends selected by `settings.MAF_SESSION_BACKEND` — `PostgresSessionHistoryProvider` (production, backed by the `messages`/`conversations` tables), `FileSessionHistoryProvider` (local dev, JSONL under `settings.MAF_SESSION_DIR`), and `InMemorySessionHistoryProvider` (tests). `get_history_provider()` at `agents/python/shared/session.py:201` picks the backend by name — same idea as this chapter's `_load_or_new`/`LoadOrNew`, just with three interchangeable backing stores instead of one file.
+In the full application, every chat request loads the shopper's earlier turns from Postgres before the agent runs, which is why a conversation survives a server restart.
 
-The orchestrator calls it directly: `agents/python/orchestrator/routes/chat.py:160` reads `history = await get_history_as_dicts(get_history_provider(pool=pool), conversation_id)` before inserting the current turn's user message — the read has to happen before the insert, or the just-written row would get counted twice once `shared/agent_host.py` appends the current message itself (see the comment right above that line in `chat.py`). Message *writes*, unlike this chapter's single `_save()` call, stay as each route's own richer `INSERT` — a generic `HistoryProvider.save_messages()` only persists role/content, not the `agent_name`/`agents_involved`/`metadata` the timeline UI needs.
+The orchestrator, the agent that receives each chat message, reads history through a pluggable `HistoryProvider`. `agents/python/shared/session.py` defines three backends, selected by `settings.MAF_SESSION_BACKEND`:
+
+- `PostgresSessionHistoryProvider`: production, backed by the `messages` and `conversations` tables.
+- `FileSessionHistoryProvider`: local development, JSONL files under `settings.MAF_SESSION_DIR`.
+- `InMemorySessionHistoryProvider`: tests.
+
+`get_history_provider()` at `agents/python/shared/session.py:216` picks the backend by name. It is the same idea as this chapter's `_load_or_new` / `LoadOrNew`, with three interchangeable stores instead of one file.
+
+`agents/python/orchestrator/routes/chat.py:374` is where the orchestrator calls it: `history = await get_history_as_dicts(get_history_provider(pool=pool), conversation_id)`. The read happens before the current turn's user message is inserted. Otherwise that message would appear twice, because `shared/agent_host.py` appends the current message itself. Writes differ from this chapter's single `_save()` call: each route does its own `INSERT`, because it stores `agent_name`, `agents_involved` and `metadata` alongside the role and content that a generic history provider saves.
 
 ## What's next
 

@@ -1,24 +1,30 @@
 # Chapter 17 — Human-in-the-Loop
 
-Pause a workflow mid-run, ask a human, resume with their answer. Two calls to `workflow.run()`, one `request_id` tying them together — the caller's perspective is the whole story.
+Pause a workflow mid-run, ask a human, and resume with their answer. From the caller's side that is two calls to `workflow.run()` tied together by one `request_id`.
+
+**You will learn to:**
+
+- Pause a workflow from inside an executor with `ctx.request_info()` (Python) or a `RequestPort` (.NET)
+- Catch the pause as a caller and resume the run with the human's answer
+- Tell a paused run from a finished one by the events it emits
 
 ## Why this chapter
 
-Some decisions shouldn't be autonomous. Approving a refund over $500. Confirming a return shipping label. Selecting which of three draft emails to send. Workflows need a way to pause for a human and resume seamlessly when the answer arrives, without losing whatever state the run had accumulated so far.
+Some decisions shouldn't be autonomous: approving a refund over $500, confirming a return shipping label, choosing which of three draft emails to send. A workflow needs a way to pause for a human and resume when the answer arrives, without losing the state the run has built up.
 
-MAF provides `ctx.request_info()` in Python and `RequestPort` in .NET. The workflow suspends, emits a request event, and waits for the caller to supply a response before continuing. This chapter demonstrates the pattern with a refund-approval gate: a workflow holds a proposed refund and pauses to ask a human approver to approve or deny it — minimal domain logic, maximum focus on the pause/resume mechanics.
+This pattern is called human-in-the-loop (HITL). MAF provides `ctx.request_info()` in Python and `RequestPort` in .NET. The workflow suspends, emits a request event, and waits for the caller to supply a response. This chapter shows the pattern with a refund-approval gate: a workflow holds a proposed refund and pauses to ask a human to approve or deny it. The domain logic is kept small so the pause and resume mechanics stay in view.
 
 ## Prerequisites
 
 - Completed [Chapter 16 — Magentic Orchestration](../16-magentic-orchestration/)
-- No LLM needed — HITL is framework plumbing, not model behavior
-- Environment variables: none required for this chapter (the demo runs entirely offline)
+- No API key needed. HITL is framework plumbing, not model behavior, and the demo runs offline
+- Environment variables: none
 
 ## The concept
 
-1. An executor calls `await ctx.request_info(request_data, response_type)`.
+1. An executor (a node in the workflow graph) calls `await ctx.request_info(request_data, response_type)`.
 2. The workflow emits a `request_info` event containing a unique `request_id` and the request payload, then suspends.
-3. The caller's streaming loop over the first `workflow.run(..., stream=True)` call sees that event but never sees an `output` event — the run has paused, not finished.
+3. The caller's streaming loop over the first `workflow.run(..., stream=True)` call sees that event but never sees an `output` event. The run has paused, not finished.
 4. The caller pairs the `request_id` with a human-supplied response and calls `workflow.run(responses={request_id: value}, stream=True)` again.
 5. A method decorated with `@response_handler` on the same executor receives `(request, response, ctx)` and continues the workflow from where it left off.
 
@@ -39,19 +45,25 @@ sequenceDiagram
   Workflow-->>Caller: output event ("refund approved / denied")
 ```
 
-The diagram shows the two separate `run()` calls a caller makes: the first pauses on `request_info`, the second resumes with `responses={...}` and drives the workflow to an `output` event.
+The diagram shows the two separate `run()` calls a caller makes. The first pauses on `request_info`. The second resumes with `responses={...}` and drives the workflow to an `output` event.
 
 ## Python
 
-Source: [`python/main.py`](./python/main.py).
+Source: [`python/main.py`](./python/main.py). Run from the repo root:
 
 ```bash
 uv sync --project tutorials
 uv run --project tutorials python tutorials/17-human-in-the-loop/python/main.py
-uv run --project tutorials pytest tutorials/17-human-in-the-loop/python/tests -v
 ```
 
-The executor pauses on `request_info` and resumes via a `@response_handler`:
+The demo asks for a decision on stdin. Type `y` and press Enter. You should see:
+
+```
+Approve refund of $245.50 for order ord-482? [y/n]: y
+refund approved for order ord-482: $245.50
+```
+
+The executor pauses on `request_info` and resumes in a method marked `@response_handler`:
 
 ```python
 class RefundApprovalGate(Executor):
@@ -75,7 +87,7 @@ class RefundApprovalGate(Executor):
             await ctx.yield_output(f"refund denied for order {request.order_id}")
 ```
 
-`run_with_response()` (used by the tests) shows the caller side — two `workflow.run()` calls tied together by `pending_request_id`:
+`run_with_response()`, which the tests use, shows the caller side: two `workflow.run()` calls tied together by `pending_request_id`.
 
 ```python
 pending_request_id: str | None = None
@@ -91,13 +103,15 @@ async for event in workflow.run(responses={pending_request_id: approved}, stream
 
 ## .NET
 
+No key is needed. From the repo root:
+
 ```bash
 cd tutorials/17-human-in-the-loop/dotnet
 dotnet run -- y   # scripted, non-interactive: approves the refund
 dotnet run -- n   # scripted, non-interactive: denies the refund
 ```
 
-.NET's `RequestPort` folds request and response into a single `StreamingRun` loop instead of two separate calls — the port is wired into the graph as both the workflow's start node and the upstream source of the decision executor:
+.NET's `RequestPort` folds request and response into a single `StreamingRun` loop instead of two separate calls. The port is wired into the graph as both the workflow's start node and the upstream source of the decision executor:
 
 ```csharp
 RequestPort approvalPort = RequestPort.Create<RefundRequest, bool>("ApproveRefund");
@@ -125,7 +139,7 @@ await foreach (WorkflowEvent evt in run.WatchStreamAsync())
 }
 ```
 
-`RefundDecisionExecutor` receives the routed `bool` decision directly via `HandleAsync` and reports the outcome — the refund's `order_id`/`amount` were captured at construction time, since the same run already knows what it's asking approval for.
+`RefundDecisionExecutor` receives the routed `bool` decision directly in `HandleAsync` and reports the outcome. It captures the refund's `order_id` and `amount` at construction time, since the same run already knows what it is asking approval for.
 
 ## Side-by-side differences
 
@@ -138,44 +152,32 @@ await foreach (WorkflowEvent evt in run.WatchStreamAsync())
 
 ## Gotchas
 
-- **Draining the first stream matters.** This repo hit a real bug: resuming a workflow only correctly re-enters its `@response_handler` if the *first* `workflow.run(..., stream=True)` stream is drained to completion. Breaking out of the loop as soon as a `request_info` event arrives — the obvious move if you want to return an HTTP response to the user right away — left the workflow's internal `_is_running` flag stuck `True`, so the resuming `run()` raised `RuntimeError: Workflow is already running`. `tutorials/pyproject.toml`'s dependency comment documents this explicitly: it was a bug in `agent-framework-core==1.0.0`, fixed upstream in `core>=1.11.0` (this repo now pins `1.22.0`). `python/main.py`'s `run_with_response()` (used by the test suite) still drains the full first stream defensively before resuming — worth keeping that habit even on a fixed core, since a caller can't assume every consumer of this pattern is on a patched version. Note that `main()`'s interactive driver *does* `break` out of the first loop early (it only needs the `request_id`, not every event) — that now works because of the 1.11.0 fix, not because it was ever the safe pattern.
-- **Two structurally different HITL mechanisms exist in this repo — don't conflate them.** This chapter (and the production `_PolicyGateExecutor` below) teaches the in-workflow `ctx.request_info`/`@response_handler` pattern: the workflow graph itself pauses and resumes. `agents/python/shared/hitl.py` is a completely different mechanism — function-invocation middleware that intercepts a gated tool call (`cancel_order`, `process_refund`, `initiate_return`, `modify_order`, `place_backorder`) before it runs and simply never executes it until an admin approves it out-of-band, via a separate `resolve_hitl_request()` + `execute_approved_action()` call path that never re-enters the workflow or LLM loop. There's no workflow pause/resume involved; the tool call just doesn't happen. If you're looking for one and find the other, you're not in the wrong file — they solve adjacent but different problems, and this chapter's own `RefundApprovalGate` uses the *pause-and-resume* mechanism, not `shared/hitl.py`'s middleware-interception one, even though both happen to gate a refund-shaped decision.
-- **No MAF packaging workaround is needed.** `agent-framework-core` 1.26.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
-- **`WorkflowContext[T, U]` type parameters are required** on both the request-emitting handler's and the response handler's `ctx` argument — a bare `WorkflowContext` isn't enough for MAF to validate the request/response types.
+- **`RuntimeError: Workflow is already running` when you resume.** On `agent-framework-core` older than 1.11.0, breaking out of the first `workflow.run(..., stream=True)` loop as soon as `request_info` arrives leaves the workflow marked as running. The tutorials pin 1.26.0, where breaking early works, and `main()` does exactly that because it only needs the `request_id`. `run_with_response()` drains the whole first stream before resuming, which is safe on every version.
+- **You look for the approval code and find a second, different mechanism.** The application has two. This chapter and `_PolicyGateExecutor` (below) pause and resume the workflow graph with `ctx.request_info` and `@response_handler`. `agents/python/shared/hitl.py` is function middleware (code that wraps every tool call). It intercepts a gated tool call before it runs, and the tool does not execute until an admin approves it through a separate code path. No workflow pauses there.
+- **A bare `WorkflowContext` on `ctx` is not enough.** Both the handler that emits the request and the response handler need the type parameters, `WorkflowContext[T, U]`, so MAF can validate the request and response types.
 
 ## Tests
 
-
 ```bash
-uv sync --project tutorials
 uv run --project tutorials pytest tutorials/17-human-in-the-loop/python/tests -v
+dotnet test tutorials/17-human-in-the-loop/dotnet/tests/Hitl.Tests.csproj
 ```
 
-`tutorials/17-human-in-the-loop/python/tests/test_hitl.py` covers, with no LLM involved:
+Run both from the repo root. Neither calls a model.
 
-1. **Happy path per outcome** — `test_approved_refund_reports_approved` and `test_denied_refund_reports_denied` each drive `run_with_response()` with a different decision and assert on the resulting message.
-2. **Workflow construction** — `test_workflow_builds` asserts `build_workflow()` returns a workflow.
-3. **The concept assertion** — `test_workflow_pauses_for_human_before_first_response` drains the first `workflow.run(..., stream=True)` and asserts it emits a `request_info` event but *no* `output` event, proving the pause actually happens rather than the workflow completing immediately.
+The Python tests in [`python/tests/test_hitl.py`](./python/tests/test_hitl.py) drive `run_with_response()` with each decision and assert on the message. One test drains the first `workflow.run(..., stream=True)` and asserts it emits a `request_info` event but no `output` event, which proves the workflow pauses instead of completing.
 
-The scripted `dotnet run -- y` / `dotnet run -- n` runs shown above are still the quickest manual check; the test project below is what CI gates on.
-
-The .NET side ships [`dotnet/tests/HitlTests.cs`](./dotnet/tests/HitlTests.cs) — seven tests, no LLM involved at all, since HITL is framework plumbing rather than model behaviour:
-
-```bash
-cd tutorials/17-human-in-the-loop/dotnet && dotnet test tests/Hitl.Tests.csproj
-```
-
-`Program.RunAsync` takes the approval decision as a `Func<RequestInfoEvent, bool>` — a console prompt in the app, a lambda in the tests. Without that seam the test hangs on `Console.ReadLine`.
-
-The sharpest assertion is `Nothing_Downstream_Runs_Before_The_Decision_Arrives`, which checks the event ordering rather than the final answer. A gate that could be overtaken by its own downstream executor would still produce the right message.
+The .NET tests in [`dotnet/tests/HitlTests.cs`](./dotnet/tests/HitlTests.cs) pass the decision to `Program.RunAsync` as a `Func<RequestInfoEvent, bool>`: a console prompt in the app, a lambda in the tests. Without that parameter a test would hang on `Console.ReadLine`. `Nothing_Downstream_Runs_Before_The_Decision_Arrives` checks the order of events, not the final answer, because a gate that its own downstream executor could overtake would still produce the right message.
 
 ## How this shows up in the capstone
 
-The production analog of *this chapter's own mechanism* — `ctx.request_info`/`@response_handler` pausing and resuming a workflow graph — is `agents/python/workflows/return_replace.py`'s `_PolicyGateExecutor`. When the approval policy (`config/policies/approvals.yaml`, kind `return_approval`) does not route a return to `auto` — `RETURN_HITL_THRESHOLD`, default `$500`, is only the fallback when the engine cannot decide — the gate executor calls `ctx.request_info(...)` at `agents/python/workflows/return_replace.py:194`, pausing the sequential return/replace workflow before any return is created. A `@response_handler`-decorated method, `on_decision()`, resumes it at `agents/python/workflows/return_replace.py:210` with a `ReturnDecision` — restoring the full `WorkflowState` the request carried (so the paused run's state survives to the resuming request) and either continuing the chain on approval or yielding a rejection output. This is the same `ctx.request_info`/`@response_handler` pair this chapter teaches, just applied inside a multi-step sequential workflow instead of a single-executor gate.
+In the capstone (the full application in this repo), a customer's return that needs review pauses the `workflow:return-replace` run until a staff member approves or rejects it. The executor that pauses it is `_PolicyGateExecutor` in `agents/python/workflows/return_replace.py`.
 
-The web app surfaces the pause as a pending approval row in `/runs` (`web/src/app/(app)/runs/page.tsx`), and `POST /api/orchestration/{run_id}/resume` drives `ReturnReplaceMode.resume()`, which rebuilds a fresh `Workflow` object and resumes purely from `checkpoint_id` + `responses={request_id: ReturnDecision(...)}` — because the process that paused the original run may not be the process handling the resume request.
+The gate asks the approval policy (`config/policies/approvals.yaml`, kind `return_approval`) how to route the return. `RETURN_HITL_THRESHOLD`, default `$500`, is only the fallback when the policy engine cannot decide. Unless the route is `auto`, the gate calls `ctx.request_info(...)` at `agents/python/workflows/return_replace.py:280`, which pauses the workflow before any return is created. The `@response_handler` method `on_decision()` at `agents/python/workflows/return_replace.py:296` resumes it with a `ReturnDecision`. It restores the full `WorkflowState` the request carried, then either continues the chain or yields a rejection. That is the same pair of calls this chapter teaches, inside a multi-step workflow instead of a single gate.
 
-Separately — and structurally unrelated despite the similar name — `agents/python/shared/hitl.py` (358 lines) is the *other* production HITL mechanism: `HITLFunctionMiddleware` intercepts a gated tool call (`cancel_order`, `modify_order`, `process_refund`, `initiate_return`, `place_backorder` — see `HITL_GATED_TOOLS`) before it executes, writes a `tool_approval_requests` row, and returns a `pending_approval` result *without ever calling `call_next()`* — the tool simply never runs until an admin approves it later through `resolve_hitl_request()` + `execute_approved_action()`, a completely separate code path. No workflow pause/resume is involved there at all. Don't confuse the two: this chapter and `_PolicyGateExecutor` teach/use pause-and-resume; `shared/hitl.py` teaches intercept-and-never-execute.
+The web app shows the pause as a pending approval row in `/runs` (`web/src/app/(app)/runs/page.tsx`). `POST /api/orchestration/{run_id}/resume` calls `ReturnReplaceMode.resume()`, which builds a fresh `Workflow` object and resumes from `checkpoint_id` plus `responses={request_id: ReturnDecision(...)}`. It cannot reuse the original object, because the process that paused the run may not be the one handling the resume. Chapter 18 covers checkpoints, the saved snapshots that make this possible.
+
+The second mechanism, `agents/python/shared/hitl.py`, does not pause a workflow at all. `HITLFunctionMiddleware` intercepts a gated tool call (`cancel_order`, `modify_order`, `process_refund`, `initiate_return`, `place_backorder`; see `HITL_GATED_TOOLS`) before it executes. It writes a `tool_approval_requests` row and returns a `pending_approval` result without calling `call_next()`. The tool runs later, when an admin approves it through `resolve_hitl_request()` and `execute_approved_action()`.
 
 ## What's next
 

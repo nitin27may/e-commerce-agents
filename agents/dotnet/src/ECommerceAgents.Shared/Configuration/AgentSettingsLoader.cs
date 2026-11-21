@@ -53,6 +53,20 @@ public static class AgentSettingsLoader
         throw new InvalidOperationException($"A2A_TRANSPORT='{raw}' is not supported. Use legacy or a2a.");
     }
 
+    /// <summary><c>AZURE_OPENAI_AUTH</c> is <c>key</c> (blank too) or <c>identity</c>; anything else fails at startup.</summary>
+    private static string ValidatedAzureAuth(string raw)
+    {
+        var value = raw.Trim().ToLowerInvariant();
+        if (value.Length == 0)
+        {
+            return "key";
+        }
+
+        return value is "key" or "identity"
+            ? value
+            : throw new InvalidOperationException($"AZURE_OPENAI_AUTH='{raw}' is not supported. Use key or identity.");
+    }
+
     /// <summary>A bounded integer setting; out of range fails at startup (Python's <c>Field(ge=, le=)</c> does too).</summary>
     private static int InRange(string name, int value, int min, int max) =>
         value >= min && value <= max
@@ -141,6 +155,24 @@ public static class AgentSettingsLoader
                 : null;
         }
 
+        // Unset keeps the fallback; set-but-empty means "none" (null); anything unparsable keeps the fallback.
+        double? GetOptionalDouble(string key, double fallback)
+        {
+            var raw = config[key] ?? Environment.GetEnvironmentVariable(key);
+            return raw is null ? fallback
+                : string.IsNullOrWhiteSpace(raw) ? null
+                : double.TryParse(raw, out var parsed) ? parsed
+                : fallback;
+        }
+
+        int? GetNullableInt(string key)
+        {
+            var raw = Get(key);
+            return string.IsNullOrWhiteSpace(raw) ? null
+                : int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) ? parsed
+                : throw new InvalidOperationException($"{key} must be an integer");
+        }
+
         int GetInt(string key, int fallback)
         {
             var raw = Get(key);
@@ -189,9 +221,13 @@ public static class AgentSettingsLoader
             GroundingMode = ValidatedGroundingMode(Get("GROUNDING_MODE", "annotate")),
             CostBudgetMode = Get("COST_BUDGET_MODE", "observe"),
             CostBudgetUsdPerRun = GetNullableDouble("COST_BUDGET_USD_PER_RUN"),
-            Temperature = GetDouble("LLM_TEMPERATURE", 0.2),
+            Temperature = GetOptionalDouble("LLM_TEMPERATURE", 0.2),
+            DbPoolMinSize = GetNullableInt("DB_POOL_MIN_SIZE"),
+            DbPoolMaxSize = GetNullableInt("DB_POOL_MAX_SIZE"),
 
             AzureOpenAiEndpoint = Get("AZURE_OPENAI_ENDPOINT"),
+            AzureOpenAiAuth = ValidatedAzureAuth(Get("AZURE_OPENAI_AUTH")),
+            AzureClientId = Get("AZURE_CLIENT_ID").Trim(),
             AzureOpenAiKey = GetWithAlias("AZURE_OPENAI_KEY", "AZURE_OPENAI_API_KEY"),
             AzureOpenAiDeployment = GetWithAlias("AZURE_OPENAI_DEPLOYMENT", "AZURE_OPENAI_DEPLOYMENT_NAME"),
             AzureOpenAiApiVersion = Get("AZURE_OPENAI_API_VERSION", "2025-03-01-preview"),
@@ -242,6 +278,7 @@ public static class AgentSettingsLoader
 
             MafSessionBackend = Get("MAF_SESSION_BACKEND", "postgres").ToLowerInvariant(),
             MafSessionDir = Get("MAF_SESSION_DIR", "./.sessions"),
+            HistoryCompactionKeepLastGroups = Math.Max(0, GetInt("HISTORY_COMPACTION_KEEP_LAST_GROUPS", 0)),
             MafCheckpointBackend = Get("MAF_CHECKPOINT_BACKEND", "postgres").ToLowerInvariant(),
             MafCheckpointDir = Get("MAF_CHECKPOINT_DIR", "./.checkpoints"),
             ReturnHitlThreshold = GetDouble("RETURN_HITL_THRESHOLD", 500.0),

@@ -126,7 +126,8 @@ public static class ChatRoutes
             });
         }
 
-        var (ctx, error) = await PrepareConversationAsync(pool, request.Message, request.ConversationId);
+        var (ctx, error) = await PrepareConversationAsync(
+            pool, request.Message, request.ConversationId, settings.HistoryCompactionKeepLastGroups);
         if (error is not null)
         {
             return error;
@@ -242,7 +243,8 @@ public static class ChatRoutes
             return;
         }
 
-        var (ctx, error) = await PrepareConversationAsync(pool, request.Message, request.ConversationId);
+        var (ctx, error) = await PrepareConversationAsync(
+            pool, request.Message, request.ConversationId, settings.HistoryCompactionKeepLastGroups);
         if (error is not null)
         {
             await error.ExecuteAsync(context);
@@ -848,7 +850,8 @@ public static class ChatRoutes
     private static async Task<(ConversationContext? Context, IResult? Error)> PrepareConversationAsync(
         DatabasePool pool,
         string message,
-        string? requestedConversationId
+        string? requestedConversationId,
+        int keepLastHistoryGroups = 0
     )
     {
         if (IsAnonymousCaller())
@@ -917,6 +920,9 @@ public static class ChatRoutes
               ORDER BY created_at ASC",
             new { cid = convId }
         )).Select(r => new HistoryEntry((string)r.role, (string)r.content)).ToList();
+
+        // B-15: a no-op unless HISTORY_COMPACTION_KEEP_LAST_GROUPS > 0.
+        history = HistoryCompaction.Compact(history, keepLastHistoryGroups);
 
         return (new ConversationContext(false, convId.ToString(), userId, history, userMessageId), null);
     }

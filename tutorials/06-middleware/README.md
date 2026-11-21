@@ -1,27 +1,34 @@
 # Chapter 06 — Middleware and the Agent Pipeline
 
-Three layers, one composable pipeline. Wrap every agent run, intercept every tool call, redact PII before the LLM ever sees it — in both Python and .NET, with the same three abstractions.
+Add middleware, code that runs around an agent call, to log every run, block a tool call and redact a card number before the LLM sees it.
+
+**You will learn to:**
+
+- Wrap an agent run to log what happens before and after it
+- Intercept a tool call and refuse it without running the tool
+- Rewrite outgoing messages before they reach the model, for example to mask a card number
+- Combine all three on one agent
 
 ## Why this chapter
 
-Every agent eventually needs cross-cutting behavior that has nothing to do with its actual job: log every run for observability, block a tool call that violates a business rule, strip a credit-card number out of a user message before it reaches the model. Bolting that logic into the tool functions or the prompt works for a demo and falls apart the moment you have six specialist agents that all need it consistently. Middleware gives you three well-defined interception points — agent run, tool/function call, and chat/LLM call — so this logic lives once, composes predictably, and doesn't require touching business code. This is exactly the shape the capstone app uses: every specialist agent in this repo is built from the same middleware stack, not a bespoke one per agent.
+Every agent eventually needs behavior that has nothing to do with its job: log every run, block a tool call that breaks a business rule, strip a credit-card number out of a user message before it reaches the model. Putting that logic in the tool functions or the prompt works for a demo. It stops working once several agents all need it applied the same way. The full application in this repo (the capstone) builds every agent from one shared middleware stack for that reason.
 
-A middleware lets you observe or mutate an agent run at three levels:
+Middleware lets you observe or change an agent run at three levels:
 
-- **Agent run** — wrap the entire invocation (before/after logging, span creation, auth checks).
-- **Function/tool** — intercept tool calls (approval gates, argument validation, result transformation).
-- **Chat/LLM** — transform messages before they reach the provider (PII redaction, caching, model routing).
+- **Agent run**: wrap the entire invocation (before/after logging, span creation, auth checks).
+- **Function/tool**: intercept tool calls (approval gates, argument validation, result transformation).
+- **Chat/LLM**: transform messages before they reach the provider (PII redaction, caching, model routing).
 
-All three compose in a single pipeline. No surgery on tool code; no prompt string gymnastics.
+All three compose in one pipeline, and neither your tool code nor your prompt changes.
 
 ## Prerequisites
 
 - Completed [Chapter 05 — Context Providers](../05-context-providers/)
-- `.env` at the repo root with working credentials (or `LLM_PROVIDER=replay` — see Tests below)
+- No API key is needed for the default prompt: with none set, `main.py` replays a recorded response. Any other prompt, including the card-number example, needs working credentials in the repo-root `.env`.
 
 ## The concept
 
-Think of it as an onion: the agent-run middleware is the outermost layer (it sees the whole invocation, start to finish), chat middleware wraps every call out to the LLM, and function middleware wraps every call into a tool. A request passes through the outer layer once on the way in and once on the way out; the inner layers can fire multiple times per run (once per LLM round-trip, once per tool call) if the agent loops.
+Think of it as an onion. Agent-run middleware is the outermost layer and sees the whole invocation, start to finish. Chat middleware wraps every call out to the LLM, and function middleware wraps every call into a tool. A request passes through the outer layer once on the way in and once on the way out. The inner layers can run several times per run, once per LLM round-trip and once per tool call.
 
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': {
@@ -61,15 +68,33 @@ flowchart LR
   class tool core
 ```
 
-Each layer can short-circuit: function middleware can refuse a tool call without ever invoking it, chat middleware can rewrite the outbound message list, agent middleware can wrap the whole thing in a try/except for a uniform failure log. None of the layers know about each other — they compose because the framework dispatches by type, not because you wired an explicit chain.
+Each layer can step in. Function middleware can refuse a tool call without invoking it, chat middleware can rewrite the outbound message list, and agent middleware can wrap the whole run in a try/except for a uniform failure log. The layers do not know about each other. They compose because the framework dispatches by type, not because you wired a chain.
 
 ## Python
 
-Run from the repo root using the shared `tutorials/` uv project (one `uv sync` covers every chapter):
+Run from the repo root:
 
 ```bash
 uv sync --project tutorials
 uv run --project tutorials python tutorials/06-middleware/python/main.py
+```
+
+You should see:
+
+```text
+No LLM key found - replaying the recorded fixture (set OPENAI_API_KEY or the AZURE_OPENAI_* variables for a live run).
+Q: What's the weather in Paris?
+A: The weather in Paris is sunny with a temperature of 18°C.
+
+agent events:    ['agent:before', 'agent:after']
+tool invocations: ['Paris']
+tool blocked:    []
+pii redactions:  0
+```
+
+The last four lines are what each middleware recorded. With a key set, pass your own message to see the redaction count change:
+
+```bash
 uv run --project tutorials python tutorials/06-middleware/python/main.py "My card is 4111-1111-1111-1111"
 ```
 
@@ -121,17 +146,18 @@ class PiiRedactionChatMiddleware(ChatMiddleware):
         await call_next()
 ```
 
-All three are wired in with `Agent(client, ..., middleware=[logger, validator, redactor])` in `build_agent()`. `main.py` also supports `LLM_PROVIDER=replay`, which plays back recorded fixtures instead of hitting a real provider — useful for the one CI-safe test (see Tests below).
+`build_agent()` attaches all three with `Agent(client, ..., middleware=[logger, validator, redactor])`.
 
 ## .NET
 
 ```bash
 cd tutorials/06-middleware/dotnet
 dotnet run
-dotnet test
 ```
 
-Source: [`dotnet/Program.cs`](./dotnet/Program.cs). .NET uses the `DelegatingChatClient` + `IChatClient.AsBuilder().Use(...)` pattern for chat middleware, and a plain function guard for the tool intercept. Agent-run middleware exists via `AIAgentBuilder.Use(runFunc, runStreamingFunc)` but is omitted here for brevity — the comment at the top of `Program.cs` notes the capstone's shared agent factory uses that layer for logging + spans.
+The command changes into the chapter's `dotnet` folder first. `dotnet run` calls a live model, so it needs a key in the repo-root `.env`. The .NET tests (`dotnet test tutorials/06-middleware/dotnet/tests/Middleware.Tests.csproj`, from the repo root) need no key, but without one they return early, so use the Python side for a keyless run.
+
+Source: [`dotnet/Program.cs`](./dotnet/Program.cs). .NET uses `DelegatingChatClient` with `IChatClient.AsBuilder().Use(...)` for chat middleware, and a plain guard inside the function for the tool intercept. Agent-run middleware exists as `AIAgentBuilder.Use(runFunc, runStreamingFunc)`; this example leaves it out to stay short.
 
 ```csharp
 private sealed class PiiRedactingChatClient : DelegatingChatClient
@@ -156,7 +182,7 @@ var agent = new ChatClientAgent(pipeline, new ChatClientAgentOptions {
 });
 ```
 
-The tool-call guard (the "Atlantis" refusal) lives directly inside the `AIFunctionFactory.Create(...)` lambda for `get_weather` rather than as a separate middleware type — there's no dedicated function-middleware abstraction in this SDK surface the way Python has `FunctionMiddleware`; the guard pattern gets you the same short-circuit behavior.
+The tool-call guard (the "Atlantis" refusal) sits inside the `AIFunctionFactory.Create(...)` lambda for `get_weather`, not in a separate middleware type. This example uses no dedicated function-middleware class the way Python uses `FunctionMiddleware`; the guard gives the same early refusal.
 
 ## Side-by-side differences
 
@@ -166,44 +192,46 @@ The tool-call guard (the "Atlantis" refusal) lives directly inside the `AIFuncti
 | Registration | `Agent(..., middleware=[...])` | `.AsBuilder().Use(...)` chain on the `IChatClient` pipeline |
 | Short-circuit | Set `context.result` and return early | `throw`, or return a canned string from the tool function |
 
-.NET is more plumbing-ey but the abstraction overhead is zero — it's plain C# delegation, no framework-specific base classes for the tool layer.
+The .NET version takes more wiring, but it is plain C# delegation, with no framework-specific base class for the tool layer.
 
 ## Gotchas
 
-- **Don't keep state across runs** unless you intend to. Instantiate a fresh middleware per run if your assertions care about ordering (the tests build a new agent per test).
-- **The arguments dict is not mutable in every backend.** To short-circuit a tool call in Python, set `context.result` rather than mutating `context.arguments`.
-- **`DelegatingChatClient` must call `base.GetResponseAsync(...)`** (or return a cached response). Forgetting to call the inner client hangs the run.
-- **A tool guard baked into the function body is not the same as function middleware.** In .NET, the guard runs as part of the tool call itself; in Python, `FunctionMiddleware` wraps the call from outside. Different layers, different observability — the .NET version can't be reused across tools without duplicating the guard code.
-- **No MAF packaging workaround is needed.** `agent-framework-core` 1.26.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
+- **Counters or event lists carry over from an earlier run.** A middleware object keeps its state for as long as it lives. Create a fresh one per run if your assertions depend on ordering; the tests build a new agent per test.
+- **Changing `context.arguments` does not stop the tool call.** The arguments dict is not mutable in every backend. To refuse a tool call in Python, set `context.result` and return without calling `call_next()`.
+- **A .NET run hangs.** A `DelegatingChatClient` must call `base.GetResponseAsync(...)` or return a cached response. If it never calls the inner client, the run does not finish.
+- **A .NET tool guard cannot be reused across tools.** A guard in the function body runs as part of the tool call itself. Python's `FunctionMiddleware` wraps the call from outside. They are different layers with different observability, and the .NET guard has to be repeated in each tool.
 
 ## Tests
 
+Both commands run from the repo root. The Python command needs pytest from the dev extras; install them once with `uv sync --project tutorials --extra dev`:
+
 ```bash
-# Python: 6 tests — 1 replay-based (no credentials, safe for CI) plus 5 live-LLM
-# tests covering each middleware type + cross-run isolation
+# Python
 uv run --project tutorials pytest tutorials/06-middleware/python/tests -v
 
-# .NET: 4 live-LLM tests (tool intercept, PII redaction, clean-message bypass, isolation)
-cd tutorials/06-middleware/dotnet
-dotnet test tests/Middleware.Tests.csproj
+# .NET
+dotnet test tutorials/06-middleware/dotnet/tests/Middleware.Tests.csproj
 ```
 
-Structurally: `python/tests/test_middleware.py` has `test_replay_agent_and_function_middleware_observe_weather_call` (runs against recorded fixtures in `python/tests/fixtures/replay/`, no network needed), plus live-LLM tests for agent-middleware ordering, function-middleware interception, the forbidden-city short-circuit, chat-middleware redaction, and no state leaking between agent instances. `dotnet/tests/MiddlewareTests.cs` covers the same ground minus the replay path: tool invocation observation, card redaction, a clean-message bypass check, and cross-run isolation.
+One Python test replays a recorded run, with no key, and confirms that the agent and function middleware both observe the weather tool call. The remaining Python tests and all the .NET tests use a live model. They cover middleware ordering, tool interception, the forbidden-city refusal, card redaction and state not leaking between agents. Without credentials the Python ones are skipped and the .NET ones return early.
 
 ## How this shows up in the capstone
 
-This chapter's toy example is a simplified version of what's actually running. The real, single wiring point every specialist and the orchestrator use is `build_specialist_middleware()` in `agents/python/shared/middleware.py:179`. Today it composes considerably more than three layers:
+In the full application, one middleware stack runs around every agent. It is what masks a shopper's card number before the model sees it, audits each tool call and pauses risky actions for a person to approve.
 
-- `AgentRunLogger` (agent middleware, `agents/python/shared/middleware.py:42`) — run timing + correlation id, always on.
-- `ToolAuditMiddleware` (function middleware, `agents/python/shared/middleware.py:78`) — structured audit log for every tool call, always on.
-- `InjectionDetectionChatMiddleware` (chat middleware, gated by `settings.GUARDRAILS_ENABLED`) — flags inbound prompt injection.
-- `PiiRedactionMiddleware` (chat middleware, `agents/python/shared/middleware.py:129`) — the same card/SSN redaction pattern this chapter teaches, always on regardless of the guardrails flag.
-- `OutputSanitizationMiddleware` (function middleware, gated by `settings.GUARDRAILS_ENABLED`) — defangs stored injection in tool output.
-- `HITLFunctionMiddleware` (function middleware, gated by `settings.HITL_ENABLED`) — human-in-the-loop approval gate.
-- Grounding middleware (`GROUNDING_LEDGER_MIDDLEWARE` + `GroundingVerificationMiddleware`, gated by `settings.GROUNDING_MODE != "off"`) — records real product/order facts during the run and verifies the final text against them.
-- `STEP_MIDDLEWARE` (from `shared.agent_observability`, on by default via `include_steps=True`) — agentic-timeline capture for the run explorer UI.
+Every specialist and the orchestrator get that stack from `build_specialist_middleware()` at `agents/python/shared/middleware.py:186`. It composes more than three layers:
 
-None of this is speculative — every agent factory in `agents/python/` calls `build_specialist_middleware()` to get its list. The tutorial's three-class example (`LoggingAgentMiddleware`, `ArgValidatorMiddleware`, `PiiRedactionChatMiddleware`) is the same *shape*, just without the guardrail/grounding/HITL layers this app adds on top. Separately, `AgentAuthMiddleware` in `agents/python/shared/auth.py:85` is HTTP middleware (Starlette `BaseHTTPMiddleware`) — a different layer entirely, wrapping the web request before it ever reaches the agent.
+- `AgentRunLogger` (agent middleware, `agents/python/shared/middleware.py:43`): run timing and a correlation id. Always on.
+- `ToolAuditMiddleware` (function middleware, `agents/python/shared/middleware.py:83`): a structured audit log for every tool call. Always on.
+- `InjectionDetectionChatMiddleware` (chat middleware, on when `settings.GUARDRAILS_ENABLED`): flags inbound prompt injection.
+- `PiiRedactionMiddleware` (chat middleware, `agents/python/shared/middleware.py:136`): the card and SSN redaction this chapter teaches. Always on, whatever the guardrails flag says.
+- `OutputSanitizationMiddleware` (function middleware, on when `settings.GUARDRAILS_ENABLED`): defangs stored injection in tool output.
+- `HITLFunctionMiddleware` (function middleware, on when `settings.HITL_ENABLED`): a human-in-the-loop (HITL) gate. A gated tool call does not run until a person approves it.
+- Grounding middleware (`GROUNDING_LEDGER_MIDDLEWARE` and `GroundingVerificationMiddleware`, on unless `settings.GROUNDING_MODE` is `"off"`): grounding means checking the answer against real data. These record the product and order facts tools returned during the run and verify the final text against them.
+- `CostBudgetMiddleware` and `OutputModerationMiddleware` (chat middleware, each off when its mode setting is `"off"`): track or cap per-run cost, and classify the model's own output.
+- `STEP_MIDDLEWARE` (from `shared.agent_observability`, on by default through `include_steps=True`): captures each step for the run explorer UI.
+
+The chapter's three classes (`LoggingAgentMiddleware`, `ArgValidatorMiddleware`, `PiiRedactionChatMiddleware`) have the same shape, without the guardrail, grounding and HITL layers. `AgentAuthMiddleware` at `agents/python/shared/auth.py:123` is a different kind of middleware: HTTP middleware (Starlette `BaseHTTPMiddleware`) that wraps the web request before it reaches the agent.
 
 ## What's next
 

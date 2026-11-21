@@ -154,6 +154,7 @@ Two deterministic pieces sit beside the model-facing suite, neither calling a mo
 
 ```bash
 # Prerequisites: running PostgreSQL + seeded data + valid OPENAI_API_KEY
+# (live runs only; the keyless replay suite is scripts/replay-evals.sh --setup)
 ./scripts/dev.sh --infra-only        # PowerShell: ./scripts/dev.ps1 -InfraOnly
 cd agents/python && uv run python -m scripts.seed
 

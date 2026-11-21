@@ -2,7 +2,8 @@
 
 A hands-on course in **Microsoft Agent Framework**, taught chapter by chapter with runnable examples
 in both Python and .NET, from a first agent up to the multi-agent e-commerce application in this
-repo. It is for developers who can read Python or C# and want to build agents, workflows and
+repo. That application is real and complete (web app, five agent services, database, approvals,
+evals, telemetry), so every chapter ends by pointing at where its idea does production work. It is for developers who can read Python or C# and want to build agents, workflows and
 multi-agent systems, not just read about them.
 
 ## Run chapter 1 now, no key
@@ -102,6 +103,20 @@ decision, checkpoint and resume it, define it in YAML, and draw it.
 handoff, group chat, Magentic), use an agent as another agent's tool, and compose larger systems
 from critique loops, planners and nested workflows.
 
+Five of these patterns run in this repo's application as orchestration modes you can switch between
+in the chat UI, so after a chapter you can watch the same pattern handle a real request:
+
+| Chapter | Mode in the app | Try it |
+|---|---|---|
+| [27 — Agent-as-tool](./27-agent-as-tool/) | `tool` (the default; the app's version calls specialists over A2A) | Any question, mode **Tool Router** |
+| [14 — Handoff](./14-handoff-orchestration/) | `handoff` | "Where's my latest order?", mode **Handoff Mesh** |
+| [13 — Concurrent](./13-concurrent-orchestration/) | `workflow:pre-purchase` | "Should I buy the Sony WH-1000XM5?", mode **Pre-Purchase Research** |
+| [12 — Sequential](./12-sequential-orchestration/) and [17 — Human-in-the-Loop](./17-human-in-the-loop/) | `workflow:return-replace` | "I want to return my last order", mode **Return & Replace** |
+| [15](./15-group-chat-orchestration/) and [22 — Group-Chat Debate](./22-group-chat-debate/) | `group-chat` | A trade-off question, mode **Group Chat** |
+
+The [orchestration benchmark](../docs/orchestration-benchmark.md) has the latency and cost of each
+on the same prompts, and [chapter 21](./21-capstone-tour/) walks through comparing them.
+
 ### Production concerns (23–26, 31–32)
 
 *For:* readers taking agents toward production who need them to talk to each other, stay grounded,
@@ -151,7 +166,8 @@ runnable examples, not the write-ups.
   (`.github/workflows/tutorials.yml`).
 - **Runnable · tests pending** — working code, tests not written yet.
 - **Not ported** — no equivalent in that language yet.
-- **Guide only** / **Planned** — no code by design, or not started.
+- **Guide only** / **Planned** — a written guide with no chapter code of its own (chapters 00 and
+  21; the capstone tours the running application instead).
 
 Each chapter's own `README.md` is the canonical, always-current source.
 
@@ -194,12 +210,10 @@ Each chapter's own `README.md` is the canonical, always-current source.
 | 32 | [Cost Control and Budgets](./32-cost-control-and-budgets/) | Runnable · tested in CI | Runnable · tested in CI |
 <!-- END GENERATED COVERAGE TABLE -->
 
-[^magentic]: Chapter 16's .NET side is still a **status stub**, not a port — but the reason has
-    changed. Magentic orchestration *does* exist in .NET now: `Microsoft.Agents.AI.Workflows`
-    1.28.0 exports `MagenticWorkflowBuilder` and its plan/ledger events (the Python names
-    `MagenticBuilder` / `StandardMagenticManager` still do not exist there). The stub's
-    tripwire tests fired when the tutorials moved from 1.1.0 to 1.28.0 and were inverted
-    rather than deleted: they now pin that the types exist. Porting the chapter is open work.
+[^magentic]: Chapter 16's .NET side is a **status stub**, not a port. `Microsoft.Agents.AI.Workflows`
+    1.28.0 exports `MagenticWorkflowBuilder` and its plan/ledger events (under different names
+    from Python's `MagenticBuilder` / `StandardMagenticManager`), and the stub's tests only pin
+    that those types exist. Porting the chapter is open work.
 
 [^devui]: DevUI is Python-only in the versions this repo pins. A `Microsoft.Agents.AI.DevUI`
     package exists on NuGet but is still prerelease-only (latest `1.28.0-preview.261106.1`
@@ -254,9 +268,12 @@ import no chat client at all. A few chapters' default prompt has no recorded fix
 chapter's README says which, and `scripts/run_tutorials_keyless.py` is the CI check that holds
 the line.
 
-Every chapter's .NET tests run against a scripted `IChatClient`
+`dotnet test` needs no key and makes no network call in any chapter. The agent chapters from 11
+on (11 to 15, 23 to 29 and 32) run against a scripted `IChatClient`
 (`tutorials/_shared/dotnet/ScriptedChatClient.cs`, the counterpart to Python's
-`replay_client.py`), so `dotnet test` needs no key and makes no network call. It records what
+`replay_client.py`). In chapters 01 to 08 the keyless tests cover the code around the model call,
+and the tests that call a model are marked as integration tests and skipped without a key. The
+scripted client records what
 actually reaches the model, which is how the orchestration chapters assert things the source
 cannot show you — that chapter 13's agents genuinely overlap in time and chapter 12's genuinely
 do not, or that a handoff target is identified only by its tool *description*.

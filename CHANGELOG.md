@@ -29,6 +29,19 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
   `nbclient` (also a step in the `tutorials-keyless` job) and fails if a committed notebook carries outputs;
   `scripts/strip_notebook_outputs.py` cleans one. `nbclient`, `nbformat` and `ipykernel` join the tutorials `dev`
   extra; the lock change is additions only.
+- **Managed identity for Azure OpenAI** (#89, P3; both stacks). `AZURE_OPENAI_AUTH=identity` (default `key`) sends
+  a Microsoft Entra token for chat and Azure embeddings instead of `AZURE_OPENAI_KEY`, which is then not required;
+  `AZURE_CLIENT_ID` selects a user-assigned identity, else `DefaultAzureCredential`. Adds `azure-identity` on Python
+  (no existing dependency moves). Tested with a fake credential only; the default is not flipped. Parity row 49.
+- **Runtime knobs for managed hosting** (#89, P2; both stacks). `LLM_TEMPERATURE` set empty sends no
+  temperature (gpt-5.x rejects it; default `0.2` unchanged, replay keys unaffected).
+  `DB_POOL_MIN_SIZE` / `DB_POOL_MAX_SIZE` bound the connection pool (Python defaults `5`/`20` as before;
+  .NET leaves Npgsql's defaults unless set). The .NET stack now honours `sslmode` in `DATABASE_URL`, which it
+  used to drop. Estimated `gpt-5.1` and `gpt-5.1-mini` price rows on both stacks. Parity row 48.
+- **History compaction on .NET** (B-15, parity row 43). `HISTORY_COMPACTION_KEEP_LAST_GROUPS` (default `0`, off) now
+  also trims the .NET specialist host's rehydrated history and the orchestrator's conversation history to the last N
+  message groups, a group being a user turn with its assistant and tool messages, kept or dropped whole. Off, the
+  history and so the model request are unchanged.
 - **A2A 1.0 on both stacks** (#88). Every specialist serves the A2A 1.0 JSON-RPC binding at
   `/a2a/v1` and an agent card at `/.well-known/agent-card.json`, beside the unchanged
   `/message:send` wire. `A2A_TRANSPORT=legacy|a2a` (default `legacy`) picks what the caller
@@ -63,6 +76,14 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
   The recorded demo fixtures are not in the images yet (the recording session adds them); until then
   every model call is a reported replay miss and the stack stays up. The key preflight now points at
   `--no-key`, and `--demo --clean` also clears the demo stack's volumes.
+- **Aspire AppHost** (B-18, #90, .NET). `agents/dotnet/src/ECommerceAgents.AppHost` runs the stack under
+  Aspire as an alternative to compose, which stays the reference path: pgvector Postgres, Redis, the repo's
+  own `scripts/migrate.py` and seeder as one-shot containers, the auth-server, the orchestrator and
+  five specialists, the outbox worker and the pnpm frontend, with `AGENT_REGISTRY` built from endpoint
+  references. `AgentStack=python` swaps the orchestrator and specialists to uvicorn apps, and
+  `AgentStackOverrides:<name>=python` moves one. `ECommerceAgents.ServiceDefaults` reuses `TelemetrySetup`.
+  `AppHostModelTests` build the model without starting it. Pinned to Aspire 13.6.5; 17.0.0 exists but obsoletes
+  the SDK and the project-resource model. See `docs/deployment.md`.
 
 ### Changed since 1.3.0
 

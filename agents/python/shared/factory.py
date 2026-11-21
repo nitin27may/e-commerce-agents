@@ -32,6 +32,7 @@ from urllib.parse import urlparse
 import openai
 from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient
 
+from shared.azure_auth import azure_credential, azure_token_provider
 from shared.config import settings
 from shared.context import current_agent_model
 from shared.embedding_config import (
@@ -62,8 +63,8 @@ def _validate_azure() -> None:
     missing = []
     if not settings.AZURE_OPENAI_ENDPOINT:
         missing.append("AZURE_OPENAI_ENDPOINT")
-    if not settings.AZURE_OPENAI_KEY:
-        missing.append("AZURE_OPENAI_KEY (or AZURE_OPENAI_API_KEY)")
+    if settings.AZURE_OPENAI_AUTH == "key" and not settings.AZURE_OPENAI_KEY:
+        missing.append("AZURE_OPENAI_KEY (or AZURE_OPENAI_API_KEY; or AZURE_OPENAI_AUTH=identity)")
     if not settings.AZURE_OPENAI_DEPLOYMENT:
         missing.append("AZURE_OPENAI_DEPLOYMENT (or AZURE_OPENAI_DEPLOYMENT_NAME)")
     if missing:
@@ -221,6 +222,14 @@ def get_chat_client(agent_name: str | None = None) -> OpenAIChatClient | OpenAIC
         api_version,
     )
     current_agent_model.set(deployment if override_model else "")
+    if settings.AZURE_OPENAI_AUTH == "identity":
+        # No key is read or sent: MAF turns the credential into a bearer-token provider.
+        return OpenAIChatCompletionClient(
+            model=deployment,
+            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            credential=azure_credential(),
+            api_version=api_version,
+        )
     return OpenAIChatCompletionClient(
         model=deployment,
         azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
@@ -259,6 +268,14 @@ def get_embeddings_client() -> openai.AsyncOpenAI | openai.AsyncAzureOpenAI:
     if provider == "azure":
         endpoint = settings.EMBEDDING_BASE_URL or settings.AZURE_OPENAI_ENDPOINT
         key = settings.EMBEDDING_API_KEY or settings.AZURE_OPENAI_KEY
+        if settings.AZURE_OPENAI_AUTH == "identity" and not settings.EMBEDDING_API_KEY:
+            if not endpoint:
+                raise ValueError("Azure embeddings need AZURE_OPENAI_ENDPOINT (or EMBEDDING_BASE_URL).")
+            return openai.AsyncAzureOpenAI(
+                azure_endpoint=endpoint,
+                azure_ad_token_provider=azure_token_provider(),
+                api_version=settings.AZURE_OPENAI_API_VERSION,
+            )
         if not endpoint or not key:
             raise ValueError(
                 "Azure embeddings need AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_KEY (or EMBEDDING_BASE_URL and "

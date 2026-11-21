@@ -211,6 +211,19 @@ docker compose -f docker-compose.dotnet.yml \
 On Windows PowerShell, put the whole command on one line, or use a backtick (`` ` ``) for line
 continuation instead of the backslash.
 
+### Or under Aspire
+
+If you have the .NET 10 SDK, `uv` and `pnpm`, the Aspire AppHost starts the same stack with a resource
+dashboard instead of compose. Docker still runs Postgres, Redis, the seeder and the auth-server.
+
+```bash
+dotnet run --project agents/dotnet/src/ECommerceAgents.AppHost
+AgentStack=python dotnet run --project agents/dotnet/src/ECommerceAgents.AppHost   # Python backend
+```
+
+It binds the same ports as compose, so stop that first. Details and caveats are in
+[deployment.md](deployment.md#running-under-aspire-alternative-to-compose).
+
 ## Run without a paid API key
 
 **No key at all: `--no-key`.** Plays back recorded model responses, so nothing calls a model.
@@ -223,7 +236,8 @@ continuation instead of the backslash.
 compose file and skips the key check. It hardcodes `LLM_PROVIDER=replay`, the replay fixtures path and
 the demo-tour settings, so a `.env` or exported variable cannot change what a recorded answer was
 keyed on. Only the suggested prompts in the chat get an answer; anything else is reported in the chat
-as not recorded. Browsing, search, the cart and checkout never call a model and work normally.
+as not recorded. The recordings are not in the released images yet, so today every chat prompt is
+reported that way ([demo guide](demo-guide.md#no-key-mode)). Browsing, search, the cart and checkout never call a model and work normally.
 Python stack only. Use `--clean` when you start it again: re-seeding an already-seeded database makes
 some recorded answers miss.
 

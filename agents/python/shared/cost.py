@@ -53,6 +53,12 @@ _PRICING: dict[str, ModelPricing] = {
     "gpt-4.1": ModelPricing(input_per_1k=0.002, output_per_1k=0.008),
     "gpt-4.1-mini": ModelPricing(input_per_1k=0.0004, output_per_1k=0.0016),
     "gpt-4.1-nano": ModelPricing(input_per_1k=0.0001, output_per_1k=0.0004),
+    # ESTIMATES, not confirmed list prices: gpt-5.1 is the Azure default (#89) and these are
+    # placeholders until the provider's pricing page is checked against a real deployment. A
+    # snapshot such as gpt-5.1-2025-11-13 resolves to the gpt-5.1 row. "gpt-5.1-mini" is a
+    # plausible deployment name, not a confirmed model id.
+    "gpt-5.1": ModelPricing(input_per_1k=0.00125, output_per_1k=0.01),
+    "gpt-5.1-mini": ModelPricing(input_per_1k=0.00025, output_per_1k=0.002),
     "gpt-4o": ModelPricing(input_per_1k=0.0025, output_per_1k=0.01),
     "gpt-4o-mini": ModelPricing(input_per_1k=0.00015, output_per_1k=0.0006),
     "text-embedding-3-small": ModelPricing(input_per_1k=0.00002, output_per_1k=0.0),

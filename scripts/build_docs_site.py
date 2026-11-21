@@ -87,6 +87,7 @@ SECTIONS: tuple[Section, ...] = (
         (
             "docs/quick-start.md",
             "docs/configuration.md",
+            "docs/model-providers.md",
             "docs/demo-guide.md",
             "docs/deployment.md",
             "docs/troubleshooting.md",
@@ -136,8 +137,10 @@ SECTIONS: tuple[Section, ...] = (
             "docs/merchant-proposals.md",
             "docs/event-autonomy.md",
             "docs/return-lifecycle.md",
+            "docs/durable-task-spike.md",
             "docs/devui.md",
             "docs/agent-quality.md",
+            "docs/eval-scorecard.md",
             "docs/maf-best-practices.md",
             "docs/releasing.md",
         ),

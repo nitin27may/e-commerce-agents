@@ -1,16 +1,25 @@
 # Chapter 09 — Workflow Executors and Edges
 
+Build the smallest useful MAF workflow: three executors (units of work) joined by two edges (message routes), where one step can end the run early.
+
+**You will learn to:**
+
+- Write an executor with a typed message handler
+- Connect executors into a workflow with `WorkflowBuilder` and edges
+- End a run early by yielding an output instead of sending a message on
+- Read a workflow's outputs from its event stream
+
 ## Why this chapter
 
-Chapters 01–08 treated each agent call as a single atomic request. Real e-commerce flows have *steps*: validate input → fetch reviews → check stock → synthesize a recommendation. You could chain `agent.run()` calls by hand, but as soon as you need parallel steps, a fan-in barrier, or a step that can short-circuit the rest of the pipeline, hand-rolled `asyncio` code gets hard to reason about — and that's exactly the shape the capstone's pre-purchase research flow needs (three tool calls in parallel, then a shipping estimate that depends on their result, then a synthesis step).
+Chapters 01–08 treated each agent call as one request. Real e-commerce flows have *steps*: validate input → fetch reviews → check stock → write a recommendation. You could chain `agent.run()` calls by hand. Once you need parallel steps, a step that waits for several others, or a step that can stop the rest of the pipeline, hand-written `asyncio` code gets hard to reason about. The capstone (the full application in this repo) needs exactly that shape for its pre-purchase research: three lookups in parallel, a shipping estimate that depends on them, then a summary.
 
-MAF's **Workflow** is a deterministic DAG of **Executors** (units of work) connected by **Edges** (message routes). It runs on a Bulk Synchronous Parallel (Pregel-style) scheduler — executors run in supersteps, in-flight messages flush at a barrier, then the next superstep starts. This chapter builds the smallest possible workflow — three executors, two edges, one short-circuit — so the mechanics are visible before Chapter 13 uses the same primitives for real concurrent orchestration.
+MAF's **Workflow** is a deterministic graph of **Executors** (units of work) connected by **Edges** (message routes). The scheduler runs in supersteps: every executor with a pending message runs, the messages they sent are delivered together, and then the next superstep starts. This chapter builds three executors, two edges and one early exit, so the mechanics are visible before Chapter 13 uses the same pieces to run agents in parallel.
 
 ## Prerequisites
 
 - Completed [Chapter 08 — MCP Tools](../08-mcp-tools/)
 - Python 3.12+ via `uv`; .NET SDK (9 or 10)
-- No environment variables needed — this chapter runs pure order-id transformation executors, no LLM calls
+- No API key or environment variables needed. The executors only transform an order id and call no model
 
 ## The concept
 
@@ -19,9 +28,9 @@ MAF's **Workflow** is a deterministic DAG of **Executors** (units of work) conne
 | **Executor** | A class with one or more typed message handlers (`@handler` in Python, `[MessageHandler]` in .NET). Receives a message, may send more messages downstream, may yield a workflow output. |
 | **Edge** | Connects two executors. A plain edge forwards every message; a conditional edge only forwards when a predicate returns true. |
 | **WorkflowBuilder** | Wires executors and edges into a `Workflow`. Declares the start executor. |
-| **WorkflowContext** | Passed to each handler. Key methods: `send_message(...)` (forward to the next executor along an outbound edge) and `yield_output(...)` (emit a final, workflow-terminating result — no downstream edge fires for that message after this call). |
+| **WorkflowContext** | Passed to each handler. `send_message(...)` forwards a value to the next executor along an outbound edge. `yield_output(...)` emits a workflow result; no downstream edge fires for the value you yield. |
 
-The demo wires three executors in a line — `NormalizeOrder → ValidateOrder → LogOrder` — where `ValidateOrder` can short-circuit: an empty or whitespace-only order id yields a terminal output immediately and `LogOrder` never runs.
+The demo wires three executors in a line: `NormalizeOrder → ValidateOrder → LogOrder`. `ValidateOrder` can end the run early. An empty or whitespace-only order id yields an output at once, and `LogOrder` never runs.
 
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': {
@@ -53,19 +62,31 @@ flowchart LR
   class skipped error
 ```
 
-`ValidateOrderExecutor` is the only branch point: a blank order id takes the error/skip path and yields immediately; anything else flows through `LogOrderExecutor` to the success output.
+`ValidateOrderExecutor` is the only branch point. A blank order id is rejected there; anything else flows through `LogOrderExecutor` to the success output.
 
 ## Python
 
-Run from the repo root using the shared `tutorials/` uv project (one `uv sync` covers every chapter):
+Run from the repo root. The shared `tutorials/` uv project covers every chapter, so one `uv sync` is enough:
 
 ```bash
 uv sync --project tutorials
 uv run --project tutorials python tutorials/09-workflow-executors-and-edges/python/main.py "ord-8842"
-uv run --project tutorials python tutorials/09-workflow-executors-and-edges/python/main.py ""   # empty -> short-circuit
+uv run --project tutorials python tutorials/09-workflow-executors-and-edges/python/main.py ""   # empty -> early exit
 ```
 
-Source: [`python/main.py`](./python/main.py). The three executors and the build function:
+You should see, for the first command and then the second:
+
+```
+input: 'ord-8842'
+output: 'ORDER LOGGED: ORD-8842'
+```
+
+```
+input: ''
+output: '[rejected: empty order id]'
+```
+
+Source: [`python/main.py`](./python/main.py). The validating executor and the build function:
 
 ```python
 class ValidateOrderExecutor(Executor):
@@ -95,9 +116,11 @@ def build_workflow():
     )
 ```
 
-`run()` drives the workflow with `workflow.run(order_id, stream=True)` and collects every event whose `type` is `"output"` — that's how both the happy-path `ORDER LOGGED: ...` result and the short-circuit `[rejected: empty order id]` result surface to the caller; `main.py` bootstraps via `tutorials/_shared/maf_bootstrap.py` before importing `agent_framework`.
+`run()` drives the workflow with `workflow.run(order_id, stream=True)` and collects every event whose `type` is `"output"`. Both results reach the caller that way: the normal `ORDER LOGGED: ...` and the early `[rejected: empty order id]`.
 
 ## .NET
+
+No API key is needed. The commands start at the repo root and change into the chapter's `dotnet` directory:
 
 ```bash
 cd tutorials/09-workflow-executors-and-edges/dotnet
@@ -105,7 +128,7 @@ dotnet run -- "ord-8842"
 dotnet test
 ```
 
-Source: [`dotnet/Program.cs`](./dotnet/Program.cs). This is a fully working, buildable example — not a reference-only stub. `Microsoft.Agents.AI.Workflows.Generators` is a Roslyn source generator: it reads each `[MessageHandler]`-decorated method on a `partial` executor class and emits the protocol wiring (`ConfigureProtocol(...)`) at compile time.
+Source: [`dotnet/Program.cs`](./dotnet/Program.cs). `Microsoft.Agents.AI.Workflows.Generators` is a Roslyn source generator. It reads each `[MessageHandler]` method on a `partial` executor class and emits the protocol wiring (`ConfigureProtocol(...)`) at compile time.
 
 ```csharp
 [SendsMessage(typeof(string))]
@@ -129,7 +152,7 @@ internal sealed partial class ValidateOrderExecutor() : Executor("validate-order
 }
 ```
 
-`WorkflowFactory.Build()` wires the three executors with `new WorkflowBuilder(normalize).AddEdge(normalize, validate).AddEdge(validate, log).WithOutputFrom(validate, log).Build()` — note `WithOutputFrom` names *both* `validate` and `log` as legitimate output sources, since either can be the last one to fire depending on whether the run short-circuits. `WorkflowRunner.RunAsync` drives it with `InProcessExecution.RunStreamingAsync(workflow, input)` and filters `WorkflowOutputEvent`s off the stream, mirroring the Python `run()` helper.
+`WorkflowFactory.Build()` wires the three executors with `new WorkflowBuilder(normalize).AddEdge(normalize, validate).AddEdge(validate, log).WithOutputFrom(validate, log).Build()`. `WithOutputFrom` names *both* `validate` and `log` as output sources, because either can be the last to run depending on whether the run ends early. `WorkflowRunner.RunAsync` drives the workflow with `InProcessExecution.RunStreamingAsync(workflow, input)` and filters `WorkflowOutputEvent`s off the stream, as the Python `run()` helper does.
 
 ## Side-by-side differences
 
@@ -141,34 +164,34 @@ internal sealed partial class ValidateOrderExecutor() : Executor("validate-order
 | Declaring outputs | Implicit — any `yield_output` call is an output | Explicit — `[YieldsOutput(typeof(T))]` on the class, plus naming sources in `WithOutputFrom(...)` |
 | Streaming | `workflow.run(input, stream=True)` → async iterator of events | `InProcessExecution.RunStreamingAsync(workflow, input)` → `StreamingRun` with `WatchStreamAsync()` |
 
-Python's pure-runtime model is easier to iterate on in a tutorial. .NET's source-gen + explicit `[SendsMessage]`/`[YieldsOutput]` attributes trade setup ceremony for compile-time verification of the message graph — the build fails if a handler tries to send a type it never declared.
+Python checks everything at run time, which is quicker to iterate on. .NET's source generator and explicit `[SendsMessage]`/`[YieldsOutput]` attributes cost some setup and give you compile-time verification of the message graph: the build fails if a handler tries to send a type it never declared.
 
 ## Gotchas
 
-- **Python — don't forget `start_executor=`** on `WorkflowBuilder`. Without it, `.build()` has no entry point.
-- **Python — `yield_output` is terminal for that message.** It emits a workflow-level output; whatever edges normally follow that executor don't fire for the value that was yielded.
-- **.NET — the executor class must be `partial`.** The source generator emits a second partial file with the protocol registration based on your `[MessageHandler]` methods; forgetting `partial` is a compile error, not a silent bug.
-- **.NET — `WithOutputFrom(...)` must list every executor that can legitimately yield.** This demo lists both `validate-order` and `log-order` because the short-circuit path ends at `validate-order`. Miss one and that output is silently dropped from the stream.
-- **Conditional routing**: Python's `add_edge(...)` takes an optional `condition: (data) -> bool | Awaitable[bool]` (confirmed in the installed `agent_framework._workflows._workflow_builder` module) for routing without a full short-circuit. This chapter's demo doesn't need it — the short-circuit is expressed inside `ValidateOrderExecutor` instead — but Chapter 13's concurrent workflow (see below) uses `add_fan_out_edges` / `add_fan_in_edges`, a related but different mechanism for parallel branches.
-- **No MAF packaging workaround is needed.** `agent-framework-core` 1.26.0 (pinned) ships a populated `__init__.py` that exports the whole public API, so chapters import from `agent_framework` directly. `tutorials/_shared/maf_bootstrap.py::bootstrap()` now only loads the repo-root `.env`; every chapter's `main.py` and tests call it before importing `agent_framework`.
+- **Python: the workflow has no entry point.** Pass `start_executor=` to `WorkflowBuilder`. Without it, `.build()` does not know where the input goes.
+- **Python: an executor downstream of a `yield_output` call never runs.** `yield_output` emits a workflow-level output. The edges that normally follow that executor do not fire for the value you yielded; call `send_message` if the next executor should see it.
+- **.NET: a compile error on an executor class.** The class must be `partial`. The source generator emits a second partial file with the protocol registration for your `[MessageHandler]` methods.
+- **.NET: an output is missing from the stream.** `WithOutputFrom(...)` must list every executor that can yield. This demo lists both `validate-order` and `log-order` because the early exit ends at `validate-order`. Miss one and its output is dropped without an error.
+- **You want to route on a condition without ending the run.** Python's `add_edge(...)` takes an optional `condition: (data) -> bool | Awaitable[bool]`. This chapter does not need it, because the early exit lives inside `ValidateOrderExecutor`. Parallel branches use a different mechanism, `add_fan_out_edges` / `add_fan_in_edges`, shown in the capstone section below.
 
 ## Tests
-
-Both languages assert the same three behaviors: happy-path output text, empty-input short-circuit, whitespace-only short-circuit — plus workflow-wiring and event-ordering checks.
 
 ```bash
 uv run --project tutorials pytest tutorials/09-workflow-executors-and-edges/python/tests -v
 cd tutorials/09-workflow-executors-and-edges/dotnet && dotnet test
 ```
 
-- Python: [`python/tests/test_workflow.py`](./python/tests/test_workflow.py) — 5 tests covering the happy path, empty-input short-circuit, whitespace-only short-circuit, executor/edge wiring (`workflow.get_executors_list()`), and `executor_invoked` event ordering.
-- .NET: [`dotnet/tests/WorkflowTests.cs`](./dotnet/tests/WorkflowTests.cs) — the same five cases using xUnit + FluentAssertions, including an `ExecutorInvokedEvent` ordering check that asserts `log` is *not* invoked on the short-circuit path.
+Run the first from the repo root; the second changes into the chapter's `dotnet` directory. Neither needs a key.
+
+Both suites ([`python/tests/test_workflow.py`](./python/tests/test_workflow.py), [`dotnet/tests/WorkflowTests.cs`](./dotnet/tests/WorkflowTests.cs)) check the same behavior: the normal output text, the early exit for an empty or whitespace-only order id, and the executor and edge wiring. They also check the order of executor-invoked events, which proves `log` does not run on the early-exit path.
 
 ## How this shows up in the capstone
 
-The capstone's pre-purchase research flow is the production version of exactly this pattern, scaled up with fan-out/fan-in instead of a linear chain. `agents/python/workflows/pre_purchase.py` defines one `Executor` subclass per parallel data source — `_ReviewsExecutor` (`agents/python/workflows/pre_purchase.py:60`), `_StockExecutor` (`agents/python/workflows/pre_purchase.py:79`), and `_PriceHistoryExecutor` (`agents/python/workflows/pre_purchase.py:98`) — plus `_MergeAndShipExecutor` (`agents/python/workflows/pre_purchase.py:117`) as the fan-in barrier and `_SynthesisExecutor` (`agents/python/workflows/pre_purchase.py:148`) as the terminal node.
+The capstone's pre-purchase research uses executors and edges to answer "should I buy this?": it looks up reviews, stock and price history at the same time, then writes one recommendation. The graph is wider than this chapter's chain. It fans out (sends one message to several executors at once) and fans in (waits for all of them before continuing).
 
-`PrePurchaseWorkflow._build_maf_workflow()` (`agents/python/workflows/pre_purchase.py:229`) wires them with the fan-out/fan-in edge helpers this chapter's demo doesn't need:
+`agents/python/workflows/pre_purchase.py` defines one `Executor` subclass per parallel data source: `_ReviewsExecutor` (`agents/python/workflows/pre_purchase.py:60`), `_StockExecutor` (`agents/python/workflows/pre_purchase.py:87`) and `_PriceHistoryExecutor` (`agents/python/workflows/pre_purchase.py:110`). `_MergeAndShipExecutor` (`agents/python/workflows/pre_purchase.py:133`) is the fan-in step and `_SynthesisExecutor` (`agents/python/workflows/pre_purchase.py:173`) is the last node.
+
+`PrePurchaseWorkflow._build_maf_workflow()` (`agents/python/workflows/pre_purchase.py:291`) wires them with two edge helpers this chapter's demo does not need:
 
 ```python
 return (
@@ -180,7 +203,7 @@ return (
 )
 ```
 
-`add_fan_out_edges` broadcasts one message to three executors that run concurrently within a superstep; `add_fan_in_edges` is the barrier — `_MergeAndShipExecutor.run(...)` doesn't fire until all three have sent their message, and it receives them as a `list[ResearchState]` rather than a single value. This is the same executor/edge vocabulary as the Uppercase→Validate→Log chain above, just with a wider graph.
+`add_fan_out_edges` sends one message to three executors that run concurrently within a superstep. `add_fan_in_edges` waits: `_MergeAndShipExecutor.run(...)` does not fire until all three have sent their message, and it receives them as a `list[ResearchState]` instead of a single value. The vocabulary is the same as the Normalize → Validate → Log chain above, on a wider graph.
 
 ## What's next
 

@@ -33,6 +33,10 @@ public static class CostEstimator
             ["gpt-4.1"] = new(0.002, 0.008),
             ["gpt-4.1-mini"] = new(0.0004, 0.0016),
             ["gpt-4.1-nano"] = new(0.0001, 0.0004),
+            // ESTIMATES, not confirmed list prices (placeholders until checked against a real
+            // deployment); "gpt-5.1-mini" is a plausible name, not a confirmed model id.
+            ["gpt-5.1"] = new(0.00125, 0.01),
+            ["gpt-5.1-mini"] = new(0.00025, 0.002),
             ["gpt-4o"] = new(0.0025, 0.01),
             ["gpt-4o-mini"] = new(0.00015, 0.0006),
             ["text-embedding-3-small"] = new(0.00002, 0.0),

@@ -1,6 +1,6 @@
-# Return lifecycle (#95)
+# Return lifecycle
 
-An approved return used to finish in the request that approved it. With `RETURN_LIFECYCLE_ENABLED` it
+By default an approved return finishes in the request that approved it. With `RETURN_LIFECYCLE_ENABLED` it
 outlives the request: it waits for the carrier's first scan, which can be days away, then for support to inspect
 what came back, and is paid out or denied. Each wait resumes from its checkpoint. Python only; the .NET stack has no equivalent (parity matrix row 41).
 

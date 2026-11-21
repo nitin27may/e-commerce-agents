@@ -422,10 +422,18 @@ sequenceDiagram
 
 ## Flow Summary
 
+The diagrams above show each flow as the default `tool` mode runs it: the orchestrator's model
+calls one specialist at a time. Two of the flows also exist as fixed workflow graphs you can select
+instead, [`workflow:return-replace`](architecture.md#orchestration-modes) (Flow 1, with an approval
+gate before the return is created) and
+[`workflow:pre-purchase`](architecture.md#orchestration-modes) (Flow 2, where the specialists really
+do run concurrently). The [benchmark](orchestration-benchmark.md) compares the modes on the same
+prompts.
+
 | Flow | Agents Involved | Key Pattern |
 |------|----------------|-------------|
 | **Return and Replace** | Order Management -> Product Discovery -> Inventory -> Pricing | Sequential chain: action (return) then search then verify then optimize |
-| **Pre-Purchase Research** | Review & Sentiment -> Product Discovery -> Pricing | Parallel research: gather opinions, alternatives, and deals |
+| **Pre-Purchase Research** | Review & Sentiment -> Product Discovery -> Pricing | Research: gather opinions, alternatives, and deals (sequential in `tool` mode, concurrent in `workflow:pre-purchase`) |
 | **Where's My Order** | Order Management -> Inventory & Fulfillment | Focused: order data then carrier/delivery status |
 | **Stock Alert** | Inventory & Fulfillment -> Product Discovery | Fallback pattern: check stock, find alternatives when unavailable |
 | **Bulk Purchase** | Product Discovery -> Pricing -> Inventory | Full pipeline: curate, price-optimize, verify fulfillment |
@@ -434,10 +442,10 @@ sequenceDiagram
 
 - **Context injection**: Every agent receives user profile and recent orders via `ECommerceContextProvider` before processing. This enables personalization (loyalty tier, purchase history) without the user repeating themselves.
 - **Shared tools**: Agents can call tools outside their primary domain. Product Discovery calls `check_stock()` (shared inventory tool) to avoid recommending out-of-stock items. This reduces unnecessary A2A round-trips.
-- **Sequential A2A**: The Orchestrator calls specialists one at a time. Each response informs the next call's message. This is intentional -- later agents need context from earlier results (e.g., Pricing needs to know which products were recommended).
+- **Sequential A2A** (in `tool` mode): The Orchestrator calls specialists one at a time. Each response informs the next call's message. This is intentional -- later agents need context from earlier results (e.g., Pricing needs to know which products were recommended).
 - **LLM synthesis**: The Orchestrator's LLM doesn't just concatenate specialist responses. It synthesizes them into a natural, coherent message with clear structure and actionable next steps.
-- **Group-chat panelist prompts**: the `group-chat` mode's two panelist prompts live in `agents/python/config/prompts/group-chat-{value,quality}.yaml`, loaded raw (no composed grounding rules) by both stacks; parity row 46.
-- **Identity propagation**: User identity flows via `X-User-Email` and `X-User-Role` headers on every A2A call, then into ContextVars. Every tool query filters by user -- there's no data leakage between customers.
+- **Group-chat panelist prompts**: the `group-chat` mode's two panelist prompts live in `agents/python/config/prompts/group-chat-{value,quality}.yaml`, loaded as written, without the shared grounding rules, by both stacks.
+- **Identity propagation**: User identity flows on every A2A call, as `X-User-Email` and `X-User-Role` headers or a signed `X-User-Context` token ([a2a.md](a2a.md)), then into ContextVars. Every tool query filters by user -- there's no data leakage between customers.
 
 ---
 
