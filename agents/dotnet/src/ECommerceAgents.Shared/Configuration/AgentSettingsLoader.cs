@@ -262,6 +262,7 @@ public static class AgentSettingsLoader
 
             MafSessionBackend = Get("MAF_SESSION_BACKEND", "postgres").ToLowerInvariant(),
             MafSessionDir = Get("MAF_SESSION_DIR", "./.sessions"),
+            HistoryCompactionKeepLastGroups = Math.Max(0, GetInt("HISTORY_COMPACTION_KEEP_LAST_GROUPS", 0)),
             MafCheckpointBackend = Get("MAF_CHECKPOINT_BACKEND", "postgres").ToLowerInvariant(),
             MafCheckpointDir = Get("MAF_CHECKPOINT_DIR", "./.checkpoints"),
             ReturnHitlThreshold = GetDouble("RETURN_HITL_THRESHOLD", 500.0),

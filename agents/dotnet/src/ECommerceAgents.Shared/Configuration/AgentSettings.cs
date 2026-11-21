@@ -347,6 +347,9 @@ public sealed record AgentSettings
     // ── MAF v1 feature flags (all optional, safe defaults) ──────
     public string MafSessionBackend { get; init; } = "postgres";
     public string MafSessionDir { get; init; } = "./.sessions";
+
+    /// <summary>B-15: keep only the last N message groups of rehydrated history; 0 (default) is off.</summary>
+    public int HistoryCompactionKeepLastGroups { get; init; }
     public string MafCheckpointBackend { get; init; } = "postgres";
     public string MafCheckpointDir { get; init; } = "./.checkpoints";
     public double ReturnHitlThreshold { get; init; } = 500.0;

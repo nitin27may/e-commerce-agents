@@ -288,7 +288,9 @@ public static class AgentHost
 
         var history = RequestContext.CurrentHistory.Count > 0
             ? RequestContext.CurrentHistory.ToList()
-            : await HistoryRehydrator.RehydrateAsync(pool, RequestContext.CurrentSessionId) ?? new List<HistoryEntry>();
+            : await HistoryRehydrator.RehydrateAsync(
+                pool, RequestContext.CurrentSessionId,
+                services.GetService<AgentSettings>()?.HistoryCompactionKeepLastGroups ?? 0) ?? new List<HistoryEntry>();
 
         var messages = history
             .Where(h => h.Role is "user" or "assistant")
@@ -322,7 +324,9 @@ public static class AgentHost
 
         var history = RequestContext.CurrentHistory.Count > 0
             ? RequestContext.CurrentHistory.ToList()
-            : await HistoryRehydrator.RehydrateAsync(pool, RequestContext.CurrentSessionId) ?? new List<HistoryEntry>();
+            : await HistoryRehydrator.RehydrateAsync(
+                pool, RequestContext.CurrentSessionId,
+                services.GetService<AgentSettings>()?.HistoryCompactionKeepLastGroups ?? 0) ?? new List<HistoryEntry>();
 
         var messages = history
             .Where(h => h.Role is "user" or "assistant")

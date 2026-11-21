@@ -34,6 +34,10 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
   `DB_POOL_MIN_SIZE` / `DB_POOL_MAX_SIZE` bound the connection pool (Python defaults `5`/`20` as before;
   .NET leaves Npgsql's defaults unless set). The .NET stack now honours `sslmode` in `DATABASE_URL`, which it
   used to drop. Estimated `gpt-5.1` and `gpt-5.1-mini` price rows on both stacks. Parity row 48.
+- **History compaction on .NET** (B-15, parity row 43). `HISTORY_COMPACTION_KEEP_LAST_GROUPS` (default `0`, off) now
+  also trims the .NET specialist host's rehydrated history and the orchestrator's conversation history to the last N
+  message groups, a group being a user turn with its assistant and tool messages, kept or dropped whole. Off, the
+  history and so the model request are unchanged.
 - **A2A 1.0 on both stacks** (#88). Every specialist serves the A2A 1.0 JSON-RPC binding at
   `/a2a/v1` and an agent card at `/.well-known/agent-card.json`, beside the unchanged
   `/message:send` wire. `A2A_TRANSPORT=legacy|a2a` (default `legacy`) picks what the caller

@@ -558,7 +558,7 @@ History compaction (B-15): the history a specialist rehydrates from Postgres, an
 both are further trimmed to the last N message groups, where a group is a user turn with the assistant and tool
 messages that follow it. A group is kept or dropped whole, so a tool result never loses its call. Off, the request
 the model sees (and so its replay key) is unchanged. `shared/history_compaction.py` does the trim; MAF's
-`SlidingWindowStrategy` is public at 1.26.0 but counts single messages, not turns. Python only for now (parity row 43).
+`SlidingWindowStrategy` is public at 1.26.0 but counts single messages, not turns. `HistoryCompaction.cs` is the .NET twin (parity row 43).
 
 ### Authentication headers
 
