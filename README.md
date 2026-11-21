@@ -43,6 +43,8 @@ Docker is the only requirement — no Python, .NET or Node needed.
 which is the difference between roughly **one minute and roughly twelve**. Images are published for
 `linux/amd64` and `linux/arm64`, so Apple Silicon runs natively.
 
+**No API key?** `./scripts/dev.sh --demo --no-key` (PowerShell: `./scripts/dev.ps1 -Demo -NoKey`) plays back recorded model responses; see [docs/quick-start.md](docs/quick-start.md#run-without-a-paid-api-key).
+
 **Building from source instead** — drop the flag. This is the contributor path, and the one to use
 if you have changed any code:
 

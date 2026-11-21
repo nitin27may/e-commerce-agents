@@ -213,7 +213,21 @@ continuation instead of the backslash.
 
 ## Run without a paid API key
 
-Nothing above requires an OpenAI subscription. Any OpenAI-compatible endpoint works through the
+**No key at all: `--no-key`.** Plays back recorded model responses, so nothing calls a model.
+
+```bash
+./scripts/dev.sh --demo --no-key       # PowerShell: ./scripts/dev.ps1 -Demo -NoKey
+```
+
+`--no-key` layers `docker-compose.nokey.yml` over the demo (or, without `--demo`, the from-source)
+compose file and skips the key check. It hardcodes `LLM_PROVIDER=replay`, the replay fixtures path and
+the demo-tour settings, so a `.env` or exported variable cannot change what a recorded answer was
+keyed on. Only the suggested prompts in the chat get an answer; anything else is reported in the chat
+as not recorded. Browsing, search, the cart and checkout never call a model and work normally.
+Python stack only. Use `--clean` when you start it again: re-seeding an already-seeded database makes
+some recorded answers miss.
+
+**A real model, still no paid key.** Any OpenAI-compatible endpoint works through the
 same code path — set `LLM_BASE_URL` and leave `LLM_PROVIDER=openai`:
 
 ```dotenv

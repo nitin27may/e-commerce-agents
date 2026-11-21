@@ -9,11 +9,9 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
-    // The .NET stack builds into .next-dotnet/ (see scripts/dev.sh --dotnet),
-    // which the default list does not cover. Without this, one `--dotnet` run
-    // leaves 455 generated files in the lint scope and `pnpm lint` reports
-    // ~2,000 errors that no source change can fix — a gate that only fails is
-    // a gate people learn to skip. Git already ignores `.next-*/`.
+    // Older checkouts may hold a .next-dotnet/ from when `dev.sh --dotnet` used a
+    // separate build directory (NEXT_DIST_DIR, since removed). Keep it out of the
+    // lint scope: it is generated, and a gate that only fails gets skipped.
     ".next-*/**",
     "out/**",
     "build/**",

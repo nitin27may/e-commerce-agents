@@ -6,6 +6,22 @@ screen recording, or your first ten minutes with the app.
 Start the stack first: [Quick Start](quick-start.md). The fast path is
 `./scripts/dev.sh --demo`, which pulls prebuilt images rather than building.
 
+## No-key mode
+
+`./scripts/dev.sh --demo --no-key` (PowerShell: `./scripts/dev.ps1 -Demo -NoKey`) runs the whole stack
+on recorded model responses, so it needs no API key. `docker-compose.nokey.yml` hardcodes
+`LLM_PROVIDER=replay`, `DEMO_TOUR_ENABLED=true` and the settings that shape prompts, so the recorded
+answers always match. The chat shows suggested prompts (the tour); each one has a recorded answer.
+A prompt that was not recorded is reported in the chat as a replay miss and offers the suggestions
+again. The stack stays up either way.
+
+Sign in as `tour@example.com` / `tour123`: a dedicated account whose orders the tour depends on, with
+a delivered order over $500 for the return flow. **Reset demo** in the chat puts it back after a run.
+The other accounts below work too, but their recorded answers were not captured, so expect misses.
+
+Known limit until the recording session lands: the recorded answers (`agents/python/demo/fixtures/replay/`)
+are not in the images yet, so every model call is a miss. Browsing, search, cart and checkout are unaffected.
+
 ## Test Users
 
 Pre-seeded accounts for testing different roles:

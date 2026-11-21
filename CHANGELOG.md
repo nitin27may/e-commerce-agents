@@ -48,11 +48,27 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
   independent of the chat provider.
 - **MAF DevUI entry point** (#98). `scripts/devui.py` browses the specialists and workflows
   without changing the lock file. See `docs/devui.md`.
+- **`dev.sh --no-key` / `dev.ps1 -NoKey`** run the stack on recorded model responses, with no API key.
+  `docker-compose.nokey.yml` is an overlay for `docker-compose.demo.yml` (or the from-source
+  `docker-compose.yml`) that hardcodes `LLM_PROVIDER=replay`, `REPLAY_FIXTURES_DIR`,
+  `DEMO_TOUR_ENABLED` and the prompt- and schema-shaping settings (MCP, handoff mode, guardrails,
+  `AGENT_REGISTRY`). They are literals rather than `${VAR:-}` so an exported variable cannot change
+  what a recorded answer was keyed on. `tutorials/21-capstone-tour/run.sh` wraps `--demo --no-key`.
+  The recorded demo fixtures are not in the images yet (the recording session adds them); until then
+  every model call is a reported replay miss and the stack stays up. The key preflight now points at
+  `--no-key`, and `--demo --clean` also clears the demo stack's volumes.
 
 ### Changed since 1.3.0
 
 - The Compose Redis image is `redis:8-alpine` (CI still runs `redis:7`).
 - The MCP servers moved to `mcp` 2.x with the MAF upgrade.
+
+### Removed
+
+- **`NEXT_DIST_DIR`** in `web/next.config.ts`. A build encodes
+  nothing about the backend since the frontend proxies `/api/*` to `ORCHESTRATOR_URL` at runtime,
+  so the reason for a separate build directory is gone. It also rewrote the committed
+  `web/tsconfig.json` on every build that used it.
 
 ### Azure pre-work
 
