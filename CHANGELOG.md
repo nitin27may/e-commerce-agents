@@ -29,6 +29,11 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
   `nbclient` (also a step in the `tutorials-keyless` job) and fails if a committed notebook carries outputs;
   `scripts/strip_notebook_outputs.py` cleans one. `nbclient`, `nbformat` and `ipykernel` join the tutorials `dev`
   extra; the lock change is additions only.
+- **Runtime knobs for managed hosting** (#89, P2; both stacks). `LLM_TEMPERATURE` set empty sends no
+  temperature (gpt-5.x rejects it; default `0.2` unchanged, replay keys unaffected).
+  `DB_POOL_MIN_SIZE` / `DB_POOL_MAX_SIZE` bound the connection pool (Python defaults `5`/`20` as before;
+  .NET leaves Npgsql's defaults unless set). The .NET stack now honours `sslmode` in `DATABASE_URL`, which it
+  used to drop. Estimated `gpt-5.1` and `gpt-5.1-mini` price rows on both stacks. Parity row 48.
 - **A2A 1.0 on both stacks** (#88). Every specialist serves the A2A 1.0 JSON-RPC binding at
   `/a2a/v1` and an agent card at `/.well-known/agent-card.json`, beside the unchanged
   `/message:send` wire. `A2A_TRANSPORT=legacy|a2a` (default `legacy`) picks what the caller

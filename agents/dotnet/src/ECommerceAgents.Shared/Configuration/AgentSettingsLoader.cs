@@ -141,6 +141,24 @@ public static class AgentSettingsLoader
                 : null;
         }
 
+        // Unset keeps the fallback; set-but-empty means "none" (null); anything unparsable keeps the fallback.
+        double? GetOptionalDouble(string key, double fallback)
+        {
+            var raw = config[key] ?? Environment.GetEnvironmentVariable(key);
+            return raw is null ? fallback
+                : string.IsNullOrWhiteSpace(raw) ? null
+                : double.TryParse(raw, out var parsed) ? parsed
+                : fallback;
+        }
+
+        int? GetNullableInt(string key)
+        {
+            var raw = Get(key);
+            return string.IsNullOrWhiteSpace(raw) ? null
+                : int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) ? parsed
+                : throw new InvalidOperationException($"{key} must be an integer");
+        }
+
         int GetInt(string key, int fallback)
         {
             var raw = Get(key);
@@ -189,7 +207,9 @@ public static class AgentSettingsLoader
             GroundingMode = ValidatedGroundingMode(Get("GROUNDING_MODE", "annotate")),
             CostBudgetMode = Get("COST_BUDGET_MODE", "observe"),
             CostBudgetUsdPerRun = GetNullableDouble("COST_BUDGET_USD_PER_RUN"),
-            Temperature = GetDouble("LLM_TEMPERATURE", 0.2),
+            Temperature = GetOptionalDouble("LLM_TEMPERATURE", 0.2),
+            DbPoolMinSize = GetNullableInt("DB_POOL_MIN_SIZE"),
+            DbPoolMaxSize = GetNullableInt("DB_POOL_MAX_SIZE"),
 
             AzureOpenAiEndpoint = Get("AZURE_OPENAI_ENDPOINT"),
             AzureOpenAiKey = GetWithAlias("AZURE_OPENAI_KEY", "AZURE_OPENAI_API_KEY"),

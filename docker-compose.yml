@@ -166,6 +166,12 @@ services:
       # /responses route. Python stack only; .NET always uses Chat Completions.
       LLM_API: ${LLM_API:-responses}
       LLM_MODEL: ${LLM_MODEL:-gpt-4.1}
+      # Sampling temperature. The "-" (no colon) matters: LLM_TEMPERATURE= (set, empty) reaches the
+      # container empty and omits the option, which gpt-5.x models require; unset keeps 0.2.
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE-0.2}
+      # Per-process connection pool bounds. asyncpg defaults 5/20.
+      DB_POOL_MIN_SIZE: ${DB_POOL_MIN_SIZE:-5}
+      DB_POOL_MAX_SIZE: ${DB_POOL_MAX_SIZE:-20}
       # LLM_PROVIDER=anthropic (Claude): the key is required then, the model defaults to
       # claude-sonnet-5-5 and LLM_MODEL is ignored for it. Anthropic has no embeddings API, so set
       # EMBEDDING_PROVIDER too or semantic search falls back to full-text. Stub-tested only; no live call yet.

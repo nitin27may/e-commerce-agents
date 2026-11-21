@@ -17,7 +17,7 @@ import logging
 from pathlib import Path
 from typing import Literal
 
-from pydantic import AliasChoices, Field, field_validator, model_validator
+from pydantic import AliasChoices, Field, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
@@ -153,7 +153,12 @@ class Settings(BaseSettings):
     # reproducible answers — at the provider default (~1.0) the same query can
     # yield categorically different results (e.g. finding vs. not finding a
     # borderline-priced product). Raise toward 1.0 for more varied phrasing.
-    LLM_TEMPERATURE: float = 0.2
+    # An EMPTY value means "send no temperature at all": gpt-5.x models reject the parameter.
+    LLM_TEMPERATURE: float | None = 0.2
+    # asyncpg pool bounds per process. A managed Postgres has a hard max_connections, and every
+    # service holds its own pool, so Azure sets these low (demo 1/4). Defaults are the old literals.
+    DB_POOL_MIN_SIZE: int = Field(default=5, ge=0)
+    DB_POOL_MAX_SIZE: int = Field(default=20, ge=1)
     EMBEDDING_MODEL: str = "text-embedding-3-small"
     # Embeddings are decoupled from the chat provider (#96). Empty EMBEDDING_PROVIDER follows
     # LLM_PROVIDER, exactly as before; otherwise openai | azure | openai_compatible | replay.
@@ -527,6 +532,32 @@ class Settings(BaseSettings):
     def cors_origins(self) -> list[str]:
         """``CORS_ALLOWED_ORIGINS`` split on commas, blanks dropped, trailing slashes trimmed."""
         return [o.strip().rstrip("/") for o in self.CORS_ALLOWED_ORIGINS.split(",") if o.strip()]
+
+    @field_validator("LLM_TEMPERATURE", mode="before")
+    @classmethod
+    def _blank_temperature_is_none(cls, value: object) -> object:
+        """``LLM_TEMPERATURE=`` (set, empty) omits the option; compose passes it through as ''."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @field_validator("DB_POOL_MIN_SIZE", "DB_POOL_MAX_SIZE", mode="before")
+    @classmethod
+    def _blank_pool_size_is_default(cls, value: object, info: ValidationInfo) -> object:
+        """A set-but-empty pool size means 'use the default'.
+
+        The .NET compose file passes ``DB_POOL_MIN_SIZE: ${DB_POOL_MIN_SIZE:-}`` (empty means Npgsql's own
+        default there), and in the mixed ``net-py`` stack that empty string reaches the Python specialists.
+        """
+        if isinstance(value, str) and not value.strip():
+            return cls.model_fields[str(info.field_name)].default
+        return value
+
+    @model_validator(mode="after")
+    def _validate_pool_bounds(self) -> "Settings":
+        if self.DB_POOL_MIN_SIZE > self.DB_POOL_MAX_SIZE:
+            raise ValueError("DB_POOL_MIN_SIZE must not exceed DB_POOL_MAX_SIZE")
+        return self
 
     @field_validator("LLM_PROVIDER")
     @classmethod

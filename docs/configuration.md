@@ -380,6 +380,26 @@ documented but **has not been run**: it needs a reachable Ollama, and the build 
 none. What is tested is everything around it — client construction for `openai_compatible`, the
 width checks, the reset script and the startup check against a real Postgres.
 
+## Runtime knobs for managed hosting
+
+Added for the Azure Container Apps deployment (#89), harmless anywhere else; every default is the
+pre-existing behaviour.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `LLM_TEMPERATURE` | `0.2` | Sampling temperature on every agent run. **Set but empty omits the option entirely** on both stacks: gpt-5.x models reject `temperature` with a 400. Unset is not empty. A per-agent `model: {temperature}` block still applies to that agent |
+| `DB_POOL_MIN_SIZE`, `DB_POOL_MAX_SIZE` | Python `5` / `20`; .NET unset (Npgsql `0` / `100`) | Connection pool bounds per process. Every service holds its own pool, so six services plus the worker multiply them against Postgres `max_connections`; the Azure demo runs `1` / `4`. Min above max, or max below 1, fails at startup on both stacks |
+| `DATABASE_URL` `?sslmode=` | unset | .NET now honours `disable`, `allow`, `prefer`, `require`, `verify-ca` and `verify-full` (mapped to Npgsql's `SslMode`); an unknown value fails at startup. Python's asyncpg always did. Azure Database for PostgreSQL requires TLS, so use `?sslmode=require` |
+
+Gotchas:
+
+- In Compose, `${LLM_TEMPERATURE-0.2}` (no colon) is deliberate: `${VAR:-0.2}` would turn an empty
+  value back into `0.2` and the omission could never be requested.
+- The replay key excludes sampling parameters, so omitting the temperature changes no fixture.
+- The `gpt-5.1` and `gpt-5.1-mini` rows in `shared/cost.py` and `CostEstimator.cs` are estimates,
+  not confirmed list prices, and `gpt-5.1-mini` is a plausible deployment name rather than a
+  confirmed model id. Until checked against a real deployment, budgets on those models are rough.
+
 ## Per-run cost ceiling (`COST_BUDGET_*`)
 
 | Variable | Default | Meaning |
