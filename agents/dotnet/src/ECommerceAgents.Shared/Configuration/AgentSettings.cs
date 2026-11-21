@@ -187,6 +187,15 @@ public sealed record AgentSettings
     public string AzureOpenAiDeployment { get; init; } = "";
 
     public string AzureOpenAiApiVersion { get; init; } = "2025-03-01-preview";
+
+    /// <summary>
+    /// <c>AZURE_OPENAI_AUTH</c>: <c>key</c> (default) or <c>identity</c> (a Microsoft Entra token, no key).
+    /// Python twin: <c>AZURE_OPENAI_AUTH</c> in <c>shared/config.py</c>.
+    /// </summary>
+    public string AzureOpenAiAuth { get; init; } = "key";
+
+    /// <summary><c>AZURE_CLIENT_ID</c>: a user-assigned managed identity; empty uses <c>DefaultAzureCredential</c>.</summary>
+    public string AzureClientId { get; init; } = "";
     public string AzureEmbeddingDeployment { get; init; } = "";
 
     // ── Auth ────────────────────────────────────────────────────

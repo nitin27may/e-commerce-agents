@@ -1,5 +1,6 @@
 using System.ClientModel;
 using Azure.AI.OpenAI;
+using Azure.Core;
 using ECommerceAgents.Shared.Configuration;
 using OpenAI;
 using OpenAI.Embeddings;
@@ -87,7 +88,12 @@ public static class EmbeddingClientFactory
         }
     }
 
-    public static EmbeddingClient CreateEmbeddingClient(AgentSettings settings)
+    public static EmbeddingClient CreateEmbeddingClient(AgentSettings settings) =>
+        CreateEmbeddingClient(settings, null, null);
+
+    /// <summary>Credential and options are a test seam; production passes neither.</summary>
+    public static EmbeddingClient CreateEmbeddingClient(
+        AgentSettings settings, TokenCredential? credential, AzureOpenAIClientOptions? options)
     {
         var provider = ResolveProvider(settings);
         var model = EmbeddingModelName(settings);
@@ -95,14 +101,27 @@ public static class EmbeddingClientFactory
         if (provider == "azure")
         {
             var endpoint = FirstNonBlank(settings.EmbeddingBaseUrl, settings.AzureOpenAiEndpoint);
-            var key = FirstNonBlank(settings.EmbeddingApiKey, settings.AzureOpenAiKey);
+            var explicitKey = FirstNonBlank(settings.EmbeddingApiKey);
+            if (AzureIdentity.IsIdentity(settings) && explicitKey is null)
+            {
+                if (endpoint is null)
+                {
+                    throw new InvalidOperationException("Azure embeddings need AZURE_OPENAI_ENDPOINT (or EMBEDDING_BASE_URL)");
+                }
+
+                return new AzureOpenAIClient(
+                    new Uri(endpoint), credential ?? AzureIdentity.CreateCredential(settings), options)
+                    .GetEmbeddingClient(model);
+            }
+
+            var key = explicitKey ?? FirstNonBlank(settings.AzureOpenAiKey);
             if (endpoint is null || key is null)
             {
                 throw new InvalidOperationException(
                     "Azure embeddings need AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_KEY (or EMBEDDING_BASE_URL and EMBEDDING_API_KEY)");
             }
 
-            return new AzureOpenAIClient(new Uri(endpoint), new ApiKeyCredential(key)).GetEmbeddingClient(model);
+            return new AzureOpenAIClient(new Uri(endpoint), new ApiKeyCredential(key), options).GetEmbeddingClient(model);
         }
 
         if (provider == "openai_compatible")

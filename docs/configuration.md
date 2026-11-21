@@ -400,6 +400,21 @@ Gotchas:
   not confirmed list prices, and `gpt-5.1-mini` is a plausible deployment name rather than a
   confirmed model id. Until checked against a real deployment, budgets on those models are rough.
 
+## Azure OpenAI authentication (`AZURE_OPENAI_AUTH`)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `AZURE_OPENAI_AUTH` | `key` | `key` sends `AZURE_OPENAI_KEY`. `identity` sends a Microsoft Entra bearer token and no key; the key is not required and never sent. Anything else fails at startup on both stacks |
+| `AZURE_CLIENT_ID` | empty | Client id of a user-assigned managed identity. Empty uses `DefaultAzureCredential` (managed identity on Azure, `az login` or environment credentials locally) |
+
+Identity mode covers chat and, with `EMBEDDING_PROVIDER=azure`, embeddings (an explicit
+`EMBEDDING_API_KEY` still wins for embeddings). The identity needs the `Cognitive Services OpenAI User`
+role on the Azure OpenAI resource. Python uses `azure-identity`'s sync credentials
+(`shared/azure_auth.py`); .NET uses `Azure.Identity` (`AzureIdentity.cs`). **The default stays `key`**: identity
+mode has been tested against a fake credential only, never a live Azure resource, and is flipped only after a
+verified Azure run. `LLM_PROVIDER=replay` and `openai` ignore both variables; recording through
+`REPLAY_RECORD_PROVIDER=azure` still needs the key.
+
 ## Per-run cost ceiling (`COST_BUDGET_*`)
 
 | Variable | Default | Meaning |

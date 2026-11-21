@@ -53,6 +53,20 @@ public static class AgentSettingsLoader
         throw new InvalidOperationException($"A2A_TRANSPORT='{raw}' is not supported. Use legacy or a2a.");
     }
 
+    /// <summary><c>AZURE_OPENAI_AUTH</c> is <c>key</c> (blank too) or <c>identity</c>; anything else fails at startup.</summary>
+    private static string ValidatedAzureAuth(string raw)
+    {
+        var value = raw.Trim().ToLowerInvariant();
+        if (value.Length == 0)
+        {
+            return "key";
+        }
+
+        return value is "key" or "identity"
+            ? value
+            : throw new InvalidOperationException($"AZURE_OPENAI_AUTH='{raw}' is not supported. Use key or identity.");
+    }
+
     /// <summary>A bounded integer setting; out of range fails at startup (Python's <c>Field(ge=, le=)</c> does too).</summary>
     private static int InRange(string name, int value, int min, int max) =>
         value >= min && value <= max
@@ -212,6 +226,8 @@ public static class AgentSettingsLoader
             DbPoolMaxSize = GetNullableInt("DB_POOL_MAX_SIZE"),
 
             AzureOpenAiEndpoint = Get("AZURE_OPENAI_ENDPOINT"),
+            AzureOpenAiAuth = ValidatedAzureAuth(Get("AZURE_OPENAI_AUTH")),
+            AzureClientId = Get("AZURE_CLIENT_ID").Trim(),
             AzureOpenAiKey = GetWithAlias("AZURE_OPENAI_KEY", "AZURE_OPENAI_API_KEY"),
             AzureOpenAiDeployment = GetWithAlias("AZURE_OPENAI_DEPLOYMENT", "AZURE_OPENAI_DEPLOYMENT_NAME"),
             AzureOpenAiApiVersion = Get("AZURE_OPENAI_API_VERSION", "2025-03-01-preview"),
