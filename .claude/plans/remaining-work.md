@@ -63,6 +63,169 @@ a fixture date, #149 and #150 racing `.NET` tests); a fixture with an absolute t
 
 ---
 
+## Consolidated plan, 2026-11-20
+
+Checked against `main` at `f380bba` (#157 DevUI is the newest commit). **This block supersedes the
+ordering in Parts I and II and the Phase B text in section B below.** Parts III and IV stay as the
+constraints and build log. Git holds no half-done work: no open PRs, no stashes, no extra worktrees,
+and one stale branch (`docs/readme-accuracy-audit`, July, 398 commits behind, superseded by #82).
+
+### Decisions needed first
+
+1. **R0 recording session ($1-3).** Cheapest unblock: C-8, C-9b, C-10, C-11, C-18 and the tutorial fixtures wait on it.
+2. **D-3, .NET parity line.** Decides NET-36, B-18 and the .NET halves of B-15, B-16 and D-5b.
+3. **D-1, Azure spend ceiling.** Azure is independent of everything else but stays parked until this is set.
+4. **Chat model on Azure: gpt-5.1 (approved 2026-11-20).** gpt-4.1 is closed to new customers; it stays an override.
+5. **LangGraph (LG1-LG3) stays parked.** #103 recommends one LangGraph specialist behind A2A instead of a third backend.
+
+### Pending items
+
+**Key-free, no Azure (start now)**
+
+| ID | Issue | Work | Size |
+|---|---|---|---|
+| DOC-R | #103 | Fix stale claims: roadmap (MCP 2.x "blocked", PyPI, Claude), parity rows 3, 8, 12, 23, plan section 15 (RFC 7591 is built), README "What's next" | 3h |
+| DOCS-SYNC | #82 | Apply the 2026-11-20 drift audit (below) | 8h |
+| YAML-1 | #86/#97 | Group-chat panelist and judge prompts into YAML, byte-identical (`group_chat_mode.py:34,39`, `llm_judge.py:29`) | 4h |
+| B-15 | #98 | History compaction, off by default, both stacks; Python rehydration is capped at 50 rows today | 10h |
+| SAN-2 | #97 | Sanitize `recall_memories` and `get_user_profile` (`guardrails/config.py:49,52`) | 3h |
+| NET-36 | #92 | .NET handler for `approval.timeout_apply` (parity row 36) | 8h |
+| CI-H | #85/#84 | Secret-scan job, `maf-canary.yml`, MAF badge check, pricing-promotions baseline (0.727 measured vs 0.680 committed) | 5h |
+| SMOKE-MX | #88 | Boot `py-net` and `net-py` mixed stacks in compose-smoke | 4h |
+| B-18 | #90 | Aspire AppHost and ServiceDefaults | 14h |
+| C-7, C-18, C-9b, DIST-X | #86/#104 | `docker-compose.nokey.yml`, `dev.sh --no-key`, capstone `run.sh`, devcontainer start, remove `NEXT_DIST_DIR` | 11h |
+| C-20 | #100 | Notebooks for chapters 01-04 under replay | 8h |
+| AUTH-KR, AUTH-AM | section 15 | Signing-key rotation (migration 0014), route/token matrix doc and test | 14h |
+| WEB-T, WEB-S, WEB-C | section 17 | Type `api.ts`, `useSyncExternalStore` for auth and cart, report dropped cards; both lint rules back to `error` | 16h |
+| UI-AUDIT | #99 | Read-only UI audit, ranked fixes signed off before the demo GIF is recorded | 4h |
+| SEED-D, TUT-RH, E-9a, P-8, DTS, RL-LIVE, PS1 | various | Re-seed fixture miss, commit the rehash script, scorecard generator, `docs/model-providers.md`, Durable Task write-up, live-stack return run, run `dev.ps1` | 24h |
+
+**Azure preparation that needs no subscription** (Phase B rewritten, see below): P1, P2, P3, I1-I4.
+
+**Needs a live key** (R0 first, then one R1 sitting so nothing is recorded twice): C-6/A-6b/tutorial fixtures (R0), C-8, C-10, C-11, D-5b, B-16, M-2, V-1a, E-3b, E-4, E-6, E-7, E-8, E-10, typed product filters, B2 (dual-stack parity in CI), P-7 (R2).
+
+**Needs Azure:** I5 (first real deploy), I6 (reference profile), I7 (build from source), then C, D, E.
+
+### Parallel lanes (one worktree each)
+
+| Lane | Work | Owns | Collides with |
+|---|---|---|---|
+| L1 Docs | DOC-R, DOCS-SYNC, P-8 | docs, README, parity rows 3/8/12/23, this file | any lane adding a parity row |
+| L2 Prompts | YAML-1 | `config/prompts/group-chat-*.yaml`, `_eval/`, `group_chat_mode.py`, `llm_judge.py`, .NET `GroupChatMode.cs` | replay fixtures must not change |
+| L3 Python runtime | B-15, SAN-2, P2 | `shared/agent_host.py`, `shared/config.py`, `guardrails/config.py` | L7 and L12 on `shared/config.py` |
+| L4 .NET runtime | B-15, SAN-2, NET-36 | rehydrator, sanitizer config, approvals hosted service | L5 on `Directory.Packages.props` |
+| L5 Aspire | B-18 | AppHost, ServiceDefaults, `.sln` | L4 (serialize merges) |
+| L6 CI | CI-H, SMOKE-MX, TUT-RH, SEED-D | `.github/workflows/`, `compose-smoke.sh`, baselines, `seed.py` checkpoints | L8 and L11 on `seed.py` |
+| L7 Auth | AUTH-KR | `auth_server/`, migration 0014, .NET JWKS refresh | L3 on `shared/config.py` |
+| L8 Demo | C-7, C-18, C-9b, DIST-X | compose overlay, `dev.sh`/`dev.ps1`, devcontainer | L11 (Dockerfile) |
+| L9 Web | WEB-T/S/C, UI-AUDIT fixes | `web/src/lib`, components, `eslint.config.mjs` | `web/pnpm-lock.yaml`: hold Dependabot web merges |
+| L10 Tutorials | C-20 | notebooks | none |
+| L11 Azure runtime | P1 (`db-init` image, `seed --if-empty`, staff password) | `Dockerfile.dbinit`, `scripts/db_init.py`, `seed.py`, build-images matrix | L6, L8 |
+| L12 Azure code | P2, P3 (temperature, DB pool, `sslmode`, managed identity) | `shared/factory.py`, `agent_host._run_options`, .NET factories | L3 |
+| L13 Azure infra | I1-I4 | `infra/`, `azure.yaml`, `scripts/azure/`, `azure-up.sh`/`azure-down.sh` | none (new files) |
+
+Pre-assigned: migration 0014 to AUTH-KR, 0015 reserved for D-5b. Parity rows 43 B-15, 44 B-18, 45 AUTH-KR, 46 YAML-1; Azure deployment takes the next free row. Every lane running `replay-evals.sh` shares one `flock` file; never `pkill`. Every key-free PR passes `fixture_drift` (exit 0) and replay with zero misses before and after. Stage explicit paths, never `git add -A`. Agree file ownership with the other session before L3, L7, L8, L10 start (Part III).
+
+### Order of work
+
+- **Wave 1 (about 2 days, parallel, key-free, no fixture changes):** L1, L2, L3 (B-15 Python, SAN-2), L6 (CI-H, SMOKE-MX), L11 (P1), L13 (I1), UI-AUDIT.
+- **Wave 2 (about 3 days):** L4 if D-3 is "parity", L7, L8, L9, L12 (P2, P3), L13 (I2-I4), L6 (SEED-D, TUT-RH, E-9a). Once SMOKE-MX is green, flip `A2A_IDENTITY=token` in a release.
+- **Wave 3:** UI fixes from the audit, then R0 (C-6, A-6b, tutorial fixtures, then C-8, C-9b, C-18, C-10, C-11). In parallel and keyless: L5 B-18, WEB-S, WEB-C, L10, P-8. Then one R1 sitting with every keyed item ready on a branch, then regenerate the eval scorecard and land B2.
+- **Azure (starts when D-1 is set and `az login` is fresh):** I5 first real deploy, I6 reference profile, I7 build-from-source, then Foundry (C), hosted agents (D), publish (E).
+
+### Phase B rewritten: one-command Azure deploy (#89)
+
+**Goal.** `./scripts/azure-up.sh` (wraps `azd up`) yields a public URL where a signed-in user completes a keyed chat turn with product cards and one approval. `./scripts/azure-down.sh` leaves zero resources and nothing soft-deleted. Nothing exists yet: no `infra/`, no `azure.yaml`, no `azd` or `bicep` installed.
+
+**Findings that change the earlier design**
+
+1. gpt-4.1 and gpt-4.1-mini are Deprecated and closed to new customers. Default chat model is **gpt-5.1 (2025-11-13)**; gpt-4.1 remains an override. gpt-5.x rejects `temperature`, so P2 makes an empty `LLM_TEMPERATURE` omit it on both stacks.
+2. gpt-4.1-mini is not deployed by default: nothing reads it. `deployMiniModel` is opt-in.
+3. Azure Cache for Redis is closed to new customers. Demo: `redis:8-alpine` as an internal-TCP container app. Reference: Azure Managed Redis. Rate limiting fails open either way.
+4. A public URL with anonymous chat and a published admin password is an open spend tap. Defaults: frontend ingress restricted to the deployer IP, generated staff passwords, `COST_BUDGET_MODE=enforce`, a TPM cap, a resource-group budget alert.
+5. The seeder cannot run in Azure as it is: `scripts/` and `docker/postgres/` are bind-mounted, not in an image; `seed.py` truncates when users exist; the precomputed embeddings file is not committed. P1 fixes all three.
+
+**Topology.** One resource group per azd environment. Container Apps environment with: frontend (the only external ingress, IP-restricted), orchestrator, five specialists, outbox worker (min 1), Redis container, manual `job-db-init`; auth-server and MCP servers opt-in. PostgreSQL Flexible 16 with `azure.extensions=VECTOR,PGCRYPTO`. One AIServices account with chat and `text-embedding-3-small` deployments, created by the Bicep. Key Vault (RBAC), user-assigned managed identity, Log Analytics and App Insights, budget alert. Images from GHCR by pinned release tag. Python stack only; .NET images are not published, recorded as a parity row.
+
+**Cost (estimates; Phase E publishes measured numbers).** Demo about $120-380 per month ($4-12 a day), about $0.02-0.03 per chat turn. Reference about $500-800 per month (zone-redundant Postgres in a VNet, Managed Redis, ACR).
+
+**Bicep layout.** `azure.yaml`; `infra/main.bicep` (subscription scope), `main.parameters.json`, `bicepconfig.json` (linter rules as errors), `profiles/demo.json`, `profiles/reference.json`, `modules/` (monitoring, identity, keyvault, postgres, openai, redis-container, redis-managed, cae, container-app, apps, db-init-job, budget, acr); `scripts/azure/` (`prereqs`, `preprovision`, `postprovision`, `smoke`, each as `.sh` and `.ps1`). Naming: `resourceToken = toLower(uniqueString(subscription().id, environmentName, location))` on globally unique resources; container apps named `ca-<service>` without the token (32-character limit). Separate `location` and `openAiLocation`. Pin API versions with `az provider show` while writing I1.
+
+**Secrets and config wiring**
+
+- `preprovision` generates once per azd environment, only if unset: `POSTGRES_ADMIN_PASSWORD` (alphanumeric, three character classes, so `DATABASE_URL` needs no encoding), `JWT_SECRET`, `AGENT_SHARED_SECRET`, `A2A_IDENTITY_KEY` (distinct), `OAUTH_SEED_KEY`, `AUTH_SIGNING_KEY_ENCRYPTION_KEY` (64 hex each), `SEED_STAFF_PASSWORD` (20 alphanumeric). Never `newGuid()` (rotates every deploy) or `uniqueString()` (not secret).
+- Secrets go to Key Vault and are injected as Container Apps secrets with `keyVaultUrl` plus the managed identity, consumed through `secretRef`. No secret is a Bicep output; the admin password is printed from the azd env by `postprovision`.
+- Bicep computes: `DATABASE_URL` (`?sslmode=require`), `AZURE_OPENAI_ENDPOINT` and key, `AGENT_REGISTRY` (`https://ca-<svc>.internal.<domain>`), `ORCHESTRATOR_URL`, `CORS_ALLOWED_ORIGINS`, per-specialist `A2A_PUBLIC_BASE_URL`, `REDIS_URL`.
+- Static: `ENVIRONMENT=production` (turns on the secret validator, so the worker and job need the full secret set), `LLM_PROVIDER=azure`, `HOSTNAME=0.0.0.0`, `WEB_TRUSTED_PROXY_HOPS=1`, `RATE_LIMIT_TRUSTED_PROXY_HOPS=2` (verify in I5), `HITL_RESUME_TIMEOUT_SECONDS=200` and `MAF_STREAM_TIMEOUT_SECONDS=120` (both under the 240 s ingress limit).
+- Do not set `OTEL_EXPORTER_OTLP_ENDPOINT`; the managed OTel agent injects a gRPC endpoint. Metrics do not reach App Insights (documented).
+- End-of-deploy outputs: `FRONTEND_URL`, `ORCHESTRATOR_INTERNAL_URL`, `AZURE_KEY_VAULT_NAME`, `AZURE_RESOURCE_GROUP`, `ADMIN_LOGIN_EMAIL`, `AZURE_OPENAI_ENDPOINT`, `AZURE_CHAT_DEPLOYMENT`, `AZURE_POSTGRES_FQDN`, `APPLICATIONINSIGHTS_NAME`.
+- Auth: first go uses the OpenAI key in Key Vault. P3 adds `AZURE_OPENAI_AUTH=identity` with `AZURE_CLIENT_ID` and the `Cognitive Services OpenAI User` role; flip the default only after a verified Azure run (release blocker for Phase E). `azure-identity` is the one dependency risk: gate it with `uv lock --check`, a lock diff showing no MAF or FastAPI change, replay-evals and an image smoke import.
+
+**Mechanics**
+
+- Database order: server, then `azure.extensions` configuration (serialized), then database, then `AllowAllAzureServices` firewall rule (demo), then apps and job. `scripts.db_init` runs `migrate`, `seed --if-empty` (never TRUNCATE in Azure), embeddings with `REINDEX` when the table is empty, then `ANALYZE`.
+- Container Apps has no `depends_on`: apps start and serve 503 on `/ready` until the job lands the schema. Verify in I5 that the ARM PUT does not block on readiness; if it does, move migrate into an orchestrator init container.
+- Every app `minReplicas: 1` (a Python cold start can exceed the 60 s A2A timeout); the worker is always min 1; orchestrator scales to 3 on HTTP concurrency 20. `POST /api/orchestration/compare` can exceed the 240 s limit and is documented best-effort.
+- `azure-down.sh` runs `azd down --purge --force`, re-checks `az keyvault list-deleted` and `az cognitiveservices account list-deleted`, purges leftovers, and exits non-zero if anything remains.
+- `prereqs.sh`: `az`, `azd`, `bicep` floor versions, `containerapp` extension, `jq`, `curl`; provider registrations (App, OperationalInsights, Insights, CognitiveServices, DBforPostgreSQL, KeyVault, ManagedIdentity, Consumption, Cache for reference); role-assignment write rights (Owner, or Contributor plus User Access Administrator); Postgres SKU availability, model name, version, `GlobalStandard` SKU, lifecycle and quota in the region.
+
+**First-run failure catalogue (29 items, each with a guard)**
+
+| Failure | Guard |
+|---|---|
+| gpt-4.1 deployment refused | gpt-5.1 default; lifecycle preflight |
+| gpt-5.x 400 on `temperature` | P2 omission; Bicep derives it from the model name |
+| No TPM quota | usage preflight, `openAiLocation`, capacity param |
+| Parallel model deployments conflict | `dependsOn` chain |
+| Postgres offer-restricted in region | `list-skus` preflight with alternates |
+| `CREATE EXTENSION vector` not allowed | allowlist before the job |
+| Postgres password rejected or breaks the URL | generator guarantees classes, alphanumeric only |
+| Postgres unreachable or no TLS | firewall rule, `sslmode=require`, .NET honours it (P2) |
+| `max_connections` exhausted | `DB_POOL_*` (P2), demo 1/4 |
+| Key Vault RBAC propagation | role assignment in an earlier module; one retry of `azd provision` |
+| Deployer lacks role-assignment rights | prereq RBAC check |
+| Soft-deleted name collision | `list-deleted` check, purge, no purge protection in demo |
+| Worker or job crash-loops on placeholder secrets | full secret set on both |
+| Re-run wipes data | `seed --if-empty` |
+| Semantic search silently full-text | embeddings step in `db_init`, smoke asserts count |
+| IVFFlat built before data | `REINDEX` after seed |
+| A2A call redirected http to https | registry uses `https://...internal.<domain>` |
+| Wrong `ORCHESTRATOR_URL` | built by Bicep, smoke logs in through the proxy |
+| Shared rate-limit bucket | proxy-hop settings, verified with two client IPs |
+| SSE buffered or cut at 240 s | stream cap 120 s, frame-timing check in I5 |
+| Specialist cold start over 60 s | min replicas 1 |
+| Public URL abused | IP restriction, generated passwords, enforce budget, TPM cap, budget alert |
+| Azure Policy denies public PG or local auth | `azd provision --preview`; reference profile as fallback |
+
+The full 29-row catalogue (job log lag, telemetry, card origin under `a2a`, Next bind address, and so on) goes into `docs/troubleshooting.md` with I3.
+
+**Validation chain.** (1) Offline on every PR, no Azure credentials: `az bicep build` and lint on every profile and flag combination, `shellcheck` and PSScriptAnalyzer, and a pytest on the compiled ARM JSON asserting the env-var table per app, probe limits and that every secret is a Key Vault reference. (2) What-if via `azd provision --preview`, `workflow_dispatch` only, OIDC, never on `pull_request`. (3) `smoke.sh`: revisions healthy and job succeeded, frontend 200, admin and alice login, one keyed chat turn with a product card, one approval with no model (a return over $500 in `workflow:return-replace`, decided by support, timeline shows finalize), SSE timing (first frame under 15 s, more than 10 frames). (4) Playwright with `E2E_BASE_URL=$FRONTEND_URL`. (5) `.github/workflows/azure.yml`: offline on PR; dispatch what-if; dispatch deploy-and-test behind a required reviewer, `azure-down` in an `always()` step, leftover-resource assertion. No schedule, ever.
+
+**Work breakdown (about 73h, 9 working days)**
+
+| PR | Scope | Size | Verified |
+|---|---|---|---|
+| P1 | `db-init` image, `scripts/db_init.py`, `seed --if-empty`, `SEED_STAFF_PASSWORD`, build-images matrix and smoke import | 7h | offline |
+| P2 | Optional `LLM_TEMPERATURE`, `DB_POOL_MIN/MAX_SIZE`, .NET `sslmode`, gpt-5.1 cost rows | 6h | offline |
+| P3 | `AZURE_OPENAI_AUTH=key\|identity`, `AZURE_CLIENT_ID`, `azure-identity` | 7h | offline code, Azure for the flip |
+| I1 | `infra/` skeleton and offline CI job | 9h | offline |
+| I2 | Container Apps environment, apps, job, opt-in auth and MCP | 9h | offline build |
+| I3 | `azure.yaml`, hooks, up and down scripts | 8h | offline, then Azure |
+| I4 | `smoke.sh`, Playwright env, `azure.yml` | 7h | offline, then Azure |
+| I5 | First real deploy from a clean subscription, fix-forward, measured SSE and proxy hops, one keyed eval run on gpt-5.1 (re-recorded, never copied) | 6h plus wall clock | Azure |
+| I6 | Reference profile: VNet, private Postgres, Managed Redis, ACR, `A2A_IDENTITY=token`, identity default | 10h | Azure |
+| I7 | Build-from-source mode with `remoteBuild` | 4h | Azure |
+
+Each PR carries its own Tests, UI, Seed, Env and Docs lines: P1 `configuration.md` and `deployment.md`; P2 `configuration.md` and the parity matrix; P3 `security-guide.md`; I1-I3 `docs/azure-deployment.md` (draft), README "Deploy to Azure", `troubleshooting.md`; I5 `deployment.md` App Insights section (B6), a parity row "Azure deployment: Python stack only", CHANGELOG. `.gitignore` gains `.azure/`. P1, P2 and P3 touch files other lanes own; confirm ownership first. The job image needs the next `:main` publish before I2 can reference it.
+
+**Open risks.** Prompts and evals were tuned on gpt-4.1; gpt-5.1 behaviour is unmeasured until I5. Five behaviours need a live subscription: ARM readiness blocking, proxy-hop counts, the OpenAI API version for gpt-5.1 tool calling, MCP host headers on internal FQDNs, and the managed OTel agent on a preview API version. Consumption egress IPs are not static, which matters only for Phase D allow-listing. D-1 is unanswered; the demo costs about $4-12 a day while it is up.
+
+### Documentation and README sync (audit of 2026-11-20, nothing fixed yet)
+
+28 drift findings, 8 README gaps. High: README, `CITATION.cff` and others say "A2A-style ... #88" though A2A 1.0 shipped (D-6); `docs/adding-an-agent.md` teaches a nonexistent `A2AAgentHost` instead of `shared.agent_host.create_agent_app` (D-7); `architecture.md` and `telemetry.md` repeat it and omit `/a2a/v1`, the agent card and the identity token (D-8). Medium: migration range and table count (D-1 to D-3), Redis 7 versus 8 (D-5), metrics and deployment doc claims (D-9, D-10), env-var catalogue (D-11), API route counts (D-14), docs missing from the site nav and README table (D-16), stale `docs/index.md` and `roadmap.md` and `CHANGELOG` (D-18 to D-20), `generate_embeddings` run from the wrong directory (D-25). README gaps: no table of contents, features, project layout, testing or configuration section; no hero GIF (#87); diagram and MAF badge use indigo; no release badge; `CODE_OF_CONDUCT` and `SECURITY` not linked. Missing community files: `SUPPORT.md`, a dependency-review workflow (CONTRIBUTING claims one), a secret-scan job. Fix order: the three high items, then the medium group as one docs-sync PR, then the README restructure after the hero GIF exists. The README follows an open-source layout (pitch, badges, hero GIF, table of contents, features, architecture diagram in the house palette, quick start with prerequisites and the keyless path, configuration, project layout, testing, docs index, roadmap, contributing, security, license, support).
+
+---
+
 # Part I — The sequence
 
 Ordered. Each phase states what it unblocks, so an item that moves shows what it drags with it.
