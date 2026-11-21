@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useCart } from "@/lib/cart-context";
-import { api } from "@/lib/api";
+import { api, type OrderSummary as HomeOrder } from "@/lib/api";
 import { formatPrice, formatDate } from "@/lib/format";
 import { productImageUrl } from "@/lib/images";
 import { QUICK_PROMPTS, DEMO_SCENARIOS, chatPromptHref } from "@/lib/scenarios";
@@ -24,12 +24,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { OrderStatusBadge } from "@/components/status-badge";
 import { ScenarioCard } from "@/components/demo/scenario-card";
 
-interface HomeOrder {
-  id: string;
-  status: string;
-  total: number;
-  created_at: string;
-}
 
 interface HomeProduct {
   id: string;
@@ -193,7 +187,7 @@ export default function HomePage() {
                           Order #{o.id.slice(0, 8)}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {formatDate(o.created_at)}
+                          {formatDate(o.date)}
                         </p>
                       </div>
                       <div className="flex shrink-0 items-center gap-3">

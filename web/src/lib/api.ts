@@ -314,6 +314,239 @@ export interface CartResponse {
   billing_same_as_shipping: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// Response shapes for the routes in agents/python/orchestrator/routes/legacy.py.
+// Money is a JSON number on these routes (the server casts Decimal with float()).
+// ---------------------------------------------------------------------------
+
+export interface ConversationSummary {
+  id: string;
+  title: string | null;
+  message_count: number;
+  created_at: string;
+  last_message_at: string;
+}
+
+export interface ConversationMessage {
+  id: string;
+  role: string;
+  content: string;
+  agent_name: string | null;
+  agents_involved: string[];
+  metadata: Record<string, unknown>;
+  tokens_in: number | null;
+  tokens_out: number | null;
+  created_at: string;
+}
+
+export interface ConversationDetail {
+  id: string;
+  title: string | null;
+  created_at: string;
+  last_message_at: string;
+  messages: ConversationMessage[];
+}
+
+export interface CatalogAgent {
+  id: string;
+  name: string;
+  display_name: string;
+  description: string;
+  category: string;
+  icon: string | null;
+  status: string;
+  version: string;
+  capabilities: string[];
+  requires_approval: boolean;
+  allowed_roles: string[];
+}
+
+export interface AccessRequestResult {
+  id: string;
+  agent_name: string;
+  status: "approved" | "pending";
+  message: string;
+}
+
+export interface MyAgent {
+  agent_name: string;
+  display_name: string;
+  description: string;
+  category: string;
+  icon: string | null;
+  role: string;
+  granted_at: string;
+}
+
+export interface AccessRequest {
+  id: string;
+  agent_name: string;
+  role_requested: string;
+  use_case: string;
+  status: string;
+  created_at: string;
+  user_email: string;
+  user_name: string;
+  user_role: string;
+}
+
+export interface AccessRequestDecision {
+  status: string;
+  request_id: string;
+}
+
+export interface UsageStats {
+  period: string;
+  overall: {
+    total_requests: number;
+    unique_users: number;
+    total_tokens_in: number;
+    total_tokens_out: number;
+    avg_duration_ms: number;
+    total_tool_calls: number;
+    total_tokens_cached_in: number;
+    total_cost_usd: number;
+  };
+  by_agent: {
+    agent_name: string;
+    request_count: number;
+    unique_users: number;
+    tokens_in: number;
+    tokens_out: number;
+    avg_duration_ms: number;
+    error_count: number;
+    cost_usd: number;
+  }[];
+  daily_trend: { day: string; request_count: number; unique_users: number }[];
+}
+
+/** A row of `GET /api/products` (description is cut to 200 characters server-side). */
+export interface ProductSummary {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  brand: string;
+  price: number;
+  original_price: number | null;
+  image_url: string | null;
+  rating: number;
+  review_count: number;
+}
+
+export interface ProductListResponse {
+  products: ProductSummary[];
+  total: number;
+  categories: string[];
+}
+
+export interface ProductReview {
+  id: string;
+  rating: number;
+  title: string | null;
+  body: string | null;
+  verified: boolean;
+  reviewer: string;
+  date: string;
+}
+
+export interface ProductDetail extends ProductSummary {
+  specs: Record<string, string | number | boolean>;
+  in_stock: boolean;
+  total_stock: number;
+  warehouses: { name: string; region: string; quantity: number }[];
+  reviews: ProductReview[];
+  /** Star (as a string key) -> review count. */
+  rating_distribution: Record<string, number>;
+}
+
+export interface OrderSummary {
+  id: string;
+  status: string;
+  total: number;
+  carrier: string | null;
+  tracking: string | null;
+  item_count: number;
+  date: string;
+}
+
+export interface OrderLine {
+  product_id: string;
+  name: string;
+  category: string;
+  image_url: string | null;
+  quantity: number;
+  unit_price: number;
+  subtotal: number;
+}
+
+export interface OrderReturn {
+  id: string;
+  reason: string;
+  status: string;
+  refund_method: string | null;
+  refund_amount: number | null;
+  return_label_url: string | null;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+export interface OrderDetail {
+  id: string;
+  status: string;
+  total: number;
+  /** Empty object when the order has none. */
+  shipping_address: Partial<Address>;
+  billing_address: Partial<Address>;
+  carrier: string | null;
+  tracking: string | null;
+  coupon: string | null;
+  discount: number;
+  date: string;
+  items: OrderLine[];
+  status_history: { status: string; notes: string | null; location: string | null; timestamp: string }[];
+  return: OrderReturn | null;
+}
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  /** The column defaults to bronze; sign-up and the seeder always set it. */
+  loyalty_tier: string;
+  total_spend: number;
+  member_since: string;
+  order_count: number;
+  review_count: number;
+  tier_benefits: {
+    discount_pct: number;
+    free_shipping_threshold: number | null;
+    priority_support: boolean;
+  };
+}
+
+export interface SellerProduct extends ProductSummary {
+  is_active: boolean;
+}
+
+export interface SellerOrder {
+  id: string;
+  status: string;
+  total: number;
+  date: string;
+  buyer_name: string;
+  buyer_email: string;
+  item_count: number;
+}
+
+export interface SellerStats {
+  product_count: number;
+  total_revenue: number;
+  order_count: number;
+  avg_rating: number;
+}
+
 const STORAGE_ACCESS = "ecommerce_access_token";
 const STORAGE_REFRESH = "ecommerce_refresh_token";
 
@@ -860,24 +1093,24 @@ class ApiClient {
 
   // Conversations
   getConversations() {
-    return this.request<any[]>("/api/conversations");
+    return this.request<ConversationSummary[]>("/api/conversations");
   }
 
   getConversation(id: string) {
-    return this.request<any>(`/api/conversations/${id}`);
+    return this.request<ConversationDetail>(`/api/conversations/${id}`);
   }
 
   deleteConversation(id: string) {
-    return this.request<any>(`/api/conversations/${id}`, { method: "DELETE" });
+    return this.request<{ status: string }>(`/api/conversations/${id}`, { method: "DELETE" });
   }
 
   // Marketplace
   getAgentCatalog() {
-    return this.request<any[]>("/api/marketplace/agents");
+    return this.request<CatalogAgent[]>("/api/marketplace/agents");
   }
 
   requestAccess(agentName: string, roleRequested: string, useCase: string) {
-    return this.request<any>("/api/marketplace/request", {
+    return this.request<AccessRequestResult>("/api/marketplace/request", {
       method: "POST",
       body: JSON.stringify({
         agent_name: agentName,
@@ -888,23 +1121,23 @@ class ApiClient {
   }
 
   getMyAgents() {
-    return this.request<any[]>("/api/marketplace/my-agents");
+    return this.request<MyAgent[]>("/api/marketplace/my-agents");
   }
 
   // Admin
   getAccessRequests() {
-    return this.request<any[]>("/api/admin/requests");
+    return this.request<AccessRequest[]>("/api/admin/requests");
   }
 
   approveRequest(id: string, notes?: string) {
-    return this.request<any>(`/api/admin/requests/${id}/approve`, {
+    return this.request<AccessRequestDecision>(`/api/admin/requests/${id}/approve`, {
       method: "POST",
       body: JSON.stringify({ admin_notes: notes }),
     });
   }
 
   denyRequest(id: string, notes?: string) {
-    return this.request<any>(`/api/admin/requests/${id}/deny`, {
+    return this.request<AccessRequestDecision>(`/api/admin/requests/${id}/deny`, {
       method: "POST",
       body: JSON.stringify({ admin_notes: notes }),
     });
@@ -952,7 +1185,7 @@ class ApiClient {
   }
 
   getUsageStats() {
-    return this.request<any>("/api/admin/usage");
+    return this.request<UsageStats>("/api/admin/usage");
   }
 
   getNotifications(limit = 20) {
@@ -1067,15 +1300,15 @@ class ApiClient {
 
   // Seller
   getSellerProducts() {
-    return this.request<{ products: any[]; total: number }>("/api/seller/products");
+    return this.request<{ products: SellerProduct[]; total: number }>("/api/seller/products");
   }
 
   getSellerOrders() {
-    return this.request<{ orders: any[]; total: number }>("/api/seller/orders");
+    return this.request<{ orders: SellerOrder[]; total: number }>("/api/seller/orders");
   }
 
   getSellerStats() {
-    return this.request<any>("/api/seller/stats");
+    return this.request<SellerStats>("/api/seller/stats");
   }
 
   // Seller merchant proposals (#93)
@@ -1132,11 +1365,11 @@ class ApiClient {
     if (params?.search) qs.set("search", params.search);
     if (params?.sort) qs.set("sort", params.sort);
     const q = qs.toString();
-    return this.request<{ products: any[]; total: number; categories: string[] }>(`/api/products${q ? `?${q}` : ""}`);
+    return this.request<ProductListResponse>(`/api/products${q ? `?${q}` : ""}`);
   }
 
   getProduct(id: string) {
-    return this.request<any>(`/api/products/${id}`);
+    return this.request<ProductDetail>(`/api/products/${id}`);
   }
 
   // Cart
@@ -1254,16 +1487,16 @@ class ApiClient {
   // Orders
   getOrders(status?: string) {
     const q = status ? `?status=${status}` : "";
-    return this.request<{ orders: any[]; total: number }>(`/api/orders${q}`);
+    return this.request<{ orders: OrderSummary[]; total: number }>(`/api/orders${q}`);
   }
 
   getOrder(id: string) {
-    return this.request<any>(`/api/orders/${id}`);
+    return this.request<OrderDetail>(`/api/orders/${id}`);
   }
 
   // Profile
   getProfile() {
-    return this.request<any>("/api/profile");
+    return this.request<UserProfile>("/api/profile");
   }
 
   getUserMemories(category?: string) {
