@@ -84,6 +84,23 @@ def hash_pw(password: str) -> str:
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
+STAFF_ROLES = frozenset({"admin", "support", "seller"})
+
+
+def staff_password(role: str, default: str) -> str:
+    """The password a seeded account gets: SEED_STAFF_PASSWORD for staff roles when set, else the demo default.
+
+    Customers and the tour user keep their published passwords. Draws nothing from ``random``.
+    """
+    override = os.environ.get("SEED_STAFF_PASSWORD", "")
+    return override if override and role in STAFF_ROLES else default
+
+
+def seed_if_empty_requested(flag: bool = False) -> bool:
+    """``--if-empty`` or ``SEED_MODE=if-empty``: skip, never clear, a database that already has users."""
+    return flag or os.environ.get("SEED_MODE", "").strip().lower() == "if-empty"
+
+
 # ============================================================
 # DATA DEFINITIONS
 # ============================================================
@@ -328,7 +345,7 @@ async def seed_users(conn: asyncpg.Connection) -> dict[str, uuid.UUID]:
     """Insert users and return email -> id mapping."""
     user_ids = {}
     for email, password, name, role, tier, spend in USERS:
-        pw_hash = hash_pw(password)
+        pw_hash = hash_pw(staff_password(role, password))
         row = await conn.fetchrow(
             """INSERT INTO users (email, password_hash, name, role, loyalty_tier, total_spend)
                VALUES ($1, $2, $3, $4, $5, $6)
@@ -1026,7 +1043,7 @@ async def seed_support_user(conn: asyncpg.Connection) -> None:
            VALUES ($1, $2, 'Support Agent', 'support', 'bronze', 0)
            ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name
            RETURNING id""",
-        SUPPORT_EMAIL, hash_pw("support123"),
+        SUPPORT_EMAIL, hash_pw(staff_password("support", "support123")),
     )
     admin_id = await conn.fetchval("SELECT id FROM users WHERE email = 'admin.demo@gmail.com'")
     for agent_name in [a[0] for a in AGENT_CATALOG if not a[6]]:
@@ -1176,7 +1193,7 @@ async def reset_autonomy_log(conn: asyncpg.Connection) -> None:
         logger.info("Cleared the autonomy decision log and store-credit ledger (dev/demo reseed)")
 
 
-async def main(reset_tour_only: bool = False) -> None:
+async def main(reset_tour_only: bool = False, if_empty: bool = False) -> None:
     logger.info("Connecting to database: %s", DATABASE_URL.split("@")[-1])
     conn = await connect_with_retry(DATABASE_URL)
 
@@ -1187,6 +1204,9 @@ async def main(reset_tour_only: bool = False) -> None:
 
         # Check if already seeded
         count = await conn.fetchval("SELECT COUNT(*) FROM users")
+        if count > 0 and seed_if_empty_requested(if_empty):
+            logger.info("seed skipped: database already has %d users (if-empty mode, nothing cleared)", count)
+            return
         if count > 0:
             logger.info("Database already has %d users — clearing and re-seeding", count)
             # Truncate all tables in dependency order. Phase-7 tables
@@ -1271,5 +1291,10 @@ if __name__ == "__main__":
         action="store_true",
         help="only put the tour user back to its seeded state; seed nothing else",
     )
+    _parser.add_argument(
+        "--if-empty",
+        action="store_true",
+        help="seed only when the users table is empty; otherwise skip without clearing (env: SEED_MODE=if-empty)",
+    )
     _args = _parser.parse_args(sys.argv[1:])
-    asyncio.run(main(reset_tour_only=_args.reset_tour_user))
+    asyncio.run(main(reset_tour_only=_args.reset_tour_user, if_empty=_args.if_empty))

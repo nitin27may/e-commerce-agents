@@ -119,6 +119,22 @@ docker compose --profile agents --profile mcp --profile frontend up -d
 docker compose --profile seed run --rm seeder
 ```
 
+### The seeder outside compose (`db-init`)
+
+Compose bind-mounts `scripts/` and `docker/postgres/` into the seeder. A managed environment has no such
+mount, so the `db-init` image (`agents/python/Dockerfile.dbinit`, build context is the **repo root**) bakes
+them in:
+
+```bash
+docker build -f agents/python/Dockerfile.dbinit -t db-init .
+docker run --rm -e DATABASE_URL=postgresql://... -e SEED_STAFF_PASSWORD=... db-init
+```
+
+It migrates, seeds only if `users` is empty, loads embeddings only if the table is empty and a real provider
+is configured, then runs `ANALYZE`. It is idempotent and never truncates. `SEED_STAFF_PASSWORD` replaces the
+published admin/support/seller demo passwords; set it anywhere but a laptop. See
+[Configuration](configuration.md#database-bootstrap-seed_-db-init).
+
 ## 4. dev.sh Script
 
 The `scripts/dev.sh` script is the recommended way to start the development environment. It handles build ordering, health checks, seeding, and prints a summary when ready.

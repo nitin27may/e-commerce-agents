@@ -53,6 +53,18 @@ Azure pre-work. Two application-code blockers that would each have stopped a dep
 them about Azure services. Both are contract changes any additional backend inherits, which is why
 they landed before the infrastructure work rather than during it.
 
+### Added
+
+- **`db-init`, a one-shot database bootstrap image for Azure.** `scripts/` and `docker/postgres/` were
+  only bind-mounted by compose, and the agent image's build context is `agents/python`, so a managed
+  environment had no way to create the schema. `agents/python/Dockerfile.dbinit` (repo-root context,
+  non-root) runs `python -m scripts.db_init`: migrate, seed only if `users` is empty, embeddings only if
+  the table is empty and a real provider is configured, `ANALYZE`. It is the twelfth image in
+  `build-images.yml`, with a smoke import.
+- **`seed --if-empty` / `SEED_MODE=if-empty`** skips a database that already has users instead of
+  clearing it, and **`SEED_STAFF_PASSWORD`** replaces the published admin, support and seller demo
+  passwords. Neither draws from `random` or changes any other seeded row.
+
 ### Changed
 
 - **The frontend no longer knows its backend's address.** `NEXT_PUBLIC_API_URL` was inlined into

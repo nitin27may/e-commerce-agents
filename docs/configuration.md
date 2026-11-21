@@ -417,6 +417,24 @@ through; the rest are read from `.env` by host-run Python.
 
 The merchant hard limits are a file, not environment: `agents/python/config/policies/merchant_limits.yaml` (`margin_floor_pct`, `max_change_pct_per_day`, `block_during_active_promotion`, `max_lines_per_batch`, and the restock limits `max_restock_quantity` and `max_restock_order_value`, both placeholders to set for your catalogue). See [Approvals](approvals.md).
 
+## Database bootstrap (`SEED_*`, `db-init`)
+
+The `db-init` image (`agents/python/Dockerfile.dbinit`, built from the repo root) is a one-shot job for
+environments with no bind mounts, such as an Azure Container Apps job. It runs
+`python -m scripts.db_init`: migrations (advisory-locked), the seed only if `users` is empty, embeddings
+only if `product_embeddings` is empty and a real embedding provider is configured (skipped with a warning
+under `LLM_PROVIDER=replay` or with no provider), then `ANALYZE`. It never truncates, so it is safe to run on
+every deployment. Logs are JSON lines; any failure exits non-zero.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `SEED_MODE` | *(empty)* | `if-empty` makes `scripts.seed` skip, without clearing, when `users` already has rows. Same as `--if-empty`. Unset, the seeder keeps its dev behaviour of clearing and re-seeding |
+| `SEED_STAFF_PASSWORD` | *(empty)* | When set, the seeded `admin`, `support` and `seller` accounts get this password instead of the published demo ones. Customers and the tour user are unchanged. Set it in any shared or public environment |
+| `SEED_CLOCK_OFFSET_DAYS` | `0` | Shifts every seeded timestamp back by this many days |
+
+Neither new variable changes any seeded row other than the staff password hashes, so replay fixtures are
+unaffected.
+
 ## One stack at a time
 
 The Python and .NET stacks publish the same host ports — 3000, 5432, 6379, 8080–8085, 8090, 18888 —
