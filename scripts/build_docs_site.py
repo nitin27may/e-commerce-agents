@@ -137,6 +137,7 @@ SECTIONS: tuple[Section, ...] = (
             "docs/merchant-proposals.md",
             "docs/event-autonomy.md",
             "docs/return-lifecycle.md",
+            "docs/durable-task-spike.md",
             "docs/devui.md",
             "docs/agent-quality.md",
             "docs/eval-scorecard.md",

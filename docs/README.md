@@ -64,6 +64,7 @@ This folder contains the full technical documentation for E-Commerce Agents.
 | [event-autonomy.md](event-autonomy.md) | Event autonomy: autonomy budgets, the append-only decision log, reversal, the event simulator, how an over-budget action becomes an approval |
 | [devui.md](devui.md) | Browse the specialists and workflows in MAF DevUI: how to run it without touching the lock, the bound identity, the guard rails |
 | [return-lifecycle.md](return-lifecycle.md) | The return lifecycle after approval: waiting for the carrier's scan across restarts, the expiry timer, the admin scan simulator |
+| [durable-task-spike.md](durable-task-spike.md) | Write-up: would the Durable Task extension replace the return lifecycle's checkpoints and outbox timers (recommendation: no) |
 | [merchant-proposals.md](merchant-proposals.md) | Seller merchant proposals: deterministic markdown/restock suggestions, review through the approvals machinery, idempotent execution, the daily run |
 | [approvals.md](approvals.md) | Approval routing policy (`approvals.yaml`), default rules, golden cases, the approvals tables |
 | [agent-quality.md](agent-quality.md) | Eval methodology, datasets, red-team scenarios, scoring, CI gate |
