@@ -4,7 +4,7 @@ Every specialist, Python and .NET, serves two wires on the same port:
 
 | Wire | Where | Status |
 |---|---|---|
-| **A2A 1.0**, JSON-RPC binding | `POST /a2a/v1`, card at `GET /.well-known/agent-card.json` | Python since B-12, .NET since B-13. What the official `a2a-sdk` / A2A .NET SDK client, and any other 1.0 client, speaks |
+| **A2A 1.0**, JSON-RPC binding | `POST /a2a/v1`, card at `GET /.well-known/agent-card.json` | On both stacks. What the official `a2a-sdk` / A2A .NET SDK client, and any other 1.0 client, speaks |
 | **Legacy** | `POST /message:send`, `POST /message:stream` | The original look-alike: a bare `{"message": "..."}` body. Unchanged on both stacks, byte for byte |
 
 The caller picks one with `A2A_TRANSPORT=legacy|a2a` (default `legacy`), on **both** orchestrators. It applies to the

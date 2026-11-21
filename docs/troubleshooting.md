@@ -35,7 +35,8 @@ The compose services use 5432 (Postgres), 6379 (Redis), 8080 (orchestrator),
 
 ## Chat returns an error / "encountered an issue"
 
-The LLM is never mocked. Set a real key in the repo `.env`:
+Outside replay mode (`LLM_PROVIDER=replay`, which `--no-key` sets and which answers only recorded
+prompts), chat needs a real model. Set a key in the repo `.env`:
 
 ```bash
 LLM_PROVIDER=openai

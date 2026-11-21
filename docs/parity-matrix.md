@@ -3,10 +3,13 @@
 This repo ships two complete backends over the same domain: `agents/python/` (Microsoft
 Agent Framework's Python SDK) and `agents/dotnet/` (the .NET/C# SDK). Development here is
 **Python-first** — new capabilities land in Python first, and the .NET backend follows on a
-prioritized backlog rather than in lockstep. This matrix replaces an earlier, less accurate
-"feature-parity" claim in the root `README.md` with an honest, per-concept breakdown of what's
-actually implemented on each side today, verified directly against the code (not carried
-forward from an older description).
+prioritized backlog rather than in lockstep.
+
+**The shared foundation is complete on both:** an orchestrator plus five specialist agents, all
+five orchestration modes, A2A 1.0, Postgres-backed checkpointing and resume, approvals, auth,
+guardrails, idempotency on the money paths, rate limiting and telemetry. The rows below are a
+per-concept breakdown of everything beyond that, each verified against the code, so most of what
+you will read here is the list of differences.
 
 See also [`docs/agent-audit-matrix.md`](agent-audit-matrix.md) for the security-specific
 breakdown (injection defense, role enforcement, eval/red-team coverage) — this document covers

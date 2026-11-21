@@ -21,8 +21,7 @@ this one except the constant this chapter writes by hand.
 - Completed [Chapter 24 — RAG and Grounding](../24-rag-and-grounding/) (a post-generation
   verification step that doesn't feed back into another generation — this chapter is what happens
   when you close that loop)
-- Repo-root `.env` with a working LLM provider (`OPENAI_API_KEY`, or `AZURE_OPENAI_ENDPOINT` +
-  `AZURE_OPENAI_KEY` + `AZURE_OPENAI_DEPLOYMENT`)
+- No API key needed: with none set, `main.py` replays recorded responses and prints one line saying so. To use a live model instead, put `OPENAI_API_KEY` (or the `AZURE_OPENAI_*` variables) in the repo-root `.env`
 
 ## The concept
 

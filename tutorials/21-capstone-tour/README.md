@@ -1,14 +1,14 @@
 # Chapter 21 — Capstone Tour
 
-Every concept from Chapters 00–20, mapped to the exact file and line where it lives in the running
+Every concept from the earlier chapters, mapped to the exact file and line where it lives in the running
 e-commerce platform — plus the one artifact none of the other chapters can show you: the same
 question, run through five different orchestration mechanisms, side by side, with real numbers.
 
 ## Why this chapter
 
-The previous 20 chapters each drilled one Microsoft Agent Framework concept in isolation, against a
+The earlier chapters each drilled one Microsoft Agent Framework concept in isolation, against a
 small standalone example. That's the right way to learn a concept, but it leaves an honest question
-unanswered: does any of this actually change how you'd build a real system, or is it 20 disconnected
+unanswered: does any of this actually change how you'd build a real system, or is it a pile of disconnected
 toy demos? This chapter closes that gap. Every pattern you learned is running, right now, in the
 same multi-agent e-commerce platform — a `tool` router, MAF's `HandoffBuilder` mesh, two different
 MAF `WorkflowBuilder` graphs (one concurrent, one sequential with a human-approval pause), and a
@@ -142,11 +142,11 @@ Two prompts worth trying, matched to a real difference between modes:
 - *"Should I buy these headphones?"* — compare `tool` against `workflow:pre-purchase` (concurrent
   reviews/stock/price checks) and `group-chat` (value vs. quality panelists debating it).
 
-**Known gap, stated plainly:** the compare response doesn't include token counts, estimated cost, or
-grounding verification results yet, even though `shared/cost.py` (Chapter 13's capstone pointer)
-and the grounding verifier (`docs/concepts/09-grounding-and-rag.md`) both exist now — wiring them
-into `CompareModeResult` is a small, real follow-up that hasn't landed, not a fabricated number.
-Judge cost and correctness by reading the response text and the timeline for now.
+Each result card shows the mode's answer, latency, input and output tokens and estimated cost
+(`tokens_in`, `tokens_out`, `est_cost_usd`; the two workflow modes call no model, so theirs are an
+explicit zero). Grounding verification results are not part of the compare response, so judge
+correctness by reading the response text and the timeline. Measured numbers for all five modes are
+in the [orchestration benchmark](../../docs/orchestration-benchmark.md).
 
 **Also try the single-mode chat**, not just Compare: `web/src/components/chat/mode-switcher.tsx`
 lets you pin one mode per conversation, and `orchestration-graph.tsx` animates the live graph next
@@ -223,36 +223,38 @@ checkable rather than asserted.
   implement `graph_mermaid()` — `tool` and `handoff` both return `None` (see
   [Chapter 07 — Graphs in agent systems](../../docs/concepts/07-graphs-in-agent-systems.md)).
   Don't expect an animated diagram for every mode in the switcher.
-- **The eval table above will drift.** These are the scores as of this session's baseline commit —
+- **The eval table above will drift.** These are the scores at the committed baseline —
   if you improve a prompt or add a tool, re-run the suite and update `evals/baselines/`, or the
-  numbers in this chapter stop being true the way half the claims the original audit found already
-  were.
+  numbers in this chapter stop being true.
 
 ## What was deliberately left out, and why
 
 - **Magentic orchestration** (Chapter 16) has no live mode — the manager/worker planning pattern is
   real MAF functionality this repo teaches, but hasn't been wired into a sixth `orchestrator/modes/`
   entry yet. Tracked, not hidden.
-- **Cost and grounding columns on the Compare response** — both underlying pieces exist
-  (`shared/cost.py`, the grounding verifier) but aren't threaded into `CompareModeResult` yet. Noted
-  above, not silently absent.
-- **Idempotency, retries, and rate limiting** are real production concerns this repo does not yet
-  implement — see [`docs/concepts/14-production-concerns.md`](../../docs/concepts/14-production-concerns.md)
-  for the full, honest accounting rather than repeating it here.
-- **A `.NET` version of this tour** isn't written — the .NET backend exists (`docker-compose.dotnet.yml`)
-  but doesn't yet have the mode registry this chapter is built around; see each Python chapter's own
-  `.NET` section for what parity does exist today, chapter by chapter.
+- **A grounding column on the Compare response** — the grounding verifier exists but its result is
+  not threaded into `CompareModeResult`.
+- **Production concerns** (idempotency, retries, rate limiting and the rest) are not toured here —
+  see [`docs/concepts/14-production-concerns.md`](../../docs/concepts/14-production-concerns.md)
+  for what the application does about each.
+- **A `.NET` version of this tour** isn't written. The .NET backend runs the same five modes
+  (`agents/dotnet/src/ECommerceAgents.Orchestrator/Modes/`, start it with `./scripts/dev.sh --dotnet`),
+  but the file pointers in this chapter are to the Python code; the
+  [parity matrix](../../docs/parity-matrix.md) lists the differences.
 
 ## What's next
 
-You've reached the end of the tutorial series proper. From here:
+This is where the course's concepts meet the application. From here:
 
 - [`docs/concepts/`](../../docs/concepts/) — the foundations layer, if you started here instead of
   at Chapter 00 and want the conceptual version of everything this tour just pointed at in code.
 - [`docs/architecture.md`](../../docs/architecture.md) — the system-level view: auth, data flow,
   technology decisions, beyond what one chapter can cover.
-- A published Python-vs-.NET parity matrix doesn't exist yet — until it does, each chapter's own
-  `## Side-by-side differences` section is the closest thing, chapter by chapter.
+- [Chapters 22 to 32](../README.md#learning-paths) — more orchestration patterns (round-table
+  debate, agent-as-tool, reflection, planner-executor, subworkflows) and the production chapters
+  (A2A, grounding, guardrails, evals, compensation, cost budgets).
+- [`docs/parity-matrix.md`](../../docs/parity-matrix.md) — what the Python and .NET backends each
+  cover, row by row.
 - Or go build something — every pattern in this repo is meant to be copied, not just read.
 
 <!-- BEGIN GENERATED CHAPTER NAV -->

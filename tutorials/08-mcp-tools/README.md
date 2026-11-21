@@ -9,7 +9,7 @@ This chapter stands up a tiny Python MCP server with a single `get_weather` tool
 ## Prerequisites
 
 - Completed [Chapter 07 — Observability](../07-observability-otel/)
-- Repo-root `.env` with one LLM provider configured (`OPENAI_API_KEY`, or the `AZURE_OPENAI_*` triplet)
+- No API key needed: with none set, `main.py` replays recorded responses and prints one line saying so. To use a live model instead, put `OPENAI_API_KEY` (or the `AZURE_OPENAI_*` variables) in the repo-root `.env`
 - `uv sync --project tutorials` (pulls in the `mcp` package alongside `agent-framework-core`)
 
 ## The concept
