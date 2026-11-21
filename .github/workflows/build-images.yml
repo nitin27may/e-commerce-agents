@@ -1,10 +1,11 @@
 name: Build Images
 
-# Builds the ten container images this stack runs on, in three build shapes:
+# Builds the twelve container images this stack runs on, in four build shapes:
 #
 #   agent   -> agents/python/Dockerfile      (ARG AGENT_NAME + AGENT_PORT)
 #   mcp     -> agents/python/Dockerfile.mcp  (ARG MCP_PACKAGE/MCP_DIR/MCP_MODULE/MCP_PORT)
 #   web     -> web/Dockerfile                (no build args)
+#   db-init -> agents/python/Dockerfile.dbinit (REPO ROOT context; one-shot DB bootstrap job)
 #
 # ── This workflow never decides to publish on its own ────────────────────────
 #
@@ -61,7 +62,7 @@ concurrency:
   # An earlier version collapsed both a manual publish and a pull-request build
   # into the same "-pr" group, because workflow_dispatch defines no `tag_mode`
   # input and the fallback was a constant. Pushing to the PR then cancelled an
-  # in-flight publish that had already pushed several of the ten images —
+  # in-flight publish that had already pushed several of the twelve images —
   # observed, not theoretical.
   #
   #   pull_request      -> ...-pull_request
@@ -177,6 +178,14 @@ jobs:
               MCP_MODULE=ecommerce_mcp_inventory.server:app
               MCP_PORT=9001
             smoke_module: ecommerce_mcp_inventory.server
+
+          # ── DB bootstrap job: repo-root context (needs scripts/ and docker/postgres/) ──
+          # Runs as an Azure Container Apps job: migrate, seed if empty, embeddings, ANALYZE.
+          - image: db-init
+            context: .
+            dockerfile: ./agents/python/Dockerfile.dbinit
+            build_args: ""
+            smoke_module: scripts.db_init scripts.seed scripts.generate_embeddings
 
           # ── Frontend: Node multi-stage, no build args ──
           # Deliberately no NEXT_PUBLIC_API_URL. The backend address is a
@@ -339,7 +348,7 @@ jobs:
           docker rm -f "$CID" > /dev/null
           exit 1
 
-  # A single job the branch protection rule can require, instead of listing ten
+  # A single job the branch protection rule can require, instead of listing twelve
   # matrix legs by name (which breaks every time the matrix changes).
   build-images-ok:
     name: Build images · all green
@@ -353,4 +362,4 @@ jobs:
             echo "::error::one or more image builds failed"
             exit 1
           fi
-          echo "all ten images built"
+          echo "all twelve images built"

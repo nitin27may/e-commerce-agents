@@ -1,0 +1,55 @@
+# ============================================================
+# E-Commerce Agents -- one-shot database bootstrap image (Azure Container Apps job)
+# Build context: the REPO ROOT (it needs scripts/ and docker/postgres/, which the
+# agent image's ./agents/python context cannot see):
+#   docker build -f agents/python/Dockerfile.dbinit -t db-init .
+# Runs `python -m scripts.db_init`: migrate, seed if empty, embeddings if empty and
+# a provider is configured, ANALYZE. See docs/deployment.md.
+# ============================================================
+
+FROM python:3.12-slim AS build
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends gcc libpq-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:0.11.32 /uv /uvx /bin/
+
+WORKDIR /app
+
+# Same locked dependency graph as the agent image: no re-resolution against live PyPI.
+COPY agents/python/pyproject.toml agents/python/uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
+
+FROM python:3.12-slim AS runtime
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends libpq5 && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -r dbinit && useradd -r -g dbinit -d /app -s /sbin/nologin dbinit
+
+WORKDIR /app
+
+# uv is kept so the CI image smoke test (`uv run --no-project python -c ...`) works on every image alike.
+COPY --from=ghcr.io/astral-sh/uv:0.11.32 /uv /bin/uv
+COPY --from=build /app/.venv /app/.venv
+# The libraries the scripts import (seed, generate_embeddings, migrate) and the prompt/policy config they read.
+COPY agents/python/shared/ shared/
+COPY agents/python/config/ config/
+# Only these: no agent code, no tests.
+COPY scripts/ scripts/
+COPY docker/postgres/ docker/postgres/
+
+RUN chown -R dbinit:dbinit /app
+
+ENV PATH="/app/.venv/bin:${PATH}" \
+    PYTHONPATH=/app \
+    PYTHONUNBUFFERED=1 \
+    UV_CACHE_DIR=/tmp/uv-cache \
+    POSTGRES_SCHEMA_DIR=/app/docker/postgres
+
+USER dbinit
+
+# A job, not a service: no port, no HTTP health check. Exit code is the result.
+ENTRYPOINT ["python", "-m", "scripts.db_init"]
