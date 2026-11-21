@@ -219,17 +219,13 @@ function parseCodeBlocks(content: string): Segment[] | null {
           // already captured as its own segment by the lastIndex
           // bookkeeping around this match. Logged so a bad LLM response
           // is still debuggable without being user-visible.
-          if (process.env.NODE_ENV !== "production") {
-            console.warn(`[rich-message] dropped a \`${kind}\` fence that failed schema validation`, data);
-          }
+          warnDropped(`dropped a \`${kind}\` fence that failed schema validation`, data);
         }
       }
     } catch (err) {
       // Malformed JSON inside a recognized fence tag — same treatment:
       // drop it, don't show the raw (broken) JSON to the user.
-      if (process.env.NODE_ENV !== "production") {
-        console.warn(`[rich-message] dropped a \`${match[1]}\` fence with malformed JSON`, err);
-      }
+      warnDropped(`dropped a \`${match[1]}\` fence with malformed JSON`, err);
     }
     lastIndex = match.index + match[0].length;
   }
@@ -611,15 +607,30 @@ function tryParseProductParagraph(
 // treats any ``` fence as a generic code block and renders the raw JSON
 // verbatim: exactly the "never show raw JSON" failure this component
 // exists to prevent for the 5 known tags.
+/**
+ * A dropped card is never shown to the user, so say so in the console: always in
+ * development, and in a production build when the page URL carries
+ * `?debug=cards`. Behaviour is otherwise unchanged (the fence is still dropped).
+ */
+function warnDropped(message: string, detail?: unknown): void {
+  let debug = process.env.NODE_ENV !== "production";
+  if (!debug && typeof window !== "undefined") {
+    try {
+      debug = new URLSearchParams(window.location.search).get("debug") === "cards";
+    } catch {
+      // a locked-down window.location: stay quiet
+    }
+  }
+  if (debug) console.warn(`[rich-message] ${message}`, detail ?? "");
+}
+
 const KNOWN_CARD_TAGS = new Set(["products", "product", "order", "checkout", "return", "sentiment", "inventory", "pricing"]);
 const ANY_FENCE_RE = /```([a-zA-Z0-9_-]*)\s*([[{][\s\S]*?)```/g;
 
 function stripUnrecognizedJsonFences(content: string): string {
   return content.replace(ANY_FENCE_RE, (full, tag: string) => {
     if (KNOWN_CARD_TAGS.has(tag)) return full; // parseCodeBlocks handles these
-    if (process.env.NODE_ENV !== "production") {
-      console.warn(`[rich-message] dropped an unrecognized \`${tag || "(untagged)"}\` JSON-shaped fence`);
-    }
+    warnDropped(`dropped an unrecognized \`${tag || "(untagged)"}\` JSON-shaped fence`);
     return "";
   });
 }

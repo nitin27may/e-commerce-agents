@@ -73,12 +73,12 @@ export function ApprovalCard({ runId, onResolved }: ApprovalCardProps) {
 
   if (!isAdmin) {
     return (
-      <div className="mt-2.5 rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5">
-        <div className="flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-400">
+      <div role="alert" className="mt-2.5 rounded-lg border border-warning/40 bg-warning/5 p-2.5">
+        <div className="flex items-center gap-1.5 text-xs font-medium text-[color-mix(in_oklab,var(--warning)_45%,black)] dark:text-warning">
           <ShieldAlertIcon className="size-3.5 shrink-0" />
           Awaiting staff review
         </div>
-        <p className="mt-1 text-[11px] text-muted-foreground">
+        <p className="mt-1 text-xs text-muted-foreground">
           This return is above the auto-approval limit. A member of our staff will review it before it continues.
         </p>
       </div>
@@ -86,8 +86,8 @@ export function ApprovalCard({ runId, onResolved }: ApprovalCardProps) {
   }
 
   return (
-    <div className="mt-2.5 rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5">
-      <div className="flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-400">
+    <div role="alert" className="mt-2.5 rounded-lg border border-warning/40 bg-warning/5 p-2.5">
+      <div className="flex items-center gap-1.5 text-xs font-medium text-[color-mix(in_oklab,var(--warning)_45%,black)] dark:text-warning">
         <ShieldAlertIcon className="size-3.5 shrink-0" />
         This return needs your approval before it can continue
       </div>
@@ -121,7 +121,7 @@ export function ApprovalCard({ runId, onResolved }: ApprovalCardProps) {
         </button>
       </div>
 
-      {error && <p className="mt-1.5 text-[11px] text-destructive">{error}</p>}
+      {error && <p role="alert" className="mt-1.5 text-xs text-destructive">{error}</p>}
     </div>
   );
 }

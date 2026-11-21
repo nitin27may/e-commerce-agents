@@ -784,6 +784,7 @@ export default function ChatPage() {
 
       {/* -------- Main chat area -------- */}
       <div className="flex flex-1 flex-col overflow-hidden">
+        <h1 className="sr-only">Chat</h1>
         {/* ---- Top bar ---- */}
         <div className="flex h-11 items-center gap-2 border-b px-3">
           {/* Mobile conversation list toggle */}
@@ -844,7 +845,14 @@ export default function ChatPage() {
         </div>
 
         {/* ---- Messages ---- */}
-        <div className="flex-1 overflow-y-auto">
+        {/* aria-busy holds the announcement until a streamed reply finishes, so a screen reader does not read every token. */}
+        <div
+          role="log"
+          aria-live="polite"
+          aria-label="Conversation"
+          aria-busy={isResponding}
+          className="flex-1 overflow-y-auto"
+        >
           {messages.length === 0 && !isResponding ? (
             <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center">
               <div className="flex size-14 items-center justify-center rounded-full bg-primary/10">
@@ -898,6 +906,11 @@ export default function ChatPage() {
                   </Avatar>
 
                   <div
+                    role={
+                      msg.role === "assistant" && msg.content.startsWith("Error: ")
+                        ? "alert"
+                        : undefined
+                    }
                     className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
                       msg.role === "user"
                         ? "bg-primary text-primary-foreground"
