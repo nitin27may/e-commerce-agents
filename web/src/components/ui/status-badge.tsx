@@ -35,7 +35,7 @@ export const TONE_TEXT_CLASS: Record<SemanticTone, string> = {
  * mode uses the raw token.
  */
 export const CHIP_CLASS = {
-  primary: "bg-primary/10 text-primary border-primary/30 dark:bg-primary/15",
+  primary: "bg-primary/10 text-primary border-primary/30 dark:bg-primary/15 dark:text-[color-mix(in_oklab,var(--primary)_65%,white)]",
   teal: "bg-chart-2/10 text-[color-mix(in_oklab,var(--chart-2)_55%,black)] dark:text-chart-2 border-chart-2/30 dark:bg-chart-2/15",
   slate: "bg-secondary text-secondary-foreground border-border",
 } as const;

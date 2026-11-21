@@ -91,6 +91,8 @@ test.describe("authenticated shell", () => {
         await page.goto(path);
         await page.waitForLoadState("networkidle");
         await expect(page.getByRole("main")).toBeVisible();
+        // A page that crashed into the error boundary has no violations to find, so rule it out first.
+        await expect(page.getByRole("heading", { name: "Something went wrong" })).toHaveCount(0);
         await scan(page, `${name} (${theme})`);
       });
     }

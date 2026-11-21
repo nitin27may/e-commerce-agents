@@ -58,7 +58,10 @@ function formatPrice(price: number): string {
   }).format(price);
 }
 
-function StarRating({ rating, count }: { rating: number; count: number }) {
+function StarRating({ rating: rawRating, count: rawCount }: { rating?: number; count?: number }) {
+  // A product with no reviews yet may arrive without either field.
+  const rating = asNumber(rawRating);
+  const count = asNumber(rawCount);
   const fullStars = Math.floor(rating);
   const hasHalf = rating - fullStars >= 0.5;
   const emptyStars = 5 - fullStars - (hasHalf ? 1 : 0);
@@ -228,6 +231,7 @@ export default function ProductsPage() {
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Search products..."
+                aria-label="Search products"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9"
@@ -235,7 +239,7 @@ export default function ProductsPage() {
             </div>
 
             <Select value={sortBy} onValueChange={(v) => v && setSortBy(v)}>
-              <SelectTrigger className="w-48">
+              <SelectTrigger className="w-48" aria-label="Sort products">
                 <SelectValue placeholder="Sort by" />
               </SelectTrigger>
               <SelectContent>
@@ -402,6 +406,7 @@ export default function ProductsPage() {
                     <Button
                       variant="outline"
                       size="icon"
+                      aria-label={`Add ${product.name} to cart`}
                       className={`shrink-0 transition-colors ${
                         addedIds.has(product.id)
                           ? "border-success/40 bg-success/10 text-[color-mix(in_oklab,var(--success)_62%,black)] dark:text-success"
