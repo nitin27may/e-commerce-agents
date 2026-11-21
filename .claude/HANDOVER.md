@@ -162,7 +162,7 @@ tutorial chapter READMEs rewritten for learners (#190); chapter pointers by symb
 number, enforced by `scripts/check_tutorial_readmes.py`, plus a status table and a refreshed chapter
 template (#196); roadmap and parity matrix reorganised for visitors, ten guides cleaned of plan codes,
 new `docs/checkpoints-and-resume.md` and `docs/replay-mode.md` (#195); release 1.4.0 with a "Known limits"
-section in the changelog (#193); Discussion "Which orchestration pattern should I use?" is #188.
+section in the changelog (#193); third pass over quick start, troubleshooting, the 14 concept pages, configuration, database schema, API reference, audit matrix, benchmark and releasing (#198); Discussion "Which orchestration pattern should I use?" is #188.
 
 **Open, in order:**
 1. Approve the 1.4.0 release run (Review deployments, `release`, approve). It is the maintainer's click;
@@ -180,15 +180,16 @@ section in the changelog (#193); Discussion "Which orchestration pattern should 
    answers every chat prompt with "not recorded". README, quick start, demo guide, `docs/replay-mode.md`
    and the 1.4.0 changelog all say so; remove those caveats when it ships.
 
-**Suspected, not verified (left as they were):** `docs/maf-best-practices.md` names only OpenAI and Azure
-OpenAI as providers although Anthropic is wired; `docs/adr/0002` says "forty-six tools" but the eval
-scorecard's per-agent counts sum higher; `docs/telemetry.md` shows a "Starlette request span" on a
-specialist the page calls a FastAPI app; parity rows 29 and 33 have priorities that do not match their
-status; a comment in `docker-compose.nokey.yml` says the fixture key includes the model name, but
-`shared/replay_client.py` hashes messages, tools, instructions and response format only; Python
-`ReturnReplaceMode.capabilities` has `supports_checkpoints=False` although the mode checkpoints every run
-(.NET says `true`; that one is code, not docs); `docs/images/flow-guest-browse.png` (12 MB) and
-`flow-guest-product.png` are referenced nowhere.
+**Suspected, not verified (left as they were):** parity rows 29 and 33 have priorities that do not match
+their status; Python `ReturnReplaceMode.capabilities` has `supports_checkpoints=False` although the mode
+checkpoints every run (.NET says `true`; that one is code, not docs);
+`docs/images/flow-guest-browse.png` (12 MB) and `flow-guest-product.png` are referenced nowhere;
+`docs/reported-vs-actual.md` ties "twelve containers reported healthy" to two different test counts;
+`docs/concepts/10-guardrails.md`'s middleware snippet omits the cost-budget and output-moderation layers;
+the API reference's overview diagram still implies every non-auth route needs a token, and its "about 70
+routes" is uncounted; a comment in `.github/workflows/build-images.yml` says four test jobs gate
+publishing (it is six). The earlier entries for `maf-best-practices`, ADR 0002, the telemetry diagram and
+the `docker-compose.nokey.yml` comment were verified and fixed in #198.
 
 **Limits of the new tutorial checks:** the symbol check passes a path if any backticked identifier in the
 same paragraph or list item occurs in the file (no one-to-one pairing); `web/src/app/(app)/runs/page.tsx`
@@ -219,6 +220,7 @@ Time sinks: `uv lock` with a different local uv version rewrites unrelated marke
 
 Append newest first. One line per landed change: date, PR, what, and anything left unverified.
 
+- 2026-11-21 (docs session): #198 merged, third docs pass (quick start, concepts, configuration, schema, API reference, benchmark, audit matrix, releasing); it fixed four of the previously suspected mismatches and corrected `docs/concepts/14` (idempotency, retry and rate limiting do exist). #195 was merged before its CI finished (an `--auto` merge fired at once); every workflow on that commit later passed on `main`. The 1.4.0 release run is still waiting on the maintainer's approval; no announcement posted yet. Not started: #182 screenshots and GIF.
 - 2026-11-21 (docs session): issue #183 closed by #195; a third docs pass is starting on branch `docs/third-pass` (concept pages, configuration, database schema, API reference, quick start, troubleshooting, releasing, benchmark, reported-vs-actual, audit matrix, plus verifying the suspected mismatches in section 9).
 - 2026-11-21: #194 .NET approval-timeout worker (row 36 Full); v1.4.0 tagged; handover document added.
 - 2026-11-21: #158 to #193: see the plan's Progress block for the list.
