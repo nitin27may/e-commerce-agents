@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 import uuid
 from typing import Any
@@ -1690,12 +1691,20 @@ async def return_order(order_id: str, body: ReturnOrderRequest, user: dict = Dep
 # ── Return Label PDF ─────────────────────────────────────────
 
 
+# Tokens are minted as ``uuid.uuid4().hex[:12]`` (lowercase hex) at both creation sites.
+_LABEL_TOKEN_RE = re.compile(r"[0-9a-f]{12}")
+
+
 @router.get("/api/returns/{label_token}/label")
 async def get_return_label(label_token: str):
     """Generate a return shipping label PDF for the given token."""
+    # The route is public and the token is the only credential, so it is matched whole and exactly: a malformed
+    # segment (wildcards, partial or over-long tokens) gets the same 404 as an unknown one, and is never echoed.
+    if not _LABEL_TOKEN_RE.fullmatch(label_token):
+        raise HTTPException(status_code=404, detail="Return label not found")
+
     pool = get_pool()
 
-    # Find the return by label URL pattern
     ret = await pool.fetchrow(
         """SELECT r.id, r.order_id, r.reason, r.status, r.return_label_url,
                   r.refund_method, r.refund_amount, r.created_at,
@@ -1704,8 +1713,8 @@ async def get_return_label(label_token: str):
            FROM returns r
            JOIN orders o ON r.order_id = o.id
            JOIN users u ON r.user_id = u.id
-           WHERE r.return_label_url LIKE $1""",
-        f"%{label_token}%",
+           WHERE r.return_label_url = $1""",
+        f"/api/returns/{label_token}/label",
     )
     if not ret:
         raise HTTPException(status_code=404, detail="Return label not found")
