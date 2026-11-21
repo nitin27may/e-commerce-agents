@@ -56,7 +56,7 @@ export function ScenarioCard({ scenario, href, compact = false }: ScenarioCardPr
             <span
               key={a}
               className={cn(
-                "rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground",
+                "rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground",
               )}
             >
               {a}

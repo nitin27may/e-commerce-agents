@@ -246,7 +246,7 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
                         key={s.label}
                         type="button"
                         onClick={() => { setInput(s.prompt); textareaRef.current?.focus(); }}
-                        className="rounded-full border border-border/60 bg-muted/40 px-2.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-primary/30 hover:bg-muted hover:text-foreground"
+                        className="rounded-full border border-border/60 bg-muted/40 px-2.5 py-0.5 text-xs text-muted-foreground transition-colors hover:border-primary/30 hover:bg-muted hover:text-foreground"
                       >
                         {s.label}
                       </button>
@@ -307,7 +307,7 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
                       aria-expanded={modeMenuOpen}
                       aria-label="Specialist"
                       className={cn(
-                        "flex h-8 items-center gap-1 rounded-full px-2.5 text-[11px] font-medium transition-colors disabled:pointer-events-none disabled:opacity-40",
+                        "flex h-8 items-center gap-1 rounded-full px-2.5 text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-40",
                         agentMode === null
                           ? "text-muted-foreground hover:bg-muted hover:text-foreground"
                           : "bg-primary text-primary-foreground hover:bg-primary/90"
@@ -361,7 +361,7 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
               </div>
 
               {/* Keyboard hint */}
-              <span className="hidden select-none text-[10px] text-muted-foreground/50 sm:block">
+              <span className="hidden select-none text-xs text-muted-foreground/50 sm:block">
                 Enter to send · Shift+Enter newline
               </span>
 

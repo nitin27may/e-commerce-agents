@@ -326,7 +326,7 @@ export default function AdminApprovalsPage() {
                         <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
                           Show input
                         </summary>
-                        <pre className="mt-1.5 max-h-32 overflow-auto rounded bg-muted/60 px-2 py-1.5 text-[10px] leading-relaxed text-foreground/70">
+                        <pre className="mt-1.5 max-h-32 overflow-auto rounded bg-muted/60 px-2 py-1.5 text-xs leading-relaxed text-foreground/70">
                           {JSON.stringify(req.tool_input, null, 2)}
                         </pre>
                       </details>

@@ -523,7 +523,7 @@ export default function ProductDetailPage() {
                                 {review.verified && (
                                   <Badge
                                     variant="outline"
-                                    className="border-primary/30 bg-primary/10 text-primary text-[10px]"
+                                    className="border-primary/30 bg-primary/10 text-primary text-xs"
                                   >
                                     <CheckCircle className="mr-0.5 size-2.5" />
                                     Verified

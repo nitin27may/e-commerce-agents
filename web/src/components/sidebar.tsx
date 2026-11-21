@@ -109,7 +109,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         <nav className="flex flex-col gap-5">
           {groups.map((group) => (
             <div key={group.label} className="flex flex-col gap-1">
-              <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 {group.label}
               </p>
               {group.items.map((item) => (

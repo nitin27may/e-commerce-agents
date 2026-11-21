@@ -202,7 +202,7 @@ function StepDetail({ step }: { step: AuditStep }) {
     <div className="rounded-lg border border-border bg-card px-3 py-2">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="inline-flex size-5 items-center justify-center rounded bg-muted text-[10px] font-medium text-muted-foreground">
+          <span className="inline-flex size-5 items-center justify-center rounded bg-muted text-xs font-medium text-muted-foreground">
             {step.step_index + 1}
           </span>
           <span className="font-mono text-xs font-semibold text-foreground/80">
@@ -211,7 +211,7 @@ function StepDetail({ step }: { step: AuditStep }) {
           {step.status === "error" && (
             <Badge
               variant="outline"
-              className="border-red-200 bg-red-50 text-[10px] text-red-700"
+              className="border-red-200 bg-red-50 text-xs text-red-700"
             >
               error
             </Badge>
@@ -222,12 +222,12 @@ function StepDetail({ step }: { step: AuditStep }) {
         </span>
       </div>
       {inputStr && (
-        <pre className="mt-1.5 max-h-24 overflow-auto rounded bg-muted/60 px-2 py-1 pl-7 text-[10px] leading-relaxed text-foreground/70">
+        <pre className="mt-1.5 max-h-24 overflow-auto rounded bg-muted/60 px-2 py-1 pl-7 text-xs leading-relaxed text-foreground/70">
           {inputStr}
         </pre>
       )}
       {outputStr && (
-        <pre className="mt-1 max-h-24 overflow-auto rounded bg-muted/40 px-2 py-1 pl-7 text-[10px] leading-relaxed text-muted-foreground">
+        <pre className="mt-1 max-h-24 overflow-auto rounded bg-muted/40 px-2 py-1 pl-7 text-xs leading-relaxed text-muted-foreground">
           {outputStr}
         </pre>
       )}

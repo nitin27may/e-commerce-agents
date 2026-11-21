@@ -136,12 +136,12 @@ function ProductColumn({
       {/* Badges */}
       <div className="flex flex-wrap gap-1 justify-center">
         {isBetterValue && (
-          <Badge className="bg-success text-success-foreground border-0 text-[9px] px-1.5 py-0">
+          <Badge className="bg-success text-success-foreground border-0 text-xs px-1.5 py-0">
             Better value
           </Badge>
         )}
         {isBetterRated && (
-          <Badge className="bg-warning text-warning-foreground border-0 text-[9px] px-1.5 py-0">
+          <Badge className="bg-warning text-warning-foreground border-0 text-xs px-1.5 py-0">
             Higher rated
           </Badge>
         )}
@@ -154,7 +154,7 @@ function ProductColumn({
 
       {/* Brand */}
       {product.brand && (
-        <p className="text-[10px] text-muted-foreground text-center">{product.brand}</p>
+        <p className="text-xs text-muted-foreground text-center">{product.brand}</p>
       )}
 
       {/* Price */}
@@ -184,7 +184,7 @@ function ProductColumn({
               />
             ))}
           </div>
-          <span className="text-[10px] text-muted-foreground">
+          <span className="text-xs text-muted-foreground">
             {product.rating.toFixed(1)}
             {product.review_count != null && ` (${product.review_count})`}
           </span>
@@ -262,7 +262,7 @@ export function ComparisonCard({ products, onAction }: ComparisonCardProps) {
       {/* Spec comparison table */}
       {sharedSpecKeys.length > 0 && (
         <div className="border-t border-border">
-          <table className="w-full text-[11px]">
+          <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-border bg-muted/30">
                 <th className="px-3 py-1.5 text-left font-medium text-muted-foreground w-1/3">Spec</th>

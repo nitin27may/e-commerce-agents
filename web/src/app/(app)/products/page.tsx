@@ -369,7 +369,7 @@ export default function ProductsPage() {
                       </div>
                       <Badge
                         variant="outline"
-                        className={`shrink-0 text-[10px] font-normal ${getCategoryColor(product.category)}`}
+                        className={`shrink-0 text-xs font-normal ${getCategoryColor(product.category)}`}
                       >
                         {product.category}
                       </Badge>

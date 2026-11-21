@@ -356,7 +356,7 @@ function RunRow({
                       <span className="text-foreground">{e.title}</span>
                       {e.detail ? ` — ${e.detail}` : ""}
                       {e.actor ? ` (${e.actor})` : ""}
-                      <span className="ml-2 text-[11px]">{new Date(e.at).toLocaleString()}</span>
+                      <span className="ml-2 text-xs">{new Date(e.at).toLocaleString()}</span>
                     </li>
                   ))}
                 </ol>
@@ -440,7 +440,7 @@ function JsonBlock({ label, value }: { label: string; value: unknown }) {
   return (
     <div>
       <p className="mb-0.5 text-xs font-medium text-muted-foreground">{label}</p>
-      <pre className="max-h-48 overflow-auto rounded bg-background/60 p-2 text-[10px] leading-relaxed text-foreground/80 ring-1 ring-border/60">
+      <pre className="max-h-48 overflow-auto rounded bg-background/60 p-2 text-xs leading-relaxed text-foreground/80 ring-1 ring-border/60">
         {display}
       </pre>
     </div>

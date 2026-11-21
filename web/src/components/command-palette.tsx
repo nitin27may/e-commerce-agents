@@ -181,7 +181,7 @@ export function CommandPalette() {
             aria-label="Search pages, scenarios, or orders"
             className="h-11 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           />
-          <kbd className="hidden rounded border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground sm:inline">
+          <kbd className="hidden rounded border bg-muted px-1.5 py-0.5 text-xs text-muted-foreground sm:inline">
             esc
           </kbd>
         </div>
@@ -196,7 +196,7 @@ export function CommandPalette() {
           {/* Nav pages */}
           {filteredNav.length > 0 && (
             <section>
-              <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <p className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Pages
               </p>
               <ul className="px-2 pb-1">
@@ -232,7 +232,7 @@ export function CommandPalette() {
           {/* Demo scenarios */}
           {filteredScenarios.length > 0 && (
             <section>
-              <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <p className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Demo scenarios
               </p>
               <ul className="px-2 pb-1">
@@ -270,7 +270,7 @@ export function CommandPalette() {
           {/* Recent orders */}
           {filteredOrders.length > 0 && (
             <section>
-              <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <p className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Recent orders
               </p>
               <ul className="px-2 pb-2">

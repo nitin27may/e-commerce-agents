@@ -178,7 +178,7 @@ export function ChatOrderCard({ data, onAction }: ChatOrderCardProps) {
                       {item.name}
                     </div>
                     {(item.category || item.brand) && (
-                      <div className="text-[10px] text-muted-foreground mt-0.5">
+                      <div className="text-xs text-muted-foreground mt-0.5">
                         {[item.brand, item.category]
                           .filter(Boolean)
                           .join(" \u00b7 ")}
@@ -245,7 +245,7 @@ export function ChatOrderCard({ data, onAction }: ChatOrderCardProps) {
 
         {/* Timeline (compact) */}
         {timeline.length > 0 && (
-          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground pt-0.5 flex-wrap">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground pt-0.5 flex-wrap">
             <Clock className="size-3 shrink-0" />
             {timeline.map((event, i) => (
               <span key={i} className="flex items-center gap-1">

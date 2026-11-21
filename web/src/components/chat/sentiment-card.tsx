@@ -105,7 +105,7 @@ export function ChatSentimentCard({ data }: { data: SentimentData }) {
               </span>
             )}
             {data.trend && (
-              <Badge variant="outline" className="ml-auto text-[10px] px-1.5 py-0">
+              <Badge variant="outline" className="ml-auto text-xs px-1.5 py-0">
                 {TREND_CONFIG[data.trend].label}
               </Badge>
             )}
@@ -115,7 +115,7 @@ export function ChatSentimentCard({ data }: { data: SentimentData }) {
         {/* Rating distribution */}
         {distributionData.length > 0 && (
           <div>
-            <p className="text-[11px] font-medium text-muted-foreground mb-1">Rating distribution</p>
+            <p className="text-xs font-medium text-muted-foreground mb-1">Rating distribution</p>
             <DistributionChart data={distributionData} height={140} valueLabel="Reviews" />
           </div>
         )}
@@ -123,7 +123,7 @@ export function ChatSentimentCard({ data }: { data: SentimentData }) {
         {/* Monthly trend */}
         {data.monthly_data && data.monthly_data.length > 0 && (
           <div>
-            <p className="text-[11px] font-medium text-muted-foreground mb-1">Rating over time</p>
+            <p className="text-xs font-medium text-muted-foreground mb-1">Rating over time</p>
             <TrendChart
               data={data.monthly_data.map((m) => ({ month: m.month, average_rating: m.average_rating }))}
               xKey="month"
@@ -165,7 +165,7 @@ export function ChatSentimentCard({ data }: { data: SentimentData }) {
 
         {/* Suspicious review count */}
         {data.suspicious_count != null && data.suspicious_count > 0 && (
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             {data.suspicious_count} review{data.suspicious_count !== 1 ? "s" : ""} flagged as potentially fake
           </p>
         )}

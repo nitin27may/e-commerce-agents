@@ -134,7 +134,7 @@ export function ModeComparison({ initialPrompt = "" }: ModeComparisonProps) {
                   <CardHeader>
                     <CardTitle className="flex items-center justify-between gap-2 text-sm">
                       <span>{result.label}</span>
-                      <Badge variant="secondary" className="text-[10px] font-normal">
+                      <Badge variant="secondary" className="text-xs font-normal">
                         {result.latency_ms}ms
                       </Badge>
                     </CardTitle>
@@ -145,11 +145,11 @@ export function ModeComparison({ initialPrompt = "" }: ModeComparisonProps) {
                     ) : (
                       <>
                         <p className="whitespace-pre-wrap text-foreground/90">{result.text || "(no answer)"}</p>
-                        <div className="flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground">
+                        <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
                           <span>{result.step_count} step{result.step_count === 1 ? "" : "s"}</span>
                           <span data-testid={`usage-${result.mode}`}>{formatUsage(result)}</span>
                           {result.agents_involved.map((agent) => (
-                            <Badge key={agent} variant="outline" className="text-[10px] font-normal">
+                            <Badge key={agent} variant="outline" className="text-xs font-normal">
                               {agent}
                             </Badge>
                           ))}

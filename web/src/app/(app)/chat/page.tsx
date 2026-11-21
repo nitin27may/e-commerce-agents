@@ -184,7 +184,7 @@ function MessageActions({
       <button
         type="button"
         onClick={handleCopy}
-        className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+        className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
       >
         {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
         {copied ? "Copied" : "Copy"}
@@ -192,7 +192,7 @@ function MessageActions({
       <button
         type="button"
         onClick={onRetry}
-        className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+        className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
       >
         <RotateCcw className="size-3" />
         Retry
@@ -200,7 +200,7 @@ function MessageActions({
       <button
         type="button"
         onClick={handleShare}
-        className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+        className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
       >
         {shared ? <Check className="size-3" /> : <Share2 className="size-3" />}
         {shared ? "Copied link" : "Share"}
@@ -939,7 +939,7 @@ export default function ChatPage() {
                           <Badge
                             key={agent}
                             variant="outline"
-                            className="text-[10px] font-normal"
+                            className="text-xs font-normal"
                           >
                             {agent}
                           </Badge>

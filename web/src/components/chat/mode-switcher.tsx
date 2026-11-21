@@ -91,17 +91,17 @@ export function ModeSwitcher({ value, onChange, disabled }: ModeSwitcherProps) {
       {active && (
         <div className="flex flex-wrap gap-1" title={active.description}>
           {active.capabilities.is_graph && (
-            <Badge variant="outline" className="text-[10px] font-normal">
+            <Badge variant="outline" className="text-xs font-normal">
               graph
             </Badge>
           )}
           {active.capabilities.supports_hitl && (
-            <Badge variant="outline" className="text-[10px] font-normal">
+            <Badge variant="outline" className="text-xs font-normal">
               HITL
             </Badge>
           )}
           {active.capabilities.supports_checkpoints && (
-            <Badge variant="outline" className="text-[10px] font-normal">
+            <Badge variant="outline" className="text-xs font-normal">
               checkpoints
             </Badge>
           )}

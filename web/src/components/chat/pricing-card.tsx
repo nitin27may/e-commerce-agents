@@ -143,7 +143,7 @@ export function ChatPricingCard({ data }: { data: PricingData }) {
         {/* Active coupons */}
         {hasCoupons && (
           <div>
-            <p className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground mb-1">
+            <p className="flex items-center gap-1 text-xs font-medium text-muted-foreground mb-1">
               <Ticket className="size-3" /> Active coupons
             </p>
             <DataTable columns={COUPON_COLUMNS} rows={data.coupons!} />
@@ -153,7 +153,7 @@ export function ChatPricingCard({ data }: { data: PricingData }) {
         {/* Active promotions */}
         {hasPromotions && (
           <div>
-            <p className="text-[11px] font-medium text-muted-foreground mb-1">Active promotions</p>
+            <p className="text-xs font-medium text-muted-foreground mb-1">Active promotions</p>
             <DataTable columns={PROMOTION_COLUMNS} rows={data.promotions!} />
           </div>
         )}

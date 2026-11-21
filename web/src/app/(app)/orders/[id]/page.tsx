@@ -617,7 +617,7 @@ export default function OrderDetailPage() {
                           <TableCell>
                             <Badge
                               variant="outline"
-                              className="text-[10px] font-normal"
+                              className="text-xs font-normal"
                             >
                               {item.category}
                             </Badge>

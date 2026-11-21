@@ -72,7 +72,7 @@ export function ChatCheckoutCard({ data }: { data: CheckoutData }) {
                         {item.name}
                       </div>
                       {item.brand && (
-                        <div className="text-[10px] text-muted-foreground mt-0.5">{item.brand}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">{item.brand}</div>
                       )}
                     </td>
                     <td className="px-2 py-2 text-center text-muted-foreground w-10">
@@ -92,7 +92,7 @@ export function ChatCheckoutCard({ data }: { data: CheckoutData }) {
       {/* Footer: address + totals + CTA */}
       <div className="px-5 py-3 space-y-2.5">
         {addressStr && (
-          <div className="flex items-start gap-2 text-[11px] text-muted-foreground">
+          <div className="flex items-start gap-2 text-xs text-muted-foreground">
             <MapPin className="size-3.5 shrink-0 mt-0.5" />
             <span className="line-clamp-2">{addressStr}</span>
           </div>

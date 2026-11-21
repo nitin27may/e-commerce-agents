@@ -109,12 +109,12 @@ export function ChatProductCard({ data, onAction }: ChatProductCardProps) {
 
           <div className="flex items-center gap-1.5 flex-wrap">
             {data.brand && (
-              <span className="text-[11px] text-muted-foreground">{data.brand}</span>
+              <span className="text-xs text-muted-foreground">{data.brand}</span>
             )}
             {data.category && (
               <Badge
                 variant="outline"
-                className={`text-[10px] px-1.5 py-0 ${catColor}`}
+                className={`text-xs px-1.5 py-0 ${catColor}`}
               >
                 {data.category}
               </Badge>
@@ -122,7 +122,7 @@ export function ChatProductCard({ data, onAction }: ChatProductCardProps) {
           </div>
 
           {data.description && (
-            <p className="text-[11px] text-muted-foreground line-clamp-2 leading-snug">
+            <p className="text-xs text-muted-foreground line-clamp-2 leading-snug">
               {data.description}
             </p>
           )}
@@ -140,7 +140,7 @@ export function ChatProductCard({ data, onAction }: ChatProductCardProps) {
               </span>
             )}
             {hasDiscount && discountPct > 0 && (
-              <Badge className="bg-destructive text-white border-0 text-[9px] px-1.5 py-0">
+              <Badge className="bg-destructive text-white border-0 text-xs px-1.5 py-0">
                 {discountPct}% OFF
               </Badge>
             )}
@@ -161,7 +161,7 @@ export function ChatProductCard({ data, onAction }: ChatProductCardProps) {
                   />
                 ))}
               </div>
-              <span className="text-[11px] text-muted-foreground">
+              <span className="text-xs text-muted-foreground">
                 {data.rating.toFixed(1)}
                 {data.review_count != null && ` (${data.review_count})`}
               </span>
