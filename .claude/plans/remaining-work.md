@@ -70,6 +70,28 @@ ordering in Parts I and II and the Phase B text in section B below.** Parts III 
 constraints and build log. Git holds no half-done work: no open PRs, no stashes, no extra worktrees,
 and one stale branch (`docs/readme-accuracy-audit`, July, 398 commits behind, superseded by #82).
 
+### Progress, 2026-11-21
+
+Built and merged since the plan was written (PR numbers are in `git log`): docs sync (#159); `setsid` portability (#160) and its cleanup fix (#189);
+SEED-D root cause, which was CPU-dependent pgvector float32 arithmetic and not seed nondeterminism (#161), with the .NET twin (#174);
+YAML-1 (#162); B-15 history compaction and SAN-2 (#163, .NET half #175); Azure P1 `db-init` (#164), I1 infra skeleton (#165), I2 to I4
+apps, scripts, smoke and the gated deploy workflow (#172), P2 runtime knobs (#176); CI: secret scan, MAF canary, badge check and the
+mixed-stack boots (#166); a return-label wildcard leak fixed on both stacks (#167); signing-key rotation and the route/credential matrix (#168);
+the pre-demo UI pass (#169) and WEB-T/WEB-S (#177); `--no-key` demo mode and the capstone `run.sh` (#170); a flaky .NET env-var race (#171);
+tutorial notebooks 01 to 04 (#173); the Aspire AppHost (#178); the eval scorecard (#184), model providers guide (#185), tutorial fixture rehash (#186)
+and the Durable Task spike (#187, recommendation: keep the current design).
+
+Open: Azure P3 managed identity (#191); the .NET approval-timeout worker (NET-36, parity row 36); #180, a prerelease `Azure.AI.OpenAI` bump
+that needs a maintainer decision (only the native client path is affected; the adapter the agents use is not).
+
+Corrections to this plan found while building it: a return over $500 routes to `manager`, which `support` cannot decide, so the deploy smoke test
+picks the decider from the approval's `assigned_role`; the mixed `net-py` stack crashed the Python specialists on an empty `DB_POOL_*` value until
+the settings treated blank as default; dependency review needs Dependabot alerts and the dependency graph enabled in the repo settings (an owner
+setting), so that workflow is not added.
+
+Still needing a human: D-1 (Azure spend), a fresh `az login` and a real first deploy; the R0 recording session (demo GIF, tutorial fixtures);
+a live-model eval run; #180; enabling Dependabot alerts and the dependency graph.
+
 ### Decisions needed first
 
 1. **R0 recording session ($1-3).** Cheapest unblock: C-8, C-9b, C-10, C-11, C-18 and the tutorial fixtures wait on it.
