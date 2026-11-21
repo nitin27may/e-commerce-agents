@@ -311,7 +311,7 @@ The .NET orchestrator serves the same API over the same tables (`approvals`, `ap
 | Intake | `Shared/Approvals/ApprovalIntake.cs` — routes a gated tool call (`HitlGate`) or a paused return (`ChatRoutes`) through the policy and opens the row; the policy gate's own decision routes a return, not a second evaluation |
 | Executor | `Orchestrator/Routes/HitlActionExecutor.cs`, run once per approval id through `IdempotencyGuard.RunOnceAsync` |
 
-**One worker for both stacks.** The Python worker drains timers .NET wrote. The timer's dedupe key
+**One worker for both stacks, bar one topic.** The Python worker drains timers .NET wrote (the exception is `approval.timeout_apply` for a .NET return, below). The timer's dedupe key
 (`{topic}:{approval id}:{level}:{epoch ms of due_at}`), its payload (`approval_id`, `level`, `due_at`) and the way `due_at` is
 written (microsecond precision, `+00:00`) are what the worker's handlers compare, so they match what Python writes.
 `ApprovalCrossStackTests` dumps what .NET writes from Postgres and compares it to
@@ -322,14 +322,18 @@ the Python test then proves the worker still reads it.
 
 **Known differences from Python:**
 
-* *An expiry cannot resume a paused .NET return.* When a review nobody picks up times out at the top level, the Python worker
-  resumes the paused workflow from its checkpoint with Python's `ReturnReplaceMode`; a checkpoint written by .NET's workflow is
-  MAF .NET's own JSON (`PostgresJsonCheckpointStore`), not the format Python's storage decodes, so that resume cannot succeed
-  and the row ends up retried and parked (`GET /api/admin/outbox/parked`; reasoned from the two storage implementations, not
-  run end to end). Reminders and
-  the support-to-manager escalation resume nothing and work for .NET approvals, and a .NET *tool* approval expires correctly (the
-  worker only denies the request row). Until the worker can hand a .NET workflow to .NET, an unattended .NET return is closed by
-  a manager's decision, not by timeout.
+* *An expiry of a paused .NET return is applied by .NET, not by the Python worker* (parity row 36). Both stacks consume
+  `approval.timeout_apply`, and only a stack can resume its own checkpoint (a .NET workflow's checkpoint is MAF .NET's JSON,
+  `PostgresJsonCheckpointStore`, which Python's storage cannot decode). So `ApprovalIntake` tags every paused-return approval a
+  .NET orchestrator opens with `recommendation.stack = "dotnet"` (no schema change), the Python worker's claim query skips
+  `approval.timeout_apply` rows for a `workflow` approval carrying that tag, and the .NET `ApprovalTimeoutWorker` hosted service
+  claims only those (`FOR UPDATE SKIP LOCKED`, lease, capped backoff, parked after `OUTBOX_MAX_ATTEMPTS`). It calls
+  `ApprovalsService.ExpireAsync`: the approval's claim is taken first (a decide in flight wins, a lost claim is a 409 skip), the
+  run is resumed as a rejection as the requester with the reviewer recorded as `system`, and the approval ends `expired` (or
+  `rejected` for `on_timeout: reject`). A run an approver already resumed but never recorded is recorded, not run again.
+  `DOTNET_TIMEOUT_WORKER_ENABLED=false` stops it, and those rows then wait. An approval opened before the tag existed has none,
+  so it still goes to Python and is retried and parked as it always was; a manager's decision closes it. A .NET *tool* approval
+  needs no tag: its expiry only denies the request row, which either worker can do.
 * *Requests stored before that change* (PascalCase tool name, camelCase input keys) are mapped when approved: the name
   as before, and the top-level input keys with the same snake_case rule (`orderId` becomes `order_id`; nested objects are
   left alone). If two different keys would collapse onto one name with different values the mapping is a guess, so the

@@ -620,6 +620,135 @@ public sealed class ApprovalsService(
         return affected == 1;
     }
 
+    // ── expiry (the SLA ran out) ─────────────────────────────────────────────
+
+    /// <summary>
+    /// The SLA ran out at the top of the escalation chain with no decision: a paused <c>workflow:return-replace</c> run is resumed as a
+    /// REJECTION (so nothing is created) and the approval ends as <paramref name="final"/> (<c>expired</c>, or <c>rejected</c> when the
+    /// policy's <c>on_timeout</c> says so). The .NET twin of Python's <c>expire()</c> for a workflow approval, called by
+    /// <see cref="ApprovalTimeoutWorker"/>, which has no request identity: the reviewer is recorded as <c>system</c> and the run executes
+    /// as the original requester, exactly as for a staff decision. Fenced like every decide path: the approval's claim is taken first (a
+    /// decide in flight wins, as a 409), a lost claim at the end is a 409, and nothing here re-runs a workflow that already ran.
+    /// </summary>
+    public async Task<DecideOutcome> ExpireAsync(Guid approvalId, string reason, string final, string action = "sla_timeout")
+    {
+        if (final != S.Expired && final != S.Rejected) throw new ArgumentException("an expiry ends as expired or rejected", nameof(final));
+        var approval = await repo.GetAsync(approvalId) ?? throw new ApprovalHttpException(404, "Approval not found");
+        Require(approval, S.PendingReview, S.NeedsInfo);
+        if (approval.Source != "workflow" || approval.SourceRef is not { } hitlId)
+            throw new ApprovalHttpException(422, "Only a paused workflow approval is expired here");
+
+        var token = await ClaimAsync(approval, S.PendingReview, S.NeedsInfo);
+        try
+        {
+            var runResult = ResultOf(final);
+            var hitl = await HitlOutcomeAsync(hitlId);
+            if (hitl is null)
+            {
+                // A parked (needs_info) run is claimable again.
+                await UnparkWorkflowAsync(approval);
+                await ResumeWorkflowAsync(
+                    hitlId, new ReturnDecision("reject", Note: reason, DecidedBy: "system", ApprovalId: approval.Id.ToString()), "system");
+            }
+            else if (hitl.Value.Approved)
+            {
+                // The run was already APPROVED and resumed (a decide finished the work and died before recording it): record that, do not
+                // reject something that happened.
+                return await RecordRecoveredApprovalAsync(approval, token, hitl.Value.DecidedBy);
+            }
+            // (An already-rejected run is the same outcome as ours: fall through and record it.)
+
+            try
+            {
+                var updated = await repo.TransitionAsync(
+                    approval.Id,
+                    [S.PendingReview, S.NeedsInfo],
+                    final,
+                    new TransitionOptions
+                    {
+                        Action = action,
+                        Payload = new Dictionary<string, object?> { ["reason"] = reason },
+                        ClaimedBy = token,
+                    });
+                logger.LogInformation("approval.expired id={Id} final={Final}", approval.Id, final);
+                return new DecideOutcome(updated, runResult);
+            }
+            catch (ClaimLostException)
+            {
+                logger.LogWarning("approval.claim_lost id={Id}", approval.Id);
+                throw new ApprovalHttpException(409, "This approval was taken over by another reviewer");
+            }
+            catch (InvalidTransitionException)
+            {
+                throw new ApprovalHttpException(409, "Request is no longer pending review");
+            }
+        }
+        catch
+        {
+            await ReleaseAsync(approval.Id, token);
+            throw;
+        }
+    }
+
+    /// <summary>Where the paused run's <c>hitl_requests</c> row stands: null while it is still waiting, otherwise how it was answered.</summary>
+    private async Task<(bool Approved, string? DecidedBy)?> HitlOutcomeAsync(Guid hitlId)
+    {
+        await using var conn = await pool.OpenAsync();
+        var row = await conn.QueryFirstOrDefaultAsync(
+            "SELECT status, response FROM hitl_requests WHERE id = @hitlId", new { hitlId });
+        if (row is null) throw new ApprovalHttpException(409, "The paused run behind this approval no longer exists");
+        var status = (string)row.status;
+        if (status is not ("approved" or "rejected")) return null;
+        string? decidedBy = null;
+        if (ParseJson((object?)row.response) is { ValueKind: JsonValueKind.Object } body
+            && body.TryGetProperty("decided_by", out var by) && by.ValueKind == JsonValueKind.String)
+            decidedBy = by.GetString();
+        return (status == "approved", decidedBy);
+    }
+
+    /// <summary>Moves an approval whose workflow already ran as approved to <c>approved</c> then <c>executed</c>, under the caller's claim.</summary>
+    private async Task<DecideOutcome> RecordRecoveredApprovalAsync(Approval approval, string token, string? approver)
+    {
+        try
+        {
+            var detail = new Dictionary<string, object?> { ["decision"] = "approve", ["recovered"] = true };
+            var approved = await repo.TransitionAsync(
+                approval.Id,
+                [S.PendingReview],
+                S.Approved,
+                new TransitionOptions
+                {
+                    ActorEmail = approver,
+                    ActorRole = approver is null ? null : "admin",
+                    Action = "decided",
+                    Payload = detail,
+                    ClaimedBy = token,
+                    DecidedBy = approver,
+                    Decision = detail,
+                });
+            var final = await repo.TransitionAsync(
+                approval.Id,
+                [approved.Status],
+                S.Executed,
+                new TransitionOptions
+                {
+                    ActorEmail = approver,
+                    Action = "executed",
+                    Payload = new Dictionary<string, object?> { ["recovered"] = true },
+                });
+            logger.LogInformation("approval.recovered id={Id}", approval.Id);
+            return new DecideOutcome(final, ResultOf("approved"));
+        }
+        catch (ClaimLostException)
+        {
+            throw new ApprovalHttpException(409, "This approval was taken over by another reviewer");
+        }
+        catch (InvalidTransitionException)
+        {
+            throw new ApprovalHttpException(409, "Request is no longer pending review");
+        }
+    }
+
     // ── workflow approvals ───────────────────────────────────────────────────
 
     /// <summary>Validates a reviewer's edits against the policy allowlist and builds the workflow's <see cref="ReturnDecision"/>.</summary>

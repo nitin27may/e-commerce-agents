@@ -443,6 +443,7 @@ through; the rest are read from `.env` by host-run Python.
 | `OUTBOX_BACKOFF_BASE_SECONDS` | `5` | Retry delay is `base * 2^(attempts-1)` |
 | `OUTBOX_BACKOFF_MAX_SECONDS` | `600` | Ceiling on that delay |
 | `OUTBOX_WORKER_HEARTBEAT_FILE` | `/tmp/outbox-worker.heartbeat` | Touched every loop; the container healthcheck reads its age |
+| `DOTNET_TIMEOUT_WORKER_ENABLED` | `true` | .NET orchestrator only. Runs the hosted service that applies `approval.timeout_apply` to paused returns the .NET stack opened (the Python worker skips those rows; parity row 36). `false` leaves them unprocessed. It reads the same `OUTBOX_POLL_INTERVAL_SECONDS`, `OUTBOX_BATCH_SIZE`, `OUTBOX_MAX_ATTEMPTS`, `OUTBOX_LEASE_SECONDS` and `OUTBOX_BACKOFF_*` values as the Python worker |
 | `APPROVAL_REMINDER_FRACTION` | `0.5` | The reminder fires this fraction of the way through an approval's `sla_hours` |
 | `MERCHANT_OPS_SCHEDULE_ENABLED` | `false` | The worker books and runs the daily merchant proposal run (`merchant.daily_run_due`); off, a stray row does nothing and does not reschedule. See [Merchant proposals](merchant-proposals.md#the-daily-run-m-4) |
 | `MERCHANT_OPS_RUN_HOUR_UTC` | `6` | UTC hour of that daily run |

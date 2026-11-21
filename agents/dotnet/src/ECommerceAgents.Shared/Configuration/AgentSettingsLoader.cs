@@ -290,6 +290,13 @@ public static class AgentSettingsLoader
             HitlResumeTimeoutSeconds = ValidatedResumeTimeout(
                 GetInt("HITL_RESUME_TIMEOUT_SECONDS", 300), GetInt("HITL_CLAIM_TTL_SECONDS", 600)),
             ApprovalReminderFraction = GetDouble("APPROVAL_REMINDER_FRACTION", 0.5),
+            DotnetTimeoutWorkerEnabled = GetBool("DOTNET_TIMEOUT_WORKER_ENABLED", true),
+            OutboxPollIntervalSeconds = GetDouble("OUTBOX_POLL_INTERVAL_SECONDS", 2.0),
+            OutboxBatchSize = GetInt("OUTBOX_BATCH_SIZE", 10),
+            OutboxMaxAttempts = GetInt("OUTBOX_MAX_ATTEMPTS", 8),
+            OutboxLeaseSeconds = GetInt("OUTBOX_LEASE_SECONDS", 120),
+            OutboxBackoffBaseSeconds = GetDouble("OUTBOX_BACKOFF_BASE_SECONDS", 5.0),
+            OutboxBackoffMaxSeconds = GetDouble("OUTBOX_BACKOFF_MAX_SECONDS", 600.0),
         };
     }
 

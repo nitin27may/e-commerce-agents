@@ -89,6 +89,11 @@ they target. They are listed under "Known limits" so nobody discovers them the h
   also trims the .NET specialist host's rehydrated history and the orchestrator's conversation history to the last N
   message groups, a group being a user turn with its assistant and tool messages, kept or dropped whole. Off, the
   history and so the model request are unchanged.
+- **NET-36: a paused .NET return now times out on its own** (parity row 36 is Full). The .NET orchestrator runs a hosted service
+  (`ApprovalTimeoutWorker`, `DOTNET_TIMEOUT_WORKER_ENABLED`, default on) that drains `approval.timeout_apply` for approvals a .NET
+  workflow opened, resuming the run as a rejection as the requester under the same claim fence as a staff decision. The two
+  stacks share the topic, so `ApprovalIntake` tags those approvals `recommendation.stack = "dotnet"` (no migration) and the
+  Python worker's claim skips them. Approvals opened before the tag still go to Python and are parked as before.
 - **A2A 1.0 on both stacks** (#88). Every specialist serves the A2A 1.0 JSON-RPC binding at
   `/a2a/v1` and an agent card at `/.well-known/agent-card.json`, beside the unchanged
   `/message:send` wire. `A2A_TRANSPORT=legacy|a2a` (default `legacy`) picks what the caller

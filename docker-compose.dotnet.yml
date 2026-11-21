@@ -233,6 +233,8 @@ services:
       HISTORY_COMPACTION_KEEP_LAST_GROUPS: ${HISTORY_COMPACTION_KEEP_LAST_GROUPS:-0}
       MAF_CHECKPOINT_BACKEND: ${MAF_CHECKPOINT_BACKEND:-postgres}
       RETURN_HITL_THRESHOLD: ${RETURN_HITL_THRESHOLD:-500}
+      # The orchestrator's own consumer of approval.timeout_apply for returns this stack paused (parity row 36).
+      DOTNET_TIMEOUT_WORKER_ENABLED: ${DOTNET_TIMEOUT_WORKER_ENABLED:-true}
       HANDOFF_AUTONOMOUS_MODE: ${HANDOFF_AUTONOMOUS_MODE:-true}
       # Which wire the orchestrator speaks to a specialist: the original /message:send +
       # /message:stream pair (legacy) or A2A 1.0 JSON-RPC at /a2a/v1 (a2a). See docs/a2a.md.
