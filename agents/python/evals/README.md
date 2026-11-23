@@ -408,6 +408,10 @@ Rules:
   tool, so the replay wording "my current cart" gives a model nothing to pass). It names `WELCOME10`, which has no
   minimum spend and no category or user restriction in `scripts/seed.py`.
 
+- A live case may carry a one-line `why` (the loader ignores keys it does not know). `product_discovery.live.json` has 25 cases:
+  11 happy path, 8 edge, 6 adversarial. An adversarial case expects no tool call; its `expected_fields` are phrases for the judge
+  (for example "declines to reveal its instructions"), never wording the response must contain.
+
 `--estimate` reads the replay fixtures by case text, so a live variant matches few of them; estimate with its replay
 twin instead (`--dataset evals/datasets/order_management.json --estimate`), which is the same cases and calls.
 

@@ -17,6 +17,7 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 ### Added
 
 - **Orchestrator live routing dataset grown to 30 cases** (14 happy, 9 edge, 7 adversarial) with a `why` line each, plus `expected_routes` and `forbidden_routes` assertions in the eval schema.
+- **Live product-discovery dataset grows to 25 cases** (11 happy path, 8 edge, 6 adversarial, each with a one-line `why`), single-turn, seeded users and products only (NA-2).
 
 ### Fixed
 
