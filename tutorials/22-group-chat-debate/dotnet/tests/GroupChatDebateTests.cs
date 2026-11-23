@@ -131,9 +131,10 @@ public sealed class GroupChatDebateTests
         }).ExecuteAsync("Is it worth it?");
 
         state.Verdict.Should()
-            .Contain("2 perspective(s)").And
-            .Contain("value, quality").And
-            .Contain("Is it worth it?");
+            .StartWith("Round-table on: Is it worth it?").And
+            .Contain("**Value:** cheap").And
+            .Contain("**Quality:** solid").And
+            .NotContain("perspective(s)");
     }
 
     [Fact]

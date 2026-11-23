@@ -138,7 +138,7 @@ public sealed class ContextEnricher(DatabasePool pool)
             {
                 var date = order.CreatedAt.ToString("yyyy-MM-dd");
                 lines.Add(
-                    $"  - Order {order.Id[..8]}... | {order.Status} | ${order.Total:F2} | {date}"
+                    $"  - order_id={order.Id} | {order.Status} | ${order.Total:F2} | {date}"
                 );
             }
             lines.Add(RecentOrdersNote);

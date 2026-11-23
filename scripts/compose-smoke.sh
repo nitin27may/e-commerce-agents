@@ -148,7 +148,22 @@ PY
 done
 
 # ── Log in and read ──────────────────────────────────────────
-login="$(curl -sf -m 20 -X POST "$ORCH_URL/api/auth/login" \
+# /ready proves the service answers, not that its first request-path call is warm: a cold .NET
+# orchestrator pays JIT, a first bcrypt verify and its first pooled connection on the first login, and
+# one such call timed out once in CI (net-py) and passed on re-run. Each read below gets a bounded,
+# logged retry (3 attempts, 3 s apart), so a transient cold-start failure does not fail the job while a
+# real failure still does after the last attempt.
+retry3() {
+  local what="$1" attempt out; shift
+  for attempt in 1 2 3; do
+    if out="$("$@")"; then printf '%s' "$out"; return 0; fi
+    echo "retry  $what failed (attempt $attempt/3)" >&2
+    (( attempt < 3 )) && sleep 3
+  done
+  return 1
+}
+
+login="$(retry3 login curl -sf -m 20 -X POST "$ORCH_URL/api/auth/login" \
   -H 'Content-Type: application/json' \
   -d "{\"email\":\"$SMOKE_EMAIL\",\"password\":\"$SMOKE_PASSWORD\"}")" \
   || { dump_logs; fail "login as $SMOKE_EMAIL failed (is the stack seeded?)"; }
@@ -156,7 +171,7 @@ token="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"]
   || fail "login response had no access_token"
 echo "login  ok ($SMOKE_EMAIL)"
 
-products="$(curl -sf -m 20 "$ORCH_URL/api/products?limit=5" -H "Authorization: Bearer $token")" \
+products="$(retry3 products curl -sf -m 20 "$ORCH_URL/api/products?limit=5" -H "Authorization: Bearer $token")" \
   || { dump_logs; fail "GET /api/products failed"; }
 python3 - "$products" <<'PY' || fail "GET /api/products returned no products: $products"
 import json, sys
@@ -200,15 +215,20 @@ for name in CUSTOMERS:
     try:
         token = call("POST", "/api/auth/login", body={"email": email, "password": password})["access_token"]
         orders = call("GET", "/api/orders?limit=1", token)
-    except urllib.error.URLError:
+    except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
+        # One slow or reset call (cold orchestrator) must not abandon the whole check: try the next customer.
+        print(f"chat   skip {email}: {type(exc).__name__}: {exc}", file=sys.stderr)
         continue
     newest = orders.get("orders", [])[:1]  # newest first, on both stacks
     if not newest or newest[0].get("status") != "delivered":
         continue
-    turn = call("POST", "/api/chat", token, {
-        "message": "I want to return my most recent order, it arrived damaged",
-        "mode": "workflow:return-replace",
-    })
+    request = {"message": "I want to return my most recent order, it arrived damaged", "mode": "workflow:return-replace"}
+    try:
+        turn = call("POST", "/api/chat", token, request)
+    except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
+        # The turn creates nothing before the approval gate, so one logged retry is safe.
+        print(f"chat   retrying after {type(exc).__name__}: {exc}", file=sys.stderr)
+        turn = call("POST", "/api/chat", token, request)
     text = turn.get("response") or ""
     steps = turn.get("agents_involved") or []
     assert text, f"empty response: {turn}"

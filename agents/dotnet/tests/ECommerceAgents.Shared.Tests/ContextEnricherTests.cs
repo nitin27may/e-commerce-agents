@@ -73,8 +73,10 @@ public sealed class ContextEnricherTests : IAsyncLifetime
         result.UserContext.Should().Contain("Recent orders");
         result.UserContext.Should().Contain("summary only").And.Contain("get_order_details");
         result.UserContext.Should().Contain("User Preferences");
-        // Assert the first 8 chars of an order id appear as the short-form label.
-        result.UserContext.Should().Contain(result.RecentOrders[0].Id[..8]);
+        // The full id must be present (the model passes it to tools); a truncated form is unusable.
+        foreach (var order in result.RecentOrders)
+            result.UserContext.Should().Contain($"order_id={order.Id} |");
+        result.UserContext.Should().NotContain("...");
     }
 
     [Fact]
