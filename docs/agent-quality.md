@@ -234,6 +234,8 @@ The `full` job:
 5. Fails if any eval exits non-zero.
 6. Uploads all `eval-*.json` result files as artifacts (retained 30 days).
 
+Every report starts with the run's setup (stack, target, chat and embedding provider and model, judge, gateway, pricing source), and each case can be stored as a JSONL run record (`--records-out`) that re-scores later with no model call (`--rescore`). Baselines are keyed by setup under `agents/python/evals/baselines/<setup-key>/`; your own live results go to a git-ignored `evals/.local/`, and each report says whether it compared against a reference baseline, a personal one, or only the pass-threshold floor. A live run repeats the dataset (`--repeats`, default 3) and reports mean and spread, and its regression threshold follows the case count and the measured spread instead of a flat 0.05. The judge model is set with `JUDGE_PROVIDER` and `JUDGE_MODEL` and is never silently the model under test; a self-judged run is labelled as such. `python -m evals.provider_check` lists what a provider can do and which suites then apply. Details: `agents/python/evals/README.md`.
+
 **Required secret (`full` job only)**: `OPENAI_API_KEY` in the repository settings. The workflow fails fast if the secret is absent rather than running with a dummy key.
 
 ### Score thresholds

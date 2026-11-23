@@ -105,3 +105,6 @@ agents/python/eval-*.json
 
 # azd environment store (per-developer, holds environment values)
 .azure/
+
+# Personal eval baselines and local eval output (evals/baselines.py, evals/provider_check.py)
+agents/python/evals/.local/

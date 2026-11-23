@@ -275,9 +275,9 @@ minutes apart produce slightly different absolute validity windows. This
 doesn't break replay itself — the model's own recorded text is frozen and
 byte-identical either way — it changes which *tool-returned facts* end up
 being checked, which can nudge groundedness/correctness by a point or two.
-`evals/baselines/*.json` were regenerated against the current deterministic
-seed as of this fix; `--max-regression` (default 0.05) already tolerates
-this scale of drift. Making coupon/promotion windows fully time-independent
+`evals/baselines/python-inproc-replay/*.json` were regenerated against the current deterministic
+seed as of this fix; the regression threshold (0.02 for replayed runs, see
+`evals/baselines.py`) tolerates this scale of drift. Making coupon/promotion windows fully time-independent
 (e.g. anchored to a fixed epoch instead of seed-time `now()`) would close
 this the same way the product-id fix closed the bigger one, but wasn't
 pursued here — the datasets that hit it aren't currently sensitive enough
