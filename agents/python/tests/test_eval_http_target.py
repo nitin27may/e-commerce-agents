@@ -215,7 +215,7 @@ def test_apply_setup_records_target_stack_and_host() -> None:
         "gpt-5.1",
     )
     assert setup.key == "dotnet-http-replay"
-    assert "orch.example.com:8080" in "\n".join(setup.lines())
+    assert any(line.endswith("orch.example.com:8080") for line in setup.lines())
 
 
 # ─────────────────────── a fake orchestrator over ASGI ───────────────────────
