@@ -407,6 +407,11 @@ Rules:
   no `expected_fields` (a parked call returns none); with no fields and an empty parked reply the judge is skipped.
   The `http` target cannot see a `function_approval_request` through the specialist's reply, so there the fact stays
   not observable. `initiate_return` is a real write against the database a live run uses. Reseed between runs.
+- A live case may carry `type` (`happy`, `edge`, `adversarial`) and a one-line `why`. The loader ignores both; the
+  per-suite tests count them (`tests/test_eval_live_review_sentiment.py`).
+- `cancel_order` is approval-gated: a live run parks it (a pending `tool_approval_requests` row, the order untouched,
+  `expect_hitl: true` on the live case) and leaves that row behind. `initiate_return` is a real write against the
+  database a live run uses. Reseed between runs.
 - The pricing coupon case states a cart total (`validate_coupon` needs `cart_total` and the pricing agent has no cart
   tool, so the replay wording "my current cart" gives a model nothing to pass). It names `WELCOME10`, which has no
   minimum spend and no category or user restriction in `scripts/seed.py`.
