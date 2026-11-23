@@ -19,6 +19,17 @@ from shared.tool_inputs import clamp_limit
 
 logger = logging.getLogger(__name__)
 
+
+def _money(value: float) -> Decimal:
+    """A price filter as an exact two-decimal Decimal.
+
+    `products.price` is NUMERIC(10,2). Sending a Python float lets the driver encode 14.99 as the double
+    14.990000000000000213..., which compares above the stored 14.99, so `min_price == max_price == 14.99` matched
+    nothing. Rounding to cents through the shortest repr keeps the comparison exact.
+    """
+    return Decimal(repr(float(value))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
 SORT_CLAUSES = {
     "price_asc": "p.price ASC",
     "price_desc": "p.price DESC",
@@ -70,13 +81,13 @@ async def search_products(
         idx += 1
 
     if min_price is not None:
-        conditions.append(f"p.price >= ${idx}")
-        args.append(min_price)
+        conditions.append(f"p.price >= ${idx}::numeric")
+        args.append(_money(min_price))
         idx += 1
 
     if max_price is not None:
-        conditions.append(f"p.price <= ${idx}")
-        args.append(max_price)
+        conditions.append(f"p.price <= ${idx}::numeric")
+        args.append(_money(max_price))
         idx += 1
 
     if min_rating is not None:
