@@ -37,6 +37,23 @@ param allowedIps string = ''
 param deployAuthServer bool = false
 param deployMcp bool = false
 
+// ---- Foundry and gateway switches (infra-foundry-project-and-gateway lane) ----
+@description('AZ-2: create a Foundry project under the AIServices account, connect App Insights to it, grant the app identity Azure AI User.')
+param deployFoundryProject bool = false
+@description('Per-app identities: one user-assigned identity per app (modules/app-identities.bicep). Created but NOT attached to the apps; wiring is in apps.bicep and documented in docs/azure-deployment.md.')
+param deployPerAppIdentities bool = false
+@description('AZ-5: API Management in front of the model account; the apps call it instead. Provisioning takes minutes (v2 tiers) to 45 minutes (classic). See docs/azure-deployment.md.')
+param deployGateway bool = false
+@allowed(['Developer', 'BasicV2', 'StandardV2', 'Basic', 'Standard', 'Premium'])
+@description('UNVERIFIED which tiers support the Azure OpenAI token policies; see modules/gateway-apim.bicep.')
+param gatewaySku string = 'BasicV2'
+@description('APIM publisher email (service notices). Set a real one for a lasting gateway.')
+param gatewayPublisherEmail string = 'noreply@example.com'
+@description('Tokens per minute for an agent without its own entry in gatewayAgentTokenLimits.')
+param gatewayDefaultTokensPerMinute int = 60000
+@description('Per-agent tokens per minute by agent name, e.g. { orchestrator: 120000 }.')
+param gatewayAgentTokenLimits object = {}
+
 @secure()
 param postgresAdminPassword string
 @secure()
@@ -146,6 +163,7 @@ module openAi 'modules/openai.bicep' = {
     deployMiniModel: deployMiniModel
     miniCapacity: cfg.openAi.miniCapacity
     disableLocalAuth: openAiAuth == 'identity'
+    allowProjectManagement: deployFoundryProject
   }
 }
 
@@ -156,7 +174,8 @@ module derivedSecrets 'modules/keyvault-secrets.bicep' = {
   params: {
     vaultName: keyVault.outputs.name
     databaseUrl: 'postgresql://${postgres.outputs.administratorLogin}:${postgresAdminPassword}@${postgres.outputs.fqdn}:5432/${postgres.outputs.databaseName}?sslmode=require'
-    openAiAccountName: openAiAuth == 'key' ? openAi.outputs.name : ''
+    // With the gateway on, the secret holds the gateway subscription key (written by the gateway module).
+    openAiAccountName: (openAiAuth == 'key' && !deployGateway) ? openAi.outputs.name : ''
   }
 }
 
@@ -191,7 +210,7 @@ module apps 'modules/apps.bicep' = {
     keyVaultUri: keyVault.outputs.uri
     imageRegistry: imageRegistry
     imageTag: imageTag
-    openAiEndpoint: openAi.outputs.endpoint
+    openAiEndpoint: deployGateway ? gateway!.outputs.gatewayEndpoint : openAi.outputs.endpoint
     chatDeployment: openAi.outputs.chatDeploymentName
     embeddingDeployment: openAi.outputs.embeddingDeploymentName
     chatModelName: chatModelName
@@ -202,6 +221,72 @@ module apps 'modules/apps.bicep' = {
     allowedIpRanges: frontendAllowedIps
     deployAuthServer: deployAuthServer
     deployMcp: deployMcp
+  }
+}
+
+// ---- Foundry project (AZ-2). Appended section; see modules/foundry-project.bicep ----
+module foundryProject 'modules/foundry-project.bicep' = if (deployFoundryProject) {
+  scope: rg
+  name: 'foundry-project'
+  params: {
+    accountName: openAi.outputs.name
+    projectName: 'proj-${resourceToken}'
+    location: openAiLocation
+    tags: tags
+    appInsightsName: monitoring.outputs.appInsightsName
+    callerPrincipalId: identity.outputs.principalId
+  }
+}
+
+// ---- Per-app identities. Appended section; wiring into apps.bicep is separate ----
+var appIdentityNames = [
+  'orchestrator'
+  'product-discovery'
+  'order-management'
+  'pricing-promotions'
+  'review-sentiment'
+  'inventory-fulfillment'
+  'outbox-worker'
+]
+
+module appIdentities 'modules/app-identities.bicep' = if (deployPerAppIdentities) {
+  scope: rg
+  name: 'app-identities'
+  params: {
+    namePrefix: 'id-${resourceToken}'
+    location: location
+    tags: tags
+    appNames: appIdentityNames
+    keyVaultName: keyVault.outputs.name
+    openAiAccountName: openAi.outputs.name
+  }
+}
+
+// ---- AI gateway (AZ-5). Appended section; see modules/gateway-apim.bicep ----
+module gateway 'modules/gateway-apim.bicep' = if (deployGateway) {
+  scope: rg
+  name: 'gateway'
+  params: {
+    name: 'apim-${resourceToken}'
+    location: location
+    tags: tags
+    skuName: gatewaySku
+    publisherEmail: gatewayPublisherEmail
+    openAiAccountName: openAi.outputs.name
+    appInsightsName: monitoring.outputs.appInsightsName
+    callerAuth: openAiAuth == 'identity' ? 'entra' : 'subscription'
+    // The shared identity stays allowed until the apps use their own (header-asserted, untrusted).
+    allowedCallerClientIds: concat(
+      [identity.outputs.clientId],
+      deployPerAppIdentities ? map(appIdentities!.outputs.identities, i => i.clientId) : []
+    )
+    agentIdentityMap: deployPerAppIdentities
+      ? map(appIdentities!.outputs.identities, i => { app: i.app, principalId: i.principalId })
+      : []
+    keyVaultName: keyVault.outputs.name
+    agentNames: appIdentityNames
+    defaultTokensPerMinute: gatewayDefaultTokensPerMinute
+    agentTokenLimits: gatewayAgentTokenLimits
   }
 }
 
@@ -232,6 +317,10 @@ output AZURE_OPENAI_EMBEDDING_DEPLOYMENT string = openAi.outputs.embeddingDeploy
 output AZURE_CHAT_DEPLOYMENT string = openAi.outputs.chatDeploymentName
 output AZURE_POSTGRES_FQDN string = postgres.outputs.fqdn
 output APPLICATIONINSIGHTS_NAME string = monitoring.outputs.appInsightsName
+output AZURE_AI_PROJECT_NAME string = deployFoundryProject ? foundryProject!.outputs.name : ''
+output AZURE_AI_PROJECT_ENDPOINT string = deployFoundryProject ? foundryProject!.outputs.endpoint : ''
+output AZURE_GATEWAY_ENDPOINT string = deployGateway ? gateway!.outputs.gatewayEndpoint : ''
+output AZURE_APP_IDENTITIES array = deployPerAppIdentities ? appIdentities!.outputs.identities : []
 output AZURE_CONTAINER_APPS_ENVIRONMENT string = cae.outputs.name
 output FRONTEND_URL string = apps.outputs.frontendUrl
 output ORCHESTRATOR_INTERNAL_URL string = apps.outputs.orchestratorInternalUrl

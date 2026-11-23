@@ -205,17 +205,21 @@ def _snapshot(fixture: Path, workdir: Path) -> dict[str, Any]:
 
 
 @pytest.fixture(scope="module")
-def snapshots(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Apps]:
+def raw_snapshots(tmp_path_factory: pytest.TempPathFactory) -> dict[str, list[dict[str, Any]]]:
+    """fixture stem -> every predicted resource (one `bicep snapshot` per fixture)."""
+    return {
+        fixture.stem: _snapshot(fixture, tmp_path_factory.mktemp(fixture.stem))["predictedResources"]
+        for fixture in sorted((INFRA / "ci").glob("*.bicepparam"))
+    }
+
+
+@pytest.fixture(scope="module")
+def snapshots(raw_snapshots: dict[str, list[dict[str, Any]]]) -> dict[str, Apps]:
     """fixture stem -> {resource name: predicted resource}, for apps and jobs only."""
-    out: dict[str, Apps] = {}
-    for fixture in sorted((INFRA / "ci").glob("*.bicepparam")):
-        snap = _snapshot(fixture, tmp_path_factory.mktemp(fixture.stem))
-        out[fixture.stem] = {
-            r["name"]: r
-            for r in snap["predictedResources"]
-            if r["type"] in ("Microsoft.App/containerApps", "Microsoft.App/jobs")
-        }
-    return out
+    return {
+        stem: {r["name"]: r for r in resources if r["type"] in ("Microsoft.App/containerApps", "Microsoft.App/jobs")}
+        for stem, resources in raw_snapshots.items()
+    }
 
 
 def _container(resource: dict[str, Any]) -> dict[str, Any]:
@@ -435,3 +439,185 @@ def test_deployment_outputs_are_present(template: dict[str, Any]) -> None:
         "DB_INIT_JOB_NAME",
     }
     assert required <= set(template["outputs"])
+
+
+# ----------------------------------------------------------------------------------------------
+# AZ-2 / AZ-3: the Foundry project. Off by default; on, it is a project under the AIServices
+# account, an App Insights connection and a least-privilege role for the app identity.
+# ----------------------------------------------------------------------------------------------
+
+AZURE_AI_USER_ROLE = "53ca6127-db72-4b80-b1b0-d745d6d5456d"
+OPENAI_USER_ROLE = "5e0bd9bd-7b93-4f28-af87-19fc36ad61bd"
+BROAD_ROLES = {
+    "8e3af657-a8ff-443c-a75c-2fe8c4bcb635",  # Owner
+    "b24988ac-6180-42a0-ab88-20f7382dd24c",  # Contributor
+    "a97b65f3-24c7-4388-baec-2e87135dc908",  # Cognitive Services User (all data actions)
+    "25fbc0a9-bd7c-42a3-aa1a-3b75d497ee68",  # Cognitive Services Contributor
+}
+
+Resources = list[dict[str, Any]]
+
+
+def _of_type(resources: Resources, kind: str) -> Resources:
+    return [r for r in resources if r["type"] == kind]
+
+
+def _role_ids(resources: Resources) -> list[str]:
+    return [
+        r["properties"]["roleDefinitionId"].rsplit("/", 1)[-1]
+        for r in _of_type(resources, "Microsoft.Authorization/roleAssignments")
+    ]
+
+
+def test_foundry_project_is_off_by_default(raw_snapshots: dict[str, Resources]) -> None:
+    resources = raw_snapshots["demo-mini-false"]
+    assert not _of_type(resources, "Microsoft.CognitiveServices/accounts/projects")
+    account = _of_type(resources, "Microsoft.CognitiveServices/accounts")[0]
+    # ARM drops null(), so None is "not sent": the account is untouched unless the flag is on.
+    assert account["properties"].get("allowProjectManagement") is None
+    assert account.get("identity") is None
+
+
+def test_foundry_project_is_created_under_the_account(raw_snapshots: dict[str, Resources]) -> None:
+    resources = raw_snapshots["demo-foundry-on"]
+    account = _of_type(resources, "Microsoft.CognitiveServices/accounts")[0]
+    assert account["properties"]["allowProjectManagement"] is True
+    assert account["identity"]["type"] == "SystemAssigned", "projects need the account's own identity"
+    projects = _of_type(resources, "Microsoft.CognitiveServices/accounts/projects")
+    assert len(projects) == 1
+    assert projects[0]["identity"]["type"] == "SystemAssigned"
+
+
+def test_foundry_project_has_an_app_insights_connection(raw_snapshots: dict[str, Resources]) -> None:
+    resources = raw_snapshots["demo-foundry-on"]
+    connections = _of_type(resources, "Microsoft.CognitiveServices/accounts/projects/connections")
+    assert len(connections) == 1
+    props = connections[0]["properties"]
+    assert props["category"] == "AppInsights"
+    assert "Microsoft.Insights/components" in json.dumps(props), "the target is the shared App Insights component"
+
+
+def test_foundry_roles_are_least_privilege(raw_snapshots: dict[str, Resources]) -> None:
+    roles = _role_ids(raw_snapshots["demo-foundry-on"])
+    assert AZURE_AI_USER_ROLE in roles, "the app identity is Azure AI User on the project"
+    assert not BROAD_ROLES & set(roles), "no Owner, Contributor or all-data-actions role anywhere"
+    assert AZURE_AI_USER_ROLE not in _role_ids(raw_snapshots["demo-mini-false"])
+
+
+def test_foundry_project_endpoint_is_an_output_without_secrets(template: dict[str, Any]) -> None:
+    assert "AZURE_AI_PROJECT_ENDPOINT" in template["outputs"]
+    assert "AZURE_AI_PROJECT_NAME" in template["outputs"]
+
+
+def test_docs_say_the_azure_provider_is_foundry_for_openai_models() -> None:
+    for name in ("azure-deployment.md", "model-providers.md"):
+        text = (REPO_ROOT / "docs" / name).read_text(encoding="utf-8")
+        assert re.search(r"`azure`\s+provider.*?is\s+Foundry", text, re.DOTALL), name
+        assert "do not add `LLM_PROVIDER=foundry`" in text, name
+
+
+# ----------------------------------------------------------------------------------------------
+# Per-app identities: the module exists and compiles; the wiring is another lane's (apps.bicep).
+# ----------------------------------------------------------------------------------------------
+
+
+AGENTS = ["orchestrator", *SPECIALISTS, "outbox-worker"]
+
+
+def test_per_app_identities_module_creates_one_identity_per_app(raw_snapshots: dict[str, Resources]) -> None:
+    kind = "Microsoft.ManagedIdentity/userAssignedIdentities"
+    assert len(_of_type(raw_snapshots["reference-identities-on"], kind)) == 1 + len(AGENTS), "shared plus one per app"
+    assert len(_of_type(raw_snapshots["demo-foundry-on"], kind)) == 1, "demo keeps the single shared identity"
+
+
+def test_per_app_identities_are_not_wired_into_apps_yet() -> None:
+    apps = (INFRA / "modules" / "apps.bicep").read_text(encoding="utf-8")
+    assert "appIdentities" not in apps, "wiring is a separate change; see docs/azure-deployment.md"
+
+
+# ----------------------------------------------------------------------------------------------
+# AZ-5: the API Management gateway in front of the account.
+# ----------------------------------------------------------------------------------------------
+
+
+def _gateway_policy(resources: Resources) -> str:
+    policies = _of_type(resources, "Microsoft.ApiManagement/service/apis/policies")
+    assert len(policies) == 1
+    return str(policies[0]["properties"]["value"])
+
+
+def test_gateway_is_off_by_default(raw_snapshots: dict[str, Resources], snapshots: dict[str, Apps]) -> None:
+    assert not [r for r in raw_snapshots["demo-mini-false"] if r["type"].startswith("Microsoft.ApiManagement")]
+    endpoint = _env(snapshots["demo-mini-false"]["ca-orchestrator"])["AZURE_OPENAI_ENDPOINT"]["value"]
+    assert "Microsoft.ApiManagement" not in endpoint
+
+
+def test_gateway_fronts_the_account_and_apps_point_at_it(
+    raw_snapshots: dict[str, Resources], snapshots: dict[str, Apps]
+) -> None:
+    resources = raw_snapshots["demo-gateway-on"]
+    assert len(_of_type(resources, "Microsoft.ApiManagement/service")) == 1
+    apis = _of_type(resources, "Microsoft.ApiManagement/service/apis")
+    assert [a["properties"]["path"] for a in apis] == ["openai"]
+    for app in ("ca-orchestrator", *(f"ca-{s}" for s in SPECIALISTS), "ca-outbox-worker"):
+        endpoint = _env(snapshots["demo-gateway-on"][app])["AZURE_OPENAI_ENDPOINT"]["value"]
+        assert "Microsoft.ApiManagement/service" in endpoint, f"{app} must call the gateway"
+
+
+def test_gateway_policy_limits_and_meters_per_agent(raw_snapshots: dict[str, Resources]) -> None:
+    policy = _gateway_policy(raw_snapshots["demo-gateway-on"])
+    assert "<azure-openai-token-limit" in policy
+    assert "<azure-openai-emit-token-metric" in policy
+    assert "x-agent-name" in policy
+    assert "<authentication-managed-identity" in policy
+    # The managed-identity authentication resource, matched as an attribute rather than a bare substring.
+    assert re.search(r'resource="https://cognitiveservices\.azure\.com"', policy)
+    for agent in AGENTS:
+        assert f'"{agent}"' in policy, f"{agent} needs its own limit"
+    assert 'name="api-key"' in policy and 'exists-action="delete"' in policy, (
+        "the caller's key never reaches the account"
+    )
+
+
+def test_gateway_policy_in_entra_mode_validates_the_caller_token(raw_snapshots: dict[str, Resources]) -> None:
+    policy = _gateway_policy(raw_snapshots["reference-gateway-on"])
+    assert "<validate-azure-ad-token" in policy
+    assert "client-application-ids" in policy
+    assert "<validate-azure-ad-token" not in _gateway_policy(raw_snapshots["demo-gateway-on"])
+
+
+def test_gateway_identity_can_call_the_models_and_nothing_else(raw_snapshots: dict[str, Resources]) -> None:
+    resources = raw_snapshots["demo-gateway-on"]
+    assert _role_ids(resources).count(OPENAI_USER_ROLE) == 2, "the app identity and the gateway identity"
+    assert not BROAD_ROLES & set(_role_ids(resources))
+    service = _of_type(resources, "Microsoft.ApiManagement/service")[0]
+    assert service["identity"]["type"] == "SystemAssigned"
+
+
+def test_gateway_sends_token_metrics_to_app_insights(raw_snapshots: dict[str, Resources]) -> None:
+    resources = raw_snapshots["demo-gateway-on"]
+    loggers = _of_type(resources, "Microsoft.ApiManagement/service/loggers")
+    assert [lg["properties"]["loggerType"] for lg in loggers] == ["applicationInsights"]
+    diagnostics = _of_type(resources, "Microsoft.ApiManagement/service/diagnostics")
+    assert diagnostics and diagnostics[0]["properties"]["metrics"] is True
+
+
+def test_gateway_key_mode_stores_a_subscription_key_not_the_account_key(raw_snapshots: dict[str, Resources]) -> None:
+    secrets = [
+        r
+        for r in _of_type(raw_snapshots["demo-gateway-on"], "Microsoft.KeyVault/vaults/secrets")
+        if r["name"].endswith("/azure-openai-key")
+    ]
+    assert len(secrets) == 1
+    value = str(secrets[0]["properties"]["value"])
+    assert "Microsoft.ApiManagement" in value and "Microsoft.CognitiveServices" not in value
+
+
+def test_gateway_outputs_the_endpoint(template: dict[str, Any]) -> None:
+    assert "AZURE_GATEWAY_ENDPOINT" in template["outputs"]
+
+
+def test_gateway_sku_is_a_parameter_with_the_unknown_documented() -> None:
+    text = (INFRA / "modules" / "gateway-apim.bicep").read_text(encoding="utf-8")
+    assert "param skuName" in text
+    assert "UNVERIFIED" in text, "the tier-support unknown must be loud in the module"

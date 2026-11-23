@@ -55,6 +55,15 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 - **`python -m evals.run_evals --estimate`** prints the token count and cost a live run would have, from the
   replay fixtures and the price file, and exits without calling a model. **`--concurrency`** bounds live
   eval calls and a 429 or 5xx is retried with a `Retry-After`-aware, jittered, capped backoff.
+- **Optional Azure modules for Foundry, an AI gateway and per-app identities (Bicep, offline only).**
+  `deployFoundryProject` adds a Foundry project under the AIServices account with the App Insights
+  connection and Azure AI User for the app identity. `deployGateway` adds an API Management instance in
+  front of the account with per-agent token limits and token metrics keyed on `x-agent-name`, managed
+  identity to the model and the endpoint handed to the apps through the existing `AZURE_OPENAI_ENDPOINT`.
+  `deployPerAppIdentities` adds one user-assigned identity per app (created, not yet attached to the
+  apps). All three are off by default. The `azure` provider pointed at the account is documented as
+  Foundry for OpenAI models; there is no `LLM_PROVIDER=foundry`. None has been deployed: the APIM tier
+  that supports the token policies is unverified (see `docs/azure-deployment.md`).
 
 ### Changed
 

@@ -180,3 +180,19 @@ Twenty-nine ways a first `scripts/azure-up.sh` goes wrong, and what already guar
 | 29 | `POST /api/orchestration/compare` times out | 504 from the ingress on a long comparison | documented best-effort: the request can exceed the 240 s ingress limit; run fewer modes per call |
 
 Other things to try first: `az containerapp revision list --name ca-orchestrator --resource-group rg-<env> -o table` for revision health, `az containerapp logs show --name ca-orchestrator --resource-group rg-<env> --follow false`, and `azd env get-values` for what the hooks saw (it contains secrets; do not paste it).
+
+### Foundry project and gateway (optional modules, predicted failures)
+
+None of this has run against a subscription; these are the failures the design predicts.
+
+| # | Failure | Symptom | What to do |
+|---|---|---|---|
+| 30 | APIM provisioning is slow | `azd provision` sits on `Microsoft.ApiManagement/service` for 30 to 45 minutes (classic tiers) or several minutes (v2); a wrapper script may time out | wait and re-run; prefer a v2 tier (`GATEWAY_SKU=BasicV2`); `azure-down` is slow for the same reason |
+| 31 | Tier does not support the token policies | the `apis/policies` PUT fails with a message naming `azure-openai-token-limit` or `azure-openai-emit-token-metric` | raise `GATEWAY_SKU`, then record which tier works in the plan (M6.2) |
+| 32 | Policy expression does not compile | the policy PUT fails with a C# compile error from the gateway | the expressions are in `modules/gateway-policy.xml`; reproduce in the portal policy editor |
+| 33 | Gateway answers 401 | every model call fails; with `AZURE_OPENAI_AUTH=identity` the token audience or the caller's client id is not allowed, with `key` the `azure-openai-key` secret is still the old account key | check `allowedCallerClientIds` includes the identity the app runs as; redeploy so the secret holds the subscription key |
+| 34 | Gateway answers 404 | a call to an operation the module does not define | only chat completions, embeddings and `/v1/responses` exist; add the operation in `gateway-apim.bicep` |
+| 35 | 429 from the gateway | `Retry-After` set, `x-ratelimit-remaining-tokens` is 0 | raise `gatewayAgentTokenLimits` for that agent or the default; an agent not in the list shares the `unlisted` bucket |
+| 36 | Project PUT refused | `allowProjectManagement` missing or no identity on the account | deploy with `DEPLOY_FOUNDRY_PROJECT=true` from the start; if the account exists without it, redeploy (or recreate the account) |
+| 37 | `2026-09-01` not available | `NoRegisteredProviderFound` or `InvalidApiVersion` on the project | change the three Foundry resources in `foundry-project.bicep` to `2025-06-01` |
+| 38 | Traces missing in the project | the project tracing view is empty | check the connection `appinsights` exists and points at the right component; the apps export to App Insights regardless |

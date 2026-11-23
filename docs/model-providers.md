@@ -48,6 +48,10 @@ Azure is always Chat Completions on the Python stack. The deployment name is wha
 deployment, not necessarily the model id. For production, prefer managed identity over a key; the
 Azure deployment path in [azure-deployment.md](azure-deployment.md) does that.
 
+### Foundry
+
+The `azure` provider pointed at an Azure AI Foundry (AIServices) account is Foundry for OpenAI models. The account the Bicep creates (`infra/`, see [azure-deployment.md](azure-deployment.md#foundry-project-optional)) is exactly that, so no separate provider exists and we do not add `LLM_PROVIDER=foundry`. A Foundry project (evaluations, tracing) is an optional extra there, not a different way of calling the model. A provider would only be warranted for a non-OpenAI catalogue model or a project-scoped client.
+
 ## OpenAI
 
 ```dotenv

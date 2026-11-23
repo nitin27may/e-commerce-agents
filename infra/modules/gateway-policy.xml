@@ -1,0 +1,53 @@
+<policies>
+  <inbound>
+    <base />
+    <!-- 1. Who is calling. Entra mode: validate the caller token (audience is the model scope),
+         restricted to the app identities. Subscription mode: APIM already checked the key. -->
+    {{CALLER_AUTH}}
+    <!-- 2. Which agent. An app identity vouches for its name (trustedAgent). Without that the
+         x-agent-name header is believed, and counted as untrusted. -->
+    <set-variable name="trustedAgent" value="@{
+      if (!context.Variables.ContainsKey("callerJwt")) { return ""; }
+      var jwt = (Jwt)context.Variables["callerJwt"];
+      var oid = jwt.Claims.GetValueOrDefault("oid", new string[] { "" })[0];
+      foreach (var entry in "{{OID_MAP}}".Split(';')) {
+        var pair = entry.Split('=');
+        if (pair.Length == 2 && pair[0] == oid) { return pair[1]; }
+      }
+      return "";
+    }" />
+    <set-variable name="agent" value="@{
+      var trusted = (string)context.Variables["trustedAgent"];
+      if (trusted != "") { return trusted; }
+      return context.Request.Headers.GetValueOrDefault("x-agent-name", "unknown");
+    }" />
+    <!-- 3. Per-agent token budget. A name that is not listed shares one bucket, so a made-up
+         header cannot mint fresh counters. -->
+    <choose>
+      {{AGENT_LIMITS}}
+      <otherwise>
+        <azure-openai-token-limit counter-key="unlisted" tokens-per-minute="{{DEFAULT_TPM}}" estimate-prompt-tokens="true" remaining-tokens-header-name="x-ratelimit-remaining-tokens" />
+      </otherwise>
+    </choose>
+    <!-- 4. Token metrics per agent to Application Insights (custom metrics, needs the
+         diagnostics resource with metrics enabled). No request or response bodies are logged. -->
+    <azure-openai-emit-token-metric namespace="ecommerce_agents">
+      <dimension name="Agent" value="@((string)context.Variables["agent"])" />
+      <dimension name="AgentTrusted" value="@(((string)context.Variables["trustedAgent"]) != "" ? "true" : "false")" />
+      <dimension name="API ID" />
+    </azure-openai-emit-token-metric>
+    <!-- 5. Backend: the gateway own managed identity. The caller key never reaches the account. -->
+    <set-header name="api-key" exists-action="delete" />
+    <set-header name="Ocp-Apim-Subscription-Key" exists-action="delete" />
+    <authentication-managed-identity resource="https://cognitiveservices.azure.com" />
+  </inbound>
+  <backend>
+    <forward-request timeout="230" buffer-response="false" />
+  </backend>
+  <outbound>
+    <base />
+  </outbound>
+  <on-error>
+    <base />
+  </on-error>
+</policies>

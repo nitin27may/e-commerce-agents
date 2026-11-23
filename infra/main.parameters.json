@@ -59,6 +59,21 @@
     "deployMcp": {
       "value": "${DEPLOY_MCP=false}"
     },
+    "deployFoundryProject": {
+      "value": "${DEPLOY_FOUNDRY_PROJECT=false}"
+    },
+    "deployGateway": {
+      "value": "${DEPLOY_GATEWAY=false}"
+    },
+    "gatewaySku": {
+      "value": "${GATEWAY_SKU=BasicV2}"
+    },
+    "gatewayPublisherEmail": {
+      "value": "${GATEWAY_PUBLISHER_EMAIL=noreply@example.com}"
+    },
+    "deployPerAppIdentities": {
+      "value": "${DEPLOY_PER_APP_IDENTITIES=false}"
+    },
     "a2aIdentityKey": {
       "value": "${A2A_IDENTITY_KEY}"
     },
