@@ -6,8 +6,8 @@ target) and fail when they diverge. This is the check behind the CI job ``stack-
 What must match, exactly, per case and repeat:
 
 * the outcome class (answered, replay miss, error);
-* the set of tool names called, the specialists routed to, and the workflow nodes entered (as a multiset: parallel
-  branches have no fixed order);
+* the set of tool names called, the specialists routed to, and the workflow nodes entered (as a set of normalised ids:
+  parallel branches have no fixed order);
 * the denial and approval flags, unless either record lists the fact as not observable;
 * whether the case passed.
 
@@ -33,6 +33,7 @@ from evals.records import RecordFormatError, RunRecord, read_records
 
 DEFAULT_SCORE_TOLERANCE = 0.05
 _SCORES = ("groundedness", "correctness", "completeness", "overall")
+_GROUNDING_DEPENDENT = ("groundedness", "overall")
 
 
 @dataclass
@@ -105,6 +106,10 @@ def compare_records(
     return result
 
 
+def _node_set(nodes: list[str]) -> set[str]:
+    return {n.replace("-", "_") for n in nodes}
+
+
 def _compare_case(name: str, ra: RunRecord, rb: RunRecord, label_a: str, label_b: str) -> list[str]:
     out: list[str] = []
     tools_a, tools_b = set(ra.tools_called), set(rb.tools_called)
@@ -115,9 +120,12 @@ def _compare_case(name: str, ra: RunRecord, rb: RunRecord, label_a: str, label_b
         )
     if set(ra.routes) != set(rb.routes):
         out.append(f"{name}: routes differ: {label_a} {sorted(set(ra.routes))}, {label_b} {sorted(set(rb.routes))}")
-    # Sorted: the fan-out branches of a workflow run concurrently, so their order is not a property of the stack.
-    if sorted(ra.nodes) != sorted(rb.nodes):
-        out.append(f"{name}: workflow nodes differ: {label_a} {sorted(ra.nodes)}, {label_b} {sorted(rb.nodes)}")
+    # Compared as a set of normalised ids: the fan-out branches run concurrently so order is no property of the
+    # stack; the two stacks spell an executor id differently (``merge-and-ship`` / ``merge_and_ship``, the
+    # documented Mermaid convention); and .NET announces a fan-in executor once per message it receives.
+    nodes_a, nodes_b = _node_set(ra.nodes), _node_set(rb.nodes)
+    if nodes_a != nodes_b:
+        out.append(f"{name}: workflow nodes differ: {label_a} {sorted(nodes_a)}, {label_b} {sorted(nodes_b)}")
     unseen = set(ra.not_observable) | set(rb.not_observable)
     if "denial" not in unseen and ra.denied != rb.denied:
         out.append(f"{name}: denial differs: {label_a} {ra.denied}, {label_b} {rb.denied}")
@@ -143,7 +151,13 @@ def _compare_scores(
         groups[key[0]].append(key)
     out: list[str] = []
     for dataset, keys in sorted(groups.items()):
+        # A stack that reports no grounding (the Python workflow modes send no grounding frame) scores groundedness
+        # by default, and ``overall`` weighs it: comparing either against a stack that does report one measures
+        # the reporting gap, not the answers. Same rule as the denial and approval flags above.
+        grounding_unseen = any("grounding" in (by_a[k].not_observable + by_b[k].not_observable) for k in keys)
         for score in _SCORES:
+            if grounding_unseen and score in _GROUNDING_DEPENDENT:
+                continue
             mean_a = sum(getattr(by_a[k].scores, score) for k in keys) / len(keys)
             mean_b = sum(getattr(by_b[k].scores, score) for k in keys) / len(keys)
             if abs(mean_a - mean_b) > tolerance + 1e-9:

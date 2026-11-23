@@ -66,7 +66,7 @@ def test_removing_a_capability_from_one_stack_fails_the_comparison() -> None:
 
     assert not result.ok
     text = format_comparison(result)
-    assert "workflow nodes differ" in text and "price-history" in text
+    assert "workflow nodes differ" in text and "price_history" in text
     assert "tool calls differ: only python: ['get_price_history']" in text
 
 
@@ -141,3 +141,25 @@ def test_cli_exit_codes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> N
     assert "workflow nodes differ" in capsys.readouterr().out
 
     assert main([str(pa), str(tmp_path / "missing.jsonl")]) == 2
+
+
+def test_node_ids_compare_by_normalised_set() -> None:
+    a, b = _pair(
+        nodes=["fan_out", "reviews", "stock", "price_history", "merge_and_ship", "merge_and_ship", "synthesis"]
+    )
+    assert compare_records(a, b, label_a="python", label_b="dotnet").ok
+
+
+def test_a_missing_node_still_diverges() -> None:
+    a, b = _pair(nodes=["fan_out", "reviews", "stock", "synthesis"])
+    result = compare_records(a, b, label_a="python", label_b="dotnet")
+    assert not result.ok and "workflow nodes differ" in format_comparison(result)
+
+
+def test_unreported_grounding_skips_groundedness_and_overall_only() -> None:
+    a = [_record("python", 0, not_observable=["grounding"])]
+    low = CaseScores(groundedness=0.0, correctness=1.0, completeness=1.0, overall=0.6)
+    assert compare_records(a, [_record("dotnet", 0, scores=low)], label_a="python", label_b="dotnet").ok
+    worse = CaseScores(groundedness=0.0, correctness=0.0, completeness=1.0, overall=0.3)
+    result = compare_records(a, [_record("dotnet", 0, scores=worse)], label_a="python", label_b="dotnet")
+    assert not result.ok and "correctness" in format_comparison(result)
