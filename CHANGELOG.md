@@ -139,6 +139,11 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
   the served database, over `--target http` (where it also clears `hitl` from `not_observable` and no longer turns a
   parked turn into an "empty response" error). `expect_hitl: true` is set on the live cancel case. Replay results are
   unchanged.
+- **Grounding ledger records coupon amounts.** `GroundingLedger._record_bare_amount` skipped `min_spend`,
+  `max_discount` and `discount_value`, so an honest answer about active deals scored groundedness 0 (the
+  pricing-promotions specialist, 0 of 10 amounts, in the 2026-11-23 live run). Those fields are recorded now; an amount
+  absent from every tool result is still unverifiable. Python only: the .NET verifier has no ledger. Committed replay
+  baselines are not re-recorded.
 - **The Mode dropdown shows its labels in full.** The list is as wide as its longest label; it used to take the
   trigger's width and cut three of the five off (#210).
 - **The Compare dialog renders answers the way chat does.** A fenced card block in a mode's answer (a product, a

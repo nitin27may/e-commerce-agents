@@ -106,6 +106,18 @@ async def test_amount_with_no_ledger_match_is_unverifiable() -> None:
 
 
 @pytest.mark.asyncio
+async def test_deal_fields_verify_but_a_nearby_fabricated_amount_does_not() -> None:
+    ledger = GroundingLedger()
+    ledger.record({"coupons": [{"code": "TECHSAVE", "discount_value": 15.0, "min_spend": 100.0, "max_discount": 75.0}]})
+    claims = ExtractedClaims(
+        amounts=[AmountClaim(value=100.0), AmountClaim(value=75.0), AmountClaim(value=80.0), AmountClaim(value=100.5)]
+    )
+
+    report = await verify_claims(claims, ledger, pool=None)
+    assert [v.status for v in report.verdicts] == ["verified", "verified", "unverifiable", "unverifiable"]
+
+
+@pytest.mark.asyncio
 async def test_tracking_verified_against_ledger() -> None:
     ledger = GroundingLedger()
     ledger.orders["o1"] = OrderFact(id="o1", status="shipped", total=1.0, tracking="TRK1")
