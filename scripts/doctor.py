@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import importlib.util
 import json
 import os
 import re
@@ -455,27 +454,32 @@ def pricing_checks(cfg: Any) -> list[Check]:
     return checks
 
 
-def capability_check(enabled: bool) -> Check:
-    """Hook for ``evals.provider_check`` (EV-10, lane M1a)."""
-    if importlib.util.find_spec("evals.provider_check") is None:
-        return Check(
-            "capabilities",
-            SKIP,
-            "STUB: evals.provider_check (tool calling, streaming, JSON, context length) is not built yet",
-        )
+async def capability_checks(cfg: Any, client: httpx.AsyncClient, enabled: bool) -> list[Check]:
+    """Run ``evals.provider_check`` (EV-10) and map each capability to a check.
+
+    Off by default: the probes make real model calls (a few tokens each, plus one near-context-length prompt),
+    so ``--probe-capabilities`` opts in. A capability the model lacks is a warning, not a failure: it means
+    some eval suites will be marked not applicable, not that the app cannot start.
+    """
     if not enabled:
-        return Check(
-            "capabilities",
-            SKIP,
-            "evals.provider_check is available; run with --probe-capabilities to call it (spends tokens)",
-        )
-    # TODO(M1a): call evals.provider_check's entrypoint here once its API is on main, and map each
-    # capability to a Check.
-    return Check(
-        "capabilities",
-        SKIP,
-        "STUB: evals.provider_check exists but this hook is not wired to its API yet",
-    )
+        return [
+            Check(
+                "capabilities",
+                SKIP,
+                "not probed; run with --probe-capabilities to test tool calling, streaming, JSON output, "
+                "context length and embeddings (spends tokens)",
+            )
+        ]
+    from evals import provider_check  # imported lazily: the doctor must start without the eval package's deps
+
+    try:
+        results = await provider_check.run_probes(cfg, client)
+    except Exception as exc:  # noqa: BLE001 - a misconfigured provider must not crash the doctor
+        return [Check("capabilities", FAIL, f"capability probe could not run: {type(exc).__name__}")]
+    mapped = {"pass": OK, "fail": FAIL, "unsupported": WARN}
+    return [
+        Check(f"capability.{r.capability.value}", mapped.get(r.status, WARN), r.detail or r.status) for r in results
+    ]
 
 
 async def run_checks(
@@ -545,7 +549,7 @@ async def run_checks(
             )
         checks.append(result)
 
-    checks.append(capability_check(probe_capabilities))
+    checks.extend(await capability_checks(cfg, client, probe_capabilities))
     return checks
 
 

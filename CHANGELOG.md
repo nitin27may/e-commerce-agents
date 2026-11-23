@@ -27,7 +27,7 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
   the model endpoint, database, Redis and every registry entry without spending tokens. `--json`, exit 1 on a hard
   failure. The capability check is a marked stub until the eval work adds it.
 - **One structured startup line per service on both stacks** (provider, model, embedding model, auth mode, pricing
-  source, budget mode), with no secret. Parity matrix row 50.
+  source, budget mode), with no secret. Parity matrix row 51.
 
 ### Changed
 

@@ -250,10 +250,42 @@ async def test_a_chat_key_headed_for_the_wrong_host_is_flagged(monkeypatch: pyte
     assert KEY not in doctor.render_text(report)
 
 
-async def test_the_capability_hook_is_a_marked_stub_until_the_probe_exists(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_capabilities_are_not_probed_unless_asked(monkeypatch: pytest.MonkeyPatch) -> None:
     report = await report_for(make_cfg(monkeypatch, LLM_PROVIDER="replay"), ok_handler)
     check = status(report, "capabilities")
-    assert check.status == doctor.SKIP and "STUB" in check.detail
+    assert check.status == doctor.SKIP and "--probe-capabilities" in check.detail
+
+
+async def test_capability_probe_maps_each_result_to_a_check(monkeypatch: pytest.MonkeyPatch) -> None:
+    from evals import provider_check as pc
+
+    async def fake_run_probes(cfg: object, client: object) -> list[pc.ProbeResult]:
+        return [
+            pc.ProbeResult(pc.Capability.TOOL_CALLING, "pass", "called the tool"),
+            pc.ProbeResult(pc.Capability.PARALLEL_TOOL_CALLS, "unsupported", "one call at a time"),
+            pc.ProbeResult(pc.Capability.EMBEDDINGS, "fail", "HTTP 404"),
+        ]
+
+    monkeypatch.setattr(pc, "run_probes", fake_run_probes)
+    async with transport(ok_handler) as client:
+        checks = await doctor.capability_checks(make_cfg(monkeypatch, LLM_PROVIDER="openai"), client, True)
+    by_name = {c.name: c for c in checks}
+    assert by_name["capability.tool_calling"].status == doctor.OK
+    assert by_name["capability.parallel_tool_calls"].status == doctor.WARN
+    assert by_name["capability.embeddings"].status == doctor.FAIL
+
+
+async def test_capability_probe_failure_is_a_failed_check_not_a_crash(monkeypatch: pytest.MonkeyPatch) -> None:
+    from evals import provider_check as pc
+
+    async def boom(cfg: object, client: object) -> list[pc.ProbeResult]:
+        raise RuntimeError("secret detail that must not be printed")
+
+    monkeypatch.setattr(pc, "run_probes", boom)
+    async with transport(ok_handler) as client:
+        checks = await doctor.capability_checks(make_cfg(monkeypatch, LLM_PROVIDER="openai"), client, True)
+    assert checks[0].status == doctor.FAIL and "RuntimeError" in checks[0].detail
+    assert "secret detail" not in checks[0].detail
 
 
 # ── redaction ────────────────────────────────────────────────────────────────
