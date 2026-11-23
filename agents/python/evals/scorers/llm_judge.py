@@ -23,6 +23,7 @@ import logging
 
 from pydantic import BaseModel, Field, ValidationError
 
+from evals.judge import JudgeConfig
 from shared.prompt_loader import load_raw_prompt
 
 logger = logging.getLogger(__name__)
@@ -41,9 +42,9 @@ class JudgeVerdict(BaseModel):
 _cache: dict[str, JudgeVerdict] = {}
 
 
-def _cache_key(case_id: str, response_text: str) -> str:
+def _cache_key(case_id: str, response_text: str, judge_key: str = "") -> str:
     digest = hashlib.sha256(response_text.encode("utf-8")).hexdigest()[:16]
-    return f"{case_id}:{digest}"
+    return f"{judge_key}:{case_id}:{digest}"
 
 
 async def judge_response(
@@ -51,24 +52,29 @@ async def judge_response(
     user_input: str,
     response_text: str,
     expected_fields: list[str],
+    judge: JudgeConfig | None = None,
 ) -> JudgeVerdict:
-    key = _cache_key(case_id, response_text)
+    """Judge one response. ``judge`` says which model (``evals/judge.py``); None keeps the chat client."""
+    key = _cache_key(case_id, response_text, judge.cache_key if judge else "")
     cached = _cache.get(key)
     if cached is not None:
         return cached
 
-    verdict = await _call_judge(user_input, response_text, expected_fields)
+    verdict = await _call_judge(user_input, response_text, expected_fields, judge)
     _cache[key] = verdict
     return verdict
 
 
-async def _call_judge(user_input: str, response_text: str, expected_fields: list[str]) -> JudgeVerdict:
+async def _call_judge(
+    user_input: str, response_text: str, expected_fields: list[str], judge_config: JudgeConfig | None = None
+) -> JudgeVerdict:
     from agent_framework import Agent
 
-    from shared.factory import get_chat_client
+    from shared.factory import get_chat_client, get_judge_chat_client
 
+    client = get_chat_client() if judge_config is None or judge_config.via_chat_client else get_judge_chat_client()
     judge = Agent(
-        client=get_chat_client(),
+        client=client,
         instructions=_JUDGE_INSTRUCTIONS,
         name="eval-judge",
     )

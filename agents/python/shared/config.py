@@ -137,6 +137,18 @@ class Settings(BaseSettings):
     # compatible endpoint, some vLLM / Ollama versions). The `azure` provider
     # always uses Chat Completions and ignores this.
     LLM_API: Literal["responses", "chat_completions"] = "responses"
+    # The eval judge (evals/judge.py). Same vocabulary as the chat provider: JUDGE_PROVIDER is
+    # openai | azure | anthropic | replay, JUDGE_MODEL the model (an Azure deployment for azure),
+    # JUDGE_BASE_URL an OpenAI-compatible endpoint (or the Azure endpoint), JUDGE_API_KEY its key
+    # (inherited only when the judge uses the same provider as the model under test), JUDGE_API
+    # responses | chat_completions for openai (empty follows LLM_API). Evals refuse to default the
+    # judge to the model under test: set these, or JUDGE_ALLOW_SELF=true to accept a "self-judged" run.
+    JUDGE_PROVIDER: str = ""
+    JUDGE_MODEL: str = ""
+    JUDGE_BASE_URL: str = ""
+    JUDGE_API_KEY: str = ""
+    JUDGE_API: Literal["", "responses", "chat_completions"] = ""
+    JUDGE_ALLOW_SELF: bool = False
     # replay-provider settings — see shared/replay_client.py. RECORD=true makes
     # a missing fixture fall through to a real call (via REPLAY_RECORD_PROVIDER)
     # and persist the result instead of raising.
