@@ -149,6 +149,10 @@ class Settings(BaseSettings):
     JUDGE_API_KEY: str = ""
     JUDGE_API: Literal["", "responses", "chat_completions"] = ""
     JUDGE_ALLOW_SELF: bool = False
+    # Attribution headers (x-agent-name, x-run-id, x-eval-run-id) on every model call, for an AI gateway
+    # (shared/gateway_headers.py). EVAL_RUN_ID is the run id an eval process stamps on its calls.
+    GATEWAY_HEADERS_ENABLED: bool = True
+    EVAL_RUN_ID: str = ""
     # replay-provider settings — see shared/replay_client.py. RECORD=true makes
     # a missing fixture fall through to a real call (via REPLAY_RECORD_PROVIDER)
     # and persist the result instead of raising.

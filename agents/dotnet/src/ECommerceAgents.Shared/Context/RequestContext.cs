@@ -19,6 +19,9 @@ public static class RequestContext
     private static readonly AsyncLocal<string?> _userEmail = new();
     private static readonly AsyncLocal<string?> _userRole = new();
     private static readonly AsyncLocal<string?> _sessionId = new();
+    // Opaque id for one request/turn, stamped on model calls as x-run-id (Agents/GatewayHeaders.cs). Fresh per Scope;
+    // not the session id and carries no identity. Python's current_run_id.
+    private static readonly AsyncLocal<string?> _runId = new();
     private static readonly AsyncLocal<IReadOnlyList<HistoryEntry>?> _history = new();
     private static readonly AsyncLocal<List<string>?> _invokedAgents = new();
     private static readonly AsyncLocal<ChannelWriter<StreamFrame>?> _streamWriter = new();
@@ -52,6 +55,9 @@ public static class RequestContext
         get => _sessionId.Value ?? string.Empty;
         set => _sessionId.Value = value;
     }
+
+    /// <summary>The current request's gateway run id; empty outside a <see cref="Scope"/>.</summary>
+    public static string CurrentRunId => _runId.Value ?? string.Empty;
 
     /// <summary>Running estimated LLM spend for this agent run, in USD.</summary>
     public static double CurrentRunCostUsd => _runCostUsd.Value?.Value ?? 0.0;
@@ -226,6 +232,7 @@ public static class RequestContext
             Email: _userEmail.Value,
             Role: _userRole.Value,
             Session: _sessionId.Value,
+            RunId: _runId.Value,
             History: _history.Value,
             InvokedAgents: _invokedAgents.Value,
             GuardrailFlags: _guardrailFlags.Value,
@@ -238,6 +245,7 @@ public static class RequestContext
         _userEmail.Value = email;
         _userRole.Value = role;
         _sessionId.Value = sessionId;
+        _runId.Value = Guid.NewGuid().ToString("N")[..16];
         _history.Value = history ?? Array.Empty<HistoryEntry>();
         _invokedAgents.Value = new List<string>();
         _guardrailFlags.Value = new Dictionary<string, bool>();
@@ -255,6 +263,7 @@ public static class RequestContext
             _userEmail.Value = previous.Email;
             _userRole.Value = previous.Role;
             _sessionId.Value = previous.Session;
+            _runId.Value = previous.RunId;
             _history.Value = previous.History;
             _invokedAgents.Value = previous.InvokedAgents;
             _guardrailFlags.Value = previous.GuardrailFlags;

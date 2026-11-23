@@ -28,6 +28,11 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
   failure. The capability check is a marked stub until the eval work adds it.
 - **One structured startup line per service on both stacks** (provider, model, embedding model, auth mode, pricing
   source, budget mode), with no secret. Parity matrix row 51.
+- **Gateway attribution headers on every model call, both stacks (AZ-4).** Chat and embeddings requests
+  carry `x-agent-name`, `x-run-id` and `x-eval-run-id`, so an AI gateway can count tokens per agent and per
+  run. Values are sanitised and capped, an empty one is omitted, and no user identity or secret is sent.
+  `GATEWAY_HEADERS_ENABLED` (default true) turns it off; `EVAL_RUN_ID` sets the eval run id. Replay keys and
+  every fixture are unaffected (`fixture_drift` exit 0). Parity row 52.
 
 ### Changed
 

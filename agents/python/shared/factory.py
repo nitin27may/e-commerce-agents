@@ -34,7 +34,7 @@ from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient
 
 from shared.azure_auth import azure_credential, azure_token_provider
 from shared.config import settings
-from shared.context import current_agent_model
+from shared.context import current_agent_model, current_agent_name
 from shared.embedding_config import (
     NO_EMBEDDINGS,
     NO_EMBEDDINGS_MESSAGE,
@@ -44,6 +44,7 @@ from shared.embedding_config import (
     follows_chat_provider,
     verify_vector_length,
 )
+from shared.gateway_headers import attach_to_maf_client, install_gateway_headers
 from shared.prompt_loader import ModelOverride, load_model_override
 
 logger = logging.getLogger(__name__)
@@ -206,13 +207,26 @@ def get_judge_chat_client() -> OpenAIChatClient | OpenAIChatCompletionClient | A
 
     Does not touch ``current_agent_model``: the judge's model must not become the model usage is priced as.
     """
-    return _build_chat_client(judge_settings(settings), None, track_model=False)
+    return _build_chat_client(judge_settings(settings), None, track_model=False, gateway_agent="eval-judge")
 
 
 def _build_chat_client(
+    cfg: Any, agent_name: str | None, *, track_model: bool, gateway_agent: str | None = None
+) -> OpenAIChatClient | OpenAIChatCompletionClient | Any:
+    """``get_chat_client``'s body over any settings object (the judge passes its own overlay).
+
+    A client for a real provider gets the gateway attribution hook (``shared/gateway_headers.py``); the replay
+    client has no SDK client, so it is returned untouched.
+    """
+    client = _build_provider_client(cfg, agent_name, track_model=track_model)
+    if track_model and agent_name:
+        current_agent_name.set(agent_name)
+    return attach_to_maf_client(client, gateway_agent or agent_name)
+
+
+def _build_provider_client(
     cfg: Any, agent_name: str | None, *, track_model: bool
 ) -> OpenAIChatClient | OpenAIChatCompletionClient | Any:
-    """The body of ``get_chat_client``, over any settings object (the judge passes its own overlay)."""
 
     def _note_model(name: str) -> None:
         if track_model:
@@ -295,6 +309,14 @@ def _build_chat_client(
 
 
 def get_embeddings_client() -> openai.AsyncOpenAI | openai.AsyncAzureOpenAI:
+    """``_build_embeddings_client`` plus the gateway attribution hook (the replay stand-in makes no HTTP call)."""
+    client = _build_embeddings_client()
+    if isinstance(client, openai.AsyncOpenAI):
+        install_gateway_headers(client)
+    return client
+
+
+def _build_embeddings_client() -> openai.AsyncOpenAI | openai.AsyncAzureOpenAI:
     """Return an async client configured for embeddings.
 
     The provider is ``EMBEDDING_PROVIDER`` (``openai | azure | openai_compatible | replay``), or

@@ -1,4 +1,5 @@
 using System.ClientModel;
+using System.ClientModel.Primitives;
 using Azure.AI.OpenAI;
 using Azure.Core;
 using ECommerceAgents.Shared.Configuration;
@@ -91,15 +92,32 @@ public static class EmbeddingClientFactory
     public static EmbeddingClient CreateEmbeddingClient(AgentSettings settings) =>
         CreateEmbeddingClient(settings, null, null);
 
+    /// <summary>The embeddings client over a caller-supplied <see cref="HttpClient"/> (a stub handler in tests).</summary>
+    public static EmbeddingClient CreateEmbeddingClient(AgentSettings settings, HttpClient httpClient) =>
+        CreateEmbeddingClient(settings, null, null, httpClient);
+
     /// <summary>Credential and options are a test seam; production passes neither.</summary>
     public static EmbeddingClient CreateEmbeddingClient(
-        AgentSettings settings, TokenCredential? credential, AzureOpenAIClientOptions? options)
+        AgentSettings settings, TokenCredential? credential, AzureOpenAIClientOptions? options) =>
+        CreateEmbeddingClient(settings, credential, options, null);
+
+    // Every embeddings call carries the gateway attribution headers (Agents/GatewayHeaders.cs); the agent is the one
+    // most recently built in this process, since an embeddings client has no agent of its own.
+    private static EmbeddingClient CreateEmbeddingClient(
+        AgentSettings settings, TokenCredential? credential, AzureOpenAIClientOptions? options, HttpClient? httpClient)
     {
         var provider = ResolveProvider(settings);
         var model = EmbeddingModelName(settings);
 
         if (provider == "azure")
         {
+            options ??= new AzureOpenAIClientOptions();
+            if (httpClient is not null)
+            {
+                options.Transport = new HttpClientPipelineTransport(httpClient);
+            }
+
+            GatewayHeaders.Apply(options, settings, null);
             var endpoint = FirstNonBlank(settings.EmbeddingBaseUrl, settings.AzureOpenAiEndpoint);
             var explicitKey = FirstNonBlank(settings.EmbeddingApiKey);
             if (AzureIdentity.IsIdentity(settings) && explicitKey is null)
@@ -137,7 +155,8 @@ public static class EmbeddingClientFactory
             var localKey = FirstNonBlank(settings.EmbeddingApiKey) ?? "not-needed";
             return new OpenAIClient(
                 new ApiKeyCredential(localKey),
-                new OpenAIClientOptions { Endpoint = new Uri(settings.EmbeddingBaseUrl) }).GetEmbeddingClient(model);
+                WithGateway(new OpenAIClientOptions { Endpoint = new Uri(settings.EmbeddingBaseUrl) }, settings, httpClient))
+                .GetEmbeddingClient(model);
         }
 
         // An explicit EMBEDDING_BASE_URL is a host of its own: it gets EMBEDDING_API_KEY or a placeholder, never
@@ -160,7 +179,19 @@ public static class EmbeddingClientFactory
             openAiOptions.Endpoint = new Uri(baseUrl);
         }
 
-        return new OpenAIClient(new ApiKeyCredential(openAiKey), openAiOptions).GetEmbeddingClient(model);
+        return new OpenAIClient(new ApiKeyCredential(openAiKey), WithGateway(openAiOptions, settings, httpClient))
+            .GetEmbeddingClient(model);
+    }
+
+    private static OpenAIClientOptions WithGateway(OpenAIClientOptions options, AgentSettings settings, HttpClient? httpClient)
+    {
+        if (httpClient is not null)
+        {
+            options.Transport = new HttpClientPipelineTransport(httpClient);
+        }
+
+        GatewayHeaders.Apply(options, settings, null);
+        return options;
     }
 
     /// <summary>OpenAI's text-embedding-3 family is the only one that accepts a <c>dimensions</c> parameter.</summary>

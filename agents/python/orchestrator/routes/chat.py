@@ -57,6 +57,7 @@ from starlette.responses import StreamingResponse
 from shared.agent_observability import get_steps, reset_steps
 from shared.context import current_session_id
 from shared.db import get_pool
+from shared.gateway_headers import begin_run
 from shared.grounding.ledger import reset_grounding_ledger
 from shared.log_safe import log_safe
 from shared.rate_limit import rate_limit_chat
@@ -118,6 +119,7 @@ def _bind_session_to_conversation(conversation_id: str | None) -> None:
     conversation by its UUID — the specialist's rehydration query trusts this
     id. Anonymous chat has no conversation row of its own anyway.
     """
+    begin_run()  # one run id per chat turn, for gateway attribution of its model calls
     if conversation_id:
         current_session_id.set(conversation_id)
 

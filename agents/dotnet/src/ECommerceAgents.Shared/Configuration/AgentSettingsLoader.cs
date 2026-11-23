@@ -209,6 +209,8 @@ public static class AgentSettingsLoader
             EmbeddingDim = EmbeddingDim(),
             OpenAiApiKey = Get("OPENAI_API_KEY"),
             LlmBaseUrl = Get("LLM_BASE_URL"),
+            GatewayHeadersEnabled = GetBool("GATEWAY_HEADERS_ENABLED", true),
+            EvalRunId = Get("EVAL_RUN_ID"),
             RateLimitEnabled = GetBool("RATE_LIMIT_ENABLED", true),
             RateLimitMaxRequests = GetInt("RATE_LIMIT_MAX_REQUESTS", 30),
             RateLimitWindowSeconds = GetDouble("RATE_LIMIT_WINDOW_SECONDS", 60.0),
