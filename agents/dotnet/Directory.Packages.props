@@ -98,7 +98,7 @@
          the compose files stays on its own tag: the AppHost ships its own dashboard. -->
     <PackageVersion Include="Aspire.Hosting.PostgreSQL" Version="13.6.5" />
     <PackageVersion Include="Aspire.Hosting.Redis" Version="13.6.5" />
-    <PackageVersion Include="Aspire.Hosting.Python" Version="13.6.5" />
+    <PackageVersion Include="Aspire.Hosting.Python" Version="17.0.0" />
     <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.6.5" />
     <PackageVersion Include="Aspire.Hosting.Testing" Version="13.6.5" />
   </ItemGroup>
