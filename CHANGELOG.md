@@ -45,6 +45,16 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
   from attached records (re-scored with no model call), and refuses secret-looking strings, absurd scores, an
   undisclosed judge and an unlabelled self-judged run. The eval scorecard lists accepted files in a separate table,
   "Community-submitted, not verified by the maintainers", never in the reference rows.
+- **`COST_BUDGET_TOKENS_PER_RUN`, a per-run token ceiling on both stacks.** It sits beside the dollar
+  ceiling, under the same `COST_BUDGET_MODE`, and unlike it still holds for a model with no price on file.
+  In `enforce` the next LLM turn is refused once a run has used that many input plus output tokens, and a
+  turn that reports no usage also stops the run (fail closed). Unset, empty or 0 means off.
+- **`usage_logs.price_source` and `priced_at`** (migration `0015`, both stacks). Each costed row now says
+  which pricing file and version priced it (a short content digest, or `override:<file>`) and when, so a
+  later price change can be told apart from the price a row was computed with. Older rows stay NULL.
+- **`python -m evals.run_evals --estimate`** prints the token count and cost a live run would have, from the
+  replay fixtures and the price file, and exits without calling a model. **`--concurrency`** bounds live
+  eval calls and a 429 or 5xx is retried with a `Retry-After`-aware, jittered, capped backoff.
 
 ### Changed
 

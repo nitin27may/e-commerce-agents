@@ -447,11 +447,19 @@ A2A and MCP calls are not model calls and carry none. See [model-providers.md](m
 |---|---|---|
 | `COST_BUDGET_MODE` | `observe` | `off` attaches nothing; `observe` estimates and logs each run and counts a turn past the ceiling as `cost_budget.would_block`, never refusing; `enforce` refuses the next LLM turn once a run's estimated cost passes the ceiling |
 | `COST_BUDGET_USD_PER_RUN` | `0.50` in `.env.example` and the three compose files; unset in code | USD ceiling for one run. With no value, even `enforce` refuses nothing |
+| `COST_BUDGET_TOKENS_PER_RUN` | unset (off) | Ceiling on input plus output tokens for one run, under the same mode and enforcement points as the dollar ceiling. Unset, empty or `0` means off. Both stacks |
 
 `0.50` is a demo default, large enough for a normal turn and small enough to catch a runaway
 agent loop. The mode stays `observe`: watch `cost_budget.would_block` (see
 [telemetry.md](telemetry.md#cost-and-usage)) before choosing `enforce`. The figure is an
 estimate from the pricing file below, not a bill.
+
+The token ceiling is the one that still holds where cost is unknown: tokens are counted for a model
+with no price on file. In `enforce` the next LLM turn is refused once a run has used the ceiling's
+worth of tokens (a turn already in flight is never aborted, so a run can overshoot by one turn). It
+fails closed: with a token ceiling set, a turn that reports no usage at all also stops the run,
+because the count can no longer be trusted. In `observe` it only counts `cost_budget.would_block`.
+With `COST_BUDGET_MODE=off` neither ceiling is attached.
 
 ### Model prices (`PRICING_*`)
 
@@ -469,6 +477,13 @@ A model the file does not list has an **unknown** cost: `usage_logs.cost_usd`, `
 eval report show null or "unknown", never a guessed figure. Under `COST_BUDGET_MODE=enforce` with a
 ceiling set, a turn on an unpriced model stops the run, because the ceiling can no longer be checked.
 An invalid file is logged (`cost.pricing_file_invalid`) and makes every cost unknown.
+
+Every `usage_logs` row that has a cost also records `price_source` (the pricing file and a short
+content digest, for example `models.yaml#3fa2c1d09b`, or `override:<file>#<digest>`; several are
+comma-joined when a run's agents were priced from different files) and `priced_at` (when). Rows
+from before migration `0015`, runs with no captured usage, runs on an unpriced model and modes
+that make no LLM call keep both NULL. Editing a price changes the digest, so a stored cost can
+always be told apart from what today's file would say.
 
 Both variables are read by host-run processes. Containers use the copy of the file built into the
 image, so rebuild after editing it.
