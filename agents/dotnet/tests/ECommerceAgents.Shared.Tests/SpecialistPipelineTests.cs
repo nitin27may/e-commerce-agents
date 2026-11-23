@@ -280,6 +280,106 @@ public sealed class SpecialistPipelineTests
         second.Text.Should().Be("two");
         counted.Should().Be(1);
     }
+
+    // ─────────────────────── token ceiling (COST_BUDGET_TOKENS_PER_RUN) ───────────────────
+
+    [Fact]
+    public async Task TokenCeiling_Enforce_RefusesTheNextTurnOnceReached()
+    {
+        using var scope = RequestContext.Scope("u@example.com", "customer", "sess-tok-1");
+        var chat = new FakeChatClient { Usage = OneThousandIn }.EnqueueResponse("first").EnqueueResponse("second");
+        var inner = chat.AsAIAgent(instructions: "be helpful", name: "test-agent");
+        var settings = new AgentSettings { CostBudgetMode = "enforce", CostBudgetTokensPerRun = 1000 };
+
+        var wrapped = SpecialistPipeline.Apply(inner, settings, BuildServices(), "test-agent");
+        (await wrapped.RunAsync("hi")).Text.Should().Be("first");
+        RequestContext.CurrentRunTokens.Should().Be(1000);
+
+        (await wrapped.RunAsync("again")).Text.Should().Be(SpecialistPipeline.TokenBudgetRefusalMessage);
+        chat.CallCount.Should().Be(1, "the refused turn never reaches the model");
+    }
+
+    [Fact]
+    public async Task TokenCeiling_Streaming_RefusesToo()
+    {
+        using var scope = RequestContext.Scope("u@example.com", "customer", "sess-tok-2");
+        var chat = new FakeChatClient { Usage = OneThousandIn }.EnqueueResponse("streamed").EnqueueResponse("never");
+        var inner = chat.AsAIAgent(instructions: "be helpful", name: "test-agent");
+        var settings = new AgentSettings { CostBudgetMode = "enforce", CostBudgetTokensPerRun = 500 };
+
+        var wrapped = SpecialistPipeline.Apply(inner, settings, BuildServices(), "test-agent");
+        await foreach (var _ in wrapped.RunStreamingAsync("hi"))
+        {
+        }
+
+        var refused = new System.Text.StringBuilder();
+        await foreach (var update in wrapped.RunStreamingAsync("again"))
+        {
+            refused.Append(update.Text);
+        }
+
+        refused.ToString().Should().Be(SpecialistPipeline.TokenBudgetRefusalMessage);
+        chat.CallCount.Should().Be(1);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(0)]
+    [InlineData(-5)]
+    public async Task TokenCeiling_IsOffWhenUnsetZeroOrNegative(int? value)
+    {
+        using var scope = RequestContext.Scope("u@example.com", "customer", "sess-tok-3");
+        var chat = new FakeChatClient { Usage = OneThousandIn }.EnqueueResponse("one").EnqueueResponse("two");
+        var inner = chat.AsAIAgent(instructions: "be helpful", name: "test-agent");
+        var settings = new AgentSettings { CostBudgetMode = "enforce", CostBudgetTokensPerRun = value };
+
+        var wrapped = SpecialistPipeline.Apply(inner, settings, BuildServices(), "test-agent");
+        await wrapped.RunAsync("a");
+        (await wrapped.RunAsync("b")).Text.Should().Be("two");
+    }
+
+    [Fact]
+    public async Task TokenCeiling_Observe_NeverBlocks()
+    {
+        using var scope = RequestContext.Scope("u@example.com", "customer", "sess-tok-4");
+        var chat = new FakeChatClient { Usage = OneThousandIn }.EnqueueResponse("one").EnqueueResponse("two");
+        var inner = chat.AsAIAgent(instructions: "be helpful", name: "test-agent");
+        var settings = new AgentSettings { CostBudgetMode = "observe", CostBudgetTokensPerRun = 1 };
+
+        var wrapped = SpecialistPipeline.Apply(inner, settings, BuildServices(), "test-agent");
+        await wrapped.RunAsync("a");
+        (await wrapped.RunAsync("b")).Text.Should().Be("two");
+    }
+
+    [Fact]
+    public async Task TokenCeiling_Enforce_CountsTokensOfAnUnpricedModel()
+    {
+        using var scope = RequestContext.Scope("u@example.com", "customer", "sess-tok-5");
+        var chat = new FakeChatClient { Usage = OneThousandIn }.EnqueueResponse("one").EnqueueResponse("two");
+        var inner = chat.AsAIAgent(instructions: "be helpful", name: "test-agent");
+        var settings = new AgentSettings
+        {
+            LlmModel = "a-model-nobody-priced", CostBudgetMode = "enforce", CostBudgetTokensPerRun = 1000,
+        };
+
+        var wrapped = SpecialistPipeline.Apply(inner, settings, BuildServices(), "test-agent");
+        await wrapped.RunAsync("a");
+        RequestContext.CurrentRunTokens.Should().Be(1000);
+        (await wrapped.RunAsync("b")).Text.Should().Be(SpecialistPipeline.TokenBudgetRefusalMessage);
+    }
+
+    [Fact]
+    public async Task TokenCeiling_Enforce_FailsClosedWhenATurnReportsNoUsage()
+    {
+        using var scope = RequestContext.Scope("u@example.com", "customer", "sess-tok-6");
+        var chat = new FakeChatClient().EnqueueResponse("one").EnqueueResponse("two");
+        var inner = chat.AsAIAgent(instructions: "be helpful", name: "test-agent");
+        var settings = new AgentSettings { CostBudgetMode = "enforce", CostBudgetTokensPerRun = 100000 };
+
+        var wrapped = SpecialistPipeline.Apply(inner, settings, BuildServices(), "test-agent");
+        (await wrapped.RunAsync("a")).Text.Should().Be("one");
+        (await wrapped.RunAsync("b")).Text.Should().Be(SpecialistPipeline.UntrackedRefusalMessage);
+    }
 }
 
 /// <summary>

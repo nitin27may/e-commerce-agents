@@ -76,13 +76,30 @@ current_run_cost_usd: ContextVar[float | None] = ContextVar("current_run_cost_us
 # True once a turn in this run was served by a model the pricing file does not list: the run's
 # cost is then unknown, and an enforcing budget cannot vouch for it.
 current_run_unpriced: ContextVar[bool] = ContextVar("current_run_unpriced", default=False)
+# Input + output tokens this run has used (the COST_BUDGET_TOKENS_PER_RUN ceiling), counted even
+# for an unpriced model. ``current_run_untracked`` is True once a turn reported no usage at all.
+current_run_tokens: ContextVar[int | None] = ContextVar("current_run_tokens", default=None)
+current_run_untracked: ContextVar[bool] = ContextVar("current_run_untracked", default=False)
 
 
 def reset_run_cost() -> float:
     """Begin capture for the current request/run; returns the fresh baseline (0.0)."""
     current_run_cost_usd.set(0.0)
     current_run_unpriced.set(False)
+    current_run_tokens.set(0)
+    current_run_untracked.set(False)
     return 0.0
+
+
+def get_run_tokens() -> int:
+    """Return the input + output tokens recorded so far in this run's context."""
+    return current_run_tokens.get() or 0
+
+
+def token_budget() -> int | None:
+    """The per-run token ceiling, or ``None`` when it is off (unset, 0 or negative)."""
+    limit = settings.COST_BUDGET_TOKENS_PER_RUN
+    return limit if limit is not None and limit > 0 else None
 
 
 def run_has_unpriced_turn() -> bool:
@@ -153,6 +170,16 @@ BUDGET_REFUSAL_MESSAGE = (
     "Start a new request, or raise COST_BUDGET_USD_PER_RUN if this ceiling is too low."
 )
 
+TOKEN_BUDGET_REFUSAL_MESSAGE = (
+    "This run has been stopped because it reached its configured token budget. "
+    "Start a new request, or raise COST_BUDGET_TOKENS_PER_RUN if this ceiling is too low."
+)
+
+UNTRACKED_REFUSAL_MESSAGE = (
+    "This run has been stopped because a model turn reported no token usage, so its token budget "
+    "cannot be enforced. Use a provider that reports usage, or set COST_BUDGET_MODE=observe."
+)
+
 UNPRICED_REFUSAL_MESSAGE = (
     "This run has been stopped because its model has no price on file, so its cost budget cannot be "
     "enforced. Add the model to config/pricing/models.yaml (or PRICING_OVERRIDES_FILE), or set "
@@ -181,6 +208,27 @@ class CostBudgetMiddleware(ChatMiddleware):
             return
 
         budget = settings.COST_BUDGET_USD_PER_RUN
+        tokens_cap = token_budget()
+        if mode == "enforce" and tokens_cap is not None:
+            # Fail closed: a turn with no usage means the running count undercounts.
+            if current_run_untracked.get():
+                self.blocked += 1
+                logger.warning("cost_budget.blocked_untracked budget_tokens=%d", tokens_cap)
+                context.result = self._refusal_result(context, UNTRACKED_REFUSAL_MESSAGE)
+                return
+            if get_run_tokens() >= tokens_cap:
+                self.blocked += 1
+                logger.warning(
+                    "cost_budget.blocked_tokens run_tokens=%d budget_tokens=%d", get_run_tokens(), tokens_cap
+                )
+                context.result = self._refusal_result(context, TOKEN_BUDGET_REFUSAL_MESSAGE)
+                return
+
+        if mode == "observe" and tokens_cap is not None and get_run_tokens() >= tokens_cap:
+            self.would_block += 1
+            logger.info("cost_budget.would_block_tokens run_tokens=%d budget_tokens=%d", get_run_tokens(), tokens_cap)
+            record_would_block(agent=settings.OTEL_SERVICE_NAME)
+
         if mode == "enforce" and budget is not None and run_has_unpriced_turn():
             # Fail closed: a budget that cannot price a turn cannot promise the ceiling holds.
             self.blocked += 1
@@ -223,8 +271,11 @@ class CostBudgetMiddleware(ChatMiddleware):
     def _record_from_response(self, response: Any) -> Any:
         priced = _turn_cost(response)
         if priced is None:
+            if token_budget() is not None:
+                current_run_untracked.set(True)
             return response
         cost, tokens_in, tokens_out = priced
+        current_run_tokens.set(get_run_tokens() + int(tokens_in) + int(tokens_out))
         if cost is None:
             current_run_unpriced.set(True)
             logger.info("cost_budget.turn_unpriced mode=%s", settings.COST_BUDGET_MODE)

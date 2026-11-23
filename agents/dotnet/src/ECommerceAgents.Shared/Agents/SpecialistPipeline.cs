@@ -142,6 +142,11 @@ public static class SpecialistPipeline
                 ));
             }
 
+            if (TokenBudgetRefusal(settings, logger) is { } tokenRefusal)
+            {
+                return new AgentResponse(new ChatMessage(ChatRole.Assistant, tokenRefusal));
+            }
+
             NoteWouldBlock(settings, logger);
 
             var response = await innerAgent.RunAsync(messages, session, options, cancellationToken: ct);
@@ -171,6 +176,66 @@ public static class SpecialistPipeline
             );
             CostMetrics.RecordWouldBlock(settings.OtelServiceName);
         }
+
+        if (TokenCeiling(settings) is { } tokenCap && RequestContext.CurrentRunTokens >= tokenCap)
+        {
+            logger.LogInformation(
+                "cost_budget.would_block_tokens run_tokens={Tokens} budget_tokens={Cap}",
+                RequestContext.CurrentRunTokens, tokenCap
+            );
+            CostMetrics.RecordWouldBlock(settings.OtelServiceName);
+        }
+    }
+
+    /// <summary>Guardrail flag set when a turn in this run reported no usage (its tokens are not counted).</summary>
+    public const string UntrackedFlag = "tokens_untracked";
+
+    /// <summary>Twin of Python's TOKEN_BUDGET_REFUSAL_MESSAGE.</summary>
+    public const string TokenBudgetRefusalMessage =
+        "This run has been stopped because it reached its configured token budget. "
+        + "Start a new request, or raise COST_BUDGET_TOKENS_PER_RUN if this ceiling is too low.";
+
+    /// <summary>Twin of Python's UNTRACKED_REFUSAL_MESSAGE.</summary>
+    public const string UntrackedRefusalMessage =
+        "This run has been stopped because a model turn reported no token usage, so its token budget "
+        + "cannot be enforced. Use a provider that reports usage, or set COST_BUDGET_MODE=observe.";
+
+    /// <summary>The per-run token ceiling, or null when it is off (unset, 0 or negative).</summary>
+    public static long? TokenCeiling(AgentSettings settings) =>
+        settings.CostBudgetTokensPerRun is { } limit and > 0 ? limit : null;
+
+    /// <summary>
+    /// The refusal text when enforce mode must stop this run before another turn: the token ceiling is
+    /// reached, or an earlier turn reported no usage so the count cannot be trusted (fail closed).
+    /// Null when the turn may go ahead. Same trade-off as the dollar ceiling: a turn already in flight
+    /// is never aborted, so a run can overshoot by one turn.
+    /// </summary>
+    public static string? TokenBudgetRefusal(AgentSettings settings, ILogger logger)
+    {
+        var enforcing = string.Equals(settings.CostBudgetMode, "enforce", StringComparison.OrdinalIgnoreCase);
+        if (!enforcing || TokenCeiling(settings) is not { } cap)
+        {
+            return null;
+        }
+
+        if (RequestContext.CurrentGuardrailFlags.TryGetValue(UntrackedFlag, out var untracked) && untracked)
+        {
+            logger.LogWarning("cost_budget.blocked_untracked budget_tokens={Cap}", cap);
+            RequestContext.SetGuardrailFlag("cost_budget_exceeded", true);
+            return UntrackedRefusalMessage;
+        }
+
+        if (RequestContext.CurrentRunTokens >= cap)
+        {
+            logger.LogWarning(
+                "cost_budget.blocked_tokens run_tokens={Tokens} budget_tokens={Cap}",
+                RequestContext.CurrentRunTokens, cap
+            );
+            RequestContext.SetGuardrailFlag("cost_budget_exceeded", true);
+            return TokenBudgetRefusalMessage;
+        }
+
+        return null;
     }
 
     /// <summary>Guardrail flag set when a turn in this run was on a model the pricing file does not list.</summary>
@@ -198,12 +263,18 @@ public static class SpecialistPipeline
     {
         if (usage is null)
         {
+            if (TokenCeiling(settings) is not null)
+            {
+                RequestContext.SetGuardrailFlag(UntrackedFlag, true);
+            }
+
             return;
         }
 
         var ceiling = settings.CostBudgetUsdPerRun;
         var tokensIn = usage.InputTokenCount ?? 0;
         var tokensOut = usage.OutputTokenCount ?? 0;
+        RequestContext.AddRunTokens(tokensIn + tokensOut);
         var turnCost = CostEstimator.Estimate(
             model, (int)tokensIn, (int)tokensOut, (int)(usage.CachedInputTokenCount ?? 0), logger);
         if (turnCost is null)
@@ -286,6 +357,12 @@ public static class SpecialistPipeline
                 ChatRole.Assistant,
                 "I've reached the cost limit for this request and can't continue. Please try a narrower question."
             );
+            yield break;
+        }
+
+        if (TokenBudgetRefusal(settings, logger) is { } tokenRefusal)
+        {
+            yield return new AgentResponseUpdate(ChatRole.Assistant, tokenRefusal);
             yield break;
         }
 

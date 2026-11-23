@@ -222,6 +222,8 @@ services:
       # (cost_budget.would_block), never enforced, until you set enforce yourself.
       COST_BUDGET_MODE: ${COST_BUDGET_MODE:-observe}
       COST_BUDGET_USD_PER_RUN: ${COST_BUDGET_USD_PER_RUN:-0.50}
+      # Per-run token ceiling (input + output), same mode as the dollar ceiling. Empty = none.
+      COST_BUDGET_TOKENS_PER_RUN: ${COST_BUDGET_TOKENS_PER_RUN:-}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
       # Embeddings are configured apart from the chat provider (empty provider = follow LLM_PROVIDER).
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-}

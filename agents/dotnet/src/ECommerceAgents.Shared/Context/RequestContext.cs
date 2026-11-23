@@ -31,6 +31,8 @@ public static class RequestContext
     // Running LLM spend for the current agent run, in USD. The .NET twin of
     // Python's current_run_cost_usd ContextVar (issue #30).
     private static readonly AsyncLocal<StrongBox<double>?> _runCostUsd = new();
+    // Input + output tokens this run has used (the token ceiling); boxed for the same reason.
+    private static readonly AsyncLocal<StrongBox<long>?> _runTokens = new();
     // Per-turn LLM token usage by agent (Python's current_run_usage). Mutable
     // object in an AsyncLocal, like _runCostUsd above, for the same reason.
     private static readonly AsyncLocal<RunUsage?> _runUsage = new();
@@ -63,7 +65,27 @@ public static class RequestContext
     public static double CurrentRunCostUsd => _runCostUsd.Value?.Value ?? 0.0;
 
     /// <summary>Starts a fresh spend tally. Called once per agent run.</summary>
-    public static void ResetRunCost() => _runCostUsd.Value = new StrongBox<double>(0.0);
+    public static void ResetRunCost()
+    {
+        _runCostUsd.Value = new StrongBox<double>(0.0);
+        _runTokens.Value = new StrongBox<long>(0);
+    }
+
+    /// <summary>Input + output tokens recorded so far in this run (counted even for an unpriced model).</summary>
+    public static long CurrentRunTokens => _runTokens.Value?.Value ?? 0;
+
+    /// <summary>Adds to the run's token tally and returns the new total.</summary>
+    public static long AddRunTokens(long tokens)
+    {
+        var box = _runTokens.Value;
+        if (box is null)
+        {
+            box = new StrongBox<long>(0);
+            _runTokens.Value = box;
+        }
+        box.Value += Math.Max(tokens, 0);
+        return box.Value;
+    }
 
     /// <summary>
     /// Adds to the run's spend and returns the new total. Mutates a boxed
@@ -240,6 +262,7 @@ public static class RequestContext
             DeliveredSteps: _deliveredSteps.Value,
             RunUsage: _runUsage.Value,
             RunCost: _runCostUsd.Value,
+            RunTokens: _runTokens.Value,
             ReplayMiss: _replayMiss.Value
         );
         _userEmail.Value = email;
@@ -258,6 +281,7 @@ public static class RequestContext
         // AsyncLocal does not carry back to the caller — so the running total, and with it the
         // per-run ceiling, was never visible to the code that checks it.
         _runCostUsd.Value = new StrongBox<double>(0.0);
+        _runTokens.Value = new StrongBox<long>(0);
         return new Disposable(() =>
         {
             _userEmail.Value = previous.Email;
@@ -271,6 +295,7 @@ public static class RequestContext
             _deliveredSteps.Value = previous.DeliveredSteps;
             _runUsage.Value = previous.RunUsage;
             _runCostUsd.Value = previous.RunCost;
+            _runTokens.Value = previous.RunTokens;
             _replayMiss.Value = previous.ReplayMiss;
         });
     }

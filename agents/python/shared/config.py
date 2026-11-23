@@ -533,6 +533,15 @@ class Settings(BaseSettings):
     # startup line and the doctor. Informational: the profile's values themselves arrive as ordinary variables.
     RUN_PROFILE: str = ""
 
+    # ── Per-run token budget (EV-12) ─────────────────────────────────
+    # A ceiling on input + output tokens for one run, beside the dollar budget and under the
+    # same COST_BUDGET_MODE: not attached when "off", counted and logged in "observe", and in
+    # "enforce" the next LLM turn is refused once the run has reached the ceiling (a turn in
+    # flight is never aborted, so a run can overshoot by one turn). Tokens are counted even for
+    # an unpriced model, so this is the ceiling that still holds where cost is unknown. In
+    # enforce a turn that reports no usage also stops the run (fail closed). 0 or unset = off.
+    COST_BUDGET_TOKENS_PER_RUN: int | None = None
+
     # ── Output moderation (Phase 6.4) ────────────────────────────────
     # shared/guardrails/output_middleware.py's OutputSanitizationMiddleware
     # defangs adversarial *instructions* hiding in untrusted tool output —
@@ -570,6 +579,14 @@ class Settings(BaseSettings):
     @classmethod
     def _blank_temperature_is_none(cls, value: object) -> object:
         """``LLM_TEMPERATURE=`` (set, empty) omits the option; compose passes it through as ''."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @field_validator("COST_BUDGET_TOKENS_PER_RUN", mode="before")
+    @classmethod
+    def _blank_token_budget_is_off(cls, value: object) -> object:
+        """``COST_BUDGET_TOKENS_PER_RUN=`` (set, empty; compose passes it through as '') means no ceiling."""
         if isinstance(value, str) and not value.strip():
             return None
         return value

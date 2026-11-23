@@ -61,6 +61,36 @@ public sealed class AgentSettingsLoaderTests
         settings.Temperature.Should().Be(0.7);
     }
 
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("", null)]
+    [InlineData("50000", 50000)]
+    [InlineData("0", 0)]
+    public void Load_ReadsTheTokenBudget_AndLeavesItUnsetByDefault(string? raw, int? expected)
+    {
+        var values = new Dictionary<string, string?>();
+        if (raw is not null)
+        {
+            values["COST_BUDGET_TOKENS_PER_RUN"] = raw;
+        }
+
+        var settings = AgentSettingsLoader.Load(new ConfigurationBuilder().AddInMemoryCollection(values).Build());
+
+        settings.CostBudgetTokensPerRun.Should().Be(expected);
+    }
+
+    [Fact]
+    public void Load_RejectsANonIntegerTokenBudget()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["COST_BUDGET_TOKENS_PER_RUN"] = "lots" })
+            .Build();
+
+        var act = () => AgentSettingsLoader.Load(config);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*COST_BUDGET_TOKENS_PER_RUN*");
+    }
+
     private static AgentSettings LoadWithGroundingMode(string? mode)
     {
         var values = new Dictionary<string, string?>();
