@@ -26,3 +26,12 @@ current_stream_queue: ContextVar[asyncio.Queue | None] = ContextVar("current_str
 # ``shared.factory.get_chat_client``). Cost pricing falls back to it when a provider response
 # names no model; a response that does name one always wins. Empty until a client is built.
 current_agent_model: ContextVar[str] = ContextVar("current_agent_model", default="")
+
+# Gateway attribution (shared/gateway_headers.py). ``current_agent_name`` is the agent the most recently built chat
+# client in this context belongs to (set by ``get_chat_client`` beside ``current_agent_model``; embeddings calls, which
+# have no agent of their own, read it). ``current_run_id`` is a fresh opaque id per inbound request (orchestrator chat
+# turn, specialist request); it is not the session id and carries no identity. ``current_eval_run_id`` is for an eval
+# harness that wants a run id other than the process-wide ``EVAL_RUN_ID`` setting.
+current_agent_name: ContextVar[str] = ContextVar("current_agent_name", default="")
+current_run_id: ContextVar[str] = ContextVar("current_run_id", default="")
+current_eval_run_id: ContextVar[str] = ContextVar("current_eval_run_id", default="")

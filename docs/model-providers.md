@@ -110,6 +110,18 @@ LLM_MODEL=<a model_name from the proxy's config>
 Untested here. Two things to check yourself: that the routed model supports tool calls, and the
 cache-token caveat below.
 
+## Gateways
+
+Behind an AI gateway (APIM, LiteLLM, OpenRouter, any proxy) the gateway sees only HTTP, so every model call
+carries `x-agent-name`, `x-run-id` and `x-eval-run-id` for it to attribute tokens and apply limits per agent and
+per run. It is on by default (`GATEWAY_HEADERS_ENABLED`), covers every provider shape on both stacks and
+embeddings, and sends no user identity or secret; details in
+[configuration.md](configuration.md#gateway-attribution-headers-gateway_headers_enabled-eval_run_id).
+Known limits: the run id is minted per process (not forwarded over A2A), and a header asserted by the caller is
+not proof of who called, which is why per-app identities belong in the gateway's own authentication. Untested
+against a real gateway: only stub transports have seen these headers. Name the gateway in `EVAL_GATEWAY` so an
+eval record says so.
+
 ## Embeddings
 
 Embeddings are configured separately from chat, and defaulting to the chat provider is often wrong:

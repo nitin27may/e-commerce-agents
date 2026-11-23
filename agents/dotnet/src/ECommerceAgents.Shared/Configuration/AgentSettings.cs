@@ -79,6 +79,15 @@ public sealed record AgentSettings
 
     // ── Rate limiting (issue #30) — .NET twin of Python's RATE_LIMIT_* ──
     public bool RateLimitEnabled { get; init; } = true;
+
+    /// <summary>
+    /// <c>GATEWAY_HEADERS_ENABLED</c> (default true): send <c>x-agent-name</c>, <c>x-run-id</c> and <c>x-eval-run-id</c> on
+    /// every model call (chat and embeddings) so an AI gateway can attribute tokens. See <c>Agents/GatewayHeaders.cs</c>.
+    /// </summary>
+    public bool GatewayHeadersEnabled { get; init; } = true;
+
+    /// <summary><c>EVAL_RUN_ID</c>: the run id an eval process stamps on its model calls as <c>x-eval-run-id</c>.</summary>
+    public string EvalRunId { get; init; } = "";
     public int RateLimitMaxRequests { get; init; } = 30;
 
     /// <summary>

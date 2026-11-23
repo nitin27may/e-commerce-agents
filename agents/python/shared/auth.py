@@ -24,6 +24,7 @@ from starlette.responses import JSONResponse, Response
 
 from shared.config import settings
 from shared.context import current_session_id, current_user_email, current_user_role
+from shared.gateway_headers import begin_run
 from shared.identity_token import HEADER_NAME, IdentityTokenError
 from shared.identity_token import verify as verify_identity
 from shared.jwt_utils import decode_token
@@ -134,6 +135,7 @@ class AgentAuthMiddleware(BaseHTTPMiddleware):
         if path in PUBLIC_PATHS:
             return await call_next(request)
 
+        begin_run()  # the id a gateway attributes this request's model calls to (shared/gateway_headers.py)
         agent_secret = request.headers.get("x-agent-secret")
 
         # oauth mode retires the shared secret entirely — a request bearing

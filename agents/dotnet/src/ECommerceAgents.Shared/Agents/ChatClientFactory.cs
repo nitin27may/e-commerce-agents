@@ -43,11 +43,12 @@ public static class ChatClientFactory
     public static IChatClient Create(AgentSettings settings, string? agentName = null, PromptLoader? prompts = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
+        GatewayHeaders.NoteAgent(agentName);
 
         var agentOverride = agentName is null ? null : prompts?.LoadModelOverride(agentName);
         if (agentOverride is not null)
         {
-            var client = Create(agentOverride.ApplyTo(settings));
+            var client = Create(agentOverride.ApplyTo(settings), agentName);
             return agentOverride.Temperature is { } t
                 // Applied as the request leaves, so it also beats the agent's own ChatOptions.Temperature
                 // (SpecialistAgentFactory sets that from LLM_TEMPERATURE).
@@ -77,19 +78,19 @@ public static class ChatClientFactory
             IChatClient? recorder = null;
             if (settings.Record)
             {
-                recorder = CreateProviderClient(settings with { LlmProvider = settings.ReplayRecordProvider });
+                recorder = CreateProviderClient(settings with { LlmProvider = settings.ReplayRecordProvider }, agentName);
             }
 
             return new ReplayChatClient(settings.ReplayFixturesDir, recorder);
         }
 
-        return CreateProviderClient(settings);
+        return CreateProviderClient(settings, agentName);
     }
 
-    private static IChatClient CreateProviderClient(AgentSettings settings) =>
+    private static IChatClient CreateProviderClient(AgentSettings settings, string? agentName) =>
         string.Equals(settings.LlmProvider, "anthropic", StringComparison.OrdinalIgnoreCase)
-            ? CreateAnthropicClient(settings)
-            : CreateChatClient(settings).AsIChatClient();
+            ? CreateAnthropicClient(settings, agentName)
+            : CreateChatClient(settings, null, null, null, agentName).AsIChatClient();
 
     /// <summary>
     /// Anthropic's <c>messages</c> API requires <c>max_tokens</c> on every request; the OpenAI-shaped
@@ -103,7 +104,26 @@ public static class ChatClientFactory
     /// loader fills from <c>ANTHROPIC_MODEL</c> (default <c>claude-sonnet-5-5</c>). <paramref name="httpClient"/>
     /// exists so a test can put a stub handler under the real SDK.
     /// </summary>
-    public static IChatClient CreateAnthropicClient(AgentSettings settings, HttpClient? httpClient = null)
+    public static IChatClient CreateAnthropicClient(AgentSettings settings, HttpClient? httpClient = null) =>
+        BuildAnthropicClient(settings, httpClient);
+
+    /// <summary>
+    /// The Anthropic client with the gateway attribution headers (<see cref="GatewayHeaders"/>). Without a caller's
+    /// <paramref name="httpClient"/> it owns an <see cref="HttpClient"/> whose handler adds them; a caller's client is used
+    /// as is (a test seam that predates the headers: use the <see cref="HttpMessageHandler"/> overload to see them).
+    /// </summary>
+    public static IChatClient CreateAnthropicClient(AgentSettings settings, string? agentName, HttpClient? httpClient = null) =>
+        BuildAnthropicClient(
+            settings,
+            httpClient ?? (settings.GatewayHeadersEnabled
+                ? new HttpClient(GatewayHeaders.Wrap(new HttpClientHandler(), settings, agentName))
+                : null));
+
+    /// <summary>A stub <paramref name="handler"/> under the real SDK, wrapped by the gateway-header handler (tests).</summary>
+    public static IChatClient CreateAnthropicClient(AgentSettings settings, string? agentName, HttpMessageHandler handler) =>
+        BuildAnthropicClient(settings, new HttpClient(GatewayHeaders.Wrap(handler, settings, agentName)));
+
+    private static IChatClient BuildAnthropicClient(AgentSettings settings, HttpClient? httpClient)
     {
         if (string.IsNullOrWhiteSpace(settings.AnthropicApiKey))
         {
@@ -123,11 +143,11 @@ public static class ChatClientFactory
     /// under the real SDK.
     /// </summary>
     public static ChatClient CreateChatClient(AgentSettings settings) =>
-        CreateChatClient(settings, null, null, null);
+        CreateChatClient(settings, null, null, null, null);
 
     /// <summary>The same client over a caller-supplied <see cref="HttpClient"/> (a stub handler in tests).</summary>
-    public static ChatClient CreateChatClient(AgentSettings settings, HttpClient? httpClient) =>
-        CreateChatClient(settings, null, null, httpClient);
+    public static ChatClient CreateChatClient(AgentSettings settings, HttpClient? httpClient, string? agentName = null) =>
+        CreateChatClient(settings, null, null, httpClient, agentName);
 
     /// <summary>
     /// <paramref name="credential"/> and <paramref name="options"/> exist so a test can put a fake
@@ -135,13 +155,14 @@ public static class ChatClientFactory
     /// </summary>
     public static ChatClient CreateChatClient(
         AgentSettings settings, TokenCredential? credential, AzureOpenAIClientOptions? options) =>
-        CreateChatClient(settings, credential, options, null);
+        CreateChatClient(settings, credential, options, null, null);
 
     private static ChatClient CreateChatClient(
         AgentSettings settings,
         TokenCredential? credential,
         AzureOpenAIClientOptions? options,
-        HttpClient? httpClient)
+        HttpClient? httpClient,
+        string? agentName)
     {
         if (string.Equals(settings.LlmProvider, "azure", StringComparison.OrdinalIgnoreCase))
         {
@@ -171,6 +192,8 @@ public static class ChatClientFactory
                 azureOptions.Transport = new HttpClientPipelineTransport(httpClient);
             }
 
+            GatewayHeaders.Apply(azureOptions, settings, agentName);
+
             var endpoint = new Uri(settings.AzureOpenAiEndpoint);
             var azureClient = AzureIdentity.IsIdentity(settings)
                 // No key is read or sent: the SDK asks the credential for a bearer token.
@@ -194,6 +217,8 @@ public static class ChatClientFactory
         {
             openAiOptions.Transport = new HttpClientPipelineTransport(httpClient);
         }
+
+        GatewayHeaders.Apply(openAiOptions, settings, agentName);
 
         if (!string.IsNullOrWhiteSpace(settings.LlmBaseUrl))
         {

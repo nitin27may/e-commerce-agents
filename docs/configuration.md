@@ -425,6 +425,22 @@ mode has been tested against a fake credential only, never a live Azure resource
 verified Azure run. `LLM_PROVIDER=replay` and `openai` ignore both variables; recording through
 `REPLAY_RECORD_PROVIDER=azure` still needs the key.
 
+## Gateway attribution headers (`GATEWAY_HEADERS_ENABLED`, `EVAL_RUN_ID`)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `GATEWAY_HEADERS_ENABLED` | `true` | Send `x-agent-name`, `x-run-id` and `x-eval-run-id` on every model call, chat and embeddings, on both stacks |
+| `EVAL_RUN_ID` | empty | The value of `x-eval-run-id`. Empty omits the header |
+
+`x-agent-name` is the agent the client was built for (`product-discovery`, `orchestrator`, `eval-judge`, ...).
+`x-run-id` is a fresh opaque id per inbound request (an orchestrator chat turn, a request to a specialist); it
+is not the session id. A header whose value is empty is not sent. Values are limited to ASCII
+`[A-Za-z0-9._:/+=-]` and 128 characters, so an `@` or a control character never gets through, and the user's
+email, role and session id and any credential are never put in these headers. The headers are added per request
+by a hook on the provider SDK's HTTP client (Python) or a pipeline policy / delegating handler (.NET), so they
+change with the agent and the request. Replay makes no HTTP call, so replay keys and fixtures do not change.
+A2A and MCP calls are not model calls and carry none. See [model-providers.md](model-providers.md#gateways).
+
 ## Per-run cost ceiling (`COST_BUDGET_*`)
 
 | Variable | Default | Meaning |
