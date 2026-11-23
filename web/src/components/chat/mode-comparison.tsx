@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { OrchestrationGraph } from "@/components/chat/orchestration-graph";
+import { RichMessage } from "@/components/chat/rich-message";
 import { Scale, Loader2 } from "lucide-react";
 
 interface ModeComparisonProps {
@@ -150,7 +151,13 @@ export function ModeComparison({ initialPrompt = "" }: ModeComparisonProps) {
                       <p className="text-destructive">{result.error}</p>
                     ) : (
                       <>
-                        <p className="whitespace-pre-wrap text-foreground/90">{result.text || "(no answer)"}</p>
+                        {/* The chat renderer, so a fenced card block shows as its card here too
+                            and is never printed as JSON. */}
+                        {result.text ? (
+                          <RichMessage content={result.text} />
+                        ) : (
+                          <p className="text-muted-foreground">(no answer)</p>
+                        )}
                         <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
                           <span>{result.step_count} step{result.step_count === 1 ? "" : "s"}</span>
                           <span data-testid={`usage-${result.mode}`}>{formatUsage(result)}</span>
