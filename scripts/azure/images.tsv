@@ -1,0 +1,23 @@
+# name	used_by	context	dockerfile	build_args
+# One row per image build-images.yml publishes. Paths are repo-root relative (no ./); build_args are ';'-separated KEY=VALUE.
+# used_by: python = the Python stack only, dotnet = the .NET stack only, both = either. Read by scripts/azure/acr-images.sh;
+# agents/python/tests/test_infra_bicep.py fails when this drifts from the build-images.yml matrix.
+orchestrator	python	agents/python	agents/python/Dockerfile	AGENT_NAME=orchestrator;AGENT_PORT=8080
+product-discovery	python	agents/python	agents/python/Dockerfile	AGENT_NAME=product_discovery;AGENT_PORT=8081
+order-management	python	agents/python	agents/python/Dockerfile	AGENT_NAME=order_management;AGENT_PORT=8082
+pricing-promotions	python	agents/python	agents/python/Dockerfile	AGENT_NAME=pricing_promotions;AGENT_PORT=8083
+review-sentiment	python	agents/python	agents/python/Dockerfile	AGENT_NAME=review_sentiment;AGENT_PORT=8084
+inventory-fulfillment	python	agents/python	agents/python/Dockerfile	AGENT_NAME=inventory_fulfillment;AGENT_PORT=8085
+outbox-worker	both	agents/python	agents/python/Dockerfile	AGENT_NAME=worker;AGENT_PORT=8095
+auth-server	both	agents/python	agents/python/Dockerfile	AGENT_NAME=auth_server;AGENT_PORT=8090
+mcp-product	python	agents/python	agents/python/Dockerfile.mcp	MCP_PACKAGE=ecommerce-mcp-product;MCP_DIR=packages/mcp-product;MCP_MODULE=ecommerce_mcp_product.server:app;MCP_PORT=9000
+mcp-inventory	python	agents/python	agents/python/Dockerfile.mcp	MCP_PACKAGE=ecommerce-mcp-inventory;MCP_DIR=packages/mcp-inventory;MCP_MODULE=ecommerce_mcp_inventory.server:app;MCP_PORT=9001
+db-init	both	.	agents/python/Dockerfile.dbinit	
+frontend	both	web	web/Dockerfile	
+orchestrator-dotnet	dotnet	.	agents/dotnet/src/ECommerceAgents.Orchestrator/Dockerfile	
+product-discovery-dotnet	dotnet	.	agents/dotnet/src/ECommerceAgents.ProductDiscovery/Dockerfile	
+order-management-dotnet	dotnet	.	agents/dotnet/src/ECommerceAgents.OrderManagement/Dockerfile	
+pricing-promotions-dotnet	dotnet	.	agents/dotnet/src/ECommerceAgents.PricingPromotions/Dockerfile	
+review-sentiment-dotnet	dotnet	.	agents/dotnet/src/ECommerceAgents.ReviewSentiment/Dockerfile	
+inventory-fulfillment-dotnet	dotnet	.	agents/dotnet/src/ECommerceAgents.InventoryFulfillment/Dockerfile	
+mcp-inventory-dotnet	dotnet	.	agents/dotnet/src/ECommerceAgents.Mcp/Dockerfile	

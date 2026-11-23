@@ -17,8 +17,8 @@ if (-not $OpenAiLocation) { $OpenAiLocation = $Location }
 
 $minAz = [version]'2.67.0'; $minAzd = [version]'1.18.0'; $minBicep = [version]'0.34.0'
 $providers = @('Microsoft.App', 'Microsoft.OperationalInsights', 'Microsoft.Insights', 'Microsoft.CognitiveServices',
-    'Microsoft.DBforPostgreSQL', 'Microsoft.KeyVault', 'Microsoft.ManagedIdentity', 'Microsoft.Consumption', 'Microsoft.Authorization')
-if ($Profile -eq 'reference') { $providers += 'Microsoft.Cache' }
+    'Microsoft.DBforPostgreSQL', 'Microsoft.KeyVault', 'Microsoft.ManagedIdentity', 'Microsoft.Consumption', 'Microsoft.Authorization', 'Microsoft.ContainerRegistry')
+if ($Profile -eq 'reference') { $providers += 'Microsoft.Cache', 'Microsoft.Network' }
 
 foreach ($tool in 'az', 'azd') {
     if (-not (Test-Tool $tool)) {

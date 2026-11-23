@@ -4,7 +4,9 @@
 #   1. generates the secrets this environment needs, only those that are unset, and never overwrites;
 #   2. pins the image tag (IMAGE_TAG must be set: a deployment never floats on :latest or :main);
 #   3. records the deployer's public IP for the frontend allow-list (PUBLIC_ACCESS=restricted);
-#   4. checks Postgres SKU, model, quota and soft-deleted names in the target region.
+#   4. checks Postgres SKU, model, quota and soft-deleted names in the target region;
+#   5. for an acr image source, keeps DEPLOY_APPS=false until postprovision has put IMAGE_TAG into the registry
+#      (an app cannot start from an image that is not there yet), then sets it true.
 #
 # Standalone and offline (no azd, no Azure) with a dotenv store:
 #   AZURE_SECRET_STORE_FILE=/tmp/x.env scripts/azure/preprovision.sh --secrets-only
@@ -22,7 +24,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --secrets-only) SECRETS_ONLY=1; shift ;;
         --dry-run) AZURE_DRY_RUN=1; shift ;;
-        -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
         *) die "unknown argument: $1" ;;
     esac
 done
@@ -78,6 +80,24 @@ profile="$(env_get DEPLOY_PROFILE)"
 profile="${profile:-demo}"
 profile_file="infra/profiles/${profile}.json"
 [ -f "$profile_file" ] || die "unknown DEPLOY_PROFILE=$profile"
+stack="$(env_get DEPLOY_STACK)"
+stack="${stack:-python}"
+case "$stack" in python|dotnet) ;; *) die "DEPLOY_STACK=$stack is not python or dotnet" ;; esac
+image_source="$(env_get IMAGE_SOURCE)"
+image_source="${image_source:-auto}"
+if [ "$image_source" = auto ]; then
+    image_source="$(sed -n 's/.*"imageSource": *"\([a-z]*\)".*/\1/p' "$profile_file" | head -n 1)"
+fi
+case "$image_source" in ghcr|acr) ;; *) die "IMAGE_SOURCE must be ghcr or acr (or auto); the $profile profile resolves to '$image_source'" ;; esac
+if [ "$image_source" = acr ] && [ "$(env_get ACR_IMAGES_TAG)" != "$image_tag" ]; then
+    env_set DEPLOY_APPS false
+    log "image source acr: provisioning infrastructure first; postprovision fills the registry with $image_tag, then provision again to start the apps"
+else
+    env_set DEPLOY_APPS true
+fi
+if [ "$stack" = dotnet ] && [ "$image_source" = ghcr ]; then
+    warn "stack dotnet pulls <service>-dotnet images from GHCR at $image_tag; they exist only for releases built after the .NET images were added to build-images.yml"
+fi
 chat_model="$(env_get AZURE_CHAT_MODEL)"
 chat_version="$(env_get AZURE_CHAT_MODEL_VERSION)"
 

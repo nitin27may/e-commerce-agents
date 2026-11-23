@@ -2,7 +2,14 @@
 #
 # `azd up` provisions infra/ (Bicep, subscription scope) and runs the hooks below. There are no
 # `services:`: the container images are built and published by .github/workflows/build-images.yml and
-# pulled from GHCR at the pinned IMAGE_TAG, so there is nothing for azd to build or deploy.
+# pulled from GHCR at the pinned IMAGE_TAG (IMAGE_SOURCE=ghcr, the demo default), so there is nothing for azd to build or deploy.
+#
+# IMAGE_SOURCE=acr (the reference default) pulls from the Container Registry the template creates. The postprovision hook
+# fills it: `az acr import` from GHCR, or with BUILD_FROM_SOURCE=true `az acr build` (a remote build in ACR Tasks) from this
+# tree. That is done by scripts/azure/acr-images.sh rather than by azd `services:` with `remoteBuild`, because the apps need
+# their image at provision time and `azd deploy` needs the apps to exist first; declaring services here would also make a
+# plain `azd up` rebuild and redeploy them. preprovision keeps DEPLOY_APPS=false until the registry holds IMAGE_TAG.
+# DEPLOY_STACK=python|dotnet picks the implementation.
 # Use scripts/azure-up.sh, which wraps this with the prerequisite checks. docs/azure-deployment.md.
 name: e-commerce-agents
 metadata:
