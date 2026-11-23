@@ -6,7 +6,8 @@ target) and fail when they diverge. This is the check behind the CI job ``stack-
 What must match, exactly, per case and repeat:
 
 * the outcome class (answered, replay miss, error);
-* the set of tool names called, the specialists routed to, and the workflow nodes entered, in order;
+* the set of tool names called, the specialists routed to, and the workflow nodes entered (as a multiset: parallel
+  branches have no fixed order);
 * the denial and approval flags, unless either record lists the fact as not observable;
 * whether the case passed.
 
@@ -114,8 +115,9 @@ def _compare_case(name: str, ra: RunRecord, rb: RunRecord, label_a: str, label_b
         )
     if set(ra.routes) != set(rb.routes):
         out.append(f"{name}: routes differ: {label_a} {sorted(set(ra.routes))}, {label_b} {sorted(set(rb.routes))}")
-    if ra.nodes != rb.nodes:
-        out.append(f"{name}: workflow nodes differ: {label_a} {ra.nodes}, {label_b} {rb.nodes}")
+    # Sorted: the fan-out branches of a workflow run concurrently, so their order is not a property of the stack.
+    if sorted(ra.nodes) != sorted(rb.nodes):
+        out.append(f"{name}: workflow nodes differ: {label_a} {sorted(ra.nodes)}, {label_b} {sorted(rb.nodes)}")
     unseen = set(ra.not_observable) | set(rb.not_observable)
     if "denial" not in unseen and ra.denied != rb.denied:
         out.append(f"{name}: denial differs: {label_a} {ra.denied}, {label_b} {rb.denied}")

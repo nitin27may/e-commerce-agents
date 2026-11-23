@@ -48,6 +48,12 @@ def test_identical_runs_agree_and_wording_is_not_compared() -> None:
     assert "OK: no divergence" in format_comparison(result)
 
 
+def test_parallel_workflow_branches_in_a_different_order_are_not_a_divergence() -> None:
+    a, b = _pair(nodes=["fan-out", "price-history", "stock", "reviews", "merge-and-ship", "synthesis"])
+
+    assert compare_records(a, b).ok
+
+
 def test_removing_a_capability_from_one_stack_fails_the_comparison() -> None:
     """A workflow node the .NET stack no longer runs, and a tool it no longer calls: both are divergences."""
     a, b = _pair(
