@@ -309,8 +309,9 @@ Rules:
 - Applied only to a case in a file named `*.live.json`, or one that sets `"live": true`. A replay dataset never
   contains a placeholder or the marker (`tests/test_eval_live_facts.py` pins both), so replay is untouched.
 - Placeholders are resolved in `input` and in every string inside `expected_tool_args`. An `{{order:...}}` needs the
-  case to set `user_email` (orders belong to a user; the live variants use `carol.davis@gmail.com`, who has an order
-  in every status the cases ask for). An unresolvable placeholder aborts the run with the reason; it is a setup
+  case to set `user_email` (orders belong to a user; the live variants use `jack.anderson@gmail.com`, who has an order
+  in every status the cases ask for, each among the five most recent: the order-management agent lists only the last
+  five orders in its context and, asked about an older one, declines without calling a tool). An unresolvable placeholder aborts the run with the reason; it is a setup
   error, never a score.
 - Resolution reads the eval process's own database pool (`DATABASE_URL`, as `run_evals` already initialises). With the
   in-process target that is the database the tools use. With an HTTP target it must be the database the stack under

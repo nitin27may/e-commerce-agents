@@ -16,7 +16,7 @@
       "tool_called": true,
       "routed": true
     },
-    "user_email": "carol.davis@gmail.com"
+    "user_email": "jack.anderson@gmail.com"
   },
   {
     "input": "Where is my order {{order:shipped}}? I want tracking.",
@@ -35,7 +35,7 @@
       "tool_called": true,
       "routed": true
     },
-    "user_email": "carol.davis@gmail.com"
+    "user_email": "jack.anderson@gmail.com"
   },
   {
     "input": "Do you have any coupons or active discounts I can use?",
@@ -54,7 +54,7 @@
       "tool_called": true,
       "routed": true
     },
-    "user_email": "carol.davis@gmail.com"
+    "user_email": "jack.anderson@gmail.com"
   },
   {
     "input": "What are customers saying in reviews about the Dyson V15?",
@@ -73,7 +73,7 @@
       "tool_called": true,
       "routed": true
     },
-    "user_email": "carol.davis@gmail.com"
+    "user_email": "jack.anderson@gmail.com"
   },
   {
     "input": "Is the Dyson V15 in stock and how fast can it ship to 10001?",
@@ -92,7 +92,7 @@
       "tool_called": true,
       "routed": true
     },
-    "user_email": "carol.davis@gmail.com"
+    "user_email": "jack.anderson@gmail.com"
   },
   {
     "input": "Please cancel my order {{order:placed}}",
@@ -111,6 +111,6 @@
       "tool_called": true,
       "routed": true
     },
-    "user_email": "carol.davis@gmail.com"
+    "user_email": "jack.anderson@gmail.com"
   }
 ]

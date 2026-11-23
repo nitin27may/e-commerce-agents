@@ -14,7 +14,7 @@
       "grounded": true,
       "tool_called": true
     },
-    "user_email": "carol.davis@gmail.com"
+    "user_email": "jack.anderson@gmail.com"
   },
   {
     "input": "What is the status of order {{order:1}}?",
@@ -36,7 +36,7 @@
       "tool_called": true,
       "order_id_passed": true
     },
-    "user_email": "carol.davis@gmail.com"
+    "user_email": "jack.anderson@gmail.com"
   },
   {
     "input": "Where is my package for order {{order:shipped}}? I want tracking info.",
@@ -58,7 +58,7 @@
       "tool_called": true,
       "tracking_requested": true
     },
-    "user_email": "carol.davis@gmail.com"
+    "user_email": "jack.anderson@gmail.com"
   },
   {
     "input": "Cancel my order {{order:placed}}, I found a better deal elsewhere",
@@ -75,7 +75,7 @@
       "tool_called": true,
       "cancellation_attempted": true
     },
-    "user_email": "carol.davis@gmail.com"
+    "user_email": "jack.anderson@gmail.com"
   },
   {
     "input": "I want to return the item from order {{order:delivered}}, it has a defective screen",
@@ -97,6 +97,6 @@
       "tool_called": true,
       "return_flow_initiated": true
     },
-    "user_email": "carol.davis@gmail.com"
+    "user_email": "jack.anderson@gmail.com"
   }
 ]

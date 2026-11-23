@@ -246,7 +246,16 @@ async def test_every_live_dataset_resolves_against_a_seeded_database(
         "SELECT DISTINCT u.email FROM orders o JOIN users u ON u.id = o.user_id WHERE o.id = ANY($1::uuid[])",
         list(resolved_orders),
     )
-    assert owner == "carol.davis@gmail.com"
+    assert owner == "jack.anderson@gmail.com"
+    # The agent's RecentOrdersProvider shows it only the last five orders; the ones the cases name must be among them.
+    recent_rows = await clean_db.fetch(
+        "SELECT o.id FROM orders o JOIN users u ON u.id = o.user_id WHERE u.email = $1 "
+        "ORDER BY o.created_at DESC, o.id LIMIT 5",
+        "jack.anderson@gmail.com",
+    )
+    recent = {str(r["id"]) for r in recent_rows}
+    for status in ("placed", "shipped", "delivered"):
+        assert await source.order_id("jack.anderson@gmail.com", status) in recent, status
 
     # Product ids are uuid5 of the name, so the replay datasets' literal ids are right; the live ones are not guesses.
     assert await source.product_id("Sony WH-1000XM5") == PRODUCT_ID

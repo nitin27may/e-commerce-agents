@@ -17,7 +17,7 @@
       "tool_called": true,
       "stock_checked": true
     },
-    "user_email": "carol.davis@gmail.com"
+    "user_email": "jack.anderson@gmail.com"
   },
   {
     "input": "When will the Dyson V15 Detect be back in stock?",
@@ -37,7 +37,7 @@
       "tool_called": true,
       "restock_checked": true
     },
-    "user_email": "carol.davis@gmail.com"
+    "user_email": "jack.anderson@gmail.com"
   },
   {
     "input": "How long will shipping take for the Sony WH-1000XM5 to ZIP code 90210?",
@@ -58,7 +58,7 @@
       "tool_called": true,
       "shipping_estimated": true
     },
-    "user_email": "carol.davis@gmail.com"
+    "user_email": "jack.anderson@gmail.com"
   },
   {
     "input": "Compare shipping carriers and delivery times from the east region to the west region",
@@ -79,7 +79,7 @@
       "tool_called": true,
       "carriers_compared": true
     },
-    "user_email": "carol.davis@gmail.com"
+    "user_email": "jack.anderson@gmail.com"
   },
   {
     "input": "What's the tracking status of order {{order:shipped}}?",
@@ -100,6 +100,6 @@
       "tool_called": true,
       "tracking_requested": true
     },
-    "user_email": "carol.davis@gmail.com"
+    "user_email": "jack.anderson@gmail.com"
   }
 ]
