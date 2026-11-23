@@ -16,6 +16,11 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ### Added
 
+- **Live-capable eval datasets.** `evals/datasets/live/*.live.json` (order management, inventory, orchestrator
+  routing, review sentiment) name orders and products as `{{order:1}}`, `{{order:shipped}}` and
+  `{{product_id:NAME}}`, resolved against the run's database (`evals/live_facts.py`) and as a seeded customer, so a
+  live model is no longer asked about order ids that do not exist (order management scored 49.2% live for that
+  reason). The records store the resolved text. Replay datasets and fixtures are unchanged and pinned placeholder-free.
 - **Run profiles.** Twelve provider setups (`keyless`, `openai`, `azure-key`, `azure-identity`, `anthropic`,
   `gemini`, `ollama`, `openrouter`, `llama-cpp`, `openai-compatible`, `azure-gateway`, `foundry`) in
   `agents/python/config/profiles/`. Each sets chat, embeddings and the model together, holds no secret, and states
