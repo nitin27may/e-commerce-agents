@@ -1,0 +1,23 @@
+event: node
+data: {"kind":"node_enter","node_id":"fan-out","agent":null,"phase":"enter"}
+
+event: node
+data: {"kind":"node_exit","node_id":"fan-out","agent":null,"phase":"exit"}
+
+event: node
+data: {"kind":"node_enter","node_id":"reviews","agent":null,"phase":"enter"}
+
+event: node
+data: {"kind":"node_enter","node_id":"synthesis","agent":null,"phase":"enter"}
+
+data: Reviews: positive (4.7/5 avg) | Stock: 120 units available
+
+event: metadata
+data: {"conversation_id":"c2","agents_involved":["fan-out","reviews","synthesis"]}
+
+event: run
+data: {"run_id":"run-2","pending_approval":false}
+
+event: done
+data: [DONE]
+
