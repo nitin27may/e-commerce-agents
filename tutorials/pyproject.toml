@@ -48,7 +48,7 @@ dependencies = [
     # Chapter 19 — declarative workflows parse workflow.yaml directly
     "pyyaml==6.0.3",
     # Chapters 02, 06 — tool argument schemas
-    "pydantic==2.14.3",
+    "pydantic==2.14.4",
     # Chapter 07 — observability: chapter code builds its own TracerProvider
     # and span exporters, so the SDK (not just the API) is a direct import.
     "opentelemetry-sdk==1.45.2",
@@ -58,7 +58,7 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
-    "ruff==0.17.5",
+    "ruff==0.17.6",
     # Chapters 01-04 notebooks: executed headlessly by
     # tutorials/tests/test_notebooks.py (nbclient runs the cells in an ipykernel).
     "nbclient>=0.10,<1",
