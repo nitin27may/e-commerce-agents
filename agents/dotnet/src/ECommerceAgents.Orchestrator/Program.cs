@@ -1,3 +1,4 @@
+using ECommerceAgents.Shared.Logging;
 using ECommerceAgents.Orchestrator.Agent;
 using ECommerceAgents.Orchestrator.Approvals;
 using ECommerceAgents.Orchestrator.Routes;
@@ -131,6 +132,7 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+StartupLog.Log(app.Services.GetRequiredService<ILogger<Program>>(), "orchestrator", settings);
 app.Services.GetRequiredService<PromptLoader>().ValidateModelOverrides(); // fail at startup, naming the file
 ReturnReplaceMode.CheckPolicyFile(); // log loudly if approvals.yaml is broken; the return gate fails closed regardless
 
