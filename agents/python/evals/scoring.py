@@ -93,6 +93,7 @@ def check_assertions(
     denied: bool,
     hitl_requested: bool,
     not_observable: list[str] | None = None,
+    routes: list[str] | None = None,
 ) -> list[str]:
     """Schema-v2 assertions: tool arguments, role denial, human approval. They never move a score.
 
@@ -101,6 +102,12 @@ def check_assertions(
     """
     skip = set(not_observable or [])
     failures: list[str] = []
+    called = list(routes or [])
+    failures.extend(f"routes: {r} was not called" for r in expected.routes if r not in called)
+    for r in expected.forbidden_routes:
+        hit = called if r == "*" else [c for c in called if c == r]
+        if hit:
+            failures.append(f"forbidden_routes: {', '.join(sorted(set(hit)))} was called")
     if expected.tool_args:
         from evals.scorers.tool_args import score_tool_args
 
@@ -163,7 +170,7 @@ def score_record(record: RunRecord, pass_threshold: float | None = None) -> RunR
 
     overall = weighted_overall(groundedness, correctness, completeness)
     failures = check_assertions(
-        expected, record.tool_calls, record.denied, record.hitl_requested, record.not_observable
+        expected, record.tool_calls, record.denied, record.hitl_requested, record.not_observable, record.routes
     )
     return record.model_copy(
         update={

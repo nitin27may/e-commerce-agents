@@ -14,6 +14,10 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ## [Unreleased]
 
+### Added
+
+- **Orchestrator live routing dataset grown to 30 cases** (14 happy, 9 edge, 7 adversarial) with a `why` line each, plus `expected_routes` and `forbidden_routes` assertions in the eval schema.
+
 ### Fixed
 
 - **Azure first-run hardening (optional deployment only).** The Postgres SKU preflight read the wrong level of the

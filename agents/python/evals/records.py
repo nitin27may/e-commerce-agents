@@ -197,6 +197,10 @@ class Expected(BaseModel):
     tools: list[str] = Field(default_factory=list)
     fields: list[str] = Field(default_factory=list)
     route: str | None = None
+    # Orchestrator assertions on the specialists called: every name in ``routes`` must have been called, and none
+    # in ``forbidden_routes`` (``"*"`` is every specialist). Assertions only; they never move a score.
+    routes: list[str] = Field(default_factory=list)
+    forbidden_routes: list[str] = Field(default_factory=list)
     criteria: dict[str, bool] = Field(default_factory=dict)
     tool_args: dict[str, dict[str, Any]] | None = None
     denial: bool | None = None
