@@ -94,6 +94,13 @@ class GroundingLedger:
             # surfacing discounted products reliably enough that the model
             # started mentioning the strikethrough price in most answers.
             "original_price",
+            # get_active_deals / validate_coupon report these as dollar (or, for
+            # `discount_value` on a percentage coupon, percent) amounts, and an
+            # honest answer quotes them ("min $100, max $75"). A fabricated
+            # figure still fails: only values a tool actually returned are added.
+            "min_spend",
+            "max_discount",
+            "discount_value",
         ):
             value = _as_float(item.get(key))
             if value is not None:

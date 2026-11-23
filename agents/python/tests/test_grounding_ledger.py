@@ -218,6 +218,26 @@ async def test_get_price_history_empty_shape_records_current_price_only() -> Non
 
 
 @pytest.mark.asyncio
+async def test_get_active_deals_shape_records_coupon_amount_fields() -> None:
+    # get_active_deals returns discount_value / min_spend / max_discount per
+    # coupon. An answer quoting "min $100, max $75" scored unverifiable because
+    # none of these keys were recorded.
+    ledger = reset_grounding_ledger()
+    ctx = _function_context(
+        {
+            "coupons": [
+                {"code": "TECHSAVE", "discount_value": 15.0, "min_spend": 100.0, "max_discount": 75.0},
+                {"code": "FREESHIP", "discount_value": 10.0, "min_spend": None, "max_discount": None},
+            ]
+        }
+    )
+    await GroundingLedgerMiddleware().process(ctx, _noop)
+
+    assert {15.0, 100.0, 75.0, 10.0} <= ledger.known_amounts
+    assert 99.0 not in ledger.known_amounts
+
+
+@pytest.mark.asyncio
 async def test_records_a_product_from_the_real_content_wrapped_runtime_shape() -> None:
     # Every other test in this file calls the middleware with a bare dict,
     # which is NOT what context.result actually is in production -- MAF
