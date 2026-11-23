@@ -316,6 +316,9 @@ class RunRecord(BaseModel):
     guardrail_flags: dict[str, bool] = Field(default_factory=dict)
     error: str | None = None
     fixture_missing: bool = False
+    # The run was stopped by the cost/token budget (``COST_BUDGET_*``) and answered with its fixed refusal text.
+    # Nothing about quality was measured, so the case is left out of every mean (see ``evals/scoring.py``).
+    budget_exceeded: bool = False
     # Workflow nodes entered, in order (``node`` frames / ``node_enter`` events). Empty in tool mode.
     nodes: list[str] = Field(default_factory=list)
     # Facts this target could not observe (``http`` target: ``hitl``, ``denial``, ``guardrail_flags``, ``tokens``,

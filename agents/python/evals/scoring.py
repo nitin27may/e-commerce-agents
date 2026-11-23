@@ -83,8 +83,18 @@ def score_completeness_keyword(response_text: str, expected_fields: list[str]) -
     return len(found) / len(expected_fields), found, missing
 
 
-def weighted_overall(groundedness: float, correctness: float, completeness: float) -> float:
+def weighted_overall(groundedness: float, correctness: float, completeness: float | None) -> float:
+    """The 0.4/0.4/0.2 weighting. ``completeness=None`` (no judge verdict exists) reweights the other two to 1."""
+    if completeness is None:
+        return (groundedness * GROUNDEDNESS_WEIGHT + correctness * CORRECTNESS_WEIGHT) / (
+            GROUNDEDNESS_WEIGHT + CORRECTNESS_WEIGHT
+        )
     return groundedness * GROUNDEDNESS_WEIGHT + correctness * CORRECTNESS_WEIGHT + completeness * COMPLETENESS_WEIGHT
+
+
+def judge_unavailable(record: RunRecord) -> bool:
+    """The judge could not give a verdict (content filter), so completeness was not measured."""
+    return record.judge is not None and record.judge.failure_mode == "judge_unavailable"
 
 
 def check_assertions(
@@ -214,6 +224,18 @@ def _score_turns(record: RunRecord, threshold: float) -> RunRecord:
 
 
 def _score_single(record: RunRecord, threshold: float) -> RunRecord:
+    if record.budget_exceeded:
+        return record.model_copy(
+            update={
+                "scores": CaseScores(),
+                "fields_found": [],
+                "fields_missing": [],
+                "assertion_failures": [],
+                "pass_threshold": threshold,
+                "passed": False,
+            }
+        )
+
     from evals.scorers.db_groundedness import reclassify_user_supplied, score_from_report
 
     expected = record.expected
@@ -231,14 +253,17 @@ def _score_single(record: RunRecord, threshold: float) -> RunRecord:
     if expected.route:
         correctness = score_routing(record.routes, expected.route)
 
-    if record.judge is not None:
+    unavailable = judge_unavailable(record)
+    if unavailable:
+        completeness, found, missing = 0.0, [], []
+    elif record.judge is not None:
         completeness = record.judge.score
         found = list(expected.fields) if completeness >= 1.0 else []
         missing = [] if completeness >= 1.0 else list(expected.fields)
     else:
         completeness, found, missing = score_completeness_keyword(record.response, expected.fields)
 
-    overall = weighted_overall(groundedness, correctness, completeness)
+    overall = weighted_overall(groundedness, correctness, None if unavailable else completeness)
     failures = check_assertions(
         expected, record.tool_calls, record.denied, record.hitl_requested, record.not_observable, record.routes
     )

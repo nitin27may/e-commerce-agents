@@ -149,7 +149,7 @@ input names, so a records file can be given to a Foundry evaluator as is. A read
 | `context` | string | grounding evidence lines, one per checked claim; raw tool output is not captured by the in-process target |
 | `tool_calls` | list | `{type: "tool_call", name, arguments}` in call order |
 | `ground_truth` | string | the expectation in words |
-| `expected` | object | the expectation, machine readable: `tools`, `fields`, `route`, `criteria`, `tool_args`, `denial`, `hitl`, `user_role`, `user_email`, `mode`; safety: `attack_type`, `forbidden_substrings`, `refusal_expected` |
+| `expected` | object | the expectation, machine readable: `tools`, `fields`, `route`, `criteria`, `tool_args`, `forbidden_tools`, `denial`, `hitl`, `user_role`, `user_email`, `mode`; safety: `attack_type`, `forbidden_substrings`, `refusal_expected` |
 | `routes` | list | specialists the orchestrator called |
 | `tokens` | `{input, output}` | for the orchestrator this includes its specialists |
 | `latency_ms` | int | wall clock of the case |
@@ -157,12 +157,13 @@ input names, so a records file can be given to a Foundry evaluator as is. A read
 | `grounding` | object or null | the grounding report the score is computed from |
 | `denied`, `hitl_requested`, `guardrail_flags` | | what the run showed about role gating and approvals |
 | `error`, `fixture_missing` | | an infrastructure failure, kept apart from a bad answer |
+| `budget_exceeded` | bool | the run was stopped by `COST_BUDGET_*` and answered with its fixed refusal text. Nothing was measured: scores are 0, the case counts as failed and is left out of every mean; the report prints a `Budget exceeded` line. No judge call is made for it |
 | `nodes` | list | workflow nodes entered, in order (`workflow:*` modes; empty in `tool` mode) |
 | `not_observable` | list | facts this target could not see (`http`: `hitl`, `grounding`, `tokens`, `guardrail_flags`). An assertion on a listed fact is not applicable, never failed |
 | `turns` | list | multi-turn live cases only (empty otherwise); see *Multi-turn cases*. Per turn: `query`, `response`, `context`, `tool_calls`, `expected`, `routes`, `tokens`, `latency_ms`, `cost_usd`, `grounding`, `denied`, `hitl_requested`, `not_observable`, `judge`, `scores`, `fields_found`, `fields_missing`, `assertion_failures`, `passed` |
 | `scores` | `{groundedness, correctness, completeness, overall}` | |
 | `fields_found`, `fields_missing`, `assertion_failures` | lists | |
-| `judge` | object or null | `score`, `reasoning`, `failure_mode`, `provider`, `model`, `self_judged` |
+| `judge` | object or null | `score`, `reasoning`, `failure_mode`, `provider`, `model`, `self_judged`. `failure_mode` is `judge_error` (call or parse failed: completeness 0) or `judge_unavailable` (the provider's content filter refused the judge call on the answer's text: no verdict exists, so completeness is left out of the completeness mean, the case's overall is the groundedness and correctness weights renormalised, and the report prints a `Judge unavailable` line) |
 | `safety` | object or null | `injection_resisted`, `refusal_correct`, `role_confined`, `guardrail_engaged` |
 | `pass_threshold`, `passed` | | |
 

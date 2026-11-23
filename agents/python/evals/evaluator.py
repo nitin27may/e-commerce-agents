@@ -43,6 +43,7 @@ from evals.records import (
     utc_now,
 )
 from shared.cost import estimate_cost
+from shared.guardrails.cost_budget_middleware import is_budget_refusal
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +130,10 @@ class EvalResult:
     judge_reasoning: str | None = None
     error: str | None = None
     fixture_missing: bool = False
+    # Left out of the means: the run was stopped by the cost budget (nothing measured), or the judge's call was
+    # refused by the provider's content filter (completeness not measured).
+    budget_exceeded: bool = False
+    judge_unavailable: bool = False
     passed: bool = False
     # Schema v2 assertions that did not hold. They never move the scores; they
     # fail the case and the run, since a regression here is a behaviour change
@@ -157,6 +162,8 @@ class EvalResult:
             judge_reasoning=record.judge.reasoning if record.judge else None,
             error=record.error,
             fixture_missing=record.fixture_missing,
+            budget_exceeded=record.budget_exceeded,
+            judge_unavailable=scoring.judge_unavailable(record),
             passed=record.passed,
             assertion_failures=record.assertion_failures,
             repeat=record.repeat,
@@ -206,6 +213,16 @@ class EvalSummary:
         return sum(len(r.assertion_failures) for r in self.results)
 
     @property
+    def budget_exceeded_cases(self) -> int:
+        """Cases the cost/token budget stopped: excluded from every mean, since nothing was measured."""
+        return sum(1 for r in self.results if r.budget_exceeded)
+
+    @property
+    def judge_unavailable_cases(self) -> int:
+        """Cases whose judge call the provider's content filter refused: excluded from the completeness mean."""
+        return sum(1 for r in self.results if r.judge_unavailable)
+
+    @property
     def missing_fixtures(self) -> int:
         """Cases that failed because their replay fixture was absent.
 
@@ -235,6 +252,8 @@ class EvalSummary:
             "total_tokens_out": self.total_tokens_out,
             "estimated_cost_usd": None if self.estimated_cost_usd is None else round(self.estimated_cost_usd, 4),
             "missing_fixtures": self.missing_fixtures,
+            "budget_exceeded_cases": self.budget_exceeded_cases,
+            "judge_unavailable_cases": self.judge_unavailable_cases,
             "assertion_failures": self.assertion_failures,
             "results": [
                 {
@@ -411,16 +430,19 @@ def summarize_records(
 
     per_repeat: dict[str, list[float]] = {key: [] for key in TRACKED_SCORES}
     for index in range(repeats):
-        rows = [r for r in summary.results if r.repeat == index]
+        # A budget-stopped case measured nothing, so it is in no mean; a case whose judge was refused by the
+        # content filter is in every mean but completeness.
+        rows = [r for r in summary.results if r.repeat == index and not r.budget_exceeded]
         if not rows:
             continue
         n = len(rows)
         groundedness = sum(r.groundedness_score for r in rows) / n
         correctness = sum(r.correctness_score for r in rows) / n
-        completeness = sum(r.completeness_score for r in rows) / n
+        judged = [r for r in rows if not r.judge_unavailable]
+        completeness = sum(r.completeness_score for r in judged) / len(judged) if judged else None
         per_repeat["avg_groundedness"].append(groundedness)
         per_repeat["avg_correctness"].append(correctness)
-        per_repeat["avg_completeness"].append(completeness)
+        per_repeat["avg_completeness"].append(completeness if completeness is not None else 0.0)
         per_repeat["overall_score"].append(scoring.weighted_overall(groundedness, correctness, completeness))
 
     if per_repeat["overall_score"]:
@@ -640,6 +662,12 @@ class AgentEvaluator:
             else:
                 fallback = await self._score_groundedness_fallback(response_text, case.criteria)
             record = record.model_copy(update={"scores": CaseScores(groundedness=fallback)})
+
+        # The run was stopped by the cost budget and answered with its fixed refusal: nothing to measure, and
+        # no judge call to spend on it.
+        if is_budget_refusal(response_text):
+            record = record.model_copy(update={"budget_exceeded": True})
+            return EvalResult.from_record(scoring.score_record(record))
 
         # A call parked for approval answers with no text by design, and a case that expects the park lists no
         # fields: there is nothing for a judge to read, and it would score the empty reply 0 ("empty_response").
@@ -873,6 +901,16 @@ def format_summary_report(summary: EvalSummary, verbose: bool = False) -> str:
         lines.append(f"  Total cases: {summary.total_cases}")
     lines.append(f"  Passed:      {summary.passed_cases}")
     lines.append(f"  Failed:      {summary.failed_cases}")
+    if summary.budget_exceeded_cases:
+        lines.append(
+            f"  Budget exceeded: {summary.budget_exceeded_cases} case(s) stopped by the cost budget; "
+            "counted as failed, left out of every mean below"
+        )
+    if summary.judge_unavailable_cases:
+        lines.append(
+            f"  Judge unavailable: {summary.judge_unavailable_cases} case(s) the judge's content filter refused; "
+            "left out of the completeness mean"
+        )
     lines.append("-" * 70)
     lines.append(f"  Groundedness:  {_score_text(summary, 'avg_groundedness')}")
     lines.append(f"  Correctness:   {_score_text(summary, 'avg_correctness')}")
@@ -911,6 +949,10 @@ def format_summary_report(summary: EvalSummary, verbose: bool = False) -> str:
                 lines.append(f"    Missing fields: {', '.join(r.fields_missing)}")
             if r.judge_reasoning:
                 lines.append(f"    Judge: {r.judge_reasoning}")
+            if r.budget_exceeded:
+                lines.append("    Budget exceeded: not scored")
+            if r.judge_unavailable:
+                lines.append("    Judge unavailable: completeness not scored")
             if r.error:
                 lines.append(f"    Error: {r.error}")
             lines.append(f"    Latency: {r.latency_ms}ms")
