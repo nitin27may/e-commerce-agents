@@ -140,6 +140,16 @@ input names, so a records file can be given to a Foundry evaluator as is. A read
 Gotcha: a case with no grounding report (`GROUNDING_MODE=off`) was scored from the database at run time;
 a re-score keeps that stored groundedness because it cannot repeat the database check.
 
+## Community results
+
+`evals/community/` holds result files contributed for other providers and models: a versioned JSON header (setup,
+commit, date, repeats, cost, submitter, judge) with the per-suite scores and spread, and optionally the records.
+`python -m evals.community_validate <file>` checks the schema and the setup, re-scores attached records with
+`evals.rescore` and compares them with the header, and refuses secret-looking strings, absurd scores and an
+undisclosed or unlabelled self-judge. `scripts/build_eval_scorecard.py` shows accepted files in a separate
+"Community-submitted, not verified by the maintainers" table. They are never baselines. Format, how to run and
+how to submit: `evals/community/README.md`. `evals/community/sample/` is a fixture for the tests and is never shown.
+
 ## Repeats and the regression threshold
 
 `--repeats k` runs the dataset `k` times. The default is 1 under `LLM_PROVIDER=replay` (replay is exact) and

@@ -28,6 +28,9 @@ python3 scripts/check_tutorial_readmes.py --check
 python3 scripts/check_tutorial_coverage.py --check
 ```
 
+- [ ] Adding eval results for your own provider? Put the file under `agents/python/evals/community/`, run
+      `python -m evals.community_validate <file>` and regenerate the scorecard
+      (`agents/python/evals/community/README.md`)
 - [ ] Changed a prompt, tool schema or tool output? Replay eval smoke re-run with zero
       fixture misses (recipe in `agents/python/evals/fixtures/README.md`)
 
