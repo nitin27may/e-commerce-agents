@@ -14,18 +14,24 @@ import asyncpg
 import pytest
 import pytest_asyncio
 
+import shared.config as config_mod
 import shared.cost as cost
 import shared.db as shared_db
-from shared.config import settings
 from shared.run_usage import ORCHESTRATOR, RunUsage, zero_usage
 from shared.usage_db import log_agent_usage, usage_columns
 from tests.conftest import POSTGRES_DIR
 
 
+def _settings():
+    """The live settings object. ``test_env_aliases`` reloads ``shared.config``, so a name bound at import time can
+    be stale, and cost.py reads ``shared.config.settings`` at call time."""
+    return config_mod.settings
+
+
 @pytest.fixture(autouse=True)
 def _pricing(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    monkeypatch.setattr(settings, "PRICING_FILE", "")
-    monkeypatch.setattr(settings, "PRICING_OVERRIDES_FILE", "")
+    monkeypatch.setattr(_settings(), "PRICING_FILE", "")
+    monkeypatch.setattr(_settings(), "PRICING_OVERRIDES_FILE", "")
     cost.reload_pricing()
     yield
     cost.reload_pricing()
@@ -56,7 +62,7 @@ def test_an_unpriced_model_has_no_source() -> None:
 def test_the_digest_changes_when_the_file_changes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path = tmp_path / "prices.yaml"
     path.write_text("version: 1\nmodels:\n  m:\n    input_per_1m: 1\n    output_per_1m: 2\n")
-    monkeypatch.setattr(settings, "PRICING_FILE", str(path))
+    monkeypatch.setattr(_settings(), "PRICING_FILE", str(path))
     cost.reload_pricing()
     first = cost.price_source("m")
     path.write_text("version: 1\nmodels:\n  m:\n    input_per_1m: 1\n    output_per_1m: 3\n")
@@ -67,7 +73,7 @@ def test_the_digest_changes_when_the_file_changes(tmp_path: Path, monkeypatch: p
 def test_an_override_names_itself_not_the_shipped_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     override = tmp_path / "mine.yaml"
     override.write_text("version: 1\nmodels:\n  local-llama:\n    input_per_1m: 0\n    output_per_1m: 0\n")
-    monkeypatch.setattr(settings, "PRICING_OVERRIDES_FILE", str(override))
+    monkeypatch.setattr(_settings(), "PRICING_OVERRIDES_FILE", str(override))
     cost.reload_pricing()
     assert (cost.price_source("local-llama") or "").startswith("override:mine.yaml#")
     assert (cost.price_source("gpt-4.1") or "").startswith("models.yaml#")
@@ -86,7 +92,7 @@ def test_usage_columns_carry_the_source_and_a_timestamp_only_when_a_price_was_ap
 def test_a_run_priced_from_two_files_lists_both_sources(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     override = tmp_path / "mine.yaml"
     override.write_text("version: 1\nmodels:\n  local-llama:\n    input_per_1m: 0\n    output_per_1m: 0\n")
-    monkeypatch.setattr(settings, "PRICING_OVERRIDES_FILE", str(override))
+    monkeypatch.setattr(_settings(), "PRICING_OVERRIDES_FILE", str(override))
     cost.reload_pricing()
     usage = RunUsage()
     usage.add(ORCHESTRATOR, {"input_token_count": 10, "output_token_count": 1}, "gpt-4.1")
