@@ -95,7 +95,7 @@ def check_assertions(
     not_observable: list[str] | None = None,
     routes: list[str] | None = None,
 ) -> list[str]:
-    """Schema-v2 assertions: tool arguments, role denial, human approval. They never move a score.
+    """Schema-v2 assertions: tool arguments, forbidden tools, role denial, human approval. They never move a score.
 
     An assertion on a fact the target could not observe (``not_observable``, set by the ``http`` target) is
     not applicable: it neither passes nor fails.
@@ -114,6 +114,8 @@ def check_assertions(
         steps = [{"tool_name": c.name, "tool_input": c.arguments} for c in tool_calls]
         verdict = score_tool_args(steps, expected.tool_args)
         failures.extend(f"tool_args: {name} was not called with {expected.tool_args[name]}" for name in verdict.missing)
+    called = {c.name for c in tool_calls}
+    failures.extend(f"forbidden_tools: {name} was called" for name in expected.forbidden_tools if name in called)
     if expected.denial is not None and "denial" not in skip and denied != expected.denial:
         failures.append(f"expect_denial={expected.denial} but denied={denied}")
     if expected.hitl is not None and "hitl" not in skip and hitl_requested != expected.hitl:

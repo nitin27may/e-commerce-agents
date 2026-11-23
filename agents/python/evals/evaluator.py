@@ -105,6 +105,8 @@ class EvalCase:
     # Multi-turn (live cases only): the conversation, run in order in one session. ``input`` is then the last turn's
     # message and the expectations live in the turns. None for every single-turn case.
     turns: list[EvalTurn] | None = None
+    # Tools that must NOT be called. An assertion only: it never moves a score.
+    forbidden_tools: list[str] | None = None
 
 
 @dataclass
@@ -269,6 +271,14 @@ def _parse_route_list(index: int, key: str, raw: Any) -> list[str] | None:
     return raw
 
 
+def _parse_forbidden_tools(index: int, raw: Any) -> list[str] | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or not all(isinstance(v, str) and v for v in raw):
+        raise ValueError(f"Dataset entry {index}: forbidden_tools must be a list of tool names")
+    return raw
+
+
 def _parse_expected_tool_args(index: int, raw: Any) -> dict[str, dict[str, Any]] | None:
     if raw is None:
         return None
@@ -359,6 +369,7 @@ def load_dataset(path: str | Path) -> list[EvalCase]:
                 expected_routes=_parse_route_list(i, "expected_routes", entry.get("expected_routes")),
                 forbidden_routes=_parse_route_list(i, "forbidden_routes", entry.get("forbidden_routes")),
                 why=entry.get("why"),
+                forbidden_tools=_parse_forbidden_tools(i, entry.get("forbidden_tools")),
             )
         )
 
@@ -571,6 +582,7 @@ class AgentEvaluator:
             hitl=case.expect_hitl,
             routes=case.expected_routes or [],
             forbidden_routes=case.forbidden_routes or [],
+            forbidden_tools=case.forbidden_tools or [],
             user_role=case.user_role,
             user_email=case.user_email,
             mode=case.mode,
@@ -800,6 +812,7 @@ class AgentEvaluator:
             hitl=case.expect_hitl,
             routes=case.expected_routes or [],
             forbidden_routes=case.forbidden_routes or [],
+            forbidden_tools=case.forbidden_tools or [],
         )
         calls = [ToolCall(name=c.get("tool_name", ""), arguments=c.get("tool_input")) for c in outcome.tool_calls]
         return scoring.check_assertions(

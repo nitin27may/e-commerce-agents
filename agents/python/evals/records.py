@@ -205,6 +205,8 @@ class Expected(BaseModel):
     tool_args: dict[str, dict[str, Any]] | None = None
     denial: bool | None = None
     hitl: bool | None = None
+    # Tools that must not have been called (assertion only).
+    forbidden_tools: list[str] = Field(default_factory=list)
     user_role: str | None = None
     user_email: str | None = None
     # Orchestration mode the case runs through (``workflow:pre-purchase``); None is the default ``tool`` mode.
