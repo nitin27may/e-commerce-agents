@@ -199,7 +199,7 @@ came from is out of sync too; open an issue.
 The eval harness (`agents/python/evals/harness.py`) runs every specialist agent's golden dataset,
 a fixed set of questions with expected answers, through the same production path a user's request
 takes. [The evaluation concept page](../../docs/concepts/12-evaluation.md) explains the method.
-The committed baselines (`agents/python/evals/baselines/*.json`) are low:
+The committed baselines (`agents/python/evals/baselines/python-inproc-replay/*.json`) are low:
 
 | Agent | Groundedness | Correctness | Completeness | Overall |
 |---|---|---|---|---|
@@ -233,7 +233,7 @@ you can check.
   mode's `capabilities` reports this as `is_graph`. See
   [Chapter 07 — Graphs in agent systems](../../docs/concepts/07-graphs-in-agent-systems.md).
 - **The eval table above goes out of date.** These are the scores at the committed baseline. If
-  you improve a prompt or add a tool, re-run the suite and update `evals/baselines/`, or the
+  you improve a prompt or add a tool, re-run the suite and update `evals/baselines/python-inproc-replay/`, or the
   numbers in this chapter stop being true.
 
 ## What was deliberately left out, and why

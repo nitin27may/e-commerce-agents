@@ -17,7 +17,7 @@ claims.
 
 This costs real money and cannot run under `LLM_PROVIDER=replay` — replay
 fixtures return instantly, which makes latency meaningless. It is deliberately
-not wired into CI; the PR gate stays the free replay-driven smoke suite.
+not wired into CI; the PR gate stays the free replay-regression suite.
 
 Usage::
 

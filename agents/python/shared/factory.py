@@ -52,20 +52,22 @@ logger = logging.getLogger(__name__)
 # ─────────────────────── Validators ───────────────────────
 
 
-def _validate_openai() -> None:
-    if not settings.OPENAI_API_KEY:
+def _validate_openai(cfg: Any = None) -> None:
+    cfg = cfg if cfg is not None else settings
+    if not cfg.OPENAI_API_KEY:
         raise ValueError(
             "OPENAI_API_KEY is required when LLM_PROVIDER=openai. Set it in .env or switch to LLM_PROVIDER=azure."
         )
 
 
-def _validate_azure() -> None:
+def _validate_azure(cfg: Any = None) -> None:
+    cfg = cfg if cfg is not None else settings
     missing = []
-    if not settings.AZURE_OPENAI_ENDPOINT:
+    if not cfg.AZURE_OPENAI_ENDPOINT:
         missing.append("AZURE_OPENAI_ENDPOINT")
-    if settings.AZURE_OPENAI_AUTH == "key" and not settings.AZURE_OPENAI_KEY:
+    if cfg.AZURE_OPENAI_AUTH == "key" and not cfg.AZURE_OPENAI_KEY:
         missing.append("AZURE_OPENAI_KEY (or AZURE_OPENAI_API_KEY; or AZURE_OPENAI_AUTH=identity)")
-    if not settings.AZURE_OPENAI_DEPLOYMENT:
+    if not cfg.AZURE_OPENAI_DEPLOYMENT:
         missing.append("AZURE_OPENAI_DEPLOYMENT (or AZURE_OPENAI_DEPLOYMENT_NAME)")
     if missing:
         raise ValueError(
@@ -77,7 +79,7 @@ def _validate_azure() -> None:
 
 
 def build_openai_client(
-    *, model: str, api_key: str, base_url: str | None
+    *, model: str, api_key: str, base_url: str | None, cfg: Any = None
 ) -> OpenAIChatClient | OpenAIChatCompletionClient:
     """Construct the ``openai``-provider client for the configured ``LLM_API``.
 
@@ -85,13 +87,13 @@ def build_openai_client(
     ``chat_completions`` -> ``OpenAIChatCompletionClient`` (``POST /chat/completions``).
     Shared with the replay recorder so RECORD=true talks to the endpoint the same way.
     """
-    if settings.LLM_API == "chat_completions":
+    if (cfg if cfg is not None else settings).LLM_API == "chat_completions":
         return OpenAIChatCompletionClient(model=model, api_key=api_key, base_url=base_url)
     return OpenAIChatClient(model=model, api_key=api_key, base_url=base_url)
 
 
-def _validate_anthropic() -> None:
-    if not settings.ANTHROPIC_API_KEY.strip():
+def _validate_anthropic(cfg: Any = None) -> None:
+    if not (cfg if cfg is not None else settings).ANTHROPIC_API_KEY.strip():
         raise ValueError(
             "ANTHROPIC_API_KEY is required when LLM_PROVIDER=anthropic. Set it in .env or switch to "
             "LLM_PROVIDER=openai or azure."
@@ -160,23 +162,77 @@ def get_chat_client(agent_name: str | None = None) -> OpenAIChatClient | OpenAIC
     This matches the decision documented in the Ch01/Ch07 tutorial code —
     see docs/architecture.md for the full rationale.
     """
-    global_provider = settings.LLM_PROVIDER.strip().lower()
+    return _build_chat_client(settings, agent_name, track_model=True)
+
+
+def judge_settings(cfg: Any = None) -> Any:
+    """``cfg`` with the ``JUDGE_*`` settings laid over the chat settings, for ``_build_chat_client``.
+
+    The judge is configured with the same vocabulary as the model under test: ``JUDGE_PROVIDER``
+    (``openai | azure | anthropic | replay``), ``JUDGE_MODEL`` (an Azure deployment for ``azure``),
+    ``JUDGE_BASE_URL`` (an OpenAI-compatible endpoint, or the Azure endpoint) and ``JUDGE_API_KEY``. The
+    base URL is never inherited from the chat settings (the judge is a different endpoint on purpose); the
+    key is inherited only when the judge uses the same provider as the model under test. ``JUDGE_API``
+    picks ``responses`` or ``chat_completions`` for the ``openai`` provider (default: ``LLM_API``).
+    """
+    base = cfg if cfg is not None else settings
+    provider = (base.JUDGE_PROVIDER or "").strip().lower()
+    if not provider:
+        raise ValueError("JUDGE_PROVIDER is not set")
+    update: dict[str, Any] = {"LLM_PROVIDER": provider, "LLM_BASE_URL": base.JUDGE_BASE_URL}
+    if base.JUDGE_API:
+        update["LLM_API"] = base.JUDGE_API
+    model = base.JUDGE_MODEL
+    if provider == "openai":
+        update["LLM_MODEL"] = model
+        update["OPENAI_API_KEY"] = base.JUDGE_API_KEY or (
+            base.OPENAI_API_KEY if base.LLM_PROVIDER.strip().lower() == "openai" else ""
+        )
+    elif provider == "azure":
+        update["AZURE_OPENAI_DEPLOYMENT"] = model
+        if base.JUDGE_BASE_URL:
+            update["AZURE_OPENAI_ENDPOINT"] = base.JUDGE_BASE_URL
+        if base.JUDGE_API_KEY:
+            update["AZURE_OPENAI_KEY"] = base.JUDGE_API_KEY
+    elif provider == "anthropic":
+        update["ANTHROPIC_MODEL"] = model
+        if base.JUDGE_API_KEY:
+            update["ANTHROPIC_API_KEY"] = base.JUDGE_API_KEY
+    return base.model_copy(update=update)
+
+
+def get_judge_chat_client() -> OpenAIChatClient | OpenAIChatCompletionClient | Any:
+    """MAF chat client for the eval judge (``JUDGE_*`` settings), through the same plumbing as the chat client.
+
+    Does not touch ``current_agent_model``: the judge's model must not become the model usage is priced as.
+    """
+    return _build_chat_client(judge_settings(settings), None, track_model=False)
+
+
+def _build_chat_client(
+    cfg: Any, agent_name: str | None, *, track_model: bool
+) -> OpenAIChatClient | OpenAIChatCompletionClient | Any:
+    """The body of ``get_chat_client``, over any settings object (the judge passes its own overlay)."""
+
+    def _note_model(name: str) -> None:
+        if track_model:
+            current_agent_model.set(name)
+
+    global_provider = cfg.LLM_PROVIDER.strip().lower()
 
     if global_provider == "replay":
         from shared.replay_client import ReplayChatClient
 
-        logger.info(
-            "Creating replay chat client (record=%s, fixtures_dir=%s)", settings.RECORD, settings.REPLAY_FIXTURES_DIR
-        )
+        logger.info("Creating replay chat client (record=%s, fixtures_dir=%s)", cfg.RECORD, cfg.REPLAY_FIXTURES_DIR)
         return ReplayChatClient(
-            fixtures_dir=settings.REPLAY_FIXTURES_DIR,
-            record=settings.RECORD,
-            record_provider=settings.REPLAY_RECORD_PROVIDER,
+            fixtures_dir=cfg.REPLAY_FIXTURES_DIR,
+            record=cfg.RECORD,
+            record_provider=cfg.REPLAY_RECORD_PROVIDER,
         )
 
     if global_provider not in ("openai", "azure", "anthropic"):
         raise ValueError(
-            f"Unknown LLM_PROVIDER: {settings.LLM_PROVIDER!r}. Must be 'openai', 'azure', 'anthropic', or 'replay'."
+            f"Unknown LLM_PROVIDER: {cfg.LLM_PROVIDER!r}. Must be 'openai', 'azure', 'anthropic', or 'replay'."
         )
 
     override = _resolve_override(agent_name)
@@ -194,46 +250,46 @@ def get_chat_client(agent_name: str | None = None) -> OpenAIChatClient | OpenAIC
             )
 
     if provider == "anthropic":
-        _validate_anthropic()
-        model = override_model or settings.ANTHROPIC_MODEL
+        _validate_anthropic(cfg)
+        model = override_model or cfg.ANTHROPIC_MODEL
         logger.info("Creating Anthropic chat client (model=%s)", model)
-        current_agent_model.set(model if override_model else "")
+        _note_model(model if override_model else "")
         from shared.anthropic_client import build_anthropic_client
 
-        return build_anthropic_client(model=model, api_key=settings.ANTHROPIC_API_KEY)
+        return build_anthropic_client(model=model, api_key=cfg.ANTHROPIC_API_KEY)
 
     if provider == "openai":
-        _validate_openai()
-        model = override_model or settings.LLM_MODEL
+        _validate_openai(cfg)
+        model = override_model or cfg.LLM_MODEL
         # LLM_BASE_URL belongs to the global openai endpoint; an agent that switches *to* openai
         # from another global provider talks to api.openai.com.
-        base_url = (settings.LLM_BASE_URL or None) if global_provider == "openai" else None
-        logger.info("Creating OpenAI chat client (api=%s, model=%s, base_url=%s)", settings.LLM_API, model, base_url)
-        current_agent_model.set(model if override_model else "")
-        return build_openai_client(model=model, api_key=settings.OPENAI_API_KEY, base_url=base_url)
+        base_url = (cfg.LLM_BASE_URL or None) if global_provider == "openai" else None
+        logger.info("Creating OpenAI chat client (api=%s, model=%s, base_url=%s)", cfg.LLM_API, model, base_url)
+        _note_model(model if override_model else "")
+        return build_openai_client(model=model, api_key=cfg.OPENAI_API_KEY, base_url=base_url, cfg=cfg)
 
-    _validate_azure()
-    deployment = override_model or settings.AZURE_OPENAI_DEPLOYMENT
-    api_version = settings.AZURE_OPENAI_API_VERSION
+    _validate_azure(cfg)
+    deployment = override_model or cfg.AZURE_OPENAI_DEPLOYMENT
+    api_version = cfg.AZURE_OPENAI_API_VERSION
     logger.info(
         "Creating Azure OpenAI chat-completions client (deployment=%s, endpoint=%s, api_version=%s)",
         deployment,
-        settings.AZURE_OPENAI_ENDPOINT,
+        cfg.AZURE_OPENAI_ENDPOINT,
         api_version,
     )
-    current_agent_model.set(deployment if override_model else "")
-    if settings.AZURE_OPENAI_AUTH == "identity":
+    _note_model(deployment if override_model else "")
+    if cfg.AZURE_OPENAI_AUTH == "identity":
         # No key is read or sent: MAF turns the credential into a bearer-token provider.
         return OpenAIChatCompletionClient(
             model=deployment,
-            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+            azure_endpoint=cfg.AZURE_OPENAI_ENDPOINT,
             credential=azure_credential(),
             api_version=api_version,
         )
     return OpenAIChatCompletionClient(
         model=deployment,
-        azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
-        api_key=settings.AZURE_OPENAI_KEY,
+        azure_endpoint=cfg.AZURE_OPENAI_ENDPOINT,
+        api_key=cfg.AZURE_OPENAI_KEY,
         api_version=api_version,
     )
 

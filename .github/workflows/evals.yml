@@ -2,9 +2,11 @@ name: Evals
 
 # Two jobs, split by cost:
 #
-# - `smoke` runs on every PR: every dataset (including orchestrator_routing.json
-#   and red_team.json), all against LLM_PROVIDER=replay with deterministic
-#   scorers only, compared against evals/baselines/. Zero cost, zero
+# - `replay-regression` ("Replay regression") runs on every PR: every dataset (including
+#   orchestrator_routing.json and red_team.json), all against LLM_PROVIDER=replay with
+#   deterministic scorers only, compared against evals/baselines/python-inproc-replay/. It gates on fixture
+#   misses, deterministic assertions and a score drop against the baseline. Its score is a
+#   regression signal about the recorded answers, never a measure of quality. Zero cost, zero
 #   credentials — see agents/python/evals/fixtures/README.md for how the
 #   cassettes were recorded and why the five specialist services still need
 #   to be booted (in replay mode, no key) before the orchestrator/safety
@@ -59,7 +61,7 @@ env:
     "pricing-promotions":"http://localhost:8083","review-sentiment":"http://localhost:8084",
     "inventory-fulfillment":"http://localhost:8085"}
   THRESH: ${{ github.event.inputs.pass_threshold || '0.7' }}
-  # The smoke job replays frozen model output, so its absolute score is a
+  # The replay-regression job replays frozen model output, so its absolute score is a
   # property of the recording session, not of the pull request under test.
   # What a PR *can* change is measured by --baseline/--max-regression (and by
   # the missing-fixture check, which always fails the run). The 0.7 quality
@@ -67,8 +69,8 @@ env:
   SMOKE_THRESH: ${{ github.event.inputs.pass_threshold || '0' }}
 
 jobs:
-  smoke:
-    name: Smoke (replay, deterministic, free)
+  replay-regression:
+    name: Replay regression
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -145,8 +147,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: eval-results-smoke
-          path: agents/python/eval-*.json
+          name: eval-results-replay-regression
+          path: |
+            agents/python/eval-*.json
+            agents/python/eval-records-*.jsonl
           retention-days: 30
 
   full:
@@ -240,24 +244,24 @@ jobs:
           fail=0
           for a in product-discovery order-management pricing-promotions review-sentiment inventory-fulfillment; do
             ds="evals/datasets/${a//-/_}.json"
-            base="evals/baselines/${a//-/_}.json"
+            base="evals/baselines/python-inproc-replay/${a//-/_}.json"
             echo "::group::quality eval — $a"
             uv run python -m evals.run_evals --agent "$a" --dataset "$ds" \
-              --pass-threshold "$THRESH" --use-llm-judge \
-              --baseline "$base" --max-regression 0.05 \
+              --pass-threshold "$THRESH" --use-llm-judge --allow-self-judge --repeats 1 \
+              --baseline "$base" --records-out "eval-records-$a.jsonl" \
               --output-json "eval-$a.json" || fail=1
             echo "::endgroup::"
           done
           echo "::group::routing eval — orchestrator"
           uv run python -m evals.run_evals --agent orchestrator \
             --dataset evals/datasets/orchestrator_routing.json \
-            --pass-threshold "$THRESH" --use-llm-judge \
-            --baseline evals/baselines/orchestrator_routing.json --max-regression 0.05 \
-            --output-json eval-orchestrator.json || fail=1
+            --pass-threshold "$THRESH" --use-llm-judge --allow-self-judge --repeats 1 \
+            --baseline evals/baselines/python-inproc-replay/orchestrator_routing.json \
+            --records-out eval-records-orchestrator.jsonl --output-json eval-orchestrator.json || fail=1
           echo "::endgroup::"
           echo "::group::safety / red-team"
-          uv run python -m evals.run_evals --suite safety \
-            --pass-threshold 0.8 --output-json eval-safety.json || fail=1
+          uv run python -m evals.run_evals --suite safety --repeats 1 \
+            --pass-threshold 0.8 --records-out eval-records-safety.jsonl --output-json eval-safety.json || fail=1
           echo "::endgroup::"
           exit $fail
 
@@ -278,5 +282,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: eval-results-full
-          path: agents/python/eval-*.json
+          path: |
+            agents/python/eval-*.json
+            agents/python/eval-records-*.jsonl
           retention-days: 30

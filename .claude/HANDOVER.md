@@ -92,7 +92,7 @@ is clean (zero misses). A miss means a prompt, tool schema or tool output change
 4. Start the five specialists (`AGENT_NAME=... AGENT_PORT=808x uv run --no-project uvicorn <name>.main:app`)
    in their own process groups, wait for `/health`, then per agent:
    `uv run python -m evals.run_evals --agent <a> --dataset evals/datasets/<a>.json --pass-threshold 0.7
-   --use-llm-judge --baseline evals/baselines/<a>.json --max-regression 0.05 --verbose --output-json <out>`;
+   --use-llm-judge --baseline evals/baselines/python-inproc-replay/<a>.json --allow-self-judge --verbose --output-json <out>`;
    orchestrator uses `orchestrator_routing.json`; safety uses `--suite safety --pass-threshold 0.8`. This
    mirrors the `full` job in `.github/workflows/evals.yml`. Do not pass `--update-baseline`.
 5. Kill only the PIDs you started; `docker compose -p eca-live down -v`.

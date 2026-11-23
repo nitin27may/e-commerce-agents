@@ -14,23 +14,43 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from evals import scoring
 from evals.harness import ProductionRunner
+from evals.judge import JudgeConfig, resolve_judge
+from evals.records import (
+    CaseScores,
+    Expected,
+    JudgeRecord,
+    JudgeSetup,
+    RunRecord,
+    Setup,
+    Tokens,
+    ToolCall,
+    build_setup,
+    context_text,
+    current_chat_model,
+    ground_truth_text,
+    new_run_id,
+    utc_now,
+)
 from shared.cost import estimate_cost
 
 logger = logging.getLogger(__name__)
+
+# The scores a baseline tracks and a run reports mean and spread for.
+TRACKED_SCORES = ("avg_groundedness", "avg_correctness", "avg_completeness", "overall_score")
 
 
 def _current_model() -> str:
     from shared.config import settings
 
-    if settings.LLM_PROVIDER.lower() == "azure":
-        return settings.AZURE_OPENAI_DEPLOYMENT
-    return settings.LLM_MODEL
+    return current_chat_model(settings)
 
 
 @dataclass
@@ -85,6 +105,34 @@ class EvalResult:
     # fail the case and the run, since a regression here is a behaviour change
     # the score cannot see.
     assertion_failures: list[str] = field(default_factory=list)
+    repeat: int = 0
+    # The run record this result was derived from (the source of truth for ``--records-out``).
+    record: RunRecord | None = None
+
+    @classmethod
+    def from_record(cls, record: RunRecord) -> EvalResult:
+        return cls(
+            input=record.query,
+            groundedness_score=record.scores.groundedness,
+            correctness_score=record.scores.correctness,
+            completeness_score=record.scores.completeness,
+            overall_score=record.scores.overall,
+            tools_called=record.tools_called,
+            fields_found=record.fields_found,
+            fields_missing=record.fields_missing,
+            route_called=record.routes[0] if record.expected.route and record.routes else None,
+            latency_ms=record.latency_ms,
+            tokens_in=record.tokens.input,
+            tokens_out=record.tokens.output,
+            grounding=record.grounding,
+            judge_reasoning=record.judge.reasoning if record.judge else None,
+            error=record.error,
+            fixture_missing=record.fixture_missing,
+            passed=record.passed,
+            assertion_failures=record.assertion_failures,
+            repeat=record.repeat,
+            record=record,
+        )
 
 
 @dataclass
@@ -106,6 +154,22 @@ class EvalSummary:
     # None when the model is not in config/pricing/models.yaml (cost unknown, not zero).
     estimated_cost_usd: float | None = 0.0
     results: list[EvalResult] = field(default_factory=list)
+    # What produced the run, and how many times the dataset was run. ``total_cases`` / ``passed_cases`` /
+    # ``failed_cases`` and the token totals count every repeat; ``dataset_cases`` is one repeat's size.
+    # The ``avg_*`` scores are the mean over repeats and ``spread`` their sample standard deviation
+    # (empty with a single repeat: one run says nothing about its own noise).
+    setup: Setup | None = None
+    repeats: int = 1
+    dataset_cases: int = 0
+    spread: dict[str, float] = field(default_factory=dict)
+
+    @property
+    def records(self) -> list[RunRecord]:
+        return [r.record for r in self.results if r.record is not None]
+
+    def per_repeat(self, total: int) -> int:
+        """A run-wide total divided by the repeats: comparable with a baseline taken at any repeat count."""
+        return round(total / max(self.repeats, 1))
 
     @property
     def assertion_failures(self) -> int:
@@ -126,6 +190,10 @@ class EvalSummary:
         return {
             "agent_name": self.agent_name,
             "dataset_path": self.dataset_path,
+            "setup": self.setup.model_dump(mode="json") if self.setup else None,
+            "repeats": self.repeats,
+            "dataset_cases": self.dataset_cases or self.total_cases,
+            "spread": {k: round(v, 4) for k, v in self.spread.items()},
             "total_cases": self.total_cases,
             "passed_cases": self.passed_cases,
             "failed_cases": self.failed_cases,
@@ -158,6 +226,7 @@ class EvalSummary:
                     "error": r.error,
                     "fixture_missing": r.fixture_missing,
                     "assertion_failures": r.assertion_failures,
+                    "repeat": r.repeat,
                     "passed": r.passed,
                 }
                 for r in self.results
@@ -207,6 +276,81 @@ def load_dataset(path: str | Path) -> list[EvalCase]:
     return cases
 
 
+def summarize_records(
+    records: list[RunRecord],
+    *,
+    agent_name: str,
+    dataset_path: str,
+    setup: Setup | None,
+    repeats: int,
+    dataset_cases: int,
+) -> EvalSummary:
+    """Aggregate scored records into an ``EvalSummary``: mean over repeats, spread across them.
+
+    One code path for a live run and for ``--rescore``. The per-repeat score is the same arithmetic a
+    single run always used (average of the case scores, then the 0.4/0.4/0.2 weighting of the averages).
+    """
+    summary = EvalSummary(
+        agent_name=agent_name,
+        dataset_path=dataset_path,
+        total_cases=len(records),
+        setup=setup,
+        repeats=repeats,
+        dataset_cases=dataset_cases,
+    )
+    for rec in records:
+        result = EvalResult.from_record(rec)
+        summary.results.append(result)
+        if result.passed:
+            summary.passed_cases += 1
+        else:
+            summary.failed_cases += 1
+        summary.total_latency_ms += result.latency_ms
+        summary.total_tokens_in += result.tokens_in
+        summary.total_tokens_out += result.tokens_out
+
+    per_repeat: dict[str, list[float]] = {key: [] for key in TRACKED_SCORES}
+    for index in range(repeats):
+        rows = [r for r in summary.results if r.repeat == index]
+        if not rows:
+            continue
+        n = len(rows)
+        groundedness = sum(r.groundedness_score for r in rows) / n
+        correctness = sum(r.correctness_score for r in rows) / n
+        completeness = sum(r.completeness_score for r in rows) / n
+        per_repeat["avg_groundedness"].append(groundedness)
+        per_repeat["avg_correctness"].append(correctness)
+        per_repeat["avg_completeness"].append(completeness)
+        per_repeat["overall_score"].append(scoring.weighted_overall(groundedness, correctness, completeness))
+
+    if per_repeat["overall_score"]:
+        means = {key: sum(values) / len(values) for key, values in per_repeat.items()}
+        summary.avg_groundedness = means["avg_groundedness"]
+        summary.avg_correctness = means["avg_correctness"]
+        summary.avg_completeness = means["avg_completeness"]
+        summary.overall_score = means["overall_score"]
+        if len(per_repeat["overall_score"]) >= 2:
+            summary.spread = {key: _sample_stdev(values) for key, values in per_repeat.items()}
+
+    model = setup.chat_model if setup else _current_model()
+    summary.estimated_cost_usd = estimate_cost(model, summary.total_tokens_in, summary.total_tokens_out)
+    return summary
+
+
+def _tool_call_records(outcome: Any) -> list[ToolCall]:
+    """The outcome's tool calls in record shape (names only when a runner reports no arguments)."""
+    if outcome.tool_calls:
+        return [ToolCall(name=c.get("tool_name", ""), arguments=c.get("tool_input")) for c in outcome.tool_calls]
+    return [ToolCall(name=name) for name in outcome.tools_called]
+
+
+def _sample_stdev(values: list[float]) -> float:
+    if len(values) < 2:
+        return 0.0
+    mean = sum(values) / len(values)
+    return math.sqrt(sum((v - mean) ** 2 for v in values) / (len(values) - 1))
+
+
 class AgentEvaluator:
     """Runs evaluation cases against an agent (via ``ProductionRunner``) and scores results.
 
@@ -215,149 +359,178 @@ class AgentEvaluator:
         database (``shared/grounding/verifier.py``), not just "was a tool called".
       - Correctness (0-1): did it call the right tools / route to the right specialist?
       - Completeness (0-1): does the response cover what was expected? Keyword-alias
-        matching by default (fast, free, deterministic — the smoke suite's mode);
-        set ``use_llm_judge=True`` for a real judge call (the full suite's mode).
+        matching by default (fast, free, deterministic — the replay-regression suite's mode);
+        set ``use_llm_judge=True`` for a real judge call (the full suite's mode). The judge
+        is configured by ``JUDGE_*`` (``evals/judge.py``) and is never silently the model under test.
+
+    Every case yields a ``RunRecord`` (``result.record``); scoring happens in ``evals/scoring.py`` so a
+    stored record re-scores to the same numbers.
     """
 
-    def __init__(self, agent_name: str, pass_threshold: float = 0.7, *, use_llm_judge: bool = False) -> None:
+    def __init__(
+        self,
+        agent_name: str,
+        pass_threshold: float = 0.7,
+        *,
+        use_llm_judge: bool = False,
+        setup: Setup | None = None,
+        judge: JudgeConfig | None = None,
+        allow_self_judge: bool = False,
+    ) -> None:
         self.agent_name = agent_name
         self.pass_threshold = pass_threshold
         self.use_llm_judge = use_llm_judge
         self._runner = ProductionRunner(agent_name)
+        self._judge = judge
+        if use_llm_judge and self._judge is None:
+            from shared.config import settings
+
+            self._judge = resolve_judge(settings, allow_self=allow_self_judge)
+        if setup is None:
+            from shared.config import settings
+
+            setup = build_setup(settings, judge=self._judge.setup() if self._judge else JudgeSetup())
+        self.setup = setup
 
     async def run_once(self, user_input: str) -> dict[str, Any]:
         """Run a single input through the production path (used by the safety suite)."""
+        start = time.monotonic()
         outcome = await self._runner.run(user_input)
         return {
             "text": outcome.text,
             "tokens_in": outcome.tokens_in,
             "tokens_out": outcome.tokens_out,
             "tools_called": outcome.tools_called,
+            "tool_calls": outcome.tool_calls,
             "routes": outcome.routes,
             "grounding": outcome.grounding,
             "guardrail_flags": outcome.guardrail_flags,
+            "denied": outcome.denied,
+            "hitl_requested": outcome.hitl_requested,
+            "fixture_missing": outcome.fixture_missing,
+            "latency_ms": int((time.monotonic() - start) * 1000),
             "error": outcome.error,
         }
 
-    async def evaluate_dataset(self, dataset_path: str | Path) -> EvalSummary:
-        """Run all cases in a dataset and return aggregate scores."""
+    async def evaluate_dataset(self, dataset_path: str | Path, *, repeats: int = 1) -> EvalSummary:
+        """Run all cases in a dataset ``repeats`` times and return aggregate scores (mean over repeats)."""
         cases = load_dataset(dataset_path)
-        summary = EvalSummary(
+        repeats = max(repeats, 1)
+        records: list[RunRecord] = []
+        run_id = new_run_id()
+        for repeat in range(repeats):
+            for i, case in enumerate(cases):
+                case_id = f"{self.agent_name}:{Path(dataset_path).stem}:{i}"
+                result = await self._evaluate_case(
+                    case, case_id, index=i, repeat=repeat, run_id=run_id, dataset_path=str(dataset_path)
+                )
+                if result.record is not None:
+                    records.append(result.record)
+        return summarize_records(
+            records,
             agent_name=self.agent_name,
             dataset_path=str(dataset_path),
-            total_cases=len(cases),
+            setup=self.setup,
+            repeats=repeats,
+            dataset_cases=len(cases),
         )
 
-        for i, case in enumerate(cases):
-            case_id = f"{self.agent_name}:{Path(dataset_path).stem}:{i}"
-            result = await self._evaluate_case(case, case_id)
-            summary.results.append(result)
-
-            if result.passed:
-                summary.passed_cases += 1
-            else:
-                summary.failed_cases += 1
-
-            summary.total_latency_ms += result.latency_ms
-            summary.total_tokens_in += result.tokens_in
-            summary.total_tokens_out += result.tokens_out
-
-        # Compute averages
-        n = len(summary.results)
-        if n > 0:
-            summary.avg_groundedness = sum(r.groundedness_score for r in summary.results) / n
-            summary.avg_correctness = sum(r.correctness_score for r in summary.results) / n
-            summary.avg_completeness = sum(r.completeness_score for r in summary.results) / n
-            summary.overall_score = (
-                summary.avg_groundedness * 0.4 + summary.avg_correctness * 0.4 + summary.avg_completeness * 0.2
-            )
-
-        summary.estimated_cost_usd = estimate_cost(_current_model(), summary.total_tokens_in, summary.total_tokens_out)
-
-        return summary
-
-    async def _evaluate_case(self, case: EvalCase, case_id: str) -> EvalResult:
+    async def _evaluate_case(
+        self,
+        case: EvalCase,
+        case_id: str,
+        *,
+        index: int = 0,
+        repeat: int = 0,
+        run_id: str = "",
+        dataset_path: str = "",
+    ) -> EvalResult:
         """Evaluate a single test case against the agent."""
-        result = EvalResult(input=case.input)
-
         start = time.monotonic()
         outcome = await self._runner.run(case.input, user_role=case.user_role, user_email=case.user_email)
-        result.latency_ms = int((time.monotonic() - start) * 1000)
+        latency_ms = int((time.monotonic() - start) * 1000)
 
+        expected = Expected(
+            tools=case.expected_tools,
+            fields=case.expected_fields,
+            route=case.expected_route,
+            criteria=case.criteria,
+            tool_args=case.expected_tool_args,
+            denial=case.expect_denial,
+            hitl=case.expect_hitl,
+            user_role=case.user_role,
+            user_email=case.user_email,
+        )
+        record = RunRecord(
+            run_id=run_id or new_run_id(),
+            recorded_at=utc_now(),
+            agent=self.agent_name,
+            dataset=Path(dataset_path).stem if dataset_path else (case_id.split(":")[1] if ":" in case_id else ""),
+            dataset_path=dataset_path,
+            case_id=case_id,
+            case_index=index,
+            repeat=repeat,
+            setup=self.setup,
+            query=case.input,
+            ground_truth=ground_truth_text(expected),
+            expected=expected,
+            latency_ms=latency_ms,
+            pass_threshold=self.pass_threshold,
+            error=outcome.error,
+            fixture_missing=outcome.fixture_missing,
+        )
         if outcome.error:
-            result.error = outcome.error
-            result.fixture_missing = outcome.fixture_missing
             logger.error("Eval case failed: %s — %s", case.input[:60], outcome.error)
-            return result
+            return EvalResult.from_record(scoring.score_record(record))
 
         response_text = outcome.text
-        result.tools_called = outcome.tools_called
-        result.tokens_in = outcome.tokens_in
-        result.tokens_out = outcome.tokens_out
-        result.grounding = outcome.grounding
+        record = record.model_copy(
+            update={
+                "response": response_text,
+                "context": context_text(outcome.grounding),
+                "tool_calls": _tool_call_records(outcome),
+                "routes": outcome.routes,
+                "tokens": Tokens(input=outcome.tokens_in, output=outcome.tokens_out),
+                "cost_usd": estimate_cost(self.setup.chat_model, outcome.tokens_in, outcome.tokens_out),
+                "grounding": outcome.grounding,
+                "denied": outcome.denied,
+                "hitl_requested": outcome.hitl_requested,
+                "guardrail_flags": outcome.guardrail_flags,
+            }
+        )
 
-        # Groundedness: reuse the report GroundingVerificationMiddleware
-        # already computed during the production run when available (free);
-        # fall back to a from-scratch DB check otherwise (e.g. GROUNDING_MODE=off).
-        if outcome.grounding is not None:
-            from evals.scorers.db_groundedness import score_from_report
+        # Groundedness reuses the report GroundingVerificationMiddleware computed during the production
+        # run (free). With none (GROUNDING_MODE=off) fall back to a from-scratch DB check and store it,
+        # since a re-score has no database to repeat it against.
+        if outcome.grounding is None:
+            fallback = await self._score_groundedness_fallback(response_text, case.criteria)
+            record = record.model_copy(update={"scores": CaseScores(groundedness=fallback)})
 
-            result.groundedness_score = score_from_report(outcome.grounding)
-        else:
-            result.groundedness_score = await self._score_groundedness_fallback(response_text, case.criteria)
-
-        # Correctness: did it call the expected tools?
-        result.correctness_score = self._score_correctness(outcome.tools_called, case.expected_tools)
-
-        # Routing override: for orchestrator cases the meaningful signal is
-        # whether it handed off to the *correct* specialist, not merely that it
-        # invoked the routing tool.
-        if case.expected_route:
-            result.route_called = outcome.routes[0] if outcome.routes else None
-            result.correctness_score = self._score_routing(outcome.routes, case.expected_route)
-
-        # Completeness
-        if self.use_llm_judge:
+        if self.use_llm_judge and self._judge is not None:
             from evals.scorers.llm_judge import judge_response
 
-            verdict = await judge_response(case_id, case.input, response_text, case.expected_fields)
-            result.completeness_score = verdict.score
-            result.judge_reasoning = verdict.reasoning
-            result.fields_found = list(case.expected_fields) if verdict.score >= 1.0 else []
-            result.fields_missing = [] if verdict.score >= 1.0 else list(case.expected_fields)
-        else:
-            result.completeness_score, result.fields_found, result.fields_missing = self._score_completeness_keyword(
-                response_text, case.expected_fields
+            verdict = await judge_response(case_id, case.input, response_text, case.expected_fields, self._judge)
+            record = record.model_copy(
+                update={
+                    "judge": JudgeRecord(
+                        score=verdict.score,
+                        reasoning=verdict.reasoning,
+                        failure_mode=verdict.failure_mode,
+                        provider=self._judge.provider,
+                        model=self._judge.model,
+                        self_judged=self._judge.self_judged,
+                    )
+                }
             )
 
-        # Weighted overall score
-        result.overall_score = (
-            result.groundedness_score * 0.4 + result.correctness_score * 0.4 + result.completeness_score * 0.2
-        )
-        result.assertion_failures = self._check_assertions(case, outcome)
-        result.passed = result.overall_score >= self.pass_threshold and not result.assertion_failures
-
-        return result
+        return EvalResult.from_record(scoring.score_record(record))
 
     @staticmethod
     def _check_assertions(case: EvalCase, outcome: Any) -> list[str]:
         """Schema-v2 assertions: tool arguments, role denial, human approval."""
-        failures: list[str] = []
-
-        if case.expected_tool_args:
-            from evals.scorers.tool_args import score_tool_args
-
-            verdict = score_tool_args(outcome.tool_calls, case.expected_tool_args)
-            failures.extend(
-                f"tool_args: {name} was not called with {case.expected_tool_args[name]}" for name in verdict.missing
-            )
-
-        if case.expect_denial is not None and outcome.denied != case.expect_denial:
-            failures.append(f"expect_denial={case.expect_denial} but denied={outcome.denied}")
-        if case.expect_hitl is not None and outcome.hitl_requested != case.expect_hitl:
-            failures.append(f"expect_hitl={case.expect_hitl} but hitl_requested={outcome.hitl_requested}")
-
-        return failures
+        expected = Expected(tool_args=case.expected_tool_args, denial=case.expect_denial, hitl=case.expect_hitl)
+        calls = [ToolCall(name=c.get("tool_name", ""), arguments=c.get("tool_input")) for c in outcome.tool_calls]
+        return scoring.check_assertions(expected, calls, outcome.denied, outcome.hitl_requested)
 
     @staticmethod
     async def _score_groundedness_fallback(response_text: str, criteria: dict[str, bool]) -> float:
@@ -384,67 +557,17 @@ class AgentEvaluator:
 
     @staticmethod
     def _score_correctness(tools_called: list[str], expected_tools: list[str]) -> float:
-        """Score whether the correct tools were called.
-
-        Partial credit: if 2 of 3 expected tools were called, score = 0.67.
-        Bonus: no penalty for calling additional helpful tools.
-        """
-        if not expected_tools:
-            return 1.0  # No tool expectations
-
-        matched = sum(1 for t in expected_tools if t in tools_called)
-        return matched / len(expected_tools)
+        return scoring.score_correctness(tools_called, expected_tools)
 
     @staticmethod
     def _score_routing(routes: list[str], expected_route: str) -> float:
-        """Score orchestrator hand-off: 1.0 right specialist, 0.5 wrong, 0.0 none."""
-        if not routes:
-            return 0.0
-        return 1.0 if expected_route in routes else 0.5
+        return scoring.score_routing(routes, expected_route)
 
     @staticmethod
     def _score_completeness_keyword(
         response_text: str, expected_fields: list[str]
     ) -> tuple[float, list[str], list[str]]:
-        """Fast, free, deterministic completeness check via field-name aliases.
-
-        Coarser than the LLM judge (a bare "$" counts as satisfying a "price"
-        field), but zero-cost and replay-compatible — the smoke suite's mode.
-        """
-        if not expected_fields:
-            return 1.0, [], []
-
-        response_lower = response_text.lower()
-        found: list[str] = []
-        missing: list[str] = []
-
-        field_aliases: dict[str, list[str]] = {
-            "name": ["name", "product", "title"],
-            "price": ["price", "$", "cost", "usd"],
-            "rating": ["rating", "stars", "score", "rated"],
-            "description": ["description", "about", "details"],
-            "category": ["category", "type", "department"],
-            "specs": ["specs", "specifications", "features"],
-            "status": ["status", "state", "condition"],
-            "order_id": ["order", "order_id", "#"],
-            "tracking_number": ["tracking", "shipment", "carrier"],
-            "items": ["items", "products", "line items"],
-            "total": ["total", "amount", "sum"],
-            "created_at": ["date", "created", "placed", "ordered"],
-            "new_status": ["cancelled", "canceled", "new status"],
-            "refund_amount": ["refund", "money back", "credit"],
-            "return_eligible": ["eligible", "return", "returnable"],
-        }
-
-        for fld in expected_fields:
-            aliases = field_aliases.get(fld, [fld])
-            if any(alias in response_lower for alias in aliases):
-                found.append(fld)
-            else:
-                missing.append(fld)
-
-        score = len(found) / len(expected_fields) if expected_fields else 1.0
-        return score, found, missing
+        return scoring.score_completeness_keyword(response_text, expected_fields)
 
 
 def format_summary_report(summary: EvalSummary, verbose: bool = False) -> str:
@@ -455,14 +578,23 @@ def format_summary_report(summary: EvalSummary, verbose: bool = False) -> str:
     lines.append(f"  EVALUATION REPORT: {summary.agent_name}")
     lines.append("=" * 70)
     lines.append(f"  Dataset:     {summary.dataset_path}")
-    lines.append(f"  Total cases: {summary.total_cases}")
+    if summary.setup is not None:
+        lines.extend(summary.setup.lines())
+    if summary.repeats > 1:
+        lines.append(f"  Total cases: {summary.total_cases} ({summary.dataset_cases} x {summary.repeats} repeats)")
+    else:
+        lines.append(f"  Total cases: {summary.total_cases}")
     lines.append(f"  Passed:      {summary.passed_cases}")
     lines.append(f"  Failed:      {summary.failed_cases}")
     lines.append("-" * 70)
-    lines.append(f"  Groundedness:  {summary.avg_groundedness:.1%}")
-    lines.append(f"  Correctness:   {summary.avg_correctness:.1%}")
-    lines.append(f"  Completeness:  {summary.avg_completeness:.1%}")
-    lines.append(f"  Overall Score: {summary.overall_score:.1%}")
+    lines.append(f"  Groundedness:  {_score_text(summary, 'avg_groundedness')}")
+    lines.append(f"  Correctness:   {_score_text(summary, 'avg_correctness')}")
+    lines.append(f"  Completeness:  {_score_text(summary, 'avg_completeness')}")
+    lines.append(f"  Overall Score: {_score_text(summary, 'overall_score')}")
+    if summary.setup is not None and summary.setup.chat_provider == "replay":
+        lines.append("  (replayed answers: a regression signal, not a quality measurement)")
+    if summary.setup is not None and summary.setup.judge.self_judged:
+        lines.append("  (SELF-JUDGED: the model under test judged its own completeness; not comparable)")
     lines.append("-" * 70)
     lines.append(f"  Total latency: {summary.total_latency_ms:,}ms")
     lines.append(f"  Tokens (in):   {summary.total_tokens_in:,}")
@@ -477,7 +609,8 @@ def format_summary_report(summary: EvalSummary, verbose: bool = False) -> str:
         lines.append("")
         for i, r in enumerate(summary.results, 1):
             status = "PASS" if r.passed else "FAIL"
-            lines.append(f"  [{status}] Case {i}: {r.input[:60]}")
+            repeat = f" (repeat {r.repeat + 1})" if summary.repeats > 1 else ""
+            lines.append(f"  [{status}] Case {i}{repeat}: {r.input[:60]}")
             lines.append(
                 f"    Groundedness: {r.groundedness_score:.1%}  "
                 f"Correctness: {r.correctness_score:.1%}  "
@@ -497,3 +630,9 @@ def format_summary_report(summary: EvalSummary, verbose: bool = False) -> str:
             lines.append("")
 
     return "\n".join(lines)
+
+
+def _score_text(summary: EvalSummary, key: str) -> str:
+    value = getattr(summary, key)
+    spread = summary.spread.get(key)
+    return f"{value:.1%}" if spread is None else f"{value:.1%} +/- {spread:.1%} (sd over {summary.repeats} repeats)"

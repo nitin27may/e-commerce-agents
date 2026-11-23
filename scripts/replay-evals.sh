@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run every eval suite against the committed replay fixtures — keyless, free.
 #
-# This is the one implementation of the "smoke" job in .github/workflows/evals.yml:
+# This is the one implementation of the "Replay regression" job in .github/workflows/evals.yml:
 # CI calls it, and so can you. Zero LLM calls, no credentials.
 #
 #   scripts/replay-evals.sh            # services + all suites (DB already seeded)
@@ -102,23 +102,35 @@ stop_specialists() {
   return 0
 }
 
+# Baselines are keyed by setup (agents/python/evals/baselines.py): replay on the in-process target
+# compares against the python-inproc-replay directory.
+BASELINE_DIR="evals/baselines/python-inproc-replay"
+
+# Every suite also writes its run records, and the records are then re-scored with no model call:
+# the stored scores must come back exactly, or the scorers and the records have drifted apart.
+rescore_check() {
+  uv run python -m evals.run_evals --rescore "$1" --verify > /dev/null
+}
+
 run_suites() {
   cd "$PY_DIR" || return 1
   local fail=0 a ds base
   for a in product-discovery order-management pricing-promotions review-sentiment inventory-fulfillment; do
     ds="evals/datasets/${a//-/_}.json"
-    base="evals/baselines/${a//-/_}.json"
+    base="$BASELINE_DIR/${a//-/_}.json"
     echo "::group::quality eval — $a"
     uv run python -m evals.run_evals --agent "$a" --dataset "$ds" \
-      --pass-threshold "$SMOKE_THRESH" --baseline "$base" --max-regression 0.05 \
-      --output-json "eval-$a.json" || fail=1
+      --pass-threshold "$SMOKE_THRESH" --baseline "$base" \
+      --records-out "eval-records-$a.jsonl" --output-json "eval-$a.json" || fail=1
+    rescore_check "eval-records-$a.jsonl" || fail=1
     echo "::endgroup::"
   done
   echo "::group::routing eval — orchestrator"
   uv run python -m evals.run_evals --agent orchestrator \
     --dataset evals/datasets/orchestrator_routing.json \
-    --pass-threshold "$SMOKE_THRESH" --baseline evals/baselines/orchestrator_routing.json --max-regression 0.05 \
-    --output-json eval-orchestrator.json || fail=1
+    --pass-threshold "$SMOKE_THRESH" --baseline "$BASELINE_DIR/orchestrator_routing.json" \
+    --records-out eval-records-orchestrator.jsonl --output-json eval-orchestrator.json || fail=1
+  rescore_check eval-records-orchestrator.jsonl || fail=1
   echo "::endgroup::"
   if [[ "${ADVERSARIAL_SEED:-0}" == "1" ]]; then
     # After every quality suite (the rows are real rows the review and product tools would
@@ -129,7 +141,8 @@ run_suites() {
   fi
   echo "::group::safety / red-team"
   uv run python -m evals.run_evals --suite safety \
-    --pass-threshold 0.8 --output-json eval-safety.json || fail=1
+    --pass-threshold 0.8 --records-out eval-records-safety.jsonl --output-json eval-safety.json || fail=1
+  rescore_check eval-records-safety.jsonl || fail=1
   echo "::endgroup::"
   return $fail
 }

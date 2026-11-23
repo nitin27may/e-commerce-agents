@@ -16,7 +16,7 @@ from scripts import build_eval_scorecard as sc  # noqa: E402
 
 
 def _baselines(root: Path) -> Path:
-    return root / "agents" / "python" / "evals" / "baselines"
+    return root / "agents" / "python" / "evals" / "baselines" / "python-inproc-replay"
 
 
 def _write_suite(root: Path, name: str, agent: str, cases: int, **extra: object) -> None:
@@ -55,7 +55,7 @@ def test_render_states_replay_caveat_and_omits_missing_cost(tmp_path: Path) -> N
 
     text = sc.render(rows, Counter({"model-x": 2}), "2026-01-01", "2026-01-02", {})
 
-    assert "not a live measurement" in text
+    assert "regression signal, not a quality measurement" in text
     assert "`model-x` (2 fixtures)" in text
     assert "| alpha | `a_suite.json` | 5 | 0.50 | 1.00 | 0.25 | 0.70 |" in text
     assert "None of the committed baselines carries token" in text

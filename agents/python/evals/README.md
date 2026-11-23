@@ -25,7 +25,7 @@ Each eval run scores agent responses on three dimensions:
   the right specialist?
 - **Completeness**: does the response cover what was expected? Two modes —
   a free, deterministic keyword-alias check by default (replay-compatible,
-  the smoke suite's mode), or `--use-llm-judge` for a real judge call scoring
+  the replay-regression suite's mode), or `--use-llm-judge` for a real judge call scoring
   substance rather than literal keyword presence (`evals/scorers/llm_judge.py`,
   the full suite's mode).
 
@@ -84,17 +84,124 @@ cassettes were recorded and how to re-record after a dataset/prompt change):
 LLM_PROVIDER=replay uv run python -m evals.run_evals --agent product-discovery --dataset evals/datasets/product_discovery.json
 ```
 
-## Baselines and regression detection
+## Setup, run records and re-scoring
+
+Every report starts with the **setup** it ran under (stack, target, chat provider and model, embedding
+provider and model, judge, gateway, pricing source), and every record and baseline stores it. The setup
+`key` (`python-inproc-replay`, `python-inproc-gpt-5.1`) names the baseline directory: scores are only
+compared with scores taken the same way. `EVAL_GATEWAY` names the gateway the model calls went through
+(default `none`); nothing in the eval path interprets it.
+
+`--records-out <file>` writes one JSON line per case (per repeat). `--rescore <file>` scores a records file
+again with **no model call and no database**: derived fields are recomputed from the stored raw fields
+(`evals/scoring.py`, the same function the live run finishes a case with), a stored judge verdict is reused,
+and a stored grounding report is re-scored. `--rescore <file> --verify` additionally fails unless every
+record re-scores to exactly its stored scores; `scripts/replay-evals.sh` does this for every suite it runs.
 
 ```bash
-# Compare this run against a stored baseline; fail if any tracked score drops > --max-regression
 uv run python -m evals.run_evals --agent product-discovery --dataset evals/datasets/product_discovery.json \
-  --baseline evals/baselines/product_discovery.json --max-regression 0.05
-
-# After a deliberate, reviewed change — overwrite the stored baseline
-uv run python -m evals.run_evals --agent product-discovery --dataset evals/datasets/product_discovery.json \
-  --update-baseline evals/baselines/product_discovery.json
+  --records-out records.jsonl --repeats 3
+uv run python -m evals.run_evals --rescore records.jsonl --verify
+uv run python -m evals.run_evals --rescore records.jsonl --pass-threshold 0.8 --baseline-from personal
 ```
+
+### Record schema (`schema_version` 1, `evals/records.py::RunRecord`)
+
+The top-level names `query`, `response`, `context`, `tool_calls`, `ground_truth` are Foundry's evaluation
+input names, so a records file can be given to a Foundry evaluator as is. A reader refuses a
+`schema_version` it does not know. Any target (the in-process one today, `http` later) writes this shape.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `schema_version` | int | `1` |
+| `run_id`, `recorded_at` | string | one id per dataset run; UTC timestamp |
+| `suite` | `quality` or `safety` | |
+| `agent`, `dataset`, `dataset_path`, `case_id`, `case_index`, `repeat` | | which case, and which repeat (0-based) |
+| `setup` | object | `stack`, `target` (`inproc`/`http`), `chat_provider`, `chat_model`, `chat_api`, `embedding_provider`, `embedding_model`, `judge` (`kind`, `provider`, `model`, `self_judged`), `gateway`, `pricing_source` |
+| `query` | string | the user message |
+| `response` | string | the final answer text |
+| `context` | string | grounding evidence lines, one per checked claim; raw tool output is not captured by the in-process target |
+| `tool_calls` | list | `{type: "tool_call", name, arguments}` in call order |
+| `ground_truth` | string | the expectation in words |
+| `expected` | object | the expectation, machine readable: `tools`, `fields`, `route`, `criteria`, `tool_args`, `denial`, `hitl`, `user_role`, `user_email`; safety: `attack_type`, `forbidden_substrings`, `refusal_expected` |
+| `routes` | list | specialists the orchestrator called |
+| `tokens` | `{input, output}` | for the orchestrator this includes its specialists |
+| `latency_ms` | int | wall clock of the case |
+| `cost_usd` | float or null | priced from `config/pricing/models.yaml`; null means the model is not in the file |
+| `grounding` | object or null | the grounding report the score is computed from |
+| `denied`, `hitl_requested`, `guardrail_flags` | | what the run showed about role gating and approvals |
+| `error`, `fixture_missing` | | an infrastructure failure, kept apart from a bad answer |
+| `scores` | `{groundedness, correctness, completeness, overall}` | |
+| `fields_found`, `fields_missing`, `assertion_failures` | lists | |
+| `judge` | object or null | `score`, `reasoning`, `failure_mode`, `provider`, `model`, `self_judged` |
+| `safety` | object or null | `injection_resisted`, `refusal_correct`, `role_confined`, `guardrail_engaged` |
+| `pass_threshold`, `passed` | | |
+
+Gotcha: a case with no grounding report (`GROUNDING_MODE=off`) was scored from the database at run time;
+a re-score keeps that stored groundedness because it cannot repeat the database check.
+
+## Repeats and the regression threshold
+
+`--repeats k` runs the dataset `k` times. The default is 1 under `LLM_PROVIDER=replay` (replay is exact) and
+3 for a live provider. The report gives the mean per suite and, with two or more repeats, the sample standard
+deviation of the per-repeat score.
+
+The regression threshold is no longer a flat 0.05 (`evals/baselines.py::regression_threshold`):
+
+* replayed, keyword-scored run: `0.02` (rounding only; the same inputs give the same scores);
+* otherwise, two or more repeats on both sides: `max(0.02, 2 * sqrt(sd_new^2 / k_new + sd_base^2 / k_base))`,
+  the 95 percent band of a difference of two means;
+* otherwise (no noise estimate): `max(0.02, 1 / n_cases)`, one case's worth of score. With five cases that
+  is 0.2, because a gate tighter than one flipped case fails on noise.
+
+`--max-regression X` still forces a fixed threshold. Gotcha: three repeats give a rough standard deviation,
+and three identical runs give zero; the 0.02 floor is what stops that from gating on nothing.
+
+## The judge
+
+`--use-llm-judge` scores completeness with a judge model. The judge is configured with `JUDGE_PROVIDER`
+(`openai | azure | anthropic | replay`), `JUDGE_MODEL`, `JUDGE_BASE_URL`, `JUDGE_API_KEY` and `JUDGE_API`
+(`shared/config.py`), through the same client factory as the chat model. The judge never defaults to the model
+under test: with nothing configured the run stops and says what to set. `--allow-self-judge` (or
+`JUDGE_ALLOW_SELF=true`) accepts it anyway; the report and every record then say **self-judged**, and the run
+is not comparable with an independently judged one. The prompt is `config/prompts/_eval/completeness-judge.yaml`.
+
+## Capability check
+
+`python -m evals.provider_check` probes the configured provider for tool calling, parallel tool calls, tool
+choice, streaming with tools, JSON output, context length (against the largest composed system prompt) and
+embeddings, then lists which suites are applicable. A suite that needs a capability the provider lacks is
+reported "not applicable" rather than failing. It makes real (small) calls; its tests use stubbed transports.
+
+## Baselines and regression detection
+
+Baselines are keyed by setup. Three kinds, and every report states which one it compared against:
+
+| Kind | Where | Meaning |
+|---|---|---|
+| reference | `evals/baselines/<setup-key>/<dataset>.json`, committed | what the project says this setup scores; the replay gate uses `python-inproc-replay` |
+| personal | `evals/.local/baselines/<setup-key>/<dataset>.json`, git-ignored | your own last run on your own model |
+| floor | none | no baseline compared; the run is held to `--pass-threshold` |
+
+```bash
+# Compare against a named file (kind follows its location), or by setup and dataset
+uv run python -m evals.run_evals --agent product-discovery --dataset evals/datasets/product_discovery.json \
+  --baseline evals/baselines/python-inproc-replay/product_discovery.json
+uv run python -m evals.run_evals --agent product-discovery --dataset evals/datasets/product_discovery.json \
+  --baseline-from personal
+
+# Keep your own baseline (git-ignored)
+uv run python -m evals.run_evals --agent product-discovery --dataset evals/datasets/product_discovery.json \
+  --update-personal-baseline
+
+# After a deliberate, reviewed change: overwrite the committed reference baseline
+uv run python -m evals.run_evals --agent product-discovery --dataset evals/datasets/product_discovery.json \
+  --update-baseline evals/baselines/python-inproc-replay/product_discovery.json
+```
+
+A baseline taken under a different setup key than the run is still compared, with a note that the comparison
+is not like-for-like. `evals/baselines/prompt_tokens.json` is not a score baseline (it measures prompt size,
+independent of any model) and stays at the top level.
 
 ## Requirements
 
@@ -108,7 +215,7 @@ uv run python -m evals.run_evals --agent product-discovery --dataset evals/datas
 1. Create a new JSON file in `evals/datasets/`
 2. Follow the schema above -- each entry needs `input`, `expected_tools`, `expected_fields`, and `criteria`
 3. Run with `--agent <agent-name>` matching the agent's factory function name
-4. Record replay fixtures for the new cases (`evals/fixtures/README.md`) so the smoke suite covers them too
+4. Record replay fixtures for the new cases (`evals/fixtures/README.md`) so the replay-regression suite covers them too
 
 ## Datasets
 
@@ -167,10 +274,10 @@ change as an informational line; they never gate.
 
 Two jobs in `.github/workflows/evals.yml`:
 
-- **`smoke`** — runs on every PR. Every dataset, including
+- **`replay-regression`** ("Replay regression") — runs on every PR. It gates on fixture misses, deterministic assertions and a score drop against the baseline; its score is a regression signal, never a quality number. Every dataset, including
   `orchestrator_routing.json` and `red_team.json`, all against
   `LLM_PROVIDER=replay` with the deterministic scorers only (no
-  `--use-llm-judge`), compared against `evals/baselines/`. The job boots the
+  `--use-llm-judge`), compared against `evals/baselines/python-inproc-replay/`. The job boots the
   five specialist services as plain replay-mode servers (no key, `RECORD`
   unset) before running the orchestrator/safety suites — `call_specialist_agent`
   makes a real HTTP call independent of `LLM_PROVIDER`, so those two suites
@@ -179,8 +286,9 @@ Two jobs in `.github/workflows/evals.yml`:
   tens of seconds to under one, proving zero network calls anywhere in the
   request graph. Zero cost, zero credentials, gates merges.
 - **`full`** — `workflow_dispatch` only — deliberately no schedule, since it spends a live key. Every suite again,
-  this time with `--use-llm-judge` and a real key, so completeness is judged
-  rather than keyword-matched. Uploads per-suite JSON results as an artifact.
+  this time with `--use-llm-judge --allow-self-judge` and a real key, so completeness is judged
+  rather than keyword-matched (by the model under test itself, labelled self-judged, until the
+  planned rebuild of this job picks an independent judge). Uploads per-suite JSON results as an artifact.
 
 The `--output-json` flag produces machine-readable output for custom gates:
 

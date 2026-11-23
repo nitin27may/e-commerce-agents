@@ -46,7 +46,7 @@ LLM_PROVIDER=replay RECORD=true REPLAY_RECORD_PROVIDER=azure \
 
 Verify deterministic replay after recording — same scores, no network, and
 this time with every service (including the five specialists) in **pure**
-`LLM_PROVIDER=replay` (no `RECORD`) — this is exactly what CI's `smoke` job
+`LLM_PROVIDER=replay` (no `RECORD`) — this is exactly what CI's `replay-regression` job
 does:
 
 ```bash
@@ -59,7 +59,7 @@ Confirmed working end to end: with the five specialists running as plain
 safety suites run the same way, both reproduced their recorded scores
 exactly with total latency dropping from tens of seconds to under a second
 — proof of zero network calls anywhere in the request graph. So the
-`smoke` CI job **does** cover every dataset, including
+`replay-regression` CI job **does** cover every dataset, including
 `orchestrator_routing.json` and `red_team.json` — it just needs to boot the
 five specialist services (in replay mode, no cost) as a setup step before
 running those two, which the five pure-specialist datasets don't require
@@ -160,7 +160,7 @@ dataset adds a case that looks up a *real* seeded order, the same
 ## The bigger version of the same bug: live database payloads were in the cache key
 
 The product-id fix above closed the *grounding* half of the problem and left
-the *lookup* half open, which is why the `smoke` job stayed red on every PR
+the *lookup* half open, which is why the `replay-regression` job stayed red on every PR
 that ran it.
 
 A fixture's filename is a hash of `(messages, tools, instructions)`. In a MAF
@@ -275,9 +275,9 @@ minutes apart produce slightly different absolute validity windows. This
 doesn't break replay itself — the model's own recorded text is frozen and
 byte-identical either way — it changes which *tool-returned facts* end up
 being checked, which can nudge groundedness/correctness by a point or two.
-`evals/baselines/*.json` were regenerated against the current deterministic
-seed as of this fix; `--max-regression` (default 0.05) already tolerates
-this scale of drift. Making coupon/promotion windows fully time-independent
+`evals/baselines/python-inproc-replay/*.json` were regenerated against the current deterministic
+seed as of this fix; the regression threshold (0.02 for replayed runs, see
+`evals/baselines.py`) tolerates this scale of drift. Making coupon/promotion windows fully time-independent
 (e.g. anchored to a fixed epoch instead of seed-time `now()`) would close
 this the same way the product-id fix closed the bigger one, but wasn't
 pursued here — the datasets that hit it aren't currently sensitive enough

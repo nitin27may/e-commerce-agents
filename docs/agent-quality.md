@@ -28,7 +28,7 @@ Agent quality has two distinct failure modes:
 
 The eval suite covers both. Functional evals are scored continuously; safety evals run adversarially. Neither replaces the guardrails code (which is unit-tested deterministically without a live LLM), but both measure whether the code-layer and prompt-layer defenses are working together end-to-end.
 
-**Evals are not a substitute for unit tests.** The live-LLM run needs a real key and a seeded database, so it is human-dispatched and never gates a PR. A deterministic `smoke` job does gate PRs: it replays committed fixtures (`LLM_PROVIDER=replay`), needs no key, and fails on a regression against the committed baselines. The unit-test gate is `tests.yml` (pytest, no network). Both live in `.github/workflows/` — see `evals.yml`.
+**Evals are not a substitute for unit tests.** The live-LLM run needs a real key and a seeded database, so it is human-dispatched and never gates a PR. A deterministic `replay-regression` job (shown as "Replay regression") does gate PRs: it replays committed fixtures (`LLM_PROVIDER=replay`), needs no key, and fails on a missing fixture, a failed deterministic assertion, or a score drop against the committed baselines. Its score is a regression signal about frozen answers; it is not a measure of quality, and it says nothing about how any model performs today. The unit-test gate is `tests.yml` (pytest, no network). Both live in `.github/workflows/` — see `evals.yml`.
 
 ---
 
@@ -165,7 +165,7 @@ Two deterministic pieces sit beside the model-facing suite, neither calling a mo
 
 ## Running Evals
 
-**Without a key.** This is the command CI's `smoke` job runs. It replays the committed recordings, calls no model and costs nothing:
+**Without a key.** This is the command CI's `replay-regression` job runs. It replays the committed recordings, calls no model and costs nothing:
 
 ```bash
 docker compose up -d db redis
@@ -222,7 +222,7 @@ fixture about 97% of input was cached) and never understate it. See
 
 Evals are **not** in the unit-test workflow `tests.yml`. `.github/workflows/evals.yml` has two jobs:
 
-- **`smoke`** — on every PR and push to `main` touching agent or eval code. Replays committed fixtures with deterministic scorers only: no key, no cost, and it fails the PR on a regression against the committed baselines.
+- **`replay-regression`** ("Replay regression") — on every PR and push to `main` touching agent or eval code. Replays committed fixtures with deterministic scorers only: no key, no cost. It fails the PR on a missing fixture, a failed case assertion, or a score drop against the committed baselines. The score it prints is never presented as quality: the answers are frozen, so the number only says whether the code still handles them the way it did when they were recorded.
 - **`full`** — **manual dispatch only** (there is no schedule), with a real key, the LLM judge and a configurable `pass_threshold` (default `0.7`). It spends real money, so a human starts it.
 
 The `full` job:
@@ -233,6 +233,8 @@ The `full` job:
 4. Runs all six quality evals in sequence, then the safety suite (threshold 0.8).
 5. Fails if any eval exits non-zero.
 6. Uploads all `eval-*.json` result files as artifacts (retained 30 days).
+
+Every report starts with the run's setup (stack, target, chat and embedding provider and model, judge, gateway, pricing source), and each case can be stored as a JSONL run record (`--records-out`) that re-scores later with no model call (`--rescore`). Baselines are keyed by setup under `agents/python/evals/baselines/<setup-key>/`; your own live results go to a git-ignored `evals/.local/`, and each report says whether it compared against a reference baseline, a personal one, or only the pass-threshold floor. A live run repeats the dataset (`--repeats`, default 3) and reports mean and spread, and its regression threshold follows the case count and the measured spread instead of a flat 0.05. The judge model is set with `JUDGE_PROVIDER` and `JUDGE_MODEL` and is never silently the model under test; a self-judged run is labelled as such. `python -m evals.provider_check` lists what a provider can do and which suites then apply. Details: `agents/python/evals/README.md`.
 
 **Required secret (`full` job only)**: `OPENAI_API_KEY` in the repository settings. The workflow fails fast if the secret is absent rather than running with a dummy key.
 
@@ -252,7 +254,7 @@ The `full` job:
 3. For quality cases: pick `expected_tools` from the agent's `AGENT_TOOLS` list; pick `expected_fields` from what the tool actually returns.
 4. For red-team cases: set `target_agent` to the agent's `name` (e.g. `"review-sentiment"`), choose an `attack_type`, and supply the `forbidden_substrings` that would indicate a failure.
 5. Run the suite locally to confirm the new case behaves as expected.
-6. Commit the updated dataset. The `smoke` job will pick it up once its replay fixtures are re-recorded (see `agents/python/evals/fixtures/README.md`).
+6. Commit the updated dataset. The `replay-regression` job will pick it up once its replay fixtures are re-recorded (see `agents/python/evals/fixtures/README.md`).
 
 ---
 

@@ -65,3 +65,47 @@ def test_check_regression_improvement_never_flagged() -> None:
     regressed, message = check_regression(baseline, _summary(), max_regression=0.05)
     assert regressed is False
     assert "REGRESSION" not in message
+
+
+# ─────────────────────── baselines keyed by setup ───────────────────────
+
+
+def test_reference_baselines_live_under_the_setup_key_and_exist_for_replay() -> None:
+    from evals.baselines import REFERENCE_ROOT, reference_path
+
+    path = reference_path("python-inproc-replay", "product_discovery")
+    assert path == REFERENCE_ROOT / "python-inproc-replay" / "product_discovery.json"
+    assert path.exists()
+    assert not (REFERENCE_ROOT / "product_discovery.json").exists()  # nothing left at the unkeyed location
+
+
+def test_personal_baselines_are_git_ignored_and_kind_follows_location(tmp_path: Path) -> None:
+    import subprocess
+
+    from evals.baselines import baseline_kind_for, personal_path, reference_path
+
+    personal = personal_path("python-inproc-gpt-5.1", "order_management")
+    assert personal.parts[-4:] == (".local", "baselines", "python-inproc-gpt-5.1", "order_management.json")
+    assert baseline_kind_for(personal) == "personal"
+    assert baseline_kind_for(reference_path("python-inproc-replay", "order_management")) == "reference"
+    assert baseline_kind_for(tmp_path / "x.json") == "reference"
+    ignored = subprocess.run(["git", "check-ignore", "-q", str(personal)], cwd=Path(__file__).parent)
+    assert ignored.returncode == 0
+
+
+def test_a_written_baseline_carries_its_setup_repeats_and_spread(tmp_path: Path) -> None:
+    from evals.records import Setup
+
+    summary = _summary()
+    summary.setup = Setup(chat_provider="openai", chat_model="gpt-5.1")
+    summary.repeats = 3
+    summary.dataset_cases = 5
+    summary.spread = {"overall_score": 0.02}
+    path = tmp_path / "b.json"
+
+    write_baseline(path, summary)
+    loaded = load_baseline(path)
+
+    assert loaded is not None
+    assert loaded["setup_key"] == "python-inproc-gpt-5.1"
+    assert (loaded["repeats"], loaded["dataset_cases"], loaded["spread"]) == (3, 5, {"overall_score": 0.02})
