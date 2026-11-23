@@ -9,8 +9,8 @@
 param name string
 param location string
 param tags object
-@description('Principal that pulls images (the user-assigned identity).')
-param pullerPrincipalId string
+@description('Principals that pull images: the shared user-assigned identity and, with per-app identities, one per app.')
+param pullerPrincipalIds array
 
 var acrPullRoleId = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 
@@ -26,15 +26,17 @@ resource registry 'Microsoft.ContainerRegistry/registries@2025-04-01' = {
   }
 }
 
-resource pullRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(registry.id, pullerPrincipalId, acrPullRoleId)
-  scope: registry
-  properties: {
-    principalId: pullerPrincipalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', acrPullRoleId)
+resource pullRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = [
+  for principalId in pullerPrincipalIds: {
+    name: guid(registry.id, principalId, acrPullRoleId)
+    scope: registry
+    properties: {
+      principalId: principalId
+      principalType: 'ServicePrincipal'
+      roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', acrPullRoleId)
+    }
   }
-}
+]
 
 output id string = registry.id
 output name string = registry.name

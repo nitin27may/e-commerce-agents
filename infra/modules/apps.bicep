@@ -18,6 +18,8 @@ param defaultDomain string
 param identityId string
 @description('Client id of the user-assigned identity (AZURE_CLIENT_ID for Entra auth).')
 param identityClientId string
+@description('Per-app identities from app-identities.bicep: [{ app, id, clientId }]. Empty: every app uses the shared identity. The db-init job and Redis keep the shared one.')
+param appIdentities array = []
 @description('Vault URI with trailing slash.')
 param keyVaultUri string
 
@@ -59,6 +61,8 @@ param allowedIpRanges array = []
 param deployAuthServer bool = false
 param deployMcp bool = false
 
+var identityOf = toObject(appIdentities, i => i.app)
+var perApp = !empty(appIdentities)
 var domain = defaultDomain
 var frontendUrl = 'https://ca-frontend.${domain}'
 var orchestratorUrl = 'https://ca-orchestrator.internal.${domain}'
@@ -161,7 +165,6 @@ var coreEnv = concat(
     { name: 'AZURE_EMBEDDING_DEPLOYMENT', value: embeddingDeployment }
     { name: 'AZURE_OPENAI_API_VERSION', value: openAiApiVersion }
     { name: 'AZURE_OPENAI_AUTH', value: openAiAuth }
-    { name: 'AZURE_CLIENT_ID', value: identityClientId }
     { name: 'EMBEDDING_MODEL', value: 'text-embedding-3-small' }
     { name: 'COST_BUDGET_MODE', value: costBudgetMode }
     { name: 'COST_BUDGET_USD_PER_RUN', value: costBudgetUsdPerRun }
@@ -175,6 +178,8 @@ var coreEnv = concat(
   authEnv
 )
 // Read by the Python stack only (the .NET hosts have no stream-timeout setting).
+// AZURE_CLIENT_ID picks the managed identity for Entra auth, so it follows the identity each app runs as.
+func clientIdEnv(clientId string) array => [{ name: 'AZURE_CLIENT_ID', value: clientId }]
 var pythonOnlyEnv = [{ name: 'MAF_STREAM_TIMEOUT_SECONDS', value: '120' }]
 var backendEnv = concat(coreEnv, isDotnet ? [] : pythonOnlyEnv, redisEnv)
 var batchEnv = isDotnet ? concat(coreEnv, pythonOnlyEnv) : backendEnv
@@ -205,7 +210,7 @@ module dbInit 'db-init-job.bicep' = {
     image: image(imageRegistry, suffixed(isDotnet, dotnetServices, 'db-init'), imageTag)
     registryServer: registryServer
     keyVaultUri: keyVaultUri
-    env: concat(batchEnv, [{ name: 'OTEL_SERVICE_NAME', value: 'ecommerce.db-init' }])
+    env: concat(batchEnv, clientIdEnv(identityClientId), [{ name: 'OTEL_SERVICE_NAME', value: 'ecommerce.db-init' }])
     secretEnv: concat(batchSecretEnv, [{ env: 'SEED_STAFF_PASSWORD', secret: 'seed-staff-password' }])
   }
 }
@@ -219,7 +224,7 @@ module orchestrator 'container-app.bicep' = {
     location: location
     tags: tags
     environmentId: environmentId
-    identityId: identityId
+    identityId: perApp ? identityOf.orchestrator.id : identityId
     keyVaultUri: keyVaultUri
     image: image(imageRegistry, suffixed(isDotnet, dotnetServices, 'orchestrator'), imageTag)
     registryServer: registryServer
@@ -229,7 +234,7 @@ module orchestrator 'container-app.bicep' = {
     httpConcurrency: scale.httpConcurrency
     cpu: '1'
     memory: '2Gi'
-    env: concat(backendEnv, [
+    env: concat(backendEnv, clientIdEnv(perApp ? identityOf.orchestrator.clientId : identityClientId), [
       { name: 'OTEL_SERVICE_NAME', value: 'ecommerce.orchestrator${otelSuffix}' }
       { name: 'OAUTH_CLIENT_ID', value: 'orchestrator' }
       { name: 'AGENT_REGISTRY', value: agentRegistry }
@@ -256,7 +261,7 @@ module specialistApps 'container-app.bicep' = [
       location: location
       tags: tags
       environmentId: environmentId
-      identityId: identityId
+      identityId: perApp ? identityOf[s.name].id : identityId
       keyVaultUri: keyVaultUri
       image: image(imageRegistry, suffixed(isDotnet, dotnetServices, s.name), imageTag)
       registryServer: registryServer
@@ -266,6 +271,7 @@ module specialistApps 'container-app.bicep' = [
       httpConcurrency: scale.httpConcurrency
       env: concat(
         backendEnv,
+        clientIdEnv(perApp ? identityOf[s.name].clientId : identityClientId),
         [
           { name: 'OTEL_SERVICE_NAME', value: 'ecommerce.${s.name}${otelSuffix}' }
           { name: 'OAUTH_CLIENT_ID', value: s.name }
@@ -300,7 +306,7 @@ module worker 'container-app.bicep' = {
     location: location
     tags: tags
     environmentId: environmentId
-    identityId: identityId
+    identityId: perApp ? identityOf['outbox-worker'].id : identityId
     keyVaultUri: keyVaultUri
     image: image(imageRegistry, suffixed(isDotnet, dotnetServices, 'outbox-worker'), imageTag)
     registryServer: registryServer
@@ -310,7 +316,7 @@ module worker 'container-app.bicep' = {
     probesEnabled: false
     minReplicas: scale.workerMinReplicas
     maxReplicas: 1
-    env: concat(batchEnv, [
+    env: concat(batchEnv, clientIdEnv(perApp ? identityOf['outbox-worker'].clientId : identityClientId), [
       { name: 'OTEL_SERVICE_NAME', value: 'ecommerce.outbox-worker' }
       { name: 'OUTBOX_WORKER_ENABLED', value: 'true' }
     ])

@@ -224,7 +224,10 @@ module acr 'modules/acr.bicep' = if (useAcr) {
     name: 'acr${resourceToken}'
     location: location
     tags: tags
-    pullerPrincipalId: identity.outputs.principalId
+    pullerPrincipalIds: concat(
+      [identity.outputs.principalId],
+      deployPerAppIdentities ? map(appIdentities!.outputs.identities, i => i.principalId) : []
+    )
   }
 }
 
@@ -305,6 +308,7 @@ module apps 'modules/apps.bicep' = if (deployApps) {
     publicAccess: publicAccess
     allowedIpRanges: frontendAllowedIps
     a2aIdentity: cfg.a2aIdentity
+    appIdentities: deployPerAppIdentities ? appIdentities!.outputs.identities : []
     managedRedis: managedRedis
     deployAuthServer: deployAuthServer
     deployMcp: deployMcp

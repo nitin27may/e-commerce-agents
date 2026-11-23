@@ -65,8 +65,8 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
   connection and Azure AI User for the app identity. `deployGateway` adds an API Management instance in
   front of the account with per-agent token limits and token metrics keyed on `x-agent-name`, managed
   identity to the model and the endpoint handed to the apps through the existing `AZURE_OPENAI_ENDPOINT`.
-  `deployPerAppIdentities` adds one user-assigned identity per app (created, not yet attached to the
-  apps). All three are off by default. The `azure` provider pointed at the account is documented as
+  `deployPerAppIdentities` adds one user-assigned identity per app (attached to the orchestrator, the
+  specialists and the outbox worker). All three are off by default. The `azure` provider pointed at the account is documented as
   Foundry for OpenAI models; there is no `LLM_PROVIDER=foundry`. None has been deployed: the APIM tier
   that supports the token policies is unverified (see `docs/azure-deployment.md`).
 - **The `reference` Azure profile is real.** A VNet with a delegated Container Apps subnet and a private endpoint subnet; private endpoints and private DNS zones for PostgreSQL, Key Vault and the AIServices account, all with public access off; Azure Managed Redis in place of the redis container; a Basic Container Registry with `AcrPull` for the app identity; Entra auth to the model by default; `A2A_IDENTITY=token` with the distinct generated key. The demo profile deploys exactly what it did (a stored resource list pins it). Written and compiled offline, never deployed.

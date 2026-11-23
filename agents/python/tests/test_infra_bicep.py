@@ -530,9 +530,46 @@ def test_per_app_identities_module_creates_one_identity_per_app(raw_snapshots: d
     assert len(_of_type(raw_snapshots["demo-foundry-on"], kind)) == 1, "demo keeps the single shared identity"
 
 
-def test_per_app_identities_are_not_wired_into_apps_yet() -> None:
+def test_per_app_identities_are_wired_into_apps() -> None:
     apps = (INFRA / "modules" / "apps.bicep").read_text(encoding="utf-8")
-    assert "appIdentities" not in apps, "wiring is a separate change; see docs/azure-deployment.md"
+    assert "param appIdentities array = []" in apps and "toObject(appIdentities" in apps
+
+
+PER_APP = ["orchestrator", *SPECIALISTS, "outbox-worker"]
+
+
+def test_apps_run_as_their_own_identity_when_per_app_identities_are_on(tmp_path: Path) -> None:
+    snap = _snapshot_with(tmp_path, "reference", "param deployPerAppIdentities = true\n")
+    apps = {r["name"]: r for r in snap if r["type"] in ("Microsoft.App/containerApps", "Microsoft.App/jobs")}
+    names = [r["name"] for r in snap if r["type"] == "Microsoft.ManagedIdentity/userAssignedIdentities"]
+    shared = min(names, key=len)
+    assert len(names) == 1 + len(PER_APP)
+    for app in PER_APP:
+        resource = apps[f"ca-{app}"]
+        identities = list(resource["identity"]["userAssignedIdentities"])
+        assert len(identities) == 1 and identities[0].endswith(f"-{app}"), f"{app}: {identities}"
+        assert not identities[0].endswith(shared)
+        # The Key Vault references resolve with the same per-app identity, and AZURE_CLIENT_ID follows it.
+        for secret in resource["properties"]["configuration"]["secrets"]:
+            assert secret["identity"].endswith(f"-{app}"), f"{app}: {secret['name']}"
+        assert _env(resource)["AZURE_CLIENT_ID"]["value"], app
+        assert _env(resource)["AZURE_CLIENT_ID"]["value"] != _env(apps["job-db-init"])["AZURE_CLIENT_ID"]["value"]
+        assert "'identity'" in resource["properties"]["configuration"]["registries"]
+    # The db-init job, the frontend and the redis/MCP/auth apps keep the shared identity.
+    assert list(apps["job-db-init"]["identity"]["userAssignedIdentities"])[0].endswith(shared)
+    assert list(apps["ca-frontend"]["identity"]["userAssignedIdentities"])[0].endswith(shared)
+    # Every per-app identity can pull from the registry.
+    pulls = [
+        r
+        for r in snap
+        if r["type"] == "Microsoft.Authorization/roleAssignments" and ACR_PULL_ROLE in json.dumps(r["properties"])
+    ]
+    assert len(pulls) == 1 + len(PER_APP)
+
+
+def test_shared_identity_stays_the_default() -> None:
+    apps = (INFRA / "modules" / "apps.bicep").read_text(encoding="utf-8")
+    assert "empty(appIdentities)" in apps or "perApp ?" in apps
 
 
 # ----------------------------------------------------------------------------------------------

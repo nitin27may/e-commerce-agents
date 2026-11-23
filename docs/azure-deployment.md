@@ -89,15 +89,7 @@ Cost and time: **UNVERIFIED offline.** v2 tiers provision in minutes and are the
 
 `DEPLOY_PER_APP_IDENTITIES` (Bicep `deployPerAppIdentities`, default false; intended for the reference profile) adds `modules/app-identities.bicep`: seven user-assigned identities (`id-<token>-<app>`: orchestrator, the five specialists, outbox-worker), each with Key Vault Secrets User, and Cognitive Services OpenAI User on the account only when there is no gateway. Output `AZURE_APP_IDENTITIES` lists `{ app, id, clientId, principalId }`.
 
-**They are created but not attached.** Attaching them is an edit to `modules/apps.bicep`, which another change owns. The exact edit:
-
-1. `apps.bicep`: add `param appIdentities array = []` (items `{ app, id, clientId }`) and a lookup, for example `var identityOf = toObject(appIdentities, i => i.app)`.
-2. For each app module call (the orchestrator, five specialists and the outbox worker; redis and the db-init job may keep the shared identity) replace `identityId: identityId` with `identityId: empty(appIdentities) ? identityId : identityOf['<app>'].id`, using that app's own name.
-3. `AZURE_CLIENT_ID` is in the shared `backendEnv`; it must be the app's own client id, so move it to each app's own `env` array: `{ name: 'AZURE_CLIENT_ID', value: empty(appIdentities) ? identityClientId : identityOf['<app>'].clientId }`.
-4. `main.bicep`, `apps` module: `appIdentities: deployPerAppIdentities ? appIdentities!.outputs.identities : []`.
-5. `container-app.bicep` needs no change: it already takes `identityId` per app and uses it in the identity block and in every Key Vault secret reference. Each identity already has Secrets User from the module.
-
-After that the gateway treats each app's calls as trusted, and the shared identity's calls (if any remain) as header-asserted. `test_per_app_identities_are_not_wired_into_apps_yet` pins the current state; flip it when the wiring lands.
+**They are attached to the apps.** With the flag on, the orchestrator, the five specialists and the outbox worker run as their own identity: it is the app's `identityId`, resolves its Key Vault references, and its client id is the app's `AZURE_CLIENT_ID`. The db-init job, the frontend, Redis, the auth server and the MCP servers keep the shared identity. When the image source is ACR, every per-app identity also gets `AcrPull` (the registry pull uses the app's own identity). The gateway can then treat each app's calls as trusted rather than header-asserted. `test_apps_run_as_their_own_identity_when_per_app_identities_are_on` pins it.
 
 ## What it creates
 
@@ -185,7 +177,7 @@ Set by `azure-up` or by hand with `azd env set`.
 | `DEPLOY_MINI_MODEL`, `DEPLOY_AUTH_SERVER`, `DEPLOY_MCP` | `false` | opt-in model deployment and apps |
 | `DEPLOY_FOUNDRY_PROJECT` | `false` | Foundry project under the AIServices account, App Insights connection, Azure AI User for the app identity |
 | `DEPLOY_GATEWAY`, `GATEWAY_SKU`, `GATEWAY_PUBLISHER_EMAIL` | `false`, `BasicV2`, placeholder | API Management in front of the account; see [AI gateway](#ai-gateway-optional) |
-| `DEPLOY_PER_APP_IDENTITIES` | `false` | one identity per app (created, not yet attached) |
+| `DEPLOY_PER_APP_IDENTITIES` | `false` | one identity per app, attached to the orchestrator, specialists and worker |
 | `POSTGRES_ADMIN_PASSWORD`, `JWT_SECRET`, `AGENT_SHARED_SECRET`, `A2A_IDENTITY_KEY`, `OAUTH_SEED_KEY`, `AUTH_SIGNING_KEY_ENCRYPTION_KEY`, `SEED_STAFF_PASSWORD` | generated | `preprovision` creates each only if unset and never overwrites. Postgres password: 32 alphanumerics with three character classes (no URL encoding in `DATABASE_URL`). Staff password: 20 alphanumerics. The rest: 64 hex characters, `A2A_IDENTITY_KEY` distinct from `AGENT_SHARED_SECRET` |
 
 `.azure/` (azd's environment store, which holds these secrets in clear text) is git-ignored. Do not copy it into a repo.
