@@ -106,6 +106,9 @@ python3 scripts/check_tutorial_coverage.py --check
   fixture is allowlisted in `.gitleaks.toml`, not ignored. A dependency-review workflow
   needs the repository's dependency graph and Dependabot alerts enabled, so it is not added yet.
 
+Landing Dependabot pull requests, resolving lockfile and changelog conflicts, and cleaning up
+parallel worktrees are covered in [`docs/contributing-dependencies.md`](docs/contributing-dependencies.md).
+
 ## Good first issues
 
 New here? Start with the issues labelled

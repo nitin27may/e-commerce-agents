@@ -35,6 +35,15 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ### Added
 
+- **Dependency policy and a hardened merge helper.** `docs/contributing-dependencies.md` records the Dependabot
+  policy in force (grouped minor and patch, one reviewed PR per major, the MAF group as a deliberate step), how to
+  handle conflicting PRs and lockfiles, the keep-both rule for `CHANGELOG.md` and `docs/parity-matrix.md`, and a
+  worktree and branch cleanup runbook. `scripts/merge-when-green.sh <pr>` squash-merges only when the head SHA
+  is unchanged since it started, at least 20 checks are complete and none failed, and the PR is mergeable, on two
+  polls 45 seconds apart; it pins the merge with `--match-head-commit`, never uses `--admin`, and exits non-zero
+  with a reason otherwise. A watcher once merged at an old head before a late push registered. Tested with a fake
+  `gh` in `agents/python/tests/test_merge_watcher.py`.
+
 - **Live-capable eval datasets.** `evals/datasets/live/*.live.json` (order management, inventory, orchestrator
   routing, review sentiment, pricing and promotions, product discovery) name orders and products as `{{order:1}}`,
   `{{order:shipped}}` and `{{product_id:NAME}}`, resolved against the run's database (`evals/live_facts.py`) and as a seeded customer, so a

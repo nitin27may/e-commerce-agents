@@ -91,6 +91,7 @@ This folder contains the full technical documentation for E-Commerce Agents.
 | [run-profiles.md](run-profiles.md) | One command per provider setup: profiles for OpenAI, Azure, Anthropic, Gemini, local servers and more, what is verified, and the doctor |
 | [demo-guide.md](demo-guide.md) | Test users, the agent catalog, scenarios to try, the screens gallery |
 | [releasing.md](releasing.md) | Cutting a release: version bump, images on GHCR, retention |
+| [contributing-dependencies.md](contributing-dependencies.md) | Dependabot policy, merge-when-green helper, lockfile and changelog conflicts, worktree cleanup |
 | [roadmap.md](roadmap.md) | What shipped, what is next, what is deliberately not planned |
 | [orchestration-benchmark.md](orchestration-benchmark.md) | The same question routed five ways, with latency and cost |
 | [reported-vs-actual.md](reported-vs-actual.md) | Bugs that turned out bigger than the report said, and how each was found |
