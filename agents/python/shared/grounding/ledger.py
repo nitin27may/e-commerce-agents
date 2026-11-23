@@ -75,6 +75,9 @@ class GroundingLedger:
                         if isinstance(nested, dict):
                             self._record_one(nested)
                             self._record_bare_amount(nested)
+                elif isinstance(value, dict):
+                    # get_loyalty_tier nests its next-tier amounts one dict down.
+                    self._record_bare_amount(value)
             self._record_bare_amount(item)
 
     def _record_bare_amount(self, item: dict[str, Any]) -> None:
@@ -94,15 +97,21 @@ class GroundingLedger:
             # surfacing discounted products reliably enough that the model
             # started mentioning the strikethrough price in most answers.
             "original_price",
-            # get_active_deals / validate_coupon report these as dollar (or, for
-            # `discount_value` on a percentage coupon, percent) amounts, and an
-            # honest answer quotes them ("min $100, max $75"). A fabricated
-            # figure still fails: only values a tool actually returned are added.
+            # get_loyalty_tier reports these amounts and the model repeats them ("spend $400 more", "free
+            # shipping over $75"); without them a correct loyalty answer scored groundedness 0.
+            "spend_needed",
+            "total_spend",
             "min_spend",
+            "free_shipping_threshold",
             "max_discount",
-            "discount_value",
         ):
             value = _as_float(item.get(key))
+            if value is not None:
+                self.known_amounts.add(value)
+        # get_active_deals lists coupons as {discount_type, discount_value}; only a fixed one is dollars
+        # ("$10 off"), a percentage's 15.0 must not make "$15" read as grounded.
+        if item.get("discount_type") == "fixed":
+            value = _as_float(item.get("discount_value"))
             if value is not None:
                 self.known_amounts.add(value)
 

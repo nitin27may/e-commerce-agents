@@ -148,3 +148,44 @@ async def test_run_captures_exception_as_error_outcome(monkeypatch: pytest.Monke
 
     assert outcome.error == "agent construction failed"
     assert outcome.text == ""
+
+
+@pytest.mark.asyncio
+async def test_specialist_call_parked_by_maf_approval_is_seen_as_a_park(monkeypatch: pytest.MonkeyPatch) -> None:
+    # approval_mode="always_require" is decided by MAF before any function middleware runs: the response has no
+    # text, no step and no tool_approval_requests row, only a function_approval_request. The runner must still
+    # report the park and the call (name and arguments), or expect_hitl can never hold for a gated tool.
+    ran: list[str] = []
+
+    @tool(name="cancel_order", description="Cancel an order", approval_mode="always_require")
+    async def cancel_order(order_id: str, reason: str) -> dict:
+        ran.append(order_id)
+        return {"status": "cancelled"}
+
+    call_response = ChatResponse(
+        messages=[
+            Message(
+                role="assistant",
+                contents=[
+                    Content.from_function_call(
+                        call_id="c1", name="cancel_order", arguments={"order_id": "o-1", "reason": "cheaper elsewhere"}
+                    )
+                ],
+            )
+        ],
+        response_id=str(uuid.uuid4()),
+        finish_reason="tool_calls",
+    )
+    fake = _ScriptedClient(call_response)
+    fake_agent = Agent(client=fake, instructions="test", name="order-management", tools=[cancel_order])
+    monkeypatch.setattr("order_management.agent.create_order_management_agent", lambda: fake_agent)
+
+    outcome = await ProductionRunner("order-management").run("cancel order o-1")
+
+    assert ran == [], "a parked call must not execute"
+    assert outcome.text == ""
+    assert outcome.hitl_requested is True
+    assert outcome.tools_called == ["cancel_order"]
+    assert outcome.tool_calls == [
+        {"tool_name": "cancel_order", "tool_input": {"order_id": "o-1", "reason": "cheaper elsewhere"}}
+    ]

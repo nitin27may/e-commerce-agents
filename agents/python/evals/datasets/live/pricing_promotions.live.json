@@ -22,9 +22,9 @@
     "user_email": "jack.anderson@gmail.com"
   },
   {
-    "input": "What's my loyalty tier and how much discount do I get?",
+    "input": "Look up my loyalty tier and tell me how much discount I get.",
     "expected_tools": ["get_loyalty_tier"],
-    "expected_fields": ["status"],
+    "expected_fields": ["bronze", "discount"],
     "criteria": {
       "grounded": true,
       "tool_called": true,

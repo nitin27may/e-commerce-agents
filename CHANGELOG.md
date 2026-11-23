@@ -27,6 +27,14 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
   failing `azd down`, the smoke test waits for revisions to become healthy, and `azd provision` replaces `azd up`
   (the template declares no services). `docs/azure-deployment.md` now opens with a first-deploy checklist. Nothing
   outside `infra/`, `scripts/azure*` and the docs changed; the dev, demo and eval paths do not need Azure.
+- **Live evals: a parked `cancel_order` is now seen as a park, and three live cases assert what the data supports.**
+  MAF decides `approval_mode="always_require"` before function middleware runs, so a gated call writes no
+  `tool_approval_requests` row and leaves an empty reply; the harness now reads the `function_approval_request`
+  (`shared.agent_host.approval_requests`) as `hitl_requested` plus the call and its arguments. The live cancel case
+  expects the park instead of order fields, the inventory restock case asserts `get_warehouse_availability`, and the
+  pricing loyalty case asks the model to look the tier up (the replay wording let it answer from its context). Grounding no longer scores amounts from `get_loyalty_tier`
+  (`spend_needed`, `free_shipping_threshold`, `total_spend`) or `get_active_deals` (fixed coupon values,
+  `max_discount`) as unverifiable, and `$1,000` is read as 1000 rather than `$1`. No replay fixture or dataset changes.
 
 - **Group chat no longer answers with a placeholder.** The moderator's default verdict was the one line
   "Synthesized 2 perspective(s) (value, quality) on: <prompt>"; it now shows the question followed by each

@@ -22,10 +22,10 @@
   {
     "input": "When will the Dyson V15 Detect be back in stock?",
     "expected_tools": [
-      "get_restock_schedule"
+      "get_warehouse_availability"
     ],
     "expected_tool_args": {
-      "get_restock_schedule": {
+      "get_warehouse_availability": {
         "product_id": "{{product_id:Dyson V15 Detect}}"
       }
     },

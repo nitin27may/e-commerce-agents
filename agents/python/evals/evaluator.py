@@ -543,7 +543,10 @@ class AgentEvaluator:
                 fallback = await self._score_groundedness_fallback(response_text, case.criteria)
             record = record.model_copy(update={"scores": CaseScores(groundedness=fallback)})
 
-        if self.use_llm_judge and self._judge is not None:
+        # A call parked for approval answers with no text by design, and a case that expects the park lists no
+        # fields: there is nothing for a judge to read, and it would score the empty reply 0 ("empty_response").
+        nothing_to_judge = outcome.hitl_requested and not response_text.strip() and not case.expected_fields
+        if self.use_llm_judge and self._judge is not None and not nothing_to_judge:
             from evals.scorers.llm_judge import judge_response
 
             verdict = await run_with_limits(

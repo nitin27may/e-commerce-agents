@@ -112,7 +112,30 @@ async def _run_agent_native(
             metadata_box["_maf_usage"] = dict(usage)
         if model := served_model(response):
             metadata_box["_maf_model"] = model
+        if parked := approval_requests(response):
+            metadata_box["_maf_approval_requests"] = parked
     return response.text or ""
+
+
+def approval_requests(response: Any) -> list[dict[str, Any]]:
+    """Tool calls MAF parked for approval (``approval_mode="always_require"``) instead of running.
+
+    MAF decides this before any function middleware runs, so ``HITLFunctionMiddleware`` never sees such a call: no
+    ``tool_approval_requests`` row is written, no step is recorded, and the response text is empty. The
+    ``function_approval_request`` content in ``response.user_input_requests`` is the only trace.
+    """
+    parked: list[dict[str, Any]] = []
+    for request in getattr(response, "user_input_requests", None) or []:
+        call = getattr(request, "function_call", None)
+        name = getattr(call, "name", None)
+        if not name:
+            continue
+        try:
+            arguments = call.parse_arguments()
+        except Exception:
+            arguments = None
+        parked.append({"tool_name": str(name), "tool_input": arguments if isinstance(arguments, dict) else None})
+    return parked
 
 
 async def _run_agent_native_stream(

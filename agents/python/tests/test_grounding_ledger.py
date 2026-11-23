@@ -226,14 +226,28 @@ async def test_get_active_deals_shape_records_coupon_amount_fields() -> None:
     ctx = _function_context(
         {
             "coupons": [
-                {"code": "TECHSAVE", "discount_value": 15.0, "min_spend": 100.0, "max_discount": 75.0},
-                {"code": "FREESHIP", "discount_value": 10.0, "min_spend": None, "max_discount": None},
+                {
+                    "code": "TECHSAVE",
+                    "discount_type": "percentage",
+                    "discount_value": 15.0,
+                    "min_spend": 100.0,
+                    "max_discount": 75.0,
+                },
+                {
+                    "code": "NEWUSER",
+                    "discount_type": "fixed",
+                    "discount_value": 10.0,
+                    "min_spend": None,
+                    "max_discount": None,
+                },
             ]
         }
     )
     await GroundingLedgerMiddleware().process(ctx, _noop)
 
-    assert {15.0, 100.0, 75.0, 10.0} <= ledger.known_amounts
+    # A fixed coupon's value is dollars; a percentage's 15.0 must not make "$15" read as grounded.
+    assert {100.0, 75.0, 10.0} <= ledger.known_amounts
+    assert 15.0 not in ledger.known_amounts
     assert 99.0 not in ledger.known_amounts
 
 
@@ -256,3 +270,42 @@ async def test_records_a_product_from_the_real_content_wrapped_runtime_shape() -
     fact = ledger.products[_PRODUCT_ID]
     assert fact.name == "Widget"
     assert fact.price == 19.99
+
+
+@pytest.mark.asyncio
+async def test_loyalty_tier_shape_records_spend_and_threshold_amounts() -> None:
+    # get_loyalty_tier nests next_tier one dict down and reports amounts under spend_needed / total_spend /
+    # free_shipping_threshold; a correct "spend $400 more" answer used to score groundedness 0 (live run).
+    ledger = reset_grounding_ledger()
+    ctx = _function_context(
+        {
+            "tier": "bronze",
+            "total_spend": 600.0,
+            "discount_pct": 0.0,
+            "free_shipping_threshold": 75.0,
+            "priority_support": False,
+            "next_tier": {"name": "silver", "spend_needed": 400.0, "discount_pct": 5.0},
+        }
+    )
+    await GroundingLedgerMiddleware().process(ctx, _noop)
+
+    assert {600.0, 75.0, 400.0} <= ledger.known_amounts
+
+
+@pytest.mark.asyncio
+async def test_active_deals_records_only_fixed_coupon_values_as_dollars() -> None:
+    ledger = reset_grounding_ledger()
+    ctx = _function_context(
+        {
+            "coupons": [
+                {"code": "NEWUSER", "discount_type": "fixed", "discount_value": 10.0, "max_discount": None},
+                {"code": "TECHSAVE", "discount_type": "percentage", "discount_value": 15.0, "max_discount": 50.0},
+            ],
+            "promotions": [],
+        }
+    )
+    await GroundingLedgerMiddleware().process(ctx, _noop)
+
+    assert 10.0 in ledger.known_amounts
+    assert 50.0 in ledger.known_amounts
+    assert 15.0 not in ledger.known_amounts

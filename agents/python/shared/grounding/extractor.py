@@ -26,7 +26,7 @@ from typing import Any
 
 _CARD_FENCE_RE = re.compile(r"```(product|products|order)\s*\n(.*?)\n?```", re.DOTALL)
 _UUID_RE = re.compile(r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b")
-_AMOUNT_RE = re.compile(r"\$\s?(\d{1,6}(?:\.\d{2})?)")
+_AMOUNT_RE = re.compile(r"\$\s?(\d{1,3}(?:,\d{3})+(?:\.\d{2})?|\d{1,6}(?:\.\d{2})?)")
 _TRACKING_RE = re.compile(r"\bTRK[A-Z0-9]+\b")
 
 
@@ -105,7 +105,7 @@ def extract_claims(text: str) -> ExtractedClaims:
             claims.bare_ids.append(BareIdClaim(id=uuid_match.group(0)))
 
     for amount_match in _AMOUNT_RE.finditer(prose):
-        claims.amounts.append(AmountClaim(value=float(amount_match.group(1))))
+        claims.amounts.append(AmountClaim(value=float(amount_match.group(1).replace(",", ""))))
 
     for tracking_match in _TRACKING_RE.finditer(prose):
         if tracking_match.group(0) not in card_trackings:

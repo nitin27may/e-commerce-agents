@@ -77,6 +77,9 @@ class RunOutcome:
     # Workflow nodes entered, in order (non-``tool`` modes), and facts a target could not observe (``http``).
     nodes: list[str] = field(default_factory=list)
     not_observable: list[str] = field(default_factory=list)
+    # Calls MAF parked for approval (``approval_mode="always_require"``): no step, no row, just a
+    # ``function_approval_request`` in the response (``shared.agent_host.approval_requests``).
+    parked_calls: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _create_agent(agent_name: str) -> Any:
@@ -256,7 +259,7 @@ class ProductionRunner:
 
         outcome.guardrail_flags = get_guardrail_flags()
         steps = get_steps()
-        outcome.tool_calls = _tool_calls(steps)
+        outcome.tool_calls = _tool_calls(steps) + outcome.parked_calls
         outcome.denied = _was_denied(steps)
         hitl_rows_after = await _hitl_rows()
         parked_tool_calls = await pending_tool_approvals(run_email, window_start)
@@ -264,6 +267,7 @@ class ProductionRunner:
             outcome.hitl_requested
             or _hitl_requested(steps)
             or bool(parked_tool_calls)
+            or bool(outcome.parked_calls)
             or (hitl_rows_before is not None and hitl_rows_after is not None and hitl_rows_after > hitl_rows_before)
         )
         return outcome
@@ -318,9 +322,11 @@ class ProductionRunner:
 
         steps = get_steps()
         usage = metadata_box.get("_maf_usage") or {}
+        parked = metadata_box.get("_maf_approval_requests") or []
         return RunOutcome(
             text=text,
-            tools_called=_tools_called(steps),
+            tools_called=_tools_called(steps) + [p["tool_name"] for p in parked],
+            parked_calls=list(parked),
             tokens_in=usage.get("input_token_count") or 0,
             tokens_out=usage.get("output_token_count") or 0,
             grounding=metadata_box.get("grounding"),
