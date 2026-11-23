@@ -116,6 +116,16 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ### Fixed
 
+- **Foundry evaluator inputs now use the shapes the SDK documents.** The adapter passed `query` and `response` as
+  plain strings; `IntentResolutionEvaluator` and `TaskAdherenceEvaluator` then logged "Conversation history could
+  not be parsed" and "Agent response could not be parsed" and judged an unstructured prompt, which degrades scores
+  without failing the call. They now get message lists (a user message; the tool calls, then the final answer as
+  assistant messages), `ToolCallAccuracyEvaluator` gets message-list queries and `{name, description, parameters}`
+  definitions, and a record that calls a tool with no definition is skipped by name. New
+  `--tool-definitions auto` reads the definitions off the agents that produced the records, so records with tool
+  calls are scoreable without a hand-written file. Tests check the shapes against the installed SDK's own
+  validators and reformatters, offline. Live check on 5 pricing records (gpt-4.1-mini judge): both warnings gone,
+  intent resolution unchanged at 4.2, tool call accuracy now scores 4 records (mean 4.25).
 - **Order cards built from the recent-orders summary.** The context provider on both stacks lists each recent order as
   id, status, total and date only, and the order-management agent could render an `order` card straight from that line,
   so the card shipped with empty `items`, address, carrier and tracking and no tool was called. The injected block now
