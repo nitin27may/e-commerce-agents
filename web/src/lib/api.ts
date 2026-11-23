@@ -182,6 +182,34 @@ export interface ProposalLine {
   executed_at: string | null;
 }
 
+/** One row of the staff approvals inbox (`GET /api/approvals`). */
+export interface ApprovalSummary {
+  id: string;
+  /** What raised it: a tool call, a paused workflow, an event the system could not act on alone. */
+  source: string;
+  kind: string;
+  requester_email: string;
+  amount: number | string | null;
+  /** Who the policy routed it to: `auto`, `support` or `manager`. */
+  route: string | null;
+  assigned_role: string | null;
+  status: string;
+  due_at: string | null;
+  escalation_level: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The reviewer's view of one approval (`GET /api/approvals/{id}`). */
+export interface ApprovalDetail extends ApprovalSummary {
+  source_detail: Record<string, unknown> | null;
+  events: Record<string, unknown>[];
+  editable_fields: string[];
+  [key: string]: unknown;
+}
+
+export type ApprovalDecision = "approve" | "reject" | "request_info";
+
 export interface SellerProposal {
   id: string;
   seller_email: string;
@@ -1149,38 +1177,21 @@ class ApiClient {
     >("/api/agents/stats");
   }
 
-  // HITL
-  getHitlRequests(status?: string) {
+  // The unified approvals inbox (#92): every pending approval the signed-in reviewer may decide,
+  // whatever raised it. `status` is one status or "all"; omitted means what is waiting.
+  listApprovals(status?: string) {
     const q = status ? `?status=${encodeURIComponent(status)}` : "";
-    return this.request<{
-      requests: {
-        id: string;
-        user_email: string;
-        agent_name: string;
-        tool_name: string;
-        tool_input: Record<string, unknown>;
-        status: string;
-        admin_note: string | null;
-        approved_by: string | null;
-        execution_result: Record<string, unknown> | null;
-        created_at: string;
-        resolved_at: string | null;
-      }[];
-      total: number;
-    }>(`/api/admin/hitl/requests${q}`);
+    return this.request<{ approvals: ApprovalSummary[]; total: number }>(`/api/approvals${q}`);
   }
 
-  approveHitlRequest(id: string, note?: string) {
-    return this.request<{ status: string; execution_result: Record<string, unknown> }>(
-      `/api/admin/hitl/requests/${id}/approve`,
-      { method: "POST", body: JSON.stringify({ note: note ?? null }) },
-    );
+  getApproval(id: string) {
+    return this.request<ApprovalDetail>(`/api/approvals/${encodeURIComponent(id)}`);
   }
 
-  denyHitlRequest(id: string, note?: string) {
-    return this.request<{ status: string }>(
-      `/api/admin/hitl/requests/${id}/deny`,
-      { method: "POST", body: JSON.stringify({ note: note ?? null }) },
+  decideApproval(id: string, decision: ApprovalDecision, note?: string) {
+    return this.request<{ approval: ApprovalSummary; result: Record<string, unknown> | null }>(
+      `/api/approvals/${encodeURIComponent(id)}/decide`,
+      { method: "POST", body: JSON.stringify({ decision, note: note ?? null }) },
     );
   }
 

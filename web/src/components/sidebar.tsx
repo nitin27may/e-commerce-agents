@@ -67,11 +67,11 @@ function CartBadge() {
 }
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
-  const { user, logout, isAdmin } = useAuth();
+  const { user, logout, isAdmin, isStaff } = useAuth();
   const pathname = usePathname();
 
   const isSeller = user?.role === "seller" || isAdmin;
-  const groups = visibleGroups({ isAdmin, isSeller });
+  const groups = visibleGroups({ isAdmin, isSeller, isStaff });
 
   // Only the most specific matching item is active, so a parent route like
   // /admin doesn't also light up while on /admin/usage.

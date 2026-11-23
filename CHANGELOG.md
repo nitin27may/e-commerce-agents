@@ -62,6 +62,16 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
   reports showed invented dollars. They now show null. With `COST_BUDGET_MODE=enforce` and a ceiling, a
   turn on an unpriced model stops the run instead of letting the ceiling pass unchecked.
 
+### Fixed
+
+- **Staff could not decide a paused return from the Approvals page, and the support role had no
+  page to decide from** (#208). The page read the older tool-approval list, so a return paused at
+  the workflow's policy gate never appeared and the inbox said "No pending approvals"; it was also
+  admin-only, while support's Runs page lists only its own runs. The page now reads the unified
+  inbox (`GET /api/approvals`) and decides through `POST /api/approvals/{id}/decide`, and it is
+  open to `support` and `admin`. The server still decides what each reviewer sees and may decide.
+  Web only; the API was already correct on both stacks.
+
 ### Documentation
 
 - **Screenshots of the orchestration UI** (the Compare dialog, a return paused for approval, an admin
