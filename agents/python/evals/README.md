@@ -387,11 +387,21 @@ Rules:
 - Live variants may also correct a case that was wrong for live data, and say why in the commit, not in the file. Today:
   `inventory_fulfillment.live.json` asks about the out-of-stock Dyson V15 Detect for the restock case (the Sony is in
   stock in the seed, so a model rightly answers from `get_warehouse_availability`), and
+  and now asserts `get_warehouse_availability` with the resolved id (it returns the restock dates, so the model never
+  needs `get_restock_schedule`), `pricing_promotions.live.json` expects the seed's real tier for
+  `jack.anderson@gmail.com` (bronze, 0% discount, spend $600) and `get_loyalty_tier`; it says "Look up my loyalty tier ..." because the replay wording lets the model answer from the tier
+  in its injected context with no tool call (2 of 6 samples), which leaves every dollar figure it quotes ungrounded, and
   `review_sentiment.live.json` does not assert `months: 6` (the model relies on the tool's default of 6, which is not
   recorded as an argument).
-- `cancel_order` is approval-gated: a live run parks it (a pending `tool_approval_requests` row, the order untouched,
-  `expect_hitl: true` on the live case) and leaves that row behind. `initiate_return` is a real write against the
-  database a live run uses. Reseed between runs.
+- `cancel_order` is approval-gated with `approval_mode="always_require"`, which MAF resolves before any function
+  middleware runs: a live run parks the call (the order is untouched) but writes **no** `tool_approval_requests` row
+  (`HITLFunctionMiddleware` never sees the call), records no step, and the reply is empty. The only trace is a
+  `function_approval_request` in the response, which `shared.agent_host.approval_requests` surfaces and the in-process
+  runner turns into `hitl_requested`, a `cancel_order` tool call (name and arguments) and `parked_calls`. The live
+  case therefore expects the park (`expect_hitl: true`, `expected_tool_args` with the resolved order id) and lists
+  no `expected_fields` (a parked call returns none); with no fields and an empty parked reply the judge is skipped.
+  The `http` target cannot see a `function_approval_request` through the specialist's reply, so there the fact stays
+  not observable. `initiate_return` is a real write against the database a live run uses. Reseed between runs.
 - The pricing coupon case states a cart total (`validate_coupon` needs `cart_total` and the pricing agent has no cart
   tool, so the replay wording "my current cart" gives a model nothing to pass). It names `WELCOME10`, which has no
   minimum spend and no category or user restriction in `scripts/seed.py`.

@@ -65,11 +65,12 @@
     "expected_tools": [
       "cancel_order"
     ],
-    "expected_fields": [
-      "order_id",
-      "new_status",
-      "refund_amount"
-    ],
+    "expected_tool_args": {
+      "cancel_order": {
+        "order_id": "{{order:placed}}"
+      }
+    },
+    "expected_fields": [],
     "criteria": {
       "grounded": true,
       "tool_called": true,

@@ -127,3 +127,9 @@ def test_rewrite_cards_leaves_malformed_fence_untouched() -> None:
     text = "```product\n{broken}\n```"
     result = rewrite_cards(text, lambda e: None, lambda e: e)
     assert result == text
+
+
+def test_dollar_amount_with_thousands_separator_is_one_amount() -> None:
+    # "$1,000" used to be read as "$1" (the comma ended the match), a claim no tool result could back.
+    claims = extract_claims("Silver starts at $1,000 and gold at $3,000.50, free shipping over $75.")
+    assert [a.value for a in claims.amounts] == [1000.0, 3000.5, 75.0]
