@@ -146,6 +146,7 @@ SECTIONS: tuple[Section, ...] = (
             "docs/replay-mode.md",
             "docs/maf-best-practices.md",
             "docs/releasing.md",
+            "docs/contributing-dependencies.md",
         ),
     ),
     Section(
