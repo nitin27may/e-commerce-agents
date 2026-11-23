@@ -570,7 +570,8 @@ def test_gateway_policy_limits_and_meters_per_agent(raw_snapshots: dict[str, Res
     assert "<azure-openai-emit-token-metric" in policy
     assert "x-agent-name" in policy
     assert "<authentication-managed-identity" in policy
-    assert "https://cognitiveservices.azure.com" in policy
+    # The managed-identity authentication resource, matched as an attribute rather than a bare substring.
+    assert re.search(r'resource="https://cognitiveservices\.azure\.com"', policy)
     for agent in AGENTS:
         assert f'"{agent}"' in policy, f"{agent} needs its own limit"
     assert 'name="api-key"' in policy and 'exists-action="delete"' in policy, (
