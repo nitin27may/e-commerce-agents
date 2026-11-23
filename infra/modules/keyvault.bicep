@@ -7,6 +7,8 @@ param readerPrincipalId string
 @description('Deploying user or pipeline; gets Secrets Officer. Empty to skip.')
 param deployerPrincipalId string = ''
 param enablePurgeProtection bool
+@description('Reference profile: public network access off and the default firewall action Deny (trusted Azure services bypass). Reached through a private endpoint; secrets are still written through ARM.')
+param privateOnly bool = false
 @minValue(7)
 @maxValue(90)
 param softDeleteRetentionDays int
@@ -41,7 +43,8 @@ resource vault 'Microsoft.KeyVault/vaults@2025-05-01' = {
     softDeleteRetentionInDays: softDeleteRetentionDays
     // Once true it can never be set back to false, so the demo profile omits it.
     enablePurgeProtection: enablePurgeProtection ? true : null
-    publicNetworkAccess: 'Enabled'
+    publicNetworkAccess: privateOnly ? 'Disabled' : 'Enabled'
+    networkAcls: privateOnly ? { defaultAction: 'Deny', bypass: 'AzureServices' } : null
   }
 }
 
@@ -109,5 +112,6 @@ resource staffPasswordEntry 'Microsoft.KeyVault/vaults/secrets@2025-05-01' = {
   properties: { value: seedStaffPassword }
 }
 
+output id string = vault.id
 output name string = vault.name
 output uri string = vault.properties.vaultUri

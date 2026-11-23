@@ -7,6 +7,8 @@ param environmentId string
 @description('User-assigned identity: resolves Key Vault secret references.')
 param identityId string
 param image string
+@description('Registry the image comes from when it is an ACR (pulled with the user-assigned identity). Empty for a public registry such as GHCR.')
+param registryServer string = ''
 @description('Container command override (empty keeps the image CMD).')
 param command array = []
 
@@ -134,6 +136,7 @@ resource app 'Microsoft.App/containerApps@2025-07-01' = {
     configuration: {
       activeRevisionsMode: 'Single'
       secrets: secretList
+      registries: empty(registryServer) ? null : [{ server: registryServer, identity: identityId }]
       ingress: hasIngress
         ? {
             external: externalIngress

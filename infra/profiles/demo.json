@@ -1,6 +1,12 @@
 {
-  "logAnalytics": { "dailyQuotaGb": 1, "retentionDays": 30 },
-  "keyVault": { "enablePurgeProtection": false, "softDeleteRetentionDays": 7 },
+  "logAnalytics": {
+    "dailyQuotaGb": 1,
+    "retentionDays": 30
+  },
+  "keyVault": {
+    "enablePurgeProtection": false,
+    "softDeleteRetentionDays": 7
+  },
   "postgres": {
     "tier": "Burstable",
     "skuName": "Standard_B1ms",
@@ -10,8 +16,15 @@
     "geoRedundantBackup": "Disabled",
     "allowAzureServices": true
   },
-  "openAi": { "chatCapacity": 50, "embeddingCapacity": 20, "miniCapacity": 50 },
-  "budget": { "monthlyAmount": 150, "alertThresholdPercent": 80 },
+  "openAi": {
+    "chatCapacity": 50,
+    "embeddingCapacity": 20,
+    "miniCapacity": 50
+  },
+  "budget": {
+    "monthlyAmount": 150,
+    "alertThresholdPercent": 80
+  },
   "containerApps": {
     "minReplicas": 1,
     "maxReplicas": 2,
@@ -20,5 +33,19 @@
     "workerMinReplicas": 1,
     "httpConcurrency": 20
   },
-  "redis": { "minReplicas": 1, "maxReplicas": 1 }
+  "openAiAuth": "key",
+  "a2aIdentity": "both",
+  "imageSource": "ghcr",
+  "network": {
+    "enabled": false,
+    "addressPrefix": "10.40.0.0/16",
+    "environmentSubnetPrefix": "10.40.0.0/24",
+    "privateEndpointSubnetPrefix": "10.40.1.0/24"
+  },
+  "redis": {
+    "kind": "container",
+    "minReplicas": 1,
+    "maxReplicas": 1,
+    "skuName": ""
+  }
 }
