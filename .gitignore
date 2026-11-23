@@ -108,3 +108,6 @@ agents/python/eval-*.json
 
 # Personal eval baselines and local eval output (evals/baselines.py, evals/provider_check.py)
 agents/python/evals/.local/
+
+# Foundry adapter scratch input (evals/foundry/run.py --log-to-project)
+.foundry-input/
