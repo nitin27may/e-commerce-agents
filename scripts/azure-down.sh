@@ -31,18 +31,31 @@ export AZURE_DRY_RUN
 resource_group="rg-$ENV_NAME"
 
 if [ "$PURGE_ONLY" != "1" ]; then
+    if [ "$AZURE_DRY_RUN" != "1" ] && ! azd env list --output json 2>/dev/null | jq -e --arg n "$ENV_NAME" '.[] | select(.Name == $n)' >/dev/null; then
+        die "no azd environment named '$ENV_NAME' on this machine (azd keeps them under .azure/). If the deployment was made elsewhere, delete it by hand: az group delete --name $resource_group, then re-run with --purge-only to clear the soft-deleted names."
+    fi
     log "azd down --purge --force ($ENV_NAME)"
-    run azd down --environment "$ENV_NAME" --purge --force --no-prompt
+    # A purge-protected vault makes azd's own purge step complain; the checks below decide whether anything is really left.
+    run azd down --environment "$ENV_NAME" --purge --force --no-prompt \
+        || warn "azd down exited non-zero; checking for leftovers anyway"
 fi
 
 status=0
-if ! check_soft_deleted "$ENV_NAME"; then
+# check_soft_deleted: 0 clean, 1 purgeable leftovers, 2 only purge-protected Key Vaults (they cannot be purged early).
+deleted=0
+check_soft_deleted "$ENV_NAME" || deleted=$?
+if [ "$deleted" -eq 1 ]; then
     log "leftovers found; purging"
     check_soft_deleted "$ENV_NAME" purge || true
-    if ! check_soft_deleted "$ENV_NAME"; then
-        warn "soft-deleted resources remain after the purge; purge them by hand (az keyvault purge, az cognitiveservices account purge)"
+    deleted=0
+    check_soft_deleted "$ENV_NAME" || deleted=$?
+    if [ "$deleted" -eq 1 ]; then
+        warn "soft-deleted resources remain after the purge; purge them by hand (az keyvault purge, az cognitiveservices account purge, az apim deletedservice purge)"
         status=1
     fi
+fi
+if [ "$deleted" -eq 2 ]; then
+    warn "a purge-protected Key Vault stays soft-deleted until its scheduled purge date (reference profile). Nothing is billed for it, but do not reuse the name '$ENV_NAME' before then."
 fi
 
 if [ "$AZURE_DRY_RUN" = "1" ]; then

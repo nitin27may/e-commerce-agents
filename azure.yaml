@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
 #
-# `azd up` provisions infra/ (Bicep, subscription scope) and runs the hooks below. There are no
+# `azd provision` provisions infra/ (Bicep, subscription scope) and runs the hooks below. There are no
 # `services:`: the container images are built and published by .github/workflows/build-images.yml and
 # pulled from GHCR at the pinned IMAGE_TAG (IMAGE_SOURCE=ghcr, the demo default), so there is nothing for azd to build or deploy.
 #

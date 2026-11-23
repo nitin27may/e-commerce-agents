@@ -1001,11 +1001,12 @@ def test_build_from_source_dry_run_prints_a_remote_build_per_image() -> None:
 
 
 @needs_bash
-def test_a_demo_dry_run_still_pulls_from_ghcr_with_azd_up() -> None:
+def test_a_demo_dry_run_still_pulls_from_ghcr_with_azd_provision() -> None:
     out = _run_script(
         "scripts/azure-up.sh", "--env", "t1", "--location", "eastus2", "--image-tag", "v0.0.0-ci", "--dry-run"
     )
-    assert "azd up --environment t1" in out and "az acr" not in out
+    assert "azd provision --environment t1" in out and "az acr" not in out and "azd up" not in out
+    assert "azd env new t1 --location eastus2 --subscription" in out and "azd env set AZURE_SUBSCRIPTION_ID" in out
     assert "azd env set DEPLOY_STACK python" in out and "azd env set IMAGE_SOURCE auto" in out
 
 

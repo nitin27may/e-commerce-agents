@@ -16,6 +16,17 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ### Fixed
 
+- **Azure first-run hardening (optional deployment only).** The Postgres SKU preflight read the wrong level of the
+  `az postgres flexible-server list-skus` JSON (SKUs are nested under `supportedServerEditions`), so it rejected
+  every region and `scripts/azure-up.sh` could not get past `prereqs`. Fixed against a live read-only listing and
+  pinned by `tests/test_azure_checks.py`. Also: resource providers are registered in parallel and polled (a new
+  subscription needs minutes), `azd auth login` and the subscription are checked and pinned, the embedding model
+  quota is checked as well as the chat model, `Microsoft.Network` and (for the gateway) `Microsoft.ApiManagement`
+  are registered, purge-protected and API Management soft-deleted names are recognised, `azure-down` survives a
+  failing `azd down`, the smoke test waits for revisions to become healthy, and `azd provision` replaces `azd up`
+  (the template declares no services). `docs/azure-deployment.md` now opens with a first-deploy checklist. Nothing
+  outside `infra/`, `scripts/azure*` and the docs changed; the dev, demo and eval paths do not need Azure.
+
 - **Group chat no longer answers with a placeholder.** The moderator's default verdict was the one line
   "Synthesized 2 perspective(s) (value, quality) on: <prompt>"; it now shows the question followed by each
   panelist's actual words (#210). No model call is involved, so no replay fixture changes.

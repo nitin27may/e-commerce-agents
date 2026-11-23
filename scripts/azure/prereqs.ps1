@@ -17,8 +17,9 @@ if (-not $OpenAiLocation) { $OpenAiLocation = $Location }
 
 $minAz = [version]'2.67.0'; $minAzd = [version]'1.18.0'; $minBicep = [version]'0.34.0'
 $providers = @('Microsoft.App', 'Microsoft.OperationalInsights', 'Microsoft.Insights', 'Microsoft.CognitiveServices',
-    'Microsoft.DBforPostgreSQL', 'Microsoft.KeyVault', 'Microsoft.ManagedIdentity', 'Microsoft.Consumption', 'Microsoft.Authorization', 'Microsoft.ContainerRegistry')
-if ($Profile -eq 'reference') { $providers += 'Microsoft.Cache', 'Microsoft.Network' }
+    'Microsoft.DBforPostgreSQL', 'Microsoft.KeyVault', 'Microsoft.ManagedIdentity', 'Microsoft.Consumption', 'Microsoft.Authorization', 'Microsoft.ContainerRegistry', 'Microsoft.Network')
+if ($Profile -eq 'reference') { $providers += 'Microsoft.Cache' }
+if ((Get-AzdValue 'DEPLOY_GATEWAY') -eq 'true') { $providers += 'Microsoft.ApiManagement' }
 
 foreach ($tool in 'az', 'azd') {
     if (-not (Test-Tool $tool)) {
@@ -43,14 +44,21 @@ Write-Log 'tools ok'
 
 if (Test-DryRun) { Invoke-Step az account show } else {
     az account show *> $null
-    if ($LASTEXITCODE -ne 0) { Stop-Azure "not logged in: run 'az login' (and 'azd auth login')" }
+    if ($LASTEXITCODE -ne 0) { Stop-Azure "not logged in: run 'az login'" }
+    if (Test-Tool 'azd') {
+        azd auth login --check-status *> $null
+        if ($LASTEXITCODE -ne 0) { Stop-Azure "azd is not signed in: run 'azd auth login' (it is separate from 'az login')" }
+    }
 }
 Invoke-Step az extension add --name containerapp --upgrade --only-show-errors
 
 foreach ($p in $providers) {
     if (Test-DryRun) { Invoke-Step az provider register --namespace $p; continue }
     $state = az provider show --namespace $p --query registrationState -o tsv 2>$null
-    if ($state -ne 'Registered') { Write-Log "registering $p (was $state)"; az provider register --namespace $p --wait --only-show-errors }
+    if ($state -ne 'Registered') {
+        Write-Log "registering $p (was $state; on a new subscription this can take several minutes)"
+        az provider register --namespace $p --wait --only-show-errors
+    }
 }
 Write-Log 'resource providers registered'
 

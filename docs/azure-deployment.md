@@ -8,6 +8,53 @@ Bicep templates and scripts that deploy the Python stack to Azure Container Apps
 
 **Status: written, compiled and linted, never deployed.** Everything here was checked offline: the Bicep builds and lints, the compiled wiring is asserted by `agents/python/tests/test_infra_bicep.py`, the scripts pass `bash -n` and a dry run, and the secret generator has its own test. **Nothing has run against a real subscription**, and every behaviour that needs one is listed under [Assumptions to confirm](#assumptions-to-confirm-on-a-real-subscription). The Python stack is the default; the .NET stack (`--stack dotnet`) is deployable too, verified offline only. For local and Compose paths see [deployment.md](deployment.md).
 
+**Azure is optional.** Nothing outside `infra/`, `azure.yaml`, `scripts/azure*` and `.github/workflows/azure.yml` needs it. The default dev, demo and eval paths run with `LLM_PROVIDER=openai`, `replay` or any OpenAI-compatible endpoint and never touch Azure.
+
+## First deploy on a new subscription
+
+A checklist for a clean subscription. It has not been run end to end yet: [what was and was not verified](#assumptions-to-confirm-on-a-real-subscription).
+
+**You need**
+
+- An Azure subscription where you are **Owner** (or Contributor plus User Access Administrator): the template creates role assignments (Key Vault Secrets User, Cognitive Services OpenAI User). A pay-as-you-go or free-trial account is fine; a free trial may refuse the model quota or the Postgres SKU, and then the preflight says so before anything is created.
+- `az` 2.67 or newer, `azd` 1.18 or newer (`azd version`), Bicep 0.34 or newer (`az bicep install`), `jq`, `curl`, and `bash` (or PowerShell with the `.ps1` mirrors). The released images are public on GHCR, so no Docker is needed.
+- Rough cost: the demo profile is about 4 to 12 USD a day while it is up (these are estimates, not measurements). The reference profile (zone-redundant Postgres, Managed Redis, private endpoints, ACR) costs several times that. A budget alert is created, but it only notifies; it does not stop spending. Run the teardown when you are done.
+
+**Commands, in order**
+
+```bash
+az login                                     # opens a browser; then, if you have several subscriptions:
+az account set --subscription <subscription-id>
+azd auth login                               # azd keeps its own sign-in; az login does not cover it
+
+scripts/azure-up.sh --env <env> --location <region> --image-tag v1.4.0 --dry-run   # prints every command, changes nothing
+scripts/azure-up.sh --env <env> --location <region> --image-tag v1.4.0             # PowerShell: scripts/azure-up.ps1 -EnvName ...
+```
+
+`<env>` is lowercase letters, digits and dashes (it names the resource group `rg-<env>`). Pick a `<region>` where the subscription can create Postgres Flexible Server and where `gpt-5.1` has quota (`eastus2` and `swedencentral` are common). `--image-tag` must be a published tag; `v1.4.0` is the latest release. Add `--openai-location <region>` to put only the model account in another region.
+
+**What each step does**
+
+| Step | What happens | Creates | Typical time |
+|---|---|---|---|
+| `prereqs.sh` | Checks tools and both sign-ins, registers resource providers and waits for them, checks you can create role assignments, checks the Postgres SKU, model availability and quota (chat and embeddings), and soft-deleted names | Nothing except provider registrations and the `containerapp` CLI extension | Under a minute; 2 to 10 minutes on a subscription that has never registered the providers |
+| azd environment | `azd env new` pinned to the active subscription; the settings go into `.azure/<env>/.env` | Local files only | Seconds |
+| `preprovision` hook | Generates every secret once (never overwritten), records your public IP for the frontend allow-list, repeats the region checks | Local files only | Seconds |
+| `azd provision` | Deploys `infra/main.bicep` at subscription scope | Resource group, Log Analytics, App Insights, identity, Key Vault, Postgres + pgvector, the Azure OpenAI account with chat and embedding deployments, Container Apps environment, 8 apps, the db-init job, budget (reference profile adds a VNet, private endpoints, Managed Redis and ACR, in two passes) | 15 to 30 minutes (estimate; Postgres and the model account dominate) |
+| `postprovision` hook | Starts `job-db-init` (migrations, seed, embeddings) and waits, prints the login, runs the quick smoke test (waits up to 5 minutes for revisions and the frontend) | Database content | 5 to 15 minutes (the embeddings step dominates) |
+
+When it finishes it prints the frontend URL. Sign in as `admin.demo@gmail.com` with `azd env get-value SEED_STAFF_PASSWORD`. The frontend answers only your public IP; if it changes, `azd env set DEPLOYER_IP <ip>` and run the script again (it is idempotent: secrets, environment and resources are reused).
+
+**If a step fails:** read the message, fix the cause and re-run the same command. The failures a new subscription meets are: a resource provider still registering (the script waits up to 20 minutes, `PROVIDER_WAIT_SECONDS`), no `gpt-5.1` quota (request it, or `AZURE_CHAT_MODEL=<name> AZURE_CHAT_MODEL_VERSION=<version> scripts/azure-up.sh ...`), a region that restricts Postgres (pick another `--location`), and a soft-deleted name from an earlier attempt (`scripts/azure-down.sh --env <env> --purge-only`). More in [troubleshooting.md](troubleshooting.md#azure-deployment-first-run-failure-catalogue).
+
+**Tear down** (everything, including the soft-deleted Key Vault and model account that would block a re-deploy):
+
+```bash
+scripts/azure-down.sh --env <env>            # azd down --purge --force, purges leftovers, then proves rg-<env> is gone
+```
+
+The reference profile turns on Key Vault purge protection, which cannot be undone: after teardown its vault stays soft-deleted for the retention period (90 days) and **that `--env` name cannot be deployed again until then**. Use a new name. The teardown reports this and exits 0, because nothing is billed for it.
+
 ## Deploy
 
 ```bash
@@ -17,7 +64,7 @@ scripts/azure-up.sh --env demo1 --location eastus2 --image-tag v1.4.0     # Powe
 scripts/azure-down.sh --env demo1
 ```
 
-`azure-up` runs `scripts/azure/prereqs.sh`, creates the azd environment, then `azd up`. The azd hooks do the rest: `preprovision` generates secrets and records your IP, `postprovision` runs the database job, prints the login and runs the smoke test. The frontend is reachable **only from your public IP** unless you pass `--public-open` or `--allowed-ips`. The admin, support and seller accounts get a generated password (`azd env get-value SEED_STAFF_PASSWORD`); customers keep the published demo passwords, so keep the frontend restricted.
+`azure-up` runs `scripts/azure/prereqs.sh`, creates the azd environment, then `azd provision` (the template declares no services, so `azd up` would add nothing). The azd hooks do the rest: `preprovision` generates secrets and records your IP, `postprovision` runs the database job, prints the login and runs the smoke test. The frontend is reachable **only from your public IP** unless you pass `--public-open` or `--allowed-ips`. The admin, support and seller accounts get a generated password (`azd env get-value SEED_STAFF_PASSWORD`); customers keep the published demo passwords, so keep the frontend restricted.
 
 ## Topology
 
@@ -235,7 +282,7 @@ Earlier assumptions:
 - `RATE_LIMIT_TRUSTED_PROXY_HOPS=2` gives each client its own bucket; `WEB_TRUSTED_PROXY_HOPS=1` is right for the Container Apps ingress.
 - The MCP servers answer 2xx on `/mcp` (or the protected-resource metadata) for probes, and accept the internal FQDN as `Host`.
 - azd evaluates `main.parameters.json` after the `preprovision` hook (the generated secrets reach the deployment).
-- `az cognitiveservices usage list`, `model list`, `keyvault list-deleted` and `account list-deleted` return the JSON shapes `scripts/azure/lib/checks.sh` parses.
+- `keyvault list-deleted`, `account list-deleted` and `apim deletedservice list` return the JSON shapes `scripts/azure/lib/checks.sh` parses. (`postgres flexible-server list-skus`, `cognitiveservices model list` and `usage list` were checked against live read-only listings, and `az deployment sub validate` and `what-if` accepted the demo and reference parameters; that is the extent of the Azure-side verification.)
 - `AZURE_PRINCIPAL_ID` is set by azd for a signed-in user; the deployer role assignment is skipped when it is empty.
 - The AllowAllAzureServices firewall rule and the `source` value `user-override` for `azure.extensions` are accepted.
 - Reference profile: private endpoint DNS (`privatelink.redis.azure.net` is the Managed Redis zone; the three AIServices zones cover its hostnames); Key Vault secrets written through ARM still succeed with public access off, and Container Apps resolves the references over the private endpoint; the Container Apps subnet size (`/24`) is enough; a Postgres private endpoint (not VNet integration) is accepted by the flexible server API version used.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One command to an Azure deployment: prerequisites, an azd environment, `azd up`.
+# One command to an Azure deployment: prerequisites, an azd environment, `azd provision` (the hooks do the rest).
 #
 #   scripts/azure-up.sh --env demo1 --location eastus2 [--image-tag v1.4.0] [--profile demo|reference]
 #                       [--openai-location eastus2] [--public-open] [--allowed-ips 198.51.100.0/24,...]
@@ -81,9 +81,21 @@ scripts/azure/prereqs.sh "${prereq_args[@]}"
 settings=("AZURE_LOCATION=$LOCATION" "DEPLOY_PROFILE=$PROFILE" "IMAGE_TAG=$image_tag" "PUBLIC_ACCESS=$PUBLIC_ACCESS_ARG"
     "ALLOWED_IPS=$ALLOWED_IPS_ARG" "DEPLOY_AUTH_SERVER=$AUTH_SERVER" "DEPLOY_MCP=$MCP" "AZURE_OPENAI_LOCATION=${OPENAI_LOCATION:-$LOCATION}"
     "DEPLOY_STACK=$STACK" "IMAGE_SOURCE=$IMAGE_SOURCE_ARG" "BUILD_FROM_SOURCE=$BUILD_FROM_SOURCE")
+# A model other than the default (see check_model's message when gpt-5.1 has no quota): the shell value is persisted so
+# preprovision and the template parameters see the same one the preflight just checked.
+[ -z "${AZURE_CHAT_MODEL:-}" ] || settings+=("AZURE_CHAT_MODEL=$AZURE_CHAT_MODEL")
+[ -z "${AZURE_CHAT_MODEL_VERSION:-}" ] || settings+=("AZURE_CHAT_MODEL_VERSION=$AZURE_CHAT_MODEL_VERSION")
+
+# azd would otherwise prompt for a subscription (and `--no-prompt` makes that a failure): pin the one az is using.
+subscription_id="<subscription-id>"
+if [ "$AZURE_DRY_RUN" != "1" ]; then
+    subscription_id="$(az account show --query id --output tsv)"
+    [ -n "$subscription_id" ] || die "no active Azure subscription: az login, then az account set --subscription <id>"
+fi
+settings+=("AZURE_SUBSCRIPTION_ID=$subscription_id")
 
 if [ "$AZURE_DRY_RUN" = "1" ]; then
-    run azd env new "$ENV_NAME" --location "$LOCATION" --no-prompt
+    run azd env new "$ENV_NAME" --location "$LOCATION" --subscription "$subscription_id" --no-prompt
     for kv in "${settings[@]}"; do run azd env set "${kv%%=*}" "${kv#*=}"; done
     if [ "$image_source" = acr ]; then
         # preprovision sets DEPLOY_APPS=false until the registry holds this tag; postprovision then fills it.
@@ -93,13 +105,14 @@ if [ "$AZURE_DRY_RUN" = "1" ]; then
         scripts/azure/acr-images.sh "$mode" --registry acr-from-AZURE_CONTAINER_REGISTRY_NAME --tag "$image_tag" --stack "$STACK" --dry-run
         run azd provision --environment "$ENV_NAME" --no-prompt
     else
-        run azd up --environment "$ENV_NAME" --no-prompt
+        # azure.yaml declares no services, so there is nothing for the deploy half of `azd up` to do: provision is the whole job.
+        run azd provision --environment "$ENV_NAME" --no-prompt
     fi
     exit 0
 fi
 
 if ! azd env list --output json 2>/dev/null | jq -e --arg n "$ENV_NAME" '.[] | select(.Name == $n)' >/dev/null; then
-    azd env new "$ENV_NAME" --location "$LOCATION" --no-prompt
+    azd env new "$ENV_NAME" --location "$LOCATION" --subscription "$subscription_id" --no-prompt
 fi
 azd env select "$ENV_NAME"
 azd env set AZURE_LOCATION "$LOCATION"
@@ -124,5 +137,6 @@ if [ "$image_source" = acr ]; then
         provision_with_retry azd provision --no-prompt
     fi
 else
-    provision_with_retry azd up --no-prompt
+    provision_with_retry azd provision --no-prompt
 fi
+log "done. Staff password: azd env get-value SEED_STAFF_PASSWORD. Tear down: scripts/azure-down.sh --env $ENV_NAME"

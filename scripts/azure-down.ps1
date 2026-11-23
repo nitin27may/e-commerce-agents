@@ -13,7 +13,9 @@ $resourceGroup = "rg-$EnvName"
 
 if (-not $PurgeOnly) {
     Write-Log "azd down --purge --force ($EnvName)"
-    Invoke-Step azd down --environment $EnvName --purge --force --no-prompt
+    # A purge-protected vault makes azd's purge step complain; the checks below decide whether anything is really left.
+    try { Invoke-Step azd down --environment $EnvName --purge --force --no-prompt }
+    catch { Write-Warn "azd down failed ($($_.Exception.Message)); checking for leftovers anyway" }
 }
 
 $clean = $true
