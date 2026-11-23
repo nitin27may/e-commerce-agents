@@ -10,6 +10,10 @@
 #   ./scripts/dev.sh --no-key     Replay recorded model responses: no API key needed
 #                                 (combines with --demo; from source it layers
 #                                 docker-compose.nokey.yml on docker-compose.yml)
+#   ./scripts/dev.sh --profile NAME
+#                                 Apply a run profile (agents/python/config/profiles/NAME.env): chat,
+#                                 embeddings and model for one provider, no secrets. See docs/run-profiles.md.
+#                                 Precedence: your shell > the profile > .env.
 #
 # --dotnet composes with docker-compose.dotnet.yml instead of the default
 # docker-compose.yml, and adds the "mcp" profile (the .NET MCP inventory
@@ -114,7 +118,14 @@ DEMO=false
 SWITCH=false
 NO_KEY=false
 
-for arg in "$@"; do
+PROFILE=""
+_PROFILE_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/profile.sh"
+# shellcheck source=lib/profile.sh
+source "$_PROFILE_LIB"
+
+while [ $# -gt 0 ]; do
+    arg="$1"
+    shift
     case $arg in
         --clean)      CLEAN=true ;;
         --seed-only)  SEED_ONLY=true ;;
@@ -123,6 +134,15 @@ for arg in "$@"; do
         --demo)       DEMO=true ;;
         --switch)     SWITCH=true ;;
         --no-key)     NO_KEY=true ;;
+        --profile)
+            if [ $# -eq 0 ]; then
+                error "--profile needs a name. Valid profiles: $(list_profiles | tr '\n' ' ')"
+                exit 1
+            fi
+            PROFILE="$1"
+            shift
+            ;;
+        --profile=*)  PROFILE="${arg#--profile=}" ;;
         --help|-h)
             echo "Usage: ./scripts/dev.sh [OPTIONS]"
             echo ""
@@ -134,7 +154,12 @@ for arg in "$@"; do
             echo "  --dotnet      Target the .NET backend instead of Python"
             echo "  --switch      Tear the other stack down first, volumes and all"
             echo "  --no-key      Play back recorded model responses; needs no API key (Python only)"
+            echo "  --profile N   Apply run profile N (chat + embeddings + model for one provider)"
             echo "  --help        Show this help"
+            echo ""
+            echo "  Profiles: $(list_profiles | tr '\n' ' ')"
+            echo "  A profile holds no secrets (keys stay in .env). Your exported variables beat the profile,"
+            echo "  and the profile beats .env. Table and commands: docs/run-profiles.md"
             echo ""
             echo "  --demo is the fast path: no local build, one command, ~2 minutes."
             echo "  Override the image tag with IMAGE_TAG (default: latest):"
@@ -154,6 +179,21 @@ for arg in "$@"; do
             ;;
     esac
 done
+
+# A profile is validated before anything else happens (no Docker, no .env needed to be told it is wrong).
+if [ -n "$PROFILE" ]; then
+    if ! profile_valid "$PROFILE"; then
+        error "$(profile_refuse "$PROFILE" 2>&1)"
+        exit 1
+    fi
+    # keyless IS the no-key overlay: same thing, one name.
+    if [ "$PROFILE" = "keyless" ]; then
+        NO_KEY=true
+    elif [ "$NO_KEY" = true ]; then
+        error "--no-key replays recorded responses and cannot be combined with --profile $PROFILE (use --profile keyless)"
+        exit 1
+    fi
+fi
 
 # --demo pulls release images; --dotnet targets a stack built from source. There
 # is no .NET demo image set, so the combination has no meaning.
@@ -284,6 +324,27 @@ if [ -n "$GENERATED_SECRETS" ]; then
     info "Tokens issued before this run are no longer valid; sign in again."
 fi
 
+# ── Run profile ──────────────────────────────────────────────
+# Exports the profile's variables the shell has not set, so compose interpolation sees them ahead of .env.
+# localhost URLs become host.docker.internal for the containers (docker-compose*.yml map it to the host).
+
+if [ -n "$PROFILE" ]; then
+    if ! apply_profile "$PROFILE" containers; then
+        error "Profile $PROFILE could not be applied."
+        exit 1
+    fi
+    info "Profile ${PROFILE}: $(profile_meta "$PROFILE" summary)"
+    if [ "${#PROFILE_KEPT[@]}" -gt 0 ]; then
+        info "Kept from your shell (not overridden): ${PROFILE_KEPT[*]}"
+    fi
+    if [ "${#PROFILE_OVERRIDES[@]}" -gt 0 ]; then
+        warn "The profile overrides .env for: $(printf '%s; ' "${PROFILE_OVERRIDES[@]}")"
+        warn "Export the variable in your shell to keep your own value."
+    fi
+    info "Verified how: $(profile_meta "$PROFILE" verified)"
+    info "Key needed: $(profile_meta "$PROFILE" key)"
+fi
+
 # ── LLM key preflight ────────────────────────────────────────
 # With LLM_PROVIDER=openai or azure and no key, the stack starts and then every
 # answer is an apology. Stop before building or touching volumes, and say how to
@@ -324,16 +385,23 @@ elif [ "$INFRA_ONLY" != true ] && [ "$SEED_ONLY" != true ]; then
             has_llm_key "$(env_value OPENAI_API_KEY)" || LLM_KEY_MISSING=true
             ;;
         azure)
-            if ! has_llm_key "$(env_value AZURE_OPENAI_KEY)" && ! has_llm_key "$(env_value AZURE_OPENAI_API_KEY)"; then
-                LLM_KEY_MISSING=true
+            # AZURE_OPENAI_AUTH=identity sends an Entra token and no key.
+            if [ "$(env_value AZURE_OPENAI_AUTH | tr '[:upper:]' '[:lower:]')" != "identity" ]; then
+                if ! has_llm_key "$(env_value AZURE_OPENAI_KEY)" && ! has_llm_key "$(env_value AZURE_OPENAI_API_KEY)"; then
+                    LLM_KEY_MISSING=true
+                fi
             fi
+            ;;
+        anthropic)
+            has_llm_key "$(env_value ANTHROPIC_API_KEY)" || LLM_KEY_MISSING=true
             ;;
     esac
     if [ "$LLM_KEY_MISSING" = true ]; then
         error "LLM_PROVIDER=${LLM_PROVIDER_VALUE} but no API key is set, so every answer would fail."
         echo ""
         echo "  Two ways forward:"
-        echo "    1. Add your key to .env (OPENAI_API_KEY, or AZURE_OPENAI_KEY for LLM_PROVIDER=azure),"
+        echo "    1. Add your key to .env (OPENAI_API_KEY, AZURE_OPENAI_KEY for LLM_PROVIDER=azure, or"
+        echo "       ANTHROPIC_API_KEY for LLM_PROVIDER=anthropic),"
         echo "       then run this again."
         echo "    2. Run with --no-key (-NoKey on PowerShell) to play back recorded model responses."
         echo "       Only the recorded demo prompts answer; anything else says it was not recorded."
@@ -341,6 +409,22 @@ elif [ "$INFRA_ONLY" != true ] && [ "$SEED_ONLY" != true ]; then
         exit 1
     fi
 fi
+
+# ── Embedding dimension ──────────────────────────────────────
+# A profile may change the embedding width (a local nomic-embed-text is 768, the baseline column is 1536).
+# scripts/reset_embeddings.py --if-needed is a no-op when the columns already match; otherwise it drops the stored
+# vectors (they could not be compared across widths anyway). Only runs under --profile: without one the width is
+# whatever you configured, as before.
+reconcile_embedding_dim() {
+    [ -n "$PROFILE" ] || return 0
+    local dim="${EMBEDDING_DIM:-}"
+    [ -n "$dim" ] || return 0
+    info "Checking the embedding column width against EMBEDDING_DIM=${dim}"
+    if ! "${COMPOSE[@]}" --profile seed run --rm seeder uv run --no-project python -m scripts.reset_embeddings --if-needed --dim "$dim"; then
+        error "Could not set the embedding dimension to ${dim} (see scripts/reset_embeddings.py)."
+        exit 1
+    fi
+}
 
 # ── Clean (if requested) ─────────────────────────────────────
 
@@ -429,6 +513,7 @@ if [ "$SEED_ONLY" = true ]; then
         success "Database reinitialized with correct credentials"
     fi
 
+    reconcile_embedding_dim
     "${COMPOSE[@]}" --profile seed run --rm seeder
     success "Seeder complete"
     exit 0
@@ -491,6 +576,7 @@ success "Infrastructure is ready"
 # ── Run Seeder ────────────────────────────────────────────────
 
 step "Running database seeder"
+reconcile_embedding_dim
 "${COMPOSE[@]}" --profile seed run --rm seeder
 success "Database seeded"
 

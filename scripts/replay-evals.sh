@@ -10,6 +10,11 @@
 #                                           # safety suite (or ADVERSARIAL_SEED=1). OFF by default:
 #                                           # the committed recorded safety suite does not use it.
 #
+#   scripts/replay-evals.sh --profile keyless   # accepted for symmetry with dev.sh; any other profile is refused.
+#                                               # This script is the keyless gate: it always replays recorded
+#                                               # fixtures. A live run of another provider is
+#                                               #   cd agents/python && uv run python -m evals.run_evals --profile NAME ...
+#
 # Needs Postgres (pgvector) and Redis reachable at $DATABASE_URL / $REDIS_URL.
 # Defaults match docker-compose.yml, so `docker compose up -d db redis` is enough.
 #
@@ -147,12 +152,35 @@ run_suites() {
   return $fail
 }
 
+# --profile NAME: validate against agents/python/config/profiles. Only `keyless` is meaningful here, because the
+# script exports LLM_PROVIDER=replay unconditionally; accepting another profile and then ignoring it would let a
+# green run look like a result for that provider.
+check_profile() {
+  local name="$1"
+  # shellcheck source=lib/profile.sh
+  source "$REPO_ROOT/scripts/lib/profile.sh"
+  if ! profile_valid "$name"; then
+    profile_refuse "$name"
+    exit 2
+  fi
+  if [[ "$name" != "keyless" ]]; then
+    echo "replay-evals.sh replays recorded fixtures and would ignore --profile $name." >&2
+    echo "For a live run of that provider: cd agents/python && uv run python -m evals.run_evals --profile $name ..." >&2
+    exit 2
+  fi
+}
+
 main() {
   local arg do_setup=0
-  for arg in "$@"; do
+  while [[ $# -gt 0 ]]; do
+    arg="$1"; shift
     case "$arg" in
       --setup) do_setup=1 ;;
       --adversarial) export ADVERSARIAL_SEED=1 ;;
+      --profile)
+        [[ $# -gt 0 ]] || { echo "--profile needs a name" >&2; exit 2; }
+        check_profile "$1"; shift ;;
+      --profile=*) check_profile "${arg#--profile=}" ;;
       *) echo "unknown argument: $arg" >&2; exit 2 ;;
     esac
   done

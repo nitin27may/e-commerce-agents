@@ -37,8 +37,16 @@
     is needed. Layers docker-compose.nokey.yml (LLM_PROVIDER=replay and the tour
     settings, hardcoded) and skips the key preflight. Combines with -Demo. Python only.
 
+.PARAMETER Profile
+    Apply a run profile (agents/python/config/profiles/<name>.env): chat, embeddings and model for one provider,
+    no secrets. Precedence: your environment > the profile > .env. `keyless` is the same as -NoKey. An unknown
+    name is refused with the list of valid ones. On Windows an environment variable cannot be empty, so a profile
+    line such as LLM_BASE_URL= cannot blank a value left in .env: edit .env if a stale value gets through.
+    See docs/run-profiles.md.
+
 .EXAMPLE
     ./scripts/dev.ps1
+    ./scripts/dev.ps1 -Profile ollama
     ./scripts/dev.ps1 -Demo -NoKey
     ./scripts/dev.ps1 -Clean
     ./scripts/dev.ps1 -Dotnet
@@ -52,6 +60,7 @@ param(
     [switch]$Dotnet,
     [switch]$Demo,
     [switch]$NoKey,
+    [string]$Profile = '',
     # The VARIABLE cannot be $Switch — that is a reserved automatic variable in
     # PowerShell (the switch-statement enumerator), and shadowing it is a real
     # bug waiting. The alias keeps the user-facing flag matching dev.sh's
@@ -116,6 +125,22 @@ function Set-LocalSecrets {
         [System.IO.File]::WriteAllText((Resolve-Path $Path).Path, $text, (New-Object System.Text.UTF8Encoding($false)))
     }
     return , $generated
+}
+
+# ── Run profile: validated before anything else (no Docker, no .env needed to be told it is wrong) ──
+$RepoRootForProfiles = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'lib/Profile.ps1')
+if ($Profile) {
+    if (-not (Test-ProfileName -RepoRoot $RepoRootForProfiles -Name $Profile)) {
+        Write-Err "unknown profile '$Profile'; valid profiles: $((Get-ProfileNames -RepoRoot $RepoRootForProfiles) -join ', ')"
+        exit 1
+    }
+    if ($Profile -eq 'keyless') {
+        $NoKey = [switch]::new($true)   # keyless IS the no-key overlay: one thing, one name
+    } elseif ($NoKey) {
+        Write-Err "-NoKey replays recorded responses and cannot be combined with -Profile $Profile (use -Profile keyless)"
+        exit 1
+    }
 }
 
 # ── Stack selection ──────────────────────────────────────────
@@ -332,6 +357,16 @@ function Show-Summary {
     Write-Host ''
 }
 
+# A profile may change the embedding width (nomic-embed-text is 768, the baseline column is 1536).
+# scripts/reset_embeddings.py --if-needed is a no-op when the columns already match. Mirrors dev.sh.
+function Sync-EmbeddingDimension {
+    if (-not $Profile) { return }
+    $dim = [Environment]::GetEnvironmentVariable('EMBEDDING_DIM')
+    if (-not $dim) { return }
+    Write-Info "Checking the embedding column width against EMBEDDING_DIM=$dim"
+    Invoke-Compose -Arguments @('--profile', 'seed', 'run', '--rm', 'seeder', 'uv', 'run', '--no-project', 'python', '-m', 'scripts.reset_embeddings', '--if-needed', '--dim', $dim)
+}
+
 # ── Run from the repository root, wherever the script was invoked from ──
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 Push-Location $RepoRoot
@@ -368,6 +403,25 @@ try {
         Write-Info 'Tokens issued before this run are no longer valid; sign in again.'
     }
 
+    # ── Run profile ──────────────────────────────────────────
+    # Mirrors dev.sh: exports the profile's variables the environment has not set, so compose interpolation sees
+    # them ahead of .env. localhost URLs become host.docker.internal for the containers.
+    if ($Profile) {
+        $applied = Use-RunProfile -RepoRoot $RepoRoot -Name $Profile -ForContainers
+        if ($applied.Unresolved.Count -gt 0) {
+            Write-Err "Profile $Profile needs a value for: $($applied.Unresolved -join ' ') (set them in .env or the environment)."
+            exit 1
+        }
+        Write-Info "Profile ${Profile}: $(Get-ProfileMeta -RepoRoot $RepoRoot -Name $Profile -Field 'summary')"
+        if ($applied.Kept.Count -gt 0) { Write-Info "Kept from your environment (not overridden): $($applied.Kept -join ' ')" }
+        if ($applied.Overrides.Count -gt 0) {
+            Write-Warn "The profile overrides .env for: $($applied.Overrides -join '; ')"
+            Write-Warn 'Set the variable in your environment to keep your own value.'
+        }
+        Write-Info "Verified how: $(Get-ProfileMeta -RepoRoot $RepoRoot -Name $Profile -Field 'verified')"
+        Write-Info "Key needed: $(Get-ProfileMeta -RepoRoot $RepoRoot -Name $Profile -Field 'key')"
+    }
+
     # ── LLM key preflight ────────────────────────────────────
     # Mirrors dev.sh: openai/azure with no key means every answer fails, so stop
     # before building or touching volumes. -InfraOnly and -SeedOnly call no model.
@@ -396,13 +450,19 @@ try {
         if ($provider -eq 'openai') {
             $keyMissing = -not (Test-LlmKey (Get-EnvValue 'OPENAI_API_KEY'))
         } elseif ($provider -eq 'azure') {
-            $keyMissing = -not ((Test-LlmKey (Get-EnvValue 'AZURE_OPENAI_KEY')) -or (Test-LlmKey (Get-EnvValue 'AZURE_OPENAI_API_KEY')))
+            # AZURE_OPENAI_AUTH=identity sends an Entra token and no key.
+            if ((Get-EnvValue 'AZURE_OPENAI_AUTH').ToLower() -ne 'identity') {
+                $keyMissing = -not ((Test-LlmKey (Get-EnvValue 'AZURE_OPENAI_KEY')) -or (Test-LlmKey (Get-EnvValue 'AZURE_OPENAI_API_KEY')))
+            }
+        } elseif ($provider -eq 'anthropic') {
+            $keyMissing = -not (Test-LlmKey (Get-EnvValue 'ANTHROPIC_API_KEY'))
         }
         if ($keyMissing) {
             Write-Err "LLM_PROVIDER=$provider but no API key is set, so every answer would fail."
             Write-Host ''
             Write-Host '  Two ways forward:'
-            Write-Host '    1. Add your key to .env (OPENAI_API_KEY, or AZURE_OPENAI_KEY for LLM_PROVIDER=azure),'
+            Write-Host '    1. Add your key to .env (OPENAI_API_KEY, AZURE_OPENAI_KEY for LLM_PROVIDER=azure, or'
+            Write-Host '       ANTHROPIC_API_KEY for LLM_PROVIDER=anthropic),'
             Write-Host '       then run this again.'
             Write-Host '    2. Run with -NoKey to play back recorded model responses with no key.'
             Write-Host '       Only the recorded demo prompts answer; anything else says it was not recorded.'
@@ -484,6 +544,7 @@ try {
         Wait-ForHealth -Name 'Redis' -Probe @('exec', 'redis', 'redis-cli', 'ping')
         Repair-StaleDatabaseVolume
         Invoke-Migrations
+        Sync-EmbeddingDimension
         Invoke-Compose -Arguments @('--profile', 'seed', 'run', '--rm', 'seeder')
         Write-Ok 'Seeder complete'
         exit 0
@@ -515,6 +576,7 @@ try {
 
     # ── Seed ─────────────────────────────────────────────────
     Write-Step 'Running database seeder'
+    Sync-EmbeddingDimension
     Invoke-Compose -Arguments @('--profile', 'seed', 'run', '--rm', 'seeder')
     Write-Ok 'Database seeded'
 

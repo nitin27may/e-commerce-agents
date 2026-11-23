@@ -8,6 +8,7 @@ changing a vector column's dimension makes the stored vectors meaningless. That 
 script an operator runs on purpose and not a migration that would run on every ``dev.sh``.
 
     uv run --project agents/python python scripts/reset_embeddings.py --dim 768
+    # --if-needed makes it a no-op when the columns already have that width (dev.sh --profile uses it)
     # then set EMBEDDING_DIM=768 (and EMBEDDING_MODEL / EMBEDDING_PROVIDER) and re-embed:
     uv run python -m scripts.seed --seed-only   # or: python -m scripts.generate_embeddings
 
@@ -105,7 +106,7 @@ async def current_dims(conn: asyncpg.Connection) -> dict[str, int]:
     return {r["t"]: r["d"] for r in rows}
 
 
-async def main(dim: int, database_url: str) -> int:
+async def main(dim: int, database_url: str, *, if_needed: bool = False) -> int:
     try:
         validate_dim(dim)
     except ResetRefused as exc:
@@ -114,6 +115,9 @@ async def main(dim: int, database_url: str) -> int:
     conn = await asyncpg.connect(database_url)
     try:
         before = await current_dims(conn)
+        if if_needed and before and all(width == dim for width in before.values()):
+            logger.info("embedding columns are already vector(%d); nothing to do", dim)
+            return 0
         await reset(conn, dim)
         after = await current_dims(conn)
     finally:
@@ -133,9 +137,14 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument("--dim", type=int, required=True, help="new vector dimension (1-2000)")
     parser.add_argument("--database-url", default=DATABASE_URL, help="defaults to $DATABASE_URL")
+    parser.add_argument(
+        "--if-needed",
+        action="store_true",
+        help="do nothing when the columns already have this dimension (what dev.sh --profile runs)",
+    )
     return parser.parse_args(argv)
 
 
 if __name__ == "__main__":
     args = _parse_args(sys.argv[1:])
-    sys.exit(asyncio.run(main(args.dim, args.database_url)))
+    sys.exit(asyncio.run(main(args.dim, args.database_url, if_needed=args.if_needed)))

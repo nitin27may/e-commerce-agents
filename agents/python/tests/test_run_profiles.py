@@ -188,3 +188,65 @@ def test_parse_dotenv_last_wins_and_unquotes(tmp_path: Path) -> None:
     path.write_text("A=1\nB=\"two\"\nA=3\n# C=4\nexport D='x y'\n", encoding="utf-8")
     assert prof.parse_dotenv(path) == {"A": "3", "B": "two", "D": "x y"}
     assert prof.parse_dotenv(tmp_path / "missing") == {}
+
+
+# ── The eval CLI hook and the embedding-dimension helper ─────────────────────
+
+
+def test_eval_cli_reads_the_profile_flag() -> None:
+    from evals._profile_early import profile_from_argv
+
+    assert profile_from_argv(["--agent", "x", "--profile", "ollama"]) == "ollama"
+    assert profile_from_argv(["--profile=gemini"]) == "gemini"
+    assert profile_from_argv(["--profile"]) == ""
+    assert profile_from_argv(["--suite", "safety"]) is None
+
+
+def test_eval_cli_applies_a_profile_to_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    from evals._profile_early import apply_profile_from_argv
+
+    monkeypatch.setattr(prof, "repo_env_file", lambda: None)
+    for key in ("LLM_PROVIDER", "LLM_BASE_URL", "RUN_PROFILE"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("LLM_MODEL", "exported-wins")
+    applied = apply_profile_from_argv(["--profile", "ollama"])
+    assert applied is not None
+    import os
+
+    assert os.environ["LLM_PROVIDER"] == "openai"
+    assert os.environ["LLM_MODEL"] == "exported-wins"
+    assert os.environ["RUN_PROFILE"] == "ollama"
+    monkeypatch.delenv("LLM_PROVIDER")
+    monkeypatch.delenv("LLM_BASE_URL")
+    monkeypatch.delenv("RUN_PROFILE")
+
+
+def test_eval_cli_refuses_an_unknown_profile(capsys: pytest.CaptureFixture[str]) -> None:
+    from evals._profile_early import apply_profile_from_argv
+
+    with pytest.raises(SystemExit) as err:
+        apply_profile_from_argv(["--profile", "nope"])
+    assert err.value.code == 2
+    assert "valid profiles" in capsys.readouterr().err
+
+
+def test_reset_embeddings_accepts_if_needed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.syspath_prepend(str(REPO))  # scripts/ lives at the repo root, outside the project
+    from scripts import reset_embeddings
+
+    args = reset_embeddings._parse_args(["--dim", "768", "--if-needed"])
+    assert args.if_needed is True and args.dim == 768
+
+
+def test_shell_side_of_profiles_matches() -> None:
+    """scripts/test-profiles.sh: profile.sh precedence and the --profile flags of dev.sh / replay-evals.sh."""
+    import shutil
+    import subprocess
+
+    bash = shutil.which("bash")
+    if bash is None:
+        pytest.skip("bash is not available")
+    done = subprocess.run(
+        [bash, str(REPO / "scripts" / "test-profiles.sh")], capture_output=True, text=True, timeout=60, check=False
+    )
+    assert done.returncode == 0, done.stdout + done.stderr
