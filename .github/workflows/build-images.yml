@@ -389,15 +389,25 @@ jobs:
 
       # The .NET images have no Python module either. An ASP.NET host that starts and answers /health has
       # loaded its configuration, its dependency graph and its prompts (the Dockerfiles copy the shared YAML in).
-      # /health needs no database or model. Not yet exercised in CI: the first run of this step is its test.
+      # /health needs no model, but product-discovery checks EMBEDDING_DIM against the stored vector columns at
+      # startup (as its Python twin does), so the smoke test gives every .NET image a real pgvector database loaded
+      # with the frozen baseline schema, on the host network.
       - name: Smoke-test .NET image
         if: steps.publish.outputs.should_push != 'true' && matrix.smoke_port != ''
         run: |
           IMAGE_TAG=$(echo "${{ steps.meta.outputs.tags }}" | cut -d',' -f1)
           PORT="${{ matrix.smoke_port }}"
-          CID=$(docker run -d -p "${PORT}:${PORT}" \
+          PGID=$(docker run -d --network host \
+            -e POSTGRES_USER=smoke -e POSTGRES_PASSWORD=smoke -e POSTGRES_DB=smoke \
+            -v "$PWD/docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro" \
+            pgvector/pgvector:pg16)
+          for i in $(seq 1 30); do
+            docker exec "$PGID" pg_isready -U smoke -d smoke > /dev/null 2>&1 && break
+            sleep 2
+          done
+          CID=$(docker run -d --network host \
             -e ENVIRONMENT="test" \
-            -e DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy" \
+            -e DATABASE_URL="postgresql://smoke:smoke@localhost:5432/smoke" \
             -e OPENAI_API_KEY="sk-test" \
             -e JWT_SECRET="test-jwt-secret-32-bytes-padding" \
             -e AGENT_SHARED_SECRET="test-agent-secret-32-bytes-pads" \
@@ -407,14 +417,14 @@ jobs:
           for i in $(seq 1 30); do
             if curl -sf "http://localhost:${PORT}/health" > /dev/null; then
               echo "[OK] ${{ matrix.image }}: /health answered on :${PORT}"
-              docker rm -f "$CID" > /dev/null
+              docker rm -f "$CID" "$PGID" > /dev/null
               exit 0
             fi
             sleep 2
           done
           echo "::error::${{ matrix.image }} did not answer /health on :${PORT} within 60s"
           docker logs "$CID"
-          docker rm -f "$CID" > /dev/null
+          docker rm -f "$CID" "$PGID" > /dev/null
           exit 1
 
       # The frontend image has no Python module to import. `node server.js` is
