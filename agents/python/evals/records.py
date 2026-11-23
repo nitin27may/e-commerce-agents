@@ -82,6 +82,8 @@ class Setup(BaseModel):
     judge: JudgeSetup = Field(default_factory=JudgeSetup)
     gateway: str = NO_GATEWAY
     pricing_source: str = ""
+    # ``http`` target only: host (and port) of the orchestrator that was driven, never a credential or a path.
+    endpoint: str = ""
 
     @property
     def key(self) -> str:
@@ -101,7 +103,7 @@ class Setup(BaseModel):
         embed = f"{self.embedding_provider} / {self.embedding_model}" if self.embedding_provider else "none"
         return [
             f"  Setup:       {self.key}",
-            f"  Stack:       {self.stack}, target {self.target}",
+            f"  Stack:       {self.stack}, target {self.target}" + (f" ({self.endpoint})" if self.endpoint else ""),
             f"  Chat:        {chat}",
             f"  Embeddings:  {embed}",
             f"  Judge:       {self.judge.label()}",
@@ -201,6 +203,8 @@ class Expected(BaseModel):
     hitl: bool | None = None
     user_role: str | None = None
     user_email: str | None = None
+    # Orchestration mode the case runs through (``workflow:pre-purchase``); None is the default ``tool`` mode.
+    mode: str | None = None
     # Safety suite only.
     attack_type: str | None = None
     forbidden_substrings: list[str] = Field(default_factory=list)
@@ -268,6 +272,11 @@ class RunRecord(BaseModel):
     guardrail_flags: dict[str, bool] = Field(default_factory=dict)
     error: str | None = None
     fixture_missing: bool = False
+    # Workflow nodes entered, in order (``node`` frames / ``node_enter`` events). Empty in tool mode.
+    nodes: list[str] = Field(default_factory=list)
+    # Facts this target could not observe (``http`` target: ``hitl``, ``denial``, ``guardrail_flags``, ``tokens``,
+    # ``grounding``). The scorer treats an assertion on a listed fact as not applicable, never as failed.
+    not_observable: list[str] = Field(default_factory=list)
 
     scores: CaseScores = Field(default_factory=CaseScores)
     fields_found: list[str] = Field(default_factory=list)

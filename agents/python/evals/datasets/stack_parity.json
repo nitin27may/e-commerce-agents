@@ -1,0 +1,29 @@
+[
+  {
+    "input": "Should I buy the Sony WH-1000XM5? Research it before I decide.",
+    "mode": "workflow:pre-purchase",
+    "user_role": "customer",
+    "user_email": "alice.johnson@gmail.com",
+    "expected_tools": [],
+    "expected_fields": ["stock"],
+    "criteria": {"grounded": false}
+  },
+  {
+    "input": "Is the Logitech MX Master 3S worth buying? Check reviews, stock and price.",
+    "mode": "workflow:pre-purchase",
+    "user_role": "customer",
+    "user_email": "alice.johnson@gmail.com",
+    "expected_tools": [],
+    "expected_fields": ["stock"],
+    "criteria": {"grounded": false}
+  },
+  {
+    "input": "Research the Samsung T7 Shield SSD 2TB for me before I buy it.",
+    "mode": "workflow:pre-purchase",
+    "user_role": "customer",
+    "user_email": "alice.johnson@gmail.com",
+    "expected_tools": [],
+    "expected_fields": ["stock"],
+    "criteria": {"grounded": false}
+  }
+]

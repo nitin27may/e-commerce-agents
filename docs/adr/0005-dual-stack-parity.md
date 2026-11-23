@@ -47,6 +47,14 @@ running the browser suite by hand.
 
 That is the standing weakness of this decision, and it is recorded rather than resolved.
 
+**Update (2026-11): a keyless part of the gate is now in CI.** `.github/workflows/stack-parity.yml` boots both stacks
+under replay, drives `evals/datasets/stack_parity.json` through each with the eval `http` target and fails when the two
+diverge on outcome, tool calls, routes, workflow nodes or approval flags, or on a mean score by more than 0.05. It
+catches the failure above that a boot check cannot, a stack that is up and answers wrongly, for the orchestration modes
+that call no model. It does not replace the browser suite and it cannot cover a turn that needs a model, because the
+replay fixtures are Python's request hashes. The parity definition at the top of this ADR still stands: the Playwright
+parity spec with a live key is the full gate.
+
 ## What would make this wrong
 
 If the .NET backlog stopped moving, this would become one working stack and one

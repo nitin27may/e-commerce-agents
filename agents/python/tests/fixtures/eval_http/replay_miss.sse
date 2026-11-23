@@ -1,0 +1,8 @@
+event: replay_miss
+data: {"message": "This demo replays recorded answers, and this question was not one of them."}
+
+event: metadata
+data: {"conversation_id": "c3", "agents_involved": ["orchestrator"]}
+
+data: [DONE]
+

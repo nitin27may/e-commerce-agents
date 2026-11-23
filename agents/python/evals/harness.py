@@ -73,6 +73,9 @@ class RunOutcome:
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     denied: bool = False
     hitl_requested: bool = False
+    # Workflow nodes entered, in order (non-``tool`` modes), and facts a target could not observe (``http``).
+    nodes: list[str] = field(default_factory=list)
+    not_observable: list[str] = field(default_factory=list)
 
 
 def _create_agent(agent_name: str) -> Any:
@@ -163,8 +166,12 @@ class ProductionRunner:
         *,
         user_role: str | None = None,
         user_email: str | None = None,
+        mode: str | None = None,
     ) -> RunOutcome:
-        """Run one input. ``user_role`` / ``user_email`` override the runner's defaults for this case."""
+        """Run one input. ``user_role`` / ``user_email`` override the runner's defaults for this case.
+
+        ``mode`` names an orchestration mode other than ``tool`` (orchestrator cases only).
+        """
         self._run_role = user_role or self.user_role
         current_user_email.set(user_email or self.user_email)
         current_user_role.set(self._run_role)
@@ -180,8 +187,10 @@ class ProductionRunner:
             reset_steps()
             reset_grounding_ledger()
             reset_guardrail_flags()
+            if mode and mode != "tool" and self.agent_name != "orchestrator":
+                raise ValueError(f"mode {mode!r} is an orchestrator mode; agent {self.agent_name!r} has none")
             if self.agent_name == "orchestrator":
-                return await self._run_orchestrator(user_input)
+                return await self._run_orchestrator(user_input, mode or "tool")
             return await self._run_specialist(user_input)
 
         try:
@@ -210,25 +219,35 @@ class ProductionRunner:
         outcome.tool_calls = _tool_calls(steps)
         outcome.denied = _was_denied(steps)
         hitl_rows_after = await _hitl_rows()
-        outcome.hitl_requested = _hitl_requested(steps) or (
-            hitl_rows_before is not None and hitl_rows_after is not None and hitl_rows_after > hitl_rows_before
+        outcome.hitl_requested = (
+            outcome.hitl_requested
+            or _hitl_requested(steps)
+            or (hitl_rows_before is not None and hitl_rows_after is not None and hitl_rows_after > hitl_rows_before)
         )
         return outcome
 
-    async def _run_orchestrator(self, user_input: str) -> RunOutcome:
+    async def _run_orchestrator(self, user_input: str, mode_name: str = "tool") -> RunOutcome:
         from orchestrator.modes import RunContext, get_mode
 
-        mode = get_mode("tool")
+        mode = get_mode(mode_name)
         ctx = RunContext(history=[])
         text = ""
         grounding: dict[str, Any] | None = None
         usage: dict[str, Any] = {}
+        nodes: list[str] = []
+        parked = False
 
         async for event in mode.run(user_input, ctx):
             if event.kind == "run_completed":
                 text = event.payload.get("text", "")
                 grounding = event.payload.get("grounding")
                 usage = event.payload.get("usage") or {}
+            elif event.kind == "node_enter" and event.node_id:
+                nodes.append(event.node_id)
+            elif event.kind == "request_info":
+                # A workflow paused for a human (the return gate): the same fact the ``http`` target reads
+                # from the ``request_info`` frame.
+                parked = True
 
         steps = get_steps()
         # run_completed.usage is {total, by_agent}: the orchestrator's calls plus
@@ -241,6 +260,8 @@ class ProductionRunner:
             tokens_in=tokens_in,
             tokens_out=tokens_out,
             grounding=grounding,
+            nodes=nodes,
+            hitl_requested=parked,
         )
 
     async def _run_specialist(self, user_input: str) -> RunOutcome:

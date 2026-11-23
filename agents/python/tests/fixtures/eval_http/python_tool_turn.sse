@@ -1,0 +1,31 @@
+event: step
+data: {"agent": "product-discovery", "tool_name": "search_products", "tool_input": {"query": "trail", "max_price": 100}, "tool_output": [{"id": "p1", "name": "Trail Runner", "price": 89.99}], "status": "success", "duration_ms": 41, "provenance": {"source": "tool:search_products", "row_ids": ["p1"]}}
+
+event: delta
+data: The Trail
+
+event: delta
+data:  Runner costs
+
+data: The Trail Runner costs $89.99
+
+data:  and is rated 4.5 stars.
+data:
+data: ```product
+data: {"id": "p1"}
+data: ```
+
+event: grounding
+data: {"total": 2, "verified": 1, "unverified": 1, "claims": [{"type": "price", "id": "p1", "status": "verified", "detail": "", "source": "ledger"}]}
+
+event: step
+data: {"agent": "orchestrator", "tool_name": "call_specialist_agent", "tool_input": {"agent_name": "product-discovery", "message": "trail shoes under $100"}, "tool_output": "ok", "status": "success", "duration_ms": 900}
+
+event: metadata
+data: {"conversation_id": "c1", "agents_involved": ["orchestrator", "product-discovery"]}
+
+event: run
+data: {"run_id": "run-1", "pending_approval": false}
+
+data: [DONE]
+

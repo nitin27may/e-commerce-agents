@@ -220,6 +220,36 @@ python -c "import json; r=json.load(open('eval-pd.json')); exit(0 if r['overall_
 
 ---
 
+## Against a running stack: the http target and the stack-parity gate
+
+The in-process runs above call the agents inside the eval process. `--target http --base-url <orchestrator>` drives a
+**running** orchestrator over `POST /api/chat/stream` as a seeded user and writes the same run records, so the same
+datasets measure the Python stack, the .NET stack, a mixed stack or a deployed URL with no database access and no model
+key in the eval process. What it cannot observe (guardrail flags, a tool-mode approval pause, tokens when the run is not
+listed, grounding when the stack sends none) is listed per record in `not_observable`, and an assertion on such a fact is
+not applicable rather than failed. The full table is in `agents/python/evals/README.md`.
+
+**Stack parity in CI.** `.github/workflows/stack-parity.yml` boots the Python stack and the .NET stack under
+`LLM_PROVIDER=replay`, runs `evals/datasets/stack_parity.json` through the http target against each, and fails when the
+stacks diverge on outcome, tool-call set, routes, workflow nodes or approval flags, or when a mean score differs by more
+than 0.05. It is keyless and runs on pull requests that touch `agents/**`, the compose files or the scripts it uses.
+
+What that gate can and cannot say. Under replay a turn that calls a model is a replay miss on every stack: the committed
+fixtures are Python request hashes recorded for an identity with no profile, and a logged-in user's profile changes the
+request. So the parity dataset uses the orchestration modes that call no model (`workflow:pre-purchase`). They still run
+the real route, authentication, mode registry, workflow graph and database tools on each stack, which is what the
+adjacent gate, `compose-smoke.yml`, does not check: it proves a stack boots and answers one turn, not that it answers the
+same way. The tool-calling path (an orchestrator choosing a specialist, a specialist choosing a tool) is **not** covered
+keyless. Comparing it takes a live key, a recording made through the http target, or a human running
+`scripts/stack-parity.sh --dataset evals/datasets/orchestrator_routing.json` against keyed stacks.
+
+Known issue: the first real run of this job has not happened yet (it needs Docker for both stacks and a CI run), so the
+dataset's three cases and the `search_products` lookup that resolves a product from the message are unverified on the
+.NET stack. If they diverge for a reason that is a genuine difference, record it in the parity matrix and narrow the
+dataset; do not widen the tolerance.
+
+---
+
 ## Cost numbers
 
 The eval report's `Est. cost` and the runtime `usage_logs.cost_usd` come from the same table

@@ -87,8 +87,19 @@ def weighted_overall(groundedness: float, correctness: float, completeness: floa
     return groundedness * GROUNDEDNESS_WEIGHT + correctness * CORRECTNESS_WEIGHT + completeness * COMPLETENESS_WEIGHT
 
 
-def check_assertions(expected: Expected, tool_calls: list[ToolCall], denied: bool, hitl_requested: bool) -> list[str]:
-    """Schema-v2 assertions: tool arguments, role denial, human approval. They never move a score."""
+def check_assertions(
+    expected: Expected,
+    tool_calls: list[ToolCall],
+    denied: bool,
+    hitl_requested: bool,
+    not_observable: list[str] | None = None,
+) -> list[str]:
+    """Schema-v2 assertions: tool arguments, role denial, human approval. They never move a score.
+
+    An assertion on a fact the target could not observe (``not_observable``, set by the ``http`` target) is
+    not applicable: it neither passes nor fails.
+    """
+    skip = set(not_observable or [])
     failures: list[str] = []
     if expected.tool_args:
         from evals.scorers.tool_args import score_tool_args
@@ -96,9 +107,9 @@ def check_assertions(expected: Expected, tool_calls: list[ToolCall], denied: boo
         steps = [{"tool_name": c.name, "tool_input": c.arguments} for c in tool_calls]
         verdict = score_tool_args(steps, expected.tool_args)
         failures.extend(f"tool_args: {name} was not called with {expected.tool_args[name]}" for name in verdict.missing)
-    if expected.denial is not None and denied != expected.denial:
+    if expected.denial is not None and "denial" not in skip and denied != expected.denial:
         failures.append(f"expect_denial={expected.denial} but denied={denied}")
-    if expected.hitl is not None and hitl_requested != expected.hitl:
+    if expected.hitl is not None and "hitl" not in skip and hitl_requested != expected.hitl:
         failures.append(f"expect_hitl={expected.hitl} but hitl_requested={hitl_requested}")
     return failures
 
@@ -151,7 +162,9 @@ def score_record(record: RunRecord, pass_threshold: float | None = None) -> RunR
         completeness, found, missing = score_completeness_keyword(record.response, expected.fields)
 
     overall = weighted_overall(groundedness, correctness, completeness)
-    failures = check_assertions(expected, record.tool_calls, record.denied, record.hitl_requested)
+    failures = check_assertions(
+        expected, record.tool_calls, record.denied, record.hitl_requested, record.not_observable
+    )
     return record.model_copy(
         update={
             "scores": CaseScores(

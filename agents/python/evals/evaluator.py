@@ -82,6 +82,8 @@ class EvalCase:
     # A live case names run-time facts (``{{order:1}}``, ``{{product_id:NAME}}``) that are resolved against the
     # run's database before it runs. True for every case of a ``*.live.json`` dataset; see evals/live_facts.py.
     live: bool = False
+    # Orchestration mode to run through (``workflow:pre-purchase``); None is ``tool``. Orchestrator cases only.
+    mode: str | None = None
 
 
 @dataclass
@@ -276,6 +278,7 @@ def load_dataset(path: str | Path) -> list[EvalCase]:
                 expect_denial=entry.get("expect_denial"),
                 expect_hitl=entry.get("expect_hitl"),
                 live=is_live_file or entry.get("live") is True,
+                mode=entry.get("mode"),
             )
         )
 
@@ -382,11 +385,14 @@ class AgentEvaluator:
         setup: Setup | None = None,
         judge: JudgeConfig | None = None,
         allow_self_judge: bool = False,
+        runner: Any | None = None,
     ) -> None:
         self.agent_name = agent_name
         self.pass_threshold = pass_threshold
         self.use_llm_judge = use_llm_judge
-        self._runner = ProductionRunner(agent_name)
+        # The ``http`` target passes its own runner (``evals/http_target.py``); the default is the in-process one.
+        self._shared_runner = runner is not None
+        self._runner = runner if runner is not None else ProductionRunner(agent_name)
         self._judge = judge
         if use_llm_judge and self._judge is None:
             from shared.config import settings
@@ -416,6 +422,7 @@ class AgentEvaluator:
             "fixture_missing": outcome.fixture_missing,
             "latency_ms": int((time.monotonic() - start) * 1000),
             "error": outcome.error,
+            "not_observable": outcome.not_observable,
         }
 
     async def evaluate_dataset(self, dataset_path: str | Path, *, repeats: int = 1) -> EvalSummary:
@@ -462,9 +469,12 @@ class AgentEvaluator:
 
         case = await resolve_case_from_database(case)  # no-op unless the case is live
         start = time.monotonic()
-        # A runner holds per-run state, so cases that overlap each get their own.
-        runner = self._runner if concurrency() <= 1 else ProductionRunner(self.agent_name)
-        outcome = await runner.run(case.input, user_role=case.user_role, user_email=case.user_email)
+        # A runner holds per-run state, so cases that overlap each get their own. The http target's runner is
+        # shared: it is built for concurrent turns (one session per account).
+        runner = self._runner if (self._shared_runner or concurrency() <= 1) else ProductionRunner(self.agent_name)
+        # ``mode`` is passed only when the case sets one, so a runner that predates it keeps working.
+        extra = {"mode": case.mode} if case.mode else {}
+        outcome = await runner.run(case.input, user_role=case.user_role, user_email=case.user_email, **extra)
         latency_ms = int((time.monotonic() - start) * 1000)
 
         expected = Expected(
@@ -477,6 +487,7 @@ class AgentEvaluator:
             hitl=case.expect_hitl,
             user_role=case.user_role,
             user_email=case.user_email,
+            mode=case.mode,
         )
         record = RunRecord(
             run_id=run_id or new_run_id(),
@@ -508,11 +519,15 @@ class AgentEvaluator:
                 "tool_calls": _tool_call_records(outcome),
                 "routes": outcome.routes,
                 "tokens": Tokens(input=outcome.tokens_in, output=outcome.tokens_out),
-                "cost_usd": estimate_cost(self.setup.chat_model, outcome.tokens_in, outcome.tokens_out),
+                "cost_usd": None
+                if "tokens" in outcome.not_observable
+                else estimate_cost(self.setup.chat_model, outcome.tokens_in, outcome.tokens_out),
                 "grounding": outcome.grounding,
                 "denied": outcome.denied,
                 "hitl_requested": outcome.hitl_requested,
                 "guardrail_flags": outcome.guardrail_flags,
+                "nodes": outcome.nodes,
+                "not_observable": outcome.not_observable,
             }
         )
 
@@ -520,7 +535,12 @@ class AgentEvaluator:
         # run (free). With none (GROUNDING_MODE=off) fall back to a from-scratch DB check and store it,
         # since a re-score has no database to repeat it against.
         if outcome.grounding is None:
-            fallback = await self._score_groundedness_fallback(response_text, case.criteria)
+            # A target with no database (``http``) cannot repeat the check: 1.0 is "nothing to verify", the
+            # same value an empty report scores, and the record lists ``grounding`` as not observable.
+            if "grounding" in outcome.not_observable:
+                fallback = 1.0
+            else:
+                fallback = await self._score_groundedness_fallback(response_text, case.criteria)
             record = record.model_copy(update={"scores": CaseScores(groundedness=fallback)})
 
         if self.use_llm_judge and self._judge is not None:

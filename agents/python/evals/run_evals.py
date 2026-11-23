@@ -29,6 +29,10 @@ Usage:
     python -m evals.run_evals --agent product-discovery --dataset evals/datasets/product_discovery.json \\
         --records-out eval-records.jsonl --repeats 3
     python -m evals.run_evals --rescore eval-records.jsonl --verify
+
+    # Drive a running orchestrator (any stack, any URL) over POST /api/chat/stream instead of the agents in-process
+    python -m evals.run_evals --target http --base-url http://localhost:8080 --stack dotnet \\
+        --agent orchestrator --dataset evals/datasets/stack_parity.json --records-out http-records.jsonl
 """
 
 from __future__ import annotations
@@ -41,6 +45,7 @@ import sys
 from pathlib import Path
 
 import evals._profile_early  # noqa: F401  (applies --profile before shared.config reads the environment)
+from evals import http_target
 from evals.baselines import (
     BaselineKind,
     baseline_kind_for,
@@ -182,6 +187,7 @@ async def run_evaluation(
     allow_self_judge: bool = False,
     baseline_from: str | None = None,
     update_personal_baseline: bool = False,
+    target_options: http_target.HttpTargetOptions | None = None,
 ) -> int:
     """Run a quality evaluation and return an exit code (0 = passed)."""
     dataset = Path(dataset_path)
@@ -189,20 +195,26 @@ async def run_evaluation(
         print(f"Dataset not found: {dataset_path}", file=sys.stderr)
         return 1
 
+    http_runner = http_target.make_runner(target_options) if target_options else None
     try:
         evaluator = AgentEvaluator(
             agent_name=agent_name,
             pass_threshold=pass_threshold,
             use_llm_judge=use_llm_judge,
             allow_self_judge=allow_self_judge,
+            runner=http_runner,
         )
     except JudgeConfigError as exc:
         print(f"Judge: {exc}", file=sys.stderr)
         return 1
+    if target_options:
+        evaluator.setup = http_target.apply_setup(evaluator.setup, target_options)
     run_repeats = repeats if repeats is not None else default_repeats(evaluator.setup.chat_provider)
 
-    print("Initializing infrastructure...")
-    await _init_infrastructure()
+    # The http target has no database in this process: nothing to open, nothing to close.
+    print("Initializing infrastructure..." if not target_options else "Target: http (no local database)")
+    if not target_options:
+        await _init_infrastructure()
 
     try:
         print(f"Running evaluation: {dataset.name} ({agent_name})")
@@ -227,7 +239,10 @@ async def run_evaluation(
         )
 
     finally:
-        await _cleanup_infrastructure()
+        if http_runner is not None:
+            await http_runner.aclose()
+        else:
+            await _cleanup_infrastructure()
 
 
 def _report_safety(summary: SafetySummary, *, pass_threshold: float, verbose: bool, output_json: str | None) -> int:
@@ -255,6 +270,7 @@ async def run_safety(
     *,
     repeats: int | None = None,
     records_out: str | None = None,
+    target_options: http_target.HttpTargetOptions | None = None,
 ) -> int:
     """Run the safety / red-team suite and return an exit code (0 = passed)."""
     from evals.safety_evaluator import SafetyEvaluator
@@ -264,12 +280,24 @@ async def run_safety(
         print(f"Safety dataset not found: {dataset_path}", file=sys.stderr)
         return 1
 
-    print("Initializing infrastructure...")
-    await _init_infrastructure()
+    http_runner = http_target.make_runner(target_options) if target_options else None
+    if not target_options:
+        print("Initializing infrastructure...")
+        await _init_infrastructure()
     try:
         print(f"Running safety / red-team suite: {dataset.name}")
-        evaluator = SafetyEvaluator(pass_threshold=pass_threshold)
         from shared.config import settings
+
+        if target_options:
+            from evals.records import build_setup
+
+            evaluator = SafetyEvaluator(
+                pass_threshold=pass_threshold,
+                setup=http_target.apply_setup(build_setup(settings), target_options),
+                runner=http_runner,
+            )
+        else:
+            evaluator = SafetyEvaluator(pass_threshold=pass_threshold)
 
         run_repeats = repeats if repeats is not None else default_repeats(settings.LLM_PROVIDER.strip().lower())
         print(f"Pass threshold: {pass_threshold:.0%}, repeats: {run_repeats}\n")
@@ -281,7 +309,10 @@ async def run_safety(
 
         return _report_safety(summary, pass_threshold=pass_threshold, verbose=verbose, output_json=output_json)
     finally:
-        await _cleanup_infrastructure()
+        if http_runner is not None:
+            await http_runner.aclose()
+        else:
+            await _cleanup_infrastructure()
 
 
 def run_rescore(
@@ -472,7 +503,10 @@ Examples:
         "A 429 or 5xx is retried with Retry-After-aware, jittered, capped backoff",
     )
 
+    http_target.add_arguments(parser)
+
     args = parser.parse_args()
+    target_options = http_target.options_from_args(args, parser)
 
     logging.basicConfig(
         level=logging.INFO if args.verbose else logging.WARNING,
@@ -485,6 +519,11 @@ Examples:
         parser.error("--repeats must be at least 1")
     if args.concurrency < 1:
         parser.error("--concurrency must be at least 1")
+    if args.estimate is not None and target_options is not None:
+        parser.error(
+            "--estimate does not apply to --target http: it prices the replay fixtures of the in-process run, "
+            "and says nothing about a remote system"
+        )
     if args.estimate is not None:
         from evals.estimate import run_estimate
 
@@ -521,6 +560,7 @@ Examples:
                 output_json=args.output_json,
                 repeats=args.repeats,
                 records_out=args.records_out,
+                target_options=target_options,
             )
         )
     else:
@@ -542,6 +582,7 @@ Examples:
                 allow_self_judge=args.allow_self_judge,
                 baseline_from=args.baseline_from,
                 update_personal_baseline=args.update_personal_baseline,
+                target_options=target_options,
             )
         )
     sys.exit(exit_code)

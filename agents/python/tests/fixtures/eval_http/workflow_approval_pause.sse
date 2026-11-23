@@ -1,0 +1,16 @@
+event: node
+data: {"node_id": "policy-gate", "phase": "enter", "agent": null, "payload": {}}
+
+event: request_info
+data: {"node_id": "policy-gate", "request_id": "r1"}
+
+data: This return needs staff approval.
+
+event: metadata
+data: {"conversation_id": "c4", "agents_involved": ["check", "policy-gate"]}
+
+event: run
+data: {"run_id": "run-4", "pending_approval": true}
+
+data: [DONE]
+
