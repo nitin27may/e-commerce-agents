@@ -14,8 +14,28 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ## [Unreleased]
 
+### Added
+
+- **Run profiles.** Twelve provider setups (`keyless`, `openai`, `azure-key`, `azure-identity`, `anthropic`,
+  `gemini`, `ollama`, `openrouter`, `llama-cpp`, `openai-compatible`, `azure-gateway`, `foundry`) in
+  `agents/python/config/profiles/`. Each sets chat, embeddings and the model together, holds no secret, and states
+  its tier, key, cost, .NET support and how it was verified (most were stub-tested or not tested at all, and the
+  header says so). `./scripts/dev.sh --profile NAME` (`dev.ps1 -Profile`, `replay-evals.sh --profile keyless`,
+  `evals.run_evals --profile`) applies one: your shell wins, then the profile, then `.env`. An unknown name is
+  refused with the valid list. `docs/run-profiles.md` has the table.
+- **`python -m scripts.doctor`.** Prints the effective configuration with secrets redacted, validates it, and checks
+  the model endpoint, database, Redis and every registry entry without spending tokens. `--json`, exit 1 on a hard
+  failure. The capability check is a marked stub until the eval work adds it.
+- **One structured startup line per service on both stacks** (provider, model, embedding model, auth mode, pricing
+  source, budget mode), with no secret. Parity matrix row 51.
+
 ### Changed
 
+- **The pricing directory is mounted into every agent container** (`/pricing`, read-only, all three compose files),
+  so a price edit or `PRICING_OVERRIDES_FILE` takes effect on restart with no rebuild. `host.docker.internal` is
+  mapped to the host so local model servers work from containers on Linux.
+- `dev.sh` / `dev.ps1` key preflight understands `AZURE_OPENAI_AUTH=identity` (no key needed) and
+  `LLM_PROVIDER=anthropic`. `scripts/reset_embeddings.py` gains `--if-needed`.
 - **No model price is written in code any more.** Both stacks read one file,
   `agents/python/config/pricing/models.yaml`, in USD per 1M tokens, with a source, a date and a
   `verified` flag on every row. Anyone can correct a price or add a model there; `PRICING_OVERRIDES_FILE`

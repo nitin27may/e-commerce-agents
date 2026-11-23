@@ -275,6 +275,9 @@ def create_agent_app(
         if on_startup:
             await on_startup(app)
         logger.info("%s.started port=%d", log_safe(agent_name), port)
+        from shared.startup_info import log_startup
+
+        log_startup(agent_name, logger)
         yield
         for mount in a2a_mounts:
             await mount.aclose()

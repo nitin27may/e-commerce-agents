@@ -59,6 +59,9 @@ async def lifespan(app: FastAPI):
     instrument_fastapi(app)
     await init_db_pool()
     logger.info("orchestrator.started")
+    from shared.startup_info import log_startup
+
+    log_startup("orchestrator", logger)
     yield
     await close_db_pool()
     logger.info("orchestrator.stopped")

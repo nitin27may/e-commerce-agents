@@ -524,6 +524,11 @@ class Settings(BaseSettings):
     PRICING_FILE: str = ""
     PRICING_OVERRIDES_FILE: str = ""
 
+    # ── Run profile (config/profiles/<name>.env) ─────────────────────
+    # Set by `dev.sh --profile` / `-Profile` / the eval CLI so a service can say which profile it runs under in its
+    # startup line and the doctor. Informational: the profile's values themselves arrive as ordinary variables.
+    RUN_PROFILE: str = ""
+
     # ── Output moderation (Phase 6.4) ────────────────────────────────
     # shared/guardrails/output_middleware.py's OutputSanitizationMiddleware
     # defangs adversarial *instructions* hiding in untrusted tool output —

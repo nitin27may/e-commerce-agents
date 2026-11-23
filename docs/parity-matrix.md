@@ -17,7 +17,7 @@ the wider feature surface; the two overlap on guardrails and cross-link rather t
 
 ## Summary
 
-48 rows, numbered 1 to 49 with number 45 unused. Row numbers are stable, so other pages cite them.
+50 rows, numbered 1 to 51 with number 45 unused. Row numbers are stable, so other pages cite them.
 
 | Status | Rows | Meaning |
 |--------|------|---------|
@@ -25,7 +25,7 @@ the wider feature surface; the two overlap on guardrails and cross-link rather t
 | Partial | 6 | Present but incomplete, or present in one form and not the equivalent form (noted inline) |
 | Parity | 2 | The same content or files on both sides, with the exceptions the row names |
 | By design | 6 | One shared implementation, or a difference that is intended and stays |
-| Python only | 5 | Python has it and .NET does not; the row says whether that is a recorded decision |
+| Python only | 6 | Python has it and .NET does not; the row says whether that is a recorded decision |
 | .NET only | 1 | .NET has it and Python does not |
 | Neither stack | 1 | On neither side, so not a parity gap |
 
@@ -86,6 +86,7 @@ linked gaps, P1 first.
 | 47 | Auth-server signing-key rotation | `scripts/rotate_signing_key.py` inserts a new active key in `oauth_signing_keys` (migration 0014) and keeps the old one in the JWKS until `AUTH_KEY_RETIRE_AFTER_SECONDS` (default access-token TTL + 300 s) has passed. The auth-server is the shared Python image (row 26), so there is one implementation of rotation and both stacks get it. Each stack owns the validating side: on an unknown `kid` it refetches the JWKS once, at most every 30 s, so a rotation needs no restart (Python `RotationAwareJWKClient`, vendored into both MCP servers; .NET `JwksKeyProvider.GetSigningKeysForTokenAsync`). | **Same auth-server image; both validators refetch on an unknown `kid`** (`JwksRotationTests`). | By design | — | — |
 | 48 | Runtime knobs for managed hosting | `LLM_TEMPERATURE` set empty omits the option on both stacks (gpt-5.x rejects it). `DB_POOL_MIN_SIZE` / `DB_POOL_MAX_SIZE` bound the pool. The `gpt-5.1` and `gpt-5.1-mini` price rows are estimates. .NET additionally maps `sslmode` in `DATABASE_URL` onto Npgsql's `SslMode`. The pool defaults differ until the variables are set: Python `5`/`20`, .NET Npgsql's `0`/`100`. | **Same variables, same omission rule** (`tests/test_runtime_knobs.py`, `RuntimeKnobsTests`). Pool defaults differ by design. | By design | — | [#89](https://github.com/nitin27may/e-commerce-agents/issues/89) |
 | 49 | Managed identity for Azure OpenAI | `AZURE_OPENAI_AUTH=key\|identity` (default `key`) and `AZURE_CLIENT_ID`. Under `identity`, chat and Azure embeddings send a Microsoft Entra bearer token and no key, and the key is not required. A set `AZURE_CLIENT_ID` uses `ManagedIdentityCredential`, else `DefaultAzureCredential`. Python: `shared/azure_auth.py` with `azure-identity`; .NET: `AzureIdentity.cs` with `Azure.Identity`. | **Same variables and credential choice** (`tests/test_azure_identity_auth.py`, `AzureIdentityAuthTests`; fake credential, no live Azure). | By design | — | [#89](https://github.com/nitin27may/e-commerce-agents/issues/89) |
+| 51 | Startup line and the doctor | One structured line per service at startup on both stacks: `startup service=... stack=... profile=... provider=... model=... llm_api=... llm_host=... embedding_provider=... embedding_model=... auth_mode=... pricing=... budget_mode=...`, no secret, only the host of a base URL (Python `shared/startup_info.py`, .NET `Logging/StartupLog.cs`). `python -m scripts.doctor` prints the effective configuration with secrets redacted, checks the model endpoint, database, Redis and each registry entry, and exits non-zero on a hard failure. The doctor reads the process environment, which is the same variables the .NET services read. | **Startup line: same fields, same order** (`tests/test_doctor.py`, `StartupLogTests`); `llm_api` is always `chat_completions` on .NET. **Doctor: Python tool only**; it diagnoses either stack's configuration but there is no .NET twin. | Python only (doctor) | P3 | — |
 
 ---
 

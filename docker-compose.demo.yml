@@ -54,6 +54,18 @@ name: e-commerce-agents-demo
 
 x-image-tag: &image-tag ${IMAGE_TAG:-latest}
 
+# What every agent container (orchestrator and the five specialists) gets beside its environment:
+#   - the pricing directory, read-only at /pricing, so editing agents/python/config/pricing/models.yaml (or adding an
+#     overrides file there) takes effect on the next container restart with no image rebuild. PRICING_FILE below points
+#     at it; PRICING_OVERRIDES_FILE is yours to set, as a path UNDER /pricing (for example /pricing/overrides.yaml):
+#     a host path in .env means nothing inside a container.
+#   - host.docker.internal, so a local model server on your machine (Ollama, llama.cpp, vLLM: the run profiles use it)
+#     is reachable on Linux too; Docker Desktop provides the name already.
+x-agent-runtime: &agent-runtime
+  extra_hosts: ["host.docker.internal:host-gateway"]
+  volumes:
+    - ./agents/python/config/pricing:/pricing:ro
+
 services:
   # ── Infrastructure (public images, unchanged from docker-compose.yml) ──────
 
@@ -158,6 +170,7 @@ services:
   # ── Orchestrator ──────────────────────────────────────────────────────────
 
   orchestrator:
+    <<: *agent-runtime
     image: ghcr.io/nitin27may/e-commerce-agents/orchestrator:${IMAGE_TAG:-latest}
     ports: ["127.0.0.1:8080:8080"]
     depends_on:
@@ -182,6 +195,12 @@ services:
       DATABASE_URL: postgresql://ecommerce:ecommerce_secret@db:5432/ecommerce_agents
       REDIS_URL: redis://redis:6379
       LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      # Which run profile applied this environment (scripts/dev.sh --profile); informational, shown in the startup line.
+      RUN_PROFILE: ${RUN_PROFILE:-}
+      # Prices come from the mounted directory, not the copy baked into the image. PRICING_OVERRIDES_FILE must be a path
+      # under /pricing (see x-agent-runtime above).
+      PRICING_FILE: /pricing/models.yaml
+      PRICING_OVERRIDES_FILE: ${PRICING_OVERRIDES_FILE:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       LLM_BASE_URL: ${LLM_BASE_URL:-}
       # responses (default) | chat_completions — needed for endpoints with no
@@ -261,6 +280,7 @@ services:
   # ── Specialist agents ─────────────────────────────────────────────────────
 
   product-discovery:
+    <<: *agent-runtime
     image: ghcr.io/nitin27may/e-commerce-agents/product-discovery:${IMAGE_TAG:-latest}
     ports: ["127.0.0.1:8081:8081"]
     depends_on:
@@ -285,6 +305,7 @@ services:
       MCP_PRODUCT_REQUIRED_SCOPE: ${MCP_PRODUCT_REQUIRED_SCOPE:-mcp:product}
 
   order-management:
+    <<: *agent-runtime
     image: ghcr.io/nitin27may/e-commerce-agents/order-management:${IMAGE_TAG:-latest}
     ports: ["127.0.0.1:8082:8082"]
     depends_on:
@@ -304,6 +325,7 @@ services:
       OAUTH_CLIENT_ID: order-management
 
   pricing-promotions:
+    <<: *agent-runtime
     image: ghcr.io/nitin27may/e-commerce-agents/pricing-promotions:${IMAGE_TAG:-latest}
     ports: ["127.0.0.1:8083:8083"]
     depends_on:
@@ -323,6 +345,7 @@ services:
       OAUTH_CLIENT_ID: pricing-promotions
 
   review-sentiment:
+    <<: *agent-runtime
     image: ghcr.io/nitin27may/e-commerce-agents/review-sentiment:${IMAGE_TAG:-latest}
     ports: ["127.0.0.1:8084:8084"]
     depends_on:
@@ -342,6 +365,7 @@ services:
       OAUTH_CLIENT_ID: review-sentiment
 
   inventory-fulfillment:
+    <<: *agent-runtime
     image: ghcr.io/nitin27may/e-commerce-agents/inventory-fulfillment:${IMAGE_TAG:-latest}
     ports: ["127.0.0.1:8085:8085"]
     depends_on:

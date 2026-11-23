@@ -40,6 +40,7 @@ import logging
 import sys
 from pathlib import Path
 
+import evals._profile_early  # noqa: F401  (applies --profile before shared.config reads the environment)
 from evals.baselines import (
     BaselineKind,
     baseline_kind_for,
@@ -352,6 +353,11 @@ Examples:
   python -m evals.run_evals --suite safety --pass-threshold 0.8 --verbose
   python -m evals.run_evals --rescore eval-records.jsonl --verify
         """,
+    )
+    parser.add_argument(
+        "--profile",
+        help="Run profile to apply (agents/python/config/profiles); read before settings load, see "
+        "evals/_profile_early.py. Your exported variables win over it, and it wins over .env",
     )
     parser.add_argument(
         "--suite",

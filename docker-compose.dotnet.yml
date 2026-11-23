@@ -29,6 +29,18 @@
 # each other's container names. See plan 16 F4.
 name: e-commerce-agents-dotnet
 
+# What every agent container (orchestrator and the five specialists) gets beside its environment:
+#   - the pricing directory, read-only at /pricing, so editing agents/python/config/pricing/models.yaml (or adding an
+#     overrides file there) takes effect on the next container restart with no image rebuild. PRICING_FILE below points
+#     at it; PRICING_OVERRIDES_FILE is yours to set, as a path UNDER /pricing (for example /pricing/overrides.yaml):
+#     a host path in .env means nothing inside a container.
+#   - host.docker.internal, so a local model server on your machine (Ollama, llama.cpp, vLLM: the run profiles use it)
+#     is reachable on Linux too; Docker Desktop provides the name already.
+x-agent-runtime: &agent-runtime
+  extra_hosts: ["host.docker.internal:host-gateway"]
+  volumes:
+    - ./agents/python/config/pricing:/pricing:ro
+
 services:
   # ── Infrastructure ─────────────────────────────────────────
 
@@ -140,6 +152,7 @@ services:
   # ── Orchestrator (.NET) ────────────────────────────────────
 
   orchestrator:
+    <<: *agent-runtime
     build:
       context: .
       dockerfile: agents/dotnet/src/ECommerceAgents.Orchestrator/Dockerfile
@@ -165,6 +178,12 @@ services:
       ConnectionStrings__Postgres: Host=db;Port=5432;Database=ecommerce_agents;Username=ecommerce;Password=ecommerce_secret
       ConnectionStrings__Redis: redis:6379
       LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      # Which run profile applied this environment (scripts/dev.sh --profile); informational, shown in the startup line.
+      RUN_PROFILE: ${RUN_PROFILE:-}
+      # Prices come from the mounted directory, not the copy baked into the image. PRICING_OVERRIDES_FILE must be a path
+      # under /pricing (see x-agent-runtime above).
+      PRICING_FILE: /pricing/models.yaml
+      PRICING_OVERRIDES_FILE: ${PRICING_OVERRIDES_FILE:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # Any OpenAI-compatible endpoint (Ollama, vLLM, OpenRouter, Gemini's
       # compatible API). Empty means the provider's default.
@@ -258,6 +277,7 @@ services:
   # ── Specialist Agents (.NET) ───────────────────────────────
 
   product-discovery:
+    <<: *agent-runtime
     build:
       context: .
       dockerfile: agents/dotnet/src/ECommerceAgents.ProductDiscovery/Dockerfile
@@ -280,6 +300,7 @@ services:
     profiles: ["agents"]
 
   order-management:
+    <<: *agent-runtime
     build:
       context: .
       dockerfile: agents/dotnet/src/ECommerceAgents.OrderManagement/Dockerfile
@@ -302,6 +323,7 @@ services:
     profiles: ["agents"]
 
   pricing-promotions:
+    <<: *agent-runtime
     build:
       context: .
       dockerfile: agents/dotnet/src/ECommerceAgents.PricingPromotions/Dockerfile
@@ -324,6 +346,7 @@ services:
     profiles: ["agents"]
 
   review-sentiment:
+    <<: *agent-runtime
     build:
       context: .
       dockerfile: agents/dotnet/src/ECommerceAgents.ReviewSentiment/Dockerfile
@@ -346,6 +369,7 @@ services:
     profiles: ["agents"]
 
   inventory-fulfillment:
+    <<: *agent-runtime
     build:
       context: .
       dockerfile: agents/dotnet/src/ECommerceAgents.InventoryFulfillment/Dockerfile

@@ -110,6 +110,8 @@ public static class AgentHost
 
         var app = builder.Build();
 
+        StartupLog.Log(app.Services.GetRequiredService<ILogger<AgentHostMarker>>(), name, settings);
+
         // A malformed per-agent model: block fails here, naming the file, not on the first request.
         app.Services.GetService<ECommerceAgents.Shared.Prompts.PromptLoader>()?.ValidateModelOverrides();
 
