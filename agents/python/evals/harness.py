@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import importlib
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 from evals.live_limits import run_with_limits
@@ -110,7 +111,9 @@ def _hitl_requested(steps: list[dict[str, Any]]) -> bool:
 
     Rarely fires on its own: ``HITLFunctionMiddleware`` sits outside
     ``StepRecorderMiddleware`` and short-circuits before it, so a parked call
-    leaves no step. ``_hitl_rows`` below is the signal that actually sees it.
+    leaves no step. ``pending_tool_approvals`` (a ``tool_approval_requests`` row)
+    is what sees a parked tool-mode call; ``_hitl_rows`` (``hitl_requests``) sees
+    a paused workflow.
     """
     return any(_output_field(s, "status") == "pending_approval" for s in steps)
 
@@ -121,6 +124,41 @@ async def _hitl_rows() -> int | None:
         from shared.db import get_pool
 
         return await get_pool().fetchval("SELECT count(*) FROM hitl_requests")
+    except Exception:
+        return None
+
+
+async def db_clock() -> datetime | None:
+    """The database's own ``now()`` (``None`` when there is no database): the start of a run window.
+
+    Compared against ``created_at`` so a skew between the eval host's clock and the database never matters.
+    """
+    try:
+        from shared.db import get_pool
+
+        return await get_pool().fetchval("SELECT now()")
+    except Exception:
+        return None
+
+
+async def pending_tool_approvals(user_email: str, since: datetime | None) -> int | None:
+    """Pending ``tool_approval_requests`` rows for ``user_email`` created at or after ``since``.
+
+    This is the signal for a parked tool-mode call (``cancel_order``, ``process_refund``, ...):
+    ``HITLFunctionMiddleware`` writes this table, not ``hitl_requests``, and short-circuits before the step
+    recorder. ``None`` when there is no database or no window start, so a caller never reads "unknown" as "none".
+    """
+    if since is None:
+        return None
+    try:
+        from shared.db import get_pool
+
+        return await get_pool().fetchval(
+            "SELECT count(*) FROM tool_approval_requests WHERE user_email = $1 AND status = 'pending' "
+            "AND created_at >= $2",
+            user_email,
+            since,
+        )
     except Exception:
         return None
 
@@ -181,6 +219,8 @@ class ProductionRunner:
         reset_guardrail_flags()
 
         hitl_rows_before = await _hitl_rows()
+        run_email = user_email or self.user_email
+        window_start = await db_clock()
 
         async def _attempt() -> RunOutcome:
             # A retried attempt starts clean, or its steps would be counted twice.
@@ -219,9 +259,11 @@ class ProductionRunner:
         outcome.tool_calls = _tool_calls(steps)
         outcome.denied = _was_denied(steps)
         hitl_rows_after = await _hitl_rows()
+        parked_tool_calls = await pending_tool_approvals(run_email, window_start)
         outcome.hitl_requested = (
             outcome.hitl_requested
             or _hitl_requested(steps)
+            or bool(parked_tool_calls)
             or (hitl_rows_before is not None and hitl_rows_after is not None and hitl_rows_after > hitl_rows_before)
         )
         return outcome

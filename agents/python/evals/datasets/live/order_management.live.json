@@ -75,6 +75,7 @@
       "tool_called": true,
       "cancellation_attempted": true
     },
+    "expect_hitl": true,
     "user_email": "jack.anderson@gmail.com"
   },
   {

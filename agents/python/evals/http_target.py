@@ -28,7 +28,9 @@ plain ``data:``            response text (the orchestrator's own final answer, c
 
 What it cannot fill, and how the record says so (``RunRecord.not_observable``): ``guardrail_flags`` (a server
 side ContextVar, never on the wire), ``hitl`` when a tool-mode specialist parked a destructive call (the park
-leaves no step and no frame; workflow modes do emit ``request_info``, so there the absence is real),
+leaves no step and no frame, so it is seen only when this process can read the served database and finds a pending
+``tool_approval_requests`` row for the case user in the run window; workflow modes do emit ``request_info``, so
+there the absence is real),
 ``tokens`` and ``cost_usd`` when ``GET /api/runs`` does not list the run, and ``grounding`` when the stack
 sent no grounding frame (``GROUNDING_MODE=off``). The scorer treats an assertion on a not observable fact as not
 applicable. ``context`` is the grounding evidence lines, exactly as in-process: raw tool output is not captured
@@ -54,7 +56,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from evals.harness import RunOutcome, _hitl_requested, _routes, _was_denied
+from evals.harness import RunOutcome, _hitl_requested, _routes, _was_denied, db_clock, pending_tool_approvals
 from evals.records import Setup
 
 logger = logging.getLogger(__name__)
@@ -381,6 +383,7 @@ class HttpRunner:
                 raise HttpTargetError(
                     f"the case runs as role {user_role!r} but {account.email} has role {session.role!r}"
                 )
+            window_start = await db_clock()
             async with asyncio.timeout(self.timeout_s * 2):
                 result, partial_error = await self._stream(account, session, user_input, mode)
         except HttpTargetError as exc:
@@ -394,6 +397,12 @@ class HttpRunner:
 
         tokens = await self._tokens(account, result.run_id) if result.run_id else None
         outcome = outcome_from_stream(result, mode=mode, tokens=tokens)
+        # A parked tool-mode call leaves no frame, but it does leave a pending approval row. When this process can
+        # read the database the stack serves, that row is the evidence; "no row" still proves nothing (the database
+        # may be another stack's), so only a positive finding changes the record.
+        if not outcome.hitl_requested and await pending_tool_approvals(account.email, window_start):
+            outcome.hitl_requested = True
+            outcome.not_observable = [f for f in outcome.not_observable if f != "hitl"]
         if outcome.error:
             return outcome
         if partial_error:
@@ -402,7 +411,7 @@ class HttpRunner:
             outcome.error = "empty stream: the orchestrator answered 200 and sent no frames"
         elif not result.saw_terminator:
             outcome.error = f"stream ended without a terminator after {result.frames} frame(s): the connection dropped"
-        elif not outcome.text.strip() and not result.steps and not result.nodes:
+        elif not outcome.text.strip() and not result.steps and not result.nodes and not outcome.hitl_requested:
             outcome.error = "empty response: the stream completed with no text, no tool calls and no nodes"
         return outcome
 

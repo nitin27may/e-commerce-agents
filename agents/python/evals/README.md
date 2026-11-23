@@ -56,7 +56,7 @@ the run (`Assertion failed:` in the verbose report, `assertion_failures` in the 
 | `user_role` / `user_email` | Run the case as this caller (default: the runner's `customer` / `eval@example.com`). Agents bake the role into their prompt, so the runner builds one agent per role. |
 | `expected_tool_args` | `{tool: {arg: value}}`. Subset match against the `tool_input` recorded in the steps (`evals/scorers/tool_args.py`): extra arguments are fine, strings compare case-insensitively, numbers by value. Keys must be tools the case also lists in `expected_tools`. |
 | `expect_denial` | `true`: a tool refused the call for this role (`permission_denied` step output). `false`: none did. |
-| `expect_hitl` | `true`: a destructive tool was parked for approval (a new `hitl_requests` row, or a `pending_approval` step). `false`: none was. |
+| `expect_hitl` | `true`: a destructive tool was parked for approval: a pending `tool_approval_requests` row for the case user created during the run (what a parked tool-mode `cancel_order` leaves), a new `hitl_requests` row (a paused workflow), or a `pending_approval` step. `false`: none was. |
 
 `expected_tool_args` on a case only holds while its fixtures do: a re-recording that makes
 the model pass different arguments fails the assertion, which is the point.
@@ -250,7 +250,7 @@ What it cannot fill, and what the record says about it:
 | Field | Over http | Why |
 |---|---|---|
 | `guardrail_flags`, safety `guardrail_engaged` | empty / null, listed in `not_observable` | a server-side ContextVar, never on the wire |
-| `hitl_requested` | exact for `workflow:*` modes (the pause is a `request_info` frame); a visible pause in `tool` mode is seen (`run.pending_approval`), **no pause in `tool` mode is not provable** and `hitl` is listed in `not_observable` | a tool-mode specialist parks a destructive call without a frame or a step. `expect_hitl` is then not applicable |
+| `hitl_requested` | exact for `workflow:*` modes (the pause is a `request_info` frame); a visible pause in `tool` mode is seen (`run.pending_approval`), **no pause in `tool` mode is not provable** and `hitl` is listed in `not_observable` | a tool-mode specialist parks a destructive call without a frame or a step (`HITLFunctionMiddleware` short-circuits before the step recorder). When the eval process can read the served database (`DATABASE_URL`) and finds a pending `tool_approval_requests` row for the case user in the run window, the park is seen and `hitl` is not listed; otherwise `expect_hitl` is not applicable |
 | `denied` | exact | read from a `permission_denied` step output, as in-process |
 | `tokens`, `cost_usd` | read back from `GET /api/runs` by the run id the stream names; null cost and `tokens` in `not_observable` when the run is not listed | the stream itself reports no usage |
 | `grounding`, `context` | from the `grounding` frame; with none (`GROUNDING_MODE=off`, or a workflow mode) groundedness is 1.0 ("nothing to verify") and `grounding` is listed | no database here to repeat the check. `context` is the grounding evidence lines, as in-process; raw tool output is captured by neither target |
@@ -379,7 +379,12 @@ Rules:
   stock in the seed, so a model rightly answers from `get_warehouse_availability`), and
   `review_sentiment.live.json` does not assert `months: 6` (the model relies on the tool's default of 6, which is not
   recorded as an argument).
-- `cancel_order` and `initiate_return` are real writes against the database a live run uses. Reseed between runs.
+- `cancel_order` is approval-gated: a live run parks it (a pending `tool_approval_requests` row, the order untouched,
+  `expect_hitl: true` on the live case) and leaves that row behind. `initiate_return` is a real write against the
+  database a live run uses. Reseed between runs.
+- The pricing coupon case states a cart total (`validate_coupon` needs `cart_total` and the pricing agent has no cart
+  tool, so the replay wording "my current cart" gives a model nothing to pass). It names `WELCOME10`, which has no
+  minimum spend and no category or user restriction in `scripts/seed.py`.
 
 `--estimate` reads the replay fixtures by case text, so a live variant matches few of them; estimate with its replay
 twin instead (`--dataset evals/datasets/order_management.json --estimate`), which is the same cases and calls.
@@ -399,7 +404,7 @@ Quality datasets (one per agent, scored on groundedness / correctness / complete
   `review_sentiment.json`, `inventory_fulfillment.json`
 - `orchestrator_routing.json` — each case sets `expected_route`; correctness is scored on
   whether the orchestrator handed off to the right specialist via `call_specialist_agent`.
-- `live/{order_management,inventory_fulfillment,orchestrator_routing,review_sentiment}.live.json` — the same cases for
+- `live/{order_management,inventory_fulfillment,orchestrator_routing,review_sentiment,pricing_promotions,product_discovery}.live.json` — the same cases for
   a live model, with run-time facts resolved (see *Live datasets*). Not part of the replay gate.
 
 ## Safety / Red-Team Suite

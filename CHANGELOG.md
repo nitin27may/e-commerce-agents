@@ -25,8 +25,8 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 ### Added
 
 - **Live-capable eval datasets.** `evals/datasets/live/*.live.json` (order management, inventory, orchestrator
-  routing, review sentiment) name orders and products as `{{order:1}}`, `{{order:shipped}}` and
-  `{{product_id:NAME}}`, resolved against the run's database (`evals/live_facts.py`) and as a seeded customer, so a
+  routing, review sentiment, pricing and promotions, product discovery) name orders and products as `{{order:1}}`,
+  `{{order:shipped}}` and `{{product_id:NAME}}`, resolved against the run's database (`evals/live_facts.py`) and as a seeded customer, so a
   live model is no longer asked about order ids that do not exist (order management scored 49.2% live for that
   reason). The records store the resolved text. Replay datasets and fixtures are unchanged and pinned placeholder-free.
 - **Run profiles.** Twelve provider setups (`keyless`, `openai`, `azure-key`, `azure-identity`, `anthropic`,
@@ -121,6 +121,14 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
   so the card shipped with empty `items`, address, carrier and tracking and no tool was called. The injected block now
   says it is a summary and points to `get_user_orders` / `get_order_details` for any card. No replay fixture contains
   the block, so none is re-keyed (the prompt YAML is deliberately untouched: 15 fixtures embed it).
+- **The eval harness could not see a parked approval-gated tool call.** `HITLFunctionMiddleware` writes
+  `tool_approval_requests` and short-circuits before the step recorder, but the harness counted only
+  `hitl_requests` (workflow pauses), so an `expect_hitl` case on a tool-mode `cancel_order` could never pass and the
+  live order management cancel case failed with an empty response. A pending `tool_approval_requests` row for the
+  case user created during the run now counts as an approval pause, in-process and, when the eval process can read
+  the served database, over `--target http` (where it also clears `hitl` from `not_observable` and no longer turns a
+  parked turn into an "empty response" error). `expect_hitl: true` is set on the live cancel case. Replay results are
+  unchanged.
 - **The Mode dropdown shows its labels in full.** The list is as wide as its longest label; it used to take the
   trigger's width and cut three of the five off (#210).
 - **The Compare dialog renders answers the way chat does.** A fenced card block in a mode's answer (a product, a
