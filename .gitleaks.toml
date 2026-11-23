@@ -13,3 +13,7 @@ paths = ['''agents/python/config/identity/testdata/user-context\.v1\.json''']
 description = "Throwaway JWT secret for the container smoke test in build-images.yml"
 paths = ['''\.github/workflows/build-images\.yml''']
 regexes = ['''test-jwt-secret-32-bytes-padding''']
+
+[[allowlists]]
+description = "Sentinel secret-looking values in the doctor's redaction tests (they exist to prove the doctor never prints a key or password)"
+paths = ['''agents/python/tests/test_doctor\.py''']
