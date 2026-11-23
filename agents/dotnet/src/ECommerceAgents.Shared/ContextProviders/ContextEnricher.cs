@@ -15,6 +15,12 @@ public sealed class ContextEnricher(DatabasePool pool)
 {
     private readonly DatabasePool _pool = pool;
 
+    // Same text as Python's RECENT_ORDERS_NOTE: a summary line has no items, address or tracking.
+    private const string RecentOrdersNote =
+        "This list is a summary only: it has no items, shipping address, carrier or tracking. "
+        + "Do not build an order card from it. For any card or detail, call get_user_orders or "
+        + "get_order_details and use their result.";
+
     /// <summary>Max orders included in the recent-orders block.</summary>
     public int RecentOrdersLimit { get; init; } = 5;
 
@@ -135,6 +141,7 @@ public sealed class ContextEnricher(DatabasePool pool)
                     $"  - Order {order.Id[..8]}... | {order.Status} | ${order.Total:F2} | {date}"
                 );
             }
+            lines.Add(RecentOrdersNote);
         }
 
         if (memories.Count > 0)
