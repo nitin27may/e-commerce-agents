@@ -28,4 +28,7 @@ regexes = [
   # Azure built-in role definition ids (Key Vault Secrets User and Secrets Officer): public, not secrets.
   '''4633458b-17de-408a-b874-0f5e9c3b6f6c''',
   '''b86a8fe4-44ce-4948-aee5-eccb2c155cd7''',
+  # Cognitive Services OpenAI User and Azure AI User built-in role definition ids (app-identities, foundry-project).
+  '''5e0bd9bd-7b93-4f28-af87-19fc36ad61bd''',
+  '''53ca6127-db72-4b80-b1b0-d745d6d5456d''',
 ]
