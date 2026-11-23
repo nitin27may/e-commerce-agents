@@ -91,7 +91,7 @@ jobs:
         run: |
           python3 -c "import sys, yaml; d = yaml.safe_load(open('azure.yaml')); assert d['hooks']['preprovision']['posix'] and d['hooks']['postprovision']['windows']"
           python3 -c "import yaml; d = yaml.safe_load(open('.github/workflows/azure.yml')); assert 'schedule' not in (d.get(True) or d.get('on'))"
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
       - name: Offline infra and smoke tests
         working-directory: agents/python
         run: uv run --extra dev pytest tests/test_infra_bicep.py tests/test_azure_smoke.py -v
