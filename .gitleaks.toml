@@ -16,8 +16,14 @@ paths = [
   '''agents/python/config/identity/testdata/user-context\.v1\.json''',
   # The doctor's redaction tests hold fake key and password values on purpose, to prove it never prints them.
   '''agents/python/tests/test_doctor\.py''',
+  # Test fixtures: a throwaway environment value and fake return-label tokens.
+  '''agents/python/tests/test_db_init\.py''',
+  '''agents/python/tests/test_return_label_token\.py''',
 ]
 regexes = [
   # Throwaway JWT secret for the container smoke test in build-images.yml.
   '''test-jwt-secret-32-bytes-padding''',
+  # Azure built-in role definition ids (Key Vault Secrets User and Secrets Officer): public, not secrets.
+  '''4633458b-17de-408a-b874-0f5e9c3b6f6c''',
+  '''b86a8fe4-44ce-4948-aee5-eccb2c155cd7''',
 ]
