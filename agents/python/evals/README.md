@@ -179,7 +179,7 @@ export FOUNDRY_EVAL_ENDPOINT=https://<account>.openai.azure.com FOUNDRY_EVAL_DEP
 # FOUNDRY_EVAL_API_KEY=...   optional; without it DefaultAzureCredential is used
 uv run python -m evals.foundry.run --records my-run.jsonl --dry-run          # map and count, call nothing
 uv run python -m evals.foundry.run --records my-run.jsonl --limit 20         # a small paid sample first
-uv run python -m evals.foundry.run --records my-run.jsonl --tool-definitions tools.json
+uv run python -m evals.foundry.run --records my-run.jsonl --tool-definitions auto   # or a JSON file
 ```
 
 Results go next to the records: `my-run.foundry.jsonl` (one line per record and evaluator: scored, skipped with
@@ -191,10 +191,20 @@ scorecard, because they are a different instrument with a different judge.
 | Evaluator | Inputs we pass | What it cannot score from our records |
 |---|---|---|
 | `GroundednessEvaluator` | `query`, `response`, `context` | `context` is our grounding report's claim lines, not the raw tool output; skipped when a record has no report |
-| `IntentResolutionEvaluator` | `query`, `response`, `tool_definitions` if given | nothing required is missing |
-| `ToolCallAccuracyEvaluator` | `query`, `tool_calls`, `tool_definitions` | tool definitions (supply `--tool-definitions`: a JSON array of `{name, description, parameters}`); tool results are not captured, so retries and errors are invisible; skipped with no tool calls |
-| `TaskAdherenceEvaluator` | `query`, `response`, `tool_definitions` if given | the agent's system prompt, which Foundry reads as the first query message |
+| `IntentResolutionEvaluator` | `query` and `response` as message lists, `tool_definitions` if given | nothing required is missing |
+| `ToolCallAccuracyEvaluator` | `query` (message list), `tool_calls`, `tool_definitions` | tool definitions (supply `--tool-definitions auto`, which reads them off the agents, or a JSON array of `{name, description, parameters}`; a record calling a tool with no definition is skipped); tool results are not captured, so retries and errors are invisible; skipped with no tool calls |
+| `TaskAdherenceEvaluator` | `query` and `response` as message lists, `tool_definitions` if given | the agent's system prompt, which Foundry reads as the first query message |
 | `IndirectAttackEvaluator` | `query`, `response` (safety records only) | a Foundry safety-service call, not a judge: needs `AZURE_AI_PROJECT` and Azure credentials; the injected document is not in the record |
+
+Input shapes matter. The SDK accepts a string for `query` and `response`, but intent resolution and task
+adherence then log "could not be parsed ... falling back" and judge an unstructured prompt, which lowers accuracy
+without failing. So those two get message lists: `query` is one user message, `response` is the tool calls
+(`tool_call` items with `tool_call_id`, `name`, `arguments`) followed by the final answer as an assistant text
+message (a response ending in a tool call counts as intermediate and is not scored). Tool results are not in a
+record, so no `tool` messages are sent. `tests/test_eval_foundry.py` checks these shapes against the installed
+SDK's validators and reformatters. Gotcha: task adherence is binary (0 fail, 1 pass) and its prompt says to pass
+when uncertain; without the agent's system prompt it has no rules to hold the answer to, so all-1.0 results are
+expected and carry little signal.
 
 `ground_truth` is carried in the records but none of these five evaluators takes it. Each tool call gets a
 `tool_call_id` (`call_<n>`) because Foundry's examples carry one and records do not store the model's own.

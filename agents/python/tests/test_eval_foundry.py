@@ -139,22 +139,143 @@ def test_mapping_uses_foundry_input_names_exactly(foundry) -> None:
         "response": rec.response,
         "context": rec.context,
     }
-    assert mapping.inputs_for("intent_resolution", rec).inputs == {"query": rec.query, "response": rec.response}
-    assert mapping.inputs_for("task_adherence", rec).inputs == {"query": rec.query, "response": rec.response}
+    messages = {
+        "query": [{"role": "user", "content": [{"type": "text", "text": rec.query}]}],
+        "response": [
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_call",
+                        "tool_call_id": "call_0",
+                        "name": "search_products",
+                        "arguments": {"query": "trail"},
+                    }
+                ],
+            },
+            {"role": "assistant", "content": [{"type": "text", "text": rec.response}]},
+        ],
+    }
+    assert mapping.inputs_for("intent_resolution", rec).inputs == messages
+    assert mapping.inputs_for("task_adherence", rec).inputs == messages
     accuracy = mapping.inputs_for("tool_call_accuracy", rec, tool_definitions=TOOL_DEFS).inputs
     assert accuracy == {
-        "query": rec.query,
-        "tool_calls": [
-            {"type": "tool_call", "tool_call_id": "call_0", "name": "search_products", "arguments": {"query": "trail"}}
-        ],
+        "query": messages["query"],
+        "tool_calls": messages["response"][0]["content"],
         "tool_definitions": TOOL_DEFS,
     }
+
+
+def test_a_response_without_tool_calls_is_a_single_assistant_text_message(foundry) -> None:
+    _, mapping, _ = foundry
+    inputs = mapping.inputs_for("task_adherence", _record(tool_calls=[])).inputs
+    assert inputs is not None
+    assert inputs["response"] == [
+        {"role": "assistant", "content": [{"type": "text", "text": "The Trail Runner costs $89.99."}]}
+    ]
+
+
+def test_the_final_answer_is_the_last_message_so_the_sdk_does_not_treat_it_as_intermediate(foundry) -> None:
+    _, mapping, _ = foundry
+    inputs = mapping.inputs_for("intent_resolution", _record()).inputs
+    assert inputs is not None
+    assert inputs["response"][-1]["content"][-1]["type"] == "text"
+
+
+def test_tool_definitions_are_normalised_to_name_description_parameters(foundry) -> None:
+    _, mapping, _ = foundry
+    spec = {
+        "type": "function",
+        "function": {"name": "search_products", "description": "Search.", "parameters": {"a": 1}},
+    }
+    bare = {"name": "get_x"}
+    assert mapping.normalize_tool_definitions([spec, bare]) == [
+        {"name": "search_products", "description": "Search.", "parameters": {"a": 1}},
+        {"name": "get_x", "description": "", "parameters": {"type": "object", "properties": {}}},
+    ]
+    inputs = mapping.inputs_for("tool_call_accuracy", _record(), tool_definitions=[spec]).inputs
+    assert inputs is not None and inputs["tool_definitions"][0]["parameters"] == {"a": 1}
+
+
+def test_tool_call_accuracy_is_skipped_naming_a_tool_with_no_definition(foundry) -> None:
+    _, mapping, _ = foundry
+    other = [{"name": "other", "description": "", "parameters": {"type": "object"}}]
+    reason = mapping.inputs_for("tool_call_accuracy", _record(), tool_definitions=other).skip_reason
+    assert "no tool definition for: search_products" in reason
 
 
 def test_tool_definitions_are_passed_to_optional_evaluators_when_supplied(foundry) -> None:
     _, mapping, _ = foundry
     inputs = mapping.inputs_for("intent_resolution", _record(), tool_definitions=TOOL_DEFS).inputs
     assert inputs is not None and inputs["tool_definitions"] == TOOL_DEFS
+
+
+def test_auto_tool_definitions_come_from_the_agents_of_the_records(foundry, monkeypatch: pytest.MonkeyPatch) -> None:
+    run, _, _ = foundry
+    specs = {
+        "product-discovery": [{"type": "function", "function": {"name": "search_products", "parameters": {"x": 1}}}],
+        "order-management": [{"type": "function", "function": {"name": "get_orders", "parameters": {}}}],
+    }
+    import evals.fixture_drift as drift
+
+    monkeypatch.setattr(drift, "live_tool_specs", lambda: specs)
+    found = run.tool_definitions_from_agents([_record(agent="product_discovery")])
+    assert [d["name"] for d in found] == ["search_products"]
+
+
+def test_dry_run_counts_match_the_mapping(foundry, tmp_path: Path) -> None:
+    run, _, _ = foundry
+    path = tmp_path / "records.jsonl"
+    write_records(path, [_record(), _record(case_id="c1", tool_calls=[])])
+    assert run.main(["--records", str(path), "--dry-run", "--tool-definitions", str(_defs_file(tmp_path))]) == 0
+    summary = json.loads((tmp_path / "records.foundry.summary.json").read_text())["evaluators"]
+    assert summary["intent_resolution"]["would_score"] == 2
+    assert summary["task_adherence"]["would_score"] == 2
+    assert summary["tool_call_accuracy"]["would_score"] == 1
+    assert summary["tool_call_accuracy"]["skipped"] == 1
+
+
+def _defs_file(directory: Path) -> Path:
+    path = directory / "defs.json"
+    path.write_text(json.dumps(TOOL_DEFS), encoding="utf-8")
+    return path
+
+
+def test_mapped_shapes_satisfy_the_installed_sdk_without_the_parse_fallbacks(caplog: pytest.LogCaptureFixture) -> None:
+    """Against the real SDK's validators and reformatters (offline): no fallback warning, tool calls visible."""
+    pytest.importorskip("azure.ai.evaluation")
+    import logging
+
+    from azure.ai.evaluation._common.utils import (
+        _preprocess_messages,
+        reformat_agent_response,
+        reformat_conversation_history,
+    )
+    from azure.ai.evaluation._evaluators._common._validators import ToolCallsValidator, ToolDefinitionsValidator
+    from azure.ai.evaluation._exceptions import ErrorTarget
+
+    from evals.foundry import mapping
+
+    rec = _record()
+    logger = logging.getLogger("foundry-shape-test")
+    with caplog.at_level(logging.WARNING, logger="foundry-shape-test"):
+        for name in ("intent_resolution", "task_adherence"):
+            inputs = mapping.inputs_for(name, rec, tool_definitions=TOOL_DEFS).inputs
+            assert inputs is not None
+            ToolDefinitionsValidator(error_target=ErrorTarget.TASK_ADHERENCE_EVALUATOR).validate_eval_input(inputs)
+            query = reformat_conversation_history(
+                _preprocess_messages(inputs["query"]), logger, include_system_messages=True
+            )
+            response = reformat_agent_response(
+                _preprocess_messages(inputs["response"]), logger, include_tool_messages=True
+            )
+            assert "trail shoes under $100" in query
+            assert '[TOOL_CALL] search_products(query="trail")' in response
+            assert "The Trail Runner costs $89.99." in response
+        accuracy = mapping.inputs_for("tool_call_accuracy", rec, tool_definitions=TOOL_DEFS).inputs
+        assert accuracy is not None
+        ToolCallsValidator(error_target=ErrorTarget.TOOL_CALL_ACCURACY_EVALUATOR).validate_eval_input(accuracy)
+    assert caplog.records == []
 
 
 def test_records_that_an_evaluator_cannot_score_are_skipped_with_a_reason(foundry) -> None:

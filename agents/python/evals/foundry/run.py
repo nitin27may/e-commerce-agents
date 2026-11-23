@@ -39,6 +39,7 @@ from evals.foundry.mapping import (
     SDK_CLASSES,
     Mapped,
     inputs_for,
+    normalize_tool_definitions,
 )
 from evals.records import RecordFormatError, RunRecord, read_records
 
@@ -301,9 +302,33 @@ def sink_to_project(
 # ───────────────────────────── CLI ─────────────────────────────
 
 
-def _load_tool_definitions(path: str | None) -> list[dict[str, Any]] | None:
+AUTO_TOOL_DEFINITIONS = "auto"
+
+
+def tool_definitions_from_agents(records: list[RunRecord]) -> list[dict[str, Any]]:
+    """Definitions of the tools carried by the agents that produced ``records`` (``--tool-definitions auto``).
+
+    Built the way ``evals.fixture_drift`` builds them: each agent factory runs under the replay provider, so no
+    key and no model call, and the tool schemas are read off the built agent. Records name their agent with
+    underscores (``pricing_promotions``), the factory table uses dashes.
+    """
+    from evals.fixture_drift import live_tool_specs
+
+    wanted = {record.agent.replace("_", "-") for record in records}
+    by_name: dict[str, dict[str, Any]] = {}
+    for agent, specs in live_tool_specs().items():
+        if agent not in wanted:
+            continue
+        for definition in normalize_tool_definitions(specs):
+            by_name.setdefault(definition["name"], definition)
+    return list(by_name.values())
+
+
+def _load_tool_definitions(path: str | None, records: list[RunRecord]) -> list[dict[str, Any]] | None:
     if not path:
         return None
+    if path == AUTO_TOOL_DEFINITIONS:
+        return tool_definitions_from_agents(records)
     raw = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(raw, list) or not all(isinstance(item, dict) and "name" in item for item in raw):
         raise FoundryConfigError("--tool-definitions must be a JSON array of {name, description, parameters}")
@@ -319,7 +344,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         help=f"comma-separated subset of: {', '.join(EVALUATOR_NAMES)} (default: all)",
     )
     parser.add_argument("--out-dir", help="where to write results (default: next to the records)")
-    parser.add_argument("--tool-definitions", help="JSON array of tool definitions, needed by tool_call_accuracy")
+    parser.add_argument(
+        "--tool-definitions",
+        help="JSON file (array of {name, description, parameters}) or 'auto' to read them off the agents that "
+        "produced the records; needed by tool_call_accuracy",
+    )
     parser.add_argument("--reasoning-model", action="store_true", help="the judge deployment is a reasoning model")
     parser.add_argument("--limit", type=int, help="score at most this many records (cost control)")
     parser.add_argument("--dry-run", action="store_true", help="map the records and report; call no model")
@@ -338,7 +367,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     try:
         records = read_records(args.records)
-        tool_definitions = _load_tool_definitions(args.tool_definitions)
+        tool_definitions = _load_tool_definitions(args.tool_definitions, records)
     except (RecordFormatError, FoundryConfigError, OSError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
