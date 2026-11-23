@@ -16,6 +16,7 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ### Fixed
 
+- **"New chat" right after closing the Compare dialog did nothing (#210).** A closing dialog's backdrop kept catching clicks for its 100 ms exit animation; closed dialog layers no longer take pointer events. Backend-free spec: `web/e2e/chat-new-after-compare.spec.ts`.
 - **Azure first-run hardening (optional deployment only).** The Postgres SKU preflight read the wrong level of the
   `az postgres flexible-server list-skus` JSON (SKUs are nested under `supportedServerEditions`), so it rejected
   every region and `scripts/azure-up.sh` could not get past `prereqs`. Fixed against a live read-only listing and
