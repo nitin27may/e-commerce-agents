@@ -147,4 +147,49 @@ describe("ModeComparison", () => {
     await waitFor(() => expect(screen.getByText("ok")).toBeInTheDocument());
     expect(screen.getByText("Couldn't find a product matching 'x'.")).toBeInTheDocument();
   });
+
+  it("renders a fenced card block as its card, never as JSON text (#209)", async () => {
+    vi.spyOn(api, "getOrchestrationModes").mockResolvedValue(MODES);
+    const sentiment = {
+      product_name: "Sony WH-1000XM5",
+      overall_sentiment: "positive",
+      average_rating: 4.7,
+      total_reviews: 15,
+      pros: ["Comfortable"],
+      cons: ["Expensive"],
+    };
+    const result = {
+      latency_ms: 10,
+      agents_involved: [],
+      step_count: 1,
+      graph_mermaid: null,
+      error: null,
+    };
+    vi.spyOn(api, "compareModes").mockResolvedValue({
+      message: "x",
+      results: [
+        {
+          ...result,
+          mode: "tool",
+          label: "Tool Router",
+          text: `Reviews are strong.\n\n\`\`\`sentiment\n${JSON.stringify(sentiment)}\n\`\`\``,
+        },
+        { ...result, mode: "workflow:pre-purchase", label: "Pre-Purchase Research", text: "" },
+      ],
+    });
+
+    render(<ModeComparison />);
+    fireEvent.click(screen.getByRole("button", { name: /Compare/ }));
+    await waitFor(() => expect(screen.getByText("Pre-Purchase Research")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Pre-Purchase Research"));
+    fireEvent.change(screen.getByPlaceholderText(/headphones/), { target: { value: "x" } });
+    fireEvent.click(screen.getByRole("button", { name: /Run comparison/ }));
+
+    await waitFor(() => expect(screen.getByText("Reviews are strong.")).toBeInTheDocument());
+    expect(screen.getByText("from 15 reviews")).toBeInTheDocument();
+    expect(screen.getByText("Comfortable")).toBeInTheDocument();
+    expect(screen.queryByText(/overall_sentiment/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/```/)).not.toBeInTheDocument();
+    expect(screen.getByText("(no answer)")).toBeInTheDocument();
+  });
 });

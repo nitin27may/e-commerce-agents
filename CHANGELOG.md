@@ -83,6 +83,8 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ### Fixed
 
+- **The Compare dialog renders answers the way chat does.** A fenced card block in a mode's answer (a product, a
+  sentiment summary) shows as its card. It used to be printed as JSON text (#209).
 - **Staff could not decide a paused return from the Approvals page, and the support role had no
   page to decide from** (#208). The page read the older tool-approval list, so a return paused at
   the workflow's policy gate never appeared and the inbox said "No pending approvals"; it was also
