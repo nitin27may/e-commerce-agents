@@ -32,7 +32,7 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
   carry `x-agent-name`, `x-run-id` and `x-eval-run-id`, so an AI gateway can count tokens per agent and per
   run. Values are sanitised and capped, an empty one is omitted, and no user identity or secret is sent.
   `GATEWAY_HEADERS_ENABLED` (default true) turns it off; `EVAL_RUN_ID` sets the eval run id. Replay keys and
-  every fixture are unaffected (`fixture_drift` exit 0). Parity row 50.
+  every fixture are unaffected (`fixture_drift` exit 0). Parity row 52.
 
 ### Changed
 
