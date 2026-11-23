@@ -187,6 +187,46 @@ async def test_pii_redaction_no_op_on_clean_text() -> None:
     assert mw.redactions == 0
 
 
+UUID_LIKE = [
+    "00000000-0000-4000-8000-000000000000",
+    "12345678-1234-4123-8123-123456789012",
+    "11111111-2222-4333-8444-555555555555",
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("uuid_text", UUID_LIKE)
+async def test_pii_redaction_leaves_uuids_alone(uuid_text: str) -> None:
+    mw = PiiRedactionMiddleware()
+    msg = _FakeMessage(f"Look up order {uuid_text} please")
+    await mw.process(_chat_context(msg), _noop)
+
+    assert uuid_text in msg.contents[0].text
+    assert mw.redactions == 0
+
+
+@pytest.mark.asyncio
+async def test_pii_redaction_requires_luhn_and_ignores_long_digit_runs() -> None:
+    mw = PiiRedactionMiddleware()
+    msg = _FakeMessage("ref 1234 5678 9012 3456 and id 12345678901234567890 and 4111111111111111")
+    await mw.process(_chat_context(msg), _noop)
+
+    text = msg.contents[0].text
+    assert "1234 5678 9012 3456" in text
+    assert "12345678901234567890" in text
+    assert text.endswith("[REDACTED-CARD]")
+    assert mw.redactions == 1
+
+
+@pytest.mark.asyncio
+async def test_pii_redaction_ssn_not_taken_from_inside_a_token() -> None:
+    mw = PiiRedactionMiddleware()
+    msg = _FakeMessage("sku AB-123-45-6789 ssn 123-45-6789")
+    await mw.process(_chat_context(msg), _noop)
+
+    assert msg.contents[0].text == "sku AB-123-45-6789 ssn [REDACTED-SSN]"
+
+
 # ─────────────────────── Default stack ───────────────────────
 
 

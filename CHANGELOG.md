@@ -21,6 +21,7 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ### Fixed
 
+- **PII redaction mangled UUIDs and long ids (D2).** The card pattern matched slices of a UUID such as `00000000-0000-4000-8000-000000000000`, so a tool received `[REDACTED-CARD]-[REDACTED-CARD]` as an id. Card-shaped numbers must now pass Luhn, and no match may start or end inside a longer token; Python and .NET.
 - **"New chat" right after closing the Compare dialog did nothing (#210).** A closing dialog's backdrop kept catching clicks for its 100 ms exit animation; closed dialog layers no longer take pointer events. Backend-free spec: `web/e2e/chat-new-after-compare.spec.ts`.
 - **Azure first-run hardening (optional deployment only).** The Postgres SKU preflight read the wrong level of the
   `az postgres flexible-server list-skus` JSON (SKUs are nested under `supportedServerEditions`), so it rejected

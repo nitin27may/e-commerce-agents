@@ -69,6 +69,17 @@ public sealed class MiddlewareTests
         redactor.Redactions.Should().Be(1);
     }
 
+    [Theory]
+    [InlineData("order 00000000-0000-4000-8000-000000000000 ok")]
+    [InlineData("order 12345678-1234-4123-8123-123456789012 ok")]
+    [InlineData("ref 1234 5678 9012 3456 and id 12345678901234567890")]
+    public void PiiRedactor_LeavesUuidsAndNonLuhnNumbersAlone(string input)
+    {
+        var redactor = new PiiRedactor();
+        redactor.Redact(input).Should().Be(input);
+        redactor.Redactions.Should().Be(0);
+    }
+
     [Fact]
     public void PiiRedactor_MasksSsn()
     {
@@ -81,7 +92,7 @@ public sealed class MiddlewareTests
     public void PiiRedactor_AccumulatesCount()
     {
         var redactor = new PiiRedactor();
-        redactor.Redact("4111 1111 1111 1111 and 123-45-6789 and 4222 2222 2222 2222");
+        redactor.Redact("4111 1111 1111 1111 and 123-45-6789 and 4012 8888 8888 1881");
         redactor.Redactions.Should().Be(3);
     }
 
