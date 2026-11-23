@@ -38,7 +38,7 @@ carries the per-issue checklist. What the check found:
 | Item | Issue | State |
 |---|---|---|
 | ~~D-9b inspection, resolution, timeline~~ | #95 | **Built 2026-11-19** with D-9a, behind `RETURN_LIFECYCLE_ENABLED`: `await-inspection`, `resolve_return` (idempotent payout, amount only lowered), staff list/decide routes and `/admin/returns`, the overdue-inspection nudge (admins are told; the customer is never denied for slowness), `GET /api/runs/{id}/timeline` and its `/runs` rendering. D-9a: `await-carrier-scan`, `shared/return_lifecycle.py`, `worker/return_handlers.py`, the admin scan simulator, migration 0013; `docs/return-lifecycle.md`. No `issue-label` executor: `initiate_return` already issues the label. **#95 is done except a live-stack run** (see its issue). |
-| B-15 history compaction | #98 | Not built. |
+| B-15 history compaction | #98 | Built (#163, .NET half #175). |
 | ~~B-17 DevUI entry point~~ | #98 | **Built 2026-11-19**: `scripts/devui.py`, run with `uv run --with agent-framework-devui==...` and **not** added to the lock (DevUI requires `fastapi<0.163`; an extra in the shared lock downgraded the orchestrator's production FastAPI from 0.163.1 to 0.162.7). `docs/devui.md`, parity row 42. |
 | ~~B-19 typed card frames~~ | #98 | **Decided against, 2026-11-19.** The browser already hides unclosed fences while streaming, validates every card with Zod (null-dropping, passthrough, `products` arrays to comparison cards), collapses duplicates and drops bad ones. Server-side frames would add a second path: seven card schemas mirrored in Pydantic and C# records, and a move from `content: string` to message parts across the chat page, the shop assistant and history loading, with the fence parser kept as the fallback. Little user-visible gain for that. Revisit if a non-web consumer (an A2A client) needs typed cards. The one real gap is that a bad card is dropped silently, with a console warning that is off in production. |
 | B-16 `GroupChatBuilder`, D-5b customer confirm, M-2, V-1 `ops-responder`, E-3b, E-4, E-7, E-8 | #98 #92 #93 #94 #97 | **Not on main and on no remote branch.** The "held on their branches until R1" wording below was wrong: the only remote branches were already merged and are deleted. Treat them as unbuilt, not parked. |
@@ -91,6 +91,42 @@ setting), so that workflow is not added.
 
 Still needing a human: D-1 (Azure spend), a fresh `az login` and a real first deploy; the R0 recording session (demo GIF, tutorial fixtures);
 a live-model eval run; #180; enabling Dependabot alerts and the dependency graph.
+
+### Status, 2026-11-23
+
+Written after taking in every session's open work. Main is green; verify with `gh pr list` before trusting the open-PR list below.
+
+**Built and merged since 2026-11-21** (offline-verified unless stated): execution-plan M1 EV-0/1/3/4/10/11/13 run records, repeats, separate judge,
+provider check and setup-keyed baselines (#202), pricing file and token budget (#200, #201, #203, #206), M2 run profiles, doctor and startup line
+(#207), EV-8 Foundry evaluators adapter and EV-14 community results (#216), AZ-2/AZ-3/AZ-5 Foundry project, APIM gateway and per-app identities
+modules (#213), AZ-4 gateway headers (#214), I6/I7 reference profile (VNet, private endpoints, managed Redis, ACR), `stack=dotnet`, build from
+source, per-app identity wired (#223, smoke fix #236), ADR 0006 Foundry hosted agents, Proposed (#212), `NET-36` (#194), P3 managed identity (#191),
+v1.4.0 cut and announced (#193, #205), the docs passes (#195-#199, #211), web fixes (#217, #219, #221). Orchestrator groundedness scoring (#220) and live-capable
+datasets (#222) came out of the first live-model eval. **#215 (EV-2 http target and the B2 parity job) is the one eval PR still in flight**; when it lands,
+parity row 53 and the CI job `stack-parity` exist. Dependabot is on: #224, #225, #227-#230 merged.
+
+**What the first live eval found** (Azure gpt-5.1, judge gpt-4.1-mini, about 1 USD; records in the session scratchpad, not committed):
+1. Hard-coded order ids never exist on a seeded DB and the runner's default user is never seeded, so live runs measured the not-found path. Fixed for live runs
+   by `evals/live_facts.py` and `evals/datasets/live/*.live.json` (#222); replay datasets and fixtures are untouched and stay valid.
+2. Orchestrator groundedness 0 was a scoring limit (its ledger is empty across the A2A hop), not fabrication. Fixed in scoring only (#220). **Open:**
+   `GroundingLedger` does not record `min_spend`, `max_discount`, `discount_value`, so the pricing specialist also scores 0 on deal amounts; the .NET workflow
+   mode reports an unverifiable amount where Python workflow modes send no grounding frame (the parity comparison skips grounding-dependent means for that reason).
+3. Pricing case 1: `validate_coupon` needs `cart_total` and the pricing agent has no cart tool, so asking is correct. Decision needed: cart tool, optional
+   `cart_total`, or a live case that states a total. Any code change invalidates fixtures.
+4. A parked `cancel_order` (approval-gated) writes `tool_approval_requests`, which the harness never counts, so the live cancel case cannot pass. Fix in `harness.py` after #215.
+5. "Show me my recent orders" renders cards from context with empty items, address and tracking: a likely agent defect (RecentOrdersProvider shortcut).
+6. Pricing and product-discovery suites still run as `eval@example.com` in live mode; add live variants. Live `cancel_order`/`initiate_return` write for real: reseed between runs.
+
+**Remaining, by who can do it**
+
+| Owner | Item |
+|---|---|
+| Code, keyless (next) | Land #215; harness sees parked cancels (finding 4); recent-orders cards (5); pricing and product-discovery live datasets (6); grounding ledger records deal fields (2, shifts specialist baselines, needs a rescore); #210 items (group chat placeholder answer, Alice's latest order shipped in the demo, "New chat" after Compare); Dependabot: #234 once its net-py boot passes, the four Aspire 13 to 17 PRs (#231-#233, #235) as one change with the .NET test fixes, #226 `@types/node` 26 needs a maintainer call |
+| Docs | #182 visuals (README GIF, live graph mid-run, Aspire trace, retake `docs/images/mode-compare.jpg`, which shows the pre-#219 dialog) |
+| Machine, no spend | M0: `az login`, quota check, OIDC app, public GHCR; the `.NET` image smoke legs have only run on PRs |
+| Machine, spend (approved, bounded) | M3 recording sitting R1 (fixtures, demo GIF, C-8/C-10/C-11, tutorial fixtures); M4 first real Azure deploy (I5); then re-run the live eval on the new datasets, 1 to 2 USD |
+| Maintainer | D-6 reading in ADR 0006 and spike thresholds, return-label token strength, #180 decision, pricing finding 3, #226. v1.4.0 is published (#205); Dependabot is on |
+| After a real deploy | M5 Foundry foundation on a live subscription, M6 gateway attribution check, M7 hosted-agent spike (ADR 0006 S1-S12; D-6 cannot be met literally, orchestrator REST/SSE routes cannot move), M8 injection comparison and publish |
 
 ### Decisions needed first
 
@@ -286,20 +322,20 @@ a tier-1 code path is a design error.
 |---|---|---|
 | Model providers | **Built:** openai, azure (key or managed identity), anthropic (stub-tested only), replay; any OpenAI-compatible endpoint through `LLM_BASE_URL` + `LLM_API`; per-agent `model:` override | `shared/factory.py::get_chat_client`, `docs/model-providers.md` |
 | Pricing | **Built (this branch):** one shared file, no price in code, unknown model costs null, enforce fails closed | `config/pricing/models.yaml`, `shared/cost.py`, `CostEstimator.cs` |
-| Pricing, rest | **Not built:** token budget, re-pricing columns, compose mount, `update_pricing.py`, eval `--estimate` | EV-12 below |
+| Pricing, rest | **Built (#200, #201):** token budget, `price_source`/`priced_at` columns, shared file, eval `--estimate` | EV-12 below |
 | Eval runner | **Built, in-process only:** `evals/harness.py` calls agent objects directly; .NET has a separate in-process runner (`ECommerceAgents.Evals`) | no eval reaches a deployed system |
 | Datasets | **Small:** 5 to 8 cases each, 40 total; red team 8, all direct injection | `evals/datasets/` |
 | Indirect injection corpus | **Built, unscored by evals:** canary corpus, seeded only with `--adversarial`; scored by `guardrail_confusion.py` | `evals/seed_adversarial.py` |
 | Judge | **Self-judging:** `scorers/llm_judge.py` uses `get_chat_client()` | |
 | CI evals | `smoke` (replay, every PR) **correct**; `full` (dispatch) **wrong shape**: `openai` + `gpt-4.1` + stored `OPENAI_API_KEY`, in-process | `.github/workflows/evals.yml` |
-| Run profiles, doctor | **Not built** | no `config/profiles/`, no `scripts/doctor.py` |
+| Run profiles, doctor | **Built (#207)** | no `config/profiles/`, no `scripts/doctor.py` |
 | Azure infra | **Written, never deployed:** Bicep (CAE, apps, Postgres Flexible + pgvector, AIServices with gpt-5.1 + embeddings, Key Vault, identity, Log Analytics/App Insights via managed OTel, budget, Redis container, db-init job), `demo`/`reference` profiles, `azure-up.sh`/`azure-down.sh`, hooks, `smoke.sh`, `azure.yml` (offline on PR, what-if and deploy-and-test on dispatch with OIDC) | `infra/`, `scripts/azure/`, `.github/workflows/azure.yml` |
 | Azure gaps | **Not built:** VNet/private endpoints, ACR, Azure Managed Redis (the `reference` profile has sizing but no networking modules); Foundry project (`accounts/projects`); App Insights connected to a Foundry project; APIM | `infra/modules/` |
 | Images | **Python only** published to GHCR (orchestrator, five specialists, plus web/auth/MCP); **no .NET images** | `build-images.yml` |
 | MCP on Azure | Opt-in (`deployMcp`), **internal ingress** | `apps.bicep` |
 | A2A on Azure | `A2A_TRANSPORT=legacy`, `A2A_IDENTITY=both` | `apps.bicep` |
-| Gateway headers | **Not built** (no `x-agent-name`/run ids on model calls) | `shared/factory.py` |
-| Dual-stack parity gate in CI | **Not built** (B2); `scripts/e2e-both-stacks.sh` runs by hand | no workflow references it |
+| Gateway headers | **Built (#214, AZ-4)** | `shared/factory.py` |
+| Dual-stack parity gate in CI | **Built in #215 (EV-2 + B2), see the 2026-11-23 status block; the Playwright spec with a live key stays the full gate** | no workflow references it |
 | Foundry anything | **Not built** | |
 
 Known open risks carried from Phase B: prompts and evals were tuned on gpt-4.1 and gpt-5.1 is unmeasured; ARM
