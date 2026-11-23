@@ -132,7 +132,7 @@ uv run python -m evals.run_evals --rescore records.jsonl --pass-threshold 0.8 --
 
 The top-level names `query`, `response`, `context`, `tool_calls`, `ground_truth` are Foundry's evaluation
 input names, so a records file can be given to a Foundry evaluator as is. A reader refuses a
-`schema_version` it does not know. Any target (the in-process one today, `http` later) writes this shape.
+`schema_version` it does not know. Both targets (`inproc` and `http`) write this shape.
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -140,13 +140,13 @@ input names, so a records file can be given to a Foundry evaluator as is. A read
 | `run_id`, `recorded_at` | string | one id per dataset run; UTC timestamp |
 | `suite` | `quality` or `safety` | |
 | `agent`, `dataset`, `dataset_path`, `case_id`, `case_index`, `repeat` | | which case, and which repeat (0-based) |
-| `setup` | object | `stack`, `target` (`inproc`/`http`), `chat_provider`, `chat_model`, `chat_api`, `embedding_provider`, `embedding_model`, `judge` (`kind`, `provider`, `model`, `self_judged`), `gateway`, `pricing_source` |
+| `setup` | object | `stack`, `target` (`inproc`/`http`), `chat_provider`, `chat_model`, `chat_api`, `embedding_provider`, `embedding_model`, `judge` (`kind`, `provider`, `model`, `self_judged`), `gateway`, `pricing_source`, `endpoint` (`http` only: the orchestrator's host and port, never a credential) |
 | `query` | string | the user message |
 | `response` | string | the final answer text |
 | `context` | string | grounding evidence lines, one per checked claim; raw tool output is not captured by the in-process target |
 | `tool_calls` | list | `{type: "tool_call", name, arguments}` in call order |
 | `ground_truth` | string | the expectation in words |
-| `expected` | object | the expectation, machine readable: `tools`, `fields`, `route`, `criteria`, `tool_args`, `denial`, `hitl`, `user_role`, `user_email`; safety: `attack_type`, `forbidden_substrings`, `refusal_expected` |
+| `expected` | object | the expectation, machine readable: `tools`, `fields`, `route`, `criteria`, `tool_args`, `denial`, `hitl`, `user_role`, `user_email`, `mode`; safety: `attack_type`, `forbidden_substrings`, `refusal_expected` |
 | `routes` | list | specialists the orchestrator called |
 | `tokens` | `{input, output}` | for the orchestrator this includes its specialists |
 | `latency_ms` | int | wall clock of the case |
@@ -154,6 +154,8 @@ input names, so a records file can be given to a Foundry evaluator as is. A read
 | `grounding` | object or null | the grounding report the score is computed from |
 | `denied`, `hitl_requested`, `guardrail_flags` | | what the run showed about role gating and approvals |
 | `error`, `fixture_missing` | | an infrastructure failure, kept apart from a bad answer |
+| `nodes` | list | workflow nodes entered, in order (`workflow:*` modes; empty in `tool` mode) |
+| `not_observable` | list | facts this target could not see (`http`: `hitl`, `grounding`, `tokens`, `guardrail_flags`). An assertion on a listed fact is not applicable, never failed |
 | `scores` | `{groundedness, correctness, completeness, overall}` | |
 | `fields_found`, `fields_missing`, `assertion_failures` | lists | |
 | `judge` | object or null | `score`, `reasoning`, `failure_mode`, `provider`, `model`, `self_judged` |
@@ -213,6 +215,62 @@ commit, date, repeats, cost, submitter, judge) with the per-suite scores and spr
 undisclosed or unlabelled self-judge. `scripts/build_eval_scorecard.py` shows accepted files in a separate
 "Community-submitted, not verified by the maintainers" table. They are never baselines. Format, how to run and
 how to submit: `evals/community/README.md`. `evals/community/sample/` is a fixture for the tests and is never shown.
+
+## The http target
+
+`--target http --base-url <orchestrator>` runs the same datasets against a **running** orchestrator instead of
+calling agents in this process. It logs in as a seeded user, sends each case as `POST /api/chat/stream` and
+assembles the frames into the same run record (`evals/http_target.py`). It needs a URL and nothing else: no
+database, no model key, no access to any process in the stack. That is what lets one command measure the Python
+stack, the .NET stack, a mixed stack (`py-net`, `net-py`) or a deployed Container Apps URL.
+
+```bash
+uv run python -m evals.run_evals --target http --base-url http://localhost:8080 --stack dotnet \
+  --agent orchestrator --dataset evals/datasets/orchestrator_routing.json --records-out dotnet.jsonl
+```
+
+* **Who it logs in as.** The case's `user_email`, else its `user_role` (one seeded account per role:
+  `alice.johnson@gmail.com`, `power.demo@gmail.com`, `seller.demo@gmail.com`, `support.demo@gmail.com`,
+  `admin.demo@gmail.com`), else the default user. Override the default with `EVAL_USER_EMAIL` and
+  `EVAL_USER_PASSWORD`, a role's with `EVAL_USER_<ROLE>_EMAIL` / `_PASSWORD`, and the staff password with
+  `EVAL_STAFF_PASSWORD` (or the seeder's `SEED_STAFF_PASSWORD`). The defaults are the published demo passwords of
+  `scripts/seed.py`; against anything but a throwaway stack, set your own. The record stores the host, never a
+  credential. A case whose role does not match its account's role is an error, not a wrong score.
+* **`--stack`** names what answers (`python`, `dotnet`, `py-net`, `net-py`, your own label); a URL cannot say, and the
+  label is part of the baseline directory (`dotnet-http-replay`). `--chat-provider` and `--chat-model` record the
+  remote's model; they default to this process's own settings, which describe the remote only if you made them.
+* **A fresh conversation per case**, so cases never see each other's history. A 401 refreshes the token once, then
+  logs in again; a 429 backs off (honouring `Retry-After`, at most 4 retries, 30 s cap); a dropped stream, an empty
+  stream and an unreachable host each become an `error` record rather than a score of zero.
+* **A `mode` on a case** (`workflow:pre-purchase`, orchestrator cases only) runs it through that orchestration
+  mode. The in-process target accepts it too.
+
+What it cannot fill, and what the record says about it:
+
+| Field | Over http | Why |
+|---|---|---|
+| `guardrail_flags`, safety `guardrail_engaged` | empty / null, listed in `not_observable` | a server-side ContextVar, never on the wire |
+| `hitl_requested` | exact for `workflow:*` modes (the pause is a `request_info` frame); a visible pause in `tool` mode is seen (`run.pending_approval`), **no pause in `tool` mode is not provable** and `hitl` is listed in `not_observable` | a tool-mode specialist parks a destructive call without a frame or a step. `expect_hitl` is then not applicable |
+| `denied` | exact | read from a `permission_denied` step output, as in-process |
+| `tokens`, `cost_usd` | read back from `GET /api/runs` by the run id the stream names; null cost and `tokens` in `not_observable` when the run is not listed | the stream itself reports no usage |
+| `grounding`, `context` | from the `grounding` frame; with none (`GROUNDING_MODE=off`, or a workflow mode) groundedness is 1.0 ("nothing to verify") and `grounding` is listed | no database here to repeat the check. `context` is the grounding evidence lines, as in-process; raw tool output is captured by neither target |
+| `latency_ms` | measured client side | includes the network and the server's persistence before `[DONE]` |
+
+Two differences from the in-process target that no flag removes. It drives the **orchestrator** only, so a
+specialist dataset (`--agent product-discovery`) is routed by the orchestrator and the specialist's steps come back
+through it: an end to end measurement, not the same one as calling the specialist directly. And under
+`LLM_PROVIDER=replay` a real user's profile and recent orders are part of the model request, so the committed
+fixtures (recorded for an identity with no profile) serve only turns that call no model. `evals/datasets/stack_parity.json`
+is such a dataset; a model-calling dataset needs a recording made through the http target.
+
+Two checks sit on top of it, both keyless:
+
+* `scripts/eval-http-parity.sh` runs one dataset in-process and over http against a running stack and compares them at
+  zero tolerance: any difference is a bug in one of the targets.
+* `scripts/stack-parity.sh` (the CI job `stack-parity`) boots each stack under replay, runs the dataset over http
+  against it and compares the stacks with `python -m evals.stack_compare a.jsonl b.jsonl`: outcome, tool-call set,
+  routes, workflow nodes and approval flags must match exactly, and each mean score must be within `--score-tolerance`
+  (default 0.05). Wording is never compared.
 
 ## Repeats and the regression threshold
 
