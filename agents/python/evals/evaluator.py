@@ -215,7 +215,7 @@ class AgentEvaluator:
         database (``shared/grounding/verifier.py``), not just "was a tool called".
       - Correctness (0-1): did it call the right tools / route to the right specialist?
       - Completeness (0-1): does the response cover what was expected? Keyword-alias
-        matching by default (fast, free, deterministic — the smoke suite's mode);
+        matching by default (fast, free, deterministic — the replay-regression suite's mode);
         set ``use_llm_judge=True`` for a real judge call (the full suite's mode).
     """
 
@@ -409,7 +409,7 @@ class AgentEvaluator:
         """Fast, free, deterministic completeness check via field-name aliases.
 
         Coarser than the LLM judge (a bare "$" counts as satisfying a "price"
-        field), but zero-cost and replay-compatible — the smoke suite's mode.
+        field), but zero-cost and replay-compatible — the replay-regression suite's mode.
         """
         if not expected_fields:
             return 1.0, [], []

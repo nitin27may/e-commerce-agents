@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run every eval suite against the committed replay fixtures — keyless, free.
 #
-# This is the one implementation of the "smoke" job in .github/workflows/evals.yml:
+# This is the one implementation of the "Replay regression" job in .github/workflows/evals.yml:
 # CI calls it, and so can you. Zero LLM calls, no credentials.
 #
 #   scripts/replay-evals.sh            # services + all suites (DB already seeded)

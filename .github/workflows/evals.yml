@@ -2,9 +2,11 @@ name: Evals
 
 # Two jobs, split by cost:
 #
-# - `smoke` runs on every PR: every dataset (including orchestrator_routing.json
-#   and red_team.json), all against LLM_PROVIDER=replay with deterministic
-#   scorers only, compared against evals/baselines/. Zero cost, zero
+# - `replay-regression` ("Replay regression") runs on every PR: every dataset (including
+#   orchestrator_routing.json and red_team.json), all against LLM_PROVIDER=replay with
+#   deterministic scorers only, compared against evals/baselines/. It gates on fixture
+#   misses, deterministic assertions and a score drop against the baseline. Its score is a
+#   regression signal about the recorded answers, never a measure of quality. Zero cost, zero
 #   credentials — see agents/python/evals/fixtures/README.md for how the
 #   cassettes were recorded and why the five specialist services still need
 #   to be booted (in replay mode, no key) before the orchestrator/safety
@@ -59,7 +61,7 @@ env:
     "pricing-promotions":"http://localhost:8083","review-sentiment":"http://localhost:8084",
     "inventory-fulfillment":"http://localhost:8085"}
   THRESH: ${{ github.event.inputs.pass_threshold || '0.7' }}
-  # The smoke job replays frozen model output, so its absolute score is a
+  # The replay-regression job replays frozen model output, so its absolute score is a
   # property of the recording session, not of the pull request under test.
   # What a PR *can* change is measured by --baseline/--max-regression (and by
   # the missing-fixture check, which always fails the run). The 0.7 quality
@@ -67,8 +69,8 @@ env:
   SMOKE_THRESH: ${{ github.event.inputs.pass_threshold || '0' }}
 
 jobs:
-  smoke:
-    name: Smoke (replay, deterministic, free)
+  replay-regression:
+    name: Replay regression
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -145,7 +147,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: eval-results-smoke
+          name: eval-results-replay-regression
           path: agents/python/eval-*.json
           retention-days: 30
 

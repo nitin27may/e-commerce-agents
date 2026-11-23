@@ -2,7 +2,7 @@
 #
 # Manual only, deliberately. The job seeds a database, starts five specialist
 # services and drives real orchestration turns, so it is minutes rather than
-# seconds — too slow to sit on every pull request, and the Python `smoke` job
+# seconds — too slow to sit on every pull request, and the Python `replay-regression` job
 # already gives PRs a fast deterministic signal. Run this from the Actions tab
 # when the .NET agents change, or before a release.
 #

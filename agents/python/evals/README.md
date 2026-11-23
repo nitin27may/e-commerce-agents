@@ -25,7 +25,7 @@ Each eval run scores agent responses on three dimensions:
   the right specialist?
 - **Completeness**: does the response cover what was expected? Two modes —
   a free, deterministic keyword-alias check by default (replay-compatible,
-  the smoke suite's mode), or `--use-llm-judge` for a real judge call scoring
+  the replay-regression suite's mode), or `--use-llm-judge` for a real judge call scoring
   substance rather than literal keyword presence (`evals/scorers/llm_judge.py`,
   the full suite's mode).
 
@@ -108,7 +108,7 @@ uv run python -m evals.run_evals --agent product-discovery --dataset evals/datas
 1. Create a new JSON file in `evals/datasets/`
 2. Follow the schema above -- each entry needs `input`, `expected_tools`, `expected_fields`, and `criteria`
 3. Run with `--agent <agent-name>` matching the agent's factory function name
-4. Record replay fixtures for the new cases (`evals/fixtures/README.md`) so the smoke suite covers them too
+4. Record replay fixtures for the new cases (`evals/fixtures/README.md`) so the replay-regression suite covers them too
 
 ## Datasets
 
@@ -167,7 +167,7 @@ change as an informational line; they never gate.
 
 Two jobs in `.github/workflows/evals.yml`:
 
-- **`smoke`** — runs on every PR. Every dataset, including
+- **`replay-regression`** ("Replay regression") — runs on every PR. It gates on fixture misses, deterministic assertions and a score drop against the baseline; its score is a regression signal, never a quality number. Every dataset, including
   `orchestrator_routing.json` and `red_team.json`, all against
   `LLM_PROVIDER=replay` with the deterministic scorers only (no
   `--use-llm-judge`), compared against `evals/baselines/`. The job boots the

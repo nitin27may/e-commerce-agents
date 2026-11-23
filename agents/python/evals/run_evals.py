@@ -228,7 +228,7 @@ Examples:
         action="store_true",
         help="Score completeness with an LLM judge instead of the free keyword-alias check "
         "(quality suite only — spends real judge tokens; the 'full' CI job uses this, "
-        "the PR-blocking 'smoke' job does not)",
+        "the PR-blocking replay-regression job does not)",
     )
     parser.add_argument(
         "--baseline",

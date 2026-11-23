@@ -34,7 +34,7 @@ miss only: an existing recording is replayed, not replaced.
 |---|---|---|
 | Tutorials | `uv run --project tutorials python tutorials/01-first-agent/python/main.py` | each chapter's `tests/fixtures/replay/` |
 | Tests | `cd agents/python && uv run pytest` and `uv run --project tutorials pytest tutorials/ -m "not integration"` | committed beside the tests |
-| Eval smoke suite | `scripts/replay-evals.sh --setup` | `agents/python/evals/fixtures/replay/` |
+| Eval replay regression | `scripts/replay-evals.sh --setup` | `agents/python/evals/fixtures/replay/` |
 | The no-key stack | `./scripts/dev.sh --demo --no-key` | `/app/demo/fixtures/replay` inside the images |
 
 **Tutorials.** A chapter needs no setting at all. `tutorials/_shared/llm.py` (`resolve_provider`)
@@ -47,7 +47,7 @@ not touch the database.
 tests marked `integration` are the live ones; `-m "not integration"` leaves them out, which is what
 CI does.
 
-**Eval smoke suite.** `scripts/replay-evals.sh` is the `smoke` job in
+**Eval replay regression.** `scripts/replay-evals.sh` is the `replay-regression` job in
 `.github/workflows/evals.yml`, and CI runs that same script. It starts the five specialists in
 replay mode, runs every quality suite and the safety suite, and compares each to its committed
 baseline. `--setup` first migrates and seeds the database; it needs Postgres and Redis

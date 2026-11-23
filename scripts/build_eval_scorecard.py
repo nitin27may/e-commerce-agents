@@ -92,11 +92,11 @@ def render(rows: list[Row], models: Counter[str], first: str, last: str, prompt_
         "",
         "Scores per specialist and dataset, as committed in `agents/python/evals/baselines/`.",
         "",
-        "**Read this first.** These numbers are not a live measurement. Every case was answered from a replay "
+        "**Read this first.** These numbers are a regression signal, not a quality measurement. Every case was answered from a replay "
         f"fixture recorded on {model_text} between {first} and {last}, and the scorer is deterministic: "
         "groundedness is a database check, correctness is a tool or route match, and completeness is a keyword "
         "check, not a judge model. A score tells you the recorded answers still pass the current code and "
-        "prompts. It says nothing about how a different model, or the same model today, would do. Each dataset "
+        "prompts, which is what the PR job named Replay regression checks. It says nothing about how a different model, or the same model today, would do. Each dataset "
         "has five or six cases, so one flipped case moves a score by 0.1 or more, and the score is a property "
         "of the recording session as much as of the system (see `agents/python/evals/fixtures/README.md`).",
         "",
