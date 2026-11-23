@@ -139,6 +139,110 @@ class HITLFunctionMiddleware(FunctionMiddleware):
         # Don't call call_next() — tool not executed
 
 
+# ─────────────────────── Parked calls (MAF's own approval gate) ──────────────
+#
+# ``@tool(approval_mode="always_require")`` makes MAF stop the run *before* it builds the function-middleware
+# pipeline: the model's call comes back as a ``function_approval_request`` in ``response.user_input_requests``, the
+# tool never runs and ``HITLFunctionMiddleware`` is never reached. For the five gated tools the middleware above is
+# therefore dead code on the real path; the host calls ``park_gated_call`` / ``parked_reply`` instead.
+
+_PARK_VERBS: dict[str, tuple[str, str]] = {
+    # tool -> (what the customer asked for, the argument that names the subject)
+    "cancel_order": ("cancelling order", "order_id"),
+    "modify_order": ("changing the shipping address on order", "order_id"),
+    "initiate_return": ("starting a return for order", "order_id"),
+    "process_refund": ("processing the refund for return", "return_id"),
+    "place_backorder": ("placing a backorder for product", "product_id"),
+}
+
+
+def _uuid_or_none(value: str | None) -> str | None:
+    """``current_session_id`` is a client-influenced string; the column is a UUID."""
+    if not value:
+        return None
+    try:
+        return str(UUID(str(value)))
+    except ValueError:
+        return None
+
+
+async def park_gated_call(
+    *,
+    user_email: str,
+    session_id: str | None,
+    agent_name: str,
+    tool_name: str,
+    tool_input: dict[str, Any],
+) -> tuple[UUID, bool]:
+    """Durably record a gated call MAF parked, once. Returns ``(request_id, created)``.
+
+    Idempotent: the same requester asking for the same tool with the same input while an earlier request is
+    still ``pending`` or ``processing`` gets that request back, not a second row (a per-key advisory lock closes
+    the race between two concurrent turns). The inbox approval is opened best-effort, as ``_create_hitl_request``
+    does, and also for an existing row that never got one. The tool is not executed here.
+    """
+    from shared.approvals.intake import open_tool_approval
+    from shared.db import get_pool
+
+    pool = get_pool()
+    canonical = json.dumps(tool_input, sort_keys=True, default=str)
+    lock_key = f"park:{user_email.lower()}:{tool_name}:{canonical}"
+    created = False
+    async with pool.acquire() as conn, conn.transaction():
+        await conn.execute("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lock_key)
+        row = await conn.fetchrow(
+            """SELECT id FROM tool_approval_requests
+                WHERE lower(user_email) = lower($1) AND tool_name = $2 AND tool_input = $3::jsonb
+                  AND status IN ('pending', 'processing')
+                ORDER BY created_at LIMIT 1""",
+            user_email,
+            tool_name,
+            canonical,
+        )
+        if row is None:
+            row = await conn.fetchrow(
+                """INSERT INTO tool_approval_requests (user_email, session_id, agent_name, tool_name, tool_input)
+                   VALUES ($1, $2, $3, $4, $5::jsonb) RETURNING id""",
+                user_email,
+                _uuid_or_none(session_id),
+                agent_name,
+                tool_name,
+                canonical,
+            )
+            created = True
+    request_id: UUID = row["id"]
+    try:
+        await open_tool_approval(
+            pool,
+            request_id=str(request_id),
+            user_email=user_email,
+            session_id=session_id,
+            tool_name=tool_name,
+            tool_input=tool_input,
+        )
+    except Exception:
+        logger.exception("hitl: could not open the inbox approval for parked request %s", log_safe(request_id))
+    return request_id, created
+
+
+def parked_reply(tool_name: str, tool_input: dict[str, Any] | None, request_id: UUID | str | None) -> str:
+    """The sentence the customer reads for a parked call. Deterministic: no model call produces it."""
+    ref = f" (ref: {str(request_id)[:8]})" if request_id else ""
+    verb, key = _PARK_VERBS.get(tool_name, (tool_name.replace("_", " "), ""))
+    subject = str((tool_input or {}).get(key, "")).strip() if key else ""
+    what = f"{verb} {subject}" if subject else verb
+    return (
+        f"I have asked a team member to approve {what}{ref}. "
+        "Nothing has changed yet; you will be notified once it has been reviewed."
+    )
+
+
+PARK_FAILED_REPLY = (
+    "I could not submit that request for approval right now, so no changes have been made. "
+    "Please try again in a moment."
+)
+
+
 def _decode_jsonb(value: Any) -> dict | None:
     """asyncpg returns JSONB columns as raw JSON text by default (no codec
     registered on this pool) — decode explicitly rather than ``dict(value)``,

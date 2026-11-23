@@ -21,6 +21,26 @@ behind it. The gaps are listed under [What is not built](#what-is-not-built).
 | Inbox schema | migration `0006_approvals_foundation.sql` | `approvals`, `approval_events` (append-only), `outbox`, `notifications` — see [Database Schema](database-schema.md) |
 | Repository | `agents/python/shared/approvals/repo.py`, `shared/outbox.py` | Guarded state transitions, audit trail, outbox |
 
+## How a gated tool call reaches the inbox (Python)
+
+The gated tools (`cancel_order`, `modify_order`, `initiate_return`, `process_refund`, `place_backorder`) are declared
+`@tool(approval_mode="always_require")`. MAF acts on that setting before it builds the function-middleware
+pipeline: the run ends with a `function_approval_request` in `response.user_input_requests`, the tool does not run,
+and the response text is empty. `HITLFunctionMiddleware` therefore never sees these calls on the real path (it
+still guards an ungated registration of the same names). The specialist host closes the gap:
+
+* `shared/agent_host.py::park_pending_approvals` runs after every blocking and streaming agent run (the legacy
+  `/message:send` and `/message:stream` routes and the A2A 1.0 executor share those two functions).
+* For each parked call it calls `shared/hitl.py::park_gated_call`, which writes the `tool_approval_requests` row and
+  the routed inbox `approvals` row, owned by the forwarded user. The tool is not executed and no model call is made.
+* It is idempotent: the same user asking for the same tool with the same input while a request is `pending` or
+  `processing` gets that request back (one row, one inbox entry), also under concurrent turns.
+* The user reads a fixed sentence, for example "I have asked a team member to approve cancelling order <id> (ref:
+  ab804829). Nothing has changed yet; you will be notified once it has been reviewed." With no forwarded identity
+  or a database error the reply says nothing was changed and no row is written (fail closed).
+* In `tool` mode the orchestrator relays that sentence; the in-chat approval card exists only for the workflow
+  modes. Staff see the request in the inbox either way.
+
 ## Roles
 
 `support` is staff and reviews what the policy routes to `support`; `admin` acts as manager and handles
