@@ -474,6 +474,28 @@ async def check_bundle_eligibility(
             rules = promo["rules"] if isinstance(promo["rules"], dict) else json.loads(promo["rules"])
             required_ids = rules.get("product_ids", [])
             required_categories = rules.get("categories", [])
+            # Seeded bundles store product NAMES under `products` (see scripts/seed.py), the same shape
+            # optimize_cart reads; match them case-insensitively.
+            required_names = {n.strip().lower() for n in _as_list(rules.get("products")) if n.strip()}
+
+            # Check by product names
+            if required_names:
+                cart_names = {p["name"].strip().lower() for p in products}
+                if required_names <= cart_names:
+                    discount_pct = rules.get("discount_pct", 0)
+                    matching_products = [p for p in products if p["name"].strip().lower() in required_names]
+                    bundle_total = sum(p["price"] for p in matching_products)
+                    savings = bundle_total * (discount_pct / 100)
+                    eligible_bundles.append(
+                        {
+                            "promotion_name": promo["name"],
+                            "discount_pct": discount_pct,
+                            "bundle_total": round(bundle_total, 2),
+                            "savings": round(savings, 2),
+                            "end_date": promo["end_date"].isoformat(),
+                            "qualifying_products": [p["name"] for p in matching_products],
+                        }
+                    )
 
             # Check by product IDs
             if required_ids:
