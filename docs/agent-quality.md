@@ -238,6 +238,28 @@ Every report starts with the run's setup (stack, target, chat and embedding prov
 
 **Required secret (`full` job only)**: `OPENAI_API_KEY` in the repository settings. The workflow fails fast if the secret is absent rather than running with a dummy key.
 
+### Foundry evaluators (optional)
+
+If you already work in a Microsoft Foundry project, a records file can also be scored by Foundry's evaluators:
+groundedness, intent resolution, tool-call accuracy, task adherence and indirect attack
+(`python -m evals.foundry.run --records <file>`, optional extra `foundry-evals`). It runs locally against a judge
+deployment you name, writes results next to the records, and can log the run to your project when
+`AZURE_AI_PROJECT` is set. It is a second tier: the core eval path does not import it or any Azure package, and
+its scores are a different instrument from the repo's own, so they never enter the baselines or the scorecard.
+What each evaluator cannot score from our records (no raw tool output, no system prompt, no tool definitions
+unless you supply them) is listed in `agents/python/evals/README.md`.
+
+### Community results
+
+Scores from your own provider and model can be contributed as a file under `agents/python/evals/community/`. The
+file carries the full setup, the commit, the date, the repeats, the cost, the judge and the scores with their
+spread, and optionally the run's records. `python -m evals.community_validate <file>` refuses an incomplete setup,
+an undisclosed or unlabelled self-judge, scores that cannot be right, a header that does not follow from the
+attached records (it re-scores them with no model call) and anything that looks like a secret or personal data.
+The [eval scorecard](eval-scorecard.md) lists accepted files in a separate table, "Community-submitted, not
+verified by the maintainers", and never in the reference rows. Format and how to submit:
+`agents/python/evals/community/README.md`.
+
 ### Score thresholds
 
 | Suite | Threshold | Rationale |

@@ -1,0 +1,66 @@
+{
+  "format": "ecommerce-agents-community-result",
+  "format_version": 1,
+  "sample": true,
+  "submitter": {
+    "name": "Sample Submitter (not a real run)",
+    "github": ""
+  },
+  "run": {
+    "date": "2026-11-20",
+    "git_commit": "0123456789abcdef0123456789abcdef01234567",
+    "repeats": 2,
+    "cost_usd": 0.06
+  },
+  "setup": {
+    "stack": "python",
+    "target": "inproc",
+    "chat_provider": "sample-provider",
+    "chat_model": "sample-model-1",
+    "chat_api": "",
+    "embedding_provider": "sample-provider",
+    "embedding_model": "sample-embed",
+    "judge": {
+      "kind": "llm",
+      "provider": "sample-judge",
+      "model": "sample-judge-1",
+      "self_judged": false
+    },
+    "gateway": "none",
+    "pricing_source": ""
+  },
+  "suites": [
+    {
+      "suite": "quality",
+      "agent": "product-discovery",
+      "dataset": "product_discovery",
+      "cases": 2,
+      "scores": {
+        "groundedness": 1.0,
+        "correctness": 1.0,
+        "completeness": 0.75,
+        "overall": 0.95
+      },
+      "spread": {
+        "groundedness": 0.0,
+        "correctness": 0.0,
+        "completeness": 0.0,
+        "overall": 0.0
+      }
+    },
+    {
+      "suite": "safety",
+      "agent": "product-discovery",
+      "dataset": "red_team",
+      "cases": 1,
+      "scores": {
+        "pass_rate": 1.0
+      },
+      "spread": {
+        "pass_rate": 0
+      }
+    }
+  ],
+  "records_file": "SAMPLE-not-real.records.jsonl",
+  "notes": "SAMPLE. Invented numbers for the validator's tests. Never shown in the scorecard."
+}

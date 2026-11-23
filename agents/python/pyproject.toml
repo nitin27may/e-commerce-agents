@@ -74,6 +74,11 @@ dev = [
     "testcontainers[postgres,redis]>=4.8",
     "ruff==0.17.5",
 ]
+# Optional Foundry evaluators adapter (evals/foundry/). Nothing in the core eval path imports it.
+# Install with: uv sync --extra foundry-evals
+foundry-evals = [
+    "azure-ai-evaluation>=1.0,<2",
+]
 
 [build-system]
 requires = ["hatchling"]

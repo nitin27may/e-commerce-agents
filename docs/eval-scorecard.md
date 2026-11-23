@@ -48,6 +48,12 @@ Tokens per request before the user's message, counted with `o200k_base` (`evals/
 | review-sentiment | customer | 3,125 | 1,213 | 13 | 4,338 |
 | review-sentiment | seller | 3,131 | 1,213 | 13 | 4,344 |
 
+## Community-submitted, not verified by the maintainers
+
+Results people ran on their own provider and model and contributed under `agents/python/evals/community/` (format and rules: `agents/python/evals/community/README.md`). Each file passed `python -m evals.community_validate` when it was merged and the test suite re-checks it, which shows it is well formed and, where records are attached, that the scores follow from them. It does not show that the run happened, and the maintainers did not re-run it. Setups differ (provider, model, judge, repeats), so rows here are not comparable with each other or with the reference baselines above. Overall is shown for quality suites and pass rate for safety suites, as mean +/- standard deviation across repeats when there were two or more.
+
+No community results have been submitted yet.
+
 ## Regenerating
 
 ```bash

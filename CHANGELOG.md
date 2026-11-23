@@ -33,6 +33,18 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
   run. Values are sanitised and capped, an empty one is omitted, and no user identity or secret is sent.
   `GATEWAY_HEADERS_ENABLED` (default true) turns it off; `EVAL_RUN_ID` sets the eval run id. Replay keys and
   every fixture are unaffected (`fixture_drift` exit 0). Parity row 52.
+- **Foundry evaluators adapter (EV-8), optional.** `uv sync --extra foundry-evals` adds `azure-ai-evaluation`;
+  `python -m evals.foundry.run --records <file>` maps run records onto Foundry's groundedness, intent resolution,
+  tool-call accuracy, task adherence and indirect-attack evaluators, runs them locally against a judge deployment
+  you name (`FOUNDRY_EVAL_*`), writes results next to the records, and optionally logs the run to a Foundry project
+  (`AZURE_AI_PROJECT`, `--log-to-project`). The core eval path imports no Azure package and never imports the
+  adapter; a test enforces it.
+- **Community eval results (EV-14).** Anyone can contribute a result file for their own provider and model under
+  `agents/python/evals/community/` (format, how to run, how to submit by PR in its README).
+  `python -m evals.community_validate <file>` checks the schema, that the setup is complete, that the scores follow
+  from attached records (re-scored with no model call), and refuses secret-looking strings, absurd scores, an
+  undisclosed judge and an unlabelled self-judged run. The eval scorecard lists accepted files in a separate table,
+  "Community-submitted, not verified by the maintainers", never in the reference rows.
 
 ### Changed
 

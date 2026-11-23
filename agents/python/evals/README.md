@@ -140,6 +140,57 @@ input names, so a records file can be given to a Foundry evaluator as is. A read
 Gotcha: a case with no grounding report (`GROUNDING_MODE=off`) was scored from the database at run time;
 a re-score keeps that stored groundedness because it cannot repeat the database check.
 
+## Foundry evaluators (optional)
+
+`evals/foundry/` scores a records file with Microsoft Foundry's evaluators from `azure-ai-evaluation`. It is a
+second tier on top of the provider-neutral path: it is an optional extra, the core eval path (`run_evals`,
+evaluator, records, scoring, rescore, judge, harness, provider_check) imports no Azure package and never imports
+`evals.foundry`, and a test enforces both. Importing `evals.foundry` without the extra fails and names the
+command that installs it.
+
+```bash
+uv sync --extra foundry-evals
+export FOUNDRY_EVAL_ENDPOINT=https://<account>.openai.azure.com FOUNDRY_EVAL_DEPLOYMENT=<judge deployment>
+# FOUNDRY_EVAL_API_KEY=...   optional; without it DefaultAzureCredential is used
+uv run python -m evals.foundry.run --records my-run.jsonl --dry-run          # map and count, call nothing
+uv run python -m evals.foundry.run --records my-run.jsonl --limit 20         # a small paid sample first
+uv run python -m evals.foundry.run --records my-run.jsonl --tool-definitions tools.json
+```
+
+Results go next to the records: `my-run.foundry.jsonl` (one line per record and evaluator: scored, skipped with
+the reason, or error) and `my-run.foundry.summary.json` (counts, mean score, pass rate per evaluator, and what
+that evaluator cannot score from our records). The judge is `FOUNDRY_EVAL_*`, separate from the model under test.
+A run calls a model and costs money; the Foundry scores are never mixed into the reference baselines or the
+scorecard, because they are a different instrument with a different judge.
+
+| Evaluator | Inputs we pass | What it cannot score from our records |
+|---|---|---|
+| `GroundednessEvaluator` | `query`, `response`, `context` | `context` is our grounding report's claim lines, not the raw tool output; skipped when a record has no report |
+| `IntentResolutionEvaluator` | `query`, `response`, `tool_definitions` if given | nothing required is missing |
+| `ToolCallAccuracyEvaluator` | `query`, `tool_calls`, `tool_definitions` | tool definitions (supply `--tool-definitions`: a JSON array of `{name, description, parameters}`); tool results are not captured, so retries and errors are invisible; skipped with no tool calls |
+| `TaskAdherenceEvaluator` | `query`, `response`, `tool_definitions` if given | the agent's system prompt, which Foundry reads as the first query message |
+| `IndirectAttackEvaluator` | `query`, `response` (safety records only) | a Foundry safety-service call, not a judge: needs `AZURE_AI_PROJECT` and Azure credentials; the injected document is not in the record |
+
+`ground_truth` is carried in the records but none of these five evaluators takes it. Each tool call gets a
+`tool_call_id` (`call_<n>`) because Foundry's examples carry one and records do not store the model's own.
+
+Optional sink: with `AZURE_AI_PROJECT` set to a project endpoint
+(`https://<account>.services.ai.azure.com/api/projects/<project>`) and `--log-to-project`, each evaluator's
+rows are also sent through the SDK's `evaluate()` with `azure_ai_project=...`, so the run shows in the project.
+That asks the judge a second time, so it doubles the judge cost. With the variable unset the sink is skipped and
+nothing but the judge calls leaves the machine. Gotchas: the SDK marks most of these evaluators experimental;
+the safety-service evaluator and the project logging are not covered by the offline tests (they stub the SDK).
+
+## Community results
+
+`evals/community/` holds result files contributed for other providers and models: a versioned JSON header (setup,
+commit, date, repeats, cost, submitter, judge) with the per-suite scores and spread, and optionally the records.
+`python -m evals.community_validate <file>` checks the schema and the setup, re-scores attached records with
+`evals.rescore` and compares them with the header, and refuses secret-looking strings, absurd scores and an
+undisclosed or unlabelled self-judge. `scripts/build_eval_scorecard.py` shows accepted files in a separate
+"Community-submitted, not verified by the maintainers" table. They are never baselines. Format, how to run and
+how to submit: `evals/community/README.md`. `evals/community/sample/` is a fixture for the tests and is never shown.
+
 ## Repeats and the regression threshold
 
 `--repeats k` runs the dataset `k` times. The default is 1 under `LLM_PROVIDER=replay` (replay is exact) and

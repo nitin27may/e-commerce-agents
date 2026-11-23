@@ -3,7 +3,8 @@
     uv run --project agents/python python -m scripts.build_eval_scorecard           # write the page
     uv run --project agents/python python -m scripts.build_eval_scorecard --check   # fail if it is stale
 
-Inputs are files already in the repo: agents/python/evals/baselines/python-inproc-replay/*.json (the
+Community-submitted result files (agents/python/evals/community/*.json) are shown in their own labelled table and
+never mixed into the reference rows. Inputs are files already in the repo: agents/python/evals/baselines/python-inproc-replay/*.json (the
 score snapshots), evals/baselines/prompt_tokens.json, the datasets (for case counts) and the replay fixtures (for the model and the
 recording window). Nothing is measured here and no model is called, so the output is a pure
 function of the committed files and `--check` is deterministic. Standard library only.
@@ -27,6 +28,8 @@ BASELINES_ROOT = EVALS / "baselines"
 BASELINES = BASELINES_ROOT / BASELINE_SETUP
 DATASETS = EVALS / "datasets"
 FIXTURES = EVALS / "fixtures" / "replay"
+COMMUNITY = EVALS / "community"
+COMMUNITY_FORMAT = "ecommerce-agents-community-result"
 OUTPUT = REPO_ROOT / "docs" / "eval-scorecard.md"
 
 _SCORES = ("avg_groundedness", "avg_correctness", "avg_completeness", "overall_score")
@@ -66,6 +69,124 @@ def load_rows(baselines_dir: Path = BASELINES, repo_root: Path = REPO_ROOT) -> l
     return sorted(rows, key=lambda r: r.agent)
 
 
+@dataclass(frozen=True)
+class CommunityRow:
+    """One suite of one community file. Shown as submitted: the maintainers have not re-run it."""
+
+    file: str
+    submitter: str
+    date: str
+    commit: str
+    provider: str
+    model: str
+    stack: str
+    judge: str
+    repeats: int
+    suite: str
+    agent: str
+    dataset: str
+    cases: int
+    scores: dict[str, float]
+    spread: dict[str, float] | None
+    cost_usd: float | None
+    records: str
+
+
+def _judge_label(setup: dict[str, Any]) -> str:
+    judge = setup.get("judge") or {}
+    if judge.get("kind") != "llm":
+        return "keyword check"
+    label = f"{judge.get('provider', '')}:{judge.get('model', '')}"
+    return f"{label} (self-judged)" if judge.get("self_judged") else label
+
+
+def _cell(text: object) -> str:
+    """Text safe inside a Markdown table cell."""
+    return str(text).replace("|", "/").replace("`", "'").replace("\n", " ").replace("\r", " ").strip()
+
+
+def load_community(community_dir: Path = COMMUNITY) -> list[CommunityRow]:
+    """One row per suite of every top-level *.json file there, skipping samples. Sorted for stable output.
+
+    This reads the files; it does not validate them. `python -m evals.community_validate` does, and a test
+    runs it on every file in the directory.
+    """
+    rows: list[CommunityRow] = []
+    for path in sorted(community_dir.glob("*.json")):
+        data: dict[str, Any] = json.loads(path.read_text())
+        if data.get("format") != COMMUNITY_FORMAT:
+            raise SystemExit(f"{path.name}: not a community result file (format field)")
+        if data.get("sample"):
+            continue
+        setup, run = data["setup"], data["run"]
+        records = data.get("records_url") or data.get("records_file") or ("embedded" if data.get("records") else "none")
+        rows.extend(
+            CommunityRow(
+                file=path.name,
+                submitter=str(data["submitter"]["name"]),
+                date=str(run["date"]),
+                commit=str(run["git_commit"])[:7],
+                provider=str(setup["chat_provider"]),
+                model=str(setup["chat_model"]),
+                stack=f"{setup.get('stack', '')} {setup.get('target', '')}".strip(),
+                judge=_judge_label(setup),
+                repeats=int(run["repeats"]),
+                suite=str(suite["suite"]),
+                agent=str(suite["agent"]),
+                dataset=str(suite["dataset"]),
+                cases=int(suite["cases"]),
+                scores={k: float(v) for k, v in suite["scores"].items()},
+                spread=None if suite.get("spread") is None else {k: float(v) for k, v in suite["spread"].items()},
+                cost_usd=run.get("cost_usd"),
+                records=str(records),
+            )
+            for suite in data["suites"]
+        )
+    return sorted(rows, key=lambda r: (r.date, r.file, r.suite, r.agent, r.dataset))
+
+
+def _community_score(row: CommunityRow) -> str:
+    key = "overall" if row.suite == "quality" else "pass_rate"
+    value = row.scores.get(key)
+    if value is None:
+        return "n/a"
+    spread = None if row.spread is None else row.spread.get(key)
+    return f"{value:.2f}" if spread is None else f"{value:.2f} +/- {spread:.2f}"
+
+
+def render_community(rows: list[CommunityRow]) -> list[str]:
+    out = [
+        "## Community-submitted, not verified by the maintainers",
+        "",
+        "Results people ran on their own provider and model and contributed under "
+        "`agents/python/evals/community/` (format and rules: `agents/python/evals/community/README.md`). "
+        "Each file passed `python -m evals.community_validate` when it was merged and the test suite re-checks "
+        "it, which shows it is well formed and, where records are attached, that the scores follow from them. "
+        "It does not show that the run happened, and the maintainers did not re-run it. Setups differ "
+        "(provider, model, judge, repeats), so rows here are not comparable with each other or with the "
+        "reference baselines above. Overall is shown for quality suites and pass rate for safety suites, as "
+        "mean +/- standard deviation across repeats when there were two or more.",
+        "",
+    ]
+    if not rows:
+        return [*out, "No community results have been submitted yet.", ""]
+    out += [
+        "| Date | Submitter | Provider / model | Stack | Judge | k | Suite | Agent | Dataset | Cases | Score "
+        "| Cost USD | Commit | Records |",
+        "|------|-----------|------------------|-------|-------|--:|-------|-------|---------|------:|------:"
+        "|---------:|--------|---------|",
+    ]
+    for r in rows:
+        cost = "unknown" if r.cost_usd is None else f"{r.cost_usd:.2f}"
+        out.append(
+            f"| {_cell(r.date)} | {_cell(r.submitter)} | {_cell(r.provider)} / {_cell(r.model)} | {_cell(r.stack)} "
+            f"| {_cell(r.judge)} | {r.repeats} | {r.suite} | {_cell(r.agent)} | `{_cell(r.dataset)}` | {r.cases} "
+            f"| {_community_score(r)} | {cost} | `{_cell(r.commit)}` | {_cell(r.records)} |"
+        )
+    out.append("")
+    return out
+
+
 def fixture_summary(fixtures_dir: Path = FIXTURES) -> tuple[Counter[str], str, str]:
     """Model names, earliest and latest recording date across the replay fixtures."""
     models: Counter[str] = Counter()
@@ -86,7 +207,14 @@ def _fmt(value: float | None) -> str:
     return "n/a" if value is None else f"{value:.2f}"
 
 
-def render(rows: list[Row], models: Counter[str], first: str, last: str, prompt_tokens: dict[str, Any]) -> str:
+def render(
+    rows: list[Row],
+    models: Counter[str],
+    first: str,
+    last: str,
+    prompt_tokens: dict[str, Any],
+    community: list[CommunityRow] | None = None,
+) -> str:
     model_text = ", ".join(f"`{name}` ({count} fixtures)" for name, count in sorted(models.items())) or "unknown"
     out = [
         "# Eval scorecard",
@@ -160,6 +288,7 @@ def render(rows: list[Row], models: Counter[str], first: str, last: str, prompt_
                 cells = f"{e['instructions']:,} | {e['tools']:,} | {e['tool_count']} | {e['total']:,}"
                 out.append(f"| {agent} | {role} | {cells} |")
         out.append("")
+    out += render_community(community or [])
     out += [
         "## Regenerating",
         "",
@@ -178,7 +307,7 @@ def build() -> str:
     pt_path = BASELINES_ROOT / "prompt_tokens.json"
     prompt_tokens = json.loads(pt_path.read_text()) if pt_path.exists() else {}
     models, first, last = fixture_summary()
-    return render(load_rows(), models, first, last, prompt_tokens)
+    return render(load_rows(), models, first, last, prompt_tokens, load_community())
 
 
 def main(argv: list[str] | None = None) -> int:
