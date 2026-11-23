@@ -77,14 +77,26 @@ the quickest way to see what that means:
     select several modes. Each gets a result card with its answer, latency, tokens and estimated
     cost, and the graph it took. Measured numbers are in the
     [orchestration benchmark](orchestration-benchmark.md).
-11. **Approve a paused return.** As `alice.johnson@gmail.com`, pick **Return & Replace** and
-    ask "I want to return my last order". The run pauses at the approval gate and the chat shows
-    "Awaiting staff review". Sign in as `support.demo@gmail.com` in another browser, open
-    **Runs**, expand the run marked "Needs approval", and approve or reject (an admin also has the
-    full inbox under **Admin → Approvals**). The run resumes from its checkpoint
-    and finishes as the customer; a rejected return leaves no return row behind. A high-value
-    return is routed to a manager by `approvals.yaml`, so use `admin.demo@gmail.com` if support is
-    told it cannot decide. See [approvals](approvals.md).
+
+    <img src="images/mode-compare.jpg" alt="Compare dialog: one prompt run through four orchestration modes, each card showing latency, steps, tokens, cost and the graph it took" width="820"/>
+11. **Approve a paused return.** Sign in as `tour@example.com` / `tour123`, the account seeded with
+    a delivered order (Alice's most recent order is still `shipped`, so her return stops at the
+    eligibility check). Pick **Return & Replace** and ask "I want to return my last delivered
+    order". The run pauses at the policy gate, nothing is created, and the chat shows "Awaiting
+    staff review".
+
+    <img src="images/return-awaiting-approval.jpg" alt="Chat showing a return paused at the policy gate with an Awaiting staff review card and the workflow graph" width="820"/>
+
+    Sign in as `admin.demo@gmail.com` in another browser and open **Runs**. The run is marked
+    "Needs approval"; expand it and choose **Approve** or **Reject**. The run resumes from its
+    checkpoint and finishes as the customer; a rejected return leaves no return row behind.
+
+    <img src="images/runs-approve.jpg" alt="Runs page as an admin: the paused return expanded, with Approve and Reject buttons" width="820"/>
+
+    Two limits of the web UI today: the `support` role has no page to decide from (its **Runs**
+    page lists only its own runs, and **Admin → Approvals** is admin-only), and **Admin →
+    Approvals** lists tool approvals only, not a paused return. The API has neither limit
+    (`GET /api/approvals`, `POST /api/approvals/{id}/decide`). See [approvals](approvals.md).
 
 ---
 

@@ -27,6 +27,9 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ### Documentation
 
+- **Screenshots of the orchestration UI** (the Compare dialog, a return paused for approval, an admin
+  approving from Runs) in the README and the demo guide. The demo guide's approval scenario is
+  corrected after running it: it needs the demo-tour account, and an admin decides from Runs.
 - **The roadmap is reorganised for a visitor:** what is next, what each release shipped, what is
   not planned. It said there was no Azure path and that a third model provider was still to come;
   both were out of date.
