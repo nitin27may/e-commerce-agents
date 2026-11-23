@@ -40,6 +40,8 @@ param deployMcp bool = false
 // ---- Foundry and gateway switches (infra-foundry-project-and-gateway lane) ----
 @description('AZ-2: create a Foundry project under the AIServices account, connect App Insights to it, grant the app identity Azure AI User.')
 param deployFoundryProject bool = false
+@description('Per-app identities: one user-assigned identity per app (modules/app-identities.bicep). Created but NOT attached to the apps; wiring is in apps.bicep and documented in docs/azure-deployment.md.')
+param deployPerAppIdentities bool = false
 
 @secure()
 param postgresAdminPassword string
@@ -224,6 +226,30 @@ module foundryProject 'modules/foundry-project.bicep' = if (deployFoundryProject
   }
 }
 
+// ---- Per-app identities. Appended section; wiring into apps.bicep is separate ----
+var appIdentityNames = [
+  'orchestrator'
+  'product-discovery'
+  'order-management'
+  'pricing-promotions'
+  'review-sentiment'
+  'inventory-fulfillment'
+  'outbox-worker'
+]
+
+module appIdentities 'modules/app-identities.bicep' = if (deployPerAppIdentities) {
+  scope: rg
+  name: 'app-identities'
+  params: {
+    namePrefix: 'id-${resourceToken}'
+    location: location
+    tags: tags
+    appNames: appIdentityNames
+    keyVaultName: keyVault.outputs.name
+    openAiAccountName: openAi.outputs.name
+  }
+}
+
 module budget 'modules/budget.bicep' = {
   scope: rg
   name: 'budget'
@@ -253,6 +279,7 @@ output AZURE_POSTGRES_FQDN string = postgres.outputs.fqdn
 output APPLICATIONINSIGHTS_NAME string = monitoring.outputs.appInsightsName
 output AZURE_AI_PROJECT_NAME string = deployFoundryProject ? foundryProject!.outputs.name : ''
 output AZURE_AI_PROJECT_ENDPOINT string = deployFoundryProject ? foundryProject!.outputs.endpoint : ''
+output AZURE_APP_IDENTITIES array = deployPerAppIdentities ? appIdentities!.outputs.identities : []
 output AZURE_CONTAINER_APPS_ENVIRONMENT string = cae.outputs.name
 output FRONTEND_URL string = apps.outputs.frontendUrl
 output ORCHESTRATOR_INTERNAL_URL string = apps.outputs.orchestratorInternalUrl

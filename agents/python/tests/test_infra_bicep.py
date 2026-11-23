@@ -514,3 +514,22 @@ def test_docs_say_the_azure_provider_is_foundry_for_openai_models() -> None:
         text = (REPO_ROOT / "docs" / name).read_text(encoding="utf-8")
         assert re.search(r"`azure`\s+provider.*?is\s+Foundry", text, re.DOTALL), name
         assert "do not add `LLM_PROVIDER=foundry`" in text, name
+
+
+# ----------------------------------------------------------------------------------------------
+# Per-app identities: the module exists and compiles; the wiring is another lane's (apps.bicep).
+# ----------------------------------------------------------------------------------------------
+
+
+AGENTS = ["orchestrator", *SPECIALISTS, "outbox-worker"]
+
+
+def test_per_app_identities_module_creates_one_identity_per_app(raw_snapshots: dict[str, Resources]) -> None:
+    kind = "Microsoft.ManagedIdentity/userAssignedIdentities"
+    assert len(_of_type(raw_snapshots["reference-identities-on"], kind)) == 1 + len(AGENTS), "shared plus one per app"
+    assert len(_of_type(raw_snapshots["demo-foundry-on"], kind)) == 1, "demo keeps the single shared identity"
+
+
+def test_per_app_identities_are_not_wired_into_apps_yet() -> None:
+    apps = (INFRA / "modules" / "apps.bicep").read_text(encoding="utf-8")
+    assert "appIdentities" not in apps, "wiring is a separate change; see docs/azure-deployment.md"
