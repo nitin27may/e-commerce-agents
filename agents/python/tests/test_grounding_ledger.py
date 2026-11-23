@@ -226,14 +226,28 @@ async def test_get_active_deals_shape_records_coupon_amount_fields() -> None:
     ctx = _function_context(
         {
             "coupons": [
-                {"code": "TECHSAVE", "discount_value": 15.0, "min_spend": 100.0, "max_discount": 75.0},
-                {"code": "FREESHIP", "discount_value": 10.0, "min_spend": None, "max_discount": None},
+                {
+                    "code": "TECHSAVE",
+                    "discount_type": "percentage",
+                    "discount_value": 15.0,
+                    "min_spend": 100.0,
+                    "max_discount": 75.0,
+                },
+                {
+                    "code": "NEWUSER",
+                    "discount_type": "fixed",
+                    "discount_value": 10.0,
+                    "min_spend": None,
+                    "max_discount": None,
+                },
             ]
         }
     )
     await GroundingLedgerMiddleware().process(ctx, _noop)
 
-    assert {15.0, 100.0, 75.0, 10.0} <= ledger.known_amounts
+    # A fixed coupon's value is dollars; a percentage's 15.0 must not make "$15" read as grounded.
+    assert {100.0, 75.0, 10.0} <= ledger.known_amounts
+    assert 15.0 not in ledger.known_amounts
     assert 99.0 not in ledger.known_amounts
 
 
