@@ -100,5 +100,75 @@
       "return_flow_initiated": true
     },
     "user_email": "jack.anderson@gmail.com"
+  },
+  {
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "follow_up_context": true
+    },
+    "user_email": "jack.anderson@gmail.com",
+    "input": "and when will it arrive",
+    "turns": [
+      {
+        "input": "what is the status of my latest order",
+        "expected_tools": [
+          "get_order_details"
+        ],
+        "expected_fields": [
+          "order_id",
+          "status"
+        ]
+      },
+      {
+        "input": "and when will it arrive",
+        "expected_tools": [
+          "get_order_tracking"
+        ],
+        "expected_fields": [
+          "status"
+        ]
+      }
+    ]
+  },
+  {
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "follow_up_context": true
+    },
+    "user_email": "jack.anderson@gmail.com",
+    "input": "can I return it if it is damaged",
+    "turns": [
+      {
+        "input": "show me the details of order {{order:delivered}}",
+        "expected_tools": [
+          "get_order_details"
+        ],
+        "expected_tool_args": {
+          "get_order_details": {
+            "order_id": "{{order:delivered}}"
+          }
+        },
+        "expected_fields": [
+          "order_id",
+          "status"
+        ]
+      },
+      {
+        "input": "can I return it if it is damaged",
+        "expected_tools": [
+          "check_return_eligibility"
+        ],
+        "expected_tool_args": {
+          "check_return_eligibility": {
+            "order_id": "{{order:delivered}}"
+          }
+        },
+        "expected_fields": [
+          "return_eligible"
+        ]
+      }
+    ]
   }
 ]

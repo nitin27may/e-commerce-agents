@@ -60,6 +60,7 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 ### Added
 
 - **Inventory-fulfillment live suite grown to 28 cases (NA-2).** Happy, edge and adversarial cases, each with a `type` and a one-line `why`, and a test that every placeholder resolves on a freshly seeded database and the per-type minimums hold.
+- **Multi-turn live eval cases.** A live case may carry `turns`, run in one conversation on the in-process and `http` targets, scored per turn (the case passes only if every turn does) and stored in a `turns` list of the run record; replay datasets reject it.
 - **Dependency policy and a hardened merge helper.** `docs/contributing-dependencies.md` records the Dependabot
   policy in force (grouped minor and patch, one reviewed PR per major, the MAF group as a deliberate step), how to
   handle conflicting PRs and lockfiles, the keep-both rule for `CHANGELOG.md` and `docs/parity-matrix.md`, and a

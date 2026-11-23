@@ -16,8 +16,8 @@ uses, right before the case runs, so the resolved text is what the model sees an
 Resolution applies only to a case whose dataset is a ``*.live.json`` file or that carries ``"live": true``.
 Replay datasets never contain a placeholder (``tests/test_eval_live_facts.py`` pins it), so their request
 text, and with it every replay fixture key, is untouched. It covers ``input`` and every string inside
-``expected_tool_args``. An unresolvable placeholder raises: a live dataset that cannot find its facts is a
-setup problem, not a score.
+``expected_tool_args``, and the same two fields of every turn of a multi-turn case. An unresolvable placeholder
+raises: a live dataset that cannot find its facts is a setup problem, not a score.
 """
 
 from __future__ import annotations
@@ -123,16 +123,32 @@ async def resolve_case(case: EvalCase, source: FactSource) -> EvalCase:
     """The case with every placeholder replaced. A case that is not ``live`` is returned as is."""
     if not case.live:
         return case
+    turns = None
+    if case.turns:
+        # Each turn resolves like ``input`` does; the case's own ``input`` is its last turn's message.
+        turns = [
+            replace(
+                turn,
+                input=await _resolve_text(turn.input, case.user_email, source),
+                expected_tool_args=await _resolve_value(turn.expected_tool_args, case.user_email, source),
+            )
+            for turn in case.turns
+        ]
     return replace(
         case,
-        input=await _resolve_text(case.input, case.user_email, source),
+        input=turns[-1].input if turns else await _resolve_text(case.input, case.user_email, source),
         expected_tool_args=await _resolve_value(case.expected_tool_args, case.user_email, source),
+        turns=turns,
     )
 
 
 async def resolve_case_from_database(case: EvalCase) -> EvalCase:
     """``resolve_case`` against the run's own database pool, only when there is something to resolve."""
-    if not case.live or not (has_placeholder(case.input) or has_placeholder(case.expected_tool_args)):
+    if not case.live or not (
+        has_placeholder(case.input)
+        or has_placeholder(case.expected_tool_args)
+        or has_placeholder([(t.input, t.expected_tool_args) for t in case.turns or []])
+    ):
         return case
     from shared.db import get_pool
 

@@ -16,12 +16,13 @@ import json
 import logging
 import math
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from evals import scoring
-from evals.harness import ProductionRunner
+from evals.harness import Conversation, ProductionRunner
 from evals.judge import JudgeConfig, resolve_judge
 from evals.live_limits import concurrency, map_bounded, run_with_limits
 from evals.records import (
@@ -33,6 +34,7 @@ from evals.records import (
     Setup,
     Tokens,
     ToolCall,
+    TurnRecord,
     build_setup,
     context_text,
     current_chat_model,
@@ -52,6 +54,17 @@ def _current_model() -> str:
     from shared.config import settings
 
     return current_chat_model(settings)
+
+
+@dataclass
+class EvalTurn:
+    """One user message of a multi-turn live case, with the expectations scored for that turn alone."""
+
+    input: str
+    expected_tools: list[str] = field(default_factory=list)
+    expected_fields: list[str] = field(default_factory=list)
+    expected_tool_args: dict[str, dict[str, Any]] | None = None
+    expect_hitl: bool | None = None
 
 
 @dataclass
@@ -89,6 +102,9 @@ class EvalCase:
     forbidden_routes: list[str] | None = None
     # One line saying why the case exists. Documentation for the dataset reader; never scored.
     why: str | None = None
+    # Multi-turn (live cases only): the conversation, run in order in one session. ``input`` is then the last turn's
+    # message and the expectations live in the turns. None for every single-turn case.
+    turns: list[EvalTurn] | None = None
 
 
 @dataclass
@@ -261,6 +277,50 @@ def _parse_expected_tool_args(index: int, raw: Any) -> dict[str, dict[str, Any]]
     return raw
 
 
+# Case-level expectations that a multi-turn case states per turn instead.
+_PER_TURN_ONLY = (
+    "expected_tools",
+    "expected_fields",
+    "expected_tool_args",
+    "expect_hitl",
+    "expected_route",
+    "expect_denial",
+)
+_TURN_KEYS = {"input", "expected_tools", "expected_fields", "expected_tool_args", "expect_hitl"}
+
+
+def _parse_turns(index: int, entry: dict[str, Any], *, live: bool) -> list[EvalTurn]:
+    """The ``turns`` of a multi-turn case. Replay datasets may not have any: their fixtures key one request each."""
+    raw = entry["turns"]
+    where = f"Dataset entry {index}"
+    if not live:
+        raise ValueError(f"{where}: 'turns' is for live cases only (a *.live.json file or \"live\": true)")
+    if not isinstance(raw, list) or not raw:
+        raise ValueError(f"{where}: turns must be a non-empty list")
+    for key in _PER_TURN_ONLY:
+        if entry.get(key) not in (None, [], {}):
+            raise ValueError(f"{where}: with turns, '{key}' goes inside each turn, not on the case")
+    turns: list[EvalTurn] = []
+    for n, item in enumerate(raw, start=1):
+        if not isinstance(item, dict) or not isinstance(item.get("input"), str) or not item["input"].strip():
+            raise ValueError(f"{where}, turn {n}: each turn needs a non-empty 'input'")
+        unknown = set(item) - _TURN_KEYS
+        if unknown:
+            raise ValueError(f"{where}, turn {n}: unknown field(s) {sorted(unknown)}")
+        turns.append(
+            EvalTurn(
+                input=item["input"],
+                expected_tools=list(item.get("expected_tools") or []),
+                expected_fields=list(item.get("expected_fields") or []),
+                expected_tool_args=_parse_expected_tool_args(index, item.get("expected_tool_args")),
+                expect_hitl=item.get("expect_hitl"),
+            )
+        )
+    if "input" in entry and entry["input"] != turns[-1].input:
+        raise ValueError(f"{where}: 'input', when given with turns, must equal the last turn's input")
+    return turns
+
+
 def load_dataset(path: str | Path) -> list[EvalCase]:
     """Load a golden dataset from a JSON file."""
     path = Path(path)
@@ -276,21 +336,25 @@ def load_dataset(path: str | Path) -> list[EvalCase]:
     is_live_file = path.name.endswith(".live.json")
     cases = []
     for i, entry in enumerate(raw):
-        if not all(k in entry for k in ("input", "expected_tools", "expected_fields", "criteria")):
+        live = is_live_file or entry.get("live") is True
+        turns = _parse_turns(i, entry, live=live) if "turns" in entry else None
+        required = ("criteria",) if turns else ("input", "expected_tools", "expected_fields", "criteria")
+        if not all(k in entry for k in required):
             raise ValueError(f"Dataset entry {i} missing required fields")
         cases.append(
             EvalCase(
-                input=entry["input"],
-                expected_tools=entry["expected_tools"],
-                expected_fields=entry["expected_fields"],
+                input=turns[-1].input if turns else entry["input"],
+                expected_tools=[] if turns else entry["expected_tools"],
+                expected_fields=[] if turns else entry["expected_fields"],
                 criteria=entry["criteria"],
+                turns=turns,
                 expected_route=entry.get("expected_route"),
                 user_role=entry.get("user_role"),
                 user_email=entry.get("user_email"),
                 expected_tool_args=_parse_expected_tool_args(i, entry.get("expected_tool_args")),
                 expect_denial=entry.get("expect_denial"),
                 expect_hitl=entry.get("expect_hitl"),
-                live=is_live_file or entry.get("live") is True,
+                live=live,
                 mode=entry.get("mode"),
                 expected_routes=_parse_route_list(i, "expected_routes", entry.get("expected_routes")),
                 forbidden_routes=_parse_route_list(i, "forbidden_routes", entry.get("forbidden_routes")),
@@ -490,6 +554,10 @@ class AgentEvaluator:
         runner = self._runner if (self._shared_runner or concurrency() <= 1) else ProductionRunner(self.agent_name)
         # ``mode`` is passed only when the case sets one, so a runner that predates it keeps working.
         extra = {"mode": case.mode} if case.mode else {}
+        if case.turns:
+            return await self._evaluate_turns(
+                case, case_id, runner, extra, index=index, repeat=repeat, run_id=run_id, dataset_path=dataset_path
+            )
         outcome = await runner.run(case.input, user_role=case.user_role, user_email=case.user_email, **extra)
         latency_ms = int((time.monotonic() - start) * 1000)
 
@@ -583,6 +651,144 @@ class AgentEvaluator:
                 }
             )
 
+        return EvalResult.from_record(scoring.score_record(record))
+
+    async def _evaluate_turns(
+        self,
+        case: EvalCase,
+        case_id: str,
+        runner: Any,
+        extra: dict[str, Any],
+        *,
+        index: int,
+        repeat: int,
+        run_id: str,
+        dataset_path: str,
+    ) -> EvalResult:
+        """A multi-turn live case: every turn runs in order in ONE conversation, then the case is scored whole.
+
+        Turns share a ``Conversation`` (session id and history). The first failed turn (a transport error, a
+        missing fixture) ends the case: later turns would run without the context they depend on.
+        """
+        turns: list[TurnRecord] = []
+        error: str | None = None
+        fixture_missing = False
+        # ``http``: the stack names the conversation on the first turn. In-process: a fresh session id per case.
+        conversation = Conversation(session_id="" if self.setup.target == "http" else str(uuid.uuid4()))
+        assert case.turns  # the caller branches on it
+        for number, turn in enumerate(case.turns, start=1):
+            start = time.monotonic()
+            outcome = await runner.run(
+                turn.input,
+                user_role=case.user_role,
+                user_email=case.user_email,
+                conversation=conversation,
+                **extra,
+            )
+            latency_ms = int((time.monotonic() - start) * 1000)
+            expected = Expected(
+                tools=turn.expected_tools,
+                fields=turn.expected_fields,
+                criteria=case.criteria,
+                tool_args=turn.expected_tool_args,
+                hitl=turn.expect_hitl,
+                user_role=case.user_role,
+                user_email=case.user_email,
+                mode=case.mode,
+            )
+            record = TurnRecord(
+                query=turn.input,
+                expected=expected,
+                latency_ms=latency_ms,
+                error=outcome.error,
+                fixture_missing=outcome.fixture_missing,
+                guardrail_flags=outcome.guardrail_flags,
+            )
+            if outcome.error:
+                logger.error("Eval case failed: %s (turn %d) - %s", case.input[:60], number, outcome.error)
+                turns.append(record)
+                error, fixture_missing = f"turn {number}: {outcome.error}", outcome.fixture_missing
+                break
+            conversation.record_turn(turn.input, outcome)
+            record = record.model_copy(
+                update={
+                    "response": outcome.text,
+                    "context": context_text(outcome.grounding),
+                    "tool_calls": _tool_call_records(outcome),
+                    "routes": outcome.routes,
+                    "tokens": Tokens(input=outcome.tokens_in, output=outcome.tokens_out),
+                    "cost_usd": None
+                    if "tokens" in outcome.not_observable
+                    else estimate_cost(self.setup.chat_model, outcome.tokens_in, outcome.tokens_out),
+                    "grounding": outcome.grounding,
+                    "denied": outcome.denied,
+                    "hitl_requested": outcome.hitl_requested,
+                    "nodes": outcome.nodes,
+                    "not_observable": outcome.not_observable,
+                }
+            )
+            if outcome.grounding is None:
+                fallback = (
+                    1.0
+                    if "grounding" in outcome.not_observable
+                    else await self._score_groundedness_fallback(outcome.text, case.criteria)
+                )
+                record = record.model_copy(update={"scores": CaseScores(groundedness=fallback)})
+            if self.use_llm_judge and self._judge is not None:
+                from evals.scorers.llm_judge import judge_response
+
+                verdict = await run_with_limits(
+                    lambda t=turn, text=outcome.text: judge_response(
+                        case_id, t.input, text, t.expected_fields, self._judge
+                    )
+                )
+                record = record.model_copy(
+                    update={
+                        "judge": JudgeRecord(
+                            score=verdict.score,
+                            reasoning=verdict.reasoning,
+                            failure_mode=verdict.failure_mode,
+                            provider=self._judge.provider,
+                            model=self._judge.model,
+                            self_judged=self._judge.self_judged,
+                        )
+                    }
+                )
+            turns.append(record)
+
+        last = turns[-1]
+        costs = [t.cost_usd for t in turns]
+        record = RunRecord(
+            run_id=run_id or new_run_id(),
+            recorded_at=utc_now(),
+            agent=self.agent_name,
+            dataset=Path(dataset_path).stem if dataset_path else (case_id.split(":")[1] if ":" in case_id else ""),
+            dataset_path=dataset_path,
+            case_id=case_id,
+            case_index=index,
+            repeat=repeat,
+            setup=self.setup,
+            query=last.query,
+            response=last.response,
+            context=last.context,
+            tool_calls=last.tool_calls,
+            ground_truth=ground_truth_text(last.expected),
+            expected=last.expected,
+            routes=last.routes,
+            tokens=Tokens(input=sum(t.tokens.input for t in turns), output=sum(t.tokens.output for t in turns)),
+            latency_ms=sum(t.latency_ms for t in turns),
+            cost_usd=None if any(c is None for c in costs) else sum(c for c in costs if c is not None),
+            grounding=last.grounding,
+            denied=last.denied,
+            hitl_requested=last.hitl_requested,
+            guardrail_flags=last.guardrail_flags,
+            nodes=last.nodes,
+            not_observable=sorted({f for t in turns for f in t.not_observable}),
+            turns=turns,
+            pass_threshold=self.pass_threshold,
+            error=error,
+            fixture_missing=fixture_missing,
+        )
         return EvalResult.from_record(scoring.score_record(record))
 
     @staticmethod

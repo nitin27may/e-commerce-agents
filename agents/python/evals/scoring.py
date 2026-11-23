@@ -8,7 +8,7 @@ record; this step only reads the record.
 
 from __future__ import annotations
 
-from evals.records import CaseScores, Expected, RunRecord, SafetyScores, ToolCall
+from evals.records import CaseScores, Expected, RunRecord, SafetyScores, ToolCall, TurnRecord
 
 GROUNDEDNESS_WEIGHT = 0.4
 CORRECTNESS_WEIGHT = 0.4
@@ -146,7 +146,72 @@ def score_record(record: RunRecord, pass_threshold: float | None = None) -> RunR
         return _score_safety(record, threshold)
     if record.error:
         return record.model_copy(update={"passed": False, "pass_threshold": threshold})
+    if record.turns:
+        return _score_turns(record, threshold)
+    return _score_single(record, threshold)
 
+
+def _score_turns(record: RunRecord, threshold: float) -> RunRecord:
+    """A multi-turn case: each turn scored as a single-turn record, then aggregated.
+
+    The case's groundedness, correctness and completeness are the means over turns and ``overall`` is their usual
+    weighting. The case passes only when every turn passes (its own overall at the threshold, no assertion
+    failures). Failures and fields are listed as ``turn N: ...``.
+    """
+    turns: list[TurnRecord] = []
+    for turn in record.turns:
+        shell = record.model_copy(
+            update={
+                "turns": [],
+                "query": turn.query,
+                "response": turn.response,
+                "context": turn.context,
+                "tool_calls": turn.tool_calls,
+                "routes": turn.routes,
+                "grounding": turn.grounding,
+                "denied": turn.denied,
+                "hitl_requested": turn.hitl_requested,
+                "not_observable": turn.not_observable,
+                "judge": turn.judge,
+                "expected": turn.expected,
+                "scores": turn.scores,
+            }
+        )
+        scored = _score_single(shell, threshold)
+        turns.append(
+            turn.model_copy(
+                update={
+                    "scores": scored.scores,
+                    "fields_found": scored.fields_found,
+                    "fields_missing": scored.fields_missing,
+                    "assertion_failures": scored.assertion_failures,
+                    "passed": scored.passed,
+                }
+            )
+        )
+    n = len(turns)
+    groundedness = sum(t.scores.groundedness for t in turns) / n
+    correctness = sum(t.scores.correctness for t in turns) / n
+    completeness = sum(t.scores.completeness for t in turns) / n
+    return record.model_copy(
+        update={
+            "turns": turns,
+            "scores": CaseScores(
+                groundedness=groundedness,
+                correctness=correctness,
+                completeness=completeness,
+                overall=weighted_overall(groundedness, correctness, completeness),
+            ),
+            "fields_found": [f"turn {i}: {f}" for i, t in enumerate(turns, 1) for f in t.fields_found],
+            "fields_missing": [f"turn {i}: {f}" for i, t in enumerate(turns, 1) for f in t.fields_missing],
+            "assertion_failures": [f"turn {i}: {a}" for i, t in enumerate(turns, 1) for a in t.assertion_failures],
+            "pass_threshold": threshold,
+            "passed": all(t.passed for t in turns),
+        }
+    )
+
+
+def _score_single(record: RunRecord, threshold: float) -> RunRecord:
     from evals.scorers.db_groundedness import score_from_report
 
     expected = record.expected

@@ -56,7 +56,15 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from evals.harness import RunOutcome, _hitl_requested, _routes, _was_denied, db_clock, pending_tool_approvals
+from evals.harness import (
+    Conversation,
+    RunOutcome,
+    _hitl_requested,
+    _routes,
+    _was_denied,
+    db_clock,
+    pending_tool_approvals,
+)
 from evals.records import Setup
 
 logger = logging.getLogger(__name__)
@@ -185,6 +193,7 @@ class StreamResult:
     nodes: list[str] = field(default_factory=list)
     grounding: dict[str, Any] | None = None
     run_id: str | None = None
+    conversation_id: str | None = None
     pending_approval: bool = False
     request_info: bool = False
     replay_miss: bool = False
@@ -236,6 +245,9 @@ def absorb(result: StreamResult, frame: SseFrame) -> None:
             result.pending_approval = bool(run.get("pending_approval"))
     elif name == "metadata":
         result.saw_terminator = True
+        meta = _json(frame.data)
+        if isinstance(meta, dict) and meta.get("conversation_id"):
+            result.conversation_id = str(meta["conversation_id"])
     elif name == "replay_miss":
         result.replay_miss = True
     elif name == "error":
@@ -258,6 +270,7 @@ def outcome_from_stream(result: StreamResult, *, mode: str | None, tokens: tuple
         grounding=result.grounding,
         denied=_was_denied(steps),
         nodes=list(result.nodes),
+        conversation_id=result.conversation_id,
     )
     parked = result.request_info or result.pending_approval or _hitl_requested(steps)
     outcome.hitl_requested = parked
@@ -374,8 +387,13 @@ class HttpRunner:
         user_role: str | None = None,
         user_email: str | None = None,
         mode: str | None = None,
+        conversation: Conversation | None = None,
     ) -> RunOutcome:
-        """One chat turn as one case. Any transport or login failure is an ``error`` outcome, not an exception."""
+        """One chat turn as one case. Any transport or login failure is an ``error`` outcome, not an exception.
+
+        ``conversation`` makes it a turn of a multi-turn case: its ``session_id`` (the conversation id the stack
+        returned on the first turn) is sent as ``conversation_id``, so the stack loads the earlier turns itself.
+        """
         try:
             account = resolve_account(user_email=user_email, user_role=user_role, env=self._env)
             session = await self._session(account)
@@ -385,7 +403,9 @@ class HttpRunner:
                 )
             window_start = await db_clock()
             async with asyncio.timeout(self.timeout_s * 2):
-                result, partial_error = await self._stream(account, session, user_input, mode)
+                result, partial_error = await self._stream(
+                    account, session, user_input, mode, conversation.session_id if conversation else None
+                )
         except HttpTargetError as exc:
             return RunOutcome(text="", error=str(exc), not_observable=list(_NOT_FILLED_ALWAYS))
         except TimeoutError:
@@ -459,11 +479,18 @@ class HttpRunner:
     # -- the turn -----------------------------------------------------------
 
     async def _stream(
-        self, account: Account, session: _Session, message: str, mode: str | None
+        self,
+        account: Account,
+        session: _Session,
+        message: str,
+        mode: str | None,
+        conversation_id: str | None = None,
     ) -> tuple[StreamResult, str | None]:
         payload: dict[str, Any] = {"message": message}
         if mode:
             payload["mode"] = mode
+        if conversation_id:
+            payload["conversation_id"] = conversation_id
         refreshed = False
         attempt = 0
         while True:

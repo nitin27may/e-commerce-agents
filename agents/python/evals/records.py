@@ -241,6 +241,44 @@ class JudgeRecord(BaseModel):
     self_judged: bool = False
 
 
+class TurnRecord(BaseModel):
+    """One turn of a multi-turn live case: the raw facts of that turn and its own scores.
+
+    ``expected`` is the turn's expectation (tools, fields, tool_args, hitl plus the case's criteria and identity).
+    The case-level scores are the mean of the turns' scores and the case passes only when every turn does
+    (``evals/scoring.py::score_record``).
+    """
+
+    query: str
+    response: str = ""
+    context: str = ""
+    tool_calls: list[ToolCall] = Field(default_factory=list)
+    expected: Expected = Field(default_factory=Expected)
+    routes: list[str] = Field(default_factory=list)
+    tokens: Tokens = Field(default_factory=Tokens)
+    latency_ms: int = 0
+    cost_usd: float | None = None
+    grounding: dict[str, Any] | None = None
+    denied: bool = False
+    hitl_requested: bool = False
+    guardrail_flags: dict[str, bool] = Field(default_factory=dict)
+    nodes: list[str] = Field(default_factory=list)
+    not_observable: list[str] = Field(default_factory=list)
+    judge: JudgeRecord | None = None
+    error: str | None = None
+    fixture_missing: bool = False
+
+    scores: CaseScores = Field(default_factory=CaseScores)
+    fields_found: list[str] = Field(default_factory=list)
+    fields_missing: list[str] = Field(default_factory=list)
+    assertion_failures: list[str] = Field(default_factory=list)
+    passed: bool = False
+
+    @property
+    def tools_called(self) -> list[str]:
+        return [c.name for c in self.tool_calls]
+
+
 class RunRecord(BaseModel):
     """One scored eval case. One JSON object per line in a records file."""
 
@@ -281,6 +319,9 @@ class RunRecord(BaseModel):
     # Facts this target could not observe (``http`` target: ``hitl``, ``denial``, ``guardrail_flags``, ``tokens``,
     # ``grounding``). The scorer treats an assertion on a listed fact as not applicable, never as failed.
     not_observable: list[str] = Field(default_factory=list)
+    # Multi-turn live cases only (empty otherwise). The top-level ``query``, ``response``, ``tool_calls`` and
+    # ``expected`` are then the last turn's, ``tokens`` and ``latency_ms`` the sums, and ``scores`` the turn means.
+    turns: list[TurnRecord] = Field(default_factory=list)
 
     scores: CaseScores = Field(default_factory=CaseScores)
     fields_found: list[str] = Field(default_factory=list)
