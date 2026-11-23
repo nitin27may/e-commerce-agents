@@ -275,7 +275,8 @@ internal sealed class ProductionRunner(DatabasePool pool, AgentSettings settings
             provider.GetRequiredService<OrchestratorTools>(),
             provider);
 
-        return new ModeRegistry([new ToolRouterMode(agent)]);
+        // The model name feeds the cost estimate: a mode built without one reports an unpriced run (null cost).
+        return new ModeRegistry([new ToolRouterMode(agent, settings.LlmModel)]);
     }
 
     private static string PromptsRoot()
