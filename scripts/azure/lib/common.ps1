@@ -98,9 +98,12 @@ function Initialize-AzureSecrets {
 function Test-PostgresSku([string]$Location, [string]$Sku) {
     Write-Log "PostgreSQL Flexible Server: SKU $Sku in $Location"
     if (Test-DryRun) { Invoke-Step az postgres flexible-server list-skus --location $Location --output json; return }
-    $skus = az postgres flexible-server list-skus --location $Location --output json | ConvertFrom-Json
-    if (-not ($skus | Where-Object { $_.name -eq $Sku })) {
-        Stop-Azure "PostgreSQL SKU $Sku is not offered in $Location. Offered: $((($skus | Select-Object -First 8).name) -join ', '). Pick another AZURE_LOCATION."
+    # One capability object per region; the SKUs sit under supportedServerEditions[].supportedServerSkus[].
+    $capabilities = @(az postgres flexible-server list-skus --location $Location --output json | ConvertFrom-Json)
+    $names = @($capabilities | ForEach-Object { $_.supportedServerEditions } | ForEach-Object { $_.supportedServerSkus } |
+        Where-Object { $_.status -ne 'Disabled' } | ForEach-Object { $_.name })
+    if ($names -notcontains $Sku) {
+        Stop-Azure "PostgreSQL SKU $Sku is not offered to this subscription in $Location (new subscriptions are often restricted in busy regions). Offered: $(($names | Select-Object -First 8) -join ', '). Pick another -Location."
     }
 }
 

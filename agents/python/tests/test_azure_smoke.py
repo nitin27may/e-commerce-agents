@@ -114,7 +114,7 @@ def stub() -> Any:
 
 def _run(url: str, *args: str) -> subprocess.CompletedProcess[str]:
     env = {k: v for k, v in os.environ.items() if not k.startswith("AZURE_")}
-    env.update(FRONTEND_URL=url, E2E_STAFF_PASSWORD="Staff-pw-1")
+    env.update(FRONTEND_URL=url, E2E_STAFF_PASSWORD="Staff-pw-1", SMOKE_WAIT_SECONDS="0")
     return subprocess.run(
         ["bash", str(SCRIPT), *args], capture_output=True, text=True, env=env, timeout=60, check=False
     )

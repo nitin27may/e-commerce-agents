@@ -19,7 +19,11 @@ MIN_AZ=2.67.0
 MIN_AZD=1.18.0
 MIN_BICEP=0.34.0
 PROVIDERS=(Microsoft.App Microsoft.OperationalInsights Microsoft.Insights Microsoft.CognitiveServices
-    Microsoft.DBforPostgreSQL Microsoft.KeyVault Microsoft.ManagedIdentity Microsoft.Consumption Microsoft.Authorization Microsoft.ContainerRegistry)
+    Microsoft.DBforPostgreSQL Microsoft.KeyVault Microsoft.ManagedIdentity Microsoft.Consumption Microsoft.Authorization
+    Microsoft.ContainerRegistry Microsoft.Network)
+# A brand-new subscription has most of these unregistered, and registration takes one to several minutes each (they run
+# in parallel here). Seconds to wait for all of them before giving up.
+PROVIDER_WAIT_SECONDS="${PROVIDER_WAIT_SECONDS:-1200}"
 
 LOCATION="${AZURE_LOCATION:-}"
 OPENAI_LOCATION="${AZURE_OPENAI_LOCATION:-}"
@@ -69,7 +73,12 @@ log "tools ok (bicep $bicep_version)"
 if [ "$AZURE_DRY_RUN" = "1" ]; then
     run az account show
 else
-    az account show >/dev/null 2>&1 || die "not logged in: run 'az login' (and 'azd auth login')"
+    az account show >/dev/null 2>&1 || die "not logged in: run 'az login'"
+    # azd keeps its own credential cache; `az login` does not sign it in.
+    if have azd && ! azd auth login --check-status >/dev/null 2>&1; then
+        die "azd is not signed in: run 'azd auth login' (it is separate from 'az login')"
+    fi
+    log "subscription: $(az account show --query '[name, id]' -o tsv | tr '\t' ' ') (change it with: az account set --subscription <id>)"
 fi
 if [ "$AZURE_DRY_RUN" != "1" ] && ! az extension show --name containerapp >/dev/null 2>&1; then
     log "installing the az containerapp extension"
@@ -78,7 +87,9 @@ run az extension add --name containerapp --upgrade --only-show-errors
 
 # ---- providers -------------------------------------------------------------------------------
 providers=("${PROVIDERS[@]}")
-case "$PROFILE" in reference) providers+=(Microsoft.Cache Microsoft.Network) ;; esac
+case "$PROFILE" in reference) providers+=(Microsoft.Cache) ;; esac
+[ "$(env_get DEPLOY_GATEWAY)" != true ] || providers+=(Microsoft.ApiManagement)
+pending=()
 for p in "${providers[@]}"; do
     if [ "$AZURE_DRY_RUN" = "1" ]; then
         run az provider register --namespace "$p"
@@ -87,9 +98,27 @@ for p in "${providers[@]}"; do
     state="$(az provider show --namespace "$p" --query registrationState -o tsv 2>/dev/null || echo NotRegistered)"
     if [ "$state" != "Registered" ]; then
         log "registering $p (was $state)"
-        az provider register --namespace "$p" --wait --only-show-errors
+        # No --wait: start every registration, then poll them together below.
+        az provider register --namespace "$p" --only-show-errors >/dev/null \
+            || die "could not start registering $p; registering a provider needs Contributor or Owner on the subscription"
+        pending+=("$p")
     fi
 done
+if [ "${#pending[@]}" -gt 0 ]; then
+    log "waiting for ${#pending[@]} provider registration(s); on a new subscription this can take several minutes"
+    deadline=$((SECONDS + PROVIDER_WAIT_SECONDS))
+    while [ "${#pending[@]}" -gt 0 ]; do
+        still=()
+        for p in "${pending[@]}"; do
+            state="$(az provider show --namespace "$p" --query registrationState -o tsv 2>/dev/null || echo Unknown)"
+            [ "$state" = "Registered" ] || still+=("$p")
+        done
+        pending=("${still[@]+"${still[@]}"}")
+        [ "${#pending[@]}" -gt 0 ] || break
+        [ "$SECONDS" -lt "$deadline" ] || die "still registering after ${PROVIDER_WAIT_SECONDS}s: ${pending[*]}. Re-run this script; registration continues in the background (az provider show --namespace <ns> --query registrationState)."
+        sleep 10
+    done
+fi
 log "resource providers registered"
 
 # ---- role assignment rights --------------------------------------------------------------------
@@ -105,9 +134,14 @@ else
     if [ -z "$principal" ]; then
         warn "cannot resolve the signed-in user (service principal or no Graph access); set SKIP_RBAC_CHECK=1 once you have confirmed Owner or User Access Administrator"
     else
-        roles="$(az role assignment list --assignee "$principal" --include-inherited \
+        # --include-groups also finds a role held through a group; it needs Graph read access, so fall back without it.
+        roles="$(az role assignment list --assignee "$principal" --include-inherited --include-groups \
             --scope "/subscriptions/$subscription_id" --query '[].roleDefinitionName' -o tsv 2>/dev/null || true)"
-        if grep -qx 'Owner' <<<"$roles" \
+        [ -n "$roles" ] || roles="$(az role assignment list --assignee "$principal" --include-inherited \
+            --scope "/subscriptions/$subscription_id" --query '[].roleDefinitionName' -o tsv 2>/dev/null || true)"
+        if [ -z "$roles" ]; then
+            warn "could not read any role assignment for the signed-in user on the subscription (no Graph or RBAC read access?). Continuing; the deployment fails fast if you cannot create role assignments."
+        elif grep -qx 'Owner' <<<"$roles" \
             || { grep -qx 'Contributor' <<<"$roles" && grep -qx 'User Access Administrator' <<<"$roles"; } \
             || grep -qx 'Role Based Access Control Administrator' <<<"$roles"; then
             log "role-assignment rights ok"
@@ -127,9 +161,16 @@ profile_file="infra/profiles/${PROFILE}.json"
 [ -f "$profile_file" ] || die "unknown profile $PROFILE (no $profile_file)"
 sku="$(jq -r '.postgres.skuName' "$profile_file")"
 capacity="$(jq -r '.openAi.chatCapacity' "$profile_file")"
+embedding_capacity="$(jq -r '.openAi.embeddingCapacity' "$profile_file")"
 check_postgres_sku "$LOCATION" "$sku"
-check_model "$OPENAI_LOCATION" "${AZURE_CHAT_MODEL:-gpt-5.1}" "${AZURE_CHAT_MODEL_VERSION:-2025-11-13}" "$capacity"
+check_model "$OPENAI_LOCATION" "${AZURE_CHAT_MODEL:-gpt-5.1}" "${AZURE_CHAT_MODEL_VERSION:-2025-11-13}" "$capacity" "$embedding_capacity"
 if [ -n "$ENV_NAME" ]; then
-    check_soft_deleted "$ENV_NAME" || die "soft-deleted resources from a previous '$ENV_NAME' deployment hold their names. Purge them: scripts/azure-down.sh --env $ENV_NAME --purge-only"
+    deleted=0
+    check_soft_deleted "$ENV_NAME" || deleted=$?
+    case "$deleted" in
+        0) ;;
+        2) die "a purge-protected Key Vault from an earlier '$ENV_NAME' deployment still holds its name. Use a different --env." ;;
+        *) die "soft-deleted resources from a previous '$ENV_NAME' deployment hold their names. Purge them: scripts/azure-down.sh --env $ENV_NAME --purge-only" ;;
+    esac
 fi
 log "prerequisites ok"

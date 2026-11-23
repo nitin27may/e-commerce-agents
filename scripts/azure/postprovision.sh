@@ -58,11 +58,22 @@ fi
 
 # ---- 1. database job ---------------------------------------------------------------------------
 log "starting $job_name"
-execution="$(capture az containerapp job start --name "$job_name" --resource-group "$resource_group" --query name --output tsv)"
+execution=""
+if [ "$AZURE_DRY_RUN" = "1" ]; then
+    capture az containerapp job start --name "$job_name" --resource-group "$resource_group" --query name --output tsv
+else
+    # The job resource can answer 'not ready' for a short while after the deployment reports done.
+    for attempt in 1 2 3 4; do
+        execution="$(az containerapp job start --name "$job_name" --resource-group "$resource_group" --query name --output tsv 2>/dev/null || true)"
+        [ -z "$execution" ] || break
+        log "job start attempt $attempt returned nothing; retrying in 20s"
+        sleep 20
+    done
+fi
 if [ "$AZURE_DRY_RUN" = "1" ]; then
     run az containerapp job execution show --name "$job_name" --resource-group "$resource_group" --job-execution-name '<execution>'
 else
-    [ -n "$execution" ] || die "az containerapp job start returned no execution name"
+    [ -n "$execution" ] || die "az containerapp job start returned no execution name after 4 tries (az extension add --name containerapp --upgrade; then: az containerapp job start --name $job_name --resource-group $resource_group)"
     log "execution $execution"
     deadline=$((SECONDS + JOB_TIMEOUT_SECONDS))
     while :; do

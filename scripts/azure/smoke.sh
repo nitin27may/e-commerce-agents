@@ -17,7 +17,7 @@
 # Steps 5 and 6 need the stack to have a model (5) and are skipped by --quick.
 #
 # Environment: FRONTEND_URL, E2E_STAFF_PASSWORD (admin, support), SMOKE_CUSTOMER_PASSWORD (default customer123),
-# AZURE_RESOURCE_GROUP, DB_INIT_JOB_NAME, SMOKE_FIRST_FRAME_SECONDS (15), SMOKE_MIN_FRAMES (10).
+# AZURE_RESOURCE_GROUP, DB_INIT_JOB_NAME, SMOKE_FIRST_FRAME_SECONDS (15), SMOKE_MIN_FRAMES (10), SMOKE_WAIT_SECONDS (300).
 # Not verified against a real subscription; the Azure-only steps (1) are the least certain.
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.." || exit 1
@@ -46,6 +46,8 @@ else
     SUPPORT_PASSWORD="$E2E_STAFF_PASSWORD"
 fi
 FRONTEND_URL="${FRONTEND_URL%/}"
+# Seconds to wait for revisions and the frontend to come up before a check fails (0 = fail on the first look).
+SMOKE_WAIT_SECONDS="${SMOKE_WAIT_SECONDS:-300}"
 CUSTOMER_PASSWORD="${SMOKE_CUSTOMER_PASSWORD:-customer123}"
 export FRONTEND_URL ADMIN_PASSWORD SUPPORT_PASSWORD CUSTOMER_PASSWORD
 export SMOKE_FIRST_FRAME_SECONDS="${SMOKE_FIRST_FRAME_SECONDS:-15}" SMOKE_MIN_FRAMES="${SMOKE_MIN_FRAMES:-10}"
@@ -54,17 +56,24 @@ command -v curl >/dev/null || fail "curl is required"
 
 # ---- 1. revisions and job (Azure only) -------------------------------------------------------
 if [ -n "${AZURE_RESOURCE_GROUP:-}" ] && command -v az >/dev/null 2>&1; then
-    unhealthy=""
-    for app in $(az containerapp list --resource-group "$AZURE_RESOURCE_GROUP" --query '[].name' --output tsv); do
-        health="$(az containerapp revision list --name "$app" --resource-group "$AZURE_RESOURCE_GROUP" \
-            --query '[?properties.active] | [0].properties.healthState' --output tsv)"
-        [ "$health" = "Healthy" ] || unhealthy="$unhealthy $app($health)"
+    # Right after a provision, revisions are still starting (health 'None' or 'Unhealthy' for a minute or two): poll.
+    wait_deadline=$((SECONDS + SMOKE_WAIT_SECONDS))
+    while :; do
+        unhealthy=""
+        for app in $(az containerapp list --resource-group "$AZURE_RESOURCE_GROUP" --query '[].name' --output tsv); do
+            health="$(az containerapp revision list --name "$app" --resource-group "$AZURE_RESOURCE_GROUP" \
+                --query '[?properties.active] | [0].properties.healthState' --output tsv)"
+            [ "$health" = "Healthy" ] || unhealthy="$unhealthy $app($health)"
+        done
+        [ -n "$unhealthy" ] || break
+        [ "$SECONDS" -lt "$wait_deadline" ] || fail "revisions not Healthy after ${SMOKE_WAIT_SECONDS}s:$unhealthy"
+        echo "wait  revisions not Healthy yet:$unhealthy" >&2
+        sleep 10
     done
-    [ -z "$unhealthy" ] || fail "revisions not Healthy:$unhealthy"
     pass "every active revision is Healthy"
     if [ -n "${DB_INIT_JOB_NAME:-}" ]; then
         status="$(az containerapp job execution list --name "$DB_INIT_JOB_NAME" --resource-group "$AZURE_RESOURCE_GROUP" \
-            --query '[0].properties.status' --output tsv)"
+            --query 'sort_by(@, &properties.startTime) | [-1].properties.status' --output tsv)"
         [ "$status" = "Succeeded" ] || fail "$DB_INIT_JOB_NAME latest execution is '$status'"
         pass "$DB_INIT_JOB_NAME succeeded"
     fi
@@ -73,7 +82,14 @@ else
 fi
 
 # ---- 2. frontend -----------------------------------------------------------------------------
-code="$(curl -s -o /dev/null -m 20 -L -w '%{http_code}' "$FRONTEND_URL/")" || code=000
+wait_deadline=$((SECONDS + SMOKE_WAIT_SECONDS))
+while :; do
+    code="$(curl -s -o /dev/null -m 20 -L -w '%{http_code}' "$FRONTEND_URL/")" || code=000
+    [ "$code" != "200" ] || break
+    [ "$SECONDS" -lt "$wait_deadline" ] || break
+    echo "wait  frontend answered $code; retrying" >&2
+    sleep 10
+done
 [ "$code" = "200" ] || fail "frontend $FRONTEND_URL/ answered $code (restricted ingress? this machine's IP must be allowed)"
 pass "frontend answers 200"
 

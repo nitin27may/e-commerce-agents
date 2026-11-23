@@ -145,7 +145,7 @@ the Aspire container. See [telemetry.md](./telemetry.md).
 
 ## Azure deployment: first-run failure catalogue
 
-Thirty-two ways a first `scripts/azure-up.sh` goes wrong, and what already guards against each. None of this has run against a real subscription yet ([azure-deployment.md](azure-deployment.md) lists the assumptions), so the guards are the intent, not a track record. When one fires, the message names the fix.
+Thirty-eight ways a first `scripts/azure-up.sh` goes wrong, and what already guards against each. None of this has run against a real subscription yet ([azure-deployment.md](azure-deployment.md) lists the assumptions), so the guards are the intent, not a track record. When one fires, the message names the fix.
 
 | # | Failure | Symptom | Guard |
 |---|---|---|---|
@@ -181,6 +181,12 @@ Thirty-two ways a first `scripts/azure-up.sh` goes wrong, and what already guard
 | 30 | Apps fail to start from ACR on the first pass | `MANIFEST_UNKNOWN` or an image pull error on every app | the registry is filled before the apps exist: `preprovision` holds `DEPLOY_APPS=false` until `postprovision` has imported or built `IMAGE_TAG`. Run `azd provision` again (or use `scripts/azure-up.sh`). If an import fails, the GHCR package is probably private |
 | 31 | Reference profile: apps cannot reach Postgres, Key Vault or the model | timeouts or `Name or service not known` | private endpoint DNS: check the zone group on each `pe-*` and the VNet link of each `privatelink.*` zone; resolve the public name from a replica |
 | 32 | `--stack dotnet` image not found | `pull access denied` for `<service>-dotnet` | the .NET images exist only for tags built after `build-images.yml` started publishing them; use `--build-from-source` or a newer tag |
+| 33 | A resource provider is not registered (new subscription) | `MissingSubscriptionRegistration` or `NoRegisteredProviderFound` | `prereqs` registers every provider the profile needs, polls them together and waits up to `PROVIDER_WAIT_SECONDS` (1200); `Microsoft.ApiManagement` is added when `DEPLOY_GATEWAY=true` |
+| 34 | `azd` signed out, or no subscription chosen | `azd` asks for a subscription (fatal under `--no-prompt`) or answers 401 | `prereqs` runs `azd auth login --check-status`; `azure-up` pins `AZURE_SUBSCRIPTION_ID` from `az account show` when it creates the azd environment |
+| 35 | Purge-protected Key Vault blocks the name (reference profile) | `VaultAlreadyExists` on redeploy for up to 90 days | purge protection cannot be undone: `azure-down` reports it (exit 0) and `prereqs` refuses the name with "use a different --env" |
+| 36 | Smoke fails seconds after provisioning | `revisions not Healthy` or a non-200 frontend while apps still start | `smoke.sh` polls revisions and the frontend for `SMOKE_WAIT_SECONDS` (300) before failing |
+| 37 | `az containerapp job start` right after provisioning returns nothing | `postprovision` stops with no execution name | retried four times, 20 s apart, then the message prints the manual command |
+| 38 | `azd down` fails or the environment is not on this machine | `no azd environment` or a purge error from a protected vault | `azure-down` explains how to delete `rg-<env>` by hand and re-run with `--purge-only`; a failing `azd down` no longer stops the leftover check |
 
 Other things to try first: `az containerapp revision list --name ca-orchestrator --resource-group rg-<env> -o table` for revision health, `az containerapp logs show --name ca-orchestrator --resource-group rg-<env> --follow false`, and `azd env get-values` for what the hooks saw (it contains secrets; do not paste it).
 

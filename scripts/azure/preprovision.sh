@@ -103,9 +103,16 @@ chat_version="$(env_get AZURE_CHAT_MODEL_VERSION)"
 
 if [ "$AZURE_DRY_RUN" != "1" ] && ! have jq; then die "jq is required for the region checks"; fi
 check_postgres_sku "$location" "$(jq -r '.postgres.skuName' "$profile_file")"
-check_model "$openai_location" "${chat_model:-gpt-5.1}" "${chat_version:-2025-11-13}" "$(jq -r '.openAi.chatCapacity' "$profile_file")"
+check_model "$openai_location" "${chat_model:-gpt-5.1}" "${chat_version:-2025-11-13}" "$(jq -r '.openAi.chatCapacity' "$profile_file")" \
+    "$(jq -r '.openAi.embeddingCapacity' "$profile_file")"
 env_name="$(env_get AZURE_ENV_NAME)"
-if [ -n "$env_name" ] && ! check_soft_deleted "$env_name"; then
-    die "soft-deleted resources from an earlier '$env_name' deployment still hold their names. Purge them: scripts/azure-down.sh --env $env_name --purge-only"
+if [ -n "$env_name" ]; then
+    deleted=0
+    check_soft_deleted "$env_name" || deleted=$?
+    case "$deleted" in
+        0) ;;
+        2) die "a purge-protected Key Vault from an earlier '$env_name' deployment still holds its name. Use a different --env." ;;
+        *) die "soft-deleted resources from an earlier '$env_name' deployment still hold their names. Purge them: scripts/azure-down.sh --env $env_name --purge-only" ;;
+    esac
 fi
 log "preprovision ok"

@@ -159,7 +159,7 @@ jobs:
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       - name: azd login (federated)
         run: azd auth login --client-id "${{ vars.AZURE_CLIENT_ID }}" --federated-credential-provider github --tenant-id "${{ vars.AZURE_TENANT_ID }}"
-      - name: Deploy (azd up; the postprovision hook runs the quick smoke test)
+      - name: Deploy (azd provision; the postprovision hook runs the quick smoke test)
         run: |
           scripts/azure-up.sh --env "$AZURE_ENV_NAME" --location "${{ inputs.location }}" --image-tag "${{ inputs.image_tag }}"
       - name: Full smoke test (keyed chat turn, approval, SSE timing)

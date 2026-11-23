@@ -53,21 +53,30 @@ $settings = [ordered]@{
     DEPLOY_MCP = "$($Mcp.IsPresent)".ToLowerInvariant(); AZURE_OPENAI_LOCATION = $OpenAiLocation
     DEPLOY_STACK = $Stack; IMAGE_SOURCE = $ImageSource; BUILD_FROM_SOURCE = "$($BuildFromSource.IsPresent)".ToLowerInvariant()
 }
+if ($env:AZURE_CHAT_MODEL) { $settings['AZURE_CHAT_MODEL'] = $env:AZURE_CHAT_MODEL }
+if ($env:AZURE_CHAT_MODEL_VERSION) { $settings['AZURE_CHAT_MODEL_VERSION'] = $env:AZURE_CHAT_MODEL_VERSION }
+# azd would otherwise prompt for a subscription (a failure under --no-prompt): pin the one az is using.
+$subscriptionId = '<subscription-id>'
+if (-not (Test-DryRun)) {
+    $subscriptionId = (az account show --query id --output tsv)
+    if (-not $subscriptionId) { Stop-Azure 'no active Azure subscription: az login, then az account set --subscription <id>' }
+}
+$settings['AZURE_SUBSCRIPTION_ID'] = $subscriptionId
 if (Test-DryRun) {
-    Invoke-Step azd env new $EnvName --location $Location --no-prompt
+    Invoke-Step azd env new $EnvName --location $Location --subscription $subscriptionId --no-prompt
     foreach ($k in $settings.Keys) { Invoke-Step azd env set $k $settings[$k] }
     if ($effectiveSource -eq 'acr') {
         Invoke-Step azd provision --environment $EnvName --no-prompt
         Invoke-Step bash scripts/azure/acr-images.sh $(if ($BuildFromSource) { 'build' } else { 'import' }) --registry '<AZURE_CONTAINER_REGISTRY_NAME>' --tag $ImageTag --stack $Stack --dry-run
         Invoke-Step azd provision --environment $EnvName --no-prompt
     } else {
-        Invoke-Step azd up --environment $EnvName --no-prompt
+        Invoke-Step azd provision --environment $EnvName --no-prompt
     }
     exit 0
 }
 
 $existing = azd env list --output json | ConvertFrom-Json
-if (-not ($existing | Where-Object { $_.Name -eq $EnvName })) { azd env new $EnvName --location $Location --no-prompt }
+if (-not ($existing | Where-Object { $_.Name -eq $EnvName })) { azd env new $EnvName --location $Location --subscription $subscriptionId --no-prompt }
 azd env select $EnvName
 foreach ($k in $settings.Keys) { azd env set $k $settings[$k] | Out-Null }
 
@@ -89,5 +98,5 @@ if ($effectiveSource -eq 'acr') {
         Invoke-Provision @('provision', '--no-prompt')
     }
 } else {
-    Invoke-Provision @('up', '--no-prompt')
+    Invoke-Provision @('provision', '--no-prompt')
 }
