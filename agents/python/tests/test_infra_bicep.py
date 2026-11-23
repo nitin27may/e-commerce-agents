@@ -533,3 +533,90 @@ def test_per_app_identities_module_creates_one_identity_per_app(raw_snapshots: d
 def test_per_app_identities_are_not_wired_into_apps_yet() -> None:
     apps = (INFRA / "modules" / "apps.bicep").read_text(encoding="utf-8")
     assert "appIdentities" not in apps, "wiring is a separate change; see docs/azure-deployment.md"
+
+
+# ----------------------------------------------------------------------------------------------
+# AZ-5: the API Management gateway in front of the account.
+# ----------------------------------------------------------------------------------------------
+
+
+def _gateway_policy(resources: Resources) -> str:
+    policies = _of_type(resources, "Microsoft.ApiManagement/service/apis/policies")
+    assert len(policies) == 1
+    return str(policies[0]["properties"]["value"])
+
+
+def test_gateway_is_off_by_default(raw_snapshots: dict[str, Resources], snapshots: dict[str, Apps]) -> None:
+    assert not [r for r in raw_snapshots["demo-mini-false"] if r["type"].startswith("Microsoft.ApiManagement")]
+    endpoint = _env(snapshots["demo-mini-false"]["ca-orchestrator"])["AZURE_OPENAI_ENDPOINT"]["value"]
+    assert "Microsoft.ApiManagement" not in endpoint
+
+
+def test_gateway_fronts_the_account_and_apps_point_at_it(
+    raw_snapshots: dict[str, Resources], snapshots: dict[str, Apps]
+) -> None:
+    resources = raw_snapshots["demo-gateway-on"]
+    assert len(_of_type(resources, "Microsoft.ApiManagement/service")) == 1
+    apis = _of_type(resources, "Microsoft.ApiManagement/service/apis")
+    assert [a["properties"]["path"] for a in apis] == ["openai"]
+    for app in ("ca-orchestrator", *(f"ca-{s}" for s in SPECIALISTS), "ca-outbox-worker"):
+        endpoint = _env(snapshots["demo-gateway-on"][app])["AZURE_OPENAI_ENDPOINT"]["value"]
+        assert "Microsoft.ApiManagement/service" in endpoint, f"{app} must call the gateway"
+
+
+def test_gateway_policy_limits_and_meters_per_agent(raw_snapshots: dict[str, Resources]) -> None:
+    policy = _gateway_policy(raw_snapshots["demo-gateway-on"])
+    assert "<azure-openai-token-limit" in policy
+    assert "<azure-openai-emit-token-metric" in policy
+    assert "x-agent-name" in policy
+    assert "<authentication-managed-identity" in policy
+    assert "https://cognitiveservices.azure.com" in policy
+    for agent in AGENTS:
+        assert f'"{agent}"' in policy, f"{agent} needs its own limit"
+    assert 'name="api-key"' in policy and 'exists-action="delete"' in policy, (
+        "the caller's key never reaches the account"
+    )
+
+
+def test_gateway_policy_in_entra_mode_validates_the_caller_token(raw_snapshots: dict[str, Resources]) -> None:
+    policy = _gateway_policy(raw_snapshots["reference-gateway-on"])
+    assert "<validate-azure-ad-token" in policy
+    assert "client-application-ids" in policy
+    assert "<validate-azure-ad-token" not in _gateway_policy(raw_snapshots["demo-gateway-on"])
+
+
+def test_gateway_identity_can_call_the_models_and_nothing_else(raw_snapshots: dict[str, Resources]) -> None:
+    resources = raw_snapshots["demo-gateway-on"]
+    assert _role_ids(resources).count(OPENAI_USER_ROLE) == 2, "the app identity and the gateway identity"
+    assert not BROAD_ROLES & set(_role_ids(resources))
+    service = _of_type(resources, "Microsoft.ApiManagement/service")[0]
+    assert service["identity"]["type"] == "SystemAssigned"
+
+
+def test_gateway_sends_token_metrics_to_app_insights(raw_snapshots: dict[str, Resources]) -> None:
+    resources = raw_snapshots["demo-gateway-on"]
+    loggers = _of_type(resources, "Microsoft.ApiManagement/service/loggers")
+    assert [lg["properties"]["loggerType"] for lg in loggers] == ["applicationInsights"]
+    diagnostics = _of_type(resources, "Microsoft.ApiManagement/service/diagnostics")
+    assert diagnostics and diagnostics[0]["properties"]["metrics"] is True
+
+
+def test_gateway_key_mode_stores_a_subscription_key_not_the_account_key(raw_snapshots: dict[str, Resources]) -> None:
+    secrets = [
+        r
+        for r in _of_type(raw_snapshots["demo-gateway-on"], "Microsoft.KeyVault/vaults/secrets")
+        if r["name"].endswith("/azure-openai-key")
+    ]
+    assert len(secrets) == 1
+    value = str(secrets[0]["properties"]["value"])
+    assert "Microsoft.ApiManagement" in value and "Microsoft.CognitiveServices" not in value
+
+
+def test_gateway_outputs_the_endpoint(template: dict[str, Any]) -> None:
+    assert "AZURE_GATEWAY_ENDPOINT" in template["outputs"]
+
+
+def test_gateway_sku_is_a_parameter_with_the_unknown_documented() -> None:
+    text = (INFRA / "modules" / "gateway-apim.bicep").read_text(encoding="utf-8")
+    assert "param skuName" in text
+    assert "UNVERIFIED" in text, "the tier-support unknown must be loud in the module"
