@@ -165,11 +165,8 @@ new `docs/checkpoints-and-resume.md` and `docs/replay-mode.md` (#195); release 1
 section in the changelog (#193); third pass over quick start, troubleshooting, the 14 concept pages, configuration, database schema, API reference, audit matrix, benchmark and releasing (#198); Discussion "Which orchestration pattern should I use?" is #188.
 
 **Open, in order:**
-1. Approve the 1.4.0 release run (Review deployments, `release`, approve). It is the maintainer's click;
-   it was deliberately not done through the API. Then step 7 of `docs/releasing.md`: an anonymous pull of
-   `orchestrator:latest` on both architectures (`db-init` is a twelfth package and must be public).
-2. Post the release announcement in Discussions (Announcements) once the GitHub release exists. Lead with
-   the return-label security fix and the Known limits; pin it and pin #188.
+1. Done 2026-11-23: release 1.4.0 approved and published.
+2. Done 2026-11-23: announcement is Discussion #204. Pin it and #188 from the Discussions UI.
 3. Screenshots and a README GIF (#182, also #87): Mode dropdown, live graph, Compare dialog, the
    approvals flow, one Aspire trace. Needs a running stack and a key. The README hero is
    `docs/images/flow-product-search.png` until then.
@@ -220,6 +217,7 @@ Time sinks: `uv lock` with a different local uv version rewrites unrelated marke
 
 Append newest first. One line per landed change: date, PR, what, and anything left unverified.
 
+- 2026-11-23 (docs session): v1.4.0 is published. The maintainer approved the `release` environment; the release run finished green, the GitHub release exists, and `orchestrator`, `frontend` and `db-init` answer an anonymous registry request for `:v1.4.0` and `:latest` with both `amd64` and `arm64` (checked through the registry API, not `docker pull`, because the local Docker daemon is still wedged; the other nine packages were not checked). Announcement posted as Discussion #204; pinning it and #188 is a manual click in the UI. Still open: #182 screenshots and GIF, demo-guide scenarios 9 to 11, the `--no-key` recordings.
 - 2026-11-21: plan block rewritten as an execution plan, milestones M0 to M8 with a verified current-state table; D-1 approved (Azure spend as needed, nothing parked); D-9 opened (MCP ingress for Foundry-hosted agents: `apps.bicep` gives MCP internal ingress today). Plan only.
 - 2026-11-21: maintainer decisions recorded in the plan: D-1 not yet (tier-2 infra parked; keyed evals on the existing Azure OpenAI key still allowed), all providers supported with Azure gpt-5.1 + OpenAI direct as reference baselines, D-6 all six agents on Foundry (staged route), D-7 one fixed judge.
 - 2026-11-21: EV-12 first half on `claude/new-session-ytrmq5`: prices moved out of `shared/cost.py` and `CostEstimator.cs` into `config/pricing/models.yaml` (D-8 = a), unknown model costs null, enforce fails closed when unpriced, CLAUDE.md "Model pricing". Python and .NET cost tests pass; DB-backed tests on both stacks need Docker (not available in the cloud container) and were not run. Two `test_azure_identity_auth.py` failures predate the change.
