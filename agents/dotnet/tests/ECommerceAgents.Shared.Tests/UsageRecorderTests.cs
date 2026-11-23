@@ -180,4 +180,26 @@ public sealed class UsageRecorderTests : IAsyncLifetime
         var nullCost = await conn.ExecuteScalarAsync<decimal?>("SELECT cost_usd FROM usage_logs WHERE id = @id", new { id = unknown });
         nullCost.Should().BeNull();
     }
+
+    [Fact]
+    public async Task LogAgentUsage_PersistsPriceSourceAndPricedAt_AndLeavesThemNullOtherwise()
+    {
+        var recorder = new UsageRecorder(_pool);
+        var pricedAt = DateTimeOffset.UtcNow;
+        var priced = await recorder.LogAgentUsageAsync(
+            _userId, "orchestrator", tokensIn: 100, model: "gpt-4.1", costUsd: 0.01,
+            priceSource: "models.yaml#3fa2c1d09b", pricedAt: pricedAt);
+        var legacy = await recorder.LogAgentUsageAsync(_userId, "orchestrator", tokensIn: 5);
+
+        await using var conn = await _pool.OpenAsync();
+        var row = await conn.QueryFirstAsync(
+            "SELECT price_source, priced_at FROM usage_logs WHERE id = @id", new { id = priced });
+        ((string)row.price_source).Should().Be("models.yaml#3fa2c1d09b");
+        ((DateTime)row.priced_at).Should().BeCloseTo(pricedAt.UtcDateTime, TimeSpan.FromSeconds(1));
+
+        var old = await conn.QueryFirstAsync(
+            "SELECT price_source, priced_at FROM usage_logs WHERE id = @id", new { id = legacy });
+        ((object?)old.price_source).Should().BeNull();
+        ((object?)old.priced_at).Should().BeNull();
+    }
 }

@@ -23,6 +23,7 @@ from typing import Any
 from evals import scoring
 from evals.harness import ProductionRunner
 from evals.judge import JudgeConfig, resolve_judge
+from evals.live_limits import concurrency, map_bounded, run_with_limits
 from evals.records import (
     CaseScores,
     Expected,
@@ -418,14 +419,20 @@ class AgentEvaluator:
         repeats = max(repeats, 1)
         records: list[RunRecord] = []
         run_id = new_run_id()
-        for repeat in range(repeats):
-            for i, case in enumerate(cases):
-                case_id = f"{self.agent_name}:{Path(dataset_path).stem}:{i}"
-                result = await self._evaluate_case(
-                    case, case_id, index=i, repeat=repeat, run_id=run_id, dataset_path=str(dataset_path)
-                )
-                if result.record is not None:
-                    records.append(result.record)
+        work = [(repeat, i, case) for repeat in range(repeats) for i, case in enumerate(cases)]
+
+        async def _one(_n: int, item: tuple[int, int, EvalCase]) -> EvalResult:
+            repeat, i, case = item
+            case_id = f"{self.agent_name}:{Path(dataset_path).stem}:{i}"
+            return await self._evaluate_case(
+                case, case_id, index=i, repeat=repeat, run_id=run_id, dataset_path=str(dataset_path)
+            )
+
+        # --concurrency (live runs only): results come back in work order, so records are identical to a
+        # sequential run. Replay and the default are sequential.
+        for result in await map_bounded(work, _one):
+            if result.record is not None:
+                records.append(result.record)
         return summarize_records(
             records,
             agent_name=self.agent_name,
@@ -447,7 +454,9 @@ class AgentEvaluator:
     ) -> EvalResult:
         """Evaluate a single test case against the agent."""
         start = time.monotonic()
-        outcome = await self._runner.run(case.input, user_role=case.user_role, user_email=case.user_email)
+        # A runner holds per-run state, so cases that overlap each get their own.
+        runner = self._runner if concurrency() <= 1 else ProductionRunner(self.agent_name)
+        outcome = await runner.run(case.input, user_role=case.user_role, user_email=case.user_email)
         latency_ms = int((time.monotonic() - start) * 1000)
 
         expected = Expected(
@@ -509,7 +518,9 @@ class AgentEvaluator:
         if self.use_llm_judge and self._judge is not None:
             from evals.scorers.llm_judge import judge_response
 
-            verdict = await judge_response(case_id, case.input, response_text, case.expected_fields, self._judge)
+            verdict = await run_with_limits(
+                lambda: judge_response(case_id, case.input, response_text, case.expected_fields, self._judge)
+            )
             record = record.model_copy(
                 update={
                     "judge": JudgeRecord(

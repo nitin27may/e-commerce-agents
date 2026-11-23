@@ -22,11 +22,16 @@ from shared.config import settings
 from shared.cost import estimate_cost
 from shared.guardrails.cost_budget_middleware import (
     BUDGET_REFUSAL_MESSAGE,
+    TOKEN_BUDGET_REFUSAL_MESSAGE,
     UNPRICED_REFUSAL_MESSAGE,
+    UNTRACKED_REFUSAL_MESSAGE,
     CostBudgetMiddleware,
     current_run_cost_usd,
+    current_run_tokens,
     current_run_unpriced,
+    current_run_untracked,
     get_run_cost,
+    get_run_tokens,
     reset_run_cost,
     run_has_unpriced_turn,
 )
@@ -64,11 +69,16 @@ def _reset_state(monkeypatch):
     """Every test starts from a clean ContextVar and a known default config."""
     monkeypatch.setattr(settings, "COST_BUDGET_MODE", "observe")
     monkeypatch.setattr(settings, "COST_BUDGET_USD_PER_RUN", None)
+    monkeypatch.setattr(settings, "COST_BUDGET_TOKENS_PER_RUN", None)
     current_run_cost_usd.set(None)
     current_run_unpriced.set(False)
+    current_run_tokens.set(None)
+    current_run_untracked.set(False)
     yield
     current_run_cost_usd.set(None)
     current_run_unpriced.set(False)
+    current_run_tokens.set(None)
+    current_run_untracked.set(False)
 
 
 def _model() -> str:
@@ -401,3 +411,101 @@ def test_reset_clears_the_unpriced_mark() -> None:
     current_run_unpriced.set(True)
     reset_run_cost()
     assert not run_has_unpriced_turn()
+
+
+# ─────────────────────── token ceiling (COST_BUDGET_TOKENS_PER_RUN) ───────────────────────
+
+
+class _NoUsageResponse:
+    usage_details: dict = {}
+    text = "ok"
+
+
+async def test_token_ceiling_off_by_default_even_in_enforce(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "COST_BUDGET_MODE", "enforce")
+    reset_run_cost()
+    mw = CostBudgetMiddleware()
+    for _ in range(3):
+        calls = await _run_one_turn(mw, _Ctx(), _FakeResponse(10_000, 10_000))
+        assert calls["count"] == 1
+    assert mw.blocked == 0
+
+
+@pytest.mark.parametrize("value", [0, -5])
+async def test_zero_or_negative_token_ceiling_is_off(monkeypatch, value) -> None:
+    monkeypatch.setattr(settings, "COST_BUDGET_MODE", "enforce")
+    monkeypatch.setattr(settings, "COST_BUDGET_TOKENS_PER_RUN", value)
+    reset_run_cost()
+    mw = CostBudgetMiddleware()
+    for _ in range(3):
+        assert (await _run_one_turn(mw, _Ctx(), _FakeResponse(1000, 1000)))["count"] == 1
+    assert mw.blocked == 0
+
+
+async def test_enforce_blocks_next_turn_once_token_ceiling_reached(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "COST_BUDGET_MODE", "enforce")
+    monkeypatch.setattr(settings, "COST_BUDGET_TOKENS_PER_RUN", 2500)
+    reset_run_cost()
+    mw = CostBudgetMiddleware()
+
+    assert (await _run_one_turn(mw, _Ctx(), _FakeResponse(1000, 500)))["count"] == 1  # 1500
+    assert (await _run_one_turn(mw, _Ctx(), _FakeResponse(600, 400)))["count"] == 1  # 2500: at the ceiling
+    assert get_run_tokens() == 2500
+
+    ctx = _Ctx()
+    calls = await _run_one_turn(mw, ctx, _FakeResponse(1, 1))
+    assert calls["count"] == 0, "the turn after the ceiling must never reach the model"
+    assert mw.blocked == 1
+    assert TOKEN_BUDGET_REFUSAL_MESSAGE in str(ctx.result.messages[0].contents[0])
+
+
+async def test_observe_counts_would_block_for_tokens_but_never_blocks(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "COST_BUDGET_MODE", "observe")
+    monkeypatch.setattr(settings, "COST_BUDGET_TOKENS_PER_RUN", 100)
+    reset_run_cost()
+    mw = CostBudgetMiddleware()
+    for _ in range(3):
+        assert (await _run_one_turn(mw, _Ctx(), _FakeResponse(200, 200)))["count"] == 1
+    assert mw.blocked == 0
+    assert mw.would_block == 2
+
+
+async def test_tokens_counted_for_an_unpriced_model(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "COST_BUDGET_MODE", "enforce")
+    monkeypatch.setattr(settings, "COST_BUDGET_TOKENS_PER_RUN", 1000)
+    monkeypatch.setattr(settings, "LLM_MODEL", "no-such-model-xyz")
+    reset_run_cost()
+    mw = CostBudgetMiddleware()
+    assert (await _run_one_turn(mw, _Ctx(), _FakeResponse(800, 400)))["count"] == 1
+    assert get_run_tokens() == 1200
+    calls = await _run_one_turn(mw, _Ctx(), _FakeResponse(1, 1))
+    assert calls["count"] == 0
+
+
+async def test_enforce_fails_closed_when_a_turn_reports_no_usage(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "COST_BUDGET_MODE", "enforce")
+    monkeypatch.setattr(settings, "COST_BUDGET_TOKENS_PER_RUN", 1000)
+    reset_run_cost()
+    mw = CostBudgetMiddleware()
+    assert (await _run_one_turn(mw, _Ctx(), _NoUsageResponse()))["count"] == 1
+    ctx = _Ctx()
+    calls = await _run_one_turn(mw, ctx, _FakeResponse(1, 1))
+    assert calls["count"] == 0
+    assert UNTRACKED_REFUSAL_MESSAGE in str(ctx.result.messages[0].contents[0])
+
+
+async def test_no_usage_never_blocks_when_token_ceiling_is_off(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "COST_BUDGET_MODE", "enforce")
+    reset_run_cost()
+    mw = CostBudgetMiddleware()
+    await _run_one_turn(mw, _Ctx(), _NoUsageResponse())
+    assert (await _run_one_turn(mw, _Ctx(), _FakeResponse(1, 1)))["count"] == 1
+
+
+async def test_token_tally_resets_with_the_run() -> None:
+    reset_run_cost()
+    mw = CostBudgetMiddleware()
+    await _run_one_turn(mw, _Ctx(), _FakeResponse(10, 10))
+    assert get_run_tokens() == 20
+    reset_run_cost()
+    assert get_run_tokens() == 0

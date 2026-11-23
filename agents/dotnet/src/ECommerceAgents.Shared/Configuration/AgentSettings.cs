@@ -144,6 +144,12 @@ public sealed record AgentSettings
 
     /// <summary>USD ceiling for a single agent run; null disables the ceiling.</summary>
     public double? CostBudgetUsdPerRun { get; init; }
+
+    /// <summary>
+    /// Ceiling on input + output tokens for a single agent run, under the same <see cref="CostBudgetMode"/>
+    /// as the dollar ceiling. Null, 0 or negative disables it. Twin of Python's COST_BUDGET_TOKENS_PER_RUN.
+    /// </summary>
+    public int? CostBudgetTokensPerRun { get; init; }
     public string EmbeddingModel { get; init; } = "text-embedding-3-small";
 
     /// <summary>

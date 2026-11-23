@@ -43,6 +43,8 @@ public sealed class UsageRecorder
         string? model = null,
         int? tokensCachedIn = null,
         double? costUsd = null,
+        string? priceSource = null,
+        DateTimeOffset? pricedAt = null,
         CancellationToken ct = default
     )
     {
@@ -55,8 +57,8 @@ public sealed class UsageRecorder
                 @"INSERT INTO usage_logs
                   (user_id, agent_name, session_id, trace_id, input_summary,
                    tokens_in, tokens_out, tool_calls_count, duration_ms, status, error_message,
-                   model, tokens_cached_in, cost_usd)
-                  VALUES (@u, @n, @s, @t, @i, @ti, @to, @tc, @d, @st, @e, @m, @tcache, @cost)
+                   model, tokens_cached_in, cost_usd, price_source, priced_at)
+                  VALUES (@u, @n, @s, @t, @i, @ti, @to, @tc, @d, @st, @e, @m, @tcache, @cost, @psrc, @pat)
                   RETURNING id",
                 new
                 {
@@ -74,6 +76,8 @@ public sealed class UsageRecorder
                     m = model,
                     tcache = tokensCachedIn,
                     cost = costUsd,
+                    psrc = priceSource,
+                    pat = pricedAt,
                 }
             );
             return id;

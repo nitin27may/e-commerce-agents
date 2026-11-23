@@ -223,6 +223,7 @@ public static class AgentSettingsLoader
             GroundingMode = ValidatedGroundingMode(Get("GROUNDING_MODE", "annotate")),
             CostBudgetMode = Get("COST_BUDGET_MODE", "observe"),
             CostBudgetUsdPerRun = GetNullableDouble("COST_BUDGET_USD_PER_RUN"),
+            CostBudgetTokensPerRun = GetNullableInt("COST_BUDGET_TOKENS_PER_RUN"),
             Temperature = GetOptionalDouble("LLM_TEMPERATURE", 0.2),
             DbPoolMinSize = GetNullableInt("DB_POOL_MIN_SIZE"),
             DbPoolMaxSize = GetNullableInt("DB_POOL_MAX_SIZE"),

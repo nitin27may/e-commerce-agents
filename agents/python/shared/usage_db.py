@@ -9,10 +9,11 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from shared.cost import usage_cost, usage_model
+from shared.cost import usage_cost, usage_model, usage_price_source
 from shared.db import get_pool
 from shared.log_safe import log_safe
 from shared.run_usage import tokens_from_usage
@@ -35,11 +36,13 @@ async def log_agent_usage(
     model: str | None = None,
     tokens_cached_in: int | None = None,
     cost_usd: float | None = None,
+    price_source: str | None = None,
+    priced_at: datetime | None = None,
 ) -> UUID | None:
     """Insert a record into usage_logs. Returns the usage_log id.
 
-    ``model``, ``tokens_cached_in`` and ``cost_usd`` are ``None`` when the run's usage
-    was not captured; use :func:`usage_columns` to derive them from a run's usage.
+    ``model``, ``tokens_cached_in``, ``cost_usd``, ``price_source`` and ``priced_at`` are ``None`` when the
+    run's usage was not captured (or the model is unpriced); use :func:`usage_columns` to derive them.
     """
     pool = get_pool()
     trace_id = get_current_trace_id()
@@ -49,8 +52,8 @@ async def log_agent_usage(
             """INSERT INTO usage_logs
                (user_id, agent_name, session_id, trace_id, input_summary,
                 tokens_in, tokens_out, tool_calls_count, duration_ms, status, error_message,
-                model, tokens_cached_in, cost_usd)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                model, tokens_cached_in, cost_usd, price_source, priced_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
                RETURNING id""",
             str(user_id) if user_id else None,
             agent_name,
@@ -66,6 +69,8 @@ async def log_agent_usage(
             model,
             tokens_cached_in,
             cost_usd,
+            price_source,
+            priced_at,
         )
         return row["id"] if row else None
     except Exception:
@@ -82,15 +87,28 @@ def usage_columns(usage: Mapping[str, Any] | None) -> dict[str, Any]:
     """
     cost = usage_cost(usage)
     if usage is None or cost is None:
-        return {"tokens_in": 0, "tokens_out": 0, "model": None, "tokens_cached_in": None, "cost_usd": None}
+        return {
+            "tokens_in": 0,
+            "tokens_out": 0,
+            "model": None,
+            "tokens_cached_in": None,
+            "cost_usd": None,
+            "price_source": None,
+            "priced_at": None,
+        }
     tokens_in, tokens_out = tokens_from_usage(usage)
     total = usage.get("total") if isinstance(usage.get("total"), Mapping) else usage
+    source = usage_price_source(usage)
     return {
         "tokens_in": tokens_in,
         "tokens_out": tokens_out,
         "model": usage_model(usage),
         "tokens_cached_in": int(total.get("cached_input_token_count") or 0),
         "cost_usd": cost,
+        # Which price file priced this row, and when: lets a later price change be told apart from
+        # the price used here. NULL for a mode that made no LLM call (cost 0, nothing was priced).
+        "price_source": source,
+        "priced_at": datetime.now(UTC) if source else None,
     }
 
 

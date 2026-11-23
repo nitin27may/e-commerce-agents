@@ -26,6 +26,7 @@ public static class EnvironmentContract
         new("ANTHROPIC_MODEL", "claude-sonnet-5-5"),
         new("COST_BUDGET_MODE", "observe"),
         new("COST_BUDGET_USD_PER_RUN", "0.50"),
+        new("COST_BUDGET_TOKENS_PER_RUN", ""),
         new("EMBEDDING_MODEL", "text-embedding-3-small"),
         new("EMBEDDING_PROVIDER", ""),
         new("EMBEDDING_BASE_URL", ""),

@@ -992,7 +992,9 @@ public static class ChatRoutes
             toolCallsCount: agentsInvolved.Count - 1,
             model: columns.Model,
             tokensCachedIn: columns.TokensCachedIn,
-            costUsd: columns.CostUsd
+            costUsd: columns.CostUsd,
+            priceSource: columns.PriceSource,
+            pricedAt: columns.PricedAt
         );
 
         // Issue #16: persist this turn's agentic-timeline steps —

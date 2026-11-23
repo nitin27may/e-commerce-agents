@@ -24,6 +24,7 @@ import importlib
 from dataclasses import dataclass, field
 from typing import Any
 
+from evals.live_limits import run_with_limits
 from shared.agent_observability import get_steps, reset_steps
 from shared.context import (
     current_session_id,
@@ -173,11 +174,19 @@ class ProductionRunner:
         reset_guardrail_flags()
 
         hitl_rows_before = await _hitl_rows()
-        try:
+
+        async def _attempt() -> RunOutcome:
+            # A retried attempt starts clean, or its steps would be counted twice.
+            reset_steps()
+            reset_grounding_ledger()
+            reset_guardrail_flags()
             if self.agent_name == "orchestrator":
-                outcome = await self._run_orchestrator(user_input)
-            else:
-                outcome = await self._run_specialist(user_input)
+                return await self._run_orchestrator(user_input)
+            return await self._run_specialist(user_input)
+
+        try:
+            # A plain call unless a live run configured retries (429 / 5xx backoff, evals/live_limits.py).
+            outcome = await run_with_limits(_attempt)
         except ReplayFixtureMissingError as exc:
             return RunOutcome(
                 text="",

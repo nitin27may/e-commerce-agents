@@ -2,7 +2,7 @@
 
 This page is the table-by-table reference for the application's one PostgreSQL database, for anyone writing a query, a tool or a migration against it. Both stacks share it.
 
-It is PostgreSQL 16 with the **pgvector** extension for embedding-based semantic search and **pgcrypto** for UUID generation. The frozen baseline (`docker/postgres/init.sql`) has 34 tables in 12 logical groups. Migrations `0003`, `0006`, `0009`, `0011` and `0012` add 11 more (45 in all), described in the sections for refresh tokens, approvals, merchant proposals and event autonomy below. Migrations `0002`, `0004`, `0005`, `0007`, `0008`, `0010`, `0013` and `0014` only alter or backfill existing tables.
+It is PostgreSQL 16 with the **pgvector** extension for embedding-based semantic search and **pgcrypto** for UUID generation. The frozen baseline (`docker/postgres/init.sql`) has 34 tables in 12 logical groups. Migrations `0003`, `0006`, `0009`, `0011` and `0012` add 11 more (45 in all), described in the sections for refresh tokens, approvals, merchant proposals and event autonomy below. Migrations `0002`, `0004`, `0005`, `0007`, `0008`, `0010`, `0013`, `0014` and `0015` only alter or backfill existing tables.
 
 ## Entity-Relationship Diagram
 
@@ -265,6 +265,8 @@ erDiagram
         varchar status
         text error_message
         timestamptz created_at
+        timestamptz priced_at
+        text price_source
     }
 
     agent_execution_steps {
@@ -451,7 +453,7 @@ Two rules the reader enforces:
 |-------|-------------|-------|
 | **conversations** | `id` (PK), `user_id` (FK -> users), `title`, `is_active`, `last_message_at` | Soft-delete via `is_active`. Title auto-set from first user message (first 100 chars). |
 | **messages** | `id` (PK), `conversation_id` (FK -> conversations), `role`, `content`, `agent_name`, `agents_involved` (TEXT[]), `metadata` (JSONB) | Roles: `user`, `assistant`, `system`. `agents_involved` tracks which specialist agents contributed. `metadata` stores tool call data and trace info. |
-| **usage_logs** | `id` (PK), `user_id` (FK -> users), `agent_name`, `trace_id`, `tokens_in`, `tokens_out`, `tokens_cached_in`, `model`, `cost_usd`, `tool_calls_count`, `duration_ms`, `status` | `model`, `tokens_cached_in` and `cost_usd` (migration `0007`) are NULL when the run's usage was not captured; `cost_usd = 0` is a mode that makes no LLM call. `trace_id` correlates with OTel traces in the Aspire Dashboard. Status: `success` or `error`. |
+| **usage_logs** | `id` (PK), `user_id` (FK -> users), `agent_name`, `trace_id`, `tokens_in`, `tokens_out`, `tokens_cached_in`, `model`, `cost_usd`, `tool_calls_count`, `duration_ms`, `status` | `model`, `tokens_cached_in` and `cost_usd` (migration `0007`) are NULL when the run's usage was not captured; `cost_usd = 0` is a mode that makes no LLM call. `price_source` (`models.yaml#<digest>` or `override:<file>#<digest>`, comma-joined when several) and `priced_at` (migration `0015`) say which pricing file priced the row and when; both are NULL for older rows, uncaptured usage, an unpriced model and a no-LLM mode. `trace_id` correlates with OTel traces in the Aspire Dashboard. Status: `success` or `error`. |
 | **agent_execution_steps** | `id` (PK), `usage_log_id` (FK -> usage_logs), `step_index`, `tool_name`, `tool_input` (JSONB), `tool_output` (JSONB), `duration_ms` | Ordered by `step_index`. Records each tool invocation within an agent execution. |
 
 **Indexes**

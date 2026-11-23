@@ -19,6 +19,7 @@ estimate errs high, never low).
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import math
 from collections.abc import Mapping
@@ -94,35 +95,56 @@ def load_pricing_file(path: str | Path) -> dict[str, ModelPricing]:
     return parse_pricing(data)
 
 
+def _source_label(path: str | Path, *, override: bool) -> str:
+    """``models.yaml#<first 10 hex of the file's sha256>``, ``override:`` prefixed for an override file.
+
+    The digest names the exact file content a price came from, so a later price change is
+    distinguishable from the one a stored row was priced with. Never the directory, which can
+    carry a host path.
+    """
+    digest = hashlib.sha256(Path(path).read_bytes()).hexdigest()[:10]
+    return f"{'override:' if override else ''}{Path(path).name}#{digest}"
+
+
 @lru_cache(maxsize=1)
-def _pricing() -> dict[str, ModelPricing]:
+def _load() -> tuple[dict[str, ModelPricing], dict[str, str]]:
+    """The merged price table and, per model key, the label of the file that priced it."""
     from shared.config import settings
 
     path = settings.PRICING_FILE or str(PRICING_PATH)
     try:
         table = load_pricing_file(path)
+        label = _source_label(path, override=False)
     except (OSError, PricingError):
         # Fixed text: the exception may quote file content. Every cost is unknown until fixed.
         logger.error("cost.pricing_file_invalid — every model is unpriced until it is fixed")
-        return {}
+        return {}, {}
+    sources = dict.fromkeys(table, label)
     overrides = settings.PRICING_OVERRIDES_FILE
     if overrides:
         try:
-            table = {**table, **load_pricing_file(overrides)}
+            extra = load_pricing_file(overrides)
+            extra_label = _source_label(overrides, override=True)
+            table = {**table, **extra}
+            sources.update(dict.fromkeys(extra, extra_label))
         except (OSError, PricingError):
             logger.error("cost.pricing_overrides_invalid — overrides ignored")
-    return table
+    return table, sources
+
+
+def _pricing() -> dict[str, ModelPricing]:
+    return _load()[0]
 
 
 def reload_pricing() -> None:
     """Forget the loaded table (tests, or after editing the file in a long-running process)."""
-    _pricing.cache_clear()
+    _load.cache_clear()
 
 
 _unpriced_logged = False
 
 
-def _lookup(model: str) -> ModelPricing | None:
+def _lookup_key(model: str) -> str | None:
     """Exact match, else the longest priced key the model is a dated snapshot of.
 
     Providers report the snapshot that served a call (``gpt-4.1-2025-04-14``);
@@ -134,12 +156,27 @@ def _lookup(model: str) -> ModelPricing | None:
         return None
     table = _pricing()
     if name in table:
-        return table[name]
+        return name
     for key in sorted(table, key=len, reverse=True):
         rest = name[len(key) :]
         if name.startswith(key) and len(rest) > 1 and rest[0] == "-" and rest[1].isdigit():
-            return table[key]
+            return key
     return None
+
+
+def _lookup(model: str) -> ModelPricing | None:
+    key = _lookup_key(model)
+    return _pricing()[key] if key is not None else None
+
+
+def price_source(model: str) -> str | None:
+    """Which pricing file (and which version of it) priced ``model``; ``None`` when it is unpriced.
+
+    Stored beside a run's cost (``usage_logs.price_source``) so a later price change can be told
+    apart from the price a row was computed with, and so rows can be re-priced.
+    """
+    key = _lookup_key(model)
+    return _load()[1].get(key) if key is not None else None
 
 
 def pricing_for(model: str) -> ModelPricing | None:
@@ -200,6 +237,19 @@ def usage_cost(usage: Mapping[str, Any] | None) -> float | None:
             return None
         total += cost
     return total
+
+
+def usage_price_source(usage: Mapping[str, Any] | None) -> str | None:
+    """The pricing source(s) behind ``usage_cost``: distinct labels, sorted, comma-joined.
+
+    ``None`` whenever the cost is ``None`` or no model was priced (a mode that made no LLM call
+    has an explicit zero cost but no price was applied).
+    """
+    by_agent = (usage or {}).get("by_agent") or {}
+    if not by_agent or usage_cost(usage) is None:
+        return None
+    labels = {price_source(str(slot.get("model") or "")) for slot in by_agent.values()}
+    return ",".join(sorted(label for label in labels if label)) or None
 
 
 def usage_model(usage: Mapping[str, Any] | None) -> str | None:
