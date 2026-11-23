@@ -52,7 +52,15 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
   polls 45 seconds apart; it pins the merge with `--match-head-commit`, never uses `--admin`, and exits non-zero
   with a reason otherwise. A watcher once merged at an old head before a late push registered. Tested with a fake
   `gh` in `agents/python/tests/test_merge_watcher.py`.
-
+- **The manual live eval job is rebuilt.** `full` in `evals.yml` stays `workflow_dispatch` only and now takes
+  `provider` (openai, azure, anthropic, openai-compatible), `model`, `repeats`, `suite`, `pass_threshold`, a judge
+  switch and two token ceilings (`COST_BUDGET_TOKENS_PER_RUN`, enforced, and a job-wide one). Keys come from
+  repository secrets by name, a missing one fails with its name before any model call, and the job runs
+  `evals/datasets/live/` through the in-process target against a Postgres service container, then uploads the run
+  records and a generated scorecard. The logic is `scripts/live-evals.sh`, which also runs locally.
+  `tests/test_workflow_secret_triggers.py` parses every workflow and fails if a job that reads a model key can run
+  from anything but a manual dispatch. A commented hook for cloud OIDC credentials is documented in
+  `evals/README.md`. It has not been run against a live model.
 - **Live-capable eval datasets.** `evals/datasets/live/*.live.json` (order management, inventory, orchestrator
   routing, review sentiment, pricing and promotions, product discovery) name orders and products as `{{order:1}}`,
   `{{order:shipped}}` and `{{product_id:NAME}}`, resolved against the run's database (`evals/live_facts.py`) and as a seeded customer, so a

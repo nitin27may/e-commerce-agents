@@ -486,10 +486,61 @@ Two jobs in `.github/workflows/evals.yml`:
   Verified end to end (`evals/fixtures/README.md`): total latency drops from
   tens of seconds to under one, proving zero network calls anywhere in the
   request graph. Zero cost, zero credentials, gates merges.
-- **`full`** — `workflow_dispatch` only — deliberately no schedule, since it spends a live key. Every suite again,
-  this time with `--use-llm-judge --allow-self-judge` and a real key, so completeness is judged
-  rather than keyword-matched (by the model under test itself, labelled self-judged, until the
-  planned rebuild of this job picks an independent judge). Uploads per-suite JSON results as an artifact.
+- **`full`** — `workflow_dispatch` only — deliberately no schedule, since it spends a live key. It runs the live
+  datasets against a model you choose; see *Live runs in CI* below.
+
+### Live runs in CI
+
+`full` runs `scripts/live-evals.sh --setup`, the same script you can run locally. Start it from the Actions tab
+(Evals, Run workflow); nothing else starts it, and `tests/test_workflow_secret_triggers.py` fails the build if any
+job that reads a model key could run from a schedule, pull request, push or reusable-workflow call.
+
+Inputs:
+
+| Input | Default | Meaning |
+|-------|---------|---------|
+| `provider` | `openai` | `openai`, `azure`, `anthropic` or `openai-compatible` |
+| `model` | `gpt-4.1` | model name; for `azure`, the deployment name |
+| `repeats` | `1` | times each case runs; mean and spread are reported |
+| `suite` | `all` | `all`, or one of the five specialists or `orchestrator` |
+| `pass_threshold` | `0.7` | minimum overall score per suite |
+| `use_llm_judge` | `false` | judge completeness with a model (self-judged unless `JUDGE_*` is configured) |
+| `token_budget_per_run` | `100000` | `COST_BUDGET_TOKENS_PER_RUN`, enforced (`COST_BUDGET_MODE=enforce`, fails closed) |
+| `max_total_tokens` | `2000000` | no new suite starts once this many tokens are spent across the job |
+
+Keys are read from repository secrets by name. If the chosen provider's secret is missing the first step fails,
+names it, and no model is called.
+
+| Provider | Secrets |
+|----------|---------|
+| `openai` | `OPENAI_API_KEY` |
+| `azure` | `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_KEY` |
+| `anthropic` | `ANTHROPIC_API_KEY` |
+| `openai-compatible` | `LLM_BASE_URL`, `LLM_API_KEY` (Chat Completions wire) |
+
+What it does: a Postgres service container, `scripts.migrate` and `scripts.seed`, the five specialists booted for the
+orchestrator suite, then each `evals/datasets/live/*.live.json` through the in-process target with `--records-out`.
+It prints the replay twin's `--estimate` first (informational). It uploads `eval-live-*.json`,
+`eval-records-live-*.jsonl` and `live-eval-scorecard.md` (also appended to the job summary) as the
+`eval-results-live` artifact. The scorecard comes from `scripts/live_eval_scorecard.py`: scores, tokens and
+estimated cost per suite, from the reports alone.
+
+Gotchas:
+
+- The spend ceiling has two parts. The per-run token ceiling stops a single run; it does not cap the job. The job
+  ceiling is checked between suites, so one suite can overshoot it. `repeats` multiplies the spend. A model with no
+  row in `config/pricing/models.yaml` reports cost as unknown, so the token ceilings are the real limit.
+- There is no `--baseline`: baselines are keyed by setup and none exists for a live model, so the threshold is the
+  gate. The red-team safety suite is not part of this job (it has no live variant); run it locally if you need it.
+- `anthropic` has no embeddings API, so semantic search uses its full-text arm. The seeder does the embedding work;
+  there is no separate `generate_embeddings` step, which would spend embedding tokens.
+- Live cases write to the database (`initiate_return`) and `cancel_order` leaves a parked approval, so the job's
+  database is throwaway. Do not point a local run at data you want to keep.
+
+Cloud OIDC credentials (optional extra): to use a cloud identity instead of a stored key (for example Azure OpenAI
+with `AZURE_OPENAI_AUTH=identity`), uncomment the `Cloud login (OIDC)` step in the `full` job, grant the job
+`id-token: write`, and put the identifiers in repository or environment variables (`EVAL_OIDC_CLIENT_ID` and the
+like), never in the file. The step is a documented hook and is not enabled or tested here.
 
 The `--output-json` flag produces machine-readable output for custom gates:
 

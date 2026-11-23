@@ -13,9 +13,11 @@ name: Evals
 #   suites run: call_specialist_agent makes a real HTTP call independent of
 #   LLM_PROVIDER, so those two suites need the services *up*, just not
 #   making any real LLM calls.
-# - `full` runs on workflow_dispatch ONLY: every suite again with a real key
-#   and --use-llm-judge, so completeness is judged rather than keyword-matched.
-#   This is the one that spends real OpenAI budget.
+# - `full` runs on workflow_dispatch ONLY: the live datasets (evals/datasets/live/) against a real
+#   model chosen by input (provider, model, repeats, suite, threshold), keys read from repository
+#   secrets by name, a Postgres service container, records and a scorecard uploaded as artifacts,
+#   and a token ceiling enforced (COST_BUDGET_TOKENS_PER_RUN, LIVE_MAX_TOTAL_TOKENS).
+#   This is the one that spends real money.
 #
 #   It used to also run on a weekly cron. Nothing in this repo may spend a live
 #   LLM key on an automatic trigger — a scheduled job bills you on a timer, for
@@ -40,11 +42,51 @@ on:
     branches: [main]
     paths:
       - "agents/python/evals/**"
+  # Inputs apply to the `full` job only. The replay job ignores them.
   workflow_dispatch:
     inputs:
+      provider:
+        description: "Model provider (its secrets must exist in the repository; see evals/README.md)"
+        type: choice
+        options: [openai, azure, anthropic, openai-compatible]
+        default: openai
+      model:
+        description: "Model name (for azure, the deployment name)"
+        type: string
+        required: true
+        default: gpt-4.1
+      repeats:
+        description: "Times each case runs (mean and spread are reported)"
+        type: string
+        default: "1"
+      suite:
+        description: "all, or one agent"
+        type: choice
+        options:
+          - all
+          - product-discovery
+          - order-management
+          - pricing-promotions
+          - review-sentiment
+          - inventory-fulfillment
+          - orchestrator
+        default: all
       pass_threshold:
-        description: "Minimum overall score for the quality suites"
+        description: "Minimum overall score per suite"
+        type: string
         default: "0.7"
+      use_llm_judge:
+        description: "Judge completeness with a model (self-judged unless JUDGE_* is configured)"
+        type: boolean
+        default: false
+      token_budget_per_run:
+        description: "COST_BUDGET_TOKENS_PER_RUN, enforced: input plus output tokens one run may use"
+        type: string
+        default: "100000"
+      max_total_tokens:
+        description: "Stop starting new suites once this many tokens have been spent in total"
+        type: string
+        default: "2000000"
 
 permissions:
   contents: read
@@ -60,13 +102,12 @@ env:
     {"product-discovery":"http://localhost:8081","order-management":"http://localhost:8082",
     "pricing-promotions":"http://localhost:8083","review-sentiment":"http://localhost:8084",
     "inventory-fulfillment":"http://localhost:8085"}
-  THRESH: ${{ github.event.inputs.pass_threshold || '0.7' }}
   # The replay-regression job replays frozen model output, so its absolute score is a
   # property of the recording session, not of the pull request under test.
   # What a PR *can* change is measured by --baseline/--max-regression (and by
-  # the missing-fixture check, which always fails the run). The 0.7 quality
-  # floor is asserted by the `full` job, which drives real models.
-  SMOKE_THRESH: ${{ github.event.inputs.pass_threshold || '0' }}
+  # the missing-fixture check, which always fails the run). The quality floor
+  # is asserted by the `full` job, which drives real models.
+  SMOKE_THRESH: "0"
 
 jobs:
   replay-regression:
@@ -153,11 +194,25 @@ jobs:
             agents/python/eval-records-*.jsonl
           retention-days: 30
 
+
+  # The live job. It SPENDS MONEY and runs on workflow_dispatch only; the `if` below repeats the
+  # trigger rule at the job, because this file also has pull_request and push triggers.
+  # agents/python/tests/test_workflow_secret_triggers.py fails if a job that reads a model key can
+  # ever run from an automatic trigger. The work is in scripts/live-evals.sh (one implementation,
+  # runnable locally); see agents/python/evals/README.md, "Live runs in CI".
   full:
-    name: Full (real LLM + judge, manual dispatch)
+    name: Live (real LLM, manual dispatch)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     if: github.event_name == 'workflow_dispatch'
+    # One live run at a time: they share a database and ports, and a second one doubles the spend.
+    concurrency:
+      group: eval-live
+      cancel-in-progress: false
+    # Cloud OIDC credentials (optional extra): see the commented block before "Run live evals".
+    # It needs `id-token: write` here, which is NOT granted by default.
+    permissions:
+      contents: read
 
     services:
       postgres:
@@ -175,19 +230,29 @@ jobs:
         ports: ["6379:6379"]
 
     env:
-      LLM_PROVIDER: openai
-      LLM_MODEL: gpt-4.1
+      LIVE_PROVIDER: ${{ inputs.provider }}
+      LIVE_MODEL: ${{ inputs.model }}
+      LIVE_REPEATS: ${{ inputs.repeats }}
+      LIVE_SUITE: ${{ inputs.suite }}
+      LIVE_PASS_THRESHOLD: ${{ inputs.pass_threshold }}
+      LIVE_USE_JUDGE: ${{ inputs.use_llm_judge }}
+      COST_BUDGET_TOKENS_PER_RUN: ${{ inputs.token_budget_per_run }}
+      LIVE_MAX_TOTAL_TOKENS: ${{ inputs.max_total_tokens }}
+      # Model keys, by name, from repository secrets. Empty when unset; the script names the missing
+      # one for the chosen provider and stops before any model call.
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+      AZURE_OPENAI_KEY: ${{ secrets.AZURE_OPENAI_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Require OPENAI_API_KEY
-        run: |
-          if [ -z "${OPENAI_API_KEY}" ]; then
-            echo "::error::OPENAI_API_KEY secret is not set — add it in repo settings to run the full eval suite."
-            exit 1
-          fi
+      # Fail first, before anything is installed, when the chosen provider's secret is missing.
+      - name: Check provider configuration
+        run: scripts/live-evals.sh --check-env
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -202,87 +267,34 @@ jobs:
         working-directory: agents/python
         run: uv sync --extra dev
 
-      # Baseline (docker/postgres/init.sql) + docker/postgres/migrations/*, in order.
-      - name: Load database schema
-        run: uv run --project agents/python python -m scripts.migrate
+      # Optional extra: sign in to a cloud with OIDC instead of a stored key (for example Azure OpenAI
+      # with managed identity, AZURE_OPENAI_AUTH=identity). Uncomment, add `id-token: write` to the
+      # job's permissions, and put the identifiers in repository or environment VARIABLES, never in
+      # this file. The Azure workflow (azure.yml) shows the same pattern. Nothing here is required.
+      #
+      # - name: Cloud login (OIDC)
+      #   uses: azure/login@v2
+      #   with:
+      #     client-id: ${{ vars.EVAL_OIDC_CLIENT_ID }}
+      #     tenant-id: ${{ vars.EVAL_OIDC_TENANT_ID }}
+      #     subscription-id: ${{ vars.EVAL_OIDC_SUBSCRIPTION_ID }}
 
-      # scripts.seed / scripts.generate_embeddings live at the repo root, not
-      # inside agents/python/ — docker-compose's seeder service resolves this
-      # via a volume mount (./scripts:/app/scripts:ro) that isn't available
-      # here, so these two steps run from the repo root and point uv at the
-      # agents/python project explicitly instead.
-      - name: Seed deterministic demo data
-        run: uv run --project agents/python python -m scripts.seed
+      # Migrate and seed a fresh database, start the specialists the orchestrator suite calls, run the
+      # live datasets (evals/datasets/live/) with --records-out, and stop what was started.
+      - name: Run live evals
+        run: scripts/live-evals.sh --setup
 
-      - name: Generate embeddings
-        run: uv run --project agents/python python -m scripts.generate_embeddings
-
-      - name: Start specialist services (real key)
-        working-directory: agents/python
-        run: |
-          for svc in product_discovery:8081 order_management:8082 pricing_promotions:8083 review_sentiment:8084 inventory_fulfillment:8085; do
-            name="${svc%%:*}"; port="${svc##*:}"
-            AGENT_NAME="$name" AGENT_PORT="$port" \
-              nohup uv run --no-project uvicorn "${name}.main:app" --host 0.0.0.0 --port "$port" \
-              > "/tmp/${name}.log" 2>&1 &
-          done
-          for port in 8081 8082 8083 8084 8085; do
-            for _ in $(seq 1 30); do
-              curl -sf "http://localhost:$port/health" > /dev/null && break
-              sleep 1
-            done
-            curl -sf "http://localhost:$port/health" > /dev/null || {
-              echo "::error::specialist on port $port never became healthy"
-              cat /tmp/*.log
-              exit 1
-            }
-          done
-
-      - name: Run quality + safety evals (real judge, real key)
-        working-directory: agents/python
-        run: |
-          fail=0
-          for a in product-discovery order-management pricing-promotions review-sentiment inventory-fulfillment; do
-            ds="evals/datasets/${a//-/_}.json"
-            base="evals/baselines/python-inproc-replay/${a//-/_}.json"
-            echo "::group::quality eval — $a"
-            uv run python -m evals.run_evals --agent "$a" --dataset "$ds" \
-              --pass-threshold "$THRESH" --use-llm-judge --allow-self-judge --repeats 1 \
-              --baseline "$base" --records-out "eval-records-$a.jsonl" \
-              --output-json "eval-$a.json" || fail=1
-            echo "::endgroup::"
-          done
-          echo "::group::routing eval — orchestrator"
-          uv run python -m evals.run_evals --agent orchestrator \
-            --dataset evals/datasets/orchestrator_routing.json \
-            --pass-threshold "$THRESH" --use-llm-judge --allow-self-judge --repeats 1 \
-            --baseline evals/baselines/python-inproc-replay/orchestrator_routing.json \
-            --records-out eval-records-orchestrator.jsonl --output-json eval-orchestrator.json || fail=1
-          echo "::endgroup::"
-          echo "::group::safety / red-team"
-          uv run python -m evals.run_evals --suite safety --repeats 1 \
-            --pass-threshold 0.8 --records-out eval-records-safety.jsonl --output-json eval-safety.json || fail=1
-          echo "::endgroup::"
-          exit $fail
-
-      # The specialists are started with `nohup ... &` and would otherwise
-      # still be running when the job's post steps execute. `setup-uv`'s
-      # cache-prune step then hangs on the uv cache those processes hold open
-      # and is killed at its 300s timeout, failing the job after all the real
-      # work has already succeeded. A job should stop what it starts.
-      - name: Stop specialist services
+      - name: Build scorecard
         if: always()
-        run: |
-          pkill -f "uvicorn .*\.main:app" || true
-          sleep 2
-          pkill -9 -f "uvicorn .*\.main:app" || true
+        run: python3 scripts/live_eval_scorecard.py agents/python --out agents/python/live-eval-scorecard.md
 
-      - name: Upload eval results
+      - name: Upload records and scorecard
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: eval-results-full
+          name: eval-results-live
           path: |
-            agents/python/eval-*.json
-            agents/python/eval-records-*.jsonl
+            agents/python/eval-live-*.json
+            agents/python/eval-records-live-*.jsonl
+            agents/python/live-eval-scorecard.md
           retention-days: 30
