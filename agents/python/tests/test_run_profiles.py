@@ -250,3 +250,14 @@ def test_shell_side_of_profiles_matches() -> None:
         [bash, str(REPO / "scripts" / "test-profiles.sh")], capture_output=True, text=True, timeout=60, check=False
     )
     assert done.returncode == 0, done.stdout + done.stderr
+
+
+@pytest.mark.parametrize("name", ALL)
+def test_every_profile_is_documented_with_its_two_commands(name: str) -> None:
+    page = (REPO / "docs" / "run-profiles.md").read_text(encoding="utf-8")
+    assert f"| `{name}` |" in page, f"{name} is missing from the table in docs/run-profiles.md"
+    assert f"./scripts/dev.sh --profile {name}" in page
+    assert f"scripts.doctor --profile {name}" in page
+    row = next(line for line in page.splitlines() if line.startswith(f"| `{name}` | {prof.load_profile(name).tier} |"))
+    expect_net = "no" if prof.load_profile(name).python_only else "yes"
+    assert f"| yes | {expect_net}" in row, f"{name}: the .NET column disagrees with the profile header"
