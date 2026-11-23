@@ -80,9 +80,11 @@ export function ModeSwitcher({ value, onChange, disabled }: ModeSwitcherProps) {
             {(v: string) => (v ? (modes.find((m) => m.name === v)?.label ?? v) : "Mode")}
           </SelectValue>
         </SelectTrigger>
-        <SelectContent>
+        {/* As wide as its longest label, never narrower than the trigger: the
+            default popup takes the trigger's width and cut the long labels off. */}
+        <SelectContent className="w-auto min-w-(--anchor-width)">
           {modes.map((mode) => (
-            <SelectItem key={mode.name} value={mode.name}>
+            <SelectItem key={mode.name} value={mode.name} className="whitespace-nowrap">
               {mode.label}
             </SelectItem>
           ))}

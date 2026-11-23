@@ -83,6 +83,8 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ### Fixed
 
+- **The Mode dropdown shows its labels in full.** The list is as wide as its longest label; it used to take the
+  trigger's width and cut three of the five off (#210).
 - **The Compare dialog renders answers the way chat does.** A fenced card block in a mode's answer (a product, a
   sentiment summary) shows as its card. It used to be printed as JSON text (#209).
 - **Staff could not decide a paused return from the Approvals page, and the support role had no
