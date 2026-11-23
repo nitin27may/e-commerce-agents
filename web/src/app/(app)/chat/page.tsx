@@ -387,6 +387,9 @@ export default function ChatPage() {
   // own first message in the same batch; the "no conversation -> empty thread"
   // effect below must not wipe that message once.
   const keepMessagesOnClearRef = useRef(false);
+  // The conversation the user most recently asked to show (null = a new chat). A slow
+  // getConversation() for an earlier selection must not overwrite a newer choice.
+  const wantedConversationRef = useRef<string | null>(null);
 
   // Cancel in-flight stream when the component unmounts (route change).
   useEffect(
@@ -434,6 +437,7 @@ export default function ChatPage() {
 
   // ---- Load messages when active conversation changes ----
   useEffect(() => {
+    wantedConversationRef.current = activeConversationId;
     if (!activeConversationId) {
       if (keepMessagesOnClearRef.current) {
         keepMessagesOnClearRef.current = false;
@@ -468,8 +472,10 @@ export default function ChatPage() {
   async function loadMessages(conversationId: string) {
     try {
       const data = await api.getConversation(conversationId);
+      if (wantedConversationRef.current !== conversationId) return;
       setMessages(asArray<Message>(data?.messages));
     } catch {
+      if (wantedConversationRef.current !== conversationId) return;
       setMessages([]);
     }
   }

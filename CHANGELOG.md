@@ -14,6 +14,14 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ## [Unreleased]
 
+### Fixed
+
+- **Group chat no longer answers with a placeholder.** The moderator's default verdict was the one line
+  "Synthesized 2 perspective(s) (value, quality) on: <prompt>"; it now shows the question followed by each
+  panelist's actual words (#210). No model call is involved, so no replay fixture changes.
+- **Chat: a slow conversation load no longer overwrites a newer choice.** Opening a conversation and then clicking
+  "New chat" before its messages arrived could bring the old conversation's messages back (#210).
+
 ### Added
 
 - **Live-capable eval datasets.** `evals/datasets/live/*.live.json` (order management, inventory, orchestrator

@@ -51,8 +51,13 @@ class GroupChatState:
 
 
 def _default_synthesis(state: GroupChatState) -> str:
-    speakers = ", ".join(turn["speaker"] for turn in state.transcript)
-    return f"Synthesized {len(state.transcript)} perspective(s) ({speakers}) on: {state.question}"
+    """Local moderator: lay out each panelist's actual words under the question.
+
+    No model call (so no replay fixture is involved). An earlier revision returned a one-line
+    "Synthesized N perspective(s)" summary, which hid what the panelists said.
+    """
+    turns = "\n\n".join(f"**{turn['speaker'].capitalize()}:** {turn['text']}" for turn in state.transcript)
+    return f"Round-table on: {state.question}\n\n{turns}"
 
 
 # ─────────────────────────── Executors ───────────────────────────

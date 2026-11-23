@@ -131,8 +131,9 @@ async def test_the_default_synthesis_names_every_speaker() -> None:
         panelists=[("value", _says("cheap")), ("quality", _says("solid"))]
     ).execute(QUESTION)
 
-    assert "2 perspective(s)" in state.verdict
-    assert "value, quality" in state.verdict
+    # The verdict carries each panelist's own words, labelled by speaker (not a one-line count).
+    assert "**Value:** cheap" in state.verdict
+    assert "**Quality:** solid" in state.verdict
     assert QUESTION in state.verdict
 
 
