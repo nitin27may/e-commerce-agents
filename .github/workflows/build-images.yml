@@ -1,11 +1,18 @@
 name: Build Images
 
-# Builds the twelve container images this stack runs on, in four build shapes:
+# Builds the container images this stack runs on (twelve Python/web, seven .NET), in five build shapes:
 #
 #   agent   -> agents/python/Dockerfile      (ARG AGENT_NAME + AGENT_PORT)
 #   mcp     -> agents/python/Dockerfile.mcp  (ARG MCP_PACKAGE/MCP_DIR/MCP_MODULE/MCP_PORT)
 #   web     -> web/Dockerfile                (no build args)
 #   db-init -> agents/python/Dockerfile.dbinit (REPO ROOT context; one-shot DB bootstrap job)
+#   dotnet  -> agents/dotnet/src/<Project>/Dockerfile (REPO ROOT context; named <service>-dotnet)
+#
+# The .NET images are what `stack=dotnet` deploys on Azure (docs/azure-deployment.md). They publish for
+# linux/amd64 only (Container Apps is amd64; the SDK stage under QEMU is slow and nothing needs arm64),
+# and the smoke test starts the container and polls /health instead of importing a Python module.
+# scripts/azure/images.tsv lists every image and its build inputs and must match this matrix
+# (agents/python/tests/test_infra_bicep.py compares them).
 #
 # ── This workflow never decides to publish on its own ────────────────────────
 #
@@ -198,6 +205,59 @@ jobs:
             build_args: ""
             smoke_module: ""
 
+          # ── .NET stack: one Dockerfile per project, repo-root context ──
+          # Names carry a -dotnet suffix so they never collide with the Python image of the same service.
+          # smoke_port is the port the image listens on; its /health is polled (no model, no database needed).
+          - image: orchestrator-dotnet
+            context: .
+            dockerfile: ./agents/dotnet/src/ECommerceAgents.Orchestrator/Dockerfile
+            build_args: ""
+            platforms: linux/amd64
+            smoke_module: ""
+            smoke_port: "8080"
+          - image: product-discovery-dotnet
+            context: .
+            dockerfile: ./agents/dotnet/src/ECommerceAgents.ProductDiscovery/Dockerfile
+            build_args: ""
+            platforms: linux/amd64
+            smoke_module: ""
+            smoke_port: "8081"
+          - image: order-management-dotnet
+            context: .
+            dockerfile: ./agents/dotnet/src/ECommerceAgents.OrderManagement/Dockerfile
+            build_args: ""
+            platforms: linux/amd64
+            smoke_module: ""
+            smoke_port: "8082"
+          - image: pricing-promotions-dotnet
+            context: .
+            dockerfile: ./agents/dotnet/src/ECommerceAgents.PricingPromotions/Dockerfile
+            build_args: ""
+            platforms: linux/amd64
+            smoke_module: ""
+            smoke_port: "8083"
+          - image: review-sentiment-dotnet
+            context: .
+            dockerfile: ./agents/dotnet/src/ECommerceAgents.ReviewSentiment/Dockerfile
+            build_args: ""
+            platforms: linux/amd64
+            smoke_module: ""
+            smoke_port: "8084"
+          - image: inventory-fulfillment-dotnet
+            context: .
+            dockerfile: ./agents/dotnet/src/ECommerceAgents.InventoryFulfillment/Dockerfile
+            build_args: ""
+            platforms: linux/amd64
+            smoke_module: ""
+            smoke_port: "8085"
+          - image: mcp-inventory-dotnet
+            context: .
+            dockerfile: ./agents/dotnet/src/ECommerceAgents.Mcp/Dockerfile
+            build_args: ""
+            platforms: linux/amd64
+            smoke_module: ""
+            smoke_port: "9001"
+
     steps:
       - uses: actions/checkout@v4
 
@@ -265,7 +325,7 @@ jobs:
       # is why the publish path builds arm64 too -- at roughly 3x build time,
       # acceptable on main, not on every PR.
       - name: Set up QEMU
-        if: steps.publish.outputs.should_push == 'true'
+        if: steps.publish.outputs.should_push == 'true' && matrix.platforms == ''
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
@@ -285,7 +345,7 @@ jobs:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           build-args: ${{ matrix.build_args }}
-          platforms: ${{ steps.publish.outputs.should_push == 'true' && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
+          platforms: ${{ steps.publish.outputs.should_push == 'true' && (matrix.platforms || 'linux/amd64,linux/arm64') || 'linux/amd64' }}
           push: ${{ steps.publish.outputs.should_push == 'true' }}
           load: ${{ steps.publish.outputs.should_push != 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
@@ -327,6 +387,36 @@ jobs:
           sys.exit(0)
           "
 
+      # The .NET images have no Python module either. An ASP.NET host that starts and answers /health has
+      # loaded its configuration, its dependency graph and its prompts (the Dockerfiles copy the shared YAML in).
+      # /health needs no database or model. Not yet exercised in CI: the first run of this step is its test.
+      - name: Smoke-test .NET image
+        if: steps.publish.outputs.should_push != 'true' && matrix.smoke_port != ''
+        run: |
+          IMAGE_TAG=$(echo "${{ steps.meta.outputs.tags }}" | cut -d',' -f1)
+          PORT="${{ matrix.smoke_port }}"
+          CID=$(docker run -d -p "${PORT}:${PORT}" \
+            -e ENVIRONMENT="test" \
+            -e DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy" \
+            -e OPENAI_API_KEY="sk-test" \
+            -e JWT_SECRET="test-jwt-secret-32-bytes-padding" \
+            -e AGENT_SHARED_SECRET="test-agent-secret-32-bytes-pads" \
+            -e AGENT_REGISTRY="{}" \
+            -e OTEL_ENABLED="false" \
+            "${IMAGE_TAG}")
+          for i in $(seq 1 30); do
+            if curl -sf "http://localhost:${PORT}/health" > /dev/null; then
+              echo "[OK] ${{ matrix.image }}: /health answered on :${PORT}"
+              docker rm -f "$CID" > /dev/null
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::${{ matrix.image }} did not answer /health on :${PORT} within 60s"
+          docker logs "$CID"
+          docker rm -f "$CID" > /dev/null
+          exit 1
+
       # The frontend image has no Python module to import. `node server.js` is
       # the standalone Next.js entry point; starting it and getting a listening
       # socket is the equivalent check.
@@ -348,7 +438,7 @@ jobs:
           docker rm -f "$CID" > /dev/null
           exit 1
 
-  # A single job the branch protection rule can require, instead of listing twelve
+  # A single job the branch protection rule can require, instead of listing every
   # matrix legs by name (which breaks every time the matrix changes).
   build-images-ok:
     name: Build images · all green
@@ -362,4 +452,4 @@ jobs:
             echo "::error::one or more image builds failed"
             exit 1
           fi
-          echo "all twelve images built"
+          echo "all images built"

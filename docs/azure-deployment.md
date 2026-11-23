@@ -6,7 +6,7 @@ title: Azure deployment (draft)
 
 Bicep templates and scripts that deploy the Python stack to Azure Container Apps, for anyone who wants to run the demo in their own subscription.
 
-**Status: written, compiled and linted, never deployed.** Everything here was checked offline: the Bicep builds and lints, the compiled wiring is asserted by `agents/python/tests/test_infra_bicep.py`, the scripts pass `bash -n` and a dry run, and the secret generator has its own test. **Nothing has run against a real subscription**, and every behaviour that needs one is listed under [Assumptions to confirm](#assumptions-to-confirm-on-a-real-subscription). Python stack only: the .NET images are not published. For local and Compose paths see [deployment.md](deployment.md).
+**Status: written, compiled and linted, never deployed.** Everything here was checked offline: the Bicep builds and lints, the compiled wiring is asserted by `agents/python/tests/test_infra_bicep.py`, the scripts pass `bash -n` and a dry run, and the secret generator has its own test. **Nothing has run against a real subscription**, and every behaviour that needs one is listed under [Assumptions to confirm](#assumptions-to-confirm-on-a-real-subscription). The Python stack is the default; the .NET stack (`--stack dotnet`) is deployable too, verified offline only. For local and Compose paths see [deployment.md](deployment.md).
 
 ## Deploy
 
@@ -137,7 +137,7 @@ Images come from `ghcr.io/nitin27may/e-commerce-agents/<service>:<imageTag>`. Th
 
 ## Profiles
 
-`infra/profiles/demo.json` and `reference.json` carry the SKUs and counts; pick one with `DEPLOY_PROFILE` (default `demo`). The reference profile still deploys the same Container Apps topology: the VNet, private Postgres and Managed Redis are not built.
+`infra/profiles/demo.json` and `reference.json` carry the SKUs and counts; pick one with `DEPLOY_PROFILE` (default `demo`). The reference profile adds a VNet, private endpoints, Azure Managed Redis and a Container Registry (details below). Both profiles are written and compiled offline; neither has been deployed.
 
 | | demo | reference |
 |---|---|---|
@@ -147,8 +147,23 @@ Images come from `ghcr.io/nitin27may/e-commerce-agents/<service>:<imageTag>`. Th
 | OpenAI capacity (K TPM) | chat 50, embedding 20 | chat 100, embedding 50 |
 | Replicas | 1 to 2 (orchestrator 1 to 3) | 2 to 6 (orchestrator 2 to 10) |
 | Budget | 150 / month | 800 / month |
+| Network | public endpoints, Postgres firewall rule for Azure services | VNet (`vnet-<token>`): Container Apps subnet (delegated, `/24`; `/27` is the minimum) and a private endpoint subnet (`/24`); private endpoints and private DNS zones for Postgres, Key Vault, the AIServices account (three zones) and Redis; public network access off on all four. The frontend ingress stays external behind its IP allow-list |
+| Redis | `redis:8` container app (`ca-redis`) | Azure Managed Redis (`Microsoft.Cache/redisEnterprise`, `Balanced_B0`, TLS on port 10000), connection string in Key Vault |
+| Images | GHCR at the pinned tag | ACR (Basic) filled by `az acr import` from GHCR, pulled with the identity (`AcrPull`) |
+| Model auth | account key from Key Vault | Entra ID through the identity; local auth disabled on the account |
+| A2A identity | `both` | `token`, with the distinct `A2A_IDENTITY_KEY` that preprovision generates |
 
 Cost (estimates, not measured): demo roughly 120 to 380 USD a month, about 0.02 to 0.03 USD per chat turn; reference 500 to 800.
+
+## Reference profile, image source and stack
+
+**Reference profile** (`DEPLOY_PROFILE=reference`). Modules: `network.bicep` (VNet, subnets, the six private DNS zones with VNet links), `private-endpoints.bicep`, `redis-managed.bicep`, `acr.bicep`. Postgres, Key Vault and the AIServices account switch to `publicNetworkAccess: Disabled` only in this profile; the demo compiles to the same resources as before (a stored list in `agents/python/tests/data/infra_demo_resources.json` pins it). Redis reaches Python as `REDIS_URL=rediss://:<key>@<host>:10000/0` (secret `redis-url`) and .NET as `ConnectionStrings__Redis` (secret `redis-connection-string`, StackExchange.Redis syntax).
+
+**Image source** (`IMAGE_SOURCE`, `auto` | `ghcr` | `acr`; `auto` is ghcr for demo, acr for reference). With `acr` the apps start only after the registry holds `IMAGE_TAG`, so a deployment is two provisions: `preprovision` sets `DEPLOY_APPS=false` until `ACR_IMAGES_TAG` matches, `postprovision` runs `scripts/azure/acr-images.sh` (import, or build) and stops; the second `azd provision` starts the apps, runs `job-db-init` and the smoke test. `scripts/azure-up.sh` does both for you.
+
+**Build from source.** `scripts/azure-up.sh --build-from-source` implies `acr` and builds every image of the stack with `az acr build` (ACR Tasks, linux/amd64, no local Docker) from the working tree, tagged `src-<sha>` (`-dirty<epoch>` on a dirty tree). `--dry-run` prints every command. `scripts/azure/images.tsv` lists the images and their build inputs; a test keeps it equal to the `build-images.yml` matrix. This is not azd `services:` with `remoteBuild`: the apps need their image at provision time and `azd deploy` needs the apps to exist, and declaring services would make a plain `azd up` rebuild them. Inner loop after the first deploy: `scripts/azure/acr-images.sh build --registry <acr> --tag <new tag> --only orchestrator`, then `azd env set IMAGE_TAG <new tag>` and `azd provision`.
+
+**.NET stack** (`--stack dotnet`, `DEPLOY_STACK`). Runs `orchestrator-dotnet`, the five `<specialist>-dotnet` images and, with `--mcp`, `mcp-inventory-dotnet` (there is no .NET product MCP server, and the .NET specialists do not call MCP). The outbox worker, `db-init`, the auth server and the frontend are the Python images on both stacks. Env differences: `ConnectionStrings__Redis` instead of `REDIS_URL`; no `MAF_STREAM_TIMEOUT_SECONDS`; `OTEL_SERVICE_NAME` ends in `.dotnet`; the orchestrator gets `DOTNET_TIMEOUT_WORKER_ENABLED=true` (parity row 36). Health paths are the same (`/health`, `/ready`; the MCP host has `/health` only). The images are published by `build-images.yml` as `<service>-dotnet` (amd64 only); the first `.NET` smoke run happens in that workflow's first CI run. Parity row 50.
 
 ## azd environment variables
 
@@ -163,7 +178,10 @@ Set by `azure-up` or by hand with `azd env set`.
 | `DEPLOYER_IP`, `ALLOWED_IPS` | detected, empty | `/32` allowed through the frontend ingress; extra CIDRs, comma separated. Restricted with neither allows nobody |
 | `AZURE_CHAT_MODEL`, `AZURE_CHAT_MODEL_VERSION` | `gpt-5.1`, `2025-11-13` | gpt-4.1 is deprecated and closed to new customers |
 | `AZURE_OPENAI_API_VERSION` | `2025-04-01-preview` | API version the apps call |
-| `AZURE_OPENAI_AUTH` | `key` | `key` or `identity` (needs an image built with `AZURE_OPENAI_AUTH` support; disables local auth on the account) |
+| `AZURE_OPENAI_AUTH` | `auto` | `auto` (demo key, reference identity), `key` or `identity` (needs an image built with `AZURE_OPENAI_AUTH` support; disables local auth on the account) |
+| `DEPLOY_STACK` | `python` | `python` or `dotnet` |
+| `IMAGE_SOURCE`, `BUILD_FROM_SOURCE` | `auto`, `false` | `auto`/`ghcr`/`acr`; source builds go into ACR |
+| `DEPLOY_APPS`, `ACR_IMAGES_TAG` | set by the hooks | false until the registry holds `IMAGE_TAG`; the tag the registry was last filled with |
 | `DEPLOY_MINI_MODEL`, `DEPLOY_AUTH_SERVER`, `DEPLOY_MCP` | `false` | opt-in model deployment and apps |
 | `DEPLOY_FOUNDRY_PROJECT` | `false` | Foundry project under the AIServices account, App Insights connection, Azure AI User for the app identity |
 | `DEPLOY_GATEWAY`, `GATEWAY_SKU`, `GATEWAY_PUBLISHER_EMAIL` | `false`, `BasicV2`, placeholder | API Management in front of the account; see [AI gateway](#ai-gateway-optional) |
@@ -228,4 +246,9 @@ Earlier assumptions:
 - `az cognitiveservices usage list`, `model list`, `keyvault list-deleted` and `account list-deleted` return the JSON shapes `scripts/azure/lib/checks.sh` parses.
 - `AZURE_PRINCIPAL_ID` is set by azd for a signed-in user; the deployer role assignment is skipped when it is empty.
 - The AllowAllAzureServices firewall rule and the `source` value `user-override` for `azure.extensions` are accepted.
+- Reference profile: private endpoint DNS (`privatelink.redis.azure.net` is the Managed Redis zone; the three AIServices zones cover its hostnames); Key Vault secrets written through ARM still succeed with public access off, and Container Apps resolves the references over the private endpoint; the Container Apps subnet size (`/24`) is enough; a Postgres private endpoint (not VNet integration) is accepted by the flexible server API version used.
+- Azure Managed Redis `Balanced_B0` exists in the chosen region at an acceptable price, and `Microsoft.Cache/redisEnterprise@2025-07-01` takes `publicNetworkAccess` and `accessKeysAuthentication`. Availability and price must be checked at deploy time.
+- `az acr import` from public GHCR works without credentials once the packages are public, and `az acr build` accepts these Dockerfiles and the repo root as context.
+- The `.NET` images start and answer `/health` with dummy settings (CI smoke), and the .NET hosts run under `ENVIRONMENT=production` with the Python-shaped secrets, `DATABASE_URL` with `sslmode=require`, and `AZURE_OPENAI_AUTH=identity`.
+- The PowerShell hooks mirror the bash ones for the ACR flow; they have not been run (no PowerShell here).
 - Budget notifications with `contactRoles` and no `contactEmails` are accepted.
