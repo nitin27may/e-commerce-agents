@@ -15,6 +15,8 @@ param backupRetentionDays int
 param geoRedundantBackup string
 @description('Demo only: lets Azure-hosted services reach the server without a private endpoint.')
 param allowAzureServices bool
+@description('Reference profile: public access off; the server is reached through a private endpoint.')
+param privateAccess bool = false
 
 resource server 'Microsoft.DBforPostgreSQL/flexibleServers@2025-08-01' = {
   name: name
@@ -38,8 +40,7 @@ resource server 'Microsoft.DBforPostgreSQL/flexibleServers@2025-08-01' = {
       geoRedundantBackup: geoRedundantBackup
     }
     highAvailability: { mode: highAvailability }
-    // TODO(I2+): the reference profile should move to VNet integration or a private endpoint.
-    network: { publicNetworkAccess: 'Enabled' }
+    network: { publicNetworkAccess: privateAccess ? 'Disabled' : 'Enabled' }
   }
 }
 
@@ -84,6 +85,7 @@ resource allowAzure 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@202
   dependsOn: [database]
 }
 
+output id string = server.id
 output name string = server.name
 output fqdn string = server.properties.fullyQualifiedDomainName
 output databaseName string = database.name

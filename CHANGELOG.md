@@ -65,10 +65,13 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
   connection and Azure AI User for the app identity. `deployGateway` adds an API Management instance in
   front of the account with per-agent token limits and token metrics keyed on `x-agent-name`, managed
   identity to the model and the endpoint handed to the apps through the existing `AZURE_OPENAI_ENDPOINT`.
-  `deployPerAppIdentities` adds one user-assigned identity per app (created, not yet attached to the
-  apps). All three are off by default. The `azure` provider pointed at the account is documented as
+  `deployPerAppIdentities` adds one user-assigned identity per app (attached to the orchestrator, the
+  specialists and the outbox worker). All three are off by default. The `azure` provider pointed at the account is documented as
   Foundry for OpenAI models; there is no `LLM_PROVIDER=foundry`. None has been deployed: the APIM tier
   that supports the token policies is unverified (see `docs/azure-deployment.md`).
+- **The `reference` Azure profile is real.** A VNet with a delegated Container Apps subnet and a private endpoint subnet; private endpoints and private DNS zones for PostgreSQL, Key Vault and the AIServices account, all with public access off; Azure Managed Redis in place of the redis container; a Basic Container Registry with `AcrPull` for the app identity; Entra auth to the model by default; `A2A_IDENTITY=token` with the distinct generated key. The demo profile deploys exactly what it did (a stored resource list pins it). Written and compiled offline, never deployed.
+- **Build from source on Azure.** `scripts/azure-up.sh --build-from-source` builds every image in ACR Tasks (`az acr build`) from the working tree; `--image-source acr` imports the published images instead. `--dry-run` prints every command.
+- **.NET on Azure.** `stack=dotnet` (`--stack dotnet`) deploys the .NET orchestrator, specialists and inventory MCP host; `build-images.yml` now publishes seven `<service>-dotnet` images (amd64) with a `/health` smoke test that has not yet run in CI. Offline-verified only; parity row 54.
 
 ### Changed
 

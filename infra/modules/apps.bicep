@@ -18,10 +18,17 @@ param defaultDomain string
 param identityId string
 @description('Client id of the user-assigned identity (AZURE_CLIENT_ID for Entra auth).')
 param identityClientId string
+@description('Per-app identities from app-identities.bicep: [{ app, id, clientId }]. Empty: every app uses the shared identity. The db-init job and Redis keep the shared one.')
+param appIdentities array = []
 @description('Vault URI with trailing slash.')
 param keyVaultUri string
 
+@description('Which implementation runs: python (default) or dotnet. dotnet swaps the orchestrator, the five specialists and the inventory MCP server for the .NET images; the outbox worker, db-init job, auth server, frontend and the product MCP server stay Python on both stacks.')
+@allowed(['python', 'dotnet'])
+param stack string = 'python'
 param imageRegistry string
+@description('ACR login server the apps pull from with the user-assigned identity. Empty when imageRegistry is a public registry (GHCR).')
+param registryServer string = ''
 @description('Pinned release tag, e.g. v1.4.0 or sha-1a2b3c4. Never latest: a re-deploy must not change what runs.')
 param imageTag string
 
@@ -32,6 +39,11 @@ param chatModelName string
 param openAiApiVersion string
 @allowed(['key', 'identity'])
 param openAiAuth string = 'key'
+@description('Wire the A2A user context: both (headers and signed token, default) or token (signed token only; needs a distinct A2A_IDENTITY_KEY, which preprovision generates).')
+@allowed(['both', 'token'])
+param a2aIdentity string = 'both'
+@description('Redis comes from Azure Managed Redis (a Key Vault secret) instead of the redis container app.')
+param managedRedis bool = false
 
 @description('containerApps section of the profile.')
 param scale object
@@ -49,12 +61,29 @@ param allowedIpRanges array = []
 param deployAuthServer bool = false
 param deployMcp bool = false
 
+var identityOf = toObject(appIdentities, i => i.app)
+var perApp = !empty(appIdentities)
 var domain = defaultDomain
 var frontendUrl = 'https://ca-frontend.${domain}'
 var orchestratorUrl = 'https://ca-orchestrator.internal.${domain}'
 var authServerUrl = 'https://ca-auth-server.internal.${domain}'
 
-func image(registry string, service string, tag string) string => '${registry}/${service}:${tag}'
+// .NET images exist for the services in dotnetServices only; everything else is the Python image on both stacks.
+var dotnetServices = [
+  'orchestrator'
+  'product-discovery'
+  'order-management'
+  'pricing-promotions'
+  'review-sentiment'
+  'inventory-fulfillment'
+  'mcp-inventory'
+]
+func suffixed(isDotnetStack bool, dotnetNames array, service string) string =>
+  isDotnetStack && contains(dotnetNames, service) ? '${service}-dotnet' : service
+func image(registry string, name string, tag string) string => '${registry}/${name}:${tag}'
+
+var isDotnet = stack == 'dotnet'
+var otelSuffix = isDotnet ? '.dotnet' : ''
 
 // Fail closed: an empty allow-list means "no restriction" to Container Apps, so a restricted
 // deployment with no address gets one that matches nobody (RFC 5737 documentation range).
@@ -81,7 +110,26 @@ var llmTemperature = startsWith(chatModelName, 'gpt-5') ? '' : '0.2'
 
 // ---------------------------------------------------------------- shared wiring
 
-var backendSecretEnv = concat(
+var redisContainerName = 'ca-redis'
+
+// Redis wiring. Python reads REDIS_URL (redis-py URL); .NET reads ConnectionStrings__Redis
+// (StackExchange.Redis syntax, which does not parse redis:// URLs). Managed Redis is a Key Vault secret.
+var redisEnv = managedRedis
+  ? []
+  : [
+      isDotnet
+        ? { name: 'ConnectionStrings__Redis', value: '${redisContainerName}:6379' }
+        : { name: 'REDIS_URL', value: 'redis://${redisContainerName}:6379' }
+    ]
+var redisSecretEnv = managedRedis
+  ? [
+      isDotnet
+        ? { env: 'ConnectionStrings__Redis', secret: 'redis-connection-string' }
+        : { env: 'REDIS_URL', secret: 'redis-url' }
+    ]
+  : []
+
+var backendSecretEnvCore = concat(
   [
     { env: 'DATABASE_URL', secret: 'database-url' }
     { env: 'JWT_SECRET', secret: 'jwt-secret' }
@@ -92,6 +140,10 @@ var backendSecretEnv = concat(
   ],
   openAiAuth == 'key' ? [{ env: 'AZURE_OPENAI_KEY', secret: 'azure-openai-key' }] : []
 )
+// The Python outbox worker and the db-init job do not use Redis on the dotnet stack, and the Redis secret
+// that exists there is the .NET connection string, so they take the core set.
+var backendSecretEnv = concat(backendSecretEnvCore, redisSecretEnv)
+var batchSecretEnv = isDotnet ? backendSecretEnvCore : backendSecretEnv
 
 var authEnv = deployAuthServer
   ? [
@@ -102,7 +154,7 @@ var authEnv = deployAuthServer
     ]
   : [{ name: 'AUTH_MODE', value: 'local' }]
 
-var backendEnv = concat(
+var coreEnv = concat(
   [
     { name: 'ENVIRONMENT', value: 'production' }
     { name: 'LLM_PROVIDER', value: 'azure' }
@@ -113,28 +165,31 @@ var backendEnv = concat(
     { name: 'AZURE_EMBEDDING_DEPLOYMENT', value: embeddingDeployment }
     { name: 'AZURE_OPENAI_API_VERSION', value: openAiApiVersion }
     { name: 'AZURE_OPENAI_AUTH', value: openAiAuth }
-    { name: 'AZURE_CLIENT_ID', value: identityClientId }
     { name: 'EMBEDDING_MODEL', value: 'text-embedding-3-small' }
-    { name: 'REDIS_URL', value: 'redis://${redis.outputs.host}:6379' }
     { name: 'COST_BUDGET_MODE', value: costBudgetMode }
     { name: 'COST_BUDGET_USD_PER_RUN', value: costBudgetUsdPerRun }
     { name: 'DB_POOL_MIN_SIZE', value: '1' }
     { name: 'DB_POOL_MAX_SIZE', value: '4' }
-    { name: 'MAF_STREAM_TIMEOUT_SECONDS', value: '120' }
     { name: 'HITL_RESUME_TIMEOUT_SECONDS', value: '200' }
     { name: 'A2A_TRANSPORT', value: 'legacy' }
-    { name: 'A2A_IDENTITY', value: 'both' }
+    { name: 'A2A_IDENTITY', value: a2aIdentity }
     { name: 'OTEL_ENABLED', value: 'true' }
   ],
   authEnv
 )
+// Read by the Python stack only (the .NET hosts have no stream-timeout setting).
+// AZURE_CLIENT_ID picks the managed identity for Entra auth, so it follows the identity each app runs as.
+func clientIdEnv(clientId string) array => [{ name: 'AZURE_CLIENT_ID', value: clientId }]
+var pythonOnlyEnv = [{ name: 'MAF_STREAM_TIMEOUT_SECONDS', value: '120' }]
+var backendEnv = concat(coreEnv, isDotnet ? [] : pythonOnlyEnv, redisEnv)
+var batchEnv = isDotnet ? concat(coreEnv, pythonOnlyEnv) : backendEnv
 
 // ---------------------------------------------------------------- Redis
 
-module redis 'redis-container.bicep' = {
+module redis 'redis-container.bicep' = if (!managedRedis) {
   name: 'app-redis'
   params: {
-    name: 'ca-redis'
+    name: redisContainerName
     location: location
     tags: tags
     environmentId: environmentId
@@ -152,10 +207,11 @@ module dbInit 'db-init-job.bicep' = {
     tags: tags
     environmentId: environmentId
     identityId: identityId
-    image: image(imageRegistry, 'db-init', imageTag)
+    image: image(imageRegistry, suffixed(isDotnet, dotnetServices, 'db-init'), imageTag)
+    registryServer: registryServer
     keyVaultUri: keyVaultUri
-    env: concat(backendEnv, [{ name: 'OTEL_SERVICE_NAME', value: 'ecommerce.db-init' }])
-    secretEnv: concat(backendSecretEnv, [{ env: 'SEED_STAFF_PASSWORD', secret: 'seed-staff-password' }])
+    env: concat(batchEnv, clientIdEnv(identityClientId), [{ name: 'OTEL_SERVICE_NAME', value: 'ecommerce.db-init' }])
+    secretEnv: concat(batchSecretEnv, [{ env: 'SEED_STAFF_PASSWORD', secret: 'seed-staff-password' }])
   }
 }
 
@@ -168,24 +224,29 @@ module orchestrator 'container-app.bicep' = {
     location: location
     tags: tags
     environmentId: environmentId
-    identityId: identityId
+    identityId: perApp ? identityOf.orchestrator.id : identityId
     keyVaultUri: keyVaultUri
-    image: image(imageRegistry, 'orchestrator', imageTag)
+    image: image(imageRegistry, suffixed(isDotnet, dotnetServices, 'orchestrator'), imageTag)
+    registryServer: registryServer
     targetPort: 8080
     minReplicas: scale.orchestratorMinReplicas
     maxReplicas: scale.orchestratorMaxReplicas
     httpConcurrency: scale.httpConcurrency
     cpu: '1'
     memory: '2Gi'
-    env: concat(backendEnv, [
-      { name: 'OTEL_SERVICE_NAME', value: 'ecommerce.orchestrator' }
+    env: concat(backendEnv, clientIdEnv(perApp ? identityOf.orchestrator.clientId : identityClientId), [
+      { name: 'OTEL_SERVICE_NAME', value: 'ecommerce.orchestrator${otelSuffix}' }
       { name: 'OAUTH_CLIENT_ID', value: 'orchestrator' }
       { name: 'AGENT_REGISTRY', value: agentRegistry }
       { name: 'CORS_ALLOWED_ORIGINS', value: frontendUrl }
       // Container Apps ingress plus the Next.js proxy: two hops append to X-Forwarded-For.
       // Verify with two client addresses on the first real deploy.
       { name: 'RATE_LIMIT_TRUSTED_PROXY_HOPS', value: '2' }
-    ])
+    ], isDotnet ? [
+      // .NET has no outbox worker of its own for the returns it pauses; the orchestrator consumes the timeout
+      // itself (parity row 36). The Python worker serves everything else on both stacks.
+      { name: 'DOTNET_TIMEOUT_WORKER_ENABLED', value: 'true' }
+    ] : [])
     secretEnv: backendSecretEnv
   }
 }
@@ -200,28 +261,30 @@ module specialistApps 'container-app.bicep' = [
       location: location
       tags: tags
       environmentId: environmentId
-      identityId: identityId
+      identityId: perApp ? identityOf[s.name].id : identityId
       keyVaultUri: keyVaultUri
-      image: image(imageRegistry, s.name, imageTag)
+      image: image(imageRegistry, suffixed(isDotnet, dotnetServices, s.name), imageTag)
+      registryServer: registryServer
       targetPort: s.port
       minReplicas: scale.minReplicas
       maxReplicas: scale.maxReplicas
       httpConcurrency: scale.httpConcurrency
       env: concat(
         backendEnv,
+        clientIdEnv(perApp ? identityOf[s.name].clientId : identityClientId),
         [
-          { name: 'OTEL_SERVICE_NAME', value: 'ecommerce.${s.name}' }
+          { name: 'OTEL_SERVICE_NAME', value: 'ecommerce.${s.name}${otelSuffix}' }
           { name: 'OAUTH_CLIENT_ID', value: s.name }
           { name: 'A2A_PUBLIC_BASE_URL', value: 'https://ca-${s.name}.internal.${domain}' }
         ],
-        deployMcp && s.name == 'product-discovery'
+        !isDotnet && deployMcp && s.name == 'product-discovery'
           ? [
               { name: 'MCP_ENABLED', value: 'true' }
               { name: 'MCP_AUTH_ENABLED', value: (deployAuthServer ? 'true' : 'false') }
               { name: 'MCP_PRODUCT_SERVER_URL', value: 'https://ca-mcp-product.internal.${domain}/mcp' }
             ]
           : [],
-        deployMcp && s.name == 'inventory-fulfillment'
+        !isDotnet && deployMcp && s.name == 'inventory-fulfillment'
           ? [
               { name: 'MCP_ENABLED', value: 'true' }
               { name: 'MCP_AUTH_ENABLED', value: (deployAuthServer ? 'true' : 'false') }
@@ -243,20 +306,21 @@ module worker 'container-app.bicep' = {
     location: location
     tags: tags
     environmentId: environmentId
-    identityId: identityId
+    identityId: perApp ? identityOf['outbox-worker'].id : identityId
     keyVaultUri: keyVaultUri
-    image: image(imageRegistry, 'outbox-worker', imageTag)
+    image: image(imageRegistry, suffixed(isDotnet, dotnetServices, 'outbox-worker'), imageTag)
+    registryServer: registryServer
     // The image CMD is uvicorn worker.main:app; the worker is a loop, not an app (same override as compose).
     command: ['uv', 'run', '--no-project', 'python', '-m', 'worker.main']
     targetPort: 0
     probesEnabled: false
     minReplicas: scale.workerMinReplicas
     maxReplicas: 1
-    env: concat(backendEnv, [
+    env: concat(batchEnv, clientIdEnv(perApp ? identityOf['outbox-worker'].clientId : identityClientId), [
       { name: 'OTEL_SERVICE_NAME', value: 'ecommerce.outbox-worker' }
       { name: 'OUTBOX_WORKER_ENABLED', value: 'true' }
     ])
-    secretEnv: backendSecretEnv
+    secretEnv: batchSecretEnv
   }
 }
 
@@ -271,7 +335,8 @@ module frontend 'container-app.bicep' = {
     environmentId: environmentId
     identityId: identityId
     keyVaultUri: keyVaultUri
-    image: image(imageRegistry, 'frontend', imageTag)
+    image: image(imageRegistry, suffixed(isDotnet, dotnetServices, 'frontend'), imageTag)
+    registryServer: registryServer
     targetPort: 3000
     externalIngress: true
     allowedIpRanges: frontendAllowedRanges
@@ -303,7 +368,8 @@ module authServer 'container-app.bicep' = if (deployAuthServer) {
     environmentId: environmentId
     identityId: identityId
     keyVaultUri: keyVaultUri
-    image: image(imageRegistry, 'auth-server', imageTag)
+    image: image(imageRegistry, suffixed(isDotnet, dotnetServices, 'auth-server'), imageTag)
+    registryServer: registryServer
     targetPort: 8090
     minReplicas: scale.minReplicas
     maxReplicas: 1
@@ -323,10 +389,12 @@ module authServer 'container-app.bicep' = if (deployAuthServer) {
 
 // ---------------------------------------------------------------- opt-in: MCP servers
 
-var mcpServers = [
-  { name: 'mcp-product', port: 9000, audience: 'MCP_PRODUCT_AUDIENCE', audienceValue: 'mcp-product', resourceVar: 'MCP_PRODUCT_RESOURCE_URL' }
-  { name: 'mcp-inventory', port: 9001, audience: 'MCP_INVENTORY_AUDIENCE', audienceValue: 'mcp-inventory', resourceVar: 'MCP_INVENTORY_RESOURCE_URL' }
+// The .NET stack ships only the inventory MCP host (no mcp-product), and its specialists do not call MCP.
+var allMcpServers = [
+  { name: 'mcp-product', python: true, dotnet: false, port: 9000, audience: 'MCP_PRODUCT_AUDIENCE', audienceValue: 'mcp-product', resourceVar: 'MCP_PRODUCT_RESOURCE_URL' }
+  { name: 'mcp-inventory', python: true, dotnet: true, port: 9001, audience: 'MCP_INVENTORY_AUDIENCE', audienceValue: 'mcp-inventory', resourceVar: 'MCP_INVENTORY_RESOURCE_URL' }
 ]
+var mcpServers = filter(allMcpServers, m => isDotnet ? m.dotnet : m.python)
 
 module mcpApps 'container-app.bicep' = [
   for m in mcpServers: if (deployMcp) {
@@ -338,11 +406,13 @@ module mcpApps 'container-app.bicep' = [
       environmentId: environmentId
       identityId: identityId
       keyVaultUri: keyVaultUri
-      image: image(imageRegistry, m.name, imageTag)
+      image: image(imageRegistry, suffixed(isDotnet, dotnetServices, m.name), imageTag)
+      registryServer: registryServer
       targetPort: m.port
       // The server answers /mcp (or the protected-resource metadata when auth is on); it has no /ready.
-      healthPath: deployAuthServer ? '/.well-known/oauth-protected-resource/mcp' : '/mcp'
-      readyPath: deployAuthServer ? '/.well-known/oauth-protected-resource/mcp' : '/mcp'
+      // The .NET host serves an unauthenticated /health either way.
+      healthPath: isDotnet ? '/health' : (deployAuthServer ? '/.well-known/oauth-protected-resource/mcp' : '/mcp')
+      readyPath: isDotnet ? '/health' : (deployAuthServer ? '/.well-known/oauth-protected-resource/mcp' : '/mcp')
       minReplicas: scale.minReplicas
       maxReplicas: scale.maxReplicas
       env: [

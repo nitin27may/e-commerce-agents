@@ -18,7 +18,7 @@ image, and the one-time repository setup the pipeline depends on. To run a publi
 `release.yml` for a tag. That is what makes the gate real: GitHub Actions has no cross-workflow
 `needs:`, so a build workflow with its own tag trigger would publish from a red commit.
 
-The workflow builds **twelve images**. Eleven are the services `docker-compose.demo.yml` runs:
+The workflow builds **nineteen images**: the twelve below plus seven `<service>-dotnet` images for the .NET stack (see [azure-deployment.md](azure-deployment.md)). Eleven are the services `docker-compose.demo.yml` runs:
 the orchestrator, five specialists, `auth-server`, `outbox-worker`, `mcp-product`, `mcp-inventory`
 and `frontend`. The twelfth is `db-init`, a one-shot database bootstrap job used only by the
 [Azure deployment](azure-deployment.md).

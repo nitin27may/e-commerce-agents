@@ -42,6 +42,16 @@ $profileName = Get-AzdValue 'DEPLOY_PROFILE'; if (-not $profileName) { $profileN
 $profileFile = Join-Path 'infra' 'profiles' "$profileName.json"
 if (-not (Test-Path $profileFile)) { Stop-Azure "unknown DEPLOY_PROFILE=$profileName" }
 $cfg = Get-Content $profileFile -Raw | ConvertFrom-Json
+
+# Image source: for acr, DEPLOY_APPS stays false until postprovision has put IMAGE_TAG into the registry (preprovision.sh, step 5).
+$stack = Get-AzdValue 'DEPLOY_STACK'; if (-not $stack) { $stack = 'python' }
+if ($stack -notin 'python', 'dotnet') { Stop-Azure "DEPLOY_STACK=$stack is not python or dotnet" }
+$imageSource = Get-AzdValue 'IMAGE_SOURCE'; if (-not $imageSource -or $imageSource -eq 'auto') { $imageSource = $cfg.imageSource }
+if ($imageSource -notin 'ghcr', 'acr') { Stop-Azure "IMAGE_SOURCE must be ghcr or acr (or auto); the $profileName profile resolves to '$imageSource'" }
+if ($imageSource -eq 'acr' -and (Get-AzdValue 'ACR_IMAGES_TAG') -ne $imageTag) {
+    Set-AzdValue 'DEPLOY_APPS' 'false'
+    Write-Log "image source acr: provisioning infrastructure first; postprovision fills the registry with $imageTag, then provision again to start the apps"
+} else { Set-AzdValue 'DEPLOY_APPS' 'true' }
 $model = Get-AzdValue 'AZURE_CHAT_MODEL'; if (-not $model) { $model = 'gpt-5.1' }
 $version = Get-AzdValue 'AZURE_CHAT_MODEL_VERSION'; if (-not $version) { $version = '2025-11-13' }
 Test-PostgresSku $location $cfg.postgres.skuName

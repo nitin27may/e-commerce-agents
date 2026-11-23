@@ -39,7 +39,7 @@
       "value": "${AZURE_OPENAI_API_VERSION=2025-04-01-preview}"
     },
     "openAiAuth": {
-      "value": "${AZURE_OPENAI_AUTH=key}"
+      "value": "${AZURE_OPENAI_AUTH=auto}"
     },
     "imageTag": {
       "value": "${IMAGE_TAG}"
@@ -73,6 +73,15 @@
     },
     "deployPerAppIdentities": {
       "value": "${DEPLOY_PER_APP_IDENTITIES=false}"
+    },
+    "stack": {
+      "value": "${DEPLOY_STACK=python}"
+    },
+    "imageSource": {
+      "value": "${IMAGE_SOURCE=auto}"
+    },
+    "deployApps": {
+      "value": "${DEPLOY_APPS=true}"
     },
     "a2aIdentityKey": {
       "value": "${A2A_IDENTITY_KEY}"

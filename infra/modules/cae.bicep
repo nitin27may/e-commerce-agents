@@ -6,6 +6,8 @@ param tags object
 param logAnalyticsName string
 @description('Application Insights component that receives the managed OpenTelemetry traces and logs.')
 param appInsightsName string
+@description('Delegated subnet (Microsoft.App/environments, /27 or larger). Empty: no VNet integration (demo profile).')
+param infrastructureSubnetId string = ''
 
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2025-07-01' existing = {
   name: logAnalyticsName
@@ -46,6 +48,7 @@ resource environment 'Microsoft.App/managedEnvironments@2025-02-02-preview' = {
         workloadProfileType: 'Consumption'
       }
     ]
+    vnetConfiguration: empty(infrastructureSubnetId) ? null : { infrastructureSubnetId: infrastructureSubnetId, internal: false }
     zoneRedundant: false
   }
 }

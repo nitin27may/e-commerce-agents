@@ -17,11 +17,11 @@ param chatModelVersion string = '2025-11-13'
 param deployMiniModel bool = false
 @description('Azure OpenAI API version the apps call. gpt-5.1 tool calling on the Responses API is unverified; see docs/azure-deployment.md.')
 param openAiApiVersion string = '2025-04-01-preview'
-@allowed(['key', 'identity'])
-@description('key: apps read the account key from Key Vault. identity: Entra ID through the user-assigned identity (needs Azure P3 in the image) and local auth is disabled on the account.')
-param openAiAuth string = 'key'
+@allowed(['auto', 'key', 'identity'])
+@description('auto: the profile decides (demo key, reference identity). key: apps read the account key from Key Vault. identity: Entra ID through the user-assigned identity (needs Azure P3 in the image) and local auth is disabled on the account.')
+param openAiAuth string = 'auto'
 
-@description('GHCR repository prefix the images are pulled from.')
+@description('GHCR repository prefix the images are pulled from when imageSource resolves to ghcr.')
 param imageRegistry string = 'ghcr.io/nitin27may/e-commerce-agents'
 @minLength(1)
 @description('Pinned image tag (release or sha-<7>). No default on purpose.')
@@ -69,11 +69,23 @@ param authSigningKeyEncryptionKey string
 @secure()
 param seedStaffPassword string
 
+// ===== BEGIN INFRA-B: reference profile, image source, stack =====
+@allowed(['python', 'dotnet'])
+@description('Which implementation of the orchestrator, specialists and inventory MCP server runs. The outbox worker, db-init job, auth server, frontend and product MCP server are Python on both. dotnet is verified offline only.')
+param stack string = 'python'
+@allowed(['auto', 'ghcr', 'acr'])
+@description('Where the apps pull images from. auto: the profile decides (demo ghcr, reference acr). acr creates a registry; fill it with scripts/azure/acr-images.sh (az acr import from GHCR, or az acr build from source).')
+param imageSource string = 'auto'
+@description('false creates everything except the container apps and the db-init job. Used for the first pass of an acr deployment, when the registry has to be filled before the apps can start.')
+param deployApps bool = true
+// ===== END INFRA-B =====
+
 var profiles = {
   demo: loadJsonContent('profiles/demo.json')
   reference: loadJsonContent('profiles/reference.json')
 }
 var cfg = profiles[profile]
+var effectiveOpenAiAuth = openAiAuth == 'auto' ? cfg.openAiAuth : openAiAuth
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = {
   'azd-env-name': environmentName
@@ -119,6 +131,7 @@ module keyVault 'modules/keyvault.bicep' = {
     readerPrincipalId: identity.outputs.principalId
     deployerPrincipalId: principalId
     enablePurgeProtection: cfg.keyVault.enablePurgeProtection
+    privateOnly: privateNetwork
     softDeleteRetentionDays: cfg.keyVault.softDeleteRetentionDays
     postgresAdminPassword: postgresAdminPassword
     jwtSecret: jwtSecret
@@ -145,6 +158,7 @@ module postgres 'modules/postgres.bicep' = {
     backupRetentionDays: cfg.postgres.backupRetentionDays
     geoRedundantBackup: cfg.postgres.geoRedundantBackup
     allowAzureServices: cfg.postgres.allowAzureServices
+    privateAccess: privateNetwork
   }
 }
 
@@ -162,8 +176,9 @@ module openAi 'modules/openai.bicep' = {
     embeddingCapacity: cfg.openAi.embeddingCapacity
     deployMiniModel: deployMiniModel
     miniCapacity: cfg.openAi.miniCapacity
-    disableLocalAuth: openAiAuth == 'identity'
+    disableLocalAuth: effectiveOpenAiAuth == 'identity'
     allowProjectManagement: deployFoundryProject
+    privateOnly: privateNetwork
   }
 }
 
@@ -175,9 +190,79 @@ module derivedSecrets 'modules/keyvault-secrets.bicep' = {
     vaultName: keyVault.outputs.name
     databaseUrl: 'postgresql://${postgres.outputs.administratorLogin}:${postgresAdminPassword}@${postgres.outputs.fqdn}:5432/${postgres.outputs.databaseName}?sslmode=require'
     // With the gateway on, the secret holds the gateway subscription key (written by the gateway module).
-    openAiAccountName: (openAiAuth == 'key' && !deployGateway) ? openAi.outputs.name : ''
+    openAiAccountName: (effectiveOpenAiAuth == 'key' && !deployGateway) ? openAi.outputs.name : ''
+    redisName: managedRedis ? redisManaged!.outputs.name : ''
+    stack: stack
   }
 }
+
+// ===== BEGIN INFRA-B: network, registry, managed Redis, private endpoints =====
+// Reference profile (profiles/reference.json). The demo profile sets network.enabled=false,
+// redis.kind=container and imageSource=ghcr, so none of this is deployed for it.
+var privateNetwork = cfg.network.enabled
+var managedRedis = cfg.redis.kind == 'managed'
+var effectiveImageSource = imageSource == 'auto' ? cfg.imageSource : imageSource
+var useAcr = effectiveImageSource == 'acr'
+
+module network 'modules/network.bicep' = if (privateNetwork) {
+  scope: rg
+  name: 'network'
+  params: {
+    name: 'vnet-${resourceToken}'
+    location: location
+    tags: tags
+    addressPrefix: cfg.network.addressPrefix
+    environmentSubnetPrefix: cfg.network.environmentSubnetPrefix
+    privateEndpointSubnetPrefix: cfg.network.privateEndpointSubnetPrefix
+  }
+}
+
+module acr 'modules/acr.bicep' = if (useAcr) {
+  scope: rg
+  name: 'acr'
+  params: {
+    name: 'acr${resourceToken}'
+    location: location
+    tags: tags
+    pullerPrincipalIds: concat(
+      [identity.outputs.principalId],
+      deployPerAppIdentities ? map(appIdentities!.outputs.identities, i => i.principalId) : []
+    )
+  }
+}
+
+module redisManaged 'modules/redis-managed.bicep' = if (managedRedis) {
+  scope: rg
+  name: 'redis-managed'
+  params: {
+    name: 'redis-${resourceToken}'
+    location: location
+    tags: tags
+    skuName: cfg.redis.skuName
+    publicNetworkAccess: privateNetwork ? 'Disabled' : 'Enabled'
+  }
+}
+
+module privateEndpoints 'modules/private-endpoints.bicep' = if (privateNetwork) {
+  scope: rg
+  name: 'private-endpoints'
+  params: {
+    location: location
+    tags: tags
+    subnetId: network!.outputs.privateEndpointSubnetId
+    endpoints: concat(
+      [
+        { name: 'pe-psql', resourceId: postgres.outputs.id, groupId: 'postgresqlServer', zoneIds: [network!.outputs.postgresZoneId] }
+        { name: 'pe-kv', resourceId: keyVault.outputs.id, groupId: 'vault', zoneIds: [network!.outputs.vaultZoneId] }
+        { name: 'pe-ai', resourceId: openAi.outputs.id, groupId: 'account', zoneIds: network!.outputs.aiServicesZoneIds }
+      ],
+      managedRedis
+        ? [{ name: 'pe-redis', resourceId: redisManaged!.outputs.id, groupId: 'redisEnterprise', zoneIds: [network!.outputs.redisZoneId] }]
+        : []
+    )
+  }
+}
+// ===== END INFRA-B =====
 
 module cae 'modules/cae.bicep' = {
   scope: rg
@@ -188,6 +273,7 @@ module cae 'modules/cae.bicep' = {
     tags: tags
     logAnalyticsName: monitoring.outputs.logAnalyticsName
     appInsightsName: monitoring.outputs.appInsightsName
+    infrastructureSubnetId: privateNetwork ? network!.outputs.environmentSubnetId : ''
   }
 }
 
@@ -196,10 +282,10 @@ var frontendAllowedIps = concat(
   empty(allowedIps) ? [] : split(replace(allowedIps, ' ', ''), ',')
 )
 
-module apps 'modules/apps.bicep' = {
+module apps 'modules/apps.bicep' = if (deployApps) {
   scope: rg
   name: 'apps'
-  dependsOn: [derivedSecrets]
+  dependsOn: [derivedSecrets, privateEndpoints]
   params: {
     location: location
     tags: tags
@@ -208,17 +294,22 @@ module apps 'modules/apps.bicep' = {
     identityId: identity.outputs.id
     identityClientId: identity.outputs.clientId
     keyVaultUri: keyVault.outputs.uri
-    imageRegistry: imageRegistry
+    stack: stack
+    imageRegistry: useAcr ? acr!.outputs.loginServer : imageRegistry
+    registryServer: useAcr ? acr!.outputs.loginServer : ''
     imageTag: imageTag
     openAiEndpoint: deployGateway ? gateway!.outputs.gatewayEndpoint : openAi.outputs.endpoint
     chatDeployment: openAi.outputs.chatDeploymentName
     embeddingDeployment: openAi.outputs.embeddingDeploymentName
     chatModelName: chatModelName
     openAiApiVersion: openAiApiVersion
-    openAiAuth: openAiAuth
+    openAiAuth: effectiveOpenAiAuth
     scale: cfg.containerApps
     publicAccess: publicAccess
     allowedIpRanges: frontendAllowedIps
+    a2aIdentity: cfg.a2aIdentity
+    appIdentities: deployPerAppIdentities ? appIdentities!.outputs.identities : []
+    managedRedis: managedRedis
     deployAuthServer: deployAuthServer
     deployMcp: deployMcp
   }
@@ -322,8 +413,17 @@ output AZURE_AI_PROJECT_ENDPOINT string = deployFoundryProject ? foundryProject!
 output AZURE_GATEWAY_ENDPOINT string = deployGateway ? gateway!.outputs.gatewayEndpoint : ''
 output AZURE_APP_IDENTITIES array = deployPerAppIdentities ? appIdentities!.outputs.identities : []
 output AZURE_CONTAINER_APPS_ENVIRONMENT string = cae.outputs.name
-output FRONTEND_URL string = apps.outputs.frontendUrl
-output ORCHESTRATOR_INTERNAL_URL string = apps.outputs.orchestratorInternalUrl
-output DB_INIT_JOB_NAME string = apps.outputs.dbInitJobName
+output FRONTEND_URL string = deployApps ? apps!.outputs.frontendUrl : ''
+output ORCHESTRATOR_INTERNAL_URL string = deployApps ? apps!.outputs.orchestratorInternalUrl : ''
+output DB_INIT_JOB_NAME string = deployApps ? apps!.outputs.dbInitJobName : ''
 output ADMIN_LOGIN_EMAIL string = 'admin.demo@gmail.com'
 output SUPPORT_LOGIN_EMAIL string = 'support.demo@gmail.com'
+
+// ===== BEGIN INFRA-B: outputs =====
+output AZURE_CONTAINER_REGISTRY_NAME string = useAcr ? acr!.outputs.name : ''
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = useAcr ? acr!.outputs.loginServer : ''
+output IMAGE_SOURCE string = effectiveImageSource
+output DEPLOY_STACK string = stack
+output PRIVATE_NETWORK bool = privateNetwork
+output APPS_DEPLOYED bool = deployApps
+// ===== END INFRA-B =====

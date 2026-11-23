@@ -145,7 +145,7 @@ the Aspire container. See [telemetry.md](./telemetry.md).
 
 ## Azure deployment: first-run failure catalogue
 
-Twenty-nine ways a first `scripts/azure-up.sh` goes wrong, and what already guards against each. None of this has run against a real subscription yet ([azure-deployment.md](azure-deployment.md) lists the assumptions), so the guards are the intent, not a track record. When one fires, the message names the fix.
+Thirty-two ways a first `scripts/azure-up.sh` goes wrong, and what already guards against each. None of this has run against a real subscription yet ([azure-deployment.md](azure-deployment.md) lists the assumptions), so the guards are the intent, not a track record. When one fires, the message names the fix.
 
 | # | Failure | Symptom | Guard |
 |---|---|---|---|
@@ -178,6 +178,9 @@ Twenty-nine ways a first `scripts/azure-up.sh` goes wrong, and what already guar
 | 27 | Next.js listens on the wrong address | ingress health check fails, 502 from the frontend | `HOSTNAME=0.0.0.0` and `PORT=3000` on `ca-frontend` |
 | 28 | Services answer 503 on `/ready` right after provisioning | readiness probe failing before the database job | expected until `job-db-init` finishes; `postprovision` waits for it. Only readiness depends on `/ready`; liveness and startup use `/health`, so nothing restarts |
 | 29 | `POST /api/orchestration/compare` times out | 504 from the ingress on a long comparison | documented best-effort: the request can exceed the 240 s ingress limit; run fewer modes per call |
+| 30 | Apps fail to start from ACR on the first pass | `MANIFEST_UNKNOWN` or an image pull error on every app | the registry is filled before the apps exist: `preprovision` holds `DEPLOY_APPS=false` until `postprovision` has imported or built `IMAGE_TAG`. Run `azd provision` again (or use `scripts/azure-up.sh`). If an import fails, the GHCR package is probably private |
+| 31 | Reference profile: apps cannot reach Postgres, Key Vault or the model | timeouts or `Name or service not known` | private endpoint DNS: check the zone group on each `pe-*` and the VNet link of each `privatelink.*` zone; resolve the public name from a replica |
+| 32 | `--stack dotnet` image not found | `pull access denied` for `<service>-dotnet` | the .NET images exist only for tags built after `build-images.yml` started publishing them; use `--build-from-source` or a newer tag |
 
 Other things to try first: `az containerapp revision list --name ca-orchestrator --resource-group rg-<env> -o table` for revision health, `az containerapp logs show --name ca-orchestrator --resource-group rg-<env> --follow false`, and `azd env get-values` for what the hooks saw (it contains secrets; do not paste it).
 

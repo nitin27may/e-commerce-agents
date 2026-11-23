@@ -8,6 +8,8 @@ param tags object
 param environmentId string
 param identityId string
 param image string
+@description('Registry the image comes from when it is an ACR (pulled with the user-assigned identity). Empty for GHCR.')
+param registryServer string = ''
 param env array
 param secretEnv array
 param keyVaultUri string
@@ -50,6 +52,7 @@ resource job 'Microsoft.App/jobs@2025-07-01' = {
         replicaCompletionCount: 1
       }
       secrets: secretList
+      registries: empty(registryServer) ? null : [{ server: registryServer, identity: identityId }]
     }
     template: {
       containers: [

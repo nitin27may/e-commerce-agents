@@ -19,7 +19,7 @@ MIN_AZ=2.67.0
 MIN_AZD=1.18.0
 MIN_BICEP=0.34.0
 PROVIDERS=(Microsoft.App Microsoft.OperationalInsights Microsoft.Insights Microsoft.CognitiveServices
-    Microsoft.DBforPostgreSQL Microsoft.KeyVault Microsoft.ManagedIdentity Microsoft.Consumption Microsoft.Authorization)
+    Microsoft.DBforPostgreSQL Microsoft.KeyVault Microsoft.ManagedIdentity Microsoft.Consumption Microsoft.Authorization Microsoft.ContainerRegistry)
 
 LOCATION="${AZURE_LOCATION:-}"
 OPENAI_LOCATION="${AZURE_OPENAI_LOCATION:-}"
@@ -78,7 +78,7 @@ run az extension add --name containerapp --upgrade --only-show-errors
 
 # ---- providers -------------------------------------------------------------------------------
 providers=("${PROVIDERS[@]}")
-case "$PROFILE" in reference) providers+=(Microsoft.Cache) ;; esac
+case "$PROFILE" in reference) providers+=(Microsoft.Cache Microsoft.Network) ;; esac
 for p in "${providers[@]}"; do
     if [ "$AZURE_DRY_RUN" = "1" ]; then
         run az provider register --namespace "$p"

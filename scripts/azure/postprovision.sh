@@ -6,6 +6,11 @@
 #      password this deployment generated for them);
 #   3. runs scripts/azure/smoke.sh --quick unless SKIP_SMOKE=1.
 #
+# With IMAGE_SOURCE=acr (the reference profile's default) it first puts the images into the registry the template just
+# created: `az acr import` from GHCR, or `az acr build` from this tree when BUILD_FROM_SOURCE=true. Until the registry
+# holds IMAGE_TAG preprovision keeps DEPLOY_APPS=false, so that first pass stops here; run `azd provision` again (or use
+# scripts/azure-up.sh, which does) to start the apps, bootstrap the database and smoke test.
+#
 # The apps start before the job finishes and answer 503 on /ready until the schema exists; that is
 # expected. Container Apps log queries lag by a minute or two, so a failed run prints the command
 # to retry rather than the (possibly still empty) log.
@@ -25,6 +30,25 @@ while [ $# -gt 0 ]; do
 done
 
 resource_group="$(env_get AZURE_RESOURCE_GROUP)"
+
+# ---- 0. images into ACR (image source acr only) -------------------------------------------------
+image_source="$(env_get IMAGE_SOURCE)"
+registry="$(env_get AZURE_CONTAINER_REGISTRY_NAME)"
+if [ "$AZURE_DRY_RUN" = "1" ] && [ "${image_source:-}" = acr ]; then registry="${registry:-acr-example}"; fi
+if [ -n "$registry" ]; then
+    image_tag="$(env_get IMAGE_TAG)"
+    stack="$(env_get DEPLOY_STACK)"
+    mode=import
+    [ "$(env_get BUILD_FROM_SOURCE)" != true ] || mode=build
+    acr_args=("$mode" --registry "$registry" --tag "${image_tag:-unset}" --stack "${stack:-python}")
+    [ "$AZURE_DRY_RUN" != "1" ] || acr_args+=(--dry-run)
+    scripts/azure/acr-images.sh "${acr_args[@]}"
+    env_set ACR_IMAGES_TAG "${image_tag:-unset}"
+    if [ "$(env_get DEPLOY_APPS)" = false ]; then
+        log "registry holds $image_tag. Run 'azd provision' again to start the apps (scripts/azure-up.sh does this for you)."
+        exit 0
+    fi
+fi
 job_name="$(env_get DB_INIT_JOB_NAME)"
 frontend_url="$(env_get FRONTEND_URL)"
 if [ "$AZURE_DRY_RUN" = "1" ]; then

@@ -530,9 +530,46 @@ def test_per_app_identities_module_creates_one_identity_per_app(raw_snapshots: d
     assert len(_of_type(raw_snapshots["demo-foundry-on"], kind)) == 1, "demo keeps the single shared identity"
 
 
-def test_per_app_identities_are_not_wired_into_apps_yet() -> None:
+def test_per_app_identities_are_wired_into_apps() -> None:
     apps = (INFRA / "modules" / "apps.bicep").read_text(encoding="utf-8")
-    assert "appIdentities" not in apps, "wiring is a separate change; see docs/azure-deployment.md"
+    assert "param appIdentities array = []" in apps and "toObject(appIdentities" in apps
+
+
+PER_APP = ["orchestrator", *SPECIALISTS, "outbox-worker"]
+
+
+def test_apps_run_as_their_own_identity_when_per_app_identities_are_on(tmp_path: Path) -> None:
+    snap = _snapshot_with(tmp_path, "reference", "param deployPerAppIdentities = true\n")
+    apps = {r["name"]: r for r in snap if r["type"] in ("Microsoft.App/containerApps", "Microsoft.App/jobs")}
+    names = [r["name"] for r in snap if r["type"] == "Microsoft.ManagedIdentity/userAssignedIdentities"]
+    shared = min(names, key=len)
+    assert len(names) == 1 + len(PER_APP)
+    for app in PER_APP:
+        resource = apps[f"ca-{app}"]
+        identities = list(resource["identity"]["userAssignedIdentities"])
+        assert len(identities) == 1 and identities[0].endswith(f"-{app}"), f"{app}: {identities}"
+        assert not identities[0].endswith(shared)
+        # The Key Vault references resolve with the same per-app identity, and AZURE_CLIENT_ID follows it.
+        for secret in resource["properties"]["configuration"]["secrets"]:
+            assert secret["identity"].endswith(f"-{app}"), f"{app}: {secret['name']}"
+        assert _env(resource)["AZURE_CLIENT_ID"]["value"], app
+        assert _env(resource)["AZURE_CLIENT_ID"]["value"] != _env(apps["job-db-init"])["AZURE_CLIENT_ID"]["value"]
+        assert "'identity'" in resource["properties"]["configuration"]["registries"]
+    # The db-init job, the frontend and the redis/MCP/auth apps keep the shared identity.
+    assert list(apps["job-db-init"]["identity"]["userAssignedIdentities"])[0].endswith(shared)
+    assert list(apps["ca-frontend"]["identity"]["userAssignedIdentities"])[0].endswith(shared)
+    # Every per-app identity can pull from the registry.
+    pulls = [
+        r
+        for r in snap
+        if r["type"] == "Microsoft.Authorization/roleAssignments" and ACR_PULL_ROLE in json.dumps(r["properties"])
+    ]
+    assert len(pulls) == 1 + len(PER_APP)
+
+
+def test_shared_identity_stays_the_default() -> None:
+    apps = (INFRA / "modules" / "apps.bicep").read_text(encoding="utf-8")
+    assert "empty(appIdentities)" in apps or "perApp ?" in apps
 
 
 # ----------------------------------------------------------------------------------------------
@@ -621,3 +658,561 @@ def test_gateway_sku_is_a_parameter_with_the_unknown_documented() -> None:
     text = (INFRA / "modules" / "gateway-apim.bicep").read_text(encoding="utf-8")
     assert "param skuName" in text
     assert "UNVERIFIED" in text, "the tier-support unknown must be loud in the module"
+
+
+# ----------------------------------------------------------------------------------------------
+# I6: the reference profile. VNet, private endpoints, managed Redis, ACR, identity auth, A2A token.
+# The demo profile must keep deploying exactly what it deployed before.
+# ----------------------------------------------------------------------------------------------
+
+DEMO_FIXTURES = ["demo-mini-false", "demo-mini-true", "demo-optional-on"]
+REFERENCE_FIXTURES = ["reference", "reference-mini-false", "reference-mini-true", "reference-dotnet"]
+ACR_PULL_ROLE = "7f951dda-4ed3-4680-a7ca-43fe172d538d"
+
+
+def _one(resources: Resources, kind: str) -> dict[str, Any]:
+    found = _of_type(resources, kind)
+    assert len(found) == 1, f"{kind}: {len(found)} found"
+    return found[0]
+
+
+def _endpoint_groups(resources: Resources) -> dict[str, str]:
+    """private endpoint name -> the group id it connects to."""
+    return {
+        r["name"]: r["properties"]["privateLinkServiceConnections"][0]["properties"]["groupIds"][0]
+        for r in _of_type(resources, "Microsoft.Network/privateEndpoints")
+    }
+
+
+def _secret_entries(resources: Resources) -> set[str]:
+    return {r["name"].split("/")[1] for r in _of_type(resources, "Microsoft.KeyVault/vaults/secrets")}
+
+
+@pytest.mark.parametrize("fixture", DEMO_FIXTURES)
+def test_demo_profile_deploys_the_same_resources_as_before(raw_snapshots: dict[str, Resources], fixture: str) -> None:
+    """The reference work must not add, drop or rename anything the demo profile deploys.
+
+    The stored list (tests/data/infra_demo_resources.json) was taken from main before the reference profile
+    existed. A deliberate change to the demo profile regenerates it in the same commit.
+    """
+    stored = json.loads((Path(__file__).parent / "data" / "infra_demo_resources.json").read_text(encoding="utf-8"))
+    current = sorted([r["type"], r["name"]] for r in raw_snapshots[fixture])
+    assert current == stored[fixture]
+
+
+@pytest.mark.parametrize("fixture", DEMO_FIXTURES)
+def test_demo_profile_stays_public_with_a_container_redis_and_ghcr(
+    raw_snapshots: dict[str, Resources], fixture: str
+) -> None:
+    resources = raw_snapshots[fixture]
+    kinds = {r["type"] for r in resources}
+    assert not kinds & {
+        "Microsoft.Network/virtualNetworks",
+        "Microsoft.Network/privateEndpoints",
+        "Microsoft.Cache/redisEnterprise",
+        "Microsoft.ContainerRegistry/registries",
+    }
+    assert _one(resources, "Microsoft.DBforPostgreSQL/flexibleServers")["properties"]["network"] == {
+        "publicNetworkAccess": "Enabled"
+    }
+    assert _one(resources, "Microsoft.KeyVault/vaults")["properties"]["publicNetworkAccess"] == "Enabled"
+    assert _one(resources, "Microsoft.CognitiveServices/accounts")["properties"]["publicNetworkAccess"] == "Enabled"
+    environment = _one(resources, "Microsoft.App/managedEnvironments")["properties"]
+    assert not environment.get("vnetConfiguration")
+
+
+@pytest.mark.parametrize("fixture", REFERENCE_FIXTURES)
+def test_reference_network_has_a_delegated_environment_subnet_and_an_endpoint_subnet(
+    raw_snapshots: dict[str, Resources], fixture: str
+) -> None:
+    resources = raw_snapshots[fixture]
+    vnet = _one(resources, "Microsoft.Network/virtualNetworks")
+    subnets = {s["name"]: s["properties"] for s in vnet["properties"]["subnets"]}
+    environment = subnets["snet-containerapps"]
+    # A workload-profiles environment needs a /27 or larger subnet delegated to Microsoft.App/environments.
+    assert int(environment["addressPrefix"].split("/")[1]) <= 27
+    assert [d["properties"]["serviceName"] for d in environment["delegations"]] == ["Microsoft.App/environments"]
+    assert subnets["snet-private-endpoints"]["privateEndpointNetworkPolicies"] == "Disabled"
+    cae = _one(resources, "Microsoft.App/managedEnvironments")["properties"]
+    assert cae["vnetConfiguration"]["infrastructureSubnetId"].endswith("/subnets/snet-containerapps")
+    # The frontend stays the one public entry point, still behind its IP allow-list.
+    assert cae["vnetConfiguration"]["internal"] is False
+
+
+@pytest.mark.parametrize("fixture", REFERENCE_FIXTURES)
+def test_reference_postgres_keyvault_and_models_are_private_only(
+    raw_snapshots: dict[str, Resources], fixture: str
+) -> None:
+    resources = raw_snapshots[fixture]
+    assert _one(resources, "Microsoft.DBforPostgreSQL/flexibleServers")["properties"]["network"] == {
+        "publicNetworkAccess": "Disabled"
+    }
+    assert not _of_type(resources, "Microsoft.DBforPostgreSQL/flexibleServers/firewallRules")
+    vault = _one(resources, "Microsoft.KeyVault/vaults")["properties"]
+    assert vault["publicNetworkAccess"] == "Disabled"
+    assert vault["networkAcls"]["defaultAction"] == "Deny"
+    account = _one(resources, "Microsoft.CognitiveServices/accounts")["properties"]
+    assert account["publicNetworkAccess"] == "Disabled"
+    assert account["disableLocalAuth"] is True
+    assert _one(resources, "Microsoft.Cache/redisEnterprise")["properties"]["publicNetworkAccess"] == "Disabled"
+
+
+@pytest.mark.parametrize("fixture", REFERENCE_FIXTURES)
+def test_reference_has_a_private_endpoint_and_dns_zone_for_every_private_service(
+    raw_snapshots: dict[str, Resources], fixture: str
+) -> None:
+    resources = raw_snapshots[fixture]
+    assert _endpoint_groups(resources) == {
+        "pe-psql": "postgresqlServer",
+        "pe-kv": "vault",
+        "pe-ai": "account",
+        "pe-redis": "redisEnterprise",
+    }
+    zones = {r["name"] for r in _of_type(resources, "Microsoft.Network/privateDnsZones")}
+    assert zones == {
+        "privatelink.postgres.database.azure.com",
+        "privatelink.vaultcore.azure.net",
+        "privatelink.cognitiveservices.azure.com",
+        "privatelink.openai.azure.com",
+        "privatelink.services.ai.azure.com",
+        "privatelink.redis.azure.net",
+    }
+    # Every zone is linked to the VNet, or the endpoint's name never resolves to its private address.
+    links = _of_type(resources, "Microsoft.Network/privateDnsZones/virtualNetworkLinks")
+    assert {r["name"].split("/")[0] for r in links} == zones
+    zone_groups = _of_type(resources, "Microsoft.Network/privateEndpoints/privateDnsZoneGroups")
+    groups = {r["name"].split("/")[0]: r for r in zone_groups}
+    assert set(groups) == set(_endpoint_groups(resources))
+    # An AIServices account answers on three hostnames, so its endpoint registers in three zones.
+    assert len(groups["pe-ai"]["properties"]["privateDnsZoneConfigs"]) == 3
+
+
+@pytest.mark.parametrize("fixture", REFERENCE_FIXTURES)
+def test_reference_uses_azure_managed_redis_and_no_redis_container(
+    raw_snapshots: dict[str, Resources], snapshots: dict[str, Apps], fixture: str
+) -> None:
+    assert "ca-redis" not in snapshots[fixture]
+    cluster = _one(raw_snapshots[fixture], "Microsoft.Cache/redisEnterprise")
+    assert cluster["properties"]["minimumTlsVersion"] == "1.2"
+    database = _one(raw_snapshots[fixture], "Microsoft.Cache/redisEnterprise/databases")["properties"]
+    # One endpoint (EnterpriseCluster) so a client that is not cluster-aware works; TLS only.
+    assert database["clusteringPolicy"] == "EnterpriseCluster"
+    assert database["clientProtocol"] == "Encrypted"
+    wanted = "redis-connection-string" if fixture == "reference-dotnet" else "redis-url"
+    assert wanted in _secret_entries(raw_snapshots[fixture])
+
+
+def test_managed_redis_reaches_python_as_a_url_secret(snapshots: dict[str, Apps]) -> None:
+    for name in ("ca-orchestrator", "ca-product-discovery", "ca-outbox-worker", "job-db-init"):
+        env = _env(snapshots["reference"][name])
+        assert env["REDIS_URL"] == {"name": "REDIS_URL", "secretRef": "redis-url"}, name
+        assert "redis-url" in _secret_names(snapshots["reference"][name])
+
+
+@pytest.mark.parametrize("fixture", REFERENCE_FIXTURES)
+def test_reference_has_a_basic_registry_and_the_apps_pull_from_it_with_the_identity(
+    raw_snapshots: dict[str, Resources], snapshots: dict[str, Apps], fixture: str
+) -> None:
+    registry = _one(raw_snapshots[fixture], "Microsoft.ContainerRegistry/registries")
+    assert registry["sku"]["name"] == "Basic"
+    assert registry["properties"]["adminUserEnabled"] is False
+    roles = _of_type(raw_snapshots[fixture], "Microsoft.Authorization/roleAssignments")
+    assert any(ACR_PULL_ROLE in json.dumps(r["properties"]) for r in roles), "the identity needs AcrPull"
+    for name, app in snapshots[fixture].items():
+        assert "ghcr.io" not in _container(app)["image"], name
+        assert "loginServer" in _container(app)["image"], f"{name} must pull from the registry"
+        registries = app["properties"]["configuration"]["registries"]
+        assert "'identity'" in registries, f"{name} pulls with the user-assigned identity, not an admin password"
+
+
+def test_reference_wires_a2a_token_mode_with_the_distinct_key(snapshots: dict[str, Apps]) -> None:
+    for name in (f"ca-{n}" for n in BACKENDS):
+        env = _env(snapshots["reference"][name])
+        assert env["A2A_IDENTITY"]["value"] == "token", name
+        # The key is its own Key Vault secret, generated apart from the shared secret by preprovision.
+        assert env["A2A_IDENTITY_KEY"]["secretRef"] == "a2a-identity-key"
+        assert env["AGENT_SHARED_SECRET"]["secretRef"] == "agent-shared-secret"
+    assert _env(snapshots["demo-mini-false"]["ca-orchestrator"])["A2A_IDENTITY"]["value"] == "both"
+
+
+def test_reference_defaults_to_entra_auth_to_the_model(
+    raw_snapshots: dict[str, Resources], snapshots: dict[str, Apps]
+) -> None:
+    orchestrator = _env(snapshots["reference"]["ca-orchestrator"])
+    assert orchestrator["AZURE_OPENAI_AUTH"]["value"] == "identity"
+    assert "AZURE_OPENAI_KEY" not in orchestrator
+    assert "azure-openai-key" not in _secret_entries(raw_snapshots["reference"]), "no key stored when local auth is off"
+
+
+def test_profiles_say_which_one_is_private() -> None:
+    reference = json.loads((INFRA / "profiles" / "reference.json").read_text(encoding="utf-8"))
+    demo = json.loads((INFRA / "profiles" / "demo.json").read_text(encoding="utf-8"))
+    assert reference["network"]["enabled"] is True and demo["network"]["enabled"] is False
+
+
+def _snapshot_with(tmp_path: Path, base: str, extra: str) -> Resources:
+    assert BICEP is not None
+    workdir = tmp_path / "infra"
+    shutil.copytree(INFRA, workdir)
+    target = workdir / "ci" / "variant.bicepparam"
+    target.write_text((workdir / "ci" / f"{base}.bicepparam").read_text(encoding="utf-8") + extra, encoding="utf-8")
+    result = subprocess.run(
+        [
+            *BICEP,
+            "snapshot",
+            str(target),
+            "--mode",
+            "overwrite",
+            "--subscription-id",
+            SNAPSHOT_SUBSCRIPTION,
+            "--location",
+            "eastus2",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=180,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    return json.loads(target.with_suffix(".snapshot.json").read_text(encoding="utf-8"))["predictedResources"]
+
+
+def test_apps_can_be_left_out_for_the_first_pass_of_an_acr_deployment(tmp_path: Path) -> None:
+    """deployApps=false: everything but the container apps and the db-init job, so the registry can be filled first."""
+    snap = _snapshot_with(tmp_path, "reference", "param deployApps = false\n")
+    kinds = {r["type"] for r in snap}
+    assert not kinds & {"Microsoft.App/containerApps", "Microsoft.App/jobs"}
+    assert {"Microsoft.ContainerRegistry/registries", "Microsoft.Network/privateEndpoints"} <= kinds
+
+
+def test_image_source_acr_works_on_the_demo_profile_too(tmp_path: Path) -> None:
+    """imageSource=acr is a switch, not reference-only: a registry and ACR image names, no VNet."""
+    snap = _snapshot_with(tmp_path, "demo-mini-false", "param imageSource = 'acr'\n")
+    kinds = {r["type"] for r in snap}
+    assert "Microsoft.ContainerRegistry/registries" in kinds and "Microsoft.Network/virtualNetworks" not in kinds
+    apps = [r for r in snap if r["type"] == "Microsoft.App/containerApps" and r["name"] != "ca-redis"]
+    assert apps and all("loginServer" in _container(r)["image"] for r in apps)
+
+
+# ----------------------------------------------------------------------------------------------
+# I7: build from source into ACR. Offline: the scripts run in dry-run mode and print every command.
+# ----------------------------------------------------------------------------------------------
+
+BASH = shutil.which("bash")
+
+
+def _build_images_workflow() -> dict[str, Any]:
+    import yaml
+
+    return yaml.safe_load((REPO_ROOT / ".github" / "workflows" / "build-images.yml").read_text(encoding="utf-8"))
+
+
+def _build_images_matrix() -> list[dict[str, Any]]:
+    return _build_images_workflow()["jobs"]["build"]["strategy"]["matrix"]["include"]
+
+
+def _manifest() -> dict[str, dict[str, str]]:
+    rows: dict[str, dict[str, str]] = {}
+    for line in (REPO_ROOT / "scripts" / "azure" / "images.tsv").read_text(encoding="utf-8").splitlines():
+        if not line or line.startswith("#"):
+            continue
+        name, used_by, context, dockerfile, build_args = (line.split("\t") + [""])[:5]
+        rows[name] = {"used_by": used_by, "context": context, "dockerfile": dockerfile, "build_args": build_args}
+    return rows
+
+
+def test_the_acr_image_manifest_matches_the_published_image_matrix() -> None:
+    """One list of images and how each is built: build-images.yml publishes it, the ACR scripts rebuild it."""
+    manifest = _manifest()
+    matrix = _build_images_matrix()
+    assert set(manifest) == {entry["image"] for entry in matrix}
+    for entry in matrix:
+        row = manifest[entry["image"]]
+        assert row["context"] == (entry["context"].removeprefix("./") if entry["context"] != "." else ".")
+        assert row["dockerfile"] == entry["dockerfile"].removeprefix("./")
+        wanted = ";".join(line.strip() for line in entry["build_args"].splitlines() if line.strip())
+        assert row["build_args"] == wanted, entry["image"]
+        assert (REPO_ROOT / row["dockerfile"]).is_file(), f"{row['dockerfile']} does not exist"
+
+
+def _run_script(*args: str, store: Path | None = None) -> str:
+    assert BASH is not None
+    env = {"PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin", "HOME": str(Path.home())}
+    if store is not None:
+        env["AZURE_SECRET_STORE_FILE"] = str(store)
+    result = subprocess.run(
+        [BASH, *args], capture_output=True, text=True, check=False, timeout=120, cwd=REPO_ROOT, env=env
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    return result.stderr
+
+
+needs_bash = pytest.mark.skipif(BASH is None, reason="bash not installed")
+
+
+@needs_bash
+def test_postprovision_imports_images_into_acr_before_the_database_job(tmp_path: Path) -> None:
+    store = tmp_path / "azd.env"
+    store.write_text(
+        'IMAGE_SOURCE="acr"\nIMAGE_TAG="v1.4.0"\nDEPLOY_APPS="true"\nAZURE_RESOURCE_GROUP="rg-x"\n'
+        'DB_INIT_JOB_NAME="job-db-init"\nFRONTEND_URL="https://x"\n',
+        encoding="utf-8",
+    )
+    out = _run_script("scripts/azure/postprovision.sh", "--dry-run", store=store)
+    lines = out.splitlines()
+    first_import = next(i for i, line in enumerate(lines) if "az acr import" in line)
+    job = next(i for i, line in enumerate(lines) if "az containerapp job start" in line)
+    assert first_import < job
+    assert 'ACR_IMAGES_TAG="v1.4.0"' in store.read_text(encoding="utf-8")
+
+
+@needs_bash
+def test_postprovision_stops_after_filling_the_registry_on_the_first_pass(tmp_path: Path) -> None:
+    store = tmp_path / "azd.env"
+    store.write_text('IMAGE_SOURCE="acr"\nIMAGE_TAG="v1.4.0"\nDEPLOY_APPS="false"\n', encoding="utf-8")
+    out = _run_script("scripts/azure/postprovision.sh", "--dry-run", store=store)
+    assert "az acr import" in out and "az containerapp job start" not in out
+
+
+@needs_bash
+def test_build_from_source_dry_run_prints_a_remote_build_per_image() -> None:
+    out = _run_script(
+        "scripts/azure-up.sh",
+        "--env",
+        "t1",
+        "--location",
+        "eastus2",
+        "--build-from-source",
+        "--image-tag",
+        "src-abc1234",
+        "--dry-run",
+    )
+    builds = [line for line in out.splitlines() if "az acr build" in line]
+    assert {line.split("--image ")[1].split()[0] for line in builds} == {
+        f"{name}:src-abc1234" for name, row in _manifest().items() if row["used_by"] in ("python", "both")
+    }
+    assert all("--platform linux/amd64" in line for line in builds)
+    # The registry is filled between two provisions: the apps cannot start from an image that is not there yet.
+    steps = [line for line in out.splitlines() if "azd provision" in line or "az acr build" in line]
+    assert steps[0].endswith("azd provision --environment t1 --no-prompt")
+    assert steps[-1].endswith("azd provision --environment t1 --no-prompt")
+    assert "azd env set IMAGE_SOURCE acr" in out and "azd env set BUILD_FROM_SOURCE true" in out
+    assert "azd up" not in out
+
+
+@needs_bash
+def test_a_demo_dry_run_still_pulls_from_ghcr_with_azd_up() -> None:
+    out = _run_script(
+        "scripts/azure-up.sh", "--env", "t1", "--location", "eastus2", "--image-tag", "v0.0.0-ci", "--dry-run"
+    )
+    assert "azd up --environment t1" in out and "az acr" not in out
+    assert "azd env set DEPLOY_STACK python" in out and "azd env set IMAGE_SOURCE auto" in out
+
+
+@needs_bash
+def test_reference_dry_run_imports_from_ghcr_into_acr() -> None:
+    out = _run_script(
+        "scripts/azure-up.sh",
+        "--env",
+        "t1",
+        "--location",
+        "eastus2",
+        "--profile",
+        "reference",
+        "--image-tag",
+        "v1.4.0",
+        "--dry-run",
+    )
+    imports = [line for line in out.splitlines() if "az acr import" in line]
+    assert imports
+    assert all("--source ghcr.io/nitin27may/e-commerce-agents/" in line and "--force" in line for line in imports)
+    assert not any("az acr build" in line for line in out.splitlines())
+
+
+@needs_bash
+@pytest.mark.parametrize("args", [["--build-from-source", "--image-source", "ghcr"], ["--image-tag", "latest"]])
+def test_azure_up_refuses_ghcr_with_a_source_build_and_a_floating_tag(args: list[str]) -> None:
+    assert BASH is not None
+    result = subprocess.run(
+        [BASH, "scripts/azure-up.sh", "--env", "t1", "--location", "eastus2", "--dry-run", *args],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+        cwd=REPO_ROOT,
+    )
+    assert result.returncode != 0
+
+
+@needs_bash
+def test_preprovision_holds_the_apps_back_until_the_registry_has_the_tag(tmp_path: Path) -> None:
+    store = tmp_path / "azd.env"
+    store.write_text(
+        'IMAGE_TAG="v1.4.0"\nPUBLIC_ACCESS="open"\nAZURE_LOCATION="eastus2"\nDEPLOY_PROFILE="reference"\n'
+        'IMAGE_SOURCE="auto"\n',
+        encoding="utf-8",
+    )
+    _run_script("scripts/azure/preprovision.sh", "--dry-run", store=store)
+    assert 'DEPLOY_APPS="false"' in store.read_text(encoding="utf-8")
+    store.write_text(store.read_text(encoding="utf-8") + 'ACR_IMAGES_TAG="v1.4.0"\n', encoding="utf-8")
+    _run_script("scripts/azure/preprovision.sh", "--dry-run", store=store)
+    assert store.read_text(encoding="utf-8").strip().splitlines()[-1] == 'DEPLOY_APPS="true"'
+
+
+@needs_bash
+def test_preprovision_never_holds_back_the_demo_profile(tmp_path: Path) -> None:
+    store = tmp_path / "azd.env"
+    store.write_text(
+        'IMAGE_TAG="v1.4.0"\nPUBLIC_ACCESS="open"\nAZURE_LOCATION="eastus2"\nDEPLOY_PROFILE="demo"\n', encoding="utf-8"
+    )
+    _run_script("scripts/azure/preprovision.sh", "--dry-run", store=store)
+    assert 'DEPLOY_APPS="true"' in store.read_text(encoding="utf-8")
+
+
+# ----------------------------------------------------------------------------------------------
+# .NET on Azure: `stack` picks the images and the env contract; the workflow publishes the images.
+# ----------------------------------------------------------------------------------------------
+
+DOTNET_IMAGES = {f"{n}-dotnet" for n in ("orchestrator", *SPECIALISTS, "mcp-inventory")}
+SHARED_PYTHON_IMAGES = {"outbox-worker", "db-init", "frontend", "auth-server"}
+
+
+def _image_name(app: dict[str, Any]) -> str:
+    """The image repository name, for a plain reference and for the ACR `format(...)` expression."""
+    image = _container(app)["image"]
+    if image.startswith("[format("):
+        return re.findall(r"'([a-z0-9-]+)', '[^']*'\)\]$", image)[0]
+    return image.rsplit("/", 1)[1].split(":")[0]
+
+
+@pytest.mark.parametrize("fixture", ["demo-dotnet", "reference-dotnet"])
+def test_dotnet_stack_runs_the_dotnet_images_for_the_orchestrator_and_specialists(
+    snapshots: dict[str, Apps], fixture: str
+) -> None:
+    apps = snapshots[fixture]
+    for service in ("orchestrator", *SPECIALISTS):
+        assert _image_name(apps[f"ca-{service}"]) == f"{service}-dotnet"
+    # Python on both stacks: the outbox worker (the .NET stack has none of its own), the db job, the frontend.
+    assert _image_name(apps["ca-outbox-worker"]) == "outbox-worker"
+    assert _image_name(apps["job-db-init"]) == "db-init"
+    assert _image_name(apps["ca-frontend"]) == "frontend"
+
+
+def test_dotnet_demo_images_are_pulled_from_ghcr_at_the_pinned_tag(snapshots: dict[str, Apps]) -> None:
+    for name, app in snapshots["demo-dotnet"].items():
+        if name == "ca-redis":
+            continue
+        image = _container(app)["image"]
+        assert image.startswith("ghcr.io/nitin27may/e-commerce-agents/") and image.endswith(":v0.0.0-ci"), image
+
+
+def test_dotnet_stack_only_deploys_the_inventory_mcp_host(snapshots: dict[str, Apps]) -> None:
+    apps = snapshots["demo-dotnet"]
+    assert "ca-mcp-product" not in apps, "there is no .NET product MCP server"
+    mcp = apps["ca-mcp-inventory"]
+    assert _image_name(mcp) == "mcp-inventory-dotnet"
+    probes = {p["type"]: p for p in _container(mcp)["probes"]}
+    assert probes["Liveness"]["httpGet"]["path"] == "/health" and probes["Readiness"]["httpGet"]["path"] == "/health"
+    # The .NET specialists do not read MCP_ENABLED or the MCP URLs, so they are not given them.
+    for specialist in SPECIALISTS:
+        env = set(_env(apps[f"ca-{specialist}"]))
+        assert not {"MCP_ENABLED", "MCP_PRODUCT_SERVER_URL", "MCP_INVENTORY_SERVER_URL"} & env
+
+
+def test_python_stack_still_deploys_both_mcp_servers(snapshots: dict[str, Apps]) -> None:
+    apps = snapshots["demo-optional-on"]
+    assert _image_name(apps["ca-mcp-product"]) == "mcp-product"
+    assert _image_name(apps["ca-mcp-inventory"]) == "mcp-inventory"
+
+
+@pytest.mark.parametrize("fixture", ["demo-dotnet", "reference-dotnet"])
+def test_dotnet_env_contract(snapshots: dict[str, Apps], fixture: str) -> None:
+    apps = snapshots[fixture]
+    for service in ("orchestrator", *SPECIALISTS):
+        env = _env(apps[f"ca-{service}"])
+        assert env["OTEL_SERVICE_NAME"]["value"].endswith(".dotnet"), service
+        assert "LLM_API" not in env, "LLM_API is Python only; .NET always uses Chat Completions"
+        assert "MAF_STREAM_TIMEOUT_SECONDS" not in env, "no .NET host reads it"
+        assert "REDIS_URL" not in env, "the .NET host reads ConnectionStrings__Redis"
+        assert "ConnectionStrings__Redis" in env
+        # What the two stacks share.
+        assert env["DATABASE_URL"]["secretRef"] == "database-url"
+        assert env["HITL_RESUME_TIMEOUT_SECONDS"]["value"] == "200"
+        assert env["LLM_PROVIDER"]["value"] == "azure"
+        probes = {p["type"]: p for p in _container(apps[f"ca-{service}"])["probes"]}
+        assert probes["Liveness"]["httpGet"]["path"] == "/health"
+        assert probes["Readiness"]["httpGet"]["path"] == "/ready"
+    # .NET consumes the timeout of the returns it pauses itself (parity row 36).
+    assert _env(apps["ca-orchestrator"])["DOTNET_TIMEOUT_WORKER_ENABLED"]["value"] == "true"
+    assert "DOTNET_TIMEOUT_WORKER_ENABLED" not in _env(apps["ca-product-discovery"])
+    # The Python worker and job keep the Python contract and the full secret set.
+    for name in ("ca-outbox-worker", "job-db-init"):
+        env = _env(apps[name])
+        assert FULL_SECRET_ENV <= {k for k, v in env.items() if "secretRef" in v}
+        assert "ConnectionStrings__Redis" not in env and "REDIS_URL" not in env
+        assert {v["secretRef"] for v in env.values() if "secretRef" in v} <= _secret_names(apps[name])
+
+
+def test_dotnet_container_redis_uses_the_stackexchange_syntax(snapshots: dict[str, Apps]) -> None:
+    env = _env(snapshots["demo-dotnet"]["ca-orchestrator"])
+    assert env["ConnectionStrings__Redis"]["value"] == "ca-redis:6379"
+    assert _env(snapshots["demo-mini-false"]["ca-orchestrator"])["REDIS_URL"]["value"] == "redis://ca-redis:6379"
+
+
+def test_dotnet_managed_redis_is_a_connection_string_secret(snapshots: dict[str, Apps]) -> None:
+    env = _env(snapshots["reference-dotnet"]["ca-orchestrator"])
+    assert env["ConnectionStrings__Redis"] == {
+        "name": "ConnectionStrings__Redis",
+        "secretRef": "redis-connection-string",
+    }
+    assert env["A2A_IDENTITY"]["value"] == "token" and env["AZURE_OPENAI_AUTH"]["value"] == "identity"
+
+
+def test_the_build_workflow_publishes_a_dotnet_image_for_every_dockerfile() -> None:
+    matrix = {entry["image"]: entry for entry in _build_images_matrix()}
+    dockerfiles = sorted((REPO_ROOT / "agents" / "dotnet" / "src").glob("*/Dockerfile"))
+    published = {name for name in matrix if name.endswith("-dotnet")}
+    assert published == DOTNET_IMAGES
+    assert len(dockerfiles) == len(DOTNET_IMAGES)
+    assert {matrix[name]["dockerfile"].removeprefix("./") for name in published} == {
+        str(d.relative_to(REPO_ROOT)) for d in dockerfiles
+    }
+    for name in published:
+        entry = matrix[name]
+        assert entry["context"] == ".", "the .NET Dockerfiles copy from the repo root"
+        assert entry["platforms"] == "linux/amd64"
+        assert entry["smoke_port"], f"{name} needs a smoke check that works in CI"
+        assert not entry["smoke_module"], "a .NET image has no Python module to import"
+    # The Python images keep their multi-arch default and their import smoke.
+    assert "platforms" not in matrix["orchestrator"] and matrix["orchestrator"]["smoke_module"] == "orchestrator.main"
+
+
+def test_the_build_workflow_tags_dotnet_images_like_the_python_ones() -> None:
+    steps = {step.get("name", ""): step for step in _build_images_workflow()["jobs"]["build"]["steps"]}
+    # One tag-derivation step for every image: the name comes from matrix.image, so -dotnet images get the same tags.
+    assert "matrix.image" in steps["Derive image tags"]["run"] or "matrix.image" in str(steps["Derive image tags"])
+    smoke = steps["Smoke-test .NET image"]
+    assert "matrix.smoke_port" in smoke["if"] and "/health" in smoke["run"]
+    # The Python smoke step is skipped for them (they have no smoke_module).
+    assert "matrix.smoke_module != ''" in steps["Smoke-test ${{ matrix.image }} image"]["if"]
+
+
+@needs_bash
+def test_dotnet_dry_run_imports_only_the_images_the_stack_uses() -> None:
+    out = _run_script(
+        "scripts/azure-up.sh",
+        "--env",
+        "t1",
+        "--location",
+        "eastus2",
+        "--profile",
+        "reference",
+        "--stack",
+        "dotnet",
+        "--image-tag",
+        "v1.4.0",
+        "--dry-run",
+    )
+    names = {line.split("--image ")[1].split(":")[0] for line in out.splitlines() if "az acr import" in line}
+    assert names == DOTNET_IMAGES | SHARED_PYTHON_IMAGES
+    assert "azd env set DEPLOY_STACK dotnet" in out

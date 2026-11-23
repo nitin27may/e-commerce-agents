@@ -9,6 +9,24 @@ if ($DryRun) { $env:AZURE_DRY_RUN = '1' }
 $timeout = if ($env:JOB_TIMEOUT_SECONDS) { [int]$env:JOB_TIMEOUT_SECONDS } else { 1200 }
 $poll = if ($env:POLL_SECONDS) { [int]$env:POLL_SECONDS } else { 10 }
 $resourceGroup = Get-AzdValue 'AZURE_RESOURCE_GROUP'
+
+# Images into ACR (image source acr only; see postprovision.sh). acr-images.sh is bash: WSL or Git Bash.
+$registry = Get-AzdValue 'AZURE_CONTAINER_REGISTRY_NAME'
+if (Test-DryRun -and (Get-AzdValue 'IMAGE_SOURCE') -eq 'acr' -and -not $registry) { $registry = 'acr-example' }
+if ($registry) {
+    if (-not (Test-DryRun) -and -not (Test-Tool 'bash')) { Stop-Azure 'bash is required to fill the registry (scripts/azure/acr-images.sh): run it from WSL or Git Bash' }
+    $mode = if ((Get-AzdValue 'BUILD_FROM_SOURCE') -eq 'true') { 'build' } else { 'import' }
+    $stackName = Get-AzdValue 'DEPLOY_STACK'; if (-not $stackName) { $stackName = 'python' }
+    $acrArgs = @("scripts/azure/acr-images.sh", $mode, '--registry', $registry, '--tag', (Get-AzdValue 'IMAGE_TAG'), '--stack', $stackName)
+    if (Test-DryRun) { $acrArgs += '--dry-run' }
+    bash @acrArgs
+    if ($LASTEXITCODE -ne 0) { Stop-Azure 'filling the registry failed' }
+    Set-AzdValue 'ACR_IMAGES_TAG' (Get-AzdValue 'IMAGE_TAG')
+    if ((Get-AzdValue 'DEPLOY_APPS') -eq 'false') {
+        Write-Log "registry holds the images. Run 'azd provision' again to start the apps (azure-up.ps1 does this for you)."
+        exit 0
+    }
+}
 $jobName = Get-AzdValue 'DB_INIT_JOB_NAME'
 $frontendUrl = Get-AzdValue 'FRONTEND_URL'
 if (Test-DryRun) {

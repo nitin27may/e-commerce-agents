@@ -1,5 +1,5 @@
 // Offline compile fixture for CI. Values are placeholders, never deployed.
-// One user-assigned identity per app (created, not yet attached to the apps).
+// One user-assigned identity per app (attached to the orchestrator, specialists and worker).
 using '../main.bicep'
 
 param environmentName = 'ci-ref-ids'

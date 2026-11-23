@@ -15,6 +15,8 @@ param embeddingSkuName string = 'GlobalStandard'
 param disableLocalAuth bool = false
 @description('AZ-2: lets Foundry projects be created under this account. Adds a system-assigned identity. Off leaves the account exactly as it was.')
 param allowProjectManagement bool = false
+@description('Reference profile: public network access off, reached through a private endpoint.')
+param privateOnly bool = false
 param deployMiniModel bool = false
 param miniModelName string = 'gpt-5.1-mini'
 param miniModelVersion string = '2025-11-13'
@@ -31,7 +33,8 @@ resource account 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
   identity: allowProjectManagement ? { type: 'SystemAssigned' } : null
   properties: {
     customSubDomainName: name
-    publicNetworkAccess: 'Enabled'
+    publicNetworkAccess: privateOnly ? 'Disabled' : 'Enabled'
+    networkAcls: privateOnly ? { defaultAction: 'Deny' } : null
     disableLocalAuth: disableLocalAuth
     allowProjectManagement: allowProjectManagement ? true : null
   }
@@ -101,6 +104,7 @@ resource callerRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   }
 }
 
+output id string = account.id
 output name string = account.name
 output endpoint string = account.properties.endpoint
 output chatDeploymentName string = chat.name
