@@ -48,6 +48,8 @@ request through any of five, selected per request in the chat box, so "which one
 | `workflow:pre-purchase` | A fixed graph fans out to several specialists at once and merges the results | 0.26 s | none |
 | `workflow:return-replace` | A fixed sequential graph that pauses for human approval before anything is created | 0.10 s | none |
 
+![Compare dialog: one prompt run through four orchestration modes, each card showing latency, steps, tokens, cost and the graph it took](docs/images/mode-compare.jpg)
+
 The two workflow modes call no model, so they are doing less work, not the same work faster.
 Method, token and cost figures: [orchestration benchmark](docs/orchestration-benchmark.md)
 (gpt-4.1, 40 requests). How each pattern works: [orchestration patterns](docs/concepts/06-orchestration-patterns.md).
