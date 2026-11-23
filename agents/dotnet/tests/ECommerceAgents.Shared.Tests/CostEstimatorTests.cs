@@ -170,6 +170,52 @@ public sealed class CostEstimatorTests : IDisposable
     }
 
     [Fact]
+    public void PriceSource_NamesTheShippedFileWithAContentDigest_AndIsNullForAnUnpricedModel()
+    {
+        var source = CostEstimator.PriceSource("gpt-4.1");
+        source.Should().MatchRegex("^models\\.yaml#[0-9a-f]{10}$");
+        CostEstimator.PriceSource("gpt-4.1-2025-04-14").Should().Be(source);
+        CostEstimator.PriceSource("my-private-deployment").Should().BeNull();
+        CostEstimator.PriceSource("").Should().BeNull();
+    }
+
+    [Fact]
+    public void PriceSource_NamesAnOverrideFileForItsOwnModels()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"mine-{Guid.NewGuid():N}.yaml");
+        File.WriteAllText(path, "version: 1\nmodels:\n  local-llama:\n    input_per_1m: 0\n    output_per_1m: 0\n");
+        try
+        {
+            Environment.SetEnvironmentVariable("PRICING_OVERRIDES_FILE", path);
+            CostEstimator.ReloadPricing();
+            CostEstimator.PriceSource("local-llama").Should().StartWith($"override:{Path.GetFileName(path)}#");
+            CostEstimator.PriceSource("gpt-4.1").Should().StartWith("models.yaml#");
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void SummarizeRun_CarriesPriceSourceAndTimeOnlyWhenAPriceWasApplied()
+    {
+        var priced = new ECommerceAgents.Shared.Context.RunUsage();
+        priced.Add("orchestrator", new ECommerceAgents.Shared.Context.SpecialistUsage(500, 50, 0, "gpt-4.1"));
+        var columns = CostEstimator.SummarizeRun(priced, noLlmCalls: false);
+        columns.PriceSource.Should().Be(CostEstimator.PriceSource("gpt-4.1"));
+        columns.PricedAt.Should().NotBeNull();
+
+        var unpriced = new ECommerceAgents.Shared.Context.RunUsage();
+        unpriced.Add("orchestrator", new ECommerceAgents.Shared.Context.SpecialistUsage(500, 50, 0, "my-private-deployment"));
+        var unknown = CostEstimator.SummarizeRun(unpriced, noLlmCalls: false);
+        (unknown.CostUsd, unknown.PriceSource, unknown.PricedAt).Should().Be(((double?)null, (string?)null, (DateTimeOffset?)null));
+
+        var free = CostEstimator.SummarizeRun(new ECommerceAgents.Shared.Context.RunUsage(), noLlmCalls: true);
+        (free.CostUsd, free.PriceSource, free.PricedAt).Should().Be((0.0, (string?)null, (DateTimeOffset?)null));
+    }
+
+    [Fact]
     public void OneUnpricedAgent_MakesTheRunCostUnknown()
     {
         var run = new ECommerceAgents.Shared.Context.RunUsage();

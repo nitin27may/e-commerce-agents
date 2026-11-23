@@ -25,6 +25,7 @@ public static class CostEstimator
 {
     private static readonly object Gate = new();
     private static IReadOnlyDictionary<string, ModelPricing>? _table;
+    private static IReadOnlyDictionary<string, string> _sources = new Dictionary<string, string>();
     private static int _unpricedLogged;
 
     /// <summary>The shipped file: the repo copy found by walking up from the binaries, else one beside them.</summary>
@@ -126,11 +127,27 @@ public static class CostEstimator
     {
         lock (Gate)
         {
-            return _table ??= LoadConfigured();
+            if (_table is null)
+            {
+                var sources = new Dictionary<string, string>(StringComparer.Ordinal);
+                _table = LoadConfigured(sources);
+                _sources = sources;
+            }
+            return _table;
         }
     }
 
-    private static IReadOnlyDictionary<string, ModelPricing> LoadConfigured()
+    /// <summary>
+    /// <c>models.yaml#&lt;first 10 hex of the file's sha256&gt;</c>, <c>override:</c> prefixed for an override file:
+    /// names the exact file content a price came from, never its directory. Twin of Python's <c>_source_label</c>.
+    /// </summary>
+    private static string SourceLabel(string path, bool isOverride)
+    {
+        var digest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(path)))[..10].ToLowerInvariant();
+        return $"{(isOverride ? "override:" : string.Empty)}{Path.GetFileName(path)}#{digest}";
+    }
+
+    private static IReadOnlyDictionary<string, ModelPricing> LoadConfigured(Dictionary<string, string> sources)
     {
         var path = Environment.GetEnvironmentVariable("PRICING_FILE");
         if (string.IsNullOrWhiteSpace(path))
@@ -143,6 +160,11 @@ public static class CostEstimator
         {
             if (path is null) throw new FileNotFoundException("pricing file not found");
             table = new Dictionary<string, ModelPricing>(LoadFile(path), StringComparer.Ordinal);
+            var label = SourceLabel(path, isOverride: false);
+            foreach (var key in table.Keys)
+            {
+                sources[key] = label;
+            }
         }
         catch (Exception ex) when (ex is PricingException or IOException or UnauthorizedAccessException)
         {
@@ -156,9 +178,12 @@ public static class CostEstimator
         {
             try
             {
-                foreach (var (name, pricing) in LoadFile(overrides))
+                var extra = LoadFile(overrides);
+                var overrideLabel = SourceLabel(overrides, isOverride: true);
+                foreach (var (name, pricing) in extra)
                 {
                     table[name] = pricing;
+                    sources[name] = overrideLabel;
                 }
             }
             catch (Exception ex) when (ex is PricingException or IOException or UnauthorizedAccessException)
@@ -175,6 +200,24 @@ public static class CostEstimator
         lock (Gate)
         {
             _table = null;
+            _sources = new Dictionary<string, string>();
+        }
+    }
+
+    /// <summary>
+    /// Which pricing file (and version of it) priced <paramref name="model"/>; null when it is unpriced.
+    /// Stored beside a run's cost (<c>usage_logs.price_source</c>). Twin of Python's <c>price_source</c>.
+    /// </summary>
+    public static string? PriceSource(string? model)
+    {
+        var key = LookupKey(model);
+        if (key is null)
+        {
+            return null;
+        }
+        lock (Gate)
+        {
+            return _sources.TryGetValue(key, out var label) ? label : null;
         }
     }
 
@@ -185,6 +228,12 @@ public static class CostEstimator
     /// </summary>
     public static ModelPricing? Lookup(string? model)
     {
+        var key = LookupKey(model);
+        return key is null ? null : Table()[key];
+    }
+
+    private static string? LookupKey(string? model)
+    {
         var name = model?.Trim().ToLowerInvariant();
         if (string.IsNullOrEmpty(name))
         {
@@ -192,9 +241,9 @@ public static class CostEstimator
         }
 
         var table = Table();
-        if (table.TryGetValue(name, out var exact))
+        if (table.ContainsKey(name))
         {
-            return exact;
+            return name;
         }
 
         foreach (var key in table.Keys.OrderByDescending(k => k.Length))
@@ -204,7 +253,7 @@ public static class CostEstimator
                 && name[key.Length] == '-'
                 && char.IsAsciiDigit(name[key.Length + 1]))
             {
-                return table[key];
+                return key;
             }
         }
 
@@ -272,7 +321,13 @@ public static class CostEstimator
     /// (<paramref name="noLlmCalls"/>) yields an explicit cost of 0 — so "free" and "unknown"
     /// are different rows. Twin of Python's <c>shared/usage_db.py::usage_columns</c>.
     /// </remarks>
-    public readonly record struct RunColumns(string? Model, int? TokensCachedIn, double? CostUsd);
+    /// <remarks>
+    /// <c>PriceSource</c> and <c>PricedAt</c> say which pricing file priced the row and when; both are null whenever
+    /// no price was applied (not captured, an unpriced model, or a mode with no LLM call).
+    /// </remarks>
+    public readonly record struct RunColumns(
+        string? Model, int? TokensCachedIn, double? CostUsd,
+        string? PriceSource = null, DateTimeOffset? PricedAt = null);
 
     public static RunColumns SummarizeRun(ECommerceAgents.Shared.Context.RunUsage usage, bool noLlmCalls)
     {
@@ -284,6 +339,22 @@ public static class CostEstimator
 
         var heaviest = byAgent.Values.MaxBy(u => u.InputTokenCount)!;
         var cached = (int)Math.Min(byAgent.Values.Sum(u => u.CachedInputTokenCount), int.MaxValue);
-        return new RunColumns(string.IsNullOrEmpty(heaviest.Model) ? null : heaviest.Model, cached, EstimateRun(byAgent));
+        var cost = EstimateRun(byAgent);
+        var source = cost is null ? null : RunPriceSource(byAgent);
+        return new RunColumns(
+            string.IsNullOrEmpty(heaviest.Model) ? null : heaviest.Model, cached, cost,
+            source, source is null ? null : DateTimeOffset.UtcNow);
+    }
+
+    /// <summary>Distinct pricing sources behind a run, sorted and comma-joined; null when none priced it.</summary>
+    public static string? RunPriceSource(IReadOnlyDictionary<string, ECommerceAgents.Shared.Context.SpecialistUsage> byAgent)
+    {
+        var labels = byAgent.Values
+            .Select(u => PriceSource(u.Model))
+            .Where(l => l is not null)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(l => l, StringComparer.Ordinal)
+            .ToList();
+        return labels.Count == 0 ? null : string.Join(",", labels);
     }
 }
