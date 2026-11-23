@@ -59,7 +59,9 @@ public static class OrchestratorTestHost
                     // Registered with the tool router only: a test host has no
                     // database pool wired for the workflow modes, and every
                     // existing chat test exercises the default path anyway.
-                    services.AddSingleton<IOrchestrationMode>(sp => new ToolRouterMode(sp.GetRequiredService<AIAgent>()));
+                    // The model name is passed as Program.cs passes it: usage recorded without one
+                    // is unpriced, and its cost is reported as unknown.
+                    services.AddSingleton<IOrchestrationMode>(sp => new ToolRouterMode(sp.GetRequiredService<AIAgent>(), settings.LlmModel));
                     services.AddSingleton<ModeRegistry>();
                     services.AddLogging();
                     // The approvals inbox (unified API, and the shims behind the legacy resume / admin approve-deny routes).

@@ -13,8 +13,10 @@ from pathlib import Path
 
 import pytest
 
+# Looked up at use, not bound at import: other test files reload shared.config, and
+# shared.cost reads the settings object of whichever module is current.
+import shared.config as shared_config
 import shared.cost as cost
-from shared.config import settings
 
 PRICING_DIR = Path(cost.PRICING_PATH).parent
 TESTDATA = PRICING_DIR / "testdata"
@@ -22,8 +24,8 @@ TESTDATA = PRICING_DIR / "testdata"
 
 @pytest.fixture
 def golden_prices(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(settings, "PRICING_FILE", str(TESTDATA / "prices.yaml"))
-    monkeypatch.setattr(settings, "PRICING_OVERRIDES_FILE", "")
+    monkeypatch.setattr(shared_config.settings, "PRICING_FILE", str(TESTDATA / "prices.yaml"))
+    monkeypatch.setattr(shared_config.settings, "PRICING_OVERRIDES_FILE", "")
     cost.reload_pricing()
     yield
     cost.reload_pricing()
@@ -72,7 +74,7 @@ def test_overrides_are_merged_over_the_reference_file(golden_prices, monkeypatch
         "  qwen2.5:14b: {input_per_1m: 0, output_per_1m: 0, source: local, as_of: null, verified: false}\n"
         "  model-a: {input_per_1m: 1.0, output_per_1m: 1.0, source: negotiated, as_of: null, verified: false}\n"
     )
-    monkeypatch.setattr(settings, "PRICING_OVERRIDES_FILE", str(extra))
+    monkeypatch.setattr(shared_config.settings, "PRICING_OVERRIDES_FILE", str(extra))
     cost.reload_pricing()
     assert cost.estimate_cost("qwen2.5:14b", 1000, 1000) == 0.0
     assert cost.estimate_cost("model-a", 1_000_000, 0) == pytest.approx(1.0)
@@ -82,7 +84,7 @@ def test_overrides_are_merged_over_the_reference_file(golden_prices, monkeypatch
 def test_an_invalid_file_makes_every_cost_unknown(monkeypatch, tmp_path, caplog) -> None:
     bad = tmp_path / "bad.yaml"
     bad.write_text("version: 1\nmodels:\n  m: {input_per_1m: -1, output_per_1m: 0}\n")
-    monkeypatch.setattr(settings, "PRICING_FILE", str(bad))
+    monkeypatch.setattr(shared_config.settings, "PRICING_FILE", str(bad))
     cost.reload_pricing()
     with caplog.at_level(logging.ERROR, logger="shared.cost"):
         assert cost.estimate_cost("gpt-4.1", 1000, 1000) is None
