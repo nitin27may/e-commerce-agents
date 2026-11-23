@@ -55,7 +55,22 @@ async def test_requires_at_least_one_panelist() -> None:
 
 def test_default_synthesis_mentions_speakers() -> None:
     state = GroupChatState(question="q?", transcript=[{"speaker": "value", "text": "t"}])
-    assert "value" in _default_synthesis(state)
+    assert "value" in _default_synthesis(state).lower()
+
+
+def test_default_synthesis_includes_panelists_words() -> None:
+    state = GroupChatState(
+        question="Is it worth it?",
+        transcript=[
+            {"speaker": "value", "text": "Cheap for what it does."},
+            {"speaker": "quality", "text": "Solid build."},
+        ],
+    )
+    verdict = _default_synthesis(state)
+    assert "Cheap for what it does." in verdict
+    assert "Solid build." in verdict
+    assert "Is it worth it?" in verdict
+    assert "Synthesized" not in verdict
 
 
 async def test_async_responder_is_awaited() -> None:
