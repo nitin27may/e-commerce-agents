@@ -19,6 +19,8 @@ paths = [
   # Test fixtures: a throwaway environment value and fake return-label tokens.
   '''agents/python/tests/test_db_init\.py''',
   '''agents/python/tests/test_return_label_token\.py''',
+  # The community-results validator's tests plant fake AWS and API keys on purpose, to prove it refuses them.
+  '''agents/python/tests/test_eval_community\.py''',
 ]
 regexes = [
   # Throwaway JWT secret for the container smoke test in build-images.yml.
