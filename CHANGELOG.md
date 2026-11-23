@@ -94,6 +94,12 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ### Changed
 
+- **Aspire AppHost moved to 17.0.0** (Hosting.PostgreSQL, Redis, Python, JavaScript, Testing, plus the new
+  Hosting.AppHost and Hosting.Dotnet). Aspire 17 requires .NET 10 and obsoletes `Aspire.AppHost.Sdk`
+  (ASPIRE012, an error under warnings-as-errors) and `AddProject<T>`. The AppHost now uses `Microsoft.NET.Sdk` and
+  `AddDotnetProject` by project path; the tests assert `DotnetProjectResource`. Supersedes Dependabot PRs 231,
+  232, 233 and 235. The Anthropic/Dapper/Npgsql bumps of PR 237 were already on main.
+
 - **The pricing directory is mounted into every agent container** (`/pricing`, read-only, all three compose files),
   so a price edit or `PRICING_OVERRIDES_FILE` takes effect on restart with no rebuild. `host.docker.internal` is
   mapped to the host so local model servers work from containers on Linux.
@@ -288,7 +294,7 @@ they target. They are listed under "Known limits" so nobody discovers them the h
   five specialists, the outbox worker and the pnpm frontend, with `AGENT_REGISTRY` built from endpoint
   references. `AgentStack=python` swaps the orchestrator and specialists to uvicorn apps, and
   `AgentStackOverrides:<name>=python` moves one. `ECommerceAgents.ServiceDefaults` reuses `TelemetrySetup`.
-  `AppHostModelTests` build the model without starting it. Pinned to Aspire 13.6.5; 17.0.0 exists but obsoletes
+  `AppHostModelTests` build the model without starting it. Pinned to Aspire 13.6.5 (later moved to 17.0.0; see Unreleased); 17.0.0 obsoletes
   the SDK and the project-resource model. See `docs/deployment.md`.
 
 ### Changed since 1.3.0

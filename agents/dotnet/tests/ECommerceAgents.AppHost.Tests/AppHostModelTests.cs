@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Aspire.Hosting;
 using Aspire.Hosting.ApplicationModel;
+using Aspire.Hosting.Dotnet;
 using Aspire.Hosting.Python;
 using Aspire.Hosting.Testing;
 using ECommerceAgents.AppHost;
@@ -171,7 +172,7 @@ public sealed class AppHostModelTests
         foreach (var name in SpecialistNames.Append("orchestrator"))
         {
             var resource = builder.Resources.Single(r => r.Name == name);
-            resource.Should().BeOfType<ProjectResource>();
+            resource.Should().BeOfType<DotnetProjectResource>();
 
             var env = await EnvironmentOfAsync(resource);
             env.Should().ContainKeys(
@@ -206,7 +207,7 @@ public sealed class AppHostModelTests
         {
             var resource = builder.Resources.Single(r => r.Name == name);
             resource.Should().BeAssignableTo<PythonAppResource>($"{name} runs as Python under AgentStack=python");
-            resource.Should().NotBeOfType<ProjectResource>();
+            resource.Should().NotBeOfType<DotnetProjectResource>();
 
             var env = await EnvironmentOfAsync(resource);
             env.Should().ContainKeys("DATABASE_URL", "REDIS_URL", "LLM_API", "ORCHESTRATION_MODE", "AUTONOMY_ENABLED");
@@ -224,8 +225,8 @@ public sealed class AppHostModelTests
         var builder = await CreateAsync("--AgentStackOverrides:order-management=python");
 
         builder.Resources.Single(r => r.Name == "order-management").Should().BeAssignableTo<PythonAppResource>();
-        builder.Resources.Single(r => r.Name == "product-discovery").Should().BeOfType<ProjectResource>();
-        builder.Resources.Single(r => r.Name == "orchestrator").Should().BeOfType<ProjectResource>();
+        builder.Resources.Single(r => r.Name == "product-discovery").Should().BeOfType<DotnetProjectResource>();
+        builder.Resources.Single(r => r.Name == "orchestrator").Should().BeOfType<DotnetProjectResource>();
     }
 
     [Fact]
@@ -241,7 +242,7 @@ public sealed class AppHostModelTests
     {
         var dotnet = await CreateAsync("--Mcp=true");
         dotnet.Resources.Select(r => r.Name).Should().Contain("mcp-inventory").And.NotContain("mcp-product");
-        dotnet.Resources.Single(r => r.Name == "mcp-inventory").Should().BeOfType<ProjectResource>();
+        dotnet.Resources.Single(r => r.Name == "mcp-inventory").Should().BeOfType<DotnetProjectResource>();
 
         var python = await CreateAsync("--Mcp=true", "--AgentStack=python");
         python.Resources.Select(r => r.Name).Should().Contain(["mcp-inventory", "mcp-product"]);

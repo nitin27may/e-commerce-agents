@@ -1,4 +1,5 @@
 using Aspire.Hosting.ApplicationModel;
+using Aspire.Hosting.Dotnet;
 using Microsoft.Extensions.Configuration;
 
 namespace ECommerceAgents.AppHost;
@@ -8,7 +9,7 @@ public sealed record SpecialistSpec(
     string Name,
     string PythonModule,
     int Port,
-    Func<IDistributedApplicationBuilder, string, IResourceBuilder<ProjectResource>> AddDotnetProject);
+    Func<IDistributedApplicationBuilder, string, IResourceBuilder<DotnetProjectResource>> AddDotnetProject);
 
 /// <summary>
 /// The Aspire application model for the stack: an alternative to <c>docker-compose.yml</c>, which stays the
@@ -43,6 +44,9 @@ public static class AppHostModel
     private const string MigrateCommand = "uv run --no-project python -m scripts.migrate";
     private const string SeedCommand = "uv run --no-project python -m scripts.seed";
 
+    // Sibling project, relative to the AppHost directory. Aspire 17 resolves a path, not a generated Projects.* type.
+    private static string ProjectPath(string project) => $"../{project}/{project}.csproj";
+
     // No launchSettings.json is read: the AppHost owns the ports, so a stray local profile cannot move a service.
     private static void NoLaunchProfile(ProjectResourceOptions options)
     {
@@ -53,15 +57,15 @@ public static class AppHostModel
     public static readonly IReadOnlyList<SpecialistSpec> Specialists =
     [
         new("product-discovery", "product_discovery", 8081,
-            (b, n) => b.AddProject<Projects.ECommerceAgents_ProductDiscovery>(n, NoLaunchProfile)),
+            (b, n) => b.AddDotnetProject(n, ProjectPath("ECommerceAgents.ProductDiscovery"), NoLaunchProfile)),
         new("order-management", "order_management", 8082,
-            (b, n) => b.AddProject<Projects.ECommerceAgents_OrderManagement>(n, NoLaunchProfile)),
+            (b, n) => b.AddDotnetProject(n, ProjectPath("ECommerceAgents.OrderManagement"), NoLaunchProfile)),
         new("pricing-promotions", "pricing_promotions", 8083,
-            (b, n) => b.AddProject<Projects.ECommerceAgents_PricingPromotions>(n, NoLaunchProfile)),
+            (b, n) => b.AddDotnetProject(n, ProjectPath("ECommerceAgents.PricingPromotions"), NoLaunchProfile)),
         new("review-sentiment", "review_sentiment", 8084,
-            (b, n) => b.AddProject<Projects.ECommerceAgents_ReviewSentiment>(n, NoLaunchProfile)),
+            (b, n) => b.AddDotnetProject(n, ProjectPath("ECommerceAgents.ReviewSentiment"), NoLaunchProfile)),
         new("inventory-fulfillment", "inventory_fulfillment", 8085,
-            (b, n) => b.AddProject<Projects.ECommerceAgents_InventoryFulfillment>(n, NoLaunchProfile)),
+            (b, n) => b.AddDotnetProject(n, ProjectPath("ECommerceAgents.InventoryFulfillment"), NoLaunchProfile)),
     ];
 
     public static void Configure(IDistributedApplicationBuilder builder)
@@ -129,7 +133,7 @@ public static class AppHostModel
         orchestratorWaits.AddRange(specialistBuilders);
         var orchestrator = AddAgentProcess(builder, new AgentProcessOptions(
             OrchestratorName, OrchestratorPort, orchestratorStack, "orchestrator.main:app",
-            (b, n) => b.AddProject<Projects.ECommerceAgents_Orchestrator>(n, NoLaunchProfile),
+            (b, n) => b.AddDotnetProject(n, ProjectPath("ECommerceAgents.Orchestrator"), NoLaunchProfile),
             db, redis, pythonDeps, orchestratorWaits, completions, McpEnabled: false,
             AgentRegistry: BuildAgentRegistry(registryEntries)));
 
@@ -226,7 +230,7 @@ public static class AppHostModel
         int Port,
         AgentStack Stack,
         string PythonApp,
-        Func<IDistributedApplicationBuilder, string, IResourceBuilder<ProjectResource>> AddDotnetProject,
+        Func<IDistributedApplicationBuilder, string, IResourceBuilder<DotnetProjectResource>> AddDotnetProject,
         IResourceBuilder<PostgresDatabaseResource> Db,
         IResourceBuilder<RedisResource> Redis,
         IResourceBuilder<ExecutableResource> PythonDeps,
@@ -327,7 +331,7 @@ public static class AppHostModel
         if (dotnetStack)
         {
             // docker-compose.dotnet.yml: the .NET MCP host serves inventory only.
-            builder.AddProject<Projects.ECommerceAgents_Mcp>("mcp-inventory", NoLaunchProfile)
+            builder.AddDotnetProject("mcp-inventory", ProjectPath("ECommerceAgents.Mcp"), NoLaunchProfile)
                 .WithHttpEndpoint(port: 9001, targetPort: 9001, name: "http", isProxied: false)
                 .WithReference(db, "Postgres")
                 .WithEnvironment("AUTH_SERVER_ISSUER", EnvironmentContract.AuthServerUrl)
