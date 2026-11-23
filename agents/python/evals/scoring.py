@@ -212,14 +212,17 @@ def _score_turns(record: RunRecord, threshold: float) -> RunRecord:
 
 
 def _score_single(record: RunRecord, threshold: float) -> RunRecord:
-    from evals.scorers.db_groundedness import score_from_report
+    from evals.scorers.db_groundedness import reclassify_user_supplied, score_from_report
 
     expected = record.expected
     # The orchestrator's ledger never sees a specialist's tool results, so amount/tracking claims it
     # relays cannot be checked there (see docs/agent-quality.md); a specialist's own ledger can.
+    # An amount or id the user typed is theirs, not the model's: records written before the verifier knew that
+    # are relabelled here from the stored query and tool arguments (a no-op on a report that already says so).
+    grounding = reclassify_user_supplied(record.grounding, [record.query, *(c.arguments for c in record.tool_calls)])
     groundedness = (
-        score_from_report(record.grounding, ledger_complete=record.agent != "orchestrator")
-        if record.grounding is not None
+        score_from_report(grounding, ledger_complete=record.agent != "orchestrator")
+        if grounding is not None
         else record.scores.groundedness
     )
     correctness = score_correctness(record.tools_called, expected.tools)

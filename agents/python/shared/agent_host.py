@@ -85,6 +85,16 @@ def _run_options(agent: Any = None) -> dict[str, Any]:
     return {"temperature": temperature}
 
 
+def _note_user_message(user_message: str) -> None:
+    """Tell the grounding ledger what the caller typed this turn (not history): an amount or id the answer
+    echoes from it is the user's own, not a figure the model made up."""
+    from shared.grounding.ledger import current_grounding_ledger
+
+    ledger = current_grounding_ledger.get()
+    if ledger is not None:
+        ledger.note_user_text(user_message)
+
+
 async def _run_agent_native(
     agent: Any,
     user_message: str,
@@ -102,6 +112,7 @@ async def _run_agent_native(
     plain ``str`` return can't carry that side-channel data.
     """
     messages = _history_as_maf_messages(history, user_message)
+    _note_user_message(user_message)
     begin_miss_tracking()
     response = await agent.run(messages, options=_run_options(agent))
     raise_if_specialist_missed()
@@ -156,6 +167,7 @@ async def _run_agent_native_stream(
     here just returns that cached result.
     """
     messages = _history_as_maf_messages(history, user_message)
+    _note_user_message(user_message)
     begin_miss_tracking()
     stream = agent.run(messages, stream=True, options=_run_options(agent))
     async for update in stream:
