@@ -86,6 +86,15 @@ class UserProfileProvider(ContextProvider):
         pass
 
 
+# A summary line carries no items, address, carrier or tracking. Without this note a model
+# renders an ```order card straight from the line and ships it with those fields empty.
+RECENT_ORDERS_NOTE = (
+    "This list is a summary only: it has no items, shipping address, carrier or tracking. "
+    "Do not build an order card from it. For any card or detail, call get_user_orders or "
+    "get_order_details and use their result."
+)
+
+
 class RecentOrdersProvider(ContextProvider):
     """Injects the user's last N orders. Requires UserProfileProvider in
     the same provider chain, or a prior call that populated
@@ -139,6 +148,7 @@ class RecentOrdersProvider(ContextProvider):
             for order in orders:
                 date = order["created_at"].strftime("%Y-%m-%d")
                 lines.append(f"  - order_id={order['id']} | {order['status']} | ${order['total']:.2f} | {date}")
+            lines.append(RECENT_ORDERS_NOTE)
             context.extend_instructions("recent-orders", "\n".join(lines))
 
     async def after_run(self, *, agent: Any, session: Any, context: Any, state: dict[str, Any]) -> None:

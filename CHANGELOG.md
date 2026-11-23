@@ -102,6 +102,11 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ### Fixed
 
+- **Order cards built from the recent-orders summary.** The context provider on both stacks lists each recent order as
+  id, status, total and date only, and the order-management agent could render an `order` card straight from that line,
+  so the card shipped with empty `items`, address, carrier and tracking and no tool was called. The injected block now
+  says it is a summary and points to `get_user_orders` / `get_order_details` for any card. No replay fixture contains
+  the block, so none is re-keyed (the prompt YAML is deliberately untouched: 15 fixtures embed it).
 - **The Mode dropdown shows its labels in full.** The list is as wide as its longest label; it used to take the
   trigger's width and cut three of the five off (#210).
 - **The Compare dialog renders answers the way chat does.** A fenced card block in a mode's answer (a product, a

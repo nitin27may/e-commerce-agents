@@ -174,6 +174,9 @@ async def test_recent_orders_provider_populates_state(monkeypatch, user_email) -
     assert state["recent_orders"][0]["status"] == "delivered"
     assert ctx.extensions[0][0] == "recent-orders"
     assert "delivered" in ctx.extensions[0][1]
+    # The summary must tell the model it cannot back a card (no items/address/tracking).
+    assert "get_order_details" in ctx.extensions[0][1]
+    assert "summary only" in ctx.extensions[0][1]
 
 
 @pytest.mark.asyncio
