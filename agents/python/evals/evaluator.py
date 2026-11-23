@@ -79,6 +79,9 @@ class EvalCase:
     # True: a destructive tool must have been parked for approval
     # (pending_approval). False: none may have. None: not asserted.
     expect_hitl: bool | None = None
+    # A live case names run-time facts (``{{order:1}}``, ``{{product_id:NAME}}``) that are resolved against the
+    # run's database before it runs. True for every case of a ``*.live.json`` dataset; see evals/live_facts.py.
+    live: bool = False
 
 
 @dataclass
@@ -255,6 +258,7 @@ def load_dataset(path: str | Path) -> list[EvalCase]:
     if not isinstance(raw, list):
         raise ValueError(f"Dataset must be a JSON array, got {type(raw).__name__}")
 
+    is_live_file = path.name.endswith(".live.json")
     cases = []
     for i, entry in enumerate(raw):
         if not all(k in entry for k in ("input", "expected_tools", "expected_fields", "criteria")):
@@ -271,6 +275,7 @@ def load_dataset(path: str | Path) -> list[EvalCase]:
                 expected_tool_args=_parse_expected_tool_args(i, entry.get("expected_tool_args")),
                 expect_denial=entry.get("expect_denial"),
                 expect_hitl=entry.get("expect_hitl"),
+                live=is_live_file or entry.get("live") is True,
             )
         )
 
@@ -453,6 +458,9 @@ class AgentEvaluator:
         dataset_path: str = "",
     ) -> EvalResult:
         """Evaluate a single test case against the agent."""
+        from evals.live_facts import resolve_case_from_database
+
+        case = await resolve_case_from_database(case)  # no-op unless the case is live
         start = time.monotonic()
         # A runner holds per-run state, so cases that overlap each get their own.
         runner = self._runner if concurrency() <= 1 else ProductionRunner(self.agent_name)
