@@ -21,6 +21,8 @@ now actually works for evals, which it never did through the old loop.
 from __future__ import annotations
 
 import importlib
+import json
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -125,9 +127,46 @@ def _output_field(step: dict[str, Any], key: str) -> Any:
     return output.get(key) if isinstance(output, dict) else None
 
 
+# What a role-guard refusal looks like in prose. ``shared.guardrails.roles._denial`` builds the structured
+# payload (``error: permission_denied`` plus a "requires one of these roles" message); a specialist's reply
+# relayed through an orchestrator, or a tool that refuses in plain words, carries only text. "restricted to a
+# specific user" (a coupon) is a business rule, not a role guard, so the role words are spelled out.
+_DENIAL_TEXT = re.compile(
+    r"permission_denied"
+    r"|don'?t have permission to perform this action"
+    r"|requires one of these roles"
+    r"|restricted to (?:\w+ )?(?:sellers?|admins?|admin(?:istrator)?s?|staff|support|managers?|power users?)\b",
+    re.IGNORECASE,
+)
+
+
+def _denial_in(output: Any, depth: int = 0) -> bool:
+    """True when a recorded tool output is a role-guard refusal, whatever shape the step stored it in.
+
+    ``StepRecorderMiddleware`` stores ``_summarize(result)``: a dict when the tool returned one, a one-item list
+    holding the JSON text when MAF wrapped the result in ``Content``, a JSON string, or (past 400 characters or
+    for a tool that answers in prose) a plain string.
+    """
+    if depth > 3 or output is None:
+        return False
+    if isinstance(output, dict):
+        if output.get("error") == "permission_denied":
+            return True
+        return any(isinstance(output.get(k), str) and _DENIAL_TEXT.search(output[k]) for k in ("error", "message"))
+    if isinstance(output, list):
+        return any(_denial_in(item, depth + 1) for item in output)
+    if isinstance(output, str):
+        try:
+            parsed = json.loads(output)
+        except ValueError:
+            return bool(_DENIAL_TEXT.search(output))
+        return _denial_in(parsed, depth + 1) if isinstance(parsed, (dict, list)) else bool(_DENIAL_TEXT.search(output))
+    return False
+
+
 def _was_denied(steps: list[dict[str, Any]]) -> bool:
     """A tool refused the call for the caller's role (``shared.guardrails.roles._denial``)."""
-    return any(_output_field(s, "error") == "permission_denied" for s in steps)
+    return any(_denial_in(s.get("tool_output")) for s in steps)
 
 
 def _hitl_requested(steps: list[dict[str, Any]]) -> bool:
