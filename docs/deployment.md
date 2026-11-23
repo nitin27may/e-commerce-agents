@@ -417,9 +417,12 @@ Tests: `dotnet test agents/dotnet/tests/ECommerceAgents.AppHost.Tests` builds th
 ### Gotchas
 
 - **It binds the compose ports** (8080 to 8085, 8090, 3000), so stop compose first.
-- **Aspire is pinned to 13.6.5 on purpose.** 17.0.0 is newer on nuget.org but marks `Aspire.AppHost.Sdk` and
-  the `ProjectReference` resource model obsolete (ASPIRE012) and moves to the Aspire CLI bundle. Moving to it
-  means `AddDotnetProject` and a new test harness; it is a separate piece of work.
+- **Aspire 17 (.NET 10 minimum).** The AppHost uses plain `Microsoft.NET.Sdk` with `Aspire.Hosting.AppHost` and
+  `Aspire.Hosting.Dotnet` package references; `Aspire.AppHost.Sdk` is obsolete there (ASPIRE012). .NET processes
+  are added with `AddDotnetProject(name, "../Project/Project.csproj", ...)` (a `DotnetProjectResource`), not the
+  generated `Projects.*` types, and the AppHost no longer carries `ProjectReference` items to the services.
+  ASPIRE013 (C# AppHosts want the Aspire CLI bundle) is suppressed like ASPIRE010; nothing here uses the bundle.
+  The dashboard image in the compose files stays on its own tag.
 - The AppHost project sets `CentralPackageTransitivePinningEnabled=false`, because Aspire needs newer
   `Microsoft.Extensions.*` than the repo-wide pins; the services themselves keep the pins.
 - Host-side processes reach the auth-server at `http://localhost:8090`, which is also its issuer; containers
