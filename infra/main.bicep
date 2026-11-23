@@ -37,6 +37,10 @@ param allowedIps string = ''
 param deployAuthServer bool = false
 param deployMcp bool = false
 
+// ---- Foundry and gateway switches (infra-foundry-project-and-gateway lane) ----
+@description('AZ-2: create a Foundry project under the AIServices account, connect App Insights to it, grant the app identity Azure AI User.')
+param deployFoundryProject bool = false
+
 @secure()
 param postgresAdminPassword string
 @secure()
@@ -146,6 +150,7 @@ module openAi 'modules/openai.bicep' = {
     deployMiniModel: deployMiniModel
     miniCapacity: cfg.openAi.miniCapacity
     disableLocalAuth: openAiAuth == 'identity'
+    allowProjectManagement: deployFoundryProject
   }
 }
 
@@ -205,6 +210,20 @@ module apps 'modules/apps.bicep' = {
   }
 }
 
+// ---- Foundry project (AZ-2). Appended section; see modules/foundry-project.bicep ----
+module foundryProject 'modules/foundry-project.bicep' = if (deployFoundryProject) {
+  scope: rg
+  name: 'foundry-project'
+  params: {
+    accountName: openAi.outputs.name
+    projectName: 'proj-${resourceToken}'
+    location: openAiLocation
+    tags: tags
+    appInsightsName: monitoring.outputs.appInsightsName
+    callerPrincipalId: identity.outputs.principalId
+  }
+}
+
 module budget 'modules/budget.bicep' = {
   scope: rg
   name: 'budget'
@@ -232,6 +251,8 @@ output AZURE_OPENAI_EMBEDDING_DEPLOYMENT string = openAi.outputs.embeddingDeploy
 output AZURE_CHAT_DEPLOYMENT string = openAi.outputs.chatDeploymentName
 output AZURE_POSTGRES_FQDN string = postgres.outputs.fqdn
 output APPLICATIONINSIGHTS_NAME string = monitoring.outputs.appInsightsName
+output AZURE_AI_PROJECT_NAME string = deployFoundryProject ? foundryProject!.outputs.name : ''
+output AZURE_AI_PROJECT_ENDPOINT string = deployFoundryProject ? foundryProject!.outputs.endpoint : ''
 output AZURE_CONTAINER_APPS_ENVIRONMENT string = cae.outputs.name
 output FRONTEND_URL string = apps.outputs.frontendUrl
 output ORCHESTRATOR_INTERNAL_URL string = apps.outputs.orchestratorInternalUrl

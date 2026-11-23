@@ -205,17 +205,21 @@ def _snapshot(fixture: Path, workdir: Path) -> dict[str, Any]:
 
 
 @pytest.fixture(scope="module")
-def snapshots(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Apps]:
+def raw_snapshots(tmp_path_factory: pytest.TempPathFactory) -> dict[str, list[dict[str, Any]]]:
+    """fixture stem -> every predicted resource (one `bicep snapshot` per fixture)."""
+    return {
+        fixture.stem: _snapshot(fixture, tmp_path_factory.mktemp(fixture.stem))["predictedResources"]
+        for fixture in sorted((INFRA / "ci").glob("*.bicepparam"))
+    }
+
+
+@pytest.fixture(scope="module")
+def snapshots(raw_snapshots: dict[str, list[dict[str, Any]]]) -> dict[str, Apps]:
     """fixture stem -> {resource name: predicted resource}, for apps and jobs only."""
-    out: dict[str, Apps] = {}
-    for fixture in sorted((INFRA / "ci").glob("*.bicepparam")):
-        snap = _snapshot(fixture, tmp_path_factory.mktemp(fixture.stem))
-        out[fixture.stem] = {
-            r["name"]: r
-            for r in snap["predictedResources"]
-            if r["type"] in ("Microsoft.App/containerApps", "Microsoft.App/jobs")
-        }
-    return out
+    return {
+        stem: {r["name"]: r for r in resources if r["type"] in ("Microsoft.App/containerApps", "Microsoft.App/jobs")}
+        for stem, resources in raw_snapshots.items()
+    }
 
 
 def _container(resource: dict[str, Any]) -> dict[str, Any]:
@@ -435,3 +439,78 @@ def test_deployment_outputs_are_present(template: dict[str, Any]) -> None:
         "DB_INIT_JOB_NAME",
     }
     assert required <= set(template["outputs"])
+
+
+# ----------------------------------------------------------------------------------------------
+# AZ-2 / AZ-3: the Foundry project. Off by default; on, it is a project under the AIServices
+# account, an App Insights connection and a least-privilege role for the app identity.
+# ----------------------------------------------------------------------------------------------
+
+AZURE_AI_USER_ROLE = "53ca6127-db72-4b80-b1b0-d745d6d5456d"
+OPENAI_USER_ROLE = "5e0bd9bd-7b93-4f28-af87-19fc36ad61bd"
+BROAD_ROLES = {
+    "8e3af657-a8ff-443c-a75c-2fe8c4bcb635",  # Owner
+    "b24988ac-6180-42a0-ab88-20f7382dd24c",  # Contributor
+    "a97b65f3-24c7-4388-baec-2e87135dc908",  # Cognitive Services User (all data actions)
+    "25fbc0a9-bd7c-42a3-aa1a-3b75d497ee68",  # Cognitive Services Contributor
+}
+
+Resources = list[dict[str, Any]]
+
+
+def _of_type(resources: Resources, kind: str) -> Resources:
+    return [r for r in resources if r["type"] == kind]
+
+
+def _role_ids(resources: Resources) -> list[str]:
+    return [
+        r["properties"]["roleDefinitionId"].rsplit("/", 1)[-1]
+        for r in _of_type(resources, "Microsoft.Authorization/roleAssignments")
+    ]
+
+
+def test_foundry_project_is_off_by_default(raw_snapshots: dict[str, Resources]) -> None:
+    resources = raw_snapshots["demo-mini-false"]
+    assert not _of_type(resources, "Microsoft.CognitiveServices/accounts/projects")
+    account = _of_type(resources, "Microsoft.CognitiveServices/accounts")[0]
+    # ARM drops null(), so None is "not sent": the account is untouched unless the flag is on.
+    assert account["properties"].get("allowProjectManagement") is None
+    assert account.get("identity") is None
+
+
+def test_foundry_project_is_created_under_the_account(raw_snapshots: dict[str, Resources]) -> None:
+    resources = raw_snapshots["demo-foundry-on"]
+    account = _of_type(resources, "Microsoft.CognitiveServices/accounts")[0]
+    assert account["properties"]["allowProjectManagement"] is True
+    assert account["identity"]["type"] == "SystemAssigned", "projects need the account's own identity"
+    projects = _of_type(resources, "Microsoft.CognitiveServices/accounts/projects")
+    assert len(projects) == 1
+    assert projects[0]["identity"]["type"] == "SystemAssigned"
+
+
+def test_foundry_project_has_an_app_insights_connection(raw_snapshots: dict[str, Resources]) -> None:
+    resources = raw_snapshots["demo-foundry-on"]
+    connections = _of_type(resources, "Microsoft.CognitiveServices/accounts/projects/connections")
+    assert len(connections) == 1
+    props = connections[0]["properties"]
+    assert props["category"] == "AppInsights"
+    assert "Microsoft.Insights/components" in json.dumps(props), "the target is the shared App Insights component"
+
+
+def test_foundry_roles_are_least_privilege(raw_snapshots: dict[str, Resources]) -> None:
+    roles = _role_ids(raw_snapshots["demo-foundry-on"])
+    assert AZURE_AI_USER_ROLE in roles, "the app identity is Azure AI User on the project"
+    assert not BROAD_ROLES & set(roles), "no Owner, Contributor or all-data-actions role anywhere"
+    assert AZURE_AI_USER_ROLE not in _role_ids(raw_snapshots["demo-mini-false"])
+
+
+def test_foundry_project_endpoint_is_an_output_without_secrets(template: dict[str, Any]) -> None:
+    assert "AZURE_AI_PROJECT_ENDPOINT" in template["outputs"]
+    assert "AZURE_AI_PROJECT_NAME" in template["outputs"]
+
+
+def test_docs_say_the_azure_provider_is_foundry_for_openai_models() -> None:
+    for name in ("azure-deployment.md", "model-providers.md"):
+        text = (REPO_ROOT / "docs" / name).read_text(encoding="utf-8")
+        assert re.search(r"`azure`\s+provider.*?is\s+Foundry", text, re.DOTALL), name
+        assert "do not add `LLM_PROVIDER=foundry`" in text, name

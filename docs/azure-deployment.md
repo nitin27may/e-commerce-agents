@@ -54,6 +54,12 @@ flowchart LR
     classDef infra fill:#6b7280,stroke:#4b5563,color:#ffffff
 ```
 
+## Foundry project (optional)
+
+`DEPLOY_FOUNDRY_PROJECT=true` (Bicep `deployFoundryProject`, default false) adds `modules/foundry-project.bicep`: a Foundry project (`Microsoft.CognitiveServices/accounts/projects`) under the same AIServices account, the shared Application Insights component connected to it (so the traces the apps already export show in the project's tracing view), and one role for the app identity, **Azure AI User** on the project. That role carries the data actions a caller needs (run agents, create evaluation runs, read project resources) and none of the management ones: not Azure AI Project Manager, not Contributor. Model calls stay covered by Cognitive Services OpenAI User on the account. Turning the flag on also sets `allowProjectManagement` and a system-assigned identity on the account (the API refuses a project otherwise); with the flag off the account is exactly what it was. Outputs: `AZURE_AI_PROJECT_NAME` and `AZURE_AI_PROJECT_ENDPOINT` (`https://<account>.services.ai.azure.com/api/projects/<project>`); no secret.
+
+**The `azure` provider is Foundry for OpenAI models.** The account this template creates is a Foundry resource (kind `AIServices`), so the `azure` provider pointed at its endpoint already is Foundry for OpenAI models: the same deployments, the same managed-identity or key auth. We do not add `LLM_PROVIDER=foundry`; one is only warranted for a non-OpenAI catalogue model or a project-scoped client, and neither is needed yet.
+
 ## What it creates
 
 | Resource | Name | Notes |

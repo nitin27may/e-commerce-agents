@@ -59,6 +59,9 @@
     "deployMcp": {
       "value": "${DEPLOY_MCP=false}"
     },
+    "deployFoundryProject": {
+      "value": "${DEPLOY_FOUNDRY_PROJECT=false}"
+    },
     "a2aIdentityKey": {
       "value": "${A2A_IDENTITY_KEY}"
     },
