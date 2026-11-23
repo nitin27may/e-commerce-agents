@@ -1,0 +1,116 @@
+[
+  {
+    "input": "I'm looking for a waterproof bluetooth speaker under $100",
+    "expected_tools": [
+      "call_specialist_agent"
+    ],
+    "expected_tool_args": {
+      "call_specialist_agent": {
+        "agent_name": "product-discovery"
+      }
+    },
+    "expected_fields": [],
+    "expected_route": "product-discovery",
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "routed": true
+    },
+    "user_email": "jack.anderson@gmail.com"
+  },
+  {
+    "input": "Where is my order {{order:shipped}}? I want tracking.",
+    "expected_tools": [
+      "call_specialist_agent"
+    ],
+    "expected_tool_args": {
+      "call_specialist_agent": {
+        "agent_name": "order-management"
+      }
+    },
+    "expected_fields": [],
+    "expected_route": "order-management",
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "routed": true
+    },
+    "user_email": "jack.anderson@gmail.com"
+  },
+  {
+    "input": "Do you have any coupons or active discounts I can use?",
+    "expected_tools": [
+      "call_specialist_agent"
+    ],
+    "expected_tool_args": {
+      "call_specialist_agent": {
+        "agent_name": "pricing-promotions"
+      }
+    },
+    "expected_fields": [],
+    "expected_route": "pricing-promotions",
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "routed": true
+    },
+    "user_email": "jack.anderson@gmail.com"
+  },
+  {
+    "input": "What are customers saying in reviews about the Dyson V15?",
+    "expected_tools": [
+      "call_specialist_agent"
+    ],
+    "expected_tool_args": {
+      "call_specialist_agent": {
+        "agent_name": "review-sentiment"
+      }
+    },
+    "expected_fields": [],
+    "expected_route": "review-sentiment",
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "routed": true
+    },
+    "user_email": "jack.anderson@gmail.com"
+  },
+  {
+    "input": "Is the Dyson V15 in stock and how fast can it ship to 10001?",
+    "expected_tools": [
+      "call_specialist_agent"
+    ],
+    "expected_tool_args": {
+      "call_specialist_agent": {
+        "agent_name": "inventory-fulfillment"
+      }
+    },
+    "expected_fields": [],
+    "expected_route": "inventory-fulfillment",
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "routed": true
+    },
+    "user_email": "jack.anderson@gmail.com"
+  },
+  {
+    "input": "Please cancel my order {{order:placed}}",
+    "expected_tools": [
+      "call_specialist_agent"
+    ],
+    "expected_tool_args": {
+      "call_specialist_agent": {
+        "agent_name": "order-management"
+      }
+    },
+    "expected_fields": [],
+    "expected_route": "order-management",
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "routed": true
+    },
+    "user_email": "jack.anderson@gmail.com"
+  }
+]

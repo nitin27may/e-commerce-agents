@@ -284,6 +284,48 @@ independent of any model) and stays at the top level.
   For a replay run: none — see above.
 - Python dependencies installed via `uv sync`
 
+## Live datasets (`datasets/live/*.live.json`)
+
+The replay datasets are a regression check on a recorded model: they hard-code order ids such as
+`550e8400-e29b-41d4-a716-446655440003` and run as `eval@example.com`. Neither exists in a seeded database
+(`scripts/seed.py::order_id_for` is a uuid5 over the loop index, and the seeder never creates that user), so the
+fixtures recorded the tools answering "order not found" and a live model gets the same and, answering honestly,
+scores groundedness 0. A live run needs cases that name facts that exist. Do not edit the replay datasets for
+that: their request text is part of every fixture key.
+
+A live variant is a copy of a replay dataset that names its facts as placeholders. They are resolved against the
+database the run uses, immediately before each case (and each repeat) runs, so the model sees real ids and the
+run record stores the resolved `query` and `expected.tool_args`. A stored record therefore re-scores
+(`--rescore`) from its own fields; the template is recoverable from `dataset_path` + `case_index`.
+
+| Placeholder | Resolves to |
+|---|---|
+| `{{order:N}}` | the case user's N-th most recent order (`{{order:1}}` is the latest) |
+| `{{order:STATUS}}` | the case user's most recent order in that status (`placed`, `confirmed`, `shipped`, `delivered`, `returned`, `cancelled`) |
+| `{{product_id:NAME}}` | the id of the product with that exact name, case-insensitive |
+
+Rules:
+
+- Applied only to a case in a file named `*.live.json`, or one that sets `"live": true`. A replay dataset never
+  contains a placeholder or the marker (`tests/test_eval_live_facts.py` pins both), so replay is untouched.
+- Placeholders are resolved in `input` and in every string inside `expected_tool_args`. An `{{order:...}}` needs the
+  case to set `user_email` (orders belong to a user; the live variants use `jack.anderson@gmail.com`, who has an order
+  in every status the cases ask for, each among the five most recent: the order-management agent lists only the last
+  five orders in its context and, asked about an older one, declines without calling a tool). An unresolvable placeholder aborts the run with the reason; it is a setup
+  error, never a score.
+- Resolution reads the eval process's own database pool (`DATABASE_URL`, as `run_evals` already initialises). With the
+  in-process target that is the database the tools use. With an HTTP target it must be the database the stack under
+  test serves; if the process has no pool, the run says so and stops.
+- Live variants may also correct a case that was wrong for live data, and say why in the commit, not in the file. Today:
+  `inventory_fulfillment.live.json` asks about the out-of-stock Dyson V15 Detect for the restock case (the Sony is in
+  stock in the seed, so a model rightly answers from `get_warehouse_availability`), and
+  `review_sentiment.live.json` does not assert `months: 6` (the model relies on the tool's default of 6, which is not
+  recorded as an argument).
+- `cancel_order` and `initiate_return` are real writes against the database a live run uses. Reseed between runs.
+
+`--estimate` reads the replay fixtures by case text, so a live variant matches few of them; estimate with its replay
+twin instead (`--dataset evals/datasets/order_management.json --estimate`), which is the same cases and calls.
+
 ## Adding New Datasets
 
 1. Create a new JSON file in `evals/datasets/`
@@ -299,6 +341,8 @@ Quality datasets (one per agent, scored on groundedness / correctness / complete
   `review_sentiment.json`, `inventory_fulfillment.json`
 - `orchestrator_routing.json` — each case sets `expected_route`; correctness is scored on
   whether the orchestrator handed off to the right specialist via `call_specialist_agent`.
+- `live/{order_management,inventory_fulfillment,orchestrator_routing,review_sentiment}.live.json` — the same cases for
+  a live model, with run-time facts resolved (see *Live datasets*). Not part of the replay gate.
 
 ## Safety / Red-Team Suite
 

@@ -1,0 +1,102 @@
+[
+  {
+    "input": "Show me my recent orders",
+    "expected_tools": [
+      "get_user_orders"
+    ],
+    "expected_fields": [
+      "order_id",
+      "status",
+      "total",
+      "created_at"
+    ],
+    "criteria": {
+      "grounded": true,
+      "tool_called": true
+    },
+    "user_email": "jack.anderson@gmail.com"
+  },
+  {
+    "input": "What is the status of order {{order:1}}?",
+    "expected_tools": [
+      "get_order_details"
+    ],
+    "expected_tool_args": {
+      "get_order_details": {
+        "order_id": "{{order:1}}"
+      }
+    },
+    "expected_fields": [
+      "order_id",
+      "status",
+      "items"
+    ],
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "order_id_passed": true
+    },
+    "user_email": "jack.anderson@gmail.com"
+  },
+  {
+    "input": "Where is my package for order {{order:shipped}}? I want tracking info.",
+    "expected_tools": [
+      "get_order_tracking"
+    ],
+    "expected_tool_args": {
+      "get_order_tracking": {
+        "order_id": "{{order:shipped}}"
+      }
+    },
+    "expected_fields": [
+      "order_id",
+      "status",
+      "tracking_number"
+    ],
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "tracking_requested": true
+    },
+    "user_email": "jack.anderson@gmail.com"
+  },
+  {
+    "input": "Cancel my order {{order:placed}}, I found a better deal elsewhere",
+    "expected_tools": [
+      "cancel_order"
+    ],
+    "expected_fields": [
+      "order_id",
+      "new_status",
+      "refund_amount"
+    ],
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "cancellation_attempted": true
+    },
+    "user_email": "jack.anderson@gmail.com"
+  },
+  {
+    "input": "I want to return the item from order {{order:delivered}}, it has a defective screen",
+    "expected_tools": [
+      "check_return_eligibility",
+      "initiate_return"
+    ],
+    "expected_tool_args": {
+      "check_return_eligibility": {
+        "order_id": "{{order:delivered}}"
+      }
+    },
+    "expected_fields": [
+      "order_id",
+      "return_eligible"
+    ],
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "return_flow_initiated": true
+    },
+    "user_email": "jack.anderson@gmail.com"
+  }
+]
