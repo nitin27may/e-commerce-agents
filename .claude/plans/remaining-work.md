@@ -121,12 +121,154 @@ parity row 53 and the CI job `stack-parity` exist. Dependabot is on: #224, #225,
 
 | Owner | Item |
 |---|---|
-| Code, keyless (next) | Land #215; harness sees parked cancels (finding 4); recent-orders cards (5); pricing and product-discovery live datasets (6); grounding ledger records deal fields (2, shifts specialist baselines, needs a rescore); #210 items (group chat placeholder answer, Alice's latest order shipped in the demo, "New chat" after Compare); Dependabot: #234 once its net-py boot passes, the four Aspire 13 to 17 PRs (#231-#233, #235) as one change with the .NET test fixes, #226 `@types/node` 26 needs a maintainer call |
+| Code, keyless (see the Non-Azure plan below) | Land #215; harness sees parked cancels (finding 4); recent-orders cards (5); pricing and product-discovery live datasets (6); grounding ledger records deal fields (2, shifts specialist baselines, needs a rescore); #210 items (group chat placeholder answer, Alice's latest order shipped in the demo, "New chat" after Compare); Dependabot: #234 once its net-py boot passes, the four Aspire 13 to 17 PRs (#231-#233, #235) as one change with the .NET test fixes, #226 `@types/node` 26 needs a maintainer call |
 | Docs | #182 visuals (README GIF, live graph mid-run, Aspire trace, retake `docs/images/mode-compare.jpg`, which shows the pre-#219 dialog) |
 | Machine, no spend | M0: `az login`, quota check, OIDC app, public GHCR; the `.NET` image smoke legs have only run on PRs |
 | Machine, spend (approved, bounded) | M3 recording sitting R1 (fixtures, demo GIF, C-8/C-10/C-11, tutorial fixtures); M4 first real Azure deploy (I5); then re-run the live eval on the new datasets, 1 to 2 USD |
 | Maintainer | D-6 reading in ADR 0006 and spike thresholds, return-label token strength, #180 decision, pricing finding 3, #226. v1.4.0 is published (#205); Dependabot is on |
 | After a real deploy | M5 Foundry foundation on a live subscription, M6 gateway attribution check, M7 hosted-agent spike (ADR 0006 S1-S12; D-6 cannot be met literally, orchestrator REST/SSE routes cannot move), M8 injection comparison and publish |
+
+### Non-Azure plan, 2026-11-23
+
+Everything left that does not need an Azure subscription, in the order it should be built. Azure work (M0, M4 to M8, the Bicep
+first-run and no-role-assignment mode) is a separate track and is not repeated here. Sizes are engineer-days of agent work; "key"
+means a model call is made and "R1" is the one recording sitting everything keyed is batched into.
+
+**Workstreams**
+
+| ID | Work | Size | Key | Depends on |
+|---|---|---|---|---|
+| NA-1 | Live-eval quality loop: finish round two of the live datasets, rescore with the grounding-ledger fix, one clean full live run, commit nothing but the datasets and the scorecard wording | 1 | live, about 2 USD | live-dataset round-two lane |
+| NA-2 | EV-5 datasets: 30 to 50 cases per agent, multi-turn, about 50 adversarial, as live variants first, replay twins after R1 | 4 | authoring none, R1 for twins | NA-1 |
+| NA-3 | EV-3 judge calibration (D-7): about 30 hand-labelled responses, two or three candidate judges, agreement reported, one chosen and documented | 1.5 | live, about 2 USD | NA-1, your labelling time |
+| NA-4 | EV-10 live capability check on every provider a key or local model exists for, results into `docs/model-providers.md` | 0.5 | live, under 1 USD | none |
+| NA-5 | EV-6 rebuilt `full` CI job: dispatch only, provider and model as inputs, records uploaded as an artifact, no schedule and no PR trigger, Azure OIDC left as a documented hook | 1 | none to build | none |
+| NA-6 | EV-11 reference baselines: live runs, k=3, through the http target, on the model(s) you choose; baselines keyed by setup | 1 | live, about 2 USD per model | NA-1, NA-3 |
+| NA-7 | R1 recording sitting (batched): order-management prompt guard and its 15 fixtures, Alice seed post-pass and her fixtures, the NA-2 replay twins, tutorial fixtures, the items in "Needs a live key" | 3 | record, cap 5 USD | NA-2, NA-3 |
+| NA-8 | Web: "New chat" after Compare (Playwright repro, then fix), issue #182 visuals (README GIF, live graph mid-run, Aspire trace, Compare screenshot retake) | 2 | none | none |
+| NA-9 | Product defects and parity leftovers (list below) | 2 | none | none |
+| NA-10 | Dependency and CI hygiene (list below) | 1 | none | none |
+| NA-11 | v1.5.0: scope, changelog, release notes, docs and scorecard sync; cut after R1 | 1 | none | NA-7 |
+
+**NA-1 Live-eval quality loop.** The round-two lane fixes the cancel case (empty response, pause not detected), the Dyson restock
+assertion and the loyalty-tier expectation. After it merges: rescore the stored pricing records with `--rescore --verify` (the
+ledger fix should lift groundedness from 0.37), run the six live suites once more, and require every suite at or above its
+threshold before NA-3 starts. Acceptance: six live suites pass at the default threshold on one setup, the run records are kept in
+the scratchpad (not committed), and `docs/agent-quality.md` states the live numbers with the setup that produced them and the date.
+
+**NA-2 Datasets (EV-5).** Author per agent as `evals/datasets/live/<agent>.live.json` so no fixture is touched. Case types and the
+minimum per agent: 10 happy path, 8 edge (empty results, ambiguous names, boundary amounts), 6 multi-turn, 6 adversarial
+(injection in product text, role escalation, other customer's order id, over-limit refund, coupon abuse, prompt leak), the rest
+free. Every case carries a one-line `why` field. Six lanes, one per agent, file-disjoint so they merge without conflict. Acceptance:
+schema tests pass; every placeholder resolves on a freshly seeded database; no case depends on write state left by another case
+(reseed rule); the scorecard shows case counts by type; `evals.fixture_drift` stays exit 0 until R1.
+
+**NA-3 Judge calibration.** I draft candidate labels (pass or fail per expected field, with the reason) for 30 stored live
+responses across suites; you confirm or flip each one, which is about an hour. Candidates: `gpt-4.1-mini`, `gpt-4.1`, and one
+`gpt-5.x` mini from the available deployments. Report agreement per judge against your labels and the cost per 100 judgements.
+Acceptance: `evals/judge_calibration/` holds the labelled set, the script, and the result table; the default judge changes only if a
+candidate beats the current one by a margin written down in advance (at least 5 points of agreement).
+
+**NA-4 Provider capability check.** Run `evals.provider_check` on each reachable provider: the Azure deployments, an OpenAI-compatible
+local endpoint if one is running, OpenAI direct if a key is supplied. Record tool calling, parallel calls, tool-result handling,
+structured output and streaming per model. Acceptance: the table in `docs/model-providers.md` is regenerated from stored results
+with their dates, and providers that were not run are marked "not run", never guessed.
+
+**NA-5 CI live job.** Rebuild the `full` job in `.github/workflows/evals.yml`: `workflow_dispatch` only, inputs `provider`, `model`,
+`repeats`, `suite`; secrets read from repository secrets; records and the scorecard uploaded as artifacts; a spend ceiling via
+`COST_BUDGET_TOKENS_PER_RUN`. A test fails the build if the workflow gains a `schedule`, `pull_request` or `push` trigger on a job
+that reads a model key. Acceptance: `actionlint` clean, that test exists, and the doc in `evals/README.md` says how to dispatch it.
+
+**NA-6 Reference baselines.** Live runs at k=3 through the http target against a locally booted stack, per model you choose
+(proposal: `gpt-4.1` as the stable reference, plus the cheapest current `gpt-5.x` mini for contrast). Baselines live under
+`evals/baselines/<setup>/` and the scorecard states which baseline a run was compared with. Acceptance: re-running a suite
+reproduces its baseline within the stated spread, and a deliberate regression (a worsened prompt on a branch) turns the gate red.
+
+**NA-7 R1 sitting.** One session, one cap (5 USD, a hard stop in the script), one fixture family at a time with `fixture_drift`
+and `scripts/replay-evals.sh --setup` run between families. Order: (1) order-management prompt guard ("never render an order card
+from the context summary") and the 15 order-management fixtures; (2) Alice seed post-pass (modelled on `seed_tour_user`, drawing
+nothing from the global random stream) and the Alice fixtures; (3) NA-2 replay twins; (4) tutorial fixtures; (5) the remaining
+"Needs a live key" items, taking only what is cheap and unblocks something. Acceptance: replay gate green, zero fixture misses,
+`fixture_drift` exit 0, each fixture family in its own commit so a bad one reverts alone.
+
+**NA-8 Web.** (a) Reproduce "New chat" after Compare with Playwright first (the backdrop-after-exit hypothesis in
+`web/src/components/ui/dialog.tsx`), fix, keep the spec. (b) #182 visuals through browser automation against the running demo
+stack: README GIF of one chat turn with the live orchestration graph, an Aspire trace screenshot, a retake of
+`docs/images/mode-compare.jpg` (it shows the pre-#219 dialog). Acceptance: the spec fails before the fix and passes after, images
+are under 300 KB each, and the README renders them on GitHub.
+
+**NA-9 Product defects and parity leftovers.**
+1. Python workflow modes send no `grounding` frame while .NET does (it reported an unverifiable amount in the parity run). Decide:
+   emit a grounding report from the Python workflow modes (preferred, so the gate can compare it) or drop it from .NET. Either way
+   parity row 53 stops needing the grounding exemption.
+2. .NET `RecentOrdersProvider` truncates order ids to 8 characters, so the model cannot pass the id to a tool. Send the full id.
+3. Tutorial 22's .NET copy of the group-chat moderator still uses the old one-line wording; align it and its test.
+4. `compose` aspire-dashboard image is still the 13.6.5 tag; check for a 17.x image and bump if it exists.
+5. #237's remaining `Npgsql` 8.0.9 `VersionOverride`: find where it lands and whether it is still needed.
+6. #226 `@types/node` 26: decide (see Decisions).
+7. The net-py mixed-stack boot job failed once and passed on re-run: add a bounded retry with a logged reason, or find the race.
+8. Cancel with an empty response (round-two lane): if it is a product defect, fix it with a regression test.
+
+**NA-10 Dependency and CI hygiene.** Write the Dependabot policy into `docs/contributing` (patch and minor grouped and merged when
+green; a major version gets one human-reviewed PR); stop the merge watcher merging a PR whose head SHA changed after its checks
+started (the #223 lesson); keep a short runbook for conflicting CHANGELOG and parity-matrix edits (keep-both rule); remove merged
+worktrees and branches that this effort created. Acceptance: policy page linked from `CONTRIBUTING.md`, watcher script committed
+under `scripts/` with its SHA check and a test.
+
+**NA-11 v1.5.0.** Scope: run records and profiles, pricing file and token budget, gateway headers, Foundry evaluators and community
+results, http target and parity gate, live datasets and the grounding fixes, Aspire 17, the web fixes. Cut after R1 so the replay
+fixtures in the release match the prompts in it. Acceptance: changelog entry reads as release notes, docs site and scorecard are
+current, the release workflow is run by you (the approval click stays yours).
+
+**Order and parallelism**
+
+```mermaid
+flowchart LR
+    A[NA-1 live loop] --> B[NA-2 datasets, 6 lanes]
+    A --> C[NA-3 judge calibration]
+    C --> D[NA-6 baselines]
+    B --> E[NA-7 R1 sitting]
+    C --> E
+    E --> F[NA-11 v1.5.0]
+    G[NA-4 provider check] --> F
+    H[NA-5 CI live job] --> F
+    I[NA-8 web] --> F
+    J[NA-9 defects] --> E
+    K[NA-10 hygiene] --> F
+    classDef key fill:#ffe9c7,stroke:#b36b00
+    class A,C,D,E,G key
+```
+
+Wave A (now, all parallel, no key unless noted): NA-1, NA-5, NA-8, NA-9, NA-10, and the NA-2 authoring lanes once NA-1's mechanism
+is confirmed. Wave B: NA-3 (needs your labels), NA-4, NA-6. Wave C: NA-7 then NA-11. NA-9 item 1 must land before R1 because it can
+change what the workflow modes send and therefore what is recorded.
+
+**Tests.** Every item adds tests with the change: dataset schema and placeholder-resolution tests (testcontainers) for NA-2; a
+trigger-safety test for the live workflow (NA-5); a Playwright spec that fails before the fix (NA-8); regression tests for each
+NA-9 defect; a watcher SHA-check test (NA-10). The merge gate stays: ruff, `fixture_drift` exit 0, replay gate, `pytest`, the docs
+check, and the .NET suite when .NET changes.
+
+**UI impact.** NA-8 only: the Compare dialog exit behaviour and new screenshots. NA-9 item 1 may add a grounding indicator to
+workflow-mode answers; if it does, the web client's `onOrchestrationEvent` path already ignores unknown frames, so no UI change is
+required, but the chat page needs a visual check.
+
+**Seed data.** NA-7 adds one post-pass after the existing seeding steps (Alice's latest order set to delivered with a matching
+history row, drawing nothing from the global random stream) so the 15 Alice fixtures are re-recorded once, not many times. NA-2
+cases use only seeded users and products by name through placeholders; no new seed rows. No migration is planned.
+
+**Config and env.** No new settings except the NA-5 workflow inputs. `.env.example` and `docs/configuration.md` change only if
+NA-9 item 1 adds a flag. Live runs read only `AZURE_OPENAI_*` and `JUDGE_*`; the repo `.env` is never sourced whole.
+
+**Spend (all approved earlier, bounded):** NA-1 about 2 USD, NA-3 about 2, NA-4 under 1, NA-6 about 2 per model, NA-7 capped at 5.
+Total about 12 to 15 USD, one-off.
+
+**Risks.** The R1 sitting is the only step that can invalidate the replay gate for everyone, so it goes last and family by family.
+Judge calibration depends on your hour of labelling; if that slips, NA-6 baselines use the current judge and say so. NA-2 can
+inflate CI time: live variants never run in the PR gate.
+
+**Decisions I need from you** (none block Wave A): (1) models for the reference baselines (proposal above); (2) 5 USD cap for R1;
+(3) the hour for judge labels, or say "use my labels as drafted" to skip it and mark the calibration as unreviewed;
+(4) NA-9 item 1 direction (emit grounding from Python workflow modes, preferred); (5) #226 merge or close; (6) v1.5.0 scope.
 
 ### Decisions needed first
 
