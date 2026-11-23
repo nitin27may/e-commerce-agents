@@ -84,6 +84,29 @@ cassettes were recorded and how to re-record after a dataset/prompt change):
 LLM_PROVIDER=replay uv run python -m evals.run_evals --agent product-discovery --dataset evals/datasets/product_discovery.json
 ```
 
+### Cost, concurrency and rate limits (live runs)
+
+```bash
+# What would a live run cost? Token counts come from the replay fixtures, the price from
+# config/pricing/models.yaml. Calls no model and needs no key or database. MODEL is optional.
+# Repeats default as in a real run (1 under replay, 3 for a live provider); --repeats overrides.
+uv run python -m evals.run_evals --estimate gpt-4.1-mini --agent product-discovery \
+  --dataset evals/datasets/product_discovery.json --use-llm-judge
+
+# Run 4 case-repeats at a time. A 429 or 5xx is retried with exponential backoff and full jitter,
+# honouring Retry-After, capped at 60 s and 6 attempts. Ignored under LLM_PROVIDER=replay.
+uv run python -m evals.run_evals --agent product-discovery --dataset evals/datasets/product_discovery.json --concurrency 4
+```
+
+The estimate matches a fixture to a case by the user text it answered. It is a floor for the recorded
+behaviour, not a cap, and other models tokenize differently from the one that recorded the fixtures
+(`gpt-4.1`). A model with no price prints the tokens and an unknown cost. The judge is resolved as a real
+run resolves it (`JUDGE_PROVIDER` / `JUDGE_MODEL`); with none configured the estimate says so and prices the
+model under test as the judge. Judge calls use stated assumptions (400 tokens of overhead, 150 out), not
+recorded counts. Records are identical at any `--concurrency` (results are kept in case order). The limits
+live in `evals/live_limits.py`; `BackoffTransport` applies the same policy to an `httpx` client that accepts
+a transport.
+
 ## Setup, run records and re-scoring
 
 Every report starts with the **setup** it ran under (stack, target, chat provider and model, embedding

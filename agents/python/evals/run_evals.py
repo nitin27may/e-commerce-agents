@@ -454,6 +454,24 @@ Examples:
         help="Write this run's scores as your personal baseline for this setup (git-ignored, evals/.local/)",
     )
 
+    # EV-12: cost estimate and live-run limits (evals/estimate.py, evals/live_limits.py).
+    parser.add_argument(
+        "--estimate",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="MODEL",
+        help="Print the tokens and cost a live run would use, from the replay fixtures and the pricing file "
+        "(priced for MODEL, default the configured model), then exit without calling any model",
+    )
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=1,
+        help="Cases to run at once in a live run (default 1; ignored under LLM_PROVIDER=replay). "
+        "A 429 or 5xx is retried with Retry-After-aware, jittered, capped backoff",
+    )
+
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -465,6 +483,16 @@ Examples:
         parser.error("--verify needs --rescore")
     if args.repeats is not None and args.repeats < 1:
         parser.error("--repeats must be at least 1")
+    if args.concurrency < 1:
+        parser.error("--concurrency must be at least 1")
+    if args.estimate is not None:
+        from evals.estimate import run_estimate
+
+        sys.exit(run_estimate(args))
+    from evals.live_limits import configure
+    from shared.config import settings
+
+    configure(concurrency=args.concurrency, replay=settings.LLM_PROVIDER.strip().lower() == "replay")
 
     if args.rescore:
         sys.exit(
