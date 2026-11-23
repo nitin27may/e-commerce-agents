@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 import sys
 from pathlib import Path
 
@@ -77,6 +78,8 @@ def test_live_datasets_exist_and_are_all_live() -> None:
         "inventory_fulfillment.live.json",
         "order_management.live.json",
         "orchestrator_routing.live.json",
+        "pricing_promotions.live.json",
+        "product_discovery.live.json",
         "review_sentiment.live.json",
     }
     for path in LIVE_DATASETS:
@@ -97,6 +100,16 @@ def test_live_args_target_expected_tools_and_every_order_case_names_a_user(path:
         assert set(case.expected_tool_args or {}) <= set(case.expected_tools)
         if "{{order:" in json.dumps([case.input, case.expected_tool_args]):
             assert case.user_email, f"{path.name}: {case.input!r} resolves an order but sets no user_email"
+
+
+def test_pricing_coupon_case_states_a_cart_total_and_the_cancel_case_expects_a_park() -> None:
+    """validate_coupon needs a cart_total (no cart tool); a parked cancel is the expected outcome."""
+    live = EVALS / "datasets" / "live"
+    coupon = load_dataset(live / "pricing_promotions.live.json")[0]
+    assert "WELCOME10" in coupon.input and re.search(r"\$\d+", coupon.input)
+    assert coupon.expected_tool_args == {"validate_coupon": {"code": "WELCOME10", "cart_total": 120}}
+    cases = load_dataset(live / "order_management.live.json")
+    assert next(c for c in cases if "cancel_order" in c.expected_tools).expect_hitl is True
 
 
 # ─────────────────────── the resolver (fake source) ───────────────────────
@@ -259,6 +272,20 @@ async def test_every_live_dataset_resolves_against_a_seeded_database(
 
     # Product ids are uuid5 of the name, so the replay datasets' literal ids are right; the live ones are not guesses.
     assert await source.product_id("Sony WH-1000XM5") == PRODUCT_ID
+    assert await source.product_id("Logitech MX Master 3S")
+    # The pricing coupon case needs a coupon that is valid for the stated cart: active, no minimum above $120, no
+    # category or user restriction, no usage cap that could be spent, inside its validity window.
+    coupon = await clean_db.fetchrow(
+        "SELECT is_active, min_spend, applicable_categories, user_specific_email, usage_limit "
+        "FROM coupons WHERE code = 'WELCOME10'"
+    )
+    assert coupon is not None and coupon["is_active"] and coupon["min_spend"] <= 120
+    assert not coupon["applicable_categories"] and coupon["user_specific_email"] is None
+    assert coupon["usage_limit"] is None
+    assert await clean_db.fetchval(
+        "SELECT valid_from <= now() AND (valid_until IS NULL OR valid_until > now()) "
+        "FROM coupons WHERE code = 'WELCOME10'"
+    )
     # The restock case relies on this product being out of stock in the seed.
     in_stock = await clean_db.fetchval(
         "SELECT coalesce(sum(wi.quantity), 0) FROM warehouse_inventory wi JOIN products p ON p.id = wi.product_id "
