@@ -87,16 +87,21 @@ the quickest way to see what that means:
 
     <img src="images/return-awaiting-approval.jpg" alt="Chat showing a return paused at the policy gate with an Awaiting staff review card and the workflow graph" width="820"/>
 
-    Sign in as `admin.demo@gmail.com` in another browser and open **Runs**. The run is marked
-    "Needs approval"; expand it and choose **Approve** or **Reject**. The run resumes from its
-    checkpoint and finishes as the customer; a rejected return leaves no return row behind.
+    Sign in as a reviewer in another browser and open **Approvals**. This return is over half the
+    customer's lifetime spend, so policy routes it to a manager: use `admin.demo@gmail.com`.
+    Choose **Approve** or **Reject**. The run resumes from its checkpoint and finishes as the
+    customer; a rejected return leaves no return row behind. An admin can also decide from
+    **Runs**, where the run is marked "Needs approval".
+
+    A smaller return is routed to support instead. Ask as `alice.johnson@gmail.com` to return a
+    specific delivered order of about $50 and it appears in `support.demo@gmail.com`'s inbox:
+
+    <img src="images/approvals-inbox.jpg" alt="Approvals inbox as a support reviewer: a pending return routed to support, with Reject and Approve buttons" width="820"/>
 
     <img src="images/runs-approve.jpg" alt="Runs page as an admin: the paused return expanded, with Approve and Reject buttons" width="820"/>
 
-    Two limits of the web UI today: the `support` role has no page to decide from (its **Runs**
-    page lists only its own runs, and **Admin → Approvals** is admin-only), and **Admin →
-    Approvals** lists tool approvals only, not a paused return. The API has neither limit
-    (`GET /api/approvals`, `POST /api/approvals/{id}/decide`). See [approvals](approvals.md).
+    The released 1.4.0 images predate the inbox fix: there, **Approvals** is admin-only and lists
+    tool approvals only, so decide from **Runs** as an admin. See [approvals](approvals.md).
 
 ---
 

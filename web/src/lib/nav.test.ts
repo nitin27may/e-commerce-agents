@@ -24,6 +24,18 @@ describe("visibleGroups", () => {
     expect(labels).not.toContain("Decisions");
   });
 
+  it("shows a support reviewer the Approvals inbox and nothing else from Admin", () => {
+    const groups = visibleGroups({ isAdmin: false, isSeller: false, isStaff: true });
+    const admin = groups.find((g) => g.label === "Admin");
+    expect(admin?.items.map((i) => i.label)).toEqual(["Approvals"]);
+  });
+
+  it("hides Approvals from a customer", () => {
+    const labels = visibleGroups({ isAdmin: false, isSeller: false, isStaff: false })
+      .flatMap((g) => g.items.map((i) => i.label));
+    expect(labels).not.toContain("Approvals");
+  });
+
   it("shows admin items (Overview, Approvals, Usage) to an admin — no old labels", () => {
     const groups = visibleGroups({ isAdmin: true, isSeller: true });
     const labels = groups.flatMap((g) => g.items.map((i) => i.label));

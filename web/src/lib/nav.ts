@@ -21,6 +21,8 @@ export interface NavItem {
   href: string;
   icon: LucideIcon;
   adminOnly?: boolean;
+  /** Staff reviewers: `support` and `admin`. */
+  staffOnly?: boolean;
   sellerOnly?: boolean;
   /** Shown for the cart count badge. */
   cartBadge?: boolean;
@@ -60,7 +62,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Admin",
     items: [
       { label: "Overview", href: "/admin", icon: Shield, adminOnly: true },
-      { label: "Approvals", href: "/admin/approvals", icon: CheckCircle, adminOnly: true },
+      { label: "Approvals", href: "/admin/approvals", icon: CheckCircle, staffOnly: true },
       { label: "Decisions", href: "/admin/decisions", icon: Gauge, adminOnly: true },
       { label: "Returns", href: "/admin/returns", icon: PackageCheck, adminOnly: true },
       { label: "Usage", href: "/admin/usage", icon: BarChart3, adminOnly: true },
@@ -72,11 +74,15 @@ export const NAV_GROUPS: NavGroup[] = [
 export function visibleGroups(opts: {
   isAdmin: boolean;
   isSeller: boolean;
+  /** `support` or `admin`. Defaults to `isAdmin`, so an admin is always staff. */
+  isStaff?: boolean;
 }): NavGroup[] {
+  const isStaff = opts.isStaff ?? opts.isAdmin;
   return NAV_GROUPS.map((group) => ({
     ...group,
     items: group.items.filter((item) => {
       if (item.adminOnly) return opts.isAdmin;
+      if (item.staffOnly) return isStaff;
       if (item.sellerOnly) return opts.isSeller;
       return true;
     }),

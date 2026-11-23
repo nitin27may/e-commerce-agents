@@ -4,71 +4,56 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useLoadEffect } from "@/lib/use-load-effect";
 import { useAuth } from "@/lib/auth-context";
-import { api } from "@/lib/api";
+import { api, type ApprovalDetail, type ApprovalSummary } from "@/lib/api";
 import { toast } from "@/lib/toast";
 import { Badge } from "@/components/ui/badge";
 import { TONE_BADGE_CLASS } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
-import {
-  CheckCircle,
-  XCircle,
-  Clock,
-  ShieldAlert,
-  Loader2,
-  RefreshCw,
-  Wrench,
-  User,
-} from "lucide-react";
+import { CheckCircle, XCircle, Clock, ShieldAlert, Loader2, RefreshCw, User, Route } from "lucide-react";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-type HitlRequest = {
-  id: string;
-  user_email: string;
-  agent_name: string;
-  tool_name: string;
-  tool_input: Record<string, unknown>;
-  status: string;
-  admin_note: string | null;
-  approved_by: string | null;
-  execution_result: Record<string, unknown> | null;
-  created_at: string;
-  resolved_at: string | null;
-};
+// The staff inbox. It reads the unified approvals API (GET /api/approvals), so it lists every
+// approval the signed-in reviewer may decide, whatever raised it: a gated tool call, a paused
+// workflow (a return), or an event the system could not act on alone. The server decides what a
+// reviewer sees (support: what is routed to support; admin: everything) and who may decide.
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-const TOOL_LABELS: Record<string, string> = {
-  cancel_order: "Cancel Order",
-  process_refund: "Process Refund",
-  initiate_return: "Initiate Return",
-  modify_order: "Modify Order",
-  place_backorder: "Place Backorder",
+const KIND_LABELS: Record<string, string> = {
+  return_approval: "Return",
+  refund_approval: "Refund",
+  cancel_order: "Cancel order",
+  process_refund: "Refund",
+  initiate_return: "Return",
+  modify_order: "Modify order",
+  place_backorder: "Backorder",
+  autonomous_action: "Autonomous action",
 };
 
-const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
-  pending: {
-    label: "Pending",
-    className: TONE_BADGE_CLASS.warning,
-  },
-  approved: {
-    label: "Approved",
-    className: TONE_BADGE_CLASS.success,
-  },
-  executed: {
-    label: "Executed",
-    className: TONE_BADGE_CLASS.success,
-  },
-  denied: {
-    label: "Denied",
-    className: TONE_BADGE_CLASS.destructive,
-  },
+const SOURCE_LABELS: Record<string, string> = {
+  tool: "Tool call",
+  workflow: "Workflow",
+  event: "Event",
 };
+
+const OPEN_STATUSES = new Set(["pending_review", "needs_info"]);
+
+const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
+  pending_confirm: { label: "Awaiting customer", className: TONE_BADGE_CLASS.warning },
+  pending_review: { label: "Pending review", className: TONE_BADGE_CLASS.warning },
+  needs_info: { label: "Needs info", className: TONE_BADGE_CLASS.warning },
+  approved: { label: "Approved", className: TONE_BADGE_CLASS.success },
+  approved_with_edits: { label: "Approved with edits", className: TONE_BADGE_CLASS.success },
+  executed: { label: "Executed", className: TONE_BADGE_CLASS.success },
+  rejected: { label: "Rejected", className: TONE_BADGE_CLASS.destructive },
+  expired: { label: "Expired", className: TONE_BADGE_CLASS.destructive },
+  failed: { label: "Failed", className: TONE_BADGE_CLASS.destructive },
+};
+
+function kindLabel(kind: string): string {
+  return KIND_LABELS[kind] ?? kind.replaceAll("_", " ");
+}
 
 function formatTs(iso: string): string {
   try {
@@ -83,34 +68,26 @@ function formatTs(iso: string): string {
   }
 }
 
-function inputSummary(tool: string, input: Record<string, unknown>): string {
-  if (tool === "cancel_order" || tool === "process_refund" || tool === "modify_order") {
-    const id = String(input.order_id ?? "").slice(0, 8);
-    const reason = input.reason ? ` — "${input.reason}"` : "";
-    return `Order #${id}${reason}`;
-  }
-  if (tool === "initiate_return") {
-    const id = String(input.order_id ?? "").slice(0, 8);
-    return `Order #${id}`;
-  }
-  if (tool === "place_backorder") {
-    return `Product #${String(input.product_id ?? "").slice(0, 8)}`;
-  }
-  return JSON.stringify(input).slice(0, 60);
+function formatAmount(amount: ApprovalSummary["amount"]): string | null {
+  if (amount === null || amount === undefined || amount === "") return null;
+  const n = Number(amount);
+  return Number.isFinite(n) ? `$${n.toFixed(2)}` : String(amount);
 }
 
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
-export default function AdminApprovalsPage() {
+export default function ApprovalsPage() {
   const router = useRouter();
-  const { user, isAdmin, isLoading: authLoading } = useAuth();
+  const { user, isStaff, isLoading: authLoading } = useAuth();
 
-  const [requests, setRequests] = useState<HitlRequest[]>([]);
+  const [approvals, setApprovals] = useState<ApprovalSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [filter, setFilter] = useState<"pending" | "all">("pending");
   const [processing, setProcessing] = useState<Set<string>>(new Set());
+  const [details, setDetails] = useState<Record<string, ApprovalDetail | "loading" | "error">>({});
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -118,56 +95,47 @@ export default function AdminApprovalsPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
-      const data = await api.getHitlRequests(filter === "pending" ? "pending" : undefined);
-      setRequests(data?.requests ?? []);
-    } catch {
-      toast.error("Failed to load approval requests");
+      const data = await api.listApprovals(filter === "pending" ? undefined : "all");
+      setApprovals(data?.approvals ?? []);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Failed to load approvals");
     } finally {
       setLoading(false);
     }
   }, [filter]);
 
-  useLoadEffect(load, Boolean(user && isAdmin));
+  useLoadEffect(load, Boolean(user && isStaff));
 
-  async function handleApprove(req: HitlRequest) {
-    setProcessing((p) => new Set(p).add(req.id));
+  async function showDetail(id: string) {
+    if (details[id] && details[id] !== "error") return;
+    setDetails((d) => ({ ...d, [id]: "loading" }));
     try {
-      const result = await api.approveHitlRequest(req.id);
-      const execResult = result?.execution_result as Record<string, unknown> | undefined;
-      const success = execResult?.success;
-      const msg = String(execResult?.message ?? "Action approved and executed.");
-      if (success) {
-        toast.success(`Approved: ${TOOL_LABELS[req.tool_name] ?? req.tool_name}`, {
-          description: msg,
-        });
-      } else {
-        toast(`Approved — but execution issue`, { description: msg });
-      }
-      await load();
+      const detail = await api.getApproval(id);
+      setDetails((d) => ({ ...d, [id]: detail }));
     } catch {
-      toast.error("Failed to approve request");
-    } finally {
-      setProcessing((p) => {
-        const next = new Set(p);
-        next.delete(req.id);
-        return next;
-      });
+      setDetails((d) => ({ ...d, [id]: "error" }));
     }
   }
 
-  async function handleDeny(req: HitlRequest) {
-    setProcessing((p) => new Set(p).add(req.id));
+  async function decide(approval: ApprovalSummary, decision: "approve" | "reject") {
+    setProcessing((p) => new Set(p).add(approval.id));
     try {
-      await api.denyHitlRequest(req.id);
-      toast(`Denied: ${TOOL_LABELS[req.tool_name] ?? req.tool_name}`);
+      await api.decideApproval(approval.id, decision);
+      const label = kindLabel(approval.kind);
+      if (decision === "approve") toast.success(`Approved: ${label}`);
+      else toast(`Rejected: ${label}`);
       await load();
-    } catch {
-      toast.error("Failed to deny request");
+    } catch (err) {
+      // The server's reason is the useful part: routed to a manager, already decided, own request.
+      toast.error(decision === "approve" ? "Could not approve" : "Could not reject", {
+        description: err instanceof Error ? err.message : undefined,
+      });
     } finally {
       setProcessing((p) => {
         const next = new Set(p);
-        next.delete(req.id);
+        next.delete(approval.id);
         return next;
       });
     }
@@ -175,7 +143,7 @@ export default function AdminApprovalsPage() {
 
   if (authLoading) return null;
 
-  if (!isAdmin) {
+  if (!isStaff) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">
@@ -183,13 +151,13 @@ export default function AdminApprovalsPage() {
             <ShieldAlert className="size-8 text-destructive" />
           </div>
           <h2 className="mt-4 text-lg font-semibold">Access Denied</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Admin privileges required.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Staff access required (support or admin).</p>
         </div>
       </div>
     );
   }
 
-  const pendingCount = requests.filter((r) => r.status === "pending").length;
+  const pendingCount = approvals.filter((a) => OPEN_STATUSES.has(a.status)).length;
 
   return (
     <div className="min-h-screen bg-background">
@@ -211,7 +179,7 @@ export default function AdminApprovalsPage() {
                   )}
                 </h1>
                 <p className="text-sm text-muted-foreground">
-                  Human-in-the-loop approval for high-stakes agent actions
+                  Returns, refunds and other agent actions waiting for a person to decide
                 </p>
               </div>
             </div>
@@ -221,6 +189,7 @@ export default function AdminApprovalsPage() {
                   <button
                     key={f}
                     type="button"
+                    aria-pressed={filter === f}
                     onClick={() => setFilter(f)}
                     className={`px-3 py-1.5 text-xs font-medium capitalize transition-colors first:rounded-l-lg last:rounded-r-lg ${
                       filter === f
@@ -250,116 +219,119 @@ export default function AdminApprovalsPage() {
           </div>
         )}
 
-        {!loading && requests.length === 0 && (
+        {!loading && loadError && (
+          <div role="alert" className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            Could not load approvals: {loadError}
+          </div>
+        )}
+
+        {!loading && !loadError && approvals.length === 0 && (
           <div className="py-20 text-center">
             <CheckCircle className="mx-auto size-12 text-success" />
             <p className="mt-3 text-sm font-medium text-foreground">
-              {filter === "pending" ? "No pending approvals" : "No requests yet"}
+              {filter === "pending" ? "No pending approvals" : "No approvals yet"}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              High-stakes agent actions (cancel orders, refunds, returns) will appear here.
+              Returns, refunds and cancellations that policy routes to you will appear here.
             </p>
           </div>
         )}
 
-        {!loading && requests.length > 0 && (
+        {!loading && !loadError && approvals.length > 0 && (
           <div className="space-y-3">
-            {requests.map((req) => {
-              const statusCfg = STATUS_CONFIG[req.status] ?? STATUS_CONFIG.pending;
-              const isPending = req.status === "pending";
-              const isProcessing = processing.has(req.id);
+            {approvals.map((approval) => {
+              const statusCfg = STATUS_CONFIG[approval.status] ?? {
+                label: approval.status,
+                className: TONE_BADGE_CLASS.warning,
+              };
+              const isPending = approval.status === "pending_review";
+              const isProcessing = processing.has(approval.id);
+              const amount = formatAmount(approval.amount);
+              const detail = details[approval.id];
 
               return (
-                <div
-                  key={req.id}
-                  className="rounded-xl bg-card ring-1 ring-foreground/10"
-                >
+                <div key={approval.id} className="rounded-xl bg-card ring-1 ring-foreground/10">
                   <div className="flex items-start gap-4 p-4">
-                    {/* Icon */}
                     <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-                      {isPending ? (
+                      {OPEN_STATUSES.has(approval.status) ? (
                         <Clock className="size-4 text-warning" />
-                      ) : req.status === "denied" ? (
+                      ) : statusCfg.className === TONE_BADGE_CLASS.destructive ? (
                         <XCircle className="size-4 text-destructive" />
                       ) : (
                         <CheckCircle className="size-4 text-success" />
                       )}
                     </div>
 
-                    {/* Main content */}
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-semibold text-sm">
-                          {TOOL_LABELS[req.tool_name] ?? req.tool_name}
+                        <span className="text-sm font-semibold">
+                          {kindLabel(approval.kind)}
+                          {amount && <span className="ml-1.5 font-normal text-muted-foreground">{amount}</span>}
                         </span>
                         <Badge variant="outline" className={statusCfg.className}>
                           {statusCfg.label}
                         </Badge>
+                        <Badge variant="outline">{SOURCE_LABELS[approval.source] ?? approval.source}</Badge>
                       </div>
 
-                      {/* Summary */}
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {inputSummary(req.tool_name, req.tool_input)}
-                      </p>
-
-                      {/* Meta row */}
                       <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                         <span className="flex items-center gap-1">
                           <User className="size-3" />
-                          {req.user_email}
+                          {approval.requester_email}
                         </span>
-                        <span className="flex items-center gap-1">
-                          <Wrench className="size-3" />
-                          {req.agent_name}
-                        </span>
-                        <span>{formatTs(req.created_at)}</span>
-                        {req.resolved_at && (
-                          <span>→ resolved {formatTs(req.resolved_at)}</span>
+                        {approval.route && (
+                          <span className="flex items-center gap-1">
+                            <Route className="size-3" />
+                            Routed to {approval.route}
+                          </span>
                         )}
-                        {req.approved_by && (
-                          <span>by {req.approved_by}</span>
+                        <span>{formatTs(approval.created_at)}</span>
+                        {approval.due_at && OPEN_STATUSES.has(approval.status) && (
+                          <span>due {formatTs(approval.due_at)}</span>
                         )}
                       </div>
 
-                      {/* Tool input detail */}
-                      <details className="mt-2">
+                      <details
+                        className="mt-2"
+                        onToggle={(e) => {
+                          if (e.currentTarget.open) void showDetail(approval.id);
+                        }}
+                      >
                         <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
-                          Show input
+                          Show details
                         </summary>
-                        <pre className="mt-1.5 max-h-32 overflow-auto rounded bg-muted/60 px-2 py-1.5 text-xs leading-relaxed text-foreground/70">
-                          {JSON.stringify(req.tool_input, null, 2)}
-                        </pre>
+                        {detail === "loading" && (
+                          <p className="mt-1.5 text-xs text-muted-foreground">Loading…</p>
+                        )}
+                        {detail === "error" && (
+                          <p className="mt-1.5 text-xs text-destructive">
+                            Could not load the details. It may be routed to a manager.
+                          </p>
+                        )}
+                        {detail && typeof detail === "object" && (
+                          <pre className="mt-1.5 max-h-48 overflow-auto rounded bg-muted/60 px-2 py-1.5 text-xs leading-relaxed text-foreground/70">
+                            {JSON.stringify(detail.source_detail ?? {}, null, 2)}
+                          </pre>
+                        )}
                       </details>
-
-                      {/* Execution result */}
-                      {req.execution_result && (
-                        <div className="mt-2 rounded-md bg-success/10 px-3 py-1.5 text-xs text-[color-mix(in_oklab,var(--success)_62%,black)] dark:text-success">
-                          {String(req.execution_result.message ?? JSON.stringify(req.execution_result))}
-                        </div>
-                      )}
                     </div>
 
-                    {/* Action buttons */}
                     {isPending && (
                       <div className="flex shrink-0 gap-2">
                         <Button
                           size="sm"
                           variant="outline"
                           disabled={isProcessing}
-                          onClick={() => handleDeny(req)}
+                          onClick={() => decide(approval, "reject")}
                           className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10"
                         >
-                          {isProcessing ? (
-                            <Loader2 className="size-3.5 animate-spin" />
-                          ) : (
-                            <XCircle className="size-3.5" />
-                          )}
-                          Deny
+                          {isProcessing ? <Loader2 className="size-3.5 animate-spin" /> : <XCircle className="size-3.5" />}
+                          Reject
                         </Button>
                         <Button
                           size="sm"
                           disabled={isProcessing}
-                          onClick={() => handleApprove(req)}
+                          onClick={() => decide(approval, "approve")}
                           className="gap-1.5 bg-[color-mix(in_oklab,var(--success)_72%,black)] text-white hover:bg-[color-mix(in_oklab,var(--success)_62%,black)]"
                         >
                           {isProcessing ? (

@@ -31,7 +31,7 @@ type PaletteItem =
  */
 export function CommandPalette() {
   const router = useRouter();
-  const { isAdmin, user } = useAuth();
+  const { isAdmin, isStaff, user } = useAuth();
   const isSeller = user?.role === "seller" || isAdmin;
 
   const [open, setOpen] = useState(false);
@@ -40,8 +40,8 @@ export function CommandPalette() {
   const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
 
   const navItems = useMemo<NavItem[]>(
-    () => visibleGroups({ isAdmin, isSeller }).flatMap((g) => g.items),
-    [isAdmin, isSeller],
+    () => visibleGroups({ isAdmin, isSeller, isStaff }).flatMap((g) => g.items),
+    [isAdmin, isSeller, isStaff],
   );
 
   // Fetch recent orders when palette opens (top 5, no caching needed)
