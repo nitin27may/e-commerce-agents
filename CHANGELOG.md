@@ -92,6 +92,14 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
   trigger's width and cut three of the five off (#210).
 - **The Compare dialog renders answers the way chat does.** A fenced card block in a mode's answer (a product, a
   sentiment summary) shows as its card. It used to be printed as JSON text (#209).
+- **Orchestrator eval groundedness no longer scores relayed amounts as ungrounded.** In the live 2026-11-23 run the
+  orchestrator suite scored 0.0 on "speaker under $100" (the user's own budget echoed) and "coupons" (real coupon
+  thresholds relayed from the specialist): the orchestrator has no tools of its own, so its ledger is empty and
+  amount/tracking claims are unverifiable by construction. `score_from_report(..., ledger_complete=False)` leaves
+  those verdicts out for the `orchestrator` target; ids and cards still count and specialist suites are unchanged.
+  Production grounding and replay fixtures are untouched (`docs/agent-quality.md`). Gap left open: the ledger does
+  not record `min_spend` / `max_discount` / `discount_value`, so the pricing specialist scores its own coupon list
+  0 of 10.
 - **Staff could not decide a paused return from the Approvals page, and the support role had no
   page to decide from** (#208). The page read the older tool-approval list, so a return paused at
   the workflow's policy gate never appeared and the inbox said "No pending approvals"; it was also

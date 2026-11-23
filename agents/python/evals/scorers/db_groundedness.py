@@ -22,18 +22,36 @@ from shared.grounding.extractor import extract_claims
 from shared.grounding.ledger import GroundingLedger
 from shared.grounding.verifier import GroundingReport, verify_claims
 
+# Verdict types the verifier can only settle against the ledger of the process that ran it.
+_LEDGER_ONLY_CLAIM_TYPES = frozenset({"amount", "tracking"})
 
-def score_from_report(grounding: dict[str, Any] | None) -> float:
+
+def score_from_report(grounding: dict[str, Any] | None, *, ledger_complete: bool = True) -> float:
     """Score from an already-computed report (e.g. ``RunOutcome.grounding``,
     which ``GroundingVerificationMiddleware`` already populated during the
     production run — free, no extra DB round trip).
 
     1.0 when there's nothing to verify: a response making no checkable
     claims isn't ungrounded, it's just not asserting anything specific.
+
+    ``ledger_complete=False`` is for a run whose ledger cannot hold the facts behind the answer: the
+    orchestrator relays specialist text, and a specialist's tool results never cross the A2A hop, so
+    an amount or tracking number it quotes is "unverifiable" by construction, not wrong. Those
+    verdicts are left out of the score (not applicable). Id and card claims still count: they are
+    checked against the database, and ``not_found`` / ``price_mismatch`` are real failures.
     """
     if not grounding or grounding.get("total", 0) == 0:
         return 1.0
-    return grounding["verified"] / grounding["total"]
+    if ledger_complete or not grounding.get("claims"):
+        return grounding["verified"] / grounding["total"]
+    counted = [
+        c
+        for c in grounding["claims"]
+        if not (c.get("status") == "unverifiable" and c.get("type") in _LEDGER_ONLY_CLAIM_TYPES)
+    ]
+    if not counted:
+        return 1.0
+    return sum(1 for c in counted if c.get("status") == "verified") / len(counted)
 
 
 async def score_groundedness(

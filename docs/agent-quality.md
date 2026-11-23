@@ -45,6 +45,18 @@ Did the agent call a tool to answer the question instead of fabricating data fro
 
 This maps directly to the "Data Grounding Rules" in `grounding-rules.yaml`. An agent that consistently scores below 1.0 on groundedness has a prompt-layer or tool-wiring problem.
 
+### What groundedness means for the orchestrator suite
+
+The live run of 2026-11-23 scored `orchestrator_routing` groundedness 0.0 on cases 0 and 2 (speaker under $100, coupons) while routing was 100%. Neither was a fabrication:
+
+- **The orchestrator's ledger is empty.** It has no data tools, only `call_specialist_agent`. The specialist's tool results stay in the specialist process; only step summaries cross the A2A hop. The orchestrator's verifier therefore checks the relayed text with no ledger, and the amount and tracking tiers (ledger only) can never match. Ids and cards are still checked against Postgres, which is why the review and stock cases (a single product id) scored 1.0.
+- **Case 0:** the only claim was `$100.00`, the user's own budget echoed back ("no ... under $100"). Nothing to verify it against.
+- **Case 2:** ten `$` amounts from the coupon list (`min $100, max $75`, ...). They match the seeded `coupons` rows (`TECHSAVE` min_spend 100, max_discount 75). The same question put to the pricing-promotions specialist directly also scored 0 of 10, so this part is not only the hop: `GroundingLedger._record_bare_amount` does not record `min_spend`, `max_discount` or `discount_value`. That is a separate, small ledger gap and is not fixed here, because it changes what specialists report in production.
+
+For the `orchestrator` target the eval scorer now treats an `unverifiable` amount or tracking verdict as not applicable and drops it from the ratio (`score_from_report(..., ledger_complete=False)`, applied in `scoring.score_record`). `not_found` and `price_mismatch` still count, so an invented order id or a wrong card price still scores 0. Specialist suites keep the strict score. Production grounding is unchanged. Re-scoring the live records gives cases 0 and 2 groundedness 1.0 and a pass. Cases 1 and 5 stay at 0.0: they quote a hard-coded order id that is not in the database.
+
+Known limit: this makes the orchestrator number say less. A relayed price is no longer checked at the orchestrator level at all; the specialist suites are where amounts are verified.
+
 ### Correctness
 
 Did the agent call the right tool(s) for the query, and was the routing decision accurate?

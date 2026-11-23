@@ -132,7 +132,13 @@ def score_record(record: RunRecord, pass_threshold: float | None = None) -> RunR
     from evals.scorers.db_groundedness import score_from_report
 
     expected = record.expected
-    groundedness = score_from_report(record.grounding) if record.grounding is not None else record.scores.groundedness
+    # The orchestrator's ledger never sees a specialist's tool results, so amount/tracking claims it
+    # relays cannot be checked there (see docs/agent-quality.md); a specialist's own ledger can.
+    groundedness = (
+        score_from_report(record.grounding, ledger_complete=record.agent != "orchestrator")
+        if record.grounding is not None
+        else record.scores.groundedness
+    )
     correctness = score_correctness(record.tools_called, expected.tools)
     if expected.route:
         correctness = score_routing(record.routes, expected.route)
