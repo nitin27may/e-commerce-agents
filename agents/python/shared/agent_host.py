@@ -116,6 +116,8 @@ async def _run_agent_native(
     begin_miss_tracking()
     response = await agent.run(messages, options=_run_options(agent))
     raise_if_specialist_missed()
+    refused: dict[str, str] = {}
+    notice = await park_pending_approvals(agent, response, refused)
     if metadata_box is not None:
         metadata_box.update(getattr(response, "additional_properties", None) or {})
         usage = getattr(response, "usage_details", None)
@@ -124,25 +126,33 @@ async def _run_agent_native(
         if model := served_model(response):
             metadata_box["_maf_model"] = model
         if parked := approval_requests(response):
+            # A call a pre-park check refused was requested by the model but never parked: say so, so a caller
+            # (the eval harness) does not count it as a human-approval request.
+            for call in parked:
+                if call["tool_name"] in refused:
+                    call["refused"] = refused[call["tool_name"]]
             metadata_box["_maf_approval_requests"] = parked
     text = response.text or ""
-    if notice := await park_pending_approvals(agent, response):
+    if notice:
         text = f"{text}\n\n{notice}" if text else notice
     return text
 
 
-async def park_pending_approvals(agent: Any, response: Any) -> str:
+async def park_pending_approvals(agent: Any, response: Any, refused: dict[str, str] | None = None) -> str:
     """Make a call MAF parked for approval durable, and return the sentence the user reads (``""`` if none).
 
     ``@tool(approval_mode="always_require")`` stops the run before function middleware, so
     ``HITLFunctionMiddleware`` never sees the call and the response text is empty. The only trace is a
     ``function_approval_request`` in ``response.user_input_requests``. Each one becomes a
     ``tool_approval_requests`` row plus its inbox approval (``shared.hitl.park_gated_call``, idempotent), owned by
-    the forwarded user, and the tool is never executed here. No identity, or a database error, fails closed: the
+    the forwarded user, and the tool is never executed here. Before that, ``shared.park_prechecks`` runs the tool's
+    role guard and its cheap preconditions (ownership, status, window): a call that can never succeed gets a
+    sentence saying why and no row. No identity, or a database error (including in a precheck), fails closed: the
     user is told nothing was changed.
     """
-    from shared.context import current_session_id, current_user_email
+    from shared.context import current_session_id, current_user_email, current_user_role
     from shared.hitl import PARK_FAILED_REPLY, park_gated_call, parked_reply
+    from shared.park_prechecks import precheck_gated_call
 
     sentences: list[str] = []
     for request in getattr(response, "user_input_requests", None) or []:
@@ -163,6 +173,13 @@ async def park_pending_approvals(agent: Any, response: Any) -> str:
             sentences.append(PARK_FAILED_REPLY)
             continue
         try:
+            if refusal := await precheck_gated_call(
+                agent, str(name), tool_input, user_email=email, role=current_user_role.get("")
+            ):
+                sentences.append(refusal.sentence)
+                if refused is not None:
+                    refused[str(name)] = refusal.reason
+                continue
             request_id, created = await park_gated_call(
                 user_email=email,
                 session_id=current_session_id.get("") or None,

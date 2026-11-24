@@ -15,6 +15,7 @@ from typing import Any
 
 import asyncpg
 import pytest
+import pytest_asyncio
 from agent_framework import Agent, ChatResponse, Content, Message, tool
 
 import shared.db as shared_db
@@ -38,9 +39,19 @@ def _call(name: str, args: dict[str, Any]) -> ChatResponse:
     )
 
 
-@pytest.fixture
-def pool(clean_db: asyncpg.Pool, monkeypatch: pytest.MonkeyPatch) -> asyncpg.Pool:
+@pytest_asyncio.fixture
+async def pool(clean_db: asyncpg.Pool, monkeypatch: pytest.MonkeyPatch) -> asyncpg.Pool:
     monkeypatch.setattr(shared_db, "_pool", clean_db)
+    # A real, cancellable order of the requester: the pre-park check (shared.park_prechecks) must pass for the
+    # park to happen at all.
+    user_id = await clean_db.fetchval(
+        "INSERT INTO users (email, password_hash, name) VALUES ($1, 'x', 'Jack') RETURNING id", EMAIL
+    )
+    await clean_db.execute(
+        "INSERT INTO orders (id, user_id, status, total, shipping_address) VALUES ($1, $2, 'placed', 10, '{}')",
+        ORDER_ID,
+        user_id,
+    )
     return clean_db
 
 
