@@ -5,11 +5,12 @@ import { ApprovalCard } from "./approval-card";
 import { api } from "@/lib/api";
 
 // Only staff may approve (#92); the card is role-gated, so each test sets the role.
-const auth = vi.hoisted(() => ({ isAdmin: true }));
-vi.mock("@/lib/auth-context", () => ({ useAuth: () => ({ isAdmin: auth.isAdmin }) }));
+const auth = vi.hoisted(() => ({ isAdmin: true, isStaff: true }));
+vi.mock("@/lib/auth-context", () => ({ useAuth: () => ({ isAdmin: auth.isAdmin, isStaff: auth.isStaff }) }));
 
 beforeEach(() => {
   auth.isAdmin = true;
+  auth.isStaff = true;
 });
 
 afterEach(() => {
@@ -33,6 +34,19 @@ describe("ApprovalCard", () => {
     expect(screen.getByText(/awaiting staff review/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /approve/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /reject/i })).not.toBeInTheDocument();
+    expect(resume).not.toHaveBeenCalled();
+  });
+
+  it("keeps a support-role viewer read-only: the card lives in the requester's own thread, so staff decide elsewhere", () => {
+    // The approvals service lets support or admin decide, but never the requester, and in chat the viewer is the
+    // requester. Staff decide from /runs or the inbox, where the requester is somebody else.
+    auth.isAdmin = false;
+    auth.isStaff = true;
+    const resume = vi.spyOn(api, "resumeRun");
+    render(<ApprovalCard runId="run-1" onResolved={() => {}} />);
+
+    expect(screen.getByText(/awaiting staff review/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /approve/i })).not.toBeInTheDocument();
     expect(resume).not.toHaveBeenCalled();
   });
 

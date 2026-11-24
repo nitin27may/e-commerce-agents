@@ -67,6 +67,10 @@ still guards an ungated registration of the same names). The specialist host clo
   or a database error the reply says nothing was changed and no row is written (fail closed).
 * In `tool` mode the orchestrator relays that sentence; the in-chat approval card exists only for the workflow
   modes. Staff see the request in the inbox either way.
+* The in-chat card renders only in the requester's own thread, so its viewer is always the requester. By design staff
+  (`support` or `admin`) do not decide from it: they decide on `/runs` or in the inbox, where the requester is someone
+  else. The card shows "Awaiting staff review" to everyone but an admin, and an admin who asked for the return is still
+  refused by the reviewer-is-not-requester rule.
 
 ## Roles
 

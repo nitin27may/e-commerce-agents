@@ -35,6 +35,7 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ### Fixed
 
+- **In-chat approval card: staff-from-own-thread is by design.** The card renders only in the requester's own thread, so `support` cannot decide from it (the requester is never the decider); staff decide on `/runs` or the inbox. Documented in the component and `docs/approvals.md`, with a vitest case for a support-role viewer.
 - **Live dataset expectations follow the precheck.** A delivered-order address change and an in-stock backorder no longer expect the gated tool to run (the precheck refuses both in words, no approval); "cancel my last order" keeps its no-tool, no-approval expectation with a sharper `why`. No assertion was loosened beyond that.
 - **Replay baselines refreshed to the re-recorded fixtures.** `python-inproc-replay` only: pricing-promotions 0.68 to 0.96, order-management 0.51 to 0.75, inventory-fulfillment 0.82 to 0.90, orchestrator routing 0.80 to 1.00 (product-discovery 0.96 and review-sentiment 1.00 unchanged). The live `python-inproc-gpt-4.1` baselines are untouched; scorecard and `docs/agent-quality.md` regenerated.
 - **Handoff mode sends the `grounding` frame.** `HandoffMode.run` now goes through `@grounded_run` like the workflow modes and group chat, so its final text is verified per `GROUNDING_MODE` and `chat_stream` emits the frame its .NET twin already sent. Parity row 17 updated.
