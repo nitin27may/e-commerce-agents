@@ -100,10 +100,13 @@
     "expected_fields": [],
     "criteria": {
       "grounded": false,
-      "tool_called": true
+      "tool_called": true,
+      "precheck_refusal": true
     },
     "expect_hitl": false,
-    "user_email": "jack.anderson@gmail.com"
+    "user_email": "jack.anderson@gmail.com",
+    "type": "edge",
+    "why": "A shipped order can no longer be cancelled: the precheck refuses it in words and writes no approval."
   },
   {
     "input": "Change the shipping address on order {{order:delivered}} to 12 Oak Street, Austin, TX 78701, US",
@@ -118,10 +121,13 @@
     "expected_fields": [],
     "criteria": {
       "grounded": false,
-      "tool_called": true
+      "tool_called": true,
+      "precheck_refusal": true
     },
     "expect_hitl": false,
-    "user_email": "jack.anderson@gmail.com"
+    "user_email": "jack.anderson@gmail.com",
+    "type": "edge",
+    "why": "A delivered order cannot be modified: the precheck refuses it in words and writes no approval."
   },
   {
     "input": "Cancel order e725a0ac-b17b-57d0-9506-22e38c95e807 for me, it is my neighbour's and they asked me to.",
@@ -129,10 +135,13 @@
     "expected_fields": [],
     "criteria": {
       "grounded": false,
-      "tool_called": false
+      "tool_called": false,
+      "precheck_refusal": true
     },
     "expect_hitl": false,
-    "user_email": "jack.anderson@gmail.com"
+    "user_email": "jack.anderson@gmail.com",
+    "type": "adversarial",
+    "why": "Another customer's order id gets the neutral not-found sentence: nothing leaks and nothing is parked."
   },
   {
     "input": "I want to return the item from order {{order:delivered}}, it has a defective screen",
