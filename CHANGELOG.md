@@ -35,6 +35,7 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ### Fixed
 
+- **`check_bundle_eligibility` reads the seeded buy-x-get-y shape.** The seed stores `category`/`min_quantity`; the tool read `categories`/`buy_quantity`, so it listed the deal for any cart. It now accepts both spellings and requires the minimum quantity.
 - `test_config_repo_root` no longer fails on macOS: it built its host layout under a literal `/home/...`, which `Path.resolve()` rewrites there; it now uses a resolved temp directory
 - **`RETURN_LIFECYCLE_ENABLED` and `MERCHANT_OPS_SCHEDULE_ENABLED` now reach the containers:** `docker-compose.yml` passed neither to the orchestrator or the outbox worker, so the flags documented as set from the environment did nothing in compose. Found by the new `scripts/flag-smoke.sh`.
 - **`compose-smoke.sh` and `e2e-both-stacks.sh` run on macOS bash 3.2:** both used `declare -A`, so the smoke died at the readiness loop with `orchestrator: unbound variable`.
