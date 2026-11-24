@@ -35,6 +35,12 @@ const LINE_TONE: Record<ProposalLine["status"], SemanticTone> = {
   blocked: "warning",
   executed: "success",
   failed: "destructive",
+  awaiting_manager: "warning",
+  expired: "neutral",
+};
+
+const LINE_LABEL: Partial<Record<ProposalLine["status"], string>> = {
+  awaiting_manager: "Awaiting manager approval",
 };
 
 /** A backend decimal (a number, or a string such as "37.49") as a number; null when absent or not a finite number. */
@@ -154,8 +160,14 @@ export function ProposalCard({
         <CardTitle className="flex flex-wrap items-center gap-2">
           {proposal.kind === "mixed" ? "Markdowns and restocks" : proposal.kind === "markdown" ? "Markdowns" : "Restocks"}
           <StatusBadge
-            label={open ? "Awaiting your review" : proposal.status.replace("_", " ")}
-            tone={open ? "warning" : proposal.status === "executed" ? "success" : "neutral"}
+            label={
+              open
+                ? "Awaiting your review"
+                : proposal.status === "awaiting_manager"
+                  ? "Awaiting manager approval"
+                  : proposal.status.replace("_", " ")
+            }
+            tone={open || proposal.status === "awaiting_manager" ? "warning" : proposal.status === "executed" ? "success" : "neutral"}
           />
         </CardTitle>
         <CardDescription>
@@ -216,7 +228,7 @@ export function ProposalCard({
                         )}
                       </div>
                     ) : (
-                      <StatusBadge label={line.status} tone={LINE_TONE[line.status]} />
+                      <StatusBadge label={LINE_LABEL[line.status] ?? line.status} tone={LINE_TONE[line.status]} />
                     )}
                   </TableCell>
                 </TableRow>
@@ -224,6 +236,20 @@ export function ProposalCard({
             </TableBody>
           </Table>
         </div>
+        {proposal.status === "awaiting_manager" && (
+          <p role="note" className="text-sm text-muted-foreground">
+            You have decided this batch. The restock lines above are worth more than the purchase-order limit you can
+            approve alone, so they wait for a manager. Nothing is ordered until they approve.
+          </p>
+        )}
+        {open && proposal.po?.needs_manager && (
+          <p role="note" className="text-sm text-muted-foreground">
+            The restock lines total {formatPrice(toNumber(proposal.po.value))}
+            {proposal.po.threshold != null ? `, over the ${formatPrice(proposal.po.threshold)} limit` : ""}. If you accept
+            them, they wait for a manager&apos;s approval; markdowns apply right away. Lowering the quantities brings the
+            total back under the limit.
+          </p>
+        )}
         {error && (
           <p role="alert" className="text-sm text-destructive">
             {error}

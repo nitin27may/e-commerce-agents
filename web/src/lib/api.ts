@@ -191,8 +191,20 @@ export interface ProposalLine {
   evidence: Record<string, unknown>;
   /** The guard verdict from when it was proposed; `reasons` are fixed codes such as `margin_below_floor`. */
   guard: { ok: boolean; reasons: string[]; numbers: Record<string, string | null>; policy_version: string } | null;
-  status: "proposed" | "accepted" | "edited" | "rejected" | "blocked" | "executed" | "failed";
+  status:
+    | "proposed"
+    | "accepted"
+    | "edited"
+    | "rejected"
+    | "blocked"
+    | "executed"
+    | "failed"
+    | "awaiting_manager"
+    | "expired";
   executed_at: string | null;
+  /** Restock lines only: what the line commits (quantity x unit cost); null when the cost is unknown. */
+  po_value?: Decimalish | null;
+  unit_cost?: Decimalish | null;
 }
 
 /** One row of the staff approvals inbox (`GET /api/approvals`). */
@@ -228,7 +240,11 @@ export interface SellerProposal {
   seller_email: string;
   kind: "markdown" | "restock" | "mixed";
   trigger: "manual" | "scheduled" | "event";
-  status: "pending_review" | "decided" | "executed" | "cancelled";
+  status: "pending_review" | "awaiting_manager" | "decided" | "executed" | "cancelled";
+  /** `manager` once the batch's PO value routed its restock lines to a manager (#298). */
+  stage?: "seller" | "manager";
+  /** The batch's PO value, the policy threshold, and whether accepting the restock lines needs a manager. */
+  po?: { value: Decimalish; threshold: number | null; needs_manager: boolean };
   created_at: string;
   updated_at: string;
   approval_id: string | null;

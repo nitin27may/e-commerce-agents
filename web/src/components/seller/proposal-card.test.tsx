@@ -157,3 +157,28 @@ describe("ProposalCard", () => {
     expect(screen.getAllByText("executed")).toHaveLength(2); // the batch and the line
   });
 });
+
+describe("a restock batch over the purchase-order limit", () => {
+  const restock = (over: Partial<ProposalLine> = {}) =>
+    line({ field: "restock_quantity", current_value: 2, proposed_value: 28, po_value: 14000, ...over });
+
+  it("tells the seller before they decide that accepted restocks will wait for a manager", () => {
+    const p = { ...proposal([restock()]), po: { value: 14000, threshold: 5000, needs_manager: true } };
+    render(<ProposalCard proposal={p} onDecide={vi.fn()} />);
+    expect(screen.getByRole("note").textContent).toContain("over the $5,000.00 limit");
+    expect(screen.getByRole("note").textContent).toContain("wait for a manager");
+  });
+
+  it("says nothing about a manager under the limit", () => {
+    const p = { ...proposal([restock()]), po: { value: 140, threshold: 5000, needs_manager: false } };
+    render(<ProposalCard proposal={p} onDecide={vi.fn()} />);
+    expect(screen.queryByRole("note")).toBeNull();
+  });
+
+  it("shows the held line as awaiting manager approval once the seller has decided", () => {
+    const p = proposal([restock({ status: "awaiting_manager", final_value: 28 })], "awaiting_manager");
+    render(<ProposalCard proposal={p} onDecide={vi.fn()} />);
+    expect(screen.getAllByText("Awaiting manager approval")).toHaveLength(2); // the batch badge and the line
+    expect(screen.queryByRole("button", { name: /apply decisions/i })).toBeNull();
+  });
+});

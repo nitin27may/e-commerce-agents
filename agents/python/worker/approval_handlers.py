@@ -104,8 +104,9 @@ async def on_reminder_due(conn: asyncpg.Connection, row: OutboxRow) -> None:
     approval_id = str(approval["id"])
     await repo.append_event(conn, approval_id, "sla_reminder_sent", payload=marker)
     role = approval["assigned_role"]
-    if approval["source"] == "proposal" and approval["subject_email"]:
-        # A merchant proposal is reviewed by the seller who owns the products, not by a staff role.
+    if approval["source"] == "proposal" and approval["subject_email"] and approval["route"] is None:
+        # A merchant proposal is reviewed by the seller who owns the products, not by a staff role, until a restock
+        # batch over the PO threshold is routed to a manager (#298): then the generic staff reminder below applies.
         await notify(
             conn,
             kind="merchant.proposal_reminder",
@@ -142,10 +143,12 @@ class _ProposalFlight:
     claim_live: bool
     executed: int  # lines already applied to the catalogue
     unfinished: int  # lines accepted or edited but not yet run
+    manager_stage: bool = False  # the seller has decided; lines wait for a manager (#298)
 
     @property
     def busy(self) -> bool:
-        return self.claim_live or self.executed > 0 or self.unfinished > 0
+        # In the manager stage the lines the seller's decide already ran are history, not a decide in flight.
+        return self.claim_live or self.unfinished > 0 or (self.executed > 0 and not self.manager_stage)
 
 
 async def _proposal_in_flight(conn: asyncpg.Connection, approval: dict[str, Any]) -> _ProposalFlight:
@@ -162,7 +165,8 @@ async def _proposal_in_flight(conn: asyncpg.Connection, approval: dict[str, Any]
              FROM proposal_lines WHERE proposal_id = $1""",
         approval["source_ref"],
     )
-    return _ProposalFlight(bool(claim_live), int(counts["executed"]), int(counts["unfinished"]))
+    manager_stage = await conn.fetchval("SELECT route IS NOT NULL FROM approvals WHERE id = $1", approval["id"])
+    return _ProposalFlight(bool(claim_live), int(counts["executed"]), int(counts["unfinished"]), bool(manager_stage))
 
 
 async def on_sla_breached(conn: asyncpg.Connection, row: OutboxRow) -> None:
@@ -232,6 +236,11 @@ async def on_sla_breached(conn: asyncpg.Connection, row: OutboxRow) -> None:
                 "WHERE proposal_id = $1 AND status IN ('accepted', 'edited')",
                 approval["source_ref"],
             )
+        # Restock lines the seller accepted and no manager approved in time were never ordered (#298).
+        await conn.execute(
+            "UPDATE proposal_lines SET status = 'expired' WHERE proposal_id = $1 AND status = 'awaiting_manager'",
+            approval["source_ref"],
+        )
     if approval["source"] in ("workflow", "tool") and approval["source_ref"]:
         # The paused return must actually be resumed as a rejection (or the tool request denied), and that
         # runs the workflow on its own connections - it cannot happen inside this row-locked transaction.
@@ -263,7 +272,8 @@ async def on_sla_breached(conn: asyncpg.Connection, row: OutboxRow) -> None:
         # is told. Normally nothing ran; if a decide executed lines and never recorded itself, the batch ends
         # "executed" and the seller is told those changes were applied.
         await conn.execute(
-            "UPDATE proposals SET status = $2, updated_at = NOW() WHERE id = $1 AND status = 'pending_review'",
+            "UPDATE proposals SET status = $2, updated_at = NOW() "
+            "WHERE id = $1 AND status IN ('pending_review', 'awaiting_manager')",
             approval["source_ref"],
             "executed" if executed_lines else "cancelled",
         )
@@ -273,8 +283,11 @@ async def on_sla_breached(conn: asyncpg.Connection, row: OutboxRow) -> None:
                 kind="merchant.proposal_expired",
                 title="Suggestions for your products expired",
                 body=(
-                    f"A proposal was not fully reviewed in time. {executed_lines} change(s) had already been applied; "
-                    "the rest were not."
+                    "Restock lines over the PO threshold were not approved by a manager in time and were not "
+                    f"ordered. {executed_lines} change(s) from the same batch had already been applied."
+                    if approval["route"] is not None
+                    else f"A proposal was not fully reviewed in time. {executed_lines} change(s) had already been "
+                    "applied; the rest were not."
                     if executed_lines
                     else "A proposal was not reviewed in time and was closed. Nothing was changed."
                 ),

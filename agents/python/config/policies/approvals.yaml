@@ -8,7 +8,7 @@
 #               support  -> the support queue
 #               manager  -> the manager queue (the admin role)
 #   op          lt | lte | gt | gte | eq | in      (in: value is a list)
-#   fact        amount                 refund / order amount in dollars
+#   fact        amount                 refund / order amount in dollars; a merchant_proposal's PO value
 #               days_since_delivery    whole days since the order was delivered
 #               loyalty_tier           bronze | silver | gold
 #               returns_90d            returns the requester opened in the last 90 days
@@ -26,7 +26,7 @@
 # adjust a golden case in testdata/. Both stacks' tests run every golden case, so they cannot drift apart.
 # Loading fails loudly on an unknown fact, operator, route or key.
 
-policy_version: "2026-11-16.3"
+policy_version: "2026-11-24.1"
 
 kinds:
   # A customer asks to send an order back. Facts are about the return being requested.
@@ -147,17 +147,25 @@ kinds:
 
   # A system-generated merchant proposal (price markdowns, restock orders; #93). The requester is the system, so the
   # seller who owns the products reviews it on their own page and the usual "never your own request" rule holds.
-  # The rule below is the shape every kind needs; its route is never stored on a proposal approval, because the
-  # reviewer is the product's seller, not a staff queue (see docs/merchant-proposals.md). The kind exists for its
-  # settings: a reviewer may edit a line's final value, and a batch nobody decides in 72 hours expires.
+  # `amount` is the batch's PO value: the sum of quantity x unit cost over the restock lines the seller accepted.
+  # Up to the threshold the seller decides alone (route `auto` here means "no staff tier": the hard limits in
+  # merchant_limits.yaml are the guard, and a person, the seller, still decides every line). Over it, the seller's
+  # accepted restock lines are recorded but wait for a manager (#298); markdown lines are not PO value and never wait.
+  # The threshold is a placeholder: set it to the purchase order your business lets a seller place alone.
+  # A reviewer may lower a line's final value, never raise it. A batch nobody decides in 72 hours expires.
   merchant_proposal:
     editable_fields: [final_value]
     sla_hours: 72
     on_timeout: expire
     rules:
-      - id: owning-seller-reviews
+      - id: po-value-needs-manager
         route: manager
-        reason: The seller who owns the products reviews the batch
+        reason: Restock orders over 5000 in total need a manager
+        when:
+          - { fact: amount, op: gt, value: 5000 }
+      - id: owning-seller-reviews
+        route: auto
+        reason: The seller who owns the products decides the batch
         when: []
 
   # An action the autonomy engine (#94) wanted to take but may not do alone: over a budget or outside every

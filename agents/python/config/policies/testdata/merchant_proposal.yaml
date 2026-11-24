@@ -1,0 +1,36 @@
+# Golden cases for the merchant_proposal kind (#298): the batch's PO value is the `amount` fact.
+# Run by both stacks' policy tests against config/policies/approvals.yaml, like every file in this directory.
+
+cases:
+  - name: "a small restock batch is the seller's alone"
+    kind: merchant_proposal
+    facts: { amount: 1200 }
+    expect:
+      route: auto
+      rule: owning-seller-reviews
+      reasons:
+        - "The seller who owns the products decides the batch"
+  - name: "a batch of exactly 5000 stays with the seller"
+    kind: merchant_proposal
+    facts: { amount: 5000 }
+    expect:
+      route: auto
+      rule: owning-seller-reviews
+      reasons:
+        - "The seller who owns the products decides the batch"
+  - name: "a batch just over 5000 needs a manager"
+    kind: merchant_proposal
+    facts: { amount: 5000.01 }
+    expect:
+      route: manager
+      rule: po-value-needs-manager
+      reasons:
+        - "Restock orders over 5000 in total need a manager"
+  - name: "an unknown PO value never satisfies the threshold"
+    kind: merchant_proposal
+    facts: {}
+    expect:
+      route: auto
+      rule: owning-seller-reviews
+      reasons:
+        - "The seller who owns the products decides the batch"
