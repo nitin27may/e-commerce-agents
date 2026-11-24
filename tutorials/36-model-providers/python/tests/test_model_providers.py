@@ -169,7 +169,7 @@ def test_probe_rows_come_from_the_stored_results() -> None:
 def test_providers_never_probed_are_listed_and_anthropic_is_among_them() -> None:
     never = not_run()
     assert any("Anthropic" in item for item in never)
-    assert any("api.openai.com" in item for item in never)
+    assert any(item.startswith("OpenAI direct") for item in never)  # a label, not a URL
     rows = load_probe_rows()
     assert not any("anthropic" in r.label.lower() for r in rows)
 
