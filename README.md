@@ -103,12 +103,16 @@ Copy-Item .env.minimal .env    # then set OPENAI_API_KEY in .env
 [WSL2](https://learn.microsoft.com/windows/wsl/install) still gives the best experience, and
 everything above works unchanged inside it.
 
-**In the browser, no install.** The Codespaces badge above opens a ready environment — Python 3.12 + `uv`,
-Node 22 + `pnpm`, the .NET 10 SDK and Docker-in-Docker — and installs the dependencies for you
-([`.devcontainer/`](./.devcontainer/)). It needs **no secrets**: `LLM_PROVIDER=replay` is set, so the
-tutorials, the Python tests and the keyless eval suite run from recorded responses. Ports 3000 (web) and
-18888 (Aspire dashboard) are forwarded. For live model calls, add `OPENAI_API_KEY` as a Codespaces secret and
-clear `LLM_PROVIDER`; for the full stack, `./scripts/dev.sh --infra-only` works inside it.
+**In the browser, no install.** The Codespaces badge above opens a ready environment (Python 3.12 + `uv`, Node 22 +
+`pnpm`, the .NET 10 SDK, Docker-in-Docker) and installs the dependencies ([`.devcontainer/`](./.devcontainer/)).
+The creation screen asks for optional model-key secrets (`OPENAI_API_KEY`, or the Azure OpenAI endpoint, key and
+deployment, or an OpenAI-compatible `LLM_BASE_URL`); the provider is chosen from whichever you supply. With none,
+it runs key-free on recorded responses: the tutorials, Python tests and keyless evals work, and chat says a prompt
+was not recorded. Add secrets under Settings, Secrets and variables, Codespaces (or your personal ones at
+github.com/settings/codespaces, scoped to this repo); after the Codespace exists, add the secret and run
+**Codespaces: Rebuild Container**. The stack is not started for you: run `./scripts/dev.sh` in the terminal, and
+check the setup with `uv run --project agents/python python -m scripts.doctor`. Details and gotchas:
+[Quick Start](docs/quick-start.md#codespaces), [Configuration](docs/configuration.md#codespaces).
 
 Full detail — the .NET stack, WSL2 notes, running with no API key, and what to do when something
 breaks: the **[Quick Start page](https://nitinksingh.com/e-commerce-agents/getting-started/quick-start.html)**.

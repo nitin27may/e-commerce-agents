@@ -595,6 +595,89 @@ compose block works perfectly on the host and silently uses the default in every
 
 Do **not** add it to `.env.minimal`. That file exists to stay at one variable.
 
+## Codespaces
+
+The Codespaces badge in the README opens `.devcontainer/`. A Codespace has no `.env` you wrote, so model keys
+arrive as **Codespaces secrets**: GitHub injects each one as an environment variable when the container is
+created. The creation screen asks for the ones declared under `secrets` in `devcontainer.json`; all are optional.
+
+<!-- codespaces-secrets:start -->
+| Secret | Needed for |
+|---|---|
+| `OPENAI_API_KEY` | OpenAI. Also the key sent to the server when `LLM_BASE_URL` is set |
+| `AZURE_OPENAI_ENDPOINT` | Azure OpenAI, together with `AZURE_OPENAI_KEY` |
+| `AZURE_OPENAI_KEY` | Azure OpenAI, together with `AZURE_OPENAI_ENDPOINT` |
+| `AZURE_OPENAI_DEPLOYMENT` | Azure OpenAI: the chat deployment name |
+| `LLM_BASE_URL` | An OpenAI-compatible server (OpenRouter, vLLM, a gateway) reachable from the internet |
+| `LLM_MODEL` | Optional model name for OpenAI or the compatible server; empty keeps the default |
+<!-- codespaces-secrets:end -->
+
+There is no separate `LLM_API_KEY`: the compatible-server path reads `OPENAI_API_KEY`, as everywhere else.
+
+**How the provider is chosen.** `.devcontainer/postCreate.sh` looks at which of those are present and writes
+`LLM_PROVIDER` into `.env` (never a key; compose and the host-run Python read keys from the environment, and the
+shell beats `.env` in both):
+
+| Present | `LLM_PROVIDER` |
+|---|---|
+| `AZURE_OPENAI_ENDPOINT` and `AZURE_OPENAI_KEY` | `azure` |
+| `LLM_BASE_URL` | `openai` (the compatible server) |
+| `OPENAI_API_KEY` | `openai` |
+| none | `replay`, with `EMBEDDING_PROVIDER=replay` |
+
+`postCreate.sh` runs again on every rebuild and re-derives those lines, as long as the first line of `.env` is the
+marker comment it wrote. Delete that line to take the file over; it is then never touched.
+
+**Adding secrets.** Either way, scope it to this repository:
+
+- Repository secrets, if you own the repo: Settings, Secrets and variables, Codespaces.
+- Personal secrets, for a fork or someone else's repo: <https://github.com/settings/codespaces>, then New secret,
+  and choose the repository under Repository access.
+
+Secrets are read when the container is created. **To add or change one after the Codespace exists**, add it,
+then run the command palette entry **Codespaces: Rebuild Container** (a reload is not enough), and
+`postCreate.sh` picks the new provider up. The rebuild keeps your files under `/workspaces`.
+
+**Check it.** Run the doctor in a terminal; it prints each key as `set` or `empty`, never the value:
+
+```bash
+uv run --project agents/python python -m scripts.doctor
+```
+
+Key-free (excerpt of a real run, from a checkout with the provider set through the environment; in a Codespace the
+source column reads `.env` for `LLM_PROVIDER`):
+
+```text
+  LLM_PROVIDER                replay   [shell]
+  OPENAI_API_KEY              empty   [default]
+  EMBEDDING_PROVIDER          replay   [shell]
+  [SKIP] model.endpoint: replay provider: no endpoint
+  [INFO] pricing: replay calls no model; nothing to price
+```
+
+With `OPENAI_API_KEY` supplied (a deliberately invalid value, to show the failure form and that the key is not echoed):
+
+```text
+  LLM_PROVIDER                openai   [shell]
+  OPENAI_API_KEY              set   [shell]
+  [FAIL] model.endpoint: reachable but the credentials were rejected (HTTP 401)
+```
+
+With Azure (a placeholder host, so the endpoint is unreachable; the key is again only `set`):
+
+```text
+  LLM_PROVIDER                azure   [shell]
+  AZURE_OPENAI_KEY            set   [shell]
+  [FAIL] model.endpoint: cannot reach https://example.invalid/openai/models (ConnectError)
+```
+
+A valid key turns that line into `[OK  ] model.endpoint`; that exact line has not been captured here, since no key
+was used. `database` and `redis` report `FAIL` until `./scripts/dev.sh` has started the stack, which is expected
+before the first run.
+
+No one has yet opened this in a real Codespace. The Gotchas in [Quick Start](quick-start.md#codespaces) list what
+is unconfirmed.
+
 ## What must never go in `.env`
 
 `.env` is gitignored, but it is still a plaintext file on a development machine. Production secrets
