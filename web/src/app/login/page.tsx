@@ -13,14 +13,16 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PREVIEW, TOUR_LOGIN } from "@/lib/preview/config";
 import { Label } from "@/components/ui/label";
 
 export default function LoginPage() {
   const router = useRouter();
   const { login } = useAuth();
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  // The static preview has one synthetic account, so the form arrives filled in.
+  const [email, setEmail] = useState<string>(PREVIEW ? TOUR_LOGIN.email : "");
+  const [password, setPassword] = useState<string>(PREVIEW ? TOUR_LOGIN.password : "");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 

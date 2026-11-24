@@ -25,8 +25,22 @@ const launchOptions = process.env.PW_CHROMIUM_PATH
 // twice would double the slowest part of the suite for no new information.
 const BACKEND_FREE_SPECS = [/ui-smoke\.spec\.ts/, /not-found\.spec\.ts/, /a11y\.spec\.ts/];
 
+// The static preview (#301) runs only on its own project, against `pnpm build:preview`'s output served on a
+// free high port under the GitHub Pages sub-path; every other project leaves it alone.
+const PREVIEW_PORT = Number(process.env.PREVIEW_PORT ?? 4173);
+const PREVIEW_BASE = "/e-commerce-agents/preview";
+const previewOnly = process.env.PREVIEW_E2E === "1";
+
 export default defineConfig({
   testDir: "./e2e",
+  testIgnore: previewOnly ? [] : [/preview\.spec\.ts/],
+  webServer: previewOnly
+    ? {
+        command: `node scripts/serve-preview.mjs ${PREVIEW_PORT} ${PREVIEW_BASE}`,
+        url: `http://127.0.0.1:${PREVIEW_PORT}${PREVIEW_BASE}/`,
+        reuseExistingServer: false,
+      }
+    : undefined,
   timeout: 30000,
   expect: { timeout: 10000 },
   fullyParallel: false,
@@ -44,17 +58,30 @@ export default defineConfig({
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
   },
-  projects: [
-    {
-      name: `chromium-${backend}`,
-      use: { browserName: "chromium", launchOptions },
-    },
-    {
-      // A phone-sized viewport with touch and a mobile user agent, on Chromium
-      // (the Pixel preset is Chromium-based, so no extra browser is installed).
-      name: "mobile-chromium",
-      testMatch: BACKEND_FREE_SPECS,
-      use: { ...devices["Pixel 7"], launchOptions },
-    },
-  ],
+  projects: previewOnly
+    ? [
+        {
+          name: "preview",
+          testMatch: /preview\.spec\.ts/,
+          // The trailing slash matters: specs `goto("chat/")` relative to it.
+          use: {
+            browserName: "chromium",
+            launchOptions,
+            baseURL: `http://127.0.0.1:${PREVIEW_PORT}${PREVIEW_BASE}/`,
+          },
+        },
+      ]
+    : [
+        {
+          name: `chromium-${backend}`,
+          use: { browserName: "chromium", launchOptions },
+        },
+        {
+          // A phone-sized viewport with touch and a mobile user agent, on Chromium
+          // (the Pixel preset is Chromium-based, so no extra browser is installed).
+          name: "mobile-chromium",
+          testMatch: BACKEND_FREE_SPECS,
+          use: { ...devices["Pixel 7"], launchOptions },
+        },
+      ],
 });

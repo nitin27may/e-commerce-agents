@@ -8,6 +8,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:preview": "node scripts/build-preview.mjs",
+    "serve:preview": "node scripts/serve-preview.mjs",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",

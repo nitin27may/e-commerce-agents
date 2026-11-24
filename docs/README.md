@@ -79,6 +79,7 @@ This folder contains the full technical documentation for E-Commerce Agents.
 | [merchant-proposals.md](merchant-proposals.md) | Seller merchant proposals: deterministic markdown/restock suggestions, review through the approvals machinery, idempotent execution, the daily run |
 | [approvals.md](approvals.md) | Approval routing policy (`approvals.yaml`), default rules, golden cases, the approvals tables |
 | [checkpoints-and-resume.md](checkpoints-and-resume.md) | How a workflow run pauses and resumes: checkpoints, the `workflow_checkpoints` and `hitl_requests` tables, timeout, the .NET differences |
+| [preview.md](preview.md) | The static web preview on GitHub Pages: what it replays, how the mock layer works, how to build and test it |
 | [replay-mode.md](replay-mode.md) | Running without an API key: what `LLM_PROVIDER=replay` does, where it is used, replay misses, when to re-record |
 | [agent-quality.md](agent-quality.md) | Eval methodology, datasets, red-team scenarios, scoring, CI gate |
 | [eval-scorecard.md](eval-scorecard.md) | Generated table of the committed eval baselines per agent, with the replay-fixture caveat |

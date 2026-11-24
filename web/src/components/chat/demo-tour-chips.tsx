@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { useDemoTour, type DemoTourChip } from "@/lib/demo-tour";
 import { Button } from "@/components/ui/button";
+import { PREVIEW, QUICKSTART_URL } from "@/lib/preview/config";
 
 interface DemoTourChipsProps {
   /** Send the chip's prompt, in its mode, in a new or the current conversation. */
@@ -59,7 +60,17 @@ export function ReplayMissCallout({ message, onPick, disabled }: ReplayMissCallo
 
   return (
     <div role="status" className="space-y-3" data-testid="replay-miss-callout">
-      <p className="text-sm">{text}</p>
+      <p className="text-sm">
+        {text}
+        {PREVIEW && (
+          <>
+            {" "}
+            <a href={QUICKSTART_URL} className="font-medium underline underline-offset-2" target="_blank" rel="noreferrer">
+              Quick start
+            </a>
+          </>
+        )}
+      </p>
       <DemoTourChips onPick={onPick} disabled={disabled} />
     </div>
   );

@@ -6,6 +6,12 @@ screen recording, or your first ten minutes with the app.
 Start the stack first: [Quick Start](quick-start.md). The fast path is
 `./scripts/dev.sh --demo`, which pulls prebuilt images rather than building.
 
+## Try it without installing anything
+
+The [static preview](preview.md) (<https://nitinksingh.com/e-commerce-agents/preview/>) is the web UI
+replaying the tour's recorded answers in your browser. No stack, no key. It cannot answer anything that was not
+recorded; for that, run the stack.
+
 ## No-key mode
 
 `./scripts/dev.sh --demo --no-key` (PowerShell: `./scripts/dev.ps1 -Demo -NoKey`) runs the whole stack
