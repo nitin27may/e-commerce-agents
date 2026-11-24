@@ -213,6 +213,17 @@ class ResilientAsyncTransport(httpx.AsyncHTTPTransport):
         jitter = base * self._jitter_fraction
         return max(0.0, base + random.uniform(-jitter, jitter))
 
+    async def __aexit__(self, *exc_info: object) -> None:
+        """Do nothing when a client that was handed this transport exits.
+
+        One instance is module-level and handed to every short-lived ``httpx.AsyncClient``
+        (``orchestrator/agent.py``, ``shared/remote_agent.py``). A client closes its transport
+        on exit, and closing the pool cuts every other client's in-flight stream with a
+        ``ReadError``: two specialists called in one turn, the first to finish dropped the
+        second mid-answer. The pool lives as long as the process; ``aclose()`` still closes it.
+        """
+        return None
+
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         host = request.url.netloc.decode("ascii", "replace")
         breaker = self._breaker_for(host)
