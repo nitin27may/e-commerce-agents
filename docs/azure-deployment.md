@@ -4,6 +4,8 @@ Bicep templates and scripts that deploy the Python stack to Azure Container Apps
 
 **Status: written, compiled and linted, never deployed.** Everything here was checked offline: the Bicep builds and lints, the compiled wiring is asserted by `agents/python/tests/test_infra_bicep.py`, the scripts pass `bash -n` and a dry run, and the secret generator has its own test. **Nothing has run against a real subscription**, and every behaviour that needs one is listed under [Assumptions to confirm](#assumptions-to-confirm-on-a-real-subscription). The Python stack is the default; the .NET stack (`--stack dotnet`) is deployable too, verified offline only. For local and Compose paths see [deployment.md](deployment.md).
 
+The Bicep in `infra/` is hand-written; it is not generated from the .NET Aspire AppHost, which is a local development tool and not a deployment path.
+
 **Azure is optional.** Nothing outside `infra/`, `azure.yaml`, `scripts/azure*` and `.github/workflows/azure.yml` needs it. The default dev, demo and eval paths run with `LLM_PROVIDER=openai`, `replay` or any OpenAI-compatible endpoint and never touch Azure.
 
 ## First deploy on a new subscription
