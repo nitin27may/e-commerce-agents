@@ -113,9 +113,11 @@ jobs:
 
       - name: Add the preview to the site
         run: |
+          # actions/jekyll-build-pages runs in a container as root, so _site is root-owned.
+          sudo chown -R "$USER":"$(id -gn)" _site
           mkdir -p _site/preview
           cp -R web/out/. _site/preview/
-          # Jekyll leaves _next alone only when told to; the preview is copied after Jekyll, so it is already safe.
+          # The preview goes in after Jekyll, so Jekyll never sees (or skips) its _next folder.
           touch _site/preview/.nojekyll
 
       - name: Upload artifact
