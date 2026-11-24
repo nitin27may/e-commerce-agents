@@ -17,7 +17,7 @@
     "updated_at": "2026-11-16T11:30:59.415485\u002B00:00",
     "assigned_role": "support",
     "subject_email": "xstack@example.com",
-    "policy_version": "2026-11-16.3",
+    "policy_version": "2026-11-24.1",
     "recommendation": {
       "route": "support",
       "reasons": [
@@ -35,7 +35,7 @@
         },
         "conditions": []
       },
-      "policy_version": "2026-11-16.3"
+      "policy_version": "2026-11-24.1"
     },
     "conversation_id": null,
     "requester_email": "xstack@example.com",
@@ -63,7 +63,7 @@
         "reasons": [
           "Needs a support review"
         ],
-        "policy_version": "2026-11-16.3"
+        "policy_version": "2026-11-24.1"
       },
       "actor_role": null,
       "created_at": "2026-11-16T11:30:59.420632\u002B00:00",

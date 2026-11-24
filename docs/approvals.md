@@ -166,7 +166,7 @@ database constraint and again in the repository. See the roles table in the [Sec
 ## The policy file
 
 ```yaml
-policy_version: "2026-11-16.3"
+policy_version: "2026-11-24.1"
 kinds:
   return_approval:
     editable_fields: [amount, resolution]
