@@ -112,5 +112,8 @@ agents/python/evals/.local/
 # Foundry adapter scratch input (evals/foundry/run.py --log-to-project)
 .foundry-input/
 
+# Aspire CLI settings, created in the AppHost directory by `aspire` commands
+aspire.config.json
+
 # Claude Code session lock
 .claude/scheduled_tasks.lock
