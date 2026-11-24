@@ -4,6 +4,11 @@
 # mean-docker), which both publish `docs/` directly with just-the-docs. This one
 # differs in a single way that matters: the site is *generated* first.
 #
+# The static web preview (#301, docs/preview.md) is published by THIS workflow, under /preview of the same
+# site: a Pages site has one deployment, so a second workflow deploying it would replace the docs (and be
+# replaced by them). The preview is built into the artifact below, after Jekyll, so one deploy carries both.
+# .github/workflows/preview.yml only tests the export on pull requests.
+#
 # `scripts/build_docs_site.py` assembles `_site_src/` from three separate trees
 # — docs/, docs/concepts/ and the 34 tutorial chapters — injecting Jekyll front
 # matter and rewriting every cross-tree link. That keeps the repository free of
@@ -19,12 +24,20 @@ on:
       - "docs/**"
       - "tutorials/**"
       - "scripts/build_docs_site.py"
+      - "scripts/build_preview_data.py"
+      - "web/**"
+      - "agents/python/config/demo/tour.yaml"
+      - "agents/python/demo/fixtures/**"
       - ".github/workflows/jekyll-gh-pages.yml"
   pull_request:
     paths:
       - "docs/**"
       - "tutorials/**"
       - "scripts/build_docs_site.py"
+      - "scripts/build_preview_data.py"
+      - "web/**"
+      - "agents/python/config/demo/tour.yaml"
+      - "agents/python/demo/fixtures/**"
       - ".github/workflows/jekyll-gh-pages.yml"
   workflow_dispatch:
 
@@ -68,6 +81,44 @@ jobs:
         with:
           source: ./_site_src
           destination: ./_site
+
+      # The static preview: the normal web app built with NEXT_PUBLIC_PREVIEW=1, served from /preview. The data it
+      # replays is committed (web/src/lib/preview/preview-data.json); the check below fails a PR that changed
+      # the tour, the fixtures or the seed catalog without regenerating it.
+      - name: Check the preview data is current
+        run: python scripts/build_preview_data.py --check
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.15.0
+
+      - name: Setup Node 26
+        uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install web dependencies
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the static preview
+        working-directory: web
+        env:
+          PREVIEW_BASE_PATH: /e-commerce-agents/preview
+          NEXT_PUBLIC_SITE_URL: https://nitinksingh.com/e-commerce-agents/preview
+        run: pnpm build:preview
+
+      - name: Add the preview to the site
+        run: |
+          # actions/jekyll-build-pages runs in a container as root, so _site is root-owned.
+          sudo chown -R "$USER":"$(id -gn)" _site
+          mkdir -p _site/preview
+          cp -R web/out/. _site/preview/
+          # The preview goes in after Jekyll, so Jekyll never sees (or skips) its _next folder.
+          touch _site/preview/.nojekyll
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

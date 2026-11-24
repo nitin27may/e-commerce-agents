@@ -9,6 +9,7 @@
 [![MAF 1.26.0](https://img.shields.io/badge/Microsoft%20Agent%20Framework-1.26.0-5E5DF0.svg)](https://github.com/microsoft/agent-framework)
 [![PostgreSQL + pgvector](https://img.shields.io/badge/PostgreSQL-pgvector-336791.svg)](https://github.com/pgvector/pgvector)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED.svg)](https://docs.docker.com/compose/)
+[![Live preview](https://img.shields.io/badge/Live%20preview-recorded%20answers-1e40af.svg)](https://nitinksingh.com/e-commerce-agents/preview/)
 [<img src="https://github.com/codespaces/badge.svg" alt="Open in GitHub Codespaces" height="20">](https://codespaces.new/nitin27may/e-commerce-agents)
 
 <p align="center">
@@ -150,6 +151,7 @@ Companion demo repo for the AI article series on [nitinksingh.com](https://nitin
 | Understand how the agents work / add a new one | [Architecture](docs/architecture.md) · [Adding an Agent](docs/adding-an-agent.md) |
 | Use the MCP server | [MCP Integration](docs/mcp-integration.md) |
 | See what shipped and what is next | [Roadmap](https://nitinksingh.com/e-commerce-agents/getting-started/roadmap.html) · [CHANGELOG](CHANGELOG.md) |
+| Look at the UI right now, nothing to install | [Live preview](https://nitinksingh.com/e-commerce-agents/preview/) (recorded answers, [how it works](docs/preview.md)) |
 | See the generative UI, test users and scenarios to try | [Demo guide](https://nitinksingh.com/e-commerce-agents/getting-started/demo-guide.html) |
 
 ---

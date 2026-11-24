@@ -1,3 +1,4 @@
+
 /**
  * Base URL for API calls. Empty by default: the browser talks to its own
  * origin and `src/app/api/[...path]/route.ts` forwards to the orchestrator, so
@@ -14,6 +15,18 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
  */
 export function apiUrl(path: string): string {
   return path.startsWith("/api") ? `${API_URL}${path}` : path;
+}
+
+/**
+ * `fetch` for every backend call. The static preview (`NEXT_PUBLIC_PREVIEW=1`, issue #301) answers from
+ * recorded data instead: the mock module is a dynamic import behind a build-time constant, so a normal
+ * build contains neither it nor its data.
+ */
+function backendFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  // The env test is written out here, not read from ./preview/config: the bundler only drops the import
+  // below when the condition is a literal in this very file.
+  if (process.env.NEXT_PUBLIC_PREVIEW === "1") return import("./preview/mock-api").then((m) => m.previewFetch(input, init));
+  return fetch(input, init);
 }
 
 export interface Address {
@@ -737,7 +750,7 @@ class ApiClient {
     const sent = this.refreshToken;
     if (!sent) return null;
     try {
-      const res = await fetch(`${API_URL}/api/auth/refresh`, {
+      const res = await backendFetch(`${API_URL}/api/auth/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refresh_token: sent }),
@@ -795,7 +808,7 @@ class ApiClient {
       headers["Authorization"] = `Bearer ${this.token}`;
     }
 
-    const res = await fetch(`${API_URL}${path}`, { ...options, headers });
+    const res = await backendFetch(`${API_URL}${path}`, { ...options, headers });
 
     if (res.status === 401) {
       // One retry: if we have a refresh token, swap it for a fresh
@@ -935,7 +948,7 @@ class ApiClient {
       headers["Authorization"] = `Bearer ${this.token}`;
     }
 
-    const res = await fetch(`${API_URL}/api/chat/stream`, {
+    const res = await backendFetch(`${API_URL}/api/chat/stream`, {
       method: "POST",
       headers,
       body: JSON.stringify({
@@ -1100,7 +1113,7 @@ class ApiClient {
    */
   async getDemoTour(): Promise<DemoTour | null> {
     try {
-      const res = await fetch(`${API_URL}/api/demo/tour`);
+      const res = await backendFetch(`${API_URL}/api/demo/tour`);
       if (!res.ok) return null;
       const data = (await res.json()) as Partial<DemoTour>;
       if (!Array.isArray(data.chips) || data.chips.length === 0) return null;
