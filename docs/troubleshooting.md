@@ -171,7 +171,7 @@ Thirty-eight ways a first `scripts/azure-up.sh` goes wrong, and what already gua
 | 20 | SSE buffered, or cut at 240 s | chat appears all at once, or ends mid-stream | `MAF_STREAM_TIMEOUT_SECONDS=120`, `HITL_RESUME_TIMEOUT_SECONDS=200`; smoke times the first frame (under 15 s) and counts frames (over 10) |
 | 21 | Specialist cold start over the 60 s A2A timeout | first request after idle fails | every app `minReplicas >= 1` |
 | 22 | Public URL abused | someone else spends your model quota | frontend ingress restricted to the deployer IP, generated staff passwords, `COST_BUDGET_MODE=enforce`, TPM cap, budget alert. `PUBLIC_ACCESS=open` warns loudly |
-| 23 | Azure Policy denies public Postgres or local auth | deployment denied by a policy assignment | run `azd provision --preview` first; the reference profile is the intended fallback, but its private networking is not built; `AZURE_OPENAI_AUTH=identity` disables local auth |
+| 23 | Azure Policy denies public Postgres or local auth | deployment denied by a policy assignment | run `azd provision --preview` first; the reference profile (private endpoints and DNS, offline-verified only) is the intended fallback; `AZURE_OPENAI_AUTH=identity` disables local auth |
 | 24 | Job log lag | `az containerapp job logs show` is empty right after a failure | `postprovision` prints the command and the Log Analytics query instead of the log; wait a minute or two |
 | 25 | No metrics in App Insights, or telemetry goes nowhere | traces appear, metrics do not; or an exporter error at startup | managed OpenTelemetry carries traces and logs only (documented); no app sets `OTEL_EXPORTER_OTLP_ENDPOINT`, the agent injects it; a setting of ours would override it |
 | 26 | Agent card or product card links point at the wrong origin under `A2A_TRANSPORT=a2a` | callers get a card naming `localhost` | `A2A_PUBLIC_BASE_URL` is set per specialist to its own internal URL |
@@ -192,16 +192,16 @@ Other things to try first: `az containerapp revision list --name ca-orchestrator
 
 ### Foundry project and gateway (optional modules, predicted failures)
 
-None of this has run against a subscription; these are the failures the design predicts.
+None of this has run against a subscription; these are the failures the design predicts. They continue the numbering above (39 to 47).
 
 | # | Failure | Symptom | What to do |
 |---|---|---|---|
-| 30 | APIM provisioning is slow | `azd provision` sits on `Microsoft.ApiManagement/service` for 30 to 45 minutes (classic tiers) or several minutes (v2); a wrapper script may time out | wait and re-run; prefer a v2 tier (`GATEWAY_SKU=BasicV2`); `azure-down` is slow for the same reason |
-| 31 | Tier does not support the token policies | the `apis/policies` PUT fails with a message naming `azure-openai-token-limit` or `azure-openai-emit-token-metric` | raise `GATEWAY_SKU`, then record which tier works in the plan (M6.2) |
-| 32 | Policy expression does not compile | the policy PUT fails with a C# compile error from the gateway | the expressions are in `modules/gateway-policy.xml`; reproduce in the portal policy editor |
-| 33 | Gateway answers 401 | every model call fails; with `AZURE_OPENAI_AUTH=identity` the token audience or the caller's client id is not allowed, with `key` the `azure-openai-key` secret is still the old account key | check `allowedCallerClientIds` includes the identity the app runs as; redeploy so the secret holds the subscription key |
-| 34 | Gateway answers 404 | a call to an operation the module does not define | only chat completions, embeddings and `/v1/responses` exist; add the operation in `gateway-apim.bicep` |
-| 35 | 429 from the gateway | `Retry-After` set, `x-ratelimit-remaining-tokens` is 0 | raise `gatewayAgentTokenLimits` for that agent or the default; an agent not in the list shares the `unlisted` bucket |
-| 36 | Project PUT refused | `allowProjectManagement` missing or no identity on the account | deploy with `DEPLOY_FOUNDRY_PROJECT=true` from the start; if the account exists without it, redeploy (or recreate the account) |
-| 37 | `2026-09-01` not available | `NoRegisteredProviderFound` or `InvalidApiVersion` on the project | change the three Foundry resources in `foundry-project.bicep` to `2025-06-01` |
-| 38 | Traces missing in the project | the project tracing view is empty | check the connection `appinsights` exists and points at the right component; the apps export to App Insights regardless |
+| 39 | APIM provisioning is slow | `azd provision` sits on `Microsoft.ApiManagement/service` for 30 to 45 minutes (classic tiers) or several minutes (v2); a wrapper script may time out | wait and re-run; prefer a v2 tier (`GATEWAY_SKU=BasicV2`); `azure-down` is slow for the same reason |
+| 40 | Tier does not support the token policies | the `apis/policies` PUT fails with a message naming `azure-openai-token-limit` or `azure-openai-emit-token-metric` | raise `GATEWAY_SKU`, then record which tier works in [azure-deployment.md](azure-deployment.md#assumptions-to-confirm-on-a-real-subscription) |
+| 41 | Policy expression does not compile | the policy PUT fails with a C# compile error from the gateway | the expressions are in `modules/gateway-policy.xml`; reproduce in the portal policy editor |
+| 42 | Gateway answers 401 | every model call fails; with `AZURE_OPENAI_AUTH=identity` the token audience or the caller's client id is not allowed, with `key` the `azure-openai-key` secret is still the old account key | check `allowedCallerClientIds` includes the identity the app runs as; redeploy so the secret holds the subscription key |
+| 43 | Gateway answers 404 | a call to an operation the module does not define | only chat completions, embeddings and `/v1/responses` exist; add the operation in `gateway-apim.bicep` |
+| 44 | 429 from the gateway | `Retry-After` set, `x-ratelimit-remaining-tokens` is 0 | raise `gatewayAgentTokenLimits` for that agent or the default; an agent not in the list shares the `unlisted` bucket |
+| 45 | Project PUT refused | `allowProjectManagement` missing or no identity on the account | deploy with `DEPLOY_FOUNDRY_PROJECT=true` from the start; if the account exists without it, redeploy (or recreate the account) |
+| 46 | `2026-09-01` not available | `NoRegisteredProviderFound` or `InvalidApiVersion` on the project | change the three Foundry resources in `foundry-project.bicep` to `2025-06-01` |
+| 47 | Traces missing in the project | the project tracing view is empty | check the connection `appinsights` exists and points at the right component; the apps export to App Insights regardless |
