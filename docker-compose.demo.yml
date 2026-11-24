@@ -96,7 +96,7 @@ services:
       retries: 5
 
   aspire:
-    image: mcr.microsoft.com/dotnet/aspire-dashboard:13.6.5
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:13.6.5   # no 17.x image on MCR as of 2026-11-24
     ports:
       - "127.0.0.1:18888:18888" # Dashboard UI
       - "127.0.0.1:18890:18889" # OTLP receiver
