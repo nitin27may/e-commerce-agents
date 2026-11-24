@@ -17,44 +17,44 @@ The sections from auth to admin give request and response examples; the rest lis
 
 ```mermaid
 graph LR
-    subgraph Public
-        style Public fill:#10b981,stroke:#059669,color:#fff
-        A1[POST /auth/signup]
-        A2[POST /auth/login]
-        A3[POST /auth/refresh]
+    Client([Client])
+
+    subgraph Public["No credential"]
+        A1["POST /auth/signup, /login, /refresh"]
+        A2["GET /health, /ready, /docs, /openapi.json"]
+        A3["GET /orchestration/modes, /demo/tour"]
+        A4["GET /returns/:label_token/label"]
     end
 
-    subgraph Authenticated
-        style Authenticated fill:#0ea5e9,stroke:#0284c7,color:#fff
-        C1[POST /chat]
-        CV1[GET /conversations]
-        CV2[GET /conversations/:id]
-        CV3[DELETE /conversations/:id]
-        P1[GET /products]
-        P2[GET /products/:id]
-        O1[GET /orders]
-        O2[GET /orders/:id]
-        PR1[GET /profile]
-        M1[GET /marketplace/agents]
-        M2[POST /marketplace/request]
-        M3[GET /marketplace/my-agents]
+    subgraph Optional["JWT optional (anonymous allowed)"]
+        C1["POST /chat, /chat/stream"]
+        P1["GET /products, /products/:id"]
     end
 
-    subgraph Admin Only
-        style Admin fill:#f59e0b,stroke:#d97706,color:#fff
-        AD1[GET /admin/requests]
-        AD2[POST /admin/requests/:id/approve]
-        AD3[POST /admin/requests/:id/deny]
-        AD4[GET /admin/usage]
-        AD5[GET /admin/audit]
+    subgraph Signed["JWT required, any signed-in user"]
+        CV["/conversations, /orders, /profile, /cart, /checkout"]
+        M["/marketplace/*, /runs, /me/*"]
     end
 
-    Client([Client]) --> Public
-    Client --> Authenticated
-    Client --> Admin
+    subgraph Roles["JWT required, role checked"]
+        S1["seller or admin: /seller/*"]
+        S2["support or admin: /approvals, /staff/*, /orchestration/:id/resume"]
+        S3["admin only: /admin/requests, /usage, /audit, /decisions"]
+    end
 
-    style Client fill:#6366f1,stroke:#4f46e5,color:#fff
+    Client --> Public
+    Client --> Optional
+    Client --> Signed
+    Client --> Roles
+
+    style Client fill:#475569,stroke:#334155,color:#fff
+    style Public fill:#e2e8f0,stroke:#64748b,color:#0f172a
+    style Optional fill:#ccfbf1,stroke:#0d9488,color:#0f172a
+    style Signed fill:#dbeafe,stroke:#2563eb,color:#0f172a
+    style Roles fill:#fef3c7,stroke:#d97706,color:#0f172a
 ```
+
+The diagram groups routes by the credential they need, as classified in [auth-route-matrix.md](auth-route-matrix.md). Not every route needs a token: the first group takes none (the returns label route is guarded only by the unguessable token in its path), and chat and product browsing accept anonymous callers. The orchestrator has no agent-secret routes; `X-Agent-Secret` is read only by the specialists on :8081-8085, which are not part of this API. Groups are summarised, not exhaustive.
 
 ## Authentication
 
