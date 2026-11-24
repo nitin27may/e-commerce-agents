@@ -38,6 +38,21 @@ public static partial class UserSupplied
         return (amounts, ids);
     }
 
+    // Convert.ToDecimal(double) is exact on .NET 11 (14.99 becomes 14.990000000000000213...), where earlier
+    // runtimes rounded to 15 significant digits. A user-typed amount is what the shortest round-trip text says.
+    private static bool TryShortestDecimal(object node, out decimal value)
+    {
+        value = 0m;
+        var text = node switch
+        {
+            float f when float.IsFinite(f) => f.ToString("R", CultureInfo.InvariantCulture),
+            double d when double.IsFinite(d) => d.ToString("R", CultureInfo.InvariantCulture),
+            _ => null,
+        };
+        return text is not null
+            && decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+    }
+
     private static void Walk(object? node, HashSet<decimal> amounts, HashSet<string> ids, int depth)
     {
         if (node is null or bool || depth > 16)
@@ -60,9 +75,9 @@ public static partial class UserSupplied
                 amounts.Add(d);
                 return;
             case double or float:
-                if (double.IsFinite(Convert.ToDouble(node, CultureInfo.InvariantCulture)))
+                if (TryShortestDecimal(node, out var shortest))
                 {
-                    amounts.Add(Convert.ToDecimal(node, CultureInfo.InvariantCulture));
+                    amounts.Add(shortest);
                 }
                 return;
             case sbyte or byte or short or ushort or int or uint or long or ulong:
