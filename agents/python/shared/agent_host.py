@@ -125,7 +125,60 @@ async def _run_agent_native(
             metadata_box["_maf_model"] = model
         if parked := approval_requests(response):
             metadata_box["_maf_approval_requests"] = parked
-    return response.text or ""
+    text = response.text or ""
+    if notice := await park_pending_approvals(agent, response):
+        text = f"{text}\n\n{notice}" if text else notice
+    return text
+
+
+async def park_pending_approvals(agent: Any, response: Any) -> str:
+    """Make a call MAF parked for approval durable, and return the sentence the user reads (``""`` if none).
+
+    ``@tool(approval_mode="always_require")`` stops the run before function middleware, so
+    ``HITLFunctionMiddleware`` never sees the call and the response text is empty. The only trace is a
+    ``function_approval_request`` in ``response.user_input_requests``. Each one becomes a
+    ``tool_approval_requests`` row plus its inbox approval (``shared.hitl.park_gated_call``, idempotent), owned by
+    the forwarded user, and the tool is never executed here. No identity, or a database error, fails closed: the
+    user is told nothing was changed.
+    """
+    from shared.context import current_session_id, current_user_email
+    from shared.hitl import PARK_FAILED_REPLY, park_gated_call, parked_reply
+
+    sentences: list[str] = []
+    for request in getattr(response, "user_input_requests", None) or []:
+        if getattr(request, "type", None) != "function_approval_request":
+            continue
+        call = getattr(request, "function_call", None)
+        name = getattr(call, "name", None)
+        if not name:
+            continue
+        try:
+            arguments = call.parse_arguments()
+        except Exception:
+            arguments = None
+        tool_input = arguments if isinstance(arguments, dict) else {}
+        email = current_user_email.get("")
+        if not email:
+            logger.warning("hitl.park_refused reason=no_identity tool=%s", log_safe(name))
+            sentences.append(PARK_FAILED_REPLY)
+            continue
+        try:
+            request_id, created = await park_gated_call(
+                user_email=email,
+                session_id=current_session_id.get("") or None,
+                agent_name=str(getattr(agent, "name", "") or "unknown"),
+                tool_name=str(name),
+                tool_input=tool_input,
+            )
+        except Exception:
+            logger.exception("hitl.park_failed tool=%s", log_safe(name))
+            sentences.append(PARK_FAILED_REPLY)
+            continue
+        logger.info(
+            "hitl.parked tool=%s request_id=%s created=%s", log_safe(name), log_safe(request_id), log_safe(created)
+        )
+        sentences.append(parked_reply(str(name), tool_input, request_id))
+    return " ".join(dict.fromkeys(sentences))
 
 
 def approval_requests(response: Any) -> list[dict[str, Any]]:
@@ -170,13 +223,19 @@ async def _run_agent_native_stream(
     _note_user_message(user_message)
     begin_miss_tracking()
     stream = agent.run(messages, stream=True, options=_run_options(agent))
+    streamed = False
     async for update in stream:
         text = getattr(update, "text", None)
         if text:
+            streamed = True
             yield text
     raise_if_specialist_missed()
-    if metadata_box is not None and hasattr(stream, "get_final_response"):
+    final: Any = None
+    if hasattr(stream, "get_final_response"):
         final = await stream.get_final_response()
+        if notice := await park_pending_approvals(agent, final):
+            yield f"\n\n{notice}" if streamed else notice
+    if metadata_box is not None and final is not None:
         metadata_box.update(getattr(final, "additional_properties", None) or {})
         usage = getattr(final, "usage_details", None)
         if usage:

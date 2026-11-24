@@ -55,6 +55,12 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 - **Compose smoke: cold-start retries.** `scripts/compose-smoke.sh` retries login and the products read up to three times
   (logged) and the keyless chat turn once, and no longer aborts the customer search on a timeout. Aimed at the one-off
   `Boot (net-py)` failure that passed on re-run; no root cause could be reproduced from the job alone.
+- **Cancelling or changing an order, or any other gated tool, now creates an approval instead of an empty reply.**
+  MAF stops a run at `approval_mode="always_require"` before function middleware, so `HITLFunctionMiddleware` never
+  ran for the five gated tools: no `tool_approval_requests` row, no inbox entry, and the specialist answered with
+  empty text. This was reproduced against a real order-management host. The host now records each parked call
+  (idempotent, as the requesting user, tool not executed) and replies with a fixed sentence naming the request; no
+  model call, no replay fixture change. .NET is not affected (its gate is its own pipeline stage).
 - **Group chat no longer answers with a placeholder.** The moderator's default verdict was the one line
   "Synthesized 2 perspective(s) (value, quality) on: <prompt>"; it now shows the question followed by each
   panelist's actual words (#210). No model call is involved, so no replay fixture changes.
