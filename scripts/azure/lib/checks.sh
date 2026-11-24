@@ -132,3 +132,22 @@ check_soft_deleted() {
     [ "$protected" -eq 0 ] || return 2
     return 0
 }
+
+# deployments_of_env <env>: names of the subscription-scope deployment records that belong to this environment: named exactly
+# <env> or <env>-<suffix> (azd), or whose outputs name rg-<env> (a portal deployment). A substring match would sweep up
+# other people's records, so it is not used.
+deployments_of_env() {
+    local env_name="$1"
+    az deployment sub list --query "[?name=='$env_name' || starts_with(name, '$env_name-') || properties.outputs.AZURE_RESOURCE_GROUP.value=='rg-$env_name'].name" \
+        --output tsv 2>/dev/null || true
+}
+
+# budget_exists <scope-path-after-/subscriptions/<id>> <budget-name>: read-only GET; true when the budget answers 200.
+budget_exists() {
+    local scope="$1" name="$2" sub
+    sub="$(az account show --query id --output tsv 2>/dev/null || true)"
+    [ -n "$sub" ] || return 1
+    az rest --method get --url "https://management.azure.com/subscriptions/$sub${scope}/providers/Microsoft.Consumption/budgets/$name?api-version=2023-05-01" >/dev/null 2>&1
+}
+subscription_budget_exists() { budget_exists "" "budget-$1"; }
+group_budget_exists() { budget_exists "/resourceGroups/rg-$1" "budget-$1"; }

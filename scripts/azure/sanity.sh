@@ -9,8 +9,8 @@
 #          its asyncpg pool. Counts products (admin) and lists the seeded customer's orders, and reads the approvals inbox
 #          (a table added by a later migration). No firewall rule is opened, no `az containerapp exec`, no SQL client:
 #          the database stays reachable only from the apps. A count over the API is what is possible without exposing it.
-#   model  one direct chat completion against the deployed Foundry (Azure OpenAI) endpoint with the key from Key Vault (falls
-#          back to `az cognitiveservices account keys list`), on the deployed low-cost model, max 200 completion tokens.
+#   model  one direct chat completion against the deployed Foundry (Azure OpenAI) endpoint with a bearer token for the signed-in user
+#          (`az account get-access-token`, role Cognitive Services OpenAI User; no key, none is read or stored), on the deployed low-cost model, max 200 completion tokens.
 #          SKIP when the environment has no model account (deployOpenAi=false).
 #   turn   one full application turn as the seeded customer through the orchestrator: "show me my recent orders". It must
 #          route to a specialist, the specialist must call a tool (which reads the database), and text must come back.
@@ -22,7 +22,7 @@
 # This script creates and deletes NOTHING in Azure and never tears anything down. What it does write is rows in the
 # deployed database (chat conversations and run records for the seeded customer and the eval users); they go with the
 # environment when you run `scripts/azure-down.sh --env <env>`, which is a separate step for after you have reviewed the
-# results. It never prints a key: the key is held in one process's environment for the single call that needs it.
+# results. It handles no key at all: the model check uses your own Entra token, held in one process's environment for the single call.
 #
 # Without azd (a portal deployment) pass --resource-group and set E2E_STAFF_PASSWORD to the seedStaffPassword you chose;
 # the frontend URL, Key Vault, account and deployment are discovered from the resource group.
@@ -184,15 +184,13 @@ if wanted model; then
     if [ -z "$endpoint" ] || [ -z "$account" ]; then
         skip "model: no Azure OpenAI account in $RG (deployOpenAi=false: the apps use replay or an external endpoint)"
     else
-        vault="$(envv AZURE_KEY_VAULT_NAME)"
-        [ -n "$vault" ] || vault="$(az keyvault list --resource-group "$RG" --query '[0].name' -o tsv 2>/dev/null || true)"
-        key=""
-        [ -z "$vault" ] || key="$(az keyvault secret show --vault-name "$vault" --name azure-openai-key --query value -o tsv 2>/dev/null || true)"
-        [ -n "$key" ] || key="$(az cognitiveservices account keys list --name "$account" --resource-group "$RG" --query key1 -o tsv 2>/dev/null || true)"
-        if [ -z "$key" ]; then
-            fail "model: could not read the key from Key Vault $vault or from the account (needs Key Vault Secrets User, or Cognitive Services Contributor)"
+        # Keyless: the caller's own Entra token for the Cognitive Services audience. The template grants the deployer
+        # Cognitive Services OpenAI User on the account (azd passes the principal id; in the portal tick grantDeployerAccess).
+        token="$(az account get-access-token --resource https://cognitiveservices.azure.com --query accessToken -o tsv 2>/dev/null || true)"
+        if [ -z "$token" ]; then
+            fail "model: could not get an Entra token for https://cognitiveservices.azure.com (az login again)"
         else
-            if SANITY_KEY="$key" SANITY_ENDPOINT="$endpoint" SANITY_DEPLOYMENT="$deployment" \
+            if SANITY_TOKEN="$token" SANITY_ENDPOINT="$endpoint" SANITY_DEPLOYMENT="$deployment" \
                 SANITY_API_VERSION="$(envv AZURE_OPENAI_API_VERSION)" python3 -I - <<'PY'
 import json, os, sys, urllib.error, urllib.request
 
@@ -202,7 +200,7 @@ version = os.environ.get("SANITY_API_VERSION") or "2025-04-01-preview"
 url = "%s/openai/deployments/%s/chat/completions?api-version=%s" % (endpoint, deployment, version)
 body = {"messages": [{"role": "user", "content": "Reply with the single word: pong"}], "max_completion_tokens": 200}
 req = urllib.request.Request(
-    url, method="POST", data=json.dumps(body).encode(), headers={"Content-Type": "application/json", "api-key": os.environ["SANITY_KEY"]}
+    url, method="POST", data=json.dumps(body).encode(), headers={"Content-Type": "application/json", "Authorization": "Bearer " + os.environ["SANITY_TOKEN"]}
 )
 try:
     with urllib.request.urlopen(req, timeout=120) as res:
@@ -221,9 +219,9 @@ if not text.strip():
     sys.exit(1)
 PY
             then pass "model: $deployment on $account answered a one-line completion"
-            else fail "model: the direct call failed (a gpt-5.x name or API version the account rejects shows as an HTTP 400 above)"; fi
+            else fail "model: the direct call failed. HTTP 401 or 403: the deployer lacks Cognitive Services OpenAI User on the account (a new role assignment takes a few minutes; in the portal tick grantDeployerAccess). HTTP 400 or 404: the model name or API version"; fi
         fi
-        key=""
+        token=""
     fi
 fi
 
