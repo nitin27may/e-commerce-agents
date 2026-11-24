@@ -69,6 +69,24 @@ models:
     as_of: null
     verified: false
     note: A plausible deployment name, not a confirmed model id.
+  gpt-5.4-mini:
+    provider: azure
+    input_per_1m: 0.75
+    output_per_1m: 4.50
+    cached_input_per_1m: 0.075
+    source: https://prices.azure.com/api/retail/prices?api-version=2023-01-01-preview (serviceName Foundry Models, armRegionName eastus2, meters "5.4 mini Inp Gl", "5.4 mini Opt Gl", "5.4 mini cd Inp Gl")
+    as_of: 2026-11-24
+    verified: false
+    note: Global Standard list price read from the Azure Retail Prices API, not confirmed on a pricing page. Data Zone is 10 percent higher.
+  gpt-5.2:
+    provider: azure
+    input_per_1m: 1.75
+    output_per_1m: 14.00
+    cached_input_per_1m: 0.175
+    source: https://prices.azure.com/api/retail/prices?api-version=2023-01-01-preview (serviceName Foundry Models, armRegionName eastus2, meters "GPT 5.2 inp Gl", "GPT 5.2 opt Gl", "GPT 5.2 cd inp Gl")
+    as_of: 2026-11-24
+    verified: false
+    note: Global Standard list price read from the Azure Retail Prices API, not confirmed on a pricing page. Data Zone is 10 percent higher.
   gpt-4o:
     provider: openai
     input_per_1m: 2.50

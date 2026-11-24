@@ -317,7 +317,7 @@ is not comparable with an independently judged one. The prompt is `config/prompt
 How well each candidate judge agrees with a human reading is measured in `evals/judge_calibration/` (30 labelled
 responses, stored verdicts, `python -m evals.judge_calibration.run --rescore` to recompute offline, `--requery` to call
 the judges again). The labels there are drafted and not yet reviewed; the README in that directory states the decision
-rule for changing the default judge and the current result.
+rule for changing the judge and the current result: `gpt-5.4-mini` is recommended (`JUDGE_PROVIDER=azure JUDGE_MODEL=gpt-5.4-mini`); no judge is defaulted in code.
 
 ## Capability check
 

@@ -79,16 +79,18 @@ Completeness is deliberately fuzzy (substring match on the response text) becaus
 
 ### Judge calibration
 
-The LLM judge is only useful if it agrees with a person reading the same response. `agents/python/evals/judge_calibration/` holds 30 stored live responses (clear passes and misses, partial answers, one empty reply, refusals, five adversarial prompts), a label for every expected field, the stored verdicts of four candidate judges, and a script that recomputes every figure offline (`uv run python -m evals.judge_calibration.run --rescore`). The decision rule was written before any judge ran: a candidate replaces the default `gpt-4.1-mini` only if its agreement is at least 5 points higher and its cost per judgement is under 3 times the default's.
+The LLM judge is only useful if it agrees with a person reading the same response. `agents/python/evals/judge_calibration/` holds 30 stored live responses (clear passes and misses, partial answers, one empty reply, refusals, five adversarial prompts), a label for every expected field, the stored verdicts of four candidate judges, and a script that recomputes every figure offline (`uv run python -m evals.judge_calibration.run --rescore`). The decision rule was written before any judge ran: a candidate replaces the incumbent judge `gpt-4.1-mini` only if its agreement is at least 5 points higher and its cost per judgement is under 3 times the default's.
 
 | Judge | Agreement with labels | Kappa | False pass | False fail | Cost per 100 judgements |
 |---|---|---|---|---|---|
-| gpt-4.1-mini (default) | 63% | 0.29 | 2 | 8 | 0.020 USD |
+| gpt-4.1-mini (incumbent) | 63% | 0.29 | 2 | 8 | 0.020 USD |
 | gpt-4.1 | 87% | 0.73 | 0 | 4 | 0.104 USD |
-| gpt-5.4-mini | 78% | 0.58 | 0 | 6 | unpriced |
-| gpt-5.2 | 78% | 0.58 | 0 | 6 | unpriced |
+| gpt-5.4-mini (recommended) | 78% | 0.58 | 0 | 6 | 0.043 USD |
+| gpt-5.2 | 78% | 0.58 | 0 | 6 | 0.116 USD |
 
-Measured 2026-11-23 on Azure deployments, one repeat. The default stays: `gpt-4.1` is 24 points better but 5.2 times the cost, and the two `gpt-5.x` models have no price row, so their cost leg cannot be shown (add a row from the provider's price page and rerun `--rescore`). The result does say the default is the weakest judge here: it under-scores answers a reader accepts and twice passes an answer that gives nothing.
+Measured 2026-11-23 on Azure deployments, one repeat; the two `gpt-5.x` models were priced on 2026-11-24 from the Azure Retail Prices API (Global Standard, `verified: false`) and the offline decision rerun. **`gpt-5.4-mini` is the recommended judge**: 15 points better than the incumbent at 2.14 times the cost per judgement, under the 3x cap. `gpt-4.1` is 24 points better but 5.2 times the cost, and `gpt-5.2` is the same 15 points at 5.8 times. Nothing in code defaults a judge (a run with no `JUDGE_*` stops), so the recommendation is a setting: `JUDGE_PROVIDER=azure JUDGE_MODEL=gpt-5.4-mini`, overridable like any `JUDGE_*` value. The incumbent is still the weakest judge here: it under-scores answers a reader accepts and twice passes an answer that gives nothing.
+
+The Azure content filter refused three adversarial rows for every judge except `gpt-4.1`, the incumbent included, so the incumbent and `gpt-5.4-mini` are compared on the same 27 rows and the filter does not move the decision. It does leave a blind spot: those rows come back `judge_unavailable`, are left out of the completeness mean and reported on a `Judge unavailable` line, never scored 0 or passed.
 
 Caveats. **The labels are drafted and have not been reviewed by the maintainer** (every row says `reviewed: false`), so treat the table as provisional. 30 responses is small: the 95% intervals overlap, and three of the judges are within 2 to 4 cases of each other. Three adversarial rows were refused by the provider's content filter for every judge except `gpt-4.1`, so the other three are compared on 27. All responses came from `gpt-4.1`, which makes `gpt-4.1` a self-judge here. To review the labels, edit `labels.jsonl` (flip `present`, set `reviewed`), then rerun `--rescore`; no model is called. Details and the per-category breakdown are in the directory's README and `results.json`.
 
