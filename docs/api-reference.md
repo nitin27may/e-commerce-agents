@@ -946,7 +946,7 @@ Python only; see [merchant-proposals.md](merchant-proposals.md). Seller or admin
 | `GET /api/seller/proposals` | `?status=`, `?limit=`. The caller's proposals with their lines (an admin sees all) |
 | `POST /api/seller/proposals/run` | `{"seller_email": "..."}` optional. Generates a proposal now; a seller can only generate for themselves |
 | `GET /api/seller/proposals/{id}` | One proposal with its lines |
-| `POST /api/seller/proposals/{id}/decide` | `{"lines": [{...}], "note": "..."}`. Accept, edit or reject each line; accepted lines execute once. An edit can never raise a line |
+| `POST /api/seller/proposals/{id}/decide` | `{"lines": [{...}], "note": "..."}`. Accept, edit or reject each line; accepted lines execute once. An edit can never raise a line. A restock batch whose PO value is over the threshold in `approvals.yaml` is not executed: its accepted restock lines become `awaiting_manager`, the same approval is routed to `manager`, and a second seller decision is a `409`. An admin decides that tier through `POST /api/approvals/{id}/decide` (a quantity may only be lowered; `request_info` is a `422`; `support` and the seller get `403`) |
 
 ## Event autonomy
 
