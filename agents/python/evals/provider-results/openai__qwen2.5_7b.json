@@ -1,0 +1,87 @@
+{
+  "date": "2026-11-24",
+  "provider": "openai",
+  "label": "Ollama (local)",
+  "model": "qwen2.5:7b",
+  "shape": "chat_completions",
+  "capabilities": {
+    "tool_calling": {
+      "status": "pass",
+      "detail": "called lookup_order",
+      "tokens_in": 179,
+      "tokens_out": 23
+    },
+    "parallel_tool_calls": {
+      "status": "pass",
+      "detail": "2 calls in one turn",
+      "tokens_in": 192,
+      "tokens_out": 46
+    },
+    "tool_result": {
+      "status": "pass",
+      "detail": "answered from the tool result",
+      "tokens_in": 234,
+      "tokens_out": 11
+    },
+    "tool_choice": {
+      "status": "fail",
+      "detail": "a named tool was forced and not called",
+      "tokens_in": 168,
+      "tokens_out": 10
+    },
+    "streaming_tools": {
+      "status": "pass",
+      "detail": "a tool call arrived in the stream",
+      "tokens_in": 179,
+      "tokens_out": 23
+    },
+    "json_output": {
+      "status": "pass",
+      "detail": "native JSON mode",
+      "tokens_in": 49,
+      "tokens_out": 6
+    },
+    "context_length": {
+      "status": "pass",
+      "detail": "accepted the order-management/seller system prompt, about 3,847 tokens",
+      "tokens_in": 3987,
+      "tokens_out": 2
+    },
+    "temperature_param": {
+      "status": "pass",
+      "detail": "temperature 0.2 accepted",
+      "tokens_in": 36,
+      "tokens_out": 2
+    },
+    "embeddings": {
+      "status": "fail",
+      "detail": "HTTP 404: model 'nomic-embed-text' not found",
+      "tokens_in": 0,
+      "tokens_out": 0
+    }
+  },
+  "tokens_in": 5024,
+  "tokens_out": 123,
+  "suites": [
+    {
+      "suite": "quality: specialists (five datasets)",
+      "verdict": "degraded",
+      "reason": "without embeddings (product search falls back to full text without embeddings)"
+    },
+    {
+      "suite": "quality: orchestrator routing",
+      "verdict": "applicable",
+      "reason": ""
+    },
+    {
+      "suite": "safety / red-team",
+      "verdict": "applicable",
+      "reason": ""
+    },
+    {
+      "suite": "LLM judge completeness",
+      "verdict": "applicable",
+      "reason": ""
+    }
+  ]
+}

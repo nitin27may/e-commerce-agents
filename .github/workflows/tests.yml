@@ -65,6 +65,11 @@ jobs:
       - name: Eval scorecard page is current
         run: python3 -m scripts.build_eval_scorecard --check
 
+      # The capability table in docs/model-providers.md is generated from evals/provider-results/. Stdlib only.
+      # Fix: `uv run --project agents/python python -m scripts.build_provider_table`.
+      - name: Provider capability table is current
+        run: python3 -m scripts.build_provider_table --check
+
       - name: Run pytest with coverage
         working-directory: agents/python
         run: |

@@ -1,0 +1,86 @@
+{
+  "date": "2026-11-24",
+  "provider": "azure",
+  "model": "gpt-4.1",
+  "shape": "chat_completions",
+  "capabilities": {
+    "tool_calling": {
+      "status": "pass",
+      "detail": "called lookup_order",
+      "tokens_in": 75,
+      "tokens_out": 17
+    },
+    "parallel_tool_calls": {
+      "status": "pass",
+      "detail": "2 calls in one turn",
+      "tokens_in": 88,
+      "tokens_out": 50
+    },
+    "tool_result": {
+      "status": "pass",
+      "detail": "answered from the tool result",
+      "tokens_in": 116,
+      "tokens_out": 12
+    },
+    "tool_choice": {
+      "status": "pass",
+      "detail": "the named tool was called",
+      "tokens_in": 73,
+      "tokens_out": 6
+    },
+    "streaming_tools": {
+      "status": "pass",
+      "detail": "a tool call arrived in the stream",
+      "tokens_in": 75,
+      "tokens_out": 17
+    },
+    "json_output": {
+      "status": "pass",
+      "detail": "native JSON mode",
+      "tokens_in": 27,
+      "tokens_out": 5
+    },
+    "context_length": {
+      "status": "pass",
+      "detail": "accepted the order-management/seller system prompt, about 3,847 tokens",
+      "tokens_in": 3865,
+      "tokens_out": 1
+    },
+    "temperature_param": {
+      "status": "pass",
+      "detail": "temperature 0.2 accepted",
+      "tokens_in": 14,
+      "tokens_out": 1
+    },
+    "embeddings": {
+      "status": "pass",
+      "detail": "1536 dimensions",
+      "tokens_in": 1,
+      "tokens_out": 0
+    }
+  },
+  "tokens_in": 4334,
+  "tokens_out": 109,
+  "suites": [
+    {
+      "suite": "quality: specialists (five datasets)",
+      "verdict": "applicable",
+      "reason": ""
+    },
+    {
+      "suite": "quality: orchestrator routing",
+      "verdict": "applicable",
+      "reason": ""
+    },
+    {
+      "suite": "safety / red-team",
+      "verdict": "applicable",
+      "reason": ""
+    },
+    {
+      "suite": "LLM judge completeness",
+      "verdict": "applicable",
+      "reason": ""
+    }
+  ]
+}
