@@ -54,7 +54,11 @@ export default function SellerProposalsPage() {
     const res = await api.decideSellerProposal(id, lines);
     const executed = res.results.filter((r) => r.status === "executed").length;
     const blocked = res.results.filter((r) => r.status === "blocked").length;
-    setNotice(`Applied ${executed} change${executed === 1 ? "" : "s"}${blocked ? `; ${blocked} blocked by a limit` : ""}.`);
+    const waiting = res.results.filter((r) => r.status === "awaiting_manager").length;
+    setNotice(
+      `Applied ${executed} change${executed === 1 ? "" : "s"}${blocked ? `; ${blocked} blocked by a limit` : ""}` +
+        `${waiting ? `; ${waiting} restock line${waiting === 1 ? "" : "s"} awaiting manager approval` : ""}.`,
+    );
     await load();
   }
 
@@ -68,7 +72,8 @@ export default function SellerProposalsPage() {
   }
 
   const open = proposals.filter((p) => p.status === "pending_review");
-  const past = proposals.filter((p) => p.status !== "pending_review");
+  const waiting = proposals.filter((p) => p.status === "awaiting_manager");
+  const past = proposals.filter((p) => p.status !== "pending_review" && p.status !== "awaiting_manager");
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
@@ -109,6 +114,9 @@ export default function SellerProposalsPage() {
       ) : (
         <>
           {open.map((p) => (
+            <ProposalCard key={p.id} proposal={p} onDecide={decide} />
+          ))}
+          {waiting.map((p) => (
             <ProposalCard key={p.id} proposal={p} onDecide={decide} />
           ))}
           {past.length > 0 && (

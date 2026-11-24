@@ -65,7 +65,7 @@ line that fails is `blocked` and can only be rejected.
 ## Review runs on the existing approvals machinery
 
 There is no second approval system. A proposal batch is one `approvals` row, kind `merchant_proposal`
-(settings in `approvals.yaml`: editable field `final_value`, 72-hour SLA, `expire` on timeout),
+(settings and the PO-value rule in `approvals.yaml`: editable field `final_value`, 72-hour SLA, `expire` on timeout),
 source `proposal`, `source_ref` the proposal id. The seller's decision moves that row with the same
 `repo.claim`, guarded `repo.transition` and audit events as every other kind.
 
@@ -80,9 +80,69 @@ The seller's own limits are the guards, not the approval rule.
 
 ### Who may decide
 
-Only the seller who owns the proposal, or an `admin`. Another seller's proposal is a **404**,
+Only the seller who owns the proposal, or an `admin`. (A restock batch over the PO threshold then needs a manager as
+well: see [PO value threshold](#po-value-threshold).) Another seller's proposal is a **404**,
 identical to a missing one. Customers and `support` get 403 (`require_seller`). The staff approvals
-inbox leaves proposals out; its list omits them, its detail read, decide and answer-info endpoints all answer the same 404 a missing id gets, for every decision (both stacks), so there is one place to decide them.
+inbox leaves a proposal out while it is the seller's to decide: its list omits it, its detail read, decide and answer-info endpoints all answer the same 404 a missing id gets, for every decision (both stacks). The one exception is the manager tier of a restock batch over the PO threshold, below, which Python staff decide in the inbox.
+
+## PO value threshold
+
+A restock line commits money, so the seller does not get the last word on a large order (#298). When the seller
+decides, the batch's **PO value** is worked out: the sum of quantity x unit cost over the restock lines being
+accepted (an edit counts at its lowered quantity; a line with no recorded cost adds nothing, because execution blocks it).
+That number is the `amount` fact for kind `merchant_proposal` in `config/policies/approvals.yaml`, evaluated like every
+other kind (first rule wins, `gt` only, a missing fact never satisfies a condition):
+
+| Rule | Route | Meaning |
+|---|---|---|
+| `po-value-needs-manager` (`amount gt 5000`) | `manager` | the restock lines wait for a manager |
+| `owning-seller-reviews` | `auto` | no staff tier: the seller decides alone (the hard limits are still the guards) |
+
+The 5000 is a placeholder; set it to the order your business lets a seller place alone.
+
+**Over the threshold**, in one seller decision:
+
+1. Markdown lines and every rejected line are handled as before (markdowns execute now).
+2. Each accepted restock line is recorded as `awaiting_manager` with the seller's value and is **not executed**.
+3. The same approvals row is routed: `route = manager`, `assigned_role = admin`, `escalation_level + 1`, a fresh
+   72-hour deadline and its reminder and breach outbox timers, all in one transaction fenced by the seller's claim.
+   The proposal becomes `awaiting_manager`; the seller-stage timers are now stale and do nothing. Admins are notified.
+4. The seller cannot decide the batch again (409). The staff inbox lists the row for `admin` (not `support`, a manager
+   route) and `GET /api/approvals/{id}` returns `source_detail` with the lines, their PO value and the seller's stage.
+   The seller's page shows "Awaiting manager approval" on those lines.
+
+**The manager decides** with the ordinary `POST /api/approvals/{id}/decide`:
+
+* `approve` runs each held line through `execute_line`, which re-checks every guard on live facts and runs it at most
+  once, so a price that moved or stock already on order still blocks it. Optional
+  `edits: {"final_value": {"<line_id>": <quantity>}}` lowers a line; **raising one is a 422**, as is a non-integer, or
+  any field other than `final_value`.
+* `reject` rejects the held lines; nothing is ordered.
+* `request_info` is a 422: the requester is the system actor and nobody could answer.
+* The approval ends `executed` if any line of the batch ran (the seller's markdowns count), `failed` if every accepted
+  line was blocked, `rejected` if nothing ran. The seller is notified.
+
+**Who may not.** The seller (not staff: 403) and `support` (a manager route: 403). Whoever decided the seller's side,
+an admin acting for the seller included, cannot also be the manager (403): one person cannot approve their own purchase
+order. Staff still get the byte-identical 404 for a proposal still at the seller's stage. The database CHECK
+`approvals_no_beneficiary_decision` exempts a proposal only while `route IS NULL`; once routed, the seller is just the
+subject again. `authorize_decider` keeps the `SELLER_DECIDED_SOURCES` exemption for the seller's own stage only
+(`is_seller_stage`).
+
+**SLA.** The manager tier has its own clock. It is never expired under a decide in flight (a live claim, or lines
+accepted or edited and not yet run, always defers the timer; the lines the seller's decide already executed are history
+and do not). If nobody decides in time the held lines become `expired` (never ordered), the approval `expired`, the
+proposal `executed` when other lines ran and `cancelled` otherwise, and the seller is told. The reminder goes to the
+admins' queue, not the seller.
+
+Gotchas:
+
+* The threshold is checked **per batch**, on what the seller accepts. Lowering quantities to get under it is allowed
+  (a smaller order is within the seller's authority), but two batches are never summed.
+* Every restock line of a batch routed to a manager waits, not only the ones that individually cross the threshold.
+* The policy is read at decide time: changing `approvals.yaml` does not move a batch already handed over.
+* A .NET admin does not see these rows in its inbox (the .NET list and detail answer 404 for source `proposal`);
+  deciding them is Python only, like the rest of the merchant flow.
 
 ## Deciding
 
@@ -201,6 +261,14 @@ before a run (the same deterministic generator, idempotent). Results are in [age
 * **PO-value approval thresholds beyond the per-line limits** (the last item of #298) are not built.
 * Python only (parity matrix, rows 39 and 57): the .NET stack has no proposal routes and no merchant-ops agent. Its
   approvals inbox shares the database and would list a proposal approval, but refuses to decide it.
+* **The merchant-ops agent** (an `Agent`, `merchant-ops.yaml`, `propose_markdown` / `propose_restock` tools,
+  `evals/datasets/merchant_ops.json`) needs a recording session with a model key. No `@tool` exists for it, so
+  no existing agent's tool schema, prompt or replay fixture is affected. A tool that wraps `generate_proposal`
+  returns seller-authored product names, so it needs a sanitizer entry.
+* Python only (parity matrix, row 39): the .NET stack has no proposal routes, so no PO-value tier either. Its
+  approvals inbox shares the database but answers 404 for every proposal approval, including one routed to a manager,
+  so a manager decides that tier on the Python stack. The policy rule itself is read by both stacks and its golden cases
+  (`testdata/merchant_proposal.yaml`) run in both test suites.
 
 ### A shortfall above the restock limits
 

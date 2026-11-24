@@ -76,14 +76,6 @@ cases:
       rule: high-value
       reasons:
         - "Changing an order over 1000 needs a manager"
-  - name: "a merchant proposal is reviewed by the owning seller whatever the facts"
-    kind: merchant_proposal
-    facts: { amount: 5000 }
-    expect:
-      route: manager
-      rule: owning-seller-reviews
-      reasons:
-        - "The seller who owns the products reviews the batch"
   - name: "a backorder always goes to a manager"
     kind: place_backorder
     facts: {}

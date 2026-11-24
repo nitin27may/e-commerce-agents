@@ -97,15 +97,31 @@ def _same_person(a: str | None, b: str | None) -> bool:
 # ─────────────────────────── authorisation ───────────────────────────
 
 
-def refuse_proposal(approval: dict[str, Any]) -> None:
+def is_seller_stage(approval: dict[str, Any]) -> bool:
+    """A merchant proposal that no policy has routed to staff: the owning seller's to decide (#298).
+
+    Its ``route`` stays NULL until the seller's decision finds the batch over the PO threshold; then the same row is
+    routed to a manager and this is False. The database CHECK ``approvals_no_beneficiary_decision`` keys on the same
+    column.
+    """
+    return approval.get("source") in SELLER_DECIDED_SOURCES and approval.get("route") is None
+
+
+def refuse_proposal(approval: dict[str, Any], *, allow_manager_stage: bool = False) -> None:
     """A merchant proposal is decided by its seller on ``/api/seller/proposals/{id}/decide``, never here.
+
+    The one exception (``allow_manager_stage``, #298): once the seller has decided and the batch's PO value routed
+    it to a manager, staff decide that tier here, through the normal inbox.
 
     Approve and reject would have no executor on this path, and ``request_info`` would park the batch in
     ``needs_info`` where nobody can answer it (its requester is the system actor). The answer is the one a missing id
     gets (404, same body), on every staff route, so staff cannot tell a proposal id from an unused one.
     """
-    if approval["source"] == "proposal":
-        raise ApprovalHTTPError(404, "Approval not found")
+    if approval["source"] != "proposal":
+        return
+    if allow_manager_stage and not is_seller_stage(approval):
+        return
+    raise ApprovalHTTPError(404, "Approval not found")
 
 
 def can_review(approval: dict[str, Any], actor: Actor) -> bool:
@@ -119,8 +135,9 @@ def repo_rank(role: str | None) -> int:
     return intake.ROLE_RANK.get((role or "").lower(), 0)
 
 
-#: Sources whose *subject* is the intended reviewer, so the beneficiary rule below does not apply to them. A merchant
-#: proposal is about a seller's own catalogue and the seller decides it, on the seller routes
+#: Sources whose *subject* is the intended reviewer, so the beneficiary rule below does not apply to them, for as long
+#: as the seller's own stage is open (:func:`is_seller_stage`). A merchant proposal is about a seller's own catalogue
+#: and the seller decides it, on the seller routes
 #: (``proposals_service.decide``), never through :func:`authorize_decider` (the staff path 404s the source first, see
 #: :func:`refuse_proposal`). Every other source is decided by staff, and for those the rule is: the reviewer may never
 #: be the party who receives the money or benefit of the action. Listed explicitly, not left as an accident.
@@ -138,9 +155,7 @@ def authorize_decider(approval: dict[str, Any], actor: Actor) -> None:
         raise ApprovalHTTPError(403, "Staff access required")
     if _same_person(actor.email, approval["requester_email"]):
         raise ApprovalHTTPError(403, "You cannot approve your own request")
-    if approval.get("source") not in SELLER_DECIDED_SOURCES and _same_person(
-        actor.email, approval.get("subject_email")
-    ):
+    if not is_seller_stage(approval) and _same_person(actor.email, approval.get("subject_email")):
         raise ApprovalHTTPError(403, "You cannot decide a request that is for you")
     if not can_review(approval, actor):
         raise ApprovalHTTPError(403, "This approval is routed to a manager")
@@ -193,6 +208,10 @@ async def _source_detail(pool: asyncpg.Pool, approval: dict[str, Any]) -> dict[s
     if approval["source"] == "event":
         decision = await autonomy.get_decision(pool, ref)
         return None if decision is None else {"decision": decision}
+    if approval["source"] == "proposal":
+        from orchestrator import proposals_service
+
+        return await proposals_service.po_review_detail(pool, approval)
     if approval["source"] == "workflow":
         row = await pool.fetchrow(
             "SELECT workflow_run_id, status, payload FROM hitl_requests WHERE id = $1",
@@ -223,10 +242,15 @@ async def decide(
     Returns ``{"approval": <serialised row>, "result": <what executing it produced>}``.
     """
     approval = await load(approval_id)
-    refuse_proposal(approval)  # before anything else: not even a 403 hints at a decision path that does not exist
+    # before anything else: not even a 403 hints at a decision path that does not exist
+    refuse_proposal(approval, allow_manager_stage=True)
     authorize_decider(approval, actor)
     note = (note or "").strip()[:MAX_NOTE_LENGTH] or None
     edits = edits or {}
+    if approval["source"] == "proposal":  # the manager tier of a restock batch over the PO threshold (#298)
+        from orchestrator import proposals_service
+
+        return await proposals_service.decide_po(approval, actor, decision=decision, edits=edits, note=note)
 
     if decision == "request_info":
         if edits:

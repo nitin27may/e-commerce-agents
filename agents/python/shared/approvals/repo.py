@@ -500,15 +500,20 @@ async def list_for_staff(
     statuses: Collection[ApprovalStatus | str] | None = None,
     assigned_roles: Collection[str] | None = None,
     exclude_sources: Collection[str] | None = None,
+    hide_seller_stage_proposals: bool = False,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
     """The reviewer queue: oldest deadline first. ``assigned_roles`` limits it to what a role may decide;
-    ``exclude_sources`` leaves out approvals that are decided somewhere other than the staff inbox."""
+    ``exclude_sources`` leaves out approvals that are decided somewhere other than the staff inbox, and
+    ``hide_seller_stage_proposals`` leaves out a merchant proposal until it has been routed to a manager (#298):
+    while its route is still NULL it is the owning seller's to decide, on the seller routes."""
     where: list[str] = []
     args: list[Any] = []
     if exclude_sources:
         args.append(list(exclude_sources))
         where.append(f"source <> ALL(${len(args)}::text[])")
+    if hide_seller_stage_proposals:
+        where.append("NOT (source = 'proposal' AND route IS NULL)")
     if statuses:
         args.append([ApprovalStatus(s).value for s in statuses])
         where.append(f"status = ANY(${len(args)}::text[])")

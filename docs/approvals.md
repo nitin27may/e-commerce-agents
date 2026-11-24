@@ -166,7 +166,7 @@ database constraint and again in the repository. See the roles table in the [Sec
 ## The policy file
 
 ```yaml
-policy_version: "2026-11-16.3"
+policy_version: "2026-11-24.1"
 kinds:
   return_approval:
     editable_fields: [amount, resolution]
@@ -321,7 +321,7 @@ proposed change plus the facts and return a `GuardResult` (`ok`, the `reasons`, 
 `shared/merchant/limits.py` validates the YAML at load time, failing loudly on an unknown key or out-of-range
 value.
 
-**A merchant proposal is not the staff inbox's to decide, on both stacks.** Every staff route answers **404 `Approval not found`** for source `proposal`, byte-for-byte what a missing id gets, so staff cannot tell a proposal id from an unused one: `decide()` and the answer-info route (for every decision, including `request_info`: a batch parked in `needs_info` could never be answered by its system-actor requester) and `GET /api/approvals/{id}`, matching the staff list that leaves it out (.NET's list excludes it too); the legacy resume and admin approve/deny routes cannot reach one. The seller decides on `/api/seller/proposals/{id}/decide` (Python only). An SLA breach never expires a proposal under a decide in flight: see [merchant proposals](merchant-proposals.md#sla-expiry-and-a-decide-in-flight).
+**A merchant proposal is not the staff inbox's to decide, on both stacks, with one Python-only exception (#298).** While it is the seller's to decide, every staff route answers **404 `Approval not found`** for source `proposal`, byte-for-byte what a missing id gets, so staff cannot tell a proposal id from an unused one: `decide()` and the answer-info route (for every decision, including `request_info`: a batch parked in `needs_info` could never be answered by its system-actor requester) and `GET /api/approvals/{id}`, matching the staff list that leaves it out (.NET's list excludes it too); the legacy resume and admin approve/deny routes cannot reach one. The seller decides on `/api/seller/proposals/{id}/decide` (Python only). The exception: when the batch's PO value (sum of quantity x unit cost of the accepted restock lines, the `amount` fact of kind `merchant_proposal`) is over the policy threshold, the seller's decision records those lines as `awaiting_manager` and routes the same row to `manager` (`is_seller_stage` is then false, the beneficiary exemption ends, and the DB CHECK `approvals_no_beneficiary_decision` keys on `route IS NULL`); Python staff at manager level then see and decide it here (`approve`, `reject`, lowering a line only; `request_info` is a 422), never the person who decided the seller's side. .NET still answers 404 for source `proposal` at every stage. See [merchant proposals](merchant-proposals.md#po-value-threshold). An SLA breach never expires a proposal under a decide in flight: see [merchant proposals](merchant-proposals.md#sla-expiry-and-a-decide-in-flight).
 
 The schema is migration `0009_merchant_proposals.sql`: `proposals`, `proposal_lines` (per-line status
 including `blocked`, the guard result as JSONB), `promotion_products` and a nullable `products.unit_cost`. The
