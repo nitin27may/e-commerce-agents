@@ -226,6 +226,26 @@ public sealed class ReturnAndLoyaltyToolsTests : IAsyncLifetime
         second.TryGetProperty("error", out _).Should().BeFalse();
     }
 
+    [Fact]
+    public async Task ProcessRefund_RefusesADeniedReturnWithPythonsPayload()
+    {
+        var created = Json(await Returns().InitiateReturn(_deliveredOrderId.ToString(), "Faulty"));
+        var returnId = created.GetProperty("return_id").GetString()!;
+        await using (var conn = await _pool.OpenAsync())
+        {
+            await conn.ExecuteAsync("UPDATE returns SET status = 'denied' WHERE id = @id", new { id = Guid.Parse(returnId) });
+        }
+
+        var result = Json(await Returns().ProcessRefund(returnId));
+
+        result.GetProperty("error").GetString().Should().Be("This return was denied and cannot be refunded.");
+        result.GetProperty("return_id").GetString().Should().Be(returnId);
+
+        await using var check = await _pool.OpenAsync();
+        (await check.ExecuteScalarAsync<string>("SELECT status FROM returns WHERE id = @id", new { id = Guid.Parse(returnId) }))
+            .Should().Be("denied", "a refused refund must not move the row");
+    }
+
     /// <summary>
     /// The gate is what stands between an agent and someone's money, so this
     /// asserts the registration rather than trusting it was remembered.
