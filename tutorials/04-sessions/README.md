@@ -63,7 +63,7 @@ There are two separate `Agent`/`AIAgent` objects in two separate processes, and 
 
 ## Python
 
-`main.py` needs an API key, because its prompts have no recorded response. With no key, run the tests first; they replay a recorded conversation across two fresh agent objects. From the repo root:
+With no key, `main.py` replays a recorded response for its default run (`save`, "Hello!"); the tests replay a recorded conversation across two fresh agent objects. A reworded prompt has no recording. From the repo root:
 
 ```bash
 uv sync --project tutorials --extra dev

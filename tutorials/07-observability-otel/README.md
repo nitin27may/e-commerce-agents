@@ -78,7 +78,7 @@ def setup_tracing(service_name: str = "maf-v1-ch07", exporter: object | None = N
 
 `main.py` calls `setup_tracing()` once at startup, then builds an `Agent` and runs it. `enable_instrumentation()` makes MAF emit spans for every agent and LLM call. The `BatchSpanProcessor` with a `ConsoleSpanExporter` prints them.
 
-`main.py` needs an API key, because its prompts have no recorded response. With no key, run the tests first; one replays a recorded run and checks the spans it emits. From the repo root:
+With no key, `main.py` replays a recorded response for its default question; one test replays a recorded run and checks the spans it emits. A reworded question has no recording. From the repo root:
 
 ```bash
 uv sync --project tutorials --extra dev
