@@ -46,9 +46,11 @@ permissions:
   pages: write
   id-token: write
 
-# Never cancel an in-progress production deploy.
+# Never cancel an in-progress production deploy. Pull request builds get their own group: with one shared
+# group, a queued PR run replaced the pending push run, so a merge to main could skip its deploy (the
+# docs for #324 were not published until the run was re-run by hand).
 concurrency:
-  group: "pages"
+  group: ${{ github.event_name == 'pull_request' && format('pages-pr-{0}', github.ref) || 'pages' }}
   cancel-in-progress: false
 
 jobs:
