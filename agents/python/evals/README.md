@@ -158,6 +158,7 @@ input names, so a records file can be given to a Foundry evaluator as is. A read
 | `error`, `fixture_missing` | | an infrastructure failure, kept apart from a bad answer |
 | `nodes` | list | workflow nodes entered, in order (`workflow:*` modes; empty in `tool` mode) |
 | `not_observable` | list | facts this target could not see (`http`: `hitl`, `grounding`, `tokens`, `guardrail_flags`). An assertion on a listed fact is not applicable, never failed |
+| `turns` | list | multi-turn live cases only (empty otherwise); see *Multi-turn cases*. Per turn: `query`, `response`, `context`, `tool_calls`, `expected`, `routes`, `tokens`, `latency_ms`, `cost_usd`, `grounding`, `denied`, `hitl_requested`, `not_observable`, `judge`, `scores`, `fields_found`, `fields_missing`, `assertion_failures`, `passed` |
 | `scores` | `{groundedness, correctness, completeness, overall}` | |
 | `fields_found`, `fields_missing`, `assertion_failures` | lists | |
 | `judge` | object or null | `score`, `reasoning`, `failure_mode`, `provider`, `model`, `self_judged` |
@@ -411,6 +412,47 @@ Rules:
 - A live case may carry a one-line `why` (the loader ignores keys it does not know). `product_discovery.live.json` has 25 cases:
   11 happy path, 8 edge, 6 adversarial. An adversarial case expects no tool call; its `expected_fields` are phrases for the judge
   (for example "declines to reveal its instructions"), never wording the response must contain.
+### Multi-turn cases
+
+A live case may carry `turns` instead of a single `input`: an ordered conversation run in ONE session. Live only: a
+replay dataset (a plain `*.json` file without `"live": true`) that has `turns` fails to load, because a replay fixture
+keys one request and no fixture exists for turn 2.
+
+```json
+{
+  "criteria": {"grounded": true, "tool_called": true},
+  "user_email": "jack.anderson@gmail.com",
+  "turns": [
+    {"input": "what is the status of my latest order", "expected_tools": ["get_order_details"], "expected_fields": ["status"]},
+    {"input": "and when will it arrive", "expected_tools": ["get_order_tracking"]}
+  ]
+}
+```
+
+- A turn takes `input` (required) and, all optional, `expected_tools`, `expected_fields`, `expected_tool_args`,
+  `expect_hitl`. Those expectations belong to the turn: a case that sets `expected_tools`, `expected_fields`,
+  `expected_tool_args`, `expect_hitl`, `expected_route` or `expect_denial` next to `turns` fails to load. `criteria`,
+  `user_role`, `user_email` and `mode` stay on the case and apply to every turn. `input` may be given beside `turns` only
+  as an echo of the last turn's message.
+- Placeholders (`{{order:...}}`, `{{product_id:...}}`) resolve in every turn's `input` and `expected_tool_args`,
+  exactly as for a single-turn case, and the record stores the resolved text.
+- One conversation: the in-process target gives the case a fresh session id, binds it for each turn and hands the agent
+  the earlier user and assistant messages as `history` (the orchestrator gets them as `RunContext.history`); the
+  `http` target sends the `conversation_id` the stack named in the first turn's `metadata` frame with every later turn,
+  so the stack loads the history itself. Gotcha: in-process orchestrator cases do not write the `messages` table, so a
+  specialist reached over A2A cannot rehydrate earlier turns; only the orchestrator sees them. Multi-turn specialist
+  cases and the `http` target are not affected.
+- Scoring: each turn is scored with the same scorers as a single-turn case (its own groundedness, correctness,
+  completeness and assertions). The case's three scores are the mean over turns, `overall` is the usual 0.4/0.4/0.2
+  weighting of those means, and the case passes only if every turn passes (the turn's overall at the threshold and no
+  assertion failure). `assertion_failures`, `fields_found` and `fields_missing` are prefixed `turn N:`.
+- A failed turn (a transport error, a missing fixture) ends the case: `error` is `turn N: ...` and later turns do not
+  run, since they would run without the context they depend on.
+- Records stay Foundry-compatible: the top-level `query`, `response`, `context`, `tool_calls` and `expected` are the
+  last turn's, `tokens`, `latency_ms` and `cost_usd` are sums, and the new `turns` list holds each turn's own record.
+  `--rescore --verify` re-scores every turn from its stored fields and compares them too.
+- Reseed rule: a turn that writes (an approved return) leaves state behind like any live case; keep writes out of
+  multi-turn cases or reseed between runs.
 
 `--estimate` reads the replay fixtures by case text, so a live variant matches few of them; estimate with its replay
 twin instead (`--dataset evals/datasets/order_management.json --estimate`), which is the same cases and calls.

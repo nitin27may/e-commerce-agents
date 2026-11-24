@@ -80,6 +80,27 @@ class RunOutcome:
     # Calls MAF parked for approval (``approval_mode="always_require"``): no step, no row, just a
     # ``function_approval_request`` in the response (``shared.agent_host.approval_requests``).
     parked_calls: list[dict[str, Any]] = field(default_factory=list)
+    # ``http`` target: the conversation the stack put the turn in (its ``metadata`` frame), so a next turn joins it.
+    conversation_id: str | None = None
+
+
+@dataclass
+class Conversation:
+    """State shared by the turns of one multi-turn case.
+
+    ``session_id`` is what a turn binds as the session (in-process) or sends as ``conversation_id`` (``http``; empty
+    until the stack names the conversation on the first turn). ``history`` is the prior user and assistant messages,
+    which the in-process runner hands to the agent exactly as a real request does after loading the session.
+    """
+
+    session_id: str = ""
+    history: list[dict[str, str]] = field(default_factory=list)
+
+    def record_turn(self, user_input: str, outcome: RunOutcome) -> None:
+        if outcome.conversation_id:
+            self.session_id = outcome.conversation_id
+        self.history.append({"role": "user", "content": user_input})
+        self.history.append({"role": "assistant", "content": outcome.text})
 
 
 def _create_agent(agent_name: str) -> Any:
@@ -208,15 +229,18 @@ class ProductionRunner:
         user_role: str | None = None,
         user_email: str | None = None,
         mode: str | None = None,
+        conversation: Conversation | None = None,
     ) -> RunOutcome:
         """Run one input. ``user_role`` / ``user_email`` override the runner's defaults for this case.
 
-        ``mode`` names an orchestration mode other than ``tool`` (orchestrator cases only).
+        ``mode`` names an orchestration mode other than ``tool`` (orchestrator cases only). ``conversation`` makes
+        this a turn of a multi-turn case: its session id is bound and its history reaches the agent.
         """
         self._run_role = user_role or self.user_role
+        history = list(conversation.history) if conversation else []
         current_user_email.set(user_email or self.user_email)
         current_user_role.set(self._run_role)
-        current_session_id.set("")
+        current_session_id.set(conversation.session_id if conversation else "")
         reset_steps()
         reset_grounding_ledger()
         reset_guardrail_flags()
@@ -233,8 +257,10 @@ class ProductionRunner:
             if mode and mode != "tool" and self.agent_name != "orchestrator":
                 raise ValueError(f"mode {mode!r} is an orchestrator mode; agent {self.agent_name!r} has none")
             if self.agent_name == "orchestrator":
-                return await self._run_orchestrator(user_input, mode or "tool")
-            return await self._run_specialist(user_input)
+                return await self._run_orchestrator(
+                    user_input, mode or "tool", history, conversation.session_id if conversation else None
+                )
+            return await self._run_specialist(user_input, history)
 
         try:
             # A plain call unless a live run configured retries (429 / 5xx backoff, evals/live_limits.py).
@@ -272,11 +298,17 @@ class ProductionRunner:
         )
         return outcome
 
-    async def _run_orchestrator(self, user_input: str, mode_name: str = "tool") -> RunOutcome:
+    async def _run_orchestrator(
+        self,
+        user_input: str,
+        mode_name: str = "tool",
+        history: list[dict[str, str]] | None = None,
+        conversation_id: str | None = None,
+    ) -> RunOutcome:
         from orchestrator.modes import RunContext, get_mode
 
         mode = get_mode(mode_name)
-        ctx = RunContext(history=[])
+        ctx = RunContext(history=history or [], conversation_id=conversation_id)
         text = ""
         grounding: dict[str, Any] | None = None
         usage: dict[str, Any] = {}
@@ -310,7 +342,7 @@ class ProductionRunner:
             hitl_requested=parked,
         )
 
-    async def _run_specialist(self, user_input: str) -> RunOutcome:
+    async def _run_specialist(self, user_input: str, history: list[dict[str, str]] | None = None) -> RunOutcome:
         from shared.agent_host import _run_agent_native
 
         agent = self._agents.get(self._run_role)
@@ -318,7 +350,7 @@ class ProductionRunner:
             agent = self._agents[self._run_role] = _create_agent(self.agent_name)
 
         metadata_box: dict[str, Any] = {}
-        text = await _run_agent_native(agent, user_input, metadata_box=metadata_box)
+        text = await _run_agent_native(agent, user_input, history=history or None, metadata_box=metadata_box)
 
         steps = get_steps()
         usage = metadata_box.get("_maf_usage") or {}

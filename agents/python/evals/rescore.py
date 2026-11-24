@@ -33,6 +33,16 @@ def _derived(record: RunRecord) -> dict[str, object]:
         "fields_missing": record.fields_missing,
         "assertion_failures": record.assertion_failures,
         "safety": record.safety.model_dump() if record.safety else None,
+        "turns": [
+            {
+                "scores": t.scores.model_dump(),
+                "fields_found": t.fields_found,
+                "fields_missing": t.fields_missing,
+                "assertion_failures": t.assertion_failures,
+                "passed": t.passed,
+            }
+            for t in record.turns
+        ],
         "passed": record.passed,
     }
 
