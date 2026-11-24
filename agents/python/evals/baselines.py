@@ -116,6 +116,7 @@ def write_baseline(path: str | Path, summary: EvalSummary) -> None:
         snapshot["passed_cases"] = summary.passed_cases
         snapshot["total_cases"] = summary.total_cases
         snapshot["judge_unavailable_cases"] = summary.judge_unavailable_cases
+        snapshot["fallback_scored_cases"] = summary.fallback_scored_cases
         snapshot["estimated_cost_usd"] = (
             None if summary.estimated_cost_usd is None else round(summary.estimated_cost_usd, 4)
         )

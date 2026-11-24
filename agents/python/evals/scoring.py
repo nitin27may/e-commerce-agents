@@ -97,6 +97,28 @@ def weighted_overall(groundedness: float, correctness: float, completeness: floa
     return groundedness * GROUNDEDNESS_WEIGHT + correctness * CORRECTNESS_WEIGHT + completeness * COMPLETENESS_WEIGHT
 
 
+SOURCE_JUDGE = "judge"
+SOURCE_KEYWORDS = "keywords"
+SOURCE_FALLBACK = "fallback_keywords"
+
+
+def score_completeness_fallback(
+    response_text: str, expected_fields: list[str], refusal_expected: bool | None
+) -> tuple[float, list[str], list[str]] | None:
+    """Deterministic completeness for a case whose judge was unavailable, or None when nothing is checkable.
+
+    Checkable means a keyword expectation: ``expected.fields`` (alias match) and, when the case expects a refusal,
+    the refusal markers. A case with neither has no expectation to score, so it stays unmeasured.
+    """
+    checks = list(expected_fields) + (["refusal"] if refusal_expected else [])
+    if not checks:
+        return None
+    _, found, missing = score_completeness_keyword(response_text, expected_fields)
+    if refusal_expected:
+        (found if score_refusal(response_text) else missing).append("refusal")
+    return len(found) / len(checks), found, missing
+
+
 def judge_unavailable(record: RunRecord) -> bool:
     """The judge could not give a verdict (content filter), so completeness was not measured."""
     return record.judge is not None and record.judge.failure_mode == "judge_unavailable"
@@ -202,6 +224,7 @@ def _score_turns(record: RunRecord, threshold: float) -> RunRecord:
             turn.model_copy(
                 update={
                     "scores": scored.scores,
+                    "completeness_source": scored.completeness_source,
                     "fields_found": scored.fields_found,
                     "fields_missing": scored.fields_missing,
                     "assertion_failures": scored.assertion_failures,
@@ -213,9 +236,12 @@ def _score_turns(record: RunRecord, threshold: float) -> RunRecord:
     groundedness = sum(t.scores.groundedness for t in turns) / n
     correctness = sum(t.scores.correctness for t in turns) / n
     completeness = sum(t.scores.completeness for t in turns) / n
+    sources = [t.completeness_source for t in turns]
+    case_source = SOURCE_FALLBACK if SOURCE_FALLBACK in sources else next((x for x in sources if x), None)
     return record.model_copy(
         update={
             "turns": turns,
+            "completeness_source": case_source,
             "scores": CaseScores(
                 groundedness=groundedness,
                 correctness=correctness,
@@ -236,6 +262,7 @@ def _score_single(record: RunRecord, threshold: float) -> RunRecord:
         return record.model_copy(
             update={
                 "scores": CaseScores(),
+                "completeness_source": None,
                 "fields_found": [],
                 "fields_missing": [],
                 "assertion_failures": [],
@@ -261,17 +288,29 @@ def _score_single(record: RunRecord, threshold: float) -> RunRecord:
     if expected.route:
         correctness = score_routing(record.routes, expected.route)
 
-    unavailable = judge_unavailable(record)
-    if unavailable:
-        completeness, found, missing = 0.0, [], []
+    # A refused judge call falls back to the keyword checks; with nothing keyword-checkable the case stays unmeasured.
+    fallback = (
+        score_completeness_fallback(record.response, expected.fields, expected.refusal_expected)
+        if judge_unavailable(record)
+        else None
+    )
+    measured = True
+    source: str | None
+    if judge_unavailable(record):
+        if fallback is None:
+            completeness, found, missing, source, measured = 0.0, [], [], None, False
+        else:
+            (completeness, found, missing), source = fallback, SOURCE_FALLBACK
     elif record.judge is not None:
         completeness = record.judge.score
         found = list(expected.fields) if completeness >= 1.0 else []
         missing = [] if completeness >= 1.0 else list(expected.fields)
+        source = SOURCE_JUDGE
     else:
         completeness, found, missing = score_completeness_keyword(record.response, expected.fields)
+        source = SOURCE_KEYWORDS
 
-    overall = weighted_overall(groundedness, correctness, None if unavailable else completeness)
+    overall = weighted_overall(groundedness, correctness, completeness if measured else None)
     failures = check_assertions(
         expected, record.tool_calls, record.denied, record.hitl_requested, record.not_observable, record.routes
     )
@@ -280,11 +319,13 @@ def _score_single(record: RunRecord, threshold: float) -> RunRecord:
             "scores": CaseScores(
                 groundedness=groundedness, correctness=correctness, completeness=completeness, overall=overall
             ),
+            "completeness_source": source,
             "fields_found": found,
             "fields_missing": missing,
             "assertion_failures": failures,
             "pass_threshold": threshold,
-            "passed": overall >= threshold and not failures,
+            # A fallback-scored case never passes with a keyword check missing, whatever its overall.
+            "passed": overall >= threshold and not failures and not (source == SOURCE_FALLBACK and missing),
         }
     )
 

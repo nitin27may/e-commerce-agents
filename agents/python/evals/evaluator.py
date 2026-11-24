@@ -134,6 +134,8 @@ class EvalResult:
     # refused by the provider's content filter (completeness not measured).
     budget_exceeded: bool = False
     judge_unavailable: bool = False
+    # ``fallback_keywords`` when the judge was unavailable and the keyword checks scored completeness instead.
+    completeness_source: str | None = None
     passed: bool = False
     # Schema v2 assertions that did not hold. They never move the scores; they
     # fail the case and the run, since a regression here is a behaviour change
@@ -164,6 +166,7 @@ class EvalResult:
             fixture_missing=record.fixture_missing,
             budget_exceeded=record.budget_exceeded,
             judge_unavailable=scoring.judge_unavailable(record),
+            completeness_source=record.completeness_source,
             passed=record.passed,
             assertion_failures=record.assertion_failures,
             repeat=record.repeat,
@@ -219,8 +222,35 @@ class EvalSummary:
 
     @property
     def judge_unavailable_cases(self) -> int:
-        """Cases whose judge call the provider's content filter refused: excluded from the completeness mean."""
+        """Cases whose judge call the provider's content filter refused (scored by fallback or left unmeasured)."""
         return sum(1 for r in self.results if r.judge_unavailable)
+
+    @property
+    def fallback_scored_cases(self) -> int:
+        """Judge-unavailable cases whose completeness the deterministic keyword fallback scored (less strict)."""
+        return sum(1 for r in self.results if r.completeness_source == scoring.SOURCE_FALLBACK)
+
+    @property
+    def judge_unscored_cases(self) -> int:
+        """Judge-unavailable cases with no keyword-checkable expectation: out of the completeness mean."""
+        return self.judge_unavailable_cases - self.fallback_scored_cases
+
+    @property
+    def judge_scored_cases(self) -> int:
+        """Cases whose completeness came from the configured scorer (judge, or keywords when no judge ran)."""
+        return sum(1 for r in self.results if not r.budget_exceeded and not r.judge_unavailable)
+
+    @property
+    def avg_completeness_fallback(self) -> float | None:
+        """Mean completeness over the fallback-scored cases alone, or None when there are none."""
+        rows = [r for r in self.results if r.completeness_source == scoring.SOURCE_FALLBACK]
+        return sum(r.completeness_score for r in rows) / len(rows) if rows else None
+
+    @property
+    def avg_completeness_judged(self) -> float | None:
+        """Mean completeness over the judge-scored cases alone, or None when there are none."""
+        rows = [r for r in self.results if not r.budget_exceeded and not r.judge_unavailable]
+        return sum(r.completeness_score for r in rows) / len(rows) if rows else None
 
     @property
     def missing_fixtures(self) -> int:
@@ -254,6 +284,10 @@ class EvalSummary:
             "missing_fixtures": self.missing_fixtures,
             "budget_exceeded_cases": self.budget_exceeded_cases,
             "judge_unavailable_cases": self.judge_unavailable_cases,
+            "fallback_scored_cases": self.fallback_scored_cases,
+            "judge_scored_cases": self.judge_scored_cases,
+            "avg_completeness_judged": _round_or_none(self.avg_completeness_judged),
+            "avg_completeness_fallback": _round_or_none(self.avg_completeness_fallback),
             "assertion_failures": self.assertion_failures,
             "results": [
                 {
@@ -431,14 +465,14 @@ def summarize_records(
     per_repeat: dict[str, list[float]] = {key: [] for key in TRACKED_SCORES}
     for index in range(repeats):
         # A budget-stopped case measured nothing, so it is in no mean; a case whose judge was refused by the
-        # content filter is in every mean but completeness.
+        # content filter is in the completeness mean only if the keyword fallback scored it.
         rows = [r for r in summary.results if r.repeat == index and not r.budget_exceeded]
         if not rows:
             continue
         n = len(rows)
         groundedness = sum(r.groundedness_score for r in rows) / n
         correctness = sum(r.correctness_score for r in rows) / n
-        judged = [r for r in rows if not r.judge_unavailable]
+        judged = [r for r in rows if not r.judge_unavailable or r.completeness_source == scoring.SOURCE_FALLBACK]
         completeness = sum(r.completeness_score for r in judged) / len(judged) if judged else None
         per_repeat["avg_groundedness"].append(groundedness)
         per_repeat["avg_correctness"].append(correctness)
@@ -909,7 +943,13 @@ def format_summary_report(summary: EvalSummary, verbose: bool = False) -> str:
     if summary.judge_unavailable_cases:
         lines.append(
             f"  Judge unavailable: {summary.judge_unavailable_cases} case(s) the judge's content filter refused; "
-            "left out of the completeness mean"
+            f"{summary.fallback_scored_cases} scored by the keyword fallback (less strict), "
+            f"{summary.judge_unscored_cases} left out of the completeness mean"
+        )
+        lines.append(
+            f"  Completeness sources: {summary.judge_scored_cases} judge-scored"
+            f" (mean {_pct(summary.avg_completeness_judged)}), {summary.fallback_scored_cases} fallback-scored"
+            f" (mean {_pct(summary.avg_completeness_fallback)}); the headline completeness includes both"
         )
     lines.append("-" * 70)
     lines.append(f"  Groundedness:  {_score_text(summary, 'avg_groundedness')}")
@@ -951,7 +991,9 @@ def format_summary_report(summary: EvalSummary, verbose: bool = False) -> str:
                 lines.append(f"    Judge: {r.judge_reasoning}")
             if r.budget_exceeded:
                 lines.append("    Budget exceeded: not scored")
-            if r.judge_unavailable:
+            if r.completeness_source == scoring.SOURCE_FALLBACK:
+                lines.append("    Judge unavailable: completeness scored by keyword fallback")
+            elif r.judge_unavailable:
                 lines.append("    Judge unavailable: completeness not scored")
             if r.error:
                 lines.append(f"    Error: {r.error}")
@@ -959,6 +1001,14 @@ def format_summary_report(summary: EvalSummary, verbose: bool = False) -> str:
             lines.append("")
 
     return "\n".join(lines)
+
+
+def _round_or_none(value: float | None) -> float | None:
+    return None if value is None else round(value, 3)
+
+
+def _pct(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.1%}"
 
 
 def _score_text(summary: EvalSummary, key: str) -> str:

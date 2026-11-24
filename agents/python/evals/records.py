@@ -271,6 +271,8 @@ class TurnRecord(BaseModel):
     fixture_missing: bool = False
 
     scores: CaseScores = Field(default_factory=CaseScores)
+    # Who scored completeness; see ``RunRecord.completeness_source``.
+    completeness_source: str | None = None
     fields_found: list[str] = Field(default_factory=list)
     fields_missing: list[str] = Field(default_factory=list)
     assertion_failures: list[str] = Field(default_factory=list)
@@ -329,6 +331,11 @@ class RunRecord(BaseModel):
     turns: list[TurnRecord] = Field(default_factory=list)
 
     scores: CaseScores = Field(default_factory=CaseScores)
+    # Who scored completeness: ``judge`` (the LLM judge), ``keywords`` (a run configured without a judge),
+    # ``fallback_keywords`` (the judge was unavailable, so the keyword checks scored it: less strict), or
+    # None (nothing measured it: judge unavailable with no keyword-checkable expectation, a budget stop, or a
+    # record written before the field existed).
+    completeness_source: str | None = None
     fields_found: list[str] = Field(default_factory=list)
     fields_missing: list[str] = Field(default_factory=list)
     judge: JudgeRecord | None = None
