@@ -422,6 +422,10 @@ Rules:
 - The pricing coupon case states a cart total (`validate_coupon` needs `cart_total` and the pricing agent has no cart
   tool, so the replay wording "my current cart" gives a model nothing to pass). It names `WELCOME10`, which has no
   minimum spend and no category or user restriction in `scripts/seed.py`.
+- `pricing_promotions.live.json` carries two extra keys per case that the loader ignores: `type` (`happy`, `edge` or
+  `adversarial`) and a one-line `why`. `tests/test_eval_pricing_promotions_live.py` pins the per-type minimums (10, 8, 6)
+  and that every placeholder and coupon code resolves on a freshly seeded database. Adversarial cases can only assert
+  through `expected_tools`, `expected_tool_args` and the judge: the quality loader has no "tool must not be called" check.
 
 - A live case may carry a one-line `why` (the loader ignores keys it does not know). `product_discovery.live.json` has 25 cases:
   11 happy path, 8 edge, 6 adversarial. An adversarial case expects no tool call; its `expected_fields` are phrases for the judge
