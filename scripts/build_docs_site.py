@@ -49,7 +49,7 @@ GITHUB_BRANCH = "main"
 # last-resort meta description and, more importantly, as the sentinel the
 # build checks for: a page still carrying it has no description of its own.
 SITE_DESCRIPTION = (
-    "Multi-agent orchestration with Microsoft Agent Framework — concepts, 34 tutorial "
+    "Multi-agent orchestration with Microsoft Agent Framework — concepts, 38 tutorial "
     "chapters, and a running reference implementation in Python and .NET."
 )
 
@@ -108,7 +108,7 @@ SECTIONS: tuple[Section, ...] = (
     Section(
         "Tutorials",
         4,
-        "Thirty-four chapters, each with a runnable example in Python and .NET, "
+        "Thirty-eight chapters, each with a runnable Python example (all but the last four also in .NET), "
         "building from one agent to the full capstone.",
         (),  # populated from tutorials/ below
         index_source="tutorials/README.md",
@@ -185,10 +185,10 @@ SECTIONS: tuple[Section, ...] = (
 TIERS: tuple[tuple[str, tuple[range, ...]], ...] = (
     ("Setup", (range(0, 1),)),
     ("Your first agent", (range(1, 5),)),
-    ("Inside an agent", (range(5, 9),)),
+    ("Inside an agent", (range(5, 9), range(34, 36))),
     ("Workflows", (range(9, 12), range(17, 21))),
     ("Multi-agent orchestration", (range(12, 17), range(22, 23), range(27, 31))),
-    ("Production concerns", (range(23, 27), range(31, 33))),
+    ("Production concerns", (range(23, 27), range(31, 34), range(36, 37))),
     ("Capstone", (range(21, 22),)),
 )
 

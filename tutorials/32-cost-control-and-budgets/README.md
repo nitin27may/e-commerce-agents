@@ -259,5 +259,5 @@ The conversion from token counts to dollars is `estimate_cost()` in `agents/pyth
 <!-- BEGIN GENERATED CHAPTER NAV -->
 ---
 
-**Previous:** [Chapter 31 — Retry and Compensation (Saga Pattern)](../31-retry-and-compensation/) · [Series index](../README.md)
+**Previous:** [Chapter 31 — Retry and Compensation (Saga Pattern)](../31-retry-and-compensation/) · [Series index](../README.md) · **Next:** [Chapter 33 — Prompt Injection and Red Team](../33-prompt-injection-and-red-team/)
 <!-- END GENERATED CHAPTER NAV -->

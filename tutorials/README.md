@@ -55,7 +55,7 @@ conversation going across turns.
 Each of these four chapters also has a Jupyter notebook (`<chapter>/python/notebook.ipynb`) that runs the
 chapter's own code one cell at a time, keyless, against the same recorded fixtures.
 
-### Inside an agent (05–08)
+### Inside an agent (05–08, 34–35)
 
 *For:* readers with a working agent who want to control what it sees, how its calls are handled, and
 what it reports.
@@ -64,9 +64,12 @@ what it reports.
 2. [06 — Middleware and the Agent Pipeline](./06-middleware/)
 3. [07 — Observability with OpenTelemetry](./07-observability-otel/)
 4. [08 — MCP Tools](./08-mcp-tools/)
+5. [34 — Structured Output](./34-structured-output/)
+6. [35 — Memory](./35-memory/)
 
 *At the end you can:* inject per-user context into a run, intercept and filter calls with
-middleware, trace a run with OpenTelemetry, and attach tools served over MCP.
+middleware, trace a run with OpenTelemetry, attach tools served over MCP, validate the typed data a
+model writes, and say exactly what the application remembers between turns and what it does not.
 
 ### Workflows (09–11, 17–20)
 
@@ -117,7 +120,7 @@ in the chat UI, so after a chapter you can watch the same pattern handle a real 
 The [orchestration benchmark](../docs/orchestration-benchmark.md) has the latency and cost of each
 on the same prompts, and [chapter 21](./21-capstone-tour/) walks through comparing them.
 
-### Production concerns (23–26, 31–32)
+### Production concerns (23–26, 31–33, 36)
 
 *For:* readers taking agents toward production who need them to talk to each other, stay grounded,
 stay safe, be measured, and fail well.
@@ -128,10 +131,13 @@ stay safe, be measured, and fail well.
 4. [26 — Evals](./26-evals/)
 5. [31 — Retry and Compensation (Saga Pattern)](./31-retry-and-compensation/)
 6. [32 — Cost Control and Budgets](./32-cost-control-and-budgets/)
+7. [33 — Prompt Injection and Red Team](./33-prompt-injection-and-red-team/)
+8. [36 — Model Providers](./36-model-providers/)
 
 *At the end you can:* expose an agent over A2A, ground its answers in retrieved data, put guardrails
-and a cost budget around it, score it with evals, and undo a multi-step operation when a step
-fails.
+and a cost budget around it, attack your own agent with direct and indirect injection and read what
+each layer caught, score it with evals, undo a multi-step operation when a step fails, and switch
+model providers knowing which ones this repo has actually run.
 
 ### Capstone (21)
 
@@ -159,7 +165,7 @@ to evaluate the result, then the application that uses them.
 
 ## Every chapter
 
-**Every chapter below is written, and every example that ships is gated in CI.** The one port still open is chapter 16's .NET side. The status columns describe the
+**Every chapter below is written, and every example that ships is gated in CI.** The ports still open are chapter 16's .NET side and the .NET side of chapters 33 to 36, which are Python-only. The status columns describe the
 runnable examples, not the write-ups.
 
 - **Runnable · tested in CI** — a working example with tests that run on every pull request
@@ -211,6 +217,10 @@ Each chapter's own `README.md` is the canonical, always-current source.
 | 30 | [Subworkflows](./30-subworkflows/) | Runnable · tested in CI | Runnable · tested in CI |
 | 31 | [Retry and Compensation (Saga Pattern)](./31-retry-and-compensation/) | Runnable · tested in CI | Runnable · tested in CI |
 | 32 | [Cost Control and Budgets](./32-cost-control-and-budgets/) | Runnable · tested in CI | Runnable · tested in CI |
+| 33 | [Prompt Injection and Red Team](./33-prompt-injection-and-red-team/) | Runnable · tested in CI | Not ported |
+| 34 | [Structured Output](./34-structured-output/) | Runnable · tested in CI | Not ported |
+| 35 | [Memory](./35-memory/) | Runnable · tested in CI | Not ported |
+| 36 | [Model Providers](./36-model-providers/) | Runnable · tested in CI | Not ported |
 <!-- END GENERATED COVERAGE TABLE -->
 
 [^magentic]: Chapter 16's .NET side is a **status stub**, not a port. `Microsoft.Agents.AI.Workflows`
@@ -356,6 +366,13 @@ The docs site's tutorials section is built from the learning paths above by
   - Chapter 30 teaches MAF's nesting primitive, `WorkflowExecutor` in Python and
     `SubworkflowBinding` in .NET. The application's `return_replace.py` does not use it.
   - Chapter 31's saga and compensation code exists only in the chapter.
+- **Chapters 33–36** (prompt injection and red team, structured output, memory, model providers) are
+  Python-only. Each imports the application's own pure modules out of `agents/python` (guardrail
+  matching, the card extractor, the history compactor, the provider results) rather than copying them,
+  and ports the two functions that need the backend's database or settings stack (`rehydrate`,
+  `plan_client`) over in-memory data, with a test that fails if the original drifts. Their model calls
+  are recorded once and replayed, and every other step calls no model. Chapter 36 states per provider
+  what was verified live, what is stub-tested and what was never run, Anthropic included.
 - **Chapter 32** is the exception to the standalone rule: it is backed by application code,
   `CostBudgetMiddleware` (`agents/python/shared/guardrails/cost_budget_middleware.py`), which is
   the runtime consumer of `estimate_cost()`. It adds no orchestration mode and no UI or SSE

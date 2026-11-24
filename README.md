@@ -17,7 +17,7 @@
 </p>
 <p align="center"><em>Recorded on the no-key stack (recorded model responses): ask, get cards, switch mode, watch the graph, a return waits for a person. Run it yourself with <code>./scripts/dev.sh --no-key</code>.</em></p>
 
-**A complete multi-agent e-commerce application built on [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) (MAF), in Python and .NET, and a 34-chapter course that teaches every piece of it.**
+**A complete multi-agent e-commerce application built on [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) (MAF), in Python and .NET, and a 38-chapter course that teaches every piece of it.**
 
 This is a working application, end to end, not a sample that stops at "the agent replied". A
 storefront with sign-in and roles sits in front of an orchestrator and five specialist agents that
@@ -125,7 +125,7 @@ breaks: the **[Quick Start page](https://nitinksingh.com/e-commerce-agents/getti
 
 **Generative UI, not raw JSON.** The chat surface never dumps a tool result as text or a code block. Every agent response is inspected by shape and rendered as the right interactive component: a single detailed result becomes a card, a list becomes a table, a distribution or trend becomes a chart, a status becomes a tone-coded badge — see it live in the [screens gallery](https://nitinksingh.com/e-commerce-agents/getting-started/demo-guide.html) (review sentiment: rating distribution + 6-month trend, rendered from the same data an LLM would otherwise only describe in prose).
 
-**Full documentation:** **[nitinksingh.com/e-commerce-agents](https://nitinksingh.com/e-commerce-agents/)** — the concepts library, all 34 tutorial chapters, and the architecture reference, with every diagram rendered.
+**Full documentation:** **[nitinksingh.com/e-commerce-agents](https://nitinksingh.com/e-commerce-agents/)** — the concepts library, all 38 tutorial chapters, and the architecture reference, with every diagram rendered.
 
 Companion demo repo for the AI article series on [nitinksingh.com](https://nitinksingh.com):
 **[MAF v1: Putting It All Together](https://nitinksingh.com/posts/maf-v1-21-putting-it-all-together/)**
@@ -140,7 +140,7 @@ Companion demo repo for the AI article series on [nitinksingh.com](https://nitin
 
 | I want to... | Go here |
 |---|---|
-| **Learn MAF step by step** — start with no key | [tutorials/README.md](./tutorials/README.md) — 34 chapters; [run chapter 1](#learn) now |
+| **Learn MAF step by step** — start with no key | [tutorials/README.md](./tutorials/README.md) — 38 chapters; [run chapter 1](#learn) now |
 | **Just run it** | [Run it](#run-it) above — Docker, one command |
 | **Choose an orchestration pattern** | [The five modes](#one-orchestrator-five-orchestration-modes) · [benchmark](docs/orchestration-benchmark.md) · [orchestration patterns](docs/concepts/06-orchestration-patterns.md) |
 | Run the .NET backend, or Windows, or with no API key | [Quick Start](https://nitinksingh.com/e-commerce-agents/getting-started/quick-start.html) |
@@ -277,7 +277,7 @@ only on the site.
 | Section | What's in it |
 |---------|--------------|
 | **[Concepts](https://nitinksingh.com/e-commerce-agents/concepts/)** | 14 pages for readers new to agents — what an agent is, the agentic loop, tools, harnesses, why multi-agent, orchestration patterns, graphs, state and memory, grounding, guardrails, HITL, evaluation, observability and cost, production concerns |
-| **[Tutorials](https://nitinksingh.com/e-commerce-agents/tutorials/)** | 34 chapters. Every chapter that ships code ships both Python and .NET, and every one is gated in CI — the tests replay fixtures (Python) or drive a scripted client (.NET), so the whole suite runs with no key and no network |
+| **[Tutorials](https://nitinksingh.com/e-commerce-agents/tutorials/)** | 38 chapters. Chapters 00 to 32 ship Python and .NET (chapter 16's .NET side is a status stub and 20b is Python only); chapters 33 to 36 (injection and red team, structured output, memory, model providers) are Python only. Every chapter is gated in CI — the tests replay fixtures (Python) or drive a scripted client (.NET), so the whole suite runs with no key and no network |
 | **[Architecture](https://nitinksingh.com/e-commerce-agents/architecture/)** | [System design](docs/architecture.md) · [agent flows](docs/agent-flows.md) · [database schema](docs/database-schema.md) · [API reference](docs/api-reference.md) · [frontend](docs/frontend.md) · [workflows](docs/workflows/README.md) |
 | **[Guides](https://nitinksingh.com/e-commerce-agents/guides/)** | [Adding an agent](docs/adding-an-agent.md) · [A2A 1.0](docs/a2a.md) · [approvals](docs/approvals.md) · [merchant proposals](docs/merchant-proposals.md) · [event autonomy](docs/event-autonomy.md) · [return lifecycle](docs/return-lifecycle.md) · [DevUI](docs/devui.md) · [MCP integration](docs/mcp-integration.md) · [telemetry](docs/telemetry.md) · [security](docs/security-guide.md) · [agent quality and evals](docs/agent-quality.md) · [MAF best practices](docs/maf-best-practices.md) · [releasing](docs/releasing.md) |
 | **[Getting Started](https://nitinksingh.com/e-commerce-agents/getting-started/)** | [Quick start](docs/quick-start.md) · [configuration](docs/configuration.md) · [deployment](docs/deployment.md) · [troubleshooting](docs/troubleshooting.md) |

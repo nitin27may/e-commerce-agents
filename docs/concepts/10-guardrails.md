@@ -117,7 +117,7 @@ flowchart LR
   class ground infra
 ```
 
-**Build it yourself:** [Chapter 25: guardrails](../../tutorials/25-guardrails/README.md). **In the application:** `agents/python/shared/middleware.py` and `agents/python/shared/guardrails/`.
+**Build it yourself:** [Chapter 25: guardrails](../../tutorials/25-guardrails/README.md) and [Chapter 33: prompt injection and red team](../../tutorials/33-prompt-injection-and-red-team/README.md). **In the application:** `agents/python/shared/middleware.py` and `agents/python/shared/guardrails/`.
 
 Next: [human-in-the-loop](11-human-in-the-loop.md) — the layer for actions no amount of guardrail
 confidence should let run unsupervised.

@@ -93,7 +93,7 @@ flowchart LR
   class mismatch,notfound error
 ```
 
-**Build it yourself:** [Chapter 24: RAG and grounding](../../tutorials/24-rag-and-grounding/README.md). **In the application:** `agents/python/shared/grounding/`.
+**Build it yourself:** [Chapter 24: RAG and grounding](../../tutorials/24-rag-and-grounding/README.md); [Chapter 34: structured output](../../tutorials/34-structured-output/README.md) covers validating the card JSON a model writes. **In the application:** `agents/python/shared/grounding/`.
 
 Next: [guardrails](10-guardrails.md) — grounding catches fabricated *facts*; guardrails are the
 separate layer that catches malicious or unauthorized *inputs*.

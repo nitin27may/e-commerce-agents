@@ -107,7 +107,7 @@ All three end up in the same Postgres database, which is exactly why it's worth 
 about which one you mean — they're different tables, different lifecycles, and different code
 paths, not three names for the same row.
 
-**Build it yourself:** [Chapter 04: sessions](../../tutorials/04-sessions/README.md) and [Chapter 18: state and checkpoints](../../tutorials/18-state-and-checkpoints/README.md). **In the application:** `agents/python/shared/session.py` and `agents/python/shared/checkpoint_storage.py`.
+**Build it yourself:** [Chapter 04: sessions](../../tutorials/04-sessions/README.md) and [Chapter 18: state and checkpoints](../../tutorials/18-state-and-checkpoints/README.md); [Chapter 35: memory](../../tutorials/35-memory/README.md) covers what is replayed, trimmed and deliberately not remembered. **In the application:** `agents/python/shared/session.py` and `agents/python/shared/checkpoint_storage.py`.
 
 Next: [grounding and RAG](09-grounding-and-rag.md) — why a model can produce a confident-sounding
 answer that's still wrong, and what this repo checks before trusting one.

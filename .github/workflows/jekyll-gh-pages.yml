@@ -10,7 +10,7 @@
 # .github/workflows/preview.yml only tests the export on pull requests.
 #
 # `scripts/build_docs_site.py` assembles `_site_src/` from three separate trees
-# — docs/, docs/concepts/ and the 34 tutorial chapters — injecting Jekyll front
+# — docs/, docs/concepts/ and the 38 tutorial chapters — injecting Jekyll front
 # matter and rewriting every cross-tree link. That keeps the repository free of
 # front matter, which would otherwise render as a metadata table on top of every
 # file when read on GitHub. The repo stays the source of truth; the site is a

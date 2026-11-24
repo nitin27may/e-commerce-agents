@@ -13,7 +13,7 @@
 # page here already carries its title as an H1.
 
 title: E-Commerce Agents
-description: Multi-agent orchestration with Microsoft Agent Framework — concepts, 34 tutorial chapters, and a running reference implementation in Python and .NET.
+description: Multi-agent orchestration with Microsoft Agent Framework — concepts, 38 tutorial chapters, and a running reference implementation in Python and .NET.
 remote_theme: just-the-docs/just-the-docs
 
 # `url` is the origin ONLY. The project path lives in `baseurl`.
@@ -35,9 +35,9 @@ baseurl: /e-commerce-agents
 # way to be told "you are not running inside Actions".
 repository: nitin27may/e-commerce-agents
 
-# Mermaid. Neither sibling repo needs this key; this one has 71 diagrams (37 in
-# docs/, 34 across the tutorials), so getting it wrong silently turns the most
-# distinctive thing about these docs into 71 raw code blocks. Setting the
+# Mermaid. Neither sibling repo needs this key; this one has 75 diagrams (37 in
+# docs/, 38 across the tutorials), so getting it wrong silently turns the most
+# distinctive thing about these docs into 75 raw code blocks. Setting the
 # version here is what makes fenced ```mermaid blocks render — no per-page front
 # matter required. Pinned rather than floating: a major Mermaid release can
 # change diagram syntax under a site nobody is watching.
