@@ -72,6 +72,13 @@ def test_a_backorder_case_states_whether_it_parks() -> None:
                 assert entry["expect_hitl"] is False and entry.get("expect_denial") is True, entry["input"]
 
 
+def test_an_in_stock_backorder_expects_the_refusal_not_a_tool_call() -> None:
+    """The precheck refuses a backorder for an in-stock product in words, before the tool runs or an approval opens."""
+    entry = next(e for e in _raw() if e["input"] == "Place a backorder for 10 units of the Sony WH-1000XM5.")
+    assert entry["expected_tools"] == [] and "expected_tool_args" not in entry
+    assert entry["expect_hitl"] is False and entry["criteria"]["precheck_refusal"] is True
+
+
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_every_case_resolves_on_a_freshly_seeded_database(

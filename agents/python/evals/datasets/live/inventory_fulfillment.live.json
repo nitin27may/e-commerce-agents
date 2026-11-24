@@ -374,20 +374,13 @@
   },
   {
     "type": "edge",
-    "why": "A backorder for a product that is in stock is refused before it parks (no approval for a no-op).",
+    "why": "A backorder for a product that is in stock is refused in words before it parks: no approval opens and no place_backorder runs.",
     "input": "Place a backorder for 10 units of the Sony WH-1000XM5.",
-    "expected_tools": [
-      "place_backorder"
-    ],
-    "expected_tool_args": {
-      "place_backorder": {
-        "product_id": "{{product_id:Sony WH-1000XM5}}"
-      }
-    },
+    "expected_tools": [],
     "expected_fields": [],
     "criteria": {
       "grounded": false,
-      "tool_called": true
+      "precheck_refusal": true
     },
     "expect_hitl": false,
     "user_role": "seller",
