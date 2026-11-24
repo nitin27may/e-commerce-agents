@@ -45,6 +45,28 @@ const REASON: Record<string, string> = {
   order_already_credited: "This order has already been credited",
   beneficiary_is_staff: "The credit is for a staff member, so a person must decide it",
   demo_user_excluded: "The demo account is never acted on",
+  line_not_found: "The order line does not exist",
+  line_not_for_product: "The order line is for a different product",
+  line_already_adjusted: "This order line has already had a price adjustment",
+  order_adjustment_limit: "This order has reached its limit of adjusted lines",
+  purchase_too_old: "The purchase is too old for a price adjustment",
+  price_not_lower_than_paid: "The new price is not lower than the price paid",
+  invalid_event_product: "The event named no valid product",
+  invalid_event_price: "The event gave no usable price",
+  product_not_found: "The product does not exist",
+  product_not_in_stock: "The product has no stock, so nobody was told it is back",
+  recipients_over_cap: "Too many customers for the system to notify alone; a person should look",
+  customer_daily_notice_cap: "This customer already received the most notices allowed today",
+  recipient_is_staff: "Staff are not notified by the system",
+  customer_not_found: "The customer does not exist",
+  notice_needs_review: "The policy does not let this notice go out alone",
+};
+
+const ACTION_LABEL: Record<string, string> = {
+  goodwill_credit: "goodwill credit",
+  price_adjustment: "price adjustment",
+  back_in_stock_notice: "back-in-stock notice",
+  none: "no action",
 };
 
 export function reasonText(code: string): string {
@@ -73,7 +95,11 @@ export function DecisionCard({
   const state = STATE[decision.state] ?? { label: decision.state, tone: "neutral" as const };
   const drew = decision.budget.drew;
   const tripped = decision.budget.tripped ?? [];
-  const label = `${decision.action.replaceAll("_", " ")} ${money(decision.applied_amount ?? decision.amount)} for ${decision.customer_email ?? "unknown customer"}`;
+  const actionName = ACTION_LABEL[decision.action] ?? decision.action.replaceAll("_", " ");
+  const amountPart = decision.amount == null && decision.applied_amount == null ? "" : ` ${money(decision.applied_amount ?? decision.amount)}`;
+  const label = `${actionName}${amountPart} for ${decision.customer_email ?? "unknown customer"}`;
+  const event = decision.input.event;
+  const productName = event?.line?.product_name ?? event?.product_name;
 
   async function reverse() {
     setBusy(true);
@@ -99,7 +125,11 @@ export function DecisionCard({
         <p className="text-xs text-muted-foreground">
           {formatDateTime(decision.created_at)}
           {decision.order_id ? ` · order ${decision.order_id.slice(0, 8)}` : ""}
-          {decision.input.event?.delay_days != null ? ` · ${decision.input.event.delay_days} day delay` : ""}
+          {event?.delay_days != null ? ` · ${event.delay_days} day delay` : ""}
+          {productName ? ` · ${productName}` : ""}
+          {event?.line?.paid_unit_price && event.line.new_price
+            ? ` · paid ${money(event.line.paid_unit_price)}, now ${money(event.line.new_price)}`
+            : ""}
           {decision.policy_version ? ` · policy ${decision.policy_version}` : ""}
         </p>
       </CardHeader>
@@ -121,6 +151,17 @@ export function DecisionCard({
           {decision.approved_by ? ` Approved by ${decision.approved_by}.` : ""}
           {decision.reversed_by ? ` Reversed by ${decision.reversed_by} on ${formatDateTime(decision.reversed_at)}.` : ""}
         </p>
+        {decision.draft && (
+          <div data-testid="decision-draft">
+            <p className="font-medium">Message to the customer</p>
+            <p className="text-muted-foreground">{decision.draft.body}</p>
+            <p className="text-xs text-muted-foreground">
+              {decision.draft.source === "llm"
+                ? "Worded by the ops-responder; the amount and the decision are the engine's."
+                : `Standard wording${decision.draft.fallback_reason ? ` (the draft was not used: ${decision.draft.fallback_reason})` : ""}.`}
+            </p>
+          </div>
+        )}
         {error && (
           <p role="alert" className="text-destructive">
             {error}

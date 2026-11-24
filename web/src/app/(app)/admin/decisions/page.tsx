@@ -173,9 +173,13 @@ export default function AutonomyDecisionsPage() {
     try {
       const res = await api.simulateAutonomyEvent(scenario);
       setNotice(
-        res.enqueued
-          ? `Sent a ${res.delay_days}-day delay for order ${res.order_id.slice(0, 8)}. The worker will decide it in a moment.`
-          : "That event was already sent.",
+        !res.enqueued
+          ? "That event was already sent."
+          : res.order_id
+            ? `Sent a ${res.delay_days}-day delay for order ${res.order_id.slice(0, 8)}. The worker will decide it in a moment.`
+            : res.new_price
+              ? `Sent a price drop to ${res.new_price} for product ${(res.product_id ?? "").slice(0, 8)}. The worker will decide each recent purchase in a moment.`
+              : `Sent a back-in-stock event for product ${(res.product_id ?? "").slice(0, 8)}. The worker will notify the carts that hold it in a moment.`,
       );
       if (res.enqueued) {
         totalBeforeEvent.current = data?.total ?? 0;
@@ -198,6 +202,7 @@ export default function AutonomyDecisionsPage() {
   }
 
   const scenarios = Object.entries(data?.scenarios ?? {});
+  const eventScenarios = Object.entries(data?.event_scenarios ?? {});
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
@@ -214,12 +219,18 @@ export default function AutonomyDecisionsPage() {
             {refreshing ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
             Refresh
           </Button>
-        {scenarios.length > 0 && (
+        {(scenarios.length > 0 || eventScenarios.length > 0) && (
           <div role="group" aria-label="Send a demo event" className="flex flex-wrap gap-2">
             {scenarios.map(([name, days]) => (
               <Button key={name} type="button" size="sm" variant="outline" onClick={() => simulate(name)} disabled={simulating !== null}>
                 {simulating === name ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Play data-icon="inline-start" />}
                 {name} delay ({days} days)
+              </Button>
+            ))}
+            {eventScenarios.map(([name]) => (
+              <Button key={name} type="button" size="sm" variant="outline" onClick={() => simulate(name)} disabled={simulating !== null}>
+                {simulating === name ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Play data-icon="inline-start" />}
+                {name.replaceAll("-", " ")}
               </Button>
             ))}
           </div>

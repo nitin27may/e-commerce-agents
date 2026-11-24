@@ -90,6 +90,61 @@ describe("DecisionCard", () => {
   });
 });
 
+describe("DecisionCard for the newer events", () => {
+  it("shows a price adjustment with the product and the prices", () => {
+    render(
+      <DecisionCard
+        decision={decision({
+          event_type: "product.price_dropped",
+          action: "price_adjustment",
+          input: {
+            event: { event_id: "e", line: { product_name: "Widget", paid_unit_price: "100.00", new_price: "95.00" } },
+            rule: "auto-small-adjustment",
+          },
+        })}
+        onReverse={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/price adjustment \$5\.00 for alice@example.com/)).toBeTruthy();
+    expect(screen.getByText(/Widget · paid \$100\.00, now \$95\.00/)).toBeTruthy();
+  });
+
+  it("shows a notice without an amount, and says why nothing was sent", () => {
+    render(
+      <DecisionCard
+        decision={decision({
+          action: "back_in_stock_notice",
+          amount: null,
+          budget_key: null,
+          can_reverse: false,
+          reasons: ["customer_daily_notice_cap"],
+        })}
+        onReverse={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("back-in-stock notice for alice@example.com")).toBeTruthy();
+    expect(screen.getByText("This customer already received the most notices allowed today")).toBeTruthy();
+  });
+
+  it("shows the drafted customer message and where it came from", () => {
+    const { rerender } = render(
+      <DecisionCard
+        decision={decision({ draft: { body: "Sorry about order 1. We added $5.00.", source: "llm", model: "m", fallback_reason: null } })}
+        onReverse={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Sorry about order 1. We added $5.00.")).toBeTruthy();
+    expect(screen.getByText(/Worded by the ops-responder/)).toBeTruthy();
+    rerender(
+      <DecisionCard
+        decision={decision({ draft: { body: "Standard.", source: "template", model: null, fallback_reason: "rejected:amount_not_in_facts" } })}
+        onReverse={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/the draft was not used: rejected:amount_not_in_facts/)).toBeTruthy();
+  });
+});
+
 describe("helpers", () => {
   it("formats decimal strings and tolerates junk", () => {
     expect(money("12.5")).toBe("$12.50");
