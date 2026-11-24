@@ -77,6 +77,11 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "deps(web)"
+    ignore:
+      # @types/node versions with Node. Keep its major at the runtime major (Node 26 in
+      # web/Dockerfile, .nvmrc, CI and the devcontainer); moving the runtime is its own change.
+      - dependency-name: "@types/node"
+        versions: [">=27"]
     groups:
       web-minor-patch:
         update-types:
@@ -130,7 +135,7 @@ updates:
     commit-message:
       prefix: "deps(docker)"
     ignore:
-      # Runtime lines are chosen with the code (py312 / Node 22 / net10.0 in the
+      # Runtime lines are chosen with the code (py312 / Node 26 / net10.0 in the
       # lockfiles, ruff target and CI), not bumped by an image tag.
       - dependency-name: "python"
         update-types: ["version-update:semver-minor", "version-update:semver-major"]

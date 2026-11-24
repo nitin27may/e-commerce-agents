@@ -27,10 +27,12 @@ green CI alone. Two examples from this repo:
   switch SDK and call `AddDotnetProject`, and its tests had to assert the new resource type. Four
   separate Dependabot PRs could not each pass CI alone, so they were closed and superseded by one
   hand-made change.
-- **`@types/node` 26 against a Node 20/22 runtime.** The types package versions with Node. Taking 26
-  would type-check against APIs that a Node 20 or 22 runtime does not have (`web/package.json` pins
-  `@types/node` to `^20`, and the Docker `node` major is ignored on purpose). A major here is declined (close the PR, or add an `ignore` entry with a comment saying
-  why) until the runtime moves.
+- **`@types/node` follows the Node runtime.** The types package versions with Node, so its major is kept
+  equal to the runtime major: Node 26 (`web/Dockerfile`, `web/.nvmrc`, `engines` in `web/package.json`, the CI
+  `setup-node` steps, the devcontainer) and `@types/node` 26. `.github/dependabot.yml` ignores `@types/node`
+  at 27 and above, so a types major arrives only after the runtime has moved. To move the runtime, change every
+  one of those places and the types in one PR (Next.js, jsdom and Playwright must support the new line first),
+  then raise the `ignore` bound. The Docker `node` image major is ignored for the same reason.
 
 When several related majors arrive together, close the individual PRs with a pointer to the combined one.
 
