@@ -57,6 +57,14 @@ async def _ask(tool_name: str, args: dict[str, Any]) -> str:
     return await _run_agent_native(agent, "do it")
 
 
+@pytest.fixture(autouse=True)
+def _no_customer_confirmation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests are about parking itself; the confirmation before it is in test_customer_confirmation.py."""
+    import shared.config as shared_config
+
+    monkeypatch.setattr(shared_config.settings, "CUSTOMER_CONFIRMATION_ENABLED", False)
+
+
 @pytest.fixture
 def _identity() -> Iterator[None]:
     tokens = (
