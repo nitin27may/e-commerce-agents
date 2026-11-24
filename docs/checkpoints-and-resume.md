@@ -162,7 +162,11 @@ run; everyone else only their own.
 
 - A run with a pending request shows a **Needs approval** badge without expanding the row.
 - Staff (`support` or `admin`) see **Approve** and **Reject**, which call
-  `POST /api/orchestration/{run_id}/resume`. Everyone else sees "Awaiting staff review".
+  `POST /api/orchestration/{run_id}/resume`, on a run that is not their own (a reviewer can never be the
+  requester). Everyone else sees "Awaiting staff review". Whether the reviewer's role reaches the level the policy
+  assigned (`support` cannot decide a `manager` route) is the server's call; a refusal shows inline.
+- Run visibility stays narrow on purpose: `/runs` lists only admins' view of all users, so `support` sees their own
+  runs here and reviews other customers' requests in the approvals inbox (`/api/approvals`).
 - A return in a lifecycle wait shows its timeline from `GET /api/runs/{id}/timeline`.
 
 ## What differs on .NET
@@ -187,3 +191,12 @@ same routes. The differences:
   timeout for a paused return it opened: its `ApprovalTimeoutWorker` hosted service drains those
   `approval.timeout_apply` rows and the Python worker skips them (parity matrix, row 36; added
   after release 1.4.0). The lifecycle waits are not ported (row 41).
+
+## Gotchas
+
+- **A checkpoint belongs to the graph that wrote it.** Flipping `RETURN_LIFECYCLE_ENABLED` changes the graph, so change it only while no return is paused; a paused run cannot resume against a different graph.
+- **Custom types must round-trip.** `PostgresCheckpointStorage` carries `ReturnDecision` and the workflow state; MAF's own `FileCheckpointStorage` refuses custom types, so do not swap it in.
+- **Resume builds a new workflow.** The process that paused the run may not be the one that resumes it, so nothing may depend on in-memory state from before the pause.
+- **A stack resumes only its own checkpoints.** A Python checkpoint is not readable by .NET and the reverse.
+- **No decision means rejection.** When the SLA expires with nobody deciding, the run resumes as a rejection and nothing is created.
+- **Returns paused before the policy gate existed** were expired by migration `0010`; their checkpoints cannot be resumed with the current response type.

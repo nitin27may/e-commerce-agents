@@ -111,23 +111,9 @@ public sealed class AgentSettingsLoaderTests
     [InlineData("off")]
     [InlineData("observe")]
     [InlineData("ANNOTATE")]
-    public void Load_AcceptsTheGroundingModesDotnetImplements(string mode) =>
+    [InlineData("enforce")]
+    public void Load_AcceptsEveryGroundingModePythonHas(string mode) =>
         LoadWithGroundingMode(mode).GroundingMode.Should().Be(mode.ToLowerInvariant());
-
-    /// <summary>
-    /// The strongest-sounding setting must not be the one that lies. Python's
-    /// "enforce" strips unverified cards and corrects prices; .NET does not, so
-    /// accepting the value would leave an operator believing a defense is on
-    /// that isn't — the same failure this repo already fixed once, when
-    /// GUARDRAILS_BLOCK_ON_INJECTION only raised a log level.
-    /// </summary>
-    [Fact]
-    public void Load_RefusesGroundingModeEnforce_AndSaysWhereItExists()
-    {
-        var act = () => LoadWithGroundingMode("enforce");
-
-        act.Should().Throw<InvalidOperationException>().WithMessage("*enforce*Python*");
-    }
 
     [Fact]
     public void Load_RefusesAnUnknownGroundingMode() =>
@@ -169,7 +155,10 @@ public sealed class AgentSettingsLoaderTests
             ["RateLimitAuthMaxRequests"] = "RATE_LIMIT_AUTH_MAX_REQUESTS",
             ["RateLimitAuthIpMaxRequests"] = "RATE_LIMIT_AUTH_IP_MAX_REQUESTS",
             ["HitlResumeTimeoutSeconds"] = "HITL_RESUME_TIMEOUT_SECONDS",
+            ["CustomerConfirmationEnabled"] = "CUSTOMER_CONFIRMATION_ENABLED",
+            ["CustomerConfirmationTtlSeconds"] = "CUSTOMER_CONFIRMATION_TTL_SECONDS",
             ["RateLimitTrustedProxyHops"] = "RATE_LIMIT_TRUSTED_PROXY_HOPS",
+            ["RateLimitTrustedProxies"] = "RATE_LIMIT_TRUSTED_PROXIES",
             ["CorsAllowedOrigins"] = "CORS_ALLOWED_ORIGINS",
             ["CostBudgetMode"] = "COST_BUDGET_MODE",
             ["GroundingMode"] = "GROUNDING_MODE",

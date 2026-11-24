@@ -19,6 +19,7 @@ AGENTS = [
     "pricing-promotions",
     "review-sentiment",
     "inventory-fulfillment",
+    "merchant-ops",
     "orchestrator",
 ]
 

@@ -2,7 +2,9 @@
 #
 # Shape of the policy, so a new entry does not have to rediscover it:
 #
-#   * Weekly, one PR per ecosystem for minor/patch bumps (grouped). Majors are
+#   * Weekly for Python, web and .NET; monthly for container images, compose files and
+#     GitHub Actions (they rarely matter and each used to be its own PR).
+#     One PR per ecosystem for minor/patch bumps (grouped). Majors are
 #     left as individual PRs, because a major is where the breakage is and each
 #     deserves its own review.
 #
@@ -77,6 +79,11 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "deps(web)"
+    ignore:
+      # @types/node versions with Node. Keep its major at the runtime major (Node 26 in
+      # web/Dockerfile, .nvmrc, CI and the devcontainer); moving the runtime is its own change.
+      - dependency-name: "@types/node"
+        versions: [">=27"]
     groups:
       web-minor-patch:
         update-types:
@@ -103,6 +110,10 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "System.*"
         update-types: ["version-update:semver-major"]
+      # Serilog.AspNetCore 11 breaks the build and every boot job (PR #295, closed):
+      # moving to it is a migration of its own. Minor and patch bumps still arrive.
+      - dependency-name: "Serilog.AspNetCore"
+        update-types: ["version-update:semver-major"]
     groups:
       maf:
         patterns:
@@ -124,13 +135,12 @@ updates:
       - /web
       - /agents/dotnet/src/*
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
     open-pull-requests-limit: 5
     commit-message:
       prefix: "deps(docker)"
     ignore:
-      # Runtime lines are chosen with the code (py312 / Node 22 / net10.0 in the
+      # Runtime lines are chosen with the code (py312 / Node 26 / net10.0 in the
       # lockfiles, ruff target and CI), not bumped by an image tag.
       - dependency-name: "python"
         update-types: ["version-update:semver-minor", "version-update:semver-major"]
@@ -152,8 +162,7 @@ updates:
   - package-ecosystem: docker-compose
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
     open-pull-requests-limit: 3
     commit-message:
       prefix: "deps(compose)"
@@ -171,8 +180,7 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
     open-pull-requests-limit: 3
     commit-message:
       prefix: "ci"

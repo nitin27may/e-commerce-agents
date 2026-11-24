@@ -1,0 +1,87 @@
+{
+  "date": "2026-11-24",
+  "provider": "openai",
+  "label": "Ollama (local)",
+  "model": "maternion/fara:7b",
+  "shape": "chat_completions",
+  "capabilities": {
+    "tool_calling": {
+      "status": "fail",
+      "detail": "tool was offered and not called",
+      "tokens_in": 169,
+      "tokens_out": 38
+    },
+    "parallel_tool_calls": {
+      "status": "fail",
+      "detail": "0 call(s) in one turn; two were asked for",
+      "tokens_in": 182,
+      "tokens_out": 42
+    },
+    "tool_result": {
+      "status": "pass",
+      "detail": "answered from the tool result",
+      "tokens_in": 222,
+      "tokens_out": 32
+    },
+    "tool_choice": {
+      "status": "fail",
+      "detail": "a named tool was forced and not called",
+      "tokens_in": 158,
+      "tokens_out": 21
+    },
+    "streaming_tools": {
+      "status": "fail",
+      "detail": "the stream carried no tool call",
+      "tokens_in": 169,
+      "tokens_out": 38
+    },
+    "json_output": {
+      "status": "pass",
+      "detail": "native JSON mode",
+      "tokens_in": 39,
+      "tokens_out": 6
+    },
+    "context_length": {
+      "status": "pass",
+      "detail": "accepted the order-management/seller system prompt, about 3,847 tokens",
+      "tokens_in": 3987,
+      "tokens_out": 16
+    },
+    "temperature_param": {
+      "status": "pass",
+      "detail": "temperature 0.2 accepted",
+      "tokens_in": 26,
+      "tokens_out": 16
+    },
+    "embeddings": {
+      "status": "fail",
+      "detail": "HTTP 404: model 'nomic-embed-text' not found",
+      "tokens_in": 0,
+      "tokens_out": 0
+    }
+  },
+  "tokens_in": 4952,
+  "tokens_out": 209,
+  "suites": [
+    {
+      "suite": "quality: specialists (five datasets)",
+      "verdict": "not applicable",
+      "reason": "missing tool_calling"
+    },
+    {
+      "suite": "quality: orchestrator routing",
+      "verdict": "not applicable",
+      "reason": "missing tool_calling"
+    },
+    {
+      "suite": "safety / red-team",
+      "verdict": "not applicable",
+      "reason": "missing tool_calling"
+    },
+    {
+      "suite": "LLM judge completeness",
+      "verdict": "applicable",
+      "reason": ""
+    }
+  ]
+}

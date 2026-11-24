@@ -82,7 +82,7 @@ public sealed class StockLookupTools(DatabasePool pool)
         };
     }
 
-    [Description("Get detailed warehouse availability for a product including restock schedules.")]
+    [Description("Get current per-warehouse stock for a product (quantity and reorder threshold only). Does not say when stock returns: use get_restock_schedule for restock dates.")]
     public async Task<object> GetWarehouseAvailability(
         [Description("UUID of the product")] string productId
     )

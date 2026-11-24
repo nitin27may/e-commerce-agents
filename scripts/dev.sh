@@ -98,6 +98,7 @@ print_summary() {
         echo -e "    Pricing & Promos  http://localhost:8083"
         echo -e "    Review & Sentim.  http://localhost:8084"
         echo -e "    Inventory & Ful.  http://localhost:8085"
+        [ "${MERCHANT_OPS_UP:-false}" = true ] && echo -e "    Merchant Ops      http://localhost:8086"
         echo ""
         echo -e "  ${BOLD}Frontend${NC}"
         echo -e "    Next.js           http://localhost:3000"
@@ -161,7 +162,7 @@ while [ $# -gt 0 ]; do
             echo "  A profile holds no secrets (keys stay in .env). Your exported variables beat the profile,"
             echo "  and the profile beats .env. Table and commands: docs/run-profiles.md"
             echo ""
-            echo "  --demo is the fast path: no local build, one command, ~2 minutes."
+            echo "  --demo is the fast path: no local build, one command, about a minute on a first run (rough)."
             echo "  Override the image tag with IMAGE_TAG (default: latest):"
             echo "    IMAGE_TAG=main ./scripts/dev.sh --demo"
             echo ""
@@ -224,7 +225,6 @@ if [ "$DOTNET" = true ]; then
     APP_PROFILES=(--profile seed --profile agents --profile mcp --profile frontend)
     RUN_PROFILES=(--profile agents --profile mcp --profile frontend)
     PGDATA_VOLUME_PATTERN='pgdata-dotnet$'
-    THIS_STACK="e-commerce-agents-dotnet"
     OTHER_STACK="e-commerce-agents"
     OTHER_STACK_LABEL="Python"
     OTHER_STACK_FILE="docker-compose.yml"
@@ -235,8 +235,16 @@ else
     [ "$NO_KEY" = true ] && COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.nokey.yml)
     APP_PROFILES=(--profile seed --profile agents --profile frontend)
     RUN_PROFILES=(--profile agents --profile frontend)
+    # The opt-in merchant-ops specialist (#298, Python only, :8086) has its own profile. Exported in the shell as
+    # MERCHANT_OPS_AGENT_ENABLED=true it is built, started and waited on here, and compose passes the same flag to the
+    # orchestrator so it may route to it. Not with --no-key: the replay overlay carries no entry for it.
+    MERCHANT_OPS_UP=false
+    if [ "${MERCHANT_OPS_AGENT_ENABLED:-false}" = true ] && [ "$NO_KEY" != true ]; then
+        MERCHANT_OPS_UP=true
+        APP_PROFILES+=(--profile merchant-ops)
+        RUN_PROFILES+=(--profile merchant-ops)
+    fi
     PGDATA_VOLUME_PATTERN='_pgdata$'
-    THIS_STACK="e-commerce-agents"
     OTHER_STACK="e-commerce-agents-dotnet"
     OTHER_STACK_LABEL=".NET"
     OTHER_STACK_FILE="docker-compose.dotnet.yml"
@@ -449,6 +457,13 @@ fi
 if [ "$DEMO" = true ]; then
     DEMO_COMPOSE=(docker compose -f docker-compose.demo.yml)
     [ "$NO_KEY" = true ] && DEMO_COMPOSE=(docker compose -f docker-compose.demo.yml -f docker-compose.nokey.yml)
+    # The auth-server sits behind the `oauth` profile; it is only wanted under AUTH_MODE=oauth
+    # (exported, or set in .env). Without it the default demo is 11 running containers (#86).
+    _demo_auth_mode="${AUTH_MODE:-}"
+    if [ -z "$_demo_auth_mode" ] && [ -f .env ]; then
+        _demo_auth_mode="$(grep -E '^AUTH_MODE=' .env | tail -n1 | cut -d= -f2- | tr -d '"'"'"' \r')"
+    fi
+    [ "$_demo_auth_mode" = oauth ] && DEMO_COMPOSE+=(--profile oauth)
     TAG="${IMAGE_TAG:-latest}"
 
     step "Demo mode — pulling prebuilt images (tag: ${TAG})"
@@ -599,6 +614,7 @@ wait_for_http "Order Management"  "http://localhost:8082/ready"
 wait_for_http "Pricing & Promos"  "http://localhost:8083/ready"
 wait_for_http "Review & Sentim."  "http://localhost:8084/ready"
 wait_for_http "Inventory & Ful."  "http://localhost:8085/ready"
+[ "${MERCHANT_OPS_UP:-false}" = true ] && wait_for_http "Merchant Ops"      "http://localhost:8086/ready"
 
 success "All agents are running"
 

@@ -69,6 +69,75 @@ class Finding:
 # ─────────────────────── live tool specs ───────────────────────
 
 
+# The handoff mesh's start agent offers tools MAF synthesises when the workflow is built (``handoff_to_<name>``), so
+# no ``create_*_agent()`` shows them. They are listed under this name; the replay key sorts tools by name, so the
+# order a process happens to build them in is not a difference (``ORDER_FREE``).
+HANDOFF_TRIAGE = "handoff-triage"
+# The two specialists built with ``MCP_ENABLED=true``: their tools are the MCP servers' (read from the server objects,
+# offline) plus the agent's local ones. Only the *names* are known offline (MAF builds each MCP tool's schema from a
+# live ``tools/list``), so a fixture is checked for its tool set and not per-tool descriptions.
+MCP_VARIANTS = {"product-discovery": "product-discovery[mcp]", "inventory-fulfillment": "inventory-fulfillment[mcp]"}
+NAME_ONLY = frozenset(MCP_VARIANTS.values())
+ORDER_FREE = frozenset({HANDOFF_TRIAGE, *NAME_ONLY})
+_MCP_SERVERS = {"product-mcp": "ecommerce_mcp_product.server", "inventory-mcp": "ecommerce_mcp_inventory.server"}
+
+
+def _server_tool_names(tool_name: str) -> list[str]:
+    import asyncio
+    import importlib
+    from concurrent.futures import ThreadPoolExecutor
+
+    server = importlib.import_module(_MCP_SERVERS[tool_name]).mcp
+
+    def _list() -> list[str]:
+        return [t.name for t in asyncio.run(server.list_tools())]
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return _list()
+    with ThreadPoolExecutor(max_workers=1) as pool:  # a caller already inside a loop (a test) cannot nest asyncio.run
+        return pool.submit(_list).result()
+
+
+def _mcp_variant_specs(factory: Any, flag_holders: list[Any]) -> list[dict[str, Any]]:
+    """Name-only specs of an agent built with ``MCP_ENABLED=true``, the MCP tool replaced by the server's tools."""
+    previous = [(h, h.MCP_ENABLED, h.MCP_AUTH_ENABLED) for h in flag_holders]
+    for h in flag_holders:
+        h.MCP_ENABLED, h.MCP_AUTH_ENABLED = True, False
+    try:
+        agent = factory()
+    finally:
+        for h, enabled, auth in previous:
+            h.MCP_ENABLED, h.MCP_AUTH_ENABLED = enabled, auth
+    names: list[str] = []
+    # MAF keeps an MCP tool beside the agent's function tools (``mcp_tools``), not in ``default_options["tools"]``.
+    for t in getattr(agent, "mcp_tools", None) or []:
+        names.extend(_server_tool_names("product-mcp" if "product" in str(getattr(t, "name", "")) else "inventory-mcp"))
+    for t in (getattr(agent, "default_options", None) or {}).get("tools") or []:
+        names.append(str(getattr(t, "name", t)))
+    return [{"name": n} for n in sorted(names)]
+
+
+def _handoff_triage_specs() -> list[dict[str, Any]]:
+    from evals.harness import SPECIALISTS
+    from orchestrator.handoff import build_orchestrator_handoff_workflow, build_remote_specialist_agents
+
+    # Nothing here is called: the mesh is built only to read the tools MAF gave its start agent.
+    registry = {name: f"http://localhost:{9000 + i}" for i, name in enumerate(sorted(SPECIALISTS))}
+    workflow = build_orchestrator_handoff_workflow(specialists=build_remote_specialist_agents(registry))
+    executor = workflow.executors["orchestrator"]
+    agent = getattr(executor, "_agent", None) or executor.agent
+    tools = (getattr(agent, "default_options", None) or {}).get("tools") or []
+    specs: list[dict[str, Any]] = []
+    for t in tools:
+        try:
+            specs.append(t.to_json_schema_spec())
+        except AttributeError:
+            specs.append({"name": getattr(t, "name", str(t))})
+    return specs
+
+
 def live_tool_specs() -> dict[str, list[dict[str, Any]]]:
     """``{agent name: [tool spec, ...]}`` from each ``create_*_agent()``, in order."""
     import importlib
@@ -104,6 +173,10 @@ def live_tool_specs() -> dict[str, list[dict[str, Any]]]:
                 except AttributeError:
                     agent_specs.append({"name": getattr(t, "name", str(t))})
             specs[name] = agent_specs
+        specs[HANDOFF_TRIAGE] = _handoff_triage_specs()
+        holders = [c for c, _ in switched.values()]
+        for agent_name, variant in MCP_VARIANTS.items():
+            specs[variant] = _mcp_variant_specs(factories[agent_name], holders)
     finally:
         for candidate, previous in switched.values():
             candidate.LLM_PROVIDER = previous
@@ -165,6 +238,12 @@ def _best_agent(stored_names: list[str], live: dict[str, list[dict[str, Any]]]) 
         names = [_tool_name(s) for s in specs]
         if names == stored_names:
             return agent
+    # An agent whose tools come in no fixed order (the handoff mesh, an MCP-backed specialist) matches on the set.
+    for agent in ORDER_FREE & live.keys():
+        if {_tool_name(s) for s in live[agent]} == wanted:
+            return agent
+    for agent, specs in live.items():
+        names = [_tool_name(s) for s in specs]
         have = set(names)
         score = len(wanted & have) / max(len(wanted | have), 1)
         if best is None or score > best[0]:
@@ -184,6 +263,11 @@ def _compare_tools(
         return [(SEMANTIC, f"no live agent offers tools {stored_names[:3]}...")], None
 
     live_specs = live[agent]
+    if agent in ORDER_FREE:
+        by_name = {_tool_name(s): s for s in live_specs}
+        live_specs = [by_name[n] for n in stored_names if n in by_name] + [
+            s for n, s in by_name.items() if n not in stored_names
+        ]
     live_names = [_tool_name(s) for s in live_specs]
     if live_names != stored_names:
         added = sorted(set(live_names) - set(stored_names))
@@ -195,6 +279,8 @@ def _compare_tools(
             detail += f"; removed {removed}"
         return [(SEMANTIC, detail)], None
 
+    if agent in NAME_ONLY:
+        return [], None  # the tool set matched above; MCP tool schemas are only known from a live server
     findings: list[tuple[str, str]] = []
     corrected: list[dict[str, Any]] = []
     format_only = False

@@ -84,3 +84,35 @@ def test_check_flag_fails_on_stale_page(tmp_path: Path, monkeypatch: pytest.Monk
     assert sc.main(["--check"]) == 1
     stale.write_text(sc.build())
     assert sc.main(["--check"]) == 0
+
+
+def test_live_baselines_get_their_own_labelled_table_and_never_join_the_replay_rows(tmp_path: Path) -> None:
+    root = tmp_path / "baselines"
+    (root / "python-inproc-replay").mkdir(parents=True)
+    (root / "python-inproc-replay" / "a.json").write_text(json.dumps({"agent_name": "a", "overall_score": 1.0}))
+    live_dir = root / "python-inproc-gpt-4.1"
+    live_dir.mkdir()
+    (live_dir / "a.json").write_text(
+        json.dumps(
+            {
+                "agent_name": "a",
+                "dataset_path": "evals/datasets/live/a.live.json",
+                "overall_score": 0.5,
+                "avg_groundedness": 0.4,
+                "live": True,
+                "repeats": 1,
+                "recorded_on": "2026-11-24",
+                "setup_key": "python-inproc-gpt-4.1",
+                "setup": {"chat_model": "gpt-4.1", "judge": {"kind": "llm", "provider": "azure", "model": "j"}},
+                "passed_cases": 3,
+                "estimated_cost_usd": 0.5,
+            }
+        )
+    )
+    (live_dir / "not-live.json").write_text(json.dumps({"agent_name": "b", "overall_score": 0.1}))
+    rows = sc.load_live(root, tmp_path)
+    assert [r.agent for r in rows] == ["a"]
+    text = "\n".join(sc.render_live(rows))
+    assert "Live reference baselines (not a quality guarantee)" in text
+    assert "azure:j" in text and "| 1 |" in text and "2026-11-24" in text
+    assert sc.render_live([]) == []

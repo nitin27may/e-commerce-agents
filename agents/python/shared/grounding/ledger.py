@@ -65,6 +65,30 @@ class GroundingLedger:
     # get_price_history's own historical price points scored "unverifiable"
     # even though they're real data straight from the same tool call.
     known_amounts: set[float] = field(default_factory=set)
+    # Values the *caller* put in: amounts and ids typed in this turn's user message or passed as a tool
+    # argument. An answer that echoes them is quoting the user, not inventing a figure, so the verifier
+    # reports them as ``user_supplied`` (see shared/grounding/verifier.py). They never make a model-made
+    # figure verified: only a value that literally appears in the user's text or the call arguments lands here.
+    user_amounts: set[float] = field(default_factory=set)
+    user_ids: set[str] = field(default_factory=set)
+    # Ids of rows a tool returned this turn that are neither products nor orders (a review, a proposal, a proposal
+    # line: merchant-ops, #298). Quoting one is quoting the tool; without this the DB check only knows products and
+    # orders and scored every review id the agent repeated "not_found".
+    result_ids: set[str] = field(default_factory=set)
+
+    def note_user_text(self, text: Any) -> None:
+        from shared.grounding.verifier import user_supplied_values
+
+        amounts, ids = user_supplied_values(text)
+        self.user_amounts |= amounts
+        self.user_ids |= ids
+
+    def note_tool_arguments(self, arguments: Any) -> None:
+        from shared.grounding.verifier import user_supplied_values
+
+        amounts, ids = user_supplied_values(arguments)
+        self.user_amounts |= amounts
+        self.user_ids |= ids
 
     def record(self, result: Any) -> None:
         for item in _iter_dicts(result):
@@ -75,10 +99,18 @@ class GroundingLedger:
                         if isinstance(nested, dict):
                             self._record_one(nested)
                             self._record_bare_amount(nested)
+                            self._record_result_ids(nested)
                 elif isinstance(value, dict):
                     # get_loyalty_tier nests its next-tier amounts one dict down.
                     self._record_bare_amount(value)
             self._record_bare_amount(item)
+            self._record_result_ids(item)
+
+    def _record_result_ids(self, item: dict[str, Any]) -> None:
+        for key in _RESULT_ID_KEYS:
+            value = item.get(key)
+            if isinstance(value, str) and value:
+                self.result_ids.add(value.lower())
 
     def _record_bare_amount(self, item: dict[str, Any]) -> None:
         for key in (
@@ -104,6 +136,23 @@ class GroundingLedger:
             "min_spend",
             "free_shipping_threshold",
             "max_discount",
+            # Amounts other pricing and fulfillment tools report under their own names; each was an answer quoting
+            # the tool's figure and scoring "unverifiable" (live reference run, 2026-11-24):
+            # get_loyalty_benefits' tier thresholds, check_bundle_eligibility's bundle total and saving,
+            # optimize_cart's totals, calculate_fulfillment_plan's shipping cost (top level and per shipment).
+            "min_spend_required",
+            "bundle_total",
+            "savings",
+            "original_total",
+            "total_savings",
+            "final_total",
+            "shipping_cost",
+            "total_shipping_cost",
+            # merchant-ops (#298): the proposal line's figures, quoted as the tool reports them.
+            "proposed_price",
+            "unit_price_drop",
+            "order_value",
+            "stock_value_at_current_price",
         ):
             value = _as_float(item.get(key))
             if value is not None:
@@ -142,6 +191,9 @@ class GroundingLedger:
                 discount_type=item.get("discount_type"),
             )
             self.promos[fact.code] = fact
+
+
+_RESULT_ID_KEYS = ("review_id", "proposal_id", "line_id")
 
 
 def _iter_dicts(result: Any):
@@ -191,11 +243,20 @@ class GroundingLedgerMiddleware(FunctionMiddleware):
         context: FunctionInvocationContext,
         call_next: Callable[[], Awaitable[None]],
     ) -> None:
+        ledger = current_grounding_ledger.get()
+        if ledger is not None:
+            ledger.note_tool_arguments(_arguments_of(context))
         await call_next()
         ledger = current_grounding_ledger.get()
         if ledger is None:
             return
         ledger.record(unwrap_function_result(getattr(context, "result", None)))
+
+
+def _arguments_of(context: Any) -> Any:
+    args = getattr(context, "arguments", None)
+    dump = getattr(args, "model_dump", None)
+    return dump() if callable(dump) else args
 
 
 # Stateless — shared across every agent, same idiom as STEP_MIDDLEWARE.

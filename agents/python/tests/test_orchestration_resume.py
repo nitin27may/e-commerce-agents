@@ -221,3 +221,35 @@ async def test_get_run_checkpoints_blocks_a_different_user(clean_db, monkeypatch
         resp = await http.get(f"/api/runs/{run_id}/checkpoints", headers={"Authorization": "Bearer fake"})
 
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_support_reads_only_their_own_runs(clean_db, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Staff may decide an approval, but only admins read other users' runs: support reviews from /api/approvals."""
+    owner = "scope-owner@example.com"
+    support = "scope-support@example.com"
+    owner_id = await _seed_user(clean_db, owner)
+    support_id = await _seed_user(clean_db, support)
+    _, run_id = await _pause_a_return(clean_db, monkeypatch, owner, owner_id)
+
+    app = _app_for(support, support_id, role="support")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
+        listed = await http.get("/api/runs", headers={"Authorization": "Bearer fake"})
+        checkpoints = await http.get(f"/api/runs/{run_id}/checkpoints", headers={"Authorization": "Bearer fake"})
+
+    assert listed.status_code == 200 and listed.json()["total"] == 0
+    assert checkpoints.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_admin_reads_any_run(clean_db, monkeypatch: pytest.MonkeyPatch) -> None:
+    owner = "scope-owner2@example.com"
+    owner_id = await _seed_user(clean_db, owner)
+    admin_id = await _seed_user(clean_db, "scope-admin@example.com")
+    _, run_id = await _pause_a_return(clean_db, monkeypatch, owner, owner_id)
+
+    app = _app_for("scope-admin@example.com", admin_id, role="admin")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
+        checkpoints = await http.get(f"/api/runs/{run_id}/checkpoints", headers={"Authorization": "Bearer fake"})
+
+    assert checkpoints.status_code == 200

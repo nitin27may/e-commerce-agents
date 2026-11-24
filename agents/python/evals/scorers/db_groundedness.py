@@ -20,7 +20,7 @@ import asyncpg
 
 from shared.grounding.extractor import extract_claims
 from shared.grounding.ledger import GroundingLedger
-from shared.grounding.verifier import GroundingReport, verify_claims
+from shared.grounding.verifier import GROUNDED_STATUSES, GroundingReport, user_supplied_values, verify_claims
 
 # Verdict types the verifier can only settle against the ledger of the process that ran it.
 _LEDGER_ONLY_CLAIM_TYPES = frozenset({"amount", "tracking"})
@@ -51,7 +51,54 @@ def score_from_report(grounding: dict[str, Any] | None, *, ledger_complete: bool
     ]
     if not counted:
         return 1.0
-    return sum(1 for c in counted if c.get("status") == "verified") / len(counted)
+    return sum(1 for c in counted if c.get("status") in GROUNDED_STATUSES) / len(counted)
+
+
+def reclassify_user_supplied(grounding: dict[str, Any] | None, user_texts: list[Any]) -> dict[str, Any] | None:
+    """A stored report with each unsettled amount or bare-id claim the caller supplied relabelled ``user_supplied``.
+
+    For records written before the verifier knew about user-supplied values: ``user_texts`` is the case's
+    query and the tool-call arguments. Only a value that appears in them changes, and only from
+    ``unverifiable`` / ``not_found``; a figure nobody supplied keeps its verdict. Idempotent.
+    """
+    if not grounding or not grounding.get("claims"):
+        return grounding
+    amounts: set[float] = set()
+    ids: set[str] = set()
+    for text in user_texts:
+        a, i = user_supplied_values(text)
+        amounts |= a
+        ids |= i
+    changed = False
+    claims = []
+    for claim in grounding["claims"]:
+        if claim.get("status") in ("unverifiable", "not_found") and _supplied(claim, amounts, ids):
+            claim = {**claim, "status": "user_supplied", "detail": "supplied in the user's message or tool arguments"}
+            changed = True
+        claims.append(claim)
+    if not changed:
+        return grounding
+    verified = sum(1 for c in claims if c.get("status") in GROUNDED_STATUSES)
+    return {
+        **grounding,
+        "claims": claims,
+        "verified": verified,
+        "unverified": len(claims) - verified,
+        "user_supplied": sum(1 for c in claims if c.get("status") == "user_supplied"),
+    }
+
+
+def _supplied(claim: dict[str, Any], amounts: set[float], ids: set[str]) -> bool:
+    identifier = str(claim.get("id", ""))
+    if claim.get("type") == "bare_id":
+        return identifier.lower() in ids
+    if claim.get("type") == "amount":
+        try:
+            value = float(identifier.lstrip("$"))
+        except ValueError:
+            return False
+        return any(abs(value - a) < 0.01 for a in amounts)
+    return False
 
 
 async def score_groundedness(
@@ -77,6 +124,8 @@ def _report_dict(report: GroundingReport) -> dict[str, Any]:
         "total": report.total_count,
         "verified": report.verified_count,
         "unverified": report.unverified_count,
+        "user_supplied": report.user_supplied_count,
+        "derived": report.derived_count,
         "claims": [
             {
                 "type": v.claim_type,

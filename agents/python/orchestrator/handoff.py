@@ -26,7 +26,7 @@ from agent_framework_orchestrations import HandoffBuilder
 from shared.agent_factory import agent_default_options, create_chat_client
 from shared.config import settings
 from shared.context import current_user_role
-from shared.factory import parse_agent_registry
+from shared.factory import active_agent_registry
 from shared.prompt_loader import load_prompt
 from shared.remote_agent import make_remote_specialist_agent
 
@@ -45,7 +45,7 @@ def _load_registry() -> dict[str, str]:
     switcher both change ``settings.AGENT_REGISTRY`` at runtime, and an
     lru_cache would serve the first value forever.
     """
-    return parse_agent_registry(settings.AGENT_REGISTRY)
+    return active_agent_registry(settings.AGENT_REGISTRY)
 
 
 def create_handoff_triage_agent() -> Agent:

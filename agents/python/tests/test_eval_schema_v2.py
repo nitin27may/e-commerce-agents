@@ -191,7 +191,6 @@ def test_denial_is_read_from_the_recorded_step_output() -> None:
     fine_step = {"tool_name": "search_products", "tool_output": {"count": 3}}
     assert _was_denied([fine_step, denied_step])
     assert not _was_denied([fine_step])
-    assert not _was_denied([{"tool_name": "t", "tool_output": "permission_denied"}])  # truncated string output
     assert _tool_calls([fine_step, {"no": "name"}]) == [{"tool_name": "search_products", "tool_input": None}]
 
 

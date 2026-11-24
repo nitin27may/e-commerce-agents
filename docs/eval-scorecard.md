@@ -4,24 +4,48 @@
 
 Scores per specialist and dataset, as committed in `agents/python/evals/baselines/python-inproc-replay/` (baselines are keyed by setup: stack, target and model).
 
-**Read this first.** These numbers are a regression signal, not a quality measurement. Every case was answered from a replay fixture recorded on `gpt-4.1-2025-04-14` (102 fixtures) between 2026-08-21 and 2026-08-26, and the scorer is deterministic: groundedness is a database check, correctness is a tool or route match, and completeness is a keyword check, not a judge model. A score tells you the recorded answers still pass the current code and prompts, which is what the PR job named Replay regression checks. It says nothing about how a different model, or the same model today, would do. Each dataset has five or six cases, so one flipped case moves a score by 0.1 or more, and the score is a property of the recording session as much as of the system (see `agents/python/evals/fixtures/README.md`).
+**Read this first.** These numbers are a regression signal, not a quality measurement. Every case was answered from a replay fixture recorded on `gpt-4.1-2025-04-14` (184 fixtures) between 2026-08-21 and 2026-11-24, and the scorer is deterministic: groundedness is a database check, correctness is a tool or route match, and completeness is a keyword check, not a judge model. A score tells you the recorded answers still pass the current code and prompts, which is what the PR job named Replay regression checks. It says nothing about how a different model, or the same model today, would do. Each dataset has five or six cases, so one flipped case moves a score by 0.1 or more, and the score is a property of the recording session as much as of the system (see `agents/python/evals/fixtures/README.md`).
 
 ## Quality baselines
 
 | Agent | Dataset | Cases | Groundedness | Correctness | Completeness | Overall |
 |-------|---------|------:|-------------:|------------:|-------------:|--------:|
-| inventory-fulfillment | `inventory_fulfillment.json` | 5 | 0.80 | 1.00 | 0.50 | 0.82 |
-| orchestrator | `orchestrator_routing.json` | 6 | 0.50 | 1.00 | 1.00 | 0.80 |
-| order-management | `order_management.json` | 5 | 0.40 | 0.70 | 0.35 | 0.51 |
-| pricing-promotions | `pricing_promotions.json` | 5 | 0.60 | 0.80 | 0.60 | 0.68 |
-| product-discovery | `product_discovery.json` | 6 | 1.00 | 0.92 | 1.00 | 0.97 |
+| inventory-fulfillment | `inventory_fulfillment.json` | 5 | 1.00 | 1.00 | 0.50 | 0.90 |
+| merchant-ops | `merchant_ops.json` | 5 | 1.00 | 1.00 | 1.00 | 1.00 |
+| orchestrator | `indirect_injection.json` | 4 | 1.00 | 1.00 | 1.00 | 1.00 |
+| orchestrator | `orchestrator_routing.json` | 6 | 1.00 | 1.00 | 1.00 | 1.00 |
+| order-management | `approvals.json` | 5 | 1.00 | 1.00 | 1.00 | 1.00 |
+| order-management | `order_management.json` | 5 | 1.00 | 0.70 | 0.35 | 0.75 |
+| pricing-promotions | `pricing_promotions.json` | 5 | 1.00 | 1.00 | 0.80 | 0.96 |
+| product-discovery | `product_discovery.json` | 6 | 1.00 | 0.92 | 0.97 | 0.96 |
 | review-sentiment | `review_sentiment.json` | 5 | 1.00 | 1.00 | 1.00 | 1.00 |
 
 The baselines record no date or commit of their own. Git history on the baseline files gives the commit that last changed each one.
 
-## Cost and latency
+## Orchestrator by mode
 
-None of the committed baselines carries token, cost or latency fields, so none are shown. Replay latency would only measure reading a JSON file.
+The same replay setup, scored through each orchestration mode (`--mode` on `evals.run_evals`, baselines under `python-inproc-replay-mode-<mode>/`; a mode's score is only ever compared with its own baseline). A case lists the modes it can be scored in (`modes` in the dataset), so each row covers the prompts that make sense for that mode and the case counts differ: routing prompts run in `tool` and `handoff`, the research prompts in `workflow:pre-purchase` and `group-chat`, and a return request in `workflow:return-replace`. The two workflow modes call no model (zero tokens, nothing recorded); the others replay recorded fixtures. Scores are deterministic and say whether a mode still behaves as recorded, not which mode is better.
+
+| Mode | Dataset | Cases | Groundedness | Correctness | Completeness | Overall | Tokens in | Tokens out |
+|------|---------|------:|-------------:|------------:|-------------:|--------:|----------:|-----------:|
+| `tool` | `orchestrator_routing.json` | 6 | 1.00 | 1.00 | 1.00 | 1.00 | 106,141 | 3,520 |
+| `group-chat` | `orchestrator_modes.json` | 2 | 1.00 | 1.00 | 1.00 | 1.00 | 499 | 279 |
+| `handoff` | `orchestrator_routing.json` | 4 | 1.00 | 1.00 | 1.00 | 1.00 | 40,382 | 1,361 |
+| `workflow:pre-purchase` | `orchestrator_modes.json` | 2 | 1.00 | 1.00 | 1.00 | 1.00 | 0 | 0 |
+| `workflow:return-replace` | `orchestrator_modes.json` | 1 | 1.00 | 1.00 | 1.00 | 1.00 | 0 | 0 |
+
+## Recorded token usage
+
+Summed over each suite's fixtures. Informational; it is not a price.
+
+| Agent | Tokens in | Tokens out |
+|-------|----------:|-----------:|
+| inventory-fulfillment | 53,931 | 1,138 |
+| orchestrator | 99,758 | 3,233 |
+| orchestrator | 106,141 | 3,520 |
+| order-management | 32,965 | 277 |
+| order-management | 51,089 | 420 |
+| pricing-promotions | 48,885 | 1,088 |
 
 ## Prompt and tool-schema size
 
@@ -32,6 +56,9 @@ Tokens per request before the user's message, counted with `o200k_base` (`evals/
 | inventory-fulfillment | admin | 3,081 | 894 | 10 | 3,975 |
 | inventory-fulfillment | customer | 3,076 | 894 | 10 | 3,970 |
 | inventory-fulfillment | seller | 3,087 | 894 | 10 | 3,981 |
+| merchant-ops | admin | 2,907 | 961 | 7 | 3,868 |
+| merchant-ops | customer | 2,928 | 961 | 7 | 3,889 |
+| merchant-ops | seller | 2,900 | 961 | 7 | 3,861 |
 | orchestrator | admin | 2,971 | 126 | 1 | 3,097 |
 | orchestrator | customer | 2,967 | 126 | 1 | 3,093 |
 | orchestrator | seller | 3,063 | 126 | 1 | 3,189 |
@@ -47,6 +74,19 @@ Tokens per request before the user's message, counted with `o200k_base` (`evals/
 | review-sentiment | admin | 3,129 | 1,213 | 13 | 4,342 |
 | review-sentiment | customer | 3,125 | 1,213 | 13 | 4,338 |
 | review-sentiment | seller | 3,131 | 1,213 | 13 | 4,344 |
+
+## Live reference baselines (not a quality guarantee)
+
+**These are live runs, not replay.** Each row is one sitting of one model with an LLM judge, taken through the in-process target on a freshly seeded database. With one repeat there is no spread: a single flipped case moves a suite by a few points, and a rerun can move it too. They are stored under their own setup key and the replay gate never compares against them. A self-judged run says so in the Judge column. A case the judge could not score (content filter) is noted beside Passed, with how many of those the less strict keyword fallback scored instead. Cost is the tokens times the price in `config/pricing/models.yaml` with cached input billed at the full rate, so it is an upper bound, and it excludes the judge calls.
+
+| Date | Setup | Model | Judge | k | Agent | Dataset | Cases | Passed | Groundedness | Correctness | Completeness | Overall | Cost (USD) |
+|------|-------|-------|-------|--:|-------|---------|------:|-------:|-------------:|------------:|-------------:|--------:|-----------:|
+| 2026-11-24 | `python-inproc-gpt-4.1` | gpt-4.1 | azure:gpt-5.4-mini | 1 | inventory-fulfillment | `inventory_fulfillment.live.json` | 29 | 28 | 1.00 | 0.97 | 0.79 | 0.94 | 0.65 |
+| 2026-11-24 | `python-inproc-gpt-4.1` | gpt-4.1 | azure:gpt-5.4-mini | 1 | orchestrator | `orchestrator_routing.live.json` | 31 | 30 | 1.00 | 1.00 | 0.88 | 0.97 | 0.97 |
+| 2026-11-24 | `python-inproc-gpt-4.1` | gpt-4.1 | azure:gpt-5.4-mini | 1 | order-management | `order_management.live.json` | 37 | 30 (1 judge-unavailable, 1 scored by keyword fallback) | 0.94 | 0.89 | 0.85 | 0.90 | 0.99 |
+| 2026-11-24 | `python-inproc-gpt-4.1` | gpt-4.1 | azure:gpt-5.4-mini | 1 | pricing-promotions | `pricing_promotions.live.json` | 33 | 28 (1 judge-unavailable) | 0.96 | 0.97 | 0.89 | 0.95 | 0.51 |
+| 2026-11-24 | `python-inproc-gpt-4.1` | gpt-4.1 | azure:gpt-5.4-mini | 1 | product-discovery | `product_discovery.live.json` | 29 | 25 | 1.00 | 0.98 | 0.88 | 0.97 | 0.49 |
+| 2026-11-24 | `python-inproc-gpt-4.1` | gpt-4.1 | azure:gpt-5.4-mini | 1 | review-sentiment | `review_sentiment.live.json` | 30 | 29 (1 judge-unavailable) | 1.00 | 1.00 | 0.92 | 0.98 | 0.75 |
 
 ## Community-submitted, not verified by the maintainers
 

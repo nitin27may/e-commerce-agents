@@ -20,6 +20,7 @@ FACTORIES = [
     ("pricing_promotions.agent", "create_pricing_promotions_agent", "pricing-promotions"),
     ("review_sentiment.agent", "create_review_sentiment_agent", "review-sentiment"),
     ("inventory_fulfillment.agent", "create_inventory_fulfillment_agent", "inventory-fulfillment"),
+    ("merchant_ops.agent", "create_merchant_ops_agent", "merchant-ops"),
     ("orchestrator.agent", "create_orchestrator_agent", "orchestrator"),
 ]
 

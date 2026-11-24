@@ -23,6 +23,7 @@ from orchestrator.events import OrchestrationEvent, adapt_workflow_event
 from shared.run_usage import ORCHESTRATOR, begin_run_usage, usage_from_updates
 
 from .base import ModeCapabilities, RunContext
+from .grounded import grounded_run
 
 
 class HandoffMode:
@@ -39,6 +40,7 @@ class HandoffMode:
         is_graph=True,
     )
 
+    @grounded_run
     async def run(self, message: str, ctx: RunContext) -> AsyncIterator[OrchestrationEvent]:
         # Forwarded for parity with the tool router — handoff specialists are
         # RemoteSpecialistChatClient instances that don't currently read this
@@ -88,15 +90,10 @@ class HandoffMode:
         agents_involved = list(dict.fromkeys(eid for eid, _ in assembled)) or ["orchestrator"]
         final_text = assembled[-1][1] if assembled else ""
 
-        # No "grounding" key here (unlike tool_router.py): each participant's
-        # own agent.run() call still runs GroundingVerificationMiddleware and
-        # still corrects/strips its finalized response before persistence,
-        # but final_text above is assembled by concatenating raw streamed
-        # AgentResponseUpdate chunks off HandoffBuilder's workflow event
-        # stream — it never exposes the per-participant AgentResponse whose
-        # additional_properties carries the report. Surfacing it in the UI
-        # for this mode needs a HandoffBuilder event-stream change, not a
-        # grounding change.
+        # The grounding report comes from @grounded_run, which verifies final_text (as for the workflow modes
+        # and group chat). Specialists run in other processes, so the per-request ledger holds nothing
+        # from them here and figures are checked on the DB and consistency tiers; each participant's own
+        # middleware still corrects its response before persistence.
         yield OrchestrationEvent(
             kind="run_completed",
             payload={"text": final_text, "agents_involved": agents_involved, "usage": run_usage.snapshot()},

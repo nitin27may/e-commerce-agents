@@ -1,0 +1,61 @@
+[
+  {
+    "type": "happy",
+    "why": "A decision prompt only the research modes can serve: pre-purchase fans out to reviews, stock and price history with no model call, group-chat debates it.",
+    "input": "Should I buy the Sony WH-1000XM5? Research it before I decide.",
+    "expected_tools": [],
+    "expected_fields": [
+      "stock"
+    ],
+    "criteria": {
+      "grounded": false
+    },
+    "user_email": "jack.anderson@gmail.com",
+    "modes": [
+      "workflow:pre-purchase",
+      "group-chat"
+    ],
+    "mode_overrides": {
+      "group-chat": {
+        "expected_fields": []
+      }
+    }
+  },
+  {
+    "type": "happy",
+    "why": "Second research prompt, on a different product.",
+    "input": "Is the Logitech MX Master 3S worth buying? Check reviews, stock and price.",
+    "expected_tools": [],
+    "expected_fields": [
+      "stock"
+    ],
+    "criteria": {
+      "grounded": false
+    },
+    "user_email": "jack.anderson@gmail.com",
+    "modes": [
+      "workflow:pre-purchase",
+      "group-chat"
+    ],
+    "mode_overrides": {
+      "group-chat": {
+        "expected_fields": []
+      }
+    }
+  },
+  {
+    "type": "happy",
+    "why": "The return graph must pause at the policy gate for a person before anything is created.",
+    "input": "I want to return my order {{order:delivered}}, the item arrived damaged.",
+    "expected_tools": [],
+    "expected_fields": [],
+    "criteria": {
+      "grounded": false
+    },
+    "expect_hitl": true,
+    "user_email": "jack.anderson@gmail.com",
+    "modes": [
+      "workflow:return-replace"
+    ]
+  }
+]

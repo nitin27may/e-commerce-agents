@@ -41,7 +41,10 @@ class FakeSource:
     """A fake database: one user with three orders (newest first) and one product."""
 
     def __init__(self) -> None:
-        self.orders = {"a@example.com": [("o-new", "placed"), ("o-mid", "delivered"), ("o-old", "delivered")]}
+        self.orders = {
+            "a@example.com": [("o-new", "placed"), ("o-mid", "delivered"), ("o-old", "delivered")],
+            "b@example.com": [("b-new", "confirmed")],
+        }
         self.products = {"sony wh-1000xm5": PRODUCT_ID}
 
     async def order_id(self, user_email: str, selector: str) -> str | None:
@@ -75,8 +78,12 @@ def test_no_replay_dataset_has_a_placeholder_or_live_marker(path: Path) -> None:
 
 def test_live_datasets_exist_and_are_all_live() -> None:
     assert {p.name for p in LIVE_DATASETS} == {
+        "approvals.live.json",
         "inventory_fulfillment.live.json",
+        "merchant_ops.live.json",
         "order_management.live.json",
+        "indirect_injection.live.json",
+        "orchestrator_modes.live.json",
         "orchestrator_routing.live.json",
         "pricing_promotions.live.json",
         "product_discovery.live.json",
@@ -109,7 +116,9 @@ def test_pricing_coupon_case_states_a_cart_total_and_the_cancel_case_expects_a_p
     assert "WELCOME10" in coupon.input and re.search(r"\$\d+", coupon.input)
     assert coupon.expected_tool_args == {"validate_coupon": {"code": "WELCOME10", "cart_total": 120}}
     cases = load_dataset(live / "order_management.live.json")
-    assert next(c for c in cases if "cancel_order" in c.expected_tools).expect_hitl is True
+    # A cancel asks the customer first (turn 1, nothing parked) and parks once they say yes (turn 2).
+    cancel = next(c for c in cases if c.turns and "cancel_order" in c.turns[-1].expected_tools)
+    assert [t.expect_hitl for t in cancel.turns or []] == [False, True]
 
 
 # ─────────────────────── the resolver (fake source) ───────────────────────
@@ -119,6 +128,16 @@ def test_pricing_coupon_case_states_a_cart_total_and_the_cancel_case_expects_a_p
 async def test_resolves_by_position_and_by_status() -> None:
     case = _case(input="status of {{order:1}} and {{order:2}}, return {{ order:placed }}", user_email="a@example.com")
     assert (await resolve_case(case, FakeSource())).input == "status of o-new and o-mid, return o-new"
+
+
+@pytest.mark.asyncio
+async def test_resolves_another_users_order_with_an_at_suffix() -> None:
+    case = _case(input="cancel {{order:confirmed@b@example.com}}", user_email="a@example.com")
+    assert (await resolve_case(case, FakeSource())).input == "cancel b-new"
+    owner_less = _case(input="{{order:1@b@example.com}}", user_email=None)  # the suffix names the owner
+    assert (await resolve_case(owner_less, FakeSource())).input == "b-new"
+    with pytest.raises(LiveFactError, match="b@example.com has no such order"):
+        await resolve_case(_case(input="{{order:placed@b@example.com}}", user_email="a@example.com"), FakeSource())
 
 
 @pytest.mark.asyncio

@@ -29,6 +29,7 @@ from shared.prompt_loader import load_raw_prompt
 from shared.run_usage import begin_run_usage, record_usage
 
 from .base import ModeCapabilities, RunContext
+from .grounded import grounded_run
 
 _PANEL_PROMPTS = {
     "value": load_raw_prompt("group-chat-value"),
@@ -90,6 +91,7 @@ class GroupChatMode:
             return self._panelists
         return [(name, _make_agent_responder(name, instructions)) for name, instructions in _PANEL_PROMPTS.items()]
 
+    @grounded_run
     async def run(self, message: str, ctx: RunContext) -> AsyncIterator[OrchestrationEvent]:
         from workflows.group_chat import GroupChatState, GroupChatWorkflow
 
@@ -110,12 +112,8 @@ class GroupChatMode:
                 if isinstance(data, GroupChatState):
                     final_state = data
 
-        # No "grounding" key here: each panelist's own agent.run() call still
-        # runs GroundingVerificationMiddleware against its own turn's text
-        # (see _make_agent_responder above), but that per-turn report isn't
-        # threaded back through workflows/group_chat.py's transcript entries
-        # ({"speaker", "text"} only) or GroupChatState. Surfacing it in the
-        # UI would mean extending that data model, not the grounding code.
+        # The verdict's grounding report comes from @grounded_run, which checks the final text; each
+        # panelist's per-turn middleware report still isn't threaded back through the transcript entries.
         agents_involved = [name for name, _ in panelists] + ["moderator"]
         yield OrchestrationEvent(
             kind="run_completed",

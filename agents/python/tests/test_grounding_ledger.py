@@ -309,3 +309,27 @@ async def test_active_deals_records_only_fixed_coupon_values_as_dollars() -> Non
     assert 10.0 in ledger.known_amounts
     assert 50.0 in ledger.known_amounts
     assert 15.0 not in ledger.known_amounts
+
+
+@pytest.mark.asyncio
+async def test_pricing_and_fulfillment_amounts_under_their_own_field_names_are_recorded() -> None:
+    ledger = reset_grounding_ledger()
+    shapes = [
+        [{"tier": "silver", "min_spend_required": 1000.0}, {"tier": "gold", "min_spend_required": 3000.0}],
+        {"bundle_deals": [{"promotion_name": "Tech", "bundle_total": 389.98, "savings": 39.0}]},
+        {"original_total": 324.9, "total_savings": 162.44, "final_total": 162.46, "savings": [{"amount": 64.98}]},
+        {"total_shipping_cost": 5.99, "shipments": [{"shipping_cost": 5.99, "carrier": "Standard"}]},
+    ]
+    for shape in shapes:
+        await GroundingLedgerMiddleware().process(_function_context(shape), _noop)
+
+    assert {1000.0, 3000.0, 389.98, 39.0, 324.9, 162.44, 162.46, 64.98, 5.99} <= ledger.known_amounts
+
+
+@pytest.mark.asyncio
+async def test_a_figure_in_no_tool_result_stays_unknown_even_with_the_new_fields() -> None:
+    ledger = reset_grounding_ledger()
+    await GroundingLedgerMiddleware().process(_function_context({"total_savings": 162.44}), _noop)
+
+    # A derived figure (3000 - 600) or an invented one is not recorded: the verifier stays strict.
+    assert 2400.0 not in ledger.known_amounts and 162.45 not in ledger.known_amounts

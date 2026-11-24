@@ -146,3 +146,11 @@
     @apply font-sans;
   }
 }
+
+/* Static preview (#301): the banner above the app takes 2.25rem, so full-height shells give it back. */
+html[data-preview] .h-screen {
+  height: calc(100vh - 2.25rem);
+}
+html[data-preview] .min-h-screen {
+  min-height: calc(100vh - 2.25rem);
+}

@@ -9,9 +9,15 @@
 [![MAF 1.26.0](https://img.shields.io/badge/Microsoft%20Agent%20Framework-1.26.0-5E5DF0.svg)](https://github.com/microsoft/agent-framework)
 [![PostgreSQL + pgvector](https://img.shields.io/badge/PostgreSQL-pgvector-336791.svg)](https://github.com/pgvector/pgvector)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED.svg)](https://docs.docker.com/compose/)
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/nitin27may/e-commerce-agents)
+[![Live preview](https://img.shields.io/badge/Live%20preview-recorded%20answers-1e40af.svg)](https://nitinksingh.com/e-commerce-agents/preview/)
+[<img src="https://github.com/codespaces/badge.svg" alt="Open in GitHub Codespaces" height="20">](https://codespaces.new/nitin27may/e-commerce-agents)
 
-**A complete multi-agent e-commerce application built on [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) (MAF), in Python and .NET, and a 34-chapter course that teaches every piece of it.**
+<p align="center">
+  <img src="docs/images/demo.gif" alt="Screen recording of the chat: a question about noise-cancelling headphones answered with product cards, the orchestration mode switched to pre-purchase research with its graph animating, then a return that pauses at an Awaiting staff review card" width="820"/>
+</p>
+<p align="center"><em>Recorded on the no-key stack (recorded model responses): ask, get cards, switch mode, watch the graph, a return waits for a person. Run it yourself with <code>./scripts/dev.sh --no-key</code>.</em></p>
+
+**A complete multi-agent e-commerce application built on [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) (MAF), in Python and .NET, and a 38-chapter course that teaches every piece of it.**
 
 This is a working application, end to end, not a sample that stops at "the agent replied". A
 storefront with sign-in and roles sits in front of an orchestrator and five specialist agents that
@@ -21,7 +27,7 @@ agent and builds up to it one mechanism at a time; chapter 1 runs with no API ke
 
 ![Chat with a side-by-side product comparison, the Compare button and the orchestration mode switcher](docs/images/flow-product-search.png)
 
-### What is in the box
+## What is in the box
 
 | Layer | What runs |
 |---|---|
@@ -31,11 +37,11 @@ agent and builds up to it one mechanism at a time; chapter 1 runs with no API ke
 | **Data** | PostgreSQL with pgvector for semantic search, numbered migrations, a deterministic seeder, Redis for rate limiting |
 | **Identity** | JWT sign-in, five roles (customer, power user, seller, support, admin), identity carried to every agent and tool |
 | **Safety** | Policy-routed human approval, checkpoints and resume, guardrails, grounding checks, idempotency on money-moving actions |
-| **Quality** | An eval suite that replays without a key in CI, a red-team set, more than 30 CI checks per pull request |
+| **Quality** | An eval suite that replays without a key in CI, a red-team set, dozens of CI checks per pull request |
 | **Operations** | OpenTelemetry into the Aspire dashboard, per-request token and cost tracking, Docker Compose with prebuilt images, a draft Azure Container Apps deployment |
 | **Two backends** | All of the above in Python, and in .NET / C# behind the same frontend and database, with the differences listed in the [parity matrix](docs/parity-matrix.md) |
 
-### One orchestrator, five orchestration modes
+## One orchestrator, five orchestration modes
 
 Most agent samples show one orchestration pattern in isolation. Here the orchestrator runs the same
 request through any of five, selected per request in the chat box, so "which one should I use?" has a measured answer:
@@ -54,7 +60,7 @@ The two workflow modes call no model, so they are doing less work, not the same 
 Method, token and cost figures: [orchestration benchmark](docs/orchestration-benchmark.md)
 (gpt-4.1, 40 requests). How each pattern works: [orchestration patterns](docs/concepts/06-orchestration-patterns.md).
 
-### Learn
+## Learn
 
 New to MAF? Run chapter 1 now — no API key, no Docker:
 
@@ -68,7 +74,7 @@ It replays a recorded model response, so it works offline. From there, follow a
 multi-agent orchestration, production concerns — or the short route in the
 [course README](./tutorials/README.md).
 
-### Run it
+## Run it
 
 ```bash
 git clone https://github.com/nitin27may/e-commerce-agents.git
@@ -81,10 +87,10 @@ Then open **http://localhost:3000** and sign in as `alice.johnson@gmail.com` / `
 Docker is the only requirement — no Python, .NET or Node needed.
 
 `--demo` pulls the eleven released images from GitHub Container Registry instead of building them,
-which is the difference between roughly **one minute and roughly twelve**. Images are published for
+which is the difference between a first run of about a minute and one of about twelve (a rough figure; it depends on your network and machine). Images are published for
 `linux/amd64` and `linux/arm64`, so Apple Silicon runs natively.
 
-**No API key?** `./scripts/dev.sh --demo --no-key` (PowerShell: `./scripts/dev.ps1 -Demo -NoKey`) starts the whole stack with no model behind it: browsing, search, cart and checkout work, and chat replays recorded answers for the suggested prompts. Those recordings are not in the released images yet, so until they are, chat prompts report "not recorded"; the tutorials are the fully keyless path today. A local model through Ollama also needs no paid key: see [docs/quick-start.md](docs/quick-start.md#run-without-a-paid-api-key).
+**No API key?** `./scripts/dev.sh --demo --no-key` (PowerShell: `./scripts/dev.ps1 -Demo -NoKey`) starts the whole stack with no model behind it: browsing, search, cart and checkout work, and chat replays recorded answers for the suggested prompts. The recordings ship in images built after this change; the released 1.4.0 images have none and report chat prompts as "not recorded". A local model through Ollama also needs no paid key: see [docs/quick-start.md](docs/quick-start.md#run-without-a-paid-api-key).
 
 **Building from source instead** — drop the flag. This is the contributor path, and the one to use
 if you have changed any code:
@@ -103,19 +109,23 @@ Copy-Item .env.minimal .env    # then set OPENAI_API_KEY in .env
 [WSL2](https://learn.microsoft.com/windows/wsl/install) still gives the best experience, and
 everything above works unchanged inside it.
 
-**In the browser, no install.** The Codespaces badge above opens a ready environment — Python 3.12 + `uv`,
-Node 22 + `pnpm`, the .NET 10 SDK and Docker-in-Docker — and installs the dependencies for you
-([`.devcontainer/`](./.devcontainer/)). It needs **no secrets**: `LLM_PROVIDER=replay` is set, so the
-tutorials, the Python tests and the keyless eval suite run from recorded responses. Ports 3000 (web) and
-18888 (Aspire dashboard) are forwarded. For live model calls, add `OPENAI_API_KEY` as a Codespaces secret and
-clear `LLM_PROVIDER`; for the full stack, `./scripts/dev.sh --infra-only` works inside it.
+**In the browser, no install.** The Codespaces badge above opens a ready environment (Python 3.12 + `uv`, Node 26 +
+`pnpm`, the .NET 10 SDK, Docker-in-Docker) and installs the dependencies ([`.devcontainer/`](./.devcontainer/)).
+The creation screen asks for optional model-key secrets (`OPENAI_API_KEY`, or the Azure OpenAI endpoint, key and
+deployment, or an OpenAI-compatible `LLM_BASE_URL`); the provider is chosen from whichever you supply. With none,
+it runs key-free on recorded responses: the tutorials, Python tests and keyless evals work, and chat says a prompt
+was not recorded. Add secrets under Settings, Secrets and variables, Codespaces (or your personal ones at
+github.com/settings/codespaces, scoped to this repo); after the Codespace exists, add the secret and run
+**Codespaces: Rebuild Container**. The stack is not started for you: run `./scripts/dev.sh` in the terminal, and
+check the setup with `uv run --project agents/python python -m scripts.doctor`. Details and gotchas:
+[Quick Start](docs/quick-start.md#codespaces), [Configuration](docs/configuration.md#codespaces).
 
 Full detail — the .NET stack, WSL2 notes, running with no API key, and what to do when something
 breaks: the **[Quick Start page](https://nitinksingh.com/e-commerce-agents/getting-started/quick-start.html)**.
 
 **Generative UI, not raw JSON.** The chat surface never dumps a tool result as text or a code block. Every agent response is inspected by shape and rendered as the right interactive component: a single detailed result becomes a card, a list becomes a table, a distribution or trend becomes a chart, a status becomes a tone-coded badge — see it live in the [screens gallery](https://nitinksingh.com/e-commerce-agents/getting-started/demo-guide.html) (review sentiment: rating distribution + 6-month trend, rendered from the same data an LLM would otherwise only describe in prose).
 
-**Full documentation:** **[nitinksingh.com/e-commerce-agents](https://nitinksingh.com/e-commerce-agents/)** — the concepts library, all 34 tutorial chapters, and the architecture reference, with every diagram rendered.
+**Full documentation:** **[nitinksingh.com/e-commerce-agents](https://nitinksingh.com/e-commerce-agents/)** — the concepts library, all 38 tutorial chapters, and the architecture reference, with every diagram rendered.
 
 Companion demo repo for the AI article series on [nitinksingh.com](https://nitinksingh.com):
 **[MAF v1: Putting It All Together](https://nitinksingh.com/posts/maf-v1-21-putting-it-all-together/)**
@@ -130,7 +140,7 @@ Companion demo repo for the AI article series on [nitinksingh.com](https://nitin
 
 | I want to... | Go here |
 |---|---|
-| **Learn MAF step by step** — start with no key | [tutorials/README.md](./tutorials/README.md) — 34 chapters; [run chapter 1](#learn) now |
+| **Learn MAF step by step** — start with no key | [tutorials/README.md](./tutorials/README.md) — 38 chapters; [run chapter 1](#learn) now |
 | **Just run it** | [Run it](#run-it) above — Docker, one command |
 | **Choose an orchestration pattern** | [The five modes](#one-orchestrator-five-orchestration-modes) · [benchmark](docs/orchestration-benchmark.md) · [orchestration patterns](docs/concepts/06-orchestration-patterns.md) |
 | Run the .NET backend, or Windows, or with no API key | [Quick Start](https://nitinksingh.com/e-commerce-agents/getting-started/quick-start.html) |
@@ -141,6 +151,7 @@ Companion demo repo for the AI article series on [nitinksingh.com](https://nitin
 | Understand how the agents work / add a new one | [Architecture](docs/architecture.md) · [Adding an Agent](docs/adding-an-agent.md) |
 | Use the MCP server | [MCP Integration](docs/mcp-integration.md) |
 | See what shipped and what is next | [Roadmap](https://nitinksingh.com/e-commerce-agents/getting-started/roadmap.html) · [CHANGELOG](CHANGELOG.md) |
+| Look at the UI right now, nothing to install | [Live preview](https://nitinksingh.com/e-commerce-agents/preview/) (recorded answers, [how it works](docs/preview.md)) |
 | See the generative UI, test users and scenarios to try | [Demo guide](https://nitinksingh.com/e-commerce-agents/getting-started/demo-guide.html) |
 
 ---
@@ -231,12 +242,12 @@ graph TB
     style AZ fill:#fbbf24,stroke:#f59e0b,color:#78350f
 ```
 
-Six agents — five specialists behind one orchestrator, which coordinates them in any of the [five modes](#one-orchestrator-five-orchestration-modes) — over A2A (1.0 JSON-RPC and the legacy HTTP wire, [docs/a2a.md](docs/a2a.md)), with the same schema and the
+Six agents — five specialists behind one orchestrator, which coordinates them in any of the [five modes](#one-orchestrator-five-orchestration-modes); an opt-in sixth specialist, merchant-ops (Python only, port 8086), is off by default — over A2A (1.0 JSON-RPC and the legacy HTTP wire, [docs/a2a.md](docs/a2a.md)), with the same schema and the
 same frontend for either backend. Full detail — request flow, agent internals, the database schema
 and the API surface — is in **[Architecture](https://nitinksingh.com/e-commerce-agents/architecture/)**.
 
 **Pick your stack:** [`agents/python/`](./agents/python/) or [`agents/dotnet/`](./agents/dotnet/) —
-switch with `./scripts/dev.sh --dotnet`. Parity is checked by a dual-backend test gate you run locally (`scripts/e2e-both-stacks.sh`; it is not in CI yet), and
+switch with `./scripts/dev.sh --dotnet`. Parity is checked in CI by a keyless gate that boots both stacks under replay (`.github/workflows/stack-parity.yml`); the live dual-backend Playwright suite (`scripts/e2e-both-stacks.sh`) still runs locally. And
 [`docs/parity-matrix.md`](./docs/parity-matrix.md) lists the remaining differences row by row.
 
 ---
@@ -276,7 +287,7 @@ only on the site.
 | Section | What's in it |
 |---------|--------------|
 | **[Concepts](https://nitinksingh.com/e-commerce-agents/concepts/)** | 14 pages for readers new to agents — what an agent is, the agentic loop, tools, harnesses, why multi-agent, orchestration patterns, graphs, state and memory, grounding, guardrails, HITL, evaluation, observability and cost, production concerns |
-| **[Tutorials](https://nitinksingh.com/e-commerce-agents/tutorials/)** | 34 chapters. Every chapter that ships code ships both Python and .NET, and every one is gated in CI — the tests replay fixtures (Python) or drive a scripted client (.NET), so the whole suite runs with no key and no network |
+| **[Tutorials](https://nitinksingh.com/e-commerce-agents/tutorials/)** | 38 chapters. Chapters 00 to 32 ship Python and .NET (chapter 16's .NET side is a status stub and 20b is Python only); chapters 33 to 36 (injection and red team, structured output, memory, model providers) are Python only. Every chapter is gated in CI — the tests replay fixtures (Python) or drive a scripted client (.NET), so the whole suite runs with no key and no network |
 | **[Architecture](https://nitinksingh.com/e-commerce-agents/architecture/)** | [System design](docs/architecture.md) · [agent flows](docs/agent-flows.md) · [database schema](docs/database-schema.md) · [API reference](docs/api-reference.md) · [frontend](docs/frontend.md) · [workflows](docs/workflows/README.md) |
 | **[Guides](https://nitinksingh.com/e-commerce-agents/guides/)** | [Adding an agent](docs/adding-an-agent.md) · [A2A 1.0](docs/a2a.md) · [approvals](docs/approvals.md) · [merchant proposals](docs/merchant-proposals.md) · [event autonomy](docs/event-autonomy.md) · [return lifecycle](docs/return-lifecycle.md) · [DevUI](docs/devui.md) · [MCP integration](docs/mcp-integration.md) · [telemetry](docs/telemetry.md) · [security](docs/security-guide.md) · [agent quality and evals](docs/agent-quality.md) · [MAF best practices](docs/maf-best-practices.md) · [releasing](docs/releasing.md) |
 | **[Getting Started](https://nitinksingh.com/e-commerce-agents/getting-started/)** | [Quick start](docs/quick-start.md) · [configuration](docs/configuration.md) · [deployment](docs/deployment.md) · [troubleshooting](docs/troubleshooting.md) |
@@ -315,8 +326,8 @@ checkboxes and the reasoning for the order, is on the
 
 | Next | What it is |
 |---|---|
-| **Azure and Microsoft Foundry** | A Container Apps deployment is written and checked offline ([Deploy to Azure](#deploy-to-azure)) but has not yet run against a real subscription; that first deploy is next. After it: the same six agents in two more topologies (Foundry as model provider, Foundry Hosted Agents), with what each one costs you |
-| **Finish the gates** | The dual-backend parity suite runs locally but not in CI, and the .NET eval suite needs its baselines. Every parity claim this repo makes rests on a gate nobody runs automatically |
+| **Azure and Microsoft Foundry** | A Container Apps deployment is written and checked offline ([Deploy to Azure](#deploy-to-azure)) but has not yet run against a real subscription. It comes last, after the evaluation and documentation work is merged. After it: Foundry features that need an Azure credential (hosted agents, evaluators logging to a project) and the measured cost of each topology. The .NET 11 move is a separate, later change |
+| **Finish the gates** | The keyless parity gate runs in CI, but it covers only turns that call no model. A model-calling comparison across the two stacks needs a key, and the .NET eval suite still needs its baselines |
 | **Retrieval and tooling** | A typed filter DSL for `search_products`, the two MCP servers published to PyPI, and prompt caching — now measurable, because the cost counter ships |
 
 No third backend is planned. The roadmap also records what is **deliberately not** planned, and why, so those are not mistaken

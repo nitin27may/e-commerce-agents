@@ -21,6 +21,7 @@ from shared.a2a_server import build_agent_card
 from shared.guardrails.roles import available_to_least_privileged, required_roles
 
 SPECIALISTS = [name for name in AGENT_FACTORIES if name != "orchestrator"]
+SELLER_ONLY_SPECIALISTS = {"merchant-ops"}
 
 
 @pytest.fixture
@@ -60,7 +61,8 @@ def test_a_real_specialists_card_hides_every_tool_customers_may_not_call(name: s
     card = build_agent_card(agent=agent, agent_name=name, description="d", base_url="http://x")
     advertised = {s.id for s in card.skills}
 
-    assert customer, f"{name} has no customer tool at all"
+    # merchant-ops is for sellers and admins alone: every tool is role-restricted, so its public card has no skill.
+    assert customer or name in SELLER_ONLY_SPECIALISTS, f"{name} has no customer tool at all"
     assert advertised == customer
     assert not advertised & restricted
     serialized = card.SerializeToString().decode("utf-8", errors="ignore")

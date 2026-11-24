@@ -3,6 +3,7 @@ using ECommerceAgents.ProductDiscovery.Tools;
 using ECommerceAgents.Shared.Agents;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Data;
+using ECommerceAgents.Shared.Grounding;
 using ECommerceAgents.TestFixtures;
 using FluentAssertions;
 using Npgsql;
@@ -129,6 +130,22 @@ public sealed class ProductToolsTests : IAsyncLifetime
     // no stemming ("noise cancellation" never substring-matched "noise
     // cancelling"), and one absent term emptied the whole result set. Ordering
     // was rating-only, so match quality never influenced the ranking.
+
+    /// <summary>The ledger over the tools' own return values (a list of records, then one detail record).</summary>
+    [Fact]
+    public async Task TheGroundingLedger_RecordsWhatSearchProductsAndGetProductDetailsReturn()
+    {
+        var results = await _tools.SearchProducts();
+        var ledger = new GroundingLedger();
+
+        ledger.Record(results);
+        ledger.Record(await _tools.GetProductDetails(results[0].Id));
+
+        ledger.Products.Should().HaveCount(results.Count);
+        ledger.Products[results[0].Id].Price.Should().Be(results[0].Price);
+        ledger.Products[results[0].Id].ImageUrl.Should().Be("https://example.com/img.jpg");
+        ledger.KnownAmounts.Should().Contain(results.Select(r => r.Price));
+    }
 
     [Fact]
     public async Task SearchProducts_MatchesStemmedTerms()

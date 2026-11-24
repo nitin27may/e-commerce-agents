@@ -170,6 +170,14 @@ if ($Dotnet) {
     $ComposeArgs        = if ($NoKey) { @('compose', '-f', 'docker-compose.yml', '-f', 'docker-compose.nokey.yml') } else { @('compose') }
     $AppProfiles        = @('--profile', 'seed', '--profile', 'agents', '--profile', 'frontend')
     $RunProfiles        = @('--profile', 'agents', '--profile', 'frontend')
+    # The opt-in merchant-ops specialist (#298, Python only, :8086) has its own profile. With the environment
+    # variable MERCHANT_OPS_AGENT_ENABLED=true it is built, started and waited on; not with -NoKey (the replay
+    # overlay carries no entry for it).
+    $MerchantOpsUp = ($env:MERCHANT_OPS_AGENT_ENABLED -eq 'true') -and -not $NoKey
+    if ($MerchantOpsUp) {
+        $AppProfiles += @('--profile', 'merchant-ops')
+        $RunProfiles += @('--profile', 'merchant-ops')
+    }
     $PgDataVolumeRegex  = '_pgdata$'
     $StackName          = 'Python'
     $OtherStackProject  = 'e-commerce-agents-dotnet'
@@ -494,6 +502,14 @@ try {
 
         $demoFiles = @('-f', 'docker-compose.demo.yml')
         if ($NoKey) { $demoFiles += @('-f', 'docker-compose.nokey.yml') }
+        # The auth-server sits behind the `oauth` profile; only wanted under AUTH_MODE=oauth
+        # (set in the shell or in .env). Without it the default demo is 11 running containers (#86).
+        $demoAuthMode = $env:AUTH_MODE
+        if (-not $demoAuthMode -and (Test-Path .env)) {
+            $line = Get-Content .env | Where-Object { $_ -match '^AUTH_MODE=' } | Select-Object -Last 1
+            if ($line) { $demoAuthMode = ($line -replace '^AUTH_MODE=', '').Trim().Trim('"', "'") }
+        }
+        if ($demoAuthMode -eq 'oauth') { $demoFiles += @('--profile', 'oauth') }
 
         & docker compose @demoFiles pull
         if ($LASTEXITCODE -ne 0) {
@@ -596,6 +612,7 @@ try {
     Wait-ForHttp -Name 'Pricing & Promos'  -Url 'http://localhost:8083/ready'
     Wait-ForHttp -Name 'Review & Sentiment' -Url 'http://localhost:8084/ready'
     Wait-ForHttp -Name 'Inventory & Fulfilment' -Url 'http://localhost:8085/ready'
+    if ($MerchantOpsUp) { Wait-ForHttp -Name 'Merchant Ops' -Url 'http://localhost:8086/ready' }
     Write-Ok 'All agents are running'
 
     Wait-ForHttp -Name 'Frontend' -Url 'http://localhost:3000' -TimeoutSeconds 90

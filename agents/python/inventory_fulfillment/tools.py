@@ -10,6 +10,7 @@ from pydantic import Field
 from shared.context import current_user_email
 from shared.db import get_pool
 from shared.guardrails.roles import requires_role
+from shared.park_prechecks import NOT_SUBMITTED, precheck, valid_uuid
 
 
 @tool(name="get_restock_schedule", description="Get upcoming restock schedule for a product across all warehouses.")
@@ -345,6 +346,28 @@ async def calculate_fulfillment_plan(
             "unavailable_products": unavailable,
             "all_available": len(unavailable) == 0,
         }
+
+
+@precheck("place_backorder")
+async def _precheck_place_backorder(email: str, tool_input: dict) -> str | None:
+    """The role guard has already run. Same conditions the tool refuses on: quantity, product, stock."""
+    try:
+        quantity = int(tool_input.get("quantity", 0))
+    except (TypeError, ValueError):
+        quantity = 0
+    if quantity <= 0:
+        return f"A backorder needs a quantity greater than zero. {NOT_SUBMITTED}"
+    product_id = valid_uuid(tool_input.get("product_id"))
+    pool = get_pool()
+    product = await pool.fetchrow("SELECT id, name FROM products WHERE id = $1", product_id) if product_id else None
+    if product is None:
+        return f"I could not find that product. {NOT_SUBMITTED}"
+    stock = await pool.fetchval(
+        "SELECT COALESCE(SUM(quantity), 0) FROM warehouse_inventory WHERE product_id = $1", product_id
+    )
+    if stock > 0:
+        return f"{product['name']} is in stock ({stock} units available), so no backorder is needed. {NOT_SUBMITTED}"
+    return None
 
 
 @tool(

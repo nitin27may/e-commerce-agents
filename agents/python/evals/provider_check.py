@@ -3,16 +3,22 @@
     uv run python -m evals.provider_check                  # probe the configured provider, print, save
     uv run python -m evals.provider_check --output-json caps.json
 
-Seven probes, each one small request in the provider's own wire shape:
+Nine probes, each one small request in the provider's own wire shape:
 
 * ``tool_calling``        a tool is offered and the model calls it
 * ``parallel_tool_calls`` two independent lookups are asked for and come back as two calls in one turn
+* ``tool_result``         a tool result is sent back and the model answers from it in words
 * ``tool_choice``         a named tool is forced
 * ``streaming_tools``     a streamed response carries a tool call
 * ``json_output``         the model returns a JSON object (native JSON mode where the API has one; for
                           Anthropic, which has none, a prompted object)
 * ``context_length``      the largest composed system prompt (``config/prompts``) is accepted
+* ``temperature_param``   a ``temperature`` parameter is accepted (reasoning models often reject it)
 * ``embeddings``          the embedding endpoint answers and returns ``EMBEDDING_DIM`` numbers
+
+A chat-completions model that rejects ``max_tokens`` and wants ``max_completion_tokens`` (the gpt-5 family and
+the o-series) is retried once with the other name; the probe's detail says so. Each result carries the tokens its
+request used, so a stored check states what it cost.
 
 Three wire shapes are understood: OpenAI **chat completions** (OpenAI, Azure OpenAI, Gemini, Ollama, vLLM,
 OpenRouter, llama.cpp, LM Studio, LiteLLM), OpenAI **Responses** (``LLM_API=responses``) and Anthropic
@@ -34,6 +40,7 @@ import asyncio
 import json
 import sys
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Literal
@@ -48,6 +55,7 @@ OPENAI_BASE_URL = "https://api.openai.com/v1"
 ANTHROPIC_BASE_URL = "https://api.anthropic.com"
 ANTHROPIC_VERSION = "2023-06-01"
 LOCAL_OUTPUT_DIR = EVALS_DIR / ".local" / "provider-check"
+RESULTS_DIR = EVALS_DIR / "provider-results"
 
 _LOOKUP_TOOL = {
     "name": "lookup_order",
@@ -60,13 +68,19 @@ _LOOKUP_TOOL = {
 }
 
 
+_ARGS = {"order_id": "A-1"}
+_RESULT = '{"order_id": "A-1", "status": "shipped"}'
+
+
 class Capability(StrEnum):
     TOOL_CALLING = "tool_calling"
     PARALLEL_TOOL_CALLS = "parallel_tool_calls"
+    TOOL_RESULT = "tool_result"
     TOOL_CHOICE = "tool_choice"
     STREAMING_TOOLS = "streaming_tools"
     JSON_OUTPUT = "json_output"
     CONTEXT_LENGTH = "context_length"
+    TEMPERATURE_PARAM = "temperature_param"
     EMBEDDINGS = "embeddings"
 
 
@@ -84,6 +98,8 @@ class ProbeResult:
     capability: Capability
     status: Status
     detail: str = ""
+    tokens_in: int = 0
+    tokens_out: int = 0
 
 
 @dataclass(frozen=True)
@@ -227,6 +243,8 @@ def build_request(
     stream: bool = False,
     json_mode: bool = False,
     max_output_tokens: int = 200,
+    tool_result: bool = False,
+    temperature: float | None = None,
 ) -> dict[str, Any]:
     """One request body in the target's wire shape."""
     shape = target.shape
@@ -240,6 +258,13 @@ def build_request(
         if system:
             body["system"] = system
         body["messages"] = [{"role": "user", "content": user}]
+        if tool_result:
+            body["messages"] += [
+                {"role": "assistant", "content": [{"type": "tool_use", "id": "call_1", "name": name, "input": _ARGS}]},
+                {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "call_1", "content": _RESULT}]},
+            ]
+        if temperature is not None:
+            body["temperature"] = temperature
         if tools:
             body["tools"] = [
                 {
@@ -261,6 +286,14 @@ def build_request(
         if system:
             body["instructions"] = system
         body["input"] = user
+        if tool_result:
+            body["input"] = [
+                {"role": "user", "content": user},
+                {"type": "function_call", "call_id": "call_1", "name": name, "arguments": json.dumps(_ARGS)},
+                {"type": "function_call_output", "call_id": "call_1", "output": _RESULT},
+            ]
+        if temperature is not None:
+            body["temperature"] = temperature
         if tools:
             body["tools"] = [{"type": "function", **_LOOKUP_TOOL}]
             if tool_choice == "required":
@@ -273,12 +306,25 @@ def build_request(
             body["stream"] = True
         return body
 
-    messages: list[dict[str, str]] = []
+    messages: list[dict[str, Any]] = []
     if system:
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": user})
+    if tool_result:
+        messages += [
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {"id": "call_1", "type": "function", "function": {"name": name, "arguments": json.dumps(_ARGS)}}
+                ],
+            },
+            {"role": "tool", "tool_call_id": "call_1", "content": _RESULT},
+        ]
     body["messages"] = messages
     body["max_tokens"] = max_output_tokens
+    if temperature is not None:
+        body["temperature"] = temperature
     if tools:
         body["tools"] = [{"type": "function", "function": _LOOKUP_TOOL}]
         if tool_choice == "required":
@@ -289,6 +335,7 @@ def build_request(
         body["response_format"] = {"type": "json_object"}
     if stream:
         body["stream"] = True
+        body["stream_options"] = {"include_usage": True}
     return body
 
 
@@ -360,8 +407,83 @@ def _error_detail(response: httpx.Response) -> str:
     return f"HTTP {response.status_code}: {str(message or '').strip()[:200]}"
 
 
+def usage_tokens(shape: Shape, body: dict[str, Any]) -> tuple[int, int]:
+    """Input and output tokens a non-streamed response reports, zero when it reports none."""
+    usage = body.get("usage") if isinstance(body, dict) else None
+    if not isinstance(usage, dict):
+        return 0, 0
+    if shape is Shape.CHAT_COMPLETIONS:
+        return int(usage.get("prompt_tokens") or 0), int(usage.get("completion_tokens") or 0)
+    return int(usage.get("input_tokens") or 0), int(usage.get("output_tokens") or 0)
+
+
+def stream_usage(shape: Shape, lines: list[str]) -> tuple[int, int]:
+    """Tokens a streamed response reports: the last usage block seen (Anthropic splits it over two events)."""
+    tokens_in = tokens_out = 0
+    for line in lines:
+        if not line.startswith("data:"):
+            continue
+        try:
+            event = json.loads(line[5:].strip())
+        except ValueError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        candidates = [
+            event.get("usage"),
+            (event.get("response") or {}).get("usage"),
+            (event.get("message") or {}).get("usage"),
+        ]
+        for usage in candidates:
+            if not isinstance(usage, dict):
+                continue
+            if shape is Shape.CHAT_COMPLETIONS:
+                tokens_in = int(usage.get("prompt_tokens") or tokens_in)
+                tokens_out = int(usage.get("completion_tokens") or tokens_out)
+            else:
+                tokens_in = int(usage.get("input_tokens") or tokens_in)
+                tokens_out = int(usage.get("output_tokens") or tokens_out)
+    return tokens_in, tokens_out
+
+
+def _wants_completion_tokens(response: httpx.Response, body: dict[str, Any]) -> bool:
+    """A 400 that says this model takes ``max_completion_tokens`` instead of ``max_tokens``."""
+    return response.status_code == 400 and "max_tokens" in body and "max_completion_tokens" in response.text
+
+
+def _with_completion_tokens(body: dict[str, Any]) -> dict[str, Any]:
+    swapped = {k: v for k, v in body.items() if k != "max_tokens"}
+    swapped["max_completion_tokens"] = body["max_tokens"]
+    return swapped
+
+
+def _used_completion_tokens(response: httpx.Response) -> bool:
+    try:
+        return b"max_completion_tokens" in response.request.content
+    except (httpx.RequestNotRead, AttributeError):
+        return False
+
+
+def _note(response: httpx.Response, detail: str) -> str:
+    return f"{detail} (sent max_completion_tokens)" if _used_completion_tokens(response) else detail
+
+
+def _outcome(
+    capability: Capability, status: Status, detail: str, shape: Shape, response: httpx.Response
+) -> ProbeResult:
+    """A result carrying the tokens the response reported and the parameter-name note."""
+    try:
+        tokens_in, tokens_out = usage_tokens(shape, response.json())
+    except ValueError:
+        tokens_in = tokens_out = 0
+    return ProbeResult(capability, status, _note(response, detail), tokens_in, tokens_out)
+
+
 async def _post(client: httpx.AsyncClient, target: Target, body: dict[str, Any]) -> httpx.Response:
-    return await client.post(target.url, headers=target.headers, json=body)
+    response = await client.post(target.url, headers=target.headers, json=body)
+    if target.shape is Shape.CHAT_COMPLETIONS and _wants_completion_tokens(response, body):
+        response = await client.post(target.url, headers=target.headers, json=_with_completion_tokens(body))
+    return response
 
 
 async def probe_tool_calling(client: httpx.AsyncClient, target: Target) -> ProbeResult:
@@ -374,11 +496,11 @@ async def probe_tool_calling(client: httpx.AsyncClient, target: Target) -> Probe
     )
     response = await _post(client, target, body)
     if response.status_code >= 400:
-        return ProbeResult(Capability.TOOL_CALLING, "fail", _error_detail(response))
+        return _outcome(Capability.TOOL_CALLING, "fail", _error_detail(response), target.shape, response)
     names = tool_call_names(target.shape, response.json())
     if _LOOKUP_TOOL["name"] in names:
-        return ProbeResult(Capability.TOOL_CALLING, "pass", "called lookup_order")
-    return ProbeResult(Capability.TOOL_CALLING, "fail", "tool was offered and not called")
+        return _outcome(Capability.TOOL_CALLING, "pass", "called lookup_order", target.shape, response)
+    return _outcome(Capability.TOOL_CALLING, "fail", "tool was offered and not called", target.shape, response)
 
 
 async def probe_parallel_tool_calls(client: httpx.AsyncClient, target: Target) -> ProbeResult:
@@ -391,54 +513,91 @@ async def probe_parallel_tool_calls(client: httpx.AsyncClient, target: Target) -
     )
     response = await _post(client, target, body)
     if response.status_code >= 400:
-        return ProbeResult(Capability.PARALLEL_TOOL_CALLS, "fail", _error_detail(response))
+        return _outcome(Capability.PARALLEL_TOOL_CALLS, "fail", _error_detail(response), target.shape, response)
     count = len(tool_call_names(target.shape, response.json()))
     if count >= 2:
-        return ProbeResult(Capability.PARALLEL_TOOL_CALLS, "pass", f"{count} calls in one turn")
-    return ProbeResult(Capability.PARALLEL_TOOL_CALLS, "fail", f"{count} call(s) in one turn; two were asked for")
+        return _outcome(Capability.PARALLEL_TOOL_CALLS, "pass", f"{count} calls in one turn", target.shape, response)
+    detail = f"{count} call(s) in one turn; two were asked for"
+    return _outcome(Capability.PARALLEL_TOOL_CALLS, "fail", detail, target.shape, response)
+
+
+async def probe_tool_result(client: httpx.AsyncClient, target: Target) -> ProbeResult:
+    """The second turn of every tool loop: the model is handed a tool result and must answer from it."""
+    body = build_request(
+        target,
+        user="What is the status of order A-1? Use the tool.",
+        tools=True,
+        tool_choice="auto",
+        tool_result=True,
+        max_output_tokens=200,
+    )
+    response = await _post(client, target, body)
+    if response.status_code >= 400:
+        return _outcome(Capability.TOOL_RESULT, "fail", _error_detail(response), target.shape, response)
+    data = response.json()
+    if "shipped" in response_text(target.shape, data).lower():
+        return _outcome(Capability.TOOL_RESULT, "pass", "answered from the tool result", target.shape, response)
+    if tool_call_names(target.shape, data):
+        return _outcome(
+            Capability.TOOL_RESULT, "fail", "called the tool again instead of answering", target.shape, response
+        )
+    return _outcome(Capability.TOOL_RESULT, "fail", "the answer did not use the tool result", target.shape, response)
 
 
 async def probe_tool_choice(client: httpx.AsyncClient, target: Target) -> ProbeResult:
     body = build_request(target, user="Say hello.", tools=True, tool_choice="named", max_output_tokens=200)
     response = await _post(client, target, body)
     if response.status_code >= 400:
-        return ProbeResult(Capability.TOOL_CHOICE, "fail", _error_detail(response))
+        return _outcome(Capability.TOOL_CHOICE, "fail", _error_detail(response), target.shape, response)
     if _LOOKUP_TOOL["name"] in tool_call_names(target.shape, response.json()):
-        return ProbeResult(Capability.TOOL_CHOICE, "pass", "the named tool was called")
-    return ProbeResult(Capability.TOOL_CHOICE, "fail", "a named tool was forced and not called")
+        return _outcome(Capability.TOOL_CHOICE, "pass", "the named tool was called", target.shape, response)
+    return _outcome(Capability.TOOL_CHOICE, "fail", "a named tool was forced and not called", target.shape, response)
 
 
 async def probe_streaming_tools(client: httpx.AsyncClient, target: Target) -> ProbeResult:
     body = build_request(
         target, user="What is the status of order A-1? Use the tool.", tools=True, stream=True, max_output_tokens=200
     )
-    async with client.stream("POST", target.url, headers=target.headers, json=body) as response:
-        if response.status_code >= 400:
-            await response.aread()
-            return ProbeResult(Capability.STREAMING_TOOLS, "fail", _error_detail(response))
-        lines = [line async for line in response.aiter_lines()]
+    lines: list[str] = []
+    for attempt in range(2):
+        async with client.stream("POST", target.url, headers=target.headers, json=body) as response:
+            if response.status_code >= 400:
+                await response.aread()
+                if attempt == 0 and target.shape is Shape.CHAT_COMPLETIONS and _wants_completion_tokens(response, body):
+                    body = _with_completion_tokens(body)
+                    continue
+                return ProbeResult(Capability.STREAMING_TOOLS, "fail", _error_detail(response))
+            lines = [line async for line in response.aiter_lines()]
+            note = " (sent max_completion_tokens)" if "max_completion_tokens" in body else ""
+            break
+    tokens_in, tokens_out = stream_usage(target.shape, lines)
     if stream_has_tool_call(target.shape, lines):
-        return ProbeResult(Capability.STREAMING_TOOLS, "pass", "a tool call arrived in the stream")
-    return ProbeResult(Capability.STREAMING_TOOLS, "fail", "the stream carried no tool call")
+        return ProbeResult(
+            Capability.STREAMING_TOOLS, "pass", "a tool call arrived in the stream" + note, tokens_in, tokens_out
+        )
+    return ProbeResult(
+        Capability.STREAMING_TOOLS, "fail", "the stream carried no tool call" + note, tokens_in, tokens_out
+    )
 
 
 async def probe_json_output(client: httpx.AsyncClient, target: Target) -> ProbeResult:
     prompt = 'Reply with a JSON object with one key, "ok", set to true. No other text.'
     body = build_request(target, user=prompt, json_mode=target.shape is not Shape.ANTHROPIC, max_output_tokens=100)
     response = await _post(client, target, body)
+    shape = target.shape
     if response.status_code >= 400:
-        return ProbeResult(Capability.JSON_OUTPUT, "fail", _error_detail(response))
-    text = response_text(target.shape, response.json()).strip()
+        return _outcome(Capability.JSON_OUTPUT, "fail", _error_detail(response), shape, response)
+    text = response_text(shape, response.json()).strip()
     if text.startswith("```"):
         text = text.strip("`").removeprefix("json").strip()
     try:
         parsed = json.loads(text)
     except ValueError:
-        return ProbeResult(Capability.JSON_OUTPUT, "fail", "the reply was not JSON")
+        return _outcome(Capability.JSON_OUTPUT, "fail", "the reply was not JSON", shape, response)
     if not isinstance(parsed, dict):
-        return ProbeResult(Capability.JSON_OUTPUT, "fail", "the reply was JSON but not an object")
-    how = "prompted (this API has no JSON mode)" if target.shape is Shape.ANTHROPIC else "native JSON mode"
-    return ProbeResult(Capability.JSON_OUTPUT, "pass", how)
+        return _outcome(Capability.JSON_OUTPUT, "fail", "the reply was JSON but not an object", shape, response)
+    how = "prompted (this API has no JSON mode)" if shape is Shape.ANTHROPIC else "native JSON mode"
+    return _outcome(Capability.JSON_OUTPUT, "pass", how, shape, response)
 
 
 def _largest_prompt_text() -> tuple[str, str, str]:
@@ -470,8 +629,19 @@ async def probe_context_length(client: httpx.AsyncClient, target: Target) -> Pro
     response = await _post(client, target, body)
     label = f"{name}/{role} system prompt, about {tokens:,} tokens"
     if response.status_code >= 400:
-        return ProbeResult(Capability.CONTEXT_LENGTH, "fail", f"{label}: {_error_detail(response)}")
-    return ProbeResult(Capability.CONTEXT_LENGTH, "pass", f"accepted the {label}")
+        return _outcome(
+            Capability.CONTEXT_LENGTH, "fail", f"{label}: {_error_detail(response)}", target.shape, response
+        )
+    return _outcome(Capability.CONTEXT_LENGTH, "pass", f"accepted the {label}", target.shape, response)
+
+
+async def probe_temperature_param(client: httpx.AsyncClient, target: Target) -> ProbeResult:
+    """Whether ``temperature`` is accepted. The stack sends ``LLM_TEMPERATURE`` unless it is left empty."""
+    body = build_request(target, user="Reply with the single word OK.", temperature=0.2, max_output_tokens=16)
+    response = await _post(client, target, body)
+    if response.status_code >= 400:
+        return _outcome(Capability.TEMPERATURE_PARAM, "fail", _error_detail(response), target.shape, response)
+    return _outcome(Capability.TEMPERATURE_PARAM, "pass", "temperature 0.2 accepted", target.shape, response)
 
 
 async def probe_embeddings(client: httpx.AsyncClient, cfg: Any) -> ProbeResult:
@@ -487,23 +657,31 @@ async def probe_embeddings(client: httpx.AsyncClient, cfg: Any) -> ProbeResult:
     if response.status_code >= 400:
         return ProbeResult(Capability.EMBEDDINGS, "fail", _error_detail(response))
     try:
-        vector = response.json()["data"][0]["embedding"]
+        data = response.json()
+        vector = data["data"][0]["embedding"]
     except (KeyError, IndexError, TypeError, ValueError):
         return ProbeResult(Capability.EMBEDDINGS, "fail", "the response had no embedding")
+    usage = data.get("usage") or {}
+    tokens_in = int(usage.get("prompt_tokens") or 0)
     if len(vector) != target.dim:
         return ProbeResult(
-            Capability.EMBEDDINGS, "fail", f"returned {len(vector)} numbers but EMBEDDING_DIM is {target.dim}"
+            Capability.EMBEDDINGS,
+            "fail",
+            f"returned {len(vector)} numbers but EMBEDDING_DIM is {target.dim}",
+            tokens_in,
         )
-    return ProbeResult(Capability.EMBEDDINGS, "pass", f"{len(vector)} dimensions")
+    return ProbeResult(Capability.EMBEDDINGS, "pass", f"{len(vector)} dimensions", tokens_in)
 
 
 _CHAT_PROBES = (
     probe_tool_calling,
     probe_parallel_tool_calls,
+    probe_tool_result,
     probe_tool_choice,
     probe_streaming_tools,
     probe_json_output,
     probe_context_length,
+    probe_temperature_param,
 )
 
 
@@ -596,13 +774,27 @@ class CheckReport:
     shape: str
     results: list[ProbeResult] = field(default_factory=list)
     suites: list[Applicability] = field(default_factory=list)
+    date: str = field(default_factory=lambda: datetime.now(UTC).date().isoformat())
+    label: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "date": self.date,
             "provider": self.provider,
+            **({"label": self.label} if self.label else {}),
             "model": self.model,
             "shape": self.shape,
-            "capabilities": {r.capability.value: {"status": r.status, "detail": r.detail} for r in self.results},
+            "capabilities": {
+                r.capability.value: {
+                    "status": r.status,
+                    "detail": r.detail,
+                    "tokens_in": r.tokens_in,
+                    "tokens_out": r.tokens_out,
+                }
+                for r in self.results
+            },
+            "tokens_in": sum(r.tokens_in for r in self.results),
+            "tokens_out": sum(r.tokens_out for r in self.results),
             "suites": [{"suite": s.suite, "verdict": s.verdict, "reason": s.reason} for s in self.suites],
         }
 
@@ -646,9 +838,23 @@ async def check(cfg: Any, client: httpx.AsyncClient | None = None) -> CheckRepor
     )
 
 
+def result_filename(provider: str, model: str) -> str:
+    """One stored file per provider and model: ``azure__gpt-5.4-mini.json``."""
+    safe = "".join(c if c.isalnum() or c in ".-" else "_" for c in model)
+    return f"{provider}__{safe}.json"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Probe the configured model provider and list the suites that apply.")
     parser.add_argument("--output-json", help="Also write the result here (always saved under evals/.local/)")
+    parser.add_argument(
+        "--label", default="", help="Name of the server behind an OpenAI-compatible URL, for example Ollama"
+    )
+    parser.add_argument(
+        "--save-result",
+        action="store_true",
+        help="Also store the result under evals/provider-results/ (committed; the docs table is built from it)",
+    )
     args = parser.parse_args(argv)
 
     from shared.config import settings
@@ -658,6 +864,7 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         print(f"Cannot probe: {exc}", file=sys.stderr)
         return 2
+    report.label = args.label
     print(format_report(report))
 
     payload = json.dumps(report.to_dict(), indent=2) + "\n"
@@ -666,6 +873,11 @@ def main(argv: list[str] | None = None) -> int:
     local.write_text(payload)
     if args.output_json:
         Path(args.output_json).write_text(payload)
+    if args.save_result:
+        stored = RESULTS_DIR / result_filename(report.provider, report.model)
+        stored.parent.mkdir(parents=True, exist_ok=True)
+        stored.write_text(payload)
+        print(f"  Stored {stored.relative_to(EVALS_DIR)}")
     core = {Capability.TOOL_CALLING, Capability.CONTEXT_LENGTH}
     return 0 if all(r.status == "pass" for r in report.results if r.capability in core) else 1
 

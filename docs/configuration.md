@@ -170,8 +170,17 @@ brings CORS back with it.
   treats only a 401/403 from refresh as a dead session; a 429, 5xx or network error keeps the user
   signed in and surfaces a retryable error. Local Playwright runs log in repeatedly as a few accounts
   from one address, so raise both limits (e.g. 1000 and 10000) in `.env` before running them.
-- **Client address.** The orchestrator takes the entry `RATE_LIMIT_TRUSTED_PROXY_HOPS` (default 1)
-  places from the **right** of `X-Forwarded-For`; anything to its left is caller-supplied and ignored.
+- **Client address.** One derivation serves every limit keyed by address (chat, the auth ceiling and
+  per-account budget, and the unknown return-label budget), identical on both stacks. The orchestrator
+  takes the entry `RATE_LIMIT_TRUSTED_PROXY_HOPS` places from the **right** of `X-Forwarded-For`;
+  anything to its left is caller-supplied and ignored. The **code default is 0** (header ignored, the
+  TCP peer is the address: safe for a directly exposed orchestrator); the shipped compose files set 1
+  and the Bicep apps set 2. `RATE_LIMIT_TRUSTED_PROXIES` (comma-separated IPs or CIDRs, empty = no gate)
+  adds a peer gate: the header is honoured only when the TCP peer is in the list, so a caller reaching
+  the orchestrator directly cannot pick its bucket. The compose files default it to the private ranges
+  plus loopback; Bicep leaves it empty (the Container Apps ingress peer range is not pinned). A header
+  that is missing, shorter than the hop count or not an IP literal falls back to the peer, and a gate
+  that parses to nothing trusts nobody.
   The Next proxy writes that entry. **Limitation:** a Next 16 route handler cannot know the client
   address — there is no `NextRequest.ip` and the socket is not exposed; Next only fills
   `X-Forwarded-For` from the socket when the header is absent, so a browser-supplied value is
@@ -445,11 +454,12 @@ A2A and MCP calls are not model calls and carry none. See [model-providers.md](m
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `COST_BUDGET_MODE` | `observe` | `off` attaches nothing; `observe` estimates and logs each run and counts a turn past the ceiling as `cost_budget.would_block`, never refusing; `enforce` refuses the next LLM turn once a run's estimated cost passes the ceiling |
+| `COST_BUDGET_MODE` | `observe` | `off` attaches nothing; `observe` estimates and logs each run and counts a turn past the ceiling as `cost_budget.would_block` (and on the run's `usage_logs.would_block`), never refusing; `enforce` refuses the next LLM turn once the conversation turn's estimated cost passes the ceiling |
 | `COST_BUDGET_USD_PER_RUN` | `0.50` in `.env.example` and the three compose files; unset in code | USD ceiling for one run. With no value, even `enforce` refuses nothing |
 | `COST_BUDGET_TOKENS_PER_RUN` | unset (off) | Ceiling on input plus output tokens for one run, under the same mode and enforcement points as the dollar ceiling. Unset, empty or `0` means off. Both stacks |
 
-`0.50` is a demo default, large enough for a normal turn and small enough to catch a runaway
+A "run" is a conversation turn: the orchestrator's model calls and every specialist's, summed (see *Turn-level
+ceiling* below). `0.50` is a demo default, large enough for a normal turn and small enough to catch a runaway
 agent loop. The mode stays `observe`: watch `cost_budget.would_block` (see
 [telemetry.md](telemetry.md#cost-and-usage)) before choosing `enforce`. The figure is an
 estimate from the pricing file below, not a bill.
@@ -460,6 +470,70 @@ worth of tokens (a turn already in flight is never aborted, so a run can oversho
 fails closed: with a token ceiling set, a turn that reports no usage at all also stops the run,
 because the count can no longer be trusted. In `observe` it only counts `cost_budget.would_block`.
 With `COST_BUDGET_MODE=off` neither ceiling is attached.
+
+### Why `COST_BUDGET_MODE` stays `observe` (decision, #97)
+
+The default is not changed to `enforce`, and `observe` with the `0.50` demo ceiling in `.env.example` and the compose
+files is the demo-safe setting. The reasons, so the question is not reopened without new facts:
+
+- **Enforce fails closed, and most setups the repo documents have no price.** An unpriced model (Ollama, LM Studio, Gemini's
+  compatible endpoint, an Azure deployment with a custom name) has an unknown cost, so under `enforce` with a ceiling its first
+  turn stops the run. Making that the default would turn a working local or custom-deployment install into one that refuses
+  every request until the operator adds a pricing row. The token ceiling has the same property for a turn that reports no usage.
+- **The prices are not verified.** `config/pricing/models.yaml` carries `verified: false` and no `as_of` date on its rows. A
+  default that refuses turns on the strength of an unverified estimate would be a default that can be wrong in both directions.
+- **There is no measured false-positive rate.** The advice above stands: watch `cost_budget.would_block` first. Nothing in the
+  repo has collected that figure over real traffic, so no ceiling is known to be one that a normal turn stays under.
+- **The ceiling used to bound one process, not the turn. It now bounds the turn (Python).** Before, a run's cost was a
+  ContextVar per process: the orchestrator's ceiling covered its own calls and each specialist counted only its own
+  request. The ceiling now compares the turn's total (see *Turn-level ceiling* below). This prerequisite is met; the others
+  below are not.
+- **Where a hard stop is needed it is already one flag away and explicit.** The manual `full` eval job sets
+  `COST_BUDGET_TOKENS_PER_RUN` and enforces it, and an operator who has priced their model and watched `would_block` sets
+  `COST_BUDGET_MODE=enforce` with their own ceiling.
+
+What would change this decision: a pricing file with verified rows for the default models and a `would_block` rate from real
+traffic. The turn-level ceiling now exists (Python); the other two do not. #97 keeps the item open until they do.
+
+### Turn-level ceiling and `would_block` (Python, parity row 58)
+
+The ceiling is compared with the spend of the whole conversation turn, not one process's share of it.
+
+- **What travels.** On every inter-agent call the orchestrator sends `x-turn-spend: usd=<float>;tokens=<int>;unpriced=<0|1>`:
+  its own spend so far plus what earlier specialists reported on the wire (their `usage`, priced by the pricing file; a report
+  from a model with no price sets `unpriced`). It is added in `build_a2a_headers`, which both wires call, so the legacy
+  `/message:send` and `/message:stream` calls and the A2A 1.0 JSON-RPC calls carry it identically. A specialist counts it as
+  already spent before its own first model call, so its `COST_BUDGET_USD_PER_RUN` and `COST_BUDGET_TOKENS_PER_RUN` checks, and
+  the fail-closed rules for unpriced and untracked turns, now see the turn. Nothing is sent with `COST_BUDGET_MODE=off`.
+- **Why a header and not the identity token.** The signed `x-user-context` token's format is pinned across both stacks by a
+  shared test vector, and the spend is accounting, not identity. No request body or message text changes, so no replay
+  fixture key moves.
+- **Trust.** The header is read only on the two inter-agent credential paths (`AgentAuthMiddleware`: shared secret, or an
+  OAuth service token), never on a user's own request, and a malformed, negative, non-finite or absurd value is ignored (one
+  log line) rather than guessed at. It only adds to what a specialist counts, so it cannot raise a ceiling; a caller holding
+  the shared secret could send zeros to look cheaper, which it could already do far worse things with.
+- **Limits, stated.** Specialist calls that run concurrently each see the spend as it was when they started, so a turn can
+  overshoot by the other in-flight calls (an enforcing ceiling is already one model turn behind). A specialist's spend is
+  known to the orchestrator only when the specialist returns, so the orchestrator's next model turn is the first place a
+  specialist's overrun is refused. The ceiling is each process's own configured value: set the same one on every service (the
+  compose files do).
+- **`would_block` is measured per turn.** In `observe` mode each LLM turn that starts past the turn's ceiling (dollars or
+  tokens, once however many it crossed) adds one to the run's usage record, written to `usage_logs.would_block` (migration
+  0020) beside the cost columns. NULL means the run could not count (budget `off` or `enforce`, a row from before the
+  migration, or a row the .NET stack wrote); 0 means it counted and stayed under. The rate to watch before choosing `enforce`:
+
+  ```sql
+  SELECT count(*) FILTER (WHERE would_block > 0)::float / count(*) AS would_block_rate, count(*) AS runs
+  FROM usage_logs WHERE would_block IS NOT NULL AND agent_name = 'orchestrator' AND created_at > now() - interval '7 days';
+  ```
+
+  A specialist's own would-blocks (counted against the inherited spend) stay in its log line and the `cost_budget.would_block`
+  counter only: the usage wire shape is pinned on both stacks and was not extended.
+- **.NET.** Not ported (parity row 58). The .NET specialists ignore the header, so a Python orchestrator in front of .NET
+  specialists enforces only its own and reported spend, and a .NET orchestrator sends none. The design to port: read the
+  header in the specialist pipeline's auth step into the per-request context, add it to `SpecialistPipeline`'s running total
+  before the first model call, send it from `A2AProtocolClient` and the legacy client, and add `usage_logs.would_block` to
+  `UsageRecorder`.
 
 ### Model prices (`PRICING_*`)
 
@@ -512,9 +586,13 @@ through; the rest are read from `.env` by host-run Python.
 | `DOTNET_TIMEOUT_WORKER_ENABLED` | `true` | .NET orchestrator only. Runs the hosted service that applies `approval.timeout_apply` to paused returns the .NET stack opened (the Python worker skips those rows; parity row 36). `false` leaves them unprocessed. It reads the same `OUTBOX_POLL_INTERVAL_SECONDS`, `OUTBOX_BATCH_SIZE`, `OUTBOX_MAX_ATTEMPTS`, `OUTBOX_LEASE_SECONDS` and `OUTBOX_BACKOFF_*` values as the Python worker |
 | `APPROVAL_REMINDER_FRACTION` | `0.5` | The reminder fires this fraction of the way through an approval's `sla_hours` |
 | `MERCHANT_OPS_SCHEDULE_ENABLED` | `false` | The worker books and runs the daily merchant proposal run (`merchant.daily_run_due`); off, a stray row does nothing and does not reschedule. See [Merchant proposals](merchant-proposals.md#the-daily-run) |
+| `MERCHANT_OPS_AGENT_ENABLED` | `false` | Python only. Whether the **orchestrator** may route seller-operations questions to the opt-in `merchant-ops` specialist (:8086, compose profile `merchant-ops`). Off, the orchestrator drops it from its registry and its prompt and routing tool never mention it, so the recorded orchestrator fixtures are unchanged. The specialist itself is callable directly whenever it runs. See [Merchant proposals](merchant-proposals.md#the-merchant-ops-agent) |
 | `MERCHANT_OPS_RUN_HOUR_UTC` | `6` | UTC hour of that daily run |
+| `CUSTOMER_CONFIRMATION_ENABLED` | `true` | In `tool` mode a gated call (`cancel_order`, `modify_order`, `initiate_return`, `process_refund`, `place_backorder`) first asks the customer to confirm the exact action in plain words and parks for staff only after their explicit yes on a later turn. `false` parks straight away. Both stacks (`CustomerConfirmationEnabled` on .NET, parity row 56). See [Approvals](approvals.md#customer-confirmation-before-a-call-parks) |
+| `CUSTOMER_CONFIRMATION_TTL_SECONDS` | `600` | How long an unanswered confirmation stays answerable; a yes after that starts the question over |
 | `AUTONOMY_ENABLED` | `false` | The worker acts on events (`order.shipment_delayed`): inside an autonomy budget it issues a goodwill credit alone, outside it opens an approval. Off, a due event row is consumed and nothing happens. Past decisions stay listed and reversible. No model is called either way. See [Event autonomy](event-autonomy.md) |
 | `AUTONOMY_SIMULATOR_ENABLED` | `false` | Also needs `AUTONOMY_ENABLED`. Enables `POST /api/admin/events/simulate` (admin only); otherwise it is a 404. There is no production event producer, so with this off no event reaches the engine |
+| `AUTONOMY_RESPONDER_ENABLED` | `false` | Also needs `AUTONOMY_ENABLED` and a chat provider. After the engine commits a credit, the outbox worker has a model draft the customer message from the decision's facts; the draft is checked against them and a failed check or a model error falls back to the template. It never changes an amount or a tier. See [event-autonomy.md](event-autonomy.md#the-ops-responder) |
 | `HISTORY_COMPACTION_KEEP_LAST_GROUPS` | `0` | `0` is off. `N > 0` trims the rehydrated conversation history (specialist host and orchestrator `RunContext.history`) to the last N message groups, a group being a user turn with its assistant/tool messages, kept or dropped whole. Both stacks; see [Architecture](architecture.md) and parity row 43 |
 | `AUTONOMY_POLICY_PATH` | *(empty)* | Use this autonomy policy file instead of `config/policies/autonomy.yaml` (tests, demos with small caps). The budgets themselves are the file, not environment |
 
@@ -595,6 +673,89 @@ compose block works perfectly on the host and silently uses the default in every
 
 Do **not** add it to `.env.minimal`. That file exists to stay at one variable.
 
+## Codespaces
+
+The Codespaces badge in the README opens `.devcontainer/`. A Codespace has no `.env` you wrote, so model keys
+arrive as **Codespaces secrets**: GitHub injects each one as an environment variable when the container is
+created. The creation screen asks for the ones declared under `secrets` in `devcontainer.json`; all are optional.
+
+<!-- codespaces-secrets:start -->
+| Secret | Needed for |
+|---|---|
+| `OPENAI_API_KEY` | OpenAI. Also the key sent to the server when `LLM_BASE_URL` is set |
+| `AZURE_OPENAI_ENDPOINT` | Azure OpenAI, together with `AZURE_OPENAI_KEY` |
+| `AZURE_OPENAI_KEY` | Azure OpenAI, together with `AZURE_OPENAI_ENDPOINT` |
+| `AZURE_OPENAI_DEPLOYMENT` | Azure OpenAI: the chat deployment name |
+| `LLM_BASE_URL` | An OpenAI-compatible server (OpenRouter, vLLM, a gateway) reachable from the internet |
+| `LLM_MODEL` | Optional model name for OpenAI or the compatible server; empty keeps the default |
+<!-- codespaces-secrets:end -->
+
+There is no separate `LLM_API_KEY`: the compatible-server path reads `OPENAI_API_KEY`, as everywhere else.
+
+**How the provider is chosen.** `.devcontainer/postCreate.sh` looks at which of those are present and writes
+`LLM_PROVIDER` into `.env` (never a key; compose and the host-run Python read keys from the environment, and the
+shell beats `.env` in both):
+
+| Present | `LLM_PROVIDER` |
+|---|---|
+| `AZURE_OPENAI_ENDPOINT` and `AZURE_OPENAI_KEY` | `azure` |
+| `LLM_BASE_URL` | `openai` (the compatible server) |
+| `OPENAI_API_KEY` | `openai` |
+| none | `replay`, with `EMBEDDING_PROVIDER=replay` |
+
+`postCreate.sh` runs again on every rebuild and re-derives those lines, as long as the first line of `.env` is the
+marker comment it wrote. Delete that line to take the file over; it is then never touched.
+
+**Adding secrets.** Either way, scope it to this repository:
+
+- Repository secrets, if you own the repo: Settings, Secrets and variables, Codespaces.
+- Personal secrets, for a fork or someone else's repo: <https://github.com/settings/codespaces>, then New secret,
+  and choose the repository under Repository access.
+
+Secrets are read when the container is created. **To add or change one after the Codespace exists**, add it,
+then run the command palette entry **Codespaces: Rebuild Container** (a reload is not enough), and
+`postCreate.sh` picks the new provider up. The rebuild keeps your files under `/workspaces`.
+
+**Check it.** Run the doctor in a terminal; it prints each key as `set` or `empty`, never the value:
+
+```bash
+uv run --project agents/python python -m scripts.doctor
+```
+
+Key-free (excerpt of a real run, from a checkout with the provider set through the environment; in a Codespace the
+source column reads `.env` for `LLM_PROVIDER`):
+
+```text
+  LLM_PROVIDER                replay   [shell]
+  OPENAI_API_KEY              empty   [default]
+  EMBEDDING_PROVIDER          replay   [shell]
+  [SKIP] model.endpoint: replay provider: no endpoint
+  [INFO] pricing: replay calls no model; nothing to price
+```
+
+With `OPENAI_API_KEY` supplied (a deliberately invalid value, to show the failure form and that the key is not echoed):
+
+```text
+  LLM_PROVIDER                openai   [shell]
+  OPENAI_API_KEY              set   [shell]
+  [FAIL] model.endpoint: reachable but the credentials were rejected (HTTP 401)
+```
+
+With Azure (a placeholder host, so the endpoint is unreachable; the key is again only `set`):
+
+```text
+  LLM_PROVIDER                azure   [shell]
+  AZURE_OPENAI_KEY            set   [shell]
+  [FAIL] model.endpoint: cannot reach https://example.invalid/openai/models (ConnectError)
+```
+
+A valid key turns that line into `[OK  ] model.endpoint`; that exact line has not been captured here, since no key
+was used. `database` and `redis` report `FAIL` until `./scripts/dev.sh` has started the stack, which is expected
+before the first run.
+
+No one has yet opened this in a real Codespace. The Gotchas in [Quick Start](quick-start.md#codespaces) list what
+is unconfirmed.
+
 ## What must never go in `.env`
 
 `.env` is gitignored, but it is still a plaintext file on a development machine. Production secrets
@@ -604,6 +765,13 @@ belong in a secret manager — Key Vault, or your platform's equivalent — inje
 `development`, and warns loudly even when it is. The placeholders shipped in `.env.example` are
 explicitly rejected outside development, so copying it verbatim into a deployed environment cannot
 work by accident.
+
+## Gotchas
+
+- **Precedence:** a variable you export beats a run profile, which beats `.env`.
+- **Containers read the mounted pricing directory** (`/pricing`, read-only), so a price edit or an overrides file under it takes effect on restart; `PRICING_OVERRIDES_FILE` must be a path under `/pricing`, not a host path.
+- **Gpt-5.x rejects `temperature`:** set `LLM_TEMPERATURE=` empty to omit it on both stacks.
+- **Embeddings dimension is a database property.** Changing `EMBEDDING_DIM` needs `scripts/reset_embeddings.py`, which discards stored vectors.
 
 ## Related
 

@@ -18,7 +18,8 @@ On Windows PowerShell, the last two lines are `Copy-Item .env.minimal .env` (or
 
 The first run takes about a minute. It pulls the eleven released images, seeds the database, starts
 everything, and waits until the orchestrator and frontend answer before printing the summary.
-Nothing is compiled.
+Nothing is compiled. The default demo runs eleven containers (plus the one-shot seeder); the OAuth
+auth-server starts only with `AUTH_MODE=oauth`, which `dev.sh --demo` turns into `--profile oauth` for you.
 
 Then open <http://localhost:3000> and sign in as `alice.johnson@gmail.com` / `customer123`.
 
@@ -247,8 +248,8 @@ It binds the same ports as compose, so stop that first. Details and caveats are 
 compose file and skips the key check. It hardcodes `LLM_PROVIDER=replay`, the replay fixtures path and
 the demo-tour settings, so a `.env` or exported variable cannot change what a recorded answer was
 keyed on. Only the suggested prompts in the chat get an answer; anything else is reported in the chat
-as not recorded. The recordings are not in the released images yet, so today every chat prompt is
-reported that way ([demo guide](demo-guide.md#no-key-mode)). Browsing, search, the cart and checkout never call a model and work normally.
+as not recorded ([demo guide](demo-guide.md#no-key-mode)). The recordings ship in the images built
+after this change; an older released image has none and reports every chat prompt that way. Browsing, search, the cart and checkout never call a model and work normally.
 Python stack only. Use `--clean` when you start it again: re-seeding an already-seeded database makes
 some recorded answers miss.
 
@@ -350,6 +351,56 @@ uv run --project agents/python python -m scripts.generate_embeddings
 > is why `generate_embeddings` is the step that fills the table. Details:
 > [Configuration](configuration.md#embeddings-are-configured-separately).
 
+## Codespaces
+
+No install at all: click the **Open in GitHub Codespaces** badge in the [README](../README.md). The creation screen
+asks for optional secrets (the model keys), then builds the container and installs the dependencies. The
+Codespace does **not** start the stack for you; in its terminal run:
+
+```bash
+./scripts/dev.sh                  # from source; add --demo to pull the prebuilt images instead
+```
+
+Port 3000 (web) opens in a browser tab when it comes up; 18888 is the Aspire dashboard. The orchestrator on 8080
+is not forwarded, because the browser only talks to the web app's own address and Next passes requests on inside
+the container network.
+
+**Which model it uses.** The container picks the provider from the secrets present: Azure endpoint plus key, else
+`LLM_BASE_URL`, else `OPENAI_API_KEY`, else key-free. Names, how to add them, and how to add one after the
+Codespace exists are in [Configuration: Codespaces](configuration.md#codespaces). Short version: add the secret
+(repository secrets under Settings, Secrets and variables, Codespaces, or your personal ones at
+<https://github.com/settings/codespaces>, scoped to this repository), then run **Codespaces: Rebuild Container**.
+Verify with:
+
+```bash
+uv run --project agents/python python -m scripts.doctor
+```
+
+**With no key.** The container selects `LLM_PROVIDER=replay`. Browsing, search, cart and checkout work, as do the
+tutorials, the Python tests and the keyless eval suite. Chat answers only the recorded demo prompts, and the
+recordings are not in the images yet, so every chat prompt currently answers that it was not recorded
+(see [Run without a paid API key](#run-without-a-paid-api-key)). Add a key to get real answers.
+
+**Cost.** Codespaces usage is billed to your own GitHub account against its included free quota, and model calls
+are billed by your provider. GitHub documents the current allowance and prices:
+<https://docs.github.com/en/billing/managing-billing-for-your-products/about-billing-for-github-codespaces>.
+This project sets a 4 CPU, 8 GB minimum machine; stop the Codespace when you are done.
+
+**Gotchas**
+
+- A secret is read when the container is created. Adding it later does nothing until you rebuild the container.
+- Do not export `LLM_PROVIDER` in your shell to change provider: a shell value beats `.env` in docker compose.
+  Edit `.env` (delete its first line so the rebuild stops managing it) or add the secrets and rebuild.
+- `LLM_BASE_URL` must be reachable from GitHub's cloud. `http://localhost:11434` is your laptop, not the Codespace,
+  so a local Ollama does not work this way.
+- The compatible-server path uses `OPENAI_API_KEY` as its key; there is no `LLM_API_KEY`. If the server has no
+  `/embeddings` route, set the `EMBEDDING_*` variables in `.env` (see [Configuration](configuration.md#embeddings-are-configured-separately)).
+- Docker-in-Docker, the full stack and the web UI through the forwarded 3000 address have not been run in a real
+  Codespace. The same goes for the pnpm 10.15.0 pin and the .NET 10 feature inside GitHub's builder. A CI job builds
+  the container and runs the setup step on every change under `.devcontainer/`, which covers the build and the
+  toolchain but not the running stack.
+- Never paste a key into `.env` in a Codespace you share, or commit it. Use secrets.
+
 ## Other commands
 
 ```bash
@@ -378,6 +429,6 @@ The two most common:
 ## Where to go next
 
 - [Concepts](./concepts/) — what an agent is, why more than one, what a graph means here
-- [Tutorials](../tutorials/) — 34 chapters, Python and .NET; every chapter's tests run with no key on recorded replay fixtures, and a key is only needed for live runs
+- [Tutorials](../tutorials/) — 38 chapters, Python and .NET (the last four Python only); every chapter's tests run with no key on recorded replay fixtures, and a key is only needed for live runs
 - [Architecture](./architecture.md) — how the whole system fits together
 - [Deployment](./deployment.md) — configuration reference, profiles, environment variables

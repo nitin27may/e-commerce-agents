@@ -200,6 +200,7 @@ graph TB
 | **Pricing & Promotions** | 8083 | `pricing_promotions/` | `validate_coupon`, `optimize_cart`, `get_active_deals`, `check_bundle_eligibility`, `get_loyalty_tier`, `calculate_loyalty_discount` |
 | **Review & Sentiment** | 8084 | `review_sentiment/` | `get_product_reviews`, `analyze_sentiment`, `get_sentiment_by_topic`, `get_sentiment_trend`, `detect_fake_reviews`, `compare_product_reviews` |
 | **Inventory & Fulfillment** | 8085 | `inventory_fulfillment/` | `check_stock`, `get_warehouse_availability`, `get_restock_schedule`, `estimate_shipping`, `compare_carriers`, `calculate_fulfillment_plan`, `place_backorder` |
+| **Merchant Ops** (opt-in, Python only) | 8086 | `merchant_ops/` | `find_my_product`, `list_my_proposals`, `get_proposal_details`, `triage_product_reviews`, `list_reviews_needing_attention`, `draft_review_response`, `assess_review_text` (all read-only; seller or admin). Reachable from the orchestrator only with `MERCHANT_OPS_AGENT_ENABLED`; see [Merchant proposals](merchant-proposals.md#the-merchant-ops-agent) |
 
 ---
 
@@ -553,7 +554,7 @@ The caller authenticates with `X-Agent-Secret` and says which user the call is f
 
 The orchestrator forwards the last 10 conversation turns (each truncated to 500 characters) in `history`. This gives specialists enough context for follow-up questions without unbounded payload growth.
 
-History compaction (B-15): the history a specialist rehydrates from Postgres, and the orchestrator's own
+History compaction: the history a specialist rehydrates from Postgres, and the orchestrator's own
 `RunContext.history`, is capped at the last 50 rows. With `HISTORY_COMPACTION_KEEP_LAST_GROUPS=N` (default `0`, off)
 both are further trimmed to the last N message groups, where a group is a user turn with the assistant and tool
 messages that follow it. A group is kept or dropped whole, so a tool result never loses its call. Off, the request

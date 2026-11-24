@@ -26,8 +26,7 @@ Specialist Agent (MAF)
   → PostgreSQL
 ```
 
-The agent's behavior — prompts, routing, middleware, guardrails — is identical in both modes.
-Only the data access layer changes.
+The agent's prompts, routing, middleware and guardrails are the same in both modes. Only the data access layer changes, and each MCP tool is a twin of a native tool: same name, same description, same parameter schema, same query and ranking, same result fields. See *Native versus MCP, measured*.
 
 ## MCP Servers
 
@@ -187,6 +186,47 @@ single-worker server tries to fetch its own JWKS from within its own request han
 
 Both MCP servers have no auth surface at all. A test guards that byte for byte:
 `tests/test_mcp_oauth_integration.py::test_mcp_auth_disabled_is_unchanged_regression_guard`.
+
+## Native versus MCP, measured
+
+`scripts/mcp-compare.sh` (CI job `MCP versus native tools` in `evals.yml`, keyless, no model call) compares the two paths
+two ways, with `agents/python/evals/mcp_compare.py`:
+
+1. **The same tool calls both ways.** Eleven calls (the ones the product-discovery and inventory-fulfillment datasets make)
+   run against the native function and the MCP server on the seeded database. All eleven return equal results.
+2. **The same cases both ways, replayed.** Eleven cases, each recorded once per path (the MCP tools carry a different
+   top-level schema title and a different tool order, so the MCP path has its own fixtures). Tool-call accuracy is 0.955
+   on both paths. One case differs in whether the model looked up its memories first, with equal accuracy. Answer text is never identical across two
+   recordings; the report counts it and does not gate on it.
+
+### How the twins stay twins
+
+The MCP packages install on their own and cannot import `shared`, so the query code is mirrored by hand, not shared.
+`agents/python/tests/test_mcp_native_equivalence.py` is what stops the mirror drifting: for each of the ten MCP tools it
+asserts that the description and the parameter schema (properties, descriptions, defaults, required) equal the native
+tool's, and `mcp-parity` asserts equal results on the seeded database. Change a native tool and its twin in the same
+commit. Two things the alignment settled:
+
+- `get_trending_products` ranks by units sold (`SUM(order_items.quantity)`) on both paths and returns `order_count` and
+  `units_sold`; it used to rank the MCP side by order lines.
+- A model picks a tool from its name and description, so the MCP descriptions are the native docstrings word for word, and
+  the product agent's MCP path keeps `get_warehouse_availability` and the memory tools locally, so both paths offer the
+  same tool set. The MCP product server therefore no longer returns `in_stock`, `seller` or `total_stock` from
+  `get_product_details` (use `check_stock`); it returns what the native tool does.
+
+### Restock versus availability
+
+"When will the Sony be back in stock" used to pick `get_warehouse_availability` over MCP (twice, and on a fresh native
+recording too) because its description said it included restock schedules, which overlaps `get_restock_schedule`. The
+description now says it reports current per-warehouse stock only and points to `get_restock_schedule` for when stock returns
+(the same words on the native tool, the MCP twin and the .NET tool). On both paths the model now picks
+`get_restock_schedule`, which took MCP accuracy from 0.864 to 0.955, equal to native. The result of
+`get_warehouse_availability` is unchanged and still carries `upcoming_restocks`; only the description moved.
+`test_inventory_descriptions_keep_restock_and_availability_apart` pins that the two do not claim the same job.
+
+Every accepted difference is listed with its reason in `agents/python/evals/mcp_known_differences.json`; the job fails on a
+new difference, on a drop in tool-call accuracy outside the listed cases, and on a listed entry that stopped differing.
+What this does not show: nothing here measures a live model on the MCP path beyond the recordings above.
 
 ## Inspect with MCP Inspector
 

@@ -137,6 +137,13 @@ The chat page is `app/(app)/chat/page.tsx`. The pieces:
   `mobile-chromium` projects. The rest of `web/e2e/` is not run in CI: it needs the live
   stack. Run it locally with `cd web && pnpm exec playwright test`.
 
+## Gotchas
+
+- **Theme tokens, never raw palette classes.** Hard-coded slate or white classes break dark mode; use the OKLCH tokens ([CONTRIBUTING](https://github.com/nitin27may/e-commerce-agents/blob/main/CONTRIBUTING.md)).
+- **Next.js 16 differs from older docs.** Read `node_modules/next/dist/docs/` before touching framework code.
+- **Playwright: wait on the composer's stop icon, never on status text.** A streamed turn is finished when the submit button stops showing the stop icon; the "Routing to specialists" text disappears mid-turn.
+- **Three specs need no backend** (`ui-smoke`, `not-found`, `a11y`) and run on desktop and `mobile-chromium`; the rest of `e2e/` needs the running stack and runs on desktop only.
+
 ## Related
 
 - [`docs/architecture.md`](architecture.md) — full system architecture and SSE orchestration pattern

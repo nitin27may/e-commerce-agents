@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-E-Commerce Agents is a multi-agent e-commerce platform built with **Microsoft Agent Framework (MAF)** Python SDK. 6 specialized agents collaborate via **A2A protocol** to handle product discovery, orders, pricing, reviews, inventory, and customer support. Includes a marketplace layer with agent catalog, access requests, and admin approval.
+E-Commerce Agents is a multi-agent e-commerce platform built with **Microsoft Agent Framework (MAF)** Python SDK. An orchestrator and five specialists (ports 8081-8085) collaborate via **A2A protocol** to handle product discovery, orders, pricing, reviews, inventory, and customer support; an opt-in sixth, Python-only specialist (`merchant-ops`, port 8086, `MERCHANT_OPS_AGENT_ENABLED`) helps sellers with proposals and review triage. A 38-chapter course (`tutorials/`) builds up to it. Includes a marketplace layer with agent catalog, access requests, and admin approval.
 
 Companion demo repo for the AI article series on nitinksingh.com.
 
@@ -68,6 +68,35 @@ uv run --project agents/python python -m scripts.migrate
 # Replay eval suite, keyless — the same script CI runs
 scripts/replay-evals.sh --setup          # migrate + seed a fresh DB, then every suite
 cd agents/python && uv run python -m evals.fixture_drift   # 0 clean · 1 offline-fixable · 2 re-record
+
+# Live evals (dispatch-only in CI; runs locally too, spends a key). Cost first, no model called:
+cd agents/python && uv run python -m evals.run_evals --estimate gpt-4.1-mini --agent product-discovery --dataset evals/datasets/product_discovery.json
+scripts/live-evals.sh --check-env        # the same script the manual `full` job runs; see agents/python/evals/README.md
+
+# Effective configuration with secrets redacted, and run profiles (a profile holds no secret)
+uv run --project agents/python python -m scripts.doctor
+./scripts/dev.sh --profile ollama        # dev.ps1 -Profile; also --no-key for the replay-backed demo; table in docs/run-profiles.md
+
+# Boot smoke with every off-by-default flag on (autonomy, return lifecycle, merchant schedule), keyless; CI job `flags`
+scripts/flag-smoke.sh
+
+# MCP versus native tools, keyless gate (needs a migrated, seeded DB; starts the two MCP servers itself)
+scripts/mcp-compare.sh
+
+# README GIF and doc stills from the no-key stack (./scripts/dev.sh --no-key first)
+scripts/record-demo.sh [--stills]
+
+# Static hosted preview (key-free, backend-free copy of the web app; docs/preview.md)
+python3 scripts/build_preview_data.py --check      # CI fails when web/src/lib/preview/preview-data.json is stale
+cd web && pnpm build:preview && pnpm serve:preview
+
+# Docs checks (CI: jekyll-gh-pages.yml, tutorials.yml)
+python3 scripts/build_docs_site.py --check     # nav, links, diagrams, parity-matrix summary
+python3 scripts/check_tutorial_readmes.py --check && python3 scripts/check_tutorial_coverage.py --check && python3 scripts/check_tutorial_nav.py --check
+python3 scripts/build_eval_scorecard.py --check && python3 scripts/check_maf_badge.py
+
+# Land a green PR only when its head SHA did not move (see docs/contributing-dependencies.md)
+scripts/merge-when-green.sh <pr>
 
 # Lint Python
 cd agents/python && uv run ruff check .
@@ -162,7 +191,8 @@ One inbox, one decide path, on both stacks over the same tables (Python: `orches
 - **State lives in `approvals`** (migration 0006) with an append-only `approval_events` audit; `tool_approval_requests` and `hitl_requests` remain as per-source execution records linked by `approval_id`. Every state change goes through `shared/approvals/repo.py` (`create`, guarded `transition`, `claim`/`release_claim`, `escalate`). The database itself refuses a decider equal to the requester.
 - **Deciding** is `POST /api/approvals/{id}/decide` (`approve | reject | request_info`, optional `edits`). Edits are accepted only for the kind's `editable_fields` and can never raise the amount. The legacy resume and admin approve/deny routes call the same function. Every path (tool and workflow, both stacks) re-runs the decider check **after** taking the claim, because an escalation can land between the first check and the claim; an action that already ran but whose recording lost the claim is recorded by a retry and by the timeout handler rather than 409'd or expired; a lost claim is a 409, never a 500.
 - **Deadlines are outbox rows.** Entering `pending_review` schedules a reminder and an SLA timer in the same transaction (`shared/outbox.py`). `agents/python/worker/` (compose service `outbox-worker`; `uv run python -m worker.main`) claims rows with `FOR UPDATE SKIP LOCKED` under a lease, retries with capped backoff and parks a row after `OUTBOX_MAX_ATTEMPTS`. A breach escalates `support → manager` once; at the top it applies the kind's `on_timeout`, which for a paused return means resuming it as a rejection. The worker serves both stacks, since they share the database.
-- **A merchant proposal is the seller's to decide, never the staff inbox's:** every staff route (decide including `request_info`, answer-info, detail) answers the same 404 a missing id gets for source `proposal`, on both stacks. A reviewer's edit can never raise a line (a restock quantity may only be lowered; a price stays between proposed and starting), enforced at decide time and again in `apply_line`; restock lines have hard limits in `merchant_limits.yaml`. An SLA breach never expires a proposal under a decide in flight. See `docs/merchant-proposals.md`.
+- **A merchant proposal is the seller's to decide, never the staff inbox's, until its PO value says otherwise:** while `route IS NULL` (`is_seller_stage`) every staff route (decide including `request_info`, answer-info, detail) answers the same 404 a missing id gets for source `proposal`, on both stacks. A restock batch whose accepted lines' PO value (qty x unit cost, the `amount` fact of kind `merchant_proposal`, `approvals.yaml`) is over the threshold is, on Python only (#298), recorded as `awaiting_manager` lines and the same row is routed to `manager` with a fresh SLA clock; staff then decide it in the inbox (`proposals_service.decide_po`; lower a line, never raise; `request_info` is a 422; never the person who decided the seller's side), .NET still 404s it, and the DB CHECK `approvals_no_beneficiary_decision` exempts a proposal only while `route IS NULL`. A reviewer's edit can never raise a line (a restock quantity may only be lowered; a price stays between proposed and starting), enforced at decide time and again in `apply_line`; restock lines have hard limits in `merchant_limits.yaml`. An SLA breach never expires a proposal under a decide in flight. See `docs/merchant-proposals.md`.
+- **The customer confirms first, in tool mode (#302, #307, both stacks, parity row 56).** After the pre-park checks `shared/agent_host.py::park_pending_approvals` calls `shared/customer_confirmation.py::evaluate` (.NET: `HitlGate.TryGateAsync` calling `CustomerConfirmationRepository.EvaluateAsync`): the first request opens a `customer_confirmations` row (migration 0016) and the user reads a fixed sentence naming the action; the call parks only when it arrives again after an explicit yes, read from the stored `messages` row (never from text the orchestrator's model composed), inside `CUSTOMER_CONFIRMATION_TTL_SECONDS`. It is not an approval (no inbox row). The key ignores the free-text `reason`. An eval case expecting a park therefore needs two turns (live) or asserts `expect_hitl: false` (replay). `CUSTOMER_CONFIRMATION_ENABLED=false` restores the one-step park. Sentences and matching: `config/policies/testdata/customer-confirmation.v1.json`.
 - **Identity on execution:** whoever approves, the action runs as the original requester (tools read ContextVars), and the reviewer is recorded separately.
 
 ### Merchant proposals (#93, Python only)
@@ -172,11 +202,24 @@ deterministically (no model), `shared/merchant/execute.py` applies one line at m
 `proposal_line:{id}`) after re-running the M-1 guards on live facts; `orchestrator/proposals_service.py` + `routes/proposals.py`
 decide a batch line by line. It is **one `approvals` row per batch** (kind `merchant_proposal`, source `proposal`), moved with the
 same `repo.claim`/`transition` as every other kind; the requester is the system actor `merchant-ops@system`, so the owning seller
-(or an admin) deciding never trips the reviewer-is-not-requester rule. Another seller's proposal is a 404. The M-2 agent and its
-eval dataset are not built (they need a key); no `@tool` exists for it, so no fixture is affected. The daily run
+(or an admin) deciding never trips the reviewer-is-not-requester rule. Another seller's proposal is a 404. The daily run
 (`merchant.daily_run_due`) is off unless `MERCHANT_OPS_SCHEDULE_ENABLED`.
 
-### Event autonomy (#94, Python only)
+**The merchant-ops agent (#298, the opt-in sixth specialist, port 8086).** `merchant_ops/` follows the specialist pattern,
+prompt `config/prompts/merchant-ops.yaml`, compose profile `merchant-ops` (`MERCHANT_OPS_AGENT_ENABLED=true ./scripts/dev.sh`).
+Its tools are **read-only** (`shared/merchant/reads.py`, `review_quality.py`): explain and order a batch (the approve-first
+order is computed in code, the model only words it), triage reviews, draft replies. It has no write tool, so nothing it does
+can bypass the approvals machinery; keep it that way. Scope is the caller's own products (admin: any) from ContextVars, and
+another seller's row is `not_found`, same as a missing one. Whether the **orchestrator** may route to it is
+`MERCHANT_OPS_AGENT_ENABLED` (default off): `shared.factory.active_agent_registry` drops it from the registry the
+orchestrator and handoff read, and the routing paragraph (`merchant_ops_routing` in `orchestrator.yaml`) and the tool
+description appear only with the flag, because both are part of every orchestrator replay key. Replay dataset
+`evals/datasets/merchant_ops.json` (fixtures recorded, `evals/merchant_setup.py` makes the batch), live twin under
+`datasets/live`. A replay case must not make the model pass a random id (a proposal or review id) as a tool argument: arguments
+are hashed verbatim, so the fixture would miss on the next seed. Any ordering in a tool's output must be total on stable keys,
+never on a random id. Parity row 57 (Python only).
+
+### Event autonomy (#94, #299, Python only)
 
 Budgets for what the system may do on its own when an event arrives, `docs/event-autonomy.md`. `order.shipment_delayed`
 (an outbox row; only the admin simulator produces it) is sized into a goodwill credit by a deterministic rule;
@@ -191,6 +234,20 @@ day's budget. An event acts once (`run_once` plus a unique `event_key`). A staff
 approval, may only lower the amount, and draws no budget; an SLA breach never expires one mid-decide. **Off unless
 `AUTONOMY_ENABLED`**, the simulator additionally needs `AUTONOMY_SIMULATOR_ENABLED`, and no model is called. Every number in
 `autonomy.yaml` is a placeholder.
+
+**More events and the responder (#299).** Five event types share the engine (the three below, then `order.item_damaged` and `order.risk_flagged`): `order.shipment_delayed` (credit per order),
+`product.price_dropped` (price adjustment per order *line*, one per line ever, a partial unique index backs it) and
+`inventory.back_in_stock` (a money-free notice per cart holder: no budget, per-customer daily cap, bounded audience; carts only,
+there is no wishlist). The last two fan out, one decision per target under `topic:event_id:target`; an action's `kind`
+(`credit|price_adjustment|notice`) in `autonomy.yaml` picks the sizing. `AUTONOMY_RESPONDER_ENABLED` (off) has the worker word
+the customer message after the decision committed (`shared/autonomy/responder.py`, prompt `ops-responder.yaml`, not a routable
+agent): checked against the decision's facts, template fallback, stored in append-only `decision_drafts`, never read back by the
+engine. A real carrier feed is external and stays open in #299; nothing reads `orders.on_hold` yet, so a hold blocks nothing.
+
+#299 (#328) added `order.item_damaged` (one credit or replacement offer per order line, ever), `order.risk_flagged` (a score read from
+the database; low is nothing, medium an approval, high an approval plus a reversible `orders.on_hold` flag; **never an autonomous
+tier**, the engine never cancels or refunds) and per-UTC-month budget caps (`global_per_month`). **`lock_budget` takes the day lock and
+then the month lock, always in that order** (migration 0018).
 
 Review-fix rules to keep (details in `docs/event-autonomy.md`): **a reviewer is never the approval's subject**
 (`authorize_decider` / `AuthorizeDecider`, a DB CHECK, and the engine never acts alone for a `support`/`admin` beneficiary;
@@ -228,7 +285,7 @@ no return paused. .NET: parity row 41, not ported.
 
 ### A2A 1.0 (both stacks)
 
-Every specialist, Python and .NET, serves two wires; `docs/a2a.md` has the detail. The legacy `/message:send` and `/message:stream` are untouched. Beside them the A2A 1.0 JSON-RPC binding is mounted at `/a2a/v1` with the agent card at `/.well-known/agent-card.json`: Python via the official `a2a-sdk` (1.3.0, spec 1.0; `shared/a2a_server.py`), .NET via the official A2A .NET SDK (`A2A` + `A2A.AspNetCore` **1.0.0-preview4**, spec 1.0, pinned exactly, a preview; `Shared/A2A/Protocol/`). JSON-RPC binding only on both. `A2A_TRANSPORT=legacy|a2a` (default `legacy`) picks what the *caller* speaks, on both orchestrators (Python: `orchestrator/agent.py::_call_over_a2a`, `shared/remote_agent.py`, through `shared/a2a_client.py`; .NET: `A2AClient` behind `A2AProtocolClient`), and any orchestrator can call any specialist over `a2a`: `scripts/a2a-interop.sh` proves both directions across processes.
+Every specialist, Python and .NET, serves two wires; `docs/a2a.md` has the detail. The legacy `/message:send` and `/message:stream` are untouched. Beside them the A2A 1.0 JSON-RPC binding is mounted at `/a2a/v1` with the agent card at `/.well-known/agent-card.json`: Python via the official `a2a-sdk` (1.3.1, spec 1.0; `shared/a2a_server.py`), .NET via the official A2A .NET SDK (`A2A` + `A2A.AspNetCore` **1.0.0-preview4**, spec 1.0, pinned exactly, a preview; `Shared/A2A/Protocol/`). JSON-RPC binding only on both. `A2A_TRANSPORT=legacy|a2a` (default `legacy`) picks what the *caller* speaks, on both orchestrators (Python: `orchestrator/agent.py::_call_over_a2a`, `shared/remote_agent.py`, through `shared/a2a_client.py`; .NET: `A2AClient` behind `A2AProtocolClient`), and any orchestrator can call any specialist over `a2a`: `scripts/a2a-interop.sh` proves both directions across processes.
 
 - **The executor is custom, on purpose, on both stacks.** Python's `SpecialistExecutor` calls `shared.agent_host._run_agent_native_stream` (looked up at call time); .NET's `SpecialistA2AExecutor` calls `AgentHost.RunAgentWithHistoryStreamingAsync`. The messages a specialist's model sees are identical on both wires and no replay fixture changes. Do not swap in `agent-framework-a2a`'s `A2AExecutor` (Python): it builds a MAF session from `contextId`. The conformance tests pin model-input equality.
 - **`contextId` is the session id**; the `x-session-id` header is a fallback. Both SDKs invent a `contextId` when the caller sent none and it looks like a session id: Python's generator prefixes invented ids `a2a-ctx-` (`session_id_from_context` ignores them); .NET uses the SDK's `ClientProvidedContextId` flag (`A2AWire.SessionIdFromContext`).
@@ -256,7 +313,7 @@ Separately, the orchestrator's own read of *its* conversation's history (for `Ru
 | Layer | Technology |
 |-------|-----------|
 | Agent Framework | MAF Python SDK — `agent-framework-core` 1.26.0, `-openai` 1.18.2, `-orchestrations` 1.4.2 (pinned in `agents/python/pyproject.toml` and mirrored in `tutorials/pyproject.toml`), plus `-anthropic` 1.0.0b261112 (a beta; `agents/python` only, the tutorials do not use it), with MCP Python SDK `mcp[cli]` 2.x (`>=2.2,<3`; `FastMCP` is now `mcp.server.mcpserver.MCPServer`, and its client stack is `httpx2`); MAF .NET — `Microsoft.Agents.AI` 1.28.0 (`agents/dotnet/Directory.Packages.props`, shared by the tutorials via `tutorials/Directory.Packages.props`) |
-| Agent Communication | A2A Protocol: A2A 1.0 JSON-RPC at `/a2a/v1` on every specialist (`a2a-sdk` 1.3.0 on Python, `A2A` + `A2A.AspNetCore` 1.0.0-preview4 on .NET) and the original `POST /message:send` + `/message:stream` pair (`A2A_TRANSPORT=legacy`, the default); user identity as headers or a signed `X-User-Context` token (`A2A_IDENTITY`) |
+| Agent Communication | A2A Protocol: A2A 1.0 JSON-RPC at `/a2a/v1` on every specialist (`a2a-sdk` 1.3.1 on Python, `A2A` + `A2A.AspNetCore` 1.0.0-preview4 on .NET) and the original `POST /message:send` + `/message:stream` pair (`A2A_TRANSPORT=legacy`, the default); user identity as headers or a signed `X-User-Context` token (`A2A_IDENTITY`) |
 | LLM | OpenAI / Azure OpenAI (gpt-4.1) / Anthropic Claude (`claude-sonnet-5-5`, stub-tested only), configurable via `LLM_PROVIDER` env var — plus any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, OpenRouter, GitHub Models) via `LLM_PROVIDER=openai` + `LLM_BASE_URL` |
 | Backend | Python 3.12, FastAPI (orchestrator), Starlette (specialist agents via agent_host) |
 | Database | PostgreSQL 16 + pgvector (1536-dim embeddings for text-embedding-3-small) |
@@ -339,7 +396,8 @@ LLM_API=chat_completions      # default `responses`; needed where there is no /r
   The golden cases in `config/pricing/testdata/` are shared; change them only when the pricing *rules* change.
 - **Private prices** (a local model at 0, a negotiated rate) go in a file named by `PRICING_OVERRIDES_FILE`,
   never in the shipped file. `PRICING_FILE` replaces the shipped file. Both are read by host-run processes;
-  containers use the copy built into the image (rebuild after editing).
+  containers read the pricing directory mounted read-only at `/pricing` (restart after editing, no rebuild), so
+  `PRICING_OVERRIDES_FILE` must be a path under `/pricing`.
 - **An unlisted model's cost is unknown (null), never a guess.** Do not reintroduce a fallback price: the old
   gpt-4.1 fallback made every Ollama, Gemini and custom-deployment run report invented dollars. Under
   `COST_BUDGET_MODE=enforce` with a ceiling, an unpriced turn stops the run (fail closed).
@@ -350,7 +408,7 @@ no model is called at all — that is what CI, the eval smoke suite and the tuto
 
 ## Database
 
-- Schema: `docker/postgres/init.sql` is the frozen baseline (34 tables; the 11 added by migrations bring it to 45); every change since is a numbered file in `docker/postgres/migrations/` (0002–0013 today: approval claims, refresh tokens, lower-cased user emails, refresh-family expiry, approvals/outbox/notifications, usage cost columns, embedding model, merchant proposals, expiry of pre-policy return approvals, worker leases, event autonomy, return lifecycle columns) applied by `scripts/migrate.py` (the seeder, `dev.sh`/`dev.ps1` and every test fixture run it). Never edit an applied migration — the checksum guard fails the run; add a new one. The runner applies whatever is unapplied in numeric order, so a lower number arriving late is fine.
+- Schema: `docker/postgres/init.sql` is the frozen baseline (34 tables; the 13 added by migrations bring it to 47); every change since is a numbered file in `docker/postgres/migrations/` (0002–0020 today: approval claims, refresh tokens, lower-cased user emails, refresh-family expiry, approvals/outbox/notifications, usage cost columns, embedding model, merchant proposals, expiry of pre-policy return approvals, worker leases, event autonomy, return lifecycle columns, signing-key rotation, usage price source, then 0016 `customer_confirmations`, 0017 price-drop and back-in-stock events plus the `decision_drafts` table, 0018 order risk, damaged items and monthly budgets, 0019 `awaiting_manager` PO review for merchant proposals, 0020 `usage_logs.would_block`) applied by `scripts/migrate.py` (the seeder, `dev.sh`/`dev.ps1` and every test fixture run it). Never edit an applied migration — the checksum guard fails the run; add a new one. The runner applies whatever is unapplied in numeric order, so a lower number arriving late is fine.
 - All queries use parameterized `$1, $2` syntax (asyncpg)
 - All user-facing queries filter by `user_email` or `user_id`
 - Embeddings stored as `vector(1536)` with ivfflat cosine index
@@ -358,7 +416,7 @@ no model is called at all — that is what CI, the eval smoke suite and the tuto
 
 ## Testing & Evals
 
-Five traps here cost more time than anything else in the repo.
+Six traps here cost more time than anything else in the repo.
 
 **Playwright: wait on the composer's stop icon, never on status text.** A streamed
 turn is finished when the submit button stops showing the stop icon — not when
@@ -394,6 +452,21 @@ drift tool only tells you which kind of repair is needed.
 `workflow_dispatch` alone, never a schedule. Nothing in this repo may put a live
 LLM key behind an automatic trigger — keep it that way when adding jobs to
 `.github/workflows/evals.yml`.
+
+**A parked gated tool call has no function-middleware trace.** `cancel_order`, `modify_order`, `process_refund`,
+`initiate_return` and `place_backorder` are `@tool(approval_mode="always_require")`, and MAF decides that before function
+middleware runs: the run ends with an empty reply and a `function_approval_request` in `response.user_input_requests`,
+and `HITLFunctionMiddleware` is never reached. The specialist host makes it durable after the run
+(`shared/agent_host.py::park_pending_approvals` -> `shared/hitl.py::park_gated_call`: a `tool_approval_requests` row plus
+its inbox approval, idempotent, a fixed reply sentence). Anything that looks for a step or a row written *during* the run
+(an eval assertion, a test) will not find one; read the parked request (`agent_host.approval_requests`) instead.
+
+**Live eval datasets are a separate family.** `agents/python/evals/datasets/live/*.live.json` name orders and products as
+`{{order:N}}`, `{{order:STATUS}}` and `{{product_id:NAME}}`, resolved against the run's database by `evals/live_facts.py`, so a
+live model is asked about facts that exist. A replay dataset must never contain a placeholder (a test pins it) because its
+request text is part of every fixture key; never edit a replay dataset to fix a live case. A live case may carry `turns`
+(multi-turn, live only), `forbidden_tools`, `expected_routes` / `forbidden_routes`, `why` and `type`; the schema table and
+sizes are in `agents/python/evals/README.md`.
 
 ## Coding Conventions
 

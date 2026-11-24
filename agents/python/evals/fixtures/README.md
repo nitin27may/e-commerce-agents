@@ -16,8 +16,14 @@ LLM_PROVIDER=replay RECORD=true REPLAY_RECORD_PROVIDER=azure \
 ```
 
 Repeat per specialist dataset (`order-management`, `pricing-promotions`,
-`review-sentiment`, `inventory-fulfillment` — DB only, no other services
+`review-sentiment`, `inventory-fulfillment`, `merchant-ops` — DB only, no other services
 needed, since `ProductionRunner` calls each specialist in-process).
+
+The approvals set (`evals/datasets/approvals.json`, customer confirmation, #302) is another order-management run of the same
+recipe: `--agent order-management --dataset evals/datasets/approvals.json`. Its cases name orders of the deterministic seed by
+id and each must be one of the five newest orders of `jack.anderson@gmail.com` (the agent's context lists only five; an older
+one makes the model answer "not found" and never ask for the gated call). Six fixtures, about 33k input tokens, under 0.10 USD.
+The confirmation step runs after the model call, so editing it never invalidates these fixtures.
 
 `orchestrator` and `--suite safety` also need the five specialist A2A
 services actually running and reachable (`call_specialist_agent` makes a

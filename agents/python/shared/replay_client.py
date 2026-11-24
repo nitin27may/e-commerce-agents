@@ -123,6 +123,29 @@ def _message_key_dict(message: Any) -> dict[str, Any]:
     return data
 
 
+def _spec_name(spec: dict[str, Any]) -> str:
+    function = spec.get("function")
+    return str((function if isinstance(function, dict) else spec).get("name", ""))
+
+
+def _order_handoff_tools(tool_specs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Sort the ``handoff_to_*`` tools among their own slots; leave every other tool where it is.
+
+    MAF's HandoffBuilder keeps an agent's handoff targets in a set, so two processes list them in
+    different orders. The model sees the same set of tools either way, but an order-sensitive key
+    made a handoff recording miss in any other process (found recording the no-key demo). A request
+    with fewer than two handoff tools is untouched, so no other key moves.
+    """
+    slots = [i for i, spec in enumerate(tool_specs) if _spec_name(spec).startswith("handoff_to_")]
+    if len(slots) < 2:
+        return tool_specs
+    ordered = sorted((tool_specs[i] for i in slots), key=_spec_name)
+    result = list(tool_specs)
+    for slot, spec in zip(slots, ordered, strict=True):
+        result[slot] = spec
+    return result
+
+
 def _canonical_request(messages: Any, options: dict[str, Any] | None) -> dict[str, Any]:
     """JSON-serializable, hashable view of a request: every message plus tool schemas.
 
@@ -296,6 +319,9 @@ def _normalize_for_hash(canonical: dict[str, Any]) -> dict[str, Any]:
         for m in canonical.get("messages", [])
     ]
     normalized = {**canonical, "messages": _ordinalize_call_ids(messages)}
+    if isinstance(canonical.get("tools"), list):
+        # In the hash, not in the stored request, so ``rehash_fixtures`` applies it offline.
+        normalized["tools"] = _order_handoff_tools(canonical["tools"])
     # The system prompt is the other place volatile values reach the key:
     # ``RecentOrdersProvider`` renders the caller's real order ids and
     # now-relative dates into the instructions. Prose is untouched, so a

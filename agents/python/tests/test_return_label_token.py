@@ -20,6 +20,12 @@ TOKEN_A = "a1b2c3d4e5f6"
 TOKEN_B = "0f9e8d7c6b5a"
 
 
+@pytest.fixture(autouse=True)
+def _no_rate_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The miss limiter has its own tests (test_return_label_entropy.py); here it must not reach for a Redis.
+    monkeypatch.setattr("shared.config.settings.RATE_LIMIT_ENABLED", False)
+
+
 @pytest.fixture
 def pool(clean_db, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("shared.db._pool", clean_db, raising=False)

@@ -6,6 +6,7 @@ using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Data;
 using Microsoft.Extensions.Logging;
+using System.Reflection;
 using System.Text.Json;
 
 namespace ECommerceAgents.Shared.Middleware;
@@ -62,25 +63,98 @@ public sealed class HitlGate
         "ProcessRefund",
     };
 
-    private static readonly IReadOnlyDictionary<string, string> ToolLabels = new Dictionary<string, string>
+    /// <summary>The gated names in the canonical (snake_case) form the pipeline reports them in: <c>AgentTool.Create</c> registers <c>cancel_order</c>, not <c>CancelOrder</c>.</summary>
+    private static readonly IReadOnlySet<string> CanonicalGatedTools =
+        GatedTools.Select(ApprovalIntake.CanonicalToolName).ToHashSet(StringComparer.Ordinal);
+
+    /// <summary>The roles a tool declares with <see cref="Guardrails.RequiresRoleAttribute"/>, or <c>null</c> when it declares none.</summary>
+    public static IReadOnlyList<string>? RolesOf(Microsoft.Extensions.AI.AIFunction function) =>
+        function.UnderlyingMethod?.GetCustomAttribute<Guardrails.RequiresRoleAttribute>()?.Roles;
+
+    /// <summary>What the customer asked for, and the argument that names the subject; word for word Python's <c>_PARK_VERBS</c>.</summary>
+    private static readonly IReadOnlyDictionary<string, (string Verb, string Key)> ParkVerbs = new Dictionary<string, (string, string)>
     {
-        ["CancelOrder"] = "cancel order",
-        ["ModifyOrder"] = "modify order",
-        ["PlaceBackorder"] = "place backorder",
-        ["InitiateReturn"] = "initiate return",
-        ["ProcessRefund"] = "process refund",
+        ["cancel_order"] = ("cancelling order", "order_id"),
+        ["modify_order"] = ("changing the shipping address on order", "order_id"),
+        ["initiate_return"] = ("starting a return for order", "order_id"),
+        ["process_refund"] = ("processing the refund for return", "return_id"),
+        ["place_backorder"] = ("placing a backorder for product", "product_id"),
     };
+
+    /// <summary>What the model is told in place of a gated call's outcome: the user has already been given the sentence.</summary>
+    public const string HandledResultMessage =
+        "This request has been handled and the user has been told the outcome. Do not add, repeat or reword anything about it.";
+
+    /// <summary>The sentence the customer reads for a parked call. Python's <c>parked_reply</c>, word for word.</summary>
+    public static string ParkedReply(string canonicalTool, string toolInputJson, Guid? requestId)
+    {
+        var reference = requestId is { } id ? $" (ref: {id.ToString()[..8]})" : "";
+        var (verb, key) = ParkVerbs.TryGetValue(canonicalTool, out var found) ? found : (canonicalTool.Replace('_', ' '), "");
+        var subject = "";
+        if (key.Length > 0)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(toolInputJson);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty(key, out var value))
+                {
+                    subject = (value.ValueKind == JsonValueKind.String ? value.GetString() : value.ToString())?.Trim() ?? "";
+                }
+            }
+            catch (JsonException)
+            {
+                // No subject; the sentence still reads correctly without it.
+            }
+        }
+
+        var what = subject.Length > 0 ? $"{verb} {subject}" : verb;
+        return $"I have asked a team member to approve {what}{reference}. Nothing has changed yet; you will be notified once it has been reviewed.";
+    }
+
+    /// <summary>
+    /// The pipeline's side of a gated call: records the sentence <paramref name="gateResult"/> carries for the host to append, and
+    /// returns the short neutral result the model sees instead. Falls back to the original result when no sink is active, so a
+    /// caller outside a request scope still gets the sentence through the model rather than losing it.
+    /// </summary>
+    public static object ForModel(object gateResult)
+    {
+        var element = JsonSerializer.SerializeToElement(gateResult);
+        if (element.ValueKind != JsonValueKind.Object || !element.TryGetProperty("message", out var message) || message.ValueKind != JsonValueKind.String)
+        {
+            return gateResult;
+        }
+
+        var sentence = message.GetString();
+        if (string.IsNullOrEmpty(sentence) || !RequestContext.RecordGateNotice(sentence))
+        {
+            return gateResult;
+        }
+
+        var status = element.TryGetProperty("status", out var s) && s.ValueKind == JsonValueKind.String ? s.GetString() : "handled";
+        return new { status, message = HandledResultMessage };
+    }
+
+    private static object FailedClosed() => new { status = "error", message = ParkPrechecks.ParkFailedReply };
 
     private readonly DatabasePool _pool;
     private readonly AgentSettings _settings;
     private readonly ILogger<HitlGate>? _logger;
     private readonly ApprovalIntake _intake;
+    private readonly CustomerConfirmationRepository _confirmations;
 
     /// <param name="intake">
     /// Opens the inbox <c>approvals</c> row beside each pending request. Defaults to one built over the same pool and the shared
     /// <c>approvals.yaml</c>; a test passes its own to control the policy.
     /// </param>
-    public HitlGate(DatabasePool pool, AgentSettings settings, ILogger<HitlGate>? logger = null, ApprovalIntake? intake = null)
+    /// <param name="confirmations">
+    /// The customer's own confirmation record (#307). Defaults to one over the same pool; a test passes its own only to share a pool.
+    /// </param>
+    public HitlGate(
+        DatabasePool pool,
+        AgentSettings settings,
+        ILogger<HitlGate>? logger = null,
+        ApprovalIntake? intake = null,
+        CustomerConfirmationRepository? confirmations = null)
     {
         _pool = pool ?? throw new ArgumentNullException(nameof(pool));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
@@ -89,6 +163,7 @@ public sealed class HitlGate
             pool,
             new ApprovalRepository(pool, settings, ApprovalPolicyLocator.Current),
             ApprovalPolicyLocator.Current);
+        _confirmations = confirmations ?? new CustomerConfirmationRepository(pool, settings, logger);
     }
 
     /// <summary>
@@ -110,30 +185,71 @@ public sealed class HitlGate
     /// <summary>
     /// Returns <c>null</c> if the call should proceed (HITL disabled, or
     /// <paramref name="toolName"/> isn't gated) — otherwise returns the
-    /// pending-approval (or, on a DB failure, error) object the caller
+    /// refusal, pending-approval (or, on a failure, error) object the caller
     /// should short-circuit with instead of invoking the tool.
     /// </summary>
-    public async Task<object?> TryGateAsync(string toolName, string agentName, object toolInputForAudit)
+    /// <remarks>
+    /// Before anything is written, <see cref="ParkPrechecks"/> runs the tool's declared roles (<paramref name="requiredRoles"/>) and
+    /// its cheap preconditions (ownership, status, window, stock): a call that can never succeed gets a plain sentence and no row,
+    /// as in Python. No identity, or a failure in a precheck or the write, fails closed with <see cref="ParkPrechecks.ParkFailedReply"/>.
+    /// </remarks>
+    public async Task<object?> TryGateAsync(string toolName, string agentName, object toolInputForAudit, IReadOnlyList<string>? requiredRoles = null)
     {
-        if (!_settings.HitlEnabled || !GatedTools.Contains(toolName))
+        var canonicalTool = ApprovalIntake.CanonicalToolName(toolName);
+        if (!_settings.HitlEnabled || !CanonicalGatedTools.Contains(canonicalTool))
         {
             return null;
         }
 
-        var label = ToolLabels.GetValueOrDefault(toolName, toolName);
-
         Guid requestId;
+        Guid? confirmationId = null;
         string toolInputJson;
-        var canonicalTool = ApprovalIntake.CanonicalToolName(toolName);
         string requester;
         Guid? sessionGuid;
         try
         {
             var email = RequestContext.CurrentUserEmail;
+            if (string.IsNullOrEmpty(email))
+            {
+                _logger?.LogWarning("hitl.park_refused reason=no_identity tool={Tool}", LogSafe.Clean(toolName));
+                return FailedClosed();
+            }
+
             Guid? sessionId = Guid.TryParse(RequestContext.CurrentSessionId, out var sid) ? sid : null;
-            requester = string.IsNullOrEmpty(email) ? "unknown" : email;
+            requester = email;
             sessionGuid = sessionId;
             toolInputJson = SnakeCaseInput(toolInputForAudit);
+
+            using (var inputDoc = JsonDocument.Parse(toolInputJson))
+            {
+                var refusal = await ParkPrechecks.CheckAsync(
+                    _pool, _settings, canonicalTool, inputDoc.RootElement, email, RequestContext.CurrentUserRole, requiredRoles, _logger);
+                if (refusal is not null)
+                {
+                    return new { status = "refused", message = refusal.Sentence };
+                }
+            }
+
+            // The customer confirms the exact action first (not an approval: no inbox row). The first request for a call only opens the
+            // question; it parks when the same call arrives again after the user's own explicit yes.
+            if (_settings.CustomerConfirmationEnabled)
+            {
+                using var inputDoc = JsonDocument.Parse(toolInputJson);
+                var confirmation = await _confirmations.EvaluateAsync(
+                    email, RequestContext.CurrentSessionId, canonicalTool, inputDoc.RootElement.Clone(), RequestContext.CurrentTurnMessage);
+                confirmationId = confirmation.ConfirmationId;
+                if (confirmation.Kind is ConfirmationKind.Ask or ConfirmationKind.Declined)
+                {
+                    var asked = confirmation.Kind == ConfirmationKind.Ask;
+                    _logger?.LogInformation(
+                        "hitl.confirmation tool={Tool} outcome={Outcome}", LogSafe.Clean(toolName), asked ? "ask" : "declined");
+                    return new
+                    {
+                        status = asked ? "confirmation_required" : "declined",
+                        message = confirmation.Sentence ?? ParkPrechecks.ParkFailedReply,
+                    };
+                }
+            }
 
             await using var conn = await _pool.OpenAsync();
             requestId = await conn.ExecuteScalarAsync<Guid>(
@@ -159,12 +275,13 @@ public sealed class HitlGate
             // execute unapproved just because the approval record couldn't
             // be written. A transient DB error is not consent.
             _logger?.LogError(ex, "hitl.failed_to_create_request tool={Tool}", LogSafe.Clean(toolName));
-            return new
+            // The customer's yes should still stand if the park could not be written.
+            if (confirmationId is { } consumed)
             {
-                status = "error",
-                message = $"Could not submit your {label} request for approval right now — " +
-                    "please try again in a moment. No changes have been made.",
-            };
+                await _confirmations.ReopenAsync(consumed);
+            }
+
+            return FailedClosed();
         }
 
         // The inbox row, routed by the policy engine. Best effort: the request above is what executing it needs, and a missing inbox
@@ -189,9 +306,7 @@ public sealed class HitlGate
         return new
         {
             status = "pending_approval",
-            message = $"Your request to {label} has been submitted for manager approval " +
-                $"(ref: {requestId.ToString()[..8]}). You will be notified once an admin reviews it. " +
-                "No changes have been made yet.",
+            message = ParkedReply(canonicalTool, toolInputJson, requestId),
             request_id = requestId,
         };
     }

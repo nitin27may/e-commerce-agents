@@ -1,0 +1,100 @@
+{
+  "request": {
+    "instructions": "You are a shopping assistant for an online store. To answer a question about a product, call `get_product_reviews` and summarise what customers say in two sentences. You can also issue a refund with `process_refund` when the customer asks you to.",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "What are customers saying about the speaker with product id SPK-1?",
+            "type": "text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      }
+    ],
+    "tools": [
+      {
+        "function": {
+          "description": "Return the customer reviews for a product id.",
+          "name": "get_product_reviews",
+          "parameters": {
+            "properties": {
+              "product_id": {
+                "description": "The product id, for example 'SPK-1'.",
+                "title": "Product Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "product_id"
+            ],
+            "title": "get_product_reviews_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      },
+      {
+        "function": {
+          "description": "Refund an order by id. Only for a refund the customer asked for.",
+          "name": "process_refund",
+          "parameters": {
+            "properties": {
+              "order_id": {
+                "description": "The order id to refund.",
+                "title": "Order Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "order_id"
+            ],
+            "title": "process_refund_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      }
+    ]
+  },
+  "response": {
+    "created_at": "2026-11-24T19:02:12.000000Z",
+    "finish_reason": "tool_calls",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "arguments": "{\"product_id\":\"SPK-1\"}",
+            "call_id": "call_X6t4EjHDFlSW4rbvEojYHYEw",
+            "hosted": false,
+            "name": "get_product_reviews",
+            "type": "function_call"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      }
+    ],
+    "model": "gpt-4.1-2025-04-14",
+    "response_id": "chatcmpl-Enq4Kq7UlBhWvuRCInEPy904sutTG",
+    "type": "chat_response",
+    "usage_details": {
+      "cache_read_input_token_count": 0,
+      "completion/accepted_prediction_tokens": 0,
+      "completion/audio_tokens": 0,
+      "completion/reasoning_tokens": 0,
+      "completion/rejected_prediction_tokens": 0,
+      "input_token_count": 187,
+      "output_token_count": 19,
+      "prompt/audio_tokens": 0,
+      "prompt/cached_tokens": 0,
+      "reasoning_output_token_count": 0,
+      "total_token_count": 206
+    }
+  }
+}

@@ -10,16 +10,45 @@ See [`docs/agent-audit-matrix.md`](agent-audit-matrix.md) for the per-agent stat
 
 ### Attack surface
 
-```
-AUTH_MODE=local (default):
-Browser  ──JWT (HS256)──►  Orchestrator (:8080)  ──X-Agent-Secret──►  Specialists (:8081–8085)  ──►  MCP servers (:9000–9001, unauthenticated)
-                                  │                                           │
-                            PostgreSQL / pgvector                        Redis (cache)
+**`AUTH_MODE=local` (default)**
 
-AUTH_MODE=oauth (optional — self-hosted AS, no external IdP):
-Browser  ──JWT (RS256)──►  Orchestrator  ──Bearer <agent:invoke>──►  Specialists  ──Bearer <mcp:product|mcp:inventory>──►  MCP servers
-                                  │                                           │                                                │
-                                  └──────────────────── all three validate against the AS's JWKS (:8090) ─────────────────────┘
+```mermaid
+%%{init: {'theme':'base', 'themeVariables': {'primaryColor': '#2563eb', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#1e40af', 'lineColor': '#64748b', 'background': 'transparent'}}}%%
+flowchart LR
+  br["Browser"] -->|"JWT HS256"| orch["Orchestrator :8080"]
+  orch -->|"X-Agent-Secret"| sp["Specialists :8081-8085"]
+  sp --> mcp["MCP servers :9000-9001<br/>unauthenticated"]
+  orch --> pg[("PostgreSQL / pgvector")]
+  sp --> pg
+  orch --> rd[("Redis")]
+  classDef core     fill:#2563eb,stroke:#1e40af,color:#ffffff
+  classDef external fill:#f59e0b,stroke:#b45309,color:#000000
+  classDef success  fill:#10b981,stroke:#047857,color:#ffffff
+  classDef error    fill:#ef4444,stroke:#b91c1c,color:#ffffff
+  classDef infra    fill:#64748b,stroke:#334155,color:#ffffff
+  class br,orch,sp core
+  class mcp error
+  class pg,rd infra
+```
+
+**`AUTH_MODE=oauth` (optional, self-hosted authorization server, no external IdP)**
+
+```mermaid
+%%{init: {'theme':'base', 'themeVariables': {'primaryColor': '#2563eb', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#1e40af', 'lineColor': '#64748b', 'background': 'transparent'}}}%%
+flowchart LR
+  br["Browser"] -->|"JWT RS256"| orch["Orchestrator"]
+  orch -->|"Bearer agent:invoke"| sp["Specialists"]
+  sp -->|"Bearer mcp:product or mcp:inventory"| mcp["MCP servers"]
+  as["Authorization server :8090<br/>JWKS"] -.->|"validates"| orch
+  as -.->|"validates"| sp
+  as -.->|"validates"| mcp
+  classDef core     fill:#2563eb,stroke:#1e40af,color:#ffffff
+  classDef external fill:#f59e0b,stroke:#b45309,color:#000000
+  classDef success  fill:#10b981,stroke:#047857,color:#ffffff
+  classDef error    fill:#ef4444,stroke:#b91c1c,color:#ffffff
+  classDef infra    fill:#64748b,stroke:#334155,color:#ffffff
+  class br,orch,sp,mcp core
+  class as error
 ```
 
 The platform has three principal trust boundaries:
@@ -66,7 +95,7 @@ Request →
 
 ### Layer 1 — Prompt-layer rules (`grounding-rules.yaml`)
 
-`shared/config/prompts/_shared/grounding-rules.yaml` is injected into every agent's system prompt via the YAML composition system (`shared/prompt_loader.py`). It enforces three invariants at the model level:
+`agents/python/config/prompts/_shared/grounding-rules.yaml` is injected into every agent's system prompt via the YAML composition system (`shared/prompt_loader.py`). It enforces three invariants at the model level:
 
 - **Data grounding** — every answer must originate from a tool call; the model must not fabricate data from training.
 - **Prompt-injection resistance** — tool results and user text are data, never instructions. Fake system/developer turns are explicitly forbidden.
@@ -86,7 +115,11 @@ This layer is the broadest defense. Its weakness is that it is only as reliable 
 - XML-style injection tags (`</system>`, `<instructions>`)
 - Privilege escalation phrasing (`act as if you are an admin`)
 
-**Default behavior**: observe-only. Detections increment a counter, set `context.metadata["guardrail_injection_detected"]`, and log at INFO. Set `GUARDRAILS_BLOCK_ON_INJECTION=true` to log at WARNING; blocking of the request itself requires a custom middleware that reads the metadata flag.
+**Default behavior**: observe-only (`GUARDRAILS_BLOCK_ON_INJECTION=false`). A detection increments a counter, sets `context.metadata["guardrail_injection_detected"]` and the request-scoped `injection_detected` guardrail flag, and logs at INFO; the message still reaches the model.
+
+**Blocking**: set `GUARDRAILS_BLOCK_ON_INJECTION=true` (no custom middleware needed; independent of `GUARDRAILS_FAIL_OPEN`, and still subject to the `GUARDRAILS_ENABLED` master switch). The middleware then short-circuits the chat call without calling `call_next()`, so the flagged text never reaches the model. It logs `guardrails.injection_blocked` at WARNING and also sets the `injection_blocked` flag (the flag the red-team evals can assert on). The scan covers every message in that chat call, not only the latest user message. .NET does the same in `SpecialistPipeline` (`GuardrailsBlockOnInjection`).
+
+**What the user sees**: the specialist answers with a fixed refusal instead of a model reply: "I can't process that request - it looks like it contains an attempt to override my instructions. If you have a genuine question, please rephrase it without the embedded commands." Non-streaming calls carry `finish_reason="content_filter"`; streaming calls yield the same text as a single chunk. Turn it on only after measuring the false-positive rate (see below).
 
 **False-positive rate**: patterns are deliberately high-precision to avoid blocking legitimate phrasing. The red-team suite (`evals/safety_evaluator.py`) scores the *model's* resistance, not this detector; the detector's own precision and recall are measured by `evals/guardrail_confusion.py` and committed as [`evals/results/guardrail-confusion.md`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/evals/results/guardrail-confusion.md). That is a regex detector measured against a small synthetic corpus and the repo's own bland seeded text: it shows no false positives on that text and about half of the corpus caught, and says nothing about real attackers or real review text.
 
@@ -129,7 +162,7 @@ All four tools in `shared/tools/seller_tools.py` (`get_seller_products`, `update
 |------|---------|--------|
 | `GUARDRAILS_ENABLED` | `true` | Master switch. `false` disables all code-layer guardrails. |
 | `GUARDRAILS_OUTPUT_SANITIZATION` | `true` | Enable/disable `OutputSanitizationMiddleware`. |
-| `GUARDRAILS_BLOCK_ON_INJECTION` | `false` | Log injection detections at WARNING instead of INFO. |
+| `GUARDRAILS_BLOCK_ON_INJECTION` | `false` | Refuse a chat call whose messages match an injection pattern: a fixed refusal is returned and the model is never called. Off: the detection is counted and logged at INFO only. |
 | `GUARDRAILS_FAIL_OPEN` | `true` | Sanitization errors return the raw result rather than raising. |
 | `GUARDRAILS_STRICT_IDENTITY` | `false` | Reject inter-agent calls with malformed forwarded identity. |
 | `GUARDRAILS_INJECTION_PROVIDER` | `regex` | Reserved for future Azure AI Content Safety integration. |
@@ -282,6 +315,13 @@ async def get_user_orders(limit: Annotated[int, "Max results"] = 10) -> list[dic
 
 All database access uses `asyncpg`'s parameterized query syntax (`$1, $2, …`). No string concatenation is used to build SQL. This eliminates SQL injection at the query-construction layer.
 
+### Return-label tokens
+
+`GET /api/returns/{token}/label` is public: the token in the URL is the only credential, so it is matched whole and exactly (never with `LIKE`).
+
+- **Entropy.** New tokens are 128 random bits, 32 lowercase hex characters (`secrets.token_hex(16)` on Python, `RandomNumberGenerator` on .NET). Tokens minted earlier were 12 hex characters (48 bits). They are still accepted, but only for 30 days from the return's `created_at` (the validity the printed label states); after that they get the same 404 as an unknown token. A 32-character token does not expire on this rule. Remove the legacy branch (`shared/return_label.py`, `ReturnLabelToken`) once 30 days have passed since the deploy: it is marked `LEGACY_LABEL_TOKEN_REMOVE_AFTER` / `ReturnLabelToken.LegacyRemoveAfter` (2026-12-31), and a real-clock test on each stack (`test_legacy_token_branch_is_due_for_removal`, `ReturnLabelTokenRemovalTests.LegacyTokenBranch_IsDueForRemoval`) fails after that date with a message to delete the branch (and then the test).
+- **Enumeration limit.** Every malformed, unknown or expired-legacy lookup spends a per-client-address budget (`RATE_LIMIT_AUTH_MAX_REQUESTS` per `RATE_LIMIT_AUTH_WINDOW_SECONDS`, bucket `ratelimit:label-miss:ip:<addr>`). Once it is spent the route answers 429 before looking anything up, valid tokens included, until the window slides. A successful lookup never spends it. Like the other limiters it fails open when Redis is unreachable. The address is the shared client-address derivation (`RATE_LIMIT_TRUSTED_PROXY_HOPS`, `RATE_LIMIT_TRUSTED_PROXIES`, see `docs/configuration.md`): the right-most `X-Forwarded-For` entry a trusted proxy vouches for, never the left-most, so two browsers behind a proxy that forwards the real client address have separate budgets. When nothing in front of the web container supplies that address (the stock compose stack, where `WEB_TRUSTED_PROXY_HOPS` stays 0 because Next cannot tell a real address from a forged header), every browser still shares one address and a burst of mistyped labels from many users can briefly block label downloads for all of them.
+
 ---
 
 ## Azure AI Content Safety — Optional Integration
@@ -314,7 +354,7 @@ else:
 | Rotate `AGENT_SHARED_SECRET` | Same rotation cadence; inject via Managed Identity or Key Vault reference |
 | Enable strict identity | `GUARDRAILS_STRICT_IDENTITY=true` |
 | Enable fail-closed sanitization | `GUARDRAILS_FAIL_OPEN=false` |
-| Evaluate blocking on injection | `GUARDRAILS_BLOCK_ON_INJECTION=true` after measuring false-positive rate in staging |
+| Evaluate blocking on injection | `GUARDRAILS_BLOCK_ON_INJECTION=true` (hard refusal, no custom code) after measuring the false-positive rate in staging |
 | Enable HTTPS everywhere | TLS termination at the AKS ingress; no plain HTTP between pods |
 | Network policy | Restrict specialist ports (8081–8085) to orchestrator pod only |
 | Complete role enforcement | Add `@requires_role` on open items in the [audit matrix](agent-audit-matrix.md) |

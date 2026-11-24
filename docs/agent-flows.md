@@ -215,7 +215,7 @@ sequenceDiagram
     Note over ORCH: Intent: order tracking<br/>ECommerceContextProvider injects<br/>recent orders into context
 
     ORCH->>LLM: ChatAgent.run()
-    Note over LLM: Context already contains<br/>recent orders -- selects<br/>most recent active order
+    Note over LLM: Context already contains<br/>a summary of recent orders<br/>(id, status, total, date) --<br/>selects most recent active order
     LLM-->>ORCH: Tool call: call_specialist_agent<br/>(order-management, "Track user's most recent order")
 
     rect rgb(15, 118, 110)
@@ -440,7 +440,7 @@ prompts.
 
 ### Common Patterns Across Flows
 
-- **Context injection**: Every agent receives user profile and recent orders via `ECommerceContextProvider` before processing. This enables personalization (loyalty tier, purchase history) without the user repeating themselves.
+- **Context injection**: Every agent receives user profile and recent orders via `ECommerceContextProvider` before processing. This enables personalization (loyalty tier, purchase history) without the user repeating themselves. The recent-orders part is a summary only (id, status, total and date per order): an agent must call `get_user_orders` or `get_order_details` before it builds an order card, because the summary has no items, address, carrier or tracking.
 - **Shared tools**: Agents can call tools outside their primary domain. Product Discovery calls `check_stock()` (shared inventory tool) to avoid recommending out-of-stock items. This reduces unnecessary A2A round-trips.
 - **Sequential A2A** (in `tool` mode): The Orchestrator calls specialists one at a time. Each response informs the next call's message. This is intentional -- later agents need context from earlier results (e.g., Pricing needs to know which products were recommended).
 - **LLM synthesis**: The Orchestrator's LLM doesn't just concatenate specialist responses. It synthesizes them into a natural, coherent message with clear structure and actionable next steps.

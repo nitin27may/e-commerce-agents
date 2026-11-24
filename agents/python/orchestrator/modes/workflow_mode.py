@@ -50,6 +50,7 @@ from shared.factory import get_checkpoint_storage
 from shared.run_usage import zero_usage
 
 from .base import ModeCapabilities, RunContext
+from .grounded import grounded_run
 
 _UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 
@@ -102,7 +103,7 @@ class PrePurchaseMode:
         "estimate — then synthesized into one recommendation. Contrast with `tool`, "
         "which would make these same calls one at a time, serially."
     )
-    capabilities = ModeCapabilities(streams=True, supports_hitl=False, supports_checkpoints=False, is_graph=True)
+    capabilities = ModeCapabilities(streams=True, supports_hitl=False, supports_checkpoints=True, is_graph=True)
 
     def __init__(self, tools: dict[str, Any] | None = None) -> None:
         self._tools = tools
@@ -122,6 +123,7 @@ class PrePurchaseMode:
             "estimate_shipping": getattr(estimate_shipping, "func", estimate_shipping),
         }
 
+    @grounded_run
     async def run(self, message: str, ctx: RunContext) -> AsyncIterator[OrchestrationEvent]:
         from workflows.pre_purchase import PrePurchaseWorkflow, ResearchState
 
@@ -220,7 +222,7 @@ class ReturnReplaceMode:
         "workflow's policy-gate executor), and only then return initiation, replacement "
         "search, loyalty discount and finalize."
     )
-    capabilities = ModeCapabilities(streams=True, supports_hitl=True, supports_checkpoints=False, is_graph=True)
+    capabilities = ModeCapabilities(streams=True, supports_hitl=True, supports_checkpoints=True, is_graph=True)
 
     def __init__(self, tools: dict[str, Any] | None = None) -> None:
         self._tools = tools
@@ -244,6 +246,7 @@ class ReturnReplaceMode:
             "resolve_return": resolve_return,
         }
 
+    @grounded_run
     async def run(self, message: str, ctx: RunContext) -> AsyncIterator[OrchestrationEvent]:
         from shared.context import current_user_email
         from workflows.return_replace import ReturnAndReplaceWorkflow, WorkflowState
@@ -367,6 +370,7 @@ class ReturnReplaceMode:
             },
         )
 
+    @grounded_run
     async def resume(
         self,
         *,

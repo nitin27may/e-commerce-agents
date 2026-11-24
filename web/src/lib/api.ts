@@ -1,3 +1,4 @@
+
 /**
  * Base URL for API calls. Empty by default: the browser talks to its own
  * origin and `src/app/api/[...path]/route.ts` forwards to the orchestrator, so
@@ -14,6 +15,18 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
  */
 export function apiUrl(path: string): string {
   return path.startsWith("/api") ? `${API_URL}${path}` : path;
+}
+
+/**
+ * `fetch` for every backend call. The static preview (`NEXT_PUBLIC_PREVIEW=1`, issue #301) answers from
+ * recorded data instead: the mock module is a dynamic import behind a build-time constant, so a normal
+ * build contains neither it nor its data.
+ */
+function backendFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  // The env test is written out here, not read from ./preview/config: the bundler only drops the import
+  // below when the condition is a literal in this very file.
+  if (process.env.NEXT_PUBLIC_PREVIEW === "1") return import("./preview/mock-api").then((m) => m.previewFetch(input, init));
+  return fetch(input, init);
 }
 
 export interface Address {
@@ -178,8 +191,20 @@ export interface ProposalLine {
   evidence: Record<string, unknown>;
   /** The guard verdict from when it was proposed; `reasons` are fixed codes such as `margin_below_floor`. */
   guard: { ok: boolean; reasons: string[]; numbers: Record<string, string | null>; policy_version: string } | null;
-  status: "proposed" | "accepted" | "edited" | "rejected" | "blocked" | "executed" | "failed";
+  status:
+    | "proposed"
+    | "accepted"
+    | "edited"
+    | "rejected"
+    | "blocked"
+    | "executed"
+    | "failed"
+    | "awaiting_manager"
+    | "expired";
   executed_at: string | null;
+  /** Restock lines only: what the line commits (quantity x unit cost); null when the cost is unknown. */
+  po_value?: Decimalish | null;
+  unit_cost?: Decimalish | null;
 }
 
 /** One row of the staff approvals inbox (`GET /api/approvals`). */
@@ -215,7 +240,11 @@ export interface SellerProposal {
   seller_email: string;
   kind: "markdown" | "restock" | "mixed";
   trigger: "manual" | "scheduled" | "event";
-  status: "pending_review" | "decided" | "executed" | "cancelled";
+  status: "pending_review" | "awaiting_manager" | "decided" | "executed" | "cancelled";
+  /** `manager` once the batch's PO value routed its restock lines to a manager (#298). */
+  stage?: "seller" | "manager";
+  /** The batch's PO value, the policy threshold, and whether accepting the restock lines needs a manager. */
+  po?: { value: Decimalish; threshold: number | null; needs_manager: boolean };
   created_at: string;
   updated_at: string;
   approval_id: string | null;
@@ -271,7 +300,39 @@ export interface AutonomyDecision {
     drew?: { count: number; amount: string } | null;
     usage_before?: { global_count: number; global_amount: string; customer_count: number } | null;
   };
-  input: { event?: { event_id: string; delay_days: number | null }; rule?: string | null };
+  input: {
+    event?: {
+      event_id: string;
+      delay_days?: number | null;
+      product_id?: string;
+      product_name?: string;
+      new_price?: string;
+      line?: {
+        product_name?: string;
+        paid_unit_price?: string;
+        new_price?: string;
+        quantity?: number;
+        damaged_quantity?: number;
+        damaged_value?: string;
+      };
+      /** order.item_damaged: what was offered (#299). */
+      resolution?: "credit" | "replacement_offer" | null;
+      /** order.risk_flagged: the score read from the database and the signals that fired (#299). */
+      risk?: {
+        score: number;
+        order_total?: string;
+        hold?: boolean;
+        signals?: { signal: string; points: number; actual: string }[];
+      };
+    };
+    rule?: string | null;
+  };
+  /** The order line a price adjustment or a damaged-item remedy is for (#299). */
+  order_item_id?: string | null;
+  /** A risk review only: whether its order is on hold right now (null for every other action). */
+  hold_active?: boolean | null;
+  /** The customer message the ops-responder drafted, or the template it fell back to; null when none was made. */
+  draft?: { body: string; source: "llm" | "template"; model: string | null; fallback_reason: string | null } | null;
   policy_version: string | null;
   approval_id: string | null;
   approval_status: string | null;
@@ -293,6 +354,12 @@ export interface AutonomyBudget {
   per_customer_max_count: number;
   per_customer_max_amount: string;
   per_order_max_count: number;
+  /** This UTC month (YYYY-MM) and what the budget has drawn in it; the cap is null when the budget has none (#299). */
+  month?: string;
+  month_used_count?: number;
+  month_used_amount?: string;
+  month_max_count?: number | null;
+  month_max_amount?: string | null;
 }
 
 export interface AutonomyDecisionsResponse {
@@ -306,6 +373,9 @@ export interface AutonomyDecisionsResponse {
   simulator_enabled: boolean;
   /** Scenario name -> delay in days; empty unless the simulator is on. */
   scenarios: Record<string, number>;
+  /** Scenario name -> the event it sends (price-drop, back-in-stock); empty unless the simulator is on. */
+  event_scenarios?: Record<string, string>;
+  responder_enabled?: boolean;
 }
 
 export interface NotificationsResponse {
@@ -434,6 +504,7 @@ export interface UsageStats {
     total_tool_calls: number;
     total_tokens_cached_in: number;
     total_cost_usd: number;
+    pending_requests: number;
   };
   by_agent: {
     agent_name: string;
@@ -719,7 +790,7 @@ class ApiClient {
     const sent = this.refreshToken;
     if (!sent) return null;
     try {
-      const res = await fetch(`${API_URL}/api/auth/refresh`, {
+      const res = await backendFetch(`${API_URL}/api/auth/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refresh_token: sent }),
@@ -777,7 +848,7 @@ class ApiClient {
       headers["Authorization"] = `Bearer ${this.token}`;
     }
 
-    const res = await fetch(`${API_URL}${path}`, { ...options, headers });
+    const res = await backendFetch(`${API_URL}${path}`, { ...options, headers });
 
     if (res.status === 401) {
       // One retry: if we have a refresh token, swap it for a fresh
@@ -917,7 +988,7 @@ class ApiClient {
       headers["Authorization"] = `Bearer ${this.token}`;
     }
 
-    const res = await fetch(`${API_URL}/api/chat/stream`, {
+    const res = await backendFetch(`${API_URL}/api/chat/stream`, {
       method: "POST",
       headers,
       body: JSON.stringify({
@@ -1082,7 +1153,7 @@ class ApiClient {
    */
   async getDemoTour(): Promise<DemoTour | null> {
     try {
-      const res = await fetch(`${API_URL}/api/demo/tour`);
+      const res = await backendFetch(`${API_URL}/api/demo/tour`);
       if (!res.ok) return null;
       const data = (await res.json()) as Partial<DemoTour>;
       if (!Array.isArray(data.chips) || data.chips.length === 0) return null;
@@ -1361,7 +1432,18 @@ class ApiClient {
   }
 
   simulateAutonomyEvent(scenario: string) {
-    return this.request<{ enqueued: boolean; outbox_id: number | null; event_id: string; order_id: string; delay_days: number }>(
+    return this.request<{
+      enqueued: boolean;
+      outbox_id: number | null;
+      event_id: string;
+      event_type?: string;
+      order_id: string | null;
+      delay_days: number | null;
+      product_id?: string;
+      new_price?: string | null;
+      order_item_id?: string | null;
+      quantity?: number | null;
+    }>(
       "/api/admin/events/simulate",
       { method: "POST", body: JSON.stringify({ scenario }) },
     );

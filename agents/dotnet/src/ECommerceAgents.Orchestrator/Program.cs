@@ -107,6 +107,7 @@ builder.Services.AddApprovals();
 builder.Services.AddApprovalTimeoutWorker();
 
 builder.Services.AddSingleton<SlidingWindowRateLimiter>();
+builder.Services.AddSingleton<ILabelLookupGate, RedisLabelLookupGate>();
 builder.Services.AddSingleton<OrchestratorTools>();
 builder.Services.AddSingleton<AIAgent>(sp =>
 {

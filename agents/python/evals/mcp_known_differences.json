@@ -1,0 +1,10 @@
+{
+  "cases": [
+    {
+      "dataset": "product_discovery",
+      "case": 4,
+      "reason": "The native recording also calls recall_memories before semantic_search; the MCP recording goes straight to semantic_search. Both agents are now offered the same tools (the MCP path keeps recall_memories and store_memory locally), so this is a recorded model choice, not a missing tool. Accuracy is 1.00 on both."
+    }
+  ],
+  "parity": []
+}

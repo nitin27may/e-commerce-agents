@@ -40,7 +40,7 @@ one.** Twelve containers reported healthy throughout the first of those.
 
 The .NET stack could not answer a single question for an extended period. Throughout,
 twelve containers reported healthy, login worked, the UI served, image builds passed, and
-556 unit tests were green. The only symptom was a polite sentence:
+more than 400 unit tests were green (the first case above counts 418 at the time it was found). The only symptom was a polite sentence:
 
 > "I tried searching the catalog for running shoes and their prices, but there was an
 > error retrieving the results."
@@ -72,7 +72,9 @@ is the argument for building gates before content.
 The parity gate that catches this class — `web/e2e/orchestration-parity.spec.ts` run
 against both backends — **is not in CI**. It needs a full stack and a real API key, which
 is impractical on every push, so it runs by hand. That is the standing weakness, recorded
-in [ADR 0005](adr/0005-dual-stack-parity.md).
+in [ADR 0005](adr/0005-dual-stack-parity.md). A keyless part of the gate now runs in CI
+(`stack-parity.yml`: both stacks under replay, orchestration modes that call no model); it
+cannot cover a turn that needs a model.
 
 It is also why the numbers here keep growing.
 

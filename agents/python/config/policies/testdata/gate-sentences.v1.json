@@ -1,0 +1,33 @@
+{
+  "description": "The sentences a user reads when a gated call is refused or parked. Both hosts append them word for word, so Python (shared/park_prechecks.py, shared/hitl.py) and .NET (ParkPrechecks.cs, HitlGate.cs) are pinned to this one file.",
+  "not_submitted": "I have not submitted anything for approval.",
+  "order_not_found": "I could not find that order on your account. I have not submitted anything for approval.",
+  "return_not_found": "I could not find that return on your account. I have not submitted anything for approval.",
+  "park_failed_reply": "I could not submit that request for approval right now, so no changes have been made. Please try again in a moment.",
+  "parked": [
+    {
+      "tool": "cancel_order",
+      "input": { "order_id": "1f0e6a52-0000-4000-8000-000000000001" },
+      "request_id": "abcdef12-0000-4000-8000-000000000002",
+      "sentence": "I have asked a team member to approve cancelling order 1f0e6a52-0000-4000-8000-000000000001 (ref: abcdef12). Nothing has changed yet; you will be notified once it has been reviewed."
+    },
+    {
+      "tool": "process_refund",
+      "input": { "return_id": "2a0e6a52-0000-4000-8000-000000000003" },
+      "request_id": "bcdef123-0000-4000-8000-000000000004",
+      "sentence": "I have asked a team member to approve processing the refund for return 2a0e6a52-0000-4000-8000-000000000003 (ref: bcdef123). Nothing has changed yet; you will be notified once it has been reviewed."
+    },
+    {
+      "tool": "place_backorder",
+      "input": { "quantity": 3 },
+      "request_id": "cdef1234-0000-4000-8000-000000000005",
+      "sentence": "I have asked a team member to approve placing a backorder for product (ref: cdef1234). Nothing has changed yet; you will be notified once it has been reviewed."
+    }
+  ],
+  "role_refusal": {
+    "tool": "place_backorder",
+    "declared_roles": ["seller"],
+    "caller_role": "customer",
+    "sentence": "Your account is not permitted to place backorders; that is limited to admin, seller accounts. I have not submitted anything for approval."
+  }
+}

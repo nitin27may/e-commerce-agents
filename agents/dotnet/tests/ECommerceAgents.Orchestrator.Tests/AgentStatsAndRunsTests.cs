@@ -139,6 +139,19 @@ public sealed class AgentStatsAndRunsTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Runs_Support_SeesOnlyOwnRuns_ReviewingHappensInTheApprovalsInbox()
+    {
+        // Staff may decide an approval, but /api/runs stays scoped: only admins read other users' runs. Support
+        // reviews other people's requests from /api/approvals, not from this list (docs/checkpoints-and-resume.md).
+        await SeedRunsForBothUsersAsync();
+        using var client = ClientFor(r => r.MapRunsRoutes(), "support-stats@example.com", role: "support");
+
+        var payload = await client.GetFromJsonAsync<JsonElement>("/api/runs");
+
+        payload.GetProperty("total").GetInt64().Should().Be(0);
+    }
+
+    [Fact]
     public async Task Runs_Admin_SeesEveryUsersRuns()
     {
         await SeedRunsForBothUsersAsync();

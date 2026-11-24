@@ -3,6 +3,7 @@ using ECommerceAgents.InventoryFulfillment.Tools;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Data;
+using ECommerceAgents.Shared.Grounding;
 using ECommerceAgents.TestFixtures;
 using FluentAssertions;
 using Xunit;
@@ -223,6 +224,20 @@ public sealed class InventoryToolsTests : IAsyncLifetime
         result.TotalShipments.Should().Be(1);
         result.TotalShippingCost.Should().BeGreaterThan(0m);
         result.Shipments.Should().HaveCount(1);
+    }
+
+    /// <summary>The ledger over the fulfillment plan's own return value: the shipping cost, top level and per shipment.</summary>
+    [Fact]
+    public async Task TheGroundingLedger_RecordsWhatCalculateFulfillmentPlanReturns()
+    {
+        EnsureUserScope();
+        var result = await _tools.CalculateFulfillmentPlan([_productId.ToString()], "east");
+        var ledger = new GroundingLedger();
+
+        ledger.Record(result);
+
+        ledger.KnownAmounts.Should().Contain(result.TotalShippingCost!.Value);
+        ledger.KnownAmounts.Should().Contain(result.Shipments![0].ShippingCost);
     }
 
     // ─────────────────────── place_backorder ─────────────────

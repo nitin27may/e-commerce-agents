@@ -108,9 +108,17 @@ class Settings(BaseSettings):
     # X-Forwarded-For and are trusted to do so. The client address is the entry
     # that many places from the RIGHT of the header (1 = the right-most entry,
     # i.e. what the Next.js proxy appended). Entries further left were supplied
-    # by the caller and are never trusted. 0 ignores the header entirely and
-    # uses the TCP peer address.
-    RATE_LIMIT_TRUSTED_PROXY_HOPS: int = 1
+    # by the caller and are never trusted. 0 (the code default, safe for a
+    # directly exposed orchestrator) ignores the header entirely and uses the
+    # TCP peer address. The shipped compose files and Bicep set it for the
+    # stack they ship.
+    RATE_LIMIT_TRUSTED_PROXY_HOPS: int = 0
+    # Optional peer gate: comma-separated IPs / CIDRs allowed to set
+    # X-Forwarded-For. When set, the header is honoured only if the TCP peer is
+    # in the list; any other peer is keyed by its own address, so a caller that
+    # reaches the orchestrator directly cannot choose its bucket. Empty = no
+    # gate (hops alone decide). A value that parses to nothing trusts nobody.
+    RATE_LIMIT_TRUSTED_PROXIES: str = ""
 
     # ── CORS ────────────────────────────────────────────────────────
     # Comma-separated list of origins allowed to call the orchestrator from a
@@ -331,6 +339,12 @@ class Settings(BaseSettings):
     # before executing. Requests queue in the hitl_requests DB table and are
     # reviewed at /admin/approvals.
     HITL_ENABLED: bool = True
+    # Before a gated call is parked for staff approval the customer is asked to confirm the exact action in plain
+    # words, and only an explicit yes on a later turn lets it park (shared/customer_confirmation.py, #302). Separate
+    # from HITL_ENABLED: staff approval still applies after the customer confirms. Off = park straight away.
+    CUSTOMER_CONFIRMATION_ENABLED: bool = True
+    # How long an unanswered confirmation stays answerable. A yes after this starts the question over.
+    CUSTOMER_CONFIRMATION_TTL_SECONDS: int = 600
     # How long a resume claim ('processing' on hitl_requests) may be held before
     # another approver can take it over. A crash between claim and release used to
     # strand the row forever; claimed_at (migration 0002) makes that detectable.
@@ -366,6 +380,11 @@ class Settings(BaseSettings):
     MERCHANT_OPS_SCHEDULE_ENABLED: bool = False
     # UTC hour (0-23) of the daily run.
     MERCHANT_OPS_RUN_HOUR_UTC: int = 6
+    # The model-driven merchant-ops specialist (#298, port 8086) is reachable by a direct call to its own service
+    # whenever it runs. This flag decides whether the ORCHESTRATOR may route to it: off (the default), the agent is
+    # dropped from the registry the orchestrator reads and neither its prompt nor the routing tool's description
+    # mention it, so every recorded orchestrator request is byte-identical to what it was before the agent existed.
+    MERCHANT_OPS_AGENT_ENABLED: bool = False
 
     # ── Event autonomy (#94) ─────────────────────────────────────────
     # Events (a shipment running late) handled by the outbox worker: inside an autonomy budget the system acts
@@ -377,6 +396,12 @@ class Settings(BaseSettings):
     AUTONOMY_SIMULATOR_ENABLED: bool = False
     # Use this autonomy policy file instead of config/policies/autonomy.yaml (tests, demos with small caps).
     AUTONOMY_POLICY_PATH: str = ""
+    # The ops-responder (#299): after the engine decides, a model drafts the customer-facing message (a short apology or
+    # explanation) from the decision's facts. It only words the message: the amount and the tier are the engine's, the
+    # draft is checked against the decision's facts (amounts, ids, day counts) and a failed check or a model error falls
+    # back to the template. OFF by default; with it off no model is called anywhere in event autonomy. Needs
+    # AUTONOMY_ENABLED and a configured LLM_PROVIDER.
+    AUTONOMY_RESPONDER_ENABLED: bool = False
 
     # ── History compaction (B-15) ────────────────────────────────────
     # Keep only the last N message groups (a user turn with its assistant/tool messages) of the rehydrated
@@ -388,7 +413,8 @@ class Settings(BaseSettings):
     # ── MCP integration (optional, flag-gated) ──────────────────────
     # When enabled, specialist agents connect to MCP servers for their data
     # layer instead of calling asyncpg directly. MCP servers must be running
-    # at the configured URLs. Both modes are semantically equivalent.
+    # at the configured URLs. The tools overlap but are not identical (field sets, one ranking): see
+    # docs/mcp-integration.md, "Native versus MCP, measured".
     MCP_ENABLED: bool = False
     MCP_PRODUCT_SERVER_URL: str = "http://localhost:9000/mcp"
     MCP_INVENTORY_SERVER_URL: str = "http://localhost:9001/mcp"

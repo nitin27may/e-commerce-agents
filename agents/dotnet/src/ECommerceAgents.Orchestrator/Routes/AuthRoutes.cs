@@ -95,7 +95,7 @@ public static class AuthRoutes
             var ip = ClientAddress.Resolve(
                 http.Request.Headers["X-Forwarded-For"].FirstOrDefault(),
                 http.Connection.RemoteIpAddress,
-                settings.RateLimitTrustedProxyHops);
+                settings);
 
             if (!await limiter.TryAcquireAsync(
                     SlidingWindowRateLimiter.AuthKeyFor(ip),
@@ -124,7 +124,7 @@ public static class AuthRoutes
         var ip = ClientAddress.Resolve(
             http.Request.Headers["X-Forwarded-For"].FirstOrDefault(),
             http.Connection.RemoteIpAddress,
-            settings.RateLimitTrustedProxyHops);
+            settings);
         return await limiter.TryAcquireAsync(
             SlidingWindowRateLimiter.AuthAccountKeyFor(ip, email),
             settings.RateLimitAuthMaxRequests,

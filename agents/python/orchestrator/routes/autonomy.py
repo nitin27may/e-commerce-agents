@@ -12,6 +12,7 @@ Admin only. Identity comes from the verified token, never the body.
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -26,10 +27,17 @@ router = APIRouter()
 
 
 class SimulateBody(BaseModel):
-    scenario: str | None = Field(default=None, max_length=20)
+    scenario: str | None = Field(default=None, max_length=40)
     order_id: str | None = Field(default=None, max_length=64)
     delay_days: int | None = Field(default=None, ge=0, le=365)
     event_id: str | None = Field(default=None, max_length=200)
+    # order.shipment_delayed (the default), product.price_dropped, inventory.back_in_stock, order.item_damaged or
+    # order.risk_flagged.
+    event_type: str | None = Field(default=None, max_length=40)
+    order_item_id: str | None = Field(default=None, max_length=64)
+    quantity: int | None = Field(default=None, ge=1, le=10_000)
+    product_id: str | None = Field(default=None, max_length=64)
+    new_price: Decimal | None = Field(default=None, gt=0, allow_inf_nan=False)
 
 
 class ReverseBody(BaseModel):
@@ -58,6 +66,11 @@ async def simulate_event(body: SimulateBody, user: dict[str, Any] = Depends(requ
             order_id=body.order_id,
             delay_days=body.delay_days,
             event_id=body.event_id,
+            event_type=body.event_type,
+            product_id=body.product_id,
+            new_price=body.new_price,
+            order_item_id=body.order_item_id,
+            quantity=body.quantity,
         )
     except ApprovalHTTPError as exc:
         raise _http(exc) from None

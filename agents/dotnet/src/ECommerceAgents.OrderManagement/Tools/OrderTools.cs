@@ -39,14 +39,10 @@ public sealed class OrderTools(DatabasePool pool, AgentSettings settings)
     /// <summary>Hard ceiling for the LLM-supplied <c>limit</c> parameter on list queries.</summary>
     private const int MaxLimit = 100;
 
-    /// <summary>Allowed terminal-state values for <c>cancel_order</c> source rows.</summary>
-    private static readonly HashSet<string> CancellableStatuses = new(StringComparer.Ordinal)
-    {
-        "placed",
-        "confirmed",
-    };
+    // The status sets live in GateRules, shared with the pre-park check (ParkPrechecks) so the two cannot drift.
+    private static readonly IReadOnlySet<string> CancellableStatuses = GateRules.CancellableStatuses;
 
-    private static readonly HashSet<string> ModifiableStatuses = CancellableStatuses;
+    private static readonly IReadOnlySet<string> ModifiableStatuses = GateRules.ModifiableStatuses;
 
     public IEnumerable<AITool> All() => new AITool[]
     {

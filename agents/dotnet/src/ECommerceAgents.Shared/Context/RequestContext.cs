@@ -39,6 +39,16 @@ public static class RequestContext
     // Set when a specialist reported a replay miss (see ReplayMiss). A box for the reason _runCostUsd is one: the tool
     // call that records it runs in a task the function-invocation loop spawns, whose AsyncLocal writes the caller never sees.
     private static readonly AsyncLocal<StrongBox<bool>?> _replayMiss = new();
+    // Sentences a gated tool call must put in front of the user word for word (a precheck refusal, the pending-approval
+    // notice, a fail-closed reply). Same box-in-a-scope shape as _replayMiss: the tool call runs in a task whose AsyncLocal
+    // writes the caller never sees, so the list itself is shared and guarded by its own lock.
+    private static readonly AsyncLocal<List<string>?> _gateNotices = new();
+    // The per-request grounding ledger: one mutable object shared by reference, so a tool call that records into it
+    // from a task the function-invocation loop spawned is still seen by the code that verifies the answer.
+    private static readonly AsyncLocal<Grounding.GroundingLedger?> _groundingLedger = new();
+    // What this request was sent as: the fallback for the customer confirmation when there is no stored conversation to read the
+    // user's own words from. A box for the reason _replayMiss is one (the streaming host's iterator drops AsyncLocal writes).
+    private static readonly AsyncLocal<StrongBox<string?>?> _turnMessage = new();
 
     public static string CurrentUserEmail
     {
@@ -248,6 +258,79 @@ public static class RequestContext
     /// <summary>Whether a specialist's replay miss ended this request's tool loop.</summary>
     public static bool ReplayMissRecorded => _replayMiss.Value?.Value ?? false;
 
+    /// <summary>
+    /// Whether a gate notice sink is active for this request. When it is not (a caller outside a <see cref="Scope"/>), the
+    /// pipeline cannot promise the sentence reaches the user and leaves the tool result for the model to relay.
+    /// </summary>
+    public static bool GateNoticesActive => _gateNotices.Value is not null;
+
+    /// <summary>Starts a sink if none is active, for a host entered without a <see cref="Scope"/>; the returned handle restores the previous one.</summary>
+    public static IDisposable EnsureGateNotices()
+    {
+        if (_gateNotices.Value is not null)
+        {
+            return new Disposable(() => { });
+        }
+
+        _gateNotices.Value = new List<string>();
+        return new Disposable(() => _gateNotices.Value = null);
+    }
+
+    /// <summary>Records a sentence the user must read. Returns false (and records nothing) when no sink is active.</summary>
+    public static bool RecordGateNotice(string sentence)
+    {
+        if (_gateNotices.Value is not { } list)
+        {
+            return false;
+        }
+
+        lock (list)
+        {
+            list.Add(sentence);
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// The recorded sentences in call order, deduplicated, joined with a single space (Python's <c>park_pending_approvals</c>
+    /// return value); empty when none. Drains the sink so a second read does not repeat them.
+    /// </summary>
+    public static string TakeGateNotice()
+    {
+        if (_gateNotices.Value is not { } list)
+        {
+            return string.Empty;
+        }
+
+        lock (list)
+        {
+            var joined = string.Join(" ", list.Distinct(StringComparer.Ordinal));
+            list.Clear();
+            return joined;
+        }
+    }
+
+    /// <summary>
+    /// The facts this request's tool calls returned (and the values the caller typed), or null outside a
+    /// <see cref="Scope"/>. The .NET twin of Python's <c>current_grounding_ledger</c> ContextVar
+    /// (<c>shared/grounding/ledger.py</c>): written by <c>SpecialistPipeline</c>'s grounding stage, read by the
+    /// verifier. Every scope starts with an empty one.
+    /// </summary>
+    public static Grounding.GroundingLedger? CurrentGroundingLedger => _groundingLedger.Value;
+
+    /// <summary>The message this request was sent as, or null (python's <c>user_message</c> argument to <c>park_pending_approvals</c>).</summary>
+    public static string? CurrentTurnMessage => _turnMessage.Value?.Value;
+
+    /// <summary>Records the message this request was sent as. A no-op outside a <see cref="Scope"/>.</summary>
+    public static void NoteTurnMessage(string? message)
+    {
+        if (_turnMessage.Value is { } box)
+        {
+            box.Value = message;
+        }
+    }
+
     public static IDisposable Scope(string email, string role, string sessionId, IReadOnlyList<HistoryEntry>? history = null)
     {
         var previous = (
@@ -263,7 +346,10 @@ public static class RequestContext
             RunUsage: _runUsage.Value,
             RunCost: _runCostUsd.Value,
             RunTokens: _runTokens.Value,
-            ReplayMiss: _replayMiss.Value
+            ReplayMiss: _replayMiss.Value,
+            GateNotices: _gateNotices.Value,
+            GroundingLedger: _groundingLedger.Value,
+            TurnMessage: _turnMessage.Value
         );
         _userEmail.Value = email;
         _userRole.Value = role;
@@ -276,6 +362,9 @@ public static class RequestContext
         _deliveredSteps.Value = new HashSet<int>();
         _runUsage.Value = new RunUsage();
         _replayMiss.Value = new StrongBox<bool>(false);
+        _gateNotices.Value = new List<string>();
+        _groundingLedger.Value = new Grounding.GroundingLedger();
+        _turnMessage.Value = new StrongBox<string?>(null);
         // A fresh spend tally per scope. Nothing ever called ResetRunCost, and AddRunCost's lazy
         // creation happens inside whatever async frame first prices a turn — a change an
         // AsyncLocal does not carry back to the caller — so the running total, and with it the
@@ -297,6 +386,9 @@ public static class RequestContext
             _runCostUsd.Value = previous.RunCost;
             _runTokens.Value = previous.RunTokens;
             _replayMiss.Value = previous.ReplayMiss;
+            _gateNotices.Value = previous.GateNotices;
+            _groundingLedger.Value = previous.GroundingLedger;
+            _turnMessage.Value = previous.TurnMessage;
         });
     }
 

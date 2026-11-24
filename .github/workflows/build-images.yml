@@ -27,7 +27,7 @@ name: Build Images
 #   pull_request  -> this file's own trigger. Build, load, smoke-test, discard.
 #                    Never pushes. Fork PRs have no packages:write, so this path
 #                    must stay push-free regardless.
-#   push to main  -> tests.yml's `publish-main` job, which `needs:` all four
+#   push to main  -> tests.yml's `publish-main` job, which `needs:` all six
 #                    test jobs. Publishes :main and :sha-<7>.
 #   version tag   -> release.yml, after a full test re-run AND a human approval
 #                    on the `release` environment. Publishes :vX.Y.Z and :latest.
@@ -259,7 +259,7 @@ jobs:
             smoke_port: "9001"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # ── Resolve publish intent ───────────────────────────────────────────
       #
@@ -326,7 +326,7 @@ jobs:
       # acceptable on main, not on every PR.
       - name: Set up QEMU
         if: steps.publish.outputs.should_push == 'true' && matrix.platforms == ''
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4

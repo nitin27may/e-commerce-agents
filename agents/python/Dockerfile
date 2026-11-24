@@ -31,6 +31,10 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY shared/ shared/
 COPY config/ config/
 
+# Recorded model responses for the no-key demo (docker-compose.nokey.yml reads
+# /app/demo/fixtures/replay). About a megabyte; copied into every image like config/.
+COPY demo/ demo/
+
 # The MAF workflow graphs. Three of the five orchestration modes import these
 # lazily, inside the mode rather than at module scope:
 #

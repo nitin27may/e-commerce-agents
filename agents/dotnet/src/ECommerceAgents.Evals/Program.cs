@@ -67,7 +67,7 @@ foreach (var (evalCase, index) in cases.Select((c, i) => (c, i)))
 
     var groundedness = outcome.FixtureMissing || outcome.Error is not null
         ? 0.0
-        : await Scorers.GroundednessAsync(outcome.Text, pool);
+        : await Scorers.GroundednessAsync(outcome.Text, pool, outcome.Ledger);
 
     var correctness = evalCase.ExpectedRoute is { } route
         ? Scorers.Routing(route, outcome.Routes)
@@ -205,7 +205,8 @@ internal sealed class ProductionRunner(DatabasePool pool, AgentSettings settings
             return new RunOutcome(
                 result.Text,
                 RequestContext.CurrentSteps.Select(s => s.ToolName).ToList(),
-                RequestContext.CurrentInvokedAgents.ToList());
+                RequestContext.CurrentInvokedAgents.ToList(),
+                Ledger: RequestContext.CurrentGroundingLedger);
         }
         catch (ReplayChatClient.FixtureMissingException)
         {

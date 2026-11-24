@@ -121,6 +121,9 @@ public static class CheckoutRoutes
         await using var conn = await pool.OpenAsync();
         await using var tx = await conn.BeginTransactionAsync();
 
+        // 0. Serialise this user's checkouts so the one-use-per-coupon check below sees any concurrent order
+        await CouponUsage.LockUserForCheckoutAsync(conn, userId, tx);
+
         // 1. Fetch cart
         var cart = await conn.QueryFirstOrDefaultAsync(
             "SELECT id, coupon_code, discount_amount FROM carts WHERE user_id = @uid",
@@ -209,6 +212,12 @@ public static class CheckoutRoutes
                 && subtotal < (decimal)coupon.min_spend)
             {
                 valid = false;
+            }
+
+            if (valid && await CouponUsage.HasUsedAsync(conn, userId, couponCode, tx))
+            {
+                // Refuse rather than drop the code: dropping it would charge full price unannounced
+                throw new CheckoutRefused(Results.BadRequest(new { detail = CouponUsage.AlreadyUsedMessage }));
             }
 
             if (valid && coupon is not null)

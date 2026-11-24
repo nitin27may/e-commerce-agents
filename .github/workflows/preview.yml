@@ -1,0 +1,89 @@
+# Test the static web preview (#301, docs/preview.md) on pull requests.
+#
+# This workflow never deploys. The preview is published under /preview of the GitHub Pages site by
+# jekyll-gh-pages.yml, which builds it into the same artifact as the docs: a Pages site has one deployment,
+# and a second workflow deploying it would overwrite the docs. What lives here is the part a PR can fail on:
+# the committed data is current, and the static export builds and passes its Playwright spec.
+name: Static preview
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - "scripts/build_preview_data.py"
+      - "agents/python/config/demo/tour.yaml"
+      - "agents/python/demo/fixtures/**"
+      - ".github/workflows/preview.yml"
+  pull_request:
+    paths:
+      - "web/**"
+      - "scripts/build_preview_data.py"
+      - "agents/python/config/demo/tour.yaml"
+      - "agents/python/demo/fixtures/**"
+      - ".github/workflows/preview.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    name: Preview · data check + static export + Playwright
+    # Pinned like web-ui-smoke in tests.yml: the Playwright pinned in web/pnpm-lock.yaml cannot install
+    # Chromium's system dependencies on the newest ubuntu-latest.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Preview data is current
+        run: python scripts/build_preview_data.py --check
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.15.0
+
+      - name: Setup Node 26
+        uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the static export (GitHub Pages sub-path)
+        working-directory: web
+        env:
+          PREVIEW_BASE_PATH: /e-commerce-agents/preview
+        run: pnpm build:preview
+
+      - name: Install Chromium
+        working-directory: web
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Playwright against the export (no backend, no key)
+        working-directory: web
+        env:
+          PREVIEW_E2E: "1"
+        run: pnpm exec playwright test --project=preview --trace off
+
+      - name: Upload the export
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-export
+          path: web/out
+          retention-days: 7

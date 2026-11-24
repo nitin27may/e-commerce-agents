@@ -55,18 +55,35 @@ def test_every_case_has_type_and_one_line_why_and_loads() -> None:
     assert len(load_dataset(PATH)) == len(raw)
 
 
-def test_cases_are_single_turn_and_name_real_tools() -> None:
+def _single(entry: dict) -> list[dict]:
+    """The expectations a case holds: itself, or each turn of a case that asks the customer first and then parks."""
+    return entry["turns"] if "turns" in entry else [entry]
+
+
+def test_cases_name_real_tools() -> None:
     for entry in _raw():
         assert isinstance(entry["input"], str)
-        assert set(entry["expected_tools"]) <= TOOLS, entry["input"]
-        assert set(entry.get("expected_tool_args", {})) <= set(entry["expected_tools"]), entry["input"]
         assert entry.get("user_email"), entry["input"]
+        for part in _single(entry):
+            assert set(part["expected_tools"]) <= TOOLS, entry["input"]
+            assert set(part.get("expected_tool_args", {})) <= set(part["expected_tools"]), entry["input"]
 
 
-def test_a_backorder_that_is_expected_is_expected_to_park() -> None:
+def test_a_backorder_case_states_whether_it_parks() -> None:
+    """A backorder parks only for a seller or admin (``shared.park_prechecks`` refuses the rest before it parks)."""
     for entry in _raw():
-        if "place_backorder" in entry["expected_tools"]:
-            assert entry.get("expect_hitl") is True, entry["input"]
+        for part in _single(entry):
+            if "place_backorder" in part["expected_tools"]:
+                assert isinstance(part.get("expect_hitl"), bool), entry["input"]
+                if entry.get("user_role") not in ("seller", "admin"):
+                    assert part["expect_hitl"] is False and part.get("expect_denial") is True, entry["input"]
+
+
+def test_an_in_stock_backorder_expects_the_refusal_not_a_tool_call() -> None:
+    """The precheck refuses a backorder for an in-stock product in words, before the tool runs or an approval opens."""
+    entry = next(e for e in _raw() if e["input"] == "Place a backorder for 10 units of the Sony WH-1000XM5.")
+    assert entry["expected_tools"] == [] and "expected_tool_args" not in entry
+    assert entry["expect_hitl"] is False and entry["criteria"]["precheck_refusal"] is True
 
 
 @pytest.mark.asyncio

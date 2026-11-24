@@ -3,6 +3,7 @@ using ECommerceAgents.PricingPromotions.Tools;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Data;
+using ECommerceAgents.Shared.Grounding;
 using ECommerceAgents.TestFixtures;
 using FluentAssertions;
 using Xunit;
@@ -129,6 +130,86 @@ public sealed class PricingToolsTests : IAsyncLifetime
         result.Error.Should().Contain("specific user");
     }
 
+    private async Task<Guid> AddUserAsync(string email, string role = "customer")
+    {
+        await using var conn = await _pool.OpenAsync();
+        return await conn.ExecuteScalarAsync<Guid>(
+            @"INSERT INTO users (email, password_hash, name, role) VALUES (@email, 'x', 'T', @role) RETURNING id",
+            new { email, role }
+        );
+    }
+
+    private async Task AddOrderAsync(Guid userId, string code, string status = "delivered")
+    {
+        await using var conn = await _pool.OpenAsync();
+        await conn.ExecuteAsync(
+            @"INSERT INTO orders (user_id, status, total, shipping_address, coupon_code)
+              VALUES (@userId, @status, 20, '{}'::jsonb, @code)",
+            new { userId, status, code }
+        );
+    }
+
+    [Fact]
+    public async Task ValidateCoupon_RefusesAUserWithAPriorOrder()
+    {
+        await AddOrderAsync(await UserId(), "SAVE10");
+        EnsureUserScope();
+
+        var result = await _tools.ValidateCoupon("save10", 200m);
+
+        result.Valid.Should().BeFalse();
+        result.Code.Should().Be("save10");
+        result.Error.Should().Be("You have already used this coupon");
+        result.ErrorCode.Should().Be("coupon_already_used");
+    }
+
+    [Fact]
+    public async Task ValidateCoupon_AllowsAnotherUser()
+    {
+        await AddOrderAsync(await AddUserAsync("someone@example.com"), "SAVE10");
+        EnsureUserScope();
+
+        (await _tools.ValidateCoupon("SAVE10", 200m)).Valid.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ValidateCoupon_IgnoresACancelledOrder()
+    {
+        await AddOrderAsync(await UserId(), "SAVE10", "cancelled");
+        EnsureUserScope();
+
+        (await _tools.ValidateCoupon("SAVE10", 200m)).Valid.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("admin")]
+    [InlineData("seller")]
+    public async Task ValidateCoupon_HasNoRoleExemption(string role)
+    {
+        var email = $"{role}@example.com";
+        await AddOrderAsync(await AddUserAsync(email, role), "SAVE10");
+        RequestContext.CurrentUserEmail = email;
+
+        var result = await _tools.ValidateCoupon("SAVE10", 200m);
+
+        result.ErrorCode.Should().Be("coupon_already_used");
+    }
+
+    [Fact]
+    public async Task ValidateCoupon_UserSpecificRuleIsUnchanged()
+    {
+        EnsureUserScope();
+        var result = await _tools.ValidateCoupon("VIPONLY", 200m);
+        result.Error.Should().Contain("specific user");
+        result.ErrorCode.Should().BeNull();
+    }
+
+    private async Task<Guid> UserId()
+    {
+        await using var conn = await _pool.OpenAsync();
+        return await conn.ExecuteScalarAsync<Guid>("SELECT id FROM users WHERE email = @Email", new { Email });
+    }
+
     // ─────────────────────── get_active_deals ─────────────────
 
     [Fact]
@@ -169,6 +250,38 @@ public sealed class PricingToolsTests : IAsyncLifetime
         result.Savings!.Should().Contain(s => s.Type == "loyalty_discount");
         result.TotalSavings.Should().BeGreaterThan(0m);
         result.FinalTotal.Should().BeLessThan(result.OriginalTotal!.Value);
+    }
+
+    // ─────────────────────── grounding ledger ─────────────────
+
+    /// <summary>The ledger over the pricing tools' own return values: coupon, deals, cart totals and a bundle.</summary>
+    [Fact]
+    public async Task TheGroundingLedger_RecordsWhatThePricingToolsReturn()
+    {
+        EnsureUserScope();
+        var ledger = new GroundingLedger();
+
+        var coupon = await _tools.ValidateCoupon("SAVE10", 200m);
+        ledger.Record(coupon);
+        var deals = await _tools.GetActiveDeals();
+        ledger.Record(deals);
+        var cart = await _tools.OptimizeCart([new CartItemInput(_productElectronicsId.ToString(), 1)]);
+        ledger.Record(cart);
+        var bundle = await _tools.CheckBundleEligibility([
+            _productElectronicsId.ToString(),
+            _productClothingId.ToString(),
+        ]);
+        ledger.Record(bundle);
+
+        ledger.Promos["SAVE10"].DiscountAmount.Should().Be(20m);
+        ledger.KnownAmounts.Should().Contain([cart.OriginalTotal!.Value, cart.TotalSavings!.Value, cart.FinalTotal!.Value]);
+        ledger.KnownAmounts.Should().Contain([bundle.BundleDeals[0].BundleTotal, bundle.BundleDeals[0].Savings]);
+        foreach (var c in deals.Coupons)
+        {
+            if (c.MinSpend is { } min) ledger.KnownAmounts.Should().Contain(min);
+            if (c.MaxDiscount is { } max) ledger.KnownAmounts.Should().Contain(max);
+            if (c.DiscountType == "fixed") ledger.KnownAmounts.Should().Contain(c.DiscountValue);
+        }
     }
 
     // ─────────────────────── check_bundle_eligibility ─────────

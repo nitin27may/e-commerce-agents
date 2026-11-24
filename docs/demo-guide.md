@@ -6,6 +6,12 @@ screen recording, or your first ten minutes with the app.
 Start the stack first: [Quick Start](quick-start.md). The fast path is
 `./scripts/dev.sh --demo`, which pulls prebuilt images rather than building.
 
+## Try it without installing anything
+
+The [static preview](preview.md) (<https://nitinksingh.com/e-commerce-agents/preview/>) is the web UI
+replaying the tour's recorded answers in your browser. No stack, no key. It cannot answer anything that was not
+recorded; for that, run the stack.
+
 ## No-key mode
 
 `./scripts/dev.sh --demo --no-key` (PowerShell: `./scripts/dev.ps1 -Demo -NoKey`) runs the whole stack
@@ -17,14 +23,28 @@ again. The stack stays up either way.
 
 Sign in as `tour@example.com` / `tour123`: a dedicated account whose orders the tour depends on, with
 a delivered order over $500 for the return flow. **Reset demo** in the chat puts it back after a run.
-The other accounts below work too, but their recorded answers were not captured, so expect misses.
+`alice.johnson@gmail.com` / `customer123` also has recordings, for the scenarios listed under Demo Scenarios
+below (1 to 8, the handoff and pre-purchase prompts of 9, and the Allbirds prompts the demo clip uses). It also has
+the prompts the Playwright specs send (the greeting for five accounts, the generative-UI, shopping, follow-up and
+grounding prompts); the key-free Playwright run is `E2E_NO_KEY=1 pnpm exec playwright test`, and it reports the
+tests that send an unrecorded prompt as skipped. Other accounts and reworded prompts miss.
 
-Known limit until the recording session lands: the recorded answers (`agents/python/demo/fixtures/replay/`)
-are not in the images yet, so every model call is a miss. Browsing, search, cart and checkout are unaffected.
+The recordings are `agents/python/demo/fixtures/replay/`, and `agents/python/demo/fixtures/manifest.json` says which
+prompt each one answers. They are fixed answers: a date or a count in one ("21 days left in the return window") is
+as of the recording. Two limits. A prompt that changes data (a return, a checkout) changes what a later prompt sees,
+so run the tour from a fresh stack (`--clean`) or use **Reset demo**. The same goes for the database's age: the
+60-day price window of "is it a good deal?" holds 59 points on a fresh seed and fewer as the seed ages, and the
+recording was made on a fresh seed. And the two workflow modes, pre-purchase and
+return-and-replace, call no model, so there is nothing recorded for them and nothing to miss.
+
+The README clip and the stills in these docs are recorded on this stack by `scripts/record-demo.sh` (the clip)
+and `scripts/record-demo.sh --stills` (the stills), driven by `web/e2e/readme-gif.spec.ts`; both need ffmpeg and
+skip unless `RECORD_MEDIA=1`, which the script sets.
 
 ## Test Users
 
-Pre-seeded accounts for testing different roles:
+Pre-seeded accounts for testing different roles. These credentials belong to the local demo data the seeder creates and nothing else: a deployment to Azure generates its own staff passwords, and none of these should exist outside a throwaway environment.
+
 
 | Email | Password | Role | Loyalty Tier |
 |-------|----------|------|-------------|
@@ -65,6 +85,11 @@ Try these in the chat after logging in:
 7. **Stock Check**: "Is the Dyson V15 Detect in stock?"
 8. **Multi-Intent**: "Return my jacket and find me a warmer one under $200"
 
+A coupon works once per user. No seeded order carries a coupon code, so every demo account can still use `WELCOME10`
+(the Power User's cart already holds it). After a checkout with a code, applying that code again answers "You have
+already used this coupon"; cancel the order to free it, or use another code. `/api/demo/reset` deletes the tour user's orders,
+so that account gets its coupons back; other accounts keep theirs used until the order is cancelled.
+
 ### Switch the orchestration pattern
 
 The same orchestrator can coordinate the specialists five different ways. These three scenarios are
@@ -73,15 +98,26 @@ the quickest way to see what that means:
 9. **Change the mode.** Above the chat composer, open the **Mode** dropdown and pick **Handoff Mesh**,
    then ask "Where's my latest order?". Pick **Pre-Purchase Research** and ask "Should I buy the Sony
    WH-1000XM5?". The mode's graph is drawn with the answer and highlights each node as it runs.
+
+    <img src="images/orchestration-graph-live.jpg" alt="Chat in Pre-Purchase Research mode: the fan-out graph drawn under the answer with the fan-out node finished and the rest still running" width="820"/>
+
+    *The graph mid-run: finished nodes turn green while the rest of the fan-out is still pending. The two
+    workflow modes call no model and finish in milliseconds, so this frame is from a take where the stream
+    frames are spaced out (`web/e2e/readme-gif.spec.ts`); with a live model the pacing is its latency.*
 10. **Compare modes on one prompt.** Click **Compare** beside the dropdown, enter one prompt and
     select several modes. Each gets a result card with its answer, latency, tokens and estimated
     cost, and the graph it took. Measured numbers are in the
     [orchestration benchmark](orchestration-benchmark.md).
 
     <img src="images/mode-compare.jpg" alt="Compare dialog: one prompt run through four orchestration modes, each card showing latency, steps, tokens, cost and the graph it took" width="820"/>
+
+    *Four modes on a keyed stack.* On the no-key stack only the two workflow modes can answer here, because
+    Compare calls each model-backed mode with a request of its own and no recording matches it:
+
+    <img src="images/compare-dialog.jpg" alt="Compare dialog on the no-key stack: pre-purchase research and return-and-replace side by side, each card showing its answer, latency, steps and the graph it took" width="820"/>
 11. **Approve a paused return.** Sign in as `tour@example.com` / `tour123`, the account seeded with
-    a delivered order (Alice's most recent order is still `shipped`, so her return stops at the
-    eligibility check). Pick **Return & Replace** and ask "I want to return my last delivered
+    a delivered order over the $500 approval threshold (Alice's most recent order is delivered too, but it
+    is a smaller return that policy may approve without a pause). Pick **Return & Replace** and ask "I want to return my last delivered
     order". The run pauses at the policy gate, nothing is created, and the chat shows "Awaiting
     staff review".
 
@@ -99,6 +135,10 @@ the quickest way to see what that means:
     <img src="images/approvals-inbox.jpg" alt="Approvals inbox as a support reviewer: a pending return routed to support, with Reject and Approve buttons" width="820"/>
 
     <img src="images/runs-approve.jpg" alt="Runs page as an admin: the paused return expanded, with Approve and Reject buttons" width="820"/>
+
+    <img src="images/runs-approval.jpg" alt="Runs page as an admin on a fresh no-key stack: the tour user's return marked Needs approval and expanded to Approve and Reject, above seeded demo runs" width="820"/>
+
+    *The same page from a clean no-key take, regenerated by `scripts/record-demo.sh --stills`.*
 
     The released 1.4.0 images predate the inbox fix: there, **Approvals** is admin-only and lists
     tool approvals only, so decide from **Runs** as an admin. See [approvals](approvals.md).

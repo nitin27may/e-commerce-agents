@@ -26,7 +26,7 @@ The capstone (the full application in this repo) uses a sequential pipeline for 
 | **OpenAI** | `OPENAI_API_KEY` | `LLM_MODEL` (default `gpt-4.1`) |
 | **Azure OpenAI** | `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_KEY`, `AZURE_OPENAI_DEPLOYMENT` | `AZURE_OPENAI_API_VERSION` (default `2024-10-21`) |
 
-- **Key:** `main.py`'s default prompt has no recorded fixture, so running it needs a key (live run). Without one, the chapter's tests replay their own recorded prompt: `uv run --project tutorials pytest tutorials/12-sequential-orchestration/python/tests -m "not integration"`.
+- **No key is needed to run this chapter.** With no key, `main.py` replays a recorded response for its default prompt, and the chapter's tests replay their own: `uv run --project tutorials pytest tutorials/12-sequential-orchestration/python/tests -m "not integration"`. A different prompt has no recording; set a key to try your own wording.
 
 ## The concept
 
@@ -68,7 +68,7 @@ Each run makes three LLM calls. The Reviewer's prompt contains the Writer's outp
 
 ## Python
 
-Source: [`python/main.py`](./python/main.py). Run from the repo root. `main.py` needs a key, because its default prompt has no recorded responses. If you have no key, run the tests first; they replay a recorded prompt:
+Source: [`python/main.py`](./python/main.py). Run from the repo root. With no key, `main.py` replays a recorded response for its default prompt; the tests replay their own recorded prompt:
 
 ```bash
 uv sync --project tutorials

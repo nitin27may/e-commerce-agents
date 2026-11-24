@@ -34,11 +34,23 @@ SANITIZE_TOOLS: dict[str, set[str] | None] = {
     "semantic_search": {"name", "description"},
     "get_trending_products": {"name", "description"},
     "compare_products": {"name", "description", "specs", "features"},
+    # merchant-ops (Python only, #298): review text, and drafts that echo a reviewer's or a product's name
+    "triage_product_reviews": {"title", "body_excerpt", "reviewer", "reviewer_name", "rationale", "product_name"},
+    "list_reviews_needing_attention": {"title", "body_excerpt", "reviewer", "reviewer_name", "product_name"},
+    "draft_review_response": {"title", "body_excerpt", "reviewer", "product_name", "draft_response"},
+    # a proposal's rationale is system-written, but product names are seller-editable text
+    "get_proposal_details": {"rationale", "product_name"},
     # order-management: free-text order notes / status history
     "get_order_details": {"note", "notes", "reason", "comment", "description"},
     "get_user_orders": {"note", "notes", "reason"},
     "get_order_tracking": {"notes", "location"},
 }
+
+#: Sanitized tools that exist only on the Python stack. ``tests/test_guardrails_tool_coverage.py`` compares
+#: SANITIZE_TOOLS with the .NET config; this is the one named difference (merchant-ops is Python only, parity row 39).
+PYTHON_ONLY_SANITIZE: frozenset[str] = frozenset(
+    {"triage_product_reviews", "list_reviews_needing_attention", "draft_review_response", "get_proposal_details"}
+)
 
 # Every registered tool that is deliberately NOT sanitized: its result is
 # structured / numeric / system-generated, or it is a write whose result echoes
@@ -83,6 +95,11 @@ NO_SANITIZE: set[str] = {
     "get_tracking_status",
     "calculate_fulfillment_plan",
     "place_backorder",
+    # merchant-ops (Python only): structured lookups of the seller's own rows
+    "find_my_product",
+    "list_my_proposals",
+    # a pure function of the pasted text: it returns signals and a fixed-template draft, never the text itself
+    "assess_review_text",
     # orchestrator
     "call_specialist_agent",
 }

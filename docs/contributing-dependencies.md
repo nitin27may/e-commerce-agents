@@ -12,7 +12,7 @@ Dependabot runs weekly, on Monday, for six ecosystems: `uv` (`/agents/python`, `
 
 | Kind of update | What Dependabot opens | What we do |
 |---|---|---|
-| Patch and minor | One grouped PR per ecosystem (`python-minor-patch`, `web-minor-patch`, `dotnet-minor-patch`, `docker-minor-patch`, `actions`) | Merge when CI is green. No separate review beyond reading the changelog entries it lists. |
+| Patch and minor | One grouped PR per ecosystem (`python-minor-patch`, `web-minor-patch`, `dotnet-minor-patch`, `docker-minor-patch`, `compose-minor-patch`, `actions`) | Merge when CI is green. No separate review beyond reading the changelog entries it lists. |
 | Major | One PR per dependency, never grouped | One human-reviewed PR. Expect code changes, not just a lockfile edit. |
 | MAF, MCP, A2A SDK, `httpx2` | The `maf` group (Python and .NET), never mixed into the routine PR | A deliberate step: gate on `scripts/replay-evals.sh`, possibly re-record fixtures, move Python, .NET and the tutorials together. |
 | Runtime-coupled majors (`Microsoft.Extensions.*`, `Microsoft.AspNetCore.*`, `System.*`, the `python`, `node` and `dotnet/*` images) | Ignored on purpose | The runtime line is chosen with the code. Changing it is its own change. |
@@ -27,10 +27,12 @@ green CI alone. Two examples from this repo:
   switch SDK and call `AddDotnetProject`, and its tests had to assert the new resource type. Four
   separate Dependabot PRs could not each pass CI alone, so they were closed and superseded by one
   hand-made change.
-- **`@types/node` 26 against a Node 20/22 runtime.** The types package versions with Node. Taking 26
-  would type-check against APIs that a Node 20 or 22 runtime does not have (`web/package.json` pins
-  `@types/node` to `^20`, and the Docker `node` major is ignored on purpose). A major here is declined (close the PR, or add an `ignore` entry with a comment saying
-  why) until the runtime moves.
+- **`@types/node` follows the Node runtime.** The types package versions with Node, so its major is kept
+  equal to the runtime major: Node 26 (`web/Dockerfile`, `web/.nvmrc`, `engines` in `web/package.json`, the CI
+  `setup-node` steps, the devcontainer) and `@types/node` 26. `.github/dependabot.yml` ignores `@types/node`
+  at 27 and above, so a types major arrives only after the runtime has moved. To move the runtime, change every
+  one of those places and the types in one PR (Next.js, jsdom and Playwright must support the new line first),
+  then raise the `ignore` bound. The Docker `node` image major is ignored for the same reason.
 
 When several related majors arrive together, close the individual PRs with a pointer to the combined one.
 

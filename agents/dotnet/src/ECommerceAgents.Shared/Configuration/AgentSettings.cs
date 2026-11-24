@@ -116,25 +116,30 @@ public sealed record AgentSettings
 
     /// <summary>
     /// Trusted reverse proxies that append to <c>X-Forwarded-For</c>; the client address is the
-    /// entry this many places from the right. 0 ignores the header. Python's
+    /// entry this many places from the right. 0 (the code default, safe for a directly
+    /// exposed orchestrator) ignores the header; the shipped compose files and Bicep set it. Python's
     /// <c>RATE_LIMIT_TRUSTED_PROXY_HOPS</c>.
     /// </summary>
-    public int RateLimitTrustedProxyHops { get; init; } = 1;
+    public int RateLimitTrustedProxyHops { get; init; } = 0;
+
+    /// <summary>
+    /// Optional peer gate: comma-separated IPs / CIDRs allowed to set <c>X-Forwarded-For</c>. When set, the header
+    /// is honoured only if the TCP peer is in the list. Empty = no gate. Python's <c>RATE_LIMIT_TRUSTED_PROXIES</c>.
+    /// </summary>
+    public string RateLimitTrustedProxies { get; init; } = "";
 
     /// <summary>Comma-separated browser origins allowed by CORS - Python's <c>CORS_ALLOWED_ORIGINS</c>.</summary>
     public string CorsAllowedOrigins { get; init; } = "http://localhost:3000";
 
-    // ── Grounding (issue #33 PR 7) — .NET twin of Python's GROUNDING_MODE ──
+    // ── Grounding (issue #33) — .NET twin of Python's GROUNDING_MODE ──
     /// <summary>
-    /// "off" | "observe" | "annotate". Defaults to annotate, matching Python.
+    /// "off" | "observe" | "annotate" | "enforce". Defaults to annotate, matching Python.
     /// </summary>
     /// <remarks>
-    /// Python also has "enforce", which strips unverified card blocks and
-    /// corrects prices from the database row before the response leaves. Not
-    /// implemented here yet, and <see cref="AgentSettingsLoader"/> rejects it
-    /// at startup rather than accepting it: a mode that is advertised but
-    /// silently behaves like "annotate" is the exact failure this repo already
-    /// fixed once, when GUARDRAILS_BLOCK_ON_INJECTION did not block.
+    /// <c>enforce</c> reports like annotate and also removes a card that names a product or order that does not
+    /// exist and corrects a card's wrong price or total from the verified row. A streamed answer has already
+    /// reached the browser, so there it corrects only what is persisted; see
+    /// <see cref="Grounding.FinalTextGrounding"/>.
     /// </remarks>
     public string GroundingMode { get; init; } = "annotate";
 
@@ -387,6 +392,14 @@ public sealed record AgentSettings
     // return/replace workflow specifically — this flag gates the generic
     // cross-agent tool-interception queue (HitlApprovalMiddleware).
     public bool HitlEnabled { get; init; } = true;
+
+    // Before a gated call parks for staff the customer is asked to confirm the exact action in plain words, and only an
+    // explicit yes on a later turn lets it park (Middleware/CustomerConfirmation.cs, #302/#307). Separate from HitlEnabled:
+    // staff approval still applies after the customer confirms. Off = park straight away. Python's CUSTOMER_CONFIRMATION_ENABLED.
+    public bool CustomerConfirmationEnabled { get; init; } = true;
+
+    // How long an unanswered confirmation stays answerable; a yes after this starts the question over.
+    public int CustomerConfirmationTtlSeconds { get; init; } = 600;
 
     // How long a resume claim ('processing' on hitl_requests) may be held before
     // another approver can take it over. Mirrors Python's HITL_CLAIM_TTL_SECONDS.

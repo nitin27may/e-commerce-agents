@@ -145,6 +145,14 @@ async def build_a2a_headers(audience: str = "") -> dict[str, str]:
     elif mode == "token":
         raise ValueError("A2A_IDENTITY=token needs the specialist's name to bind the user-context token to")
 
+    # What this turn has spent so far, so the specialist's cost ceiling covers the turn and not only its own calls.
+    # Accounting, not identity: outside the signed token on purpose (its format is pinned across both stacks).
+    from shared.guardrails.cost_budget_middleware import TURN_SPEND_HEADER, format_turn_spend, outbound_turn_spend
+
+    spend = outbound_turn_spend()
+    if spend is not None:
+        headers[TURN_SPEND_HEADER] = format_turn_spend(spend)
+
     if settings.AUTH_MODE == "oauth":
         token = await acquire_service_token(scope="agent:invoke", audience=settings.AUTH_AGENT_AUDIENCE)
         headers["authorization"] = f"Bearer {token}"

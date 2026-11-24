@@ -12,13 +12,13 @@ Tell an agent who it is talking to on every run, with a context provider: an obj
 
 You want your agent to know *who* it is talking to without hard-coding "the user is Alice" into the system prompt. Once you have more than one user, formatting a prompt string per request becomes glue code scattered across every agent. A `ContextProvider` gives you one hook instead: run some code before every LLM call, add instructions (or messages, or tools) to the context, and let the framework apply it. You write one provider per concern, compose them in a list, and reuse them across agents.
 
-The agents in the full application in this repo (the capstone) depend on this. Each is built with a `context_providers=[...]` argument that injects the logged-in user's profile, recent orders and long-term memories before the LLM sees the request. The implementation is in `agents/python/shared/context_providers.py`.
+The agents in the full application in this repo (the capstone) depend on this. Each is built with a `context_providers=[...]` argument that injects the logged-in user's profile, recent orders and long-term memories before the LLM sees the request. The implementation is in `agents/python/shared/context_providers.py`. The recent-orders block it injects is a summary (id, status, total and date per order), and the injected text says so: the model must call a tool for the full order before it renders a card.
 
 ## Prerequisites
 
 - Completed [Chapter 04 — Sessions](../04-sessions/)
 - Repo-root `.env` with working LLM credentials (`OPENAI_API_KEY`, or the `AZURE_OPENAI_*` set)
-- `main.py` needs those credentials: its default prompt has no recorded response. With no key, run the chapter's tests, which replay their own recorded prompt: `uv run --project tutorials pytest tutorials/05-context-providers/python/tests -m "not integration"`.
+- `main.py` needs no credentials for its default prompt: with no key it replays a recorded response, and the chapter's tests replay their own: `uv run --project tutorials pytest tutorials/05-context-providers/python/tests -m "not integration"`.
 
 ## The concept
 
@@ -64,7 +64,7 @@ The provider never talks to the LLM. It only shapes what the agent sends on the 
 
 ## Python
 
-`main.py` needs an API key. With no key, start with the tests, from the repo root:
+With no key, `main.py` replays a recorded response for its default run. The tests, from the repo root:
 
 ```bash
 uv sync --project tutorials --extra dev
@@ -165,7 +165,7 @@ public sealed class UserProfileProvider : AIContextProvider
 - **Python raises when you create the provider or call `extend_instructions`.** `source_id` is required in both places: `super().__init__(source_id=...)` and `extend_instructions(source_id, text)`.
 - **.NET: overriding `InvokingAsync` is the wrong hook.** Override the protected `ProvideAIContextAsync` shown above. `InvokingAsync` is the base class's own pipeline method, which calls your override.
 - **A value you put in `state` is missing elsewhere.** In Python, the `state` dict passed to `before_run` is scoped to the provider chain the agent was built with, and to one run. When you chain providers, as `ECommerceContextProvider` does (see below), later ones can read fields earlier ones set, but only within that run.
-- **A keyless `main.py` fails with `ReplayFixtureMissingError`.** Its default prompt has no recorded response. Set a key, or run the tests.
+- **A keyless `main.py` fails with `ReplayFixtureMissingError`.** You changed the prompt or the user arguments: only the default run (`alice@example.com`, `Alice`, `gold`) is recorded. Set a key, or run the tests.
 
 ## Tests
 

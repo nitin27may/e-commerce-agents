@@ -21,6 +21,142 @@ behind it. The gaps are listed under [What is not built](#what-is-not-built).
 | Inbox schema | migration `0006_approvals_foundation.sql` | `approvals`, `approval_events` (append-only), `outbox`, `notifications` — see [Database Schema](database-schema.md) |
 | Repository | `agents/python/shared/approvals/repo.py`, `shared/outbox.py` | Guarded state transitions, audit trail, outbox |
 
+## How a gated tool call reaches the inbox (Python)
+
+The gated tools (`cancel_order`, `modify_order`, `initiate_return`, `process_refund`, `place_backorder`) are declared
+`@tool(approval_mode="always_require")`. MAF acts on that setting before it builds the function-middleware
+pipeline: the run ends with a `function_approval_request` in `response.user_input_requests`, the tool does not run,
+and the response text is empty. `HITLFunctionMiddleware` therefore never sees these calls on the real path (it
+still guards an ungated registration of the same names). The specialist host closes the gap:
+
+* `shared/agent_host.py::park_pending_approvals` runs after every blocking and streaming agent run (the legacy
+  `/message:send` and `/message:stream` routes and the A2A 1.0 executor share those two functions).
+* **Before** a call parks, `shared/park_prechecks.py::precheck_gated_call` asks whether it could ever succeed. MAF
+  parks a gated call before the tool body runs, so the tool's own role guard and status checks never saw it, and a
+  customer asking for a backorder (or a cancel of a shipped order) used to open an approval nobody could make work.
+  The checks are cheap, deterministic and use no model: the roles `@requires_role` recorded on the tool, then a
+  per-tool precondition registered next to the tool with `@precheck("<tool>")`. They share their predicates with the
+  tools (`shared/gate_rules.py`), so the two cannot drift. A refused call creates no row and the user reads why:
+
+  | Tool | Refused when | Sentence (example) |
+  |---|---|---|
+  | all five | the order or return is missing, malformed or not the caller's | "I could not find that order on your account. I have not submitted anything for approval." (the same words for all three cases, so another customer's data never leaks) |
+  | `cancel_order` | status is not `placed` or `confirmed` | "Order <id> has already shipped, so it can no longer be cancelled. ..." |
+  | `modify_order` | status is not `placed` or `confirmed` | "Order <id> has already been delivered, so its shipping address can no longer be changed. ..." |
+  | `initiate_return` | not `delivered`, a return already exists, or delivered more than 30 days ago | "Order <id> was delivered 45 days ago, which is outside the 30-day return window. ..." |
+  | `process_refund` | the return is already `refunded` or `denied` | "Return <id> has already been refunded. ..." |
+  | `place_backorder` | the role is not `seller` or `admin`, the quantity is not positive, the product is missing, or it is in stock | "Your account is not permitted to place backorders; that is limited to admin, seller accounts. ..." |
+
+  A failing check (a database error) fails closed like the park itself. In the in-process eval harness a refused
+  call still counts as a tool call but not as an approval request (`RunOutcome.refused_calls`), and a role refusal
+  reads as `denied`.
+
+  **.NET** runs the same checks, in the same order, with the same sentences, from `HitlGate.TryGateAsync` before it
+  writes the `tool_approval_requests` row or the inbox approval (`Shared/Middleware/ParkPrechecks.cs`; the status sets,
+  window and reasons are in `GateRules.cs`, which the order and return tools read too). The roles come from
+  `[RequiresRole]` on the registered tool function (`HitlGate.RolesOf`), with `admin` always allowed. The sentence reaches the
+  user the way it does on Python: `SpecialistPipeline.HitlCheck` records it in a request-scoped sink
+  (`RequestContext.RecordGateNotice`, opened by `RequestContext.Scope`) and tells the model only that the call was handled
+  (`HitlGate.HandledResultMessage`); `AgentHost.RunAgentWithHistoryAsync` then appends the sentences to the answer as
+  `text + blank line + sentences`, deduplicated and joined by a space, and `RunAgentWithHistoryStreamingAsync` yields them as
+  the final chunk (prefixed with the blank line when text streamed first). The A2A executor and the legacy stream both read
+  that stream, so both wires carry it. Refusals, the pending sentence (`HitlGate.ParkedReply`) and the fail-closed sentence
+  are the same strings as Python's, pinned by `config/policies/testdata/gate-sentences.v1.json` on both stacks. One
+  difference remains (parity row 55): the .NET `ProcessRefund` tool refuses only an already-refunded return, while the
+  precheck also refuses a `denied` one. Outside a request scope (a caller that never ran `RequestContext.Scope`) the sentence
+  stays in the tool result for the model to relay.
+* For each parked call it calls `shared/hitl.py::park_gated_call`, which writes the `tool_approval_requests` row and
+  the routed inbox `approvals` row, owned by the forwarded user. The tool is not executed and no model call is made.
+* It is idempotent: the same user asking for the same tool with the same input while a request is `pending` or
+  `processing` gets that request back (one row, one inbox entry), also under concurrent turns.
+* The user reads a fixed sentence, for example "I have asked a team member to approve cancelling order <id> (ref:
+  ab804829). Nothing has changed yet; you will be notified once it has been reviewed." With no forwarded identity
+  or a database error the reply says nothing was changed and no row is written (fail closed).
+* In `tool` mode the orchestrator relays that sentence; the in-chat approval card exists only for the workflow
+  modes. Staff see the request in the inbox either way.
+* The in-chat card renders only in the requester's own thread, so its viewer is always the requester. By design staff
+  (`support` or `admin`) do not decide from it: they decide on `/runs` or in the inbox, where the requester is someone
+  else. The card shows "Awaiting staff review" to everyone but an admin, and an admin who asked for the return is still
+  refused by the reviewer-is-not-requester rule.
+
+## Customer confirmation before a call parks
+
+Staff approval answers "may this happen". Customer confirmation answers an earlier question: "is this what the customer
+meant". A model can pick the wrong order, mishear a request or act on an instruction it read in a tool result, and each of
+those used to become a staff task. In `tool` mode the host now asks the customer first, in plain words, and parks the call
+only after an explicit yes on a later turn (`shared/customer_confirmation.py`, issue #302). It is a different step from
+approval: no inbox row, no `approvals` audit event, nothing for staff to see until the customer has agreed. Both stacks
+do it (parity row 56): Python in `shared/customer_confirmation.py`, .NET in `CustomerConfirmation` and
+`CustomerConfirmationRepository`, over the same table and pinned to the same vector file.
+
+```mermaid
+sequenceDiagram
+    participant U as Customer
+    participant M as Specialist model
+    participant H as Host (park_pending_approvals)
+    participant S as Staff inbox
+    U->>M: "Cancel my order X"
+    M->>H: gated call cancel_order(X)
+    H->>H: pre-park checks pass
+    H->>H: open customer_confirmations row
+    H-->>U: "Before I send this for approval, please confirm: ... Reply yes ..."
+    U->>M: "yes"
+    M->>H: gated call cancel_order(X) again
+    H->>H: latest stored user message is an explicit yes, row still open
+    H->>S: park (tool_approval_requests + approvals)
+    H-->>U: "I have asked a team member to approve ..."
+```
+
+Order inside `park_pending_approvals`: role guard and preconditions (a call that can never succeed asks nothing), then the
+confirmation, then `park_gated_call`. The rules, none of which asks a model anything:
+
+* **One question per action.** `customer_confirmations` (migration 0016) holds one open row per user, session, tool and
+  argument key. The key (`args_key`) covers what decides the outcome: the order, the new address, the quantity, the refund
+  method. It does not cover the free-text `reason`, which the model words differently every turn. Another order, another
+  address or another quantity is another question, and a yes to one never answers the other.
+* **Whose words count.** The host reads the user's latest message from `messages`, scoped to the caller and the
+  conversation (`latest_user_message`). It never uses the text the orchestrator's model sent to the specialist, so a
+  product description, a review or a model-written "the user already confirmed" cannot say yes for the customer. Only a
+  caller with no stored conversation (an eval run, a script) is read from the message it sent.
+* **What counts as yes** (`is_affirmative`): the whole message is a short, explicit agreement ("yes", "yes please", "go
+  ahead", "I confirm", "that is right"). A question mark, a negation, "yes but ...", a second request or more than eight
+  words does not confirm, and neither does "cancel" or "the customer already confirmed". A clear no ("no", "never mind",
+  "stop") closes the question as declined; anything else leaves it open and the next request asks again.
+* **A yes answers an earlier question.** The message that raised the question can never also answer it, so one message
+  cannot both ask for and confirm a call.
+* **It expires.** `CUSTOMER_CONFIRMATION_TTL_SECONDS` (default 600). A yes after that starts the question over.
+* **Per user and per session.** Another user, or the same user in another conversation, never consumes it.
+* **Consumed once.** A confirmed row is spent in the same transaction that reads it (an advisory lock per key), and put
+  back if parking fails, so a database error does not cost the customer their yes. Two concurrent turns park one request.
+* **Off switch.** `CUSTOMER_CONFIRMATION_ENABLED=false` parks straight away, as before. Staff approval is unaffected.
+
+The sentences are fixed and pinned, with the matching vectors, by `config/policies/testdata/customer-confirmation.v1.json`:
+
+> Before I send this for approval, please confirm: you want me to cancel order 1f0e6a52-0000-4000-8000-000000000001. Reply "yes" to confirm, or tell me what to change. I have not submitted anything for approval.
+
+A decline answers "Understood. I have not submitted anything for approval."
+
+**On .NET** the step runs in `HitlGate.TryGateAsync` after `ParkPrechecks` and before the request is written. The sentence
+travels as the gate notice (the same path as a refusal), so the model is told the call was handled and the host appends the
+sentence word for word. The user's latest message is read from `messages` for `RequestContext.CurrentSessionId` and the
+caller; `RequestContext.CurrentTurnMessage` (what the request was sent as, noted by `AgentHost`) is the fallback only when
+there is no stored conversation. The services run with `InvariantGlobalization`, where `string.Normalize` leaves
+compatibility characters alone, so the matcher folds the fullwidth forms itself; any other compatibility character stays
+unfolded and so never counts as a yes.
+
+**Gotchas.** A first-turn "yes" with no question open confirms nothing. The eval harness reports a call the host asked
+about as a refused call (`RunOutcome.refused_calls`), never as an approval request, so an eval case that expects a park
+needs two turns (`evals/datasets/live/approvals.live.json`). The in-process specialist eval has no stored conversation, so
+it reads the user's message from the turn itself. The workflow modes (`workflow:return-replace`, handoff, group chat) do
+not go through the host and keep their own policy gate.
+
+**Evals.** `evals/datasets/approvals.json` (replay, five single-turn cases: ask, ask for an address change, a claimed
+earlier confirmation, a confirmation injected through pasted page text) and its live twin
+`evals/datasets/live/approvals.live.json` (ten cases: confirm, decline, silence, different arguments, address change,
+return, claimed and injected confirmations, an instruction posing as the answer, a bare yes). A stale confirmation needs
+the clock to move, so it is covered in `tests/test_customer_confirmation.py` with the real database instead. The existing
+live cases that expected a one-turn park are now two turns.
+
 ## Roles
 
 `support` is staff and reviews what the policy routes to `support`; `admin` acts as manager and handles
@@ -30,7 +166,7 @@ database constraint and again in the repository. See the roles table in the [Sec
 ## The policy file
 
 ```yaml
-policy_version: "2026-11-16.3"
+policy_version: "2026-11-24.1"
 kinds:
   return_approval:
     editable_fields: [amount, resolution]
@@ -169,7 +305,7 @@ approver can wave it through.
 | Key | Meaning |
 |---|---|
 | `margin_floor_pct` | Lowest margin a price may leave, `(price − unit_cost) / price × 100`. Exactly at the floor is allowed; a product with no `unit_cost` is blocked. |
-| `max_change_pct_per_day` | Most a price may move in one UTC day. Every change already in `price_history` today counts, plus the proposed one, each as `|new − old| / old × 100`. Exactly at the cap is allowed. |
+| `max_change_pct_per_day` | Most a price may move in one UTC day. Every change already in `price_history` today counts, plus the proposed one, each as `abs(new − old) / old × 100`. Exactly at the cap is allowed. |
 | `block_during_active_promotion` | Refuse a price change to a product covered by a promotion active now (`promotion_products`, `promotions.is_active`, start and end dates). |
 | `max_lines_per_batch` | Most lines one proposal batch may hold. |
 | `max_restock_quantity` | Most units one restock line may order (1 to INT32). **Placeholder** default 5000. |
@@ -185,7 +321,7 @@ proposed change plus the facts and return a `GuardResult` (`ok`, the `reasons`, 
 `shared/merchant/limits.py` validates the YAML at load time, failing loudly on an unknown key or out-of-range
 value.
 
-**A merchant proposal is not the staff inbox's to decide, on both stacks.** Every staff route answers **404 `Approval not found`** for source `proposal`, byte-for-byte what a missing id gets, so staff cannot tell a proposal id from an unused one: `decide()` and the answer-info route (for every decision, including `request_info`: a batch parked in `needs_info` could never be answered by its system-actor requester) and `GET /api/approvals/{id}`, matching the staff list that leaves it out (.NET's list excludes it too); the legacy resume and admin approve/deny routes cannot reach one. The seller decides on `/api/seller/proposals/{id}/decide` (Python only). An SLA breach never expires a proposal under a decide in flight: see [merchant proposals](merchant-proposals.md#sla-expiry-and-a-decide-in-flight).
+**A merchant proposal is not the staff inbox's to decide, on both stacks, with one Python-only exception (#298).** While it is the seller's to decide, every staff route answers **404 `Approval not found`** for source `proposal`, byte-for-byte what a missing id gets, so staff cannot tell a proposal id from an unused one: `decide()` and the answer-info route (for every decision, including `request_info`: a batch parked in `needs_info` could never be answered by its system-actor requester) and `GET /api/approvals/{id}`, matching the staff list that leaves it out (.NET's list excludes it too); the legacy resume and admin approve/deny routes cannot reach one. The seller decides on `/api/seller/proposals/{id}/decide` (Python only). The exception: when the batch's PO value (sum of quantity x unit cost of the accepted restock lines, the `amount` fact of kind `merchant_proposal`) is over the policy threshold, the seller's decision records those lines as `awaiting_manager` and routes the same row to `manager` (`is_seller_stage` is then false, the beneficiary exemption ends, and the DB CHECK `approvals_no_beneficiary_decision` keys on `route IS NULL`); Python staff at manager level then see and decide it here (`approve`, `reject`, lowering a line only; `request_info` is a 422), never the person who decided the seller's side. .NET still answers 404 for source `proposal` at every stage. See [merchant proposals](merchant-proposals.md#po-value-threshold). An SLA breach never expires a proposal under a decide in flight: see [merchant proposals](merchant-proposals.md#sla-expiry-and-a-decide-in-flight).
 
 The schema is migration `0009_merchant_proposals.sql`: `proposals`, `proposal_lines` (per-line status
 including `blocked`, the guard result as JSONB), `promotion_products` and a nullable `products.unit_cost`. The
@@ -276,6 +412,16 @@ The pause carries the whole `WorkflowState` and is answered with a `ReturnDecisi
 `RETURN_HITL_THRESHOLD` is only the fallback when the engine cannot decide. Migration `0010` expires returns paused
 before the policy gate existed: their checkpoints cannot be resumed with the `ReturnDecision` response type.
 
+![Runs page as an admin: the tour user's return marked Needs approval and expanded to show Approve and Reject](images/runs-approval.jpg)
+
+*A paused return on `/runs`, seen by a reviewer. The customer who asked for it sees the in-chat card below and
+no buttons; a staff member decides here or in the approvals inbox, and the run resumes from its checkpoint as
+the customer.*
+
+![Chat showing a return paused at the policy gate with an Awaiting staff review card and the workflow graph](images/return-awaiting-approval.jpg)
+
+*The requester's side of the same pause: nothing has been created, the card says so.*
+
 **Request more information** does not touch MAF. The approval moves to `needs_info`, the reviewer's question is
 written into the requester's conversation, and a paused workflow stays paused (its `hitl_requests` row is parked as
 `needs_info`, so it cannot be resumed meanwhile). The requester's answer (`/info`) moves it back to
@@ -296,7 +442,6 @@ staff-only, bounded by the assigned role, and keep their own status codes. There
 
 ## What is not built
 
-* *Customer confirm* (`pending_confirm`), on either stack.
 * *Acting on an `auto` route for tool calls.* The route is recorded, and the request still waits for a person.
 * *A .NET SLA worker.* The Python worker serves both stacks; see [The .NET stack](#the-net-stack) for the one case
   it cannot finish.

@@ -227,6 +227,11 @@ The Aspire Dashboard runs as a Docker container and provides the observability U
 
 Auth mode is set to `Unsecured` for local development (`DASHBOARD__FRONTEND__AUTHMODE: Unsecured`).
 
+![Aspire trace detail for one handoff-mode chat turn: the orchestrator request, its database calls collapsed or listed, the invoke_agent and workflow spans and the per-specialist executors](images/aspire-trace.jpg)
+
+*One `POST /api/chat/stream` trace in the Aspire dashboard (80 spans across the orchestrator and a specialist),
+recorded on the no-key stack, so the durations are replay speed and the model spans are cheap.*
+
 ### What to Look For
 
 | View | Use Case |
@@ -266,7 +271,7 @@ emitted as its own signal rather than left to GenAI spans:
 |---|---|
 | `ecommerce.llm.cost.usd` | Estimated spend per LLM turn, attributes `model`, `agent`, `mode` |
 | `ecommerce.llm.tokens` | Tokens per turn, split by `direction` (`input` / `output`) |
-| `cost_budget.would_block` | Turns the per-run ceiling would have refused. Counted in `observe` mode when a run is already past `COST_BUDGET_USD_PER_RUN`; nothing is refused |
+| `cost_budget.would_block` | Turns the ceiling would have refused. Counted in `observe` mode when the conversation turn (this process plus the spend the caller reported in `x-turn-spend`, plus specialists' reports on the orchestrator) is already past `COST_BUDGET_USD_PER_RUN` or the token ceiling; nothing is refused. The orchestrator's per-turn count is also stored in `usage_logs.would_block` |
 
 The estimate is `shared/cost.py` (Python) / `CostEstimator.cs` (.NET): uncached input + cached
 input + output, each agent priced at the model its usage reported (a dated snapshot such as
@@ -425,6 +430,13 @@ If the Langfuse exporter fails to initialize (wrong credentials, network unreach
 - Tool calls appear as function spans with input/output when `agent_execution_steps` are populated.
 
 ---
+
+## Gotchas
+
+- **Telemetry is off unless `OTEL_ENABLED=true`.** With it off, `setup_telemetry()` returns at once and the Aspire Dashboard stays empty.
+- **The OTLP port is not 4317.** The dashboard UI is on host `18888`; the receiver is container port `18889`, published on host `18890`. Use `http://localhost:18890` from the host and `http://aspire:18889` from inside the compose network.
+- **Azure's managed OpenTelemetry carries traces and logs only**, so App Insights shows traces without metrics ([troubleshooting](troubleshooting.md#azure-deployment-first-run-failure-catalogue), failure 25). Do not set `OTEL_EXPORTER_OTLP_ENDPOINT` on an app there: the platform injects it and yours would override it.
+- **Cost is an estimate the app computes**, from the pricing file; a model with no price row reports unknown, not zero.
 
 ## Related
 

@@ -90,6 +90,180 @@ describe("DecisionCard", () => {
   });
 });
 
+describe("DecisionCard for the newer events", () => {
+  it("shows a price adjustment with the product and the prices", () => {
+    render(
+      <DecisionCard
+        decision={decision({
+          event_type: "product.price_dropped",
+          action: "price_adjustment",
+          input: {
+            event: { event_id: "e", line: { product_name: "Widget", paid_unit_price: "100.00", new_price: "95.00" } },
+            rule: "auto-small-adjustment",
+          },
+        })}
+        onReverse={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/price adjustment \$5\.00 for alice@example.com/)).toBeTruthy();
+    expect(screen.getByText(/Widget · paid \$100\.00, now \$95\.00/)).toBeTruthy();
+  });
+
+  it("shows a notice without an amount, and says why nothing was sent", () => {
+    render(
+      <DecisionCard
+        decision={decision({
+          action: "back_in_stock_notice",
+          amount: null,
+          budget_key: null,
+          can_reverse: false,
+          reasons: ["customer_daily_notice_cap"],
+        })}
+        onReverse={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("back-in-stock notice for alice@example.com")).toBeTruthy();
+    expect(screen.getByText("This customer already received the most notices allowed today")).toBeTruthy();
+  });
+
+  it("shows the drafted customer message and where it came from", () => {
+    const { rerender } = render(
+      <DecisionCard
+        decision={decision({ draft: { body: "Sorry about order 1. We added $5.00.", source: "llm", model: "m", fallback_reason: null } })}
+        onReverse={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Sorry about order 1. We added $5.00.")).toBeTruthy();
+    expect(screen.getByText(/Worded by the ops-responder/)).toBeTruthy();
+    rerender(
+      <DecisionCard
+        decision={decision({ draft: { body: "Standard.", source: "template", model: null, fallback_reason: "rejected:amount_not_in_facts" } })}
+        onReverse={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/the draft was not used: rejected:amount_not_in_facts/)).toBeTruthy();
+  });
+});
+
+describe("DecisionCard for order risk and damaged items (#299)", () => {
+  const risk = (over: Partial<AutonomyDecision> = {}) =>
+    decision({
+      event_type: "order.risk_flagged",
+      action: "order_risk_review",
+      budget_key: null,
+      tier: "needs_approval",
+      state: "awaiting_approval",
+      amount: "600.00",
+      reasons: ["A high-risk order is held until a person reviews it"],
+      budget: {},
+      hold_active: true,
+      can_reverse: true,
+      input: {
+        event: {
+          event_id: "e",
+          risk: {
+            score: 70,
+            order_total: "600.00",
+            hold: true,
+            signals: [
+              { signal: "large-order", points: 20, actual: "600.00" },
+              { signal: "new-account", points: 25, actual: "1" },
+            ],
+          },
+        },
+        rule: "risk-high-hold",
+      },
+      ...over,
+    });
+
+  it("shows the score, the signals and that the order is on hold, without calling the order total a payment", () => {
+    render(<DecisionCard decision={risk()} onReverse={vi.fn()} />);
+    expect(screen.getByText("order risk review for alice@example.com")).toBeTruthy();
+    expect(screen.getByText("Waiting for review")).toBeTruthy();
+    expect(screen.getByText(/Risk score 70 of 100 for an order of \$600\.00/)).toBeTruthy();
+    expect(screen.getByText("large order (+20)")).toBeTruthy();
+    expect(screen.getByText(/The order is on hold until a person decides/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Release hold" })).toBeTruthy();
+  });
+
+  it("releases the hold only after a confirmation", async () => {
+    const onReverse = vi.fn().mockResolvedValue(undefined);
+    render(<DecisionCard decision={risk()} onReverse={onReverse} />);
+    fireEvent.click(screen.getByRole("button", { name: "Release hold" }));
+    expect(onReverse).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm release" }));
+    await waitFor(() => expect(onReverse).toHaveBeenCalledWith("d1", undefined));
+  });
+
+  it("says who released a hold while the review is still waiting", () => {
+    render(
+      <DecisionCard
+        decision={risk({ hold_active: false, can_reverse: false, reversed_by: "boss@example.com", reversed_at: "2026-11-16T11:00:00Z" })}
+        onReverse={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/The hold was released by boss@example.com/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Release hold" })).toBeNull();
+    expect(screen.getByText("Waiting for review")).toBeTruthy();
+  });
+
+  it("names a cleared review and a medium one that held nothing", () => {
+    const { rerender } = render(
+      <DecisionCard decision={risk({ state: "executed_after_approval", hold_active: false, can_reverse: false })} onReverse={vi.fn()} />,
+    );
+    expect(screen.getByText("Cleared by staff")).toBeTruthy();
+    rerender(
+      <DecisionCard
+        decision={risk({ hold_active: false, can_reverse: false, reasons: ["risk_low"] })}
+        onReverse={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("The order looks ordinary, so nothing was done")).toBeTruthy();
+    expect(screen.getByText("The order was not held.")).toBeTruthy();
+  });
+
+  it("shows a damaged-item remedy with the quantity and what was offered", () => {
+    render(
+      <DecisionCard
+        decision={decision({
+          event_type: "order.item_damaged",
+          action: "damage_goodwill",
+          budget_key: "damage_goodwill",
+          amount: "12.00",
+          input: {
+            event: {
+              event_id: "e",
+              resolution: "replacement_offer",
+              line: { product_name: "Kettle", damaged_quantity: 2 },
+            },
+            rule: "notify-medium-damage",
+          },
+        })}
+        onReverse={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/damaged-item remedy \$12\.00 for alice@example.com/)).toBeTruthy();
+    expect(screen.getByText(/Kettle · 2 damaged · free replacement offered/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Reverse" })).toBeTruthy();
+  });
+
+  it("explains a tripped monthly cap", () => {
+    render(
+      <DecisionCard
+        decision={decision({
+          can_reverse: false,
+          state: "awaiting_approval",
+          tier: "needs_approval",
+          reasons: ["budget:global_monthly_count"],
+          budget: { budget_key: "goodwill_credit", day: "2026-11-16", tripped: ["global_monthly_count"], drew: null },
+        })}
+        onReverse={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("This month's limit on automatic actions is used up")).toBeTruthy();
+  });
+});
+
 describe("helpers", () => {
   it("formats decimal strings and tolerates junk", () => {
     expect(money("12.5")).toBe("$12.50");

@@ -43,7 +43,7 @@ This folder contains the full technical documentation for E-Commerce Agents.
 1. [API Reference](api-reference.md) — about 70 REST routes; request/response examples for the core surface, tables for the rest
 2. [A2A](a2a.md) — the A2A 1.0 endpoint and agent card every specialist serves, and cross-stack interop
 3. [MCP Integration](mcp-integration.md) — MCP servers (MCPServer), how to enable, how to inspect
-4. [Database Schema](database-schema.md) — 45 tables (34 baseline plus 11 from migrations) with ER diagram and gotchas
+4. [Database Schema](database-schema.md) — 47 tables (34 baseline plus 13 from migrations) with ER diagram and gotchas
 
 ### "I care about quality, security, or observability"
 
@@ -64,7 +64,7 @@ This folder contains the full technical documentation for E-Commerce Agents.
 | [adding-an-agent.md](adding-an-agent.md) | Step-by-step checklist to add a new specialist agent |
 | [api-reference.md](api-reference.md) | About 70 REST routes (auth, chat, products, orders, cart, admin, marketplace, approvals, proposals, autonomy, returns, notifications) |
 | [agent-flows.md](agent-flows.md) | Five multi-agent collaboration sequence diagrams with pattern notes |
-| [database-schema.md](database-schema.md) | 45 tables (34 baseline in 12 groups, 11 from migrations), ER diagram, indexing, gotchas |
+| [database-schema.md](database-schema.md) | 47 tables (34 baseline in 12 groups, 13 from migrations), ER diagram, indexing, gotchas |
 | [deployment.md](deployment.md) | Docker Compose profiles, `dev.sh` script, environment variables, local dev, health checks |
 | [frontend.md](frontend.md) | Next.js 16 routing, theming/OKLCH, SSE streaming, agent timeline, testing |
 | [telemetry.md](telemetry.md) | OpenTelemetry instrumentation, Aspire Dashboard, Langfuse LLM observability |
@@ -79,6 +79,7 @@ This folder contains the full technical documentation for E-Commerce Agents.
 | [merchant-proposals.md](merchant-proposals.md) | Seller merchant proposals: deterministic markdown/restock suggestions, review through the approvals machinery, idempotent execution, the daily run |
 | [approvals.md](approvals.md) | Approval routing policy (`approvals.yaml`), default rules, golden cases, the approvals tables |
 | [checkpoints-and-resume.md](checkpoints-and-resume.md) | How a workflow run pauses and resumes: checkpoints, the `workflow_checkpoints` and `hitl_requests` tables, timeout, the .NET differences |
+| [preview.md](preview.md) | The static web preview on GitHub Pages: what it replays, how the mock layer works, how to build and test it |
 | [replay-mode.md](replay-mode.md) | Running without an API key: what `LLM_PROVIDER=replay` does, where it is used, replay misses, when to re-record |
 | [agent-quality.md](agent-quality.md) | Eval methodology, datasets, red-team scenarios, scoring, CI gate |
 | [eval-scorecard.md](eval-scorecard.md) | Generated table of the committed eval baselines per agent, with the replay-fixture caveat |

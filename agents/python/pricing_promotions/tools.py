@@ -11,6 +11,7 @@ from agent_framework import tool
 from pydantic import Field
 
 from shared.context import current_user_email
+from shared.coupons import COUPON_ALREADY_USED_CODE, COUPON_ALREADY_USED_MESSAGE, user_has_used_coupon
 from shared.db import get_pool
 
 
@@ -92,6 +93,17 @@ async def validate_coupon(
         # Check user-specific restriction
         if row["user_specific_email"] and row["user_specific_email"] != email:
             return {"valid": False, "code": code, "error": "This coupon is restricted to a specific user"}
+
+        # One use per customer: a non-cancelled order of theirs already carries this code
+        if email:
+            user_id = await conn.fetchval("SELECT id FROM users WHERE email = $1", email)
+            if user_id is not None and await user_has_used_coupon(conn, user_id, row["code"]):
+                return {
+                    "valid": False,
+                    "code": code,
+                    "error": COUPON_ALREADY_USED_MESSAGE,
+                    "error_code": COUPON_ALREADY_USED_CODE,
+                }
 
         # Calculate discount
         discount_type = row["discount_type"]
@@ -547,20 +559,23 @@ async def check_bundle_eligibility(
         bxgy_eligible = []
         for promo in bxgy_promos:
             rules = promo["rules"] if isinstance(promo["rules"], dict) else json.loads(promo["rules"])
-            applicable_cats = rules.get("categories", [])
-            buy_qty = rules.get("buy_quantity", 0)
-            free_qty = rules.get("free_quantity", 0)
+            # Seeded rows write singular `category` and `min_quantity` (scripts/seed.py); older rows
+            # wrote `categories`/`buy_quantity`. Accept both (same drift class as issue #51).
+            applicable_cats = _as_list(rules.get("categories") or rules.get("category"))
+            buy_qty = int(rules.get("buy_quantity") or rules.get("min_quantity") or 0)
+            free_qty = int(rules.get("free_quantity") or 0)
             matching = [p for p in products if not applicable_cats or p["category"] in applicable_cats]
-            if matching:
-                bxgy_eligible.append(
-                    {
-                        "promotion_name": promo["name"],
-                        "buy_quantity": buy_qty,
-                        "free_quantity": free_qty,
-                        "applicable_products": [p["name"] for p in matching],
-                        "end_date": promo["end_date"].isoformat(),
-                    }
-                )
+            if matching and len(matching) >= buy_qty:
+                entry = {
+                    "promotion_name": promo["name"],
+                    "buy_quantity": buy_qty,
+                    "free_quantity": free_qty,
+                    "applicable_products": [p["name"] for p in matching],
+                    "end_date": promo["end_date"].isoformat(),
+                }
+                if rules.get("discount_pct") is not None:
+                    entry["discount_pct"] = rules["discount_pct"]
+                bxgy_eligible.append(entry)
 
         return {
             "eligible": len(eligible_bundles) > 0 or len(bxgy_eligible) > 0,

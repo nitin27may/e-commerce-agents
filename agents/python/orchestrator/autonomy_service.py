@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from decimal import Decimal
 from typing import Any
 
 from orchestrator.approvals_service import Actor, ApprovalHTTPError
@@ -70,6 +71,255 @@ async def _pick_order(scenario: str) -> uuid.UUID:
     return order_id
 
 
+#: Scenario name -> the event it injects, for the two events that pick a product rather than an order.
+PRODUCT_SCENARIOS: dict[str, str] = {
+    "price-drop": engine.TOPIC_PRICE_DROPPED,
+    "back-in-stock": engine.TOPIC_BACK_IN_STOCK,
+}
+#: ... and for the two that pick an order (a risk review) or an order line (a damage report).
+ORDER_SCENARIOS: dict[str, str] = {
+    "order-risk": engine.TOPIC_RISK_FLAGGED,
+    "item-damaged": engine.TOPIC_ITEM_DAMAGED,
+}
+EVENT_SCENARIOS: dict[str, str] = {**PRODUCT_SCENARIOS, **ORDER_SCENARIOS}
+_PRICE_DROP_FRACTION = Decimal(
+    "0.90"
+)  # the scenario drops the price a tenth: a small credit, so it lands in a low tier
+
+
+async def _pick_price_drop() -> tuple[uuid.UUID, Decimal]:
+    """The most recent eligible order line of a customer, with no autonomy decision on it yet, and a price 10% lower."""
+    rule = get_policy().event(engine.TOPIC_PRICE_DROPPED)
+    if rule is None:
+        raise ApprovalHTTPError(409, "The autonomy policy has no price-drop rule")
+    found = await get_pool().fetchrow(
+        """SELECT oi.product_id, oi.unit_price FROM order_items oi
+             JOIN orders o ON o.id = oi.order_id JOIN users u ON u.id = o.user_id
+            WHERE o.status = ANY($1::text[]) AND u.role = 'customer' AND u.is_active IS NOT FALSE
+              AND lower(u.email) <> $2 AND o.created_at >= NOW() - make_interval(days => $3)
+              AND oi.unit_price >= 20
+              AND NOT EXISTS (SELECT 1 FROM agent_decisions d WHERE d.order_item_id = oi.id)
+            ORDER BY o.created_at DESC, oi.id LIMIT 1""",
+        sorted(rule.eligible_order_statuses),
+        TOUR_EMAIL,
+        rule.lookback_days,
+    )
+    if found is None:
+        raise ApprovalHTTPError(409, "No eligible recent purchase is left for the price-drop scenario")
+    return found["product_id"], (Decimal(found["unit_price"]) * _PRICE_DROP_FRACTION).quantize(Decimal("0.01"))
+
+
+async def _pick_back_in_stock() -> uuid.UUID:
+    """A product in stock that sits in a customer's recent cart and has not been announced by the engine yet."""
+    rule = get_policy().event(engine.TOPIC_BACK_IN_STOCK)
+    if rule is None:
+        raise ApprovalHTTPError(409, "The autonomy policy has no back-in-stock rule")
+    product_id = await get_pool().fetchval(
+        """SELECT ci.product_id FROM cart_items ci
+             JOIN carts c ON c.id = ci.cart_id JOIN users u ON u.id = c.user_id JOIN products p ON p.id = ci.product_id
+            WHERE c.updated_at >= NOW() - make_interval(days => $1) AND u.role = 'customer'
+              AND u.is_active IS NOT FALSE AND lower(u.email) <> $2 AND p.is_active
+              AND COALESCE((SELECT sum(w.quantity) FROM warehouse_inventory w WHERE w.product_id = p.id), 0) > 0
+              AND NOT EXISTS (SELECT 1 FROM agent_decisions d
+                               WHERE d.event_type = $3 AND d.input -> 'event' ->> 'product_id' = p.id::text)
+            ORDER BY c.updated_at DESC, ci.product_id LIMIT 1""",
+        rule.cart_max_age_days,
+        TOUR_EMAIL,
+        engine.TOPIC_BACK_IN_STOCK,
+    )
+    if product_id is None:
+        raise ApprovalHTTPError(
+            409, "No product in stock sits in a recent customer cart for the back-in-stock scenario"
+        )
+    return product_id
+
+
+async def _simulate_product_event(
+    scenario: str | None,
+    event_type: str | None,
+    product_id: str | None,
+    new_price: Decimal | None,
+    event_id: str | None,
+) -> dict[str, Any]:
+    """Enqueue a ``product.price_dropped`` or ``inventory.back_in_stock`` event (a scenario, or an explicit product)."""
+    topic = PRODUCT_SCENARIOS[scenario] if scenario is not None else event_type
+    assert topic in (engine.TOPIC_PRICE_DROPPED, engine.TOPIC_BACK_IN_STOCK)
+    price: Decimal | None = None
+    if scenario is not None:
+        if product_id is not None or new_price is not None:
+            raise ApprovalHTTPError(422, "Give a scenario or a product, not both")
+        if topic == engine.TOPIC_PRICE_DROPPED:
+            product, price = await _pick_price_drop()
+        else:
+            product = await _pick_back_in_stock()
+    else:
+        if product_id is None or (topic == engine.TOPIC_PRICE_DROPPED and new_price is None):
+            raise ApprovalHTTPError(
+                422, "Give a product_id" + (" and new_price" if topic == engine.TOPIC_PRICE_DROPPED else "")
+            )
+        try:
+            product = uuid.UUID(str(product_id))
+        except ValueError:
+            raise ApprovalHTTPError(422, "product_id must be a product id") from None
+        if topic == engine.TOPIC_PRICE_DROPPED:
+            assert new_price is not None
+            if (
+                not new_price.is_finite()
+                or not Decimal(0) < new_price <= Decimal("99999999.99")
+                or new_price != new_price.quantize(Decimal("0.01"))
+            ):
+                raise ApprovalHTTPError(422, "new_price must be a positive amount with at most two decimals")
+            price = new_price.quantize(Decimal("0.01"))
+        if not await get_pool().fetchval("SELECT 1 FROM products WHERE id = $1", product):
+            raise ApprovalHTTPError(404, "Product not found")
+    suffix = f"{product}-{price}" if price is not None else str(product)
+    event = (event_id or f"sim-{topic}-{suffix}").strip()[:200]
+    payload: dict[str, Any] = {"event_id": event, "product_id": str(product), "simulated": True}
+    if price is not None:
+        payload["new_price"] = str(price)
+    async with get_pool().acquire() as conn:
+        outbox_id = await enqueue(
+            conn, topic, payload, dedupe_key=engine.event_key(topic, event), aggregate_id=str(product)
+        )
+    logger.info("autonomy event simulated outbox=%s enqueued=%s", log_safe(outbox_id), outbox_id is not None)
+    return {
+        "enqueued": outbox_id is not None,
+        "outbox_id": outbox_id,
+        "event_id": event,
+        "event_type": topic,
+        "product_id": str(product),
+        "new_price": None if price is None else engine.money(price),
+        "order_id": None,
+        "delay_days": None,
+    }
+
+
+async def _pick_risk_order() -> uuid.UUID:
+    """The largest eligible order that no risk review has looked at, is not held, and has no event queued."""
+    rule = get_policy().event(engine.TOPIC_RISK_FLAGGED)
+    if rule is None:
+        raise ApprovalHTTPError(409, "The autonomy policy has no order-risk rule")
+    order_id = await get_pool().fetchval(
+        """SELECT o.id FROM orders o JOIN users u ON u.id = o.user_id
+            WHERE o.status = ANY($1::text[]) AND NOT o.on_hold AND u.role = 'customer' AND u.is_active IS NOT FALSE
+              AND lower(u.email) <> $2
+              AND NOT EXISTS (SELECT 1 FROM agent_decisions d WHERE d.order_id = o.id AND d.event_type = $3)
+              AND NOT EXISTS (SELECT 1 FROM outbox ob
+                               WHERE ob.topic = $3 AND ob.processed_at IS NULL AND ob.aggregate_id = o.id)
+            ORDER BY o.total DESC, o.created_at, o.id LIMIT 1""",
+        sorted(rule.eligible_order_statuses),
+        TOUR_EMAIL,
+        engine.TOPIC_RISK_FLAGGED,
+    )
+    if order_id is None:
+        raise ApprovalHTTPError(409, "No eligible order is left for the order-risk scenario")
+    return order_id
+
+
+async def _pick_damaged_line() -> uuid.UUID:
+    """The most recent delivered order line of a customer, inside the report window, with no remedy decision on it."""
+    rule = get_policy().event(engine.TOPIC_ITEM_DAMAGED)
+    if rule is None:
+        raise ApprovalHTTPError(409, "The autonomy policy has no damaged-item rule")
+    item_id = await get_pool().fetchval(
+        """SELECT oi.id FROM order_items oi
+             JOIN orders o ON o.id = oi.order_id JOIN users u ON u.id = o.user_id
+            WHERE o.status = ANY($1::text[]) AND u.role = 'customer' AND u.is_active IS NOT FALSE
+              AND lower(u.email) <> $2 AND o.created_at >= NOW() - make_interval(days => $3)
+              AND NOT EXISTS (SELECT 1 FROM agent_decisions d WHERE d.order_item_id = oi.id)
+            ORDER BY o.created_at DESC, oi.id LIMIT 1""",
+        sorted(rule.eligible_order_statuses),
+        TOUR_EMAIL,
+        rule.lookback_days,
+    )
+    if item_id is None:
+        raise ApprovalHTTPError(409, "No eligible delivered order line is left for the item-damaged scenario")
+    return item_id
+
+
+async def _customer_only(actor: Actor, owner: Any) -> None:
+    """Only a customer's own records are valid subjects, never the acting admin's and never the demo tour user's."""
+    if owner is None:
+        raise ApprovalHTTPError(404, "Not found")
+    if (
+        owner["role"] != "customer"
+        or str(owner["email"]).lower() == actor.email.strip().lower()
+        or str(owner["email"]).strip().lower() == TOUR_EMAIL
+    ):
+        raise ApprovalHTTPError(422, "Events can only be simulated on a customer's order")
+
+
+async def _simulate_order_event(
+    actor: Actor,
+    scenario: str | None,
+    event_type: str | None,
+    order_id: str | None,
+    order_item_id: str | None,
+    quantity: int | None,
+    event_id: str | None,
+) -> dict[str, Any]:
+    """Enqueue an ``order.risk_flagged`` (an order) or ``order.item_damaged`` (an order line) event."""
+    topic = ORDER_SCENARIOS[scenario] if scenario is not None else event_type
+    assert topic in (engine.TOPIC_RISK_FLAGGED, engine.TOPIC_ITEM_DAMAGED)
+    risk = topic == engine.TOPIC_RISK_FLAGGED
+    if risk and (order_item_id is not None or quantity is not None):
+        raise ApprovalHTTPError(422, "order_item_id and quantity belong to order.item_damaged")
+    if not risk and order_id is not None:
+        raise ApprovalHTTPError(422, "order_id belongs to order.risk_flagged; an item report names an order_item_id")
+    pool = get_pool()
+    payload: dict[str, Any] = {"simulated": True}
+    subject: uuid.UUID
+    if scenario is not None:
+        if order_id is not None or order_item_id is not None or quantity is not None:
+            raise ApprovalHTTPError(422, "Give a scenario or the ids, not both")
+        subject = await (_pick_risk_order() if risk else _pick_damaged_line())
+    else:
+        raw = order_id if risk else order_item_id
+        if raw is None:
+            raise ApprovalHTTPError(422, "Give an order_id" if risk else "Give an order_item_id")
+        try:
+            subject = uuid.UUID(str(raw))
+        except ValueError:
+            raise ApprovalHTTPError(
+                422, "order_id must be an order id" if risk else "order_item_id must be an id"
+            ) from None
+        owner = await pool.fetchrow(
+            "SELECT u.email, u.role FROM orders o JOIN users u ON u.id = o.user_id WHERE o.id = $1"
+            if risk
+            else "SELECT u.email, u.role FROM order_items oi JOIN orders o ON o.id = oi.order_id "
+            "JOIN users u ON u.id = o.user_id WHERE oi.id = $1",
+            subject,
+        )
+        await _customer_only(actor, owner)
+    count = 1 if quantity is None else quantity
+    if risk:
+        payload["order_id"] = str(subject)
+        aggregate = str(subject)
+        suffix = str(subject)
+    else:
+        payload["order_item_id"] = str(subject)
+        payload["quantity"] = count
+        aggregate = str(await pool.fetchval("SELECT order_id FROM order_items WHERE id = $1", subject))
+        suffix = f"{subject}-{count}"
+    event = (event_id or f"sim-{topic}-{suffix}").strip()[:200]
+    payload["event_id"] = event
+    async with pool.acquire() as conn:
+        outbox_id = await enqueue(
+            conn, topic, payload, dedupe_key=engine.event_key(topic, event), aggregate_id=aggregate
+        )
+    logger.info("autonomy event simulated outbox=%s enqueued=%s", log_safe(outbox_id), outbox_id is not None)
+    return {
+        "enqueued": outbox_id is not None,
+        "outbox_id": outbox_id,
+        "event_id": event,
+        "event_type": topic,
+        "order_id": aggregate,
+        "order_item_id": None if risk else str(subject),
+        "quantity": None if risk else count,
+        "delay_days": None,
+    }
+
+
 async def simulate(
     actor: Actor,
     *,
@@ -77,14 +327,44 @@ async def simulate(
     order_id: str | None = None,
     delay_days: int | None = None,
     event_id: str | None = None,
+    event_type: str | None = None,
+    product_id: str | None = None,
+    new_price: Decimal | None = None,
+    order_item_id: str | None = None,
+    quantity: int | None = None,
 ) -> dict[str, Any]:
-    """Enqueue one ``order.shipment_delayed`` event. Replaying the same ``event_id`` enqueues nothing."""
+    """Enqueue one event (default ``order.shipment_delayed``). Replaying the same ``event_id`` enqueues nothing."""
     require_enabled()
     if event_id is not None and not event_id.strip():
         raise ApprovalHTTPError(422, "event_id cannot be empty")
+    known = {
+        engine.TOPIC_SHIPMENT_DELAYED,
+        engine.TOPIC_PRICE_DROPPED,
+        engine.TOPIC_BACK_IN_STOCK,
+        engine.TOPIC_ITEM_DAMAGED,
+        engine.TOPIC_RISK_FLAGGED,
+    }
+    if event_type is not None and event_type not in known:
+        raise ApprovalHTTPError(422, f"event_type must be one of {', '.join(sorted(known))}")
+    if scenario in ORDER_SCENARIOS or event_type in (engine.TOPIC_ITEM_DAMAGED, engine.TOPIC_RISK_FLAGGED):
+        if scenario is not None and event_type is not None and EVENT_SCENARIOS.get(scenario) != event_type:
+            raise ApprovalHTTPError(422, "That scenario belongs to a different event_type")
+        if product_id is not None or new_price is not None or delay_days is not None:
+            raise ApprovalHTTPError(422, "product_id, new_price and delay_days belong to other event types")
+        return await _simulate_order_event(actor, scenario, event_type, order_id, order_item_id, quantity, event_id)
+    if order_item_id is not None or quantity is not None:
+        raise ApprovalHTTPError(422, "order_item_id and quantity belong to order.item_damaged")
+    if scenario in PRODUCT_SCENARIOS or event_type in (engine.TOPIC_PRICE_DROPPED, engine.TOPIC_BACK_IN_STOCK):
+        if scenario is not None and event_type is not None and EVENT_SCENARIOS.get(scenario) != event_type:
+            raise ApprovalHTTPError(422, "That scenario belongs to a different event_type")
+        if order_id is not None or delay_days is not None:
+            raise ApprovalHTTPError(422, "order_id and delay_days belong to order.shipment_delayed")
+        return await _simulate_product_event(scenario, event_type, product_id, new_price, event_id)
+    if product_id is not None or new_price is not None:
+        raise ApprovalHTTPError(422, "product_id and new_price belong to the price-drop and back-in-stock events")
     if scenario is not None:
         if scenario not in SCENARIOS:
-            raise ApprovalHTTPError(422, f"scenario must be one of {', '.join(SCENARIOS)}")
+            raise ApprovalHTTPError(422, f"scenario must be one of {', '.join([*SCENARIOS, *EVENT_SCENARIOS])}")
         if order_id is not None or delay_days is not None:
             raise ApprovalHTTPError(422, "Give a scenario or an order and a delay, not both")
         days = SCENARIOS[scenario]
@@ -133,6 +413,7 @@ async def simulate(
         "enqueued": outbox_id is not None,
         "outbox_id": outbox_id,
         "event_id": event,
+        "event_type": engine.TOPIC_SHIPMENT_DELAYED,
         "order_id": str(order),
         "delay_days": days,
     }
@@ -150,6 +431,9 @@ async def list_decisions(*, state: str | None = None, limit: int = 100, offset: 
         "enabled": settings.AUTONOMY_ENABLED,
         "simulator_enabled": settings.AUTONOMY_ENABLED and settings.AUTONOMY_SIMULATOR_ENABLED,
         "scenarios": SCENARIOS if settings.AUTONOMY_ENABLED and settings.AUTONOMY_SIMULATOR_ENABLED else {},
+        # Scenario name -> the event it sends, for the events that pick a product rather than an order.
+        "event_scenarios": EVENT_SCENARIOS if settings.AUTONOMY_ENABLED and settings.AUTONOMY_SIMULATOR_ENABLED else {},
+        "responder_enabled": settings.AUTONOMY_ENABLED and settings.AUTONOMY_RESPONDER_ENABLED,
     }
 
 

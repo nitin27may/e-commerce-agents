@@ -7,6 +7,7 @@ that could act without an amount ceiling is refused at load time.
 from __future__ import annotations
 
 import copy
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -22,7 +23,11 @@ from shared.autonomy.policy import (
     evaluate_tier,
     get_policy,
     load_policy,
+    month_start,
+    next_month_start,
     parse_policy,
+    score_order,
+    size_damage_remedy,
 )
 
 CASES = yaml.safe_load((POLICY_PATH.parent / "testdata-autonomy" / "cases.yaml").read_text(encoding="utf-8"))
@@ -43,6 +48,8 @@ def test_tier_golden_case(case: dict[str, Any]) -> None:
     decision = evaluate_tier(get_policy().action(case["action"]), case["facts"])
 
     assert (decision.tier, decision.rule_id) == (case["expect"]["tier"], case["expect"]["rule"])
+    if "hold" in case["expect"]:
+        assert decision.hold is case["expect"]["hold"]
 
 
 def test_every_rule_of_every_action_has_a_golden_case() -> None:
@@ -60,6 +67,8 @@ def test_budget_golden_case(case: dict[str, Any]) -> None:
         customer_count=case["usage"].get("customer_count", 0),
         customer_amount=Decimal(str(case["usage"].get("customer_amount", 0))),
         order_count=case["usage"].get("order_count", 0),
+        month_count=case["usage"].get("month_count", 0),
+        month_amount=Decimal(str(case["usage"].get("month_amount", 0))),
     )
     amount = None if case["amount"] is None else Decimal(str(case["amount"]))
 
@@ -281,3 +290,147 @@ def test_an_unreadable_file_is_a_policy_error(tmp_path: Path) -> None:
 def test_the_top_level_must_be_a_mapping() -> None:
     with pytest.raises(AutonomyPolicyError, match="expected a mapping"):
         parse_policy(["not", "a", "mapping"])
+
+
+# ── #299: risk scores, damage remedies, monthly caps ─────────────────────────
+
+
+@pytest.mark.parametrize("case", CASES["risk_score_cases"], ids=lambda c: c["name"])
+def test_risk_score_golden_case(case: dict[str, Any]) -> None:
+    rule = get_policy().event("order.risk_flagged")
+    assert rule is not None
+
+    assert score_order(rule, case["facts"]).score == case["score"]
+
+
+def test_the_score_names_the_signals_that_fired() -> None:
+    rule = get_policy().event("order.risk_flagged")
+    assert rule is not None
+
+    scored = score_order(rule, {"order_total": 1500, "account_age_days": 1})
+
+    assert [t["signal"] for t in scored.triggered] == ["large-order", "very-large-order", "new-account"]
+    assert sum(t["points"] for t in scored.triggered) == scored.score == 65
+
+
+@pytest.mark.parametrize("case", CASES["damage_cases"], ids=lambda c: c["name"])
+def test_damage_remedy_golden_case(case: dict[str, Any]) -> None:
+    rule = get_policy().event("order.item_damaged")
+    assert rule is not None
+
+    sized = size_damage_remedy(rule, Decimal(str(case["value"])), in_stock=case["in_stock"])
+
+    if case["resolution"] is None:
+        assert sized is None
+    else:
+        assert sized == (case["resolution"], Decimal(str(case["amount"])))
+
+
+@pytest.mark.parametrize("case", CASES["month_cases"], ids=lambda c: c["day"])
+def test_the_month_window_is_the_utc_calendar_month(case: dict[str, Any]) -> None:
+    day = date.fromisoformat(case["day"])
+
+    assert month_start(day) == date.fromisoformat(case["start"])
+    assert next_month_start(day) == date.fromisoformat(case["next"])
+
+
+def test_every_shipped_budget_has_a_month_cap_at_least_the_day_cap() -> None:
+    for budget in get_policy().budgets.values():
+        assert budget.global_per_month is not None, budget.key
+        assert budget.global_per_month.max_count >= budget.global_per_day.max_count
+        assert budget.global_per_month.max_amount >= budget.global_per_day.max_amount
+
+
+def test_a_budget_without_a_month_cap_is_still_valid_and_never_trips_one() -> None:
+    doc = _broken(lambda d: d["budgets"]["goodwill_credit"].pop("global_per_month"))
+    budget = parse_policy(doc).budget("goodwill_credit")
+
+    assert budget.global_per_month is None
+    assert check_budget(budget, Decimal(5), Usage(month_count=10**6, month_amount=Decimal(10**9))).ok
+
+
+def test_the_risk_review_never_acts_alone_and_the_hold_is_only_on_needs_approval() -> None:
+    action = get_policy().action("order_risk_review")
+
+    assert {r.tier for r in action.rules} == {"no_action", "needs_approval"}
+    assert [r.id for r in action.rules if r.hold] == ["risk-high-hold"]
+
+
+@pytest.mark.parametrize(
+    ("name", "mutate", "message"),
+    [
+        (
+            "month cap below the day count",
+            lambda d: d["budgets"]["goodwill_credit"]["global_per_month"].update(max_count=19),
+            "global_per_month is below global_per_day",
+        ),
+        (
+            "month cap below the day amount",
+            lambda d: d["budgets"]["goodwill_credit"]["global_per_month"].update(max_amount=199),
+            "global_per_month is below global_per_day",
+        ),
+        (
+            "unknown month cap key",
+            lambda d: d["budgets"]["goodwill_credit"]["global_per_month"].update(per_week=1),
+            "unknown key",
+        ),
+        (
+            "an autonomous risk rule",
+            lambda d: d["actions"]["order_risk_review"]["rules"][1].update(tier="auto", hold=False),
+            "never acts alone",
+        ),
+        (
+            "no_action on a money action",
+            lambda d: d["actions"]["goodwill_credit"]["rules"][0].update(tier="no_action"),
+            "only a risk review may take no action",
+        ),
+        (
+            "hold on a money action",
+            lambda d: d["actions"]["goodwill_credit"]["rules"][-1].update(hold=True),
+            "may hold",
+        ),
+        (
+            "hold on a no_action rule",
+            lambda d: d["actions"]["order_risk_review"]["rules"][0].update(hold=True),
+            "may hold",
+        ),
+        (
+            "an irreversible hold",
+            lambda d: d["actions"]["order_risk_review"].update(reversible=False),
+            "must be reversible",
+        ),
+        (
+            "a signal on the score itself",
+            lambda d: d["events"]["order.risk_flagged"]["signals"][0].update(fact="risk_score"),
+            "cannot test the score",
+        ),
+        (
+            "a signal worth no points",
+            lambda d: d["events"]["order.risk_flagged"]["signals"][0].update(points=0),
+            "at least 1",
+        ),
+        (
+            "duplicate signal ids",
+            lambda d: d["events"]["order.risk_flagged"]["signals"][1].update(id="large-order"),
+            "duplicate signal id",
+        ),
+        (
+            "a risk review with a budget",
+            lambda d: d["actions"]["order_risk_review"].update(budget="goodwill_credit"),
+            "spends no money",
+        ),
+        (
+            "a damage credit above 100 percent",
+            lambda d: d["events"]["order.item_damaged"].update(credit_percent=101),
+            "at most 100",
+        ),
+        (
+            "a damage autonomous rule above the per-action cap",
+            lambda d: d["actions"]["damage_goodwill"]["rules"][1]["when"][0].update(value=16),
+            "above the budget's per_action_max_amount",
+        ),
+    ],
+)
+def test_the_loader_refuses_an_unsafe_new_shape(name: str, mutate: Any, message: str) -> None:
+    with pytest.raises(AutonomyPolicyError, match=message):
+        parse_policy(_broken(mutate))

@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import time
 import uuid
 from typing import Any
@@ -26,6 +25,7 @@ from pydantic import BaseModel
 
 from shared.config import settings
 from shared.context import current_session_id, current_user_email, current_user_role
+from shared.coupons import COUPON_ALREADY_USED_MESSAGE, lock_user_for_checkout, user_has_used_coupon
 from shared.db import get_pool
 from shared.factory import get_token_verifier
 from shared.idempotency import idempotent
@@ -39,8 +39,15 @@ from shared.jwt_utils import (
 )
 from shared.log_safe import log_safe
 from shared.oauth.service_client import request_token
-from shared.rate_limit import enforce_auth_account_limit, enforce_auth_user_limit, rate_limit_auth
+from shared.rate_limit import (
+    enforce_auth_account_limit,
+    enforce_auth_user_limit,
+    enforce_label_lookup_not_blocked,
+    rate_limit_auth,
+    record_label_miss,
+)
 from shared.refresh_tokens import RefreshRejectedError, issue_refresh_token, rotate_refresh_token
+from shared.return_label import is_legacy, is_well_formed, legacy_token_expired, new_label_token
 from shared.tool_inputs import clamp_limit
 
 logger = logging.getLogger(__name__)
@@ -857,6 +864,9 @@ async def get_usage_stats(admin: dict[str, Any] = Depends(require_admin)) -> dic
            WHERE created_at >= NOW() - INTERVAL '30 days'""",
     )
 
+    # Not date-bounded: it is the number a person has yet to act on, the same rows `/api/admin/requests` lists.
+    pending_requests = await pool.fetchval("SELECT COUNT(*) FROM access_requests WHERE status = 'pending'")
+
     # Per-agent breakdown
     agent_rows = await pool.fetch(
         """SELECT
@@ -899,6 +909,7 @@ async def get_usage_stats(admin: dict[str, Any] = Depends(require_admin)) -> dic
             # carry NULL and contribute nothing: this is the cost of the rows that have one.
             "total_tokens_cached_in": overall["total_tokens_cached_in"] or 0,
             "total_cost_usd": float(overall["total_cost_usd"] or 0),
+            "pending_requests": int(pending_requests or 0),
         },
         "by_agent": [
             {
@@ -1650,7 +1661,7 @@ async def return_order(order_id: str, body: ReturnOrderRequest, user: dict = Dep
     if existing_return:
         raise HTTPException(status_code=409, detail="A return has already been requested for this order")
 
-    label_token = uuid.uuid4().hex[:12]
+    label_token = new_label_token()
     return_label_url = f"/api/returns/{label_token}/label"
 
     async with pool.acquire() as conn:
@@ -1691,16 +1702,15 @@ async def return_order(order_id: str, body: ReturnOrderRequest, user: dict = Dep
 # ── Return Label PDF ─────────────────────────────────────────
 
 
-# Tokens are minted as ``uuid.uuid4().hex[:12]`` (lowercase hex) at both creation sites.
-_LABEL_TOKEN_RE = re.compile(r"[0-9a-f]{12}")
-
-
 @router.get("/api/returns/{label_token}/label")
-async def get_return_label(label_token: str):
+async def get_return_label(label_token: str, request: Request):
     """Generate a return shipping label PDF for the given token."""
     # The route is public and the token is the only credential, so it is matched whole and exactly: a malformed
     # segment (wildcards, partial or over-long tokens) gets the same 404 as an unknown one, and is never echoed.
-    if not _LABEL_TOKEN_RE.fullmatch(label_token):
+    # Each such miss spends the caller's budget; once it is gone the lookup is refused (429) before it runs.
+    await enforce_label_lookup_not_blocked(request)
+    if not is_well_formed(label_token):
+        await record_label_miss(request)
         raise HTTPException(status_code=404, detail="Return label not found")
 
     pool = get_pool()
@@ -1716,7 +1726,9 @@ async def get_return_label(label_token: str):
            WHERE r.return_label_url = $1""",
         f"/api/returns/{label_token}/label",
     )
-    if not ret:
+    # A 12-character token is a pre-128-bit one: honoured only for the 30 days the printed label promises.
+    if not ret or (is_legacy(label_token) and legacy_token_expired(ret["created_at"])):
+        await record_label_miss(request)
         raise HTTPException(status_code=404, detail="Return label not found")
 
     address = ret["shipping_address"]
@@ -2135,6 +2147,8 @@ async def apply_coupon(body: ApplyCouponRequest, user: dict = Depends(require_au
         )
     if coupon["user_specific_email"] and coupon["user_specific_email"] != email:
         raise HTTPException(status_code=400, detail="This coupon is not valid for your account")
+    if await user_has_used_coupon(pool, user_id, coupon["code"]):
+        raise HTTPException(status_code=400, detail=COUPON_ALREADY_USED_MESSAGE)
 
     # Calculate discount
     if coupon["discount_type"] == "percentage":
@@ -2237,6 +2251,9 @@ async def _do_checkout(user_id: str, body: CheckoutRequest) -> dict:
 
     async with pool.acquire() as conn:
         async with conn.transaction():
+            # 0. Serialise this user's checkouts so the one-use-per-coupon check below sees any concurrent order
+            await lock_user_for_checkout(conn, user_id)
+
             # 1. Fetch cart
             cart = await conn.fetchrow(
                 "SELECT id, coupon_code, discount_amount FROM carts WHERE user_id = $1",
@@ -2302,6 +2319,10 @@ async def _do_checkout(user_id: str, body: CheckoutRequest) -> dict:
                         valid = False
                     if coupon["min_spend"] and subtotal < float(coupon["min_spend"]):
                         valid = False
+
+                    if valid and await user_has_used_coupon(conn, user_id, coupon_code):
+                        # Refuse rather than drop the code: dropping it would charge full price unannounced
+                        raise HTTPException(status_code=400, detail=COUPON_ALREADY_USED_MESSAGE)
 
                     if valid:
                         if coupon["discount_type"] == "percentage":

@@ -4,6 +4,7 @@ using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Data;
 using ECommerceAgents.Shared.Guardrails;
 using ECommerceAgents.Shared.Idempotency;
+using ECommerceAgents.Shared.Middleware;
 using Microsoft.Extensions.AI;
 using System.ComponentModel;
 
@@ -30,7 +31,8 @@ public sealed class ReturnTools(DatabasePool pool, AgentSettings settings, Idemp
     private readonly IdempotencyGuard _idempotency = idempotency ?? new IdempotencyGuard(pool);
     private readonly AgentSettings _settings = settings;
 
-    private const int ReturnWindowDays = 30;
+    // Shared with the pre-park check (ParkPrechecks) through GateRules so the two cannot drift.
+    private const int ReturnWindowDays = GateRules.ReturnWindowDays;
 
     public IEnumerable<AITool> All() => new AITool[]
     {
@@ -69,7 +71,7 @@ public sealed class ReturnTools(DatabasePool pool, AgentSettings settings, Idemp
         }
 
         var status = (string)order.status;
-        if (status != "delivered")
+        if (GateRules.ReturnStatusBlocker(status) is not null)
         {
             return new
             {
@@ -245,22 +247,38 @@ public sealed class ReturnTools(DatabasePool pool, AgentSettings settings, Idemp
 
         await using var conn = await _pool.OpenAsync();
 
-        // Guarded on the current status inside the UPDATE, so two concurrent
-        // calls cannot both refund — the same claim-before-acting shape #28
-        // established for HITL approvals.
+        // Read first so a refused return gets the same payload Python's tool returns (and the pre-park check
+        // gives): the blockers are GateRules.RefundBlocker's, shared with ParkPrechecks.
+        var current = await conn.QueryFirstOrDefaultAsync(
+            @"SELECT r.id, r.status
+              FROM returns r JOIN orders o ON r.order_id = o.id JOIN users u ON o.user_id = u.id
+              WHERE r.id = @id AND u.email = @email",
+            new { id, email }
+        );
+        if (current is null)
+        {
+            return new { error = $"Return not found or access denied: {returnId}" };
+        }
+        if (GateRules.RefundBlocker((string)current.status) is { } blocker)
+        {
+            return new { error = $"This return {blocker}.", return_id = ((Guid)current.id).ToString() };
+        }
+
+        // Still guarded on the status inside the UPDATE, so two concurrent calls cannot both refund: the same
+        // claim-before-acting shape #28 established for HITL approvals.
         var refunded = await conn.QueryFirstOrDefaultAsync(
             @"UPDATE returns r
               SET status = 'refunded', resolved_at = NOW()
               FROM orders o, users u
               WHERE r.id = @id AND r.order_id = o.id AND o.user_id = u.id
-                AND u.email = @email AND r.status <> 'refunded'
+                AND u.email = @email AND r.status NOT IN ('refunded', 'denied')
               RETURNING r.id, r.refund_amount, r.refund_method",
             new { id, email }
         );
 
         if (refunded is null)
         {
-            return new { error = "Return not found, not yours, or already refunded." };
+            return new { error = "This return has already been refunded.", return_id = returnId };
         }
 
         return new

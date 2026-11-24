@@ -31,6 +31,27 @@ logger = logging.getLogger(__name__)
 _JUDGE_INSTRUCTIONS = load_raw_prompt("_eval/completeness-judge")
 
 
+#: ``failure_mode`` of a verdict the judge could not give because the provider's content filter blocked the call.
+JUDGE_UNAVAILABLE = "judge_unavailable"
+
+_CONTENT_FILTER_MARKERS = ("content_filter", "responsibleaipolicyviolation", "content management policy")
+
+
+def is_content_filter_error(exc: BaseException) -> bool:
+    """True when ``exc`` is a provider content-filter refusal (Azure OpenAI ``content_filter``), by code or message.
+
+    Every other error stays a ``judge_error``: only a refusal of this kind means "no verdict was possible".
+    """
+    code = getattr(exc, "code", None)
+    body = getattr(exc, "body", None)
+    if isinstance(body, dict):
+        code = code or body.get("code") or (body.get("error") or {}).get("code")
+    if isinstance(code, str) and code.lower() == "content_filter":
+        return True
+    text = f"{type(exc).__name__} {exc}".lower()
+    return any(marker in text for marker in _CONTENT_FILTER_MARKERS)
+
+
 class JudgeVerdict(BaseModel):
     score: float = Field(ge=0.0, le=1.0)
     reasoning: str
@@ -66,8 +87,13 @@ async def judge_response(
 
 
 async def _call_judge(
-    user_input: str, response_text: str, expected_fields: list[str], judge_config: JudgeConfig | None = None
+    user_input: str,
+    response_text: str,
+    expected_fields: list[str],
+    judge_config: JudgeConfig | None = None,
+    usage_out: dict[str, int] | None = None,
 ) -> JudgeVerdict:
+    """One judge call. ``usage_out``, when given, receives the call's token counts (judge calibration reads them)."""
     from agent_framework import Agent
 
     from shared.factory import get_chat_client, get_judge_chat_client
@@ -86,9 +112,22 @@ async def _call_judge(
     try:
         response = await judge.run(prompt)
     except Exception as exc:
+        if is_content_filter_error(exc):
+            # The provider's content filter refused the *judge call* (adversarial text in the answer under
+            # test), so no verdict exists. A distinct status, not a zero: it is left out of the completeness mean.
+            logger.warning("llm_judge.content_filtered error=%s", exc)
+            return JudgeVerdict(
+                score=0.0,
+                reasoning=f"judge unavailable: content filter refused the call ({exc})",
+                failure_mode=JUDGE_UNAVAILABLE,
+            )
         logger.warning("llm_judge.call_failed error=%s", exc)
         return JudgeVerdict(score=0.0, reasoning=f"judge call failed: {exc}", failure_mode="judge_error")
 
+    if usage_out is not None:
+        details = getattr(response, "usage_details", None) or {}
+        usage_out["input_token_count"] = int(details.get("input_token_count") or 0)
+        usage_out["output_token_count"] = int(details.get("output_token_count") or 0)
     return _parse_verdict(response.text or "")
 
 

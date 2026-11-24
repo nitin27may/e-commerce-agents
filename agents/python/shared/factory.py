@@ -45,6 +45,7 @@ from shared.embedding_config import (
     verify_vector_length,
 )
 from shared.gateway_headers import attach_to_maf_client, install_gateway_headers
+from shared.opt_in import OPT_IN_SPECIALISTS
 from shared.prompt_loader import ModelOverride, load_model_override
 
 logger = logging.getLogger(__name__)
@@ -457,6 +458,20 @@ def parse_agent_registry(raw: str | None) -> dict[str, str]:
             raise ValueError(f"AGENT_REGISTRY entry {name!r} must be an absolute http(s) URL, got {url!r}.")
         parsed[name] = url
     return parsed
+
+
+def active_agent_registry(raw: str | None) -> dict[str, str]:
+    """``parse_agent_registry`` minus every opt-in specialist whose flag is off.
+
+    The orchestrator and the handoff mesh read this, never the raw registry, so a compose file or a
+    deployment may list ``merchant-ops`` unconditionally and the flag alone decides whether it is routable.
+    """
+    registry = parse_agent_registry(raw)
+    return {
+        name: url
+        for name, url in registry.items()
+        if name not in OPT_IN_SPECIALISTS or bool(getattr(settings, OPT_IN_SPECIALISTS[name], False))
+    }
 
 
 @lru_cache(maxsize=1)

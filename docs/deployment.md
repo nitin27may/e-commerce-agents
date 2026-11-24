@@ -19,8 +19,8 @@ Optional for local (non-Docker) development:
 |------|---------|-------|
 | Python | 3.12 | Required only for running agents outside Docker |
 | uv | latest | Python package manager (`pip install uv` or `brew install uv`) |
-| Node.js | 22+ | Required only for running the frontend outside Docker |
-| pnpm | 9+ | Enable via `corepack enable && corepack prepare pnpm@latest --activate` |
+| Node.js | 26+ | Required only for running the frontend outside Docker |
+| pnpm | 9+ | `npm install -g pnpm@10` (Node 25+ no longer bundles Corepack) |
 
 ## 2. Docker Compose Architecture
 
@@ -308,9 +308,9 @@ The `web/Dockerfile` uses a 3-stage build for minimal production images:
 
 | Stage | Base | Purpose |
 |-------|------|---------|
-| `deps` | `node:22-alpine` | Install dependencies with `pnpm install --frozen-lockfile` |
-| `builder` | `node:22-alpine` | Build Next.js (`pnpm build`). No backend address is compiled in — see `ORCHESTRATOR_URL` above |
-| `runner` | `node:22-alpine` | Production runtime with standalone output only. Non-root `nextjs` user. |
+| `deps` | `node:26-alpine` | Install dependencies with `pnpm install --frozen-lockfile` |
+| `builder` | `node:26-alpine` | Build Next.js (`pnpm build`). No backend address is compiled in — see `ORCHESTRATOR_URL` above |
+| `runner` | `node:26-alpine` | Production runtime with standalone output only. Non-root `nextjs` user. |
 
 The final image contains only the standalone server, static assets, and public directory -- no `node_modules` or source code.
 
@@ -423,6 +423,10 @@ Tests: `dotnet test agents/dotnet/tests/ECommerceAgents.AppHost.Tests` builds th
   generated `Projects.*` types, and the AppHost no longer carries `ProjectReference` items to the services.
   ASPIRE013 (C# AppHosts want the Aspire CLI bundle) is suppressed like ASPIRE010; nothing here uses the bundle.
   The dashboard image in the compose files stays on its own tag.
+- **Dashboard image is older than the AppHost packages.** The compose files pin
+  `mcr.microsoft.com/dotnet/aspire-dashboard:13.6.5` while the AppHost packages are 17.0.0. No 17.x tag exists on
+  MCR as of 2026-11-24 (check with `curl -s https://mcr.microsoft.com/v2/dotnet/aspire-dashboard/tags/list`); bump
+  all three compose files together once one appears.
 - The AppHost project sets `CentralPackageTransitivePinningEnabled=false`, because Aspire needs newer
   `Microsoft.Extensions.*` than the repo-wide pins; the services themselves keep the pins.
 - Host-side processes reach the auth-server at `http://localhost:8090`, which is also its issuer; containers
@@ -444,6 +448,7 @@ Tests: `dotnet test agents/dotnet/tests/ECommerceAgents.AppHost.Tests` builds th
 | 8083 | Pricing & Promotions Agent | HTTP | A2A endpoint, called by orchestrator |
 | 8084 | Review & Sentiment Agent | HTTP | A2A endpoint, called by orchestrator |
 | 8085 | Inventory & Fulfillment Agent | HTTP | A2A endpoint, called by orchestrator |
+| 8086 | Merchant Ops Agent (opt-in, Python only) | HTTP | A2A endpoint behind the `merchant-ops` compose profile; the orchestrator routes to it only with `MERCHANT_OPS_AGENT_ENABLED=true`. Not in the demo images, the .NET stack or the Azure templates |
 | 8090 | Auth Server | HTTP | OAuth 2.1 authorization server (`agents` profile) |
 | 9000 | MCP Product server | HTTP | `mcp` profile |
 | 9001 | MCP Inventory server | HTTP | `mcp` profile |

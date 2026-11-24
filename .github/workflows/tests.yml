@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -65,6 +65,11 @@ jobs:
       - name: Eval scorecard page is current
         run: python3 -m scripts.build_eval_scorecard --check
 
+      # The capability table in docs/model-providers.md is generated from evals/provider-results/. Stdlib only.
+      # Fix: `uv run --project agents/python python -m scripts.build_provider_table`.
+      - name: Provider capability table is current
+        run: python3 -m scripts.build_provider_table --check
+
       - name: Run pytest with coverage
         working-directory: agents/python
         run: |
@@ -90,7 +95,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -112,6 +117,20 @@ jobs:
         working-directory: agents/python
         run: uv run ruff format --check .
 
+  # Warning-level shellcheck over every repo script so SC2164 (unchecked cd) and SC2034 (unused
+  # variable) cannot return. Style and info findings are not gated. The azure workflow keeps its own
+  # stricter, default-severity pass over the azure scripts.
+  shellcheck:
+    name: Shell - shellcheck (warning)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: shellcheck
+        run: |
+          sudo apt-get install -y --no-install-recommends shellcheck
+          shellcheck -x -S warning scripts/*.sh scripts/lib/*.sh scripts/azure/*.sh scripts/azure/lib/*.sh
+
   mcp-package-tests:
     name: MCP packages · smoke tests
     runs-on: ubuntu-latest
@@ -125,7 +144,7 @@ jobs:
           - { name: ecommerce-mcp-product, dir: packages/mcp-product }
           - { name: ecommerce-mcp-inventory, dir: packages/mcp-inventory }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -176,7 +195,7 @@ jobs:
           - { name: ecommerce-mcp-product, dir: packages/mcp-product }
           - { name: ecommerce-mcp-inventory, dir: packages/mcp-inventory }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -199,7 +218,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v6
@@ -240,7 +259,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -270,17 +289,17 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 10.15.0
 
-      - name: Setup Node 22
+      - name: Setup Node 26
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 26
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
 
@@ -324,17 +343,17 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 10.15.0
 
-      - name: Setup Node 22
+      - name: Setup Node 26
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 26
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
 
@@ -376,7 +395,7 @@ jobs:
     # Gated on an explicit flag until visualization lands in Phase 7.
     if: ${{ vars.WORKFLOW_VISUALIZATION_ON_BUILD == 'true' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7

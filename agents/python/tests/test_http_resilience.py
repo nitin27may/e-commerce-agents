@@ -355,3 +355,38 @@ def test_host_breaker_prunes_outcomes_outside_the_sampling_window() -> None:
     time.sleep(0.08)
     breaker._prune(time.monotonic())
     assert len(breaker._outcomes) == 0
+
+
+async def test_a_client_exiting_does_not_cut_a_sibling_stream_on_the_shared_transport() -> None:
+    """Two specialists called in one turn share the module-level transport; the first to finish must not close it."""
+    import uvicorn
+
+    release = asyncio.Event()
+
+    async def app(scope, receive, send):  # type: ignore[no-untyped-def]
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"first", "more_body": True})
+        if scope["path"] == "/slow":
+            await release.wait()
+        await send({"type": "http.response.body", "body": b"-last", "more_body": False})
+
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=0, log_level="error"))
+    serving = asyncio.create_task(server.serve())
+    while not server.started:
+        await asyncio.sleep(0.01)
+    port = server.servers[0].sockets[0].getsockname()[1]
+    transport = ResilientAsyncTransport()
+    try:
+        async with httpx.AsyncClient(transport=transport) as slow_client:
+            async with slow_client.stream("GET", f"http://127.0.0.1:{port}/slow") as slow:
+                parts = slow.aiter_text()
+                chunks = [await parts.__anext__()]
+                async with httpx.AsyncClient(transport=transport) as fast_client:
+                    assert (await fast_client.get(f"http://127.0.0.1:{port}/fast")).text == "first-last"
+                release.set()
+                chunks.extend([part async for part in parts])
+        assert "".join(chunks) == "first-last"
+    finally:
+        await transport.aclose()
+        server.should_exit = True
+        await serving

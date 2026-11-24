@@ -17,7 +17,7 @@ import logging
 import math
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +43,7 @@ from evals.records import (
     utc_now,
 )
 from shared.cost import estimate_cost
+from shared.guardrails.cost_budget_middleware import is_budget_refusal
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +106,18 @@ class EvalCase:
     # Multi-turn (live cases only): the conversation, run in order in one session. ``input`` is then the last turn's
     # message and the expectations live in the turns. None for every single-turn case.
     turns: list[EvalTurn] | None = None
+    # Tools that must NOT be called. An assertion only: it never moves a score.
+    forbidden_tools: list[str] | None = None
+    # Text the answer must not contain (an injected instruction's canary token, a claim that an action was done).
+    # An assertion only, matched case-insensitively.
+    forbidden_substrings: list[str] | None = None
+    # Orchestrator only: the modes this case may be scored in (``--mode``). A case that names none runs in the
+    # default ``tool`` mode alone, so an existing dataset is unchanged. The run's ``--mode`` picks the cases that
+    # list it and sets ``mode`` on each.
+    modes: list[str] | None = None
+    # Per mode, expectations that differ from the case's own (a handoff mesh has no ``call_specialist_agent``
+    # tool, so its case states ``expected_tools: []`` there). Only the keys in ``MODE_OVERRIDABLE``.
+    mode_overrides: dict[str, dict[str, Any]] | None = None
 
 
 @dataclass
@@ -127,6 +140,12 @@ class EvalResult:
     judge_reasoning: str | None = None
     error: str | None = None
     fixture_missing: bool = False
+    # Left out of the means: the run was stopped by the cost budget (nothing measured), or the judge's call was
+    # refused by the provider's content filter (completeness not measured).
+    budget_exceeded: bool = False
+    judge_unavailable: bool = False
+    # ``fallback_keywords`` when the judge was unavailable and the keyword checks scored completeness instead.
+    completeness_source: str | None = None
     passed: bool = False
     # Schema v2 assertions that did not hold. They never move the scores; they
     # fail the case and the run, since a regression here is a behaviour change
@@ -155,6 +174,9 @@ class EvalResult:
             judge_reasoning=record.judge.reasoning if record.judge else None,
             error=record.error,
             fixture_missing=record.fixture_missing,
+            budget_exceeded=record.budget_exceeded,
+            judge_unavailable=scoring.judge_unavailable(record),
+            completeness_source=record.completeness_source,
             passed=record.passed,
             assertion_failures=record.assertion_failures,
             repeat=record.repeat,
@@ -204,6 +226,43 @@ class EvalSummary:
         return sum(len(r.assertion_failures) for r in self.results)
 
     @property
+    def budget_exceeded_cases(self) -> int:
+        """Cases the cost/token budget stopped: excluded from every mean, since nothing was measured."""
+        return sum(1 for r in self.results if r.budget_exceeded)
+
+    @property
+    def judge_unavailable_cases(self) -> int:
+        """Cases whose judge call the provider's content filter refused (scored by fallback or left unmeasured)."""
+        return sum(1 for r in self.results if r.judge_unavailable)
+
+    @property
+    def fallback_scored_cases(self) -> int:
+        """Judge-unavailable cases whose completeness the deterministic keyword fallback scored (less strict)."""
+        return sum(1 for r in self.results if r.completeness_source == scoring.SOURCE_FALLBACK)
+
+    @property
+    def judge_unscored_cases(self) -> int:
+        """Judge-unavailable cases with no keyword-checkable expectation: out of the completeness mean."""
+        return self.judge_unavailable_cases - self.fallback_scored_cases
+
+    @property
+    def judge_scored_cases(self) -> int:
+        """Cases whose completeness came from the configured scorer (judge, or keywords when no judge ran)."""
+        return sum(1 for r in self.results if not r.budget_exceeded and not r.judge_unavailable)
+
+    @property
+    def avg_completeness_fallback(self) -> float | None:
+        """Mean completeness over the fallback-scored cases alone, or None when there are none."""
+        rows = [r for r in self.results if r.completeness_source == scoring.SOURCE_FALLBACK]
+        return sum(r.completeness_score for r in rows) / len(rows) if rows else None
+
+    @property
+    def avg_completeness_judged(self) -> float | None:
+        """Mean completeness over the judge-scored cases alone, or None when there are none."""
+        rows = [r for r in self.results if not r.budget_exceeded and not r.judge_unavailable]
+        return sum(r.completeness_score for r in rows) / len(rows) if rows else None
+
+    @property
     def missing_fixtures(self) -> int:
         """Cases that failed because their replay fixture was absent.
 
@@ -233,6 +292,12 @@ class EvalSummary:
             "total_tokens_out": self.total_tokens_out,
             "estimated_cost_usd": None if self.estimated_cost_usd is None else round(self.estimated_cost_usd, 4),
             "missing_fixtures": self.missing_fixtures,
+            "budget_exceeded_cases": self.budget_exceeded_cases,
+            "judge_unavailable_cases": self.judge_unavailable_cases,
+            "fallback_scored_cases": self.fallback_scored_cases,
+            "judge_scored_cases": self.judge_scored_cases,
+            "avg_completeness_judged": _round_or_none(self.avg_completeness_judged),
+            "avg_completeness_fallback": _round_or_none(self.avg_completeness_fallback),
             "assertion_failures": self.assertion_failures,
             "results": [
                 {
@@ -266,6 +331,78 @@ def _parse_route_list(index: int, key: str, raw: Any) -> list[str] | None:
         return None
     if not isinstance(raw, list) or not all(isinstance(v, str) and v for v in raw):
         raise ValueError(f"Dataset entry {index}: {key} must be a list of specialist names")
+    return raw
+
+
+# The registered orchestration modes (``orchestrator/modes/__init__.py::MODES``; a test pins the two lists together).
+MODE_NAMES = ("tool", "handoff", "workflow:pre-purchase", "workflow:return-replace", "group-chat")
+
+# Expectations a case may restate for one mode (``mode_overrides``). ``input``, ``user_*`` and ``live`` never vary.
+MODE_OVERRIDABLE = (
+    "expected_tools",
+    "expected_tool_args",
+    "expected_fields",
+    "expected_route",
+    "expected_routes",
+    "forbidden_routes",
+    "forbidden_tools",
+    "forbidden_substrings",
+    "expect_hitl",
+    "expect_denial",
+    "criteria",
+)
+
+
+def _parse_modes(index: int, raw: Any) -> list[str] | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or not raw or not all(isinstance(v, str) and v for v in raw):
+        raise ValueError(f"Dataset entry {index}: modes must be a non-empty list of orchestration mode names")
+    unknown = [m for m in raw if m not in MODE_NAMES]
+    if unknown:
+        raise ValueError(f"Dataset entry {index}: unknown mode(s) {unknown}; known: {list(MODE_NAMES)}")
+    return raw
+
+
+def _parse_mode_overrides(index: int, raw: Any, modes: list[str] | None) -> dict[str, dict[str, Any]] | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict) or not all(isinstance(v, dict) for v in raw.values()):
+        raise ValueError(f"Dataset entry {index}: mode_overrides must map a mode name to {{expectation: value}}")
+    for mode, override in raw.items():
+        if modes is not None and mode not in modes:
+            raise ValueError(f"Dataset entry {index}: mode_overrides names {mode!r}, which is not in modes")
+        unknown = sorted(set(override) - set(MODE_OVERRIDABLE))
+        if unknown:
+            raise ValueError(
+                f"Dataset entry {index}: mode_overrides[{mode!r}] sets {unknown}; allowed: {list(MODE_OVERRIDABLE)}"
+            )
+    return raw
+
+
+def select_for_mode(cases: list[EvalCase], mode: str | None) -> list[tuple[int, EvalCase]]:
+    """The ``(dataset index, case)`` pairs a run in ``mode`` scores.
+
+    ``None`` and ``tool`` keep every case that does not name ``modes`` (or names ``tool`` among them), as written.
+    Another mode keeps only the cases that list it, each with ``mode`` set and that mode's ``mode_overrides``
+    applied. The dataset index is kept so a case id and a record stay stable whichever mode filtered the list.
+    """
+    if mode is None or mode == "tool":
+        return [(i, c) for i, c in enumerate(cases) if c.modes is None or "tool" in c.modes]
+    chosen: list[tuple[int, EvalCase]] = []
+    for i, case in enumerate(cases):
+        if not case.modes or mode not in case.modes:
+            continue
+        override = (case.mode_overrides or {}).get(mode, {})
+        chosen.append((i, replace(case, mode=mode, **override)))
+    return chosen
+
+
+def _parse_forbidden_tools(index: int, raw: Any) -> list[str] | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or not all(isinstance(v, str) and v for v in raw):
+        raise ValueError(f"Dataset entry {index}: forbidden_tools must be a list of tool names")
     return raw
 
 
@@ -337,6 +474,7 @@ def load_dataset(path: str | Path) -> list[EvalCase]:
     cases = []
     for i, entry in enumerate(raw):
         live = is_live_file or entry.get("live") is True
+        modes = _parse_modes(i, entry.get("modes"))
         turns = _parse_turns(i, entry, live=live) if "turns" in entry else None
         required = ("criteria",) if turns else ("input", "expected_tools", "expected_fields", "criteria")
         if not all(k in entry for k in required):
@@ -359,6 +497,10 @@ def load_dataset(path: str | Path) -> list[EvalCase]:
                 expected_routes=_parse_route_list(i, "expected_routes", entry.get("expected_routes")),
                 forbidden_routes=_parse_route_list(i, "forbidden_routes", entry.get("forbidden_routes")),
                 why=entry.get("why"),
+                forbidden_tools=_parse_forbidden_tools(i, entry.get("forbidden_tools")),
+                forbidden_substrings=_parse_forbidden_tools(i, entry.get("forbidden_substrings")),
+                modes=modes,
+                mode_overrides=_parse_mode_overrides(i, entry.get("mode_overrides"), modes),
             )
         )
 
@@ -400,16 +542,19 @@ def summarize_records(
 
     per_repeat: dict[str, list[float]] = {key: [] for key in TRACKED_SCORES}
     for index in range(repeats):
-        rows = [r for r in summary.results if r.repeat == index]
+        # A budget-stopped case measured nothing, so it is in no mean; a case whose judge was refused by the
+        # content filter is in the completeness mean only if the keyword fallback scored it.
+        rows = [r for r in summary.results if r.repeat == index and not r.budget_exceeded]
         if not rows:
             continue
         n = len(rows)
         groundedness = sum(r.groundedness_score for r in rows) / n
         correctness = sum(r.correctness_score for r in rows) / n
-        completeness = sum(r.completeness_score for r in rows) / n
+        judged = [r for r in rows if not r.judge_unavailable or r.completeness_source == scoring.SOURCE_FALLBACK]
+        completeness = sum(r.completeness_score for r in judged) / len(judged) if judged else None
         per_repeat["avg_groundedness"].append(groundedness)
         per_repeat["avg_correctness"].append(correctness)
-        per_repeat["avg_completeness"].append(completeness)
+        per_repeat["avg_completeness"].append(completeness if completeness is not None else 0.0)
         per_repeat["overall_score"].append(scoring.weighted_overall(groundedness, correctness, completeness))
 
     if per_repeat["overall_score"]:
@@ -466,6 +611,7 @@ class AgentEvaluator:
         judge: JudgeConfig | None = None,
         allow_self_judge: bool = False,
         runner: Any | None = None,
+        orchestration_mode: str | None = None,
     ) -> None:
         self.agent_name = agent_name
         self.pass_threshold = pass_threshold
@@ -482,6 +628,12 @@ class AgentEvaluator:
             from shared.config import settings
 
             setup = build_setup(settings, judge=self._judge.setup() if self._judge else JudgeSetup())
+        # ``--mode``: orchestrator quality runs only. The mode is part of the setup, so it names the baseline directory.
+        self.orchestration_mode = None if orchestration_mode in (None, "", "tool") else orchestration_mode
+        if self.orchestration_mode:
+            if agent_name != "orchestrator":
+                raise ValueError(f"--mode {orchestration_mode!r} applies to the orchestrator only, not {agent_name!r}")
+            setup = setup.model_copy(update={"orchestration_mode": self.orchestration_mode})
         self.setup = setup
 
     async def run_once(self, user_input: str) -> dict[str, Any]:
@@ -508,10 +660,13 @@ class AgentEvaluator:
     async def evaluate_dataset(self, dataset_path: str | Path, *, repeats: int = 1) -> EvalSummary:
         """Run all cases in a dataset ``repeats`` times and return aggregate scores (mean over repeats)."""
         cases = load_dataset(dataset_path)
+        selected = select_for_mode(cases, self.orchestration_mode)
+        if self.orchestration_mode and not selected:
+            raise ValueError(f"No case in {Path(dataset_path).name} lists mode {self.orchestration_mode!r} in `modes`")
         repeats = max(repeats, 1)
         records: list[RunRecord] = []
         run_id = new_run_id()
-        work = [(repeat, i, case) for repeat in range(repeats) for i, case in enumerate(cases)]
+        work = [(repeat, i, case) for repeat in range(repeats) for i, case in selected]
 
         async def _one(_n: int, item: tuple[int, int, EvalCase]) -> EvalResult:
             repeat, i, case = item
@@ -531,7 +686,7 @@ class AgentEvaluator:
             dataset_path=str(dataset_path),
             setup=self.setup,
             repeats=repeats,
-            dataset_cases=len(cases),
+            dataset_cases=len(selected),
         )
 
     async def _evaluate_case(
@@ -571,6 +726,8 @@ class AgentEvaluator:
             hitl=case.expect_hitl,
             routes=case.expected_routes or [],
             forbidden_routes=case.forbidden_routes or [],
+            forbidden_tools=case.forbidden_tools or [],
+            forbidden_substrings=case.forbidden_substrings or [],
             user_role=case.user_role,
             user_email=case.user_email,
             mode=case.mode,
@@ -628,6 +785,12 @@ class AgentEvaluator:
             else:
                 fallback = await self._score_groundedness_fallback(response_text, case.criteria)
             record = record.model_copy(update={"scores": CaseScores(groundedness=fallback)})
+
+        # The run was stopped by the cost budget and answered with its fixed refusal: nothing to measure, and
+        # no judge call to spend on it.
+        if is_budget_refusal(response_text):
+            record = record.model_copy(update={"budget_exceeded": True})
+            return EvalResult.from_record(scoring.score_record(record))
 
         # A call parked for approval answers with no text by design, and a case that expects the park lists no
         # fields: there is nothing for a judge to read, and it would score the empty reply 0 ("empty_response").
@@ -800,10 +963,17 @@ class AgentEvaluator:
             hitl=case.expect_hitl,
             routes=case.expected_routes or [],
             forbidden_routes=case.forbidden_routes or [],
+            forbidden_tools=case.forbidden_tools or [],
+            forbidden_substrings=case.forbidden_substrings or [],
         )
         calls = [ToolCall(name=c.get("tool_name", ""), arguments=c.get("tool_input")) for c in outcome.tool_calls]
         return scoring.check_assertions(
-            expected, calls, outcome.denied, outcome.hitl_requested, routes=list(outcome.routes or [])
+            expected,
+            calls,
+            outcome.denied,
+            outcome.hitl_requested,
+            routes=list(outcome.routes or []),
+            response=outcome.text,
         )
 
     @staticmethod
@@ -860,6 +1030,22 @@ def format_summary_report(summary: EvalSummary, verbose: bool = False) -> str:
         lines.append(f"  Total cases: {summary.total_cases}")
     lines.append(f"  Passed:      {summary.passed_cases}")
     lines.append(f"  Failed:      {summary.failed_cases}")
+    if summary.budget_exceeded_cases:
+        lines.append(
+            f"  Budget exceeded: {summary.budget_exceeded_cases} case(s) stopped by the cost budget; "
+            "counted as failed, left out of every mean below"
+        )
+    if summary.judge_unavailable_cases:
+        lines.append(
+            f"  Judge unavailable: {summary.judge_unavailable_cases} case(s) the judge's content filter refused; "
+            f"{summary.fallback_scored_cases} scored by the keyword fallback (less strict), "
+            f"{summary.judge_unscored_cases} left out of the completeness mean"
+        )
+        lines.append(
+            f"  Completeness sources: {summary.judge_scored_cases} judge-scored"
+            f" (mean {_pct(summary.avg_completeness_judged)}), {summary.fallback_scored_cases} fallback-scored"
+            f" (mean {_pct(summary.avg_completeness_fallback)}); the headline completeness includes both"
+        )
     lines.append("-" * 70)
     lines.append(f"  Groundedness:  {_score_text(summary, 'avg_groundedness')}")
     lines.append(f"  Correctness:   {_score_text(summary, 'avg_correctness')}")
@@ -898,12 +1084,26 @@ def format_summary_report(summary: EvalSummary, verbose: bool = False) -> str:
                 lines.append(f"    Missing fields: {', '.join(r.fields_missing)}")
             if r.judge_reasoning:
                 lines.append(f"    Judge: {r.judge_reasoning}")
+            if r.budget_exceeded:
+                lines.append("    Budget exceeded: not scored")
+            if r.completeness_source == scoring.SOURCE_FALLBACK:
+                lines.append("    Judge unavailable: completeness scored by keyword fallback")
+            elif r.judge_unavailable:
+                lines.append("    Judge unavailable: completeness not scored")
             if r.error:
                 lines.append(f"    Error: {r.error}")
             lines.append(f"    Latency: {r.latency_ms}ms")
             lines.append("")
 
     return "\n".join(lines)
+
+
+def _round_or_none(value: float | None) -> float | None:
+    return None if value is None else round(value, 3)
+
+
+def _pct(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.1%}"
 
 
 def _score_text(summary: EvalSummary, key: str) -> str:

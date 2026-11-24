@@ -85,6 +85,16 @@ def _run_options(agent: Any = None) -> dict[str, Any]:
     return {"temperature": temperature}
 
 
+def _note_user_message(user_message: str) -> None:
+    """Tell the grounding ledger what the caller typed this turn (not history): an amount or id the answer
+    echoes from it is the user's own, not a figure the model made up."""
+    from shared.grounding.ledger import current_grounding_ledger
+
+    ledger = current_grounding_ledger.get()
+    if ledger is not None:
+        ledger.note_user_text(user_message)
+
+
 async def _run_agent_native(
     agent: Any,
     user_message: str,
@@ -102,9 +112,12 @@ async def _run_agent_native(
     plain ``str`` return can't carry that side-channel data.
     """
     messages = _history_as_maf_messages(history, user_message)
+    _note_user_message(user_message)
     begin_miss_tracking()
     response = await agent.run(messages, options=_run_options(agent))
     raise_if_specialist_missed()
+    refused: dict[str, str] = {}
+    notice = await park_pending_approvals(agent, response, refused, user_message)
     if metadata_box is not None:
         metadata_box.update(getattr(response, "additional_properties", None) or {})
         usage = getattr(response, "usage_details", None)
@@ -113,8 +126,105 @@ async def _run_agent_native(
         if model := served_model(response):
             metadata_box["_maf_model"] = model
         if parked := approval_requests(response):
+            # A call a pre-park check refused was requested by the model but never parked: say so, so a caller
+            # (the eval harness) does not count it as a human-approval request.
+            for call in parked:
+                if call["tool_name"] in refused:
+                    call["refused"] = refused[call["tool_name"]]
             metadata_box["_maf_approval_requests"] = parked
-    return response.text or ""
+    text = response.text or ""
+    if notice:
+        text = f"{text}\n\n{notice}" if text else notice
+    return text
+
+
+async def park_pending_approvals(
+    agent: Any, response: Any, refused: dict[str, str] | None = None, user_message: str | None = None
+) -> str:
+    """Make a call MAF parked for approval durable, and return the sentence the user reads (``""`` if none).
+
+    ``@tool(approval_mode="always_require")`` stops the run before function middleware, so
+    ``HITLFunctionMiddleware`` never sees the call and the response text is empty. The only trace is a
+    ``function_approval_request`` in ``response.user_input_requests``. Each one becomes a
+    ``tool_approval_requests`` row plus its inbox approval (``shared.hitl.park_gated_call``, idempotent), owned by
+    the forwarded user, and the tool is never executed here. Before that, ``shared.park_prechecks`` runs the tool's
+    role guard and its cheap preconditions (ownership, status, window): a call that can never succeed gets a
+    sentence saying why and no row. Then the customer is asked to confirm the exact action
+    (``shared.customer_confirmation``, not an approval): the first request for a call only opens that question, and
+    the call parks only when it arrives again after the user's own explicit yes. ``user_message`` is what this
+    request was sent as, the fallback when there is no stored conversation to read the user's real words from. No
+    identity, or a database error (including in a precheck), fails closed: the user is told nothing was changed.
+    """
+    from shared import customer_confirmation
+    from shared.config import settings
+    from shared.context import current_session_id, current_user_email, current_user_role
+    from shared.hitl import PARK_FAILED_REPLY, park_gated_call, parked_reply
+    from shared.park_prechecks import precheck_gated_call
+
+    sentences: list[str] = []
+    for request in getattr(response, "user_input_requests", None) or []:
+        if getattr(request, "type", None) != "function_approval_request":
+            continue
+        call = getattr(request, "function_call", None)
+        name = getattr(call, "name", None)
+        if not name:
+            continue
+        try:
+            arguments = call.parse_arguments()
+        except Exception:
+            arguments = None
+        tool_input = arguments if isinstance(arguments, dict) else {}
+        email = current_user_email.get("")
+        if not email:
+            logger.warning("hitl.park_refused reason=no_identity tool=%s", log_safe(name))
+            sentences.append(PARK_FAILED_REPLY)
+            continue
+        try:
+            if refusal := await precheck_gated_call(
+                agent, str(name), tool_input, user_email=email, role=current_user_role.get("")
+            ):
+                sentences.append(refusal.sentence)
+                if refused is not None:
+                    refused[str(name)] = refusal.reason
+                continue
+            confirmation = None
+            if settings.CUSTOMER_CONFIRMATION_ENABLED:
+                confirmation = await customer_confirmation.evaluate(
+                    user_email=email,
+                    session_id=current_session_id.get("") or None,
+                    tool_name=str(name),
+                    tool_input=tool_input,
+                    user_message=user_message,
+                )
+                if confirmation.kind in (customer_confirmation.ASK, customer_confirmation.DECLINED):
+                    sentences.append(confirmation.sentence or PARK_FAILED_REPLY)
+                    if refused is not None:
+                        refused[str(name)] = (
+                            "confirmation" if confirmation.kind == customer_confirmation.ASK else "declined"
+                        )
+                    logger.info("hitl.confirmation tool=%s outcome=%s", log_safe(name), log_safe(confirmation.kind))
+                    continue
+            try:
+                request_id, created = await park_gated_call(
+                    user_email=email,
+                    session_id=current_session_id.get("") or None,
+                    agent_name=str(getattr(agent, "name", "") or "unknown"),
+                    tool_name=str(name),
+                    tool_input=tool_input,
+                )
+            except Exception:
+                if confirmation is not None and confirmation.confirmation_id is not None:
+                    await customer_confirmation.reopen(confirmation.confirmation_id)
+                raise
+        except Exception:
+            logger.exception("hitl.park_failed tool=%s", log_safe(name))
+            sentences.append(PARK_FAILED_REPLY)
+            continue
+        logger.info(
+            "hitl.parked tool=%s request_id=%s created=%s", log_safe(name), log_safe(request_id), log_safe(created)
+        )
+        sentences.append(parked_reply(str(name), tool_input, request_id))
+    return " ".join(dict.fromkeys(sentences))
 
 
 def approval_requests(response: Any) -> list[dict[str, Any]]:
@@ -156,15 +266,22 @@ async def _run_agent_native_stream(
     here just returns that cached result.
     """
     messages = _history_as_maf_messages(history, user_message)
+    _note_user_message(user_message)
     begin_miss_tracking()
     stream = agent.run(messages, stream=True, options=_run_options(agent))
+    streamed = False
     async for update in stream:
         text = getattr(update, "text", None)
         if text:
+            streamed = True
             yield text
     raise_if_specialist_missed()
-    if metadata_box is not None and hasattr(stream, "get_final_response"):
+    final: Any = None
+    if hasattr(stream, "get_final_response"):
         final = await stream.get_final_response()
+        if notice := await park_pending_approvals(agent, final, user_message=user_message):
+            yield f"\n\n{notice}" if streamed else notice
+    if metadata_box is not None and final is not None:
         metadata_box.update(getattr(final, "additional_properties", None) or {})
         usage = getattr(final, "usage_details", None)
         if usage:

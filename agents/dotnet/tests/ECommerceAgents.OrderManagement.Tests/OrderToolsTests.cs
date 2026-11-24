@@ -1,5 +1,6 @@
 using Dapper;
 using ECommerceAgents.OrderManagement.Tools;
+using ECommerceAgents.Shared.Grounding;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Data;
@@ -115,6 +116,25 @@ public sealed class OrderToolsTests : IAsyncLifetime
         RequestContext.CurrentUserEmail = "";
         var rows = await _tools.GetUserOrders();
         rows.Should().BeEmpty();
+    }
+
+    // ─────────────────────── grounding ledger ───────────────────────
+
+    /// <summary>The ledger over the tools' own return values (records, camel or Pascal keys and all), not hand-written JSON.</summary>
+    [Fact]
+    public async Task TheGroundingLedger_RecordsWhatGetOrderDetailsAndGetUserOrdersReturn()
+    {
+        EnsureUserScope();
+        var orderId = await GetFirstOrderIdByStatus("delivered");
+        var ledger = new GroundingLedger();
+
+        ledger.Record(await _tools.GetOrderDetails(orderId.ToString()));
+        ledger.Record(await _tools.GetUserOrders());
+
+        ledger.Orders.Should().HaveCount(2);
+        ledger.Orders[orderId.ToString()].Total.Should().BeGreaterThan(0m);
+        ledger.Products.Should().BeEmpty("order line items carry unit_price, never price");
+        ledger.KnownAmounts.Should().Contain(ledger.Orders[orderId.ToString()].Total!.Value);
     }
 
     [Fact]

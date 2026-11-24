@@ -52,7 +52,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install the Bicep CLI
         run: |
           curl -fsSLo bicep https://github.com/Azure/bicep/releases/latest/download/bicep-linux-x64
@@ -110,7 +110,7 @@ jobs:
     env:
       AZURE_ENV_NAME: ci-whatif-${{ github.run_id }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: Azure/setup-azd@v2
       - uses: azure/login@v3
         with:
@@ -148,7 +148,7 @@ jobs:
       AZURE_ENV_NAME: ci-e2e-${{ github.run_id }}
       AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: Azure/setup-azd@v2
