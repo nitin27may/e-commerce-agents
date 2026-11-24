@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -37,8 +38,11 @@ from shared.context import (
 from shared.grounding.ledger import reset_grounding_ledger
 from shared.guardrails.cost_budget_middleware import reset_run_cost
 from shared.guardrails.flags import get_guardrail_flags, reset_guardrail_flags
+from shared.log_safe import log_safe
 from shared.replay_client import ReplayFixtureMissingError
 from shared.run_usage import tokens_from_usage
+
+logger = logging.getLogger(__name__)
 
 # Agent factory registry — maps eval agent names to their creation functions.
 # Lives here (not in run_evals.py) because ProductionRunner needs it to build
@@ -88,6 +92,8 @@ class RunOutcome:
     refused_calls: list[dict[str, Any]] = field(default_factory=list)
     # ``http`` target: the conversation the stack put the turn in (its ``metadata`` frame), so a next turn joins it.
     conversation_id: str | None = None
+    # Orchestrator: the agents the run reported, written to the assistant message as the chat route does.
+    agents_involved: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -97,6 +103,8 @@ class Conversation:
     ``session_id`` is what a turn binds as the session (in-process) or sends as ``conversation_id`` (``http``; empty
     until the stack names the conversation on the first turn). ``history`` is the prior user and assistant messages,
     which the in-process runner hands to the agent exactly as a real request does after loading the session.
+    An in-process orchestrator turn also writes both messages to the ``messages`` table under ``session_id``
+    (``_ConversationWriter``), so a specialist reached over A2A rehydrates the history it would in production.
     """
 
     session_id: str = ""
@@ -107,6 +115,84 @@ class Conversation:
             self.session_id = outcome.conversation_id
         self.history.append({"role": "user", "content": user_input})
         self.history.append({"role": "assistant", "content": outcome.text})
+
+
+class _ConversationWriter:
+    """Makes an in-process orchestrator turn behave like ``orchestrator/routes/chat.py``'s ``/api/chat``.
+
+    The route resolves or creates the caller's ``conversations`` row, reads the history *before* saving the turn
+    (``get_history_as_dicts``, so ``RunContext.history`` is the table's and never a second copy), saves the user
+    message, runs, then saves the assistant message with ``agent_name``/``agents_involved``/``metadata``. The
+    route's inserts are inline SQL (its assistant insert is fused with usage logging), so this repeats the same
+    columns rather than calling it. The conversation id is the case's own fresh UUID, so no run shares rows with
+    another, and every row belongs to the caller's user.
+    """
+
+    def __init__(self, pool: Any, session_id: str, user_email: str) -> None:
+        self._pool = pool
+        self._session_id = session_id
+        self._user_email = user_email
+        self._user_message_id: Any = None
+
+    @classmethod
+    async def open(cls, session_id: str, user_email: str) -> _ConversationWriter | None:
+        """The writer for this turn, or ``None`` (logged) when there is no database or the caller has no user row."""
+        from shared.db import get_pool
+
+        try:
+            pool = get_pool()
+        except Exception:
+            logger.warning("eval.conversation_not_persisted reason=no_pool")
+            return None
+        user_id = await pool.fetchval("SELECT id FROM users WHERE email = $1", user_email)
+        if user_id is None:
+            logger.warning("eval.conversation_not_persisted reason=unknown_user user=%s", log_safe(user_email))
+            return None
+        # The first turn creates the row under the case's id; later turns find it. A row owned by someone else
+        # under this id is never joined.
+        await pool.execute(
+            "INSERT INTO conversations (id, user_id, title) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING",
+            session_id,
+            user_id,
+            "eval conversation",
+        )
+        owner = await pool.fetchval("SELECT user_id FROM conversations WHERE id = $1", session_id)
+        if owner != user_id:
+            raise RuntimeError("eval conversation id belongs to another user")
+        return cls(pool, session_id, user_email)
+
+    async def history(self) -> list[dict[str, str]]:
+        from shared.session import get_history_as_dicts, get_history_provider
+
+        return await get_history_as_dicts(get_history_provider(pool=self._pool), self._session_id)
+
+    async def save_user(self, text: str) -> None:
+        self._user_message_id = await self._pool.fetchval(
+            """INSERT INTO messages (conversation_id, role, content, agent_name)
+               VALUES ($1, 'user', $2, NULL) RETURNING id""",
+            self._session_id,
+            text,
+        )
+
+    async def discard_user(self) -> None:
+        """A turn that got no answer is taken back, as the route does for a replay miss."""
+        if self._user_message_id:
+            await self._pool.execute(
+                "DELETE FROM messages WHERE id = $1 AND conversation_id = $2", self._user_message_id, self._session_id
+            )
+
+    async def save_assistant(self, text: str, agents_involved: list[str], steps: list[dict[str, Any]]) -> None:
+        clean = [{k: v for k, v in step.items() if k != "_live"} for step in steps[:50]]
+        metadata = {"steps": clean, "agents_involved": agents_involved}
+        await self._pool.execute(
+            """INSERT INTO messages (conversation_id, role, content, agent_name, agents_involved, metadata)
+               VALUES ($1, 'assistant', $2, 'orchestrator', $3, $4::jsonb)""",
+            self._session_id,
+            text,
+            agents_involved,
+            json.dumps(metadata, default=str),
+        )
+        await self._pool.execute("UPDATE conversations SET last_message_at = NOW() WHERE id = $1", self._session_id)
 
 
 def _create_agent(agent_name: str) -> Any:
@@ -281,6 +367,16 @@ class ProductionRunner:
         """
         self._run_role = user_role or self.user_role
         history = list(conversation.history) if conversation else []
+        # A multi-turn orchestrator case writes its messages like the chat route, so a specialist reached over A2A
+        # rehydrates the earlier turns from the table. Single-turn cases and specialist runs write nothing.
+        writer: _ConversationWriter | None = None
+        if conversation and conversation.session_id and self.agent_name == "orchestrator":
+            try:
+                writer = await _ConversationWriter.open(conversation.session_id, user_email or self.user_email)
+            except RuntimeError as exc:
+                return RunOutcome(text="", error=str(exc), guardrail_flags=get_guardrail_flags())
+            if writer is not None:
+                history = await writer.history()
         current_user_email.set(user_email or self.user_email)
         current_user_role.set(self._run_role)
         current_session_id.set(conversation.session_id if conversation else "")
@@ -291,6 +387,9 @@ class ProductionRunner:
         # request; this in-process loop never did, so one eval process summed every case against one ceiling and
         # refused the rest of the suite (17 of 30 orchestrator cases on the first reference run).
         reset_run_cost()
+
+        if writer is not None:
+            await writer.save_user(user_input)
 
         hitl_rows_before = await _hitl_rows()
         run_email = user_email or self.user_email
@@ -313,6 +412,8 @@ class ProductionRunner:
             # A plain call unless a live run configured retries (429 / 5xx backoff, evals/live_limits.py).
             outcome = await run_with_limits(_attempt)
         except ReplayFixtureMissingError as exc:
+            if writer is not None:
+                await writer.discard_user()
             return RunOutcome(
                 text="",
                 error=str(exc),
@@ -320,6 +421,8 @@ class ProductionRunner:
                 guardrail_flags=get_guardrail_flags(),
             )
         except Exception as exc:
+            if writer is not None:
+                await writer.discard_user()
             # A specialist's missing fixture reaches the orchestrator as an A2A
             # failure rather than the original exception type, so fall back to
             # recognising it by message.
@@ -332,6 +435,8 @@ class ProductionRunner:
 
         outcome.guardrail_flags = get_guardrail_flags()
         steps = get_steps()
+        if writer is not None:
+            await writer.save_assistant(outcome.text, outcome.agents_involved or ["orchestrator"], steps)
         outcome.tool_calls = _tool_calls(steps) + outcome.parked_calls + outcome.refused_calls
         outcome.denied = outcome.denied or _was_denied(steps)
         hitl_rows_after = await _hitl_rows()
@@ -357,6 +462,7 @@ class ProductionRunner:
         mode = get_mode(mode_name)
         ctx = RunContext(history=history or [], conversation_id=conversation_id)
         text = ""
+        agents_involved: list[str] = []
         grounding: dict[str, Any] | None = None
         usage: dict[str, Any] = {}
         nodes: list[str] = []
@@ -365,6 +471,7 @@ class ProductionRunner:
         async for event in mode.run(user_input, ctx):
             if event.kind == "run_completed":
                 text = event.payload.get("text", "")
+                agents_involved = list(event.payload.get("agents_involved") or [])
                 grounding = event.payload.get("grounding")
                 usage = event.payload.get("usage") or {}
             elif event.kind == "node_enter" and event.node_id:
@@ -387,6 +494,7 @@ class ProductionRunner:
             grounding=grounding,
             nodes=nodes,
             hitl_requested=parked,
+            agents_involved=agents_involved,
         )
 
     async def _run_specialist(self, user_input: str, history: list[dict[str, str]] | None = None) -> RunOutcome:

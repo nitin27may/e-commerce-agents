@@ -483,9 +483,11 @@ keys one request and no fixture exists for turn 2.
 - One conversation: the in-process target gives the case a fresh session id, binds it for each turn and hands the agent
   the earlier user and assistant messages as `history` (the orchestrator gets them as `RunContext.history`); the
   `http` target sends the `conversation_id` the stack named in the first turn's `metadata` frame with every later turn,
-  so the stack loads the history itself. Gotcha: in-process orchestrator cases do not write the `messages` table, so a
-  specialist reached over A2A cannot rehydrate earlier turns; only the orchestrator sees them. Multi-turn specialist
-  cases and the `http` target are not affected.
+  so the stack loads the history itself. An in-process orchestrator turn also behaves like the chat route: it creates
+  the caller's `conversations` row under the case's session id (a case whose caller has no user row skips this, with a
+  log line), reads the history from the `messages` table, saves the user and assistant messages with the route's
+  columns, and binds the session id, so a specialist reached over A2A rehydrates earlier turns as in production. A
+  turn that errors takes its user message back out. Single-turn cases and in-process specialist cases write nothing.
 - Scoring: each turn is scored with the same scorers as a single-turn case (its own groundedness, correctness,
   completeness and assertions). The case's three scores are the mean over turns, `overall` is the usual 0.4/0.4/0.2
   weighting of those means, and the case passes only if every turn passes (the turn's overall at the threshold and no
@@ -524,7 +526,7 @@ Case counts as of 2026-11-23 (they change; count the files, not this list):
 | `stack_parity.json` | 3 | the keyless dual-stack parity gate, orchestration modes that call no model |
 | `live/product_discovery.live.json` | 25 | live, with a `why` line each |
 | `live/inventory_fulfillment.live.json` | 29 | live, `type` (`happy`, `edge`, `adversarial`) and `why` on every case |
-| `live/orchestrator_routing.live.json` | 30 | live, `type`, `why`, `expected_routes` / `forbidden_routes` |
+| `live/orchestrator_routing.live.json` | 31 | live, `type`, `why`, `expected_routes` / `forbidden_routes` |
 | `live/order_management.live.json` | 33 | live, includes multi-turn cases (`turns`) |
 | `live/pricing_promotions.live.json` | 29 | live |
 | `live/review_sentiment.live.json` | 29 | live |
