@@ -135,7 +135,7 @@ jobs:
       REPLAY_FIXTURES_DIR: evals/fixtures/replay
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -248,7 +248,7 @@ jobs:
       LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Fail first, before anything is installed, when the chosen provider's secret is missing.
       - name: Check provider configuration

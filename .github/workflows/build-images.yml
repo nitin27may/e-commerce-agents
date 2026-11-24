@@ -259,7 +259,7 @@ jobs:
             smoke_port: "9001"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # ── Resolve publish intent ───────────────────────────────────────────
       #

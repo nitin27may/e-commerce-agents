@@ -63,7 +63,7 @@ jobs:
          "inventory-fulfillment":"http://localhost:8085"}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-dotnet@v6
         with:
