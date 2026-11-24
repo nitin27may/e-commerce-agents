@@ -579,3 +579,29 @@ def test_deterministic_product_ids_are_load_bearing_for_this_design():
         "non-deterministic UUIDs found outside tool-result messages in "
         f"{offenders[:5]} — see _normalize_for_hash's docstring"
     )
+
+
+def test_handoff_tool_order_does_not_reach_the_key() -> None:
+    """MAF lists handoff targets from a set, so their order differs per process; the key must not."""
+
+    def spec(name: str) -> dict:
+        return {"type": "function", "function": {"name": name, "description": "d", "parameters": {}}}
+
+    def key(names: list[str]) -> str:
+        specs = [spec(n) for n in names]
+
+        class _Tool:
+            def __init__(self, s: dict) -> None:
+                self._s = s
+
+            def to_json_schema_spec(self) -> dict:
+                return self._s
+
+        return _request_hash(_canonical_request([], {"tools": [_Tool(s) for s in specs], "instructions": "i"}))
+
+    assert key(["handoff_to_a", "handoff_to_b", "handoff_to_c"]) == key(
+        ["handoff_to_c", "handoff_to_a", "handoff_to_b"]
+    )
+    # An ordinary tool keeps its position, so other fixtures' keys do not move.
+    assert key(["z_tool", "a_tool"]) != key(["a_tool", "z_tool"])
+    assert key(["x", "handoff_to_b", "handoff_to_a"]) != key(["handoff_to_a", "handoff_to_b", "x"])

@@ -27,13 +27,13 @@
 #
 # ── Fixtures ────────────────────────────────────────────────────────────────
 #
-# REPLAY_FIXTURES_DIR points at /app/demo/fixtures/replay inside the image. The
-# recordings are not made yet: agents/python/demo/ does not exist and
-# agents/python/Dockerfile has no `COPY demo/ demo/` (both arrive together).
-# Until then the directory is simply absent, which is a supported state:
-# every model call is a replay miss, the orchestrator reports it in chat as a
-# prompt that was not recorded, and the stack stays up. Browsing, search, cart
-# and checkout never call a model and work either way.
+# REPLAY_FIXTURES_DIR points at /app/demo/fixtures/replay inside the image
+# (agents/python/demo/fixtures/replay, copied by `COPY demo/ demo/` in
+# agents/python/Dockerfile). manifest.json beside it lists which recordings
+# answer which prompt: the nine tour chips as the tour user, and the prompts of
+# docs/demo-guide.md as Alice. A prompt that was not recorded is a replay miss:
+# the orchestrator reports it in chat and the stack stays up. Browsing, search,
+# cart and checkout never call a model and work either way.
 # ============================================================
 
 x-nokey-env: &nokey-env

@@ -59,9 +59,17 @@ overlay sets `LLM_PROVIDER=replay` and pins, as literals, every setting that sha
 tool schema, so a `.env` file or an exported variable cannot change what a recording was keyed on.
 It is Python only and cannot be combined with `--dotnet`.
 
-> **The released images do not yet contain the recordings for the `--no-key` demo.** Today every
-> chat prompt on that stack is reported as not recorded. Browsing, search, the cart and checkout
-> call no model and work normally. See the [demo guide](demo-guide.md#no-key-mode).
+The recordings are in `agents/python/demo/fixtures/replay/` and `agents/python/demo/fixtures/manifest.json`
+says which prompt each one answers. Images built before they were added (the released 1.4.0 images)
+have none, so there every chat prompt is reported as not recorded; browsing, search, the cart and
+checkout call no model and work normally. See the [demo guide](demo-guide.md#no-key-mode).
+
+To re-record them, run the five specialists and the orchestrator on free ports with the overlay's
+pinned settings (copy them from `docker-compose.nokey.yml`), `RECORD=true`,
+`REPLAY_RECORD_PROVIDER=azure` (or `openai`) and `REPLAY_FIXTURES_DIR=agents/python/demo/fixtures/replay`,
+then send each prompt of `manifest.json` through `POST /api/chat/stream` as its user and mode. Delete the
+directory first, or old recordings stay and a miss is only recorded when nothing matches. Check with a pure
+replay run on a fresh database, in a different order from the recording.
 
 ## What a replay miss is
 
