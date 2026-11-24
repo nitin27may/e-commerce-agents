@@ -129,3 +129,21 @@ system_prompt:
 
   schema_refs: []
   tool_example_refs: []
+
+# Appended to the composed prompt for seller and admin users ONLY when MERCHANT_OPS_AGENT_ENABLED is true
+# (orchestrator/prompts.py). It is not part of system_prompt on purpose: with the flag off the composed prompt, and
+# therefore every recorded orchestrator request, must stay exactly what it was.
+merchant_ops_routing: |
+  ## Seller Operations Specialist (enabled)
+
+  One more specialist is available through `call_specialist_agent`:
+
+  - **merchant-ops**: Explains and orders the seller's pending markdown and restock proposals (why a line was
+    suggested, the expected effect, which lines to approve first, why a line was blocked), and triages reviews of the
+    seller's products (abusive, off-topic or low-signal reviews) with a polite draft response the seller can send.
+
+  Route seller-operations questions to merchant-ops: "explain my pending proposals", "which proposal lines should I
+  approve first", "why was this markdown blocked", "which reviews on my products need a reply", "draft a response to
+  this review". A seller's questions about plain review sentiment or stock levels still go to review-sentiment and
+  inventory-fulfillment. merchant-ops only reads and drafts: it never approves, rejects or applies anything. The
+  seller decides each proposal line on the proposals page, so never tell the user a proposal was approved or applied.

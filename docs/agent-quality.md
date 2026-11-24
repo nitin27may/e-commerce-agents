@@ -2,11 +2,12 @@
 
 This page explains how the project measures whether its agents answer correctly and resist attacks: what is scored, on which datasets, and what CI enforces. It is for anyone who wants to judge the agents' quality, run the evals, or add a case.
 
-**Where the scores stand.** Six quality datasets of five or six cases each are scored on groundedness, correctness and completeness. The committed overall scores run from 0.75 to 1.00:
+**Where the scores stand.** Seven quality datasets of five or six cases each are scored on groundedness, correctness and completeness. The committed overall scores run from 0.75 to 1.00:
 
 | Agent | Overall |
 |-------|--------:|
 | review-sentiment | 1.00 |
+| merchant-ops | 1.00 |
 | orchestrator (routing) | 1.00 |
 | product-discovery | 0.96 |
 | pricing-promotions | 0.96 |
@@ -97,6 +98,18 @@ First reference run of the live suites. **One repeat (k=1), one model, one sitti
 - **Customer confirmation changed the gated cases after this run.** A gated call now asks the customer first and parks on a yes (issue #302), so the six live cases that expected a one-turn park (five in order-management, one in inventory-fulfillment) are two turns now, and the order-management and inventory-fulfillment baselines above predate that change. The new `approvals` live suite, run once the same way (setup `python-inproc-gpt-4.1`, judge `gpt-5.4-mini`, k=1, an upper-bound chat cost of 0.29 USD): 10 of 10 passed, groundedness 1.00, correctness 1.00, completeness 0.84, overall 0.97. It is a snapshot with the same caveats and no committed baseline; the first run failed one case ("Yes, that is right." was not read as a yes), which is why the matcher accepts that phrase now.
 - Comparing a later run with these is like-for-like only on the same setup key and judge. With one repeat on either side the regression gate allows one case's worth of drop (`1 / cases`).
 
+### Merchant-ops live sitting (2026-11-24, not a stored baseline)
+
+`live/merchant_ops.live.json` (the merchant-ops agent, [#298](https://github.com/nitin27may/e-commerce-agents/issues/298)) was run once, k=1, on `gpt-4.1` through the in-process target, a freshly seeded database and a pending proposal batch generated for each demo seller (`evals/merchant_setup.py`). The judge was the Azure mini deployment configured for this machine, `gpt-4.1-mini` (the other live baselines used `gpt-5.4-mini`), not the model under test. 19 cases: 16 passed, groundedness 1.00, correctness 0.89, completeness 0.93, overall 0.94, chat cost about 0.41 USD.
+
+It is **not stored as a reference baseline**, because the sitting and the committed dataset differ by one reworded case and the three misses below are worth reading, not averaging in:
+
+- *"What should I deal with first today?"* failed its tool expectation because the model reasonably read it as a question about reviews. The case was reworded to *"Which proposal line should I deal with first today?"* and that one case re-run (passed, tool `get_proposal_details`).
+- *"Draft a reply to review 00000000-..."* answered "I could not find that review" **without calling a tool**, against the prompt's rule to read first. The answer happened to be right; it is a real miss and stays in the dataset.
+- The pasted-injection case called `assess_review_text` and answered correctly, but the judge deployment's content filter refused the call (the same "judge unavailable" path as the review-sentiment sitting), so its completeness fell back to the keyword check and scored 0.
+
+The replay twin is held to zero missing fixtures: recorded for five cases (about 0.10 USD a recording), then replayed on two fresh databases with identical scores. Writing it found three things that are fixed: an ordering that depended on a random line id (it changed the tool output and with it the replay key), a model that described reviews without calling the tool (a prompt rule now), and review and proposal ids that the grounding check scored "not found" because it only knew products and orders (the ledger now records ids a tool returned this turn).
+
 ### Judge calibration
 
 The LLM judge is only useful if it agrees with a person reading the same response. `agents/python/evals/judge_calibration/` holds 30 stored live responses (clear passes and misses, partial answers, one empty reply, refusals, five adversarial prompts), a label for every expected field, the stored verdicts of four candidate judges, and a script that recomputes every figure offline (`uv run python -m evals.judge_calibration.run --rescore`). The decision rule was written before any judge ran: a candidate replaces the incumbent judge `gpt-4.1-mini` only if its agreement is at least 5 points higher and its cost per judgement is under 3 times the default's.
@@ -160,6 +173,7 @@ Counts as of 2026-11-23, from the files:
 | `pricing_promotions.json` | pricing-promotions | 5 | grounded, tool_called, loyalty tier correct |
 | `review_sentiment.json` | review-sentiment | 5 | grounded, tool_called, sentiment fields present |
 | `inventory_fulfillment.json` | inventory-fulfillment | 5 | grounded, tool_called, stock/shipping fields |
+| `merchant_ops.json` | merchant-ops | 5 | grounded, tool_called, proposal facts, not-found for another seller's product, injected review text flagged |
 | `orchestrator_routing.json` | orchestrator | 6 | grounded, tool_called, routed to correct specialist |
 | `stack_parity.json` | both stacks | 3 | the keyless parity gate (see below) |
 | `approvals.json` | order-management | 5 | the customer is asked to confirm a gated action and nothing parks (customer confirmation, [approvals.md](approvals.md)) |
@@ -175,6 +189,7 @@ Live variants, run by hand against a model with run-time facts resolved (they ar
 | `live/pricing_promotions.live.json` | 29 |
 | `live/review_sentiment.live.json` | 29 |
 | `live/approvals.live.json` | 10 (multi-turn: confirm, decline, silence, different arguments, claimed and injected confirmations) |
+| `live/merchant_ops.live.json` | 19 (8 happy, 5 edge, 6 adversarial) |
 
 Each dataset covers the happy path plus at least one edge case (empty results, boundary conditions, follow-up questions in context).
 

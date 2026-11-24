@@ -448,6 +448,7 @@ Tests: `dotnet test agents/dotnet/tests/ECommerceAgents.AppHost.Tests` builds th
 | 8083 | Pricing & Promotions Agent | HTTP | A2A endpoint, called by orchestrator |
 | 8084 | Review & Sentiment Agent | HTTP | A2A endpoint, called by orchestrator |
 | 8085 | Inventory & Fulfillment Agent | HTTP | A2A endpoint, called by orchestrator |
+| 8086 | Merchant Ops Agent (opt-in, Python only) | HTTP | A2A endpoint behind the `merchant-ops` compose profile; the orchestrator routes to it only with `MERCHANT_OPS_AGENT_ENABLED=true`. Not in the demo images, the .NET stack or the Azure templates |
 | 8090 | Auth Server | HTTP | OAuth 2.1 authorization server (`agents` profile) |
 | 9000 | MCP Product server | HTTP | `mcp` profile |
 | 9001 | MCP Inventory server | HTTP | `mcp` profile |

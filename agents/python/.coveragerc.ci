@@ -26,6 +26,7 @@ source =
     pricing_promotions
     review_sentiment
     inventory_fulfillment
+    merchant_ops
 omit =
     */tests/*
     */__init__.py

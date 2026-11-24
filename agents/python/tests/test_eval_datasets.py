@@ -24,6 +24,7 @@ _AGENT_TOOLSETS: dict[str, tuple[str, str]] = {
     "pricing_promotions": ("pricing_promotions.agent", "AGENT_TOOLS"),
     "review_sentiment": ("review_sentiment.agent", "AGENT_TOOLS"),
     "inventory_fulfillment": ("inventory_fulfillment.agent", "AGENT_TOOLS"),
+    "merchant_ops": ("merchant_ops.agent", "AGENT_TOOLS"),
 }
 
 

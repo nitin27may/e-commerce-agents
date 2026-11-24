@@ -71,6 +71,10 @@ class GroundingLedger:
     # figure verified: only a value that literally appears in the user's text or the call arguments lands here.
     user_amounts: set[float] = field(default_factory=set)
     user_ids: set[str] = field(default_factory=set)
+    # Ids of rows a tool returned this turn that are neither products nor orders (a review, a proposal, a proposal
+    # line: merchant-ops, #298). Quoting one is quoting the tool; without this the DB check only knows products and
+    # orders and scored every review id the agent repeated "not_found".
+    result_ids: set[str] = field(default_factory=set)
 
     def note_user_text(self, text: Any) -> None:
         from shared.grounding.verifier import user_supplied_values
@@ -95,10 +99,18 @@ class GroundingLedger:
                         if isinstance(nested, dict):
                             self._record_one(nested)
                             self._record_bare_amount(nested)
+                            self._record_result_ids(nested)
                 elif isinstance(value, dict):
                     # get_loyalty_tier nests its next-tier amounts one dict down.
                     self._record_bare_amount(value)
             self._record_bare_amount(item)
+            self._record_result_ids(item)
+
+    def _record_result_ids(self, item: dict[str, Any]) -> None:
+        for key in _RESULT_ID_KEYS:
+            value = item.get(key)
+            if isinstance(value, str) and value:
+                self.result_ids.add(value.lower())
 
     def _record_bare_amount(self, item: dict[str, Any]) -> None:
         for key in (
@@ -136,6 +148,11 @@ class GroundingLedger:
             "final_total",
             "shipping_cost",
             "total_shipping_cost",
+            # merchant-ops (#298): the proposal line's figures, quoted as the tool reports them.
+            "proposed_price",
+            "unit_price_drop",
+            "order_value",
+            "stock_value_at_current_price",
         ):
             value = _as_float(item.get(key))
             if value is not None:
@@ -174,6 +191,9 @@ class GroundingLedger:
                 discount_type=item.get("discount_type"),
             )
             self.promos[fact.code] = fact
+
+
+_RESULT_ID_KEYS = ("review_id", "proposal_id", "line_id")
 
 
 def _iter_dicts(result: Any):

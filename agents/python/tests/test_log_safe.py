@@ -65,6 +65,7 @@ SWEPT = [
     "pricing_promotions",
     "review_sentiment",
     "inventory_fulfillment",
+    "merchant_ops",
 ]
 
 

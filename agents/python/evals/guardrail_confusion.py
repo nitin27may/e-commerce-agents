@@ -151,6 +151,8 @@ def dataset_prompts() -> list[str]:
         if path.name == RED_TEAM_DATASET:
             continue
         for case in json.loads(path.read_text()):
+            if case.get("attack") is True:
+                continue  # a case that pastes an attack (merchant-ops injected review) is not natural text
             text = case.get("input")
             if isinstance(text, str) and text:
                 prompts.add(text)

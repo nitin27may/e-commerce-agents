@@ -54,11 +54,17 @@ AGENT_FACTORIES: dict[str, tuple[str, str]] = {
     "pricing-promotions": ("pricing_promotions.agent", "create_pricing_promotions_agent"),
     "review-sentiment": ("review_sentiment.agent", "create_review_sentiment_agent"),
     "inventory-fulfillment": ("inventory_fulfillment.agent", "create_inventory_fulfillment_agent"),
+    "merchant-ops": ("merchant_ops.agent", "create_merchant_ops_agent"),
     "orchestrator": ("orchestrator.agent", "create_orchestrator_agent"),
 }
 
 # The specialists an orchestrator can route to: every agent but the orchestrator itself.
-SPECIALISTS = frozenset(name for name in AGENT_FACTORIES if name != "orchestrator")
+# Opt-in specialists (``shared.factory.OPT_IN_SPECIALISTS``, merchant-ops) are not in it: the default handoff mesh and
+# its recorded fixtures are built from the registry with the flag off. ``ROUTABLE`` adds them back for reading routes.
+from shared.opt_in import OPT_IN_SPECIALISTS  # noqa: E402
+
+ROUTABLE = frozenset(name for name in AGENT_FACTORIES if name != "orchestrator")
+SPECIALISTS = frozenset(name for name in ROUTABLE if name not in OPT_IN_SPECIALISTS)
 
 
 @dataclass
@@ -489,7 +495,7 @@ class ProductionRunner:
         if not routes and mode_name != "tool":
             # A mesh or a workflow names its specialists in ``agents_involved`` (there is no ``call_specialist_agent``
             # step to read), so the specialists it reached are its routes.
-            routes = [a for a in agents_involved if a in SPECIALISTS]
+            routes = [a for a in agents_involved if a in ROUTABLE]
         # run_completed.usage is {total, by_agent}: the orchestrator's calls plus
         # every specialist's, as reported over A2A.
         tokens_in, tokens_out = tokens_from_usage(usage)

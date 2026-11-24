@@ -222,6 +222,11 @@ async def run_evaluation(
         await _init_infrastructure()
 
     try:
+        if agent_name == "merchant-ops" and not target_options:
+            # The agent explains proposals that exist; a freshly seeded database has none (evals/merchant_setup.py).
+            from evals.merchant_setup import ensure_pending_proposals
+
+            await ensure_pending_proposals()
         print(f"Running evaluation: {dataset.name} ({agent_name})")
         print(f"Pass threshold: {pass_threshold:.0%}, repeats: {run_repeats}\n")
 

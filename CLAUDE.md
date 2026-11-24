@@ -189,9 +189,22 @@ deterministically (no model), `shared/merchant/execute.py` applies one line at m
 `proposal_line:{id}`) after re-running the M-1 guards on live facts; `orchestrator/proposals_service.py` + `routes/proposals.py`
 decide a batch line by line. It is **one `approvals` row per batch** (kind `merchant_proposal`, source `proposal`), moved with the
 same `repo.claim`/`transition` as every other kind; the requester is the system actor `merchant-ops@system`, so the owning seller
-(or an admin) deciding never trips the reviewer-is-not-requester rule. Another seller's proposal is a 404. The M-2 agent and its
-eval dataset are not built (they need a key); no `@tool` exists for it, so no fixture is affected. The daily run
+(or an admin) deciding never trips the reviewer-is-not-requester rule. Another seller's proposal is a 404. The daily run
 (`merchant.daily_run_due`) is off unless `MERCHANT_OPS_SCHEDULE_ENABLED`.
+
+**The merchant-ops agent (#298, the opt-in sixth specialist, port 8086).** `merchant_ops/` follows the specialist pattern,
+prompt `config/prompts/merchant-ops.yaml`, compose profile `merchant-ops` (`MERCHANT_OPS_AGENT_ENABLED=true ./scripts/dev.sh`).
+Its tools are **read-only** (`shared/merchant/reads.py`, `review_quality.py`): explain and order a batch (the approve-first
+order is computed in code, the model only words it), triage reviews, draft replies. It has no write tool, so nothing it does
+can bypass the approvals machinery; keep it that way. Scope is the caller's own products (admin: any) from ContextVars, and
+another seller's row is `not_found`, same as a missing one. Whether the **orchestrator** may route to it is
+`MERCHANT_OPS_AGENT_ENABLED` (default off): `shared.factory.active_agent_registry` drops it from the registry the
+orchestrator and handoff read, and the routing paragraph (`merchant_ops_routing` in `orchestrator.yaml`) and the tool
+description appear only with the flag, because both are part of every orchestrator replay key. Replay dataset
+`evals/datasets/merchant_ops.json` (fixtures recorded, `evals/merchant_setup.py` makes the batch), live twin under
+`datasets/live`. A replay case must not make the model pass a random id (a proposal or review id) as a tool argument: arguments
+are hashed verbatim, so the fixture would miss on the next seed. Any ordering in a tool's output must be total on stable keys,
+never on a random id. Parity row 57 (Python only).
 
 ### Event autonomy (#94, Python only)
 

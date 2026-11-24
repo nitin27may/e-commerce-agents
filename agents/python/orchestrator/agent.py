@@ -26,7 +26,7 @@ from shared.context import (
     current_user_role,
 )
 from shared.context_providers import ECommerceContextProvider
-from shared.factory import parse_agent_registry
+from shared.factory import active_agent_registry
 from shared.http_resilience import ResilientAsyncTransport
 from shared.legacy_wire import admit_steps, normalize_steps
 from shared.log_safe import log_safe
@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 # Validated, not just decoded: shared.factory.parse_agent_registry rejects a
 # blank or scheme-less endpoint at import instead of letting it surface as an
 # unroutable agent on the first request that needs it.
-AGENT_REGISTRY: dict[str, str] = parse_agent_registry(settings.AGENT_REGISTRY)
+AGENT_REGISTRY: dict[str, str] = active_agent_registry(settings.AGENT_REGISTRY)
 
 # One shared transport (and therefore its per-host circuit breakers) reused
 # across every httpx.AsyncClient constructed below — a breaker only means
@@ -82,14 +82,17 @@ def _request_never_ran(exc: BaseException) -> bool:
     return False
 
 
-@tool(
-    name="call_specialist_agent",
-    description=(
+def routing_description(*, merchant_ops: bool) -> str:
+    """The routing tool's description. It is part of every replay fixture key, so the sixth name appears only when
+    ``MERCHANT_OPS_AGENT_ENABLED`` is on and the default text stays byte-identical to what was recorded."""
+    return (
         "Route a request to a specialist agent via A2A protocol. "
         "Available agents: product-discovery, order-management, "
-        "pricing-promotions, review-sentiment, inventory-fulfillment"
-    ),
-)
+        "pricing-promotions, review-sentiment, inventory-fulfillment" + (", merchant-ops" if merchant_ops else "")
+    )
+
+
+@tool(name="call_specialist_agent", description=routing_description(merchant_ops=settings.MERCHANT_OPS_AGENT_ENABLED))
 async def call_specialist_agent(
     agent_name: Annotated[str, Field(description="Name of the specialist agent to call")],
     message: Annotated[str, Field(description="The message/request to send to the specialist agent")],

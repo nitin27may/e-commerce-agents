@@ -120,7 +120,7 @@ rescore_check() {
 run_suites() {
   cd "$PY_DIR" || return 1
   local fail=0 a ds base
-  for a in product-discovery order-management pricing-promotions review-sentiment inventory-fulfillment; do
+  for a in product-discovery order-management pricing-promotions review-sentiment inventory-fulfillment merchant-ops; do
     ds="evals/datasets/${a//-/_}.json"
     base="$BASELINE_DIR/${a//-/_}.json"
     echo "::group::quality eval — $a"

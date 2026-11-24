@@ -88,7 +88,7 @@ build-backend = "hatchling.build"
 members = ["packages/mcp-product", "packages/mcp-inventory"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["shared", "orchestrator", "product_discovery", "order_management", "pricing_promotions", "review_sentiment", "inventory_fulfillment", "auth_server"]
+packages = ["shared", "orchestrator", "product_discovery", "order_management", "pricing_promotions", "review_sentiment", "inventory_fulfillment", "merchant_ops", "auth_server"]
 
 [tool.ruff]
 target-version = "py312"
@@ -122,7 +122,7 @@ markers = [
 
 [tool.coverage.run]
 branch = true
-source = ["shared", "orchestrator", "product_discovery", "order_management", "pricing_promotions", "review_sentiment", "inventory_fulfillment", "auth_server"]
+source = ["shared", "orchestrator", "product_discovery", "order_management", "pricing_promotions", "review_sentiment", "inventory_fulfillment", "merchant_ops", "auth_server"]
 omit = ["**/tests/*", "**/__init__.py"]
 
 [tool.coverage.report]

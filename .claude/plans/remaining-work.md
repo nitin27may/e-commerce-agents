@@ -403,7 +403,7 @@ inflate CI time: live variants never run in the PR gate.
 
 **Azure preparation that needs no subscription** (Phase B rewritten, see below): P1, P2, P3, I1-I4.
 
-**Needs a live key** (R0 first, then one R1 sitting so nothing is recorded twice): C-6/A-6b/tutorial fixtures (R0), C-8, C-10, C-11, B-16, M-2, V-1a, E-3b, E-4, E-6, E-7, E-8, E-10, typed product filters, B2 (dual-stack parity in CI), P-7 (R2).
+**Needs a live key** (R0 first, then one R1 sitting so nothing is recorded twice): C-6/A-6b/tutorial fixtures (R0), C-8, C-10, C-11, B-16, V-1a, E-3b, E-4, E-6, E-7, E-8, E-10, typed product filters, B2 (dual-stack parity in CI), P-7 (R2).
 
 **Needs Azure:** I5 (first real deploy), I6 (reference profile), I7 (build from source), then C, D, E.
 
@@ -676,7 +676,7 @@ Folded into the existing R1 so nothing is recorded twice. Prepare every keyed it
    stored key), others from their own secrets, http target against the CI compose stack, `COST_BUDGET_MODE=enforce`,
    `--estimate` first. Run it once per reference provider.
 6. **EV-14, community results.** `evals/community/` format, validation script, scorecard reads it labelled.
-7. Everything else on the R1 list (C-8, C-10, C-11, B-16, M-2, V-1a, E-6, E-7, E-8, typed filters, P-7).
+7. Everything else on the R1 list (C-8, C-10, C-11, B-16, V-1a, E-6, E-7, E-8, typed filters, P-7).
 
 *Done when* the scorecard shows both reference providers on both stacks with spread, judge agreement and cost.
 
@@ -1108,7 +1108,7 @@ is recorded twice. Every session is a person running a script on a local stack.
 | Session | When | Key | Records | Unblocks | Estimate |
 |---|---|---|---|---|---|
 | **R0 — the tour** | After wave 1 and B-3 | OpenAI or Azure OpenAI (the existing one) | The ~10-prompt demo tour (C-6), the catalog embeddings export (A-6b), and the default-prompt fixtures for tutorial chapters 04, 05, 07, 12, 13, 14, 16 (found by C-16) | C-7 → C-11, C-18 | $1–3 |
-| **R1 — everything else, one sitting** | When B-6 has merged and B-16, M-2 are *ready on their branches* — those two change what the model sees, so the replay gate fails until their fixtures are refreshed. Record against the ready branches and merge code and fixtures together | Same | New eval cases: multi-turn, role, approval, argument (E-3b); red-team v2 + judge verdicts (E-4); guardrail FP/FN (E-6); MCP-path suites (E-7); all six .NET datasets and baselines (E-8, closes §11); five-mode benchmark (E-10); `merchant_ops` dataset (M-2); group-chat fixtures (B-16); a tour re-check | E-9 and every row marked R1 | $5–9 |
+| **R1 — everything else, one sitting** | When B-6 has merged and B-16 is *ready on its branch* — that one change what the model sees, so the replay gate fails until their fixtures are refreshed. Record against the ready branches and merge code and fixtures together | Same | New eval cases: multi-turn, role, approval, argument (E-3b); red-team v2 + judge verdicts (E-4); guardrail FP/FN (E-6); MCP-path suites (E-7); all six .NET datasets and baselines (E-8, closes §11); five-mode benchmark (E-10); group-chat fixtures (B-16); a tour re-check | E-9 and every row marked R1 | $5–9 |
 | **R2 — other vendors** | After P-3, P-4, P-5 | Anthropic, Google; optionally local Ollama at $0 | Wiring smoke for each provider; the model scorecard, one fixture directory per model (P-7) | P-3–P-5 sign-off, P-7 | $1–3 per provider |
 
 Estimates are the planners' and assume OpenAI's automatic prompt caching; treat them as order of
@@ -1131,7 +1131,7 @@ otherwise.
 | **2 — first upgrade, demo surface, approvals core** | | B-3 (core 1.22), C-4 → C-5, D-2 → D-3 → D-4 → D-5a, D-7, D-8, E-2c → E-2d, E-5, P-2, P-4, P-6, M-1, X-1 | none |
 | **R0** | Record the tour | C-6, A-6b | **yes** |
 | **3 — the demo ships** | | C-7 → C-8 → C-9, C-10 → C-11, C-13, C-18, B-11 (build only; its run needs a key) | none |
-| **4 — second upgrade, real A2A, flows** | | B-6 (core 1.26 + MCP 2) → B-7, B-8, B-12 → B-13 → B-14, B-15, B-18, B-19, D-5n, D-6, D-9a → D-9b, M-3 → M-4, V-1 → V-2, B-17, P-3, P-5, P-8, C-20. **Not built (an earlier revision said "held on their branches"; no such branches exist, see the Reconciliation section). Each needs R1 recordings:** B-16, M-2's dataset, E-3b, E-4, E-6, E-7, E-8 — each invalidates or needs fixtures, so it merges with its recording, not before | none for what merges |
+| **4 — second upgrade, real A2A, flows** | | B-6 (core 1.26 + MCP 2) → B-7, B-8, B-12 → B-13 → B-14, B-15, B-18, B-19, D-5n, D-6, D-9a → D-9b, M-3 → M-4, V-1 → V-2, B-17, P-3, P-5, P-8, C-20. **Not built (an earlier revision said "held on their branches"; no such branches exist, see the Reconciliation section). Each needs R1 recordings:** B-16, E-3b, E-4, E-6, E-7, E-8 — each invalidates or needs fixtures, so it merges with its recording, not before | none for what merges |
 | **R1** | Record everything else | see §3 | **yes** |
 | **5 — publish the numbers** | | E-9, E-10, P-7 (after R2), new tutorial chapters from #100 | R2 for P-7 |
 

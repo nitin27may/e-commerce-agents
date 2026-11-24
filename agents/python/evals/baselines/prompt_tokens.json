@@ -101,6 +101,26 @@
         "total": 3975
       }
     },
+    "merchant-ops": {
+      "customer": {
+        "instructions": 2928,
+        "tools": 961,
+        "tool_count": 7,
+        "total": 3889
+      },
+      "seller": {
+        "instructions": 2900,
+        "tools": 961,
+        "tool_count": 7,
+        "total": 3861
+      },
+      "admin": {
+        "instructions": 2907,
+        "tools": 961,
+        "tool_count": 7,
+        "total": 3868
+      }
+    },
     "orchestrator": {
       "customer": {
         "instructions": 2967,

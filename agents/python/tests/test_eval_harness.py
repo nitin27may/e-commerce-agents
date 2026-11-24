@@ -19,7 +19,7 @@ from evals.harness import AGENT_FACTORIES, ProductionRunner, _routes, _tools_cal
 from tests.test_orchestration_modes import _ScriptedClient, _text_response
 
 
-def test_agent_factories_cover_orchestrator_and_all_five_specialists() -> None:
+def test_agent_factories_cover_orchestrator_and_every_specialist() -> None:
     assert set(AGENT_FACTORIES) == {
         "orchestrator",
         "product-discovery",
@@ -27,6 +27,7 @@ def test_agent_factories_cover_orchestrator_and_all_five_specialists() -> None:
         "pricing-promotions",
         "review-sentiment",
         "inventory-fulfillment",
+        "merchant-ops",
     }
 
 

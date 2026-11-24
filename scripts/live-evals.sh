@@ -11,7 +11,7 @@
 #   LIVE_MODEL           model name; for azure the deployment name        (required)
 #   LIVE_REPEATS         case repeats (default 1)
 #   LIVE_SUITE           all (default) or one of: product-discovery order-management pricing-promotions
-#                        review-sentiment inventory-fulfillment orchestrator approvals
+#                        review-sentiment inventory-fulfillment merchant-ops orchestrator approvals
 #   LIVE_PASS_THRESHOLD  minimum overall score per suite (default 0.7)
 #   LIVE_USE_JUDGE       true to score completeness with an LLM judge (self-judged unless JUDGE_* is set)
 #   COST_BUDGET_TOKENS_PER_RUN   per-run ceiling, enforced (default 100000)
@@ -34,7 +34,7 @@ PY_DIR="$REPO_ROOT/agents/python"
 LOG_DIR="${LIVE_LOG_DIR:-${TMPDIR:-/tmp}}"
 
 # `approvals` is a suite, not an agent: order-management against evals/datasets/live/approvals.live.json (#302).
-AGENTS=(product-discovery order-management pricing-promotions review-sentiment inventory-fulfillment orchestrator approvals)
+AGENTS=(product-discovery order-management pricing-promotions review-sentiment inventory-fulfillment merchant-ops orchestrator approvals)
 
 fail_config() {
   echo "::error::$1" >&2
