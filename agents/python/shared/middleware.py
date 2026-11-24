@@ -129,8 +129,43 @@ class ToolAuditMiddleware(FunctionMiddleware):
 # ─────────────────────── PII redaction ───────────────────────
 
 
-_CARD_PATTERN = re.compile(r"\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b")
-_SSN_PATTERN = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
+# The lookarounds keep a match from starting or ending inside a longer token: a UUID
+# (8-4-4-4-12 hex) or an id with a long digit run contains card-shaped slices such as
+# "0000-4000-8000-0000", and redacting one hands the tool a mangled id. Card-shaped
+# numbers must also pass the Luhn check, so only plausible card numbers are masked.
+_CARD_PATTERN = re.compile(r"(?<![0-9A-Za-z-])\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}(?![0-9A-Za-z-])")
+_SSN_PATTERN = re.compile(r"(?<![0-9A-Za-z-])\d{3}-\d{2}-\d{4}(?![0-9A-Za-z-])")
+
+
+def luhn_valid(number: str) -> bool:
+    """True when the digits in ``number`` satisfy the Luhn checksum."""
+    digits = [int(c) for c in number if c.isdigit()]
+    if not digits:
+        return False
+    total = 0
+    for i, d in enumerate(reversed(digits)):
+        if i % 2 == 1:
+            d *= 2
+            if d > 9:
+                d -= 9
+        total += d
+    return total % 10 == 0
+
+
+def redact_pii(text: str, card_mask: str = "[REDACTED-CARD]", ssn_mask: str = "[REDACTED-SSN]") -> tuple[str, int, int]:
+    """Mask Luhn-valid card numbers and SSN-shaped strings; returns (text, cards, ssns)."""
+    cards = 0
+
+    def _card(match: re.Match[str]) -> str:
+        nonlocal cards
+        if not luhn_valid(match.group(0)):
+            return match.group(0)
+        cards += 1
+        return card_mask
+
+    redacted = _CARD_PATTERN.sub(_card, text)
+    redacted, ssns = _SSN_PATTERN.subn(ssn_mask, redacted)
+    return redacted, cards, ssns
 
 
 class PiiRedactionMiddleware(ChatMiddleware):
@@ -155,8 +190,7 @@ class PiiRedactionMiddleware(ChatMiddleware):
                 text = getattr(content, "text", None)
                 if not text or not isinstance(text, str):
                     continue
-                redacted, cards = _CARD_PATTERN.subn(self.CARD_MASK, text)
-                redacted, ssns = _SSN_PATTERN.subn(self.SSN_MASK, redacted)
+                redacted, cards, ssns = redact_pii(text, self.CARD_MASK, self.SSN_MASK)
                 if cards + ssns:
                     self.redactions += cards + ssns
                     try:

@@ -21,6 +21,10 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ### Fixed
 
+- **`search_products` found nothing for an exact price (D1).** `min_price == max_price == 14.99` compared the stored NUMERIC 14.99 with the float encoded as 14.99000...02. Price filters are now exact two-decimal `numeric` values.
+- **`check_bundle_eligibility` never matched seeded bundles (D4).** Seeded bundles list product names under `products`; the tool read only `product_ids` or `categories`. It now matches names case-insensitively.
+- **`validate_coupon` accepted a negative cart (D3).** It now returns a structured `invalid_cart_total` error before any lookup. Per-user coupon reuse is not enforced: the schema has no per-user usage record (only `orders.coupon_code`), so it needs a product decision.
+- **PII redaction mangled UUIDs and long ids (D2).** The card pattern matched slices of a UUID such as `00000000-0000-4000-8000-000000000000`, so a tool received `[REDACTED-CARD]-[REDACTED-CARD]` as an id. Card-shaped numbers must now pass Luhn, and no match may start or end inside a longer token; Python and .NET.
 - **"New chat" right after closing the Compare dialog did nothing (#210).** A closing dialog's backdrop kept catching clicks for its 100 ms exit animation; closed dialog layers no longer take pointer events. Backend-free spec: `web/e2e/chat-new-after-compare.spec.ts`.
 - **Azure first-run hardening (optional deployment only).** The Postgres SKU preflight read the wrong level of the
   `az postgres flexible-server list-skus` JSON (SKUs are nested under `supportedServerEditions`), so it rejected

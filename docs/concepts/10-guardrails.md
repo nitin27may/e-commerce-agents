@@ -75,8 +75,8 @@ worth knowing:
   *results* (a review, an order note) before that text re-enters the model as context — this is
   what stops a poisoned product review from attacking every customer who asks about it, not just
   the one who wrote it.
-- **`PiiRedactionMiddleware`** masks credit-card- and SSN-shaped strings in outbound user messages
-  before they ever reach the model — the only layer here that's unconditionally on, not gated
+- **`PiiRedactionMiddleware`** masks Luhn-valid credit-card numbers and SSN-shaped strings in outbound user messages
+  before they ever reach the model (a UUID, or an id with a long digit run, is never touched) — the only layer here that's unconditionally on, not gated
   behind `GUARDRAILS_ENABLED`, because there's no scenario where sending raw PII to the model is
   the right default.
 - **Role confinement** isn't a middleware in this stack at all — it's enforced by never trusting
