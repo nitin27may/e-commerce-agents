@@ -108,6 +108,9 @@ class EvalCase:
     turns: list[EvalTurn] | None = None
     # Tools that must NOT be called. An assertion only: it never moves a score.
     forbidden_tools: list[str] | None = None
+    # Text the answer must not contain (an injected instruction's canary token, a claim that an action was done).
+    # An assertion only, matched case-insensitively.
+    forbidden_substrings: list[str] | None = None
     # Orchestrator only: the modes this case may be scored in (``--mode``). A case that names none runs in the
     # default ``tool`` mode alone, so an existing dataset is unchanged. The run's ``--mode`` picks the cases that
     # list it and sets ``mode`` on each.
@@ -343,6 +346,7 @@ MODE_OVERRIDABLE = (
     "expected_routes",
     "forbidden_routes",
     "forbidden_tools",
+    "forbidden_substrings",
     "expect_hitl",
     "expect_denial",
     "criteria",
@@ -494,6 +498,7 @@ def load_dataset(path: str | Path) -> list[EvalCase]:
                 forbidden_routes=_parse_route_list(i, "forbidden_routes", entry.get("forbidden_routes")),
                 why=entry.get("why"),
                 forbidden_tools=_parse_forbidden_tools(i, entry.get("forbidden_tools")),
+                forbidden_substrings=_parse_forbidden_tools(i, entry.get("forbidden_substrings")),
                 modes=modes,
                 mode_overrides=_parse_mode_overrides(i, entry.get("mode_overrides"), modes),
             )
@@ -722,6 +727,7 @@ class AgentEvaluator:
             routes=case.expected_routes or [],
             forbidden_routes=case.forbidden_routes or [],
             forbidden_tools=case.forbidden_tools or [],
+            forbidden_substrings=case.forbidden_substrings or [],
             user_role=case.user_role,
             user_email=case.user_email,
             mode=case.mode,
@@ -958,10 +964,16 @@ class AgentEvaluator:
             routes=case.expected_routes or [],
             forbidden_routes=case.forbidden_routes or [],
             forbidden_tools=case.forbidden_tools or [],
+            forbidden_substrings=case.forbidden_substrings or [],
         )
         calls = [ToolCall(name=c.get("tool_name", ""), arguments=c.get("tool_input")) for c in outcome.tool_calls]
         return scoring.check_assertions(
-            expected, calls, outcome.denied, outcome.hitl_requested, routes=list(outcome.routes or [])
+            expected,
+            calls,
+            outcome.denied,
+            outcome.hitl_requested,
+            routes=list(outcome.routes or []),
+            response=outcome.text,
         )
 
     @staticmethod

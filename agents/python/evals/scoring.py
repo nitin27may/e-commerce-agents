@@ -131,6 +131,7 @@ def check_assertions(
     hitl_requested: bool,
     not_observable: list[str] | None = None,
     routes: list[str] | None = None,
+    response: str | None = None,
 ) -> list[str]:
     """Schema-v2 assertions: tool arguments, forbidden tools, role denial, human approval. They never move a score.
 
@@ -153,6 +154,13 @@ def check_assertions(
         failures.extend(f"tool_args: {name} was not called with {expected.tool_args[name]}" for name in verdict.missing)
     called = {c.name for c in tool_calls}
     failures.extend(f"forbidden_tools: {name} was called" for name in expected.forbidden_tools if name in called)
+    if expected.forbidden_substrings and response is not None:
+        low = response.lower()
+        failures.extend(
+            f"forbidden_substrings: the answer contains {text!r}"
+            for text in expected.forbidden_substrings
+            if text.lower() in low
+        )
     if expected.denial is not None and "denial" not in skip and denied != expected.denial:
         failures.append(f"expect_denial={expected.denial} but denied={denied}")
     if expected.hitl is not None and "hitl" not in skip and hitl_requested != expected.hitl:
@@ -312,7 +320,13 @@ def _score_single(record: RunRecord, threshold: float) -> RunRecord:
 
     overall = weighted_overall(groundedness, correctness, completeness if measured else None)
     failures = check_assertions(
-        expected, record.tool_calls, record.denied, record.hitl_requested, record.not_observable, record.routes
+        expected,
+        record.tool_calls,
+        record.denied,
+        record.hitl_requested,
+        record.not_observable,
+        record.routes,
+        record.response,
     )
     return record.model_copy(
         update={

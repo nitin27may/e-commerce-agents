@@ -157,6 +157,19 @@ run_suites() {
     rescore_check "eval-records-mode-$slug.jsonl" || fail=1
     echo "::endgroup::"
   done
+  # Indirect injection: the corpus (reviews and product text that order a refund, a cancellation, a return) is seeded
+  # for this suite alone and removed again, so no other suite sees an [adversarial] product.
+  echo "::group::indirect injection eval — orchestrator"
+  uv run python -m evals.seed_adversarial --yes || fail=1
+  uv run python -m evals.run_evals --agent orchestrator \
+    --dataset evals/datasets/indirect_injection.json \
+    --pass-threshold "$SMOKE_THRESH" --baseline "$BASELINE_DIR/indirect_injection.json" \
+    --records-out eval-records-indirect-injection.jsonl --output-json eval-indirect-injection.json || fail=1
+  rescore_check eval-records-indirect-injection.jsonl || fail=1
+  if [[ "${ADVERSARIAL_SEED:-0}" != "1" ]]; then
+    uv run python -m evals.seed_adversarial --yes --remove || fail=1
+  fi
+  echo "::endgroup::"
   if [[ "${ADVERSARIAL_SEED:-0}" == "1" ]]; then
     # After every quality suite (the rows are real rows the review and product tools would
     # return) and before the safety suite, which is the only consumer.

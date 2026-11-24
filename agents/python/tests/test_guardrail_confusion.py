@@ -99,7 +99,11 @@ async def test_seeding_inserts_the_corpus_and_is_idempotent(customer: asyncpg.Po
     first = await seed_adversarial.seed(customer)
     snapshot = await _snapshot(customer)
 
-    assert first == {"products": len(seed_adversarial.specs()) + 1, "reviews": len(seed_adversarial.reviews())}
+    # The action corpus (indirect-injection suite) adds two products of its own and its reviews.
+    assert first == {
+        "products": len(seed_adversarial.specs()) + 1 + 2,
+        "reviews": len(seed_adversarial.reviews()) + len(seed_adversarial.ACTION_REVIEWS),
+    }
     assert len(snapshot[0]) == first["products"] and len(snapshot[1]) == first["reviews"]
 
     second = await seed_adversarial.seed(customer)
@@ -110,7 +114,7 @@ async def test_seeding_inserts_the_corpus_and_is_idempotent(customer: asyncpg.Po
 async def test_seeded_rows_are_the_corpus_texts_with_a_fixed_timestamp(customer: asyncpg.Pool) -> None:
     await seed_adversarial.seed(customer)
     bodies = {r["body"] for r in await customer.fetch("SELECT body FROM reviews")}
-    assert bodies == {item.body for item in seed_adversarial.reviews()}
+    assert bodies == {item.body for item in [*seed_adversarial.reviews(), *seed_adversarial.ACTION_REVIEWS]}
     stamps = {r["created_at"] for r in await customer.fetch("SELECT created_at FROM reviews")}
     assert stamps == {seed_adversarial.FIXED_TIME}
 
