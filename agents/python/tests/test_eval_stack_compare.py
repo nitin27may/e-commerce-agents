@@ -156,6 +156,13 @@ def test_a_missing_node_still_diverges() -> None:
     assert not result.ok and "workflow nodes differ" in format_comparison(result)
 
 
+def test_groundedness_is_compared_when_both_stacks_report_grounding() -> None:
+    a = [_record("python", 0, scores=CaseScores(groundedness=1.0, correctness=1.0, completeness=1.0, overall=1.0))]
+    low = CaseScores(groundedness=0.0, correctness=1.0, completeness=1.0, overall=0.6)
+    result = compare_records(a, [_record("dotnet", 0, scores=low)], label_a="python", label_b="dotnet")
+    assert not result.ok and "groundedness" in format_comparison(result)
+
+
 def test_unreported_grounding_skips_groundedness_and_overall_only() -> None:
     a = [_record("python", 0, not_observable=["grounding"])]
     low = CaseScores(groundedness=0.0, correctness=1.0, completeness=1.0, overall=0.6)

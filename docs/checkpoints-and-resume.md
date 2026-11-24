@@ -162,7 +162,11 @@ run; everyone else only their own.
 
 - A run with a pending request shows a **Needs approval** badge without expanding the row.
 - Staff (`support` or `admin`) see **Approve** and **Reject**, which call
-  `POST /api/orchestration/{run_id}/resume`. Everyone else sees "Awaiting staff review".
+  `POST /api/orchestration/{run_id}/resume`, on a run that is not their own (a reviewer can never be the
+  requester). Everyone else sees "Awaiting staff review". Whether the reviewer's role reaches the level the policy
+  assigned (`support` cannot decide a `manager` route) is the server's call; a refusal shows inline.
+- Run visibility stays narrow on purpose: `/runs` lists only admins' view of all users, so `support` sees their own
+  runs here and reviews other customers' requests in the approvals inbox (`/api/approvals`).
 - A return in a lifecycle wait shows its timeline from `GET /api/runs/{id}/timeline`.
 
 ## What differs on .NET

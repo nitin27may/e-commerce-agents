@@ -162,7 +162,7 @@ async def search_products(
     }.get(sort_by or "", None)
     if order is None:
         # Rank by text relevance when there is a query, else by rating.
-        order = f"ts_rank(p.search_vector, {tsquery}) DESC, p.rating DESC" if tsquery else "p.rating DESC"
+        order = f"ts_rank(p.search_vector, {tsquery}) DESC, p.rating DESC, p.id" if tsquery else "p.rating DESC, p.id"
 
     where = " AND ".join(conditions)
     sql = f"""

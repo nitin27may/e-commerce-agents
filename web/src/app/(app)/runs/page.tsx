@@ -196,7 +196,11 @@ function RunRow({
     }
   }
 
-  const { isAdmin } = useAuth();
+  const { isStaff, user } = useAuth();
+  // Staff (support or admin) decide, never on their own request: the approvals service refuses a reviewer who is
+  // the requester on both stacks, so an Approve button there could only fail. Whether the reviewer's role reaches
+  // the level the policy assigned is the server's call; its error shows inline.
+  const canDecide = isStaff && entry.user_email !== (user?.email ?? null);
   const hitl = checkpointData?.hitl_request;
   // A carrier-scan or inspection wait is pending too, but nobody approves it here: the carrier's scan answers the
   // first, and support answers the second from the staff returns page.
@@ -325,8 +329,8 @@ function RunRow({
                 <p className="text-muted-foreground">
                   The carrier has your package. Waiting for support to inspect it and decide the refund.
                 </p>
-              ) : pendingApproval && !isAdmin ? (
-                // Only staff can decide (#92); the backend 403s anyone else.
+              ) : pendingApproval && !canDecide ? (
+                // Only staff other than the requester can decide (#92); the backend refuses anyone else.
                 <p className="text-muted-foreground">Awaiting staff review</p>
               ) : pendingApproval ? (
                 <>

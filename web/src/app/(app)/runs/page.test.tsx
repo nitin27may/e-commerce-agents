@@ -4,8 +4,10 @@ import RunsPage from "./page";
 import { api, type RunEntry } from "@/lib/api";
 
 // Only staff may approve (#92), so the buttons are role-gated; each test sets the role.
-const auth = vi.hoisted(() => ({ isAdmin: true }));
-vi.mock("@/lib/auth-context", () => ({ useAuth: () => ({ isAdmin: auth.isAdmin }) }));
+const auth = vi.hoisted(() => ({ isStaff: true, email: "reviewer@example.com" }));
+vi.mock("@/lib/auth-context", () => ({
+  useAuth: () => ({ isStaff: auth.isStaff, user: { email: auth.email, name: "U", role: "x" } }),
+}));
 
 const PENDING_RUN: RunEntry = {
   id: "run-1",
@@ -24,7 +26,8 @@ const PENDING_RUN: RunEntry = {
 };
 
 beforeEach(() => {
-  auth.isAdmin = true;
+  auth.isStaff = true;
+  auth.email = "reviewer@example.com";
 });
 
 afterEach(() => {
@@ -83,7 +86,7 @@ describe("RunsPage — checkpoint resume", () => {
   });
 
   it("shows a customer 'Awaiting staff review' instead of Approve/Reject", async () => {
-    auth.isAdmin = false;
+    auth.isStaff = false;
     vi.spyOn(api, "getRuns").mockResolvedValue({ entries: [PENDING_RUN], total: 1, limit: 20, offset: 0 });
     vi.spyOn(api, "getRunCheckpoints").mockResolvedValue({
       run_id: "run-1",
@@ -309,5 +312,41 @@ describe("RunsPage — checkpoint resume", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Reject" }));
     await waitFor(() => expect(screen.getByText("No pending approval found for this run")).toBeInTheDocument());
+  });
+});
+
+describe("RunsPage — who may decide", () => {
+  async function renderPending(): Promise<ReturnType<typeof vi.spyOn>> {
+    vi.spyOn(api, "getRuns").mockResolvedValue({ entries: [PENDING_RUN], total: 1, limit: 20, offset: 0 });
+    vi.spyOn(api, "getRunCheckpoints").mockResolvedValue({
+      run_id: "run-1",
+      checkpoints: [],
+      hitl_request: {
+        id: "hitl-1",
+        status: "pending",
+        payload: { order_id: "order-abc" },
+        response: null,
+        created_at: new Date().toISOString(),
+        responded_at: null,
+      },
+    });
+    const resume = vi.spyOn(api, "resumeRun");
+    render(<RunsPage />);
+    await waitFor(() => expect(screen.getByText("return order abc")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("return order abc"));
+    return resume;
+  }
+
+  it("lets support (staff, not admin) approve another customer's return", async () => {
+    await renderPending();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument());
+    expect(screen.queryByText("Awaiting staff review")).not.toBeInTheDocument();
+  });
+
+  it("does not offer staff Approve on their own request", async () => {
+    auth.email = "alice@example.com";
+    await renderPending();
+    await waitFor(() => expect(screen.getByText("Awaiting staff review")).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
   });
 });

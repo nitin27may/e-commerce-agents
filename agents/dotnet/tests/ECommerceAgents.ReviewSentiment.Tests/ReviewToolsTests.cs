@@ -171,6 +171,24 @@ public sealed class ReviewToolsTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task GetSentimentByTopic_ReadsTheBodyWhenTheTitleHasNoKeyword()
+    {
+        // The text was `title ?? ("" + " " + body)`: a review with a title was matched on the title alone.
+        await using (var conn = await _pool.OpenAsync())
+        {
+            await conn.ExecuteAsync(
+                @"INSERT INTO reviews (product_id, user_id, rating, title, body, verified_purchase, helpful_count)
+                  SELECT @b, user_id, 5, 'Fine', 'Delivery was quick and the Packaging arrived intact.', TRUE, 0
+                  FROM reviews LIMIT 1",
+                new { b = _productBId });
+        }
+
+        var result = await _tools.GetSentimentByTopic(_productBId.ToString());
+
+        result.Topics!["shipping"].Mentions.Should().Be(1);
+    }
+
+    [Fact]
     public async Task GetSentimentByTopic_RejectsUnknownProduct()
     {
         var result = await _tools.GetSentimentByTopic(Guid.NewGuid().ToString());

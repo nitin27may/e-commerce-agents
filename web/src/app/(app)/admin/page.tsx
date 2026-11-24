@@ -119,7 +119,7 @@ export default function AdminDashboardPage() {
         total_tokens_in: overall.total_tokens_in ?? 0,
         total_tokens_out: overall.total_tokens_out ?? 0,
         active_agents: raw.by_agent.length,
-        pending_requests: 0, // the usage route reports no pending-request count
+        pending_requests: overall.pending_requests ?? 0,
         avg_duration_ms: overall.avg_duration_ms ?? 0,
         per_agent: raw.by_agent.map((a) => ({
           agent_id: a.agent_name,

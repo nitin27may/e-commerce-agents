@@ -195,6 +195,11 @@ public static class AdminRoutes
               WHERE created_at >= NOW() - INTERVAL '30 days'"
         );
 
+        // Not date-bounded: the number a person has yet to act on, the same rows /api/admin/requests lists.
+        var pendingRequests = await conn.ExecuteScalarAsync<long>(
+            "SELECT COUNT(*) FROM access_requests WHERE status = 'pending'"
+        );
+
         var byAgent = (await conn.QueryAsync(
             @"SELECT
                   agent_name,
@@ -251,6 +256,7 @@ public static class AdminRoutes
                 // Rows with NULL cost (older, or from a mode that reported no usage) add nothing.
                 total_tokens_cached_in = overall?.total_tokens_cached_in is null ? 0L : Convert.ToInt64(overall.total_tokens_cached_in),
                 total_cost_usd = overall?.total_cost_usd is null ? 0.0 : Convert.ToDouble(overall.total_cost_usd),
+                pending_requests = pendingRequests,
             },
             by_agent = byAgent,
             daily_trend = daily,

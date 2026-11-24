@@ -36,7 +36,8 @@ SORT_CLAUSES = {
     "rating": "p.rating DESC",
     "newest": "p.created_at DESC",
 }
-RATING_SORT = "p.rating DESC, p.review_count DESC"
+# p.id last: the order must not depend on how Postgres happens to return tied rows.
+RATING_SORT = "p.rating DESC, p.review_count DESC, p.id"
 
 
 @tool(
@@ -241,7 +242,7 @@ async def semantic_search(
     sql = f"""
         WITH vec AS (
             SELECT product_id, similarity,
-                   ROW_NUMBER() OVER (ORDER BY similarity DESC, rating DESC, name) AS rank
+                   ROW_NUMBER() OVER (ORDER BY similarity DESC, rating DESC, name, product_id) AS rank
             FROM (
                 -- Rounded to 6 places *before* ranking and display: pgvector accumulates float32
                 -- distances in an order that depends on the CPU's SIMD (NEON on arm64, AVX on
@@ -259,7 +260,7 @@ async def semantic_search(
         ),
         fts AS (
             SELECT p.id AS product_id,
-                   ROW_NUMBER() OVER (ORDER BY ts_rank(p.search_vector, {or_joined_tsquery("$2")}) DESC) AS rank
+                   ROW_NUMBER() OVER (ORDER BY ts_rank(p.search_vector, {or_joined_tsquery("$2")}) DESC, p.id) AS rank
             FROM products p
             WHERE p.is_active = TRUE
               AND {or_joined_tsquery("$2")} <> ''::tsquery
@@ -277,7 +278,7 @@ async def semantic_search(
                fu.similarity, fu.score
         FROM fused fu
         JOIN products p ON p.id = fu.product_id
-        ORDER BY fu.score DESC, p.rating DESC
+        ORDER BY fu.score DESC, p.rating DESC, p.id
         LIMIT $4
     """
 
@@ -288,7 +289,9 @@ async def semantic_search(
         fts_sql = f"""
             WITH fts AS (
                 SELECT p.id AS product_id,
-                       ROW_NUMBER() OVER (ORDER BY ts_rank(p.search_vector, {or_joined_tsquery("$1")}) DESC) AS rank
+                       ROW_NUMBER() OVER (
+                           ORDER BY ts_rank(p.search_vector, {or_joined_tsquery("$1")}) DESC, p.id
+                       ) AS rank
                 FROM products p
                 WHERE p.is_active = TRUE
                   AND {or_joined_tsquery("$1")} <> ''::tsquery
@@ -300,7 +303,7 @@ async def semantic_search(
                    1.0 / ({RRF_K} + f.rank) AS score
             FROM fts f
             JOIN products p ON p.id = f.product_id
-            ORDER BY score DESC, p.rating DESC
+            ORDER BY score DESC, p.rating DESC, p.id
             LIMIT $3
         """
         async with pool.acquire() as conn:

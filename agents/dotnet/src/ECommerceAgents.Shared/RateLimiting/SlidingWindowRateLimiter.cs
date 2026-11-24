@@ -137,6 +137,39 @@ public sealed class SlidingWindowRateLimiter
     }
 
     /// <summary>
+    /// Read-only: has <paramref name="key"/> already used its budget? (<see cref="TryAcquireAsync(string, int, double, CancellationToken)"/>
+    /// would record a hit.) Fails open - false - when disabled or Redis is unavailable.
+    /// </summary>
+    public async Task<bool> IsAtLimitAsync(string key, int maxRequests, double windowSeconds, CancellationToken ct = default)
+    {
+        if (!_settings.RateLimitEnabled)
+        {
+            return false;
+        }
+
+        var mux = await _redis.Value;
+        if (mux is null || !mux.IsConnected)
+        {
+            return false;
+        }
+
+        try
+        {
+            var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var count = await mux.GetDatabase().SortedSetLengthAsync(key, nowMs - (long)(windowSeconds * 1000), double.PositiveInfinity);
+            return count >= maxRequests;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "rate_limit.check_failed key_hash={KeyHash} - failing open", KeyHashForLog(key));
+            return false;
+        }
+    }
+
+    /// <summary>The budget for unknown return-label tokens, one per client address.</summary>
+    public static string LabelMissKeyFor(string? clientIp) => $"ratelimit:label-miss:ip:{clientIp ?? "unknown"}";
+
+    /// <summary>
     /// A stable, non-reversible stand-in for a rate-limit key in log lines. Keys embed the
     /// caller's email or IP address, and part of them is caller-supplied, so the raw key is
     /// neither safe to log (personal data) nor safe to interpolate (log forging). The first

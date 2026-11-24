@@ -248,6 +248,63 @@ async def rate_limit_auth(request: Request) -> None:
     )
 
 
+async def _label_miss_blocked(client: redis.Redis, key: str, *, max_requests: int, window_s: float) -> bool:
+    """Read-only check: has ``key`` already used its budget? (``check_rate_limit`` would record a hit.)"""
+    now_ms = time.time() * 1000
+    count = await client.zcount(key, now_ms - window_s * 1000, "+inf")
+    return int(count) >= max_requests
+
+
+def _too_many_label_lookups(window_s: float) -> HTTPException:
+    return HTTPException(
+        status_code=429,
+        detail="Too many unknown return-label lookups - try again shortly.",
+        headers={"Retry-After": str(int(window_s))},
+    )
+
+
+async def enforce_label_lookup_not_blocked(request: Request) -> None:
+    """Refuse (429) a client address that has used up its unknown-token budget, before any lookup.
+
+    Only *misses* spend the budget (:func:`record_label_miss`), so downloading your own label never counts.
+    The budget is the tight auth one (``RATE_LIMIT_AUTH_MAX_REQUESTS`` per ``RATE_LIMIT_AUTH_WINDOW_SECONDS``).
+    Fails open when Redis is down, like the other limiters.
+    """
+    if not settings.RATE_LIMIT_ENABLED:
+        return
+    key = f"ratelimit:label-miss:ip:{_client_ip(request)}"
+    try:
+        blocked = await _label_miss_blocked(
+            get_redis_client(),
+            key,
+            max_requests=settings.RATE_LIMIT_AUTH_MAX_REQUESTS,
+            window_s=settings.RATE_LIMIT_AUTH_WINDOW_SECONDS,
+        )
+    except Exception:
+        logger.exception("rate_limit.redis_unavailable key_hash=%s - failing open", key_hash_for_log(key))
+        return
+    if blocked:
+        raise _too_many_label_lookups(settings.RATE_LIMIT_AUTH_WINDOW_SECONDS)
+
+
+async def record_label_miss(request: Request) -> None:
+    """Count one malformed or unknown label token against the caller's address. Never raises; fails open."""
+    if not settings.RATE_LIMIT_ENABLED:
+        return
+    key = f"ratelimit:label-miss:ip:{_client_ip(request)}"
+    try:
+        await check_rate_limit(
+            get_redis_client(),
+            key,
+            max_requests=settings.RATE_LIMIT_AUTH_MAX_REQUESTS,
+            window_s=settings.RATE_LIMIT_AUTH_WINDOW_SECONDS,
+        )
+    except RateLimitExceededError:
+        return  # already at the ceiling: the next lookup is refused up front
+    except Exception:
+        logger.exception("rate_limit.redis_unavailable key_hash=%s - failing open", key_hash_for_log(key))
+
+
 def _identity_digest(value: str) -> str:
     """A stable stand-in for an email / subject in a Redis key: lower-cased, then SHA-256.
 

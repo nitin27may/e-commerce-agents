@@ -105,11 +105,12 @@ def _get_pool_or_none() -> Any:
         return None
 
 
-def _attach_report(response: Any, report: GroundingReport) -> None:
-    props = getattr(response, "additional_properties", None)
-    if not isinstance(props, dict):
-        return
-    props["grounding"] = {
+def report_to_wire(report: GroundingReport) -> dict[str, Any]:
+    """The ``grounding`` wire shape: one definition for the SSE frame and ``ChatResponse``.
+
+    The .NET twin is ``GroundingReport.ToWire()``; the field names are pinned on both sides.
+    """
+    return {
         "total": report.total_count,
         "verified": report.verified_count,
         "unverified": report.unverified_count,
@@ -128,6 +129,46 @@ def _attach_report(response: Any, report: GroundingReport) -> None:
             for v in report.verdicts
         ],
     }
+
+
+def _attach_report(response: Any, report: GroundingReport) -> None:
+    props = getattr(response, "additional_properties", None)
+    if not isinstance(props, dict):
+        return
+    props["grounding"] = report_to_wire(report)
+
+
+async def verify_final_text(text: str, mode: str | None = None) -> tuple[dict[str, Any] | None, str]:
+    """Verify an orchestration mode's final text; return ``(wire report or None, text to show)``.
+
+    For modes that have no single agent run to hang ``GroundingVerificationMiddleware`` on (the workflow
+    modes and group chat compose their answer from several steps). Same dispatch as the middleware:
+    ``off`` does nothing, ``observe`` verifies and logs but reports nothing, ``annotate`` reports,
+    ``enforce`` reports and corrects the text. No checkable claim returns no report, as on .NET, and a
+    failure here never takes down the answer.
+    """
+    mode = mode or settings.GROUNDING_MODE
+    if mode == "off" or not text:
+        return None, text
+    claims = extract_claims(text)
+    if claims.total_count == 0:
+        return None, text
+    try:
+        report = await verify_claims(claims, current_grounding_ledger.get(), _get_pool_or_none())
+    except Exception:
+        logger.exception("grounding.final_text_failed mode=%s", mode)
+        return None, text
+    logger.info(
+        "grounding.verified total=%d verified=%d unverified=%d mode=%s",
+        report.total_count,
+        report.verified_count,
+        report.unverified_count,
+        mode,
+    )
+    if mode == "observe":
+        return None, text
+    corrected = _apply_corrections(text, report) if mode == "enforce" else text
+    return report_to_wire(report), corrected
 
 
 def _apply_corrections(text: str, report: GroundingReport) -> str:

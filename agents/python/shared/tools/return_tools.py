@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import uuid
 from typing import Annotated
 
 from agent_framework import tool
@@ -20,6 +19,7 @@ from shared.gate_rules import (
 from shared.guardrails.roles import requires_role
 from shared.idempotency import idempotent
 from shared.park_prechecks import NOT_SUBMITTED, ORDER_NOT_FOUND, RETURN_NOT_FOUND, owned_order, precheck, valid_uuid
+from shared.return_label import new_label_token
 from shared.tool_inputs import (
     InitiateReturnInput,
     ProcessRefundInput,
@@ -207,7 +207,7 @@ async def initiate_return(
                     "return_id": str(existing["id"]),
                 }
 
-            label_token = uuid.uuid4().hex[:12]
+            label_token = new_label_token()
             return_label_url = f"/api/returns/{label_token}/label"
 
             return_id = await conn.fetchval(

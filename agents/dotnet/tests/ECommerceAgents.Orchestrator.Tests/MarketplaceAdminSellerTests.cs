@@ -218,6 +218,26 @@ public sealed class MarketplaceAdminSellerTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AdminUsage_ReportsPendingAccessRequests()
+    {
+        await using (var conn = await _pool.OpenAsync())
+        {
+            await conn.ExecuteAsync(
+                @"INSERT INTO access_requests (user_id, agent_name, role_requested, use_case, status)
+                  VALUES (@u, 'gated-agent', 'power_user', 'a', 'pending'),
+                         (@u, 'gated-agent', 'power_user', 'b', 'pending'),
+                         (@u, 'gated-agent', 'power_user', 'c', 'denied')",
+                new { u = _buyerId }
+            );
+        }
+
+        using var adminClient = ClientFor(r => r.MapAdminRoutes(), AdminEmail, role: "admin");
+        var payload = await adminClient.GetFromJsonAsync<JsonElement>("/api/admin/usage");
+
+        payload.GetProperty("overall").GetProperty("pending_requests").GetInt64().Should().Be(2);
+    }
+
+    [Fact]
     public async Task AdminUsage_ReturnsDailyBreakdownWhenLogsExist()
     {
         // Regression test: AdminRoutes.cs's daily-usage query casts a
