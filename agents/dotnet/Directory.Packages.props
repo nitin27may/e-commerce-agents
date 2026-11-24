@@ -44,7 +44,7 @@
   </ItemGroup>
 
   <ItemGroup Label="Data">
-    <PackageVersion Include="Npgsql" Version="10.0.4" />
+    <PackageVersion Include="Npgsql" Version="11.0.0" />
     <PackageVersion Include="Dapper" Version="2.1.100" />
     <PackageVersion Include="StackExchange.Redis" Version="3.4.35" />
   </ItemGroup>
@@ -69,7 +69,7 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.21.0" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.21.0" />
     <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.21.0" />
-    <PackageVersion Include="Npgsql.OpenTelemetry" Version="10.0.4" />
+    <PackageVersion Include="Npgsql.OpenTelemetry" Version="11.0.0" />
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
   </ItemGroup>
 
