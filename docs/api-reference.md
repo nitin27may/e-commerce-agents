@@ -989,6 +989,18 @@ Routes without a detailed section above. Auth is signed in unless stated.
 | `GET /api/demo/tour`, `POST /api/demo/reset` | Demo tour; `404` unless `DEMO_TOUR_ENABLED` |
 | `GET /health` | Static liveness, no auth |
 
+### Coupons: one use per customer
+
+A coupon can be used once per user. `POST /api/cart/coupon` and `POST /api/checkout` both answer
+`400 {"detail": "You have already used this coupon"}` when the caller already has a non-cancelled order with
+that code (compared case-insensitively; a cancelled order frees the code). At checkout the code is refused rather
+than dropped, so a customer is never charged full price without being told, and nothing is created: no order, the
+cart and the coupon counter stay as they were. Roles get no exemption. The `validate_coupon` and
+`apply_coupon_to_cart` agent tools return the same sentence with `error_code: "coupon_already_used"`. Both stacks
+behave the same. Checkouts by one user are serialised with a row lock on the user inside the checkout transaction,
+so two simultaneous checkouts with the same code place one order (the other is refused, or finds the cart already
+emptied).
+
 ## Error Response Format
 
 All error responses follow FastAPI's standard format:

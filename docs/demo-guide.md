@@ -75,6 +75,11 @@ Try these in the chat after logging in:
 7. **Stock Check**: "Is the Dyson V15 Detect in stock?"
 8. **Multi-Intent**: "Return my jacket and find me a warmer one under $200"
 
+A coupon works once per user. No seeded order carries a coupon code, so every demo account can still use `WELCOME10`
+(the Power User's cart already holds it). After a checkout with a code, applying that code again answers "You have
+already used this coupon"; cancel the order to free it, or use another code. `/api/demo/reset` deletes the tour user's orders,
+so that account gets its coupons back; other accounts keep theirs used until the order is cancelled.
+
 ### Switch the orchestration pattern
 
 The same orchestrator can coordinate the specialists five different ways. These three scenarios are

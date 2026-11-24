@@ -94,6 +94,7 @@ the code or dataset that backs it. `N/A` means the dimension does not apply to t
 | Eval dataset | Done | `datasets/pricing_promotions.json` |
 | Red-team coverage | Done | `red_team.json`: role escalation (impersonate seller to access revenue/payout data) |
 | Auth mode | Done | Inter-agent: `local` shared secret / `oauth` `agent:invoke` service token — no MCP integration for this agent |
+| Coupon reuse | Done | `validate_coupon` refuses a code the caller already has a non-cancelled order with (`error_code: coupon_already_used`); checkout enforces it under a per-user row lock. The tool description and prompt are unchanged on purpose: they are part of the replay fixture key |
 
 **Target**: If `get_seller_revenue` or similar tools are wired into this agent, they are already decorated; no further action required. Add `ensure_role` guard in any new tool that touches per-seller financials.
 

@@ -439,6 +439,134 @@ public sealed class CartCheckoutProfileTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    // ─────────────────────── one use of a coupon per user ────
+
+    private async Task<Guid> AddUserAsync(string email)
+    {
+        await using var conn = await _pool.OpenAsync();
+        return await conn.ExecuteScalarAsync<Guid>(
+            @"INSERT INTO users (email, password_hash, name, role, total_spend)
+              VALUES (@email, 'x', 'Other', 'customer', 0) RETURNING id",
+            new { email }
+        );
+    }
+
+    private async Task AddOrderWithCouponAsync(Guid userId, string code, string status = "delivered")
+    {
+        await using var conn = await _pool.OpenAsync();
+        await conn.ExecuteAsync(
+            @"INSERT INTO orders (user_id, status, total, shipping_address, coupon_code)
+              VALUES (@uid, @status, 20, '{}'::jsonb, @code)",
+            new { uid = userId, status, code }
+        );
+    }
+
+    private static object CheckoutBody(string name = "A") => new
+    {
+        shipping_address = new { name, street = "1 Main", city = "SF", state = "CA", zip = "94105", country = "US" },
+        billing_same_as_shipping = true,
+    };
+
+    private async Task FillCartAsync(string email)
+    {
+        using var cartClient = ClientFor(r => r.MapCartRoutes(), email);
+        var added = await cartClient.PostAsJsonAsync(
+            "/api/cart/items",
+            new { product_id = _productAId.ToString(), quantity = 1 }
+        );
+        added.EnsureSuccessStatusCode();
+    }
+
+    [Fact]
+    public async Task ApplyCoupon_RefusesAUserWhoAlreadyUsedIt_AndAcceptsAfterCancellation()
+    {
+        await FillCartAsync(Email);
+        await AddOrderWithCouponAsync(_userId, "SAVE10");
+        using var client = ClientFor(r => r.MapCartRoutes());
+
+        var refused = await client.PostAsJsonAsync("/api/cart/coupon", new { code = "save10" });
+        refused.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await refused.Content.ReadFromJsonAsync<JsonElement>();
+        body.GetProperty("detail").GetString().Should().Be("You have already used this coupon");
+
+        await using (var conn = await _pool.OpenAsync())
+        {
+            await conn.ExecuteAsync("UPDATE orders SET status = 'cancelled' WHERE user_id = @u", new { u = _userId });
+        }
+        var applied = await client.PostAsJsonAsync("/api/cart/coupon", new { code = "save10" });
+        applied.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Checkout_RefusesAUsedCoupon_PlacesNoOrder_AndLeavesTheCart()
+    {
+        await FillCartAsync(Email);
+        await using (var conn = await _pool.OpenAsync())
+        {
+            await conn.ExecuteAsync("UPDATE carts SET coupon_code = 'SAVE10' WHERE user_id = @u", new { u = _userId });
+        }
+        await AddOrderWithCouponAsync(_userId, "SAVE10");
+
+        using var client = ClientFor(r => r.MapCheckoutRoutes());
+        var response = await client.PostAsJsonAsync("/api/checkout", CheckoutBody());
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        body.GetProperty("detail").GetString().Should().Be("You have already used this coupon");
+
+        await using var check = await _pool.OpenAsync();
+        (await check.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM orders WHERE user_id = @u", new { u = _userId }))
+            .Should().Be(1);
+        (await check.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM cart_items")).Should().Be(1);
+        (await check.ExecuteScalarAsync<int>("SELECT times_used FROM coupons WHERE code = 'SAVE10'")).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Checkout_AllowsAnotherUser_AndACancelledPriorOrder()
+    {
+        var other = await AddUserAsync("other@example.com");
+        await AddOrderWithCouponAsync(other, "SAVE10");
+        var cancelled = await AddUserAsync("cancelled@example.com");
+        await AddOrderWithCouponAsync(cancelled, "SAVE10", "cancelled");
+
+        foreach (var (email, id) in new[] { (Email, _userId), ("cancelled@example.com", cancelled) })
+        {
+            await FillCartAsync(email);
+            await using (var conn = await _pool.OpenAsync())
+            {
+                await conn.ExecuteAsync("UPDATE carts SET coupon_code = 'SAVE10' WHERE user_id = @u", new { u = id });
+            }
+            using var client = ClientFor(r => r.MapCheckoutRoutes(), email);
+            var response = await client.PostAsJsonAsync("/api/checkout", CheckoutBody());
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+    }
+
+    [Fact]
+    public async Task Checkout_TwoSimultaneousRequestsWithTheSameCoupon_PlaceOneOrder()
+    {
+        await FillCartAsync(Email);
+        await using (var conn = await _pool.OpenAsync())
+        {
+            await conn.ExecuteAsync("UPDATE carts SET coupon_code = 'SAVE10' WHERE user_id = @u", new { u = _userId });
+        }
+
+        using var first = ClientFor(r => r.MapCheckoutRoutes());
+        using var second = ClientFor(r => r.MapCheckoutRoutes());
+        // Different bodies so the idempotency guard does not collapse the two requests into one.
+        var results = await Task.WhenAll(
+            first.PostAsJsonAsync("/api/checkout", CheckoutBody("A")),
+            second.PostAsJsonAsync("/api/checkout", CheckoutBody("B"))
+        );
+
+        results.Select(r => (int)r.StatusCode).OrderBy(c => c).Should().Equal(200, 400);
+        await using var check = await _pool.OpenAsync();
+        (await check.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM orders WHERE user_id = @u AND coupon_code = 'SAVE10'", new { u = _userId }))
+            .Should().Be(1);
+        (await check.ExecuteScalarAsync<int>("SELECT times_used FROM coupons WHERE code = 'SAVE10'")).Should().Be(1);
+    }
+
     // ─────────────────────── seed ────────────────────────────
 
     private async Task SeedAsync()

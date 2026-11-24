@@ -10,6 +10,7 @@ from agent_framework import tool
 from pydantic import Field
 
 from shared.context import current_user_email
+from shared.coupons import COUPON_ALREADY_USED_CODE, COUPON_ALREADY_USED_MESSAGE, user_has_used_coupon
 from shared.db import get_pool
 
 
@@ -512,6 +513,10 @@ async def apply_coupon_to_cart(
         # Check user-specific coupon
         if coupon["user_specific_email"] and coupon["user_specific_email"] != email:
             return {"error": f"Coupon '{code}' is not valid for your account"}
+
+        # One use per customer
+        if await user_has_used_coupon(conn, user["id"], coupon["code"]):
+            return {"error": COUPON_ALREADY_USED_MESSAGE, "error_code": COUPON_ALREADY_USED_CODE}
 
         # Calculate cart subtotal
         subtotal_row = await conn.fetchrow(
