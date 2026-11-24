@@ -148,7 +148,6 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
   (ASPIRE012, an error under warnings-as-errors) and `AddProject<T>`. The AppHost now uses `Microsoft.NET.Sdk` and
   `AddDotnetProject` by project path; the tests assert `DotnetProjectResource`. Supersedes Dependabot PRs 231,
   232, 233 and 235. The Anthropic/Dapper/Npgsql bumps of PR 237 were already on main.
-
 - **The pricing directory is mounted into every agent container** (`/pricing`, read-only, all three compose files),
   so a price edit or `PRICING_OVERRIDES_FILE` takes effect on restart with no rebuild. `host.docker.internal` is
   mapped to the host so local model servers work from containers on Linux.
@@ -747,7 +746,9 @@ First release. A multi-agent e-commerce platform with two complete backends behi
 - **Session memory and context persistence** — `store_memory` / `recall_memories` surfaced to the
   orchestrator via context providers.
 
-[Unreleased]: https://github.com/nitin27may/e-commerce-agents/compare/v1.2.0...HEAD
-[1.2.0]: https://github.com/nitin27may/e-commerce-agents/compare/v1.1.0...v1.2.0
-[1.1.0]: https://github.com/nitin27may/e-commerce-agents/compare/v1.0.0...v1.1.0
+[Unreleased]: https://github.com/nitin27may/e-commerce-agents/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/nitin27may/e-commerce-agents/compare/v1.3.0...v1.4.0
+[1.3.0]: https://github.com/nitin27may/e-commerce-agents/compare/v1.2.0...v1.3.0
+[1.2.0]: https://github.com/nitin27may/e-commerce-agents/compare/v1.0.0...v1.2.0
+[1.1.0]: https://github.com/nitin27may/e-commerce-agents/releases
 [1.0.0]: https://github.com/nitin27may/e-commerce-agents/releases/tag/v1.0.0
