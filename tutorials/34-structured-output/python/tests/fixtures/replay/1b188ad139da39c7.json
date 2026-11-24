@@ -1,0 +1,172 @@
+{
+  "request": {
+    "instructions": "You are a shopping assistant. Call `search_products` first, then recommend at most two products. Copy each product's id exactly as the tool returned it; never invent one.",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "I want wireless noise-cancelling headphones under 350 dollars.",
+            "type": "text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      },
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "arguments": "{\"query\":\"wireless noise-cancelling headphones under 350 dollars\"}",
+            "call_id": "call_7AFtCzOzmfTOMFIHF370CUII",
+            "hosted": false,
+            "name": "search_products",
+            "type": "function_call"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      },
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "call_id": "call_7AFtCzOzmfTOMFIHF370CUII",
+            "items": [
+              {
+                "additional_properties": {},
+                "text": "[{\"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"name\": \"Sony WH-1000XM5\", \"price\": 299.99, \"rating\": 4.7}, {\"id\": \"08a21e63-49ac-5ec4-974e-cd3fc1761620\", \"name\": \"AirPods Max\", \"price\": 449.99, \"rating\": 4.5}, {\"id\": \"b1e5aaad-96a1-5afb-9af7-074ae2593de1\", \"name\": \"JBL Tune 770NC\", \"price\": 99.95, \"rating\": 4.3}]",
+                "type": "text"
+              }
+            ],
+            "result": "[{\"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"name\": \"Sony WH-1000XM5\", \"price\": 299.99, \"rating\": 4.7}, {\"id\": \"08a21e63-49ac-5ec4-974e-cd3fc1761620\", \"name\": \"AirPods Max\", \"price\": 449.99, \"rating\": 4.5}, {\"id\": \"b1e5aaad-96a1-5afb-9af7-074ae2593de1\", \"name\": \"JBL Tune 770NC\", \"price\": 99.95, \"rating\": 4.3}]",
+            "type": "function_result"
+          }
+        ],
+        "role": "tool",
+        "type": "message"
+      }
+    ],
+    "response_format": {
+      "name": "ShoppingAnswer",
+      "schema": {
+        "$defs": {
+          "Pick": {
+            "additionalProperties": false,
+            "description": "What the model is asked to produce. Strict on purpose: no extra fields, every field required.",
+            "properties": {
+              "id": {
+                "description": "The product id exactly as the search tool returned it.",
+                "title": "Id",
+                "type": "string"
+              },
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "price": {
+                "title": "Price",
+                "type": "number"
+              },
+              "reason": {
+                "description": "One short sentence on why this product fits the request.",
+                "title": "Reason",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "price",
+              "reason"
+            ],
+            "title": "Pick",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "picks": {
+            "description": "At most three products, all from the search tool.",
+            "items": {
+              "$ref": "#/$defs/Pick"
+            },
+            "title": "Picks",
+            "type": "array"
+          },
+          "summary": {
+            "description": "Two sentences for the customer.",
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "summary",
+          "picks"
+        ],
+        "title": "ShoppingAnswer",
+        "type": "object"
+      }
+    },
+    "tools": [
+      {
+        "function": {
+          "description": "Search the catalogue and return matching products with their ids.",
+          "name": "search_products",
+          "parameters": {
+            "properties": {
+              "query": {
+                "description": "What the customer is looking for.",
+                "title": "Query",
+                "type": "string"
+              }
+            },
+            "required": [
+              "query"
+            ],
+            "title": "search_products_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      }
+    ]
+  },
+  "response": {
+    "created_at": "2026-11-24T19:05:08.000000Z",
+    "finish_reason": "stop",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "{\"summary\":\"Here are two wireless noise-cancelling headphones under $350 that are highly rated. These options offer a range of features and price points to match your needs.\",\"picks\":[{\"id\":\"dc9e2baa-8182-58f8-9df1-97d049426ba1\",\"name\":\"Sony WH-1000XM5\",\"price\":299.99,\"reason\":\"Top-rated wireless noise-cancelling headphones with premium sound quality under your budget.\"},{\"id\":\"b1e5aaad-96a1-5afb-9af7-074ae2593de1\",\"name\":\"JBL Tune 770NC\",\"price\":99.95,\"reason\":\"Affordable option with active noise cancelling and reliable wireless performance.\"}]}",
+            "type": "text"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      }
+    ],
+    "model": "gpt-4.1-2025-04-14",
+    "response_id": "chatcmpl-Enq7AVAOQ7iO3vTztzMBJ7UBNDUDI",
+    "type": "chat_response",
+    "usage_details": {
+      "cache_read_input_token_count": 0,
+      "completion/accepted_prediction_tokens": 0,
+      "completion/audio_tokens": 0,
+      "completion/reasoning_tokens": 0,
+      "completion/rejected_prediction_tokens": 0,
+      "input_token_count": 495,
+      "output_token_count": 162,
+      "prompt/audio_tokens": 0,
+      "prompt/cached_tokens": 0,
+      "reasoning_output_token_count": 0,
+      "total_token_count": 657
+    }
+  }
+}
