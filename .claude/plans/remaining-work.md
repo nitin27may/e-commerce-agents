@@ -220,6 +220,33 @@ results, http target and parity gate, live datasets and the grounding fixes, Asp
 fixtures in the release match the prompts in it. Acceptance: changelog entry reads as release notes, docs site and scorecard are
 current, the release workflow is run by you (the approval click stays yours).
 
+**NA-13 Public presentation: the GitHub landing page and the documentation site (reviewed in a browser on 2026-11-23).**
+The repository is the one the maintainer will promote for the long term, so how it renders to a first-time visitor is part of the
+product. A Playwright review of the signed-out GitHub page and of the published docs site found:
+
+| ID | Where | Finding | Fix |
+|---|---|---|---|
+| PR-1 | README line 12, GitHub landing | The "Open in GitHub Codespaces" badge is 249 by 32 px, a dark pill, while the other nine badges are 20 px flat shields. It wraps onto its own row and looks out of place. | Render it at the same 20 px height as the others (an `<img height="20">` inside the link, or a shields.io badge of the same style linking to the same codespaces URL) and keep it on the first badge row. |
+| PR-2 | GitHub repo settings | No social preview image: `open_graph_image_url` is empty, so links shared on social media and in chat show GitHub's generic card. | Add a 1280 by 640 social card (name, one-line pitch, the orchestration diagram) as `docs/images/social-card.png` and set it in Settings, General, Social preview. The upload step is manual; the image and its source are ours. |
+| PR-3 | GitHub About box | The description is accurate but long (the sidebar wraps it to nine lines), and the homepage link text is truncated. Twenty topics is GitHub's maximum, so none can be added without dropping one. | Shorten the description to one sentence under about 160 characters; keep the long version in the README. Review the topic list once for search value (for example `maf`, `agent-evaluation`, `llm-evals` against less useful ones). |
+| PR-4 | docs site (Just the Docs, published at the maintainer's domain) | No favicon (`/favicon.ico` is 404 under the site path; the domain root has one). The site title wraps onto two lines in the sidebar header and touches the border at desktop width. The accent colour is the theme's default purple, which does not match the project's professional palette (blues and teals). A nav entry in the Architecture group renders as a lone infinity glyph in the screenshot, and two pages share the title "Architecture". | Add a favicon and a logo; set a custom colour scheme (teal and blue links, neutral sidebar); shorten the site title or widen the sidebar title area; find and fix the infinity-glyph nav entry and give the section index and the page distinct titles. |
+| PR-5 | docs site, Mermaid | All 61 pages with a Mermaid block render (no raw blocks), but wide diagrams such as the system-overview one are scaled so small the labels are unreadable at 1440 px. | Give wide diagrams a horizontal-scroll or click-to-enlarge wrapper, and split the system overview into two diagrams (tiers, then the data path). |
+| PR-6 | docs site, navigation | `azure-deployment.md` and `auth-route-matrix.md` are not in the nav, so they are not published. The site check passes anyway. | Add both to a section and make `scripts/build_docs_site.py --check` fail on any page outside the nav (also finding X-1 of the docs audit). |
+| PR-7 | docs site, metadata | Every page's `og:image` is the same old `agent-timeline.png`. | Use the social card from PR-2 as the site default and let a page override it. |
+
+What the review found clean: all 109 nav pages return 200, no page shows raw front matter, no image is broken, every Mermaid block
+renders, and the mobile home page reads well. Acceptance for NA-13: a Playwright script (kept under `scripts/` so it can be rerun
+before each release) screenshots the GitHub page and the site at desktop and mobile widths, asserts every badge on the first row is
+the same height, asserts every nav page returns 200 with a rendered diagram where a diagram exists, and fails on a missing
+favicon or social image; the before and after screenshots go in the PR description.
+
+**Azure preparation branch (parallel, no deployment).** A separate branch prepares everything the deployment needs without
+creating anything: a free-tier parameter profile for the personal trial account (budget module 5 USD, no APIM, no Managed Redis, no
+ACR, no private networking, public images), the ordered deployment sequence with what each step creates, what each costs
+or is free, how long it takes and how to check it worked and undo it, read-only `what-if` and `validate` against the new account,
+and a rehearsed teardown. It is finished when the sequence document and the profile are merged and the what-if is clean; the
+real deployment still waits for NA-1 to NA-12.
+
 **Order and parallelism**
 
 ```mermaid
