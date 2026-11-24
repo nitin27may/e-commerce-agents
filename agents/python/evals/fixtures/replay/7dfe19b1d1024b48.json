@@ -7,7 +7,7 @@
         "contents": [
           {
             "additional_properties": {},
-            "text": "Compare shipping carriers and delivery times from the east region to the west region",
+            "text": "Check stock availability and shipping speed for Dyson V15 to zip code 10001.",
             "type": "text"
           }
         ],
@@ -19,15 +19,10 @@
         "contents": [
           {
             "additional_properties": {},
-            "text": "I'll compare all available shipping carriers and their delivery times from the east region to the west region for you.",
-            "type": "text"
-          },
-          {
-            "additional_properties": {},
-            "arguments": "{\"region_from\":\"east\",\"region_to\":\"west\"}",
-            "call_id": "call_MTeC7bisOtzgSjgPwbTlWAAl",
+            "arguments": "{\"name\":\"Dyson V15\"}",
+            "call_id": "call_wXERpAPLJaV9MfaRPLOasaeh",
             "hosted": false,
-            "name": "compare_carriers",
+            "name": "find_product_by_name",
             "type": "function_call"
           }
         ],
@@ -39,15 +34,106 @@
         "contents": [
           {
             "additional_properties": {},
-            "call_id": "call_MTeC7bisOtzgSjgPwbTlWAAl",
+            "call_id": "call_wXERpAPLJaV9MfaRPLOasaeh",
             "items": [
               {
                 "additional_properties": {},
-                "text": "{\"region_from\": \"east\", \"region_to\": \"west\", \"carriers\": [{\"carrier\": \"Standard Shipping\", \"speed_tier\": \"standard\", \"price\": 9.99, \"base_rate\": 5.99, \"estimated_days_min\": 7, \"estimated_days_max\": 9, \"delivery_window\": \"7-9 business days\"}, {\"carrier\": \"Express Shipping\", \"speed_tier\": \"express\", \"price\": 20.99, \"base_rate\": 14.99, \"estimated_days_min\": 4, \"estimated_days_max\": 5, \"delivery_window\": \"4-5 business days\"}, {\"carrier\": \"Overnight Shipping\", \"speed_tier\": \"overnight\", \"price\": 39.99, \"base_rate\": 29.99, \"estimated_days_min\": 1, \"estimated_days_max\": 3, \"delivery_window\": \"1-3 business days\"}], \"best_value\": \"Standard Shipping\", \"fastest\": \"Overnight Shipping\"}",
+                "text": "{\"found\": true, \"product_id\": \"a6fc9ef2-1267-5758-b4f2-6988f7877785\", \"product_name\": \"Dyson V15 Detect\"}",
                 "type": "text"
               }
             ],
-            "result": "{\"region_from\": \"east\", \"region_to\": \"west\", \"carriers\": [{\"carrier\": \"Standard Shipping\", \"speed_tier\": \"standard\", \"price\": 9.99, \"base_rate\": 5.99, \"estimated_days_min\": 7, \"estimated_days_max\": 9, \"delivery_window\": \"7-9 business days\"}, {\"carrier\": \"Express Shipping\", \"speed_tier\": \"express\", \"price\": 20.99, \"base_rate\": 14.99, \"estimated_days_min\": 4, \"estimated_days_max\": 5, \"delivery_window\": \"4-5 business days\"}, {\"carrier\": \"Overnight Shipping\", \"speed_tier\": \"overnight\", \"price\": 39.99, \"base_rate\": 29.99, \"estimated_days_min\": 1, \"estimated_days_max\": 3, \"delivery_window\": \"1-3 business days\"}], \"best_value\": \"Standard Shipping\", \"fastest\": \"Overnight Shipping\"}",
+            "result": "{\"found\": true, \"product_id\": \"a6fc9ef2-1267-5758-b4f2-6988f7877785\", \"product_name\": \"Dyson V15 Detect\"}",
+            "type": "function_result"
+          }
+        ],
+        "role": "tool",
+        "type": "message"
+      },
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "arguments": "{\"product_id\": \"a6fc9ef2-1267-5758-b4f2-6988f7877785\"}",
+            "call_id": "call_oOOUWmmqLyhNqiJaeG5UqDk9",
+            "hosted": false,
+            "name": "check_stock",
+            "type": "function_call"
+          },
+          {
+            "additional_properties": {},
+            "arguments": "{\"destination_region\": \"east\", \"product_id\": \"a6fc9ef2-1267-5758-b4f2-6988f7877785\"}",
+            "call_id": "call_hXyt5zXsCxlRPmX1LdM8vAiC",
+            "hosted": false,
+            "name": "estimate_shipping",
+            "type": "function_call"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      },
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "call_id": "call_oOOUWmmqLyhNqiJaeG5UqDk9",
+            "items": [
+              {
+                "additional_properties": {},
+                "text": "{\"product_id\": \"a6fc9ef2-1267-5758-b4f2-6988f7877785\", \"in_stock\": false, \"total_quantity\": 0, \"warehouses\": [{\"warehouse\": \"Central Warehouse\", \"region\": \"central\", \"quantity\": 0, \"low_stock\": true}, {\"warehouse\": \"East Coast Warehouse\", \"region\": \"east\", \"quantity\": 0, \"low_stock\": true}, {\"warehouse\": \"West Coast Warehouse\", \"region\": \"west\", \"quantity\": 0, \"low_stock\": true}]}",
+                "type": "text"
+              }
+            ],
+            "result": "{\"product_id\": \"a6fc9ef2-1267-5758-b4f2-6988f7877785\", \"in_stock\": false, \"total_quantity\": 0, \"warehouses\": [{\"warehouse\": \"Central Warehouse\", \"region\": \"central\", \"quantity\": 0, \"low_stock\": true}, {\"warehouse\": \"East Coast Warehouse\", \"region\": \"east\", \"quantity\": 0, \"low_stock\": true}, {\"warehouse\": \"West Coast Warehouse\", \"region\": \"west\", \"quantity\": 0, \"low_stock\": true}]}",
+            "type": "function_result"
+          },
+          {
+            "additional_properties": {},
+            "call_id": "call_hXyt5zXsCxlRPmX1LdM8vAiC",
+            "items": [
+              {
+                "additional_properties": {},
+                "text": "{\"product_id\": \"a6fc9ef2-1267-5758-b4f2-6988f7877785\", \"destination_region\": \"east\", \"available\": false, \"message\": \"Product is out of stock at all warehouses. Check restock schedule.\"}",
+                "type": "text"
+              }
+            ],
+            "result": "{\"product_id\": \"a6fc9ef2-1267-5758-b4f2-6988f7877785\", \"destination_region\": \"east\", \"available\": false, \"message\": \"Product is out of stock at all warehouses. Check restock schedule.\"}",
+            "type": "function_result"
+          }
+        ],
+        "role": "tool",
+        "type": "message"
+      },
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "arguments": "{\"product_id\":\"a6fc9ef2-1267-5758-b4f2-6988f7877785\"}",
+            "call_id": "call_hM08QlOrs0mHtcDIXCsAMap9",
+            "hosted": false,
+            "name": "get_restock_schedule",
+            "type": "function_call"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      },
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "call_id": "call_hM08QlOrs0mHtcDIXCsAMap9",
+            "items": [
+              {
+                "additional_properties": {},
+                "text": "{\"product_id\": \"a6fc9ef2-1267-5758-b4f2-6988f7877785\", \"product_name\": \"Dyson V15 Detect\", \"upcoming_restocks\": [{\"warehouse\": \"East Coast Warehouse\", \"region\": \"east\", \"expected_quantity\": 50, \"expected_date\": \"2026-12-09\"}, {\"warehouse\": \"Central Warehouse\", \"region\": \"central\", \"expected_quantity\": 30, \"expected_date\": \"2026-12-09\"}, {\"warehouse\": \"West Coast Warehouse\", \"region\": \"west\", \"expected_quantity\": 40, \"expected_date\": \"2026-12-09\"}], \"next_restock\": \"2026-12-09\"}",
+                "type": "text"
+              }
+            ],
+            "result": "{\"product_id\": \"a6fc9ef2-1267-5758-b4f2-6988f7877785\", \"product_name\": \"Dyson V15 Detect\", \"upcoming_restocks\": [{\"warehouse\": \"East Coast Warehouse\", \"region\": \"east\", \"expected_quantity\": 50, \"expected_date\": \"2026-12-09\"}, {\"warehouse\": \"Central Warehouse\", \"region\": \"central\", \"expected_quantity\": 30, \"expected_date\": \"2026-12-09\"}, {\"warehouse\": \"West Coast Warehouse\", \"region\": \"west\", \"expected_quantity\": 40, \"expected_date\": \"2026-12-09\"}], \"next_restock\": \"2026-12-09\"}",
             "type": "function_result"
           }
         ],
@@ -287,7 +373,7 @@
     ]
   },
   "response": {
-    "created_at": "2026-08-21T20:21:23.000000Z",
+    "created_at": "2026-11-24T03:07:59.000000Z",
     "finish_reason": "stop",
     "messages": [
       {
@@ -295,7 +381,7 @@
         "contents": [
           {
             "additional_properties": {},
-            "text": "Here are the shipping carrier options from the east region to the west region. Standard Shipping offers the best value, while Overnight Shipping is the fastest.\n\n```inventory\n{\"warehouses\": [], \"shipping_options\": [{\"carrier\": \"Standard Shipping\", \"speed_tier\": \"standard\", \"price\": 9.99, \"delivery_window\": \"7-9 business days\"}, {\"carrier\": \"Express Shipping\", \"speed_tier\": \"express\", \"price\": 20.99, \"delivery_window\": \"4-5 business days\"}, {\"carrier\": \"Overnight Shipping\", \"speed_tier\": \"overnight\", \"price\": 39.99, \"delivery_window\": \"1-3 business days\"}]}\n```\n\nLet me know if you'd like to select a carrier or need a shipping estimate for a specific product.",
+            "text": "The Dyson V15 Detect is currently out of stock at all warehouses, so shipping is not available right now. However, a restock is scheduled for all regions on 2026-12-09. You can place a backorder if you'd like to reserve one from the upcoming shipment.\n\n```inventory\n{\"product_id\":\"a6fc9ef2-1267-5758-b4f2-6988f7877785\",\"in_stock\":false,\"total_quantity\":0,\"warehouses\":[{\"warehouse\":\"Central Warehouse\",\"region\":\"central\",\"quantity\":0,\"low_stock\":true},{\"warehouse\":\"East Coast Warehouse\",\"region\":\"east\",\"quantity\":0,\"low_stock\":true},{\"warehouse\":\"West Coast Warehouse\",\"region\":\"west\",\"quantity\":0,\"low_stock\":true}],\"upcoming_restocks\":[{\"warehouse\":\"East Coast Warehouse\",\"region\":\"east\",\"expected_quantity\":50,\"expected_date\":\"2026-12-09\"},{\"warehouse\":\"Central Warehouse\",\"region\":\"central\",\"expected_quantity\":30,\"expected_date\":\"2026-12-09\"},{\"warehouse\":\"West Coast Warehouse\",\"region\":\"west\",\"expected_quantity\":40,\"expected_date\":\"2026-12-09\"}]}\n```\n\nWould you like to place a backorder for the Dyson V15 Detect?",
             "type": "text"
           }
         ],
@@ -304,16 +390,20 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-EFQ1rlrleJyZGr8v44AzNW2nBdRu5",
+    "response_id": "chatcmpl-EnbAtoPcLdgZD2jQcQCUTIHKA91hZ",
     "type": "chat_response",
     "usage_details": {
-      "cache_read_input_token_count": 0,
+      "cache_read_input_token_count": 3968,
+      "completion/accepted_prediction_tokens": 0,
+      "completion/audio_tokens": 0,
       "completion/reasoning_tokens": 0,
-      "input_token_count": 3990,
-      "output_token_count": 170,
-      "prompt/cached_tokens": 0,
+      "completion/rejected_prediction_tokens": 0,
+      "input_token_count": 4294,
+      "output_token_count": 259,
+      "prompt/audio_tokens": 0,
+      "prompt/cached_tokens": 3968,
       "reasoning_output_token_count": 0,
-      "total_token_count": 4160
+      "total_token_count": 4553
     }
   }
 }

@@ -7,7 +7,7 @@
         "contents": [
           {
             "additional_properties": {},
-            "text": "Check if the Dyson V15 is in stock and provide shipping speed estimates to ZIP code 10001.",
+            "text": "Check stock availability and shipping speed for Dyson V15 to zip code 10001.",
             "type": "text"
           }
         ],
@@ -20,7 +20,7 @@
           {
             "additional_properties": {},
             "arguments": "{\"name\":\"Dyson V15\"}",
-            "call_id": "call_u0eaBNxvFoW2JydF3NpvUOWc",
+            "call_id": "call_wXERpAPLJaV9MfaRPLOasaeh",
             "hosted": false,
             "name": "find_product_by_name",
             "type": "function_call"
@@ -34,7 +34,7 @@
         "contents": [
           {
             "additional_properties": {},
-            "call_id": "call_u0eaBNxvFoW2JydF3NpvUOWc",
+            "call_id": "call_wXERpAPLJaV9MfaRPLOasaeh",
             "items": [
               {
                 "additional_properties": {},
@@ -55,15 +55,15 @@
           {
             "additional_properties": {},
             "arguments": "{\"product_id\": \"a6fc9ef2-1267-5758-b4f2-6988f7877785\"}",
-            "call_id": "call_wn3TaU5SUpq3BEUGD28XvoZU",
+            "call_id": "call_oOOUWmmqLyhNqiJaeG5UqDk9",
             "hosted": false,
             "name": "check_stock",
             "type": "function_call"
           },
           {
             "additional_properties": {},
-            "arguments": "{\"product_id\": \"a6fc9ef2-1267-5758-b4f2-6988f7877785\", \"destination_region\": \"east\"}",
-            "call_id": "call_3dF77UhP687nFNwGT8w2pjsZ",
+            "arguments": "{\"destination_region\": \"east\", \"product_id\": \"a6fc9ef2-1267-5758-b4f2-6988f7877785\"}",
+            "call_id": "call_hXyt5zXsCxlRPmX1LdM8vAiC",
             "hosted": false,
             "name": "estimate_shipping",
             "type": "function_call"
@@ -77,7 +77,7 @@
         "contents": [
           {
             "additional_properties": {},
-            "call_id": "call_wn3TaU5SUpq3BEUGD28XvoZU",
+            "call_id": "call_oOOUWmmqLyhNqiJaeG5UqDk9",
             "items": [
               {
                 "additional_properties": {},
@@ -90,7 +90,7 @@
           },
           {
             "additional_properties": {},
-            "call_id": "call_3dF77UhP687nFNwGT8w2pjsZ",
+            "call_id": "call_hXyt5zXsCxlRPmX1LdM8vAiC",
             "items": [
               {
                 "additional_properties": {},
@@ -338,7 +338,7 @@
     ]
   },
   "response": {
-    "created_at": "2026-08-21T20:23:57.000000Z",
+    "created_at": "2026-11-24T03:07:58.000000Z",
     "finish_reason": "tool_calls",
     "messages": [
       {
@@ -347,7 +347,8 @@
           {
             "additional_properties": {},
             "arguments": "{\"product_id\":\"a6fc9ef2-1267-5758-b4f2-6988f7877785\"}",
-            "call_id": "call_sScwIIyJgIPjhZG0uf89QeyB",
+            "call_id": "call_hM08QlOrs0mHtcDIXCsAMap9",
+            "hosted": false,
             "name": "get_restock_schedule",
             "type": "function_call"
           }
@@ -357,16 +358,20 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-EFQ4L31lCSIGWJywQCzTGu1xsAkiX",
+    "response_id": "chatcmpl-EnbAshFP2lnc2fWlFMwTSu60AZMox",
     "type": "chat_response",
     "usage_details": {
       "cache_read_input_token_count": 3840,
+      "completion/accepted_prediction_tokens": 0,
+      "completion/audio_tokens": 0,
       "completion/reasoning_tokens": 0,
-      "input_token_count": 4092,
-      "output_token_count": 40,
+      "completion/rejected_prediction_tokens": 0,
+      "input_token_count": 4087,
+      "output_token_count": 39,
+      "prompt/audio_tokens": 0,
       "prompt/cached_tokens": 3840,
       "reasoning_output_token_count": 0,
-      "total_token_count": 4132
+      "total_token_count": 4126
     }
   }
 }
