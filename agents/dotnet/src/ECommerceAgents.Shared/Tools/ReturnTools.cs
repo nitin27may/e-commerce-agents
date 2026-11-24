@@ -4,6 +4,7 @@ using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Data;
 using ECommerceAgents.Shared.Guardrails;
 using ECommerceAgents.Shared.Idempotency;
+using ECommerceAgents.Shared.Middleware;
 using Microsoft.Extensions.AI;
 using System.ComponentModel;
 
@@ -30,7 +31,8 @@ public sealed class ReturnTools(DatabasePool pool, AgentSettings settings, Idemp
     private readonly IdempotencyGuard _idempotency = idempotency ?? new IdempotencyGuard(pool);
     private readonly AgentSettings _settings = settings;
 
-    private const int ReturnWindowDays = 30;
+    // Shared with the pre-park check (ParkPrechecks) through GateRules so the two cannot drift.
+    private const int ReturnWindowDays = GateRules.ReturnWindowDays;
 
     public IEnumerable<AITool> All() => new AITool[]
     {
@@ -69,7 +71,7 @@ public sealed class ReturnTools(DatabasePool pool, AgentSettings settings, Idemp
         }
 
         var status = (string)order.status;
-        if (status != "delivered")
+        if (GateRules.ReturnStatusBlocker(status) is not null)
         {
             return new
             {

@@ -26,6 +26,7 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ### Fixed
 
+- **.NET gated calls are checked before they park (parity row 55).** `HitlGate.TryGateAsync` now runs the tool's roles and its ownership, status, window and stock preconditions first (`ParkPrechecks`, rules shared with the tools in `GateRules`), so a customer's backorder or a cancel of a shipped order gets a plain sentence and no approval row, as on Python. The gate also matches the registered snake_case tool names, which it did not before.
 - **A gated call that could never succeed was still parked for approval.** A customer asking for a backorder, or a cancel of a shipped order or a change to a delivered one, opened an approval because MAF parks a gated call before the tool's own role and status checks run. `shared/park_prechecks.py` now runs the role guard and per-tool preconditions first (ownership, status, return window, stock) and answers in words with no row; the predicates are shared with the tools in `shared/gate_rules.py`. A foreign or missing order gets one neutral sentence. .NET still parks first (parity row 55).
 - **`search_products` found nothing for an exact price (D1).** `min_price == max_price == 14.99` compared the stored NUMERIC 14.99 with the float encoded as 14.99000...02. Price filters are now exact two-decimal `numeric` values.
 - **`check_bundle_eligibility` never matched seeded bundles (D4).** Seeded bundles list product names under `products`; the tool read only `product_ids` or `categories`. It now matches names case-insensitively.

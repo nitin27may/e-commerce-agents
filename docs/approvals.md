@@ -49,7 +49,15 @@ still guards an ungated registration of the same names). The specialist host clo
 
   A failing check (a database error) fails closed like the park itself. In the in-process eval harness a refused
   call still counts as a tool call but not as an approval request (`RunOutcome.refused_calls`), and a role refusal
-  reads as `denied`. .NET does not have this ordering fix yet (parity row 55).
+  reads as `denied`.
+
+  **.NET** runs the same checks, in the same order, with the same sentences, from `HitlGate.TryGateAsync` before it
+  writes the `tool_approval_requests` row or the inbox approval (`Shared/Middleware/ParkPrechecks.cs`; the status sets,
+  window and reasons are in `GateRules.cs`, which the order and return tools read too). The roles come from
+  `[RequiresRole]` on the registered tool function (`HitlGate.RolesOf`), with `admin` always allowed. Two differences
+  (parity row 55): the refusal is the gated tool's result and the model relays it, where Python's host appends the
+  sentence itself; and the .NET `ProcessRefund` tool refuses only an already-refunded return, while the precheck also
+  refuses a `denied` one.
 * For each parked call it calls `shared/hitl.py::park_gated_call`, which writes the `tool_approval_requests` row and
   the routed inbox `approvals` row, owned by the forwarded user. The tool is not executed and no model call is made.
 * It is idempotent: the same user asking for the same tool with the same input while a request is `pending` or

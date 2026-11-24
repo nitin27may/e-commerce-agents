@@ -46,6 +46,17 @@ public sealed class HitlGateTests : IAsyncLifetime
         await _pool.DisposeAsync();
     }
 
+    /// <summary>A placed order owned by <see cref="Email"/>: the gate's pre-park check refuses a cancel of anything else.</summary>
+    private async Task<string> PlacedOrderAsync()
+    {
+        await using var conn = await _pool.OpenAsync();
+        var id = await conn.ExecuteScalarAsync<Guid>(
+            @"INSERT INTO orders (user_id, status, total, shipping_address)
+              SELECT id, 'placed', 500, '{}'::jsonb FROM users WHERE email = @email RETURNING id",
+            new { email = Email });
+        return id.ToString();
+    }
+
     private HitlGate BuildGate(bool hitlEnabled = true) =>
         new(_pool, new AgentSettings { DatabaseUrl = _pg.ConnectionString, HitlEnabled = hitlEnabled });
 
@@ -55,7 +66,7 @@ public sealed class HitlGateTests : IAsyncLifetime
         RequestContext.CurrentUserEmail = Email;
         var gate = BuildGate();
 
-        var result = await gate.TryGateAsync("CancelOrder", "order-management", new { order_id = "abc", reason = "wrong size" });
+        var result = await gate.TryGateAsync("CancelOrder", "order-management", new { order_id = await PlacedOrderAsync(), reason = "wrong size" });
 
         result.Should().NotBeNull();
 
@@ -81,7 +92,7 @@ public sealed class HitlGateTests : IAsyncLifetime
         RequestContext.CurrentUserEmail = Email;
         var gate = BuildGate();
 
-        await gate.TryGateAsync("CancelOrder", "order-management", new { orderId = "not-a-real-order", reason = "x" });
+        await gate.TryGateAsync("CancelOrder", "order-management", new { orderId = await PlacedOrderAsync(), reason = "x" });
 
         await using var conn = await _pool.OpenAsync();
         var request = await conn.QueryFirstAsync(
@@ -111,11 +122,16 @@ public sealed class HitlGateTests : IAsyncLifetime
     [InlineData("CancelOrder")]
     [InlineData("ModifyOrder")]
     [InlineData("PlaceBackorder")]
-    public async Task TryGateAsync_RecognizesAllThreeGatedTools(string toolName)
+    [InlineData("InitiateReturn")]
+    [InlineData("ProcessRefund")]
+    [InlineData("cancel_order")]
+    public async Task TryGateAsync_RecognizesEveryGatedTool_ByEitherName(string toolName)
     {
         RequestContext.CurrentUserEmail = Email;
         var gate = BuildGate();
 
+        // An empty input is refused by the pre-park check (nothing to act on), which still shows the tool was recognized as
+        // gated: a non-gated tool returns null.
         var result = await gate.TryGateAsync(toolName, "some-agent", new { });
 
         result.Should().NotBeNull();
@@ -166,7 +182,7 @@ public sealed class HitlGateTests : IAsyncLifetime
         var brokenPool = new DatabasePool(brokenSettings);
         var gate = new HitlGate(brokenPool, new AgentSettings { HitlEnabled = true });
 
-        var result = await gate.TryGateAsync("CancelOrder", "order-management", new { order_id = "abc" });
+        var result = await gate.TryGateAsync("CancelOrder", "order-management", new { order_id = Guid.NewGuid().ToString() });
 
         result.Should().NotBeNull("a DB failure must fail closed, not silently let the tool execute");
         await brokenPool.DisposeAsync();
