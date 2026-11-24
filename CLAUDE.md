@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-E-Commerce Agents is a multi-agent e-commerce platform built with **Microsoft Agent Framework (MAF)** Python SDK. 6 specialized agents collaborate via **A2A protocol** to handle product discovery, orders, pricing, reviews, inventory, and customer support. Includes a marketplace layer with agent catalog, access requests, and admin approval.
+E-Commerce Agents is a multi-agent e-commerce platform built with **Microsoft Agent Framework (MAF)** Python SDK. An orchestrator and five specialists (ports 8081-8085) collaborate via **A2A protocol** to handle product discovery, orders, pricing, reviews, inventory, and customer support; an opt-in sixth, Python-only specialist (`merchant-ops`, port 8086, `MERCHANT_OPS_AGENT_ENABLED`) helps sellers with proposals and review triage. A 38-chapter course (`tutorials/`) builds up to it. Includes a marketplace layer with agent catalog, access requests, and admin approval.
 
 Companion demo repo for the AI article series on nitinksingh.com.
 
@@ -76,6 +76,19 @@ scripts/live-evals.sh --check-env        # the same script the manual `full` job
 # Effective configuration with secrets redacted, and run profiles (a profile holds no secret)
 uv run --project agents/python python -m scripts.doctor
 ./scripts/dev.sh --profile ollama        # dev.ps1 -Profile; also --no-key for the replay-backed demo; table in docs/run-profiles.md
+
+# Boot smoke with every off-by-default flag on (autonomy, return lifecycle, merchant schedule), keyless; CI job `flags`
+scripts/flag-smoke.sh
+
+# MCP versus native tools, keyless gate (needs a migrated, seeded DB; starts the two MCP servers itself)
+scripts/mcp-compare.sh
+
+# README GIF and doc stills from the no-key stack (./scripts/dev.sh --no-key first)
+scripts/record-demo.sh [--stills]
+
+# Static hosted preview (key-free, backend-free copy of the web app; docs/preview.md)
+python3 scripts/build_preview_data.py --check      # CI fails when web/src/lib/preview/preview-data.json is stale
+cd web && pnpm build:preview && pnpm serve:preview
 
 # Docs checks (CI: jekyll-gh-pages.yml, tutorials.yml)
 python3 scripts/build_docs_site.py --check     # nav, links, diagrams, parity-matrix summary
@@ -206,7 +219,6 @@ description appear only with the flag, because both are part of every orchestrat
 are hashed verbatim, so the fixture would miss on the next seed. Any ordering in a tool's output must be total on stable keys,
 never on a random id. Parity row 57 (Python only).
 
-### Event autonomy (#94, Python only)
 ### Event autonomy (#94, #299, Python only)
 
 Budgets for what the system may do on its own when an event arrives, `docs/event-autonomy.md`. `order.shipment_delayed`
@@ -223,16 +235,16 @@ approval, may only lower the amount, and draws no budget; an SLA breach never ex
 `AUTONOMY_ENABLED`**, the simulator additionally needs `AUTONOMY_SIMULATOR_ENABLED`, and no model is called. Every number in
 `autonomy.yaml` is a placeholder.
 
-**More events and the responder (#299).** Three event types share the engine: `order.shipment_delayed` (credit per order),
+**More events and the responder (#299).** Five event types share the engine (the three below, then `order.item_damaged` and `order.risk_flagged`): `order.shipment_delayed` (credit per order),
 `product.price_dropped` (price adjustment per order *line*, one per line ever, a partial unique index backs it) and
 `inventory.back_in_stock` (a money-free notice per cart holder: no budget, per-customer daily cap, bounded audience; carts only,
 there is no wishlist). The last two fan out, one decision per target under `topic:event_id:target`; an action's `kind`
 (`credit|price_adjustment|notice`) in `autonomy.yaml` picks the sizing. `AUTONOMY_RESPONDER_ENABLED` (off) has the worker word
 the customer message after the decision committed (`shared/autonomy/responder.py`, prompt `ops-responder.yaml`, not a routable
 agent): checked against the decision's facts, template fallback, stored in append-only `decision_drafts`, never read back by the
-engine. Monthly budgets, order-risk and damaged-item events and a carrier feed remain in #299.
+engine. A real carrier feed is external and stays open in #299; nothing reads `orders.on_hold` yet, so a hold blocks nothing.
 
-#299 added `order.item_damaged` (one credit or replacement offer per order line, ever), `order.risk_flagged` (a score read from
+#299 (#328) added `order.item_damaged` (one credit or replacement offer per order line, ever), `order.risk_flagged` (a score read from
 the database; low is nothing, medium an approval, high an approval plus a reversible `orders.on_hold` flag; **never an autonomous
 tier**, the engine never cancels or refunds) and per-UTC-month budget caps (`global_per_month`). **`lock_budget` takes the day lock and
 then the month lock, always in that order** (migration 0018).
@@ -396,7 +408,7 @@ no model is called at all — that is what CI, the eval smoke suite and the tuto
 
 ## Database
 
-- Schema: `docker/postgres/init.sql` is the frozen baseline (34 tables; the 13 added by migrations bring it to 47); every change since is a numbered file in `docker/postgres/migrations/` (0002–0020 today: approval claims, refresh tokens, lower-cased user emails, refresh-family expiry, approvals/outbox/notifications, usage cost columns, embedding model, merchant proposals, expiry of pre-policy return approvals, worker leases, event autonomy, return lifecycle columns, signing-key rotation, usage price source, customer confirmations, more autonomy events, usage would_block) applied by `scripts/migrate.py` (the seeder, `dev.sh`/`dev.ps1` and every test fixture run it). Never edit an applied migration — the checksum guard fails the run; add a new one. The runner applies whatever is unapplied in numeric order, so a lower number arriving late is fine.
+- Schema: `docker/postgres/init.sql` is the frozen baseline (34 tables; the 13 added by migrations bring it to 47); every change since is a numbered file in `docker/postgres/migrations/` (0002–0020 today: approval claims, refresh tokens, lower-cased user emails, refresh-family expiry, approvals/outbox/notifications, usage cost columns, embedding model, merchant proposals, expiry of pre-policy return approvals, worker leases, event autonomy, return lifecycle columns, signing-key rotation, usage price source, then 0016 `customer_confirmations`, 0017 price-drop and back-in-stock events plus the `decision_drafts` table, 0018 order risk, damaged items and monthly budgets, 0019 `awaiting_manager` PO review for merchant proposals, 0020 `usage_logs.would_block`) applied by `scripts/migrate.py` (the seeder, `dev.sh`/`dev.ps1` and every test fixture run it). Never edit an applied migration — the checksum guard fails the run; add a new one. The runner applies whatever is unapplied in numeric order, so a lower number arriving late is fine.
 - All queries use parameterized `$1, $2` syntax (asyncpg)
 - All user-facing queries filter by `user_email` or `user_id`
 - Embeddings stored as `vector(1536)` with ivfflat cosine index

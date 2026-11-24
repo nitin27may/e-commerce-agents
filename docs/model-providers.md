@@ -13,13 +13,12 @@ and are covered [on their own](#embeddings).
 
 Read this table before choosing a provider. "Verified" means a test in this repo exercises it, and
 the second column says how. Nothing in CI calls a live model. Live calls have been made only by hand: the recording
-sessions against Azure OpenAI, and a manual live eval run on 2026-11-23 (see [agent quality](agent-quality.md)).
-the second column says how. Nothing in CI calls a live model; the live calls made so far are recording sessions against Azure OpenAI
-and the capability probes in [the next section](#capability-check-results).
+sessions against Azure OpenAI, the capability probes in [the next section](#capability-check-results), and the manual
+live eval runs (see [agent quality](agent-quality.md)).
 
 | Provider | How to select | Verified how | Not verified |
 |---|---|---|---|
-| `replay` | `LLM_PROVIDER=replay` | Every CI eval and tutorial run; 101 fixtures recorded on `gpt-4.1-2025-04-14` | Anything about a model other than the one recorded |
+| `replay` | `LLM_PROVIDER=replay` | Every CI eval and tutorial run; 184 fixtures recorded on `gpt-4.1-2025-04-14` | Anything about a model other than the one recorded |
 | `azure` | `LLM_PROVIDER=azure` | Fixtures were recorded through it; the capability probes ran live against eight chat deployments (see the table below) | Current model availability for new subscriptions (see caveats); Claude deployments on Azure, which the OpenAI wire cannot reach |
 | `openai` | `LLM_PROVIDER=openai` | Stubbed-transport tests of the client wiring | No recorded run in this repo used api.openai.com |
 | `anthropic` | `LLM_PROVIDER=anthropic` | Stubbed `httpx2` transport (Python) and stub handler (.NET), `tests/test_anthropic_provider.py` | **Never run against the live API.** Tool-choice quality, prompt caching, real error shapes, streaming edge cases |
@@ -233,16 +232,13 @@ EMBEDDING_DIM=768
   one, until a keyed smoke run is recorded.
 - **Model availability moves.** The default `gpt-4.1` and its Azure deployment name are what the
   fixtures were recorded on. As of November 2026 gpt-4.1 is closed to new Azure customers (the Azure
-  preflight, `check_model`, refuses a deprecated model before provisioning), and the gpt-5.x family
-  rejects a `temperature` parameter. The stack sends `LLM_TEMPERATURE` (default 0.2) on every run, so for
-  such a model set `LLM_TEMPERATURE=` empty: the option is then omitted on both stacks (parity row 48).
-  The Bicep does this for `gpt-5*` model names.
-  fixtures were recorded on. Per the maintainer, gpt-4.1 is closed to new Azure customers; that claim was not re-checked against Azure
-  documentation. The claim that the gpt-5.x family rejects `temperature` was checked and is only
-  partly true: see the findings under the capability table (it depends on the model and on
-  reasoning effort). The stack sends `LLM_TEMPERATURE` (default 0.2) on every run unless it is set
-  empty, which omits the parameter, so for a model that rejects 0.2 (the gpt-5.6 deployments probed
-  here) set `LLM_TEMPERATURE=`.
+  preflight, `check_model`, refuses a deprecated model before provisioning), and some gpt-5.x deployments
+  reject a non-default `temperature`. The stack sends `LLM_TEMPERATURE` (default 0.2) on every run, so for
+  a model that rejects it set `LLM_TEMPERATURE=` empty: the option is then omitted on both stacks (parity row 48).
+  The Bicep does this for `gpt-5*` model names. Two caveats: the claim that gpt-4.1 is closed to new Azure
+  customers comes from the maintainer and was not re-checked against Azure documentation, and the claim that the
+  gpt-5.x family rejects `temperature` is only partly true (see the findings under the capability table: it depends
+  on the model and on reasoning effort; of the models probed, only the gpt-5.6 deployments rejected 0.2).
 - **Per-agent models** (`model:` block in the prompt YAML) need that provider's own credentials,
   and the global `LLM_BASE_URL` is not inherited by an agent that switches provider. See
   [configuration.md](configuration.md#choosing-a-model-per-agent-model-in-the-prompt-yaml).

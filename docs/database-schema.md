@@ -2,7 +2,7 @@
 
 This page is the table-by-table reference for the application's one PostgreSQL database, for anyone writing a query, a tool or a migration against it. Both stacks share it.
 
-It is PostgreSQL 16 with the **pgvector** extension for embedding-based semantic search and **pgcrypto** for UUID generation. The frozen baseline (`docker/postgres/init.sql`) has 34 tables in 12 logical groups. Migrations `0003`, `0006`, `0009`, `0011`, `0012`, `0016` and `0017` add 13 more (47 in all), described in the sections for refresh tokens, approvals, merchant proposals, event autonomy, customer confirmations and more autonomy events below. Migrations `0002`, `0004`, `0005`, `0007`, `0008`, `0010`, `0013`, `0014`, `0015` and `0020` only alter or backfill existing tables.
+It is PostgreSQL 16 with the **pgvector** extension for embedding-based semantic search and **pgcrypto** for UUID generation. The frozen baseline (`docker/postgres/init.sql`) has 34 tables in 12 logical groups. Migrations `0003`, `0006`, `0009`, `0011`, `0012`, `0016` and `0017` add 13 more (47 in all), described in the sections for refresh tokens, approvals, merchant proposals, event autonomy, customer confirmations and more autonomy events below. Migrations `0002`, `0004`, `0005`, `0007`, `0008`, `0010`, `0013`, `0014`, `0015`, `0018`, `0019` and `0020` only alter or backfill existing tables.
 
 ## Entity-Relationship Diagram
 
