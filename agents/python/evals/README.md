@@ -59,7 +59,7 @@ the run (`Assertion failed:` in the verbose report, `assertion_failures` in the 
 | `expect_denial` | `true`: a tool refused the call for this role. Read from the step output in any shape it is stored in: a `permission_denied` dict, a one-item list holding that JSON (MAF `Content`), a JSON string, or plain refusal text ("requires one of these roles", "restricted to sellers or admins"). `false`: none did. |
 | `expect_hitl` | `true`: a destructive tool was parked for approval: a pending `tool_approval_requests` row for the case user created during the run (what a parked tool-mode `cancel_order` leaves), a new `hitl_requests` row (a paused workflow), or a `pending_approval` step. `false`: none was. |
 | `expected_routes` / `forbidden_routes` | Orchestrator cases. Every specialist in `expected_routes` must have been called through `call_specialist_agent`; none in `forbidden_routes` may have been (`"*"` is every specialist, so `["*"]` means answer directly). Assertions only, they never move a score. |
-| `why` | One line saying why the case exists. Never scored. Cases in `orchestrator_routing.live.json` also carry `type` (`happy`, `edge`, `adversarial`), which `tests/test_eval_orchestrator_dataset.py` counts. |
+| `why` | One line saying why the case exists. Never scored. Live datasets with typed cases (`orchestrator_routing.live.json`, `inventory_fulfillment.live.json`) also carry `type` (`happy`, `edge`, `adversarial`), which their dataset tests count. |
 
 `expected_tool_args` on a case only holds while its fixtures do: a re-recording that makes
 the model pass different arguments fails the assertion, which is the point.
@@ -395,14 +395,16 @@ Rules:
   in-process target that is the database the tools use. With an HTTP target it must be the database the stack under
   test serves; if the process has no pool, the run says so and stops.
 - Live variants may also correct a case that was wrong for live data, and say why in the commit, not in the file. Today:
-  `inventory_fulfillment.live.json` asks about the out-of-stock Dyson V15 Detect for the restock case (the Sony is in
-  stock in the seed, so a model rightly answers from `get_warehouse_availability`), and
-  and now asserts `get_warehouse_availability` with the resolved id (it returns the restock dates, so the model never
-  needs `get_restock_schedule`), `pricing_promotions.live.json` expects the seed's real tier for
-  `jack.anderson@gmail.com` (bronze, 0% discount, spend $600) and `get_loyalty_tier`; it says "Look up my loyalty tier ..." because the replay wording lets the model answer from the tier
-  in its injected context with no tool call (2 of 6 samples), which leaves every dollar figure it quotes ungrounded, and
-  `review_sentiment.live.json` does not assert `months: 6` (the model relies on the tool's default of 6, which is not
-  recorded as an argument).
+  - `inventory_fulfillment.live.json` asks about the out-of-stock Dyson V15 Detect for the restock case (the Sony is in
+    stock in the seed, so a model rightly answers from `get_warehouse_availability`), and asserts
+    `get_warehouse_availability` with the resolved id (it returns the restock dates, so the model never needs
+    `get_restock_schedule`).
+  - `pricing_promotions.live.json` expects the seed's real tier for `jack.anderson@gmail.com` (bronze, 0% discount, spend
+    $600) and `get_loyalty_tier`. It says "Look up my loyalty tier ..." because the replay wording lets the model answer
+    from the tier in its injected context with no tool call (2 of 6 samples), which leaves every dollar figure it quotes
+    ungrounded.
+  - `review_sentiment.live.json` does not assert `months: 6` (the model relies on the tool's default of 6, which is not
+    recorded as an argument).
 - `cancel_order` is approval-gated with `approval_mode="always_require"`, which MAF resolves before any function
   middleware runs: a live run parks the call (the order is untouched) but writes **no** `tool_approval_requests` row
   (`HITLFunctionMiddleware` never sees the call), records no step, and the reply is empty. The only trace is a
@@ -478,14 +480,28 @@ twin instead (`--dataset evals/datasets/order_management.json --estimate`), whic
 
 ## Datasets
 
-Quality datasets (one per agent, scored on groundedness / correctness / completeness):
+Case counts as of 2026-11-23 (they change; count the files, not this list):
 
-- `product_discovery.json`, `order_management.json`, `pricing_promotions.json`,
-  `review_sentiment.json`, `inventory_fulfillment.json`
-- `orchestrator_routing.json` — each case sets `expected_route`; correctness is scored on
-  whether the orchestrator handed off to the right specialist via `call_specialist_agent`.
-- `live/{order_management,inventory_fulfillment,orchestrator_routing,review_sentiment,pricing_promotions,product_discovery}.live.json` — the same cases for
-  a live model, with run-time facts resolved (see *Live datasets*). Not part of the replay gate.
+| File | Cases | Notes |
+|---|---:|---|
+| `product_discovery.json` | 6 | replay, one per agent |
+| `order_management.json` | 5 | replay |
+| `pricing_promotions.json` | 5 | replay |
+| `review_sentiment.json` | 5 | replay |
+| `inventory_fulfillment.json` | 5 | replay |
+| `orchestrator_routing.json` | 6 | replay; each case sets `expected_route`, scored on whether the orchestrator handed off to the right specialist via `call_specialist_agent` |
+| `red_team.json` | 8 | safety suite, see below |
+| `stack_parity.json` | 3 | the keyless dual-stack parity gate, orchestration modes that call no model |
+| `live/product_discovery.live.json` | 25 | live, with a `why` line each |
+| `live/inventory_fulfillment.live.json` | 28 | live, `type` (`happy`, `edge`, `adversarial`) and `why` on every case |
+| `live/orchestrator_routing.live.json` | 30 | live, `type`, `why`, `expected_routes` / `forbidden_routes` |
+| `live/order_management.live.json` | 7 | live, includes multi-turn cases (`turns`) |
+| `live/pricing_promotions.live.json` | 5 | live |
+| `live/review_sentiment.live.json` | 5 | live |
+
+The `live/*.live.json` files are the replay cases and their extensions for a live model, with run-time facts resolved (see
+*Live datasets*). They are not part of the replay gate. The replay datasets are the scorecard's cases; the live ones are
+scored only by a manual run.
 
 ## Safety / Red-Team Suite
 

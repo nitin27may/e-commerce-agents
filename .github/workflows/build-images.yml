@@ -27,7 +27,7 @@ name: Build Images
 #   pull_request  -> this file's own trigger. Build, load, smoke-test, discard.
 #                    Never pushes. Fork PRs have no packages:write, so this path
 #                    must stay push-free regardless.
-#   push to main  -> tests.yml's `publish-main` job, which `needs:` all four
+#   push to main  -> tests.yml's `publish-main` job, which `needs:` all six
 #                    test jobs. Publishes :main and :sha-<7>.
 #   version tag   -> release.yml, after a full test re-run AND a human approval
 #                    on the `release` environment. Publishes :vX.Y.Z and :latest.

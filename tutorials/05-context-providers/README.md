@@ -12,7 +12,7 @@ Tell an agent who it is talking to on every run, with a context provider: an obj
 
 You want your agent to know *who* it is talking to without hard-coding "the user is Alice" into the system prompt. Once you have more than one user, formatting a prompt string per request becomes glue code scattered across every agent. A `ContextProvider` gives you one hook instead: run some code before every LLM call, add instructions (or messages, or tools) to the context, and let the framework apply it. You write one provider per concern, compose them in a list, and reuse them across agents.
 
-The agents in the full application in this repo (the capstone) depend on this. Each is built with a `context_providers=[...]` argument that injects the logged-in user's profile, recent orders and long-term memories before the LLM sees the request. The implementation is in `agents/python/shared/context_providers.py`.
+The agents in the full application in this repo (the capstone) depend on this. Each is built with a `context_providers=[...]` argument that injects the logged-in user's profile, recent orders and long-term memories before the LLM sees the request. The implementation is in `agents/python/shared/context_providers.py`. The recent-orders block it injects is a summary (id, status, total and date per order), and the injected text says so: the model must call a tool for the full order before it renders a card.
 
 ## Prerequisites
 

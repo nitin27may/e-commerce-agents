@@ -121,16 +121,36 @@ For orchestrator routing cases, add:
 }
 ```
 
+Optional per-case fields (`expected_tool_args`, `forbidden_tools`, `expect_denial`, `expect_hitl`, `expected_routes` and
+`forbidden_routes`, `user_role` and `user_email`, `why`, `type`) are assertions or labels that never move a score; the full table
+is in [the evals README](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/evals/README.md#schema-v2-optional-per-case-fields).
+A live case may also carry `turns` (an ordered conversation run in one session, scored per turn; live datasets only), described
+under [Multi-turn cases](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/evals/README.md#multi-turn-cases).
+
 ### Datasets
 
+Counts as of 2026-11-23, from the files:
+
 | Dataset | Agent | Cases | Key criteria |
-|---------|-------|-------|-------------|
-| `product_discovery.json` | product-discovery | 5+ | grounded, tool_called, max_price_respected |
-| `order_management.json` | order-management | 5+ | grounded, tool_called, correct order returned |
-| `pricing_promotions.json` | pricing-promotions | 5+ | grounded, tool_called, loyalty tier correct |
-| `review_sentiment.json` | review-sentiment | 5+ | grounded, tool_called, sentiment fields present |
-| `inventory_fulfillment.json` | inventory-fulfillment | 5+ | grounded, tool_called, stock/shipping fields |
+|---------|-------|------:|-------------|
+| `product_discovery.json` | product-discovery | 6 | grounded, tool_called, max_price_respected |
+| `order_management.json` | order-management | 5 | grounded, tool_called, correct order returned |
+| `pricing_promotions.json` | pricing-promotions | 5 | grounded, tool_called, loyalty tier correct |
+| `review_sentiment.json` | review-sentiment | 5 | grounded, tool_called, sentiment fields present |
+| `inventory_fulfillment.json` | inventory-fulfillment | 5 | grounded, tool_called, stock/shipping fields |
 | `orchestrator_routing.json` | orchestrator | 6 | grounded, tool_called, routed to correct specialist |
+| `stack_parity.json` | both stacks | 3 | the keyless parity gate (see below) |
+
+Live variants, run by hand against a model with run-time facts resolved (they are not part of the replay gate):
+
+| Live dataset | Cases |
+|---|---:|
+| `live/product_discovery.live.json` | 25 |
+| `live/inventory_fulfillment.live.json` | 28 |
+| `live/orchestrator_routing.live.json` | 30 |
+| `live/order_management.live.json` | 7 (includes multi-turn cases) |
+| `live/pricing_promotions.live.json` | 5 |
+| `live/review_sentiment.live.json` | 5 |
 
 Each dataset covers the happy path plus at least one edge case (empty results, boundary conditions, follow-up questions in context).
 

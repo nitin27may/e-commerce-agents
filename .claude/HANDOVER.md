@@ -6,18 +6,19 @@ and "Progress" blocks are the live part). **Update the Progress log at the botto
 same PR as any work you land.** Facts here were true on the date shown; verify a name or number against
 the code before relying on it.
 
-Last updated: 2026-11-21, main at `9ba0a9b`, release `v1.4.0` tagged at `9d83d45`.
+Last updated: 2026-11-23, main at `4ca4601`, release `v1.4.0` published (tagged at `9d83d45`).
 
 ## 1. State in one screen
 
 - Repo `nitin27may/e-commerce-agents`, default branch `main`, squash-merge only, history is the record.
-- **v1.4.0 is tagged.** `release.yml` waits for the maintainer's approval in the GitHub `release`
-  environment before images publish (run 44931300199 at the time of writing). **That approval is the
-  maintainer's click: do not approve it through the API unless they tell you to.** After it publishes:
-  `docs/releasing.md` step 7, then a release announcement in Discussions (Announcements), pinned
-  alongside discussion #188.
-- About 31 PRs from the 2026-11 effort are merged (#158 to #194). Nothing of mine is open. The only open
-  PRs at the time of writing were another session's docs PRs (#195, #196).
+- **v1.4.0 is published** (maintainer approved the `release` environment on 2026-11-23; announcement is
+  Discussion #204). The next release is v1.5.0 (plan NA-11); its approval click stays the maintainer's: do not
+  approve `release.yml` through the API unless they tell you to.
+- About 100 PRs of the 2026-11 effort are merged. Since v1.4.0 main has gained: run profiles and `doctor`, the pricing
+  file and token budget, gateway headers, Foundry evaluators and community results, the `http` eval target and the
+  keyless stack-parity gate, live datasets with multi-turn cases, the rebuilt manual live job, durable parking of gated
+  tool calls (#258), Aspire 17, and the docs audit fixes. Open PRs change often (`gh pr list`); at the time of writing
+  they were Azure preparation, further live suites, judge calibration and capability results, and doc passes.
 - Remote branches: `main` plus whatever is open. Delete a branch after its PR merges (see section 6).
 - Two Claude sessions work in this repo: this "queue" session (features, CI, Azure, evals, cleanups) and
   `e-commerce-agents-ac` (landing pages, docs wording, the release). Coordinate with `SendMessage` to
@@ -48,9 +49,9 @@ Last updated: 2026-11-21, main at `9ba0a9b`, release `v1.4.0` tagged at `9d83d45
 | Item | Needs | Notes |
 |---|---|---|
 | First real Azure deploy | Maintainer decision D-1 (spend), fresh `az login`, a published image tag, public GHCR packages | Everything under `infra/`, `azure.yaml`, `scripts/azure*` is offline-verified only. Runbook: `docs/azure-deployment.md`; first-deploy commands are in PR #172's description. |
-| Live-model eval run | A working local Docker + the Azure OpenAI key in the owner's `.env` | Procedure in section 5. Never run in CI automatically. |
+| Live-model eval run | A working local Docker + a model key (the Azure OpenAI key in the owner's `.env`) | Run `scripts/live-evals.sh` (procedure in section 5). First live run was 2026-11-23; the suites have grown since, so run again before quoting numbers. Never run in CI automatically. |
 | R0 recording session (about $1 to $3) | A key; run by a person | Records demo fixtures into `agents/python/demo/fixtures/replay/`, tutorial fixtures for chapters 04, 05, 07, 12 to 14, 16, the demo GIF. Then add `COPY demo/` to `agents/python/Dockerfile`. |
-| Keyed features: D-5b customer confirm, B-16 `GroupChatBuilder`, M-2 merchant agent, V-1a `ops-responder`, E-3b multi-turn evals, E-4 red-team judge, E-6, E-7 MCP-path gate, E-8 .NET eval datasets, typed `ProductFilters` DSL, B2 dual-stack parity in CI | A key; record all in one sitting so nothing is recorded twice | See plan Part IV workstreams B, D, E. |
+| Keyed features: D-5b customer confirm, B-16 `GroupChatBuilder`, M-2 merchant agent, V-1a `ops-responder`, E-4 red-team judge, E-6, E-7 MCP-path gate, E-8 .NET eval datasets, typed `ProductFilters` DSL, B2 dual-stack parity in CI | A key; record all in one sitting so nothing is recorded twice | See plan Part IV workstreams B, D, E. |
 | Foundry, AI gateway, realistic evals, run profiles | M0 prerequisites at a machine; one R1 key sitting (M3) | Planned as milestones M0 to M8 in the plan's "Execution plan" block of 2026-11-21 (supersedes Part I C to E). D-1 is approved: Azure spend as needed. M1 and M2 can start now; M0, M3, M4 need a human at a machine. Rule kept: Foundry pieces optional, the core eval path imports no Azure package. |
 | README screenshots and GIF (issue #182) | Docker healthy, then the R0 recordings | The docs lane's caveats about `--no-key` recordings and `COPY demo/` come out once those ship. Also click through `demo-guide` scenarios 9 to 11, which nobody has run. |
 | Dependency review workflow | Maintainer enables Dependabot alerts + dependency graph in repo settings | The job returned 403 without them; it was removed from PR #166. |
@@ -70,7 +71,7 @@ behaviour in the AppHost was never booted.
   `temperature`, so `LLM_TEMPERATURE=` empty omits it). gpt-4.1 stays an override.
 - `Azure.AI.OpenAI` is pinned to the prerelease 2.9.0-beta.1 (maintainer approved; no stable release after
   2.1.0; the old pin threw `MissingMethodException` on native chat calls with a max-token count).
-- Aspire is pinned at 13.6.5, not 17.0.0 (17 obsoletes the AppHost SDK and changes the project model).
+- Aspire: the AppHost packages are 17.0.0 (`Directory.Packages.props`; the AppHost uses `Microsoft.NET.Sdk` and `AddDotnetProject`). Only the dashboard container image is still the 13.6.5 tag in the compose files.
 - Redis on Azure: a container app for the demo profile (Azure Cache for Redis is closed to new customers).
 - Plan correction: a return over $500 routes to `manager`, which `support` cannot decide.
 
@@ -81,23 +82,23 @@ is clean (zero misses). A miss means a prompt, tool schema or tool output change
 `uv run python -m evals.rehash_fixtures` (only if the response is untouched). Check
 `uv run python -m evals.fixture_drift` first.
 
-**Live eval against a real model** (costs a few dollars; the owner approved running it):
-1. Use a clean worktree of `main`; `cd agents/python && uv sync --all-packages --extra dev`.
-2. **Do not `source` the repo's `.env`.** In the owner's setup its `DATABASE_URL` points at a different
-   project's database and the seeder truncates. Pick only the `AZURE_OPENAI_*` variables out of it and set
-   `DATABASE_URL=postgresql://ecommerce:ecommerce_secret@localhost:5432/ecommerce_agents`,
-   `REDIS_URL=redis://localhost:6379`, `LLM_PROVIDER=azure` explicitly.
-3. `docker compose -p eca-live up -d db redis` (own project name), then `scripts.migrate`, `scripts.seed`,
-   `scripts.generate_embeddings` (live embeddings, under a cent).
-4. Start the five specialists (`AGENT_NAME=... AGENT_PORT=808x uv run --no-project uvicorn <name>.main:app`)
-   in their own process groups, wait for `/health`, then per agent:
-   `uv run python -m evals.run_evals --agent <a> --dataset evals/datasets/<a>.json --pass-threshold 0.7
-   --use-llm-judge --baseline evals/baselines/python-inproc-replay/<a>.json --allow-self-judge --verbose --output-json <out>`;
-   orchestrator uses `orchestrator_routing.json`; safety uses `--suite safety --pass-threshold 0.8`. This
-   mirrors the `full` job in `.github/workflows/evals.yml`. Do not pass `--update-baseline`.
-5. Kill only the PIDs you started; `docker compose -p eca-live down -v`.
-6. Record scores in `docs/eval-scorecard.md` terms (the generator reads committed baselines; extending it
-   to accept a live-result file is a good small follow-up).
+**Live eval against a real model** (costs a few dollars; the owner approves each run):
+- The script is `scripts/live-evals.sh` (`--check-env` validates the configuration and calls nothing; `--setup` migrates
+  and seeds a fresh database first). It runs every `evals/datasets/live/*.live.json` through the in-process target against
+  a Postgres service container in CI (`full` job in `.github/workflows/evals.yml`, `workflow_dispatch` only; inputs and
+  secrets in `agents/python/evals/README.md#live-runs-in-ci`). Print the cost first with `evals.run_evals --estimate`.
+- **Isolated local run, the pattern that keeps the owner's data safe:**
+  1. Use a clean worktree of `main`; `cd agents/python && uv sync --all-packages --extra dev`.
+  2. **Do not `source` the repo's `.env`.** Its `DATABASE_URL` may point at a different project's database and the seeder
+     truncates. Pick only the model variables (`AZURE_OPENAI_*` or the provider's key) and set `DATABASE_URL`,
+     `REDIS_URL` and `LLM_PROVIDER` explicitly to your own project's database.
+  3. `docker compose -p eca-live up -d db redis` (own project name), then `scripts.migrate` and `scripts.seed`; the seeder
+     does the embeddings work, so there is no separate `generate_embeddings` step.
+  4. Run `scripts/live-evals.sh` (it boots the five specialists for the orchestrator suite). Live cases write to the
+     database (`initiate_return`, a parked `cancel_order`), so the database is throwaway: reseed between runs.
+  5. Kill only the PIDs you started; `docker compose -p eca-live down -v`.
+- There is no `--baseline` for a live run (baselines are keyed by setup and none exists for a live model); the threshold
+  is the gate. Do not pass `--update-baseline`. Keep run records out of the repo unless a plan item says otherwise.
 
 **Shared resources on one machine:** specialists bind 8081 to 8085 and Postgres 5432. Serialise anything
 that uses them with `flock /tmp/eca-evals.lock`. Never use the default compose project (a volume
@@ -137,7 +138,7 @@ down. Only the owner can restart it; CI on GitHub is the fallback for .NET and P
   deployment design and failure catalogue; Progress block; Part IV is the build log).
 - Docs index: `docs/README.md`. Azure: `docs/azure-deployment.md`, `docs/troubleshooting.md`. Config:
   `docs/configuration.md`. Providers: `docs/model-providers.md`. Evals: `docs/agent-quality.md`,
-  `docs/eval-scorecard.md`. Parity: `docs/parity-matrix.md` (rows to 49 plus). Auth routes:
+  `docs/eval-scorecard.md`. Parity: `docs/parity-matrix.md` (rows 1 to 54, number 45 unused; the Summary is checked against the table by `build_docs_site.py --check`). Auth routes:
   `docs/auth-route-matrix.md`. Approvals: `docs/approvals.md`.
 - Infra: `infra/` (Bicep, profiles, `ci/*.bicepparam`), `azure.yaml`, `scripts/azure/`, `scripts/azure-up.sh`,
   `scripts/azure-down.sh`. Offline checks: `.github/workflows/infra-offline.yml`; deploy workflow
@@ -145,13 +146,14 @@ down. Only the owner can restart it; CI on GitHub is the fallback for .NET and P
 
 ## 8. Suggested next steps, in order
 
-1. Confirm the v1.4.0 release environment approval happened and images published.
-2. Get Docker healthy, run the live eval, and record the scores (see section 5).
-3. Optional Foundry evaluators adapter and a live-result file format for the scorecard.
-4. Decide D-1; do the first real Azure deploy with `scripts/azure-up.sh --dry-run` first.
-5. R0 recording session, then screenshots and the demo GIF (#182), then remove the docs caveats.
-   Click through `demo-guide` scenarios 9 to 11 once the stack runs.
-6. The keyed features in section 3, recorded in one sitting.
+The order of record is the plan's "Non-Azure plan" block. In short, as of 2026-11-23:
+1. Land the open eval, documentation and Azure-preparation PRs (`gh pr list`), then one clean `scripts/live-evals.sh`
+   run on the grown datasets (NA-1) and quote its numbers with the setup and date.
+2. Judge calibration, provider capability results and reference baselines (NA-3, NA-4, NA-6), then the single R1
+   recording sitting that batches every keyed fixture (NA-7).
+3. v1.5.0 (NA-11) after R1: changelog as release notes, docs and scorecard in sync.
+4. The documentation audit's final pass (NA-12): the `CHANGELOG.md [Unreleased]` regrouping once every PR has merged.
+5. The first real Azure deployment last (AZ-LAST), on the existing environment, after the items above.
 
 ## 9. Documentation lane (folded in from the docs session)
 
@@ -177,16 +179,14 @@ section in the changelog (#193); third pass over quick start, troubleshooting, t
    answers every chat prompt with "not recorded". README, quick start, demo guide, `docs/replay-mode.md`
    and the 1.4.0 changelog all say so; remove those caveats when it ships.
 
-**Suspected, not verified (left as they were):** parity rows 29 and 33 have priorities that do not match
-their status; Python `ReturnReplaceMode.capabilities` has `supports_checkpoints=False` although the mode
-checkpoints every run (.NET says `true`; that one is code, not docs);
-`docs/images/flow-guest-browse.png` (12 MB) and `flow-guest-product.png` are referenced nowhere;
-`docs/reported-vs-actual.md` ties "twelve containers reported healthy" to two different test counts;
-`docs/concepts/10-guardrails.md`'s middleware snippet omits the cost-budget and output-moderation layers;
-the API reference's overview diagram still implies every non-auth route needs a token, and its "about 70
-routes" is uncounted; a comment in `.github/workflows/build-images.yml` says four test jobs gate
-publishing (it is six). The earlier entries for `maf-best-practices`, ADR 0002, the telemetry diagram and
-the `docker-compose.nokey.yml` comment were verified and fixed in #198.
+**Suspected mismatches, outcomes as of 2026-11-23:** parity rows 29 and 33 carried a priority although Full (priority
+cleared in the docs audit fixes, PR 265); the two unreferenced guest screenshots (one 12 MB) were deleted in the same PR;
+the guardrails snippet in `docs/concepts/10-guardrails.md` now lists the cost-budget, moderation and grounding-ledger
+layers; `docs/reported-vs-actual.md` no longer ties one claim to two test counts; the `build-images.yml` comment now says
+`publish-main` needs six test jobs, which is what `tests.yml` lists; the API reference's "about 70 routes" is right
+(69 `@router` decorators plus one in `main.py`). **Still true:** Python `ReturnReplaceMode.capabilities` has
+`supports_checkpoints=False` although the mode checkpoints every run (that one is code, not docs); the API reference's
+overview diagram may still imply every non-auth route needs a token (not re-checked).
 
 **Limits of the new tutorial checks:** the symbol check passes a path if any backticked identifier in the
 same paragraph or list item occurs in the file (no one-to-one pairing); `web/src/app/(app)/runs/page.tsx`
@@ -217,6 +217,7 @@ Time sinks: `uv lock` with a different local uv version rewrites unrelated marke
 
 Append newest first. One line per landed change: date, PR, what, and anything left unverified.
 
+- 2026-11-23 (docs audit, group two): approvals, tutorials 06 and 17 and concept 11 describe the host-level park of gated tool calls; eval dataset counts dated; CLAUDE.md gains the parked-call and live-dataset traps; this handover and the plan refreshed. Left for the final pass: `CHANGELOG.md [Unreleased]` regrouping (CL-1 to CL-8) and anything that depends on the still-open eval PRs.
 - 2026-11-23: plan gains a "Status, 2026-11-23" block (built since the 21st, what the first live eval found, remaining work by owner). Landed: #213 Foundry/APIM/identities, #214 gateway headers, #216 Foundry evaluators + community results, #220 orchestrator groundedness scoring, #222 live-capable datasets, #223 reference profile + .NET on Azure + wired identities, #236 .NET image smoke test now has a pgvector DB, Dependabot #224/#225/#227-#230. In flight: #215 (http target + stack-parity job, row 53); held: #226, #231-#233, #235 (Aspire 17, .NET tests red), #234 (net-py boot re-run). Unverified: no .NET image has run on Azure; the new smoke step's first real result is on the next PR touching images. A watcher once merged #223 before its last fix was on the PR head; check the PR head SHA before relying on a watcher.
 - 2026-11-23 (docs session): #210, first item only: the Mode dropdown popup is as wide as its longest label. Verified in a browser. The other three items in #210 are open (group chat's placeholder answer, Alice's latest order being `shipped`, "New chat" after Compare); the first two touch backend text and seed data, so check replay fixtures before changing them.
 - 2026-11-23 (docs session): #209 fixed: Compare result cards use the chat renderer (`RichMessage`), so fenced card blocks show as cards. Verified in a browser against the v1.4.0 backend with `tool` and `handoff`. `docs/images/mode-compare.jpg` still shows the old dialog; retake it with the #182 visuals.

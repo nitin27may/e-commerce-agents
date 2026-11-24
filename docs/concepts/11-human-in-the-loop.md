@@ -33,14 +33,17 @@ it's rare enough to get real attention.
 This repo has two HITL implementations, and they are not interchangeable — knowing which one a
 given mode uses matters for understanding what actually happens when a gate fires.
 
-**Middleware-based approval** — [`shared/hitl.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/hitl.py). A fixed set of high-stakes tools —
-`HITL_GATED_TOOLS`: `cancel_order`, `process_refund`, `initiate_return`, `modify_order`,
-`place_backorder` — are intercepted by `HITLFunctionMiddleware` *before* they execute. The
-docstring is explicit about what happens next: "the tool does NOT execute". A
-`tool_approval_requests` row is written with `status="pending"`, and the agent's tool call returns
-immediately with a `pending_approval` result — the LLM's turn ends there, having been told the
-action is awaiting approval. When a staff reviewer later approves it, a *separate* code path,
-`execute_approved_action()`, runs the underlying database operation directly. **The
+**Tool approval, parked by the host** — [`shared/hitl.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/hitl.py)
+and `shared/agent_host.py`. A fixed set of high-stakes tools — `HITL_GATED_TOOLS`: `cancel_order`,
+`process_refund`, `initiate_return`, `modify_order`, `place_backorder` — are declared
+`@tool(approval_mode="always_require")`. MAF itself stops the run when the model calls one: the tool does not
+execute, the reply text is empty, and the call comes back as a `function_approval_request`. After the run the
+specialist host calls `park_pending_approvals`, which writes a `tool_approval_requests` row and its inbox
+approval once (`park_gated_call`) and tells the user in one fixed sentence, written without a model, that nothing
+has changed yet. `HITLFunctionMiddleware` is a fail-closed backstop that does the same for a gated tool registered
+without `always_require`; it is not reached on the real path. When a staff reviewer (`support` or `admin`, never
+the requester) later approves, a *separate* code path, `execute_approved_action()`, runs the underlying database
+operation directly. **The
 original LLM loop is never resumed.** The approval doesn't continue the conversation — it just
 performs the action the model asked for, outside the conversation entirely.
 
@@ -73,7 +76,7 @@ flowchart LR
   classDef infra   fill:#64748b,stroke:#334155,color:#ffffff
 
   subgraph mw["shared/hitl.py — tool mode"]
-    t1["model calls process_refund"] --> gate1["HITLFunctionMiddleware<br/>intercepts"]
+    t1["model calls process_refund"] --> gate1["MAF parks the call<br/>host: park_pending_approvals"]
     gate1 --> block["tool does NOT execute<br/>LLM turn ends here"]
     block -.later, separate path.-> exec["execute_approved_action()<br/>runs the DB write directly"]
   end

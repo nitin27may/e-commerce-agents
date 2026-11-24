@@ -375,7 +375,7 @@ no model is called at all — that is what CI, the eval smoke suite and the tuto
 
 ## Testing & Evals
 
-Five traps here cost more time than anything else in the repo.
+Six traps here cost more time than anything else in the repo.
 
 **Playwright: wait on the composer's stop icon, never on status text.** A streamed
 turn is finished when the submit button stops showing the stop icon — not when
@@ -411,6 +411,21 @@ drift tool only tells you which kind of repair is needed.
 `workflow_dispatch` alone, never a schedule. Nothing in this repo may put a live
 LLM key behind an automatic trigger — keep it that way when adding jobs to
 `.github/workflows/evals.yml`.
+
+**A parked gated tool call has no function-middleware trace.** `cancel_order`, `modify_order`, `process_refund`,
+`initiate_return` and `place_backorder` are `@tool(approval_mode="always_require")`, and MAF decides that before function
+middleware runs: the run ends with an empty reply and a `function_approval_request` in `response.user_input_requests`,
+and `HITLFunctionMiddleware` is never reached. The specialist host makes it durable after the run
+(`shared/agent_host.py::park_pending_approvals` -> `shared/hitl.py::park_gated_call`: a `tool_approval_requests` row plus
+its inbox approval, idempotent, a fixed reply sentence). Anything that looks for a step or a row written *during* the run
+(an eval assertion, a test) will not find one; read the parked request (`agent_host.approval_requests`) instead.
+
+**Live eval datasets are a separate family.** `agents/python/evals/datasets/live/*.live.json` name orders and products as
+`{{order:N}}`, `{{order:STATUS}}` and `{{product_id:NAME}}`, resolved against the run's database by `evals/live_facts.py`, so a
+live model is asked about facts that exist. A replay dataset must never contain a placeholder (a test pins it) because its
+request text is part of every fixture key; never edit a replay dataset to fix a live case. A live case may carry `turns`
+(multi-turn, live only), `forbidden_tools`, `expected_routes` / `forbidden_routes`, `why` and `type`; the schema table and
+sizes are in `agents/python/evals/README.md`.
 
 ## Coding Conventions
 

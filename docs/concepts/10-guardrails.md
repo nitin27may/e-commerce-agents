@@ -57,7 +57,13 @@ if settings.GUARDRAILS_ENABLED:
 if settings.HITL_ENABLED:
     stack.append(HITLFunctionMiddleware())              # see human-in-the-loop
 if settings.GROUNDING_MODE != "off":
+    stack.extend(GROUNDING_LEDGER_MIDDLEWARE)           # records real product/order facts from tool results
     stack.append(GroundingVerificationMiddleware())     # see grounding and RAG
+if settings.COST_BUDGET_MODE != "off":
+    stack.append(CostBudgetMiddleware())                # accumulates, and in enforce mode caps, per-run cost
+if settings.OUTPUT_MODERATION_MODE != "off":
+    stack.append(OutputModerationMiddleware())          # classifies the model's own generated text
+# then replay-miss handling (replay mode only) and the step recorder for the run explorer
 ```
 
 Each layer maps directly onto one part of the threat model above, and each one has a limit
@@ -79,6 +85,8 @@ worth knowing:
   before they ever reach the model (a UUID, or an id with a long digit run, is never touched) — the only layer here that's unconditionally on, not gated
   behind `GUARDRAILS_ENABLED`, because there's no scenario where sending raw PII to the model is
   the right default.
+- **`CostBudgetMiddleware`** ([`shared/guardrails/cost_budget_middleware.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/guardrails/cost_budget_middleware.py)) adds up each run's estimated cost and token use. `COST_BUDGET_MODE` is `off`, `observe` (the default: count and log) or `enforce` (refuse the next model turn once `COST_BUDGET_USD_PER_RUN` or `COST_BUDGET_TOKENS_PER_RUN` is passed). **What it can't do:** price a model that has no row in the pricing file, so a dollar ceiling cannot see it; enforce mode then fails closed for a turn that reports no usage, and the token ceiling is the one that still holds.
+- **`OutputModerationMiddleware`** ([`shared/guardrails/moderation_middleware.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/guardrails/moderation_middleware.py)) classifies the model's own generated text with a coarse local classifier, the outbound counterpart of injection detection. `OUTPUT_MODERATION_MODE` is `off`, `observe` (the default) or `enforce`. **What it can't do:** un-send a streamed answer; for a streaming response `enforce` can only replace the persisted final result, because the chunks have already left.
 - **Role confinement** isn't a middleware in this stack at all — it's enforced by never trusting
   anything the model or the user's *text* claims about identity. `current_user_role`
   ([`shared/context.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/context.py)) is set once, from the authenticated session, and every tool and prompt

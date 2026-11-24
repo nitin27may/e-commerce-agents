@@ -92,7 +92,7 @@ Moderator verdict:
   Verdict on 'Is the Sony WH-1000XM5 worth it?': both value and quality perspectives are positive across 2 turns — recommended.
 ```
 
-The `quality` line reports `1 prior point(s)`: it saw the `value` turn before it spoke.
+The `quality` line reports `1 prior point(s)`: it saw the `value` turn before it spoke. The Python and .NET demos both pass their own moderator (`synthesize` / `Synthesize`), which produces the "Verdict on ..." line; without one, the application's default moderator lays out each panelist's actual words under the question, with no model call.
 `workflows/group_chat.py` is the application's own module, not a copy, and it lives in
 the `agents/python` package. `PYTHONPATH=agents/python` is what lets the demo import it
 as `workflows.group_chat`.
