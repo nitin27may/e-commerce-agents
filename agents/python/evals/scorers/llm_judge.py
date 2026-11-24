@@ -87,8 +87,13 @@ async def judge_response(
 
 
 async def _call_judge(
-    user_input: str, response_text: str, expected_fields: list[str], judge_config: JudgeConfig | None = None
+    user_input: str,
+    response_text: str,
+    expected_fields: list[str],
+    judge_config: JudgeConfig | None = None,
+    usage_out: dict[str, int] | None = None,
 ) -> JudgeVerdict:
+    """One judge call. ``usage_out``, when given, receives the call's token counts (judge calibration reads them)."""
     from agent_framework import Agent
 
     from shared.factory import get_chat_client, get_judge_chat_client
@@ -119,6 +124,10 @@ async def _call_judge(
         logger.warning("llm_judge.call_failed error=%s", exc)
         return JudgeVerdict(score=0.0, reasoning=f"judge call failed: {exc}", failure_mode="judge_error")
 
+    if usage_out is not None:
+        details = getattr(response, "usage_details", None) or {}
+        usage_out["input_token_count"] = int(details.get("input_token_count") or 0)
+        usage_out["output_token_count"] = int(details.get("output_token_count") or 0)
     return _parse_verdict(response.text or "")
 
 

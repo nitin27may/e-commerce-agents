@@ -1,0 +1,386 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-11-24T02:23:47+00:00",
+  "labels": {
+    "count": 30,
+    "reviewed": 0,
+    "label_pass": 20,
+    "label_fail": 10,
+    "fields": 44,
+    "categories": {
+      "adversarial": 5,
+      "clear_miss": 6,
+      "clear_pass": 8,
+      "empty": 1,
+      "partial": 6,
+      "refusal": 4
+    },
+    "agents": {
+      "inventory-fulfillment": 5,
+      "orchestrator": 3,
+      "order-management": 5,
+      "pricing-promotions": 9,
+      "product-discovery": 4,
+      "review-sentiment": 4
+    }
+  },
+  "rule": {
+    "default": "gpt-4.1-mini",
+    "min_agreement_gain": 0.05,
+    "max_cost_ratio": 3.0,
+    "pass_score": 1.0
+  },
+  "judges": {
+    "gpt-4.1-mini": {
+      "judge": "gpt-4.1-mini",
+      "calls": 30,
+      "answered": 27,
+      "failures": {
+        "judge_unavailable": [
+          "cal-22",
+          "cal-24",
+          "cal-27"
+        ]
+      },
+      "failure_count": 3,
+      "agreement": 0.6296,
+      "agreement_ci95": [
+        0.4423,
+        0.7847
+      ],
+      "agreement_at_0_8": 0.6667,
+      "kappa": 0.2932,
+      "false_pass": 2,
+      "false_fail": 8,
+      "false_pass_ids": [
+        "cal-11",
+        "cal-13"
+      ],
+      "false_fail_ids": [
+        "cal-17",
+        "cal-18",
+        "cal-20",
+        "cal-25",
+        "cal-26",
+        "cal-28",
+        "cal-29",
+        "cal-30"
+      ],
+      "field_agreement": 0.5854,
+      "field_kappa": 0.1942,
+      "fields_compared": 41,
+      "tokens_in": 9929,
+      "tokens_out": 1289,
+      "tokens_per_judgement": 373.9,
+      "cost_per_100_usd": 0.0201,
+      "latency_ms_median": 921.0,
+      "latency_ms_p95": 1207.0,
+      "by_category": {
+        "adversarial": {
+          "n": 4,
+          "agree": 0,
+          "agreement": 0.0
+        },
+        "clear_miss": {
+          "n": 6,
+          "agree": 4,
+          "agreement": 0.6667
+        },
+        "clear_pass": {
+          "n": 8,
+          "agree": 8,
+          "agreement": 1.0
+        },
+        "empty": {
+          "n": 1,
+          "agree": 1,
+          "agreement": 1.0
+        },
+        "partial": {
+          "n": 6,
+          "agree": 3,
+          "agreement": 0.5
+        },
+        "refusal": {
+          "n": 2,
+          "agree": 1,
+          "agreement": 0.5
+        }
+      },
+      "on_common_cases": {
+        "n": 27,
+        "agreement": 0.6296,
+        "kappa": 0.2932,
+        "false_pass": 2,
+        "false_fail": 8
+      }
+    },
+    "gpt-4.1": {
+      "judge": "gpt-4.1",
+      "calls": 30,
+      "answered": 30,
+      "failures": {},
+      "failure_count": 0,
+      "agreement": 0.8667,
+      "agreement_ci95": [
+        0.7032,
+        0.9469
+      ],
+      "agreement_at_0_8": 0.8667,
+      "kappa": 0.7273,
+      "false_pass": 0,
+      "false_fail": 4,
+      "false_pass_ids": [],
+      "false_fail_ids": [
+        "cal-17",
+        "cal-20",
+        "cal-25",
+        "cal-28"
+      ],
+      "field_agreement": 0.8409,
+      "field_kappa": 0.6883,
+      "fields_compared": 44,
+      "tokens_in": 10711,
+      "tokens_out": 1231,
+      "tokens_per_judgement": 398.1,
+      "cost_per_100_usd": 0.1042,
+      "latency_ms_median": 980.0,
+      "latency_ms_p95": 1354.0,
+      "by_category": {
+        "adversarial": {
+          "n": 5,
+          "agree": 4,
+          "agreement": 0.8
+        },
+        "clear_miss": {
+          "n": 6,
+          "agree": 6,
+          "agreement": 1.0
+        },
+        "clear_pass": {
+          "n": 8,
+          "agree": 8,
+          "agreement": 1.0
+        },
+        "empty": {
+          "n": 1,
+          "agree": 1,
+          "agreement": 1.0
+        },
+        "partial": {
+          "n": 6,
+          "agree": 4,
+          "agreement": 0.6667
+        },
+        "refusal": {
+          "n": 4,
+          "agree": 3,
+          "agreement": 0.75
+        }
+      },
+      "on_common_cases": {
+        "n": 27,
+        "agreement": 0.8519,
+        "kappa": 0.7065,
+        "false_pass": 0,
+        "false_fail": 4
+      }
+    },
+    "gpt-5.4-mini": {
+      "judge": "gpt-5.4-mini",
+      "calls": 30,
+      "answered": 27,
+      "failures": {
+        "judge_unavailable": [
+          "cal-22",
+          "cal-24",
+          "cal-27"
+        ]
+      },
+      "failure_count": 3,
+      "agreement": 0.7778,
+      "agreement_ci95": [
+        0.5924,
+        0.8939
+      ],
+      "agreement_at_0_8": 0.7778,
+      "kappa": 0.5759,
+      "false_pass": 0,
+      "false_fail": 6,
+      "false_pass_ids": [],
+      "false_fail_ids": [
+        "cal-18",
+        "cal-20",
+        "cal-25",
+        "cal-28",
+        "cal-29",
+        "cal-30"
+      ],
+      "field_agreement": 0.7805,
+      "field_kappa": 0.5802,
+      "fields_compared": 41,
+      "tokens_in": 9902,
+      "tokens_out": 1213,
+      "tokens_per_judgement": 370.5,
+      "cost_per_100_usd": null,
+      "latency_ms_median": 1275.0,
+      "latency_ms_p95": 1685.0,
+      "by_category": {
+        "adversarial": {
+          "n": 4,
+          "agree": 1,
+          "agreement": 0.25
+        },
+        "clear_miss": {
+          "n": 6,
+          "agree": 6,
+          "agreement": 1.0
+        },
+        "clear_pass": {
+          "n": 8,
+          "agree": 8,
+          "agreement": 1.0
+        },
+        "empty": {
+          "n": 1,
+          "agree": 1,
+          "agreement": 1.0
+        },
+        "partial": {
+          "n": 6,
+          "agree": 4,
+          "agreement": 0.6667
+        },
+        "refusal": {
+          "n": 2,
+          "agree": 1,
+          "agreement": 0.5
+        }
+      },
+      "on_common_cases": {
+        "n": 27,
+        "agreement": 0.7778,
+        "kappa": 0.5759,
+        "false_pass": 0,
+        "false_fail": 6
+      }
+    },
+    "gpt-5.2": {
+      "judge": "gpt-5.2",
+      "calls": 30,
+      "answered": 27,
+      "failures": {
+        "judge_unavailable": [
+          "cal-22",
+          "cal-24",
+          "cal-27"
+        ]
+      },
+      "failure_count": 3,
+      "agreement": 0.7778,
+      "agreement_ci95": [
+        0.5924,
+        0.8939
+      ],
+      "agreement_at_0_8": 0.8148,
+      "kappa": 0.5759,
+      "false_pass": 0,
+      "false_fail": 6,
+      "false_pass_ids": [],
+      "false_fail_ids": [
+        "cal-17",
+        "cal-18",
+        "cal-20",
+        "cal-26",
+        "cal-28",
+        "cal-30"
+      ],
+      "field_agreement": 0.7561,
+      "field_kappa": 0.5372,
+      "fields_compared": 41,
+      "tokens_in": 9902,
+      "tokens_out": 1242,
+      "tokens_per_judgement": 371.5,
+      "cost_per_100_usd": null,
+      "latency_ms_median": 1638.0,
+      "latency_ms_p95": 2103.0,
+      "by_category": {
+        "adversarial": {
+          "n": 4,
+          "agree": 1,
+          "agreement": 0.25
+        },
+        "clear_miss": {
+          "n": 6,
+          "agree": 6,
+          "agreement": 1.0
+        },
+        "clear_pass": {
+          "n": 8,
+          "agree": 8,
+          "agreement": 1.0
+        },
+        "empty": {
+          "n": 1,
+          "agree": 1,
+          "agreement": 1.0
+        },
+        "partial": {
+          "n": 6,
+          "agree": 3,
+          "agreement": 0.5
+        },
+        "refusal": {
+          "n": 2,
+          "agree": 2,
+          "agreement": 1.0
+        }
+      },
+      "on_common_cases": {
+        "n": 27,
+        "agreement": 0.7778,
+        "kappa": 0.5759,
+        "false_pass": 0,
+        "false_fail": 6
+      }
+    }
+  },
+  "decision": {
+    "default": "gpt-4.1-mini",
+    "chosen": "gpt-4.1-mini",
+    "changed": false,
+    "reason": "no candidate beats the default by the stated margin within the cost cap",
+    "candidates": [
+      {
+        "judge": "gpt-4.1",
+        "agreement_gain": 0.2371,
+        "agreement_gain_on_common_cases": 0.2223,
+        "cost_ratio": 5.18,
+        "beats_by_margin": true,
+        "under_cost_cap": false,
+        "cost_known": true,
+        "qualifies": false
+      },
+      {
+        "judge": "gpt-5.4-mini",
+        "agreement_gain": 0.1482,
+        "agreement_gain_on_common_cases": 0.1482,
+        "cost_ratio": null,
+        "beats_by_margin": true,
+        "under_cost_cap": false,
+        "cost_known": false,
+        "qualifies": false
+      },
+      {
+        "judge": "gpt-5.2",
+        "agreement_gain": 0.1482,
+        "agreement_gain_on_common_cases": 0.1482,
+        "cost_ratio": null,
+        "beats_by_margin": true,
+        "under_cost_cap": false,
+        "cost_known": false,
+        "qualifies": false
+      }
+    ]
+  }
+}
