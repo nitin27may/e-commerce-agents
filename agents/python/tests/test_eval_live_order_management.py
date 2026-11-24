@@ -52,7 +52,9 @@ def test_a_case_that_asserts_a_gated_tool_call_expects_the_park() -> None:
             GATED & {t for t in entry.get("expected_tools", [])[:1]}
         )
         if gated and entry["type"] != "multi_turn":
-            assert entry.get("expect_hitl") is True, (gated, entry.get("input"))
+            # A case marked `precheck_refusal` expects the host's pre-park check to refuse in words (no approval).
+            refused = entry.get("criteria", {}).get("precheck_refusal") is True
+            assert entry.get("expect_hitl") is (not refused), (gated, entry.get("input"))
 
 
 def test_every_order_case_runs_as_a_seeded_user() -> None:
