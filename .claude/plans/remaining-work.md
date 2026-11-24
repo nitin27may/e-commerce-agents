@@ -134,6 +134,37 @@ Everything left that does not need an Azure subscription, in the order it should
 first-run and no-role-assignment mode) is a separate track and is not repeated here. Sizes are engineer-days of agent work; "key"
 means a model call is made and "R1" is the one recording sitting everything keyed is batched into.
 
+**Revised order, set by the maintainer on 2026-11-23.** Everything is finished and verified first; the Azure deployment is the last step.
+
+1. **Use what the environment already has.** All evaluation, Foundry-evaluator and live runs use the Azure OpenAI variables in the
+   local `.env` (`AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_KEY`, the chat, mini and embedding deployments), read by name only and never
+   by sourcing the file. No Azure resource is created, and nothing else in `.env` (the AD app, search, document intelligence) is used.
+   Foundry features that need an Azure credential rather than a key (`--log-to-project`, the Foundry safety evaluator, hosted agents)
+   wait for the deployment phase on the new account.
+2. **Azure deployment is last.** It starts only after every NA item below is merged, the docs audit (NA-12) is clean, and v1.5.0 is
+   ready. The new account is a personal free trial with a hard limit of 5 USD and free resources only (no APIM, no Managed Redis,
+   no ACR, no private networking; the demo profile with the budget module set to 5, public GHCR images, and a model provider the trial
+   can afford); a `what-if` and a cost estimate come before any create, and teardown follows the smoke test. The first-deploy
+   checklist in `docs/azure-deployment.md` is the runbook.
+3. **Documentation stays in step with every merge** (NA-12): work that came from other sessions, the live-eval findings, the new
+   harness features and the dependency policy are reflected in the docs as they land, not at the end.
+
+**NA-12 Documentation consistency (runs alongside every item, final audit before the deployment).** The repo is open source, so the
+docs keep one standard: plain direct prose, no emojis, Mermaid for diagrams, a "Gotchas" or "Known issues" section where one
+applies, tables that render on GitHub, every page in the docs nav, and no stale claims.
+- **Per merge:** the PR that changes behaviour updates its page in the same PR; the `docs-sync` check (CLAUDE.md, README.md,
+  `docs/`, parity matrix, CHANGELOG) runs against main after each wave and any drift becomes a fix PR, not a note.
+- **Pages to bring up to date with what was built:** `evals/README.md` and `docs/agent-quality.md` (live datasets, multi-turn,
+  parked approvals, ledger fields, groundedness meaning, judge calibration, baselines), `docs/model-providers.md` (live capability
+  results), `docs/contributing-dependencies.md` (merge helper, policy), `docs/azure-deployment.md` (optional note, first-deploy
+  checklist, free-tier path), `docs/approvals.md` (parked tool calls, if the cancel investigation changes behaviour),
+  `docs/parity-matrix.md` (row numbers and the summary counts), `docs/roadmap.md` and the README "What's next",
+  `.claude/HANDOVER.md` progress log, `CHANGELOG.md` read as release notes, and the tutorials that quote changed behaviour.
+- **Final audit (acceptance for NA-12):** `python3 scripts/build_docs_site.py --check` and the tutorial checks pass; no broken
+  links; every claim about a number (rows, cases, scores, costs) is regenerated or dated; the parity matrix summary equals the
+  table; no document names a cloud account, tenant, subscription or resource group; the README quick start works from a clean
+  clone with no Azure; a reviewer who knows none of the history can follow the contributor docs.
+
 **Workstreams**
 
 | ID | Work | Size | Key | Depends on |
@@ -149,6 +180,8 @@ means a model call is made and "R1" is the one recording sitting everything keye
 | NA-9 | Product defects and parity leftovers (list below) | 2 | none | none |
 | NA-10 | Dependency and CI hygiene (list below) | 1 | none | none |
 | NA-11 | v1.5.0: scope, changelog, release notes, docs and scorecard sync; cut after R1 | 1 | none | NA-7 |
+| NA-12 | Documentation consistency: per-merge updates, `docs-sync` after each wave, final audit before the Azure deployment | ongoing, 1 for the audit | none | every item |
+| AZ-LAST | Azure deployment on the new free-trial account (5 USD cap), after NA-1 to NA-12 | 1 to 2 | trial credit | NA-11, NA-12 |
 
 **NA-1 Live-eval quality loop.** The round-two lane fixes the cancel case (empty response, pause not detected), the Dyson restock
 assertion and the loyalty-tier expectation. After it merges: rescore the stored pricing records with `--rescore --verify` (the
