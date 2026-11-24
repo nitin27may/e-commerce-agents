@@ -4,9 +4,12 @@
   // suite run. Supply a model key through the "secrets" below (the creation screen asks for them) and
   // postCreate.sh selects the matching live provider instead. Guidance: docs/configuration.md#codespaces
   "name": "e-commerce-agents",
-  "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bookworm",
+  // The plain base image plus the Python feature, not the python image: that image carries a Yarn apt
+  // source whose signing key is missing, which makes the Docker-in-Docker feature fail at `apt-get update`.
+  "image": "mcr.microsoft.com/devcontainers/base:bookworm",
 
   "features": {
+    "ghcr.io/devcontainers/features/python:1": { "version": "3.12" },
     // Node + pnpm for web/. The pnpm version is pinned in postCreate.sh to the one CI uses.
     "ghcr.io/devcontainers/features/node:1": { "version": "22" },
     // global.json at the repo root asks for SDK 10.0.100 and rolls forward within
