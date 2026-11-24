@@ -25,6 +25,7 @@ on:
       - "scripts/migrate.py"
       - "scripts/seed.py"
       - "scripts/compose-smoke.sh"
+      - "scripts/flag-smoke.sh"
       - ".github/workflows/compose-smoke.yml"
   push:
     branches: [main]
@@ -35,6 +36,7 @@ on:
       - "scripts/lib/mixed-env.sh"
       - "scripts/migrate.py"
       - "scripts/compose-smoke.sh"
+      - "scripts/flag-smoke.sh"
   workflow_dispatch:
 
 permissions:
@@ -88,3 +90,23 @@ jobs:
           A2A_TRANSPORT: ${{ matrix.transport }}
           A2A_IDENTITY: ${{ matrix.transport && 'token' || '' }}
         run: scripts/compose-smoke.sh ${{ matrix.args }}
+
+  # The flags that are off by default, all on at once, driven through the real routes and the outbox worker
+  # (scripts/flag-smoke.sh; docs/event-autonomy.md). Same keyless rules as the boot job above.
+  flags:
+    name: Flags on (autonomy, return lifecycle, merchant, HITL; replay, keyless)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Refuse to run with any API key set
+        run: |
+          leaked="$(env | grep -E '^[A-Za-z0-9_]*(_API_KEY|AZURE_OPENAI_KEY)=.+' | cut -d= -f1 || true)"
+          if [ -n "$leaked" ]; then
+            echo "::error::credentials present in the environment: $leaked"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - name: Boot with every flag on and drive the flagged features
+        run: scripts/flag-smoke.sh

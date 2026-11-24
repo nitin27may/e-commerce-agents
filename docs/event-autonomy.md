@@ -172,8 +172,19 @@ other path; see *The log is append-only*.
 
 Web: `/admin/decisions`.
 
+## Booting every flag at once
+
+`scripts/flag-smoke.sh` boots the Python stack under `LLM_PROVIDER=replay` with `AUTONOMY_ENABLED`,
+`AUTONOMY_SIMULATOR_ENABLED`, `RETURN_LIFECYCLE_ENABLED`, `MERCHANT_OPS_SCHEDULE_ENABLED` and `HITL_ENABLED` on, in its own
+compose project (`eca-flag-smoke`), and drives the real routes and the outbox worker with no model and no key: the three
+simulator scenarios (small is an executed `auto` decision, medium an executed `auto_notify`, large waits and opens an
+`autonomous_action` inbox row), a return through approval, carrier scan and inspection to `refunded`, a merchant run with its
+daily timer booked, and a check that no outbox row carries an error. `--dry-run` lists the flags and checks without starting
+anything; `--attach` drives a stack that is already up. CI runs it as the `flags` job in `compose-smoke.yml`.
+
 ## Gotchas
 
+- **A flag must be passed through `docker-compose.yml` to be live in a container.** `RETURN_LIFECYCLE_ENABLED` and `MERCHANT_OPS_SCHEDULE_ENABLED` were not, so `RETURN_LIFECYCLE_ENABLED=true ./scripts/dev.sh` left the simulator route a 404 and the worker handlers off until `flag-smoke.sh` booted them together.
 - **Everything is off by default.** `AUTONOMY_ENABLED` gates the engine and the simulator additionally needs `AUTONOMY_SIMULATOR_ENABLED`. Every number in `autonomy.yaml` is a placeholder.
 - **The decision and ledger tables are append-only.** A reversal is a new row, and a reset needs `reset_autonomy_log()`: `TRUNCATE` is refused while they hold rows.
 - **Lock order is budget, then order, then row locks.** Taking them in another order can deadlock two events.

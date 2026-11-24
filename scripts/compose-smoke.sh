@@ -117,16 +117,19 @@ if ! $ATTACH; then
 fi
 
 # ── /ready everywhere ────────────────────────────────────────
-declare -A TARGETS=(
-  [orchestrator]="$ORCH_URL/ready"
-  [product-discovery]="http://$SPECIALIST_HOST:$((SPECIALIST_PORT_BASE + 0))/ready"
-  [order-management]="http://$SPECIALIST_HOST:$((SPECIALIST_PORT_BASE + 1))/ready"
-  [pricing-promotions]="http://$SPECIALIST_HOST:$((SPECIALIST_PORT_BASE + 2))/ready"
-  [review-sentiment]="http://$SPECIALIST_HOST:$((SPECIALIST_PORT_BASE + 3))/ready"
-  [inventory-fulfillment]="http://$SPECIALIST_HOST:$((SPECIALIST_PORT_BASE + 4))/ready"
-)
+# A function, not `declare -A`: macOS ships bash 3.2, which has no associative arrays.
+target_url() {
+  case "$1" in
+    orchestrator) echo "$ORCH_URL/ready" ;;
+    product-discovery) echo "http://$SPECIALIST_HOST:$((SPECIALIST_PORT_BASE + 0))/ready" ;;
+    order-management) echo "http://$SPECIALIST_HOST:$((SPECIALIST_PORT_BASE + 1))/ready" ;;
+    pricing-promotions) echo "http://$SPECIALIST_HOST:$((SPECIALIST_PORT_BASE + 2))/ready" ;;
+    review-sentiment) echo "http://$SPECIALIST_HOST:$((SPECIALIST_PORT_BASE + 3))/ready" ;;
+    inventory-fulfillment) echo "http://$SPECIALIST_HOST:$((SPECIALIST_PORT_BASE + 4))/ready" ;;
+  esac
+}
 for name in orchestrator product-discovery order-management pricing-promotions review-sentiment inventory-fulfillment; do
-  url="${TARGETS[$name]}"
+  url="$(target_url "$name")"
   deadline=$((SECONDS + READY_TIMEOUT))
   until body="$(curl -sf -m 5 "$url")"; do
     if (( SECONDS >= deadline )); then

@@ -99,7 +99,9 @@ orchestrator_stack_of() {
   esac
 }
 
-declare -A RESULTS=()
+# bash 3.2 (macOS) has no associative arrays: results live in RESULT_<stack> variables.
+set_result() { printf -v "RESULT_${1//-/_}" '%s' "$2"; }
+get_result() { local v="RESULT_${1//-/_}"; echo "${!v:-}"; }
 
 teardown() {
   local stack="$1"
@@ -111,7 +113,7 @@ teardown() {
 }
 
 for stack in "${STACKS[@]}"; do
-  select_stack "$stack" || { RESULTS[$stack]="UNKNOWN STACK"; continue; }
+  select_stack "$stack" || { set_result "$stack" "UNKNOWN STACK"; continue; }
 
   echo "======================================================================"
   echo "  $stack  (${COMPOSE_FLAGS[*]})"
@@ -132,7 +134,7 @@ for stack in "${STACKS[@]}"; do
   echo "--- starting stack"
   if ! docker compose "${COMPOSE_FLAGS[@]}" --profile seed --profile agents --profile mcp --profile frontend up -d --build; then
     echo "!!! $stack failed to start" >&2
-    RESULTS[$stack]="STACK FAILED TO START"
+    set_result "$stack" "STACK FAILED TO START"
     continue
   fi
 
@@ -155,16 +157,16 @@ for stack in "${STACKS[@]}"; do
   if [[ "$ready" -ne 1 ]]; then
     echo "!!! $stack never became ready" >&2
     docker compose "${COMPOSE_FLAGS[@]}" ps
-    RESULTS[$stack]="NEVER BECAME READY"
+    set_result "$stack" "NEVER BECAME READY"
     teardown "$stack"
     continue
   fi
 
   echo "--- running Playwright against $stack"
   if (cd web && BACKEND_STACK="$(orchestrator_stack_of "$stack")" E2E_BASE_URL="$BASE_URL" npx playwright test "${PLAYWRIGHT_ARGS[@]}"); then
-    RESULTS[$stack]="PASSED"
+    set_result "$stack" "PASSED"
   else
-    RESULTS[$stack]="FAILED"
+    set_result "$stack" "FAILED"
   fi
 
   teardown "$stack"
@@ -176,8 +178,8 @@ echo "  summary"
 echo "======================================================================"
 exit_code=0
 for stack in "${STACKS[@]}"; do
-  printf '  %-8s %s\n' "$stack" "${RESULTS[$stack]:-NOT RUN}"
-  [[ "${RESULTS[$stack]:-}" == "PASSED" ]] || exit_code=1
+  printf '  %-8s %s\n' "$stack" "$(get_result "$stack" | grep . || echo "NOT RUN")"
+  [[ "$(get_result "$stack")" == "PASSED" ]] || exit_code=1
 done
 
 echo
