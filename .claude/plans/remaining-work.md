@@ -253,6 +253,65 @@ results, http target and parity gate, live datasets and the grounding fixes, Asp
 fixtures in the release match the prompts in it. Acceptance: changelog entry reads as release notes, docs site and scorecard are
 current, the release workflow is run by you (the approval click stays yours).
 
+**NA-13 Public presentation: the GitHub landing page and the documentation site (reviewed in a browser on 2026-11-23).**
+The repository is the one the maintainer will promote for the long term, so how it renders to a first-time visitor is part of the
+product. A Playwright review of the signed-out GitHub page and of the published docs site found:
+
+| ID | Where | Finding | Fix |
+|---|---|---|---|
+| PR-1 | README line 12, GitHub landing | The "Open in GitHub Codespaces" badge is 249 by 32 px, a dark pill, while the other nine badges are 20 px flat shields. It wraps onto its own row and looks out of place. | Render it at the same 20 px height as the others (an `<img height="20">` inside the link, or a shields.io badge of the same style linking to the same codespaces URL) and keep it on the first badge row. |
+| PR-2 | GitHub repo settings | No social preview image: `open_graph_image_url` is empty, so links shared on social media and in chat show GitHub's generic card. | Add a 1280 by 640 social card (name, one-line pitch, the orchestration diagram) as `docs/images/social-card.png` and set it in Settings, General, Social preview. The upload step is manual; the image and its source are ours. |
+| PR-3 | GitHub About box | The description is accurate but long (the sidebar wraps it to nine lines), and the homepage link text is truncated. Twenty topics is GitHub's maximum, so none can be added without dropping one. | Shorten the description to one sentence under about 160 characters; keep the long version in the README. Review the topic list once for search value (for example `maf`, `agent-evaluation`, `llm-evals` against less useful ones). |
+| PR-4 | docs site (Just the Docs, published at the maintainer's domain) | No favicon (`/favicon.ico` is 404 under the site path; the domain root has one). The site title wraps onto two lines in the sidebar header and touches the border at desktop width. The accent colour is the theme's default purple, which does not match the project's professional palette (blues and teals). A nav entry in the Architecture group renders as a lone infinity glyph in the screenshot, and two pages share the title "Architecture". | Add a favicon and a logo; set a custom colour scheme (teal and blue links, neutral sidebar); shorten the site title or widen the sidebar title area; find and fix the infinity-glyph nav entry and give the section index and the page distinct titles. |
+| PR-5 | docs site, Mermaid | All 61 pages with a Mermaid block render (no raw blocks), but wide diagrams such as the system-overview one are scaled so small the labels are unreadable at 1440 px. | Give wide diagrams a horizontal-scroll or click-to-enlarge wrapper, and split the system overview into two diagrams (tiers, then the data path). |
+| PR-6 | docs site, navigation | `azure-deployment.md` and `auth-route-matrix.md` are not in the nav, so they are not published. The site check passes anyway. | Add both to a section and make `scripts/build_docs_site.py --check` fail on any page outside the nav (also finding X-1 of the docs audit). |
+| PR-7 | docs site, metadata | Every page's `og:image` is the same old `agent-timeline.png`. | Use the social card from PR-2 as the site default and let a page override it. |
+
+What the review found clean: all 109 nav pages return 200, no page shows raw front matter, no image is broken, every Mermaid block
+renders, and the mobile home page reads well. Acceptance for NA-13: a Playwright script (kept under `scripts/` so it can be rerun
+before each release) screenshots the GitHub page and the site at desktop and mobile widths, asserts every badge on the first row is
+the same height, asserts every nav page returns 200 with a rendered diagram where a diagram exists, and fails on a missing
+favicon or social image; the before and after screenshots go in the PR description.
+
+**Azure preparation branch (parallel, no deployment), revised 2026-11-23.** The deployment spins the whole stack, Foundry
+included, on the personal free-trial account; only the Foundry model costs real money, so it uses a low-cost deployment
+and the budget cap is 7 USD (the first 5 plus up to 2 for Foundry, raised only if a measured need appears). Postgres Flexible
+B1ms is spun too (the free account is expected to include about 750 hours of it, still to be verified), with Container Apps,
+Key Vault, Log Analytics, monitoring and the budget alerts. The branch delivers, without creating anything:
+1. The `free-trial` profile with the Foundry account, project, a cheap chat model and the smallest embedding model, and a cost
+   table dated from Azure's public price list.
+2. `scripts/azure/sanity.sh`, the last step of a deployment: database connectivity and content, a direct call to the deployed
+   Foundry model, one full application turn through the deployed orchestrator that touches a specialist and the database, and a
+   small evaluation run through the http target (cost cap about 0.10 USD). PASS or FAIL per check, no keys printed, nothing deleted:
+   teardown is a separate, explicit step the maintainer takes after reviewing the results, and a failed step prints what exists and how
+   to continue or clean up, so no half-built state is left unexplained.
+3. A "Deploy to Azure" button in the README (generated `infra/azuredeploy.json` kept in sync by a test, the portal link, the
+   `azd up` path beside it, a cost warning, and an honest statement of what the button cannot do without `azd` hooks).
+4. The ordered deployment sequence, read-only `what-if` and `validate`, and a rehearsed teardown.
+The real deployment still waits for NA-1 to NA-12.
+
+**NA-14 Local end to end, then Azure (maintainer decision, 2026-11-23).** The next goal is to prove the whole project works
+on a laptop before any Azure layer is added. Live evaluator runs inside CI are not a gate for this: the manual CI job
+(NA-5) is built and tested for trigger safety, and a user who wants it supplies their own keys as repository secrets; if the
+same suites pass locally with the same inputs, that is the evidence. The order is: (1) land the open PRs through the serial
+merge queue; (2) a completeness audit lists every half-built or never-exercised feature outside the Azure deployment; (3) each
+item is finished or explicitly recorded as out of scope with its reason; (4) one full local verification pass; (5) the docs
+audit fixes (NA-12) and the public-presentation fixes (NA-13); (6) Codespaces guidance (NA-15); (7) only then the Azure deployment.
+The full local verification pass is: clean `dev.sh` build and seed, the replay gate (`scripts/replay-evals.sh --setup`),
+`fixture_drift`, the whole Python and .NET suites, the Playwright e2e specs, the mixed-stack boots, the tutorials keyless
+runner, the live quality suites on the keys in the local environment (read by name), and the multi-turn and http-target runs.
+It needs ports 8080 to 8085, so it starts when the other session's demo stack is stopped.
+
+**NA-15 Codespaces: one click, and clear guidance on keys.** The badge is fixed to the same height as the others (NA-13 PR-1).
+The devcontainer is checked to build and start the stack key-free, and the README, the quick start and a Codespaces section of
+`docs/configuration.md` say how a user supplies model keys the safe way: as Codespaces secrets (repository or personal
+settings), declared in `devcontainer.json` under `secrets` so the creation screen prompts for them with a description, never
+committed and never put in `.env` in the repo; which variables each provider needs (`OPENAI_API_KEY`, or the Azure OpenAI
+endpoint, key and deployment names, or an OpenAI-compatible base URL), how to set them after the Codespace exists (add the secret,
+then rebuild or reload the environment so it is injected), how to verify with `python -m scripts.doctor`, and that without
+a key the stack runs in replay mode. Acceptance: the devcontainer builds in Docker locally; the doctor command reports the
+provider from the injected variables; a user who has never seen the repo can follow the section from the badge to a working chat.
+
 **Order and parallelism**
 
 ```mermaid
