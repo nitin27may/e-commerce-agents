@@ -108,7 +108,7 @@ the code or dataset that backs it. `N/A` means the dimension does not apply to t
 |-----------|--------|--------|
 | Inbound injection detection | Done | `InjectionDetectionChatMiddleware` — highest-risk agent for inbound injection because user input can request review text |
 | Stored-content sanitization | Done | All read tools (`get_product_reviews`, `analyze_sentiment`, `search_reviews`, `get_sentiment_by_topic`, `get_sentiment_trend`, `compare_product_reviews`, `detect_fake_reviews`) covered in `SANITIZE_TOOLS` with explicit field allowlists |
-| Role enforcement | Done | `draft_seller_response` gated `@requires_role("seller", "admin")` (Python) / `RoleGuard.Ensure` in `ReviewTools.cs` (.NET) |
+| Role enforcement | Done | `draft_seller_response` gated `@requires_role("seller", "admin")` (Python) / `RoleGuard.Ensure` in `ReviewTools.cs` (.NET); a seller may draft only for reviews of products they own (`products.seller_id`), admin any, otherwise the same not-found as a missing review |
 | Eval dataset | Done | `datasets/review_sentiment.json` |
 | Red-team coverage | Done | `red_team.json`: two injection attacks — direct system-prompt dump via review request; indirect via embedded "follow it" instruction in review content |
 | Auth mode | Done | Inter-agent: `local` shared secret / `oauth` `agent:invoke` service token — no MCP integration for this agent |

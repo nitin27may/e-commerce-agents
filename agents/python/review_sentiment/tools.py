@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from typing import Annotated
 
+import asyncpg
 from agent_framework import tool
 from pydantic import Field
 
+from shared.context import current_user_email, current_user_role
 from shared.db import get_pool
 from shared.guardrails.roles import requires_role
 
@@ -565,6 +567,17 @@ async def search_reviews(
         }
 
 
+async def _caller_may_respond(conn: asyncpg.Connection, product_seller_id: object) -> bool:
+    if current_user_role.get() == "admin":
+        return True
+    if product_seller_id is None:
+        return False
+    owner = await conn.fetchval(
+        "SELECT 1 FROM users WHERE id = $1 AND email = $2", product_seller_id, current_user_email.get()
+    )
+    return owner is not None
+
+
 @tool(
     name="draft_seller_response",
     description=(
@@ -579,14 +592,16 @@ async def draft_seller_response(
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """SELECT r.id, r.rating, r.title, r.body, r.created_at,
-                      u.name as reviewer_name, p.name as product_name
+                      u.name as reviewer_name, p.name as product_name, p.seller_id
                FROM reviews r
                JOIN users u ON r.user_id = u.id
                JOIN products p ON r.product_id = p.id
                WHERE r.id = $1""",
             review_id,
         )
-        if not row:
+        # A review of another seller's product answers the same not-found as a missing review, so ids cannot be
+        # probed across sellers. Admin may draft for any review.
+        if not row or not await _caller_may_respond(conn, row["seller_id"]):
             return {"error": f"Review not found: {review_id}"}
 
         reviewer = row["reviewer_name"]
