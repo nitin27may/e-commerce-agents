@@ -84,6 +84,11 @@ class EvalCase:
     live: bool = False
     # Orchestration mode to run through (``workflow:pre-purchase``); None is ``tool``. Orchestrator cases only.
     mode: str | None = None
+    # Orchestrator only: specialists that must all be called / must not be called (``"*"`` is any); assertions.
+    expected_routes: list[str] | None = None
+    forbidden_routes: list[str] | None = None
+    # One line saying why the case exists. Documentation for the dataset reader; never scored.
+    why: str | None = None
 
 
 @dataclass
@@ -240,6 +245,14 @@ class EvalSummary:
         }
 
 
+def _parse_route_list(index: int, key: str, raw: Any) -> list[str] | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or not all(isinstance(v, str) and v for v in raw):
+        raise ValueError(f"Dataset entry {index}: {key} must be a list of specialist names")
+    return raw
+
+
 def _parse_expected_tool_args(index: int, raw: Any) -> dict[str, dict[str, Any]] | None:
     if raw is None:
         return None
@@ -279,6 +292,9 @@ def load_dataset(path: str | Path) -> list[EvalCase]:
                 expect_hitl=entry.get("expect_hitl"),
                 live=is_live_file or entry.get("live") is True,
                 mode=entry.get("mode"),
+                expected_routes=_parse_route_list(i, "expected_routes", entry.get("expected_routes")),
+                forbidden_routes=_parse_route_list(i, "forbidden_routes", entry.get("forbidden_routes")),
+                why=entry.get("why"),
             )
         )
 
@@ -485,6 +501,8 @@ class AgentEvaluator:
             tool_args=case.expected_tool_args,
             denial=case.expect_denial,
             hitl=case.expect_hitl,
+            routes=case.expected_routes or [],
+            forbidden_routes=case.forbidden_routes or [],
             user_role=case.user_role,
             user_email=case.user_email,
             mode=case.mode,
@@ -570,9 +588,17 @@ class AgentEvaluator:
     @staticmethod
     def _check_assertions(case: EvalCase, outcome: Any) -> list[str]:
         """Schema-v2 assertions: tool arguments, role denial, human approval."""
-        expected = Expected(tool_args=case.expected_tool_args, denial=case.expect_denial, hitl=case.expect_hitl)
+        expected = Expected(
+            tool_args=case.expected_tool_args,
+            denial=case.expect_denial,
+            hitl=case.expect_hitl,
+            routes=case.expected_routes or [],
+            forbidden_routes=case.forbidden_routes or [],
+        )
         calls = [ToolCall(name=c.get("tool_name", ""), arguments=c.get("tool_input")) for c in outcome.tool_calls]
-        return scoring.check_assertions(expected, calls, outcome.denied, outcome.hitl_requested)
+        return scoring.check_assertions(
+            expected, calls, outcome.denied, outcome.hitl_requested, routes=list(outcome.routes or [])
+        )
 
     @staticmethod
     async def _score_groundedness_fallback(response_text: str, criteria: dict[str, bool]) -> float:

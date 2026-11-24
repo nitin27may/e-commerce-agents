@@ -57,6 +57,8 @@ the run (`Assertion failed:` in the verbose report, `assertion_failures` in the 
 | `expected_tool_args` | `{tool: {arg: value}}`. Subset match against the `tool_input` recorded in the steps (`evals/scorers/tool_args.py`): extra arguments are fine, strings compare case-insensitively, numbers by value. Keys must be tools the case also lists in `expected_tools`. |
 | `expect_denial` | `true`: a tool refused the call for this role (`permission_denied` step output). `false`: none did. |
 | `expect_hitl` | `true`: a destructive tool was parked for approval: a pending `tool_approval_requests` row for the case user created during the run (what a parked tool-mode `cancel_order` leaves), a new `hitl_requests` row (a paused workflow), or a `pending_approval` step. `false`: none was. |
+| `expected_routes` / `forbidden_routes` | Orchestrator cases. Every specialist in `expected_routes` must have been called through `call_specialist_agent`; none in `forbidden_routes` may have been (`"*"` is every specialist, so `["*"]` means answer directly). Assertions only, they never move a score. |
+| `why` | One line saying why the case exists. Never scored. Cases in `orchestrator_routing.live.json` also carry `type` (`happy`, `edge`, `adversarial`), which `tests/test_eval_orchestrator_dataset.py` counts. |
 
 `expected_tool_args` on a case only holds while its fixtures do: a re-recording that makes
 the model pass different arguments fails the assertion, which is the point.

@@ -14,6 +14,10 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ## [Unreleased]
 
+### Added
+
+- **Orchestrator live routing dataset grown to 30 cases** (14 happy, 9 edge, 7 adversarial) with a `why` line each, plus `expected_routes` and `forbidden_routes` assertions in the eval schema.
+
 ### Fixed
 
 - **"New chat" right after closing the Compare dialog did nothing (#210).** A closing dialog's backdrop kept catching clicks for its 100 ms exit animation; closed dialog layers no longer take pointer events. Backend-free spec: `web/e2e/chat-new-after-compare.spec.ts`.
