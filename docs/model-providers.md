@@ -18,7 +18,7 @@ and the capability probes in [the next section](#capability-check-results).
 
 | Provider | How to select | Verified how | Not verified |
 |---|---|---|---|
-| `replay` | `LLM_PROVIDER=replay` | Every CI eval and tutorial run; 102 fixtures recorded on `gpt-4.1-2025-04-14` | Anything about a model other than the one recorded |
+| `replay` | `LLM_PROVIDER=replay` | Every CI eval and tutorial run; 101 fixtures recorded on `gpt-4.1-2025-04-14` | Anything about a model other than the one recorded |
 | `azure` | `LLM_PROVIDER=azure` | Fixtures were recorded through it; the capability probes ran live against eight chat deployments (see the table below) | Current model availability for new subscriptions (see caveats); Claude deployments on Azure, which the OpenAI wire cannot reach |
 | `openai` | `LLM_PROVIDER=openai` | Stubbed-transport tests of the client wiring | No recorded run in this repo used api.openai.com |
 | `anthropic` | `LLM_PROVIDER=anthropic` | Stubbed `httpx2` transport (Python) and stub handler (.NET), `tests/test_anthropic_provider.py` | **Never run against the live API.** Tool-choice quality, prompt caching, real error shapes, streaming edge cases |

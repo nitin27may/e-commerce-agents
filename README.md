@@ -84,7 +84,7 @@ Docker is the only requirement — no Python, .NET or Node needed.
 which is the difference between a first run of about a minute and one of about twelve (a rough figure; it depends on your network and machine). Images are published for
 `linux/amd64` and `linux/arm64`, so Apple Silicon runs natively.
 
-**No API key?** `./scripts/dev.sh --demo --no-key` (PowerShell: `./scripts/dev.ps1 -Demo -NoKey`) starts the whole stack with no model behind it: browsing, search, cart and checkout work, and chat replays recorded answers for the suggested prompts. Those recordings are not in the released images yet, so until they are, chat prompts report "not recorded"; the tutorials are the fully keyless path today. A local model through Ollama also needs no paid key: see [docs/quick-start.md](docs/quick-start.md#run-without-a-paid-api-key).
+**No API key?** `./scripts/dev.sh --demo --no-key` (PowerShell: `./scripts/dev.ps1 -Demo -NoKey`) starts the whole stack with no model behind it: browsing, search, cart and checkout work, and chat replays recorded answers for the suggested prompts. The recordings ship in images built after this change; the released 1.4.0 images have none and report chat prompts as "not recorded". A local model through Ollama also needs no paid key: see [docs/quick-start.md](docs/quick-start.md#run-without-a-paid-api-key).
 
 **Building from source instead** — drop the flag. This is the contributor path, and the one to use
 if you have changed any code:

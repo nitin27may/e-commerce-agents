@@ -1,0 +1,307 @@
+{
+  "about": "Which recorded fixtures answer which demo prompt. A workflow prompt with an empty list calls no model, so there is nothing to record. Regenerate with the recording recipe in docs/replay-mode.md; tests/test_demo_fixtures.py keeps this file, the directory and config/demo/tour.yaml in step.",
+  "prompts": [
+    {
+      "id": "search-headphones",
+      "source": "tour",
+      "user": "tour@example.com",
+      "mode": "tool",
+      "new_conversation": true,
+      "prompt": "Show me noise-cancelling headphones under $350.",
+      "fixtures": [
+        "5f80148429393171",
+        "668072f298346730",
+        "984f8121e0d100a3",
+        "d23a1cb7ffb3576f"
+      ]
+    },
+    {
+      "id": "follow-up-compare",
+      "source": "tour",
+      "user": "tour@example.com",
+      "mode": "tool",
+      "new_conversation": false,
+      "prompt": "Which of those has the best reviews?",
+      "fixtures": [
+        "2c34caa0ed96059d",
+        "4e57dbe0d84d4016",
+        "711c9ccb110ff1d7",
+        "bc88148e86d11194"
+      ]
+    },
+    {
+      "id": "order-status",
+      "source": "tour",
+      "user": "tour@example.com",
+      "mode": "tool",
+      "new_conversation": true,
+      "prompt": "What is the status of my Patagonia Better Sweater order?",
+      "fixtures": [
+        "2737366047e91c28",
+        "caf8472c4d12ea12",
+        "e4e788b5cbe9eb17",
+        "f3ce2065730f0ea9"
+      ]
+    },
+    {
+      "id": "coupons",
+      "source": "tour",
+      "user": "tour@example.com",
+      "mode": "tool",
+      "new_conversation": true,
+      "prompt": "Which coupons can I use on an Electronics purchase over $100?",
+      "fixtures": [
+        "33de7ddde0a9a2b6",
+        "c356716ef0644164",
+        "f77b6d3fcd6599d7",
+        "fa92c8c58e5ba9d3"
+      ]
+    },
+    {
+      "id": "stock",
+      "source": "tour",
+      "user": "tour@example.com",
+      "mode": "tool",
+      "new_conversation": true,
+      "prompt": "Is the Sony WH-1000XM5 in stock?",
+      "fixtures": [
+        "0bf181a8ecdad01e",
+        "2028a1a2f885adee",
+        "3f172ee34d09d802",
+        "42e02980ec99656c",
+        "587f597278dc7d75"
+      ]
+    },
+    {
+      "id": "handoff-order",
+      "source": "tour",
+      "user": "tour@example.com",
+      "mode": "handoff",
+      "new_conversation": true,
+      "prompt": "Where is my Patagonia Better Sweater order and when will it arrive?",
+      "fixtures": [
+        "18963b5c85108ec9",
+        "2d2688c491e593e7",
+        "44c6cdf0986569c1",
+        "62c153da82bd3147",
+        "c8982c4e75b6e128"
+      ]
+    },
+    {
+      "id": "pre-purchase",
+      "source": "tour",
+      "user": "tour@example.com",
+      "mode": "workflow:pre-purchase",
+      "new_conversation": true,
+      "prompt": "I am thinking of buying the Sony WH-1000XM5. Is it a good time to buy?",
+      "fixtures": []
+    },
+    {
+      "id": "group-chat",
+      "source": "tour",
+      "user": "tour@example.com",
+      "mode": "group-chat",
+      "new_conversation": true,
+      "prompt": "Is the Sony WH-1000XM5 worth its price?",
+      "fixtures": [
+        "070b29312836d8bb",
+        "c8164e07f365040d"
+      ]
+    },
+    {
+      "id": "return-approval",
+      "source": "tour",
+      "user": "tour@example.com",
+      "mode": "workflow:return-replace",
+      "new_conversation": true,
+      "prompt": "I want to return order 3a1a42f5-62ae-520e-b54f-89eee633f9dc, the vacuum is not what I expected.",
+      "fixtures": []
+    },
+    {
+      "id": "guide-search",
+      "source": "guide",
+      "user": "alice.johnson@gmail.com",
+      "mode": "tool",
+      "new_conversation": true,
+      "prompt": "Find me wireless headphones under $300 with good noise cancellation",
+      "fixtures": [
+        "1a9f9be2036e38ff",
+        "2940beeb075ea572",
+        "d055dda3b3847a4c",
+        "e22b74649039d385"
+      ]
+    },
+    {
+      "id": "guide-compare",
+      "source": "guide",
+      "user": "alice.johnson@gmail.com",
+      "mode": "tool",
+      "new_conversation": true,
+      "prompt": "Compare the Sony WH-1000XM5 with AirPods Max",
+      "fixtures": [
+        "1942eba4b5aeed57",
+        "5ff42b99ab236955",
+        "8ed7a3e2fa498f0f",
+        "bf8e6738a2110a87",
+        "f54c025f2cc1ec33"
+      ]
+    },
+    {
+      "id": "guide-latest-order",
+      "source": "guide",
+      "user": "alice.johnson@gmail.com",
+      "mode": "tool",
+      "new_conversation": true,
+      "prompt": "Where's my latest order?",
+      "fixtures": [
+        "12c9c903f3f691c9",
+        "352d93302e0b2432",
+        "71cdaca1ee9b5b0a",
+        "95fab6a87130270f"
+      ]
+    },
+    {
+      "id": "guide-return-last-order",
+      "source": "guide",
+      "user": "alice.johnson@gmail.com",
+      "mode": "tool",
+      "new_conversation": true,
+      "prompt": "I want to return my last order",
+      "fixtures": [
+        "125f69a1b78575d1",
+        "2788c7221ce47ebe",
+        "3c8e1b0a64ab928b",
+        "acb6e19b14c4ab0d",
+        "f46b6f44ecce755a"
+      ]
+    },
+    {
+      "id": "guide-price-check",
+      "source": "guide",
+      "user": "alice.johnson@gmail.com",
+      "mode": "tool",
+      "new_conversation": true,
+      "prompt": "Is the Logitech MX Master 3S a good deal right now?",
+      "fixtures": [
+        "1aeab7241692eef8",
+        "2ea567f9bd7ed188",
+        "3fdb93d036eb1b7b",
+        "8177ade9f9f044df",
+        "ad602f4dfc83e3a5",
+        "f1601b16fb820287"
+      ]
+    },
+    {
+      "id": "guide-reviews",
+      "source": "guide",
+      "user": "alice.johnson@gmail.com",
+      "mode": "tool",
+      "new_conversation": true,
+      "prompt": "What do people think about the Dyson V15?",
+      "fixtures": [
+        "1fb5cf25afad36a4",
+        "21c0156b209f7094",
+        "4f8f9f6e075666d9",
+        "8b268087fa8a8425",
+        "f996c67ed55cab18"
+      ]
+    },
+    {
+      "id": "guide-stock",
+      "source": "guide",
+      "user": "alice.johnson@gmail.com",
+      "mode": "tool",
+      "new_conversation": true,
+      "prompt": "Is the Dyson V15 Detect in stock?",
+      "fixtures": [
+        "229ccf55c3ef1be7",
+        "251a04e7fbaa9c07",
+        "8b0e7298b4723372",
+        "d8e1c6bc4874e7e3",
+        "ea16d7ae850df466",
+        "f4fb36f3a791a583"
+      ]
+    },
+    {
+      "id": "guide-multi-intent",
+      "source": "guide",
+      "user": "alice.johnson@gmail.com",
+      "mode": "tool",
+      "new_conversation": true,
+      "prompt": "Return my jacket and find me a warmer one under $200",
+      "fixtures": [
+        "0e2ee0da66404663",
+        "15b9f88f6520dc58",
+        "7b35d9da3d92d333",
+        "aa89b08957732501",
+        "bd1061e1aba2e996",
+        "e79ca8fd2e208762"
+      ]
+    },
+    {
+      "id": "guide-handoff-latest-order",
+      "source": "guide",
+      "user": "alice.johnson@gmail.com",
+      "mode": "handoff",
+      "new_conversation": true,
+      "prompt": "Where's my latest order?",
+      "fixtures": [
+        "1c47569332e4c208",
+        "a0b9f2e5db55e1d9",
+        "c8da8908f27c78ce"
+      ]
+    },
+    {
+      "id": "guide-pre-purchase-sony",
+      "source": "guide",
+      "user": "alice.johnson@gmail.com",
+      "mode": "workflow:pre-purchase",
+      "new_conversation": true,
+      "prompt": "Should I buy the Sony WH-1000XM5?",
+      "fixtures": []
+    },
+    {
+      "id": "e2e-allbirds-search",
+      "source": "guide",
+      "user": "alice.johnson@gmail.com",
+      "mode": "tool",
+      "new_conversation": true,
+      "prompt": "What Allbirds products do you have?",
+      "fixtures": [
+        "0425b19f78e9eb02",
+        "862818fc416754c2",
+        "cbf711449b43f2e6",
+        "eb71cb80b51809e3"
+      ]
+    },
+    {
+      "id": "e2e-allbirds-price",
+      "source": "guide",
+      "user": "alice.johnson@gmail.com",
+      "mode": "tool",
+      "new_conversation": false,
+      "prompt": "How much are they?",
+      "fixtures": [
+        "7039a2f8042f4df9"
+      ]
+    },
+    {
+      "id": "e2e-pre-purchase-allbirds",
+      "source": "guide",
+      "user": "alice.johnson@gmail.com",
+      "mode": "workflow:pre-purchase",
+      "new_conversation": true,
+      "prompt": "I'm considering the Allbirds Wool Runners — should I buy them?",
+      "fixtures": []
+    },
+    {
+      "id": "guide-return-delivered-tour",
+      "source": "guide",
+      "user": "tour@example.com",
+      "mode": "workflow:return-replace",
+      "new_conversation": true,
+      "prompt": "I want to return my last delivered order",
+      "fixtures": []
+    }
+  ]
+}

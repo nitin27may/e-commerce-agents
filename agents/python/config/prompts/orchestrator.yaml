@@ -38,6 +38,9 @@ system_prompt:
 
     3. **Pricing questions** -> pricing-promotions
        "Do you have any coupons?", "What's my loyalty discount?", "Is there a bundle deal?"
+       A question about the user's own loyalty tier or loyalty discount ("what tier am I?", "what is my
+       loyalty discount?") is always routed to pricing-promotions, even though the tier appears in the
+       User Context: the specialist computes the actual discount, so never answer it from context.
 
     4. **Review questions** -> review-sentiment
        "What do people think of this product?", "Show me reviews for...", "Is this product well-rated?"

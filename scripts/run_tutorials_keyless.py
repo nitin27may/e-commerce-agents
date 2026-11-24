@@ -38,18 +38,9 @@ TUTORIALS_DIR = REPO_ROOT / "tutorials"
 TIMEOUT_SECONDS = 120
 NOTICE = "No LLM key found"
 
-NEEDS_FIXTURE = "needs a recorded fixture: the default prompt in main.py has no recorded fixture, so replay misses"
-
 # chapter directory -> reason it is not run. Keep every entry honest: the reason
 # is printed on every run so the list cannot rot quietly.
 SKIP: dict[str, str] = {
-    "04-sessions": NEEDS_FIXTURE,
-    "05-context-providers": NEEDS_FIXTURE,
-    "07-observability-otel": NEEDS_FIXTURE,
-    "12-sequential-orchestration": NEEDS_FIXTURE,
-    "13-concurrent-orchestration": NEEDS_FIXTURE,
-    "14-handoff-orchestration": NEEDS_FIXTURE,
-    "16-magentic-orchestration": NEEDS_FIXTURE,
     "20b-devui": (
         "long-running DevUI server hardwired to a live client; it serves arbitrary prompts, "
         "which no recorded fixture can answer"
@@ -59,6 +50,12 @@ SKIP: dict[str, str] = {
 # Chapters whose demo reads stdin: the answer to feed it.
 STDIN: dict[str, str] = {
     "17-human-in-the-loop": "y\n",  # approve the refund at the human-in-the-loop prompt
+}
+
+# Files a chapter's default run leaves behind that change the next run's request (chapter 04 saves its
+# session and the next default run would reload it), removed before and after the run.
+RESIDUE: dict[str, list[str]] = {
+    "04-sessions": ["tutorials/04-sessions/python/session.json"],
 }
 
 # Chapters that import code from outside tutorials/ and need it on the path.
@@ -92,7 +89,20 @@ def discover() -> list[str]:
     return sorted(p.parent.parent.name for p in TUTORIALS_DIR.glob("*/python/main.py"))
 
 
+def clear_residue(chapter: str) -> None:
+    for name in RESIDUE.get(chapter, []):
+        (REPO_ROOT / name).unlink(missing_ok=True)
+
+
 def run_chapter(chapter: str) -> tuple[bool, str]:
+    clear_residue(chapter)
+    try:
+        return _run_chapter(chapter)
+    finally:
+        clear_residue(chapter)
+
+
+def _run_chapter(chapter: str) -> tuple[bool, str]:
     main_py = TUTORIALS_DIR / chapter / "python" / "main.py"
     cmd = ["uv", "run", "--project", "tutorials", "python", str(main_py.relative_to(REPO_ROOT))]
     try:
@@ -121,7 +131,7 @@ def main() -> int:
     args = parser.parse_args()
 
     chapters = discover()
-    stale = sorted((set(SKIP) | set(STDIN) | set(EXTRA_ENV)) - set(chapters))
+    stale = sorted((set(SKIP) | set(STDIN) | set(EXTRA_ENV) | set(RESIDUE)) - set(chapters))
     if stale:
         print(f"FAIL: SKIP/STDIN/EXTRA_ENV name chapters that do not exist: {stale}")
         return 1

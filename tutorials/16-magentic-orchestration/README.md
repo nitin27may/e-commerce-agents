@@ -33,7 +33,7 @@ was thin. It decides that at run time.
 
 - **Budget.** Magentic makes several manager LLM calls on top of every worker call. Expect
   between 5 and 15 LLM calls for a single task on the default settings.
-- **Key:** `main.py`'s default prompt has no recorded fixture, so running it needs a key (live run). Without one, the chapter's tests replay their own recorded prompt: `uv run --project tutorials pytest tutorials/16-magentic-orchestration/python/tests -m "not integration"`.
+- **No key is needed to run this chapter.** With no key, `main.py` replays a recorded response for its default prompt, and the chapter's tests replay their own: `uv run --project tutorials pytest tutorials/16-magentic-orchestration/python/tests -m "not integration"`. A different prompt has no recording; set a key to try your own wording.
 
 ## The concept
 
@@ -106,7 +106,7 @@ uv sync --project tutorials
 uv run --project tutorials pytest tutorials/16-magentic-orchestration/python/tests -m "not integration"
 ```
 
-`main.py` needs a key in the repo-root `.env`, because it calls a live model:
+With no key, `main.py` replays a recorded response for its default task; with a key it calls a live model, and a different task needs one:
 
 ```bash
 uv run --project tutorials python tutorials/16-magentic-orchestration/python/main.py "plan a product launch for an AI meal planner"

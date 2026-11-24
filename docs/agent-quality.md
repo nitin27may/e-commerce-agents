@@ -7,7 +7,7 @@ This page explains how the project measures whether its agents answer correctly 
 | Agent | Overall |
 |-------|--------:|
 | review-sentiment | 1.00 |
-| product-discovery | 0.97 |
+| product-discovery | 0.96 |
 | inventory-fulfillment | 0.82 |
 | orchestrator (routing) | 0.80 |
 | pricing-promotions | 0.68 |

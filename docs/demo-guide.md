@@ -17,10 +17,15 @@ again. The stack stays up either way.
 
 Sign in as `tour@example.com` / `tour123`: a dedicated account whose orders the tour depends on, with
 a delivered order over $500 for the return flow. **Reset demo** in the chat puts it back after a run.
-The other accounts below work too, but their recorded answers were not captured, so expect misses.
+`alice.johnson@gmail.com` / `customer123` also has recordings, for the scenarios listed under Demo Scenarios
+below (1 to 8, the handoff and pre-purchase prompts of 9, and the Allbirds prompts the demo clip uses). Other
+accounts and reworded prompts miss.
 
-Known limit until the recording session lands: the recorded answers (`agents/python/demo/fixtures/replay/`)
-are not in the images yet, so every model call is a miss. Browsing, search, cart and checkout are unaffected.
+The recordings are `agents/python/demo/fixtures/replay/`, and `agents/python/demo/fixtures/manifest.json` says which
+prompt each one answers. They are fixed answers: a date or a count in one ("21 days left in the return window") is
+as of the recording. Two limits. A prompt that changes data (a return, a checkout) changes what a later prompt sees,
+so run the tour from a fresh stack (`--clean`) or use **Reset demo**. And the two workflow modes, pre-purchase and
+return-and-replace, call no model, so there is nothing recorded for them and nothing to miss.
 
 ## Test Users
 
@@ -81,8 +86,8 @@ the quickest way to see what that means:
 
     <img src="images/mode-compare.jpg" alt="Compare dialog: one prompt run through four orchestration modes, each card showing latency, steps, tokens, cost and the graph it took" width="820"/>
 11. **Approve a paused return.** Sign in as `tour@example.com` / `tour123`, the account seeded with
-    a delivered order (Alice's most recent order is still `shipped`, so her return stops at the
-    eligibility check). Pick **Return & Replace** and ask "I want to return my last delivered
+    a delivered order over the $500 approval threshold (Alice's most recent order is delivered too, but it
+    is a smaller return that policy may approve without a pause). Pick **Return & Replace** and ask "I want to return my last delivered
     order". The run pauses at the policy gate, nothing is created, and the chat shows "Awaiting
     staff review".
 

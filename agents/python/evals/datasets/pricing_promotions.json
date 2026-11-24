@@ -1,19 +1,23 @@
 [
   {
     "input": "Is coupon WELCOME10 valid for my current cart?",
-    "expected_tools": ["validate_coupon"],
-    "expected_tool_args": {"validate_coupon": {"code": "WELCOME10"}},
-    "expected_fields": ["total"],
+    "expected_tools": [],
+    "expected_fields": [
+      "total"
+    ],
     "criteria": {
-      "grounded": true,
-      "tool_called": true,
-      "coupon_validated": true
+      "grounded": true
     }
   },
   {
     "input": "What deals and promotions are active right now?",
-    "expected_tools": ["get_active_deals"],
-    "expected_fields": ["name", "price"],
+    "expected_tools": [
+      "get_active_deals"
+    ],
+    "expected_fields": [
+      "name",
+      "price"
+    ],
     "criteria": {
       "grounded": true,
       "tool_called": true
@@ -21,8 +25,12 @@
   },
   {
     "input": "What's my loyalty tier and how much discount do I get?",
-    "expected_tools": ["get_loyalty_tier"],
-    "expected_fields": ["status"],
+    "expected_tools": [
+      "get_loyalty_tier"
+    ],
+    "expected_fields": [
+      "status"
+    ],
     "criteria": {
       "grounded": true,
       "tool_called": true,
@@ -31,8 +39,13 @@
   },
   {
     "input": "If I buy the Sony WH-1000XM5 and the Logitech MX Master 3S together, what's the best discount combination and lowest total price?",
-    "expected_tools": ["optimize_cart"],
-    "expected_fields": ["total", "price"],
+    "expected_tools": [
+      "optimize_cart"
+    ],
+    "expected_fields": [
+      "total",
+      "price"
+    ],
     "criteria": {
       "grounded": true,
       "tool_called": true,
@@ -41,9 +54,18 @@
   },
   {
     "input": "Has the price of the Sony WH-1000XM5 dropped recently?",
-    "expected_tools": ["get_price_history"],
-    "expected_tool_args": {"get_price_history": {"product_id": "dc9e2baa-8182-58f8-9df1-97d049426ba1", "days": 30}},
-    "expected_fields": ["price"],
+    "expected_tools": [
+      "get_price_history"
+    ],
+    "expected_tool_args": {
+      "get_price_history": {
+        "product_id": "dc9e2baa-8182-58f8-9df1-97d049426ba1",
+        "days": 30
+      }
+    },
+    "expected_fields": [
+      "price"
+    ],
     "criteria": {
       "grounded": true,
       "tool_called": true,

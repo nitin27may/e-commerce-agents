@@ -247,8 +247,8 @@ It binds the same ports as compose, so stop that first. Details and caveats are 
 compose file and skips the key check. It hardcodes `LLM_PROVIDER=replay`, the replay fixtures path and
 the demo-tour settings, so a `.env` or exported variable cannot change what a recorded answer was
 keyed on. Only the suggested prompts in the chat get an answer; anything else is reported in the chat
-as not recorded. The recordings are not in the released images yet, so today every chat prompt is
-reported that way ([demo guide](demo-guide.md#no-key-mode)). Browsing, search, the cart and checkout never call a model and work normally.
+as not recorded ([demo guide](demo-guide.md#no-key-mode)). The recordings ship in the images built
+after this change; an older released image has none and reports every chat prompt that way. Browsing, search, the cart and checkout never call a model and work normally.
 Python stack only. Use `--clean` when you start it again: re-seeding an already-seeded database makes
 some recorded answers miss.
 

@@ -1,0 +1,54 @@
+{
+  "request": {
+    "instructions": "You are a Market Researcher. Respond with one concrete market insight.",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "Please provide a concise market analysis for AI meal planners, including key competitors, current trends, target user personas, and suggestions for potential differentiators our product could offer.",
+            "type": "text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      }
+    ],
+    "tools": []
+  },
+  "response": {
+    "created_at": "2026-11-24T03:30:29.000000Z",
+    "finish_reason": "stop",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "Market Insight:  \nAI meal planners are gaining traction as consumers seek personalized, healthy, and convenient meal solutions. Key competitors include platforms like Mealime, Eat This Much, PlateJoy, and Foodvisor, all of which offer AI-driven recipes, dietary tracking, and grocery integration. Current trends center around deeper personalization, mobile app integration, smart kitchen connectivity, sustainability, and allergen-aware menus. Target personas are health-conscious individuals, busy professionals, parents managing family diets, and those with specific dietary restrictions (e.g., vegan, gluten-free, keto). To differentiate, consider features such as real-time recipe adaptation based on pantry inventory, dynamic nutrition coaching, integration with local grocery delivery, or social meal planning for groups and families.",
+            "type": "text"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      }
+    ],
+    "model": "gpt-4.1-2025-04-14",
+    "response_id": "chatcmpl-EnbWf73w8sUAHFfAIYQJ76Vmarchj",
+    "type": "chat_response",
+    "usage_details": {
+      "cache_read_input_token_count": 0,
+      "completion/accepted_prediction_tokens": 0,
+      "completion/audio_tokens": 0,
+      "completion/reasoning_tokens": 0,
+      "completion/rejected_prediction_tokens": 0,
+      "input_token_count": 58,
+      "output_token_count": 146,
+      "prompt/audio_tokens": 0,
+      "prompt/cached_tokens": 0,
+      "reasoning_output_token_count": 0,
+      "total_token_count": 204
+    }
+  }
+}

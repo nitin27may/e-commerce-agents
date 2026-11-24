@@ -20,7 +20,7 @@ The example here: **a Triage agent routes to a Math or a History specialist, whi
 
 - Completed [Chapter 13 — Concurrent Orchestration](../13-concurrent-orchestration/)
 - For a live run, a repo-root `.env` with one LLM provider: `OPENAI_API_KEY` (+ optional `LLM_MODEL`, default `gpt-4.1`) or `AZURE_OPENAI_ENDPOINT` / `AZURE_OPENAI_KEY` / `AZURE_OPENAI_DEPLOYMENT` (+ optional `AZURE_OPENAI_API_VERSION`, default `2024-10-21`)
-- **Key:** `main.py`'s default prompt has no recorded fixture, so running it needs a key (live run). Without one, the chapter's tests replay their own recorded prompt: `uv run --project tutorials pytest tutorials/14-handoff-orchestration/python/tests -m "not integration"` (with `PYTHONHASHSEED=0`, which the recorded fixtures assume).
+- **No key is needed to run this chapter.** With no key, `main.py` replays a recorded response for its default prompt, and the chapter's tests replay their own: `uv run --project tutorials pytest tutorials/14-handoff-orchestration/python/tests -m "not integration"` (with `PYTHONHASHSEED=0`, which the recorded fixtures assume). A different prompt has no recording; set a key to try your own wording.
 
 ## The concept
 
@@ -62,7 +62,7 @@ Each specialist decides for itself whether to hand back. The mesh has no central
 
 ## Python
 
-Run from the repo root. `main.py` needs a key, because its default prompt has no recorded responses. If you have no key, run the tests first; they replay a recorded prompt:
+Run from the repo root. With no key, `main.py` replays a recorded response for its default prompt (run with `PYTHONHASHSEED=0`); the tests replay their own recorded prompt:
 
 ```bash
 uv sync --project tutorials
