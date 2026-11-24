@@ -319,3 +319,40 @@ def test_every_gated_tool_has_a_precheck_registered() -> None:
 
     _tools()  # importing the tool modules registers their checks
     assert HITL_GATED_TOOLS <= set(registered_prechecks())
+
+
+# ───────────────────── shared sentence vector (.NET reads the same file) ─────────────────────
+
+
+def _gate_vector() -> dict[str, Any]:
+    import json
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[1] / "config" / "policies" / "testdata" / "gate-sentences.v1.json"
+    return json.loads(path.read_text())
+
+
+def test_user_facing_gate_sentences_match_the_shared_vector() -> None:
+    from shared.hitl import PARK_FAILED_REPLY, parked_reply
+
+    vector = _gate_vector()
+    assert park_prechecks.NOT_SUBMITTED == vector["not_submitted"]
+    assert park_prechecks.ORDER_NOT_FOUND == vector["order_not_found"]
+    assert park_prechecks.RETURN_NOT_FOUND == vector["return_not_found"]
+    assert PARK_FAILED_REPLY == vector["park_failed_reply"]
+    for case in vector["parked"]:
+        assert parked_reply(case["tool"], case["input"], case["request_id"]) == case["sentence"]
+
+
+def test_role_refusal_sentence_matches_the_shared_vector() -> None:
+    from types import SimpleNamespace
+
+    from shared.guardrails.roles import REQUIRED_ROLES_ATTR
+
+    case = _gate_vector()["role_refusal"]
+
+    def fn() -> None: ...
+
+    setattr(fn, REQUIRED_ROLES_ATTR, frozenset({*case["declared_roles"], "admin"}))
+    agent = SimpleNamespace(default_options={"tools": [SimpleNamespace(name=case["tool"], func=fn)]})
+    assert park_prechecks.role_refusal(agent, case["tool"], case["caller_role"]) == case["sentence"]

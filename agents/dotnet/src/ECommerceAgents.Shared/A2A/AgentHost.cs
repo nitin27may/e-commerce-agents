@@ -300,11 +300,13 @@ public static class AgentHost
             .ToList();
         messages.Add(new ChatMessage(ChatRole.User, message));
 
+        using var notices = RequestContext.EnsureGateNotices();
         var response = await agent.RunAsync(messages);
         RequestContext.RecordUsage(
             RunUsage.SelfKey,
             SpecialistUsage.From(response.Usage, services.GetService<AgentSettings>()?.LlmModel ?? ""));
-        return response.Text;
+        // A refusal or pending-approval sentence the gate recorded reaches the user as written, whatever the model said.
+        return AppendGateNotice(response.Text, RequestContext.TakeGateNotice());
     }
 
     /// <summary>
@@ -337,6 +339,10 @@ public static class AgentHost
         messages.Add(new ChatMessage(ChatRole.User, message));
 
         var model = services.GetService<AgentSettings>()?.LlmModel ?? "";
+        // No EnsureGateNotices here: an async iterator's AsyncLocal writes are dropped between MoveNextAsync calls, so a sink
+        // started inside it would never reach the tool call. The request scope (AgentAuthMiddleware) owns it; outside one,
+        // the pipeline leaves the sentence in the tool result for the model to relay.
+        var streamed = false;
         await foreach (var update in agent.RunStreamingAsync(messages, cancellationToken: ct))
         {
             // Usage arrives as a content item on an update, not as text.
@@ -347,10 +353,21 @@ public static class AgentHost
 
             if (!string.IsNullOrEmpty(update.Text))
             {
+                streamed = true;
                 yield return update.Text;
             }
         }
+
+        // The last chunk before the stream completes, as Python yields it.
+        if (RequestContext.TakeGateNotice() is { Length: > 0 } notice)
+        {
+            yield return streamed ? $"\n\n{notice}" : notice;
+        }
     }
+
+    /// <summary>Python's <c>text + blank line + sentence</c>; the sentence alone when the model said nothing.</summary>
+    internal static string AppendGateNotice(string? text, string notice) =>
+        notice.Length == 0 ? text ?? "" : string.IsNullOrEmpty(text) ? notice : $"{text}\n\n{notice}";
 }
 
 internal sealed class AgentHostMarker { }
