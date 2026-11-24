@@ -603,5 +603,34 @@
       "routed": false
     },
     "user_email": "jack.anderson@gmail.com"
+  },
+  {
+    "type": "multi_turn",
+    "why": "Turn 2 only makes sense with turn 1; when the orchestrator routes it, the specialist reached over A2A rehydrates the earlier turn from the messages table. Turn 2 asserts no route: live runs answered it from history.",
+    "input": "Tell me more about the cheapest one, including its specs.",
+    "criteria": {
+      "grounded": true,
+      "tool_called": false,
+      "routed": false
+    },
+    "user_email": "jack.anderson@gmail.com",
+    "turns": [
+      {
+        "input": "Show me some noise cancelling headphones.",
+        "expected_tools": [
+          "call_specialist_agent"
+        ],
+        "expected_tool_args": {
+          "call_specialist_agent": {
+            "agent_name": "product-discovery"
+          }
+        }
+      },
+      {
+        "input": "Tell me more about the cheapest one, including its specs.",
+        "expected_tools": [],
+        "expected_fields": []
+      }
+    ]
   }
 ]

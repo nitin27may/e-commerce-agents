@@ -168,7 +168,7 @@ Live variants, run by hand against a model with run-time facts resolved (they ar
 |---|---:|
 | `live/product_discovery.live.json` | 25 |
 | `live/inventory_fulfillment.live.json` | 29 |
-| `live/orchestrator_routing.live.json` | 30 |
+| `live/orchestrator_routing.live.json` | 31 |
 | `live/order_management.live.json` | 33 (includes multi-turn cases) |
 | `live/pricing_promotions.live.json` | 29 |
 | `live/review_sentiment.live.json` | 29 |

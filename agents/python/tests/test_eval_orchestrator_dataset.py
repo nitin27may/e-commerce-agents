@@ -20,7 +20,7 @@ from evals.scoring import check_assertions
 
 DATASET = Path(__file__).resolve().parents[1] / "evals" / "datasets" / "live" / "orchestrator_routing.live.json"
 SPECIALISTS = set(AGENT_FACTORIES) - {"orchestrator"}
-MINIMUMS = {"happy": 10, "edge": 8, "adversarial": 6}
+MINIMUMS = {"happy": 10, "edge": 8, "adversarial": 6, "multi_turn": 1}
 
 
 def _raw() -> list[dict[str, Any]]:
