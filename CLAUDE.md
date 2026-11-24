@@ -209,6 +209,15 @@ approval, may only lower the amount, and draws no budget; an SLA breach never ex
 `AUTONOMY_ENABLED`**, the simulator additionally needs `AUTONOMY_SIMULATOR_ENABLED`, and no model is called. Every number in
 `autonomy.yaml` is a placeholder.
 
+**More events and the responder (#299).** Three event types share the engine: `order.shipment_delayed` (credit per order),
+`product.price_dropped` (price adjustment per order *line*, one per line ever, a partial unique index backs it) and
+`inventory.back_in_stock` (a money-free notice per cart holder: no budget, per-customer daily cap, bounded audience; carts only,
+there is no wishlist). The last two fan out, one decision per target under `topic:event_id:target`; an action's `kind`
+(`credit|price_adjustment|notice`) in `autonomy.yaml` picks the sizing. `AUTONOMY_RESPONDER_ENABLED` (off) has the worker word
+the customer message after the decision committed (`shared/autonomy/responder.py`, prompt `ops-responder.yaml`, not a routable
+agent): checked against the decision's facts, template fallback, stored in append-only `decision_drafts`, never read back by the
+engine. Monthly budgets, order-risk and damaged-item events and a carrier feed remain in #299.
+
 Review-fix rules to keep (details in `docs/event-autonomy.md`): **a reviewer is never the approval's subject**
 (`authorize_decider` / `AuthorizeDecider`, a DB CHECK, and the engine never acts alone for a `support`/`admin` beneficiary;
 merchant proposals are the one named exemption, `SELLER_DECIDED_SOURCES`). **Lock order: budget, then order, then row locks**;
@@ -368,7 +377,7 @@ no model is called at all — that is what CI, the eval smoke suite and the tuto
 
 ## Database
 
-- Schema: `docker/postgres/init.sql` is the frozen baseline (34 tables; the 12 added by migrations bring it to 46); every change since is a numbered file in `docker/postgres/migrations/` (0002–0016 today: approval claims, refresh tokens, lower-cased user emails, refresh-family expiry, approvals/outbox/notifications, usage cost columns, embedding model, merchant proposals, expiry of pre-policy return approvals, worker leases, event autonomy, return lifecycle columns, signing-key rotation, usage price source, customer confirmations) applied by `scripts/migrate.py` (the seeder, `dev.sh`/`dev.ps1` and every test fixture run it). Never edit an applied migration — the checksum guard fails the run; add a new one. The runner applies whatever is unapplied in numeric order, so a lower number arriving late is fine.
+- Schema: `docker/postgres/init.sql` is the frozen baseline (34 tables; the 13 added by migrations bring it to 47); every change since is a numbered file in `docker/postgres/migrations/` (0002–0017 today: approval claims, refresh tokens, lower-cased user emails, refresh-family expiry, approvals/outbox/notifications, usage cost columns, embedding model, merchant proposals, expiry of pre-policy return approvals, worker leases, event autonomy, return lifecycle columns, signing-key rotation, usage price source, customer confirmations, more autonomy events) applied by `scripts/migrate.py` (the seeder, `dev.sh`/`dev.ps1` and every test fixture run it). Never edit an applied migration — the checksum guard fails the run; add a new one. The runner applies whatever is unapplied in numeric order, so a lower number arriving late is fine.
 - All queries use parameterized `$1, $2` syntax (asyncpg)
 - All user-facing queries filter by `user_email` or `user_id`
 - Embeddings stored as `vector(1536)` with ivfflat cosine index

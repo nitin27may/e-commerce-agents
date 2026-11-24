@@ -43,7 +43,7 @@ This folder contains the full technical documentation for E-Commerce Agents.
 1. [API Reference](api-reference.md) — about 70 REST routes; request/response examples for the core surface, tables for the rest
 2. [A2A](a2a.md) — the A2A 1.0 endpoint and agent card every specialist serves, and cross-stack interop
 3. [MCP Integration](mcp-integration.md) — MCP servers (MCPServer), how to enable, how to inspect
-4. [Database Schema](database-schema.md) — 45 tables (34 baseline plus 11 from migrations) with ER diagram and gotchas
+4. [Database Schema](database-schema.md) — 47 tables (34 baseline plus 13 from migrations) with ER diagram and gotchas
 
 ### "I care about quality, security, or observability"
 
@@ -64,7 +64,7 @@ This folder contains the full technical documentation for E-Commerce Agents.
 | [adding-an-agent.md](adding-an-agent.md) | Step-by-step checklist to add a new specialist agent |
 | [api-reference.md](api-reference.md) | About 70 REST routes (auth, chat, products, orders, cart, admin, marketplace, approvals, proposals, autonomy, returns, notifications) |
 | [agent-flows.md](agent-flows.md) | Five multi-agent collaboration sequence diagrams with pattern notes |
-| [database-schema.md](database-schema.md) | 45 tables (34 baseline in 12 groups, 11 from migrations), ER diagram, indexing, gotchas |
+| [database-schema.md](database-schema.md) | 47 tables (34 baseline in 12 groups, 13 from migrations), ER diagram, indexing, gotchas |
 | [deployment.md](deployment.md) | Docker Compose profiles, `dev.sh` script, environment variables, local dev, health checks |
 | [frontend.md](frontend.md) | Next.js 16 routing, theming/OKLCH, SSE streaming, agent timeline, testing |
 | [telemetry.md](telemetry.md) | OpenTelemetry instrumentation, Aspire Dashboard, Langfuse LLM observability |

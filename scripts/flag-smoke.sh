@@ -14,6 +14,8 @@
 #   1. event autonomy   POST /api/admin/events/simulate for small, medium and large, then waits for the worker:
 #                       small -> an executed, auto decision; medium -> executed, auto_notify; large -> an
 #                       awaiting_approval decision and a pending `autonomous_action` approval in the staff inbox.
+#                       Then the price-drop scenario (one price-adjustment decision per recent order line) and the
+#                       back-in-stock scenario (a notice per cart holding the product, no amount) (#299).
 #   2. return lifecycle a customer return over the approval threshold pauses for approval; an admin approves it; the
 #                       run waits for a carrier scan (a `carrier_scan` wait, no inbox row); the simulator posts the scan;
 #                       the worker resumes it into inspection; staff accept it and the return is refunded.
@@ -47,6 +49,8 @@ CHECKS=(
   "autonomy: small simulated delay is executed under the auto tier"
   "autonomy: medium simulated delay is executed under the auto_notify tier"
   "autonomy: large simulated delay waits for approval and opens an autonomous_action inbox row"
+  "autonomy: a simulated price drop gives each recent order line one price-adjustment decision"
+  "autonomy: a simulated back-in-stock event notifies the carts that hold the product, with no amount"
   "returns: an over-threshold return pauses for approval before anything is created"
   "returns: an admin approving it leaves a carrier_scan wait and no new inbox row"
   "returns: the simulated scan is resumed by the outbox worker into an inspection wait"
@@ -187,6 +191,38 @@ pending = call("GET", "/api/approvals?limit=200", admin)["approvals"]
 if not any(a.get("kind") == "autonomous_action" for a in pending):
     raise Step(f"no autonomous_action approval in the staff inbox: {[a.get('kind') for a in pending]}")
 ok("autonomy large -> awaiting_approval, autonomous_action in the inbox")
+
+# The two newer event types (#299). Both scenarios pick their own target from the seeded data.
+price = call("POST", "/api/admin/events/simulate", admin, {"scenario": "price-drop"})
+if not price.get("enqueued") or price.get("event_type") != "product.price_dropped":
+    raise Step(f"the price-drop scenario enqueued nothing: {price}")
+
+
+def decisions_of(event_type):
+    rows = call("GET", "/api/admin/decisions?limit=200", admin)["decisions"]
+    return [d for d in rows if d.get("event_type") == event_type]
+
+
+adjusted = wait_for("price-adjustment decisions for the price drop", lambda: decisions_of("product.price_dropped"))
+paid = [d for d in adjusted if d.get("action") == "price_adjustment" and d.get("tier") in ("auto", "auto_notify", "needs_approval")]
+if not paid or not all(d.get("order_item_id") for d in paid):
+    raise Step(f"the price drop produced no price-adjustment decision tied to an order line: {adjusted}")
+lines = [d["order_item_id"] for d in paid]
+if len(lines) != len(set(lines)):
+    raise Step(f"more than one decision for one order line: {lines}")
+ok(f"autonomy price drop -> {len(paid)} price-adjustment decision(s), one per order line")
+
+stock = call("POST", "/api/admin/events/simulate", admin, {"scenario": "back-in-stock"})
+if not stock.get("enqueued") or stock.get("event_type") != "inventory.back_in_stock":
+    raise Step(f"the back-in-stock scenario enqueued nothing: {stock}")
+notices = wait_for("back-in-stock notice decisions", lambda: decisions_of("inventory.back_in_stock"))
+sent = [d for d in notices if d.get("action") == "back_in_stock_notice" and d.get("state") == "executed"]
+if not sent or any(d.get("amount") is not None for d in sent):
+    raise Step(f"the back-in-stock event sent no money-free notice: {notices}")
+told = sql("SELECT count(*) FROM notifications WHERE kind = 'autonomy.back_in_stock'")
+if told == "0":
+    raise Step("a back-in-stock decision executed but no customer notification exists")
+ok(f"autonomy back in stock -> {len(sent)} notice(s), no amount, customer notified")
 
 # ── 2. return lifecycle ───────────────────────────────────────────────────────────────────────────────────────
 # A customer whose newest order is delivered and over the approval threshold, so the policy asks a person.

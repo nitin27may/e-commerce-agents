@@ -265,6 +265,7 @@ services:
       # Event autonomy (#94): off by default. The simulator route lives on the orchestrator, the handler on the worker.
       AUTONOMY_ENABLED: ${AUTONOMY_ENABLED:-false}
       AUTONOMY_SIMULATOR_ENABLED: ${AUTONOMY_SIMULATOR_ENABLED:-false}
+      AUTONOMY_RESPONDER_ENABLED: ${AUTONOMY_RESPONDER_ENABLED:-false}
       # Return lifecycle (#95): the graph gains the carrier-scan and inspection waits, read when the graph is built.
       RETURN_LIFECYCLE_ENABLED: ${RETURN_LIFECYCLE_ENABLED:-false}
       MERCHANT_OPS_SCHEDULE_ENABLED: ${MERCHANT_OPS_SCHEDULE_ENABLED:-false}
@@ -445,6 +446,21 @@ services:
       OUTBOX_MAX_ATTEMPTS: ${OUTBOX_MAX_ATTEMPTS:-8}
       OUTBOX_LEASE_SECONDS: ${OUTBOX_LEASE_SECONDS:-120}
       AUTONOMY_ENABLED: ${AUTONOMY_ENABLED:-false}
+      # The ops-responder makes one chat call per granted credit, so the worker needs the chat provider. Unused (no
+      # model is ever called here) while AUTONOMY_RESPONDER_ENABLED is false.
+      AUTONOMY_RESPONDER_ENABLED: ${AUTONOMY_RESPONDER_ENABLED:-false}
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API: ${LLM_API:-responses}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4.1}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE-0.2}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_KEY: ${AZURE_OPENAI_KEY:-}
+      AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2025-03-01-preview}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-5-5}
       RETURN_LIFECYCLE_ENABLED: ${RETURN_LIFECYCLE_ENABLED:-false}
       MERCHANT_OPS_SCHEDULE_ENABLED: ${MERCHANT_OPS_SCHEDULE_ENABLED:-false}
     profiles: ["agents"]

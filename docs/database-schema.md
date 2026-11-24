@@ -2,7 +2,7 @@
 
 This page is the table-by-table reference for the application's one PostgreSQL database, for anyone writing a query, a tool or a migration against it. Both stacks share it.
 
-It is PostgreSQL 16 with the **pgvector** extension for embedding-based semantic search and **pgcrypto** for UUID generation. The frozen baseline (`docker/postgres/init.sql`) has 34 tables in 12 logical groups. Migrations `0003`, `0006`, `0009`, `0011`, `0012` and `0016` add 12 more (46 in all), described in the sections for refresh tokens, approvals, merchant proposals, event autonomy and customer confirmations below. Migrations `0002`, `0004`, `0005`, `0007`, `0008`, `0010`, `0013`, `0014` and `0015` only alter or backfill existing tables.
+It is PostgreSQL 16 with the **pgvector** extension for embedding-based semantic search and **pgcrypto** for UUID generation. The frozen baseline (`docker/postgres/init.sql`) has 34 tables in 12 logical groups. Migrations `0003`, `0006`, `0009`, `0011`, `0012`, `0016` and `0017` add 13 more (47 in all), described in the sections for refresh tokens, approvals, merchant proposals, event autonomy, customer confirmations and more autonomy events below. Migrations `0002`, `0004`, `0005`, `0007`, `0008`, `0010`, `0013`, `0014` and `0015` only alter or backfill existing tables.
 
 ## Entity-Relationship Diagram
 
@@ -520,6 +520,14 @@ What the system did on its own when an event arrived ([event-autonomy.md](event-
 | **store_credit_ledger** | `id` (PK), `user_id` (FK), `amount` (signed, non-zero), `reason`, `decision_id` (FK -> agent_decisions) | Credit is positive, a reversal a negating entry. Unique per `decision_id`. |
 
 Migration `0012` also adds the CHECK `approvals_no_beneficiary_decision`: a reviewer is never the approval's subject (merchant proposals are the named exemption).
+
+### More autonomy events (migration `0017`, #299)
+
+| Change | Notes |
+|---|---|
+| `agent_decisions.order_item_id` (FK -> order_items) | The order line a price adjustment is for. Partial unique index `uq_agent_decisions_line_adjust`: at most one paid adjustment (an executed decision or an approved execution) per line, a reversal does not free it |
+| `notifications.decision_id` | The decision row a customer notification belongs to, so a drafted message can replace its text. No foreign key |
+| **decision_drafts** | `id` (PK), `decision_id` (FK -> agent_decisions, unique), `body`, `source` (`llm` or `template`), `model`, `fallback_reason`, `grounding`. The ops-responder's message for a decision. Append-only, like the log it hangs off; `reset_autonomy_log()` clears it too |
 
 ### Return lifecycle columns (migration `0013`)
 
