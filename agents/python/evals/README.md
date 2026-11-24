@@ -313,6 +313,11 @@ under test: with nothing configured the run stops and says what to set. `--allow
 `JUDGE_ALLOW_SELF=true`) accepts it anyway; the report and every record then say **self-judged**, and the run
 is not comparable with an independently judged one. The prompt is `config/prompts/_eval/completeness-judge.yaml`.
 
+How well each candidate judge agrees with a human reading is measured in `evals/judge_calibration/` (30 labelled
+responses, stored verdicts, `python -m evals.judge_calibration.run --rescore` to recompute offline, `--requery` to call
+the judges again). The labels there are drafted and not yet reviewed; the README in that directory states the decision
+rule for changing the default judge and the current result.
+
 ## Capability check
 
 `python -m evals.provider_check` probes the configured provider for tool calling, parallel tool calls, tool
