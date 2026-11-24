@@ -183,12 +183,12 @@
       "new_conversation": true,
       "prompt": "Is the Logitech MX Master 3S a good deal right now?",
       "fixtures": [
-        "1aeab7241692eef8",
         "2ea567f9bd7ed188",
+        "3291356d620a8469",
         "3fdb93d036eb1b7b",
+        "5612e24a23c2ad6e",
         "8177ade9f9f044df",
-        "ad602f4dfc83e3a5",
-        "f1601b16fb820287"
+        "894a20b30b100162"
       ]
     },
     {
@@ -230,11 +230,12 @@
       "new_conversation": true,
       "prompt": "Return my jacket and find me a warmer one under $200",
       "fixtures": [
-        "0e2ee0da66404663",
         "15b9f88f6520dc58",
         "7b35d9da3d92d333",
+        "a39c36aa279e41ed",
         "aa89b08957732501",
         "bd1061e1aba2e996",
+        "df0ba6a83631b573",
         "e79ca8fd2e208762"
       ]
     },
@@ -291,7 +292,7 @@
       "user": "alice.johnson@gmail.com",
       "mode": "workflow:pre-purchase",
       "new_conversation": true,
-      "prompt": "I'm considering the Allbirds Wool Runners — should I buy them?",
+      "prompt": "I'm considering the Allbirds Wool Runners \u2014 should I buy them?",
       "fixtures": []
     },
     {
@@ -302,6 +303,240 @@
       "new_conversation": true,
       "prompt": "I want to return my last delivered order",
       "fixtures": []
+    },
+    {
+      "id": "e2e-greeting-alice",
+      "source": "e2e",
+      "user": "alice.johnson@gmail.com",
+      "mode": "tool",
+      "new_conversation": true,
+      "prompt": "Hello, what can you help me with?",
+      "fixtures": [
+        "483482f47f17a3cc"
+      ]
+    },
+    {
+      "id": "e2e-greeting-admin",
+      "source": "e2e",
+      "user": "admin.demo@gmail.com",
+      "mode": "tool",
+      "new_conversation": true,
+      "prompt": "Hello, what can you help me with?",
+      "fixtures": [
+        "a8fc949a6bafaf3a"
+      ]
+    },
+    {
+      "id": "e2e-greeting-bob",
+      "source": "e2e",
+      "user": "bob.smith@gmail.com",
+      "mode": "tool",
+      "new_conversation": true,
+      "prompt": "Hello, what can you help me with?",
+      "fixtures": [
+        "de9765e3c46676cc"
+      ]
+    },
+    {
+      "id": "e2e-greeting-power",
+      "source": "e2e",
+      "user": "power.demo@gmail.com",
+      "mode": "tool",
+      "new_conversation": true,
+      "prompt": "Hello, what can you help me with?",
+      "fixtures": [
+        "a6ddfa507e442634"
+      ]
+    },
+    {
+      "id": "e2e-greeting-seller",
+      "source": "e2e",
+      "user": "seller.demo@gmail.com",
+      "mode": "tool",
+      "new_conversation": true,
+      "prompt": "Hello, what can you help me with?",
+      "fixtures": [
+        "132b4661762ac408"
+      ]
+    },
+    {
+      "id": "e2e-followup-name",
+      "source": "e2e",
+      "user": "alice.johnson@gmail.com",
+      "mode": "tool",
+      "new_conversation": true,
+      "prompt": "My name for this chat is Wombat. Remember it.",
+      "fixtures": [
+        "9c7aed78ffcbd7b8"
+      ]
+    },
+    {
+      "id": "e2e-followup-name-2",
+      "source": "e2e",
+      "user": "alice.johnson@gmail.com",
+      "mode": "tool",
+      "new_conversation": false,
+      "prompt": "What noise cancelling headphones do you have?",
+      "fixtures": [
+        "0a5a2dc35f0be7b4",
+        "60ae622354648677",
+        "e5c9c1d28cf071df",
+        "e8ac4b4f0cbe65fa"
+      ]
+    },
+    {
+      "id": "e2e-followup-name-3",
+      "source": "e2e",
+      "user": "alice.johnson@gmail.com",
+      "mode": "tool",
+      "new_conversation": false,
+      "prompt": "What name did I give you at the start of this chat?",
+      "fixtures": [
+        "23f6e4f1ec102f72"
+      ]
+    },
+    {
+      "id": "e2e-genui-sentiment-1",
+      "source": "e2e",
+      "user": "carol.davis@gmail.com",
+      "mode": "tool",
+      "new_conversation": true,
+      "prompt": "Find the Sony WH-1000XM5 headphones",
+      "fixtures": [
+        "61d2aae4f5da0086",
+        "8278b5022dca6a8d",
+        "c610d6f7186587b2",
+        "d6abbb8b6a878d04",
+        "dece21da8ef96324"
+      ]
+    },
+    {
+      "id": "e2e-genui-sentiment-2",
+      "source": "e2e",
+      "user": "carol.davis@gmail.com",
+      "mode": "tool",
+      "new_conversation": false,
+      "prompt": "What's the sentiment on its reviews? Show me the rating breakdown and how it's trended over the last 6 months.",
+      "fixtures": [
+        "4f949b5a738540ce",
+        "5cd9a5b932593eb0",
+        "99ee3986750931fe",
+        "bde6ebc0720d1ed4"
+      ]
+    },
+    {
+      "id": "e2e-genui-stock-1",
+      "source": "e2e",
+      "user": "dave.wilson@gmail.com",
+      "mode": "tool",
+      "new_conversation": true,
+      "prompt": "Find the Sony WH-1000XM5 headphones",
+      "fixtures": [
+        "8f027737d0644028",
+        "cab9db5b7b776c1f",
+        "d80b28065857f397",
+        "dc55ec3c2fe27159",
+        "df8a202f03e30a0a"
+      ]
+    },
+    {
+      "id": "e2e-genui-stock-2",
+      "source": "e2e",
+      "user": "dave.wilson@gmail.com",
+      "mode": "tool",
+      "new_conversation": false,
+      "prompt": "Is it in stock? Show me the breakdown by warehouse.",
+      "fixtures": [
+        "1d1407092c8d699a",
+        "5b0139099bcb1dbe",
+        "f65be4fea96b9919",
+        "faccd40f136023b6"
+      ]
+    },
+    {
+      "id": "e2e-genui-deals",
+      "source": "e2e",
+      "user": "alice.johnson@gmail.com",
+      "mode": "tool",
+      "new_conversation": true,
+      "prompt": "What deals and promotions are currently active on the platform?",
+      "fixtures": [
+        "291d744764ccd7e8",
+        "445b757ab11c8680",
+        "9a5773aaf0b69c63",
+        "e3af07bfc6eff5fd"
+      ]
+    },
+    {
+      "id": "e2e-genui-shipping-1",
+      "source": "e2e",
+      "user": "emma.brown@gmail.com",
+      "mode": "tool",
+      "new_conversation": true,
+      "prompt": "Find the Sony WH-1000XM5 headphones",
+      "fixtures": [
+        "6a419fee74d4654d",
+        "6f3d5f046cb67b75",
+        "98011585f2d9f6ad",
+        "b36f02ff543ce2d4",
+        "df6a8a0ca062fc7b"
+      ]
+    },
+    {
+      "id": "e2e-genui-shipping-2",
+      "source": "e2e",
+      "user": "emma.brown@gmail.com",
+      "mode": "tool",
+      "new_conversation": false,
+      "prompt": "How much would it cost to ship this to the east region, and what are my carrier options?",
+      "fixtures": [
+        "20b32fb9e2df3922",
+        "5b232ab3af17ed0c",
+        "7a51dcb1f403fe12",
+        "aedf64713790c664"
+      ]
+    },
+    {
+      "id": "e2e-shopping-products",
+      "source": "e2e",
+      "user": "alice.johnson@gmail.com",
+      "mode": "tool",
+      "new_conversation": true,
+      "prompt": "Find me wireless headphones",
+      "fixtures": [
+        "3cc772bc2651ddf1",
+        "6392c1abb6bf8893",
+        "e4662b524da1c309",
+        "e76f1ec241217974"
+      ]
+    },
+    {
+      "id": "e2e-shopping-latest-order",
+      "source": "e2e",
+      "user": "alice.johnson@gmail.com",
+      "mode": "tool",
+      "new_conversation": true,
+      "prompt": "Where is my latest order?",
+      "fixtures": [
+        "6c71c5c9837b7357",
+        "adf4e57f946d0a12",
+        "b6e6f0bb9ea7b104",
+        "eeda92ca86078f30"
+      ]
+    },
+    {
+      "id": "e2e-parity-grounding",
+      "source": "e2e",
+      "user": "alice.johnson@gmail.com",
+      "mode": "tool",
+      "new_conversation": true,
+      "prompt": "Show me wireless headphones under $400",
+      "fixtures": [
+        "0366576bda57b84a",
+        "1f91a69a06066f66",
+        "3efa67239f76506c",
+        "d9b11d25fdd747cb"
+      ]
     }
   ]
 }
