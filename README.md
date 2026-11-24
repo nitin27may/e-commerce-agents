@@ -11,6 +11,11 @@
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED.svg)](https://docs.docker.com/compose/)
 [<img src="https://github.com/codespaces/badge.svg" alt="Open in GitHub Codespaces" height="20">](https://codespaces.new/nitin27may/e-commerce-agents)
 
+<p align="center">
+  <img src="docs/images/demo.gif" alt="Screen recording of the chat: a question about noise-cancelling headphones answered with product cards, the orchestration mode switched to pre-purchase research with its graph animating, then a return that pauses at an Awaiting staff review card" width="820"/>
+</p>
+<p align="center"><em>Recorded on the no-key stack (recorded model responses): ask, get cards, switch mode, watch the graph, a return waits for a person. Run it yourself with <code>./scripts/dev.sh --no-key</code>.</em></p>
+
 **A complete multi-agent e-commerce application built on [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) (MAF), in Python and .NET, and a 34-chapter course that teaches every piece of it.**
 
 This is a working application, end to end, not a sample that stops at "the agent replied". A
