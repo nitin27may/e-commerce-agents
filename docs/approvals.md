@@ -31,6 +31,25 @@ still guards an ungated registration of the same names). The specialist host clo
 
 * `shared/agent_host.py::park_pending_approvals` runs after every blocking and streaming agent run (the legacy
   `/message:send` and `/message:stream` routes and the A2A 1.0 executor share those two functions).
+* **Before** a call parks, `shared/park_prechecks.py::precheck_gated_call` asks whether it could ever succeed. MAF
+  parks a gated call before the tool body runs, so the tool's own role guard and status checks never saw it, and a
+  customer asking for a backorder (or a cancel of a shipped order) used to open an approval nobody could make work.
+  The checks are cheap, deterministic and use no model: the roles `@requires_role` recorded on the tool, then a
+  per-tool precondition registered next to the tool with `@precheck("<tool>")`. They share their predicates with the
+  tools (`shared/gate_rules.py`), so the two cannot drift. A refused call creates no row and the user reads why:
+
+  | Tool | Refused when | Sentence (example) |
+  |---|---|---|
+  | all five | the order or return is missing, malformed or not the caller's | "I could not find that order on your account. I have not submitted anything for approval." (the same words for all three cases, so another customer's data never leaks) |
+  | `cancel_order` | status is not `placed` or `confirmed` | "Order <id> has already shipped, so it can no longer be cancelled. ..." |
+  | `modify_order` | status is not `placed` or `confirmed` | "Order <id> has already been delivered, so its shipping address can no longer be changed. ..." |
+  | `initiate_return` | not `delivered`, a return already exists, or delivered more than 30 days ago | "Order <id> was delivered 45 days ago, which is outside the 30-day return window. ..." |
+  | `process_refund` | the return is already `refunded` or `denied` | "Return <id> has already been refunded. ..." |
+  | `place_backorder` | the role is not `seller` or `admin`, the quantity is not positive, the product is missing, or it is in stock | "Your account is not permitted to place backorders; that is limited to admin, seller accounts. ..." |
+
+  A failing check (a database error) fails closed like the park itself. In the in-process eval harness a refused
+  call still counts as a tool call but not as an approval request (`RunOutcome.refused_calls`), and a role refusal
+  reads as `denied`. .NET does not have this ordering fix yet (parity row 55).
 * For each parked call it calls `shared/hitl.py::park_gated_call`, which writes the `tool_approval_requests` row and
   the routed inbox `approvals` row, owned by the forwarded user. The tool is not executed and no model call is made.
 * It is idempotent: the same user asking for the same tool with the same input while a request is `pending` or
