@@ -27,6 +27,11 @@ param oauthSeedKey string
 param authSigningKeyEncryptionKey string
 @secure()
 param seedStaffPassword string
+@secure()
+@description('Operator-supplied API key for an OpenAI-compatible endpoint (free-trial path).')
+param llmApiKey string = ''
+@description('Write the llm-api-key secret. A plain flag, not !empty(llmApiKey): a secure value is not known when the template is evaluated offline.')
+param storeLlmApiKey bool = false
 
 var secretsUserRoleId = '4633458b-17de-408a-b874-0f5e9c3b6f6c'
 var secretsOfficerRoleId = 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7'
@@ -110,6 +115,12 @@ resource staffPasswordEntry 'Microsoft.KeyVault/vaults/secrets@2025-05-01' = {
   parent: vault
   name: 'seed-staff-password'
   properties: { value: seedStaffPassword }
+}
+
+resource llmApiKeyEntry 'Microsoft.KeyVault/vaults/secrets@2025-05-01' = if (storeLlmApiKey) {
+  parent: vault
+  name: 'llm-api-key'
+  properties: { value: llmApiKey }
 }
 
 output id string = vault.id

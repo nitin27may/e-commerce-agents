@@ -83,6 +83,27 @@
     "deployApps": {
       "value": "${DEPLOY_APPS=true}"
     },
+    "deployOpenAi": {
+      "value": "${DEPLOY_OPENAI=true}"
+    },
+    "externalLlmProvider": {
+      "value": "${EXTERNAL_LLM_PROVIDER=replay}"
+    },
+    "externalLlmBaseUrl": {
+      "value": "${EXTERNAL_LLM_BASE_URL=}"
+    },
+    "externalLlmModel": {
+      "value": "${EXTERNAL_LLM_MODEL=gpt-4.1-mini}"
+    },
+    "externalLlmApi": {
+      "value": "${EXTERNAL_LLM_API=chat_completions}"
+    },
+    "externalEmbeddingProvider": {
+      "value": "${EXTERNAL_EMBEDDING_PROVIDER=replay}"
+    },
+    "externalLlmApiKey": {
+      "value": "${EXTERNAL_LLM_API_KEY=}"
+    },
     "a2aIdentityKey": {
       "value": "${A2A_IDENTITY_KEY}"
     },

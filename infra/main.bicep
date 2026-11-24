@@ -10,7 +10,7 @@ param location string
 param openAiLocation string = location
 @description('Deploying user object id (AZURE_PRINCIPAL_ID); empty in CI.')
 param principalId string = ''
-@allowed(['demo', 'reference'])
+@allowed(['demo', 'reference', 'free-trial'])
 param profile string = 'demo'
 param chatModelName string = 'gpt-5.1'
 param chatModelVersion string = '2025-11-13'
@@ -20,6 +20,24 @@ param openAiApiVersion string = '2025-04-01-preview'
 @allowed(['auto', 'key', 'identity'])
 @description('auto: the profile decides (demo key, reference identity). key: apps read the account key from Key Vault. identity: Entra ID through the user-assigned identity (needs Azure P3 in the image) and local auth is disabled on the account.')
 param openAiAuth string = 'auto'
+
+// ---- Model provider (free-trial path) ----
+@description('false skips the Azure OpenAI account, its deployments and role, and the account-key secret. The apps then use externalLlmProvider. Needed where Azure OpenAI is unavailable or quota-zero (a free trial), or to keep a deployment at zero model spend. Not combinable with deployGateway, deployFoundryProject or the reference profile (both need the account).')
+param deployOpenAi bool = true
+@allowed(['openai', 'replay'])
+@description('Only when deployOpenAi is false. openai: an OpenAI-compatible endpoint (externalLlmBaseUrl, key in Key Vault secret llm-api-key). replay: no model is called; chat prompts are answered from recordings only (the released images carry none, so chat reports "not recorded"; everything else works).')
+param externalLlmProvider string = 'replay'
+@description('OpenAI-compatible base URL, e.g. https://api.openai.com/v1. Required with externalLlmProvider openai.')
+param externalLlmBaseUrl string = ''
+@description('Chat model name for externalLlmProvider openai. Needs a row in config/pricing/models.yaml or its cost is reported as unknown.')
+param externalLlmModel string = 'gpt-4.1-mini'
+@allowed(['responses', 'chat_completions'])
+param externalLlmApi string = 'chat_completions'
+@description('EMBEDDING_PROVIDER when deployOpenAi is false. replay (default) uses keyless hashing vectors, so a compatible endpoint without an embeddings route still works. Empty follows the chat provider.')
+param externalEmbeddingProvider string = 'replay'
+@secure()
+@description('API key for externalLlmProvider openai; stored as Key Vault secret llm-api-key. Empty for replay.')
+param externalLlmApiKey string = ''
 
 @description('GHCR repository prefix the images are pulled from when imageSource resolves to ghcr.')
 param imageRegistry string = 'ghcr.io/nitin27may/e-commerce-agents'
@@ -83,7 +101,10 @@ param deployApps bool = true
 var profiles = {
   demo: loadJsonContent('profiles/demo.json')
   reference: loadJsonContent('profiles/reference.json')
+  'free-trial': loadJsonContent('profiles/free-trial.json')
 }
+var llmProvider = deployOpenAi ? 'azure' : externalLlmProvider
+var effectiveChatModel = deployOpenAi ? chatModelName : externalLlmModel
 var cfg = profiles[profile]
 var effectiveOpenAiAuth = openAiAuth == 'auto' ? cfg.openAiAuth : openAiAuth
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
@@ -106,7 +127,7 @@ module monitoring 'modules/monitoring.bicep' = {
     appInsightsName: 'appi-${resourceToken}'
     location: location
     tags: tags
-    dailyQuotaGb: cfg.logAnalytics.dailyQuotaGb
+    dailyQuotaGb: '${cfg.logAnalytics.dailyQuotaGb}'
     retentionDays: cfg.logAnalytics.retentionDays
   }
 }
@@ -140,6 +161,8 @@ module keyVault 'modules/keyvault.bicep' = {
     oauthSeedKey: oauthSeedKey
     authSigningKeyEncryptionKey: authSigningKeyEncryptionKey
     seedStaffPassword: seedStaffPassword
+    llmApiKey: externalLlmApiKey
+    storeLlmApiKey: !deployOpenAi && externalLlmProvider == 'openai'
   }
 }
 
@@ -162,7 +185,7 @@ module postgres 'modules/postgres.bicep' = {
   }
 }
 
-module openAi 'modules/openai.bicep' = {
+module openAi 'modules/openai.bicep' = if (deployOpenAi) {
   scope: rg
   name: 'openai'
   params: {
@@ -190,7 +213,7 @@ module derivedSecrets 'modules/keyvault-secrets.bicep' = {
     vaultName: keyVault.outputs.name
     databaseUrl: 'postgresql://${postgres.outputs.administratorLogin}:${postgresAdminPassword}@${postgres.outputs.fqdn}:5432/${postgres.outputs.databaseName}?sslmode=require'
     // With the gateway on, the secret holds the gateway subscription key (written by the gateway module).
-    openAiAccountName: (effectiveOpenAiAuth == 'key' && !deployGateway) ? openAi.outputs.name : ''
+    openAiAccountName: (deployOpenAi && effectiveOpenAiAuth == 'key' && !deployGateway) ? openAi!.outputs.name : ''
     redisName: managedRedis ? redisManaged!.outputs.name : ''
     stack: stack
   }
@@ -254,8 +277,10 @@ module privateEndpoints 'modules/private-endpoints.bicep' = if (privateNetwork) 
       [
         { name: 'pe-psql', resourceId: postgres.outputs.id, groupId: 'postgresqlServer', zoneIds: [network!.outputs.postgresZoneId] }
         { name: 'pe-kv', resourceId: keyVault.outputs.id, groupId: 'vault', zoneIds: [network!.outputs.vaultZoneId] }
-        { name: 'pe-ai', resourceId: openAi.outputs.id, groupId: 'account', zoneIds: network!.outputs.aiServicesZoneIds }
       ],
+      deployOpenAi
+        ? [{ name: 'pe-ai', resourceId: openAi!.outputs.id, groupId: 'account', zoneIds: network!.outputs.aiServicesZoneIds }]
+        : [],
       managedRedis
         ? [{ name: 'pe-redis', resourceId: redisManaged!.outputs.id, groupId: 'redisEnterprise', zoneIds: [network!.outputs.redisZoneId] }]
         : []
@@ -298,10 +323,15 @@ module apps 'modules/apps.bicep' = if (deployApps) {
     imageRegistry: useAcr ? acr!.outputs.loginServer : imageRegistry
     registryServer: useAcr ? acr!.outputs.loginServer : ''
     imageTag: imageTag
-    openAiEndpoint: deployGateway ? gateway!.outputs.gatewayEndpoint : openAi.outputs.endpoint
-    chatDeployment: openAi.outputs.chatDeploymentName
-    embeddingDeployment: openAi.outputs.embeddingDeploymentName
-    chatModelName: chatModelName
+    llmProvider: llmProvider
+    llmBaseUrl: externalLlmBaseUrl
+    llmApi: externalLlmApi
+    embeddingProvider: deployOpenAi ? '' : externalEmbeddingProvider
+    openAiEndpoint: deployOpenAi ? (deployGateway ? gateway!.outputs.gatewayEndpoint : openAi!.outputs.endpoint) : ''
+    chatDeployment: deployOpenAi ? openAi!.outputs.chatDeploymentName : ''
+    embeddingDeployment: deployOpenAi ? openAi!.outputs.embeddingDeploymentName : ''
+    chatModelName: effectiveChatModel
+    costBudgetMode: deployOpenAi ? 'enforce' : 'observe'
     openAiApiVersion: openAiApiVersion
     openAiAuth: effectiveOpenAiAuth
     scale: cfg.containerApps
@@ -320,7 +350,7 @@ module foundryProject 'modules/foundry-project.bicep' = if (deployFoundryProject
   scope: rg
   name: 'foundry-project'
   params: {
-    accountName: openAi.outputs.name
+    accountName: openAi!.outputs.name
     projectName: 'proj-${resourceToken}'
     location: openAiLocation
     tags: tags
@@ -349,7 +379,7 @@ module appIdentities 'modules/app-identities.bicep' = if (deployPerAppIdentities
     tags: tags
     appNames: appIdentityNames
     keyVaultName: keyVault.outputs.name
-    openAiAccountName: openAi.outputs.name
+    openAiAccountName: deployOpenAi ? openAi!.outputs.name : ''
   }
 }
 
@@ -363,7 +393,7 @@ module gateway 'modules/gateway-apim.bicep' = if (deployGateway) {
     tags: tags
     skuName: gatewaySku
     publisherEmail: gatewayPublisherEmail
-    openAiAccountName: openAi.outputs.name
+    openAiAccountName: openAi!.outputs.name
     appInsightsName: monitoring.outputs.appInsightsName
     callerAuth: openAiAuth == 'identity' ? 'entra' : 'subscription'
     // The shared identity stays allowed until the apps use their own (header-asserted, untrusted).
@@ -388,6 +418,7 @@ module budget 'modules/budget.bicep' = {
     name: 'budget-${environmentName}'
     amount: cfg.budget.monthlyAmount
     alertThresholdPercent: cfg.budget.alertThresholdPercent
+    additionalActualThresholds: cfg.budget.?additionalActualThresholds ?? []
   }
 }
 
@@ -402,10 +433,11 @@ output AZURE_APP_INSIGHTS_NAME string = monitoring.outputs.appInsightsName
 output POSTGRES_HOST string = postgres.outputs.fqdn
 output POSTGRES_DB string = postgres.outputs.databaseName
 output POSTGRES_USER string = postgres.outputs.administratorLogin
-output AZURE_OPENAI_ENDPOINT string = openAi.outputs.endpoint
-output AZURE_OPENAI_CHAT_DEPLOYMENT string = openAi.outputs.chatDeploymentName
-output AZURE_OPENAI_EMBEDDING_DEPLOYMENT string = openAi.outputs.embeddingDeploymentName
-output AZURE_CHAT_DEPLOYMENT string = openAi.outputs.chatDeploymentName
+output AZURE_OPENAI_ENDPOINT string = deployOpenAi ? openAi!.outputs.endpoint : ''
+output AZURE_OPENAI_CHAT_DEPLOYMENT string = deployOpenAi ? openAi!.outputs.chatDeploymentName : ''
+output AZURE_OPENAI_EMBEDDING_DEPLOYMENT string = deployOpenAi ? openAi!.outputs.embeddingDeploymentName : ''
+output AZURE_CHAT_DEPLOYMENT string = deployOpenAi ? openAi!.outputs.chatDeploymentName : ''
+output LLM_PROVIDER string = llmProvider
 output AZURE_POSTGRES_FQDN string = postgres.outputs.fqdn
 output APPLICATIONINSIGHTS_NAME string = monitoring.outputs.appInsightsName
 output AZURE_AI_PROJECT_NAME string = deployFoundryProject ? foundryProject!.outputs.name : ''
