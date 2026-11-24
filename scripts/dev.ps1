@@ -170,6 +170,14 @@ if ($Dotnet) {
     $ComposeArgs        = if ($NoKey) { @('compose', '-f', 'docker-compose.yml', '-f', 'docker-compose.nokey.yml') } else { @('compose') }
     $AppProfiles        = @('--profile', 'seed', '--profile', 'agents', '--profile', 'frontend')
     $RunProfiles        = @('--profile', 'agents', '--profile', 'frontend')
+    # The opt-in merchant-ops specialist (#298, Python only, :8086) has its own profile. With the environment
+    # variable MERCHANT_OPS_AGENT_ENABLED=true it is built, started and waited on; not with -NoKey (the replay
+    # overlay carries no entry for it).
+    $MerchantOpsUp = ($env:MERCHANT_OPS_AGENT_ENABLED -eq 'true') -and -not $NoKey
+    if ($MerchantOpsUp) {
+        $AppProfiles += @('--profile', 'merchant-ops')
+        $RunProfiles += @('--profile', 'merchant-ops')
+    }
     $PgDataVolumeRegex  = '_pgdata$'
     $StackName          = 'Python'
     $OtherStackProject  = 'e-commerce-agents-dotnet'
@@ -604,6 +612,7 @@ try {
     Wait-ForHttp -Name 'Pricing & Promos'  -Url 'http://localhost:8083/ready'
     Wait-ForHttp -Name 'Review & Sentiment' -Url 'http://localhost:8084/ready'
     Wait-ForHttp -Name 'Inventory & Fulfilment' -Url 'http://localhost:8085/ready'
+    if ($MerchantOpsUp) { Wait-ForHttp -Name 'Merchant Ops' -Url 'http://localhost:8086/ready' }
     Write-Ok 'All agents are running'
 
     Wait-ForHttp -Name 'Frontend' -Url 'http://localhost:3000' -TimeoutSeconds 90

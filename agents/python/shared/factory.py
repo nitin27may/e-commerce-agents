@@ -459,6 +459,24 @@ def parse_agent_registry(raw: str | None) -> dict[str, str]:
     return parsed
 
 
+#: Specialists the orchestrator may route to only when their flag is on, whatever the registry lists.
+OPT_IN_SPECIALISTS: dict[str, str] = {"merchant-ops": "MERCHANT_OPS_AGENT_ENABLED"}
+
+
+def active_agent_registry(raw: str | None) -> dict[str, str]:
+    """``parse_agent_registry`` minus every opt-in specialist whose flag is off.
+
+    The orchestrator and the handoff mesh read this, never the raw registry, so a compose file or a
+    deployment may list ``merchant-ops`` unconditionally and the flag alone decides whether it is routable.
+    """
+    registry = parse_agent_registry(raw)
+    return {
+        name: url
+        for name, url in registry.items()
+        if name not in OPT_IN_SPECIALISTS or bool(getattr(settings, OPT_IN_SPECIALISTS[name], False))
+    }
+
+
 @lru_cache(maxsize=1)
 def get_agent_registry() -> dict[str, str]:
     """``parse_agent_registry`` over the current environment, cached.

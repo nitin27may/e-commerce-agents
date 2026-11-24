@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from shared.guardrails.config import NO_SANITIZE, SANITIZE_TOOLS
+from shared.guardrails.config import NO_SANITIZE, PYTHON_ONLY_SANITIZE, SANITIZE_TOOLS
 
 _SPECIALISTS = [
     "product_discovery",
@@ -19,6 +19,7 @@ _SPECIALISTS = [
     "pricing_promotions",
     "review_sentiment",
     "inventory_fulfillment",
+    "merchant_ops",
 ]
 
 _DOTNET_CONFIG = (
@@ -82,6 +83,6 @@ def test_sanitize_list_matches_dotnet_config() -> None:
     keys = re.findall(r'\["([A-Za-z]+)"\]\s*=', _DOTNET_CONFIG.read_text(encoding="utf-8"))
     assert keys, "failed to parse any keys from SanitizeToolsConfig.cs"
     dotnet = {_snake(k) for k in keys}
-    assert dotnet == set(SANITIZE_TOOLS), (
-        f"only in .NET: {sorted(dotnet - set(SANITIZE_TOOLS))}; only in Python: {sorted(set(SANITIZE_TOOLS) - dotnet)}"
-    )
+    assert PYTHON_ONLY_SANITIZE <= set(SANITIZE_TOOLS)
+    python = set(SANITIZE_TOOLS) - PYTHON_ONLY_SANITIZE
+    assert dotnet == python, f"only in .NET: {sorted(dotnet - python)}; only in Python: {sorted(python - dotnet)}"

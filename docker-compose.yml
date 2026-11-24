@@ -269,6 +269,8 @@ services:
       # Return lifecycle (#95): the graph gains the carrier-scan and inspection waits, read when the graph is built.
       RETURN_LIFECYCLE_ENABLED: ${RETURN_LIFECYCLE_ENABLED:-false}
       MERCHANT_OPS_SCHEDULE_ENABLED: ${MERCHANT_OPS_SCHEDULE_ENABLED:-false}
+      # #298: may the orchestrator route seller-operations questions to the merchant-ops specialist (:8086)?
+      MERCHANT_OPS_AGENT_ENABLED: ${MERCHANT_OPS_AGENT_ENABLED:-false}
       # How a specialist learns which user a call is for: headers | both (default) | token. `both` sends and
       # verifies a signed, short-lived X-User-Context token and still accepts the headers; see docs/a2a.md.
       # The key is shared by every process on both stacks; empty means AGENT_SHARED_SECRET.
@@ -281,7 +283,8 @@ services:
           "order-management": "http://order-management:8082",
           "pricing-promotions": "http://pricing-promotions:8083",
           "review-sentiment": "http://review-sentiment:8084",
-          "inventory-fulfillment": "http://inventory-fulfillment:8085"
+          "inventory-fulfillment": "http://inventory-fulfillment:8085",
+          "merchant-ops": "http://merchant-ops:8086"
         }
     profiles: ["agents"]
 
@@ -415,6 +418,32 @@ services:
       MCP_INVENTORY_AUDIENCE: ${MCP_INVENTORY_AUDIENCE:-mcp-inventory}
       MCP_INVENTORY_REQUIRED_SCOPE: ${MCP_INVENTORY_REQUIRED_SCOPE:-mcp:inventory}
     profiles: ["agents"]
+
+  # Opt-in sixth specialist (#298, Python only), behind its own profile so every default run, the demo, the no-key
+  # overlay and the compose gates are unchanged:
+  #   MERCHANT_OPS_AGENT_ENABLED=true ./scripts/dev.sh     (or: docker compose --profile agents --profile merchant-ops up -d)
+  # A direct call to :8086 works whenever it runs; whether the ORCHESTRATOR may route to it is
+  # MERCHANT_OPS_AGENT_ENABLED (off by default; with it off the orchestrator drops the entry from its registry).
+  # Nothing waits on it: the orchestrator does not depend_on this service.
+  merchant-ops:
+    <<: *agent-runtime
+    build:
+      context: ./agents/python
+      args: { AGENT_NAME: merchant_ops, AGENT_PORT: 8086 }
+    ports: ["127.0.0.1:8086:8086"]
+    depends_on:
+      db: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8086/ready > /dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 15s
+    environment:
+      <<: *agent-env
+      OTEL_SERVICE_NAME: ecommerce.merchant-ops
+      OAUTH_CLIENT_ID: merchant-ops
+    profiles: ["merchant-ops"]
 
   # ── Outbox worker (approval reminders, SLA escalation, timeouts) ──
   #

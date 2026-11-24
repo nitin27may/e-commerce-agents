@@ -274,6 +274,8 @@ OAUTH_CLIENTS = [
     ("order-management", ["client_credentials"], ["agent:invoke"], ["ecommerce-agents"]),
     ("pricing-promotions", ["client_credentials"], ["agent:invoke"], ["ecommerce-agents"]),
     ("review-sentiment", ["client_credentials"], ["agent:invoke"], ["ecommerce-agents"]),
+    # Opt-in Python-only specialist (#298); harmless when the service is not running.
+    ("merchant-ops", ["client_credentials"], ["agent:invoke"], ["ecommerce-agents"]),
     (
         # Admin-only credential for calling POST /oauth/register (RFC 7591)
         # — kept separate from "orchestrator" so the broadly-scoped

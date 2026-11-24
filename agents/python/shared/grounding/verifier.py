@@ -152,6 +152,10 @@ async def verify_claims(
             verdicts.append(
                 ClaimVerdict("bare_id", bare.id, "user_supplied", "id appears in the user's message or tool arguments")
             )
+        elif bare.id.lower() in ledger.result_ids:
+            verdicts.append(
+                ClaimVerdict("bare_id", bare.id, "verified", "id appears in this turn's tool results", "ledger")
+            )
         else:
             bare_ids.append(bare)
 

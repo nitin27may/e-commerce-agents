@@ -380,6 +380,11 @@ class Settings(BaseSettings):
     MERCHANT_OPS_SCHEDULE_ENABLED: bool = False
     # UTC hour (0-23) of the daily run.
     MERCHANT_OPS_RUN_HOUR_UTC: int = 6
+    # The model-driven merchant-ops specialist (#298, port 8086) is reachable by a direct call to its own service
+    # whenever it runs. This flag decides whether the ORCHESTRATOR may route to it: off (the default), the agent is
+    # dropped from the registry the orchestrator reads and neither its prompt nor the routing tool's description
+    # mention it, so every recorded orchestrator request is byte-identical to what it was before the agent existed.
+    MERCHANT_OPS_AGENT_ENABLED: bool = False
 
     # ── Event autonomy (#94) ─────────────────────────────────────────
     # Events (a shipment running late) handled by the outbox worker: inside an autonomy budget the system acts
