@@ -1,0 +1,8 @@
+{
+  "avg_groundedness": 1.0,
+  "avg_correctness": 1.0,
+  "avg_completeness": 1.0,
+  "overall_score": 1.0,
+  "agent_name": "merchant-ops",
+  "dataset_path": "evals/datasets/merchant_ops.json"
+}

@@ -54,6 +54,7 @@ AGENT_FACTORIES: dict[str, tuple[str, str]] = {
     "pricing-promotions": ("pricing_promotions.agent", "create_pricing_promotions_agent"),
     "review-sentiment": ("review_sentiment.agent", "create_review_sentiment_agent"),
     "inventory-fulfillment": ("inventory_fulfillment.agent", "create_inventory_fulfillment_agent"),
+    "merchant-ops": ("merchant_ops.agent", "create_merchant_ops_agent"),
     "orchestrator": ("orchestrator.agent", "create_orchestrator_agent"),
 }
 

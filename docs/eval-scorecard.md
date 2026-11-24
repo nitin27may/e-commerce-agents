@@ -5,6 +5,8 @@
 Scores per specialist and dataset, as committed in `agents/python/evals/baselines/python-inproc-replay/` (baselines are keyed by setup: stack, target and model).
 
 **Read this first.** These numbers are a regression signal, not a quality measurement. Every case was answered from a replay fixture recorded on `gpt-4.1-2025-04-14` (174 fixtures) between 2026-08-21 and 2026-11-24, and the scorer is deterministic: groundedness is a database check, correctness is a tool or route match, and completeness is a keyword check, not a judge model. A score tells you the recorded answers still pass the current code and prompts, which is what the PR job named Replay regression checks. It says nothing about how a different model, or the same model today, would do. Each dataset has five or six cases, so one flipped case moves a score by 0.1 or more, and the score is a property of the recording session as much as of the system (see `agents/python/evals/fixtures/README.md`).
+**Read this first.** These numbers are a regression signal, not a quality measurement. Every case was answered from a replay fixture recorded on `gpt-4.1-2025-04-14` (176 fixtures) between 2026-08-21 and 2026-11-24, and the scorer is deterministic: groundedness is a database check, correctness is a tool or route match, and completeness is a keyword check, not a judge model. A score tells you the recorded answers still pass the current code and prompts, which is what the PR job named Replay regression checks. It says nothing about how a different model, or the same model today, would do. Each dataset has five or six cases, so one flipped case moves a score by 0.1 or more, and the score is a property of the recording session as much as of the system (see `agents/python/evals/fixtures/README.md`).
+**Read this first.** These numbers are a regression signal, not a quality measurement. Every case was answered from a replay fixture recorded on `gpt-4.1-2025-04-14` (111 fixtures) between 2026-08-21 and 2026-11-24, and the scorer is deterministic: groundedness is a database check, correctness is a tool or route match, and completeness is a keyword check, not a judge model. A score tells you the recorded answers still pass the current code and prompts, which is what the PR job named Replay regression checks. It says nothing about how a different model, or the same model today, would do. Each dataset has five or six cases, so one flipped case moves a score by 0.1 or more, and the score is a property of the recording session as much as of the system (see `agents/python/evals/fixtures/README.md`).
 
 ## Quality baselines
 
@@ -12,8 +14,8 @@ Scores per specialist and dataset, as committed in `agents/python/evals/baseline
 |-------|---------|------:|-------------:|------------:|-------------:|--------:|
 | inventory-fulfillment | `inventory_fulfillment.json` | 5 | 1.00 | 1.00 | 0.50 | 0.90 |
 | orchestrator | `indirect_injection.json` | 4 | 1.00 | 1.00 | 1.00 | 1.00 |
+| merchant-ops | `merchant_ops.json` | 5 | 1.00 | 1.00 | 1.00 | 1.00 |
 | orchestrator | `orchestrator_routing.json` | 6 | 1.00 | 1.00 | 1.00 | 1.00 |
-| order-management | `approvals.json` | 5 | 1.00 | 1.00 | 1.00 | 1.00 |
 | order-management | `order_management.json` | 5 | 1.00 | 0.70 | 0.35 | 0.75 |
 | pricing-promotions | `pricing_promotions.json` | 5 | 1.00 | 1.00 | 0.80 | 0.96 |
 | product-discovery | `product_discovery.json` | 6 | 1.00 | 0.92 | 0.97 | 0.96 |
@@ -42,7 +44,6 @@ Summed over each suite's fixtures. Informational; it is not a price.
 | inventory-fulfillment | 53,931 | 1,138 |
 | orchestrator | 99,758 | 3,233 |
 | orchestrator | 106,141 | 3,520 |
-| order-management | 32,965 | 277 |
 | order-management | 51,089 | 420 |
 | pricing-promotions | 48,885 | 1,088 |
 
@@ -55,6 +56,9 @@ Tokens per request before the user's message, counted with `o200k_base` (`evals/
 | inventory-fulfillment | admin | 3,081 | 894 | 10 | 3,975 |
 | inventory-fulfillment | customer | 3,076 | 894 | 10 | 3,970 |
 | inventory-fulfillment | seller | 3,087 | 894 | 10 | 3,981 |
+| merchant-ops | admin | 2,907 | 961 | 7 | 3,868 |
+| merchant-ops | customer | 2,928 | 961 | 7 | 3,889 |
+| merchant-ops | seller | 2,900 | 961 | 7 | 3,861 |
 | orchestrator | admin | 2,971 | 126 | 1 | 3,097 |
 | orchestrator | customer | 2,967 | 126 | 1 | 3,093 |
 | orchestrator | seller | 3,063 | 126 | 1 | 3,189 |

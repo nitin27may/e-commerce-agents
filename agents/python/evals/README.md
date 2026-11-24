@@ -435,6 +435,12 @@ Rules:
     ungrounded.
   - `review_sentiment.live.json` does not assert `months: 6` (the model relies on the tool's default of 6, which is not
     recorded as an argument).
+- `merchant_ops.live.json` runs as `seller.demo@gmail.com` (one case as `admin.demo@gmail.com`) and needs a pending proposal
+  batch per demo seller; the harness generates them with `evals/merchant_setup.py` before an in-process run, and a
+  seller who already has a pending batch is skipped. Reseed between runs, as for the other suites. A replay case that
+  makes the model pass a *random* id as a tool argument (a proposal or review id) cannot be replayed on a fresh seed,
+  because tool-call arguments are hashed verbatim: the replay twin therefore only asks for ids that are deterministic
+  (`product_id`), and `get_proposal_details` reads the newest open batch when no id is given.
 - `cancel_order` is approval-gated with `approval_mode="always_require"`, which MAF resolves before any function
   middleware runs: a live run parks the call (the order is untouched) but writes **no** `tool_approval_requests` row
   (`HITLFunctionMiddleware` never sees the call), records no step, and the reply is empty. The only trace is a
@@ -594,6 +600,7 @@ Case counts as of 2026-11-23 (they change; count the files, not this list):
 | `pricing_promotions.json` | 5 | replay |
 | `review_sentiment.json` | 5 | replay |
 | `inventory_fulfillment.json` | 5 | replay |
+| `merchant_ops.json` | 5 | replay; runs as `seller.demo@gmail.com` (`user_role` / `user_email` per case), needs a pending proposal batch, which `evals/merchant_setup.py` generates before a run |
 | `orchestrator_routing.json` | 6 | replay; each case sets `expected_route`, scored on whether the orchestrator handed off to the right specialist via `call_specialist_agent` |
 | `indirect_injection.json` | 4 | replay; reviews and product text that order a refund, cancellation or return, scored with route, forbidden routes and tools, no approval, canary tokens; needs `seed_adversarial` (see *Indirect prompt injection*) |
 | `orchestrator_modes.json` | 3 | replay; prompts for the research modes (`workflow:pre-purchase`, `group-chat`) and the return graph (`workflow:return-replace`), scored with `--mode` |
@@ -607,6 +614,8 @@ Case counts as of 2026-11-23 (they change; count the files, not this list):
 | `live/order_management.live.json` | 33 | live, includes multi-turn cases (`turns`) |
 | `live/pricing_promotions.live.json` | 29 | live |
 | `live/review_sentiment.live.json` | 30 | live |
+| `live/review_sentiment.live.json` | 29 | live |
+| `live/merchant_ops.live.json` | 19 | live, `type` and `why` on every case; another seller's product, an injected review and an approve request among the adversarial ones |
 
 The `live/*.live.json` files are the replay cases and their extensions for a live model, with run-time facts resolved (see
 *Live datasets*). They are not part of the replay gate. The replay datasets are the scorecard's cases; the live ones are

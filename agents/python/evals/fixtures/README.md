@@ -16,7 +16,7 @@ LLM_PROVIDER=replay RECORD=true REPLAY_RECORD_PROVIDER=azure \
 ```
 
 Repeat per specialist dataset (`order-management`, `pricing-promotions`,
-`review-sentiment`, `inventory-fulfillment` — DB only, no other services
+`review-sentiment`, `inventory-fulfillment`, `merchant-ops` — DB only, no other services
 needed, since `ProductionRunner` calls each specialist in-process).
 
 The approvals set (`evals/datasets/approvals.json`, customer confirmation, #302) is another order-management run of the same

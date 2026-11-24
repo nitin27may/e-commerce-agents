@@ -80,6 +80,7 @@ def test_live_datasets_exist_and_are_all_live() -> None:
     assert {p.name for p in LIVE_DATASETS} == {
         "approvals.live.json",
         "inventory_fulfillment.live.json",
+        "merchant_ops.live.json",
         "order_management.live.json",
         "indirect_injection.live.json",
         "orchestrator_modes.live.json",

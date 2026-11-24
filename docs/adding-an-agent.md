@@ -135,7 +135,7 @@ The `load_prompt()` function in `shared/prompt_loader.py` composes this with the
 
 ## 3. Assign a port
 
-Pick the next unused port from the port map (currently 8080–8085 are taken). Add it to:
+Pick the next unused port from the port map (currently 8080–8086 are taken; 8086 is the opt-in `merchant-ops` specialist, which is the worked example of a Python-only agent that stays out of the default stack: its own compose profile, a flag that decides whether the orchestrator may route to it, and a parity-matrix row). Add it to:
 
 - `agents/python/your_agent/main.py` — `port=8086`
 - `docker-compose.yml` — new service entry (see step 4)
