@@ -25,6 +25,7 @@ from pydantic import BaseModel
 
 from shared.config import settings
 from shared.context import current_session_id, current_user_email, current_user_role
+from shared.coupons import COUPON_ALREADY_USED_MESSAGE, lock_user_for_checkout, user_has_used_coupon
 from shared.db import get_pool
 from shared.factory import get_token_verifier
 from shared.idempotency import idempotent
@@ -2146,6 +2147,8 @@ async def apply_coupon(body: ApplyCouponRequest, user: dict = Depends(require_au
         )
     if coupon["user_specific_email"] and coupon["user_specific_email"] != email:
         raise HTTPException(status_code=400, detail="This coupon is not valid for your account")
+    if await user_has_used_coupon(pool, user_id, coupon["code"]):
+        raise HTTPException(status_code=400, detail=COUPON_ALREADY_USED_MESSAGE)
 
     # Calculate discount
     if coupon["discount_type"] == "percentage":
@@ -2248,6 +2251,9 @@ async def _do_checkout(user_id: str, body: CheckoutRequest) -> dict:
 
     async with pool.acquire() as conn:
         async with conn.transaction():
+            # 0. Serialise this user's checkouts so the one-use-per-coupon check below sees any concurrent order
+            await lock_user_for_checkout(conn, user_id)
+
             # 1. Fetch cart
             cart = await conn.fetchrow(
                 "SELECT id, coupon_code, discount_amount FROM carts WHERE user_id = $1",
@@ -2313,6 +2319,10 @@ async def _do_checkout(user_id: str, body: CheckoutRequest) -> dict:
                         valid = False
                     if coupon["min_spend"] and subtotal < float(coupon["min_spend"]):
                         valid = False
+
+                    if valid and await user_has_used_coupon(conn, user_id, coupon_code):
+                        # Refuse rather than drop the code: dropping it would charge full price unannounced
+                        raise HTTPException(status_code=400, detail=COUPON_ALREADY_USED_MESSAGE)
 
                     if valid:
                         if coupon["discount_type"] == "percentage":

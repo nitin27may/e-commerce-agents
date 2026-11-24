@@ -11,6 +11,7 @@ from agent_framework import tool
 from pydantic import Field
 
 from shared.context import current_user_email
+from shared.coupons import COUPON_ALREADY_USED_CODE, COUPON_ALREADY_USED_MESSAGE, user_has_used_coupon
 from shared.db import get_pool
 
 
@@ -92,6 +93,17 @@ async def validate_coupon(
         # Check user-specific restriction
         if row["user_specific_email"] and row["user_specific_email"] != email:
             return {"valid": False, "code": code, "error": "This coupon is restricted to a specific user"}
+
+        # One use per customer: a non-cancelled order of theirs already carries this code
+        if email:
+            user_id = await conn.fetchval("SELECT id FROM users WHERE email = $1", email)
+            if user_id is not None and await user_has_used_coupon(conn, user_id, row["code"]):
+                return {
+                    "valid": False,
+                    "code": code,
+                    "error": COUPON_ALREADY_USED_MESSAGE,
+                    "error_code": COUPON_ALREADY_USED_CODE,
+                }
 
         # Calculate discount
         discount_type = row["discount_type"]
