@@ -46,7 +46,7 @@ dependencies = [
     # `all` extra, which this repo deliberately does not use — without it every MCP connect fails.
     "tenacity>=9.1.4,<10",
     # Chapter 19 — declarative workflows parse workflow.yaml directly
-    "pyyaml==6.0.3",
+    "pyyaml==6.0.4",
     # Chapters 02, 06 — tool argument schemas
     "pydantic==2.14.4",
     # Chapter 07 — observability: chapter code builds its own TracerProvider
