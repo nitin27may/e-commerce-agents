@@ -172,6 +172,14 @@ other path; see *The log is append-only*.
 
 Web: `/admin/decisions`.
 
+## Gotchas
+
+- **Everything is off by default.** `AUTONOMY_ENABLED` gates the engine and the simulator additionally needs `AUTONOMY_SIMULATOR_ENABLED`. Every number in `autonomy.yaml` is a placeholder.
+- **The decision and ledger tables are append-only.** A reversal is a new row, and a reset needs `reset_autonomy_log()`: `TRUNCATE` is refused while they hold rows.
+- **Lock order is budget, then order, then row locks.** Taking them in another order can deadlock two events.
+- **A credited order is `no_action`.** It opens no approval.
+- **.NET refuses every decision on an `event` approval** (422, "not supported on this stack").
+
 ## Not built
 
 The LLM `ops-responder` mode (`EVENT_AGENT_MODE=agent`) and its fixtures need a keyed recording session. Price-drop,

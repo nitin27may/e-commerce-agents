@@ -355,7 +355,8 @@ LLM_API=chat_completions      # default `responses`; needed where there is no /r
   The golden cases in `config/pricing/testdata/` are shared; change them only when the pricing *rules* change.
 - **Private prices** (a local model at 0, a negotiated rate) go in a file named by `PRICING_OVERRIDES_FILE`,
   never in the shipped file. `PRICING_FILE` replaces the shipped file. Both are read by host-run processes;
-  containers use the copy built into the image (rebuild after editing).
+  containers read the pricing directory mounted read-only at `/pricing` (restart after editing, no rebuild), so
+  `PRICING_OVERRIDES_FILE` must be a path under `/pricing`.
 - **An unlisted model's cost is unknown (null), never a guess.** Do not reintroduce a fallback price: the old
   gpt-4.1 fallback made every Ollama, Gemini and custom-deployment run report invented dollars. Under
   `COST_BUDGET_MODE=enforce` with a ceiling, an unpriced turn stops the run (fail closed).

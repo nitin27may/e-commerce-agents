@@ -605,6 +605,13 @@ belong in a secret manager — Key Vault, or your platform's equivalent — inje
 explicitly rejected outside development, so copying it verbatim into a deployed environment cannot
 work by accident.
 
+## Gotchas
+
+- **Precedence:** a variable you export beats a run profile, which beats `.env`.
+- **Containers read the mounted pricing directory** (`/pricing`, read-only), so a price edit or an overrides file under it takes effect on restart; `PRICING_OVERRIDES_FILE` must be a path under `/pricing`, not a host path.
+- **Gpt-5.x rejects `temperature`:** set `LLM_TEMPERATURE=` empty to omit it on both stacks.
+- **Embeddings dimension is a database property.** Changing `EMBEDDING_DIM` needs `scripts/reset_embeddings.py`, which discards stored vectors.
+
 ## Related
 
 - [Quick Start](quick-start.md) — the fastest path to a running stack
