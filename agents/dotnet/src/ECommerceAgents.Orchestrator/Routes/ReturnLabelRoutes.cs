@@ -1,7 +1,10 @@
 using Dapper;
+using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Data;
+using ECommerceAgents.Shared.RateLimiting;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using System.Globalization;
 using System.Text;
@@ -23,23 +26,36 @@ public static class ReturnLabelRoutes
         return routes;
     }
 
-    /// <summary>Tokens are minted as 12 lowercase hex characters (<c>Guid.ToString("N")[..12]</c>).</summary>
-    public static bool IsWellFormedToken(string? token)
-    {
-        if (token is null || token.Length != 12) return false;
-        foreach (var c in token)
-        {
-            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
-        }
-        return true;
-    }
+    /// <summary>A new token (32 lowercase hex characters) or a legacy one (12); see <see cref="ReturnLabelToken"/>.</summary>
+    public static bool IsWellFormedToken(string? token) => ReturnLabelToken.IsWellFormed(token);
 
-    private static async Task<IResult> GetLabel(string labelToken, DatabasePool pool)
+    private static async Task<IResult> GetLabel(
+        string labelToken,
+        HttpContext http,
+        DatabasePool pool,
+        AgentSettings settings,
+        [FromServices] ILabelLookupGate? gate
+    )
     {
         // Public route, token is the only credential: match it whole and exactly. Malformed input (wildcards,
-        // partial or over-long tokens) gets the same 404 as an unknown token and is never echoed.
-        if (!IsWellFormedToken(labelToken))
+        // partial or over-long tokens) gets the same 404 as an unknown token and is never echoed. Each such miss
+        // spends the caller's budget; once it is gone the lookup is refused (429) before it runs.
+        var ip = ClientAddress.Resolve(
+            http.Request.Headers["X-Forwarded-For"].FirstOrDefault(),
+            http.Connection.RemoteIpAddress,
+            settings.RateLimitTrustedProxyHops
+        );
+        if (gate is not null && await gate.IsBlockedAsync(ip, http.RequestAborted))
         {
+            return Results.Json(
+                new { detail = "Too many unknown return-label lookups - try again shortly." },
+                statusCode: StatusCodes.Status429TooManyRequests
+            );
+        }
+
+        if (!ReturnLabelToken.IsWellFormed(labelToken))
+        {
+            if (gate is not null) await gate.RecordMissAsync(ip, http.RequestAborted);
             return Results.NotFound(new { detail = "Return label not found" });
         }
 
@@ -55,8 +71,10 @@ public static class ReturnLabelRoutes
               WHERE r.return_label_url = @url",
             new { url = $"/api/returns/{labelToken}/label" }
         );
-        if (ret is null)
+        // A 12-character token is a pre-128-bit one: honoured only for the 30 days the printed label promises.
+        if (ret is null || (ReturnLabelToken.IsLegacy(labelToken) && ReturnLabelToken.LegacyExpired((DateTime?)ret.created_at)))
         {
+            if (gate is not null) await gate.RecordMissAsync(ip, http.RequestAborted);
             return Results.NotFound(new { detail = "Return label not found" });
         }
 
@@ -225,4 +243,71 @@ public static class ReturnLabelRoutes
 
         return Encoding.Latin1.GetBytes(string.Join("\n", pdfLines));
     }
+}
+
+/// <summary>
+/// Return-label tokens, the twin of Python's <c>shared/return_label.py</c>. New tokens are 128 random bits (32 lowercase
+/// hex characters). Tokens minted before that were 12 hex characters (48 bits); they stay valid for the 30 days the
+/// printed label promises and are then refused like an unknown token.
+/// </summary>
+public static class ReturnLabelToken
+{
+    public const int LegacyLength = 12;
+    public const int Length = 32;
+    public static readonly TimeSpan LegacyValidity = TimeSpan.FromDays(30);
+
+    public static string New() => System.Security.Cryptography.RandomNumberGenerator.GetHexString(Length).ToLowerInvariant();
+
+    public static bool IsLegacy(string token) => token.Length == LegacyLength;
+
+    public static bool IsWellFormed(string? token)
+    {
+        if (token is null || (token.Length != Length && token.Length != LegacyLength)) return false;
+        foreach (var c in token)
+        {
+            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
+        }
+        return true;
+    }
+
+    /// <summary>True when a legacy token's return is older than the validity window (no date: treated as expired).</summary>
+    public static bool LegacyExpired(DateTime? createdAt, DateTime? now = null)
+    {
+        if (createdAt is null) return true;
+        var created = createdAt.Value.Kind == DateTimeKind.Unspecified
+            ? DateTime.SpecifyKind(createdAt.Value, DateTimeKind.Utc)
+            : createdAt.Value.ToUniversalTime();
+        return (now ?? DateTime.UtcNow) - created > LegacyValidity;
+    }
+}
+
+/// <summary>
+/// Budget for unknown return-label tokens per client address. Only misses spend it, so fetching your own label never
+/// counts; once spent, the lookup is refused before it runs.
+/// </summary>
+public interface ILabelLookupGate
+{
+    Task<bool> IsBlockedAsync(string? clientIp, CancellationToken ct = default);
+
+    Task RecordMissAsync(string? clientIp, CancellationToken ct = default);
+}
+
+/// <summary>The Redis-backed gate: the tight auth budget (<c>RATE_LIMIT_AUTH_MAX_REQUESTS</c> per window), failing open.</summary>
+public sealed class RedisLabelLookupGate(SlidingWindowRateLimiter limiter, AgentSettings settings) : ILabelLookupGate
+{
+    public Task<bool> IsBlockedAsync(string? clientIp, CancellationToken ct = default) =>
+        limiter.IsAtLimitAsync(
+            SlidingWindowRateLimiter.LabelMissKeyFor(clientIp),
+            settings.RateLimitAuthMaxRequests,
+            settings.RateLimitAuthWindowSeconds,
+            ct
+        );
+
+    public async Task RecordMissAsync(string? clientIp, CancellationToken ct = default) =>
+        await limiter.TryAcquireAsync(
+            SlidingWindowRateLimiter.LabelMissKeyFor(clientIp),
+            settings.RateLimitAuthMaxRequests,
+            settings.RateLimitAuthWindowSeconds,
+            ct
+        );
 }

@@ -311,6 +311,13 @@ async def get_user_orders(limit: Annotated[int, "Max results"] = 10) -> list[dic
 
 All database access uses `asyncpg`'s parameterized query syntax (`$1, $2, …`). No string concatenation is used to build SQL. This eliminates SQL injection at the query-construction layer.
 
+### Return-label tokens
+
+`GET /api/returns/{token}/label` is public: the token in the URL is the only credential, so it is matched whole and exactly (never with `LIKE`).
+
+- **Entropy.** New tokens are 128 random bits, 32 lowercase hex characters (`secrets.token_hex(16)` on Python, `RandomNumberGenerator` on .NET). Tokens minted earlier were 12 hex characters (48 bits). They are still accepted, but only for 30 days from the return's `created_at` (the validity the printed label states); after that they get the same 404 as an unknown token. A 32-character token does not expire on this rule. Remove the legacy branch (`shared/return_label.py`, `ReturnLabelToken`) once 30 days have passed since the deploy.
+- **Enumeration limit.** Every malformed, unknown or expired-legacy lookup spends a per-client-address budget (`RATE_LIMIT_AUTH_MAX_REQUESTS` per `RATE_LIMIT_AUTH_WINDOW_SECONDS`, bucket `ratelimit:label-miss:ip:<addr>`). Once it is spent the route answers 429 before looking anything up, valid tokens included, until the window slides. A successful lookup never spends it. Like the other limiters it fails open when Redis is unreachable. Behind the default web proxy every browser shares one address, so a burst of mistyped labels from many users can briefly block label downloads for all of them.
+
 ---
 
 ## Azure AI Content Safety — Optional Integration

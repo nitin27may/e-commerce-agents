@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import time
 import uuid
 from typing import Any
@@ -39,8 +38,15 @@ from shared.jwt_utils import (
 )
 from shared.log_safe import log_safe
 from shared.oauth.service_client import request_token
-from shared.rate_limit import enforce_auth_account_limit, enforce_auth_user_limit, rate_limit_auth
+from shared.rate_limit import (
+    enforce_auth_account_limit,
+    enforce_auth_user_limit,
+    enforce_label_lookup_not_blocked,
+    rate_limit_auth,
+    record_label_miss,
+)
 from shared.refresh_tokens import RefreshRejectedError, issue_refresh_token, rotate_refresh_token
+from shared.return_label import is_legacy, is_well_formed, legacy_token_expired, new_label_token
 from shared.tool_inputs import clamp_limit
 
 logger = logging.getLogger(__name__)
@@ -1654,7 +1660,7 @@ async def return_order(order_id: str, body: ReturnOrderRequest, user: dict = Dep
     if existing_return:
         raise HTTPException(status_code=409, detail="A return has already been requested for this order")
 
-    label_token = uuid.uuid4().hex[:12]
+    label_token = new_label_token()
     return_label_url = f"/api/returns/{label_token}/label"
 
     async with pool.acquire() as conn:
@@ -1695,16 +1701,15 @@ async def return_order(order_id: str, body: ReturnOrderRequest, user: dict = Dep
 # ── Return Label PDF ─────────────────────────────────────────
 
 
-# Tokens are minted as ``uuid.uuid4().hex[:12]`` (lowercase hex) at both creation sites.
-_LABEL_TOKEN_RE = re.compile(r"[0-9a-f]{12}")
-
-
 @router.get("/api/returns/{label_token}/label")
-async def get_return_label(label_token: str):
+async def get_return_label(label_token: str, request: Request):
     """Generate a return shipping label PDF for the given token."""
     # The route is public and the token is the only credential, so it is matched whole and exactly: a malformed
     # segment (wildcards, partial or over-long tokens) gets the same 404 as an unknown one, and is never echoed.
-    if not _LABEL_TOKEN_RE.fullmatch(label_token):
+    # Each such miss spends the caller's budget; once it is gone the lookup is refused (429) before it runs.
+    await enforce_label_lookup_not_blocked(request)
+    if not is_well_formed(label_token):
+        await record_label_miss(request)
         raise HTTPException(status_code=404, detail="Return label not found")
 
     pool = get_pool()
@@ -1720,7 +1725,9 @@ async def get_return_label(label_token: str):
            WHERE r.return_label_url = $1""",
         f"/api/returns/{label_token}/label",
     )
-    if not ret:
+    # A 12-character token is a pre-128-bit one: honoured only for the 30 days the printed label promises.
+    if not ret or (is_legacy(label_token) and legacy_token_expired(ret["created_at"])):
+        await record_label_miss(request)
         raise HTTPException(status_code=404, detail="Return label not found")
 
     address = ret["shipping_address"]

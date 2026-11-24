@@ -291,7 +291,7 @@ public static class OrderRoutes
             return Results.Conflict(new { detail = "A return has already been requested for this order" });
         }
 
-        var labelToken = Guid.NewGuid().ToString("N")[..12];
+        var labelToken = ReturnLabelToken.New();
         var labelUrl = $"/api/returns/{labelToken}/label";
         var total = (decimal)order.total;
         var returnId = await conn.ExecuteScalarAsync<Guid>(
