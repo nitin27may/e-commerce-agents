@@ -322,6 +322,10 @@ public static class CartRoutes
         {
             return Results.BadRequest(new { detail = "This coupon is not valid for your account" });
         }
+        if (await CouponUsage.HasUsedAsync(conn, userId.Value, (string)coupon.code))
+        {
+            return Results.BadRequest(new { detail = CouponUsage.AlreadyUsedMessage });
+        }
 
         decimal discount;
         if ((string)coupon.discount_type == "percentage")

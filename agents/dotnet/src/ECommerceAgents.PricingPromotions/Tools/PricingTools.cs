@@ -100,6 +100,23 @@ public sealed class PricingTools(DatabasePool pool)
             return CouponValidationResult.Invalid("This coupon is restricted to a specific user", code);
         }
 
+        // One use per customer: a non-cancelled order of theirs already carries this code
+        if (!string.IsNullOrEmpty(email))
+        {
+            var userId = await conn.ExecuteScalarAsync<Guid?>(
+                "SELECT id FROM users WHERE email = @email",
+                new { email }
+            );
+            if (userId is not null && await CouponUsage.HasUsedAsync(conn, userId.Value, (string)row.code))
+            {
+                return CouponValidationResult.Invalid(
+                    CouponUsage.AlreadyUsedMessage,
+                    code,
+                    CouponUsage.AlreadyUsedCode
+                );
+            }
+        }
+
         var discountType = (string)row.discount_type;
         var discountValue = (decimal)row.discount_value;
         decimal discountAmount;
@@ -617,11 +634,12 @@ public sealed record CouponValidationResult(
     decimal? DiscountValue,
     decimal? DiscountAmount,
     decimal? NewTotal,
-    List<string>? ApplicableCategories
+    List<string>? ApplicableCategories,
+    string? ErrorCode = null
 )
 {
-    public static CouponValidationResult Invalid(string error, string? code = null) =>
-        new(false, error, code, null, null, null, null, null, null);
+    public static CouponValidationResult Invalid(string error, string? code = null, string? errorCode = null) =>
+        new(false, error, code, null, null, null, null, null, null, errorCode);
 }
 
 public sealed record SavingsLine(

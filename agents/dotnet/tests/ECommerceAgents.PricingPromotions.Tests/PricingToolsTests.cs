@@ -130,6 +130,86 @@ public sealed class PricingToolsTests : IAsyncLifetime
         result.Error.Should().Contain("specific user");
     }
 
+    private async Task<Guid> AddUserAsync(string email, string role = "customer")
+    {
+        await using var conn = await _pool.OpenAsync();
+        return await conn.ExecuteScalarAsync<Guid>(
+            @"INSERT INTO users (email, password_hash, name, role) VALUES (@email, 'x', 'T', @role) RETURNING id",
+            new { email, role }
+        );
+    }
+
+    private async Task AddOrderAsync(Guid userId, string code, string status = "delivered")
+    {
+        await using var conn = await _pool.OpenAsync();
+        await conn.ExecuteAsync(
+            @"INSERT INTO orders (user_id, status, total, shipping_address, coupon_code)
+              VALUES (@userId, @status, 20, '{}'::jsonb, @code)",
+            new { userId, status, code }
+        );
+    }
+
+    [Fact]
+    public async Task ValidateCoupon_RefusesAUserWithAPriorOrder()
+    {
+        await AddOrderAsync(await UserId(), "SAVE10");
+        EnsureUserScope();
+
+        var result = await _tools.ValidateCoupon("save10", 200m);
+
+        result.Valid.Should().BeFalse();
+        result.Code.Should().Be("save10");
+        result.Error.Should().Be("You have already used this coupon");
+        result.ErrorCode.Should().Be("coupon_already_used");
+    }
+
+    [Fact]
+    public async Task ValidateCoupon_AllowsAnotherUser()
+    {
+        await AddOrderAsync(await AddUserAsync("someone@example.com"), "SAVE10");
+        EnsureUserScope();
+
+        (await _tools.ValidateCoupon("SAVE10", 200m)).Valid.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ValidateCoupon_IgnoresACancelledOrder()
+    {
+        await AddOrderAsync(await UserId(), "SAVE10", "cancelled");
+        EnsureUserScope();
+
+        (await _tools.ValidateCoupon("SAVE10", 200m)).Valid.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("admin")]
+    [InlineData("seller")]
+    public async Task ValidateCoupon_HasNoRoleExemption(string role)
+    {
+        var email = $"{role}@example.com";
+        await AddOrderAsync(await AddUserAsync(email, role), "SAVE10");
+        RequestContext.CurrentUserEmail = email;
+
+        var result = await _tools.ValidateCoupon("SAVE10", 200m);
+
+        result.ErrorCode.Should().Be("coupon_already_used");
+    }
+
+    [Fact]
+    public async Task ValidateCoupon_UserSpecificRuleIsUnchanged()
+    {
+        EnsureUserScope();
+        var result = await _tools.ValidateCoupon("VIPONLY", 200m);
+        result.Error.Should().Contain("specific user");
+        result.ErrorCode.Should().BeNull();
+    }
+
+    private async Task<Guid> UserId()
+    {
+        await using var conn = await _pool.OpenAsync();
+        return await conn.ExecuteScalarAsync<Guid>("SELECT id FROM users WHERE email = @Email", new { Email });
+    }
+
     // ─────────────────────── get_active_deals ─────────────────
 
     [Fact]
