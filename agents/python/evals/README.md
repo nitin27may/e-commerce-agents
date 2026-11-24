@@ -268,7 +268,7 @@ What it cannot fill, and what the record says about it:
 | `hitl_requested` | exact for `workflow:*` modes (the pause is a `request_info` frame); a visible pause in `tool` mode is seen (`run.pending_approval`), **no pause in `tool` mode is not provable** and `hitl` is listed in `not_observable` | a tool-mode specialist parks a destructive call without a frame or a step (`HITLFunctionMiddleware` short-circuits before the step recorder). When the eval process can read the served database (`DATABASE_URL`) and finds a pending `tool_approval_requests` row for the case user in the run window, the park is seen and `hitl` is not listed; otherwise `expect_hitl` is not applicable |
 | `denied` | exact | read from a `permission_denied` step output, as in-process |
 | `tokens`, `cost_usd` | read back from `GET /api/runs` by the run id the stream names; null cost and `tokens` in `not_observable` when the run is not listed | the stream itself reports no usage |
-| `grounding`, `context` | from the `grounding` frame; with none (`GROUNDING_MODE=off`, or a workflow mode) groundedness is 1.0 ("nothing to verify") and `grounding` is listed | no database here to repeat the check. `context` is the grounding evidence lines, as in-process; raw tool output is captured by neither target |
+| `grounding`, `context` | from the `grounding` frame; with none (`GROUNDING_MODE=off`, or an answer with no checkable claim) groundedness is 1.0 ("nothing to verify") and `grounding` is listed | no database here to repeat the check. `context` is the grounding evidence lines, as in-process; raw tool output is captured by neither target |
 | `latency_ms` | measured client side | includes the network and the server's persistence before `[DONE]` |
 
 Two differences from the in-process target that no flag removes. It drives the **orchestrator** only, so a
@@ -285,7 +285,8 @@ Two checks sit on top of it, both keyless:
 * `scripts/stack-parity.sh` (the CI job `stack-parity`) boots each stack under replay, runs the dataset over http
   against it and compares the stacks with `python -m evals.stack_compare a.jsonl b.jsonl`: outcome, tool-call set,
   routes, workflow nodes and approval flags must match exactly, and each mean score must be within `--score-tolerance`
-  (default 0.05). Wording is never compared.
+  (default 0.05). Wording is never compared. Both stacks send a `grounding` frame from every mode; a case where either
+  side sent none is exempt from the groundedness and overall means only.
 
 ## Repeats and the regression threshold
 

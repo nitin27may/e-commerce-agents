@@ -50,6 +50,7 @@ from shared.factory import get_checkpoint_storage
 from shared.run_usage import zero_usage
 
 from .base import ModeCapabilities, RunContext
+from .grounded import grounded_run
 
 _UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 
@@ -122,6 +123,7 @@ class PrePurchaseMode:
             "estimate_shipping": getattr(estimate_shipping, "func", estimate_shipping),
         }
 
+    @grounded_run
     async def run(self, message: str, ctx: RunContext) -> AsyncIterator[OrchestrationEvent]:
         from workflows.pre_purchase import PrePurchaseWorkflow, ResearchState
 
@@ -244,6 +246,7 @@ class ReturnReplaceMode:
             "resolve_return": resolve_return,
         }
 
+    @grounded_run
     async def run(self, message: str, ctx: RunContext) -> AsyncIterator[OrchestrationEvent]:
         from shared.context import current_user_email
         from workflows.return_replace import ReturnAndReplaceWorkflow, WorkflowState
@@ -367,6 +370,7 @@ class ReturnReplaceMode:
             },
         )
 
+    @grounded_run
     async def resume(
         self,
         *,

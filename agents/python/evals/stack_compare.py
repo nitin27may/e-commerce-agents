@@ -151,9 +151,10 @@ def _compare_scores(
         groups[key[0]].append(key)
     out: list[str] = []
     for dataset, keys in sorted(groups.items()):
-        # A stack that reports no grounding (the Python workflow modes send no grounding frame) scores groundedness
-        # by default, and ``overall`` weighs it: comparing either against a stack that does report one measures
-        # the reporting gap, not the answers. Same rule as the denial and approval flags above.
+        # A record that carries no grounding report (GROUNDING_MODE=off, or an answer with no checkable claim)
+        # scores groundedness by default, and ``overall`` weighs it: comparing either against a record that does
+        # report one measures the reporting gap, not the answers. Both stacks now report grounding for every
+        # mode, so this fires only for those cases, never for a whole mode. Same rule as the flags above.
         grounding_unseen = any("grounding" in (by_a[k].not_observable + by_b[k].not_observable) for k in keys)
         for score in _SCORES:
             if grounding_unseen and score in _GROUNDING_DEPENDENT:

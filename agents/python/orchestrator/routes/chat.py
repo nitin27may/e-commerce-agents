@@ -707,6 +707,8 @@ async def chat_stream(
                                 await queue.put(("text", " [an error occurred] "))
                             elif event.kind == "run_completed":
                                 run_payload_box.update(event.payload)
+                                if event.payload.get("grounding"):
+                                    await queue.put(("frame", "grounding", event.payload["grounding"]))
                                 final_agents_involved = event.payload.get("agents_involved", final_agents_involved)
                                 if not streamed_any_text:
                                     final_text = event.payload.get("text", "")
