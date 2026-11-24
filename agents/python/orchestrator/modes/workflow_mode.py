@@ -103,7 +103,7 @@ class PrePurchaseMode:
         "estimate — then synthesized into one recommendation. Contrast with `tool`, "
         "which would make these same calls one at a time, serially."
     )
-    capabilities = ModeCapabilities(streams=True, supports_hitl=False, supports_checkpoints=False, is_graph=True)
+    capabilities = ModeCapabilities(streams=True, supports_hitl=False, supports_checkpoints=True, is_graph=True)
 
     def __init__(self, tools: dict[str, Any] | None = None) -> None:
         self._tools = tools
@@ -222,7 +222,7 @@ class ReturnReplaceMode:
         "workflow's policy-gate executor), and only then return initiation, replacement "
         "search, loyalty discount and finalize."
     )
-    capabilities = ModeCapabilities(streams=True, supports_hitl=True, supports_checkpoints=False, is_graph=True)
+    capabilities = ModeCapabilities(streams=True, supports_hitl=True, supports_checkpoints=True, is_graph=True)
 
     def __init__(self, tools: dict[str, Any] | None = None) -> None:
         self._tools = tools
