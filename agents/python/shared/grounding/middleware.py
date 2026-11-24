@@ -113,6 +113,10 @@ def _attach_report(response: Any, report: GroundingReport) -> None:
         "total": report.total_count,
         "verified": report.verified_count,
         "unverified": report.unverified_count,
+        # Counted in ``verified`` above and reported separately: the caller typed the value, or it is an
+        # exact sum/difference of two grounded amounts.
+        "user_supplied": report.user_supplied_count,
+        "derived": report.derived_count,
         "claims": [
             {
                 "type": v.claim_type,

@@ -55,7 +55,8 @@ the run (`Assertion failed:` in the verbose report, `assertion_failures` in the 
 |---|---|
 | `user_role` / `user_email` | Run the case as this caller (default: the runner's `customer` / `eval@example.com`). Agents bake the role into their prompt, so the runner builds one agent per role. |
 | `expected_tool_args` | `{tool: {arg: value}}`. Subset match against the `tool_input` recorded in the steps (`evals/scorers/tool_args.py`): extra arguments are fine, strings compare case-insensitively, numbers by value. Keys must be tools the case also lists in `expected_tools`. |
-| `expect_denial` | `true`: a tool refused the call for this role (`permission_denied` step output). `false`: none did. |
+| `forbidden_tools` | List of tool names that must not have been called. An assertion only: a call to any of them adds an assertion failure and never moves a score. |
+| `expect_denial` | `true`: a tool refused the call for this role. Read from the step output in any shape it is stored in: a `permission_denied` dict, a one-item list holding that JSON (MAF `Content`), a JSON string, or plain refusal text ("requires one of these roles", "restricted to sellers or admins"). `false`: none did. |
 | `expect_hitl` | `true`: a destructive tool was parked for approval: a pending `tool_approval_requests` row for the case user created during the run (what a parked tool-mode `cancel_order` leaves), a new `hitl_requests` row (a paused workflow), or a `pending_approval` step. `false`: none was. |
 | `expected_routes` / `forbidden_routes` | Orchestrator cases. Every specialist in `expected_routes` must have been called through `call_specialist_agent`; none in `forbidden_routes` may have been (`"*"` is every specialist, so `["*"]` means answer directly). Assertions only, they never move a score. |
 | `why` | One line saying why the case exists. Never scored. Cases in `orchestrator_routing.live.json` also carry `type` (`happy`, `edge`, `adversarial`), which `tests/test_eval_orchestrator_dataset.py` counts. |
@@ -148,7 +149,7 @@ input names, so a records file can be given to a Foundry evaluator as is. A read
 | `context` | string | grounding evidence lines, one per checked claim; raw tool output is not captured by the in-process target |
 | `tool_calls` | list | `{type: "tool_call", name, arguments}` in call order |
 | `ground_truth` | string | the expectation in words |
-| `expected` | object | the expectation, machine readable: `tools`, `fields`, `route`, `criteria`, `tool_args`, `denial`, `hitl`, `user_role`, `user_email`, `mode`; safety: `attack_type`, `forbidden_substrings`, `refusal_expected` |
+| `expected` | object | the expectation, machine readable: `tools`, `fields`, `route`, `criteria`, `tool_args`, `forbidden_tools`, `denial`, `hitl`, `user_role`, `user_email`, `mode`; safety: `attack_type`, `forbidden_substrings`, `refusal_expected` |
 | `routes` | list | specialists the orchestrator called |
 | `tokens` | `{input, output}` | for the orchestrator this includes its specialists |
 | `latency_ms` | int | wall clock of the case |
@@ -156,12 +157,13 @@ input names, so a records file can be given to a Foundry evaluator as is. A read
 | `grounding` | object or null | the grounding report the score is computed from |
 | `denied`, `hitl_requested`, `guardrail_flags` | | what the run showed about role gating and approvals |
 | `error`, `fixture_missing` | | an infrastructure failure, kept apart from a bad answer |
+| `budget_exceeded` | bool | the run was stopped by `COST_BUDGET_*` and answered with its fixed refusal text. Nothing was measured: scores are 0, the case counts as failed and is left out of every mean; the report prints a `Budget exceeded` line. No judge call is made for it |
 | `nodes` | list | workflow nodes entered, in order (`workflow:*` modes; empty in `tool` mode) |
 | `not_observable` | list | facts this target could not see (`http`: `hitl`, `grounding`, `tokens`, `guardrail_flags`). An assertion on a listed fact is not applicable, never failed |
 | `turns` | list | multi-turn live cases only (empty otherwise); see *Multi-turn cases*. Per turn: `query`, `response`, `context`, `tool_calls`, `expected`, `routes`, `tokens`, `latency_ms`, `cost_usd`, `grounding`, `denied`, `hitl_requested`, `not_observable`, `judge`, `scores`, `fields_found`, `fields_missing`, `assertion_failures`, `passed` |
 | `scores` | `{groundedness, correctness, completeness, overall}` | |
 | `fields_found`, `fields_missing`, `assertion_failures` | lists | |
-| `judge` | object or null | `score`, `reasoning`, `failure_mode`, `provider`, `model`, `self_judged` |
+| `judge` | object or null | `score`, `reasoning`, `failure_mode`, `provider`, `model`, `self_judged`. `failure_mode` is `judge_error` (call or parse failed: completeness 0) or `judge_unavailable` (the provider's content filter refused the judge call on the answer's text: no verdict exists, so completeness is left out of the completeness mean, the case's overall is the groundedness and correctness weights renormalised, and the report prints a `Judge unavailable` line) |
 | `safety` | object or null | `injection_resisted`, `refusal_correct`, `role_confined`, `guardrail_engaged` |
 | `pass_threshold`, `passed` | | |
 

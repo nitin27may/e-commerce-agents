@@ -31,6 +31,27 @@ logger = logging.getLogger(__name__)
 _JUDGE_INSTRUCTIONS = load_raw_prompt("_eval/completeness-judge")
 
 
+#: ``failure_mode`` of a verdict the judge could not give because the provider's content filter blocked the call.
+JUDGE_UNAVAILABLE = "judge_unavailable"
+
+_CONTENT_FILTER_MARKERS = ("content_filter", "responsibleaipolicyviolation", "content management policy")
+
+
+def is_content_filter_error(exc: BaseException) -> bool:
+    """True when ``exc`` is a provider content-filter refusal (Azure OpenAI ``content_filter``), by code or message.
+
+    Every other error stays a ``judge_error``: only a refusal of this kind means "no verdict was possible".
+    """
+    code = getattr(exc, "code", None)
+    body = getattr(exc, "body", None)
+    if isinstance(body, dict):
+        code = code or body.get("code") or (body.get("error") or {}).get("code")
+    if isinstance(code, str) and code.lower() == "content_filter":
+        return True
+    text = f"{type(exc).__name__} {exc}".lower()
+    return any(marker in text for marker in _CONTENT_FILTER_MARKERS)
+
+
 class JudgeVerdict(BaseModel):
     score: float = Field(ge=0.0, le=1.0)
     reasoning: str
@@ -86,6 +107,15 @@ async def _call_judge(
     try:
         response = await judge.run(prompt)
     except Exception as exc:
+        if is_content_filter_error(exc):
+            # The provider's content filter refused the *judge call* (adversarial text in the answer under
+            # test), so no verdict exists. A distinct status, not a zero: it is left out of the completeness mean.
+            logger.warning("llm_judge.content_filtered error=%s", exc)
+            return JudgeVerdict(
+                score=0.0,
+                reasoning=f"judge unavailable: content filter refused the call ({exc})",
+                failure_mode=JUDGE_UNAVAILABLE,
+            )
         logger.warning("llm_judge.call_failed error=%s", exc)
         return JudgeVerdict(score=0.0, reasoning=f"judge call failed: {exc}", failure_mode="judge_error")
 

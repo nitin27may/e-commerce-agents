@@ -83,8 +83,18 @@ def score_completeness_keyword(response_text: str, expected_fields: list[str]) -
     return len(found) / len(expected_fields), found, missing
 
 
-def weighted_overall(groundedness: float, correctness: float, completeness: float) -> float:
+def weighted_overall(groundedness: float, correctness: float, completeness: float | None) -> float:
+    """The 0.4/0.4/0.2 weighting. ``completeness=None`` (no judge verdict exists) reweights the other two to 1."""
+    if completeness is None:
+        return (groundedness * GROUNDEDNESS_WEIGHT + correctness * CORRECTNESS_WEIGHT) / (
+            GROUNDEDNESS_WEIGHT + CORRECTNESS_WEIGHT
+        )
     return groundedness * GROUNDEDNESS_WEIGHT + correctness * CORRECTNESS_WEIGHT + completeness * COMPLETENESS_WEIGHT
+
+
+def judge_unavailable(record: RunRecord) -> bool:
+    """The judge could not give a verdict (content filter), so completeness was not measured."""
+    return record.judge is not None and record.judge.failure_mode == "judge_unavailable"
 
 
 def check_assertions(
@@ -95,7 +105,7 @@ def check_assertions(
     not_observable: list[str] | None = None,
     routes: list[str] | None = None,
 ) -> list[str]:
-    """Schema-v2 assertions: tool arguments, role denial, human approval. They never move a score.
+    """Schema-v2 assertions: tool arguments, forbidden tools, role denial, human approval. They never move a score.
 
     An assertion on a fact the target could not observe (``not_observable``, set by the ``http`` target) is
     not applicable: it neither passes nor fails.
@@ -114,6 +124,8 @@ def check_assertions(
         steps = [{"tool_name": c.name, "tool_input": c.arguments} for c in tool_calls]
         verdict = score_tool_args(steps, expected.tool_args)
         failures.extend(f"tool_args: {name} was not called with {expected.tool_args[name]}" for name in verdict.missing)
+    called = {c.name for c in tool_calls}
+    failures.extend(f"forbidden_tools: {name} was called" for name in expected.forbidden_tools if name in called)
     if expected.denial is not None and "denial" not in skip and denied != expected.denial:
         failures.append(f"expect_denial={expected.denial} but denied={denied}")
     if expected.hitl is not None and "hitl" not in skip and hitl_requested != expected.hitl:
@@ -212,28 +224,46 @@ def _score_turns(record: RunRecord, threshold: float) -> RunRecord:
 
 
 def _score_single(record: RunRecord, threshold: float) -> RunRecord:
-    from evals.scorers.db_groundedness import score_from_report
+    if record.budget_exceeded:
+        return record.model_copy(
+            update={
+                "scores": CaseScores(),
+                "fields_found": [],
+                "fields_missing": [],
+                "assertion_failures": [],
+                "pass_threshold": threshold,
+                "passed": False,
+            }
+        )
+
+    from evals.scorers.db_groundedness import reclassify_user_supplied, score_from_report
 
     expected = record.expected
     # The orchestrator's ledger never sees a specialist's tool results, so amount/tracking claims it
     # relays cannot be checked there (see docs/agent-quality.md); a specialist's own ledger can.
+    # An amount or id the user typed is theirs, not the model's: records written before the verifier knew that
+    # are relabelled here from the stored query and tool arguments (a no-op on a report that already says so).
+    grounding = reclassify_user_supplied(record.grounding, [record.query, *(c.arguments for c in record.tool_calls)])
     groundedness = (
-        score_from_report(record.grounding, ledger_complete=record.agent != "orchestrator")
-        if record.grounding is not None
+        score_from_report(grounding, ledger_complete=record.agent != "orchestrator")
+        if grounding is not None
         else record.scores.groundedness
     )
     correctness = score_correctness(record.tools_called, expected.tools)
     if expected.route:
         correctness = score_routing(record.routes, expected.route)
 
-    if record.judge is not None:
+    unavailable = judge_unavailable(record)
+    if unavailable:
+        completeness, found, missing = 0.0, [], []
+    elif record.judge is not None:
         completeness = record.judge.score
         found = list(expected.fields) if completeness >= 1.0 else []
         missing = [] if completeness >= 1.0 else list(expected.fields)
     else:
         completeness, found, missing = score_completeness_keyword(record.response, expected.fields)
 
-    overall = weighted_overall(groundedness, correctness, completeness)
+    overall = weighted_overall(groundedness, correctness, None if unavailable else completeness)
     failures = check_assertions(
         expected, record.tool_calls, record.denied, record.hitl_requested, record.not_observable, record.routes
     )

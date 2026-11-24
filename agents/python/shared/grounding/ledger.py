@@ -65,6 +65,26 @@ class GroundingLedger:
     # get_price_history's own historical price points scored "unverifiable"
     # even though they're real data straight from the same tool call.
     known_amounts: set[float] = field(default_factory=set)
+    # Values the *caller* put in: amounts and ids typed in this turn's user message or passed as a tool
+    # argument. An answer that echoes them is quoting the user, not inventing a figure, so the verifier
+    # reports them as ``user_supplied`` (see shared/grounding/verifier.py). They never make a model-made
+    # figure verified: only a value that literally appears in the user's text or the call arguments lands here.
+    user_amounts: set[float] = field(default_factory=set)
+    user_ids: set[str] = field(default_factory=set)
+
+    def note_user_text(self, text: Any) -> None:
+        from shared.grounding.verifier import user_supplied_values
+
+        amounts, ids = user_supplied_values(text)
+        self.user_amounts |= amounts
+        self.user_ids |= ids
+
+    def note_tool_arguments(self, arguments: Any) -> None:
+        from shared.grounding.verifier import user_supplied_values
+
+        amounts, ids = user_supplied_values(arguments)
+        self.user_amounts |= amounts
+        self.user_ids |= ids
 
     def record(self, result: Any) -> None:
         for item in _iter_dicts(result):
@@ -191,11 +211,20 @@ class GroundingLedgerMiddleware(FunctionMiddleware):
         context: FunctionInvocationContext,
         call_next: Callable[[], Awaitable[None]],
     ) -> None:
+        ledger = current_grounding_ledger.get()
+        if ledger is not None:
+            ledger.note_tool_arguments(_arguments_of(context))
         await call_next()
         ledger = current_grounding_ledger.get()
         if ledger is None:
             return
         ledger.record(unwrap_function_result(getattr(context, "result", None)))
+
+
+def _arguments_of(context: Any) -> Any:
+    args = getattr(context, "arguments", None)
+    dump = getattr(args, "model_dump", None)
+    return dump() if callable(dump) else args
 
 
 # Stateless — shared across every agent, same idiom as STEP_MIDDLEWARE.

@@ -22,6 +22,8 @@ so, deliberately, there is no stock verification tier here.
 
 from __future__ import annotations
 
+import itertools
+import re
 import uuid as uuid_module
 from dataclasses import dataclass, field
 
@@ -32,12 +34,62 @@ from shared.grounding.ledger import GroundingLedger
 
 _PRICE_TOLERANCE = 0.01
 
+# Statuses that count as grounded for the score. ``user_supplied`` (the caller typed the value, or passed it
+# as a tool argument) and ``derived`` (an exact sum or difference of two grounded amounts) are reported
+# under their own name so a report never hides how a claim was settled.
+GROUNDED_STATUSES = frozenset({"verified", "user_supplied", "derived"})
+
+# In free text only a figure that reads as money counts: a "$" prefix, a decimal point, or a currency word.
+# A bare "2" (a quantity, a count) is not an amount the user supplied.
+_MONEY_NUM = r"\d{1,6}(?:,\d{3})*(?:\.\d+)?"
+_NUMBER_RE = re.compile(
+    rf"\$\s?({_MONEY_NUM})"
+    rf"|(?<![\w.$])(\d{{1,6}}(?:,\d{{3}})*\.\d+)(?!\w)"
+    rf"|(?<![\w.$])({_MONEY_NUM})(?=\s*(?:dollars|usd|bucks)\b)",
+    re.IGNORECASE,
+)
+_UUID_TEXT_RE = re.compile(r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b")
+# Bound on the pairs tried for derived arithmetic: operands are a turn's grounded amounts, a handful in practice.
+_MAX_DERIVED_OPERANDS = 60
+
+
+def user_supplied_values(source: object) -> tuple[set[float], set[str]]:
+    """Amounts and UUIDs a caller supplied, from a string or a (nested) tool-argument structure."""
+    amounts: set[float] = set()
+    ids: set[str] = set()
+
+    def walk(node: object) -> None:
+        if isinstance(node, bool) or node is None:
+            return
+        if isinstance(node, (int, float)):
+            amounts.add(float(node))
+        elif isinstance(node, str):
+            ids.update(m.lower() for m in _UUID_TEXT_RE.findall(node))
+            stripped = _UUID_TEXT_RE.sub(" ", node)
+            for groups in _NUMBER_RE.findall(stripped):
+                number = next(g for g in groups if g)
+                amounts.add(float(number.replace(",", "")))
+        elif isinstance(node, dict):
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, (list, tuple, set)):
+            for value in node:
+                walk(value)
+
+    walk(source)
+    return amounts, ids
+
+
+def _cents(value: float) -> int:
+    return round(value * 100)
+
 
 @dataclass(frozen=True)
 class ClaimVerdict:
     claim_type: str  # "product" | "order" | "bare_id" | "amount" | "tracking"
     identifier: str
-    status: str  # "verified" | "price_mismatch" | "not_found" | "unverifiable"
+    # "verified" | "user_supplied" | "derived" | "price_mismatch" | "not_found" | "unverifiable"
+    status: str
     detail: str | None = None
     source: str | None = None  # "ledger" | "db" | None
     # The real price/total, populated only when status == "price_mismatch" — lets
@@ -55,7 +107,15 @@ class GroundingReport:
 
     @property
     def verified_count(self) -> int:
-        return sum(1 for v in self.verdicts if v.status == "verified")
+        return sum(1 for v in self.verdicts if v.status in GROUNDED_STATUSES)
+
+    @property
+    def user_supplied_count(self) -> int:
+        return sum(1 for v in self.verdicts if v.status == "user_supplied")
+
+    @property
+    def derived_count(self) -> int:
+        return sum(1 for v in self.verdicts if v.status == "derived")
 
     @property
     def unverified_count(self) -> int:
@@ -86,7 +146,14 @@ async def verify_claims(
         else:
             verdicts.append(verdict)
 
-    bare_ids = list(claims.bare_ids)
+    bare_ids = []
+    for bare in claims.bare_ids:
+        if bare.id.lower() in ledger.user_ids:
+            verdicts.append(
+                ClaimVerdict("bare_id", bare.id, "user_supplied", "id appears in the user's message or tool arguments")
+            )
+        else:
+            bare_ids.append(bare)
 
     if pool is not None:
         verdicts.extend(await _verify_products_via_db(unresolved_products, pool))
@@ -256,18 +323,47 @@ def _verify_amounts_against_ledger(claims: ExtractedClaims, ledger: GroundingLed
     known |= {p.discount_amount for p in ledger.promos.values() if p.discount_amount is not None}
     known |= ledger.known_amounts
     verdicts = []
+    operands = sorted(known | ledger.user_amounts)[:_MAX_DERIVED_OPERANDS]
     for claim in claims.amounts:
-        matched = any(abs(claim.value - k) < _PRICE_TOLERANCE for k in known)
-        verdicts.append(
-            ClaimVerdict(
-                "amount",
-                f"${claim.value:.2f}",
-                "verified" if matched else "unverifiable",
-                None if matched else "no matching price/total in this turn's tool results",
-                source="ledger" if matched else None,
+        identifier = f"${claim.value:.2f}"
+        if any(abs(claim.value - k) < _PRICE_TOLERANCE for k in known):
+            verdicts.append(ClaimVerdict("amount", identifier, "verified", source="ledger"))
+        elif any(abs(claim.value - k) < _PRICE_TOLERANCE for k in ledger.user_amounts):
+            verdicts.append(
+                ClaimVerdict(
+                    "amount",
+                    identifier,
+                    "user_supplied",
+                    "amount appears in the user's message or tool arguments",
+                    source="user",
+                )
             )
-        )
+        elif (operands_used := _derived_from(claim.value, operands)) is not None:
+            verdicts.append(
+                ClaimVerdict(
+                    "amount",
+                    identifier,
+                    "derived",
+                    f"exact sum or difference of ${operands_used[0]:.2f} and ${operands_used[1]:.2f}",
+                    source="derived",
+                )
+            )
+        else:
+            verdicts.append(
+                ClaimVerdict(
+                    "amount", identifier, "unverifiable", "no matching price/total in this turn's tool results"
+                )
+            )
     return verdicts
+
+
+def _derived_from(value: float, operands: list[float]) -> tuple[float, float] | None:
+    """Two distinct grounded amounts whose sum or difference equals ``value`` exactly to the cent."""
+    target = _cents(value)
+    for a, b in itertools.combinations(operands, 2):
+        if _cents(a) + _cents(b) == target or abs(_cents(a) - _cents(b)) == target:
+            return a, b
+    return None
 
 
 def _verify_trackings_against_ledger(claims: ExtractedClaims, ledger: GroundingLedger) -> list[ClaimVerdict]:

@@ -186,6 +186,18 @@ UNPRICED_REFUSAL_MESSAGE = (
     "COST_BUDGET_MODE=observe."
 )
 
+_BUDGET_REFUSALS = (
+    BUDGET_REFUSAL_MESSAGE,
+    TOKEN_BUDGET_REFUSAL_MESSAGE,
+    UNTRACKED_REFUSAL_MESSAGE,
+    UNPRICED_REFUSAL_MESSAGE,
+)
+
+
+def is_budget_refusal(text: str | None) -> bool:
+    """True when ``text`` carries one of the fixed messages this middleware answers with after it stops a run."""
+    return bool(text) and any(message in text for message in _BUDGET_REFUSALS)
+
 
 class CostBudgetMiddleware(ChatMiddleware):
     """Track cumulative per-run cost and, in ``enforce`` mode, cap it.

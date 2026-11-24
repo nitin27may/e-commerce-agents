@@ -25,6 +25,10 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 - **`check_bundle_eligibility` never matched seeded bundles (D4).** Seeded bundles list product names under `products`; the tool read only `product_ids` or `categories`. It now matches names case-insensitively.
 - **`validate_coupon` accepted a negative cart (D3).** It now returns a structured `invalid_cart_total` error before any lookup. Per-user coupon reuse is not enforced: the schema has no per-user usage record (only `orders.coupon_code`), so it needs a product decision.
 - **PII redaction mangled UUIDs and long ids (D2).** The card pattern matched slices of a UUID such as `00000000-0000-4000-8000-000000000000`, so a tool received `[REDACTED-CARD]-[REDACTED-CARD]` as an id. Card-shaped numbers must now pass Luhn, and no match may start or end inside a longer token; Python and .NET.
+- **Eval: a judge call the content filter refuses is `judge_unavailable`, not completeness 0.** The case is left out of the completeness mean and reported; every other judge error is unchanged.
+- **Eval: a case the cost budget stopped is `budget_exceeded`, not an empty answer.** It is left out of every mean and the report says how many.
+- **Eval harness: a role-guard denial is detected in every output shape.** `_was_denied` only read a JSON dict, so a denial stored as a one-item list, a JSON string or plain text ("restricted to sellers or admins") was missed and `expect_denial` failed on a correct refusal.
+- **Grounding verifier: an amount or id the user typed no longer scores as unverifiable.** The verifier now reports `user_supplied` (value in the turn's user message or tool arguments, counted as verified, listed separately) and `derived` (exact sum or difference of two grounded amounts); a model-invented figure still fails. `--rescore` relabels older records from the stored query.
 - **"New chat" right after closing the Compare dialog did nothing (#210).** A closing dialog's backdrop kept catching clicks for its 100 ms exit animation; closed dialog layers no longer take pointer events. Backend-free spec: `web/e2e/chat-new-after-compare.spec.ts`.
 - **Azure first-run hardening (optional deployment only).** The Postgres SKU preflight read the wrong level of the
   `az postgres flexible-server list-skus` JSON (SKUs are nested under `supportedServerEditions`), so it rejected
@@ -61,6 +65,7 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 - **Inventory-fulfillment live suite grown to 28 cases (NA-2).** Happy, edge and adversarial cases, each with a `type` and a one-line `why`, and a test that every placeholder resolves on a freshly seeded database and the per-type minimums hold.
 - **Multi-turn live eval cases.** A live case may carry `turns`, run in one conversation on the in-process and `http` targets, scored per turn (the case passes only if every turn does) and stored in a `turns` list of the run record; replay datasets reject it.
+- **`forbidden_tools` eval assertion.** A case can list tools that must not be called; a call fails the case's assertions and never moves a score.
 - **Dependency policy and a hardened merge helper.** `docs/contributing-dependencies.md` records the Dependabot
   policy in force (grouped minor and patch, one reviewed PR per major, the MAF group as a deliberate step), how to
   handle conflicting PRs and lockfiles, the keep-both rule for `CHANGELOG.md` and `docs/parity-matrix.md`, and a
