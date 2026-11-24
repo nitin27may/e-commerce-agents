@@ -1,0 +1,86 @@
+{
+  "date": "2026-11-24",
+  "provider": "azure",
+  "model": "gpt-5.6-terra",
+  "shape": "chat_completions",
+  "capabilities": {
+    "tool_calling": {
+      "status": "pass",
+      "detail": "called lookup_order (sent max_completion_tokens)",
+      "tokens_in": 156,
+      "tokens_out": 20
+    },
+    "parallel_tool_calls": {
+      "status": "pass",
+      "detail": "2 calls in one turn (sent max_completion_tokens)",
+      "tokens_in": 169,
+      "tokens_out": 64
+    },
+    "tool_result": {
+      "status": "pass",
+      "detail": "answered from the tool result (sent max_completion_tokens)",
+      "tokens_in": 203,
+      "tokens_out": 10
+    },
+    "tool_choice": {
+      "status": "pass",
+      "detail": "the named tool was called (sent max_completion_tokens)",
+      "tokens_in": 145,
+      "tokens_out": 41
+    },
+    "streaming_tools": {
+      "status": "pass",
+      "detail": "a tool call arrived in the stream (sent max_completion_tokens)",
+      "tokens_in": 156,
+      "tokens_out": 20
+    },
+    "json_output": {
+      "status": "pass",
+      "detail": "native JSON mode (sent max_completion_tokens)",
+      "tokens_in": 26,
+      "tokens_out": 11
+    },
+    "context_length": {
+      "status": "pass",
+      "detail": "accepted the order-management/seller system prompt, about 3,847 tokens (sent max_completion_tokens)",
+      "tokens_in": 3864,
+      "tokens_out": 4
+    },
+    "temperature_param": {
+      "status": "fail",
+      "detail": "HTTP 400: Unsupported value: 'temperature' does not support 0.2 with this model. Only the default (1) value is supported. (sent max_completion_tokens)",
+      "tokens_in": 0,
+      "tokens_out": 0
+    },
+    "embeddings": {
+      "status": "pass",
+      "detail": "1536 dimensions",
+      "tokens_in": 1,
+      "tokens_out": 0
+    }
+  },
+  "tokens_in": 4720,
+  "tokens_out": 170,
+  "suites": [
+    {
+      "suite": "quality: specialists (five datasets)",
+      "verdict": "applicable",
+      "reason": ""
+    },
+    {
+      "suite": "quality: orchestrator routing",
+      "verdict": "applicable",
+      "reason": ""
+    },
+    {
+      "suite": "safety / red-team",
+      "verdict": "applicable",
+      "reason": ""
+    },
+    {
+      "suite": "LLM judge completeness",
+      "verdict": "applicable",
+      "reason": ""
+    }
+  ]
+}
