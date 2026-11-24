@@ -700,5 +700,163 @@
     ],
     "type": "multi_turn",
     "why": "A follow-up about returning 'it' after viewing a delivered order must resolve the same order and check eligibility."
+  },
+  {
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "follow_up_context": true
+    },
+    "user_email": "jack.anderson@gmail.com",
+    "input": "Show me the details of the second one",
+    "turns": [
+      {
+        "input": "Show me my recent orders",
+        "expected_tools": [
+          "get_user_orders"
+        ],
+        "expected_fields": [
+          "order_id",
+          "status"
+        ]
+      },
+      {
+        "input": "Show me the details of the second one",
+        "expected_tools": [
+          "get_order_details"
+        ],
+        "expected_fields": [
+          "order_id",
+          "status",
+          "items"
+        ],
+        "expected_tool_args": {
+          "get_order_details": {
+            "order_id": "{{order:2}}"
+          }
+        }
+      }
+    ],
+    "type": "multi_turn",
+    "why": "'The second one' after a list of orders must resolve to the second order listed, then fetch its details."
+  },
+  {
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "follow_up_context": true
+    },
+    "user_email": "jack.anderson@gmail.com",
+    "input": "Sorry, I gave you the wrong one. I meant order {{order:shipped}}.",
+    "turns": [
+      {
+        "input": "What items are in order {{order:delivered}}?",
+        "expected_tools": [
+          "get_order_details"
+        ],
+        "expected_fields": [
+          "items"
+        ],
+        "expected_tool_args": {
+          "get_order_details": {
+            "order_id": "{{order:delivered}}"
+          }
+        }
+      },
+      {
+        "input": "Sorry, I gave you the wrong one. I meant order {{order:shipped}}.",
+        "expected_tools": [
+          "get_order_details"
+        ],
+        "expected_fields": [
+          "items",
+          "status"
+        ],
+        "expected_tool_args": {
+          "get_order_details": {
+            "order_id": "{{order:shipped}}"
+          }
+        }
+      }
+    ],
+    "type": "multi_turn",
+    "why": "A correction ('I meant the other order') must replace the order id, not repeat the first lookup."
+  },
+  {
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "follow_up_context": true
+    },
+    "user_email": "jack.anderson@gmail.com",
+    "input": "Actually no, keep it. Just tell me its current status.",
+    "turns": [
+      {
+        "input": "I think I want to cancel my order {{order:placed}}.",
+        "expected_tools": [],
+        "expected_fields": [],
+        "expect_hitl": false
+      },
+      {
+        "input": "Actually no, keep it. Just tell me its current status.",
+        "expected_tools": [
+          "get_order_details"
+        ],
+        "expected_fields": [
+          "status"
+        ],
+        "expected_tool_args": {
+          "get_order_details": {
+            "order_id": "{{order:placed}}"
+          }
+        },
+        "expect_hitl": false
+      }
+    ],
+    "type": "multi_turn",
+    "why": "Changing mind mid-flow: after 'cancel it' then 'keep it', nothing may park for approval."
+  },
+  {
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "follow_up_context": true
+    },
+    "user_email": "jack.anderson@gmail.com",
+    "input": "Back to that order, what are the items in it?",
+    "turns": [
+      {
+        "input": "What is the status of order {{order:1}}?",
+        "expected_tools": [
+          "get_order_details"
+        ],
+        "expected_fields": [
+          "status"
+        ],
+        "expected_tool_args": {
+          "get_order_details": {
+            "order_id": "{{order:1}}"
+          }
+        }
+      },
+      {
+        "input": "Unrelated: what is my account name and loyalty tier?",
+        "expected_tools": [
+          "get_user_profile"
+        ],
+        "expected_fields": [
+          "name"
+        ]
+      },
+      {
+        "input": "Back to that order, what are the items in it?",
+        "expected_tools": [],
+        "expected_fields": [
+          "items"
+        ]
+      }
+    ],
+    "type": "multi_turn",
+    "why": "Switching topic and back: 'that order' after an unrelated profile question must still mean the first order."
   }
 ]

@@ -380,5 +380,180 @@
       "loyalty_checked": true
     },
     "user_email": "jack.anderson@gmail.com"
+  },
+  {
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "follow_up_context": true
+    },
+    "user_email": "jack.anderson@gmail.com",
+    "input": "Actually make it three copies. What is the total now?",
+    "turns": [
+      {
+        "input": "I want one copy of Clean Code (product id {{product_id:Clean Code}}). What is the cheapest way to buy it?",
+        "expected_tools": [
+          "optimize_cart"
+        ],
+        "expected_fields": [
+          "total"
+        ]
+      },
+      {
+        "input": "Actually make it three copies. What is the total now?",
+        "expected_tools": [
+          "optimize_cart"
+        ],
+        "expected_fields": [
+          "total",
+          "savings"
+        ],
+        "expected_tool_args": {
+          "optimize_cart": {
+            "product_ids_with_quantities": [
+              {
+                "product_id": "{{product_id:Clean Code}}",
+                "quantity": 3
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "type": "multi_turn",
+    "why": "Changing quantity: 'make it three' must re-run optimize_cart with the same product and quantity 3."
+  },
+  {
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "follow_up_context": true
+    },
+    "user_email": "jack.anderson@gmail.com",
+    "input": "It is $250 of Electronics.",
+    "turns": [
+      {
+        "input": "Can I use the coupon TECHSAVE on my cart?",
+        "expected_tools": [],
+        "expected_fields": [
+          "asks for the cart total or category"
+        ]
+      },
+      {
+        "input": "It is $250 of Electronics.",
+        "expected_tools": [
+          "validate_coupon"
+        ],
+        "expected_fields": [
+          "discount",
+          "new total"
+        ],
+        "expected_tool_args": {
+          "validate_coupon": {
+            "code": "TECHSAVE",
+            "cart_total": 250
+          }
+        }
+      }
+    ],
+    "type": "multi_turn",
+    "why": "A clarification: with no cart total the agent should ask for it, then validate once the customer answers."
+  },
+  {
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "follow_up_context": true
+    },
+    "user_email": "jack.anderson@gmail.com",
+    "input": "Sorry, I typed it wrong. The cart is $45, not $60. Check it again.",
+    "turns": [
+      {
+        "input": "Does BOOKWORM work on a $60 cart of Books?",
+        "expected_tools": [
+          "validate_coupon"
+        ],
+        "expected_fields": [
+          "discount"
+        ],
+        "expected_tool_args": {
+          "validate_coupon": {
+            "code": "BOOKWORM",
+            "cart_total": 60
+          }
+        }
+      },
+      {
+        "input": "Sorry, I typed it wrong. The cart is $45, not $60. Check it again.",
+        "expected_tools": [
+          "validate_coupon"
+        ],
+        "expected_fields": [
+          "discount",
+          "new total"
+        ],
+        "expected_tool_args": {
+          "validate_coupon": {
+            "code": "BOOKWORM",
+            "cart_total": 45
+          }
+        }
+      }
+    ],
+    "type": "multi_turn",
+    "why": "A correction of a stated amount must re-validate with the corrected cart total, not the first one."
+  },
+  {
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "follow_up_context": true
+    },
+    "user_email": "jack.anderson@gmail.com",
+    "input": "Back to the coupon: what would it take off a $400 Electronics cart instead?",
+    "turns": [
+      {
+        "input": "What does TECHSAVE take off a $250 Electronics cart?",
+        "expected_tools": [
+          "validate_coupon"
+        ],
+        "expected_fields": [
+          "discount"
+        ],
+        "expected_tool_args": {
+          "validate_coupon": {
+            "code": "TECHSAVE",
+            "cart_total": 250
+          }
+        }
+      },
+      {
+        "input": "Different question: what does each loyalty tier give?",
+        "expected_tools": [
+          "get_loyalty_benefits"
+        ],
+        "expected_fields": [
+          "discount"
+        ]
+      },
+      {
+        "input": "Back to the coupon: what would it take off a $400 Electronics cart instead?",
+        "expected_tools": [
+          "validate_coupon"
+        ],
+        "expected_fields": [
+          "discount",
+          "new total"
+        ],
+        "expected_tool_args": {
+          "validate_coupon": {
+            "code": "TECHSAVE",
+            "cart_total": 400
+          }
+        }
+      }
+    ],
+    "type": "multi_turn",
+    "why": "Switching topic and back: 'the coupon' after a loyalty question must still be TECHSAVE, with the new total."
   }
 ]

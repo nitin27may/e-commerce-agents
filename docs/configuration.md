@@ -454,11 +454,12 @@ A2A and MCP calls are not model calls and carry none. See [model-providers.md](m
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `COST_BUDGET_MODE` | `observe` | `off` attaches nothing; `observe` estimates and logs each run and counts a turn past the ceiling as `cost_budget.would_block`, never refusing; `enforce` refuses the next LLM turn once a run's estimated cost passes the ceiling |
+| `COST_BUDGET_MODE` | `observe` | `off` attaches nothing; `observe` estimates and logs each run and counts a turn past the ceiling as `cost_budget.would_block` (and on the run's `usage_logs.would_block`), never refusing; `enforce` refuses the next LLM turn once the conversation turn's estimated cost passes the ceiling |
 | `COST_BUDGET_USD_PER_RUN` | `0.50` in `.env.example` and the three compose files; unset in code | USD ceiling for one run. With no value, even `enforce` refuses nothing |
 | `COST_BUDGET_TOKENS_PER_RUN` | unset (off) | Ceiling on input plus output tokens for one run, under the same mode and enforcement points as the dollar ceiling. Unset, empty or `0` means off. Both stacks |
 
-`0.50` is a demo default, large enough for a normal turn and small enough to catch a runaway
+A "run" is a conversation turn: the orchestrator's model calls and every specialist's, summed (see *Turn-level
+ceiling* below). `0.50` is a demo default, large enough for a normal turn and small enough to catch a runaway
 agent loop. The mode stays `observe`: watch `cost_budget.would_block` (see
 [telemetry.md](telemetry.md#cost-and-usage)) before choosing `enforce`. The figure is an
 estimate from the pricing file below, not a bill.
@@ -483,16 +484,56 @@ files is the demo-safe setting. The reasons, so the question is not reopened wit
   default that refuses turns on the strength of an unverified estimate would be a default that can be wrong in both directions.
 - **There is no measured false-positive rate.** The advice above stands: watch `cost_budget.would_block` first. Nothing in the
   repo has collected that figure over real traffic, so no ceiling is known to be one that a normal turn stays under.
-- **A per-run ceiling does not bound a user turn.** A run's cost is counted in a ContextVar per process and request: the
-  orchestrator's ceiling covers its own model calls, and each specialist counts its own request against its own ceiling.
-  `enforce` on the orchestrator would therefore not stop the sum of a multi-agent turn, and would read as protection it is not.
-  The per-turn total is reported (`usage.by_agent`, `usage_logs`) but not enforced.
+- **The ceiling used to bound one process, not the turn. It now bounds the turn (Python).** Before, a run's cost was a
+  ContextVar per process: the orchestrator's ceiling covered its own calls and each specialist counted only its own
+  request. The ceiling now compares the turn's total (see *Turn-level ceiling* below). This prerequisite is met; the others
+  below are not.
 - **Where a hard stop is needed it is already one flag away and explicit.** The manual `full` eval job sets
   `COST_BUDGET_TOKENS_PER_RUN` and enforces it, and an operator who has priced their model and watched `would_block` sets
   `COST_BUDGET_MODE=enforce` with their own ceiling.
 
-What would change this decision: a pricing file with verified rows for the default models, a `would_block` rate from real
-traffic, and a ceiling that covers the whole turn across agents. #97 keeps the item open until the last of those exists.
+What would change this decision: a pricing file with verified rows for the default models and a `would_block` rate from real
+traffic. The turn-level ceiling now exists (Python); the other two do not. #97 keeps the item open until they do.
+
+### Turn-level ceiling and `would_block` (Python, parity row 58)
+
+The ceiling is compared with the spend of the whole conversation turn, not one process's share of it.
+
+- **What travels.** On every inter-agent call the orchestrator sends `x-turn-spend: usd=<float>;tokens=<int>;unpriced=<0|1>`:
+  its own spend so far plus what earlier specialists reported on the wire (their `usage`, priced by the pricing file; a report
+  from a model with no price sets `unpriced`). It is added in `build_a2a_headers`, which both wires call, so the legacy
+  `/message:send` and `/message:stream` calls and the A2A 1.0 JSON-RPC calls carry it identically. A specialist counts it as
+  already spent before its own first model call, so its `COST_BUDGET_USD_PER_RUN` and `COST_BUDGET_TOKENS_PER_RUN` checks, and
+  the fail-closed rules for unpriced and untracked turns, now see the turn. Nothing is sent with `COST_BUDGET_MODE=off`.
+- **Why a header and not the identity token.** The signed `x-user-context` token's format is pinned across both stacks by a
+  shared test vector, and the spend is accounting, not identity. No request body or message text changes, so no replay
+  fixture key moves.
+- **Trust.** The header is read only on the two inter-agent credential paths (`AgentAuthMiddleware`: shared secret, or an
+  OAuth service token), never on a user's own request, and a malformed, negative, non-finite or absurd value is ignored (one
+  log line) rather than guessed at. It only adds to what a specialist counts, so it cannot raise a ceiling; a caller holding
+  the shared secret could send zeros to look cheaper, which it could already do far worse things with.
+- **Limits, stated.** Specialist calls that run concurrently each see the spend as it was when they started, so a turn can
+  overshoot by the other in-flight calls (an enforcing ceiling is already one model turn behind). A specialist's spend is
+  known to the orchestrator only when the specialist returns, so the orchestrator's next model turn is the first place a
+  specialist's overrun is refused. The ceiling is each process's own configured value: set the same one on every service (the
+  compose files do).
+- **`would_block` is measured per turn.** In `observe` mode each LLM turn that starts past the turn's ceiling (dollars or
+  tokens, once however many it crossed) adds one to the run's usage record, written to `usage_logs.would_block` (migration
+  0020) beside the cost columns. NULL means the run could not count (budget `off` or `enforce`, a row from before the
+  migration, or a row the .NET stack wrote); 0 means it counted and stayed under. The rate to watch before choosing `enforce`:
+
+  ```sql
+  SELECT count(*) FILTER (WHERE would_block > 0)::float / count(*) AS would_block_rate, count(*) AS runs
+  FROM usage_logs WHERE would_block IS NOT NULL AND agent_name = 'orchestrator' AND created_at > now() - interval '7 days';
+  ```
+
+  A specialist's own would-blocks (counted against the inherited spend) stay in its log line and the `cost_budget.would_block`
+  counter only: the usage wire shape is pinned on both stacks and was not extended.
+- **.NET.** Not ported (parity row 58). The .NET specialists ignore the header, so a Python orchestrator in front of .NET
+  specialists enforces only its own and reported spend, and a .NET orchestrator sends none. The design to port: read the
+  header in the specialist pipeline's auth step into the per-request context, add it to `SpecialistPipeline`'s running total
+  before the first model call, send it from `A2AProtocolClient` and the legacy client, and add `usage_logs.would_block` to
+  `UsageRecorder`.
 
 ### Model prices (`PRICING_*`)
 
