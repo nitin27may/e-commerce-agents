@@ -21,7 +21,15 @@ event, and a unique index on ``agent_decisions.event_key`` behind it):
 is a new row: ``approved_execution`` when staff approve one, ``reversal`` when an admin undoes one. A reversal is
 a negating ledger entry, never a delete, and does not give the day's budget back (the system did act).
 
-No model is called anywhere here, and customer-facing text is a template.
+Three event types share this flow (``autonomy.yaml`` ``events:``): ``order.shipment_delayed`` (a goodwill credit per
+order), ``product.price_dropped`` (a price-adjustment credit per recent order *line*, one per line ever) and
+``inventory.back_in_stock`` (a notification to customers whose cart holds the product: no money, no budget). The two
+newer ones fan out: one event becomes one decision per target, each in its own transaction under its own ``event_key``
+(``topic:event_id:target``), so a replayed event acts once per target.
+
+No model is called anywhere here, and customer-facing text is a template. The optional ops-responder
+(``shared/autonomy/responder.py``) only re-words that text *after* the decision committed, from an outbox row this
+module enqueues in the same transaction; it never sees or changes a tier or an amount.
 
 Logs carry ids and fixed labels only, never an email or event text.
 """
@@ -31,9 +39,10 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 import asyncpg
@@ -42,9 +51,11 @@ from shared.approvals import repo
 from shared.approvals.intake import ASSIGNED_ROLE, ROLE_RANK
 from shared.autonomy.policy import (
     AUTONOMOUS_TIERS,
+    Action,
     AutonomyPolicy,
     AutonomyPolicyError,
     Budget,
+    EventRule,
     Usage,
     check_budget,
     evaluate_tier,
@@ -54,6 +65,7 @@ from shared.demo_tour import TOUR_EMAIL
 from shared.idempotency import run_once
 from shared.log_safe import log_safe
 from shared.notifications import notify
+from shared.outbox import enqueue
 from shared.policy import PolicyError
 from shared.policy import evaluate as evaluate_approval_route
 
@@ -64,7 +76,14 @@ SOURCE = "event"
 APPROVAL_KIND = "autonomous_action"
 AGENT_NAME = "autonomy-engine"
 TOPIC_SHIPMENT_DELAYED = "order.shipment_delayed"
+TOPIC_PRICE_DROPPED = "product.price_dropped"
+TOPIC_BACK_IN_STOCK = "inventory.back_in_stock"
+TOPIC_DRAFT_REQUESTED = "autonomy.draft_requested"
 ACTION_GOODWILL_CREDIT = "goodwill_credit"
+ACTION_PRICE_ADJUSTMENT = "price_adjustment"
+ACTION_BACK_IN_STOCK = "back_in_stock_notice"
+#: Actions that move money (a store credit), as opposed to a notice.
+MONEY_ACTIONS = (ACTION_GOODWILL_CREDIT, ACTION_PRICE_ADJUSTMENT)
 
 REVIEW_LINK = "/admin/approvals"
 DECISIONS_LINK = "/admin/decisions"
@@ -81,6 +100,9 @@ STAFF_ROLES = frozenset(ROLE_RANK)
 _WAITING = ["pending_review", "needs_info"]
 #: A delay beyond this is a data error, not a delay.
 _MAX_DELAY_DAYS = 365
+_CENT = Decimal("0.01")
+#: ``products.price`` is NUMERIC(10, 2).
+_MAX_PRICE = Decimal("99999999.99")
 
 
 class AutonomyError(Exception):
@@ -115,6 +137,21 @@ def _loads(value: Any) -> Any:
 # ── parsing the event ────────────────────────────────────────────────────────
 
 
+def _event_id(payload: dict[str, Any], outbox_id: int | None) -> str:
+    raw_id = payload.get("event_id")
+    event_id = str(raw_id) if isinstance(raw_id, (str, int)) and not isinstance(raw_id, bool) and str(raw_id) else None
+    if event_id is None:
+        event_id = f"outbox-{outbox_id}"  # no producer id: the row itself is the identity
+    return event_id[:200]
+
+
+def _uuid_or_none(value: Any) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(str(value))
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
 @dataclass(frozen=True)
 class ShipmentDelayed:
     """``order.shipment_delayed`` as the engine reads it. ``order_id`` / ``delay_days`` are None when invalid."""
@@ -126,18 +163,49 @@ class ShipmentDelayed:
 
 def parse_shipment_delayed(payload: dict[str, Any], outbox_id: int | None) -> ShipmentDelayed:
     """Read the payload strictly; a field that is absent or the wrong shape is None, never guessed."""
-    raw_id = payload.get("event_id")
-    event_id = str(raw_id) if isinstance(raw_id, (str, int)) and not isinstance(raw_id, bool) and str(raw_id) else None
-    if event_id is None:
-        event_id = f"outbox-{outbox_id}"  # no producer id: the row itself is the identity
-    order_id: uuid.UUID | None
-    try:
-        order_id = uuid.UUID(str(payload["order_id"]))
-    except (KeyError, ValueError, TypeError):
-        order_id = None
+    order_id = _uuid_or_none(payload["order_id"]) if "order_id" in payload else None
     days = payload.get("delay_days")
     delay_days = days if isinstance(days, int) and not isinstance(days, bool) and 0 <= days <= _MAX_DELAY_DAYS else None
-    return ShipmentDelayed(event_id[:200], order_id, delay_days)
+    return ShipmentDelayed(_event_id(payload, outbox_id), order_id, delay_days)
+
+
+@dataclass(frozen=True)
+class PriceDropped:
+    """``product.price_dropped``: the product and the price it now sells for. None when invalid."""
+
+    event_id: str
+    product_id: uuid.UUID | None
+    new_price: Decimal | None
+
+
+def parse_price_dropped(payload: dict[str, Any], outbox_id: int | None) -> PriceDropped:
+    raw = payload.get("new_price")
+    price: Decimal | None = None
+    if isinstance(raw, (int, float, str, Decimal)) and not isinstance(raw, bool):
+        try:
+            candidate: Decimal | None = Decimal(str(raw))
+        except ArithmeticError:
+            candidate = None
+        if (
+            candidate is not None
+            and candidate.is_finite()
+            and Decimal(0) < candidate <= _MAX_PRICE
+            and candidate == candidate.quantize(_CENT)  # more than cents is a bad event, not a price to round
+        ):
+            price = candidate.quantize(_CENT)
+    product_id = _uuid_or_none(payload["product_id"]) if "product_id" in payload else None
+    return PriceDropped(_event_id(payload, outbox_id), product_id, price)
+
+
+@dataclass(frozen=True)
+class BackInStock:
+    event_id: str
+    product_id: uuid.UUID | None
+
+
+def parse_back_in_stock(payload: dict[str, Any], outbox_id: int | None) -> BackInStock:
+    product_id = _uuid_or_none(payload["product_id"]) if "product_id" in payload else None
+    return BackInStock(_event_id(payload, outbox_id), product_id)
 
 
 # ── the result of one decision ───────────────────────────────────────────────
@@ -181,13 +249,14 @@ async def lock_order(conn: asyncpg.Connection, order_id: uuid.UUID) -> None:
 
     **Lock order, everywhere: budget (:func:`lock_budget`), then order (this), then row locks** (the approval row,
     then the decision row). :func:`_execute_approved_in_tx` takes no budget lock (a person's approval draws nothing)
-    but follows the same order from the order lock on, so the two paths cannot deadlock.
+    but follows the same order from the order lock on, so the two paths cannot deadlock. A price adjustment is per
+    order *line*, and the line's order is the lock it takes, so two adjustments on lines of one order serialise too.
     """
     await conn.execute("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", f"autonomy_order:{order_id}")
 
 
-async def credits_on_order(conn: asyncpg.Connection, order_id: uuid.UUID) -> int:
-    """Credits actually granted on this order, by the engine alone or after a person approved them.
+async def credits_on_order(conn: asyncpg.Connection, order_id: uuid.UUID, action: str = ACTION_GOODWILL_CREDIT) -> int:
+    """Credits of ``action`` actually granted on this order, by the engine alone or after a person approved them.
 
     Reversed ones still count: a second credit for the same delay is not something to hand out because the first was
     undone. Call under :func:`lock_order`.
@@ -198,13 +267,32 @@ async def credits_on_order(conn: asyncpg.Connection, order_id: uuid.UUID) -> int
                 WHERE order_id = $1 AND action = $2
                   AND ((entry_type = 'decision' AND outcome = 'executed') OR entry_type = 'approved_execution')""",
             order_id,
-            ACTION_GOODWILL_CREDIT,
+            action,
+        )
+    )
+
+
+async def adjustments_on_line(conn: asyncpg.Connection, order_item_id: uuid.UUID) -> int:
+    """Price adjustments actually paid on this order line (reversed ones count: the line gets one, ever)."""
+    return int(
+        await conn.fetchval(
+            """SELECT count(*) FROM agent_decisions
+                WHERE order_item_id = $1 AND action = $2
+                  AND ((entry_type = 'decision' AND outcome = 'executed') OR entry_type = 'approved_execution')""",
+            order_item_id,
+            ACTION_PRICE_ADJUSTMENT,
         )
     )
 
 
 async def read_usage(
-    conn: asyncpg.Connection, budget_key: str, day: date, *, user_id: uuid.UUID, order_id: uuid.UUID
+    conn: asyncpg.Connection,
+    budget_key: str,
+    day: date,
+    *,
+    user_id: uuid.UUID,
+    order_id: uuid.UUID,
+    action: str = ACTION_GOODWILL_CREDIT,
 ) -> Usage:
     """What the budget has drawn today (all customers, then this customer) and what this order has been paid."""
     totals = await conn.fetchrow(
@@ -219,7 +307,7 @@ async def read_usage(
         user_id,
         sorted(AUTONOMOUS_TIERS),
     )
-    on_order = await credits_on_order(conn, order_id)
+    on_order = await credits_on_order(conn, order_id, action)
     return Usage(
         global_count=totals["n"],
         global_amount=totals["total"],
@@ -229,8 +317,10 @@ async def read_usage(
     )
 
 
-def budget_snapshot(budget: Budget, day: date, usage: Usage | None, drew: Decimal | None) -> dict[str, Any]:
+def budget_snapshot(budget: Budget | None, day: date, usage: Usage | None, drew: Decimal | None) -> dict[str, Any]:
     """What the decision row records about the budget: caps, usage before, and what this row drew."""
+    if budget is None:  # a notice has no budget
+        return {"budget_key": None, "day": day.isoformat(), "caps": None, "usage_before": None, "drew": None}
     return {
         "budget_key": budget.key,
         "day": day.isoformat(),
@@ -254,7 +344,9 @@ def budget_snapshot(budget: Budget, day: date, usage: Usage | None, drew: Decima
 # ── deciding ─────────────────────────────────────────────────────────────────
 
 
-async def _approval_open_on_order(conn: asyncpg.Connection, order_id: uuid.UUID) -> bool:
+async def _approval_open_on_order(
+    conn: asyncpg.Connection, order_id: uuid.UUID, action: str = ACTION_GOODWILL_CREDIT
+) -> bool:
     """Whether a credit for this order is already waiting on (or went through) an approval."""
     return bool(
         await conn.fetchval(
@@ -263,10 +355,78 @@ async def _approval_open_on_order(conn: asyncpg.Connection, order_id: uuid.UUID)
                   AND d.outcome = 'awaiting_approval' AND a.status = ANY($3::text[])
                 LIMIT 1""",
             order_id,
-            ACTION_GOODWILL_CREDIT,
+            action,
             _WAITING,
         )
     )
+
+
+async def _approval_open_on_line(conn: asyncpg.Connection, order_item_id: uuid.UUID) -> bool:
+    """Whether an adjustment for this order line is already waiting on an approval."""
+    return bool(
+        await conn.fetchval(
+            """SELECT 1 FROM agent_decisions d JOIN approvals a ON a.id = d.approval_id
+                WHERE d.entry_type = 'decision' AND d.order_item_id = $1 AND d.action = $2
+                  AND d.outcome = 'awaiting_approval' AND a.status = ANY($3::text[])
+                LIMIT 1""",
+            order_item_id,
+            ACTION_PRICE_ADJUSTMENT,
+            _WAITING,
+        )
+    )
+
+
+async def _tier_and_budget(
+    conn: asyncpg.Connection,
+    *,
+    action: Action,
+    budget: Budget,
+    facts: dict[str, Any],
+    amount: Decimal,
+    beneficiary_role: str | None,
+    user_id: uuid.UUID,
+    order_id: uuid.UUID,
+    day: date,
+    context: dict[str, Any],
+) -> Verdict:
+    """Tier rules, the staff-beneficiary guard and the budget check, shared by every money action.
+
+    Must run under :func:`lock_budget` (and :func:`lock_order`) so the usage it reads cannot change before the caller
+    draws.
+    """
+    verdict_tier = evaluate_tier(action, facts)
+    verdict = Verdict(
+        tier=verdict_tier.tier,
+        outcome="executed" if verdict_tier.tier in AUTONOMOUS_TIERS else "awaiting_approval",
+        reasons=[verdict_tier.reason],
+        rule_id=verdict_tier.rule_id,
+        amount=amount,
+        evidence=verdict_tier.evidence,
+    )
+    context["usage"] = None
+    if (beneficiary_role or "").lower() in STAFF_ROLES:
+        # Whoever produced the event (a simulator, a future feed): money for a staff member is always a person's
+        # decision, and never that same person's (the decider check refuses the subject).
+        verdict.tier = "needs_approval"
+        verdict.outcome = "awaiting_approval"
+        verdict.reasons = [*verdict.reasons, "beneficiary_is_staff"]
+    if verdict.tier in AUTONOMOUS_TIERS:
+        usage = await read_usage(conn, budget.key, day, user_id=user_id, order_id=order_id, action=action.name)
+        context["usage"] = usage
+        checked = check_budget(budget, amount, usage)
+        if not checked.ok:
+            # Over a cap: not dropped and not done -- a person decides. The cap that tripped is the reason.
+            verdict.tier = "needs_approval"
+            verdict.outcome = "awaiting_approval"
+            verdict.tripped = list(checked.tripped)
+            verdict.reasons = [*verdict.reasons, *(f"budget:{code}" for code in checked.tripped)]
+    return verdict
+
+
+def _budget_of(policy: AutonomyPolicy, action: Action) -> Budget:
+    if action.budget is None:  # a money action always has one: the loader enforces it
+        raise AutonomyPolicyError(f"action {action.name!r} has no budget")
+    return policy.budget(action.budget)
 
 
 async def decide_shipment_delayed(
@@ -283,7 +443,7 @@ async def decide_shipment_delayed(
     rule = policy.event(TOPIC_SHIPMENT_DELAYED)
     assert rule is not None  # the caller checked
     action = policy.action(rule.action)
-    budget = policy.budget(action.budget)
+    budget = _budget_of(policy, action)
     context: dict[str, Any] = {"order_id": None, "user_id": None, "customer_email": None, "budget": budget}
     if event.order_id is None:
         return _no_action("invalid_event_order"), context
@@ -317,32 +477,109 @@ async def decide_shipment_delayed(
         return _no_action("approval_already_open", amount=money(amount)), context
 
     facts = {"amount": amount, "delay_days": event.delay_days, "order_total": order["total"]}
-    verdict_tier = evaluate_tier(action, facts)
-    verdict = Verdict(
-        tier=verdict_tier.tier,
-        outcome="executed" if verdict_tier.tier in AUTONOMOUS_TIERS else "awaiting_approval",
-        reasons=[verdict_tier.reason],
-        rule_id=verdict_tier.rule_id,
+    verdict = await _tier_and_budget(
+        conn,
+        action=action,
+        budget=budget,
+        facts=facts,
         amount=amount,
-        evidence=verdict_tier.evidence,
+        beneficiary_role=order["role"],
+        user_id=order["user_id"],
+        order_id=order["id"],
+        day=day,
+        context=context,
     )
-    context["usage"] = None
-    if (order["role"] or "").lower() in STAFF_ROLES:
-        # Whoever produced the event (a simulator, a future carrier feed): money for a staff member is always a
-        # person's decision, and never that same person's (the decider check refuses the subject).
-        verdict.tier = "needs_approval"
-        verdict.outcome = "awaiting_approval"
-        verdict.reasons = [*verdict.reasons, "beneficiary_is_staff"]
-    if verdict.tier in AUTONOMOUS_TIERS:
-        usage = await read_usage(conn, budget.key, day, user_id=order["user_id"], order_id=order["id"])
-        context["usage"] = usage
-        checked = check_budget(budget, amount, usage)
-        if not checked.ok:
-            # Over a cap: not dropped and not done -- a person decides. The cap that tripped is the reason.
-            verdict.tier = "needs_approval"
-            verdict.outcome = "awaiting_approval"
-            verdict.tripped = list(checked.tripped)
-            verdict.reasons = [*verdict.reasons, *(f"budget:{code}" for code in checked.tripped)]
+    return verdict, context
+
+
+async def decide_price_dropped(
+    conn: asyncpg.Connection,
+    event: PriceDropped,
+    order_item_id: uuid.UUID,
+    *,
+    policy: AutonomyPolicy,
+    day: date,
+) -> tuple[Verdict, dict[str, Any]]:
+    """The verdict for one order line of a ``product.price_dropped`` event. Read-only.
+
+    The adjustment is ``(price the line was bought at - new price) x quantity``, sized from the order line itself,
+    never from the event. One per line, ever (reversed ones count), and the order's ``per_order_max_count`` bounds how
+    many lines of one order may be adjusted. Run under :func:`lock_budget` then :func:`lock_order`.
+    """
+    rule = policy.event(TOPIC_PRICE_DROPPED)
+    assert rule is not None and event.new_price is not None and event.product_id is not None
+    action = policy.action(rule.action)
+    budget = _budget_of(policy, action)
+    context: dict[str, Any] = {
+        "order_id": None,
+        "order_item_id": None,
+        "user_id": None,
+        "customer_email": None,
+        "budget": budget,
+        "line": {},
+    }
+    line = await conn.fetchrow(
+        """SELECT oi.id, oi.order_id, oi.product_id, oi.quantity, oi.unit_price,
+                  o.status, o.total, o.user_id, o.created_at, u.email, u.role, p.name AS product_name
+             FROM order_items oi
+             JOIN orders o ON o.id = oi.order_id JOIN users u ON u.id = o.user_id
+             JOIN products p ON p.id = oi.product_id
+            WHERE oi.id = $1""",
+        order_item_id,
+    )
+    if line is None:
+        return _no_action("line_not_found"), context
+    if line["product_id"] != event.product_id:
+        return _no_action("line_not_for_product"), context
+    if str(line["email"]).strip().lower() == TOUR_EMAIL:
+        return _no_action("demo_user_excluded"), context  # no ids on the row: see decide_shipment_delayed
+    context.update(
+        order_id=line["order_id"], order_item_id=line["id"], user_id=line["user_id"], customer_email=line["email"]
+    )
+    if line["status"] not in rule.eligible_order_statuses:
+        return _no_action("order_not_eligible", order_status=line["status"]), context
+    age_days = max(0, (datetime.now(UTC) - line["created_at"]).days)
+    paid = Decimal(line["unit_price"])
+    context["line"] = {
+        "order_item_id": str(line["id"]),
+        "product_id": str(event.product_id),
+        "product_name": line["product_name"],
+        "quantity": line["quantity"],
+        "paid_unit_price": money(paid),
+        "new_price": money(event.new_price),
+        "days_since_purchase": age_days,
+    }
+    if age_days > rule.lookback_days:
+        return _no_action("purchase_too_old", days_since_purchase=age_days), context
+    if event.new_price >= paid:
+        return _no_action("price_not_lower_than_paid", paid=money(paid), new_price=money(event.new_price)), context
+    amount = ((paid - event.new_price) * line["quantity"]).quantize(_CENT, rounding=ROUND_HALF_UP)
+    if await adjustments_on_line(conn, line["id"]) >= 1:
+        return _no_action("line_already_adjusted", amount=money(amount)), context
+    if await _approval_open_on_line(conn, line["id"]):
+        return _no_action("approval_already_open", amount=money(amount)), context
+    adjusted = await credits_on_order(conn, line["order_id"], ACTION_PRICE_ADJUSTMENT)
+    if adjusted >= budget.per_order_max_count:
+        return _no_action("order_adjustment_limit", amount=money(amount), adjustments_on_order=adjusted), context
+    drop_percent = ((paid - event.new_price) / paid * 100).quantize(_CENT, rounding=ROUND_HALF_UP)
+    facts = {
+        "amount": amount,
+        "days_since_purchase": age_days,
+        "drop_percent": drop_percent,
+        "order_total": line["total"],
+    }
+    verdict = await _tier_and_budget(
+        conn,
+        action=action,
+        budget=budget,
+        facts=facts,
+        amount=amount,
+        beneficiary_role=line["role"],
+        user_id=line["user_id"],
+        order_id=line["order_id"],
+        day=day,
+        context=context,
+    )
     return verdict, context
 
 
@@ -352,9 +589,9 @@ async def _insert_row(conn: asyncpg.Connection, **c: Any) -> None:
                                         budget_key,
                                         user_id, order_id, amount, tier, outcome, reasons, input, budget,
                                         policy_version, approval_id, reversible, reverses_id, actor_email, note,
-                                        budget_day)
+                                        budget_day, order_item_id)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb, $15::jsonb, $16::jsonb,
-                   $17, $18, $19, $20, $21, $22, $23)""",
+                   $17, $18, $19, $20, $21, $22, $23, $24)""",
         c["id"],
         c["entry_type"],
         c.get("event_key"),
@@ -378,6 +615,7 @@ async def _insert_row(conn: asyncpg.Connection, **c: Any) -> None:
         c.get("actor_email"),
         c.get("note"),
         c.get("budget_day"),
+        c.get("order_item_id"),
     )
 
 
@@ -394,6 +632,9 @@ async def _grant_credit(
     )
 
 
+# ── what the customer is told (templates; the responder may re-word them, never change them) ──────────────────────
+
+
 def _credit_text(amount: Decimal, order_id: uuid.UUID, delay_days: int | None) -> tuple[str, str]:
     late = f"is running about {delay_days} day(s) late" if delay_days else "has been delayed"
     return (
@@ -401,6 +642,62 @@ def _credit_text(amount: Decimal, order_id: uuid.UUID, delay_days: int | None) -
         f"Your order {str(order_id)[:8]} {late}, and we are sorry. We added ${money(amount)} of store credit to your "
         "account as an apology.",
     )
+
+
+def _adjustment_text(amount: Decimal, order_id: uuid.UUID, line: dict[str, Any]) -> tuple[str, str]:
+    name = line.get("product_name") or "An item in your order"
+    return (
+        "We added a store credit to your account",
+        f"{name} dropped to ${line.get('new_price')}, and you paid ${line.get('paid_unit_price')} for it in order "
+        f"{str(order_id)[:8]}. We added ${money(amount)} of store credit to your account to cover the difference.",
+    )
+
+
+def credit_message(
+    action_name: str, amount: Decimal, order_id: uuid.UUID, event_input: dict[str, Any]
+) -> tuple[str, str, str]:
+    """``(notification kind, title, body)`` for a granted credit. Pure: the same inputs give the same text."""
+    if action_name == ACTION_PRICE_ADJUSTMENT:
+        title, body = _adjustment_text(amount, order_id, event_input.get("line", {}))
+        return "autonomy.price_adjustment", title, body
+    title, body = _credit_text(amount, order_id, event_input.get("delay_days"))
+    return "autonomy.goodwill_credit", title, body
+
+
+def _staff_note(action_name: str, amount: Decimal) -> str:
+    what = "a price adjustment for a price drop" if action_name == ACTION_PRICE_ADJUSTMENT else "a goodwill credit"
+    return f"${money(amount)} as {what}. It can be reversed from the decisions page."
+
+
+def _ledger_reason(action_name: str, event_input: dict[str, Any], *, approved: bool) -> str:
+    if action_name == ACTION_PRICE_ADJUSTMENT:
+        return "price adjustment: approved by staff" if approved else "price adjustment: price dropped"
+    if approved:
+        return "goodwill: approved by staff"
+    return f"goodwill: shipment delayed {event_input.get('delay_days')} day(s)"
+
+
+def _reversal_message(action_name: str, amount: Decimal) -> tuple[str, str, str]:
+    if action_name == ACTION_PRICE_ADJUSTMENT:
+        return (
+            "autonomy.price_adjustment_reversed",
+            "A store credit was withdrawn",
+            f"The ${money(amount)} price adjustment added to your account was withdrawn.",
+        )
+    return (
+        "autonomy.goodwill_reversed",
+        "A store credit was withdrawn",
+        f"The ${money(amount)} goodwill credit added to your account was withdrawn.",
+    )
+
+
+def _approval_ask(action_name: str, amount: Decimal) -> str:
+    what = (
+        "price adjustment for a price drop"
+        if action_name == ACTION_PRICE_ADJUSTMENT
+        else "goodwill credit for a late shipment"
+    )
+    return f"A ${money(amount)} {what} is outside what the system may do alone."
 
 
 async def _route_for(amount: Decimal) -> tuple[str, str, str, list[str], dict[str, Any]]:
@@ -422,6 +719,198 @@ async def _route_for(amount: Decimal) -> tuple[str, str, str, list[str], dict[st
         return "manager", "admin", "", ["Policy engine unavailable: routed to a manager review"], {}
 
 
+# ── writing a decision ───────────────────────────────────────────────────────
+
+
+async def enqueue_draft(conn: asyncpg.Connection, row_id: uuid.UUID) -> None:
+    """Ask the worker to word this decision's customer message, when the responder is on.
+
+    In the decision's own transaction, so the request exists exactly when the decision does. The row is only a
+    request: the responder reads the committed decision and can change nothing on it.
+    """
+    from shared.config import settings
+
+    if not settings.AUTONOMY_RESPONDER_ENABLED:
+        return
+    await enqueue(
+        conn,
+        TOPIC_DRAFT_REQUESTED,
+        {"decision_id": str(row_id)},
+        dedupe_key=f"{TOPIC_DRAFT_REQUESTED}:{row_id}",
+        aggregate_id=str(row_id),
+    )
+
+
+@dataclass
+class Plan:
+    """One decision, ready to write: who it concerns, what was decided, and what the customer is told."""
+
+    key: str
+    topic: str
+    action: Action
+    budget: Budget | None
+    day: date
+    verdict: Verdict
+    event_input: dict[str, Any]
+    user_id: uuid.UUID | None = None
+    order_id: uuid.UUID | None = None
+    order_item_id: uuid.UUID | None = None
+    customer_email: str | None = None
+    usage: Usage | None = None
+    #: A notice: (notification kind, title, body, link) sent to the customer when it acts.
+    notice: tuple[str, str, str, str] | None = None
+
+
+def _plan_row(plan: Plan, decision_id: uuid.UUID, outbox_id: int | None, policy: AutonomyPolicy) -> dict[str, Any]:
+    v = plan.verdict
+    acts = v.tier in AUTONOMOUS_TIERS
+    drew = v.amount if acts and plan.action.kind != "notice" else None
+    return {
+        "id": decision_id,
+        "entry_type": "decision",
+        "event_key": plan.key,
+        "event_type": plan.topic,
+        "outbox_id": outbox_id,
+        "action": plan.action.name if v.tier != "no_action" else "none",
+        "budget_key": plan.budget.key if (v.tier != "no_action" and plan.budget is not None) else None,
+        "user_id": plan.user_id,
+        "order_id": plan.order_id,
+        "order_item_id": plan.order_item_id,
+        "amount": v.amount,
+        "tier": v.tier,
+        "outcome": v.outcome,
+        "reasons": v.reasons,
+        "input": {"event": plan.event_input, "rule": v.rule_id, "evidence": v.evidence},
+        "budget": budget_snapshot(plan.budget, plan.day, plan.usage, drew) | {"tripped": v.tripped},
+        "policy_version": policy.version,
+        "reversible": plan.action.reversible and acts,
+        # A notice has no budget, but the day it counts against is how a customer's daily notice cap is read.
+        "budget_day": plan.day if (drew is not None or (acts and plan.action.kind == "notice")) else None,
+    }
+
+
+async def _notify_customer(
+    conn: asyncpg.Connection, decision_id: uuid.UUID, *, kind: str, title: str, body: str, link: str, email: str | None
+) -> None:
+    note_id = await notify(conn, kind=kind, title=title, body=body, link=link, user_email=email)
+    # The link a drafted message uses to find the notification it replaces the template text of.
+    await conn.execute("UPDATE notifications SET decision_id = $2 WHERE id = $1", uuid.UUID(note_id), decision_id)
+
+
+async def _write_plan(
+    conn: asyncpg.Connection, plan: Plan, decision_id: uuid.UUID, outbox_id: int | None, policy: AutonomyPolicy
+) -> dict[str, Any]:
+    """Insert the decision and everything that must commit with it. Runs inside the caller's transaction."""
+    v = plan.verdict
+    row = _plan_row(plan, decision_id, outbox_id, policy)
+    result: dict[str, Any] = {
+        "status": v.outcome,
+        "tier": v.tier,
+        "decision_id": str(decision_id),
+        "amount": None if v.amount is None else money(v.amount),
+        "reasons": v.reasons,
+    }
+    if v.tier == "no_action":
+        await _insert_row(conn, **row)
+    elif v.tier in AUTONOMOUS_TIERS and plan.action.kind == "notice":
+        assert plan.user_id is not None and plan.notice is not None
+        await _insert_row(conn, **row)
+        kind, title, body, link = plan.notice
+        await _notify_customer(
+            conn, decision_id, kind=kind, title=title, body=body, link=link, email=plan.customer_email
+        )
+    elif v.tier in AUTONOMOUS_TIERS:
+        assert v.amount is not None and plan.user_id is not None and plan.order_id is not None
+        await _insert_row(conn, **row)
+        await _grant_credit(
+            conn,
+            decision_id=decision_id,
+            user_id=plan.user_id,
+            amount=v.amount,
+            reason=_ledger_reason(plan.action.name, plan.event_input, approved=False),
+        )
+        kind, title, body = credit_message(plan.action.name, v.amount, plan.order_id, plan.event_input)
+        await _notify_customer(
+            conn, decision_id, kind=kind, title=title, body=body, link=ORDERS_LINK, email=plan.customer_email
+        )
+        if v.tier == "auto_notify":
+            await notify(
+                conn,
+                kind="autonomy.action_taken",
+                title="The system issued a store credit on its own",
+                body=_staff_note(plan.action.name, v.amount),
+                link=DECISIONS_LINK,
+                role="admin",
+            )
+        await enqueue_draft(conn, decision_id)
+    else:  # needs_approval
+        assert v.amount is not None and plan.user_id is not None and plan.order_id is not None
+        route, role, version, route_reasons, route_evidence = await _route_for(v.amount)
+        approval = await repo.create(
+            conn,
+            source=SOURCE,
+            source_ref=str(decision_id),
+            kind=APPROVAL_KIND,
+            requester_email=SYSTEM_REQUESTER,
+            subject_email=plan.customer_email,
+            amount=v.amount,
+            policy_version=version or None,
+            route=route,
+            assigned_role=role,
+            status=repo.ApprovalStatus.PENDING_REVIEW,
+            recommendation={
+                "action": plan.action.name,
+                "reasons": v.reasons,
+                "route_reasons": route_reasons,
+                "evidence": v.evidence,
+                "route_evidence": route_evidence,
+                "autonomy_policy_version": policy.version,
+                "decision_id": str(decision_id),
+            },
+            actor_email=SYSTEM_REQUESTER,
+            actor_role="system",
+        )
+        await _insert_row(conn, **row, approval_id=approval["id"])
+        await notify(
+            conn,
+            kind="autonomy.approval_needed",
+            title="An automatic action needs your approval",
+            body=_approval_ask(plan.action.name, v.amount),
+            link=REVIEW_LINK,
+            approval_id=str(approval["id"]),
+            role=role,
+        )
+        result["approval_id"] = str(approval["id"])
+    return result
+
+
+def _replayed(existing: asyncpg.Record) -> dict[str, Any]:
+    return {
+        "status": existing["outcome"],
+        "tier": existing["tier"],
+        "decision_id": str(existing["id"]),
+        "amount": None if existing["amount"] is None else money(existing["amount"]),
+        "approval_id": str(existing["approval_id"]) if existing["approval_id"] else None,
+        "replayed": True,
+    }
+
+
+_EXISTING_SQL = (
+    "SELECT id, tier, outcome, amount, approval_id FROM agent_decisions "
+    "WHERE entry_type = 'decision' AND event_key = $1"
+)
+
+
+def _log_decision(result: dict[str, Any], topic: str) -> None:
+    logger.info(
+        "autonomy decision id=%s event=%s tier=%s outcome=%s",
+        log_safe(result["decision_id"]),
+        log_safe(topic),
+        result["tier"],
+        result["status"],
+    )
+
+
 async def _decide_in_tx(
     pool: asyncpg.Pool, topic: str, payload: dict[str, Any], outbox_id: int | None, policy: AutonomyPolicy
 ) -> dict[str, Any]:
@@ -430,158 +919,379 @@ async def _decide_in_tx(
     rule = policy.event(topic)
     assert rule is not None
     action = policy.action(rule.action)
-    budget = policy.budget(action.budget)
+    budget = _budget_of(policy, action)
     day = utc_day()
     async with pool.acquire() as conn, conn.transaction():
         await lock_budget(conn, budget.key, day)
         if event.order_id is not None:  # budget first, then the order: see lock_order
             await lock_order(conn, event.order_id)
-        existing = await conn.fetchrow(
-            "SELECT id, tier, outcome, amount, approval_id FROM agent_decisions "
-            "WHERE entry_type = 'decision' AND event_key = $1",
-            key,
-        )
+        existing = await conn.fetchrow(_EXISTING_SQL, key)
         if existing is not None:  # an event replayed (a second outbox row, a restarted worker): it acts once
             logger.info("autonomy event replayed, no second action decision=%s", log_safe(existing["id"]))
-            return {
-                "status": existing["outcome"],
-                "tier": existing["tier"],
-                "decision_id": str(existing["id"]),
-                "amount": None if existing["amount"] is None else money(existing["amount"]),
-                "approval_id": str(existing["approval_id"]) if existing["approval_id"] else None,
-                "replayed": True,
-            }
+            return _replayed(existing)
         verdict, ctx = await decide_shipment_delayed(conn, event, policy=policy, day=day)
-        decision_id = uuid.uuid4()
-        user_id, order_id = ctx["user_id"], ctx["order_id"]
-        usage: Usage | None = ctx.get("usage")
-        drew = verdict.amount if verdict.tier in AUTONOMOUS_TIERS else None
-        row: dict[str, Any] = {
-            "id": decision_id,
-            "entry_type": "decision",
-            "event_key": key,
-            "event_type": topic,
-            "outbox_id": outbox_id,
-            "action": action.name if verdict.tier != "no_action" else "none",
-            "budget_key": budget.key if verdict.tier != "no_action" else None,
-            "user_id": user_id,
-            "order_id": order_id,
-            "amount": verdict.amount,
-            "tier": verdict.tier,
-            "outcome": verdict.outcome,
-            "reasons": verdict.reasons,
-            "input": {
-                "event": {
-                    "event_id": event.event_id,
-                    "order_id": str(event.order_id) if event.order_id else None,
-                    "delay_days": event.delay_days,
-                },
-                "rule": verdict.rule_id,
-                "evidence": verdict.evidence,
+        plan = Plan(
+            key=key,
+            topic=topic,
+            action=action,
+            budget=budget,
+            day=day,
+            verdict=verdict,
+            event_input={
+                "event_id": event.event_id,
+                "order_id": str(event.order_id) if event.order_id else None,
+                "delay_days": event.delay_days,
             },
-            "budget": budget_snapshot(budget, day, usage, drew) | {"tripped": verdict.tripped},
-            "policy_version": policy.version,
-            "reversible": action.reversible and verdict.tier in AUTONOMOUS_TIERS,
-            "budget_day": day if drew is not None else None,
-        }
-        result: dict[str, Any] = {
-            "status": verdict.outcome,
-            "tier": verdict.tier,
-            "decision_id": str(decision_id),
-            "amount": None if verdict.amount is None else money(verdict.amount),
-            "reasons": verdict.reasons,
-        }
-        if verdict.tier == "no_action":
-            await _insert_row(conn, **row)
-        elif verdict.tier in AUTONOMOUS_TIERS:
-            assert verdict.amount is not None and user_id is not None and order_id is not None
-            await _insert_row(conn, **row)
-            await _grant_credit(
-                conn,
-                decision_id=decision_id,
-                user_id=user_id,
-                amount=verdict.amount,
-                reason=f"goodwill: shipment delayed {event.delay_days} day(s)",
-            )
-            title, body = _credit_text(verdict.amount, order_id, event.delay_days)
-            await notify(
-                conn,
-                kind="autonomy.goodwill_credit",
-                title=title,
-                body=body,
-                link=ORDERS_LINK,
-                user_email=ctx["customer_email"],
-            )
-            if verdict.tier == "auto_notify":
-                await notify(
-                    conn,
-                    kind="autonomy.action_taken",
-                    title="The system issued a goodwill credit on its own",
-                    body=f"${money(verdict.amount)} for a late shipment. It can be reversed from the decisions page.",
-                    link=DECISIONS_LINK,
-                    role="admin",
-                )
-        else:  # needs_approval
-            assert verdict.amount is not None and user_id is not None and order_id is not None
-            route, role, version, route_reasons, route_evidence = await _route_for(verdict.amount)
-            approval = await repo.create(
-                conn,
-                source=SOURCE,
-                source_ref=str(decision_id),
-                kind=APPROVAL_KIND,
-                requester_email=SYSTEM_REQUESTER,
-                subject_email=ctx["customer_email"],
-                amount=verdict.amount,
-                policy_version=version or None,
-                route=route,
-                assigned_role=role,
-                status=repo.ApprovalStatus.PENDING_REVIEW,
-                recommendation={
-                    "action": action.name,
-                    "reasons": verdict.reasons,
-                    "route_reasons": route_reasons,
-                    "evidence": verdict.evidence,
-                    "route_evidence": route_evidence,
-                    "autonomy_policy_version": policy.version,
-                    "decision_id": str(decision_id),
-                },
-                actor_email=SYSTEM_REQUESTER,
-                actor_role="system",
-            )
-            await _insert_row(conn, **row, approval_id=approval["id"])
-            await notify(
-                conn,
-                kind="autonomy.approval_needed",
-                title="An automatic action needs your approval",
-                body=f"A ${money(verdict.amount)} goodwill credit for a late shipment is outside what the system "
-                "may do alone.",
-                link=REVIEW_LINK,
-                approval_id=str(approval["id"]),
-                role=role,
-            )
-            result["approval_id"] = str(approval["id"])
-    logger.info(
-        "autonomy decision id=%s event=%s tier=%s outcome=%s",
-        log_safe(result["decision_id"]),
-        log_safe(topic),
-        result["tier"],
-        result["status"],
-    )
+            user_id=ctx["user_id"],
+            order_id=ctx["order_id"],
+            customer_email=ctx["customer_email"],
+            usage=ctx.get("usage"),
+        )
+        result = await _write_plan(conn, plan, uuid.uuid4(), outbox_id, policy)
+    _log_decision(result, topic)
     return result
+
+
+async def _record_event_no_action(
+    pool: asyncpg.Pool,
+    topic: str,
+    event_id: str,
+    policy: AutonomyPolicy,
+    action: Action,
+    reason: str,
+    event_input: dict[str, Any],
+    outbox_id: int | None,
+    **evidence: Any,
+) -> dict[str, Any]:
+    """A ``no_action`` row for a whole event (it named no valid target, or reached too many people), no ids on it."""
+    key = event_key(topic, event_id)
+    async with pool.acquire() as conn, conn.transaction():
+        existing = await conn.fetchrow(_EXISTING_SQL, key)
+        if existing is not None:
+            return _replayed(existing)
+        plan = Plan(
+            key=key,
+            topic=topic,
+            action=action,
+            budget=None,
+            day=utc_day(),
+            verdict=_no_action(reason, **evidence),
+            event_input=event_input,
+        )
+        result = await _write_plan(conn, plan, uuid.uuid4(), outbox_id, policy)
+    _log_decision(result, topic)
+    return result
+
+
+# ── price drops: one decision per order line ─────────────────────────────────
+
+
+async def _decide_line_in_tx(
+    pool: asyncpg.Pool,
+    topic: str,
+    event: PriceDropped,
+    order_item_id: uuid.UUID,
+    outbox_id: int | None,
+    policy: AutonomyPolicy,
+) -> dict[str, Any]:
+    rule = policy.event(topic)
+    assert rule is not None
+    action = policy.action(rule.action)
+    budget = _budget_of(policy, action)
+    key = f"{event_key(topic, event.event_id)}:{order_item_id}"
+    day = utc_day()
+    async with pool.acquire() as conn, conn.transaction():
+        # Budget first, then the order (a line never moves between orders, so its order can be read before the locks).
+        await lock_budget(conn, budget.key, day)
+        order_id = await conn.fetchval("SELECT order_id FROM order_items WHERE id = $1", order_item_id)
+        if order_id is not None:
+            await lock_order(conn, order_id)
+        existing = await conn.fetchrow(_EXISTING_SQL, key)
+        if existing is not None:
+            logger.info("autonomy event replayed, no second action decision=%s", log_safe(existing["id"]))
+            return _replayed(existing)
+        verdict, ctx = await decide_price_dropped(conn, event, order_item_id, policy=policy, day=day)
+        assert event.product_id is not None and event.new_price is not None
+        plan = Plan(
+            key=key,
+            topic=topic,
+            action=action,
+            budget=budget,
+            day=day,
+            verdict=verdict,
+            event_input={
+                "event_id": event.event_id,
+                "product_id": str(event.product_id),
+                "new_price": money(event.new_price),
+                "order_item_id": str(order_item_id),
+                "line": ctx.get("line", {}),
+            },
+            user_id=ctx["user_id"],
+            order_id=ctx["order_id"],
+            order_item_id=ctx["order_item_id"],
+            customer_email=ctx["customer_email"],
+            usage=ctx.get("usage"),
+        )
+        result = await _write_plan(conn, plan, uuid.uuid4(), outbox_id, policy)
+    _log_decision(result, topic)
+    return result
+
+
+async def _once(key: str, fn: Callable[[], Awaitable[dict[str, Any]]]) -> tuple[dict[str, Any], bool]:
+    """``run_once`` for one target, and whether *this call* made the decision (False for any kind of replay)."""
+    ran = False
+
+    async def inner() -> dict[str, Any]:
+        nonlocal ran
+        ran = True
+        return await fn()
+
+    result = await run_once(SCOPE_EVENT, key, inner)
+    return result, ran and not result.get("replayed")
+
+
+def _summarise(results: list[tuple[dict[str, Any], bool]], **extra: Any) -> dict[str, Any]:
+    counts: dict[str, int] = {}
+    for r, _ in results:
+        label = r.get("tier") or r.get("status") or "unknown"
+        counts[label] = counts.get(label, 0) + 1
+    return {
+        "status": "processed",
+        "targets": len(results),
+        "new": sum(1 for _, fresh in results if fresh),
+        "by_tier": counts,
+        **extra,
+    }
+
+
+def _echo(payload: dict[str, Any], event_id: str) -> dict[str, Any]:
+    """What a whole-event ``no_action`` row records of the payload: the id and a bounded product reference."""
+    raw = payload.get("product_id")
+    return {"event_id": event_id, "product_id": None if raw is None else str(raw)[:64]}
+
+
+async def _handle_price_dropped(
+    pool: asyncpg.Pool, topic: str, payload: dict[str, Any], outbox_id: int | None, policy: AutonomyPolicy
+) -> dict[str, Any]:
+    event = parse_price_dropped(payload, outbox_id)
+    rule = policy.event(topic)
+    assert rule is not None
+    action = policy.action(rule.action)
+    echo = _echo(payload, event.event_id)
+
+    async def record(reason: str, **evidence: Any) -> dict[str, Any]:
+        return await run_once(
+            SCOPE_EVENT,
+            event_key(topic, event.event_id),
+            lambda: _record_event_no_action(
+                pool, topic, event.event_id, policy, action, reason, echo, outbox_id, **evidence
+            ),
+        )
+
+    if event.product_id is None:
+        return await record("invalid_event_product")
+    if event.new_price is None:
+        return await record("invalid_event_price")
+    if not await pool.fetchval("SELECT 1 FROM products WHERE id = $1", event.product_id):
+        return await record("product_not_found")
+    lines = await pool.fetch(
+        """SELECT oi.id FROM order_items oi
+             JOIN orders o ON o.id = oi.order_id JOIN users u ON u.id = o.user_id
+            WHERE oi.product_id = $1 AND oi.unit_price > $2 AND o.status = ANY($3::text[])
+              AND o.created_at >= NOW() - make_interval(days => $4) AND lower(u.email) <> $5
+            ORDER BY o.created_at, oi.id LIMIT $6""",
+        event.product_id,
+        event.new_price,
+        sorted(rule.eligible_order_statuses),
+        rule.lookback_days,
+        TOUR_EMAIL,  # the demo reset deletes this user's orders; no decision row may ever reference them
+        rule.max_lines + 1,
+    )
+    truncated = len(lines) > rule.max_lines
+    results: list[tuple[dict[str, Any], bool]] = []
+    for found in lines[: rule.max_lines]:
+        item_id = found["id"]
+        results.append(
+            await _once(
+                f"{event_key(topic, event.event_id)}:{item_id}",
+                lambda item_id=item_id: _decide_line_in_tx(pool, topic, event, item_id, outbox_id, policy),
+            )
+        )
+    if not results:
+        return {"status": "no_targets", "targets": 0, "new": 0, "by_tier": {}}
+    return _summarise(results, truncated=truncated)
+
+
+# ── back in stock: one notice per customer ───────────────────────────────────
+
+
+def _notice_text(product_name: str, product_id: uuid.UUID) -> tuple[str, str, str, str]:
+    return (
+        "autonomy.back_in_stock",
+        f"{product_name} is back in stock",
+        f"{product_name} is available again, and it is still in your cart.",
+        f"/products/{product_id}",
+    )
+
+
+async def _notice_in_tx(
+    pool: asyncpg.Pool,
+    topic: str,
+    event: BackInStock,
+    user_id: uuid.UUID,
+    product: asyncpg.Record,
+    outbox_id: int | None,
+    policy: AutonomyPolicy,
+) -> dict[str, Any]:
+    rule = policy.event(topic)
+    assert rule is not None and event.product_id is not None
+    action = policy.action(rule.action)
+    key = f"{event_key(topic, event.event_id)}:{user_id}"
+    day = utc_day()
+    async with pool.acquire() as conn, conn.transaction():
+        # A notice has no budget, but its per-customer daily cap is read-then-act like one: the same advisory lock,
+        # keyed by the action, serialises it. No order is involved, so there is no second lock.
+        await lock_budget(conn, action.name, day)
+        existing = await conn.fetchrow(_EXISTING_SQL, key)
+        if existing is not None:
+            return _replayed(existing)
+        who = await conn.fetchrow("SELECT id, email, role FROM users WHERE id = $1", user_id)
+        base = {"event_id": event.event_id, "product_id": str(event.product_id), "product_name": product["name"]}
+        ids: tuple[uuid.UUID | None, str | None] = (None, None)
+        if who is None:
+            verdict = _no_action("customer_not_found")
+        elif str(who["email"]).strip().lower() == TOUR_EMAIL:
+            verdict = _no_action("demo_user_excluded")  # no ids on the row: see decide_shipment_delayed
+        else:
+            ids = (who["id"], who["email"])
+            if (who["role"] or "").lower() in STAFF_ROLES:
+                verdict = _no_action("recipient_is_staff")
+            else:
+                sent_today = await conn.fetchval(
+                    """SELECT count(*) FROM agent_decisions
+                        WHERE entry_type = 'decision' AND action = $1 AND outcome = 'executed'
+                          AND user_id = $2 AND budget_day = $3""",
+                    action.name,
+                    user_id,
+                    day,
+                )
+                if sent_today >= rule.per_customer_per_day:
+                    verdict = _no_action("customer_daily_notice_cap", sent_today=int(sent_today))
+                else:
+                    tier = evaluate_tier(action, {"recipients": 1})  # the audience was bounded by the caller
+                    if tier.tier in AUTONOMOUS_TIERS:
+                        verdict = Verdict(
+                            tier=tier.tier,
+                            outcome="executed",
+                            reasons=[tier.reason],
+                            rule_id=tier.rule_id,
+                            evidence=tier.evidence,
+                        )
+                    else:  # a policy that does not let even one notice go alone: nothing for the inbox to approve
+                        verdict = _no_action("notice_needs_review", rule=tier.rule_id)
+        plan = Plan(
+            key=key,
+            topic=topic,
+            action=action,
+            budget=None,
+            day=day,
+            verdict=verdict,
+            event_input=base,
+            user_id=ids[0],
+            customer_email=ids[1],
+            notice=_notice_text(product["name"], event.product_id),
+        )
+        result = await _write_plan(conn, plan, uuid.uuid4(), outbox_id, policy)
+    _log_decision(result, topic)
+    return result
+
+
+async def _handle_back_in_stock(
+    pool: asyncpg.Pool, topic: str, payload: dict[str, Any], outbox_id: int | None, policy: AutonomyPolicy
+) -> dict[str, Any]:
+    event = parse_back_in_stock(payload, outbox_id)
+    rule = policy.event(topic)
+    assert rule is not None
+    action = policy.action(rule.action)
+    echo = _echo(payload, event.event_id)
+
+    async def record(reason: str, **evidence: Any) -> dict[str, Any]:
+        return await run_once(
+            SCOPE_EVENT,
+            event_key(topic, event.event_id),
+            lambda: _record_event_no_action(
+                pool, topic, event.event_id, policy, action, reason, echo, outbox_id, **evidence
+            ),
+        )
+
+    if event.product_id is None:
+        return await record("invalid_event_product")
+    product = await pool.fetchrow("SELECT id, name, is_active FROM products WHERE id = $1", event.product_id)
+    if product is None:
+        return await record("product_not_found")
+    stock = await pool.fetchval(
+        "SELECT COALESCE(sum(quantity), 0) FROM warehouse_inventory WHERE product_id = $1", event.product_id
+    )
+    if not product["is_active"] or stock <= 0:
+        # Never announce stock that is not there, whatever the event says.
+        return await record("product_not_in_stock", stock=int(stock))
+    audience = await pool.fetch(
+        """SELECT c.user_id FROM carts c JOIN users u ON u.id = c.user_id
+            WHERE EXISTS (SELECT 1 FROM cart_items ci WHERE ci.cart_id = c.id AND ci.product_id = $1)
+              AND c.updated_at >= NOW() - make_interval(days => $2)
+              AND u.is_active IS NOT FALSE AND lower(u.email) <> $3
+            ORDER BY c.user_id LIMIT $4""",
+        event.product_id,
+        rule.cart_max_age_days,
+        TOUR_EMAIL,
+        rule.max_recipients + 1,
+    )
+    if not audience:
+        return {"status": "no_targets", "targets": 0, "new": 0, "by_tier": {}}
+    tier = evaluate_tier(action, {"recipients": len(audience)})
+    if tier.tier not in AUTONOMOUS_TIERS:
+        # More people than the system may notify alone: nobody is told, and the log says why. (A notice has nothing
+        # for the inbox to approve, so this is a no_action a person can pick up from the decisions page.)
+        return await record("recipients_over_cap", recipients=len(audience), cap=rule.max_recipients)
+    results = [
+        await _once(
+            f"{event_key(topic, event.event_id)}:{row['user_id']}",
+            lambda uid=row["user_id"]: _notice_in_tx(pool, topic, event, uid, product, outbox_id, policy),
+        )
+        for row in audience
+    ]
+    sent = [r for r, fresh in results if fresh and r.get("status") == "executed"]
+    if sent:  # one heads-up per event, not one per customer
+        async with pool.acquire() as conn:
+            await notify(
+                conn,
+                kind="autonomy.action_taken",
+                title="Back-in-stock notices were sent",
+                body=f"{len(sent)} customer(s) with {product['name']} in their cart were told it is back.",
+                link=DECISIONS_LINK,
+                role="admin",
+            )
+    return _summarise(results)
 
 
 async def handle_event(
     pool: asyncpg.Pool, topic: str, payload: dict[str, Any], *, outbox_id: int | None = None
 ) -> dict[str, Any]:
-    """Decide one event, at most once. Returns a JSON-safe summary (also what a replay returns).
+    """Decide one event, at most once per target. Returns a JSON-safe summary (also what a replay returns).
 
     ``run_once`` keeps its reservation on its own pool connection, so the decision commits (inside
     :func:`_decide_in_tx`) before the reservation is marked complete; a crash in between is healed by the unique
     ``event_key`` index, which makes the retry find the first decision instead of writing a second.
     """
     policy = get_policy()
-    if policy.event(topic) is None:
+    rule: EventRule | None = policy.event(topic)
+    if rule is None:
         return {"status": "ignored", "reason": "unknown_event"}
+    kind = policy.action(rule.action).kind
+    if kind == "price_adjustment":
+        return await _handle_price_dropped(pool, topic, payload, outbox_id, policy)
+    if kind == "notice":
+        return await _handle_back_in_stock(pool, topic, payload, outbox_id, policy)
     event = parse_shipment_delayed(payload, outbox_id)
     return await run_once(
         SCOPE_EVENT, event_key(topic, event.event_id), lambda: _decide_in_tx(pool, topic, payload, outbox_id, policy)
@@ -662,10 +1372,13 @@ async def _execute_approved_in_tx(
             reversible = policy.action(decision["action"]).reversible
         except AutonomyPolicyError:
             reversible = False
-        if await credits_on_order(conn, decision["order_id"]) >= ceiling:
+        if await credits_on_order(conn, decision["order_id"], decision["action"]) >= ceiling:
             # Credited some other way since this was proposed. The engine no longer opens such an approval, so this
             # is a backstop for one opened before the order was credited (or by an older build): do not pay twice.
             return {"success": False, "status": "failed", "reason": "order_already_credited"}
+        if decision["order_item_id"] is not None and await adjustments_on_line(conn, decision["order_item_id"]) >= 1:
+            # One adjustment per order line, ever: the same backstop, per line.
+            return {"success": False, "status": "failed", "reason": "line_already_adjusted"}
         execution_id = uuid.uuid4()
         await _insert_row(
             conn,
@@ -676,6 +1389,7 @@ async def _execute_approved_in_tx(
             budget_key=decision["budget_key"],
             user_id=decision["user_id"],
             order_id=decision["order_id"],
+            order_item_id=decision["order_item_id"],
             amount=amount,
             tier="needs_approval",
             outcome="executed",
@@ -692,13 +1406,14 @@ async def _execute_approved_in_tx(
             decision_id=execution_id,
             user_id=decision["user_id"],
             amount=amount,
-            reason="goodwill: approved by staff",
+            reason=_ledger_reason(decision["action"], {}, approved=True),
         )
-        delay = _loads(decision["input"]).get("event", {}).get("delay_days")
-        title, body = _credit_text(amount, decision["order_id"], delay)
-        await notify(
-            conn, kind="autonomy.goodwill_credit", title=title, body=body, link=ORDERS_LINK, user_email=order["email"]
+        event_input = _loads(decision["input"]).get("event", {})
+        kind, title, body = credit_message(decision["action"], amount, decision["order_id"], event_input)
+        await _notify_customer(
+            conn, execution_id, kind=kind, title=title, body=body, link=ORDERS_LINK, email=order["email"]
         )
+        await enqueue_draft(conn, execution_id)
     logger.info("autonomy approved action executed approval=%s", log_safe(approval_id))
     return {"success": True, "status": "executed", "decision_id": str(execution_id), "amount": money(amount)}
 
@@ -785,6 +1500,7 @@ async def reverse(pool: asyncpg.Pool, decision_id: str, *, actor_email: str, not
             budget_key=executed["budget_key"],
             user_id=executed["user_id"],
             order_id=executed["order_id"],
+            order_item_id=executed["order_item_id"],
             amount=executed["amount"],
             outcome="reversed",
             reasons=["reversed by an admin"],
@@ -799,16 +1515,14 @@ async def reverse(pool: asyncpg.Pool, decision_id: str, *, actor_email: str, not
             decision_id=reversal_id,
             user_id=executed["user_id"],
             amount=-executed["amount"],
-            reason="goodwill credit reversed",
+            reason=(
+                "price adjustment reversed"
+                if executed["action"] == ACTION_PRICE_ADJUSTMENT
+                else "goodwill credit reversed"
+            ),
         )
-        await notify(
-            conn,
-            kind="autonomy.goodwill_reversed",
-            title="A store credit was withdrawn",
-            body=f"The ${money(executed['amount'])} goodwill credit added to your account was withdrawn.",
-            link=ORDERS_LINK,
-            user_email=customer,
-        )
+        kind, title, body = _reversal_message(executed["action"], executed["amount"])
+        await notify(conn, kind=kind, title=title, body=body, link=ORDERS_LINK, user_email=customer)
     logger.info("autonomy action reversed decision=%s", log_safe(decision_id))
     return {"status": "reversed", "reversal_id": str(reversal_id), "reverses_id": str(executed["id"])}
 
@@ -834,12 +1548,15 @@ SELECT d.id, d.event_key, d.event_type, d.action, d.budget_key, d.order_id, d.am
        a.status AS approval_status, a.assigned_role AS approval_role,
        x.id AS execution_id, x.reversible AS execution_reversible, x.amount AS applied_amount,
        x.actor_email AS approved_by,
-       r.id AS reversal_id, r.created_at AS reversed_at, r.actor_email AS reversed_by, r.note AS reversal_note
+       r.id AS reversal_id, r.created_at AS reversed_at, r.actor_email AS reversed_by, r.note AS reversal_note,
+       d.order_item_id, dd.body AS draft_body, dd.source AS draft_source, dd.model AS draft_model,
+       dd.fallback_reason AS draft_fallback
   FROM agent_decisions d
   LEFT JOIN users u ON u.id = d.user_id
   LEFT JOIN approvals a ON a.id = d.approval_id
   LEFT JOIN agent_decisions x ON x.entry_type = 'approved_execution' AND x.approval_id = d.approval_id
   LEFT JOIN agent_decisions r ON r.entry_type = 'reversal' AND r.reverses_id = COALESCE(x.id, d.id)
+  LEFT JOIN decision_drafts dd ON dd.decision_id = COALESCE(x.id, d.id)
  WHERE d.entry_type = 'decision'
 """
 
@@ -876,6 +1593,18 @@ def _present(row: asyncpg.Record) -> dict[str, Any]:
         "budget_key": row["budget_key"],
         "customer_email": row["customer_email"],
         "order_id": str(row["order_id"]) if row["order_id"] else None,
+        "order_item_id": str(row["order_item_id"]) if row["order_item_id"] else None,
+        # The customer message the ops-responder drafted (or the template it fell back to); None when none was made.
+        "draft": (
+            None
+            if row["draft_body"] is None
+            else {
+                "body": row["draft_body"],
+                "source": row["draft_source"],
+                "model": row["draft_model"],
+                "fallback_reason": row["draft_fallback"],
+            }
+        ),
         "amount": None if row["amount"] is None else money(row["amount"]),
         "applied_amount": None if row["applied_amount"] is None else money(row["applied_amount"]),
         "tier": row["tier"],

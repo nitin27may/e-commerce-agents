@@ -35,7 +35,12 @@ TIERS = frozenset({"auto", "auto_notify", "needs_approval"})
 #: Tiers that act without a person; they are the ones that draw on a budget.
 AUTONOMOUS_TIERS = frozenset({"auto", "auto_notify"})
 #: Every fact a rule may test. All are numbers.
-FACTS = frozenset({"amount", "delay_days", "order_total"})
+FACTS = frozenset({"amount", "delay_days", "order_total", "days_since_purchase", "drop_percent", "recipients"})
+#: What an action does, and so how an event is sized: ``credit`` (a store credit sized by a shipment delay),
+#: ``price_adjustment`` (a store credit for a price drop on a recent purchase) and ``notice`` (a notification only,
+#: no money, no budget).
+KINDS = frozenset({"credit", "price_adjustment", "notice"})
+MONEY_KINDS = frozenset({"credit", "price_adjustment"})
 
 _CENT = Decimal("0.01")
 #: Money columns are NUMERIC(12, 2).
@@ -44,10 +49,13 @@ _MAX_MONEY = Decimal("9999999999.99")
 _TOP_KEYS = {"policy_version", "budgets", "actions", "events"}
 _BUDGET_KEYS = {"per_action_max_amount", "per_customer_per_day", "per_order_max_count", "global_per_day"}
 _CAP_KEYS = {"max_count", "max_amount"}
-_ACTION_KEYS = {"budget", "reversible", "rules"}
+_ACTION_KEYS = {"budget", "reversible", "rules", "kind"}
+_ACTION_REQUIRED = {"reversible", "rules"}
 _RULE_KEYS = {"id", "tier", "reason", "when"}
 _CONDITION_KEYS = {"fact", "op", "value"}
 _EVENT_KEYS = {"action", "eligible_order_statuses", "credit_tiers"}
+_PRICE_EVENT_KEYS = {"action", "eligible_order_statuses", "lookback_days", "max_lines"}
+_NOTICE_EVENT_KEYS = {"action", "cart_max_age_days", "max_recipients", "per_customer_per_day"}
 _CREDIT_TIER_KEYS = {"min_delay_days", "amount"}
 
 
@@ -88,9 +96,10 @@ class Rule:
 @dataclass(frozen=True)
 class Action:
     name: str
-    budget: str
+    budget: str | None  # None for a ``notice``: it spends no money, so it has no budget
     reversible: bool
     rules: tuple[Rule, ...]
+    kind: str = "credit"
 
 
 @dataclass(frozen=True)
@@ -105,6 +114,14 @@ class EventRule:
     action: str
     eligible_order_statuses: frozenset[str]
     credit_tiers: tuple[CreditTier, ...]
+    # price_adjustment events: purchases newer than ``lookback_days`` qualify, at most ``max_lines`` lines per event.
+    lookback_days: int = 0
+    max_lines: int = 0
+    # notice events: carts touched within ``cart_max_age_days``, at most ``max_recipients`` per event and
+    # ``per_customer_per_day`` notices to one customer per UTC day.
+    cart_max_age_days: int = 0
+    max_recipients: int = 0
+    per_customer_per_day: int = 0
 
     def credit_for(self, delay_days: int) -> Decimal | None:
         """The credit for a delay: the amount of the highest tier the delay reaches, or None below the lowest."""
@@ -229,11 +246,20 @@ def _amount_ceiling(rule: Rule) -> Decimal | None:
 
 def _action(name: str, raw: Any, budgets: dict[str, Budget]) -> Action:
     where = f"actions.{name}"
-    raw = _mapping(raw, where, _ACTION_KEYS)
-    if raw["budget"] not in budgets:
-        raise AutonomyPolicyError(f"{where}: unknown budget {raw['budget']!r}")
+    raw = _mapping(raw, where, _ACTION_KEYS, required=_ACTION_REQUIRED)
+    kind = raw.get("kind", "credit")
+    if kind not in KINDS:
+        raise AutonomyPolicyError(f"{where}: unknown kind {kind!r}")
+    budget_key = raw.get("budget")
+    if kind in MONEY_KINDS:
+        if budget_key not in budgets:
+            raise AutonomyPolicyError(f"{where}: unknown budget {budget_key!r}")
+    elif budget_key is not None:
+        raise AutonomyPolicyError(f"{where}: a notice spends no money, so it has no budget")
     if not isinstance(raw["reversible"], bool):
         raise AutonomyPolicyError(f"{where}.reversible: expected true or false")
+    if kind == "notice" and raw["reversible"]:
+        raise AutonomyPolicyError(f"{where}: a sent notice cannot be reversed")
     rules_raw = raw["rules"]
     if not isinstance(rules_raw, list) or not rules_raw:
         raise AutonomyPolicyError(f"{where}.rules: expected a non-empty list")
@@ -247,10 +273,18 @@ def _action(name: str, raw: Any, budgets: dict[str, Budget]) -> Action:
         raise AutonomyPolicyError(
             f"{where}.rules: an unconditional rule before the last one makes the rest unreachable"
         )
-    cap = budgets[raw["budget"]].per_action_max_amount
     for rule in rules:
         if rule.tier not in AUTONOMOUS_TIERS:
             continue
+        if kind == "notice":
+            # No money to bound, so the bound is how many people one event may reach.
+            if not any(c.fact == "recipients" and c.op in ("lte", "lt", "eq") for c in rule.when):
+                raise AutonomyPolicyError(
+                    f"{where}.rules.{rule.id}: an autonomous notice needs a 'recipients lte N' bound"
+                )
+            continue
+        assert budget_key is not None
+        cap = budgets[budget_key].per_action_max_amount
         ceiling = _amount_ceiling(rule)
         if ceiling is None:
             raise AutonomyPolicyError(f"{where}.rules.{rule.id}: an autonomous rule needs an 'amount lte N' ceiling")
@@ -258,17 +292,47 @@ def _action(name: str, raw: Any, budgets: dict[str, Budget]) -> Action:
             raise AutonomyPolicyError(
                 f"{where}.rules.{rule.id}: amount ceiling {ceiling} is above the budget's per_action_max_amount {cap}"
             )
-    return Action(name, raw["budget"], raw["reversible"], rules)
+    return Action(name, budget_key, raw["reversible"], rules, kind)
+
+
+def _positive_int(value: Any, where: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise AutonomyPolicyError(f"{where}: expected an integer of at least 1, got {value!r}")
+    return value
 
 
 def _event(topic: str, raw: Any, actions: dict[str, Action]) -> EventRule:
     where = f"events.{topic}"
+    if not isinstance(raw, dict):
+        raise AutonomyPolicyError(f"{where}: expected a mapping")
+    action_name = raw.get("action")
+    if action_name not in actions:
+        raise AutonomyPolicyError(f"{where}: unknown action {action_name!r}")
+    kind = actions[action_name].kind
+    if kind == "price_adjustment":
+        raw = _mapping(raw, where, _PRICE_EVENT_KEYS)
+        statuses = _statuses(raw["eligible_order_statuses"], where)
+        return EventRule(
+            topic,
+            action_name,
+            statuses,
+            (),
+            lookback_days=_positive_int(raw["lookback_days"], f"{where}.lookback_days"),
+            max_lines=_positive_int(raw["max_lines"], f"{where}.max_lines"),
+        )
+    if kind == "notice":
+        raw = _mapping(raw, where, _NOTICE_EVENT_KEYS)
+        return EventRule(
+            topic,
+            action_name,
+            frozenset(),
+            (),
+            cart_max_age_days=_positive_int(raw["cart_max_age_days"], f"{where}.cart_max_age_days"),
+            max_recipients=_positive_int(raw["max_recipients"], f"{where}.max_recipients"),
+            per_customer_per_day=_positive_int(raw["per_customer_per_day"], f"{where}.per_customer_per_day"),
+        )
     raw = _mapping(raw, where, _EVENT_KEYS)
-    if raw["action"] not in actions:
-        raise AutonomyPolicyError(f"{where}: unknown action {raw['action']!r}")
-    statuses = raw["eligible_order_statuses"]
-    if not isinstance(statuses, list) or not statuses or not all(isinstance(s, str) and s for s in statuses):
-        raise AutonomyPolicyError(f"{where}.eligible_order_statuses: expected a non-empty list of statuses")
+    statuses = _statuses(raw["eligible_order_statuses"], where)
     tiers_raw = raw["credit_tiers"]
     if not isinstance(tiers_raw, list) or not tiers_raw:
         raise AutonomyPolicyError(f"{where}.credit_tiers: expected a non-empty list")
@@ -284,7 +348,13 @@ def _event(topic: str, raw: Any, actions: dict[str, Action]) -> EventRule:
     ordered = sorted(tiers, key=lambda t: t.min_delay_days)
     if any(b.amount < a.amount for a, b in zip(ordered, ordered[1:], strict=False)):
         raise AutonomyPolicyError(f"{where}.credit_tiers: a longer delay may not earn a smaller credit")
-    return EventRule(topic, raw["action"], frozenset(statuses), tuple(ordered))
+    return EventRule(topic, action_name, statuses, tuple(ordered))
+
+
+def _statuses(value: Any, where: str) -> frozenset[str]:
+    if not isinstance(value, list) or not value or not all(isinstance(s, str) and s for s in value):
+        raise AutonomyPolicyError(f"{where}.eligible_order_statuses: expected a non-empty list of statuses")
+    return frozenset(value)
 
 
 def parse_policy(document: Any) -> AutonomyPolicy:
