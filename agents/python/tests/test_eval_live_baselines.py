@@ -104,3 +104,18 @@ def test_a_replay_run_resolves_its_baseline_by_setup_key_never_to_a_live_file(st
     assert resolved.parent.name == REPLAY_KEY
     assert load_baseline(resolved) is not None
     assert "live" not in (load_baseline(resolved) or {})
+
+
+def test_all_six_live_suites_have_a_baseline_for_the_reference_setup() -> None:
+    stems = {path.stem for path in (REFERENCE_ROOT / "python-inproc-gpt-4.1").glob("*.json")}
+    assert stems == {
+        "product_discovery",
+        "order_management",
+        "pricing_promotions",
+        "review_sentiment",
+        "inventory_fulfillment",
+        "orchestrator_routing",
+    }
+    for stem in stems:
+        data = json.loads((REFERENCE_ROOT / "python-inproc-gpt-4.1" / f"{stem}.json").read_text())
+        assert data["total_cases"] == data["dataset_cases"], stem  # every case ran: none refused or skipped
