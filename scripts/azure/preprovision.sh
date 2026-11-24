@@ -103,8 +103,24 @@ chat_version="$(env_get AZURE_CHAT_MODEL_VERSION)"
 
 if [ "$AZURE_DRY_RUN" != "1" ] && ! have jq; then die "jq is required for the region checks"; fi
 check_postgres_sku "$location" "$(jq -r '.postgres.skuName' "$profile_file")"
-check_model "$openai_location" "${chat_model:-gpt-5.1}" "${chat_version:-2025-11-13}" "$(jq -r '.openAi.chatCapacity' "$profile_file")" \
-    "$(jq -r '.openAi.embeddingCapacity' "$profile_file")"
+deploy_openai="$(env_get DEPLOY_OPENAI)"
+deploy_openai="${deploy_openai:-true}"
+if [ "$deploy_openai" = false ]; then
+    # No Azure OpenAI account: the apps use an operator-supplied OpenAI-compatible endpoint, or replay (no model at all).
+    llm_provider="$(env_get EXTERNAL_LLM_PROVIDER)"
+    llm_provider="${llm_provider:-replay}"
+    case "$llm_provider" in
+        replay) log "DEPLOY_OPENAI=false, EXTERNAL_LLM_PROVIDER=replay: no model account and no model calls" ;;
+        openai)
+            [ -n "$(env_get EXTERNAL_LLM_BASE_URL)" ] || die "EXTERNAL_LLM_PROVIDER=openai needs EXTERNAL_LLM_BASE_URL (azd env set EXTERNAL_LLM_BASE_URL https://<host>/v1)"
+            [ -n "$(env_get EXTERNAL_LLM_API_KEY)" ] || die "EXTERNAL_LLM_PROVIDER=openai needs EXTERNAL_LLM_API_KEY (export LLM_API_KEY=... before scripts/azure-up.sh --llm openai, or azd env set EXTERNAL_LLM_API_KEY ...)"
+            ;;
+        *) die "EXTERNAL_LLM_PROVIDER must be replay or openai (got '$llm_provider')" ;;
+    esac
+else
+    check_model "$openai_location" "${chat_model:-gpt-5.1}" "${chat_version:-2025-11-13}" "$(jq -r '.openAi.chatCapacity' "$profile_file")" \
+        "$(jq -r '.openAi.embeddingCapacity' "$profile_file")"
+fi
 env_name="$(env_get AZURE_ENV_NAME)"
 if [ -n "$env_name" ]; then
     deleted=0

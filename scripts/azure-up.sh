@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # One command to an Azure deployment: prerequisites, an azd environment, `azd provision` (the hooks do the rest).
 #
-#   scripts/azure-up.sh --env demo1 --location eastus2 [--image-tag v1.4.0] [--profile demo|reference]
+#   scripts/azure-up.sh --env demo1 --location eastus2 [--image-tag v1.4.0] [--profile demo|reference|free-trial]
+#                       [--llm replay|openai [--llm-base-url https://host/v1] [--llm-model gpt-4.1-mini]]
 #                       [--openai-location eastus2] [--public-open] [--allowed-ips 198.51.100.0/24,...]
 #                       [--auth-server] [--mcp] [--stack python|dotnet] [--image-source ghcr|acr] [--build-from-source] [--dry-run]
 #
@@ -9,6 +10,14 @@
 # (the latest vX.Y.Z git tag when --image-tag is not given). It costs real money while it is up
 # (demo: roughly 4 to 12 USD a day): scripts/azure-down.sh removes everything. Not verified against a real
 # subscription yet; see docs/azure-deployment.md.
+#
+# --profile free-trial is the 5 USD budget profile (docs/azure-deployment-sequence.md): scale to zero, one replica at most, no
+# registry, a 0.1 GB/day log cap. --llm replay|openai skips the Azure OpenAI account (a trial often has no quota for it):
+# replay calls no model; openai uses an OpenAI-compatible endpoint whose key is read from the LLM_API_KEY environment
+# variable (never an argument) and stored in Key Vault as llm-api-key.
+#
+# --preview runs the prerequisite checks, creates the local azd environment and its secrets, then `azd provision --preview`
+# (a what-if: it creates nothing in Azure) and stops.
 #
 # --image-source acr creates a Container Registry and pulls from it: the published GHCR images are imported (the reference
 # profile's default), or with --build-from-source built from this working tree in ACR Tasks (az acr build, no local Docker).
@@ -21,6 +30,7 @@ source scripts/azure/lib/common.sh
 
 ENV_NAME="" LOCATION="" OPENAI_LOCATION="" PROFILE="demo" IMAGE_TAG_ARG="" PUBLIC_ACCESS_ARG="restricted"
 ALLOWED_IPS_ARG="" AUTH_SERVER=false MCP=false STACK=python IMAGE_SOURCE_ARG=auto BUILD_FROM_SOURCE=false
+LLM="" LLM_BASE_URL="" LLM_MODEL="" PREVIEW=false
 while [ $# -gt 0 ]; do
     case "$1" in
         --env) ENV_NAME="$2"; shift 2 ;;
@@ -35,8 +45,12 @@ while [ $# -gt 0 ]; do
         --stack) STACK="$2"; shift 2 ;;
         --image-source) IMAGE_SOURCE_ARG="$2"; shift 2 ;;
         --build-from-source) BUILD_FROM_SOURCE=true; shift ;;
+        --preview) PREVIEW=true; shift ;;
+        --llm) LLM="$2"; shift 2 ;;
+        --llm-base-url) LLM_BASE_URL="$2"; shift 2 ;;
+        --llm-model) LLM_MODEL="$2"; shift 2 ;;
         --dry-run) AZURE_DRY_RUN=1; shift ;;
-        -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,29p' "$0"; exit 0 ;;
         *) die "unknown argument: $1" ;;
     esac
 done
@@ -45,6 +59,18 @@ export AZURE_DRY_RUN
 [ -n "$LOCATION" ] || die "--location is required (for example eastus2)"
 [[ "$ENV_NAME" =~ ^[a-z0-9][a-z0-9-]{0,30}$ ]] || die "--env must be lowercase letters, digits and dashes (max 31)"
 
+case "$PROFILE" in demo|reference|free-trial) ;; *) die "--profile must be demo, reference or free-trial" ;; esac
+case "$LLM" in
+    "") ;;
+    replay) ;;
+    openai)
+        [ -n "$LLM_BASE_URL" ] || die "--llm openai needs --llm-base-url (an OpenAI-compatible base URL, for example https://api.openai.com/v1)"
+        [ -n "${LLM_API_KEY:-}" ] || die "--llm openai needs the key in the LLM_API_KEY environment variable (it is never taken as an argument)"
+        ;;
+    *) die "--llm must be replay or openai" ;;
+esac
+[ -z "$LLM" ] || [ "$STACK" = python ] || die "--llm is Python stack only"
+[ "$PROFILE" != reference ] || [ -z "$LLM" ] || die "--llm needs no Azure OpenAI account, which the reference profile's private endpoints expect; use demo or free-trial"
 case "$STACK" in python|dotnet) ;; *) die "--stack must be python or dotnet" ;; esac
 case "$IMAGE_SOURCE_ARG" in auto|ghcr|acr) ;; *) die "--image-source must be ghcr or acr" ;; esac
 # Building from source needs a registry to put the result in.
@@ -76,11 +102,19 @@ case "$image_tag" in latest|main) die "--image-tag $image_tag floats; use vX.Y.Z
 prereq_args=(--location "$LOCATION" --profile "$PROFILE" --env "$ENV_NAME")
 [ -z "$OPENAI_LOCATION" ] || prereq_args+=(--openai-location "$OPENAI_LOCATION")
 [ "$AZURE_DRY_RUN" != "1" ] || prereq_args+=(--dry-run)
+[ -z "$LLM" ] || prereq_args+=(--no-openai)
 scripts/azure/prereqs.sh "${prereq_args[@]}"
 
 settings=("AZURE_LOCATION=$LOCATION" "DEPLOY_PROFILE=$PROFILE" "IMAGE_TAG=$image_tag" "PUBLIC_ACCESS=$PUBLIC_ACCESS_ARG"
     "ALLOWED_IPS=$ALLOWED_IPS_ARG" "DEPLOY_AUTH_SERVER=$AUTH_SERVER" "DEPLOY_MCP=$MCP" "AZURE_OPENAI_LOCATION=${OPENAI_LOCATION:-$LOCATION}"
     "DEPLOY_STACK=$STACK" "IMAGE_SOURCE=$IMAGE_SOURCE_ARG" "BUILD_FROM_SOURCE=$BUILD_FROM_SOURCE")
+if [ -n "$LLM" ]; then
+    settings+=("DEPLOY_OPENAI=false" "EXTERNAL_LLM_PROVIDER=$LLM")
+    if [ "$LLM" = openai ]; then
+        settings+=("EXTERNAL_LLM_BASE_URL=$LLM_BASE_URL" "EXTERNAL_LLM_MODEL=${LLM_MODEL:-gpt-4.1-mini}")
+        [ "$AZURE_DRY_RUN" = "1" ] || settings+=("EXTERNAL_LLM_API_KEY=$LLM_API_KEY")
+    fi
+fi
 # A model other than the default (see check_model's message when gpt-5.1 has no quota): the shell value is persisted so
 # preprovision and the template parameters see the same one the preflight just checked.
 [ -z "${AZURE_CHAT_MODEL:-}" ] || settings+=("AZURE_CHAT_MODEL=$AZURE_CHAT_MODEL")
@@ -97,6 +131,11 @@ settings+=("AZURE_SUBSCRIPTION_ID=$subscription_id")
 if [ "$AZURE_DRY_RUN" = "1" ]; then
     run azd env new "$ENV_NAME" --location "$LOCATION" --subscription "$subscription_id" --no-prompt
     for kv in "${settings[@]}"; do run azd env set "${kv%%=*}" "${kv#*=}"; done
+    if [ "$PREVIEW" = true ]; then
+        run bash scripts/azure/preprovision.sh
+        run azd provision --preview --environment "$ENV_NAME" --no-prompt
+        exit 0
+    fi
     if [ "$image_source" = acr ]; then
         # preprovision sets DEPLOY_APPS=false until the registry holds this tag; postprovision then fills it.
         run azd provision --environment "$ENV_NAME" --no-prompt
@@ -117,6 +156,13 @@ fi
 azd env select "$ENV_NAME"
 azd env set AZURE_LOCATION "$LOCATION"
 for kv in "${settings[@]}"; do azd env set "${kv%%=*}" "${kv#*=}"; done
+
+if [ "$PREVIEW" = true ]; then
+    bash scripts/azure/preprovision.sh
+    azd provision --preview --no-prompt
+    log "preview only: nothing was created in Azure. Run again without --preview to deploy."
+    exit 0
+fi
 
 # Key Vault role assignments take a minute to propagate; the first provision can fail on a secret
 # reference the identity cannot read yet. One retry covers it. Anything else fails twice and stops.
