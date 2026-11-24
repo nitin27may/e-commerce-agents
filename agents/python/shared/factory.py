@@ -45,6 +45,7 @@ from shared.embedding_config import (
     verify_vector_length,
 )
 from shared.gateway_headers import attach_to_maf_client, install_gateway_headers
+from shared.opt_in import OPT_IN_SPECIALISTS
 from shared.prompt_loader import ModelOverride, load_model_override
 
 logger = logging.getLogger(__name__)
@@ -457,10 +458,6 @@ def parse_agent_registry(raw: str | None) -> dict[str, str]:
             raise ValueError(f"AGENT_REGISTRY entry {name!r} must be an absolute http(s) URL, got {url!r}.")
         parsed[name] = url
     return parsed
-
-
-#: Specialists the orchestrator may route to only when their flag is on, whatever the registry lists.
-OPT_IN_SPECIALISTS: dict[str, str] = {"merchant-ops": "MERCHANT_OPS_AGENT_ENABLED"}
 
 
 def active_agent_registry(raw: str | None) -> dict[str, str]:
