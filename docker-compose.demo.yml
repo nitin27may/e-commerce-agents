@@ -269,6 +269,8 @@ services:
       RATE_LIMIT_AUTH_MAX_REQUESTS: ${RATE_LIMIT_AUTH_MAX_REQUESTS:-10}
       RATE_LIMIT_AUTH_IP_MAX_REQUESTS: ${RATE_LIMIT_AUTH_IP_MAX_REQUESTS:-300}
       RATE_LIMIT_TRUSTED_PROXY_HOPS: ${RATE_LIMIT_TRUSTED_PROXY_HOPS:-1}
+      # Only a peer in these ranges (the compose network, the published-port gateway) may set X-Forwarded-For.
+      RATE_LIMIT_TRUSTED_PROXIES: ${RATE_LIMIT_TRUSTED_PROXIES:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.0/8}
       MAF_SESSION_BACKEND: ${MAF_SESSION_BACKEND:-postgres}
       # B-15: keep only the last N message groups of rehydrated history. 0 = off.
       HISTORY_COMPACTION_KEEP_LAST_GROUPS: ${HISTORY_COMPACTION_KEEP_LAST_GROUPS:-0}

@@ -118,33 +118,74 @@ async def check_rate_limit(
         raise RateLimitExceededError(retry_after_s=window_s)
 
 
-def _client_ip(request: Request) -> str:
+def parse_trusted_proxies(raw: str) -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...] | None:
+    """Parse ``RATE_LIMIT_TRUSTED_PROXIES``. ``None`` = no gate configured; an empty tuple = trust nobody.
+
+    A malformed entry is dropped (and logged), which can only narrow trust. If every entry is
+    malformed the result is the empty tuple, not ``None``: a typo must never switch the gate off.
+    """
+    entries = [part.strip() for part in raw.split(",") if part.strip()]
+    if not entries:
+        return None
+    networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+    for entry in entries:
+        try:
+            networks.append(ipaddress.ip_network(entry, strict=False))
+        except ValueError:
+            logger.warning("rate_limit.trusted_proxies_entry_ignored entry_length=%d", len(entry))
+    return tuple(networks)
+
+
+def resolve_client_ip(
+    forwarded_for: str | None,
+    peer: str | None,
+    hops: int,
+    trusted_proxies: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...] | None = None,
+) -> str:
     """The caller's address, trusting only what a proxy *we run* appended.
 
-    ``X-Forwarded-For`` is ``client, proxy1, proxy2`` — each hop appends the
+    ``X-Forwarded-For`` is ``client, proxy1, proxy2`` - each hop appends the
     address of whoever connected to it, so every entry except the ones our own
-    proxies wrote is caller-controlled. The old rule (first entry) was exactly
-    the spoofable one: anyone could rotate a fake ``X-Forwarded-For`` and never
-    hit a limit. With ``RATE_LIMIT_TRUSTED_PROXY_HOPS = n`` we take the entry
-    ``n`` places from the right — the address the outermost trusted proxy saw.
+    proxies wrote is caller-controlled. The right-most entry is therefore the
+    only one a trusted proxy vouches for; with ``hops = n`` we take the entry
+    ``n`` places from the right (the address the outermost trusted proxy saw),
+    never the left-most one, which is whatever the caller typed.
 
-    Falls back to the TCP peer when the setting is 0, when the header is
-    missing or shorter than ``n``, or when the chosen entry is not an IP
-    literal (so a garbage value can never become a Redis key).
+    Falls back to the TCP peer when ``hops`` is 0 (header ignored), when a
+    ``trusted_proxies`` gate is configured and the peer is not in it (a caller
+    reaching us directly), when the header is missing or shorter than ``hops``,
+    or when the chosen entry is not an IP literal (so a garbage value can never
+    become a Redis key). The .NET twin is ``ClientAddress.Resolve``.
     """
-    peer = request.client.host if request.client else "unknown"
-    hops = settings.RATE_LIMIT_TRUSTED_PROXY_HOPS
-    forwarded = request.headers.get("x-forwarded-for")
-    if hops <= 0 or not forwarded:
-        return peer
-    chain = [part.strip() for part in forwarded.split(",") if part.strip()]
+    peer_text = peer or "unknown"
+    if hops <= 0 or not forwarded_for:
+        return peer_text
+    if trusted_proxies is not None:
+        try:
+            peer_ip = ipaddress.ip_address(peer_text)
+        except ValueError:
+            return peer_text
+        if isinstance(peer_ip, ipaddress.IPv6Address) and peer_ip.ipv4_mapped is not None:
+            peer_ip = peer_ip.ipv4_mapped
+        if not any(peer_ip.version == net.version and peer_ip in net for net in trusted_proxies):
+            return peer_text
+    chain = [part.strip() for part in forwarded_for.split(",") if part.strip()]
     if len(chain) < hops:
-        return peer
-    candidate = chain[-hops]
+        return peer_text
     try:
-        return str(ipaddress.ip_address(candidate))
+        return str(ipaddress.ip_address(chain[-hops]))
     except ValueError:
-        return peer
+        return peer_text
+
+
+def _client_ip(request: Request) -> str:
+    """The caller's address for every limit that keys by address (chat, auth, label-miss)."""
+    return resolve_client_ip(
+        request.headers.get("x-forwarded-for"),
+        request.client.host if request.client else None,
+        settings.RATE_LIMIT_TRUSTED_PROXY_HOPS,
+        parse_trusted_proxies(settings.RATE_LIMIT_TRUSTED_PROXIES),
+    )
 
 
 def key_hash_for_log(key: str) -> str:
