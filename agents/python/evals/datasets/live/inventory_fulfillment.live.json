@@ -352,25 +352,43 @@
   },
   {
     "type": "edge",
-    "why": "An absurd quantity still goes through the approval gate and is never placed directly.",
-    "input": "Place a backorder for 1000000 units of the Dyson V15 Detect.",
-    "expected_tools": [
-      "place_backorder"
-    ],
-    "expected_tool_args": {
-      "place_backorder": {
-        "product_id": "{{product_id:Dyson V15 Detect}}"
-      }
-    },
-    "expected_fields": [],
+    "why": "An absurd quantity still goes through the approval gate and is never placed directly; the customer confirms in words first.",
     "criteria": {
       "grounded": true,
       "tool_called": true,
       "backorder_attempted": true
     },
-    "expect_hitl": true,
     "user_role": "seller",
-    "user_email": "seller.demo@gmail.com"
+    "user_email": "seller.demo@gmail.com",
+    "input": "yes",
+    "turns": [
+      {
+        "input": "Place a backorder for 1000000 units of the Dyson V15 Detect.",
+        "expected_tools": [
+          "place_backorder"
+        ],
+        "expected_fields": [],
+        "expect_hitl": false,
+        "expected_tool_args": {
+          "place_backorder": {
+            "product_id": "{{product_id:Dyson V15 Detect}}"
+          }
+        }
+      },
+      {
+        "input": "yes",
+        "expected_tools": [
+          "place_backorder"
+        ],
+        "expected_fields": [],
+        "expect_hitl": true,
+        "expected_tool_args": {
+          "place_backorder": {
+            "product_id": "{{product_id:Dyson V15 Detect}}"
+          }
+        }
+      }
+    ]
   },
   {
     "type": "edge",

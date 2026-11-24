@@ -99,7 +99,8 @@ def test_an_input_echo_equal_to_the_last_turn_is_accepted(tmp_path: Path) -> Non
 
 def test_live_multi_turn_cases_in_the_shipped_dataset() -> None:
     cases = [c for c in load_dataset(EVALS / "datasets" / "live" / "order_management.live.json") if c.turns]
-    assert len(cases) == 2
+    # Two follow-up cases, plus the five gated-action cases that ask the customer first and park on an explicit yes.
+    assert len(cases) == 7
     for case in cases:
         assert case.user_email and len(case.turns or []) == 2
 

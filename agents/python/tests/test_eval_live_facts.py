@@ -78,6 +78,7 @@ def test_no_replay_dataset_has_a_placeholder_or_live_marker(path: Path) -> None:
 
 def test_live_datasets_exist_and_are_all_live() -> None:
     assert {p.name for p in LIVE_DATASETS} == {
+        "approvals.live.json",
         "inventory_fulfillment.live.json",
         "order_management.live.json",
         "orchestrator_routing.live.json",
@@ -112,7 +113,9 @@ def test_pricing_coupon_case_states_a_cart_total_and_the_cancel_case_expects_a_p
     assert "WELCOME10" in coupon.input and re.search(r"\$\d+", coupon.input)
     assert coupon.expected_tool_args == {"validate_coupon": {"code": "WELCOME10", "cart_total": 120}}
     cases = load_dataset(live / "order_management.live.json")
-    assert next(c for c in cases if "cancel_order" in c.expected_tools).expect_hitl is True
+    # A cancel asks the customer first (turn 1, nothing parked) and parks once they say yes (turn 2).
+    cancel = next(c for c in cases if c.turns and "cancel_order" in c.turns[-1].expected_tools)
+    assert [t.expect_hitl for t in cancel.turns or []] == [False, True]
 
 
 # ─────────────────────── the resolver (fake source) ───────────────────────

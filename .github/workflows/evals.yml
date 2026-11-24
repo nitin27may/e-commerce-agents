@@ -70,6 +70,7 @@ on:
           - review-sentiment
           - inventory-fulfillment
           - orchestrator
+          - approvals
         default: all
       pass_threshold:
         description: "Minimum overall score per suite"

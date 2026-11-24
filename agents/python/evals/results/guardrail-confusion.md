@@ -16,8 +16,8 @@ It is the first measured number for a **regex** detector against a **small synth
 | seeded review titles | 19 |
 | product descriptions | 50 |
 | product spec strings | 119 |
-| eval dataset prompts | 35 |
-| all (de-duplicated) | 505 |
+| eval dataset prompts | 40 |
+| all (de-duplicated) | 510 |
 | hand-written near misses (scored separately) | 10 |
 
 Positives: 36 adversarial reviews and product spec texts from `evals/seed_adversarial.py`, each with a unique canary token. About half use wording the patterns are written for; the rest are paraphrase, another language, zero-width or look-alike characters, encoded payloads and manipulation with no instruction wording.
@@ -26,15 +26,15 @@ Positives: 36 adversarial reviews and product spec texts from `evals/seed_advers
 
 | Layer | TP | FP | FN | TN | Precision | Recall | False-positive rate |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| inbound detector (`contains_injection_markers`) | 19 | 0 | 17 | 505 | 100.0% | 52.8% | 0.0% |
-| output sanitizer (`neutralize_text` changes the text) | 21 | 0 | 15 | 505 | 100.0% | 58.3% | 0.0% |
+| inbound detector (`contains_injection_markers`) | 19 | 0 | 17 | 510 | 100.0% | 52.8% | 0.0% |
+| output sanitizer (`neutralize_text` changes the text) | 21 | 0 | 15 | 510 | 100.0% | 58.3% | 0.0% |
 
 ## Stress — the same plus the near misses as negatives
 
 | Layer | TP | FP | FN | TN | Precision | Recall | False-positive rate |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| inbound detector (`contains_injection_markers`) | 19 | 6 | 17 | 509 | 76.0% | 52.8% | 1.2% |
-| output sanitizer (`neutralize_text` changes the text) | 21 | 6 | 15 | 509 | 77.8% | 58.3% | 1.2% |
+| inbound detector (`contains_injection_markers`) | 19 | 6 | 17 | 514 | 76.0% | 52.8% | 1.2% |
+| output sanitizer (`neutralize_text` changes the text) | 21 | 6 | 15 | 514 | 77.8% | 58.3% | 1.2% |
 
 ## Recall by technique
 
@@ -98,4 +98,4 @@ Positives: 36 adversarial reviews and product spec texts from `evals/seed_advers
 
 `evals/datasets/red_team.json` has 8 direct (user-message) attacks; the detector flags 3 and the sanitizer 3. Informational only — those are not part of the precision/recall above, and the red-team suite scores the model's own behaviour, not this layer.
 
-Stress-set detector false-positive rate: 1.2% (6 of 515).
+Stress-set detector false-positive rate: 1.2% (6 of 520).

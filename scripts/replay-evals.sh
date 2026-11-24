@@ -130,6 +130,13 @@ run_suites() {
     rescore_check "eval-records-$a.jsonl" || fail=1
     echo "::endgroup::"
   done
+  echo "::group::approvals eval — order-management (customer confirmation, #302)"
+  uv run python -m evals.run_evals --agent order-management \
+    --dataset evals/datasets/approvals.json \
+    --pass-threshold "$SMOKE_THRESH" --baseline "$BASELINE_DIR/approvals.json" \
+    --records-out eval-records-approvals.jsonl --output-json eval-approvals.json || fail=1
+  rescore_check eval-records-approvals.jsonl || fail=1
+  echo "::endgroup::"
   echo "::group::routing eval — orchestrator"
   uv run python -m evals.run_evals --agent orchestrator \
     --dataset evals/datasets/orchestrator_routing.json \
