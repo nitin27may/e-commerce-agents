@@ -3,129 +3,120 @@
 This page lists what is planned next for E-Commerce Agents, what each release shipped, and what is
 deliberately not planned. It is for anyone deciding whether the project covers what they need today.
 
-The current release is **1.4.0** (2026-11-21). Both backends, Python and .NET, run end to end: an
-orchestrator and five specialist agents, auth, telemetry, and one Next.js frontend that either
-backend serves. The storefront is public: anyone can browse, search and use the AI shopping
+The current release is **1.4.0** (2026-11-21); **1.5.0 is staged** on `main` and not yet cut. Both backends, Python and .NET, run
+end to end: an orchestrator and five specialist agents (plus an opt-in, Python-only merchant-ops specialist), auth, telemetry, and one
+Next.js frontend that either backend serves. The storefront is public: anyone can browse, search and use the AI shopping
 assistant (`/shop`) without an account, while cart checkout, orders, tracking and returns require
-sign-in. Differences between the two backends are in the [parity matrix](parity-matrix.md), and the
-per-release record, including the known limits of 1.4.0, is in the
-[changelog](https://github.com/nitin27may/e-commerce-agents/blob/main/CHANGELOG.md).
+sign-in. A key-free preview of the web app, replaying recorded answers, is published under `/preview` of the docs site. Differences
+between the two backends are in the [parity matrix](parity-matrix.md), and the per-release record, including the known limits, is in
+the [changelog](https://github.com/nitin27may/e-commerce-agents/blob/main/CHANGELOG.md).
 
 ## What's next
 
 The order follows one constraint: **this repository's value is as a worked reference for building
 multi-agent systems**, not as an e-commerce product. When the choice is between more features and
 the same features explained by running them, it goes to the second. Nothing here is a commitment
-to a date.
+to a date. Everything that needs no Azure subscription is built; what is left either needs the Azure
+run, a model key this repository does not have, or an external system.
 
-| # | Item | Size | Why it is here |
-|---|---|---|---|
-| 1 | [First real Azure deployment](#first-real-azure-deployment) | ~4 d | The Container Apps path is written and checked offline. It has never run against a real subscription |
-| 2 | [Model-calling parity run](#model-calling-parity-run) | ~1 d | The keyless parity gate runs in CI; a comparison that calls a model does not |
-| 3 | [Foundry as model provider](#foundry-as-model-provider) | ~2 d | Small, and the `LLM_PROVIDER` switch it needs exists |
-| 4 | [Foundry Hosted Agents](#foundry-hosted-agents) | 3–5 d | The most unknowns of any item. It hosts both frameworks, which is the point |
-| 5 | [Publish the Azure reference](#publish-the-azure-reference) | ~2 d | Four topologies with verified costs. The difference between them is the content |
+| # | Item | Why it is here |
+|---|---|---|
+| 1 | [First real Azure deployment](#first-real-azure-deployment) | The Container Apps path is written and checked offline. It has never run against a real subscription. It is the last step, and several other items wait on it |
+| 2 | [The .NET 11 move](#the-net-11-move) | The .NET stack targets .NET 10. A separate change that needs no key and no Azure |
+| 3 | [Model-calling parity run](#model-calling-parity-run) | The keyless parity gate runs in CI; a comparison that calls a model does not. Also the .NET live baselines |
+| 4 | [Foundry features that need an Azure credential](#foundry-features-that-need-an-azure-credential) | Foundry evaluators logging to a project, the safety evaluator, hosted agents. They wait on item 1 |
+| 5 | [Publish the Azure reference](#publish-the-azure-reference) | Topologies with measured costs. The difference between them is the content |
 
 Azure heads this list because a deployment story is what a worked reference needs most, and because
-live runs catch what tests cannot. The first real deployment is scheduled last, after the evaluation and
-documentation work now under way is merged. Foundry hosted agents are a framework-agnostic runtime, so items
-3 to 5 deploy the same six agents several ways and record what each one costs.
+live runs catch what tests cannot. It runs last, after the evaluation and documentation work that is now merged, so the
+deployment is measured against a finished project.
 
-The November 2026 audit produced issues #80–#104, tracked in
-[issue #103](https://github.com/nitin27may/e-commerce-agents/issues/103).
+The November 2026 audit produced issues #80 to #104, tracked in
+[issue #103](https://github.com/nitin27may/e-commerce-agents/issues/103), which closes last.
 
 ### First real Azure deployment
 
 `infra/` (Bicep), `azure.yaml`, `scripts/azure-up.sh` and `scripts/azure-down.sh` deploy the Python
-stack to Azure Container Apps with PostgreSQL Flexible Server, Azure OpenAI and Key Vault. The
+stack to Azure Container Apps with PostgreSQL Flexible Server, Azure OpenAI and Key Vault, with
+optional Foundry, gateway, per-app identity and reference-profile modules. The
 Bicep builds and lints, and the scripts pass offline tests. **Nothing has run against a real
 subscription.** [azure-deployment.md](azure-deployment.md) describes the topology and lists every
 assumption a real run has to confirm.
 
 Cost and teardown are part of the deliverable: a reader who cannot cheaply undo a deployment will
-not try it. Acceptance is something that either happened or did not:
+not try it. The run uses a free trial with a 10 USD cap and a key-free model path. It is done when four things hold:
 
-- From a clean subscription, a signed-in user completes a chat turn with product cards and one
-  approval gate at the URL the script printed.
-- Playwright passes against that URL.
-- Teardown leaves zero resources and no soft-deleted vault.
+- The stack comes up and a sanity script passes, with the model reached through a bearer token.
+- No model key exists anywhere in the deployment.
+- Teardown leaves nothing behind, checked by a script.
+- Spend stays under the cap, and the measured figure is recorded.
+
+The Postgres admin password stays, because Entra authentication for the database needs code on both stacks.
+Deployed evals, the `azure.yml` workflow end to end and the deployment chapter of the course follow once the run passes.
+
+### The .NET 11 move
+
+The .NET stack builds on `net10.0` and the Aspire 17 AppHost requires .NET 10. Moving to .NET 11 touches the target framework, the
+Dockerfile base images, the SDK in CI and the AppHost packages, and is done when every .NET test and both mixed-stack boots pass.
+It is its own change, separate from the Azure run, and has not started.
 
 ### Model-calling parity run
 
 The keyless half is done: `stack-parity.yml` boots both stacks under replay on every pull request and
-fails when they diverge on orchestration modes that call no model. What remains:
+fails when they diverge on orchestration modes that call no model. What remains needs a key:
 
 - [ ] Compare the two stacks on turns that call a model, and get `scripts/e2e-both-stacks.sh` (the live
-      browser suite) into a manual-dispatch job. It needs a key and both stacks up against a seeded
+      browser suite) into a manual-dispatch job. It needs both stacks up against a seeded
       database. [ADR 0005](adr/0005-dual-stack-parity.md) records the standing weakness.
+- [ ] Record the .NET eval fixtures and generate its live baselines (about 1.50 USD of tokens), then gate pull
+      requests on baseline regression rather than an absolute floor. Baselines are re-recorded, never copied from Python.
 
-### Foundry as model provider
+### Foundry features that need an Azure credential
 
-- [ ] `LLM_PROVIDER=foundry` on both stacks, the embeddings endpoint resolved, and one hosted
-      web-search tool on `review-sentiment` as the demonstration. Acceptance is the eval smoke suite
-      passing under the Foundry provider and the hosted tool visible in an Application Insights trace.
+There is no `LLM_PROVIDER=foundry`: the `azure` provider pointed at a Foundry (AIServices) account is Foundry for OpenAI models
+([model-providers.md](model-providers.md#foundry)). What waits for a real subscription:
 
-### Foundry Hosted Agents
-
-- [ ] All six agents move to Microsoft Foundry hosted agents: the orchestrator packaged for
-      Invocations, specialists reached via hosted MCP, and a Responses variant built alongside with
-      the graph loss documented.
-
-The frontend, the MCP servers and the auth-server stay on Container Apps. The MCP servers are
-OAuth 2.1 resource servers, defended by tokens rather than network isolation, so a Foundry-hosted
-agent can reach them without a private-link design. The auth-server stays self-hosted because "no
-external IdP" is a feature.
-
-Three questions are open, and the last is the largest unknown on this page:
-
-- Can the Foundry runtime reach Container Apps at all? Every specialist and both MCP servers are
-  called from inside it.
-- Does the protocol carry the identity headers that every tool reads out of ContextVars?
-- Can a workflow that pauses for approval resume in a later request when each session owns its own
-  sandbox?
-
-Acceptance includes one A2A call to a Container Apps specialist either proven to work or
-**recorded as not working, with the reason**.
+- [ ] The Foundry evaluators adapter logging a run to a project (`--log-to-project`) and the Foundry safety evaluator.
+- [ ] **Hosted agents**, staged by [ADR 0006](adr/0006-foundry-hosted-agents.md) (Proposed): a reachability spike first, then one
+      agent, then the rest. The frontend, the MCP servers and the auth-server stay on Container Apps. Three questions are open,
+      and the first is the largest unknown: can the Foundry runtime reach Container Apps at all; does the protocol carry the
+      identity headers every tool reads from ContextVars; and can a workflow that pauses for approval resume in a later request
+      when each session owns its own sandbox. The spike either proves one A2A call to a Container Apps specialist works or records
+      that it does not, with the reason.
 
 ### Publish the Azure reference
 
 [azure-deployment.md](azure-deployment.md) with **verified cost numbers rather than estimates**,
-covering four topologies. The goal is a reference for taking a multi-agent system to Azure, with
+covering the topologies below. The goal is a reference for taking a multi-agent system to Azure, with
 this app as the worked example and the trade-offs written down.
 
 | Topology | Who owns the runtime | Who owns the model |
 |---|---|---|
 | Docker Compose | you | you |
 | Azure Container Apps | you | you |
-| Foundry as model provider | you | Foundry (model and hosted tools) |
-| Foundry Hosted Agents | Foundry | Foundry |
+| Container Apps with a Foundry project and gateway | you | Foundry (model, evaluation, tracing) |
+| Foundry hosted agents | Foundry | Foundry |
 
-### Open decision
+### Recorded decision: .NET stays at parity
 
-Items 1 and 2 are correct under either answer, so they do not wait on it.
+A parity-locked .NET stack means two stacks in every gate. The decision on record is that it stays at parity, with the exceptions the
+[parity matrix](parity-matrix.md) names row by row (merchant proposals, event autonomy, the return lifecycle, the merchant-ops
+specialist and the turn-level cost ceiling are Python only by decision).
 
-- [ ] **Does .NET stay at full parity?** A parity-locked .NET stack means two stacks in every gate,
-      permanently. Freezing .NET at a fixed feature set is a defensible answer. Either way it needs
-      to become a recorded decision, including in the [parity matrix](parity-matrix.md), which
-      reads as an open commitment.
+### Waiting on something outside the repository
+
+- **A real carrier feed** for event autonomy and the return lifecycle ([#299](https://github.com/nitin27may/e-commerce-agents/issues/299)).
+  Today the admin simulator is the only producer. Fulfilment that honours `orders.on_hold` waits on it.
+- **Dependency review** needs the dependency graph and Dependabot alerts enabled in the repository settings
+  ([#303](https://github.com/nitin27may/e-commerce-agents/issues/303)).
+- **Anthropic and Gemini rows on the model scorecard** need a key for each
+  ([#300](https://github.com/nitin27may/e-commerce-agents/issues/300)). Anthropic stays stub-tested by decision.
+- **Judge-calibration labels** are drafted and need the maintainer's review before the judge choice is final.
 
 ### Unsequenced backlog
 
 Real work with no position claimed against the items above.
 
-- [ ] **The .NET eval suite.** Six of seven datasets are ported, with one committed baseline and a
-      manual-dispatch workflow (parity matrix, row 14). What remains needs a real key: record the
-      fixtures, generate the other baselines, and gate pull requests on *baseline regression*
-      rather than an absolute floor. Baselines are re-recorded, never copied from Python, because
-      the mode set differs. `red_team` needs its own evaluator, listed below.
-- [ ] **The demo clip.** The recording spec throws when the approval or resume beat is missing
-      instead of exiting 0. Still open: the return turn does not reach the approval gate, and the
-      run hits its 600s cap.
-- [ ] **An eval gate for the MCP path.** Run each dataset twice, native tools versus MCP, and fail
-      CI if the MCP run scores below the native baseline. Nothing measures whether the MCP
-      data-access layer is as good.
-- [ ] **A red-team evaluator.** `red_team.json` is scored by keyword matching, which means very
-      little; it needs its own schema and judge.
 - [ ] **Typed filter DSL.** Replace the flat parameter list on `search_products` with a structured
       `ProductFilters` model. Text-to-SQL was considered and rejected
       ([ADR 0002](adr/0002-no-text-to-sql.md)): `user_email`/`user_role` scoping lives in
@@ -140,8 +131,11 @@ Real work with no position claimed against the items above.
       as are the route/credential matrix and RFC 7591 dynamic client registration
       (`auth_server/register.py`, opt-in with `AUTH_ALLOW_DYNAMIC_REGISTRATION`, scope-limited). What is
       left is running rotation on a schedule.
-- [ ] **Agentic workflows on the repository itself.** Coding agents for eval recording,
-      documentation-drift checks and review. Ships nothing in the product.
+- [ ] **Course chapters still unwritten:** durable workflows, Foundry evals, AG-UI and the deployment chapter.
+- [ ] **A narrated walkthrough video** and the social preview upload
+      ([#318](https://github.com/nitin27may/e-commerce-agents/issues/318)).
+- [ ] **Exploratory, parked:** MCP Apps cards and an agentic-checkout adapter
+      ([#101](https://github.com/nitin27may/e-commerce-agents/issues/101)).
 
 Nothing is blocked on an upstream release.
 
@@ -153,14 +147,19 @@ One pattern has shaped every release: the reported problem was smaller than the 
 the difference was found by running something rather than reading it. The nine cases are in
 [Reported vs actual](reported-vs-actual.md).
 
-### Since 1.4 (on `main`, not yet released; as of 2026-11-23)
+### v1.5 (staged on `main`, not yet released; as of 2026-11-24)
 
-The [changelog](https://github.com/nitin27may/e-commerce-agents/blob/main/CHANGELOG.md) `[Unreleased]` section has the entries.
+The [changelog](https://github.com/nitin27may/e-commerce-agents/blob/main/CHANGELOG.md) `[Unreleased]` section has the entries and the known limits.
 
+- **Customer confirmation before a gated action** ([#302](https://github.com/nitin27may/e-commerce-agents/issues/302), [#307](https://github.com/nitin27may/e-commerce-agents/issues/307)), on both stacks: the customer confirms the exact action in plain words before it parks for staff ([approvals.md](approvals.md)).
+- **Merchant-ops specialist and a PO-value manager tier** ([#298](https://github.com/nitin27may/e-commerce-agents/issues/298), Python): an opt-in sixth specialist that explains seller proposals and triages reviews, and a restock batch over a threshold that routes to a manager ([merchant-proposals.md](merchant-proposals.md)).
+- **More event autonomy** ([#299](https://github.com/nitin27may/e-commerce-agents/issues/299), Python): price-drop, back-in-stock, damaged-item and order-risk events, monthly budgets and an optional ops-responder ([event-autonomy.md](event-autonomy.md)).
+- **A key-free hosted preview, a README GIF and a no-key tour in CI** ([#301](https://github.com/nitin27may/e-commerce-agents/issues/301), [#86](https://github.com/nitin27may/e-commerce-agents/issues/86), [#87](https://github.com/nitin27may/e-commerce-agents/issues/87)) ([preview.md](preview.md)).
+- **Evals that can run live:** run records, an `http` target, live datasets with resolved facts and multi-turn cases, per-mode orchestrator scoring, indirect-injection and red-team judge suites, an MCP-versus-native gate, six stored live baselines, a manual live job, Foundry evaluators and community-submitted results ([agent-quality.md](agent-quality.md)).
 - **Run profiles and `python -m scripts.doctor`:** twelve provider setups applied with `--profile`, and a redacted check of the effective configuration ([run-profiles.md](run-profiles.md)).
-- **Pricing in one file and a token budget:** no price is written in code on either stack; `COST_BUDGET_TOKENS_PER_RUN` sits beside the dollar ceiling.
-- **Evals that can run live:** run records, an `http` target, live datasets with resolved facts, a manual live job, Foundry evaluators and community-submitted results ([agent-quality.md](agent-quality.md)).
+- **Pricing in one file, a token budget and a turn-level cost ceiling:** no price is written in code on either stack ([configuration.md](configuration.md)).
 - **A keyless stack-parity gate in CI** and gateway attribution headers on every model call.
+- **Four more course chapters** (33 to 36: prompt injection and red team, structured output, memory, model providers), 38 in all.
 - **Azure options, offline only:** the reference profile, per-app identities, an AI gateway and a Foundry project in Bicep ([azure-deployment.md](azure-deployment.md)).
 
 ### v1.4

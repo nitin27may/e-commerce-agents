@@ -242,7 +242,7 @@ graph TB
     style AZ fill:#fbbf24,stroke:#f59e0b,color:#78350f
 ```
 
-Six agents — five specialists behind one orchestrator, which coordinates them in any of the [five modes](#one-orchestrator-five-orchestration-modes) — over A2A (1.0 JSON-RPC and the legacy HTTP wire, [docs/a2a.md](docs/a2a.md)), with the same schema and the
+Six agents — five specialists behind one orchestrator, which coordinates them in any of the [five modes](#one-orchestrator-five-orchestration-modes); an opt-in sixth specialist, merchant-ops (Python only, port 8086), is off by default — over A2A (1.0 JSON-RPC and the legacy HTTP wire, [docs/a2a.md](docs/a2a.md)), with the same schema and the
 same frontend for either backend. Full detail — request flow, agent internals, the database schema
 and the API surface — is in **[Architecture](https://nitinksingh.com/e-commerce-agents/architecture/)**.
 
@@ -316,7 +316,7 @@ checkboxes and the reasoning for the order, is on the
 
 | Next | What it is |
 |---|---|
-| **Azure and Microsoft Foundry** | A Container Apps deployment is written and checked offline ([Deploy to Azure](#deploy-to-azure)) but has not yet run against a real subscription. It comes last, after the evaluation and documentation work is merged. After it: the same six agents in two more topologies (Foundry as model provider, Foundry Hosted Agents), with what each one costs you |
+| **Azure and Microsoft Foundry** | A Container Apps deployment is written and checked offline ([Deploy to Azure](#deploy-to-azure)) but has not yet run against a real subscription. It comes last, after the evaluation and documentation work is merged. After it: Foundry features that need an Azure credential (hosted agents, evaluators logging to a project) and the measured cost of each topology. The .NET 11 move is a separate, later change |
 | **Finish the gates** | The keyless parity gate runs in CI, but it covers only turns that call no model. A model-calling comparison across the two stacks needs a key, and the .NET eval suite still needs its baselines |
 | **Retrieval and tooling** | A typed filter DSL for `search_products`, the two MCP servers published to PyPI, and prompt caching — now measurable, because the cost counter ships |
 
