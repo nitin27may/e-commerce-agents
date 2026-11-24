@@ -238,7 +238,7 @@ Each chapter's own `README.md` is the canonical, always-current source.
 ## Prerequisites
 
 - Python 3.12+ and [`uv`](https://docs.astral.sh/uv/)
-- .NET 10 SDK (every project targets `net10.0`; CI installs `10.0.x`)
+- .NET 11 SDK (every project targets `net11.0`; CI installs `11.0.x`)
 - Docker + Docker Compose
 - An OpenAI or Azure OpenAI key (set in `.env` at the repo root) — **only for live runs**. Every
   Python chapter that builds a chat client runs with no key on recorded replay fixtures; see the

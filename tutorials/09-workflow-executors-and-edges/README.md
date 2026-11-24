@@ -18,7 +18,7 @@ MAF's **Workflow** is a deterministic graph of **Executors** (units of work) con
 ## Prerequisites
 
 - Completed [Chapter 08 — MCP Tools](../08-mcp-tools/)
-- Python 3.12+ via `uv`; .NET SDK (9 or 10)
+- Python 3.12+ via `uv`; .NET SDK (11)
 - No API key or environment variables needed. The executors only transform an order id and call no model
 
 ## The concept

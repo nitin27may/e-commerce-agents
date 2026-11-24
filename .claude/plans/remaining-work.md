@@ -601,7 +601,7 @@ Nothing here is code. Do it before M3 and M4.
    (`azure-deployment.md` says why).
 5. Keys for M3: Azure OpenAI (existing), OpenAI, and any of Gemini/Anthropic/OpenRouter to be tried; Ollama
    installed with one tool-capable model.
-6. Tools: Docker, `uv`, `pnpm`, .NET 10 SDK, `azd`, Bicep CLI.
+6. Tools: Docker, `uv`, `pnpm`, .NET 11 SDK, `azd`, Bicep CLI.
 
 *Done when* `scripts/azure/prereqs.sh` passes and `scripts/azure-up.sh --env t1 --location <r> --dry-run` prints a plan.
 
