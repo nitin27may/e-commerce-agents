@@ -495,7 +495,7 @@ files is the demo-safe setting. The reasons, so the question is not reopened wit
 What would change this decision: a pricing file with verified rows for the default models and a `would_block` rate from real
 traffic. The turn-level ceiling now exists (Python); the other two do not. #97 keeps the item open until they do.
 
-### Turn-level ceiling and `would_block` (Python, parity row 57)
+### Turn-level ceiling and `would_block` (Python, parity row 58)
 
 The ceiling is compared with the spend of the whole conversation turn, not one process's share of it.
 
@@ -519,7 +519,7 @@ The ceiling is compared with the spend of the whole conversation turn, not one p
   compose files do).
 - **`would_block` is measured per turn.** In `observe` mode each LLM turn that starts past the turn's ceiling (dollars or
   tokens, once however many it crossed) adds one to the run's usage record, written to `usage_logs.would_block` (migration
-  0018) beside the cost columns. NULL means the run could not count (budget `off` or `enforce`, a row from before the
+  0020) beside the cost columns. NULL means the run could not count (budget `off` or `enforce`, a row from before the
   migration, or a row the .NET stack wrote); 0 means it counted and stayed under. The rate to watch before choosing `enforce`:
 
   ```sql
@@ -529,7 +529,7 @@ The ceiling is compared with the spend of the whole conversation turn, not one p
 
   A specialist's own would-blocks (counted against the inherited spend) stay in its log line and the `cost_budget.would_block`
   counter only: the usage wire shape is pinned on both stacks and was not extended.
-- **.NET.** Not ported (parity row 57). The .NET specialists ignore the header, so a Python orchestrator in front of .NET
+- **.NET.** Not ported (parity row 58). The .NET specialists ignore the header, so a Python orchestrator in front of .NET
   specialists enforces only its own and reported spend, and a .NET orchestrator sends none. The design to port: read the
   header in the specialist pipeline's auth step into the per-request context, add it to `SpecialistPipeline`'s running total
   before the first model call, send it from `A2AProtocolClient` and the legacy client, and add `usage_logs.would_block` to

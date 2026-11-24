@@ -17,7 +17,7 @@ the wider feature surface; the two overlap on guardrails and cross-link rather t
 
 ## Summary
 
-56 rows, numbered 1 to 57 with number 45 unused. Row numbers are stable, so other pages cite them.
+57 rows, numbered 1 to 58 with number 45 unused. Row numbers are stable, so other pages cite them.
 
 | Status | Rows | Meaning |
 |--------|------|---------|
@@ -25,7 +25,7 @@ the wider feature surface; the two overlap on guardrails and cross-link rather t
 | Partial | 7 | Present but incomplete, or present in one form and not the equivalent form (noted inline) |
 | Parity | 5 | The same content or files on both sides, with the exceptions the row names |
 | By design | 7 | One shared implementation, or a difference that is intended and stays |
-| Python only | 7 | Python has it and .NET does not; the row says whether that is a recorded decision |
+| Python only | 8 | Python has it and .NET does not; the row says whether that is a recorded decision |
 | .NET only | 1 | .NET has it and Python does not |
 | Neither stack | 1 | On neither side, so not a parity gap |
 
