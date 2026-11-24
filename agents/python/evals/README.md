@@ -381,6 +381,9 @@ run record stores the resolved `query` and `expected.tool_args`. A stored record
 | `{{order:N}}` | the case user's N-th most recent order (`{{order:1}}` is the latest) |
 | `{{order:STATUS}}` | the case user's most recent order in that status (`placed`, `confirmed`, `shipped`, `delivered`, `returned`, `cancelled`) |
 | `{{product_id:NAME}}` | the id of the product with that exact name, case-insensitive |
+| `{{order:STATUS@EMAIL}}` | the same, for another seeded user (`{{order:delivered@alice.johnson@gmail.com}}`), for cases that probe access to someone else's order |
+
+A live case may also carry `type` (`happy`, `edge`, `adversarial`, `multi_turn`) and a one-line `why`; the loader ignores both, `tests/test_eval_live_order_management.py` pins them and the per-type minimums for the order-management suite.
 
 Rules:
 

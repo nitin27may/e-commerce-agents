@@ -11,6 +11,7 @@ uses, right before the case runs, so the resolved text is what the model sees an
 
     ``{{order:1}}``          the case user's most recent order (``{{order:2}}`` the one before it)
     ``{{order:delivered}}``  the case user's most recent order in that status
+    ``{{order:delivered@alice@example.com}}``  the same, for another seeded user (access-control cases)
     ``{{product_id:NAME}}``  the id of the product with that exact (case-insensitive) name
 
 Resolution applies only to a case whose dataset is a ``*.live.json`` file or that carries ``"live": true``.
@@ -93,11 +94,14 @@ async def _resolve_text(text: str, user_email: str | None, source: FactSource) -
     for match in PLACEHOLDER.finditer(text):
         kind, arg = match.group(1), match.group(2)
         if kind == "order":
-            if not user_email:
+            # ``{{order:delivered@alice@example.com}}``: another seeded user's order (access-control cases).
+            selector, _, owner = arg.partition("@")
+            owner = owner or user_email or ""
+            if not owner:
                 raise LiveFactError(f"{match.group(0)} needs the case to set user_email (orders belong to a user)")
-            found = await source.order_id(user_email, arg)
+            found = await source.order_id(owner, selector.strip())
             if found is None:
-                raise LiveFactError(f"{match.group(0)}: {user_email} has no such order in this database")
+                raise LiveFactError(f"{match.group(0)}: {owner} has no such order in this database")
         else:
             found = await source.product_id(arg)
             if found is None:
