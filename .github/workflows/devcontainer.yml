@@ -1,0 +1,42 @@
+# Builds the Codespaces / Dev Containers image and runs its postCreate step (NA-15).
+#
+# Nobody can open a Codespace from CI, but the Dev Containers CLI is what Codespaces uses to build one, so a
+# build that fails here fails there. The job also brings the container up (which runs postCreate.sh: tool
+# installs, dependency sync, .env) and checks the toolchain and the provider line it wrote. No secrets are
+# referenced and none are needed: with none present the container must select LLM_PROVIDER=replay.
+name: Dev container
+
+on:
+  pull_request:
+    paths:
+      - ".devcontainer/**"
+      - "scripts/test-codespaces-env.sh"
+      - "agents/python/tests/test_devcontainer.py"
+      - ".env.minimal"
+      - ".github/workflows/devcontainer.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the Dev Containers CLI
+        run: npm install --global @devcontainers/cli@0.91.0
+      - name: Build the image
+        run: devcontainer build --workspace-folder . --image-name devcontainer-ci:pr
+      - name: Create the container (runs postCreate.sh)
+        run: devcontainer up --workspace-folder . --remove-existing-container
+      - name: Check the toolchain and the provider line
+        run: |
+          devcontainer exec --workspace-folder . bash -c '
+            set -euo pipefail
+            python --version; uv --version; node --version; pnpm --version; dotnet --version
+            head -n 1 .env | grep -q "Written by .devcontainer/postCreate.sh"
+            grep -qx "LLM_PROVIDER=replay" .env
+            grep -qx "EMBEDDING_PROVIDER=replay" .env
+            ! grep -q "^OPENAI_API_KEY=" .env
+          '
