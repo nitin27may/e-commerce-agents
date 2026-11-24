@@ -10,7 +10,9 @@ import json
 import re
 import shutil
 import subprocess
+import threading
 from collections.abc import Iterator
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
 
@@ -1248,7 +1250,7 @@ def _free_trial_profile() -> dict[str, Any]:
 
 def test_free_trial_profile_is_the_smallest_shape_the_template_allows() -> None:
     profile = _free_trial_profile()
-    assert profile["budget"]["monthlyAmount"] == 5
+    assert profile["budget"]["monthlyAmount"] == 7
     postgres = profile["postgres"]
     assert (postgres["tier"], postgres["skuName"], postgres["storageSizeGB"]) == ("Burstable", "Standard_B1ms", 32)
     assert postgres["highAvailability"] == "Disabled" and postgres["geoRedundantBackup"] == "Disabled"
@@ -1285,11 +1287,11 @@ def test_free_trial_deploys_nothing_that_bills_by_the_hour_beyond_postgres(
 
 
 @pytest.mark.parametrize("fixture", FREE_TRIAL_FIXTURES)
-def test_free_trial_budget_is_five_with_three_actual_alerts_and_a_forecast(
+def test_free_trial_budget_is_seven_with_three_actual_alerts_and_a_forecast(
     raw_snapshots: dict[str, Resources], fixture: str
 ) -> None:
     budget = _one(raw_snapshots[fixture], "Microsoft.Consumption/budgets")["properties"]
-    assert budget["amount"] == 5
+    assert budget["amount"] == 7
     notifications = budget["notifications"]
     assert {k: v["threshold"] for k, v in notifications.items()} == {
         "actual": 50,
@@ -1463,3 +1465,217 @@ def test_azure_up_preview_runs_a_what_if_and_never_provisions() -> None:
     assert result.returncode == 0, result.stderr
     assert any("azd provision --preview --environment t1" in line for line in lines)
     assert not any("azd provision --environment" in line for line in lines)
+
+
+# ----------------------------------------------------------------------------------------------
+# Free-trial profile deploys Foundry by default; sanity script; Deploy to Azure template.
+# ----------------------------------------------------------------------------------------------
+
+
+def _model_deployments(resources: Resources) -> dict[str, dict[str, Any]]:
+    found = _of_type(resources, "Microsoft.CognitiveServices/accounts/deployments")
+    return {r["name"].rsplit("/", 1)[-1]: r for r in found}
+
+
+def test_free_trial_deploys_foundry_with_a_nano_chat_model_and_the_smallest_embedding(
+    raw_snapshots: dict[str, Resources],
+) -> None:
+    resources = raw_snapshots["free-trial"]
+    account = _one(resources, "Microsoft.CognitiveServices/accounts")
+    assert account["kind"] == "AIServices" and account["properties"]["allowProjectManagement"] is True
+    assert len(_of_type(resources, "Microsoft.CognitiveServices/accounts/projects")) == 1
+    deployments = _model_deployments(resources)
+    assert set(deployments) == {"chat", "embedding"}
+    chat, embedding = deployments["chat"], deployments["embedding"]
+    assert chat["properties"]["model"]["name"] == "gpt-5.4-nano"
+    assert chat["properties"]["model"]["version"] == "2026-03-17"
+    assert chat["sku"] == {"name": "GlobalStandard", "capacity": 10}
+    assert embedding["properties"]["model"]["name"] == "text-embedding-3-small"
+    assert embedding["sku"]["capacity"] <= 10
+
+
+def test_free_trial_apps_use_the_nano_model_without_a_temperature(snapshots: dict[str, Apps]) -> None:
+    env = _env(snapshots["free-trial"]["ca-orchestrator"])
+    assert env["LLM_MODEL"]["value"] == "gpt-5.4-nano"
+    assert env["LLM_TEMPERATURE"]["value"] == "", "gpt-5.x rejects temperature"
+
+
+def test_free_trial_without_the_model_account_has_no_foundry_project(raw_snapshots: dict[str, Resources]) -> None:
+    resources = raw_snapshots[FREE_TRIAL]
+    assert not _of_type(resources, "Microsoft.CognitiveServices/accounts/projects")
+
+
+def test_the_demo_profile_keeps_its_default_model_and_no_foundry_project(raw_snapshots: dict[str, Resources]) -> None:
+    resources = raw_snapshots["demo-mini-false"]
+    assert _model_deployments(resources)["chat"]["properties"]["model"]["name"] == "gpt-5.1"
+    assert not _of_type(resources, "Microsoft.CognitiveServices/accounts/projects")
+
+
+def test_the_free_trial_model_is_priced_in_the_shared_price_file() -> None:
+    prices = (REPO_ROOT / "agents" / "python" / "config" / "pricing" / "models.yaml").read_text(encoding="utf-8")
+    assert "\n  gpt-5.4-nano:\n" in prices
+
+
+# ---- sanity.sh ------------------------------------------------------------------------------
+
+
+class _Mock(BaseHTTPRequestHandler):
+    """A frontend that answers what scripts/azure/sanity.sh reads, so its db and turn checks run offline."""
+
+    empty_products = False
+
+    def _send(self, body: bytes, kind: str) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", kind)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _json(self, obj: Any) -> None:
+        self._send(json.dumps(obj).encode(), "application/json")
+
+    def do_GET(self) -> None:  # noqa: N802
+        if self.path.startswith("/api/products"):
+            self._json({"products": [], "total": 0 if self.empty_products else 7})
+        elif self.path.startswith("/api/orders"):
+            self._json({"orders": [{"id": "o1"}]})
+        elif self.path.startswith("/api/approvals"):
+            self._json({"approvals": []})
+        else:
+            self.send_error(404)
+
+    def do_POST(self) -> None:  # noqa: N802
+        self.rfile.read(int(self.headers.get("Content-Length", "0")))
+        if self.path == "/api/auth/login":
+            self._json({"access_token": "t"})
+        elif self.path == "/api/chat/stream":
+            frames = (
+                'event: step\ndata: {"tool_name":"call_specialist_agent",'
+                '"tool_input":{"agent_name":"order-management"}}\n\n'
+                'event: step\ndata: {"tool_name":"get_my_orders","tool_input":{}}\n\n'
+                "data: Here are your three most recent orders and their statuses.\n\n"
+                "event: metadata\ndata: {}\n\ndata: [DONE]\n\n"
+            )
+            self._send(frames.encode(), "text/event-stream")
+        else:
+            self.send_error(404)
+
+    def log_message(self, *args: Any) -> None:
+        return
+
+
+@pytest.fixture
+def mock_frontend() -> Iterator[str]:
+    server = HTTPServer(("127.0.0.1", 0), _Mock)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@needs_bash
+@pytest.mark.parametrize("check", ["db", "turn"])
+def test_sanity_checks_pass_against_a_frontend_that_behaves(mock_frontend: str, check: str) -> None:
+    result = _script(
+        "scripts/azure/sanity.sh", "--resource-group", "rg-x", "--only", check,
+        env={"FRONTEND_URL": mock_frontend, "E2E_STAFF_PASSWORD": "pw-for-test"},
+    )  # fmt: skip
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert f"PASS  {check}:" in result.stdout
+    assert "Created in Azure by this script: nothing" in result.stdout
+    assert "azure-down.sh" in result.stdout and "tear it down yourself" in result.stdout
+    assert "pw-for-test" not in result.stdout + result.stderr
+
+
+@needs_bash
+def test_sanity_exits_non_zero_and_says_what_to_do_when_the_database_is_empty(mock_frontend: str) -> None:
+    _Mock.empty_products = True
+    try:
+        result = _script(
+            "scripts/azure/sanity.sh", "--resource-group", "rg-x", "--only", "db",
+            env={"FRONTEND_URL": mock_frontend, "E2E_STAFF_PASSWORD": "pw-for-test"},
+        )  # fmt: skip
+    finally:
+        _Mock.empty_products = False
+    assert result.returncode == 1
+    assert "FAIL  db:" in result.stderr and "az containerapp job start" in result.stderr
+    assert "Nothing was torn down" in result.stdout and "still billing" in result.stdout
+
+
+@needs_bash
+def test_sanity_dry_run_and_argument_checks() -> None:
+    ok = _script("scripts/azure/sanity.sh", "--dry-run")
+    assert ok.returncode == 0 and ok.stderr.count("[dry-run] check") == 4
+    assert _script("scripts/azure/sanity.sh", "--eval-cases", "9", "--dry-run").returncode != 0
+    assert _script("scripts/azure/sanity.sh", "--only", "teardown", "--dry-run").returncode != 0
+
+
+def test_sanity_never_deletes_tears_down_or_prints_a_key() -> None:
+    script = (REPO_ROOT / "scripts" / "azure" / "sanity.sh").read_text(encoding="utf-8")
+    code = "\n".join(line for line in script.splitlines() if not line.lstrip().startswith("#"))
+    for forbidden in ("azd down", "az group delete", " delete ", 'azure-down.sh --env "$', "set -x"):
+        assert forbidden not in code, forbidden
+    assert re.search(r"echo[^\n]*\$\{?key\b", code) is None
+    assert re.search(r"printf[^\n]*\$\{?key\b", code) is None
+
+
+# ---- Deploy to Azure: infra/azuredeploy.json -----------------------------------------------
+
+
+def _strip_generator(node: Any) -> Any:
+    """Bicep stamps its own version and a template hash; they differ between CLI versions and are not content."""
+    if isinstance(node, dict):
+        return {k: _strip_generator(v) for k, v in node.items() if k != "_generator"}
+    if isinstance(node, list):
+        return [_strip_generator(v) for v in node]
+    return node
+
+
+def test_azuredeploy_json_is_a_fresh_build_of_main_bicep(template: dict[str, Any]) -> None:
+    committed = json.loads((INFRA / "azuredeploy.json").read_text(encoding="utf-8"))
+    assert _strip_generator(committed) == _strip_generator(template), (
+        "infra/azuredeploy.json is stale. Regenerate it: cd infra && bicep build main.bicep --outfile azuredeploy.json"
+    )
+
+
+def test_azuredeploy_json_needs_only_three_values_from_a_person() -> None:
+    committed = json.loads((INFRA / "azuredeploy.json").read_text(encoding="utf-8"))
+    required = {name for name, spec in committed["parameters"].items() if "defaultValue" not in spec}
+    assert required == {"environmentName", "imageTag", "seedStaffPassword"}
+
+
+def test_without_azd_every_other_secret_is_generated_by_a_parameter_default() -> None:
+    committed = json.loads((INFRA / "azuredeploy.json").read_text(encoding="utf-8"))
+    secrets = (
+        "postgresAdminPassword",
+        "jwtSecret",
+        "agentSharedSecret",
+        "a2aIdentityKey",
+        "oauthSeedKey",
+        "authSigningKeyEncryptionKey",
+    )
+    for name in secrets:
+        spec = committed["parameters"][name]
+        assert spec["type"] == "securestring", name
+        assert "newGuid()" in spec["defaultValue"], name
+    assert committed["parameters"]["seedStaffPassword"]["minLength"] >= 12
+
+
+def test_the_template_names_the_one_command_that_makes_a_portal_deployment_usable(template: dict[str, Any]) -> None:
+    assert "DB_INIT_START_COMMAND" in template["outputs"]
+    assert "az containerapp job start" in json.dumps(template["outputs"]["DB_INIT_START_COMMAND"])
+
+
+def test_the_readme_and_docs_carry_the_button_in_its_own_marked_section() -> None:
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    assert "## Deploy to Azure (optional)" in readme
+    section = readme.split("## Deploy to Azure (optional)", 1)[1].split("\n## ", 1)[0]
+    assert "https://aka.ms/deploytoazurebutton" in section
+    assert "portal.azure.com/#create/Microsoft.Template/uri/" in section
+    assert "infra%2Fazuredeploy.json" in section
+    assert "costs money" in section.lower()
+    head = readme.split("## ", 1)[0]
+    assert "deploytoazurebutton" not in head, "the button must not be in the badge row"

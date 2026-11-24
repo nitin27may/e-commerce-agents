@@ -255,6 +255,16 @@ It creates a Container Apps environment (frontend, orchestrator, five specialist
 
 ---
 
+## Deploy to Azure (optional)
+
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fnitin27may%2Fe-commerce-agents%2Fmain%2Finfra%2Fazuredeploy.json)
+
+**This costs money while it runs** (the demo profile roughly $4 to $12 a day; the `free-trial` profile about $1.4 a day idle, see [the free-trial sequence](docs/azure-deployment-sequence.md)). Nothing here has been deployed to a real subscription yet. The button opens the portal on `infra/azuredeploy.json`, the compiled `infra/main.bicep`, and **the link works after this change is merged to `main`**, because the portal reads the raw file from there.
+
+The button is the template alone, without the azd hooks, so three things differ from `scripts/azure-up.sh`: you type `imageTag` (for example `v1.4.0`), `seedStaffPassword` (the admin login, 12 characters or more) and, to reach the frontend, your public address in `deployerIp` (or set `publicAccess` to `open`); the other secrets are generated for you; and **nothing starts the database job, so after the deployment finishes you run the one command it prints** (`DB_INIT_START_COMMAND` in the outputs, `az containerapp job start --name job-db-init --resource-group rg-<env>`). Until then the apps answer 503. Use `profile` `demo` or `free-trial`; `reference` needs azd (two passes). The other path is `azd up` / `scripts/azure-up.sh` above. What the template alone does and does not do: [docs/azure-deployment.md](docs/azure-deployment.md#deploy-to-azure-button).
+
+---
+
 ## Documentation
 
 Everything below is published, searchable and cross-linked at

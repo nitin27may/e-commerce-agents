@@ -4,9 +4,9 @@ title: Azure deployment sequence (free trial)
 
 # Azure deployment sequence (free trial)
 
-The ordered steps for a first real deployment on a new personal free-trial subscription, with a hard budget of 5 USD and free resources only. Every stage lists what it creates, what it costs, how long it takes, how to check it worked, how to stop spending, and what is known to go wrong. For the template itself see [azure-deployment.md](azure-deployment.md).
+The ordered steps for a first real deployment on a new personal free-trial subscription, with a budget of about 7 USD, a low-cost model and no standing charge beyond Postgres, the worker and Redis. Every stage lists what it creates, what it costs, how long it takes, how to check it worked, how to stop spending, and what is known to go wrong. For the template itself see [azure-deployment.md](azure-deployment.md).
 
-**Status: rehearsed read-only, never deployed.** The Bicep builds and lints, `az deployment sub validate` and `what-if` succeeded for all three free-trial variants against a real, empty subscription, and the region and SKU listings were read. Nothing has been created. What a real deployment is still needed to confirm is in [What this page could not verify](#what-this-page-could-not-verify).
+**Status: rehearsed read-only, never deployed.** The Bicep builds and lints, `az deployment sub validate` and `what-if` succeeded for every free-trial variant (and for the compiled `azuredeploy.json` the portal button uses) against a real, empty subscription, and the region and SKU listings were read. Nothing has been created. What a real deployment is still needed to confirm is in [What this page could not verify](#what-this-page-could-not-verify).
 
 `<subscription-id>`, `<env>` and `<region>` below are placeholders. Do not paste your own account name, tenant, subscription id or resource group into the repo, an issue or a commit.
 
@@ -22,8 +22,9 @@ The ordered steps for a first real deployment on a new personal free-trial subsc
 | PostgreSQL | Flexible Server 16, Burstable `Standard_B1ms`, 32 GB (the minimum), no HA, 7 day backups | The cheapest SKU that runs pgvector |
 | Key Vault | Standard, no purge protection, 7 day soft delete | A purge-protected vault keeps its name for 90 days |
 | Log Analytics | 30 days, **0.1 GB per day cap** (the API minimum is 0.023) | Caps ingestion, so a noisy day cannot cost more than about 0.28 USD |
-| Budget | **5 USD**, alerts at 50, 80 and 100 percent actual and 100 percent forecast, sent to subscription Owners and Contributors | Notifies; it does not stop spending |
-| Not created | API Management, Managed Redis, ACR, VNet, private endpoints, Foundry project, per-app identities, auth server, MCP servers | Each costs by the hour or needs a feature a trial may lack |
+| Foundry | AIServices account `ai-<token>`, a Foundry project with the Application Insights connection, `chat` = **`gpt-5.4-nano`** `2026-03-17` (GlobalStandard, 10K TPM) and `embedding` = `text-embedding-3-small` (GlobalStandard, 10K TPM) | The cheapest chat model that is generally available in `eastus2` and has a global standard SKU; the account, the project and idle deployments cost nothing, tokens are billed per use |
+| Budget | **7 USD**, alerts at 50, 80 and 100 percent actual and 100 percent forecast, sent to subscription Owners and Contributors | Notifies; it does not stop spending. Raised from 5 for Foundry |
+| Not created | API Management, Managed Redis, ACR, VNet, private endpoints, per-app identities, auth server, MCP servers | Each costs by the hour or needs a feature a trial may lack |
 
 ```mermaid
 flowchart LR
@@ -37,16 +38,16 @@ flowchart LR
             job[["job-db-init<br/>manual"]]:::infra
         end
         pg[("PostgreSQL B1ms, 32 GB")]:::core
+        foundry["Foundry: AIServices account + project<br/>gpt-5.4-nano, embeddings"]:::ext
         kv["Key Vault standard"]:::sec
         log["Log Analytics, 0.1 GB/day cap"]:::infra
-        bud["Budget 5 USD"]:::infra
+        bud["Budget 7 USD"]:::infra
     end
-    llm["Model: none (replay) or your own<br/>OpenAI-compatible endpoint"]:::ext
     orch --> pg
     spec --> pg
     worker --> pg
     job --> pg
-    spec -. "only with --llm openai" .-> llm
+    spec --> foundry
 
     classDef core fill:#0b5cab,stroke:#08427a,color:#ffffff
     classDef ext fill:#f2a900,stroke:#a87400,color:#1a1a1a
@@ -56,17 +57,19 @@ flowchart LR
 
 ## The model provider on a free trial
 
-Azure OpenAI is pay per token, needs a quota that a new subscription often has at zero, and may need an access request. The template therefore has a switch, `deployOpenAi` (azd `DEPLOY_OPENAI`, default `true`). With `false` it creates no AIServices account, no model deployments, no `Cognitive Services OpenAI User` role and no `azure-openai-key` secret, and the apps run with `externalLlmProvider`:
+The profile deploys the Foundry resources by default: the AIServices account, a Foundry project and two model deployments. The chat model was picked read-only from `az cognitiveservices model list --location eastus2`: of the generally available chat models with a GlobalStandard SKU, the nano tier is the cheapest. `gpt-4.1-mini`, `gpt-4.1-nano` and `gpt-4o-mini` are `Legacy` or `Deprecating` in that region, `gpt-5-nano` and `gpt-5.4-nano` are `GenerallyAvailable`. **`gpt-5.4-nano` `2026-03-17`** was chosen because its price could be read from the public Retail Prices API (USD per 1M tokens, `eastus2`, global standard, 2026-11-23): **0.20 input, 1.25 output, 0.02 cached input**. (`gpt-5-nano` is probably cheaper, but its meters did not show up in the API under any name this page could find, so its price is unverified.) Embeddings: `text-embedding-3-small` at 0.02 per 1M tokens (the API lists 0.00002 per 1K, global). The price file `agents/python/config/pricing/models.yaml` has a row for `gpt-5.4-nano` (`verified: false`: read from the API, not a pricing page), so the per-run cost ceiling works instead of failing closed.
+
+Azure OpenAI quota is the part of this that may not exist yet: a new subscription often has zero TPM for a model, and `az cognitiveservices usage list` cannot be read until `Microsoft.CognitiveServices` is registered (stage 3). Whether `gpt-5.4-nano` accepts the API version the apps send (`2025-04-01-preview`) is also unverified; the sanity check's direct call (stage 12) is what finds out.
+
+If the subscription has no quota, or you want zero model spend, `deployOpenAi=false` (`--llm replay|openai`) is still an option: no account, no deployments, no Foundry project, and the apps use `externalLlmProvider`:
 
 | `--llm` | What runs | Cost | What works |
 |---|---|---|---|
-| `replay` (recommended first) | `LLM_PROVIDER=replay`, `EMBEDDING_PROVIDER=replay`, `COST_BUDGET_MODE=observe`. No model is called, and nothing is needed from outside Azure | 0 USD in model tokens | Everything that calls no model: login, catalogue, search (keyless hashing vectors), cart, checkout, orders, approvals inbox, `/runs`, the quick smoke test, and the http eval target on `stack_parity.json`. A chat prompt answers "this prompt was not recorded": the released images carry no recordings ([replay-mode.md](replay-mode.md)) |
-| `openai` | `LLM_PROVIDER=openai`, `LLM_BASE_URL`, `LLM_API`, key from Key Vault secret `llm-api-key`, embeddings still `replay` unless you change `EXTERNAL_EMBEDDING_PROVIDER` | whatever the provider charges, outside the Azure budget | Chat turns |
-| (omitted) | Azure OpenAI account in the template, `gpt-5.1` and `text-embedding-3-small` at 10K TPM | pay per token on the Azure budget | Chat turns, if the trial has quota |
+| (omitted, the default) | Foundry account and project, `gpt-5.4-nano`, `text-embedding-3-small` | per token on the Azure budget | Chat turns, if the trial has quota |
+| `replay` | `LLM_PROVIDER=replay`, `EMBEDDING_PROVIDER=replay`, `COST_BUDGET_MODE=observe`. No model is called | 0 USD in model tokens | Everything that calls no model: login, catalogue, search (keyless vectors), cart, orders, approvals, the quick smoke and the http eval on `stack_parity.json`. Chat answers "not recorded" (the released images carry no recordings, [replay-mode.md](replay-mode.md)). Sanity checks `model` and `turn` do not apply |
+| `openai` | `LLM_PROVIDER=openai`, `LLM_BASE_URL`, key from Key Vault secret `llm-api-key`, embeddings `replay` unless you change `EXTERNAL_EMBEDDING_PROVIDER` | the provider's charges, outside the Azure budget | Chat turns |
 
-What is realistic. A model on your laptop (Ollama, LM Studio) is **not reachable** from Container Apps: the apps run in Azure and cannot call `localhost` on your machine. The `openai` path needs a public HTTPS OpenAI-compatible endpoint: a paid key with a hard spending limit, or a provider's free tier if it has an OpenAI-compatible route (rate limits and terms apply; check the provider). The endpoint is a plain environment variable, not a secret; the key is the only secret and lives in Key Vault. A key you export is stored in the azd environment in clear text (git-ignored, `.azure/`) like every other generated secret. Start with `--llm replay`: it proves the whole deployment for no token cost, and you can switch to `openai` later by re-running with the key.
-
-Two limits of the switch. It is Python stack only, and it cannot be combined with `deployGateway`, `deployFoundryProject` or the reference profile, which all need the account.
+A model on your laptop (Ollama, LM Studio) is **not reachable** from Container Apps. The `openai` path needs a public HTTPS OpenAI-compatible endpoint. The key is the only secret and lives in Key Vault; a key you export is stored in the azd environment in clear text (git-ignored, `.azure/`). The switch is Python stack only and cannot be combined with `deployGateway` or the reference profile.
 
 ## The sequence
 
@@ -81,7 +84,7 @@ sequenceDiagram
 
     M->>Az: az login, az account set, azd auth login
     M->>Az: tool versions
-    M->>Sub: az provider register (6 namespaces)
+    M->>Sub: az provider register (7 namespaces)
     Sub-->>M: Registered (1 to 10 min)
     M->>Az: quota and SKU reads (read only)
     M->>Az: azure-up.sh --dry-run (prints, runs nothing)
@@ -92,8 +95,10 @@ sequenceDiagram
     Job->>Sub: migrate, seed if empty, replay vectors
     Az->>App: quick smoke test
     M->>App: smoke.sh --no-model
-    M->>App: evals.run_evals --target http
-    M->>Az: azure-down.sh (teardown, then budget check)
+    M->>App: evals.run_evals --target http (optional, fuller)
+    M->>App: sanity.sh (db, model, turn, eval)
+    Note over M: review the results, nothing is torn down for you
+    M->>Az: azure-down.sh (separate, explicit step)
 ```
 
 Costs below are for `eastus2`, USD, from the public Azure Retail Prices API on **2026-11-23** (`https://prices.azure.com/api/retail/prices`, no sign-in), list prices, no discounts:
@@ -108,8 +113,11 @@ Costs below are for `eastus2`, USD, from the public Azure Retail Prices API on *
 | PostgreSQL backup storage (LRS) | 0.095 per GB-month |
 | Log Analytics, Analytics Logs ingestion | 2.76 per GB (the API also lists a 0.00 row; whether it is a free grant is not verified) |
 | Key Vault operations | 0.03 per 10,000 |
+| **`gpt-5.4-nano`, global standard: input / output / cached input** | **0.20 / 1.25 / 0.02 per 1M tokens** |
+| `text-embedding-3-small`, global | 0.02 per 1M tokens (0.00002 per 1K) |
+| Foundry account, project, idle deployments | no standing meter found; tokens only (not verified beyond the API listing) |
 
-**Free grants.** Verified in Microsoft's documentation ([Billing in Azure Container Apps](https://learn.microsoft.com/en-us/azure/container-apps/billing), updated 2026-03-25): each calendar month, per subscription, the first 180,000 vCPU-seconds, 360,000 GiB-seconds and 2 million HTTP requests of the Consumption plan are free; a revision scaled to zero replicas incurs no resource charge; idle rates apply only to a revision held at its minimum replica count. **Not verified** (the pages did not expose the figures when fetched; verify in the portal's free services list before relying on them): the free-account credit amount and period, the 12 month PostgreSQL B1ms allowance, the Log Analytics free ingestion, the Key Vault free operations. The estimates below subtract none of them, so they are upper bounds.
+**Free grants.** Verified in Microsoft's documentation ([Billing in Azure Container Apps](https://learn.microsoft.com/en-us/azure/container-apps/billing), updated 2026-03-25): each calendar month, per subscription, the first 180,000 vCPU-seconds, 360,000 GiB-seconds and 2 million HTTP requests of the Consumption plan are free; a revision scaled to zero replicas incurs no resource charge; idle rates apply only to a revision held at its minimum replica count. **Not verified** (the Microsoft pages did not expose the figures when fetched; verify in the portal): the free-account credit amount and period, the Log Analytics free ingestion, the Key Vault free operations, and the PostgreSQL B1ms allowance. The maintainer reports about 750 free hours of B1ms on a free account; this page has not confirmed it, and the estimates below subtract none of it, so they are upper bounds. If the allowance applies, take 12.41 USD a month (0.017 an hour) off.
 
 ### Estimate for the profile
 
@@ -120,12 +128,24 @@ Costs below are for `eastus2`, USD, from the public Azure Retail Prices API on *
 | Outbox worker, 1 replica idle | (0.5 vCPU x 0.000003 + 1 GiB x 0.000003) x 2,628,000 s | 11.83 / month |
 | Redis, 1 replica idle | (0.25 x 0.000003 + 0.5 x 0.000003) x 2,628,000 s | 5.91 / month |
 | Specialists, orchestrator, frontend | scaled to zero | 0 while idle |
+| Foundry account, project, deployments | no tokens, no standing charge | 0 while idle |
 | Log Analytics | at most 0.1 GB x 2.76 x 30 (the cap) | up to 8.28 / month |
 | **Left up, idle** | | **about 33.8 fixed, up to 42.1 with the log cap reached** |
 | **Per hour, idle** | 33.83 / 730 | **0.046** |
 | **Per day, idle, with the log cap** | 24 x 0.046 + 0.276 | **1.39** |
 
-At that rate the 5 USD budget lasts about **3.6 days** (5 / 1.39) before it is spent, and a month costs about 8 times the budget. This profile is for a test and a teardown, not for leaving up. The idle worker and Redis are the largest compute lines; the free monthly vCPU and GiB grants would absorb part of them, by an amount this page does not claim.
+At that rate the 7 USD budget lasts about **5 days** (7 / 1.39), and a month costs about 6 times the budget. Foundry did not change the idle figure; it only adds tokens when something calls the model. This profile is for a test and a teardown, not for leaving up. The idle worker and Redis are the largest compute lines; the free monthly vCPU and GiB grants absorb part of them, by an amount this page does not claim.
+
+### Tokens and cost of the sanity run (estimate)
+
+| Check | Model calls | Tokens (estimate) |
+|---|---|---|
+| `model`: one direct completion | 1 | about 20 in, up to 200 out |
+| `turn`: "show me my recent orders" | orchestrator plus one specialist, with tool results fed back | about 10,000 in, 1,500 out |
+| `eval`: 3 cases of `orchestrator_routing.json` | the same shape, three times | about 30,000 in, 4,500 out |
+| **Total** | | **about 40,000 in, 6,200 out visible; with reasoning tokens (billed as output) allow about 19,000 out** |
+
+40,000 x 0.20 / 1M + 19,000 x 1.25 / 1M = 0.008 + 0.024, **about 0.03 USD**, a third of the 0.10 USD cap the eval was sized for. The prompt sizes are guesses (system prompt, role blocks and tool schemas dominate); the eval run prints the real token counts and estimated cost, so the first run replaces the guess. Embedding queries add well under 0.001.
 
 ### Cost of a 2 hour test
 
@@ -135,10 +155,11 @@ At that rate the 5 USD budget lasts about **3.6 days** (5 / 1.39) before it is s
 | Eight HTTP apps active for 30 minutes | 8 x (0.5 x 1800 x 0.000024 + 1 x 1800 x 0.000003) | 0.216 |
 | `job-db-init`, 10 minutes (estimate) | 0.5 x 600 x 0.000024 + 1 x 600 x 0.000003 | 0.009 |
 | Log Analytics, cap for 2 h | 0.1 GB x 2.76 x 2 / 24 | up to 0.023 |
-| Model tokens with `--llm replay` | no model is called | 0 |
-| **Total, upper bound before any free grant** | | **about 0.34** |
+| Sanity run (stage 12) | tokens above | about 0.03 |
+| Manual chat during the test | 20 turns x about 0.003 | about 0.06 |
+| **Total, upper bound before any free grant** | | **about 0.43** |
 
-The Container Apps lines fall inside the free monthly grants (50 vCPU-hours), so the realistic bill for the test is the Postgres lines, roughly 0.10 USD. Add the provider's own charges if you use `--llm openai`. Costs can lag in the portal by several hours; check Cost Management the next day.
+The Container Apps lines fall inside the free monthly grants (50 vCPU-hours), so the realistic bill for the test is the Postgres lines plus tokens, roughly 0.2 USD (less if the B1ms allowance applies). Costs can lag in the portal by several hours; check Cost Management the next day.
 
 ---
 
@@ -172,7 +193,7 @@ jq --version && curl --version | head -n 1
 
 ### Stage 3. Provider registration (you run it)
 
-A new subscription has the providers unregistered. The free-trial path needs these six (add `Microsoft.CognitiveServices` only if you deploy the Azure OpenAI account):
+A new subscription has the providers unregistered. The free-trial path needs these seven (drop `Microsoft.CognitiveServices` only with `--llm`, which skips the Foundry account):
 
 ```bash
 az provider register --namespace Microsoft.App
@@ -181,8 +202,7 @@ az provider register --namespace Microsoft.Insights
 az provider register --namespace Microsoft.DBforPostgreSQL
 az provider register --namespace Microsoft.KeyVault
 az provider register --namespace Microsoft.ManagedIdentity
-# Only without --llm: the Azure OpenAI account.
-az provider register --namespace Microsoft.CognitiveServices
+az provider register --namespace Microsoft.CognitiveServices      # the Foundry account and its model deployments
 
 az extension add --name containerapp --upgrade --only-show-errors
 ```
@@ -195,7 +215,7 @@ az extension add --name containerapp --upgrade --only-show-errors
   ```bash
   az provider list --query "[?namespace=='Microsoft.App' || namespace=='Microsoft.DBforPostgreSQL' || namespace=='Microsoft.KeyVault' || namespace=='Microsoft.OperationalInsights' || namespace=='Microsoft.Insights' || namespace=='Microsoft.ManagedIdentity'].{ns:namespace,state:registrationState}" -o table
   ```
-  Every row says `Registered`.
+  Every row says `Registered` (add `Microsoft.CognitiveServices` to the filter).
 - **Roll back:** `az provider unregister --namespace <ns>` once the namespace holds no resources. Leaving them registered costs nothing.
 - **Failure modes:** [#33](troubleshooting.md#azure-deployment-first-run-failure-catalogue) (`MissingSubscriptionRegistration`). Until `Microsoft.App` is registered, `az containerapp list-usages` and `az cognitiveservices usage list` answer with an error or an empty list, so the quota check in stage 4 means nothing before this stage is done.
 
@@ -205,7 +225,7 @@ az extension add --name containerapp --upgrade --only-show-errors
 az postgres flexible-server list-skus --location eastus2 -o json \
   | jq -r '.[0] | (.reason // "no restriction"), ([.supportedServerEditions[] | select(.name=="Burstable") | .supportedServerSkus[].name] | join(" "))'
 az containerapp list-usages --location eastus2 -o table          # after stage 3
-az cognitiveservices usage list --location eastus2 -o table      # only for the Azure OpenAI path; empty or zero means no quota
+az cognitiveservices usage list --location eastus2 -o table      # after stage 3; look for OpenAI.GlobalStandard.gpt-5.4-nano and text-embedding-3-small, empty or zero means no quota
 ```
 
 - **Creates:** nothing. **Cost:** none. **Time:** a minute.
@@ -216,18 +236,18 @@ az cognitiveservices usage list --location eastus2 -o table      # only for the 
 ### Stage 5. Dry run (prints, runs nothing)
 
 ```bash
-scripts/azure-up.sh --env <env> --location eastus2 --profile free-trial --llm replay --image-tag v1.4.0 --dry-run
+scripts/azure-up.sh --env <env> --location eastus2 --profile free-trial --image-tag v1.4.0 --dry-run
 ```
 
 - **Creates:** nothing; every `az` and `azd` command is printed. **Cost:** none. **Time:** seconds.
-- **Verify:** the output ends with `azd provision --environment <env> --no-prompt`, has `azd env set DEPLOY_OPENAI false`, and contains no `az cognitiveservices model list`.
+- **Verify:** the output ends with `azd provision --environment <env> --no-prompt`, has `az cognitiveservices model list --location eastus2`, and (with `--llm replay`) `azd env set DEPLOY_OPENAI false` with no model listing.
 - **Roll back:** not needed.
 - **Failure modes:** `--llm openai` without `--llm-base-url` or without `LLM_API_KEY` in the environment is refused with a message; a floating `--image-tag latest` is refused ([#22](troubleshooting.md#azure-deployment-first-run-failure-catalogue) family).
 
 ### Stage 6. What-if
 
 ```bash
-scripts/azure-up.sh --env <env> --location eastus2 --profile free-trial --llm replay --image-tag v1.4.0 --preview
+scripts/azure-up.sh --env <env> --location eastus2 --profile free-trial --image-tag v1.4.0 --preview
 ```
 
 This runs the prerequisite checks (registering any provider you skipped), creates the **local** azd environment and generates the secrets into `.azure/<env>/.env`, then `azd provision --preview`, which is a what-if. It creates nothing in Azure. Expect about 31 creates: the resource group, Log Analytics, Application Insights, the identity, Key Vault with eight secrets, Postgres with its configuration, database and firewall rule, the environment, nine container apps, the job and the budget. Role assignments show as "Unsupported" (their names are computed at deployment time); that is normal.
@@ -242,10 +262,10 @@ If you would rather read it without azd, `az deployment sub what-if --location e
 ### Stage 7. Provision
 
 ```bash
-# Replay path: no key, no model. For your own endpoint add:
+# Default: Foundry with gpt-5.4-nano. No Azure OpenAI quota? add --llm replay (no model) or, for your own endpoint:
 #   export LLM_API_KEY=...           (the key is never an argument)
 #   --llm openai --llm-base-url https://<host>/v1 --llm-model <model>
-scripts/azure-up.sh --env <env> --location eastus2 --profile free-trial --llm replay --image-tag v1.4.0
+scripts/azure-up.sh --env <env> --location eastus2 --profile free-trial --image-tag v1.4.0
 ```
 
 - **Creates:** everything in [What the profile deploys](#what-the-free-trial-profile-deploys), then runs the `postprovision` hook (stages 8 to 10). The frontend answers only your public IP.
@@ -257,7 +277,7 @@ scripts/azure-up.sh --env <env> --location eastus2 --profile free-trial --llm re
   az consumption budget list --query "[].{n:name,amount:amount}" -o table        # 5
   ```
   `azd env get-value FRONTEND_URL` prints the URL.
-- **Roll back / stop spending:** `scripts/azure-down.sh --env <env>` (stage 12). If provisioning stops half way, the resources that exist still bill: run the teardown before debugging for long.
+- **Roll back / stop spending:** `scripts/azure-down.sh --env <env>` (stage 13, after the sanity check and your review). If provisioning stops half way, the resources that exist still bill: run the teardown before debugging for long.
 - **Failure modes:** [#10](troubleshooting.md#azure-deployment-first-run-failure-catalogue) (Key Vault role propagation, retried once after 60 s), [#12](troubleshooting.md#azure-deployment-first-run-failure-catalogue), [#6](troubleshooting.md#azure-deployment-first-run-failure-catalogue), [#7](troubleshooting.md#azure-deployment-first-run-failure-catalogue), [#8](troubleshooting.md#azure-deployment-first-run-failure-catalogue), and the free-trial rows 39 to 44 there. A trial's cap on Container Apps environments or cores shows as a quota error from `Microsoft.App`; it cannot be read in advance (see below).
 
 ### Stage 8. Database bootstrap (`job-db-init`)
@@ -300,7 +320,7 @@ FRONTEND_URL="$(azd env get-value FRONTEND_URL)" E2E_STAFF_PASSWORD="$(azd env g
 - **Roll back:** the demo data goes with the resource group.
 - **Failure modes:** [#20](troubleshooting.md#azure-deployment-first-run-failure-catalogue) and [#28](troubleshooting.md#azure-deployment-first-run-failure-catalogue); with scale to zero a specialist's first request is a cold start (row 40).
 
-### Stage 11. Evaluation against the deployed stack
+### Stage 11. Evaluation against the deployed stack (optional, fuller than the sanity eval)
 
 The http eval target needs only the URL. Use the frontend URL (it proxies `/api/*` to the orchestrator, which has no public address):
 
@@ -308,29 +328,59 @@ The http eval target needs only the URL. Use the frontend URL (it proxies `/api/
 cd agents/python
 export EVAL_STAFF_PASSWORD="$(azd env get-value SEED_STAFF_PASSWORD)"
 LLM_PROVIDER=replay uv run python -m evals.run_evals --target http \
-  --base-url "$(azd env get-value FRONTEND_URL)" --stack python --chat-provider replay \
+  --base-url "$(azd env get-value FRONTEND_URL)" --stack python --chat-provider azure --chat-model gpt-5.4-nano \
   --agent orchestrator --dataset evals/datasets/stack_parity.json --pass-threshold 0 --records-out /tmp/freetrial-eval.jsonl
 ```
 
-`stack_parity.json` holds cases that call no model, so it runs on a `replay` deployment. A model-calling dataset against a replay stack reports replay misses, not scores; run those only after `--llm openai` or the Azure OpenAI path, and only on purpose (they spend provider money outside this budget).
+`stack_parity.json` holds cases that call no model, so it also runs on a `--llm replay` deployment. `orchestrator_routing.json` calls the model; the sanity check runs three of its cases. A full model dataset spends tokens on the 7 USD budget: estimate it with `--estimate` first.
 
-- **Creates:** conversations and run records in the demo database. **Cost:** requests only. **Time:** 1 to 3 minutes (estimate; cold starts first).
-- **Verify:** the run prints a per-suite report and exits 0 with `--pass-threshold 0`; `/tmp/freetrial-eval.jsonl` has one record per case.
+- **Creates:** conversations and run records in the demo database. **Cost:** requests only for `stack_parity`; tokens for a model dataset. **Time:** 1 to 3 minutes (estimate; cold starts first).
+- **Verify:** a per-suite report and exit 0 with `--pass-threshold 0`; `/tmp/freetrial-eval.jsonl` has one record per case.
 - **Roll back:** the data goes with the resource group.
 - **Failure modes:** a 429 backs off and retries; a replay miss is reported, never silently scored; the frontend IP allow-list must include the machine running the eval.
 
-### Stage 12. Teardown
+### Stage 12. Sanity check (last, before you decide anything)
 
 ```bash
-scripts/azure-down.sh --env <env>            # azd down --purge --force, purges Key Vault, proves rg-<env> is gone
-az group exists --name rg-<env>              # false
-az keyvault list-deleted --query "[].name" -o tsv    # empty
+scripts/azure/sanity.sh --env <env>                 # all four checks
+scripts/azure/sanity.sh --env <env> --only model    # one check; db | model | turn | eval
+scripts/azure/sanity.sh --resource-group rg-<env>   # after a portal deployment: set E2E_STAFF_PASSWORD to the password you chose
 ```
 
-- **Deletes:** the resource group and every resource in it, then purges the soft-deleted vault. **Cost:** stops the hourly charges. **Time:** 5 to 15 minutes (estimate).
+It proves the chain from the database to a model answer, prints PASS, FAIL or SKIP per check, never prints a key, and exits non-zero if any check failed:
+
+| Check | What it does | How it reaches the database without exposing it |
+|---|---|---|
+| `db` | Admin and the seeded customer log in through the frontend; counts products, lists orders, reads the approvals inbox (a late migration) | Read-only GETs through the deployed path, frontend to orchestrator to its connection pool. No firewall rule, no `az containerapp exec`, no SQL client. A count over the API is what is possible with the database private to the apps |
+| `model` | One chat completion on the deployed Foundry endpoint, `max_completion_tokens` 200, key from Key Vault (falls back to `az cognitiveservices account keys list`) | Not the database. SKIP when the environment has no model account |
+| `turn` | "Show me my 3 most recent orders" as the seeded customer through `/api/chat/stream`; needs a route to a specialist, a specialist tool step (which read the database) and an answer | The specialist's own tools read Postgres |
+| `eval` | The first 3 cases of `orchestrator_routing.json` over the http target, `--repeats 1`; needs no case errored and every case routed to a specialist; prints groundedness and token counts (not graded) | The orchestrator's tools |
+
+- **Creates:** nothing in Azure. It writes rows to the deployed database (a chat conversation and run records for the seeded users), listed in its summary; they go with the environment. **Deletes nothing and tears nothing down.**
+- **Cost:** about 0.03 USD of tokens (estimate above). **Time:** 3 to 8 minutes (estimate; the first calls wake scaled-to-zero apps, each call waits up to `SANITY_WAIT_SECONDS`, 300).
+- **Verify:** the last lines read `sanity: 4 passed, 0 failed, 0 skipped` and exit code 0 (`echo $?`).
+- **If a check fails:** the script prints what it created (nothing in Azure, which rows) and the command to run that check again (`--only <check>`). The environment stays up and keeps billing; nothing is rolled back automatically. Decide after reading the output: fix and re-run, or tear down.
+- **Failure modes:** `db` empty means stage 8 did not finish (`az containerapp job start ...`); `model` HTTP 400 means the account rejected the model name or API version; `turn` can exceed the 60 second A2A timeout on a cold chain (troubleshooting row 40: run it again once); `eval` on a `--llm replay` deployment reports replay misses.
+
+**Do not tear down until the maintainer has reviewed the results.** The sanity check ends by saying so; the teardown is stage 13 and is only ever run by hand.
+
+### Stage 13. Teardown (a separate, explicit step)
+
+```bash
+scripts/azure-down.sh --env <env>            # azd down --purge --force, purges Key Vault and the Foundry account, proves rg-<env> is gone
+az group exists --name rg-<env>              # false
+az keyvault list-deleted --query "[].name" -o tsv                 # empty
+az cognitiveservices account list-deleted --query "[].name" -o tsv  # empty
+```
+
+- **Deletes:** the resource group and every resource in it, then purges the soft-deleted vault and Foundry account. **Cost:** stops the hourly charges. **Time:** 5 to 15 minutes (estimate).
 - **Verify:** `az group exists` prints `false`. Check Cost Management the next day; costs lag.
 - **Roll back:** none; redeploy from stage 7.
 - **Failure modes:** [#38](troubleshooting.md#azure-deployment-first-run-failure-catalogue) (`azd down` fails or the environment is not on this machine: `az group delete --name rg-<env> --yes`, then `scripts/azure-down.sh --env <env> --purge-only`). The budget resource is inside the group and is deleted with it.
+
+## The portal button instead of azure-up.sh
+
+`infra/azuredeploy.json` is the compiled template behind the README's Deploy to Azure button ([how it handles the azd hooks](azure-deployment.md#deploy-to-azure-button)). For this profile: open the button, choose the region `eastus2`, set `profile` to `free-trial`, `environmentName`, `imageTag` `v1.4.0`, `seedStaffPassword` (12 characters or more) and your public address in `deployerIp`; after the deployment run the `DB_INIT_START_COMMAND` output, then stages 9, 10 and 12 (`sanity.sh --resource-group rg-<env>` with `E2E_STAFF_PASSWORD` set). It checks nothing in advance (stages 3 to 6 do not happen), so a quota or region problem shows as a failed deployment with partial resources: delete the resource group. The button is unverified.
 
 ## Findings from the read-only rehearsal
 
@@ -338,27 +388,31 @@ Run against an empty new subscription, nothing created. Classified as the task a
 
 | Finding | Class | What it means |
 |---|---|---|
-| The template, its modules and all fixtures build and lint clean (Bicep 0.49.2) | none | |
-| `az deployment sub validate` and `what-if` succeeded for `free-trial`, `free-trial-replay` and `free-trial-openai` while 9 of 11 providers were unregistered | none | Neither command checks registration, quota or policy, so a clean result does not predict a clean deployment |
+| The template, its modules and every fixture build and lint clean (Bicep 0.49.2) | none | |
+| `az deployment sub validate` and `what-if` succeeded for `free-trial` (39 changes: Foundry account, project, `chat` `gpt-5.4-nano`, `embedding`, budget 7), `free-trial-replay` (31) and `free-trial-openai` (32), and for the compiled `infra/azuredeploy.json` with only the required portal parameters (39), while 9 of 11 providers were unregistered | none | Neither command checks registration, quota or policy, so a clean result does not predict a clean deployment |
 | `Microsoft.App`, `OperationalInsights`, `Insights`, `DBforPostgreSQL`, `KeyVault`, `ManagedIdentity`, `CognitiveServices`, `ContainerRegistry`, `Network` were not registered | permission (the maintainer registers them, stage 3) | `az containerapp list-usages` failed with a registration error until `Microsoft.App` is registered |
-| `az cognitiveservices usage list` returned an empty list | quota (unknown) | Empty because the provider is unregistered; the TPM quota for `gpt-5.1` can only be read after stage 3 |
-| `az cognitiveservices model list` for `eastus2`: `gpt-5.1` `2025-11-13` and `text-embedding-3-small` `1` are GenerallyAvailable with a GlobalStandard SKU; `gpt-4.1-mini` is `Legacy` | quota | The models exist; whether this subscription may deploy them is the unread quota |
-| `az postgres flexible-server list-skus`: `eastus2`, `centralus`, `westus3`, `westeurope`, `northeurope`, `swedencentral`, `uksouth` offer `Standard_B1ms` with no restriction; **`eastus` answers "Provisioning is restricted in this region"** | policy (offer restriction on a new subscription) | Use `eastus2` (the region every example here uses). Not a template defect |
+| `az cognitiveservices usage list` returned an empty list | quota (unknown) | Empty because the provider is unregistered; the TPM quota for `gpt-5.4-nano` and `text-embedding-3-small` can only be read after stage 3. A new subscription often has none |
+| `az cognitiveservices model list --location eastus2`: `gpt-5.4-nano` `2026-03-17`, `gpt-5-nano`, `gpt-5.1` are GenerallyAvailable with GlobalStandard; `gpt-4.1-mini`, `gpt-4.1-nano` are `Legacy`, `gpt-4o-mini` is `Deprecating` | quota | The model exists; whether this subscription may deploy it is the unread quota |
+| `az postgres flexible-server list-skus`: `eastus2`, `centralus`, `westus3`, `westeurope`, `northeurope`, `swedencentral`, `uksouth` offer `Standard_B1ms` with no restriction; **`eastus` answers "Provisioning is restricted in this region"** | policy (offer restriction on a new subscription) | Use `eastus2`. Not a template defect |
 | No Azure Policy assignments were visible to the signed-in user | policy | A policy that denies a resource would show only at deployment |
 | The signed-in user holds `Owner` | permission ok | Role assignments in the template can be created |
-| `Microsoft.App` free-trial caps (environments, cores) | quota (unreadable) | Needs the provider registered; read `az containerapp list-usages --location eastus2` after stage 3 |
-| Log Analytics `workspaceCapping.dailyQuotaGb` must be a number the Bicep type system could not express as `int` | template defect, **fixed** | The monitoring module now takes the cap as a decimal string and passes it through `json()`; the what-if shows `0.1` |
-| A conditional secret gated on a `@secure()` value was predicted even when empty (`bicep snapshot`) | template defect, **fixed** | Gated on a plain boolean instead, so the demo's resource list is unchanged (pinned by test) |
+| `Microsoft.App` free-trial caps (environments, cores) | quota (unreadable) | Read `az containerapp list-usages --location eastus2` after stage 3 |
+| The Log Analytics daily cap could not be passed as a decimal | template defect, **fixed** | The monitoring module takes it as a decimal string through `json()`; the what-if shows `0.1` |
+| A conditional secret gated on a `@secure()` value was predicted even when empty | template defect, **fixed** | Gated on a plain boolean; the demo's resource list is unchanged (pinned by test) |
+| The portal path had no way to supply seven secrets and a region | template defect, **fixed** | Six secrets and `location` now have defaults (`newGuid()`, `deployment().location`); only `environmentName`, `imageTag` and `seedStaffPassword` are required |
 
 ## What this page could not verify
 
 Without a real deployment:
 
 - That a free-trial subscription can create a Container Apps environment and nine apps, and what core and environment quotas it enforces.
-- That Postgres Flexible Server creation succeeds on the trial (the SKU listing is not an offer check) and that `azure.extensions` accepts `VECTOR,PGCRYPTO`.
+- That the subscription has TPM quota for `gpt-5.4-nano` and the embedding model, and that the account accepts `gpt-5.4-nano` on API version `2025-04-01-preview` (the apps call it on the Responses API by default). The `model` sanity check is the first thing that would find out.
+- That a Foundry project can be created under the account in `eastus2` with the API version the module uses (`2026-09-01`), and that App Insights traces appear in it.
+- That Postgres Flexible Server creation succeeds on the trial (the SKU listing is not an offer check) and that `azure.extensions` accepts `VECTOR,PGCRYPTO`. The maintainer's 750 free B1ms hours are not confirmed from Microsoft's documentation.
 - That the Container Apps environment has no hourly management charge. The Retail Prices API lists an `Environment Management Hour` meter at 0.10 USD an hour; the billing page says plan management charges apply to Dedicated profiles, private endpoints and planned maintenance, none of which this profile uses. If that meter appeared on a bill it would cost 2.40 USD a day: check Cost Management a few hours after stage 7.
-- Cold-start behaviour with every HTTP app at zero. Troubleshooting row 21 says a Python cold start can exceed the 60 second A2A timeout; this profile accepts that risk, so the first chat turn after idle may fail and the second succeed. Warm the chain with a login and a product list first, or set `minReplicas` to 1 in the profile for the orchestrator and specialists (idle cost about 11.8 USD a month for each at 0.5 vCPU and 1 GiB).
-- Whether the free grants (account credit, 12 month Postgres, Log Analytics) apply to this subscription and by how much.
-- Whether budget notifications are accepted on a trial subscription, and when they arrive.
-- Whether `azd provision --preview` runs the preprovision hook.
-- The PowerShell mirrors (`azure-up.ps1`, `prereqs.ps1`, `preprovision.ps1`) do not have the free-trial or `--llm` options; use the bash scripts (macOS, Linux, WSL).
+- Cold-start behaviour with every HTTP app at zero. Troubleshooting row 21 says a Python cold start can exceed the 60 second A2A timeout; this profile accepts that risk, so the first chat turn after idle (including the sanity `turn` check) may fail and the second succeed. Set `minReplicas` to 1 in the profile for the orchestrator and specialists to avoid it (idle cost about 11.8 USD a month each at 0.5 vCPU and 1 GiB).
+- Whether the free grants (account credit, 12 month Postgres, Log Analytics) apply and by how much, and whether budget notifications are accepted on a trial and when they arrive.
+- Whether `azd provision --preview` runs the preprovision hook; `--preview` runs it explicitly.
+- Whether the portal accepts the subscription-scope `azuredeploy.json`, and whether ARM registers providers on demand for it.
+- That the sanity script's parsing matches the live responses. Its `db` and `turn` checks run offline against a mock frontend in the test suite; the `model` and `eval` checks have never run, and the token figures above are estimates.
+- The PowerShell mirrors (`azure-up.ps1`, `prereqs.ps1`, `preprovision.ps1`) do not have the free-trial, `--llm`, `--preview` or sanity options; use the bash scripts (macOS, Linux, WSL).

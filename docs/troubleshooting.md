@@ -145,7 +145,7 @@ the Aspire container. See [telemetry.md](./telemetry.md).
 
 ## Azure deployment: first-run failure catalogue
 
-Forty-four ways a first `scripts/azure-up.sh` goes wrong, and what already guards against each. None of this has run against a real subscription yet ([azure-deployment.md](azure-deployment.md) lists the assumptions), so the guards are the intent, not a track record. When one fires, the message names the fix.
+Forty-nine ways a first `scripts/azure-up.sh` goes wrong, and what already guards against each. None of this has run against a real subscription yet ([azure-deployment.md](azure-deployment.md) lists the assumptions), so the guards are the intent, not a track record. When one fires, the message names the fix.
 
 | # | Failure | Symptom | Guard |
 |---|---|---|---|
@@ -189,10 +189,15 @@ Forty-four ways a first `scripts/azure-up.sh` goes wrong, and what already guard
 | 38 | `azd down` fails or the environment is not on this machine | `no azd environment` or a purge error from a protected vault | `azure-down` explains how to delete `rg-<env>` by hand and re-run with `--purge-only`; a failing `azd down` no longer stops the leftover check |
 | 39 | Free trial: `eastus` refuses Postgres | `list-skus` answers "Provisioning is restricted in this region" (seen on a new subscription) | `check_postgres_sku` fails with the alternatives; use `eastus2` ([sequence](azure-deployment-sequence.md#findings-from-the-read-only-rehearsal)) |
 | 40 | Free trial: the first request after idle fails or is slow | a 502 or a timeout on the first chat or API call; the second works | `free-trial` scales every HTTP app to zero, so row 21's guard is deliberately off. Log in and list products first to wake the chain, or raise `minReplicas` in `profiles/free-trial.json` |
-| 41 | Free trial: no Azure OpenAI quota | `InsufficientQuota`, or an empty `az cognitiveservices usage list` | `--llm replay` (no model, 0 USD) or `--llm openai` with your own endpoint; both set `deployOpenAi=false` and skip the account |
+| 41 | Free trial: no Azure OpenAI quota for `gpt-5.4-nano` | `InsufficientQuota`, or an empty `az cognitiveservices usage list` (the profile deploys the Foundry account and model by default) | `--llm replay` (no model, 0 USD) or `--llm openai` with your own endpoint; both set `deployOpenAi=false` and skip the account |
 | 42 | Replay stack: every chat prompt says it was not recorded | the chat shows the "not recorded" notice | expected under `--llm replay`: the released images carry no recordings. Browsing, search, cart and the quick smoke work; use `--llm openai` for chat |
 | 43 | Logs stop mid-day | no new rows in Log Analytics until midnight UTC | the 0.1 GB/day cap is reached; raise `dailyQuotaGb` in the profile (cost 2.76 USD per GB) or wait. Use `az containerapp logs show` for live logs meanwhile |
-| 44 | Budget alert arrives and spending continues | an email at 50 percent, the apps still run | a budget only notifies. Run `scripts/azure-down.sh --env <env>`; idle, the profile costs about 1.4 USD a day |
+| 44 | Budget alert arrives and spending continues | an email at 50 percent, the apps still run | a budget only notifies. Run `scripts/azure-down.sh --env <env>` once you have reviewed; idle, the profile costs about 1.4 USD a day |
+| 45 | `sanity.sh` model check answers HTTP 400 or 404 | `DeploymentNotFound`, or "unsupported parameter" for `gpt-5.4-nano` | the deployment is named `chat`; check `az cognitiveservices account deployment list`. An API version the model rejects: `azd env set AZURE_OPENAI_API_VERSION <newer>` and run `azd provision` again. The apps call the same endpoint, so fix it before chatting |
+| 46 | `sanity.sh` cannot read the model key | "could not read the key" | the deployer reads Key Vault only when azd passed a principal id (a portal deployment does not); the script then falls back to `az cognitiveservices account keys list`, which needs Contributor on the account. Without either, the `model` check FAILs and the others still run |
+| 47 | Portal deployment finished but logins fail and `/ready` answers 503 | the frontend loads, every API call 502 or 503 | nothing starts `job-db-init` without azd: run the `DB_INIT_START_COMMAND` output (`az containerapp job start --name job-db-init --resource-group rg-<env>`) |
+| 48 | Portal deployment: the frontend answers 403 | `ipSecurityRestrictions` denies your address | `deployerIp` was left empty, so the allow-list is `192.0.2.1/32` (nobody). Deploy again with your address, or `publicAccess` `open` for a throwaway test |
+| 49 | Redeploying from the portal broke the database login | apps crash-loop on `password authentication failed` after a second deployment | without azd the generated secrets are parameter defaults, so a second deployment of the same environment generates and applies new ones; the job and apps pick them up on their next revision, a running database session does not. Use azd for upgrades, or delete the resource group and start again |
 
 Other things to try first: `az containerapp revision list --name ca-orchestrator --resource-group rg-<env> -o table` for revision health, `az containerapp logs show --name ca-orchestrator --resource-group rg-<env> --follow false`, and `azd env get-values` for what the hooks saw (it contains secrets; do not paste it).
 
