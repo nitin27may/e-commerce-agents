@@ -18,7 +18,7 @@ MAF emits OpenTelemetry spans itself. With a little setup per language you see a
 
 - Completed [Chapter 06 — Middleware](../06-middleware/)
 - `.env` with working LLM credentials (`OPENAI_API_KEY`, or `AZURE_OPENAI_ENDPOINT` / `AZURE_OPENAI_KEY` / `AZURE_OPENAI_DEPLOYMENT`)
-- **Key:** `main.py`'s default prompt has no recorded fixture, so running it needs a key (live run). Without one, the chapter's tests replay their own recorded prompt: `uv run --project tutorials pytest tutorials/07-observability-otel/python/tests -m "not integration"`.
+- **No key is needed to run this chapter.** With no key, `main.py` replays a recorded response for its default prompt, and the chapter's tests replay their own: `uv run --project tutorials pytest tutorials/07-observability-otel/python/tests -m "not integration"`. A different prompt has no recording; set a key to try your own wording.
 
 ## The concept
 

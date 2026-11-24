@@ -1,0 +1,54 @@
+{
+  "request": {
+    "instructions": "You are a personal shopping assistant. Greet the user by name if you know it. Keep answers short.\nCurrent user: Alice (alice@example.com). Loyalty tier: gold.",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "Greet me and tell me what tier I'm on.",
+            "type": "text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      }
+    ],
+    "tools": []
+  },
+  "response": {
+    "created_at": "2026-11-24T03:30:08.000000Z",
+    "finish_reason": "stop",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "Hello, Alice! You're on the gold loyalty tier.",
+            "type": "text"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      }
+    ],
+    "model": "gpt-4.1-2025-04-14",
+    "response_id": "chatcmpl-EnbWKeHeG7kvi4myBn5VIPucrdok0",
+    "type": "chat_response",
+    "usage_details": {
+      "cache_read_input_token_count": 0,
+      "completion/accepted_prediction_tokens": 0,
+      "completion/audio_tokens": 0,
+      "completion/reasoning_tokens": 0,
+      "completion/rejected_prediction_tokens": 0,
+      "input_token_count": 58,
+      "output_token_count": 11,
+      "prompt/audio_tokens": 0,
+      "prompt/cached_tokens": 0,
+      "reasoning_output_token_count": 0,
+      "total_token_count": 69
+    }
+  }
+}

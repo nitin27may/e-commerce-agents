@@ -16,6 +16,7 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ### Added
 
+- **Seven more tutorial chapters run with no key** (04, 05, 07, 12, 13, 14, 16): their default prompts are recorded (22 responses), the keyless runner no longer skips them, and it clears chapter 04's saved session between runs. Only 20b (DevUI) is still skipped.
 - **The no-key demo has its recordings.** `agents/python/demo/fixtures/replay/` holds 77 recorded model responses for the nine tour chips (as the tour user) and the prompts of the demo guide (as Alice), `demo/fixtures/manifest.json` maps each prompt to its recordings, and the image copies `demo/`. `tests/test_demo_fixtures.py` keeps the directory, the manifest and `config/demo/tour.yaml` in step.
 - **Judge calibration (NA-3).** `evals/judge_calibration/` holds 30 drafted, unreviewed completeness labels, stored verdicts for four candidate judges and an offline `--rescore`; the default judge stays `gpt-4.1-mini` under the stated rule (5 points of agreement, under 3x cost), and `gpt-4.1` agrees most but costs 5.2x.
 - **Provider capability results (NA-4).** `evals.provider_check` gains tool-result and `temperature` probes, per-probe token counts, a `max_tokens` to `max_completion_tokens` retry for the gpt-5 family and `--save-result`; results for eight Azure deployments and two Ollama models are stored under `evals/provider-results/` and the capability table in `docs/model-providers.md` is generated from them (`scripts/build_provider_table.py --check` runs in CI).

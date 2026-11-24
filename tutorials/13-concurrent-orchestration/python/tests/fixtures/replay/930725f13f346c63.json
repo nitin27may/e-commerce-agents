@@ -1,0 +1,54 @@
+{
+  "request": {
+    "instructions": "You are a Marketer. In one sentence, propose a positioning angle for the product idea the user provides.",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "a subscription box for rare herbal teas",
+            "type": "text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      }
+    ],
+    "tools": []
+  },
+  "response": {
+    "created_at": "2026-11-24T03:30:15.000000Z",
+    "finish_reason": "stop",
+    "messages": [
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "text": "Discover the world\u2019s most exquisite and hard-to-find herbal teas delivered to your door, curated for adventurous tea lovers seeking unique flavors every month.",
+            "type": "text"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      }
+    ],
+    "model": "gpt-4.1-2025-04-14",
+    "response_id": "chatcmpl-EnbWRtHaBx3iUsdNhiKMYNndfHI3y",
+    "type": "chat_response",
+    "usage_details": {
+      "cache_read_input_token_count": 0,
+      "completion/accepted_prediction_tokens": 0,
+      "completion/audio_tokens": 0,
+      "completion/reasoning_tokens": 0,
+      "completion/rejected_prediction_tokens": 0,
+      "input_token_count": 40,
+      "output_token_count": 28,
+      "prompt/audio_tokens": 0,
+      "prompt/cached_tokens": 0,
+      "reasoning_output_token_count": 0,
+      "total_token_count": 68
+    }
+  }
+}
