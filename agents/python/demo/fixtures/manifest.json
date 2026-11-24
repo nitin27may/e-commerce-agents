@@ -9,10 +9,10 @@
       "new_conversation": true,
       "prompt": "Show me noise-cancelling headphones under $350.",
       "fixtures": [
-        "5f80148429393171",
+        "5ddc78b92da905c2",
         "668072f298346730",
         "984f8121e0d100a3",
-        "d23a1cb7ffb3576f"
+        "8c9fa5ac58db4d09"
       ]
     },
     {
@@ -65,10 +65,10 @@
       "new_conversation": true,
       "prompt": "Is the Sony WH-1000XM5 in stock?",
       "fixtures": [
-        "0bf181a8ecdad01e",
-        "2028a1a2f885adee",
+        "63a5a51fbbb05857",
+        "c96580aecb7beace",
         "3f172ee34d09d802",
-        "42e02980ec99656c",
+        "cdc6e744b9ff79d1",
         "587f597278dc7d75"
       ]
     },
@@ -126,8 +126,8 @@
       "prompt": "Find me wireless headphones under $300 with good noise cancellation",
       "fixtures": [
         "1a9f9be2036e38ff",
-        "2940beeb075ea572",
-        "d055dda3b3847a4c",
+        "0e709556904ea7be",
+        "be660f8c0617f0a3",
         "e22b74649039d385"
       ]
     },
@@ -139,10 +139,10 @@
       "new_conversation": true,
       "prompt": "Compare the Sony WH-1000XM5 with AirPods Max",
       "fixtures": [
-        "1942eba4b5aeed57",
+        "e84ddb1397c7abad",
         "5ff42b99ab236955",
-        "8ed7a3e2fa498f0f",
-        "bf8e6738a2110a87",
+        "324e9f70ec8aa9f5",
+        "fd51e6d31406f0d1",
         "f54c025f2cc1ec33"
       ]
     },
@@ -215,11 +215,11 @@
       "prompt": "Is the Dyson V15 Detect in stock?",
       "fixtures": [
         "229ccf55c3ef1be7",
-        "251a04e7fbaa9c07",
-        "8b0e7298b4723372",
-        "d8e1c6bc4874e7e3",
+        "d36cdda69df4cc0d",
+        "06e09ee36d3915d8",
+        "688fc7a828bfcbcf",
         "ea16d7ae850df466",
-        "f4fb36f3a791a583"
+        "f9d7b6b955a3ed02"
       ]
     },
     {
@@ -234,9 +234,9 @@
         "7b35d9da3d92d333",
         "a39c36aa279e41ed",
         "aa89b08957732501",
-        "bd1061e1aba2e996",
-        "df0ba6a83631b573",
-        "e79ca8fd2e208762"
+        "7ca588fd9f0b748f",
+        "011af663c6bc47f8",
+        "3dda72d54627e195"
       ]
     },
     {
@@ -269,9 +269,9 @@
       "new_conversation": true,
       "prompt": "What Allbirds products do you have?",
       "fixtures": [
-        "0425b19f78e9eb02",
+        "dd7f9a9bb6fb8602",
         "862818fc416754c2",
-        "cbf711449b43f2e6",
+        "fd4cca5b2061bb1a",
         "eb71cb80b51809e3"
       ]
     },
@@ -378,8 +378,8 @@
       "new_conversation": false,
       "prompt": "What noise cancelling headphones do you have?",
       "fixtures": [
-        "0a5a2dc35f0be7b4",
-        "60ae622354648677",
+        "d24a460ac8fb99d5",
+        "11af08c9fca7388b",
         "e5c9c1d28cf071df",
         "e8ac4b4f0cbe65fa"
       ]
@@ -403,9 +403,9 @@
       "new_conversation": true,
       "prompt": "Find the Sony WH-1000XM5 headphones",
       "fixtures": [
-        "61d2aae4f5da0086",
-        "8278b5022dca6a8d",
-        "c610d6f7186587b2",
+        "3649594130d42a1e",
+        "f99768c1bc295c43",
+        "c981f6a6dfd0d6ec",
         "d6abbb8b6a878d04",
         "dece21da8ef96324"
       ]
@@ -432,11 +432,11 @@
       "new_conversation": true,
       "prompt": "Find the Sony WH-1000XM5 headphones",
       "fixtures": [
-        "8f027737d0644028",
+        "fc2300d3d8907f5f",
         "cab9db5b7b776c1f",
-        "d80b28065857f397",
+        "d524b70b93b1aaaf",
         "dc55ec3c2fe27159",
-        "df8a202f03e30a0a"
+        "79b8336b29665502"
       ]
     },
     {
@@ -447,10 +447,10 @@
       "new_conversation": false,
       "prompt": "Is it in stock? Show me the breakdown by warehouse.",
       "fixtures": [
-        "1d1407092c8d699a",
+        "4477367c59bc6201",
         "5b0139099bcb1dbe",
         "f65be4fea96b9919",
-        "faccd40f136023b6"
+        "cc84a3b5dc4dc911"
       ]
     },
     {
@@ -475,11 +475,11 @@
       "new_conversation": true,
       "prompt": "Find the Sony WH-1000XM5 headphones",
       "fixtures": [
-        "6a419fee74d4654d",
-        "6f3d5f046cb67b75",
+        "987412d628a8fbaf",
+        "a4281b336be3613e",
         "98011585f2d9f6ad",
         "b36f02ff543ce2d4",
-        "df6a8a0ca062fc7b"
+        "0913ee19530e4865"
       ]
     },
     {
@@ -490,10 +490,10 @@
       "new_conversation": false,
       "prompt": "How much would it cost to ship this to the east region, and what are my carrier options?",
       "fixtures": [
-        "20b32fb9e2df3922",
+        "9ce056cd9e2e648d",
         "5b232ab3af17ed0c",
         "7a51dcb1f403fe12",
-        "aedf64713790c664"
+        "43ef304e2f1427b3"
       ]
     },
     {
@@ -506,8 +506,8 @@
       "fixtures": [
         "3cc772bc2651ddf1",
         "6392c1abb6bf8893",
-        "e4662b524da1c309",
-        "e76f1ec241217974"
+        "9afce5b9991b74c8",
+        "b2c3c37ba526a972"
       ]
     },
     {
@@ -532,8 +532,8 @@
       "new_conversation": true,
       "prompt": "Show me wireless headphones under $400",
       "fixtures": [
-        "0366576bda57b84a",
-        "1f91a69a06066f66",
+        "f89b7834a3f758e5",
+        "9282770240bd89db",
         "3efa67239f76506c",
         "d9b11d25fdd747cb"
       ]
