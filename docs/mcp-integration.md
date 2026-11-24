@@ -196,8 +196,7 @@ two ways, with `agents/python/evals/mcp_compare.py`:
    run against the native function and the MCP server on the seeded database. All eleven return equal results.
 2. **The same cases both ways, replayed.** Eleven cases, each recorded once per path (the MCP tools carry a different
    top-level schema title and a different tool order, so the MCP path has its own fixtures). Tool-call accuracy is 0.955
-   native and 0.864 MCP; the whole gap is one case, "when will the Sony be back in stock", see below. One more case differs in
-   whether the model looked up its memories first, with equal accuracy. Answer text is never identical across two
+   on both paths. One case differs in whether the model looked up its memories first, with equal accuracy. Answer text is never identical across two
    recordings; the report counts it and does not gate on it.
 
 ### How the twins stay twins
@@ -215,14 +214,15 @@ commit. Two things the alignment settled:
   same tool set. The MCP product server therefore no longer returns `in_stock`, `seller` or `total_stock` from
   `get_product_details` (use `check_stock`); it returns what the native tool does.
 
-### The one case that still differs, and why it is not an MCP difference
+### Restock versus availability
 
-"When will the Sony be back in stock" was recorded on the native path calling `get_restock_schedule` and on the MCP path
-calling `get_warehouse_availability`. With identical descriptions and schemas the MCP path still chose the second tool (twice),
-and a fresh native recording, made to test this, chose it too. Native `get_warehouse_availability` says it includes restock
-schedules, which makes the two tools overlap for this question. The committed native recording is the lucky roll, so the
-accepted entry stays in `mcp_known_differences.json` with that reason. The lasting fix is to reword the native description
-(and its twin), which re-records every native fixture that lists the tool, and is a separate change.
+"When will the Sony be back in stock" used to pick `get_warehouse_availability` over MCP (twice, and on a fresh native
+recording too) because its description said it included restock schedules, which overlaps `get_restock_schedule`. The
+description now says it reports current per-warehouse stock only and points to `get_restock_schedule` for when stock returns
+(the same words on the native tool, the MCP twin and the .NET tool). On both paths the model now picks
+`get_restock_schedule`, which took MCP accuracy from 0.864 to 0.955, equal to native. The result of
+`get_warehouse_availability` is unchanged and still carries `upcoming_restocks`; only the description moved.
+`test_inventory_descriptions_keep_restock_and_availability_apart` pins that the two do not claim the same job.
 
 Every accepted difference is listed with its reason in `agents/python/evals/mcp_known_differences.json`; the job fails on a
 new difference, on a drop in tool-call accuracy outside the listed cases, and on a listed entry that stopped differing.
