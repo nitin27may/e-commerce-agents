@@ -199,7 +199,7 @@ before a run (the same deterministic generator, idempotent). Results are in [age
 ## Not done here, and parity
 
 * **PO-value approval thresholds beyond the per-line limits** (the last item of #298) are not built.
-* Python only (parity matrix, rows 39 and 56): the .NET stack has no proposal routes and no merchant-ops agent. Its
+* Python only (parity matrix, rows 39 and 57): the .NET stack has no proposal routes and no merchant-ops agent. Its
   approvals inbox shares the database and would list a proposal approval, but refuses to decide it.
 
 ### A shortfall above the restock limits

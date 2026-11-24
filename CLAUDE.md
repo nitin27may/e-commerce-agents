@@ -204,7 +204,7 @@ description appear only with the flag, because both are part of every orchestrat
 `evals/datasets/merchant_ops.json` (fixtures recorded, `evals/merchant_setup.py` makes the batch), live twin under
 `datasets/live`. A replay case must not make the model pass a random id (a proposal or review id) as a tool argument: arguments
 are hashed verbatim, so the fixture would miss on the next seed. Any ordering in a tool's output must be total on stable keys,
-never on a random id. Parity row 56 (Python only).
+never on a random id. Parity row 57 (Python only).
 
 ### Event autonomy (#94, Python only)
 
