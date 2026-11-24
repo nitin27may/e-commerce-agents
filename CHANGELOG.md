@@ -17,6 +17,7 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 ### Added
 
 - **Judge calibration (NA-3).** `evals/judge_calibration/` holds 30 drafted, unreviewed completeness labels, stored verdicts for four candidate judges and an offline `--rescore`; the default judge stays `gpt-4.1-mini` under the stated rule (5 points of agreement, under 3x cost), and `gpt-4.1` agrees most but costs 5.2x.
+- **Provider capability results (NA-4).** `evals.provider_check` gains tool-result and `temperature` probes, per-probe token counts, a `max_tokens` to `max_completion_tokens` retry for the gpt-5 family and `--save-result`; results for eight Azure deployments and two Ollama models are stored under `evals/provider-results/` and the capability table in `docs/model-providers.md` is generated from them (`scripts/build_provider_table.py --check` runs in CI).
 - **Orchestrator live routing dataset grown to 30 cases** (14 happy, 9 edge, 7 adversarial) with a `why` line each, plus `expected_routes` and `forbidden_routes` assertions in the eval schema.
 - **Live product-discovery dataset grows to 25 cases** (11 happy path, 8 edge, 6 adversarial, each with a one-line `why`), single-turn, seeded users and products only (NA-2).
 - **Review-sentiment live dataset grown to 29 cases** (12 happy, 9 edge, 8 adversarial, each with a `type` and a one-line `why`); no seed or fixture change.
