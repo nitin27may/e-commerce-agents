@@ -115,7 +115,11 @@ This layer is the broadest defense. Its weakness is that it is only as reliable 
 - XML-style injection tags (`</system>`, `<instructions>`)
 - Privilege escalation phrasing (`act as if you are an admin`)
 
-**Default behavior**: observe-only. Detections increment a counter, set `context.metadata["guardrail_injection_detected"]`, and log at INFO. Set `GUARDRAILS_BLOCK_ON_INJECTION=true` to log at WARNING; blocking of the request itself requires a custom middleware that reads the metadata flag.
+**Default behavior**: observe-only (`GUARDRAILS_BLOCK_ON_INJECTION=false`). A detection increments a counter, sets `context.metadata["guardrail_injection_detected"]` and the request-scoped `injection_detected` guardrail flag, and logs at INFO; the message still reaches the model.
+
+**Blocking**: set `GUARDRAILS_BLOCK_ON_INJECTION=true` (no custom middleware needed; independent of `GUARDRAILS_FAIL_OPEN`, and still subject to the `GUARDRAILS_ENABLED` master switch). The middleware then short-circuits the chat call without calling `call_next()`, so the flagged text never reaches the model. It logs `guardrails.injection_blocked` at WARNING and also sets the `injection_blocked` flag (the flag the red-team evals can assert on). The scan covers every message in that chat call, not only the latest user message. .NET does the same in `SpecialistPipeline` (`GuardrailsBlockOnInjection`).
+
+**What the user sees**: the specialist answers with a fixed refusal instead of a model reply: "I can't process that request - it looks like it contains an attempt to override my instructions. If you have a genuine question, please rephrase it without the embedded commands." Non-streaming calls carry `finish_reason="content_filter"`; streaming calls yield the same text as a single chunk. Turn it on only after measuring the false-positive rate (see below).
 
 **False-positive rate**: patterns are deliberately high-precision to avoid blocking legitimate phrasing. The red-team suite (`evals/safety_evaluator.py`) scores the *model's* resistance, not this detector; the detector's own precision and recall are measured by `evals/guardrail_confusion.py` and committed as [`evals/results/guardrail-confusion.md`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/evals/results/guardrail-confusion.md). That is a regex detector measured against a small synthetic corpus and the repo's own bland seeded text: it shows no false positives on that text and about half of the corpus caught, and says nothing about real attackers or real review text.
 
@@ -158,7 +162,7 @@ All four tools in `shared/tools/seller_tools.py` (`get_seller_products`, `update
 |------|---------|--------|
 | `GUARDRAILS_ENABLED` | `true` | Master switch. `false` disables all code-layer guardrails. |
 | `GUARDRAILS_OUTPUT_SANITIZATION` | `true` | Enable/disable `OutputSanitizationMiddleware`. |
-| `GUARDRAILS_BLOCK_ON_INJECTION` | `false` | Log injection detections at WARNING instead of INFO. |
+| `GUARDRAILS_BLOCK_ON_INJECTION` | `false` | Refuse a chat call whose messages match an injection pattern: a fixed refusal is returned and the model is never called. Off: the detection is counted and logged at INFO only. |
 | `GUARDRAILS_FAIL_OPEN` | `true` | Sanitization errors return the raw result rather than raising. |
 | `GUARDRAILS_STRICT_IDENTITY` | `false` | Reject inter-agent calls with malformed forwarded identity. |
 | `GUARDRAILS_INJECTION_PROVIDER` | `regex` | Reserved for future Azure AI Content Safety integration. |
@@ -350,7 +354,7 @@ else:
 | Rotate `AGENT_SHARED_SECRET` | Same rotation cadence; inject via Managed Identity or Key Vault reference |
 | Enable strict identity | `GUARDRAILS_STRICT_IDENTITY=true` |
 | Enable fail-closed sanitization | `GUARDRAILS_FAIL_OPEN=false` |
-| Evaluate blocking on injection | `GUARDRAILS_BLOCK_ON_INJECTION=true` after measuring false-positive rate in staging |
+| Evaluate blocking on injection | `GUARDRAILS_BLOCK_ON_INJECTION=true` (hard refusal, no custom code) after measuring the false-positive rate in staging |
 | Enable HTTPS everywhere | TLS termination at the AKS ingress; no plain HTTP between pods |
 | Network policy | Restrict specialist ports (8081–8085) to orchestrator pod only |
 | Complete role enforcement | Add `@requires_role` on open items in the [audit matrix](agent-audit-matrix.md) |
