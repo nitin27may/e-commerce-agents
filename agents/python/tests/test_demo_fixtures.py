@@ -55,3 +55,13 @@ def test_no_fixture_is_unreachable() -> None:
 def test_every_fixture_is_named_by_its_current_hash(capsys: pytest.CaptureFixture[str]) -> None:
     assert rehash_main(["--fixtures-dir", str(REPLAY_DIR), "--dry-run"]) == 0
     assert "To rename:          0" in capsys.readouterr().out
+
+
+def test_no_demo_fixture_has_drifted_from_the_current_tools_or_messages() -> None:
+    """A tool description edit re-keys a demo fixture's request; the hash check above cannot see it (it reads the stored
+    request). This compares each stored request with what the current agents would send, as `evals.fixture_drift` does
+    for the eval corpus, so the keyless tour cannot ship a recording that misses."""
+    from evals import fixture_drift
+
+    findings, _ = fixture_drift.check_all(REPLAY_DIR, fixture_drift.live_tool_specs())
+    assert not findings, "; ".join(f"{f.fixture}: {f.category}: {f.detail}" for f in findings[:5])
