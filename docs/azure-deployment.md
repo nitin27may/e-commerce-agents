@@ -1,7 +1,3 @@
----
-title: Azure deployment (draft)
----
-
 # Azure deployment (draft)
 
 Bicep templates and scripts that deploy the Python stack to Azure Container Apps, for anyone who wants to run the demo in their own subscription.
