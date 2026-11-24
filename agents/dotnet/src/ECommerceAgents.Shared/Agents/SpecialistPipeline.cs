@@ -5,6 +5,8 @@ using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Cost;
 using ECommerceAgents.Shared.Telemetry;
+using ECommerceAgents.Shared.Data;
+using ECommerceAgents.Shared.Grounding;
 using ECommerceAgents.Shared.Guardrails;
 using ECommerceAgents.Shared.Middleware;
 using Microsoft.Agents.AI;
@@ -66,9 +68,23 @@ public static class SpecialistPipeline
         var logger = services.GetRequiredService<ILogger<AgentRunLoggerAdapter>>();
         var guardrailLogger = services.GetRequiredService<ILogger<GuardrailGateAdapter>>();
 
+        var groundingOn = !string.Equals(settings.GroundingMode, "off", StringComparison.OrdinalIgnoreCase);
+        var groundingLogger = services.GetService<ILoggerFactory>()?.CreateLogger("grounding");
+
         var builder = inner
             .AsBuilder()
             .Use(WrapAgentRun(logger));
+
+        // A specialist verifies the answer it composed against the facts its own tools returned. The orchestrator is
+        // not gated here: the chat route verifies its answer (and every mode's) with the same helper, once, where the
+        // text is final.
+        if (groundingOn && !string.Equals(agentName, "orchestrator", StringComparison.OrdinalIgnoreCase))
+        {
+            var pool = services.GetService<DatabasePool>();
+            builder = builder.Use(
+                GroundingGateRun(settings, pool, groundingLogger),
+                GroundingGateStreaming(settings, pool, groundingLogger));
+        }
 
         if (settings.GuardrailsEnabled)
         {
@@ -87,9 +103,18 @@ public static class SpecialistPipeline
             builder = builder.Use(SanitizeToolOutput(guardrailLogger));
         }
 
-        return builder
+        builder = builder
             .Use(AuditToolCalls(toolAudit))
-            .Use(HitlCheck(hitlGate, agentName))
+            .Use(HitlCheck(hitlGate, agentName));
+
+        // Innermost but for the step recorder: records what the tool really returned, before the sanitizer
+        // (outside it) rewrites anything, and not at all for a call the HITL gate answered itself.
+        if (groundingOn)
+        {
+            builder = builder.Use(RecordGroundingFacts(groundingLogger));
+        }
+
+        return builder
             .Use(RecordSteps())
             .Build(services);
     }
@@ -539,6 +564,120 @@ public static class SpecialistPipeline
             }
             return sanitized;
         };
+
+    /// <summary>
+    /// Records the facts in every tool result, and the values in every tool call's arguments, into the request's
+    /// <see cref="GroundingLedger"/> — the .NET twin of Python's <c>GroundingLedgerMiddleware</c>. A no-op outside a
+    /// <see cref="RequestContext.Scope"/>, and it never fails a tool call: a result it cannot read is skipped.
+    /// </summary>
+    private static Func<
+        AIAgent,
+        FunctionInvocationContext,
+        Func<FunctionInvocationContext, CancellationToken, ValueTask<object?>>,
+        CancellationToken,
+        ValueTask<object?>
+    > RecordGroundingFacts(ILogger? logger) =>
+        async (agent, context, next, ct) =>
+        {
+            var ledger = RequestContext.CurrentGroundingLedger;
+            if (ledger is null)
+            {
+                return await next(context, ct);
+            }
+
+            Safely(logger, () => ledger.NoteToolArguments(context.Arguments));
+            var result = await next(context, ct);
+            Safely(logger, () => ledger.Record(result));
+            return result;
+        };
+
+    private static void Safely(ILogger? logger, Action record)
+    {
+        try
+        {
+            record();
+        }
+        catch (Exception ex)
+        {
+            logger?.LogWarning(ex, "grounding.ledger_record_failed");
+        }
+    }
+
+    /// <summary>
+    /// Verifies a specialist's final text against its own ledger and the database — the .NET twin of Python's
+    /// <c>GroundingVerificationMiddleware</c>. In <c>enforce</c> mode the corrected text replaces the response's.
+    /// </summary>
+    private static Func<
+        IEnumerable<ChatMessage>,
+        AgentSession?,
+        AgentRunOptions?,
+        AIAgent,
+        CancellationToken,
+        Task<AgentResponse>
+    > GroundingGateRun(AgentSettings settings, DatabasePool? pool, ILogger? logger) =>
+        async (messages, session, options, innerAgent, ct) =>
+        {
+            var response = await innerAgent.RunAsync(messages, session, options, cancellationToken: ct);
+            var (_, shown) = await FinalTextGrounding.VerifyAsync(
+                response.Text, settings.GroundingMode, RequestContext.CurrentGroundingLedger, pool, logger, ct);
+            if (!string.Equals(shown, response.Text, StringComparison.Ordinal))
+            {
+                ReplaceFinalText(response, shown, logger);
+            }
+
+            return response;
+        };
+
+    /// <summary>
+    /// Streaming half. Chunks reach the caller untouched and a stream already on the wire cannot be un-sent, so
+    /// here <c>enforce</c> only verifies and logs; the correction applies to the blocking path. Python has the same
+    /// limit.
+    /// </summary>
+    private static Func<
+        IEnumerable<ChatMessage>,
+        AgentSession?,
+        AgentRunOptions?,
+        AIAgent,
+        CancellationToken,
+        IAsyncEnumerable<AgentResponseUpdate>
+    > GroundingGateStreaming(AgentSettings settings, DatabasePool? pool, ILogger? logger) =>
+        (messages, session, options, innerAgent, ct) =>
+            RunGroundedStream(messages, session, options, innerAgent, settings, pool, logger, ct);
+
+    private static async IAsyncEnumerable<AgentResponseUpdate> RunGroundedStream(
+        IEnumerable<ChatMessage> messages,
+        AgentSession? session,
+        AgentRunOptions? options,
+        AIAgent innerAgent,
+        AgentSettings settings,
+        DatabasePool? pool,
+        ILogger? logger,
+        [EnumeratorCancellation] CancellationToken ct
+    )
+    {
+        var accumulated = new System.Text.StringBuilder();
+        await foreach (var update in innerAgent.RunStreamingAsync(messages, session, options, cancellationToken: ct))
+        {
+            accumulated.Append(update.Text);
+            yield return update;
+        }
+
+        // Captured before the await: the ledger is read from this flow's context.
+        var ledger = RequestContext.CurrentGroundingLedger;
+        await FinalTextGrounding.VerifyAsync(accumulated.ToString(), settings.GroundingMode, ledger, pool, logger, ct);
+    }
+
+    private static void ReplaceFinalText(AgentResponse response, string text, ILogger? logger)
+    {
+        var last = response.Messages.LastOrDefault();
+        if (last is null || last.Contents.Count == 0 || !last.Contents.All(c => c is TextContent))
+        {
+            logger?.LogWarning("grounding.enforce_skip reason=non_text_final_message");
+            return;
+        }
+
+        last.Contents = [new TextContent(text)];
+    }
 
     /// <summary>
     /// Appends one <see cref="ExecutionStep"/> per tool call to

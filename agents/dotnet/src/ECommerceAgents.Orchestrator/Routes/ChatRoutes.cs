@@ -146,6 +146,9 @@ public static class ChatRoutes
             ctx.History
         );
 
+        // What the caller typed this turn: a figure the answer echoes from it is the user's own, not an invention.
+        RequestContext.CurrentGroundingLedger?.NoteUserText(request.Message);
+
         // The orchestrator's own agent-invocation span (#19). Python opens one
         // per turn (chat.py's `with agent_run_span("orchestrator")`); .NET
         // opened none, so every specialist span was parented to a bare
@@ -193,7 +196,9 @@ public static class ChatRoutes
         }
         sw.Stop();
 
-        var grounding = await VerifyGroundingAsync(responseText, settings, pool, loggers);
+        var (grounding, shownText) = await VerifyGroundingAsync(responseText, settings, pool, loggers);
+        // enforce corrects the text before it is persisted or returned; every other mode leaves it as composed.
+        responseText = shownText;
 
         await PersistAssistantMessageAsync(
             pool, usage, ctx, request.Message, responseText, agentsInvolved, (int)sw.ElapsedMilliseconds,
@@ -268,6 +273,9 @@ public static class ChatRoutes
             ctx.History
         );
 
+        // What the caller typed this turn: a figure the answer echoes from it is the user's own, not an invention.
+        RequestContext.CurrentGroundingLedger?.NoteUserText(request.Message);
+
         // See the blocking handler above for why this span exists (#19).
         using var runSpan = TelemetrySetup.AgentRunSpan("orchestrator", settings.LlmModel);
 
@@ -330,6 +338,8 @@ public static class ChatRoutes
         var responseText = new StringBuilder();
         List<string>? modeAgents = null;
         var replayMissed = false;
+        GroundingReport? modeGrounding = null;
+        var modeGrounded = false;
 
         try
         {
@@ -362,9 +372,14 @@ public static class ChatRoutes
                         abort
                     );
 
-                responseText.Append(modeResult.Text);
+                // The answer is composed in one piece, so it is checked before it is sent: in enforce mode the
+                // visible text is the corrected one (the twin of Python's @grounded_run on each mode).
+                var (modeReport, modeText) = await VerifyGroundingAsync(modeResult.Text, settings, pool, loggers);
+                modeGrounding = modeReport;
+                modeGrounded = true;
+                responseText.Append(modeText);
                 modeAgents = modeResult.AgentsInvolved.ToList();
-                await WriteFrameAsync(null, modeResult.Text);
+                await WriteFrameAsync(null, modeText);
             }
             else
             {
@@ -417,7 +432,19 @@ public static class ChatRoutes
             return;
         }
 
-        var groundingReport = await VerifyGroundingAsync(responseText.ToString(), settings, pool, loggers);
+        var groundingReport = modeGrounding;
+        if (!modeGrounded)
+        {
+            // The tool path streams as the model writes, so the text has already gone out. enforce can only correct
+            // what is persisted from here on, never what the browser already received.
+            var (streamedReport, streamedText) = await VerifyGroundingAsync(responseText.ToString(), settings, pool, loggers);
+            groundingReport = streamedReport;
+            if (!string.Equals(streamedText, responseText.ToString(), StringComparison.Ordinal))
+            {
+                responseText.Clear().Append(streamedText);
+            }
+        }
+
         if (groundingReport is not null)
         {
             await WriteFrameAsync("grounding", JsonSerializer.Serialize(groundingReport.ToWire()));
@@ -722,61 +749,29 @@ public static class ChatRoutes
     }
 
     /// <summary>
-    /// Checks an answer's product/order claims against the database, returning
-    /// the report only when the configured mode surfaces it to the client.
+    /// Verifies an answer's claims per <see cref="AgentSettings.GroundingMode"/> and returns the report only when
+    /// the mode surfaces it, with the text to show (corrected in <c>enforce</c> mode, as composed otherwise).
     /// </summary>
     /// <remarks>
-    /// Three modes, matching <c>shared/grounding/middleware.py</c>:
-    /// <c>off</c> skips the work entirely, <c>observe</c> verifies and logs but
-    /// attaches nothing (so a deployment can measure grounding before showing
-    /// it to users), and <c>annotate</c> — the default — attaches the report.
-    /// Python's <c>enforce</c> is refused at startup; see
-    /// <see cref="AgentSettings.GroundingMode"/>.
+    /// <c>off</c> skips the work entirely, <c>observe</c> verifies and logs but attaches nothing (so a deployment
+    /// can measure grounding before showing it to users), <c>annotate</c> (the default) attaches the report and
+    /// <c>enforce</c> attaches it and strips or corrects the cards that fail. The claims are checked against the
+    /// request's ledger of tool results first, then the database (see <see cref="GroundingVerifier"/>).
     ///
-    /// Returns null when the answer makes no checkable claim, so the client
-    /// renders no badge rather than a misleading "0 facts verified" on a
-    /// message that never claimed anything.
+    /// The report is null when the answer makes no checkable claim, so the client renders no badge rather than a
+    /// misleading "0 facts verified" on a message that never claimed anything.
     /// </remarks>
-    private static async Task<GroundingReport?> VerifyGroundingAsync(
+    private static async Task<(GroundingReport? Report, string Text)> VerifyGroundingAsync(
         string? text,
         AgentSettings settings,
         DatabasePool pool,
         ILoggerFactory loggers
-    )
-    {
-        var mode = settings.GroundingMode;
-        if (string.Equals(mode, "off", StringComparison.OrdinalIgnoreCase))
-        {
-            return null;
-        }
-
-        var claims = ClaimExtractor.Extract(text);
-        if (claims.Total == 0)
-        {
-            return null;
-        }
-
-        GroundingReport report;
-        try
-        {
-            report = await new GroundingVerifier(pool).VerifyAsync(claims);
-        }
-        catch (Exception)
-        {
-            // Grounding is a report about an answer, not part of producing it —
-            // a failure here must not take down a response the user is already
-            // reading.
-            return null;
-        }
-
-        loggers.CreateLogger("grounding").LogInformation(
-            "grounding.verified total={Total} verified={Verified} unverified={Unverified} mode={Mode}",
-            report.Total, report.Verified, report.Unverified, mode
-        );
-
-        // observe measures without showing: verified above, withheld here.
-        return string.Equals(mode, "observe", StringComparison.OrdinalIgnoreCase) ? null : report;
-    }
+    ) => await FinalTextGrounding.VerifyAsync(
+        text,
+        settings.GroundingMode,
+        RequestContext.CurrentGroundingLedger,
+        pool,
+        loggers.CreateLogger("grounding"));
 
     /// <summary>
     /// A specialist's replay miss ends the tool loop quietly (see <c>OrchestratorTools</c>) rather than throwing through

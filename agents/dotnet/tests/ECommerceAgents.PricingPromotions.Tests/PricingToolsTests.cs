@@ -3,6 +3,7 @@ using ECommerceAgents.PricingPromotions.Tools;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Data;
+using ECommerceAgents.Shared.Grounding;
 using ECommerceAgents.TestFixtures;
 using FluentAssertions;
 using Xunit;
@@ -169,6 +170,38 @@ public sealed class PricingToolsTests : IAsyncLifetime
         result.Savings!.Should().Contain(s => s.Type == "loyalty_discount");
         result.TotalSavings.Should().BeGreaterThan(0m);
         result.FinalTotal.Should().BeLessThan(result.OriginalTotal!.Value);
+    }
+
+    // ─────────────────────── grounding ledger ─────────────────
+
+    /// <summary>The ledger over the pricing tools' own return values: coupon, deals, cart totals and a bundle.</summary>
+    [Fact]
+    public async Task TheGroundingLedger_RecordsWhatThePricingToolsReturn()
+    {
+        EnsureUserScope();
+        var ledger = new GroundingLedger();
+
+        var coupon = await _tools.ValidateCoupon("SAVE10", 200m);
+        ledger.Record(coupon);
+        var deals = await _tools.GetActiveDeals();
+        ledger.Record(deals);
+        var cart = await _tools.OptimizeCart([new CartItemInput(_productElectronicsId.ToString(), 1)]);
+        ledger.Record(cart);
+        var bundle = await _tools.CheckBundleEligibility([
+            _productElectronicsId.ToString(),
+            _productClothingId.ToString(),
+        ]);
+        ledger.Record(bundle);
+
+        ledger.Promos["SAVE10"].DiscountAmount.Should().Be(20m);
+        ledger.KnownAmounts.Should().Contain([cart.OriginalTotal!.Value, cart.TotalSavings!.Value, cart.FinalTotal!.Value]);
+        ledger.KnownAmounts.Should().Contain([bundle.BundleDeals[0].BundleTotal, bundle.BundleDeals[0].Savings]);
+        foreach (var c in deals.Coupons)
+        {
+            if (c.MinSpend is { } min) ledger.KnownAmounts.Should().Contain(min);
+            if (c.MaxDiscount is { } max) ledger.KnownAmounts.Should().Contain(max);
+            if (c.DiscountType == "fixed") ledger.KnownAmounts.Should().Contain(c.DiscountValue);
+        }
     }
 
     // ─────────────────────── check_bundle_eligibility ─────────

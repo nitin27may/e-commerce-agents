@@ -25,12 +25,12 @@ public static class Scorers
     /// punished for containing no product ids. Whether it *should* have found something is
     /// what <see cref="Correctness"/> measures.
     ///
-    /// Expect .NET's numbers to sit below Python's on identical answers: Python resolves
-    /// prose figures against a per-request ledger of tool results that .NET has no
-    /// equivalent of, so a restated price that Python verifies comes back unverifiable
-    /// here. Baselines must be recorded per stack, never copied across.
+    /// The run's own ledger, when given, is checked first, as in production. In this runner the
+    /// orchestrator is in-process and the specialists are not, so the ledger holds the orchestrator's
+    /// tools, the user's message and its tool arguments, not the specialists' tool results; the rest
+    /// falls to the database. Baselines must be recorded per stack, never copied across.
     /// </remarks>
-    public static async Task<double> GroundednessAsync(string text, DatabasePool pool)
+    public static async Task<double> GroundednessAsync(string text, DatabasePool pool, GroundingLedger? ledger = null)
     {
         var claims = ClaimExtractor.Extract(text);
         if (claims.Total == 0)
@@ -38,7 +38,7 @@ public static class Scorers
             return 1.0;
         }
 
-        var report = await new GroundingVerifier(pool).VerifyAsync(claims);
+        var report = await new GroundingVerifier(pool).VerifyAsync(claims, ledger);
         return report.Total == 0 ? 1.0 : (double)report.Verified / report.Total;
     }
 

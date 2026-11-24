@@ -60,7 +60,8 @@ public sealed class ChatRoutesTests : IAsyncLifetime
     private HttpClient ClientFor(
         FakeChatClient chatClient,
         bool authenticated = true,
-        AgentSettings? settings = null
+        AgentSettings? settings = null,
+        Action<IServiceCollection>? extraServices = null
     )
     {
         var server = OrchestratorTestHost.Create(
@@ -78,6 +79,7 @@ public sealed class ChatRoutesTests : IAsyncLifetime
                     sp.GetRequiredService<IChatClient>().AsAIAgent(instructions: "test instructions", name: "orchestrator")
                 );
                 services.AddSingleton<UsageRecorder>();
+                extraServices?.Invoke(services);
             }
         );
         var client = server.CreateClient();
@@ -695,6 +697,153 @@ public sealed class ChatRoutesTests : IAsyncLifetime
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
 
         payload.GetProperty("grounding").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    /// <summary>A mode that answers with fixed text, standing in for a workflow mode's composed answer.</summary>
+    private sealed class FixedAnswerMode(string text) : ECommerceAgents.Shared.Orchestration.IOrchestrationMode
+    {
+        public string Name => "workflow:fixed";
+        public string Label => "Fixed";
+        public string Description => "test";
+        public ECommerceAgents.Shared.Orchestration.ModeCapabilities Capabilities => new();
+        public string? GraphMermaid() => null;
+
+        public Task<ECommerceAgents.Shared.Orchestration.ModeRunResult> RunAsync(
+            string message, ECommerceAgents.Shared.Orchestration.RunContext ctx, CancellationToken ct = default) =>
+            Task.FromResult(new ECommerceAgents.Shared.Orchestration.ModeRunResult(text, ["fixed"], 1, NoLlmCalls: true));
+    }
+
+    private static string AnswerText(JsonElement payload) => payload.GetProperty("response").GetString()!;
+
+    /// <summary>
+    /// enforce strips a card that names nothing real before the answer is returned or persisted. The card renders
+    /// perfectly and 404s downstream otherwise.
+    /// </summary>
+    [Fact]
+    public async Task SendAsync_EnforceMode_StripsAFabricatedCard_AndPersistsTheCorrectedText()
+    {
+        using var client = ClientFor(
+            new FakeChatClient().EnqueueResponse("Try this:\n" + CardAnswer(Guid.NewGuid(), 100.00m) + "\nEnjoy."),
+            settings: new AgentSettings { GroundingMode = "enforce" }
+        );
+
+        var response = await client.PostAsJsonAsync("/api/chat", new { message = "find a product" });
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        AnswerText(payload).Should().NotContain("```product");
+        payload.GetProperty("grounding").GetProperty("claims")[0].GetProperty("status").GetString().Should().Be("not_found");
+        await using var conn = await _pool.OpenAsync();
+        var stored = await conn.ExecuteScalarAsync<string>(
+            "SELECT content FROM messages WHERE role = 'assistant' ORDER BY created_at DESC LIMIT 1");
+        stored.Should().NotContain("```product");
+    }
+
+    [Fact]
+    public async Task SendAsync_EnforceMode_CorrectsAWrongPriceFromTheDatabaseRow()
+    {
+        var id = await SeedProductAsync(100.00m);
+        using var client = ClientFor(
+            new FakeChatClient().EnqueueResponse(CardAnswer(id, 9.99m)),
+            settings: new AgentSettings { GroundingMode = "enforce" }
+        );
+
+        var response = await client.PostAsJsonAsync("/api/chat", new { message = "find a product" });
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        AnswerText(payload).Should().Contain("\"price\":100.00").And.NotContain("9.99");
+    }
+
+    [Fact]
+    public async Task SendAsync_AnnotateMode_LeavesAFabricatedCardInPlace()
+    {
+        var answer = CardAnswer(Guid.NewGuid(), 100.00m);
+        using var client = ClientFor(
+            new FakeChatClient().EnqueueResponse(answer),
+            settings: new AgentSettings { GroundingMode = "annotate" }
+        );
+
+        var response = await client.PostAsJsonAsync("/api/chat", new { message = "find a product" });
+
+        AnswerText(await response.Content.ReadFromJsonAsync<JsonElement>()).Should().Be(answer);
+    }
+
+    /// <summary>
+    /// The current turn's user message reaches the verifier: a figure the user typed and the answer echoes is
+    /// reported as user_supplied, separately, and a figure nobody supplied stays unverifiable.
+    /// </summary>
+    [Fact]
+    public async Task SendAsync_AFigureTheUserTyped_IsUserSuppliedAndAModelInventedOneIsNot()
+    {
+        using var client = ClientFor(
+            new FakeChatClient().EnqueueResponse("Your $80.00 cart ships free; the add-on is $95.00."),
+            settings: new AgentSettings { GroundingMode = "annotate" }
+        );
+
+        var response = await client.PostAsJsonAsync("/api/chat", new { message = "My cart is $80, anything to add?" });
+        var grounding = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("grounding");
+
+        grounding.GetProperty("user_supplied").GetInt32().Should().Be(1);
+        grounding.GetProperty("derived").GetInt32().Should().Be(0);
+        grounding.GetProperty("verified").GetInt32().Should().Be(1);
+        grounding.GetProperty("unverified").GetInt32().Should().Be(1);
+    }
+
+    [Fact]
+    public async Task StreamAsync_AFigureTheUserTyped_IsUserSupplied_OnTheStreamingPathToo()
+    {
+        using var client = ClientFor(
+            new FakeChatClient().EnqueueResponse("Your $80.00 cart ships free."),
+            settings: new AgentSettings { GroundingMode = "annotate" }
+        );
+
+        var response = await client.PostAsJsonAsync("/api/chat/stream", new { message = "My cart is $80, any shipping offers?" });
+        var body = await response.Content.ReadAsStringAsync();
+
+        var frame = body.Split('\n').SkipWhile(l => !l.StartsWith("event: grounding")).First(l => l.StartsWith("data: "))["data: ".Length..];
+        JsonDocument.Parse(frame).RootElement.GetProperty("user_supplied").GetInt32().Should().Be(1);
+    }
+
+    /// <summary>
+    /// A workflow mode composes its answer in one piece, so enforce corrects the visible text, not just the stored
+    /// copy (Python's @grounded_run on each mode).
+    /// </summary>
+    [Fact]
+    public async Task StreamAsync_AWorkflowMode_IsVerified_AndEnforceCorrectsTheVisibleText()
+    {
+        using var client = ClientFor(
+            new FakeChatClient().EnqueueResponse("unused"),
+            settings: new AgentSettings { GroundingMode = "enforce" },
+            extraServices: services => services.AddSingleton<ECommerceAgents.Shared.Orchestration.IOrchestrationMode>(
+                new FixedAnswerMode("Verdict:\n" + CardAnswer(Guid.NewGuid(), 100.00m)))
+        );
+
+        var response = await client.PostAsJsonAsync("/api/chat/stream", new { message = "worth it?", mode = "workflow:fixed" });
+        var body = await response.Content.ReadAsStringAsync();
+
+        body.Should().Contain("event: grounding");
+        body.Should().NotContain("```product", "the fabricated card must not reach the browser");
+        body.Should().Contain("Verdict:");
+    }
+
+    [Fact]
+    public async Task SendAsync_AWorkflowMode_ReportsGrounding_AndOffReportsNone()
+    {
+        var id = await SeedProductAsync();
+        var answer = CardAnswer(id, 100.00m);
+        Action<IServiceCollection> add = services =>
+            services.AddSingleton<ECommerceAgents.Shared.Orchestration.IOrchestrationMode>(new FixedAnswerMode(answer));
+
+        using (var client = ClientFor(new FakeChatClient(), settings: new AgentSettings { GroundingMode = "annotate" }, extraServices: add))
+        {
+            var response = await client.PostAsJsonAsync("/api/chat", new { message = "worth it?", mode = "workflow:fixed" });
+            (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("grounding").GetProperty("verified").GetInt32().Should().Be(1);
+        }
+
+        using (var client = ClientFor(new FakeChatClient(), settings: new AgentSettings { GroundingMode = "off" }, extraServices: add))
+        {
+            var response = await client.PostAsJsonAsync("/api/chat", new { message = "worth it?", mode = "workflow:fixed" });
+            (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("grounding").ValueKind.Should().Be(JsonValueKind.Null);
+        }
     }
 
     [Fact]

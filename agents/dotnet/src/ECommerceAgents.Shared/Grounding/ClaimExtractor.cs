@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
 namespace ECommerceAgents.Shared.Grounding;
@@ -47,7 +49,7 @@ public static partial class ClaimExtractor
     [GeneratedRegex(@"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b")]
     private static partial Regex Uuid();
 
-    [GeneratedRegex(@"\$\s?(\d{1,6}(?:\.\d{2})?)")]
+    [GeneratedRegex(@"\$\s?(\d{1,3}(?:,\d{3})+(?:\.\d{2})?|\d{1,6}(?:\.\d{2})?)")]
     private static partial Regex Amount();
 
     [GeneratedRegex(@"\bTRK[A-Z0-9]+\b")]
@@ -89,7 +91,8 @@ public static partial class ClaimExtractor
                 {
                     continue;
                 }
-                var id = idProp.GetString();
+                // Python reads str(entry["id"]); a numeric id is a claim that will fail its lookup, not a crash.
+                var id = idProp.ValueKind == JsonValueKind.String ? idProp.GetString() : idProp.ToString();
                 if (string.IsNullOrWhiteSpace(id))
                 {
                     continue;
@@ -117,7 +120,10 @@ public static partial class ClaimExtractor
             .ToList();
 
         var amounts = Amount().Matches(prose)
-            .Select(m => decimal.TryParse(m.Groups[1].Value, out var value) ? value : (decimal?)null)
+            .Select(m => decimal.TryParse(
+                m.Groups[1].Value.Replace(",", ""), NumberStyles.Number, CultureInfo.InvariantCulture, out var value)
+                ? value
+                : (decimal?)null)
             .Where(v => v is not null)
             .Select(v => v!.Value)
             .Distinct()
@@ -129,6 +135,74 @@ public static partial class ClaimExtractor
             .ToList();
 
         return new ExtractedClaims(products, orders, bareIds, amounts, tracking);
+    }
+
+    /// <summary>
+    /// Rewrites the fenced <c>product</c>, <c>products</c> and <c>order</c> blocks in place — the twin of Python's
+    /// <c>rewrite_cards</c>, and <c>enforce</c> mode's stripping and correcting mechanism.
+    /// </summary>
+    /// <remarks>
+    /// The deciders receive the parsed entry and return the entry to keep (possibly corrected) or null to drop it.
+    /// In a <c>products</c> block entries are filtered one by one and a block left empty is removed. A block with
+    /// malformed JSON is left alone, and a block no decider changed is returned byte for byte, so a verified
+    /// card's formatting is never disturbed.
+    /// </remarks>
+    public static string RewriteCards(
+        string text,
+        Func<JsonObject, JsonObject?> decideProduct,
+        Func<JsonObject, JsonObject?> decideOrder)
+    {
+        return CardFence().Replace(text, match =>
+        {
+            var kind = match.Groups[1].Value;
+            JsonNode? payload;
+            try
+            {
+                payload = JsonNode.Parse(match.Groups[2].Value);
+            }
+            catch (JsonException)
+            {
+                return match.Value;
+            }
+
+            if (kind == "products")
+            {
+                if (payload is not JsonArray array)
+                {
+                    return match.Value;
+                }
+
+                var kept = new JsonArray();
+                foreach (var entry in array.OfType<JsonObject>())
+                {
+                    if (decideProduct(entry) is { } decided)
+                    {
+                        kept.Add(decided.DeepClone());
+                    }
+                }
+
+                if (JsonNode.DeepEquals(kept, array))
+                {
+                    return match.Value;
+                }
+
+                return kept.Count > 0 ? $"```products\n{kept.ToJsonString()}\n```" : "";
+            }
+
+            if (payload is not JsonObject single)
+            {
+                return match.Value;
+            }
+
+            var decide = kind == "order" ? decideOrder : decideProduct;
+            var result = decide(single);
+            if (result is not null && JsonNode.DeepEquals(result, single))
+            {
+                return match.Value;
+            }
+
+            return result is null ? "" : $"```{kind}\n{result.ToJsonString()}\n```";
+        });
     }
 
     private static string? ReadString(JsonElement e, string name) =>

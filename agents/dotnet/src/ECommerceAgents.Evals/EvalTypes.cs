@@ -32,7 +32,9 @@ public sealed record RunOutcome(
     List<string> Routes,
     GroundingSummary? Grounding = null,
     string? Error = null,
-    bool FixtureMissing = false
+    bool FixtureMissing = false,
+    // The run's ledger of tool results and caller-typed values; the scope that held it is gone by scoring time.
+    ECommerceAgents.Shared.Grounding.GroundingLedger? Ledger = null
 );
 
 public sealed record GroundingSummary(int Total, int Verified);
