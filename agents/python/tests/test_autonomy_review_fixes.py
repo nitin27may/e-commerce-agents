@@ -194,6 +194,15 @@ def _straddle_midnight(monkeypatch: pytest.MonkeyPatch) -> None:
     days = iter([today, today + timedelta(days=1)])
     monkeypatch.setattr(engine, "utc_day", lambda *_a, **_k: next(days))
 
+    # These tests are about the ORDER lock, so keep only the day lock here. The month lock (#299) would serialise two
+    # events either side of midnight as well, which test_autonomy_monthly.py covers on its own.
+    async def day_lock_only(conn: Any, budget_key: str, day: Any) -> None:
+        await conn.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", f"autonomy_budget:{budget_key}:{day}"
+        )
+
+    monkeypatch.setattr(engine, "lock_budget", day_lock_only)
+
 
 async def test_w1_two_events_for_one_order_straddling_midnight_pay_once(
     w: aus.World, monkeypatch: pytest.MonkeyPatch

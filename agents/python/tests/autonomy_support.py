@@ -172,3 +172,71 @@ async def decisions(pool: asyncpg.Pool, entry_type: str = "decision") -> list[as
 
 def loads(value: Any) -> Any:
     return json.loads(value) if isinstance(value, str) else value
+
+
+async def age_account(w: World, email: str, days: int) -> None:
+    """Make the account ``days`` days old (a new account is one of the risk signals)."""
+    await w.pool.execute(
+        "UPDATE users SET created_at = NOW() - make_interval(days => $2) WHERE id = $1", w.users[email], days
+    )
+
+
+async def risk_order(
+    w: World,
+    email: str = CUSTOMER,
+    *,
+    total: str = "600.00",
+    status: str = "placed",
+    hours_ago: float = 0,
+    shipping: dict[str, Any] | None = None,
+    billing: dict[str, Any] | None = None,
+    items: int = 1,
+) -> uuid.UUID:
+    """A placed order for the risk review: its total, addresses, item count and how long ago it was placed."""
+    order_id = uuid.uuid4()
+    await w.pool.execute(
+        "INSERT INTO orders (id, user_id, status, total, shipping_address, billing_address, created_at) "
+        "VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, NOW() - make_interval(secs => $7))",
+        order_id,
+        w.users[email],
+        status,
+        Decimal(total),
+        json.dumps(shipping or {}),
+        None if billing is None else json.dumps(billing),
+        hours_ago * 3600,
+    )
+    if items:
+        product_id = await product(w, f"Item-{order_id.hex[:6]}", price="10.00")
+        await line(w, order_id, product_id, price="10.00", qty=items)
+    return order_id
+
+
+def risk(order_id: uuid.UUID | str | None, event_id: str | None = None, **extra: Any) -> dict:
+    """An ``order.risk_flagged`` payload."""
+    out: dict[str, Any] = {"order_id": None if order_id is None else str(order_id)}
+    if event_id is not None:
+        out["event_id"] = event_id
+    return {**out, **extra}
+
+
+def damaged(item_id: uuid.UUID | str | None, event_id: str | None = None, **extra: Any) -> dict:
+    """An ``order.item_damaged`` payload (``quantity`` goes in ``extra``)."""
+    out: dict[str, Any] = {"order_item_id": None if item_id is None else str(item_id)}
+    if event_id is not None:
+        out["event_id"] = event_id
+    return {**out, **extra}
+
+
+def month_policy_file(tmp_path: Path, budget: str = "goodwill_credit", **fields: Any) -> str:
+    """A copy of the shipped policy with ``budget``'s fields replaced (nested caps merge, ``None`` removes a key)."""
+    doc = yaml.safe_load(POLICY_PATH.read_text(encoding="utf-8"))
+    for key, value in fields.items():
+        if value is None:
+            doc["budgets"][budget].pop(key, None)
+        elif isinstance(value, dict):
+            doc["budgets"][budget][key].update(value)
+        else:
+            doc["budgets"][budget][key] = value
+    path = tmp_path / "autonomy-month.yaml"
+    path.write_text(yaml.safe_dump(doc), encoding="utf-8")
+    return str(path)

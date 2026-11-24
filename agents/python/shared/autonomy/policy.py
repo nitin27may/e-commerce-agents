@@ -22,7 +22,8 @@ from __future__ import annotations
 import functools
 import math
 from dataclasses import dataclass, field
-from decimal import Decimal
+from datetime import date
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Any
 
@@ -31,31 +32,71 @@ import yaml
 POLICY_PATH = Path(__file__).resolve().parents[2] / "config" / "policies" / "autonomy.yaml"
 
 OPERATORS = frozenset({"lt", "lte", "gt", "gte", "eq"})
-TIERS = frozenset({"auto", "auto_notify", "needs_approval"})
+TIERS = frozenset({"auto", "auto_notify", "needs_approval", "no_action"})
+#: ``no_action`` is a tier only a risk review may name (a low-risk order is simply left alone); a money or notice rule
+#: that "did nothing" is a rule the engine writes itself, never one the policy file picks.
+RISK_ONLY_TIERS = frozenset({"no_action"})
 #: Tiers that act without a person; they are the ones that draw on a budget.
 AUTONOMOUS_TIERS = frozenset({"auto", "auto_notify"})
 #: Every fact a rule may test. All are numbers.
-FACTS = frozenset({"amount", "delay_days", "order_total", "days_since_purchase", "drop_percent", "recipients"})
+FACTS = frozenset(
+    {
+        "amount",
+        "delay_days",
+        "order_total",
+        "days_since_purchase",
+        "drop_percent",
+        "recipients",
+        # order.risk_flagged: the signals read from the order, and the score they add up to.
+        "account_age_days",
+        "address_mismatch",
+        "items_count",
+        "orders_in_window",
+        "risk_score",
+    }
+)
 #: What an action does, and so how an event is sized: ``credit`` (a store credit sized by a shipment delay),
 #: ``price_adjustment`` (a store credit for a price drop on a recent purchase) and ``notice`` (a notification only,
 #: no money, no budget).
-KINDS = frozenset({"credit", "price_adjustment", "notice"})
-MONEY_KINDS = frozenset({"credit", "price_adjustment"})
+#: ``damage_credit`` is a remedy for a customer-reported damaged item (a store credit, or a replacement offer: money
+#: either way, so it has a budget) and ``risk_review`` scores an order and may hold it for a person (no money).
+KINDS = frozenset({"credit", "price_adjustment", "notice", "damage_credit", "risk_review"})
+MONEY_KINDS = frozenset({"credit", "price_adjustment", "damage_credit"})
+#: A risk score is capped here so a pile of signals cannot make the number meaningless.
+MAX_RISK_SCORE = 100
 
 _CENT = Decimal("0.01")
 #: Money columns are NUMERIC(12, 2).
 _MAX_MONEY = Decimal("9999999999.99")
 
 _TOP_KEYS = {"policy_version", "budgets", "actions", "events"}
-_BUDGET_KEYS = {"per_action_max_amount", "per_customer_per_day", "per_order_max_count", "global_per_day"}
+_BUDGET_KEYS = {
+    "per_action_max_amount",
+    "per_customer_per_day",
+    "per_order_max_count",
+    "global_per_day",
+    "global_per_month",
+}
+_BUDGET_REQUIRED = _BUDGET_KEYS - {"global_per_month"}
 _CAP_KEYS = {"max_count", "max_amount"}
 _ACTION_KEYS = {"budget", "reversible", "rules", "kind"}
 _ACTION_REQUIRED = {"reversible", "rules"}
-_RULE_KEYS = {"id", "tier", "reason", "when"}
+_RULE_KEYS = {"id", "tier", "reason", "when", "hold"}
+_RULE_REQUIRED = {"id", "tier", "reason", "when"}
 _CONDITION_KEYS = {"fact", "op", "value"}
 _EVENT_KEYS = {"action", "eligible_order_statuses", "credit_tiers"}
 _PRICE_EVENT_KEYS = {"action", "eligible_order_statuses", "lookback_days", "max_lines"}
 _NOTICE_EVENT_KEYS = {"action", "cart_max_age_days", "max_recipients", "per_customer_per_day"}
+_DAMAGE_EVENT_KEYS = {
+    "action",
+    "eligible_order_statuses",
+    "lookback_days",
+    "credit_percent",
+    "max_credit",
+    "replacement_max_line_value",
+}
+_RISK_EVENT_KEYS = {"action", "eligible_order_statuses", "velocity_window_hours", "signals"}
+_SIGNAL_KEYS = {"id", "fact", "op", "value", "points"}
 _CREDIT_TIER_KEYS = {"min_delay_days", "amount"}
 
 
@@ -76,6 +117,9 @@ class Budget:
     per_customer_per_day: Cap
     per_order_max_count: int
     global_per_day: Cap
+    #: Optional: every customer, one UTC calendar month. Checked in the same transaction, under the same lock helper,
+    #: as the day cap. None means the budget has no monthly limit.
+    global_per_month: Cap | None = None
 
 
 @dataclass(frozen=True)
@@ -91,6 +135,8 @@ class Rule:
     tier: str
     reason: str
     when: tuple[Condition, ...]
+    #: A risk review only: the order is held (reversibly) while the approval waits. Never on an autonomous tier.
+    hold: bool = False
 
 
 @dataclass(frozen=True)
@@ -109,6 +155,15 @@ class CreditTier:
 
 
 @dataclass(frozen=True)
+class Signal:
+    """One thing about an order that adds ``points`` to its risk score when ``fact op value`` holds."""
+
+    id: str
+    condition: Condition
+    points: int
+
+
+@dataclass(frozen=True)
 class EventRule:
     topic: str
     action: str
@@ -122,6 +177,16 @@ class EventRule:
     cart_max_age_days: int = 0
     max_recipients: int = 0
     per_customer_per_day: int = 0
+    # damage events: reports newer than ``lookback_days`` qualify. The remedy is ``credit_percent`` of the damaged
+    # quantity's value up to ``max_credit``, or a free replacement when the damaged quantity is worth at most
+    # ``replacement_max_line_value`` and is in stock.
+    credit_percent: Decimal = Decimal(0)
+    max_credit: Decimal = Decimal(0)
+    replacement_max_line_value: Decimal = Decimal(0)
+    # risk events: orders by the same customer within ``velocity_window_hours`` count towards velocity; ``signals``
+    # add up to the score.
+    velocity_window_hours: int = 0
+    signals: tuple[Signal, ...] = ()
 
     def credit_for(self, delay_days: int) -> Decimal | None:
         """The credit for a delay: the amount of the highest tier the delay reaches, or None below the lowest."""
@@ -201,7 +266,7 @@ def _cap(raw: Any, where: str) -> Cap:
 
 def _budget(key: str, raw: Any) -> Budget:
     where = f"budgets.{key}"
-    raw = _mapping(raw, where, _BUDGET_KEYS)
+    raw = _mapping(raw, where, _BUDGET_KEYS, required=_BUDGET_REQUIRED)
     per_action = _money(raw["per_action_max_amount"], f"{where}.per_action_max_amount")
     customer = _cap(raw["per_customer_per_day"], f"{where}.per_customer_per_day")
     glob = _cap(raw["global_per_day"], f"{where}.global_per_day")
@@ -209,7 +274,14 @@ def _budget(key: str, raw: Any) -> Budget:
         raise AutonomyPolicyError(f"{where}: per_customer_per_day.max_amount is below per_action_max_amount")
     if glob.max_amount < customer.max_amount:
         raise AutonomyPolicyError(f"{where}: global_per_day.max_amount is below the per-customer cap")
-    return Budget(key, per_action, customer, _count(raw["per_order_max_count"], f"{where}.per_order_max_count"), glob)
+    month: Cap | None = None
+    if "global_per_month" in raw:
+        month = _cap(raw["global_per_month"], f"{where}.global_per_month")
+        if month.max_amount < glob.max_amount or month.max_count < glob.max_count:
+            raise AutonomyPolicyError(f"{where}: global_per_month is below global_per_day")
+    return Budget(
+        key, per_action, customer, _count(raw["per_order_max_count"], f"{where}.per_order_max_count"), glob, month
+    )
 
 
 def _condition(raw: Any, where: str) -> Condition:
@@ -222,7 +294,7 @@ def _condition(raw: Any, where: str) -> Condition:
 
 
 def _rule(raw: Any, where: str) -> Rule:
-    raw = _mapping(raw, where, _RULE_KEYS)
+    raw = _mapping(raw, where, _RULE_KEYS, required=_RULE_REQUIRED)
     for key in ("id", "reason"):
         if not isinstance(raw[key], str) or not raw[key].strip():
             raise AutonomyPolicyError(f"{where}: {key!r} must be a non-empty string")
@@ -230,11 +302,15 @@ def _rule(raw: Any, where: str) -> Rule:
         raise AutonomyPolicyError(f"{where}: unknown tier {raw['tier']!r}")
     if not isinstance(raw["when"], list):
         raise AutonomyPolicyError(f"{where}: 'when' must be a list (empty for an unconditional rule)")
+    hold = raw.get("hold", False)
+    if not isinstance(hold, bool):
+        raise AutonomyPolicyError(f"{where}: 'hold' must be true or false")
     return Rule(
         raw["id"],
         raw["tier"],
         raw["reason"],
         tuple(_condition(c, f"{where}.when[{i}]") for i, c in enumerate(raw["when"])),
+        hold,
     )
 
 
@@ -255,11 +331,13 @@ def _action(name: str, raw: Any, budgets: dict[str, Budget]) -> Action:
         if budget_key not in budgets:
             raise AutonomyPolicyError(f"{where}: unknown budget {budget_key!r}")
     elif budget_key is not None:
-        raise AutonomyPolicyError(f"{where}: a notice spends no money, so it has no budget")
+        raise AutonomyPolicyError(f"{where}: a {kind} spends no money, so it has no budget")
     if not isinstance(raw["reversible"], bool):
         raise AutonomyPolicyError(f"{where}.reversible: expected true or false")
     if kind == "notice" and raw["reversible"]:
         raise AutonomyPolicyError(f"{where}: a sent notice cannot be reversed")
+    if kind == "risk_review" and not raw["reversible"]:
+        raise AutonomyPolicyError(f"{where}: a hold must be reversible")
     rules_raw = raw["rules"]
     if not isinstance(rules_raw, list) or not rules_raw:
         raise AutonomyPolicyError(f"{where}.rules: expected a non-empty list")
@@ -274,6 +352,13 @@ def _action(name: str, raw: Any, budgets: dict[str, Budget]) -> Action:
             f"{where}.rules: an unconditional rule before the last one makes the rest unreachable"
         )
     for rule in rules:
+        if rule.tier in RISK_ONLY_TIERS and kind != "risk_review":
+            raise AutonomyPolicyError(f"{where}.rules.{rule.id}: only a risk review may take no action")
+        if rule.hold and (kind != "risk_review" or rule.tier != "needs_approval"):
+            raise AutonomyPolicyError(f"{where}.rules.{rule.id}: only a risk review's needs_approval rule may hold")
+        if kind == "risk_review" and rule.tier in AUTONOMOUS_TIERS:
+            # The engine never cancels, refunds or clears an order itself: a review ends in nothing or a person.
+            raise AutonomyPolicyError(f"{where}.rules.{rule.id}: a risk review never acts alone")
         if rule.tier not in AUTONOMOUS_TIERS:
             continue
         if kind == "notice":
@@ -309,6 +394,46 @@ def _event(topic: str, raw: Any, actions: dict[str, Action]) -> EventRule:
     if action_name not in actions:
         raise AutonomyPolicyError(f"{where}: unknown action {action_name!r}")
     kind = actions[action_name].kind
+    if kind == "damage_credit":
+        raw = _mapping(raw, where, _DAMAGE_EVENT_KEYS)
+        percent = _decimal(raw["credit_percent"], f"{where}.credit_percent")
+        if not Decimal(0) < percent <= Decimal(100):
+            raise AutonomyPolicyError(f"{where}.credit_percent: must be above 0 and at most 100")
+        return EventRule(
+            topic,
+            action_name,
+            _statuses(raw["eligible_order_statuses"], where),
+            (),
+            lookback_days=_positive_int(raw["lookback_days"], f"{where}.lookback_days"),
+            credit_percent=percent,
+            max_credit=_money(raw["max_credit"], f"{where}.max_credit"),
+            replacement_max_line_value=_money(raw["replacement_max_line_value"], f"{where}.replacement_max_line_value"),
+        )
+    if kind == "risk_review":
+        raw = _mapping(raw, where, _RISK_EVENT_KEYS)
+        signals_raw = raw["signals"]
+        if not isinstance(signals_raw, list) or not signals_raw:
+            raise AutonomyPolicyError(f"{where}.signals: expected a non-empty list")
+        signals: list[Signal] = []
+        for i, item in enumerate(signals_raw):
+            at = f"{where}.signals[{i}]"
+            item = _mapping(item, at, _SIGNAL_KEYS)
+            if not isinstance(item["id"], str) or not item["id"].strip():
+                raise AutonomyPolicyError(f"{at}.id: must be a non-empty string")
+            condition = _condition({k: item[k] for k in ("fact", "op", "value")}, at)
+            if condition.fact == "risk_score":
+                raise AutonomyPolicyError(f"{at}: a signal cannot test the score it adds to")
+            signals.append(Signal(item["id"], condition, _positive_int(item["points"], f"{at}.points")))
+        if len({s.id for s in signals}) != len(signals):
+            raise AutonomyPolicyError(f"{where}.signals: duplicate signal id")
+        return EventRule(
+            topic,
+            action_name,
+            _statuses(raw["eligible_order_statuses"], where),
+            (),
+            velocity_window_hours=_positive_int(raw["velocity_window_hours"], f"{where}.velocity_window_hours"),
+            signals=tuple(signals),
+        )
     if kind == "price_adjustment":
         raw = _mapping(raw, where, _PRICE_EVENT_KEYS)
         statuses = _statuses(raw["eligible_order_statuses"], where)
@@ -427,6 +552,7 @@ class TierDecision:
     rule_id: str
     reason: str
     evidence: dict[str, Any] = field(default_factory=dict)
+    hold: bool = False
 
 
 def evaluate_tier(action: Action, facts: dict[str, Any]) -> TierDecision:
@@ -444,7 +570,7 @@ def evaluate_tier(action: Action, facts: dict[str, Any]) -> TierDecision:
                 rule.tier,
                 rule.id,
                 rule.reason,
-                {
+                evidence={
                     "rule": rule.id,
                     "conditions": [
                         {
@@ -457,6 +583,7 @@ def evaluate_tier(action: Action, facts: dict[str, Any]) -> TierDecision:
                     ],
                     "facts": {k: None if v is None else str(v) for k, v in sorted(known.items())},
                 },
+                hold=rule.hold,
             )
     # Unreachable for a loaded policy: the last rule is unconditional.
     raise AutonomyPolicyError(f"no rule matched for action {action.name!r}")
@@ -471,6 +598,9 @@ class Usage:
     customer_count: int = 0
     customer_amount: Decimal = Decimal(0)
     order_count: int = 0
+    #: This UTC month's draws on the budget (every customer), read in the same transaction as the day's.
+    month_count: int = 0
+    month_amount: Decimal = Decimal(0)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -479,6 +609,8 @@ class Usage:
             "customer_count": self.customer_count,
             "customer_amount": str(self.customer_amount),
             "order_count": self.order_count,
+            "month_count": self.month_count,
+            "month_amount": str(self.month_amount),
         }
 
 
@@ -505,4 +637,61 @@ def check_budget(budget: Budget, amount: Decimal | None, usage: Usage) -> Budget
         tripped.append("global_daily_count")
     if usage.global_amount + amount > budget.global_per_day.max_amount:
         tripped.append("global_daily_amount")
+    month = budget.global_per_month
+    if month is not None:
+        if usage.month_count + 1 > month.max_count:
+            tripped.append("global_monthly_count")
+        if usage.month_amount + amount > month.max_amount:
+            tripped.append("global_monthly_amount")
     return BudgetCheck(not tripped, tuple(tripped))
+
+
+RESOLUTION_CREDIT = "credit"
+RESOLUTION_REPLACEMENT = "replacement_offer"
+
+
+def size_damage_remedy(rule: EventRule, value: Decimal, *, in_stock: bool) -> tuple[str, Decimal] | None:
+    """The remedy for damage worth ``value``: ``(resolution, amount)``, or None when it comes to nothing. Pure.
+
+    A free replacement (costed at ``value``) when the product is in stock and ``value`` is at most
+    ``replacement_max_line_value``; otherwise a store credit of ``credit_percent`` of ``value``, never above
+    ``max_credit``. Cents round half up.
+    """
+    if in_stock and value <= rule.replacement_max_line_value:
+        return (RESOLUTION_REPLACEMENT, value) if value > 0 else None
+    credit = min((value * rule.credit_percent / 100).quantize(_CENT, rounding=ROUND_HALF_UP), rule.max_credit)
+    return (RESOLUTION_CREDIT, credit) if credit > 0 else None
+
+
+def month_start(day: date) -> date:
+    """The first day of ``day``'s calendar month (a budget's month is the UTC calendar month, not 30 days)."""
+    return day.replace(day=1)
+
+
+def next_month_start(day: date) -> date:
+    first = month_start(day)
+    return date(first.year + 1, 1, 1) if first.month == 12 else date(first.year, first.month + 1, 1)
+
+
+@dataclass(frozen=True)
+class RiskScore:
+    score: int
+    triggered: tuple[dict[str, Any], ...]
+
+
+def score_order(rule: EventRule, facts: dict[str, Any]) -> RiskScore:
+    """The risk score of an order: the points of every signal whose condition holds, capped at 100. Pure.
+
+    A fact that could not be determined (``None``) satisfies nothing and adds nothing, so missing evidence can only
+    lower the score; the tier rules then read the score, never the raw facts.
+    """
+    known = {name: to_decimal(facts.get(name)) for name in FACTS}
+    total = 0
+    triggered: list[dict[str, Any]] = []
+    for signal in rule.signals:
+        if _holds(signal.condition, known[signal.condition.fact]):
+            total += signal.points
+            triggered.append(
+                {"signal": signal.id, "points": signal.points, "actual": str(known[signal.condition.fact])}
+            )
+    return RiskScore(min(total, MAX_RISK_SCORE), tuple(triggered))

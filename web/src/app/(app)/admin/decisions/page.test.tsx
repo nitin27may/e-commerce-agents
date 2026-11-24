@@ -289,3 +289,46 @@ describe("AutonomyDecisionsPage — paging", () => {
     expect(String(fetchSpy.mock.calls[1][0])).toMatch(/\/api\/admin\/decisions$/);
   });
 });
+
+describe("AutonomyDecisionsPage - monthly budget use (#299)", () => {
+  const budget = {
+    budget_key: "goodwill_credit",
+    day: "2026-11-16",
+    used_count: 1,
+    used_amount: "5.00",
+    max_count: 20,
+    max_amount: "200.00",
+    per_action_max_amount: "25.00",
+    per_customer_max_count: 1,
+    per_customer_max_amount: "25.00",
+    per_order_max_count: 1,
+  };
+
+  it("shows this month's use beside today's when the budget has a month cap", async () => {
+    vi.spyOn(api, "getAutonomyDecisions").mockResolvedValue(
+      page([decision(1)], {
+        budgets: [
+          { ...budget, month: "2026-11", month_used_count: 12, month_used_amount: "60.00", month_max_count: 300, month_max_amount: "3000.00" },
+        ],
+      }),
+    );
+
+    render(<AutonomyDecisionsPage />);
+
+    const month = await screen.findByTestId("budget-month");
+    expect(month.textContent).toContain("2026-11");
+    expect(month.textContent).toContain("12 of 300 actions");
+    expect(month.textContent).toContain("$60.00 of $3,000.00");
+  });
+
+  it("shows no month line for a budget without a month cap", async () => {
+    vi.spyOn(api, "getAutonomyDecisions").mockResolvedValue(
+      page([decision(1)], { budgets: [{ ...budget, month_max_count: null, month_max_amount: null }] }),
+    );
+
+    render(<AutonomyDecisionsPage />);
+
+    await screen.findByTestId("budget-meter");
+    expect(screen.queryByTestId("budget-month")).not.toBeInTheDocument();
+  });
+});

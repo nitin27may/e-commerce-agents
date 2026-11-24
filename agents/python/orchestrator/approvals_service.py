@@ -554,6 +554,10 @@ async def _approve_event(
     except Exception:
         allowed = set()
     rejected = sorted(set(edits) - allowed)
+    if proposed["action"] == autonomy.ACTION_RISK_REVIEW:
+        # The amount on a risk review is the order's total, what is at stake, not something paid: there is nothing to
+        # lower, so any edit is refused.
+        rejected = sorted(set(edits))
     if rejected:
         raise ApprovalHTTPError(422, f"Not editable: {', '.join(rejected)}")
     amount: Decimal = proposed["amount"]

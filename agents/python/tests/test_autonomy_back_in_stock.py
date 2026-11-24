@@ -77,7 +77,7 @@ async def test_a_notice_moves_no_money_and_touches_no_budget(w: aus.World) -> No
 
     assert await w.pool.fetchval("SELECT count(*) FROM approvals") == 0
     overview = {b["budget_key"]: b for b in await engine.budget_overview(w.pool)}
-    assert set(overview) == {"goodwill_credit", "price_adjustment"}
+    assert set(overview) == {"goodwill_credit", "price_adjustment", "damage_goodwill"}
     assert all(b["used_count"] == 0 for b in overview.values())
     (shown,) = await engine.list_decisions(w.pool)
     assert shown["state"] == "executed" and shown["can_reverse"] is False and shown["amount"] is None

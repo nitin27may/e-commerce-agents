@@ -276,7 +276,7 @@ async def test_the_decisions_list_shows_state_budget_use_and_the_reverse_button_
     assert by_tier["auto"]["budget"]["drew"] == {"count": 1, "amount": "5.00"}
     assert by_tier["needs_approval"]["reasons"] == ["Outside what the system may do alone"]
     overview = next(b for b in body["budgets"] if b["budget_key"] == "goodwill_credit")
-    assert {b["budget_key"] for b in body["budgets"]} == {"goodwill_credit", "price_adjustment"}
+    assert {b["budget_key"] for b in body["budgets"]} == {"goodwill_credit", "price_adjustment", "damage_goodwill"}
     assert (overview["used_count"], overview["used_amount"]) == (2, "20.00")
     only = (await _call(_admin(), "GET", "/api/admin/decisions?state=awaiting_approval")).json()
     assert [d["tier"] for d in only["decisions"]] == ["needs_approval"]

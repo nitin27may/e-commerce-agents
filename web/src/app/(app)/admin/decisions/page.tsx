@@ -44,6 +44,12 @@ function BudgetMeter({ budget }: { budget: AutonomyBudget }) {
       >
         <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
       </div>
+      {budget.month_max_count != null && budget.month_max_amount != null && (
+        <p className="mt-2 text-sm text-muted-foreground" data-testid="budget-month">
+          This month ({budget.month ?? "UTC"}): {budget.month_used_count ?? 0} of {budget.month_max_count} actions and{" "}
+          {money(budget.month_used_amount ?? "0")} of {money(budget.month_max_amount)} used.
+        </p>
+      )}
       <p className="mt-2 text-xs text-muted-foreground">
         At most {money(budget.per_action_max_amount)} per action, {budget.per_customer_max_count} per customer per day (
         {money(budget.per_customer_max_amount)}), {budget.per_order_max_count} per order.
@@ -163,7 +169,7 @@ export default function AutonomyDecisionsPage() {
 
   async function reverse(id: string, note?: string) {
     await api.reverseAutonomyDecision(id, note);
-    setNotice("Reversed. The credit was taken back with a new entry; nothing was deleted.");
+    setNotice("Reversed with a new entry (a credit is taken back, a hold is released); nothing was deleted.");
     await load();
   }
 
@@ -175,7 +181,11 @@ export default function AutonomyDecisionsPage() {
       setNotice(
         !res.enqueued
           ? "That event was already sent."
-          : res.order_id
+          : res.event_type === "order.risk_flagged"
+            ? `Sent an order-risk event for order ${(res.order_id ?? "").slice(0, 8)}. The worker will score it in a moment.`
+            : res.event_type === "order.item_damaged"
+              ? `Sent a damaged-item report for order ${(res.order_id ?? "").slice(0, 8)}. The worker will decide it in a moment.`
+              : res.order_id
             ? `Sent a ${res.delay_days}-day delay for order ${res.order_id.slice(0, 8)}. The worker will decide it in a moment.`
             : res.new_price
               ? `Sent a price drop to ${res.new_price} for product ${(res.product_id ?? "").slice(0, 8)}. The worker will decide each recent purchase in a moment.`
