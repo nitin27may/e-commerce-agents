@@ -785,7 +785,7 @@ Deny a pending access request.
 
 ### GET /api/admin/usage
 
-Get aggregate usage statistics for the last 30 days, with per-agent breakdowns and a 7-day daily trend.
+Get aggregate usage statistics for the last 30 days, with per-agent breakdowns and a 7-day daily trend. `overall.pending_requests` is the count of access requests still awaiting an admin (not limited to the 30 days).
 
 | Field | Value |
 |-------|-------|
@@ -802,7 +802,8 @@ Get aggregate usage statistics for the last 30 days, with per-agent breakdowns a
     "total_tokens_in": 450000,
     "total_tokens_out": 680000,
     "avg_duration_ms": 2300,
-    "total_tool_calls": 3400
+    "total_tool_calls": 3400,
+    "pending_requests": 2
   },
   "by_agent": [
     {

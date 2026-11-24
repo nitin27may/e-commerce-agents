@@ -857,6 +857,9 @@ async def get_usage_stats(admin: dict[str, Any] = Depends(require_admin)) -> dic
            WHERE created_at >= NOW() - INTERVAL '30 days'""",
     )
 
+    # Not date-bounded: it is the number a person has yet to act on, the same rows `/api/admin/requests` lists.
+    pending_requests = await pool.fetchval("SELECT COUNT(*) FROM access_requests WHERE status = 'pending'")
+
     # Per-agent breakdown
     agent_rows = await pool.fetch(
         """SELECT
@@ -899,6 +902,7 @@ async def get_usage_stats(admin: dict[str, Any] = Depends(require_admin)) -> dic
             # carry NULL and contribute nothing: this is the cost of the rows that have one.
             "total_tokens_cached_in": overall["total_tokens_cached_in"] or 0,
             "total_cost_usd": float(overall["total_cost_usd"] or 0),
+            "pending_requests": int(pending_requests or 0),
         },
         "by_agent": [
             {

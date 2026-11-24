@@ -434,6 +434,7 @@ export interface UsageStats {
     total_tool_calls: number;
     total_tokens_cached_in: number;
     total_cost_usd: number;
+    pending_requests: number;
   };
   by_agent: {
     agent_name: string;
