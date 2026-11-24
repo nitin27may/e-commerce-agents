@@ -41,7 +41,7 @@ public sealed class GateNoticeTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _settings = new AgentSettings { DatabaseUrl = _pg.ConnectionString, HitlEnabled = true };
+        _settings = new AgentSettings { DatabaseUrl = _pg.ConnectionString, HitlEnabled = true, CustomerConfirmationEnabled = false };
         _pool = new DatabasePool(_settings);
         await ResetAsync();
     }
