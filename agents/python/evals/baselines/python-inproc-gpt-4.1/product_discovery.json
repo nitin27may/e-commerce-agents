@@ -1,0 +1,38 @@
+{
+  "avg_groundedness": 1.0,
+  "avg_correctness": 0.98,
+  "avg_completeness": 0.8828,
+  "overall_score": 0.9686,
+  "total_tokens_in": 211205,
+  "total_tokens_out": 8957,
+  "agent_name": "product-discovery",
+  "dataset_path": "evals/datasets/live/product_discovery.live.json",
+  "setup": {
+    "stack": "python",
+    "target": "inproc",
+    "chat_provider": "azure",
+    "chat_model": "gpt-4.1",
+    "chat_api": "",
+    "embedding_provider": "azure",
+    "embedding_model": "text-embedding-3-small",
+    "judge": {
+      "kind": "llm",
+      "provider": "azure",
+      "model": "gpt-5.4-mini",
+      "self_judged": false
+    },
+    "gateway": "none",
+    "pricing_source": "pricing:models.yaml@a3bbb0fd",
+    "endpoint": ""
+  },
+  "setup_key": "python-inproc-gpt-4.1",
+  "repeats": 1,
+  "dataset_cases": 25,
+  "live": true,
+  "recorded_on": "2026-11-24",
+  "passed_cases": 25,
+  "total_cases": 25,
+  "judge_unavailable_cases": 0,
+  "estimated_cost_usd": 0.4941,
+  "caveat": "Live reference run: k=1, single model (gpt-4.1), judge azure:gpt-5.4-mini, spread unknown (one repeat). A snapshot of one sitting, not a quality guarantee, and not comparable with the replay baselines."
+}

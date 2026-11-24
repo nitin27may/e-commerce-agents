@@ -48,6 +48,17 @@ Tokens per request before the user's message, counted with `o200k_base` (`evals/
 | review-sentiment | customer | 3,125 | 1,213 | 13 | 4,338 |
 | review-sentiment | seller | 3,131 | 1,213 | 13 | 4,344 |
 
+## Live reference baselines (not a quality guarantee)
+
+**These are live runs, not replay.** Each row is one sitting of one model with an LLM judge, taken through the in-process target on a freshly seeded database. With one repeat there is no spread: a single flipped case moves a suite by a few points, and a rerun can move it too. They are stored under their own setup key and the replay gate never compares against them. A self-judged run says so in the Judge column. Cost is the tokens times the price in `config/pricing/models.yaml` with cached input billed at the full rate, so it is an upper bound, and it excludes the judge calls.
+
+| Date | Setup | Model | Judge | k | Agent | Dataset | Cases | Passed | Groundedness | Correctness | Completeness | Overall | Cost (USD) |
+|------|-------|-------|-------|--:|-------|---------|------:|-------:|-------------:|------------:|-------------:|--------:|-----------:|
+| 2026-11-24 | `python-inproc-gpt-4.1` | gpt-4.1 | azure:gpt-5.4-mini | 1 | inventory-fulfillment | `inventory_fulfillment.live.json` | 29 | 27 | 0.97 | 0.97 | 0.78 | 0.93 | 0.63 |
+| 2026-11-24 | `python-inproc-gpt-4.1` | gpt-4.1 | azure:gpt-5.4-mini | 1 | pricing-promotions | `pricing_promotions.live.json` | 29 | 25 (1 judge-unavailable) | 0.79 | 0.97 | 0.89 | 0.88 | 0.50 |
+| 2026-11-24 | `python-inproc-gpt-4.1` | gpt-4.1 | azure:gpt-5.4-mini | 1 | product-discovery | `product_discovery.live.json` | 25 | 25 | 1.00 | 0.98 | 0.88 | 0.97 | 0.49 |
+| 2026-11-24 | `python-inproc-gpt-4.1` | gpt-4.1 | azure:gpt-5.4-mini | 1 | review-sentiment | `review_sentiment.live.json` | 29 | 29 (1 judge-unavailable) | 1.00 | 1.00 | 0.92 | 0.98 | 0.75 |
+
 ## Community-submitted, not verified by the maintainers
 
 Results people ran on their own provider and model and contributed under `agents/python/evals/community/` (format and rules: `agents/python/evals/community/README.md`). Each file passed `python -m evals.community_validate` when it was merged and the test suite re-checks it, which shows it is well formed and, where records are attached, that the scores follow from them. It does not show that the run happened, and the maintainers did not re-run it. Setups differ (provider, model, judge, repeats), so rows here are not comparable with each other or with the reference baselines above. Overall is shown for quality suites and pass rate for safety suites, as mean +/- standard deviation across repeats when there were two or more.

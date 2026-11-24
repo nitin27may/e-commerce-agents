@@ -77,6 +77,24 @@ Does the response contain all the fields the user would need?
 
 Completeness is deliberately fuzzy (substring match on the response text) because the LLM formats data in varied ways. The goal is to catch cases where the agent retrieved data but then dropped key fields in the formatted response.
 
+### Live reference baselines (2026-11-24)
+
+First reference run of the live suites. **One repeat (k=1), one model, one sitting: a snapshot, not a quality guarantee, and the spread is unknown.** Three repeats would have cost about three times the 4 USD cap that applied. Setup `python-inproc-gpt-4.1`: `gpt-4.1` on Azure through the in-process target, a freshly seeded database, completeness judged by `gpt-5.4-mini` on Azure (not the model under test, so **not self-judged**), pass threshold 0.7. They are stored under `agents/python/evals/baselines/python-inproc-gpt-4.1/`, marked `"live": true`, and the replay gate never reads that directory (`tests/test_eval_live_baselines.py`). The [eval scorecard](eval-scorecard.md) shows them in a separate table.
+
+| Suite | Cases | Passed | Groundedness | Correctness | Completeness | Overall | Chat cost (USD, upper bound) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| product-discovery | 25 | 25 | 1.00 | 0.98 | 0.88 | 0.97 | 0.49 |
+| pricing-promotions | 29 | 25 | 0.79 | 0.97 | 0.89 | 0.88 | 0.50 |
+| review-sentiment | 29 | 29 | 1.00 | 1.00 | 0.92 | 0.98 | 0.75 |
+| inventory-fulfillment | 29 | 27 | 0.97 | 0.97 | 0.78 | 0.93 | 0.63 |
+| order-management | 33 | not run | | | | | |
+| orchestrator | 30 | not run | | | | | |
+
+- Cost is tokens times the `models.yaml` price with cached input at the full rate, so the real bill is lower; it leaves out the judge calls (about 0.04 USD per suite at the estimate). Whole task: about 3.2 USD of the 4 USD cap.
+- **Order-management and orchestrator have no baseline.** Their runs would have passed the 3.5 USD stop. The orchestrator suite ran once with 13 of 30 cases measured (the rest were refused by a harness defect fixed in the same change, below), so it is not recorded as a baseline. Run `scripts/live-evals.sh` for them, then store the baselines with `--rescore <records> --update-baseline`.
+- Pass counts include the cases kept failing on purpose. Pricing: 8 (loyalty tiers) and 9 and 11 (bundle and cart totals) score groundedness near 0 because the grounding check could not match a quoted amount to a tool result (`unverifiable`, not `price_mismatch`; not yet confirmed whether the gap is the checker's or the answer's), and 22 (every coupon code) reports "none valid" and misses the public deals. Inventory: 11 (fulfillment plan) is the same unmatched-amount result on a shipping price, and 18 (backorder of an in-stock item) is declined by the model, which the case did not expect. Judge-unavailable cases (one each in pricing and review) are left out of the completeness mean.
+- Comparing a later run with these is like-for-like only on the same setup key and judge. With one repeat on either side the regression gate allows one case's worth of drop (`1 / cases`).
+
 ### Judge calibration
 
 The LLM judge is only useful if it agrees with a person reading the same response. `agents/python/evals/judge_calibration/` holds 30 stored live responses (clear passes and misses, partial answers, one empty reply, refusals, five adversarial prompts), a label for every expected field, the stored verdicts of four candidate judges, and a script that recomputes every figure offline (`uv run python -m evals.judge_calibration.run --rescore`). The decision rule was written before any judge ran: a candidate replaces the incumbent judge `gpt-4.1-mini` only if its agreement is at least 5 points higher and its cost per judgement is under 3 times the default's.
@@ -148,11 +166,11 @@ Live variants, run by hand against a model with run-time facts resolved (they ar
 | Live dataset | Cases |
 |---|---:|
 | `live/product_discovery.live.json` | 25 |
-| `live/inventory_fulfillment.live.json` | 28 |
+| `live/inventory_fulfillment.live.json` | 29 |
 | `live/orchestrator_routing.live.json` | 30 |
-| `live/order_management.live.json` | 7 (includes multi-turn cases) |
-| `live/pricing_promotions.live.json` | 5 |
-| `live/review_sentiment.live.json` | 5 |
+| `live/order_management.live.json` | 33 (includes multi-turn cases) |
+| `live/pricing_promotions.live.json` | 29 |
+| `live/review_sentiment.live.json` | 29 |
 
 Each dataset covers the happy path plus at least one edge case (empty results, boundary conditions, follow-up questions in context).
 

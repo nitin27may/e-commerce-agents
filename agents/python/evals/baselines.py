@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import math
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
@@ -54,6 +55,11 @@ FLOOR = 0.02
 # Two standard errors of a difference of means: about a 95 percent band.
 Z = 2.0
 MIN_REPEATS_FOR_SPREAD = 2
+
+LIVE_CAVEAT = (
+    "Live reference run: k={k}, single model ({model}), judge {judge}, spread {spread}. "
+    "A snapshot of one sitting, not a quality guarantee, and not comparable with the replay baselines."
+)
 
 _TRACKED_SCORES = ("avg_groundedness", "avg_correctness", "avg_completeness", "overall_score")
 
@@ -102,6 +108,23 @@ def write_baseline(path: str | Path, summary: EvalSummary) -> None:
         snapshot["setup_key"] = summary.setup.key
     snapshot["repeats"] = summary.repeats
     snapshot["dataset_cases"] = summary.dataset_cases or summary.total_cases
+    if summary.setup is not None and summary.setup.chat_provider != "replay":
+        # A live baseline is one sitting on one model, and says so in the file: a reader of the JSON alone
+        # must not mistake it for a quality guarantee or for something a replay run can be compared with.
+        snapshot["live"] = True
+        snapshot["recorded_on"] = datetime.now(UTC).date().isoformat()
+        snapshot["passed_cases"] = summary.passed_cases
+        snapshot["total_cases"] = summary.total_cases
+        snapshot["judge_unavailable_cases"] = summary.judge_unavailable_cases
+        snapshot["estimated_cost_usd"] = (
+            None if summary.estimated_cost_usd is None else round(summary.estimated_cost_usd, 4)
+        )
+        snapshot["caveat"] = LIVE_CAVEAT.format(
+            k=summary.repeats,
+            model=summary.setup.chat_model,
+            judge=summary.setup.judge.label(),
+            spread="unknown (one repeat)" if summary.repeats < MIN_REPEATS_FOR_SPREAD else "see spread",
+        )
     if summary.spread:
         snapshot["spread"] = {key: round(value, 4) for key, value in summary.spread.items()}
     p.write_text(json.dumps(snapshot, indent=2) + "\n")
