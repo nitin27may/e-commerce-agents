@@ -40,7 +40,7 @@ one.** Twelve containers reported healthy throughout the first of those.
 
 The .NET stack could not answer a single question for an extended period. Throughout,
 twelve containers reported healthy, login worked, the UI served, image builds passed, and
-556 unit tests were green. The only symptom was a polite sentence:
+more than 400 unit tests were green (the first case above counts 418 at the time it was found). The only symptom was a polite sentence:
 
 > "I tried searching the catalog for running shoes and their prices, but there was an
 > error retrieving the results."

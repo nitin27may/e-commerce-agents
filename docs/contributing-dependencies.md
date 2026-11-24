@@ -12,7 +12,7 @@ Dependabot runs weekly, on Monday, for six ecosystems: `uv` (`/agents/python`, `
 
 | Kind of update | What Dependabot opens | What we do |
 |---|---|---|
-| Patch and minor | One grouped PR per ecosystem (`python-minor-patch`, `web-minor-patch`, `dotnet-minor-patch`, `docker-minor-patch`, `actions`) | Merge when CI is green. No separate review beyond reading the changelog entries it lists. |
+| Patch and minor | One grouped PR per ecosystem (`python-minor-patch`, `web-minor-patch`, `dotnet-minor-patch`, `docker-minor-patch`, `compose-minor-patch`, `actions`) | Merge when CI is green. No separate review beyond reading the changelog entries it lists. |
 | Major | One PR per dependency, never grouped | One human-reviewed PR. Expect code changes, not just a lockfile edit. |
 | MAF, MCP, A2A SDK, `httpx2` | The `maf` group (Python and .NET), never mixed into the routine PR | A deliberate step: gate on `scripts/replay-evals.sh`, possibly re-record fixtures, move Python, .NET and the tutorials together. |
 | Runtime-coupled majors (`Microsoft.Extensions.*`, `Microsoft.AspNetCore.*`, `System.*`, the `python`, `node` and `dotnet/*` images) | Ignored on purpose | The runtime line is chosen with the code. Changing it is its own change. |

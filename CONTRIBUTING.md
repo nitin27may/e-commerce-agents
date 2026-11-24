@@ -13,7 +13,7 @@ without an API key, what a PR must pass, and where to find a first issue.
 |------|---------|------------|
 | Docker with Compose v2 | 24+ | The full stack, and the Postgres containers the Python integration tests start |
 | `uv` | latest | Everything Python (3.12) |
-| Node.js and `pnpm` | 22+ and 9+ | The frontend |
+| Node.js and `pnpm` | 22+ and 10+ (CI uses pnpm 10.15.0) | The frontend |
 | .NET SDK | 10.0 | Only if you touch `agents/dotnet/` or a tutorial's .NET half |
 
 No API key is needed to build, test or open a PR.
@@ -89,6 +89,7 @@ uv run --project tutorials pytest tutorials/ -m "not integration"
 python3 scripts/build_docs_site.py --check
 python3 scripts/check_tutorial_readmes.py --check
 python3 scripts/check_tutorial_coverage.py --check
+python3 scripts/check_tutorial_nav.py --check
 ```
 
 - **Replay eval smoke** (CI: `evals.yml`, on PRs that touch `evals/`, `shared/`, the
@@ -126,6 +127,6 @@ Checklist before you ask for review:
 - [ ] The definition-of-done commands above pass for the parts you touched.
 - [ ] If you changed a prompt, a tool schema or a tool's output: the replay eval suite
       runs with zero fixture misses.
-- [ ] Docs updated when behavior changes.
+- [ ] Docs updated when behavior changes, and a line added under `[Unreleased]` in `CHANGELOG.md` (one entry per change, under Added, Changed or Fixed; see the keep-both rule in [`docs/contributing-dependencies.md`](docs/contributing-dependencies.md#changelogmd-and-docsparity-matrixmd-keep-both)).
 - [ ] The description says what changed and how you verified it (commands + results).
 - [ ] CI (`.github/workflows/tests.yml`) is green.

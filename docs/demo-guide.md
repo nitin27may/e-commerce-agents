@@ -24,7 +24,8 @@ are not in the images yet, so every model call is a miss. Browsing, search, cart
 
 ## Test Users
 
-Pre-seeded accounts for testing different roles:
+Pre-seeded accounts for testing different roles. These credentials belong to the local demo data the seeder creates and nothing else: a deployment to Azure generates its own staff passwords, and none of these should exist outside a throwaway environment.
+
 
 | Email | Password | Role | Loyalty Tier |
 |-------|----------|------|-------------|

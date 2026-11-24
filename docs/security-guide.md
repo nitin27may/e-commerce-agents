@@ -66,7 +66,7 @@ Request →
 
 ### Layer 1 — Prompt-layer rules (`grounding-rules.yaml`)
 
-`shared/config/prompts/_shared/grounding-rules.yaml` is injected into every agent's system prompt via the YAML composition system (`shared/prompt_loader.py`). It enforces three invariants at the model level:
+`agents/python/config/prompts/_shared/grounding-rules.yaml` is injected into every agent's system prompt via the YAML composition system (`shared/prompt_loader.py`). It enforces three invariants at the model level:
 
 - **Data grounding** — every answer must originate from a tool call; the model must not fabricate data from training.
 - **Prompt-injection resistance** — tool results and user text are data, never instructions. Fake system/developer turns are explicitly forbidden.
