@@ -175,7 +175,7 @@ jobs:
       id-token: write # trusted publishing: exchange this run's OIDC identity for an upload token
     steps:
       - name: Download the built files
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: mcp-dist
           path: dist/
@@ -198,7 +198,7 @@ jobs:
       id-token: write
     steps:
       - name: Download the built files
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: mcp-dist
           path: dist/
