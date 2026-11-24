@@ -22,6 +22,9 @@ paths = [
   '''agents/python/tests/test_return_label_entropy\.py''',
   '''agents/dotnet/tests/ECommerceAgents\.Orchestrator\.Tests/ReturnLabelTokenTests\.cs''',
   '''agents/dotnet/tests/ECommerceAgents\.Orchestrator\.Tests/ReturnLabelRouteTests\.cs''',
+  # Customer-confirmation test vector: its "key" values are sha256 hex digests of tool arguments (generic-api-key look-alikes), not secrets.
+  # This singular [allowlist] form cannot scope by rule id, so the scope is this one file.
+  '''agents/python/config/policies/testdata/customer-confirmation\.v1\.json''',
   # The community-results validator's tests plant fake AWS and API keys on purpose, to prove it refuses them.
   '''agents/python/tests/test_eval_community\.py''',
 ]
