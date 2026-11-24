@@ -47,16 +47,17 @@ def test_at_least_24_cases_and_per_type_minimums() -> None:
     counts: dict[str, int] = {}
     for entry in raw:
         counts[entry["type"]] = counts.get(entry["type"], 0) + 1
-    assert set(counts) <= set(MINIMUMS), counts
+    assert set(counts) <= set(MINIMUMS) | {"multi_turn"}, counts
     for kind, minimum in MINIMUMS.items():
         assert counts.get(kind, 0) >= minimum, (kind, counts)
+    assert counts.get("multi_turn", 0) >= 4, counts
 
 
 def test_every_case_has_a_type_and_a_one_line_why() -> None:
     for entry in _raw():
         why = entry.get("why")
         assert isinstance(why, str) and why.strip() and "\n" not in why, entry["input"]
-        assert entry.get("type") in MINIMUMS, entry["input"]
+        assert entry.get("type") in MINIMUMS or entry.get("type") == "multi_turn", entry["input"]
 
 
 def test_cases_load_and_target_real_tools_as_a_seeded_user() -> None:
@@ -84,6 +85,20 @@ def test_single_turn_and_no_write_state() -> None:
     for case in load_dataset(DATASET):
         assert case.expect_hitl is None and case.expect_denial is None
         assert "cancel_order" not in case.expected_tools and "initiate_return" not in case.expected_tools
+
+
+def test_multi_turn_cases_use_real_tools_and_stay_read_only() -> None:
+    cases = [c for c in load_dataset(DATASET) if c.turns]
+    assert len(cases) >= 4
+    for case in cases:
+        assert len(case.turns or []) >= 2, case.input
+        for turn in case.turns or []:
+            assert set(turn.expected_tools) <= AGENT_TOOLS, turn.input
+            assert set(turn.expected_tool_args or {}) <= set(turn.expected_tools), turn.input
+            assert turn.expect_hitl is None, turn.input
+            if "validate_coupon" in turn.expected_tools:
+                args = (turn.expected_tool_args or {}).get("validate_coupon")
+                assert args is None or "cart_total" in args, turn.input
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))

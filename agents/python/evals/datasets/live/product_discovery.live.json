@@ -451,5 +451,158 @@
     },
     "user_email": "jack.anderson@gmail.com",
     "why": "Abusive input: the agent must stay professional and still do the task."
+  },
+  {
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "follow_up_context": true
+    },
+    "user_email": "jack.anderson@gmail.com",
+    "input": "Show me the full details for the second one",
+    "turns": [
+      {
+        "input": "Find me wireless headphones under $300",
+        "expected_tools": [
+          "search_products"
+        ],
+        "expected_fields": [
+          "name",
+          "price"
+        ]
+      },
+      {
+        "input": "Show me the full details for the second one",
+        "expected_tools": [
+          "get_product_details"
+        ],
+        "expected_fields": [
+          "name",
+          "description",
+          "price"
+        ]
+      }
+    ],
+    "type": "multi_turn",
+    "why": "'The second one' after a result list must resolve to the second product listed and fetch its details."
+  },
+  {
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "follow_up_context": true
+    },
+    "user_email": "jack.anderson@gmail.com",
+    "input": "Never mind books. Show me Sports products under $50 instead.",
+    "turns": [
+      {
+        "input": "Show me books rated 4.8 or higher",
+        "expected_tools": [
+          "search_products"
+        ],
+        "expected_fields": [
+          "name",
+          "rating"
+        ],
+        "expected_tool_args": {
+          "search_products": {
+            "category": "Books",
+            "min_rating": 4.8
+          }
+        }
+      },
+      {
+        "input": "Never mind books. Show me Sports products under $50 instead.",
+        "expected_tools": [
+          "search_products"
+        ],
+        "expected_fields": [
+          "name",
+          "price"
+        ],
+        "expected_tool_args": {
+          "search_products": {
+            "category": "Sports",
+            "max_price": 50
+          }
+        }
+      }
+    ],
+    "type": "multi_turn",
+    "why": "Changing mind mid-flow: 'never mind books, show me sports' must drop the book filter and search the new category."
+  },
+  {
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "follow_up_context": true
+    },
+    "user_email": "jack.anderson@gmail.com",
+    "input": "For my dad. He likes fitness gadgets and I can spend up to $200.",
+    "turns": [
+      {
+        "input": "I need a gift",
+        "expected_tools": [],
+        "expected_fields": [
+          "asks who it is for or what they like"
+        ]
+      },
+      {
+        "input": "For my dad. He likes fitness gadgets and I can spend up to $200.",
+        "expected_tools": [
+          "search_products"
+        ],
+        "expected_fields": [
+          "name",
+          "price"
+        ],
+        "expected_tool_args": {
+          "search_products": {
+            "max_price": 200
+          }
+        }
+      }
+    ],
+    "type": "multi_turn",
+    "why": "A vague opener must draw a clarifying question, then a search that uses the answer (person, interest, budget)."
+  },
+  {
+    "criteria": {
+      "grounded": true,
+      "tool_called": true,
+      "follow_up_context": true
+    },
+    "user_email": "jack.anderson@gmail.com",
+    "input": "Sorry, I meant the AirPods Max, not the Sony.",
+    "turns": [
+      {
+        "input": "Show me the full details for the Sony WH-1000XM5",
+        "expected_tools": [
+          "search_products",
+          "get_product_details"
+        ],
+        "expected_fields": [
+          "name",
+          "price"
+        ]
+      },
+      {
+        "input": "Sorry, I meant the AirPods Max, not the Sony.",
+        "expected_tools": [
+          "get_product_details"
+        ],
+        "expected_fields": [
+          "name",
+          "price"
+        ],
+        "expected_tool_args": {
+          "get_product_details": {
+            "product_id": "{{product_id:AirPods Max}}"
+          }
+        }
+      }
+    ],
+    "type": "multi_turn",
+    "why": "A correction of the product must look up the corrected product's id, not reuse the first one."
   }
 ]

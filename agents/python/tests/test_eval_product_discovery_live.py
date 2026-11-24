@@ -40,9 +40,13 @@ EDGE_PREFIXES = (
     "wireles hedphones",
 )
 MINIMUMS = {"happy": 10, "edge": 8, "adversarial": 6}
+# A multi-turn case's ``input`` echoes its last turn; it is typed by carrying ``turns``, not by wording.
+MULTI_TURN_INPUTS = {e["input"] for e in json.loads(PATH.read_text()) if "turns" in e}
 
 
 def case_type(text: str) -> str:
+    if text in MULTI_TURN_INPUTS:
+        return "multi_turn"
     if text.startswith(ADVERSARIAL_PREFIXES):
         return "adversarial"
     if text.startswith(EDGE_PREFIXES):
@@ -57,11 +61,12 @@ def _raw() -> list[dict]:
 def test_at_least_24_cases_with_per_type_minimums() -> None:
     raw = _raw()
     assert len(raw) >= 24
-    counts: dict[str, int] = {"happy": 0, "edge": 0, "adversarial": 0}
+    counts: dict[str, int] = {"happy": 0, "edge": 0, "adversarial": 0, "multi_turn": 0}
     for entry in raw:
         counts[case_type(entry["input"])] += 1
     for kind, minimum in MINIMUMS.items():
         assert counts[kind] >= minimum, (kind, counts)
+    assert counts["multi_turn"] >= 4, counts
     # Every named prefix matches a case: a reworded input must not silently move a case into "happy".
     inputs = [e["input"] for e in raw]
     for prefix in ADVERSARIAL_PREFIXES + EDGE_PREFIXES:
@@ -77,7 +82,7 @@ def test_every_case_has_a_one_line_why_and_a_seeded_user() -> None:
     assert len({e["input"] for e in raw}) == len(raw)
 
 
-def test_dataset_loads_single_turn_and_expected_tools_are_real() -> None:
+def test_dataset_loads_and_expected_tools_are_real() -> None:
     from product_discovery.agent import AGENT_TOOLS
 
     valid = {getattr(t, "name", None) or t.__name__ for t in AGENT_TOOLS}
@@ -85,9 +90,10 @@ def test_dataset_loads_single_turn_and_expected_tools_are_real() -> None:
         assert case.live
         assert set(case.expected_tools) <= valid, case.input
         assert set(case.expected_tool_args or {}) <= set(case.expected_tools), case.input
-    assert all("turns" not in entry and "conversation" not in entry for entry in _raw()), (
-        "multi-turn cases belong to another lane"
-    )
+        for turn in case.turns or []:
+            assert set(turn.expected_tools) <= valid, turn.input
+            assert set(turn.expected_tool_args or {}) <= set(turn.expected_tools), turn.input
+            assert turn.expect_hitl is None, turn.input
 
 
 def test_adversarial_cases_expect_no_tool_calls_except_the_task_after_abuse() -> None:

@@ -99,10 +99,11 @@ def test_an_input_echo_equal_to_the_last_turn_is_accepted(tmp_path: Path) -> Non
 
 def test_live_multi_turn_cases_in_the_shipped_dataset() -> None:
     cases = [c for c in load_dataset(EVALS / "datasets" / "live" / "order_management.live.json") if c.turns]
-    # Two follow-up cases, plus the five gated-action cases that ask the customer first and park on an explicit yes.
-    assert len(cases) == 7
+    # Two follow-up cases, the five gated-action cases that ask the customer first and park on an explicit yes, and four
+    # conversational-variety cases (the second one, a correction, a change of mind, a topic switch and back).
+    assert len(cases) == 11
     for case in cases:
-        assert case.user_email and len(case.turns or []) == 2
+        assert case.user_email and 2 <= len(case.turns or []) <= 3
 
 
 # ─────────────────────── placeholders resolve per turn ───────────────────────

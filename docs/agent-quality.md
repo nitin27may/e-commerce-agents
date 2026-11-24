@@ -182,11 +182,11 @@ Live variants, run by hand against a model with run-time facts resolved (they ar
 
 | Live dataset | Cases |
 |---|---:|
-| `live/product_discovery.live.json` | 25 |
+| `live/product_discovery.live.json` | 29 (four multi-turn) |
 | `live/inventory_fulfillment.live.json` | 29 |
 | `live/orchestrator_routing.live.json` | 31 |
-| `live/order_management.live.json` | 33 (includes multi-turn cases) |
-| `live/pricing_promotions.live.json` | 29 |
+| `live/order_management.live.json` | 37 (includes multi-turn cases) |
+| `live/pricing_promotions.live.json` | 33 (four multi-turn) |
 | `live/review_sentiment.live.json` | 29 |
 | `live/approvals.live.json` | 10 (multi-turn: confirm, decline, silence, different arguments, claimed and injected confirmations) |
 | `live/merchant_ops.live.json` | 19 (8 happy, 5 edge, 6 adversarial) |
