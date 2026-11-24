@@ -1026,6 +1026,45 @@ async def seed_tour_user(conn: asyncpg.Connection) -> None:
     logger.info("Seeded tour user %s with a delivered and a shipped order", TOUR_EMAIL)
 
 
+ALICE_EMAIL = "alice.johnson@gmail.com"
+
+
+async def seed_alice_delivered_order(conn: asyncpg.Connection) -> None:
+    """Make Alice Johnson's most recent order ``delivered`` so the demo return flow works.
+
+    Appended after every other seed step and draws nothing from the global ``random`` stream (the
+    history timestamps are fixed offsets from the order's own ``created_at``), so no value seeded
+    before it moves. Idempotent: an order that is already delivered is untouched.
+    """
+    order = await conn.fetchrow(
+        """SELECT o.id, o.status, o.tracking_number, o.created_at FROM orders o
+           JOIN users u ON u.id = o.user_id
+           WHERE u.email = $1 ORDER BY o.created_at DESC, o.id DESC LIMIT 1""",
+        ALICE_EMAIL,
+    )
+    if order is None:
+        return
+    if order["status"] == "delivered":
+        logger.info("Alice's latest order is already delivered")
+        return
+    flow = ["placed", "confirmed", "shipped", "out_for_delivery", "delivered"]
+    tracking = order["tracking_number"] or f"TRK{int(order['id'].hex[:8], 16) % 900000000 + 100000000}"
+    async with conn.transaction():
+        await conn.execute(
+            "UPDATE orders SET status = 'delivered', tracking_number = $2 WHERE id = $1", order["id"], tracking
+        )
+        await conn.execute("DELETE FROM order_status_history WHERE order_id = $1", order["id"])
+        for i, status in enumerate(flow):
+            await conn.execute(
+                "INSERT INTO order_status_history (order_id, status, notes, location, timestamp)"
+                " VALUES ($1, $2, $3, $4, $5)",
+                order["id"], status, f"Order {status}",
+                "Local Hub" if status in ("shipped", "out_for_delivery") else "",
+                order["created_at"] + timedelta(hours=i * 12),
+            )
+    logger.info("Alice's latest order %s set to delivered", order["id"])
+
+
 SUPPORT_EMAIL = "support.demo@gmail.com"
 
 
@@ -1260,6 +1299,7 @@ async def main(reset_tour_only: bool = False, if_empty: bool = False) -> None:
         await seed_product_embeddings(conn)
         await seed_tour_user(conn)
         await seed_support_user(conn)
+        await seed_alice_delivered_order(conn)
         await seed_merchant_data(conn)
 
         # Collect planner statistics before anyone queries this data.

@@ -113,6 +113,10 @@ system_prompt:
       Your reply is relayed to the UI by the orchestrator, which cannot reconstruct these
       blocks: without them the customer sees no order card. Never emit a card for an
       order you did not get from a tool.
+    - Build an ```order card (items, shipping address, carrier, tracking number) only from a
+      `get_user_orders` or `get_order_details` result. The recent-orders summary in the user
+      context carries only id, status, total and date; it is never a source for items, address,
+      carrier or tracking. If you only have that summary, call `get_order_details` first.
     - If you already called check_return_eligibility for this order in this turn, include
       its `eligible` value verbatim as `return_eligible` in the ```order fence — this lets
       the card's Return button reflect the real 30-day window instead of guessing from the

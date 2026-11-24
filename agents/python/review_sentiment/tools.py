@@ -167,8 +167,13 @@ async def analyze_sentiment(
                     if kw in text and kw not in [c.lower() for c in cons]:
                         cons.append(kw.capitalize())
 
+        # Average from the reviews themselves: products.rating is a static seeded column that does not
+        # agree with them (it showed 4.4 for a product whose reviews average 3.22).
+        if total_reviews:
+            avg = round(sum(int(star) * count for star, count in distribution.items()) / total_reviews, 2)
+        else:
+            avg = float(product["rating"])
         # Sentiment label
-        avg = float(product["rating"])
         if avg >= 4.5:
             sentiment = "very_positive"
         elif avg >= 3.5:
