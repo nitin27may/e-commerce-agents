@@ -325,6 +325,12 @@ choice, streaming with tools, JSON output, context length (against the largest c
 embeddings, then lists which suites are applicable. A suite that needs a capability the provider lacks is
 reported "not applicable" rather than failing. It makes real (small) calls; its tests use stubbed transports.
 
+It also probes a tool-result turn and the `temperature` parameter, retries a chat-completions model that wants
+`max_completion_tokens` (the gpt-5 family) once with that name, and records the tokens each probe used. The check
+costs about 5,000 tokens per model. `--save-result` stores the result under `evals/provider-results/`, from which
+`scripts/build_provider_table.py` regenerates the table in `docs/model-providers.md`; providers nobody could run
+go in `provider-results/not-run.json` with the reason.
+
 ## Baselines and regression detection
 
 Baselines are keyed by setup. Three kinds, and every report states which one it compared against:

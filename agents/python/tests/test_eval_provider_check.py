@@ -75,6 +75,14 @@ def _chat_completions(*, tools: bool = True, parallel: bool = True, tool_choice:
             if not json_mode:
                 return httpx.Response(400, json={"error": {"message": "response_format is not supported"}})
             return httpx.Response(200, json={"choices": [{"message": {"content": '{"ok": true}'}}]})
+        if any(m.get("role") == "tool" for m in body["messages"]):
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [{"message": {"content": "Order A-1 has shipped."}}],
+                    "usage": {"prompt_tokens": 30, "completion_tokens": 5},
+                },
+            )
         if "tools" in body:
             if not tools:
                 return httpx.Response(200, json={"choices": [{"message": {"content": "I cannot call tools."}}]})
@@ -177,6 +185,11 @@ def _responses(handler_tools: bool = True):
         call = {"type": "function_call", "name": "lookup_order", "arguments": "{}"}
         if body.get("stream"):
             return _sse({"type": "response.output_item.added", "item": call})
+        if isinstance(body["input"], list):
+            return httpx.Response(
+                200,
+                json={"output": [{"type": "message", "content": [{"type": "output_text", "text": "It shipped."}]}]},
+            )
         if "tools" in body and handler_tools:
             output = [call, call] if _asked_for_two_orders(body) else [call]
             return httpx.Response(200, json={"output": output})
@@ -216,6 +229,8 @@ def _anthropic():
         use = {"type": "tool_use", "id": "t1", "name": "lookup_order", "input": {"order_id": "A-1"}}
         if body.get("stream"):
             return _sse({"type": "content_block_start", "index": 0, "content_block": use})
+        if len(body["messages"]) == 3:
+            return httpx.Response(200, json={"content": [{"type": "text", "text": "Order A-1 shipped."}]})
         if "tools" in body:
             if body.get("tool_choice") == {"type": "tool", "name": "lookup_order"}:
                 return httpx.Response(200, json={"content": [use]})
@@ -318,3 +333,106 @@ async def test_check_builds_a_report_that_names_provider_shape_and_suites() -> N
     assert report.shape == "chat_completions" and report.model == "m-1"
     assert "tool_calling" in text and "quality: orchestrator routing" in text
     assert report.to_dict()["capabilities"]["embeddings"]["status"] == "pass"
+
+
+# ─────────────────────── tool results, parameters, tokens, stored results ───────────────────────
+
+
+@pytest.mark.asyncio
+async def test_a_model_that_calls_the_tool_again_fails_the_tool_result_probe() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        call = {"id": "1", "type": "function", "function": {"name": "lookup_order", "arguments": "{}"}}
+        return httpx.Response(200, json={"choices": [{"message": {"tool_calls": [call]}}]})
+
+    async with _client(handler) as client:
+        result = await pc.probe_tool_result(client, pc.chat_target(_cfg()))
+
+    assert result.status == "fail" and "again" in result.detail
+
+
+@pytest.mark.asyncio
+async def test_max_tokens_rejection_is_retried_once_as_max_completion_tokens() -> None:
+    sent: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        sent.append(body)
+        if "max_tokens" in body:
+            message = (
+                "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens'."
+            )
+            return httpx.Response(400, json={"error": {"message": message}})
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "OK"}}], "usage": {"prompt_tokens": 13, "completion_tokens": 4}},
+        )
+
+    async with _client(handler) as client:
+        result = await pc.probe_temperature_param(client, pc.chat_target(_cfg()))
+
+    assert [("max_tokens" in b, "max_completion_tokens" in b) for b in sent] == [(True, False), (False, True)]
+    assert result.status == "pass" and "sent max_completion_tokens" in result.detail
+    assert (result.tokens_in, result.tokens_out) == (13, 4)
+
+
+@pytest.mark.asyncio
+async def test_a_temperature_rejection_is_reported_with_the_providers_words() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        message = "Unsupported value: 'temperature' does not support 0.2 with this model."
+        return httpx.Response(400, json={"error": {"message": message}})
+
+    async with _client(handler) as client:
+        result = await pc.probe_temperature_param(client, pc.chat_target(_cfg()))
+
+    assert result.status == "fail" and "temperature" in result.detail
+
+
+@pytest.mark.asyncio
+async def test_streaming_probe_retries_the_token_parameter_and_reads_stream_usage() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        if "max_tokens" in body:
+            return httpx.Response(400, json={"error": {"message": "use max_completion_tokens"}})
+        call = {"index": 0, "type": "function", "function": {"name": "lookup_order", "arguments": "{}"}}
+        return _sse(
+            {"choices": [{"delta": {"tool_calls": [call]}}]},
+            {"choices": [], "usage": {"prompt_tokens": 40, "completion_tokens": 9}},
+        )
+
+    async with _client(handler) as client:
+        result = await pc.probe_streaming_tools(client, pc.chat_target(_cfg()))
+
+    assert result.status == "pass" and "max_completion_tokens" in result.detail
+    assert (result.tokens_in, result.tokens_out) == (40, 9)
+
+
+def test_stream_usage_reads_each_wire_shape() -> None:
+    def lines(*events: dict) -> list[str]:
+        return [f"data: {json.dumps(e)}" for e in events]
+
+    assert pc.stream_usage(
+        Shape.RESPONSES,
+        lines({"type": "response.completed", "response": {"usage": {"input_tokens": 7, "output_tokens": 3}}}),
+    ) == (7, 3)
+    anthropic = lines(
+        {"type": "message_start", "message": {"usage": {"input_tokens": 11, "output_tokens": 1}}},
+        {"type": "message_delta", "usage": {"output_tokens": 6}},
+    )
+    assert pc.stream_usage(Shape.ANTHROPIC, anthropic) == (11, 6)
+    assert pc.stream_usage(Shape.CHAT_COMPLETIONS, ["data: [DONE]", "event: x"]) == (0, 0)
+
+
+@pytest.mark.asyncio
+async def test_the_report_totals_tokens_and_carries_the_date() -> None:
+    async with _client(_chat_completions()) as client:
+        report = await pc.check(_cfg(), client)
+
+    data = report.to_dict()
+    assert data["date"] == report.date and len(report.date) == 10
+    assert data["tokens_in"] == 30 and data["tokens_out"] == 5  # only the tool-result stub reports usage
+    assert data["capabilities"]["tool_result"]["tokens_in"] == 30
+
+
+def test_stored_result_filenames_are_one_per_provider_and_model() -> None:
+    assert pc.result_filename("azure", "gpt-5.4-mini") == "azure__gpt-5.4-mini.json"
+    assert pc.result_filename("openai", "qwen2.5:7b") == "openai__qwen2.5_7b.json"
