@@ -506,7 +506,7 @@ public static class SpecialistPipeline
                 ? new Dictionary<string, object?>()
                 : new Dictionary<string, object?>(context.Arguments);
             var pending = await gate.TryGateAsync(context.Function.Name, agentName, toolInput, HitlGate.RolesOf(context.Function));
-            return pending ?? await next(context, ct);
+            return pending is null ? await next(context, ct) : HitlGate.ForModel(pending);
         };
 
     /// <summary>
