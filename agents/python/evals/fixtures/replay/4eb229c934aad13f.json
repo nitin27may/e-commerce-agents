@@ -7,7 +7,7 @@
         "contents": [
           {
             "additional_properties": {},
-            "text": "How long will shipping take for the Sony WH-1000XM5 to ZIP code 90210?",
+            "text": "When will the Sony WH-1000XM5 be back in stock?",
             "type": "text"
           }
         ],
@@ -20,7 +20,7 @@
           {
             "additional_properties": {},
             "arguments": "{\"name\":\"Sony WH-1000XM5\"}",
-            "call_id": "call_jhCmB0GYrCV0CgjsC5pvTIGa",
+            "call_id": "call_k2u4gGQTJRnGviFaccUytskO",
             "hosted": false,
             "name": "find_product_by_name",
             "type": "function_call"
@@ -34,7 +34,7 @@
         "contents": [
           {
             "additional_properties": {},
-            "call_id": "call_jhCmB0GYrCV0CgjsC5pvTIGa",
+            "call_id": "call_k2u4gGQTJRnGviFaccUytskO",
             "items": [
               {
                 "additional_properties": {},
@@ -55,9 +55,9 @@
           {
             "additional_properties": {},
             "arguments": "{\"product_id\":\"dc9e2baa-8182-58f8-9df1-97d049426ba1\"}",
-            "call_id": "call_fmGeO7wVf0N8SAdUJp6MkmP4",
+            "call_id": "call_iJwYPZzcGs8aelxlq7M7Z9VO",
             "hosted": false,
-            "name": "check_stock",
+            "name": "get_warehouse_availability",
             "type": "function_call"
           }
         ],
@@ -78,7 +78,7 @@
                 },
                 "content": [
                   {
-                    "text": "{\n  \"product_id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\",\n  \"in_stock\": true,\n  \"total_quantity\": 203,\n  \"warehouses\": [\n    {\n      \"warehouse\": \"Central Warehouse\",\n      \"region\": \"central\",\n      \"quantity\": 33,\n      \"low_stock\": false\n    },\n    {\n      \"warehouse\": \"East Coast Warehouse\",\n      \"region\": \"east\",\n      \"quantity\": 168,\n      \"low_stock\": false\n    },\n    {\n      \"warehouse\": \"West Coast Warehouse\",\n      \"region\": \"west\",\n      \"quantity\": 2,\n      \"low_stock\": true\n    }\n  ]\n}",
+                    "text": "{\n  \"product_id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\",\n  \"warehouses\": [\n    {\n      \"name\": \"East Coast Warehouse\",\n      \"region\": \"east\",\n      \"location\": \"Richmond, VA\",\n      \"quantity\": 168,\n      \"low_stock\": false\n    },\n    {\n      \"name\": \"Central Warehouse\",\n      \"region\": \"central\",\n      \"location\": \"Dallas, TX\",\n      \"quantity\": 33,\n      \"low_stock\": false\n    },\n    {\n      \"name\": \"West Coast Warehouse\",\n      \"region\": \"west\",\n      \"location\": \"Portland, OR\",\n      \"quantity\": 2,\n      \"low_stock\": true\n    }\n  ],\n  \"upcoming_restocks\": [\n    {\n      \"warehouse\": \"West Coast Warehouse\",\n      \"expected_quantity\": 100,\n      \"expected_date\": \"2026-12-01\"\n    }\n  ]\n}",
                     "type": "text"
                   }
                 ],
@@ -92,7 +92,7 @@
                 }
               }
             },
-            "call_id": "call_fmGeO7wVf0N8SAdUJp6MkmP4",
+            "call_id": "call_iJwYPZzcGs8aelxlq7M7Z9VO",
             "items": [
               {
                 "additional_properties": {
@@ -103,76 +103,11 @@
                     }
                   }
                 },
-                "text": "{\n  \"product_id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\",\n  \"in_stock\": true,\n  \"total_quantity\": 203,\n  \"warehouses\": [\n    {\n      \"warehouse\": \"Central Warehouse\",\n      \"region\": \"central\",\n      \"quantity\": 33,\n      \"low_stock\": false\n    },\n    {\n      \"warehouse\": \"East Coast Warehouse\",\n      \"region\": \"east\",\n      \"quantity\": 168,\n      \"low_stock\": false\n    },\n    {\n      \"warehouse\": \"West Coast Warehouse\",\n      \"region\": \"west\",\n      \"quantity\": 2,\n      \"low_stock\": true\n    }\n  ]\n}",
+                "text": "{\n  \"product_id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\",\n  \"warehouses\": [\n    {\n      \"name\": \"East Coast Warehouse\",\n      \"region\": \"east\",\n      \"location\": \"Richmond, VA\",\n      \"quantity\": 168,\n      \"low_stock\": false\n    },\n    {\n      \"name\": \"Central Warehouse\",\n      \"region\": \"central\",\n      \"location\": \"Dallas, TX\",\n      \"quantity\": 33,\n      \"low_stock\": false\n    },\n    {\n      \"name\": \"West Coast Warehouse\",\n      \"region\": \"west\",\n      \"location\": \"Portland, OR\",\n      \"quantity\": 2,\n      \"low_stock\": true\n    }\n  ],\n  \"upcoming_restocks\": [\n    {\n      \"warehouse\": \"West Coast Warehouse\",\n      \"expected_quantity\": 100,\n      \"expected_date\": \"2026-12-01\"\n    }\n  ]\n}",
                 "type": "text"
               }
             ],
-            "result": "{\n  \"product_id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\",\n  \"in_stock\": true,\n  \"total_quantity\": 203,\n  \"warehouses\": [\n    {\n      \"warehouse\": \"Central Warehouse\",\n      \"region\": \"central\",\n      \"quantity\": 33,\n      \"low_stock\": false\n    },\n    {\n      \"warehouse\": \"East Coast Warehouse\",\n      \"region\": \"east\",\n      \"quantity\": 168,\n      \"low_stock\": false\n    },\n    {\n      \"warehouse\": \"West Coast Warehouse\",\n      \"region\": \"west\",\n      \"quantity\": 2,\n      \"low_stock\": true\n    }\n  ]\n}",
-            "type": "function_result"
-          }
-        ],
-        "role": "tool",
-        "type": "message"
-      },
-      {
-        "additional_properties": {},
-        "contents": [
-          {
-            "additional_properties": {},
-            "arguments": "{\"destination_region\":\"west\",\"product_id\":\"dc9e2baa-8182-58f8-9df1-97d049426ba1\"}",
-            "call_id": "call_06IRanavsCmFc3iKg88bUCPM",
-            "hosted": false,
-            "name": "estimate_shipping",
-            "type": "function_call"
-          }
-        ],
-        "role": "assistant",
-        "type": "message"
-      },
-      {
-        "additional_properties": {},
-        "contents": [
-          {
-            "additional_properties": {
-              "_mcp_tool_result_host_payload": {
-                "_meta": {
-                  "io.modelcontextprotocol/serverInfo": {
-                    "name": "inventory-fulfillment-mcp",
-                    "version": ""
-                  }
-                },
-                "content": [
-                  {
-                    "text": "{\n  \"available\": true,\n  \"ships_from\": \"west\",\n  \"destination\": \"west\",\n  \"options\": [\n    {\n      \"carrier\": \"Standard Shipping\",\n      \"speed_tier\": \"standard\",\n      \"price\": 5.99,\n      \"estimated_days\": \"5\u20137\"\n    },\n    {\n      \"carrier\": \"Express Shipping\",\n      \"speed_tier\": \"express\",\n      \"price\": 14.99,\n      \"estimated_days\": \"2\u20133\"\n    },\n    {\n      \"carrier\": \"Overnight Shipping\",\n      \"speed_tier\": \"overnight\",\n      \"price\": 29.99,\n      \"estimated_days\": \"1\u20131\"\n    }\n  ]\n}",
-                    "type": "text"
-                  }
-                ],
-                "isError": false,
-                "resultType": "complete"
-              },
-              "_meta": {
-                "io.modelcontextprotocol/serverInfo": {
-                  "name": "inventory-fulfillment-mcp",
-                  "version": ""
-                }
-              }
-            },
-            "call_id": "call_06IRanavsCmFc3iKg88bUCPM",
-            "items": [
-              {
-                "additional_properties": {
-                  "_meta": {
-                    "io.modelcontextprotocol/serverInfo": {
-                      "name": "inventory-fulfillment-mcp",
-                      "version": ""
-                    }
-                  }
-                },
-                "text": "{\n  \"available\": true,\n  \"ships_from\": \"west\",\n  \"destination\": \"west\",\n  \"options\": [\n    {\n      \"carrier\": \"Standard Shipping\",\n      \"speed_tier\": \"standard\",\n      \"price\": 5.99,\n      \"estimated_days\": \"5\u20137\"\n    },\n    {\n      \"carrier\": \"Express Shipping\",\n      \"speed_tier\": \"express\",\n      \"price\": 14.99,\n      \"estimated_days\": \"2\u20133\"\n    },\n    {\n      \"carrier\": \"Overnight Shipping\",\n      \"speed_tier\": \"overnight\",\n      \"price\": 29.99,\n      \"estimated_days\": \"1\u20131\"\n    }\n  ]\n}",
-                "type": "text"
-              }
-            ],
-            "result": "{\n  \"available\": true,\n  \"ships_from\": \"west\",\n  \"destination\": \"west\",\n  \"options\": [\n    {\n      \"carrier\": \"Standard Shipping\",\n      \"speed_tier\": \"standard\",\n      \"price\": 5.99,\n      \"estimated_days\": \"5\u20137\"\n    },\n    {\n      \"carrier\": \"Express Shipping\",\n      \"speed_tier\": \"express\",\n      \"price\": 14.99,\n      \"estimated_days\": \"2\u20133\"\n    },\n    {\n      \"carrier\": \"Overnight Shipping\",\n      \"speed_tier\": \"overnight\",\n      \"price\": 29.99,\n      \"estimated_days\": \"1\u20131\"\n    }\n  ]\n}",
+            "result": "{\n  \"product_id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\",\n  \"warehouses\": [\n    {\n      \"name\": \"East Coast Warehouse\",\n      \"region\": \"east\",\n      \"location\": \"Richmond, VA\",\n      \"quantity\": 168,\n      \"low_stock\": false\n    },\n    {\n      \"name\": \"Central Warehouse\",\n      \"region\": \"central\",\n      \"location\": \"Dallas, TX\",\n      \"quantity\": 33,\n      \"low_stock\": false\n    },\n    {\n      \"name\": \"West Coast Warehouse\",\n      \"region\": \"west\",\n      \"location\": \"Portland, OR\",\n      \"quantity\": 2,\n      \"low_stock\": true\n    }\n  ],\n  \"upcoming_restocks\": [\n    {\n      \"warehouse\": \"West Coast Warehouse\",\n      \"expected_quantity\": 100,\n      \"expected_date\": \"2026-12-01\"\n    }\n  ]\n}",
             "type": "function_result"
           }
         ],
@@ -294,11 +229,12 @@
       },
       {
         "function": {
-          "description": "Check live stock levels across all regional warehouses for a product.",
+          "description": "Check stock levels across all warehouses for a specific product.",
           "name": "check_stock",
           "parameters": {
             "properties": {
               "product_id": {
+                "description": "UUID of the product to check",
                 "title": "Product Id",
                 "type": "string"
               }
@@ -314,11 +250,12 @@
       },
       {
         "function": {
-          "description": "Get warehouse inventory and upcoming restock schedule for a product.",
+          "description": "Get detailed warehouse availability for a product including restock schedules.",
           "name": "get_warehouse_availability",
           "parameters": {
             "properties": {
               "product_id": {
+                "description": "UUID of the product",
                 "title": "Product Id",
                 "type": "string"
               }
@@ -334,11 +271,12 @@
       },
       {
         "function": {
-          "description": "Get upcoming restock dates and quantities across all warehouses.",
+          "description": "Get upcoming restock schedule for a product across all warehouses.",
           "name": "get_restock_schedule",
           "parameters": {
             "properties": {
               "product_id": {
+                "description": "UUID of the product",
                 "title": "Product Id",
                 "type": "string"
               }
@@ -354,15 +292,17 @@
       },
       {
         "function": {
-          "description": "Estimate shipping cost and delivery time from the nearest stocked warehouse.",
+          "description": "Estimate shipping cost and delivery time for a product to a destination region. Finds the closest warehouse with stock and returns carrier options.",
           "name": "estimate_shipping",
           "parameters": {
             "properties": {
               "destination_region": {
+                "description": "Destination region: 'east', 'central', or 'west'",
                 "title": "Destination Region",
                 "type": "string"
               },
               "product_id": {
+                "description": "UUID of the product",
                 "title": "Product Id",
                 "type": "string"
               }
@@ -379,15 +319,17 @@
       },
       {
         "function": {
-          "description": "Compare all carriers between two regions with pricing and estimated delivery times.",
+          "description": "Compare all carrier options (Standard, Express, Overnight) between two regions with pricing and delivery estimates.",
           "name": "compare_carriers",
           "parameters": {
             "properties": {
               "region_from": {
+                "description": "Origin region: 'east', 'central', or 'west'",
                 "title": "Region From",
                 "type": "string"
               },
               "region_to": {
+                "description": "Destination region: 'east', 'central', or 'west'",
                 "title": "Region To",
                 "type": "string"
               }
@@ -405,7 +347,7 @@
     ]
   },
   "response": {
-    "created_at": "2026-11-24T16:42:10.000000Z",
+    "created_at": "2026-11-24T19:03:41.000000Z",
     "finish_reason": "stop",
     "messages": [
       {
@@ -413,7 +355,7 @@
         "contents": [
           {
             "additional_properties": {},
-            "text": "The Sony WH-1000XM5 is in stock and ready to ship. Here are your shipping options to ZIP code 90210:\n\n```inventory\n{\n  \"product_id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\",\n  \"product_name\": \"Sony WH-1000XM5\",\n  \"in_stock\": true,\n  \"total_quantity\": 203,\n  \"warehouses\": [\n    {\"warehouse\": \"Central Warehouse\", \"region\": \"central\", \"quantity\": 33, \"low_stock\": false},\n    {\"warehouse\": \"East Coast Warehouse\", \"region\": \"east\", \"quantity\": 168, \"low_stock\": false},\n    {\"warehouse\": \"West Coast Warehouse\", \"region\": \"west\", \"quantity\": 2, \"low_stock\": true}\n  ],\n  \"ships_from\": {\"warehouse\": \"West Coast Warehouse\", \"region\": \"west\", \"quantity_available\": 2},\n  \"shipping_options\": [\n    {\"carrier\": \"Standard Shipping\", \"speed_tier\": \"standard\", \"price\": 5.99, \"delivery_window\": \"5\u20137 business days\"},\n    {\"carrier\": \"Express Shipping\", \"speed_tier\": \"express\", \"price\": 14.99, \"delivery_window\": \"2\u20133 business days\"},\n    {\"carrier\": \"Overnight Shipping\", \"speed_tier\": \"overnight\", \"price\": 29.99, \"delivery_window\": \"1 business day\"}\n  ]\n}\n```\n\nYou can select your preferred shipping speed at checkout. Let me know if you need more details!",
+            "text": "The Sony WH-1000XM5 is currently in stock at all warehouses, though the West Coast location is running low. An additional restock for the West Coast Warehouse is expected on 2026-12-01.\n\n```inventory\n{\n  \"product_id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\",\n  \"product_name\": \"Sony WH-1000XM5\",\n  \"in_stock\": true,\n  \"warehouses\": [\n    {\"warehouse\": \"East Coast Warehouse\", \"region\": \"east\", \"quantity\": 168, \"low_stock\": false},\n    {\"warehouse\": \"Central Warehouse\", \"region\": \"central\", \"quantity\": 33, \"low_stock\": false},\n    {\"warehouse\": \"West Coast Warehouse\", \"region\": \"west\", \"quantity\": 2, \"low_stock\": true}\n  ],\n  \"upcoming_restocks\": [\n    {\"warehouse\": \"West Coast Warehouse\", \"expected_quantity\": 100, \"expected_date\": \"2026-12-01\"}\n  ]\n}\n```\n\nIf you need this item shipped soon, it's available for immediate order from the East and Central warehouses. Let me know if you'd like a shipping estimate!",
             "type": "text"
           }
         ],
@@ -422,20 +364,20 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-EnnsoG1yDcz6ikjtUTq9MAEGkZYXp",
+    "response_id": "chatcmpl-Enq5lHwbiZ4v5BiVWXn2VKHhRgKZQ",
     "type": "chat_response",
     "usage_details": {
-      "cache_read_input_token_count": 3840,
+      "cache_read_input_token_count": 3968,
       "completion/accepted_prediction_tokens": 0,
       "completion/audio_tokens": 0,
       "completion/reasoning_tokens": 0,
       "completion/rejected_prediction_tokens": 0,
-      "input_token_count": 4121,
-      "output_token_count": 341,
+      "input_token_count": 4064,
+      "output_token_count": 260,
       "prompt/audio_tokens": 0,
-      "prompt/cached_tokens": 3840,
+      "prompt/cached_tokens": 3968,
       "reasoning_output_token_count": 0,
-      "total_token_count": 4462
+      "total_token_count": 4324
     }
   }
 }

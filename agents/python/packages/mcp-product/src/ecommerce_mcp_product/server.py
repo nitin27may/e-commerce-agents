@@ -15,13 +15,16 @@ Run via console script (installed):
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from contextlib import asynccontextmanager
-from typing import Annotated
+from decimal import ROUND_HALF_UP, Decimal
+from typing import Annotated, Any
 
 import asyncpg
 from mcp.server.mcpserver import MCPServer
+from pydantic import Field
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +55,36 @@ def _or_joined_tsquery(param: str) -> str:
     Keep the two in sync.
     """
     return f"replace(plainto_tsquery('english', {param})::text, '&', '|')::tsquery"
+
+
+SORT_CLAUSES = {
+    "price_asc": "p.price ASC",
+    "price_desc": "p.price DESC",
+    "rating": "p.rating DESC",
+    "newest": "p.created_at DESC",
+}
+# p.id last: the order must not depend on how Postgres happens to return tied rows.
+RATING_SORT = "p.rating DESC, p.review_count DESC, p.id"
+
+
+def _money(value: float) -> Decimal:
+    """A price filter as an exact two-decimal Decimal (``products.price`` is NUMERIC(10,2)).
+
+    Vendored from ``product_discovery/tools.py``: a float 14.99 encodes as 14.990000000000000213 and compares
+    above the stored 14.99, so ``min_price == max_price == 14.99`` would match nothing.
+    """
+    return Decimal(repr(float(value))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _clamp_limit(limit: Any, *, default: int = 10, maximum: int = 100) -> int:
+    """An LLM-controlled LIMIT as a safe positive int. Vendored from ``shared/tool_inputs.py``."""
+    try:
+        value = int(limit) if limit is not None else default
+    except (TypeError, ValueError):
+        return default
+    if value <= 0:
+        return default
+    return min(value, maximum)
 
 
 @asynccontextmanager
@@ -106,31 +139,40 @@ def _get_pool() -> asyncpg.Pool:
 
 
 # ─────────────────────── Tools ──────────────────────────────────────────────
+#
+# Each tool below is the twin of one native tool in agents/python (product_discovery/tools.py,
+# shared/tools/pricing_tools.py): same name, same description sentence, same parameter names and descriptions,
+# same query and ranking, same result fields. This package cannot import ``shared`` (it installs on its own), so
+# the code is mirrored by hand and agents/python/tests/test_mcp_native_equivalence.py fails when the two drift,
+# on the schema a model is shown and on the result for the same call. Change a native tool and its twin together.
 
 
-@mcp.tool()
+@mcp.tool(
+    name="search_products",
+    description=(
+        "Search the product catalog using natural language. Supports filtering by category, price range, and rating."
+    ),
+)
 async def search_products(
-    query: Annotated[str | None, "Natural language search query"] = None,
-    category: Annotated[str | None, "Category filter: Electronics, Clothing, Home, Sports, Books"] = None,
-    min_price: Annotated[float | None, "Minimum price"] = None,
-    max_price: Annotated[float | None, "Maximum price"] = None,
-    min_rating: Annotated[float | None, "Minimum rating (1–5)"] = None,
-    sort_by: Annotated[str | None, "Sort: price_asc, price_desc, rating, newest"] = None,
-    limit: Annotated[int, "Max results (capped at 50)"] = 10,
+    query: Annotated[
+        str | None, Field(description="Natural language search query (optional if using category filter)")
+    ] = None,
+    category: Annotated[
+        str | None, Field(description="Filter by category: Electronics, Clothing, Home, Sports, Books")
+    ] = None,
+    min_price: Annotated[float | None, Field(description="Minimum price filter")] = None,
+    max_price: Annotated[float | None, Field(description="Maximum price filter")] = None,
+    min_rating: Annotated[float | None, Field(description="Minimum rating (1-5)")] = None,
+    sort_by: Annotated[str | None, Field(description="Sort by: price_asc, price_desc, rating, newest")] = None,
+    limit: Annotated[int, Field(description="Max results to return")] = 10,
 ) -> list[dict]:
-    """Search the product catalog with keyword + optional filters."""
-    safe_limit = min(limit, 50)
+    safe_limit = _clamp_limit(limit, default=10, maximum=100)
     conditions = ["p.is_active = TRUE"]
     args: list = []
     idx = 1
 
     tsquery: str | None = None
     if query and query.strip():
-        # Postgres full-text search over the weighted products.search_vector
-        # column (name=A, brand=B, description=C). Mirrors the native
-        # product_discovery tool so MCP_ENABLED does not change results —
-        # this used to LIKE the whole query as one %phrase%, which required an
-        # exact substring and diverged badly from the native path.
         tsquery = _or_joined_tsquery(f"${idx}")
         # Stopword- or punctuation-only queries reduce to an empty tsquery,
         # which matches nothing; fall back to the filters alone.
@@ -142,32 +184,30 @@ async def search_products(
         args.append(category)
         idx += 1
     if min_price is not None:
-        conditions.append(f"p.price >= ${idx}")
-        args.append(min_price)
+        conditions.append(f"p.price >= ${idx}::numeric")
+        args.append(_money(min_price))
         idx += 1
     if max_price is not None:
-        conditions.append(f"p.price <= ${idx}")
-        args.append(max_price)
+        conditions.append(f"p.price <= ${idx}::numeric")
+        args.append(_money(max_price))
         idx += 1
     if min_rating is not None:
         conditions.append(f"p.rating >= ${idx}")
         args.append(min_rating)
         idx += 1
 
-    order = {
-        "price_asc": "p.price ASC",
-        "price_desc": "p.price DESC",
-        "rating": "p.rating DESC",
-        "newest": "p.created_at DESC",
-    }.get(sort_by or "", None)
-    if order is None:
+    if sort_by in SORT_CLAUSES:
+        order = SORT_CLAUSES[sort_by]
+    elif tsquery:
         # Rank by text relevance when there is a query, else by rating.
-        order = f"ts_rank(p.search_vector, {tsquery}) DESC, p.rating DESC, p.id" if tsquery else "p.rating DESC, p.id"
+        order = f"ts_rank(p.search_vector, {tsquery}) DESC, {RATING_SORT}"
+    else:
+        order = RATING_SORT
 
     where = " AND ".join(conditions)
     sql = f"""
-        SELECT p.id, p.name, p.category, p.brand, p.price, p.original_price,
-               p.rating, p.review_count, p.description, p.is_active
+        SELECT p.id, p.name, p.description, p.category, p.brand, p.price,
+               p.original_price, p.rating, p.review_count, p.specs, p.image_url
         FROM products p
         WHERE {where}
         ORDER BY {order}
@@ -179,89 +219,68 @@ async def search_products(
             {
                 "id": str(r["id"]),
                 "name": r["name"],
+                "description": r["description"][:150],
                 "category": r["category"],
                 "brand": r["brand"],
                 "price": float(r["price"]),
                 "original_price": float(r["original_price"]) if r["original_price"] else None,
+                "on_sale": r["original_price"] is not None and r["price"] < r["original_price"],
                 "rating": float(r["rating"]),
                 "review_count": r["review_count"],
-                "description": r["description"],
+                "image_url": r["image_url"],
             }
             for r in rows
         ]
 
 
-@mcp.tool()
+@mcp.tool(
+    name="get_product_details",
+    description="Get complete details for a specific product including full specs.",
+)
 async def get_product_details(
-    product_id: Annotated[str, "UUID of the product"],
+    product_id: Annotated[str, Field(description="UUID of the product")],
 ) -> dict:
-    """Get full product details including specs, stock status, and seller info."""
     async with _get_pool().acquire() as conn:
-        p = await conn.fetchrow(
-            """SELECT p.id, p.name, p.category, p.brand, p.price, p.original_price,
-                      p.rating, p.review_count, p.description, p.specs,
-                      u.name as seller_name,
-                      COALESCE(SUM(wi.quantity), 0) as total_stock
-               FROM products p
-               LEFT JOIN users u ON p.seller_id = u.id
-               LEFT JOIN warehouse_inventory wi ON wi.product_id = p.id
-               WHERE p.id = $1
-               GROUP BY p.id, u.name""",
+        row = await conn.fetchrow(
+            """SELECT id, name, description, category, brand, price, original_price,
+                      image_url, rating, review_count, specs
+               FROM products WHERE id = $1""",
             product_id,
         )
-        if not p:
+        if not row:
             return {"error": f"Product not found: {product_id}"}
 
-        specs = p["specs"]
-        if isinstance(specs, str):
-            import json
-
-            specs = json.loads(specs)
-
         return {
-            "id": str(p["id"]),
-            "name": p["name"],
-            "category": p["category"],
-            "brand": p["brand"],
-            "price": float(p["price"]),
-            "original_price": float(p["original_price"]) if p["original_price"] else None,
-            "rating": float(p["rating"]),
-            "review_count": p["review_count"],
-            "description": p["description"],
-            "specs": specs or {},
-            "seller": p["seller_name"],
-            "in_stock": p["total_stock"] > 0,
-            "total_stock": int(p["total_stock"]),
+            "id": str(row["id"]),
+            "name": row["name"],
+            "description": row["description"],
+            "category": row["category"],
+            "brand": row["brand"],
+            "price": float(row["price"]),
+            "original_price": float(row["original_price"]) if row["original_price"] else None,
+            "on_sale": row["original_price"] is not None and row["price"] < row["original_price"],
+            "rating": float(row["rating"]),
+            "review_count": row["review_count"],
+            "specs": json.loads(row["specs"]) if isinstance(row["specs"], str) else dict(row["specs"]),
         }
 
 
-@mcp.tool()
+@mcp.tool(name="compare_products", description="Compare 2-3 products side-by-side on key attributes.")
 async def compare_products(
-    product_ids: Annotated[list[str], "List of 2–3 product UUIDs to compare"],
+    product_ids: Annotated[list[str], Field(description="List of 2-3 product UUIDs to compare")],
 ) -> list[dict]:
-    """Compare 2–3 products side by side on price, rating, specs, and stock."""
-    if not 2 <= len(product_ids) <= 3:
-        return [{"error": "Provide 2 or 3 product IDs to compare"}]
+    if len(product_ids) < 2 or len(product_ids) > 3:
+        return [{"error": "Please provide 2-3 product IDs to compare"}]
 
     results = []
     async with _get_pool().acquire() as conn:
         for pid in product_ids:
             row = await conn.fetchrow(
-                """SELECT p.id, p.name, p.category, p.brand, p.price, p.rating,
-                          p.review_count, p.specs,
-                          COALESCE(SUM(wi.quantity), 0) as total_stock
-                   FROM products p
-                   LEFT JOIN warehouse_inventory wi ON wi.product_id = p.id
-                   WHERE p.id = $1
-                   GROUP BY p.id""",
+                """SELECT id, name, category, brand, price, original_price, rating, review_count, specs
+                   FROM products WHERE id = $1""",
                 pid,
             )
             if row:
-                import json
-
-                specs = row["specs"]
-                if isinstance(specs, str):
-                    specs = json.loads(specs)
                 results.append(
                     {
                         "id": str(row["id"]),
@@ -269,26 +288,25 @@ async def compare_products(
                         "category": row["category"],
                         "brand": row["brand"],
                         "price": float(row["price"]),
+                        "original_price": float(row["original_price"]) if row["original_price"] else None,
                         "rating": float(row["rating"]),
                         "review_count": row["review_count"],
-                        "specs": specs or {},
-                        "in_stock": row["total_stock"] > 0,
+                        "specs": json.loads(row["specs"]) if isinstance(row["specs"], str) else dict(row["specs"]),
                     }
                 )
     return results
 
 
-@mcp.tool()
+@mcp.tool(name="get_trending_products", description="Get trending products based on recent order volume.")
 async def get_trending_products(
-    category: Annotated[str | None, "Optional category filter"] = None,
-    days: Annotated[int, "Trending period in days (default 30)"] = 30,
-    limit: Annotated[int, "Max results"] = 10,
+    category: Annotated[str | None, Field(description="Optional category filter")] = None,
+    days: Annotated[int, Field(description="Trending period in days")] = 30,
+    limit: Annotated[int, Field(description="Max results")] = 10,
 ) -> list[dict]:
-    """Get trending products ranked by recent order volume."""
-    safe_limit = min(limit, 50)
-    conditions = ["p.is_active = TRUE", f"o.created_at >= NOW() - INTERVAL '{days} days'"]
-    args: list = []
-    idx = 1
+    safe_limit = _clamp_limit(limit, default=10, maximum=50)
+    conditions = ["o.created_at >= NOW() - ($1 || ' days')::interval"]
+    args: list = [str(days)]
+    idx = 2
 
     if category:
         conditions.append(f"p.category = ${idx}")
@@ -296,19 +314,22 @@ async def get_trending_products(
         idx += 1
 
     where = " AND ".join(conditions)
+    # Ranked by units sold (the sum of line quantities), not by the number of order lines: one order of ten units
+    # outranks three orders of one.
+    sql = f"""
+        SELECT p.id, p.name, p.category, p.brand, p.price, p.rating,
+               COUNT(oi.id) as order_count,
+               SUM(oi.quantity) as units_sold
+        FROM products p
+        JOIN order_items oi ON oi.product_id = p.id
+        JOIN orders o ON oi.order_id = o.id
+        WHERE {where}
+        GROUP BY p.id, p.name, p.category, p.brand, p.price, p.rating
+        ORDER BY units_sold DESC
+        LIMIT {safe_limit}
+    """
     async with _get_pool().acquire() as conn:
-        rows = await conn.fetch(
-            f"""SELECT p.id, p.name, p.category, p.brand, p.price, p.rating,
-                       p.review_count, COUNT(oi.id) as order_count
-                FROM products p
-                JOIN order_items oi ON oi.product_id = p.id
-                JOIN orders o ON oi.order_id = o.id
-                WHERE {where}
-                GROUP BY p.id
-                ORDER BY order_count DESC
-                LIMIT {safe_limit}""",
-            *args,
-        )
+        rows = await conn.fetch(sql, *args)
         return [
             {
                 "id": str(r["id"]),
@@ -317,19 +338,24 @@ async def get_trending_products(
                 "brand": r["brand"],
                 "price": float(r["price"]),
                 "rating": float(r["rating"]),
-                "review_count": r["review_count"],
-                "recent_orders": r["order_count"],
+                "order_count": r["order_count"],
+                "units_sold": r["units_sold"],
             }
             for r in rows
         ]
 
 
-@mcp.tool()
+@mcp.tool(
+    name="get_price_history",
+    description=(
+        "Get price history for a product over a specified number of days. Useful for showing price trends and "
+        "identifying deals."
+    ),
+)
 async def get_price_history(
-    product_id: Annotated[str, "UUID of the product"],
-    days: Annotated[int, "History window: 30, 60, or 90 days"] = 30,
+    product_id: Annotated[str, Field(description="UUID of the product")],
+    days: Annotated[int, Field(description="Number of days of history (30, 60, or 90)")] = 30,
 ) -> dict:
-    """Get price trend data with average, min, max, and a deal-quality signal."""
     async with _get_pool().acquire() as conn:
         product = await conn.fetchrow("SELECT name, price FROM products WHERE id = $1", product_id)
         if not product:
@@ -343,27 +369,41 @@ async def get_price_history(
             product_id,
             str(days),
         )
-        current = float(product["price"])
         if not rows:
             return {
                 "product_id": product_id,
                 "product_name": product["name"],
-                "current_price": current,
+                "current_price": float(product["price"]),
                 "history": [],
                 "summary": "No price history available",
             }
 
         prices = [float(r["price"]) for r in rows]
-        avg = sum(prices) / len(prices)
+        current = float(product["price"])
+        avg_price = sum(prices) / len(prices)
+
+        if len(prices) >= 7:
+            recent_avg = sum(prices[-7:]) / 7
+            older_avg = sum(prices[:7]) / 7
+            if recent_avg < older_avg * 0.95:
+                trend = "decreasing"
+            elif recent_avg > older_avg * 1.05:
+                trend = "increasing"
+            else:
+                trend = "stable"
+        else:
+            trend = "insufficient_data"
+
         return {
             "product_id": product_id,
             "product_name": product["name"],
             "current_price": current,
             "period_days": days,
-            "average_price": round(avg, 2),
+            "average_price": round(avg_price, 2),
             "min_price": round(min(prices), 2),
             "max_price": round(max(prices), 2),
-            "is_good_deal": current <= avg * 0.95,
+            "trend": trend,
+            "is_good_deal": current <= avg_price * 0.95,
             "data_points": len(prices),
         }
 

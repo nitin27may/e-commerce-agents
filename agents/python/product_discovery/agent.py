@@ -2,7 +2,8 @@
 
 When ``settings.MCP_ENABLED`` is True the agent connects to the Product MCP
 server (``ecommerce_mcp_product.server``) via ``MCPStreamableHTTPTool`` instead
-of calling asyncpg directly. The capabilities match; the MCP tools' results differ in places (docs/mcp-integration.md).
+of calling asyncpg directly. The MCP tools mirror their native twins (name, description, schema, query, result), and
+tests/test_mcp_native_equivalence.py keeps them so (docs/mcp-integration.md).
 """
 
 from agent_framework import Agent, MCPStreamableHTTPTool
@@ -76,8 +77,11 @@ def create_product_discovery_agent() -> Agent:
             semantic_search,
             find_similar_products,
             check_stock,
+            get_warehouse_availability,
             get_user_profile,
             get_purchase_history,
+            store_memory,
+            recall_memories,
         ]
     else:
         tools = AGENT_TOOLS  # type: ignore[assignment]

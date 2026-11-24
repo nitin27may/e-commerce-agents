@@ -7,7 +7,7 @@
         "contents": [
           {
             "additional_properties": {},
-            "text": "Compare the Sony WH-1000XM5 and the Bose QuietComfort Ultra",
+            "text": "Show me the full details for the Sony WH-1000XM5",
             "type": "text"
           }
         ],
@@ -19,16 +19,8 @@
         "contents": [
           {
             "additional_properties": {},
-            "arguments": "{\"query\": \"Sony WH-1000XM5\", \"limit\": 1}",
-            "call_id": "call_EMRUQ3A8hS1tC8tNtBBcVdDZ",
-            "hosted": false,
-            "name": "search_products",
-            "type": "function_call"
-          },
-          {
-            "additional_properties": {},
-            "arguments": "{\"query\": \"Bose QuietComfort Ultra\", \"limit\": 1}",
-            "call_id": "call_awev5ZMUKAn21iI4uhW7D2jX",
+            "arguments": "{\"query\":\"Sony WH-1000XM5\",\"limit\":1}",
+            "call_id": "call_ERbfDO2CeQ63KLyxe4SaHwsa",
             "hosted": false,
             "name": "search_products",
             "type": "function_call"
@@ -51,7 +43,7 @@
                 },
                 "content": [
                   {
-                    "text": "{\n  \"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\",\n  \"name\": \"Sony WH-1000XM5\",\n  \"category\": \"Electronics\",\n  \"brand\": \"Sony\",\n  \"price\": 299.99,\n  \"original_price\": 349.99,\n  \"rating\": 4.7,\n  \"review_count\": 15,\n  \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\"\n}",
+                    "text": "{\n  \"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\",\n  \"name\": \"Sony WH-1000XM5\",\n  \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\",\n  \"category\": \"Electronics\",\n  \"brand\": \"Sony\",\n  \"price\": 299.99,\n  \"original_price\": 349.99,\n  \"on_sale\": true,\n  \"rating\": 4.7,\n  \"review_count\": 15,\n  \"image_url\": \"https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=400&fit=crop\"\n}",
                     "type": "text"
                   }
                 ],
@@ -64,7 +56,9 @@
                       "category": "Electronics",
                       "description": "Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.",
                       "id": "dc9e2baa-8182-58f8-9df1-97d049426ba1",
+                      "image_url": "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=400&fit=crop",
                       "name": "Sony WH-1000XM5",
+                      "on_sale": true,
                       "original_price": 349.99,
                       "price": 299.99,
                       "rating": 4.7,
@@ -80,7 +74,7 @@
                 }
               }
             },
-            "call_id": "call_EMRUQ3A8hS1tC8tNtBBcVdDZ",
+            "call_id": "call_ERbfDO2CeQ63KLyxe4SaHwsa",
             "items": [
               {
                 "additional_properties": {
@@ -91,69 +85,11 @@
                     }
                   }
                 },
-                "text": "{\"result\": [{\"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"name\": \"Sony WH-1000XM5\", \"category\": \"Electronics\", \"brand\": \"Sony\", \"price\": 299.99, \"original_price\": 349.99, \"rating\": 4.7, \"review_count\": 15, \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\"}]}",
+                "text": "{\"result\": [{\"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"name\": \"Sony WH-1000XM5\", \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\", \"category\": \"Electronics\", \"brand\": \"Sony\", \"price\": 299.99, \"original_price\": 349.99, \"on_sale\": true, \"rating\": 4.7, \"review_count\": 15, \"image_url\": \"https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=400&fit=crop\"}]}",
                 "type": "text"
               }
             ],
-            "result": "{\"result\": [{\"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"name\": \"Sony WH-1000XM5\", \"category\": \"Electronics\", \"brand\": \"Sony\", \"price\": 299.99, \"original_price\": 349.99, \"rating\": 4.7, \"review_count\": 15, \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\"}]}",
-            "type": "function_result"
-          },
-          {
-            "additional_properties": {
-              "_mcp_tool_result_host_payload": {
-                "_meta": {
-                  "io.modelcontextprotocol/serverInfo": {
-                    "name": "product-discovery-mcp",
-                    "version": ""
-                  }
-                },
-                "content": [
-                  {
-                    "text": "{\n  \"id\": \"bcbbb7ac-3ec2-56cd-911f-c9d2dd70c186\",\n  \"name\": \"Uniqlo Ultra Light Down Jacket\",\n  \"category\": \"Clothing\",\n  \"brand\": \"Uniqlo\",\n  \"price\": 59.9,\n  \"original_price\": 79.9,\n  \"rating\": 4.3,\n  \"review_count\": 11,\n  \"description\": \"Ultra-lightweight packable down jacket with premium 90% duck down.\"\n}",
-                    "type": "text"
-                  }
-                ],
-                "isError": false,
-                "resultType": "complete",
-                "structuredContent": {
-                  "result": [
-                    {
-                      "brand": "Uniqlo",
-                      "category": "Clothing",
-                      "description": "Ultra-lightweight packable down jacket with premium 90% duck down.",
-                      "id": "bcbbb7ac-3ec2-56cd-911f-c9d2dd70c186",
-                      "name": "Uniqlo Ultra Light Down Jacket",
-                      "original_price": 79.9,
-                      "price": 59.9,
-                      "rating": 4.3,
-                      "review_count": 11
-                    }
-                  ]
-                }
-              },
-              "_meta": {
-                "io.modelcontextprotocol/serverInfo": {
-                  "name": "product-discovery-mcp",
-                  "version": ""
-                }
-              }
-            },
-            "call_id": "call_awev5ZMUKAn21iI4uhW7D2jX",
-            "items": [
-              {
-                "additional_properties": {
-                  "_meta": {
-                    "io.modelcontextprotocol/serverInfo": {
-                      "name": "product-discovery-mcp",
-                      "version": ""
-                    }
-                  }
-                },
-                "text": "{\"result\": [{\"id\": \"bcbbb7ac-3ec2-56cd-911f-c9d2dd70c186\", \"name\": \"Uniqlo Ultra Light Down Jacket\", \"category\": \"Clothing\", \"brand\": \"Uniqlo\", \"price\": 59.9, \"original_price\": 79.9, \"rating\": 4.3, \"review_count\": 11, \"description\": \"Ultra-lightweight packable down jacket with premium 90% duck down.\"}]}",
-                "type": "text"
-              }
-            ],
-            "result": "{\"result\": [{\"id\": \"bcbbb7ac-3ec2-56cd-911f-c9d2dd70c186\", \"name\": \"Uniqlo Ultra Light Down Jacket\", \"category\": \"Clothing\", \"brand\": \"Uniqlo\", \"price\": 59.9, \"original_price\": 79.9, \"rating\": 4.3, \"review_count\": 11, \"description\": \"Ultra-lightweight packable down jacket with premium 90% duck down.\"}]}",
+            "result": "{\"result\": [{\"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"name\": \"Sony WH-1000XM5\", \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\", \"category\": \"Electronics\", \"brand\": \"Sony\", \"price\": 299.99, \"original_price\": 349.99, \"on_sale\": true, \"rating\": 4.7, \"review_count\": 15, \"image_url\": \"https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=400&fit=crop\"}]}",
             "type": "function_result"
           }
         ],
@@ -165,10 +101,10 @@
         "contents": [
           {
             "additional_properties": {},
-            "arguments": "{\"query\":\"Bose QuietComfort Ultra headphones\",\"limit\":1}",
-            "call_id": "call_m6sfmQvZcuYNEpyxAlBucqe6",
+            "arguments": "{\"product_id\":\"dc9e2baa-8182-58f8-9df1-97d049426ba1\"}",
+            "call_id": "call_Gwn13uJH3qkp10Z5AZy2aqiD",
             "hosted": false,
-            "name": "search_products",
+            "name": "get_product_details",
             "type": "function_call"
           }
         ],
@@ -189,27 +125,12 @@
                 },
                 "content": [
                   {
-                    "text": "{\n  \"id\": \"bcbbb7ac-3ec2-56cd-911f-c9d2dd70c186\",\n  \"name\": \"Uniqlo Ultra Light Down Jacket\",\n  \"category\": \"Clothing\",\n  \"brand\": \"Uniqlo\",\n  \"price\": 59.9,\n  \"original_price\": 79.9,\n  \"rating\": 4.3,\n  \"review_count\": 11,\n  \"description\": \"Ultra-lightweight packable down jacket with premium 90% duck down.\"\n}",
+                    "text": "{\n  \"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\",\n  \"name\": \"Sony WH-1000XM5\",\n  \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\",\n  \"category\": \"Electronics\",\n  \"brand\": \"Sony\",\n  \"price\": 299.99,\n  \"original_price\": 349.99,\n  \"on_sale\": true,\n  \"rating\": 4.7,\n  \"review_count\": 15,\n  \"specs\": {\n    \"type\": \"Over-ear\",\n    \"weight\": \"250g\",\n    \"battery\": \"30 hours\",\n    \"connectivity\": \"Bluetooth 5.2\",\n    \"noise_cancelling\": true\n  }\n}",
                     "type": "text"
                   }
                 ],
                 "isError": false,
-                "resultType": "complete",
-                "structuredContent": {
-                  "result": [
-                    {
-                      "brand": "Uniqlo",
-                      "category": "Clothing",
-                      "description": "Ultra-lightweight packable down jacket with premium 90% duck down.",
-                      "id": "bcbbb7ac-3ec2-56cd-911f-c9d2dd70c186",
-                      "name": "Uniqlo Ultra Light Down Jacket",
-                      "original_price": 79.9,
-                      "price": 59.9,
-                      "rating": 4.3,
-                      "review_count": 11
-                    }
-                  ]
-                }
+                "resultType": "complete"
               },
               "_meta": {
                 "io.modelcontextprotocol/serverInfo": {
@@ -218,7 +139,7 @@
                 }
               }
             },
-            "call_id": "call_m6sfmQvZcuYNEpyxAlBucqe6",
+            "call_id": "call_Gwn13uJH3qkp10Z5AZy2aqiD",
             "items": [
               {
                 "additional_properties": {
@@ -229,11 +150,11 @@
                     }
                   }
                 },
-                "text": "{\"result\": [{\"id\": \"bcbbb7ac-3ec2-56cd-911f-c9d2dd70c186\", \"name\": \"Uniqlo Ultra Light Down Jacket\", \"category\": \"Clothing\", \"brand\": \"Uniqlo\", \"price\": 59.9, \"original_price\": 79.9, \"rating\": 4.3, \"review_count\": 11, \"description\": \"Ultra-lightweight packable down jacket with premium 90% duck down.\"}]}",
+                "text": "{\"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"name\": \"Sony WH-1000XM5\", \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\", \"category\": \"Electronics\", \"brand\": \"Sony\", \"price\": 299.99, \"original_price\": 349.99, \"on_sale\": true, \"rating\": 4.7, \"review_count\": 15, \"specs\": {\"type\": \"Over-ear\", \"weight\": \"250g\", \"battery\": \"30 hours\", \"connectivity\": \"Bluetooth 5.2\", \"noise_cancelling\": true}}",
                 "type": "text"
               }
             ],
-            "result": "{\"result\": [{\"id\": \"bcbbb7ac-3ec2-56cd-911f-c9d2dd70c186\", \"name\": \"Uniqlo Ultra Light Down Jacket\", \"category\": \"Clothing\", \"brand\": \"Uniqlo\", \"price\": 59.9, \"original_price\": 79.9, \"rating\": 4.3, \"review_count\": 11, \"description\": \"Ultra-lightweight packable down jacket with premium 90% duck down.\"}]}",
+            "result": "{\"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"name\": \"Sony WH-1000XM5\", \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\", \"category\": \"Electronics\", \"brand\": \"Sony\", \"price\": 299.99, \"original_price\": 349.99, \"on_sale\": true, \"rating\": 4.7, \"review_count\": 15, \"specs\": {\"type\": \"Over-ear\", \"weight\": \"250g\", \"battery\": \"30 hours\", \"connectivity\": \"Bluetooth 5.2\", \"noise_cancelling\": true}}",
             "type": "function_result"
           }
         ],
@@ -319,6 +240,27 @@
       },
       {
         "function": {
+          "description": "Get detailed warehouse availability for a product including restock schedules.",
+          "name": "get_warehouse_availability",
+          "parameters": {
+            "properties": {
+              "product_id": {
+                "description": "UUID of the product",
+                "title": "Product Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "product_id"
+            ],
+            "title": "get_warehouse_availability_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      },
+      {
+        "function": {
           "description": "Get the current user's profile including loyalty tier and spending history.",
           "name": "get_user_profile",
           "parameters": {
@@ -350,7 +292,72 @@
       },
       {
         "function": {
-          "description": "Search the product catalog with keyword + optional filters.",
+          "description": "Store a memory about the current user's preferences, behavior, or feedback for future reference.",
+          "name": "store_memory",
+          "parameters": {
+            "properties": {
+              "category": {
+                "description": "Memory category: preference, behavior, feedback, or context",
+                "title": "Category",
+                "type": "string"
+              },
+              "content": {
+                "description": "The memory content to store",
+                "title": "Content",
+                "type": "string"
+              },
+              "importance": {
+                "default": 5,
+                "description": "Importance score from 1 (low) to 10 (high)",
+                "title": "Importance",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "category",
+              "content"
+            ],
+            "title": "store_memory_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      },
+      {
+        "function": {
+          "description": "Recall stored memories about the current user's preferences and past interactions.",
+          "name": "recall_memories",
+          "parameters": {
+            "properties": {
+              "category": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Filter by category: preference, behavior, feedback, context",
+                "title": "Category"
+              },
+              "limit": {
+                "default": 10,
+                "description": "Max memories to return",
+                "title": "Limit",
+                "type": "integer"
+              }
+            },
+            "title": "recall_memories_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      },
+      {
+        "function": {
+          "description": "Search the product catalog using natural language. Supports filtering by category, price range, and rating.",
           "name": "search_products",
           "parameters": {
             "properties": {
@@ -364,10 +371,12 @@
                   }
                 ],
                 "default": null,
+                "description": "Filter by category: Electronics, Clothing, Home, Sports, Books",
                 "title": "Category"
               },
               "limit": {
                 "default": 10,
+                "description": "Max results to return",
                 "title": "Limit",
                 "type": "integer"
               },
@@ -381,6 +390,7 @@
                   }
                 ],
                 "default": null,
+                "description": "Maximum price filter",
                 "title": "Max Price"
               },
               "min_price": {
@@ -393,6 +403,7 @@
                   }
                 ],
                 "default": null,
+                "description": "Minimum price filter",
                 "title": "Min Price"
               },
               "min_rating": {
@@ -405,6 +416,7 @@
                   }
                 ],
                 "default": null,
+                "description": "Minimum rating (1-5)",
                 "title": "Min Rating"
               },
               "query": {
@@ -417,6 +429,7 @@
                   }
                 ],
                 "default": null,
+                "description": "Natural language search query (optional if using category filter)",
                 "title": "Query"
               },
               "sort_by": {
@@ -429,6 +442,7 @@
                   }
                 ],
                 "default": null,
+                "description": "Sort by: price_asc, price_desc, rating, newest",
                 "title": "Sort By"
               }
             },
@@ -440,11 +454,12 @@
       },
       {
         "function": {
-          "description": "Get full product details including specs, stock status, and seller info.",
+          "description": "Get complete details for a specific product including full specs.",
           "name": "get_product_details",
           "parameters": {
             "properties": {
               "product_id": {
+                "description": "UUID of the product",
                 "title": "Product Id",
                 "type": "string"
               }
@@ -460,11 +475,12 @@
       },
       {
         "function": {
-          "description": "Compare 2\u20133 products side by side on price, rating, specs, and stock.",
+          "description": "Compare 2-3 products side-by-side on key attributes.",
           "name": "compare_products",
           "parameters": {
             "properties": {
               "product_ids": {
+                "description": "List of 2-3 product UUIDs to compare",
                 "items": {
                   "type": "string"
                 },
@@ -483,7 +499,7 @@
       },
       {
         "function": {
-          "description": "Get trending products ranked by recent order volume.",
+          "description": "Get trending products based on recent order volume.",
           "name": "get_trending_products",
           "parameters": {
             "properties": {
@@ -497,15 +513,18 @@
                   }
                 ],
                 "default": null,
+                "description": "Optional category filter",
                 "title": "Category"
               },
               "days": {
                 "default": 30,
+                "description": "Trending period in days",
                 "title": "Days",
                 "type": "integer"
               },
               "limit": {
                 "default": 10,
+                "description": "Max results",
                 "title": "Limit",
                 "type": "integer"
               }
@@ -518,16 +537,18 @@
       },
       {
         "function": {
-          "description": "Get price trend data with average, min, max, and a deal-quality signal.",
+          "description": "Get price history for a product over a specified number of days. Useful for showing price trends and identifying deals.",
           "name": "get_price_history",
           "parameters": {
             "properties": {
               "days": {
                 "default": 30,
+                "description": "Number of days of history (30, 60, or 90)",
                 "title": "Days",
                 "type": "integer"
               },
               "product_id": {
+                "description": "UUID of the product",
                 "title": "Product Id",
                 "type": "string"
               }
@@ -544,7 +565,7 @@
     ]
   },
   "response": {
-    "created_at": "2026-11-24T16:41:37.000000Z",
+    "created_at": "2026-11-24T19:02:01.000000Z",
     "finish_reason": "stop",
     "messages": [
       {
@@ -552,7 +573,7 @@
         "contents": [
           {
             "additional_properties": {},
-            "text": "I found the Sony WH-1000XM5 wireless headphones, but I couldn't locate the Bose QuietComfort Ultra headphones in the catalog. Would you like to compare the Sony WH-1000XM5 with another Bose model, or see similar alternatives?\n\nHere are the details for the Sony WH-1000XM5:\n\n- Premium wireless noise-cancelling headphones\n- 30-hour battery life\n- Multipoint connection\n- Speak-to-chat feature\n- Currently on sale\n\nLet me know if you'd like to see other Bose headphones or compare Sony with another brand.\n\n```product\n{\"name\": \"Sony WH-1000XM5\", \"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"price\": 299.99, \"original_price\": 349.99, \"rating\": 4.7, \"review_count\": 15, \"category\": \"Electronics\", \"brand\": \"Sony\", \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\", \"image_url\": \"https://images.example.com/products/dc9e2baa-8182-58f8-9df1-97d049426ba1.jpg\"}\n```\n",
+            "text": "Here are the full details for the Sony WH-1000XM5. This is a premium wireless noise-cancelling headphone, highly rated for its sound quality and features. It's currently on sale, making it a great deal.\n\n- Type: Over-ear\n- Weight: 250g\n- Battery life: 30 hours\n- Connectivity: Bluetooth 5.2\n- Noise Cancelling: Yes\n- Multipoint connection and speak-to-chat features\n\nWould you like to see price history, compare with other headphones, or check stock availability?\n\n```product\n{\"name\": \"Sony WH-1000XM5\", \"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"price\": 299.99, \"original_price\": 349.99, \"rating\": 4.7, \"review_count\": 15, \"category\": \"Electronics\", \"brand\": \"Sony\", \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\", \"image_url\": \"https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=400&fit=crop\"}\n```",
             "type": "text"
           }
         ],
@@ -561,20 +582,20 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-EnnsHH7dZZEHeWtpl8yrKaIzcF456",
+    "response_id": "chatcmpl-Enq49ZXBLrOA9qKaJxYIVPx3C6xuy",
     "type": "chat_response",
     "usage_details": {
-      "cache_read_input_token_count": 3968,
+      "cache_read_input_token_count": 4224,
       "completion/accepted_prediction_tokens": 0,
       "completion/audio_tokens": 0,
       "completion/reasoning_tokens": 0,
       "completion/rejected_prediction_tokens": 0,
-      "input_token_count": 4194,
-      "output_token_count": 269,
+      "input_token_count": 4494,
+      "output_token_count": 266,
       "prompt/audio_tokens": 0,
-      "prompt/cached_tokens": 3968,
+      "prompt/cached_tokens": 4224,
       "reasoning_output_token_count": 0,
-      "total_token_count": 4463
+      "total_token_count": 4760
     }
   }
 }

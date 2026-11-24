@@ -7,46 +7,11 @@
         "contents": [
           {
             "additional_properties": {},
-            "text": "What's the tracking status of order 550e8400-e29b-41d4-a716-446655440002?",
+            "text": "Compare shipping carriers and delivery times from the east region to the west region",
             "type": "text"
           }
         ],
         "role": "user",
-        "type": "message"
-      },
-      {
-        "additional_properties": {},
-        "contents": [
-          {
-            "additional_properties": {},
-            "arguments": "{\"order_id\":\"550e8400-e29b-41d4-a716-446655440002\"}",
-            "call_id": "call_yxtblxU7cl14FoGfuowOmPbl",
-            "hosted": false,
-            "name": "get_tracking_status",
-            "type": "function_call"
-          }
-        ],
-        "role": "assistant",
-        "type": "message"
-      },
-      {
-        "additional_properties": {},
-        "contents": [
-          {
-            "additional_properties": {},
-            "call_id": "call_yxtblxU7cl14FoGfuowOmPbl",
-            "items": [
-              {
-                "additional_properties": {},
-                "text": "{\"error\": \"Order not found or not accessible: 550e8400-e29b-41d4-a716-446655440002\"}",
-                "type": "text"
-              }
-            ],
-            "result": "{\"error\": \"Order not found or not accessible: 550e8400-e29b-41d4-a716-446655440002\"}",
-            "type": "function_result"
-          }
-        ],
-        "role": "tool",
         "type": "message"
       }
     ],
@@ -164,11 +129,12 @@
       },
       {
         "function": {
-          "description": "Check live stock levels across all regional warehouses for a product.",
+          "description": "Check stock levels across all warehouses for a specific product.",
           "name": "check_stock",
           "parameters": {
             "properties": {
               "product_id": {
+                "description": "UUID of the product to check",
                 "title": "Product Id",
                 "type": "string"
               }
@@ -184,11 +150,12 @@
       },
       {
         "function": {
-          "description": "Get warehouse inventory and upcoming restock schedule for a product.",
+          "description": "Get detailed warehouse availability for a product including restock schedules.",
           "name": "get_warehouse_availability",
           "parameters": {
             "properties": {
               "product_id": {
+                "description": "UUID of the product",
                 "title": "Product Id",
                 "type": "string"
               }
@@ -204,11 +171,12 @@
       },
       {
         "function": {
-          "description": "Get upcoming restock dates and quantities across all warehouses.",
+          "description": "Get upcoming restock schedule for a product across all warehouses.",
           "name": "get_restock_schedule",
           "parameters": {
             "properties": {
               "product_id": {
+                "description": "UUID of the product",
                 "title": "Product Id",
                 "type": "string"
               }
@@ -224,15 +192,17 @@
       },
       {
         "function": {
-          "description": "Estimate shipping cost and delivery time from the nearest stocked warehouse.",
+          "description": "Estimate shipping cost and delivery time for a product to a destination region. Finds the closest warehouse with stock and returns carrier options.",
           "name": "estimate_shipping",
           "parameters": {
             "properties": {
               "destination_region": {
+                "description": "Destination region: 'east', 'central', or 'west'",
                 "title": "Destination Region",
                 "type": "string"
               },
               "product_id": {
+                "description": "UUID of the product",
                 "title": "Product Id",
                 "type": "string"
               }
@@ -249,15 +219,17 @@
       },
       {
         "function": {
-          "description": "Compare all carriers between two regions with pricing and estimated delivery times.",
+          "description": "Compare all carrier options (Standard, Express, Overnight) between two regions with pricing and delivery estimates.",
           "name": "compare_carriers",
           "parameters": {
             "properties": {
               "region_from": {
+                "description": "Origin region: 'east', 'central', or 'west'",
                 "title": "Region From",
                 "type": "string"
               },
               "region_to": {
+                "description": "Destination region: 'east', 'central', or 'west'",
                 "title": "Region To",
                 "type": "string"
               }
@@ -275,16 +247,19 @@
     ]
   },
   "response": {
-    "created_at": "2026-11-24T16:42:17.000000Z",
-    "finish_reason": "stop",
+    "created_at": "2026-11-24T19:02:38.000000Z",
+    "finish_reason": "tool_calls",
     "messages": [
       {
         "additional_properties": {},
         "contents": [
           {
             "additional_properties": {},
-            "text": "I couldn't find any order with the ID 550e8400-e29b-41d4-a716-446655440002, or it may not be accessible to your account. Please double-check the order ID or let me know if you need help with a different order.",
-            "type": "text"
+            "arguments": "{\"region_from\":\"east\",\"region_to\":\"west\"}",
+            "call_id": "call_Tm6aTwMtop1SoiGSyAyZJU7C",
+            "hosted": false,
+            "name": "compare_carriers",
+            "type": "function_call"
           }
         ],
         "role": "assistant",
@@ -292,7 +267,7 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-Ennsvk3J0gGUGLSTxsdyS2lghs1M4",
+    "response_id": "chatcmpl-Enq4k7omcdUk4NkG0ZCltSp56hfiV",
     "type": "chat_response",
     "usage_details": {
       "cache_read_input_token_count": 3584,
@@ -300,12 +275,12 @@
       "completion/audio_tokens": 0,
       "completion/reasoning_tokens": 0,
       "completion/rejected_prediction_tokens": 0,
-      "input_token_count": 3716,
-      "output_token_count": 58,
+      "input_token_count": 3719,
+      "output_token_count": 21,
       "prompt/audio_tokens": 0,
       "prompt/cached_tokens": 3584,
       "reasoning_output_token_count": 0,
-      "total_token_count": 3774
+      "total_token_count": 3740
     }
   }
 }

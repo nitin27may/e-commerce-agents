@@ -7,11 +7,142 @@
         "contents": [
           {
             "additional_properties": {},
-            "text": "Find me wireless headphones under $300",
+            "text": "Compare the Sony WH-1000XM5 and the Bose QuietComfort Ultra",
             "type": "text"
           }
         ],
         "role": "user",
+        "type": "message"
+      },
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {},
+            "arguments": "{\"query\": \"Sony WH-1000XM5\", \"category\": \"Electronics\", \"limit\": 1}",
+            "call_id": "call_HU00vZp52z3KbhXppGVphZj6",
+            "hosted": false,
+            "name": "search_products",
+            "type": "function_call"
+          },
+          {
+            "additional_properties": {},
+            "arguments": "{\"query\": \"Bose QuietComfort Ultra\", \"category\": \"Electronics\", \"limit\": 1}",
+            "call_id": "call_WKFJDx0PsqKuybXGhaAuZNkk",
+            "hosted": false,
+            "name": "search_products",
+            "type": "function_call"
+          }
+        ],
+        "role": "assistant",
+        "type": "message"
+      },
+      {
+        "additional_properties": {},
+        "contents": [
+          {
+            "additional_properties": {
+              "_mcp_tool_result_host_payload": {
+                "_meta": {
+                  "io.modelcontextprotocol/serverInfo": {
+                    "name": "product-discovery-mcp",
+                    "version": ""
+                  }
+                },
+                "content": [
+                  {
+                    "text": "{\n  \"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\",\n  \"name\": \"Sony WH-1000XM5\",\n  \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\",\n  \"category\": \"Electronics\",\n  \"brand\": \"Sony\",\n  \"price\": 299.99,\n  \"original_price\": 349.99,\n  \"on_sale\": true,\n  \"rating\": 4.7,\n  \"review_count\": 15,\n  \"image_url\": \"https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=400&fit=crop\"\n}",
+                    "type": "text"
+                  }
+                ],
+                "isError": false,
+                "resultType": "complete",
+                "structuredContent": {
+                  "result": [
+                    {
+                      "brand": "Sony",
+                      "category": "Electronics",
+                      "description": "Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.",
+                      "id": "dc9e2baa-8182-58f8-9df1-97d049426ba1",
+                      "image_url": "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=400&fit=crop",
+                      "name": "Sony WH-1000XM5",
+                      "on_sale": true,
+                      "original_price": 349.99,
+                      "price": 299.99,
+                      "rating": 4.7,
+                      "review_count": 15
+                    }
+                  ]
+                }
+              },
+              "_meta": {
+                "io.modelcontextprotocol/serverInfo": {
+                  "name": "product-discovery-mcp",
+                  "version": ""
+                }
+              }
+            },
+            "call_id": "call_HU00vZp52z3KbhXppGVphZj6",
+            "items": [
+              {
+                "additional_properties": {
+                  "_meta": {
+                    "io.modelcontextprotocol/serverInfo": {
+                      "name": "product-discovery-mcp",
+                      "version": ""
+                    }
+                  }
+                },
+                "text": "{\"result\": [{\"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"name\": \"Sony WH-1000XM5\", \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\", \"category\": \"Electronics\", \"brand\": \"Sony\", \"price\": 299.99, \"original_price\": 349.99, \"on_sale\": true, \"rating\": 4.7, \"review_count\": 15, \"image_url\": \"https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=400&fit=crop\"}]}",
+                "type": "text"
+              }
+            ],
+            "result": "{\"result\": [{\"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"name\": \"Sony WH-1000XM5\", \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\", \"category\": \"Electronics\", \"brand\": \"Sony\", \"price\": 299.99, \"original_price\": 349.99, \"on_sale\": true, \"rating\": 4.7, \"review_count\": 15, \"image_url\": \"https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=400&fit=crop\"}]}",
+            "type": "function_result"
+          },
+          {
+            "additional_properties": {
+              "_mcp_tool_result_host_payload": {
+                "_meta": {
+                  "io.modelcontextprotocol/serverInfo": {
+                    "name": "product-discovery-mcp",
+                    "version": ""
+                  }
+                },
+                "content": [],
+                "isError": false,
+                "resultType": "complete",
+                "structuredContent": {
+                  "result": []
+                }
+              },
+              "_meta": {
+                "io.modelcontextprotocol/serverInfo": {
+                  "name": "product-discovery-mcp",
+                  "version": ""
+                }
+              }
+            },
+            "call_id": "call_WKFJDx0PsqKuybXGhaAuZNkk",
+            "items": [
+              {
+                "additional_properties": {
+                  "_meta": {
+                    "io.modelcontextprotocol/serverInfo": {
+                      "name": "product-discovery-mcp",
+                      "version": ""
+                    }
+                  }
+                },
+                "text": "{\"result\": []}",
+                "type": "text"
+              }
+            ],
+            "result": "{\"result\": []}",
+            "type": "function_result"
+          }
+        ],
+        "role": "tool",
         "type": "message"
       }
     ],
@@ -93,6 +224,27 @@
       },
       {
         "function": {
+          "description": "Get detailed warehouse availability for a product including restock schedules.",
+          "name": "get_warehouse_availability",
+          "parameters": {
+            "properties": {
+              "product_id": {
+                "description": "UUID of the product",
+                "title": "Product Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "product_id"
+            ],
+            "title": "get_warehouse_availability_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      },
+      {
+        "function": {
           "description": "Get the current user's profile including loyalty tier and spending history.",
           "name": "get_user_profile",
           "parameters": {
@@ -124,7 +276,72 @@
       },
       {
         "function": {
-          "description": "Search the product catalog with keyword + optional filters.",
+          "description": "Store a memory about the current user's preferences, behavior, or feedback for future reference.",
+          "name": "store_memory",
+          "parameters": {
+            "properties": {
+              "category": {
+                "description": "Memory category: preference, behavior, feedback, or context",
+                "title": "Category",
+                "type": "string"
+              },
+              "content": {
+                "description": "The memory content to store",
+                "title": "Content",
+                "type": "string"
+              },
+              "importance": {
+                "default": 5,
+                "description": "Importance score from 1 (low) to 10 (high)",
+                "title": "Importance",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "category",
+              "content"
+            ],
+            "title": "store_memory_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      },
+      {
+        "function": {
+          "description": "Recall stored memories about the current user's preferences and past interactions.",
+          "name": "recall_memories",
+          "parameters": {
+            "properties": {
+              "category": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Filter by category: preference, behavior, feedback, context",
+                "title": "Category"
+              },
+              "limit": {
+                "default": 10,
+                "description": "Max memories to return",
+                "title": "Limit",
+                "type": "integer"
+              }
+            },
+            "title": "recall_memories_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      },
+      {
+        "function": {
+          "description": "Search the product catalog using natural language. Supports filtering by category, price range, and rating.",
           "name": "search_products",
           "parameters": {
             "properties": {
@@ -138,10 +355,12 @@
                   }
                 ],
                 "default": null,
+                "description": "Filter by category: Electronics, Clothing, Home, Sports, Books",
                 "title": "Category"
               },
               "limit": {
                 "default": 10,
+                "description": "Max results to return",
                 "title": "Limit",
                 "type": "integer"
               },
@@ -155,6 +374,7 @@
                   }
                 ],
                 "default": null,
+                "description": "Maximum price filter",
                 "title": "Max Price"
               },
               "min_price": {
@@ -167,6 +387,7 @@
                   }
                 ],
                 "default": null,
+                "description": "Minimum price filter",
                 "title": "Min Price"
               },
               "min_rating": {
@@ -179,6 +400,7 @@
                   }
                 ],
                 "default": null,
+                "description": "Minimum rating (1-5)",
                 "title": "Min Rating"
               },
               "query": {
@@ -191,6 +413,7 @@
                   }
                 ],
                 "default": null,
+                "description": "Natural language search query (optional if using category filter)",
                 "title": "Query"
               },
               "sort_by": {
@@ -203,6 +426,7 @@
                   }
                 ],
                 "default": null,
+                "description": "Sort by: price_asc, price_desc, rating, newest",
                 "title": "Sort By"
               }
             },
@@ -214,11 +438,12 @@
       },
       {
         "function": {
-          "description": "Get full product details including specs, stock status, and seller info.",
+          "description": "Get complete details for a specific product including full specs.",
           "name": "get_product_details",
           "parameters": {
             "properties": {
               "product_id": {
+                "description": "UUID of the product",
                 "title": "Product Id",
                 "type": "string"
               }
@@ -234,11 +459,12 @@
       },
       {
         "function": {
-          "description": "Compare 2\u20133 products side by side on price, rating, specs, and stock.",
+          "description": "Compare 2-3 products side-by-side on key attributes.",
           "name": "compare_products",
           "parameters": {
             "properties": {
               "product_ids": {
+                "description": "List of 2-3 product UUIDs to compare",
                 "items": {
                   "type": "string"
                 },
@@ -257,7 +483,7 @@
       },
       {
         "function": {
-          "description": "Get trending products ranked by recent order volume.",
+          "description": "Get trending products based on recent order volume.",
           "name": "get_trending_products",
           "parameters": {
             "properties": {
@@ -271,15 +497,18 @@
                   }
                 ],
                 "default": null,
+                "description": "Optional category filter",
                 "title": "Category"
               },
               "days": {
                 "default": 30,
+                "description": "Trending period in days",
                 "title": "Days",
                 "type": "integer"
               },
               "limit": {
                 "default": 10,
+                "description": "Max results",
                 "title": "Limit",
                 "type": "integer"
               }
@@ -292,16 +521,18 @@
       },
       {
         "function": {
-          "description": "Get price trend data with average, min, max, and a deal-quality signal.",
+          "description": "Get price history for a product over a specified number of days. Useful for showing price trends and identifying deals.",
           "name": "get_price_history",
           "parameters": {
             "properties": {
               "days": {
                 "default": 30,
+                "description": "Number of days of history (30, 60, or 90)",
                 "title": "Days",
                 "type": "integer"
               },
               "product_id": {
+                "description": "UUID of the product",
                 "title": "Product Id",
                 "type": "string"
               }
@@ -318,19 +549,16 @@
     ]
   },
   "response": {
-    "created_at": "2026-11-24T16:41:28.000000Z",
-    "finish_reason": "tool_calls",
+    "created_at": "2026-11-24T19:02:04.000000Z",
+    "finish_reason": "stop",
     "messages": [
       {
         "additional_properties": {},
         "contents": [
           {
             "additional_properties": {},
-            "arguments": "{\"query\":\"wireless headphones\",\"max_price\":300,\"limit\":10,\"sort_by\":\"rating\"}",
-            "call_id": "call_OZZqcyP0cbvzEeB5pnh4mUY2",
-            "hosted": false,
-            "name": "search_products",
-            "type": "function_call"
+            "text": "I found the Sony WH-1000XM5, which is a highly rated, premium wireless noise-cancelling headphone currently on sale. However, I couldn't find the Bose QuietComfort Ultra in the catalog, so I can't provide a side-by-side comparison at this time.\n\nHere are the details for the Sony WH-1000XM5:\n\n- Excellent noise cancellation\n- 30-hour battery life\n- Multipoint connection\n- Speak-to-chat feature\n- Currently on sale ($299.99, down from $349.99)\n\nIf you'd like, I can help you find similar headphones to the Sony WH-1000XM5 or check for other Bose models available.\n\n```product\n{\"name\": \"Sony WH-1000XM5\", \"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"price\": 299.99, \"original_price\": 349.99, \"rating\": 4.7, \"review_count\": 15, \"category\": \"Electronics\", \"brand\": \"Sony\", \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\", \"image_url\": \"https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=400&fit=crop\"}\n```\n\nLet me know if you'd like to see similar products or explore other Bose headphones!",
+            "type": "text"
           }
         ],
         "role": "assistant",
@@ -338,20 +566,20 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-Enns8SryYhC7nV0YQnpT3VSVkEyLi",
+    "response_id": "chatcmpl-Enq4C3rUVkOh8FMt7KUJ5rqOfiWiG",
     "type": "chat_response",
     "usage_details": {
-      "cache_read_input_token_count": 2816,
+      "cache_read_input_token_count": 4096,
       "completion/accepted_prediction_tokens": 0,
       "completion/audio_tokens": 0,
       "completion/reasoning_tokens": 0,
       "completion/rejected_prediction_tokens": 0,
-      "input_token_count": 3744,
-      "output_token_count": 30,
+      "input_token_count": 4342,
+      "output_token_count": 308,
       "prompt/audio_tokens": 0,
-      "prompt/cached_tokens": 2816,
+      "prompt/cached_tokens": 4096,
       "reasoning_output_token_count": 0,
-      "total_token_count": 3774
+      "total_token_count": 4650
     }
   }
 }
