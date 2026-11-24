@@ -181,7 +181,10 @@ check_postgres_sku "$LOCATION" "$sku"
 if [ "$DEPLOY_OPENAI" = false ]; then
     log "DEPLOY_OPENAI=false: no Azure OpenAI account, skipping model and quota checks"
 else
-    check_model "$OPENAI_LOCATION" "${AZURE_CHAT_MODEL:-gpt-5.1}" "${AZURE_CHAT_MODEL_VERSION:-2025-11-13}" "$capacity" "$embedding_capacity"
+    # The profile names its own default model (free-trial: gpt-5.4-nano); an explicit AZURE_CHAT_MODEL wins.
+    default_model="$(jq -r '.openAi.chatModelName // "gpt-5.1"' "$profile_file")"
+    default_version="$(jq -r '.openAi.chatModelVersion // "2025-11-13"' "$profile_file")"
+    check_model "$OPENAI_LOCATION" "${AZURE_CHAT_MODEL:-$default_model}" "${AZURE_CHAT_MODEL_VERSION:-$default_version}" "$capacity" "$embedding_capacity"
 fi
 if [ -n "$ENV_NAME" ]; then
     deleted=0

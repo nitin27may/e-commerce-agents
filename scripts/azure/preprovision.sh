@@ -118,7 +118,9 @@ if [ "$deploy_openai" = false ]; then
         *) die "EXTERNAL_LLM_PROVIDER must be replay or openai (got '$llm_provider')" ;;
     esac
 else
-    check_model "$openai_location" "${chat_model:-gpt-5.1}" "${chat_version:-2025-11-13}" "$(jq -r '.openAi.chatCapacity' "$profile_file")" \
+    default_model="$(jq -r '.openAi.chatModelName // "gpt-5.1"' "$profile_file")"
+    default_version="$(jq -r '.openAi.chatModelVersion // "2025-11-13"' "$profile_file")"
+    check_model "$openai_location" "${chat_model:-$default_model}" "${chat_version:-$default_version}" "$(jq -r '.openAi.chatCapacity' "$profile_file")" \
         "$(jq -r '.openAi.embeddingCapacity' "$profile_file")"
 fi
 env_name="$(env_get AZURE_ENV_NAME)"
