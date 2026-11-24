@@ -449,6 +449,13 @@ fi
 if [ "$DEMO" = true ]; then
     DEMO_COMPOSE=(docker compose -f docker-compose.demo.yml)
     [ "$NO_KEY" = true ] && DEMO_COMPOSE=(docker compose -f docker-compose.demo.yml -f docker-compose.nokey.yml)
+    # The auth-server sits behind the `oauth` profile; it is only wanted under AUTH_MODE=oauth
+    # (exported, or set in .env). Without it the default demo is 11 running containers (#86).
+    _demo_auth_mode="${AUTH_MODE:-}"
+    if [ -z "$_demo_auth_mode" ] && [ -f .env ]; then
+        _demo_auth_mode="$(grep -E '^AUTH_MODE=' .env | tail -n1 | cut -d= -f2- | tr -d '"'"'"' \r')"
+    fi
+    [ "$_demo_auth_mode" = oauth ] && DEMO_COMPOSE+=(--profile oauth)
     TAG="${IMAGE_TAG:-latest}"
 
     step "Demo mode — pulling prebuilt images (tag: ${TAG})"

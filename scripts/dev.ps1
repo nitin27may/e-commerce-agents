@@ -494,6 +494,14 @@ try {
 
         $demoFiles = @('-f', 'docker-compose.demo.yml')
         if ($NoKey) { $demoFiles += @('-f', 'docker-compose.nokey.yml') }
+        # The auth-server sits behind the `oauth` profile; only wanted under AUTH_MODE=oauth
+        # (set in the shell or in .env). Without it the default demo is 11 running containers (#86).
+        $demoAuthMode = $env:AUTH_MODE
+        if (-not $demoAuthMode -and (Test-Path .env)) {
+            $line = Get-Content .env | Where-Object { $_ -match '^AUTH_MODE=' } | Select-Object -Last 1
+            if ($line) { $demoAuthMode = ($line -replace '^AUTH_MODE=', '').Trim().Trim('"', "'") }
+        }
+        if ($demoAuthMode -eq 'oauth') { $demoFiles += @('--profile', 'oauth') }
 
         & docker compose @demoFiles pull
         if ($LASTEXITCODE -ne 0) {

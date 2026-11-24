@@ -168,6 +168,7 @@ SECTIONS: tuple[Section, ...] = (
             "docs/adr/0004-maf-native-execution.md",
             "docs/adr/0005-dual-stack-parity.md",
             "docs/adr/0006-foundry-hosted-agents.md",
+            "docs/adr/0007-keep-the-hand-rolled-group-chat.md",
             "tutorials/_shared/jargon-glossary.md",
             "tutorials/_shared/mermaid-style-guide.md",
         ),

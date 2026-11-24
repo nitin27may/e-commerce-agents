@@ -21,6 +21,7 @@ would make it wrong**. A decision with no stated reversal condition is dogma.
 | [0004](0004-maf-native-execution.md) | MAF runs the tool-calling loop, not this repo | Accepted |
 | [0005](0005-dual-stack-parity.md) | Two backends, one frontend, gated by a real test run | Accepted |
 | [0006](0006-foundry-hosted-agents.md) | Run the agents as Foundry hosted agents, one at a time, behind a reachability spike | Proposed |
+| [0007](0007-keep-the-hand-rolled-group-chat.md) | Keep the hand-rolled group chat and orchestration modes instead of MAF's builders | Accepted |
 
 ## Format
 
