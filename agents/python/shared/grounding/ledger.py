@@ -124,6 +124,18 @@ class GroundingLedger:
             "min_spend",
             "free_shipping_threshold",
             "max_discount",
+            # Amounts other pricing and fulfillment tools report under their own names; each was an answer quoting
+            # the tool's figure and scoring "unverifiable" (live reference run, 2026-11-24):
+            # get_loyalty_benefits' tier thresholds, check_bundle_eligibility's bundle total and saving,
+            # optimize_cart's totals, calculate_fulfillment_plan's shipping cost (top level and per shipment).
+            "min_spend_required",
+            "bundle_total",
+            "savings",
+            "original_total",
+            "total_savings",
+            "final_total",
+            "shipping_cost",
+            "total_shipping_cost",
         ):
             value = _as_float(item.get(key))
             if value is not None:

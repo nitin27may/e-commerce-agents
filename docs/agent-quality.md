@@ -77,7 +77,7 @@ Does the response contain all the fields the user would need?
 
 Completeness is deliberately fuzzy (substring match on the response text) because the LLM formats data in varied ways. The goal is to catch cases where the agent retrieved data but then dropped key fields in the formatted response.
 
-### Live reference baselines (2026-11-24)
+### Live reference baselines (2026-11-24, all six suites)
 
 First reference run of the live suites. **One repeat (k=1), one model, one sitting: a snapshot, not a quality guarantee, and the spread is unknown.** Three repeats would have cost about three times the 4 USD cap that applied. Setup `python-inproc-gpt-4.1`: `gpt-4.1` on Azure through the in-process target, a freshly seeded database, completeness judged by `gpt-5.4-mini` on Azure (not the model under test, so **not self-judged**), pass threshold 0.7. They are stored under `agents/python/evals/baselines/python-inproc-gpt-4.1/`, marked `"live": true`, and the replay gate never reads that directory (`tests/test_eval_live_baselines.py`). The [eval scorecard](eval-scorecard.md) shows them in a separate table.
 
@@ -87,12 +87,13 @@ First reference run of the live suites. **One repeat (k=1), one model, one sitti
 | pricing-promotions | 29 | 25 | 0.79 | 0.97 | 0.89 | 0.88 | 0.50 |
 | review-sentiment | 29 | 29 | 1.00 | 1.00 | 0.92 | 0.98 | 0.75 |
 | inventory-fulfillment | 29 | 27 | 0.97 | 0.97 | 0.78 | 0.93 | 0.63 |
-| order-management | 33 | not run | | | | | |
-| orchestrator | 30 | not run | | | | | |
+| order-management | 33 | 30 | 0.96 | 0.92 | 0.92 | 0.94 | 0.71 |
+| orchestrator | 30 | 30 | 1.00 | 1.00 | 0.88 | 0.98 | 0.97 |
 
-- Cost is tokens times the `models.yaml` price with cached input at the full rate, so the real bill is lower; it leaves out the judge calls (about 0.04 USD per suite at the estimate). Whole task: about 3.2 USD of the 4 USD cap.
-- **Order-management and orchestrator have no baseline.** Their runs would have passed the 3.5 USD stop. The orchestrator suite ran once with 13 of 30 cases measured (the rest were refused by a harness defect fixed in the same change, below), so it is not recorded as a baseline. Run `scripts/live-evals.sh` for them, then store the baselines with `--rescore <records> --update-baseline`.
-- Pass counts include the cases kept failing on purpose. Pricing: 8 (loyalty tiers) and 9 and 11 (bundle and cart totals) score groundedness near 0 because the grounding check could not match a quoted amount to a tool result (`unverifiable`, not `price_mismatch`; not yet confirmed whether the gap is the checker's or the answer's), and 22 (every coupon code) reports "none valid" and misses the public deals. Inventory: 11 (fulfillment plan) is the same unmatched-amount result on a shipping price, and 18 (backorder of an in-stock item) is declined by the model, which the case did not expect. Judge-unavailable cases (one each in pricing and review) are left out of the completeness mean.
+- Cost is tokens times the `models.yaml` price with cached input at the full rate, so the real bill is lower; it leaves out the judge calls (about 0.04 USD per suite at the estimate). The first sitting cost about 3.2 USD and the second about 1.8 USD.
+- **Order-management and orchestrator were run in a second sitting** (same setup, a fresh seeded database each, the specialists for the orchestrator suite on their own ports). The orchestrator run is valid: 30 of 30 cases ran, none reported budget exceeded (the per-case token-ceiling reset was in). The first four baselines come from the first sitting; each of the six ran once.
+- **The four groundedness gaps below were a ledger gap, now fixed, but the four baselines were not re-run.** Pricing 8, 9 and 11 and inventory 11 quoted figures that the tools did return under field names the grounding ledger did not record (`min_spend_required`, `bundle_total`/`savings`, `total_savings`/`final_total`, `total_shipping_cost`/`shipping_cost`). `shared/grounding/ledger.py` now records them. A rescore cannot show the effect (the stored grounding verdicts are kept; tool results are not stored), so the pricing and inventory baselines still carry the old, lower groundedness (0.79 and 0.97) until those suites are run again. Not a ledger gap: pricing case 8 also quotes "$600 spent" and "$2,400 more" (the first is in no tool result of that turn, the second is derived), and they stay unverifiable.
+- Pass counts include the cases kept failing on purpose. Pricing: 8, 9 and 11 are the ledger gap above, and 22 (every coupon code) reports "none valid" and misses the public deals. Inventory: 11 is the ledger gap on a shipping cost, and 18 (backorder of an in-stock item) is declined by the model, which the case did not expect. Order-management: 0 (recent orders) scores correctness 0 (cause not examined), 5 (address change on a delivered order) is refused correctly so the expected `modify_order` call never happens, and 23 (cancel my last order) parks for approval where the case expects no approval request. Judge-unavailable cases (one each in pricing, review and order-management) are left out of the completeness mean.
 - Comparing a later run with these is like-for-like only on the same setup key and judge. With one repeat on either side the regression gate allows one case's worth of drop (`1 / cases`).
 
 ### Judge calibration
