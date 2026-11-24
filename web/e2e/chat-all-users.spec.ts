@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { staffPassword } from "./credentials";
+import { skipWithoutKey } from "./no-key";
 
 /**
  * Chat E2E tests for all user roles.
@@ -85,6 +86,7 @@ for (const user of USERS) {
     });
 
     test("conversation appears in sidebar after first message", async ({ page }) => {
+      skipWithoutKey('"Tell me about your products" is not recorded');
       await sendMessageAndWaitForResponse(page, "Tell me about your products");
 
       // The conversation should appear in the sidebar
@@ -93,6 +95,7 @@ for (const user of USERS) {
     });
 
     test("can send multiple messages in same conversation", async ({ page }) => {
+      skipWithoutKey('"What categories do you have?" is not recorded');
       // First message
       await sendMessageAndWaitForResponse(page, "What categories do you have?");
 
@@ -108,6 +111,7 @@ for (const user of USERS) {
     });
 
     test("new chat button creates fresh conversation", async ({ page }) => {
+      skipWithoutKey('"First conversation message" is not recorded');
       // Send first message
       await sendMessageAndWaitForResponse(page, "First conversation message");
 
@@ -134,6 +138,7 @@ for (const user of USERS) {
 
 test.describe("Chat — Cross-User", () => {
   test("Alice's conversations are not visible to Bob", async ({ page }) => {
+    skipWithoutKey("the unrecorded prompt \"Alice unique chat test message xyz123\"");
     // Login as Alice and create a conversation
     await loginAndGoToChat(page, "alice.johnson@gmail.com", "customer123");
     await sendMessageAndWaitForResponse(page, "Alice unique chat test message xyz123");

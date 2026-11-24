@@ -42,6 +42,7 @@ import logging
 import random
 import time
 from collections import deque
+from typing import Any
 
 import httpx
 
@@ -183,6 +184,7 @@ class ResilientAsyncTransport(httpx.AsyncHTTPTransport):
         self._base_delay_s = base_delay_s
         self._backoff_multiplier = backoff_multiplier
         self._jitter_fraction = jitter_fraction
+        self._open_clients = 0
         self._breakers: dict[str, _HostBreaker] = {}
         self._breaker_kwargs = {
             "failure_ratio_threshold": failure_ratio_threshold,
@@ -212,6 +214,26 @@ class ResilientAsyncTransport(httpx.AsyncHTTPTransport):
         base = self._base_delay_s * (self._backoff_multiplier ** (attempt - 1))
         jitter = base * self._jitter_fraction
         return max(0.0, base + random.uniform(-jitter, jitter))
+
+    async def __aenter__(self) -> ResilientAsyncTransport:
+        self._open_clients += 1
+        await super().__aenter__()
+        return self
+
+    async def __aexit__(self, *exc_info: Any) -> None:
+        """Close the pool only when the last client that entered this transport exits.
+
+        One instance is module-level and handed to every short-lived ``httpx.AsyncClient``
+        (``orchestrator/agent.py``, ``shared/remote_agent.py``). A client closes its transport
+        on exit, and closing the pool cuts every other client's in-flight stream with a
+        ``ReadError``: two specialists called in one turn, the first to finish dropped the
+        second mid-answer. Counting the clients keeps the pool open while any is in flight and
+        still closes it between turns, so no keep-alive connection outlives the event loop it
+        was opened on (a pooled connection reused from a closed loop raises ``RuntimeError``).
+        """
+        self._open_clients = max(0, self._open_clients - 1)
+        if self._open_clients == 0:
+            await super().__aexit__(*exc_info)
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         host = request.url.netloc.decode("ascii", "replace")

@@ -18,13 +18,17 @@ again. The stack stays up either way.
 Sign in as `tour@example.com` / `tour123`: a dedicated account whose orders the tour depends on, with
 a delivered order over $500 for the return flow. **Reset demo** in the chat puts it back after a run.
 `alice.johnson@gmail.com` / `customer123` also has recordings, for the scenarios listed under Demo Scenarios
-below (1 to 8, the handoff and pre-purchase prompts of 9, and the Allbirds prompts the demo clip uses). Other
-accounts and reworded prompts miss.
+below (1 to 8, the handoff and pre-purchase prompts of 9, and the Allbirds prompts the demo clip uses). It also has
+the prompts the Playwright specs send (the greeting for five accounts, the generative-UI, shopping, follow-up and
+grounding prompts); the key-free Playwright run is `E2E_NO_KEY=1 pnpm exec playwright test`, and it reports the
+tests that send an unrecorded prompt as skipped. Other accounts and reworded prompts miss.
 
 The recordings are `agents/python/demo/fixtures/replay/`, and `agents/python/demo/fixtures/manifest.json` says which
 prompt each one answers. They are fixed answers: a date or a count in one ("21 days left in the return window") is
 as of the recording. Two limits. A prompt that changes data (a return, a checkout) changes what a later prompt sees,
-so run the tour from a fresh stack (`--clean`) or use **Reset demo**. And the two workflow modes, pre-purchase and
+so run the tour from a fresh stack (`--clean`) or use **Reset demo**. The same goes for the database's age: the
+60-day price window of "is it a good deal?" holds 59 points on a fresh seed and fewer as the seed ages, and the
+recording was made on a fresh seed. And the two workflow modes, pre-purchase and
 return-and-replace, call no model, so there is nothing recorded for them and nothing to miss.
 
 ## Test Users
