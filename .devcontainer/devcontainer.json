@@ -1,12 +1,15 @@
 {
-  // Codespaces / Dev Containers setup. Needs NO secrets: LLM_PROVIDER=replay plays
-  // back the recorded fixtures, so the tutorials, the Python tests and the eval
-  // smoke suite all run with no key. Add OPENAI_API_KEY as a Codespaces secret
-  // only if you want live model calls (and unset LLM_PROVIDER to use them).
+  // Codespaces / Dev Containers setup. Needs no secrets: with none present, postCreate.sh selects
+  // LLM_PROVIDER=replay (recorded responses) and the tutorials, the Python tests and the keyless eval
+  // suite run. Supply a model key through the "secrets" below (the creation screen asks for them) and
+  // postCreate.sh selects the matching live provider instead. Guidance: docs/configuration.md#codespaces
   "name": "e-commerce-agents",
-  "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bookworm",
+  // The plain base image plus the Python feature, not the python image: that image carries a Yarn apt
+  // source whose signing key is missing, which makes the Docker-in-Docker feature fail at `apt-get update`.
+  "image": "mcr.microsoft.com/devcontainers/base:bookworm",
 
   "features": {
+    "ghcr.io/devcontainers/features/python:1": { "version": "3.12" },
     // Node + pnpm for web/. The pnpm version is pinned in postCreate.sh to the one CI uses.
     "ghcr.io/devcontainers/features/node:1": { "version": "22" },
     // global.json at the repo root asks for SDK 10.0.100 and rolls forward within
@@ -16,16 +19,48 @@
     "ghcr.io/devcontainers/features/docker-in-docker:2": {}
   },
 
+  // No LLM_PROVIDER here on purpose: a containerEnv value cannot be cleared by the user and would
+  // beat .env in docker compose. postCreate.sh derives the provider from the secrets instead.
   "containerEnv": {
-    "LLM_PROVIDER": "replay",
-    "EMBEDDING_PROVIDER": "replay",
     "UV_LINK_MODE": "copy"
   },
 
+  // All optional. A Codespaces secret is injected as an environment variable when the container is
+  // created, so adding one later needs "Codespaces: Rebuild Container". Provider choice: Azure endpoint
+  // plus key, else LLM_BASE_URL, else OPENAI_API_KEY, else replay.
+  "secrets": {
+    "OPENAI_API_KEY": {
+      "description": "OpenAI key for live model calls. Also the key sent to an OpenAI-compatible server when LLM_BASE_URL is set. Leave empty to run key-free on recorded responses.",
+      "documentationUrl": "https://github.com/nitin27may/e-commerce-agents/blob/main/docs/configuration.md#codespaces"
+    },
+    "AZURE_OPENAI_ENDPOINT": {
+      "description": "Azure OpenAI endpoint URL. Used with AZURE_OPENAI_KEY and AZURE_OPENAI_DEPLOYMENT; takes precedence over OPENAI_API_KEY.",
+      "documentationUrl": "https://github.com/nitin27may/e-commerce-agents/blob/main/docs/configuration.md#codespaces"
+    },
+    "AZURE_OPENAI_KEY": {
+      "description": "Azure OpenAI key. Needed together with AZURE_OPENAI_ENDPOINT.",
+      "documentationUrl": "https://github.com/nitin27may/e-commerce-agents/blob/main/docs/configuration.md#codespaces"
+    },
+    "AZURE_OPENAI_DEPLOYMENT": {
+      "description": "Azure OpenAI chat deployment name, as you named it in your Azure resource.",
+      "documentationUrl": "https://github.com/nitin27may/e-commerce-agents/blob/main/docs/configuration.md#codespaces"
+    },
+    "LLM_BASE_URL": {
+      "description": "Base URL of an OpenAI-compatible server (OpenRouter, vLLM, a gateway). Set OPENAI_API_KEY to the key that server expects. It must be reachable from GitHub's cloud; localhost on your own machine is not.",
+      "documentationUrl": "https://github.com/nitin27may/e-commerce-agents/blob/main/docs/configuration.md#codespaces"
+    },
+    "LLM_MODEL": {
+      "description": "Model name to request with OPENAI_API_KEY or LLM_BASE_URL. Empty keeps the default.",
+      "documentationUrl": "https://github.com/nitin27may/e-commerce-agents/blob/main/docs/configuration.md#codespaces"
+    }
+  },
+
+  // The orchestrator (8080) is not forwarded on purpose: the browser calls the web app's own origin
+  // and Next proxies to the orchestrator over the container network (docker-compose.yml, frontend).
   "forwardPorts": [3000, 18888],
   "portsAttributes": {
-    "3000": { "label": "Web (Next.js)", "onAutoForward": "notify" },
-    "18888": { "label": "Aspire dashboard (telemetry)", "onAutoForward": "silent" }
+    "3000": { "label": "Web (Next.js)", "onAutoForward": "openBrowser" },
+    "18888": { "label": "Aspire dashboard (telemetry)", "onAutoForward": "notify" }
   },
 
   "hostRequirements": { "cpus": 4, "memory": "8gb" },
