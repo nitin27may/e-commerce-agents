@@ -15,6 +15,47 @@ Part III is the constraints that still bite. Parts I and IV's build log are now 
 them (`git show 4ca4601:.claude/plans/remaining-work.md`). The LangGraph backend (LG1 to LG3) stays parked by maintainer
 decision. The Azure deployment is the last item, not the first.
 
+## Live status and order, 2026-11-24
+
+This block is the current answer to "what is left, and in what order". It supersedes the ordering below where they differ.
+Issues and pull requests are the source of truth; this table only maps them to the order of work.
+
+**Rules for the order:** small and keyless first; keyed work uses the local Azure OpenAI key under a per-lane spend cap (about 5 USD
+in total for this round); the Azure deployment is last and capped at 10 USD; an issue closes only with evidence on `main`.
+
+| Wave | Work | Issue | State |
+|---|---|---|---|
+| 0 | Land the open pull requests as CI goes green (coupon rule, client address, customer confirmation, Dependabot) | #285, #291, #306, Dependabot | in CI |
+| 1 | README GIF and doc stills on the no-key stack | #87, #182 | in progress |
+| 1 | Static hosted preview fed by the recordings | #301 | not started |
+| 2 | Customer confirmation in tool mode (Python) | #302 | PR #306 |
+| 2 | Merchant-ops agent, review triage, eval dataset | #298 | in progress |
+| 2 | More autonomy events, optional ops-responder | #299 | in progress |
+| 2 | Orchestrator evals per mode, indirect injection, MCP-versus-native gate | #97, #303 | in progress |
+| 2 | Port customer confirmation to .NET (about 12 hours) | #307 | not started |
+| 3 | Missing course chapters that need no Azure | #100 | not started |
+| 3 | Refresh live baselines after the keyed lanes, once | #97 | after wave 2 |
+| 3 | Tracker, CHANGELOG pass, full verification of green `main` | #103 | after wave 2 |
+| 4 | Azure free-trial deployment: what-if, deploy, sanity check, measured cost, teardown, verify clean | #89, #91, #100 (deploy chapter) | last; PR #263 held until then |
+
+**Closing rules**
+- #89, #91 and the deployment chapter of #100 close together after the keyless Azure run passes four checks: the stack comes up and
+  `scripts/azure/sanity.sh` passes with bearer-token model access; no model key exists in the deployment; teardown leaves nothing
+  (`scripts/azure/verify-clean.sh`); spend stays under 10 USD with the measured figure recorded. The Postgres admin password remains,
+  because Entra authentication for the database needs code on both stacks; the closing comment says so.
+- #100 closes when the chapters in its list are written. #97 closes when its remaining list is done or split. #103 closes last.
+
+**Intentionally left open**
+- #300 (Anthropic and Gemini rows): the repository has no key for either, and the Azure-hosted Claude deployments answer on the
+  Anthropic Messages route; Anthropic stays stub-tested by maintainer decision.
+- #303, dependency review: needs the dependency graph enabled in repository settings (owner action).
+- #101: exploratory, parked.
+- Judge-calibration labels: the maintainer reviews `agents/python/evals/judge_calibration/labels.jsonl`, then
+  `uv run python -m evals.judge_calibration.run --rescore` (no model call) reports whether the judge decision holds.
+
+**Pull request hygiene:** Dependabot is monthly for images, compose files and Actions and weekly for the three package ecosystems
+(#304); the Serilog.AspNetCore major is ignored until migrated. Each lane opens one pull request, and the open count stays small.
+
 ## Consolidated plan, 2026-11-20
 
 Checked against `main` at `f380bba` (#157 DevUI is the newest commit). **This block supersedes the
