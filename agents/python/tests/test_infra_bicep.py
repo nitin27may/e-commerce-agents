@@ -1679,3 +1679,201 @@ def test_the_readme_and_docs_carry_the_button_in_its_own_marked_section() -> Non
     assert "costs money" in section.lower()
     head = readme.split("## ", 1)[0]
     assert "deploytoazurebutton" not in head, "the button must not be in the badge row"
+
+
+# ----------------------------------------------------------------------------------------------
+# Keyless architecture and full teardown.
+# ----------------------------------------------------------------------------------------------
+
+KEYLESS_SECRETS = {"jwt-secret", "agent-shared-secret", "database-url", "seed-staff-password"}
+SURVIVOR_CLASSES = [  # (name in the docs table, text azure-down --dry-run must contain)
+    ("Log Analytics workspace", "Log Analytics workspace"),
+    ("Key Vault", "soft-deleted Key Vault"),
+    ("Foundry", "AIServices account"),
+    ("API Management", "API Management"),
+    ("Subscription deployment records", "deployment records"),
+    ("Budget", "budget"),
+    ("Role assignments", "role assignments"),
+    ("Local azd state", ".azure/"),
+]
+
+
+@pytest.mark.parametrize("fixture", ["free-trial", FREE_TRIAL, "free-trial-portal"])
+def test_free_trial_apps_authenticate_to_the_model_and_the_vault_by_identity(
+    raw_snapshots: dict[str, Resources], snapshots: dict[str, Apps], fixture: str
+) -> None:
+    assert _free_trial_profile()["openAiAuth"] == "identity"
+    secrets = _secret_entries(raw_snapshots[fixture])
+    assert secrets == KEYLESS_SECRETS, secrets
+    for name, app in snapshots[fixture].items():
+        if app["type"] != "Microsoft.App/containerApps" or name in ("ca-redis", "ca-frontend"):
+            continue
+        env = _env(app)
+        assert "AZURE_OPENAI_KEY" not in env and "OPENAI_API_KEY" not in env, name
+        for dropped in ("A2A_IDENTITY_KEY", "OAUTH_SEED_KEY", "AUTH_SIGNING_KEY_ENCRYPTION_KEY"):
+            assert dropped not in env, f"{name}: {dropped}"
+        assert env["AZURE_CLIENT_ID"]["value"], name
+        # Key Vault references are resolved by the user-assigned identity, never by a key.
+        for secret in app["properties"]["configuration"].get("secrets", []):
+            assert secret["identity"] and "keyVaultUrl" in secret, f"{name}: {secret['name']}"
+        # Public GHCR: no registry credential of any kind.
+        assert not app["properties"]["configuration"].get("registries"), name
+
+
+def test_free_trial_model_account_has_local_auth_disabled_and_apps_use_identity(
+    raw_snapshots: dict[str, Resources], snapshots: dict[str, Apps]
+) -> None:
+    account = _one(raw_snapshots["free-trial"], "Microsoft.CognitiveServices/accounts")
+    assert account["properties"]["disableLocalAuth"] is True
+    env = _env(snapshots["free-trial"]["ca-orchestrator"])
+    assert env["AZURE_OPENAI_AUTH"]["value"] == "identity"
+    roles = _role_ids(raw_snapshots["free-trial"])
+    assert OPENAI_USER_ROLE in roles, "the app identity needs Cognitive Services OpenAI User"
+    assert "53ca6127-db72-4b80-b1b0-d745d6d5456d" in roles, "and Azure AI User on the Foundry project"
+    assert "azure-openai-key" not in _secret_entries(raw_snapshots["free-trial"])
+
+
+def test_the_demo_profile_still_uses_the_key_and_local_auth(raw_snapshots: dict[str, Resources]) -> None:
+    account = _one(raw_snapshots["demo-mini-false"], "Microsoft.CognitiveServices/accounts")
+    assert account["properties"]["disableLocalAuth"] is False
+
+
+def test_local_auth_can_be_switched_back_on_for_the_free_trial(tmp_path: Path) -> None:
+    resources = _snapshot_with(tmp_path, "free-trial", "param openAiLocalAuth = 'enabled'\n")
+    account = _one(resources, "Microsoft.CognitiveServices/accounts")
+    assert account["properties"]["disableLocalAuth"] is False
+
+
+def test_the_deployer_gets_the_model_role_for_the_keyless_sanity_call(tmp_path: Path) -> None:
+    deployer = "11111111-2222-3333-4444-555555555555"
+    without = _snapshot_with(tmp_path / "a", "free-trial", "")
+    with_deployer = _snapshot_with(tmp_path / "b", "free-trial", f"param principalId = '{deployer}'\n")
+    mine = [
+        r for r in _of_type(with_deployer, "Microsoft.Authorization/roleAssignments")
+        if r["properties"]["principalId"] == deployer
+    ]  # fmt: skip
+    assert {r["properties"]["roleDefinitionId"].rsplit("/", 1)[-1] for r in mine} == {
+        OPENAI_USER_ROLE,
+        "b86a8fe4-44ce-4948-aee5-eccb2c155cd7",  # Key Vault Secrets Officer
+    }
+    assert all(r["properties"]["principalType"] == "User" for r in mine)
+    assert (
+        len(_of_type(with_deployer, "Microsoft.Authorization/roleAssignments"))
+        == len(_of_type(without, "Microsoft.Authorization/roleAssignments")) + 2
+    )
+
+
+def test_the_sanity_script_and_the_free_trial_profile_retrieve_no_key() -> None:
+    script = (REPO_ROOT / "scripts" / "azure" / "sanity.sh").read_text(encoding="utf-8")
+    for forbidden in ("keys list", "secret show", "api-key", "listKeys", "get-secret", "AZURE_OPENAI_KEY"):
+        assert forbidden not in script, forbidden
+    assert "get-access-token --resource https://cognitiveservices.azure.com" in script
+    profile = json.dumps(_free_trial_profile()).lower()
+    for word in ("password", "secret", "apikey", "api_key", 'key"'):
+        assert word not in profile.replace("storepostgrespassword", "").replace("minimalsecrets", ""), word
+
+
+# ---- teardown --------------------------------------------------------------------------------
+
+
+def _survivor_table() -> list[str]:
+    text = (REPO_ROOT / "docs" / "azure-deployment-sequence.md").read_text(encoding="utf-8")
+    section = text.split("What survives a resource group delete", 1)[1].split("\n## ", 1)[0].split("\n### ", 1)[0]
+    rows = [line for line in section.splitlines() if line.startswith("| ") and not line.startswith("| ---")]
+    return [row.split("|")[1].strip() for row in rows[1:]]
+
+
+@needs_bash
+def test_azure_down_dry_run_lists_every_class_in_the_what_survives_table() -> None:
+    table = _survivor_table()
+    result = _script("scripts/azure-down.sh", "--env", "t1", "--dry-run")
+    assert result.returncode == 0, result.stderr
+    out = result.stderr
+    for doc_name, command_text in SURVIVOR_CLASSES:
+        assert any(doc_name.lower() in row.lower() for row in table), f"docs table lacks {doc_name}"
+        assert command_text.lower() in out.lower(), f"azure-down --dry-run does not mention {command_text}"
+    assert "azd down --environment t1 --purge --force" in out
+    assert "verify-clean.sh --env t1" in out
+    assert "workspace delete" in out and "--force true" in out
+    assert "deployment sub delete" in out and "az keyvault list-deleted" in out
+    # A dry run deletes nothing: every az/azd line is printed with the dry-run marker.
+    assert all(
+        line.startswith(("[dry-run]", "[azure]", "  ", "       ")) for line in out.splitlines() if line.strip()
+    ), out
+
+
+@needs_bash
+def test_azure_down_never_removes_state_it_has_not_verified_and_has_an_opt_out() -> None:
+    script = (REPO_ROOT / "scripts" / "azure-down.sh").read_text(encoding="utf-8")
+    assert "--keep-local" in script and "verify-clean.sh" in script
+    assert script.index('verify-clean.sh --env "$ENV_NAME" --skip-local') < script.index("rm -rf -- ")
+    for app_registration_word in ("az ad app", "federated", "oidc", "setup-oidc"):
+        assert app_registration_word not in script.lower(), app_registration_word
+
+
+def _fake_az(directory: Path, group_exists: str) -> None:
+    fake = directory / "az"
+    fake.write_text(
+        "#!/usr/bin/env bash\n"
+        'case "$*" in\n'
+        '  "account show"*) echo 00000000-0000-0000-0000-000000000000 ;;\n'
+        f'  "group exists"*) echo {group_exists} ;;\n'
+        '  "rest"*) exit 1 ;;\n'
+        '  "deployment sub list"*) ;;\n'
+        '  "apim deletedservice list"*) echo "ProviderError: not registered" >&2; exit 1 ;;\n'
+        "  *) echo '[]' ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+
+
+@needs_bash
+def test_verify_clean_exits_zero_only_when_every_class_is_clean(tmp_path: Path) -> None:
+    path = f"{tmp_path}:/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin"
+    _fake_az(tmp_path, "false")
+    clean = _script("scripts/azure/verify-clean.sh", "--env", "t1", "--skip-local", env={"PATH": path})
+    assert clean.returncode == 0, clean.stdout + clean.stderr
+    classes = ["group", "budget", "vault", "account", "apim", "workspace", "deployments", "roles"]
+    assert all(f"CLEAN  {name}" in clean.stdout for name in classes), clean.stdout
+    _fake_az(tmp_path, "true")
+    left = _script("scripts/azure/verify-clean.sh", "--env", "t1", "--skip-local", env={"PATH": path})
+    assert left.returncode == 1
+    assert "LEFT   group" in left.stdout and "azure-down.sh --env t1 --purge-only" in left.stderr
+
+
+@needs_bash
+def test_verify_clean_is_read_only_and_covers_the_classes_in_dry_run() -> None:
+    script = (REPO_ROOT / "scripts" / "azure" / "verify-clean.sh").read_text(encoding="utf-8")
+    code = "\n".join(line for line in script.splitlines() if not line.lstrip().startswith("#"))
+    assert not re.search(r"\baz\b[^\n]*\s(delete|purge|create|recover)\b", code)
+    for forbidden in ("--method delete", "rm -rf", "azd down"):
+        assert forbidden not in code, forbidden
+    result = _script("scripts/azure/verify-clean.sh", "--env", "t1", "--dry-run")
+    assert result.returncode == 0, result.stderr
+    needles = [
+        "group exists",
+        "budgets/budget-t1",
+        "keyvault list-deleted",
+        "account list-deleted",
+        "deletedservice list",
+        "list-deleted-workspaces",
+        "deployment sub list",
+        "role assignment list",
+        ".azure/t1",
+    ]
+    for needle in needles:
+        assert needle in result.stderr, needle
+
+
+def test_no_app_registration_is_created_anywhere_in_the_azure_scripts() -> None:
+    for path in [
+        *(REPO_ROOT / "scripts" / "azure").glob("*.sh"),
+        REPO_ROOT / "scripts" / "azure-up.sh",
+        REPO_ROOT / "scripts" / "azure-down.sh",
+    ]:
+        text = path.read_text(encoding="utf-8")
+        assert "az ad app" not in text and "az ad sp" not in text, path.name
+    assert not (REPO_ROOT / "scripts" / "azure" / "setup-oidc.sh").exists()
+    guide = (REPO_ROOT / "docs" / "azure-deployment.md").read_text(encoding="utf-8")
+    assert "Do you need an Entra app registration?" in guide

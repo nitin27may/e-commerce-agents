@@ -22,7 +22,7 @@ The ordered steps for a first real deployment on a new personal free-trial subsc
 | PostgreSQL | Flexible Server 16, Burstable `Standard_B1ms`, 32 GB (the minimum), no HA, 7 day backups | The cheapest SKU that runs pgvector |
 | Key Vault | Standard, no purge protection, 7 day soft delete | A purge-protected vault keeps its name for 90 days |
 | Log Analytics | 30 days, **0.1 GB per day cap** (the API minimum is 0.023) | Caps ingestion, so a noisy day cannot cost more than about 0.28 USD |
-| Foundry | AIServices account `ai-<token>`, a Foundry project with the Application Insights connection, `chat` = **`gpt-5.4-nano`** `2026-03-17` (GlobalStandard, 10K TPM) and `embedding` = `text-embedding-3-small` (GlobalStandard, 10K TPM) | The cheapest chat model that is generally available in `eastus2` and has a global standard SKU; the account, the project and idle deployments cost nothing, tokens are billed per use |
+| Foundry | AIServices account `ai-<token>` (**local auth disabled, identity only**), a Foundry project with the Application Insights connection, `chat` = **`gpt-5.4-nano`** `2026-03-17` (GlobalStandard, 10K TPM) and `embedding` = `text-embedding-3-small` (GlobalStandard, 10K TPM) | The cheapest chat model that is generally available in `eastus2` and has a global standard SKU; the account, the project and idle deployments cost nothing, tokens are billed per use |
 | Budget | **7 USD**, alerts at 50, 80 and 100 percent actual and 100 percent forecast, sent to subscription Owners and Contributors | Notifies; it does not stop spending. Raised from 5 for Foundry |
 | Not created | API Management, Managed Redis, ACR, VNet, private endpoints, per-app identities, auth server, MCP servers | Each costs by the hour or needs a feature a trial may lack |
 
@@ -250,7 +250,7 @@ scripts/azure-up.sh --env <env> --location eastus2 --profile free-trial --image-
 scripts/azure-up.sh --env <env> --location eastus2 --profile free-trial --image-tag v1.4.0 --preview
 ```
 
-This runs the prerequisite checks (registering any provider you skipped), creates the **local** azd environment and generates the secrets into `.azure/<env>/.env`, then `azd provision --preview`, which is a what-if. It creates nothing in Azure. Expect about 31 creates: the resource group, Log Analytics, Application Insights, the identity, Key Vault with eight secrets, Postgres with its configuration, database and firewall rule, the environment, nine container apps, the job and the budget. Role assignments show as "Unsupported" (their names are computed at deployment time); that is normal.
+This runs the prerequisite checks (registering any provider you skipped), creates the **local** azd environment and generates the secrets into `.azure/<env>/.env`, then `azd provision --preview`, which is a what-if. It creates nothing in Azure. Expect about 34 creates: the resource group, Log Analytics, Application Insights, the identity, Key Vault with four secrets, Postgres with its configuration, database and firewall rule, the environment, nine container apps, the job and the budget. Role assignments show as "Unsupported" (their names are computed at deployment time); that is normal.
 
 If you would rather read it without azd, `az deployment sub what-if --location eastus2 --parameters infra/ci/free-trial-replay.bicepparam` shows the same shape with CI placeholders, and `az deployment sub validate` with the same arguments checks the template against ARM. Both were run in the rehearsal and succeeded.
 
@@ -347,12 +347,12 @@ scripts/azure/sanity.sh --env <env> --only model    # one check; db | model | tu
 scripts/azure/sanity.sh --resource-group rg-<env>   # after a portal deployment: set E2E_STAFF_PASSWORD to the password you chose
 ```
 
-It proves the chain from the database to a model answer, prints PASS, FAIL or SKIP per check, never prints a key, and exits non-zero if any check failed:
+It proves the chain from the database to a model answer, prints PASS, FAIL or SKIP per check, handles no key, and exits non-zero if any check failed:
 
 | Check | What it does | How it reaches the database without exposing it |
 |---|---|---|
 | `db` | Admin and the seeded customer log in through the frontend; counts products, lists orders, reads the approvals inbox (a late migration) | Read-only GETs through the deployed path, frontend to orchestrator to its connection pool. No firewall rule, no `az containerapp exec`, no SQL client. A count over the API is what is possible with the database private to the apps |
-| `model` | One chat completion on the deployed Foundry endpoint, `max_completion_tokens` 200, key from Key Vault (falls back to `az cognitiveservices account keys list`) | Not the database. SKIP when the environment has no model account |
+| `model` | One chat completion on the deployed Foundry endpoint, `max_completion_tokens` 200, with **your own Entra token** (`az account get-access-token --resource https://cognitiveservices.azure.com`); no key is read, because the account has local authentication disabled | Not the database. Needs the deployer's Cognitive Services OpenAI User role (the template grants it from `AZURE_PRINCIPAL_ID`; in the portal tick `grantDeployerAccess`). SKIP when the environment has no model account |
 | `turn` | "Show me my 3 most recent orders" as the seeded customer through `/api/chat/stream`; needs a route to a specialist, a specialist tool step (which read the database) and an answer | The specialist's own tools read Postgres |
 | `eval` | The first 3 cases of `orchestrator_routing.json` over the http target, `--repeats 1`; needs no case errored and every case routed to a specialist; prints groundedness and token counts (not graded) | The orchestrator's tools |
 
@@ -360,23 +360,88 @@ It proves the chain from the database to a model answer, prints PASS, FAIL or SK
 - **Cost:** about 0.03 USD of tokens (estimate above). **Time:** 3 to 8 minutes (estimate; the first calls wake scaled-to-zero apps, each call waits up to `SANITY_WAIT_SECONDS`, 300).
 - **Verify:** the last lines read `sanity: 4 passed, 0 failed, 0 skipped` and exit code 0 (`echo $?`).
 - **If a check fails:** the script prints what it created (nothing in Azure, which rows) and the command to run that check again (`--only <check>`). The environment stays up and keeps billing; nothing is rolled back automatically. Decide after reading the output: fix and re-run, or tear down.
-- **Failure modes:** `db` empty means stage 8 did not finish (`az containerapp job start ...`); `model` HTTP 400 means the account rejected the model name or API version; `turn` can exceed the 60 second A2A timeout on a cold chain (troubleshooting row 40: run it again once); `eval` on a `--llm replay` deployment reports replay misses.
+- **Failure modes:** `db` empty means stage 8 did not finish (`az containerapp job start ...`); `model` HTTP 401 or 403 means the deployer's role is missing or still propagating (a few minutes), HTTP 400 or 404 the model name or API version; `turn` can exceed the 60 second A2A timeout on a cold chain (troubleshooting row 40: run it again once); `eval` on a `--llm replay` deployment reports replay misses.
 
 **Do not tear down until the maintainer has reviewed the results.** The sanity check ends by saying so; the teardown is stage 13 and is only ever run by hand.
 
-### Stage 13. Teardown (a separate, explicit step)
+### Stage 13. Teardown (explicit, separate, last)
+
+Run it only after you have read the sanity output. Nothing else ever calls it, and the goal of the whole exercise is that when everything works, **everything is deleted and nothing keeps billing or holds a name**.
 
 ```bash
-scripts/azure-down.sh --env <env>            # azd down --purge --force, purges Key Vault and the Foundry account, proves rg-<env> is gone
-az group exists --name rg-<env>              # false
-az keyvault list-deleted --query "[].name" -o tsv                 # empty
-az cognitiveservices account list-deleted --query "[].name" -o tsv  # empty
+scripts/azure-down.sh --env <env> --dry-run   # prints exactly what it will delete, deletes nothing
+scripts/azure-down.sh --env <env>             # deletes, then proves it
+scripts/azure/verify-clean.sh --env <env>     # read only; run it again any time, for example the next day
 ```
 
-- **Deletes:** the resource group and every resource in it, then purges the soft-deleted vault and Foundry account. **Cost:** stops the hourly charges. **Time:** 5 to 15 minutes (estimate).
-- **Verify:** `az group exists` prints `false`. Check Cost Management the next day; costs lag.
+`azure-down.sh` does, in order: force-deletes the Log Analytics workspace (a plain delete leaves it recoverable, holding its name, for 14 days); `azd down --purge --force` (the resource group and everything in it); purges the soft-deleted Key Vault, AIServices account and API Management service; deletes the subscription-scope deployment records of the environment; deletes a subscription-scope budget with the environment's name if one exists; runs `verify-clean.sh`; and only if that is clean removes the local azd state `.azure/<env>`, which holds the generated secrets in clear text (`--keep-local` keeps it). If anything is left it stops, says which class, and keeps the local state so you can run `scripts/azure-down.sh --env <env> --purge-only`.
+
+#### What survives a resource group delete
+
+| Class | Why it survives | What removes it | How `verify-clean.sh` shows it |
+|---|---|---|---|
+| Log Analytics workspace | soft-deleted for 14 days, keeps its name, so redeploying the same environment name fails | `az monitor log-analytics workspace delete --force true` before the group goes | `workspace` |
+| Key Vault | soft-deleted; the name is held until purged. The demo and free-trial profiles have no purge protection, so it can be purged at once; the reference profile turns purge protection on, which cannot be purged early (90 days, not billed, use a new `--env`) | `az keyvault purge` | `vault` (a purge-protected one is reported with its date) |
+| Foundry / AIServices account, its project and connection | the account is soft-deleted and holds its name; the project and the App Insights connection live inside it and go with it | `az cognitiveservices account purge` | `account` |
+| API Management | soft-deleted, only when `deployGateway` was on | `az apim deletedservice purge` | `apim` |
+| Subscription deployment records | `Microsoft.Resources/deployments` at subscription scope are not in the group (no cost) | `az deployment sub delete`, for names `<env>`, `<env>-...` or outputs naming `rg-<env>` | `deployments` |
+| Budget | `Microsoft.Consumption/budgets`. The template deploys it **in the resource group**, so it goes with the group; a copy at subscription scope would not | the group delete; a subscription-scope `budget-<env>` is deleted explicitly | `budget` (both scopes) |
+| Role assignments | the template creates none outside the group; those on the vault, account and identities go with them. Orphans of deleted principals would show as `Unknown` | the group delete | `roles` (anything still scoped under `rg-<env>`) |
+| Local azd state | `.azure/<env>` on your machine, secrets in clear text | `azure-down.sh` removes it last | `local` |
+| Resource provider registrations | not environment state, free | left alone (`az provider unregister` if you want) | not checked |
+
+No Entra app registration, service principal or federated credential is created by anything in this repo's deployment, so there is none to delete ([why](azure-deployment.md#do-you-need-an-entra-app-registration)).
+
+- **Cost:** stops every charge. **Time:** 5 to 20 minutes (estimate; the group delete dominates).
+- **Closing proof:** `verify-clean.sh` prints one line per class and ends with `verify-clean: every class is CLEAN for '<env>'` and exit code 0:
+  ```text
+  CLEAN  group        rg-<env> does not exist
+  CLEAN  budget       budget-<env> does not exist (group and subscription scope)
+  CLEAN  vault        no soft-deleted Key Vault
+  CLEAN  account      no soft-deleted AIServices account
+  CLEAN  apim         no soft-deleted API Management service
+  CLEAN  workspace    no soft-deleted Log Analytics workspace
+  CLEAN  deployments  no subscription deployment record
+  CLEAN  roles        no role assignment under rg-<env>
+  CLEAN  local        no local azd state for <env>
+  ```
+  A query that fails is `LEFT ... could not query`, never `CLEAN`, except where the provider is not registered (then nothing can exist). The format above is what the script printed against an environment that never existed; a real teardown has not been run.
 - **Roll back:** none; redeploy from stage 7.
-- **Failure modes:** [#38](troubleshooting.md#azure-deployment-first-run-failure-catalogue) (`azd down` fails or the environment is not on this machine: `az group delete --name rg-<env> --yes`, then `scripts/azure-down.sh --env <env> --purge-only`). The budget resource is inside the group and is deleted with it.
+- **Failure modes:** [#38](troubleshooting.md#azure-deployment-first-run-failure-catalogue) (`azd down` fails or the environment is not on this machine: `az group delete --name rg-<env> --yes`, then `scripts/azure-down.sh --env <env> --purge-only`), and a soft-deleted workspace from a group deleted by hand (it keeps its name 14 days: recover it with `az monitor log-analytics workspace recover` and delete it with `--force true`, or use another `--env`).
+
+## Keyless: which credentials remain
+
+The free-trial profile uses managed identity wherever the codebase supports it. The apps and the db-init job run as one user-assigned identity:
+
+| Call | How it authenticates |
+|---|---|
+| Apps to the model (Foundry / Azure OpenAI), chat and embeddings | `AZURE_OPENAI_AUTH=identity`: Entra token, the identity holds Cognitive Services OpenAI User on the account; **local authentication is disabled on the account** (`disableLocalAuth`) |
+| Apps to the Foundry project | the identity holds Azure AI User on the project |
+| Container Apps secrets | Key Vault references, resolved by the identity (Key Vault Secrets User, RBAC, no access policies) |
+| Image pulls | anonymous, public GHCR: no registry credential, no ACR |
+| You to the model (sanity check) | your own Entra token; the template grants the deployer Cognitive Services OpenAI User |
+| You to the vault | Key Vault Secrets Officer for the deployer, by role |
+| App registrations | none |
+
+**Override.** `openAiLocalAuth` (azd `AZURE_OPENAI_LOCAL_AUTH`) is `auto` by default: disabled when the apps use identity (free-trial, reference), enabled for the key-based demo profile. `enabled` keeps keys on the account for a tool that cannot use Entra ID.
+
+**Postgres stays on a password.** Entra authentication exists on Flexible Server and `asyncpg` accepts a callable password, but this codebase builds its connections from one static `DATABASE_URL` in at least eight Python entry points (`shared/db.py`, `shared/readiness.py`, `shared/checkpoint_storage.py`, the outbox worker, both MCP servers, `auth_server`, the migrate, seed and db-init scripts) and the .NET `DatabasePool`, and the migrations would have to run as an Entra role. That is a code change across both stacks and a new image release, and the pinned `v1.4.0` images cannot do it. So the admin password remains, as a generated secret that is never shown: the template generates it (azd: the preprovision hook; portal: a parameter default), it is stored only inside the Key Vault secret `database-url` (the free-trial profile drops the separate `postgres-admin-password` copy, which nothing read), and the apps read it by Key Vault reference. azd also keeps it in `.azure/<env>/.env`, in clear text, until teardown removes that directory.
+
+Every secret the free-trial deployment still contains, and whether it can go:
+
+| Secret (Key Vault name) | What it protects | Remove or derive? |
+|---|---|---|
+| Postgres admin password (inside `database-url`) | the database | Not removable now: needs Entra database auth in both stacks and a new image (above). Generated, never printed |
+| `jwt-secret` | signs user access tokens (the app's own HS256 auth server; there is no Entra login) | Not removable. It could be derived from another root secret, but that only moves the secret |
+| `agent-shared-secret` | `X-Agent-Secret` between the orchestrator and the specialists; also the root of the signed user-context token key | Not removable without replacing the service-to-service scheme (an app change); the identity-token mode already derives its key from it |
+| `seed-staff-password` | the seeded admin, support and seller logins; read only by `job-db-init` | You choose it. Removable after the first successful bootstrap, but a re-run of the job needs it. The seeded customers' passwords are public by design |
+| *Dropped in this profile:* `azure-openai-key` | the model account key | Gone: identity auth, local auth disabled |
+| *Dropped:* `postgres-admin-password` | a duplicate of the password in `database-url` | Gone |
+| *Dropped:* `a2a-identity-key` | A2A user-context token key | Gone: `A2A_IDENTITY=both` falls back to the agent secret. Needed distinct only for `token` mode |
+| *Dropped:* `oauth-seed-key`, `auth-signing-key-encryption-key` | the optional OAuth auth server | Gone unless `deployAuthServer` is on (they are read only with `AUTH_MODE=oauth`) |
+| *Only with `--llm openai`:* `llm-api-key` | your external model endpoint | Not removable: that provider has no Azure identity |
+
+Platform-held keys outside the repo and the vault: the Container Apps environment holds the Log Analytics shared key to ship console logs (the `log-analytics` destination needs it; sending through diagnostic settings would avoid it, unverified here), and the Application Insights connection string (an instrumentation key, an identifier rather than an access secret) is used by the managed OpenTelemetry agent and by the Foundry project's tracing connection. Whether App Insights can be switched to Entra-only ingestion with the managed agent is unverified, so it is left on.
 
 ## The portal button instead of azure-up.sh
 
@@ -389,7 +454,7 @@ Run against an empty new subscription, nothing created. Classified as the task a
 | Finding | Class | What it means |
 |---|---|---|
 | The template, its modules and every fixture build and lint clean (Bicep 0.49.2) | none | |
-| `az deployment sub validate` and `what-if` succeeded for `free-trial` (39 changes: Foundry account, project, `chat` `gpt-5.4-nano`, `embedding`, budget 7), `free-trial-replay` (31) and `free-trial-openai` (32), and for the compiled `infra/azuredeploy.json` with only the required portal parameters (39), while 9 of 11 providers were unregistered | none | Neither command checks registration, quota or policy, so a clean result does not predict a clean deployment |
+| `az deployment sub validate` and `what-if` succeeded for `free-trial` (34 changes: Foundry account with local auth disabled, project, `chat` `gpt-5.4-nano`, `embedding`, budget 7, four Key Vault secrets), `free-trial-replay` (27) and `free-trial-openai` (28), and for the compiled `infra/azuredeploy.json` with the required portal parameters plus `grantDeployerAccess` (36; the deployer's two role assignments resolve through `deployer().objectId`), while 9 of 11 providers were unregistered | none | Neither command checks registration, quota or policy, so a clean result does not predict a clean deployment |
 | `Microsoft.App`, `OperationalInsights`, `Insights`, `DBforPostgreSQL`, `KeyVault`, `ManagedIdentity`, `CognitiveServices`, `ContainerRegistry`, `Network` were not registered | permission (the maintainer registers them, stage 3) | `az containerapp list-usages` failed with a registration error until `Microsoft.App` is registered |
 | `az cognitiveservices usage list` returned an empty list | quota (unknown) | Empty because the provider is unregistered; the TPM quota for `gpt-5.4-nano` and `text-embedding-3-small` can only be read after stage 3. A new subscription often has none |
 | `az cognitiveservices model list --location eastus2`: `gpt-5.4-nano` `2026-03-17`, `gpt-5-nano`, `gpt-5.1` are GenerallyAvailable with GlobalStandard; `gpt-4.1-mini`, `gpt-4.1-nano` are `Legacy`, `gpt-4o-mini` is `Deprecating` | quota | The model exists; whether this subscription may deploy it is the unread quota |

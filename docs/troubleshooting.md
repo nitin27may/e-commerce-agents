@@ -145,7 +145,7 @@ the Aspire container. See [telemetry.md](./telemetry.md).
 
 ## Azure deployment: first-run failure catalogue
 
-Forty-nine ways a first `scripts/azure-up.sh` goes wrong, and what already guards against each. None of this has run against a real subscription yet ([azure-deployment.md](azure-deployment.md) lists the assumptions), so the guards are the intent, not a track record. When one fires, the message names the fix.
+Fifty-one ways a first `scripts/azure-up.sh` goes wrong, and what already guards against each. None of this has run against a real subscription yet ([azure-deployment.md](azure-deployment.md) lists the assumptions), so the guards are the intent, not a track record. When one fires, the message names the fix.
 
 | # | Failure | Symptom | Guard |
 |---|---|---|---|
@@ -194,10 +194,12 @@ Forty-nine ways a first `scripts/azure-up.sh` goes wrong, and what already guard
 | 43 | Logs stop mid-day | no new rows in Log Analytics until midnight UTC | the 0.1 GB/day cap is reached; raise `dailyQuotaGb` in the profile (cost 2.76 USD per GB) or wait. Use `az containerapp logs show` for live logs meanwhile |
 | 44 | Budget alert arrives and spending continues | an email at 50 percent, the apps still run | a budget only notifies. Run `scripts/azure-down.sh --env <env>` once you have reviewed; idle, the profile costs about 1.4 USD a day |
 | 45 | `sanity.sh` model check answers HTTP 400 or 404 | `DeploymentNotFound`, or "unsupported parameter" for `gpt-5.4-nano` | the deployment is named `chat`; check `az cognitiveservices account deployment list`. An API version the model rejects: `azd env set AZURE_OPENAI_API_VERSION <newer>` and run `azd provision` again. The apps call the same endpoint, so fix it before chatting |
-| 46 | `sanity.sh` cannot read the model key | "could not read the key" | the deployer reads Key Vault only when azd passed a principal id (a portal deployment does not); the script then falls back to `az cognitiveservices account keys list`, which needs Contributor on the account. Without either, the `model` check FAILs and the others still run |
+| 46 | `sanity.sh` model check answers 401 or 403 | the Entra token is refused by the account | the deployer needs Cognitive Services OpenAI User on the account; the template grants it from the azd principal id (portal: set `grantDeployerAccess`). A new assignment takes a few minutes. The account has local auth disabled, so no key is a fallback |
 | 47 | Portal deployment finished but logins fail and `/ready` answers 503 | the frontend loads, every API call 502 or 503 | nothing starts `job-db-init` without azd: run the `DB_INIT_START_COMMAND` output (`az containerapp job start --name job-db-init --resource-group rg-<env>`) |
 | 48 | Portal deployment: the frontend answers 403 | `ipSecurityRestrictions` denies your address | `deployerIp` was left empty, so the allow-list is `192.0.2.1/32` (nobody). Deploy again with your address, or `publicAccess` `open` for a throwaway test |
 | 49 | Redeploying from the portal broke the database login | apps crash-loop on `password authentication failed` after a second deployment | without azd the generated secrets are parameter defaults, so a second deployment of the same environment generates and applies new ones; the job and apps pick them up on their next revision, a running database session does not. Use azd for upgrades, or delete the resource group and start again |
+| 50 | Redeploying with the same `--env` after a teardown fails on the workspace or vault name | `WorkspaceNameInSoftDeleteState`, or `VaultAlreadyExists` | `azure-down.sh` force-deletes the workspace and purges the vault; if the group was deleted by hand run `scripts/azure-down.sh --env <env> --purge-only`, then `scripts/azure/verify-clean.sh --env <env>` shows what holds the name |
+| 51 | The apps cannot call the model: 401 or 403 from the account | every chat turn fails with an authorization error | the account has local auth disabled, so only the identity works: check the app identity holds Cognitive Services OpenAI User on the account and `AZURE_OPENAI_AUTH=identity` (and `AZURE_CLIENT_ID`) are set on the app; or deploy with `openAiLocalAuth=enabled` and the key |
 
 Other things to try first: `az containerapp revision list --name ca-orchestrator --resource-group rg-<env> -o table` for revision health, `az containerapp logs show --name ca-orchestrator --resource-group rg-<env> --follow false`, and `azd env get-values` for what the hooks saw (it contains secrets; do not paste it).
 

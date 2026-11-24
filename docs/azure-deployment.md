@@ -68,6 +68,10 @@ scripts/azure-down.sh --env demo1
 
 `azure-up` runs `scripts/azure/prereqs.sh`, creates the azd environment, then `azd provision` (the template declares no services, so `azd up` would add nothing). The azd hooks do the rest: `preprovision` generates secrets and records your IP, `postprovision` runs the database job, prints the login and runs the smoke test. The frontend is reachable **only from your public IP** unless you pass `--public-open` or `--allowed-ips`. The admin, support and seller accounts get a generated password (`azd env get-value SEED_STAFF_PASSWORD`); customers keep the published demo passwords, so keep the frontend restricted.
 
+## Do you need an Entra app registration?
+
+No. Not for the application: it signs users in with its own JWT auth server (no Entra login), service-to-service calls use the managed identity, and the images are public on GHCR. Not for a local deployment (`azd` and `scripts/azure-up.sh` run as the signed-in user) and not for the portal button (it runs as you). The only thing that would use an app registration is the optional GitHub Actions deploy workflow `.github/workflows/azure.yml`; if you want that, the comment block at the top of that file describes the federated credential (`repo:<owner>/<repo>:environment:azure-deploy`, no client secret) you would create by hand. Nothing in `scripts/` creates or deletes one, so teardown has none to remove.
+
 ## Deploy to Azure button
 
 `infra/azuredeploy.json` is `infra/main.bicep` compiled (`bicep build main.bicep --outfile azuredeploy.json`, run from `infra/`). It is generated and committed so the portal can read it; `test_azuredeploy_json_is_a_fresh_build_of_main_bicep` fails when it is stale (it ignores Bicep's own version stamp). The README button is:
@@ -229,6 +233,8 @@ Images come from `ghcr.io/nitin27may/e-commerce-agents/<service>:<imageTag>`. Th
 
 The chat model is the profile's choice unless `AZURE_CHAT_MODEL` and `AZURE_CHAT_MODEL_VERSION` are set (set both): `chatModelName` and `chatModelVersion` are empty by default and the profile fills them (demo and reference `gpt-5.1`, free-trial `gpt-5.4-nano`). The Foundry project is on when the profile says so or `deployFoundryProject` is true.
 
+The free-trial profile is keyless where the code allows (identity to the model, `disableLocalAuth` on the account, Key Vault references, public images); `openAiLocalAuth` overrides it. Postgres keeps a generated password. Every remaining secret and the reason is in [the keyless section](azure-deployment-sequence.md#keyless-which-credentials-remain). The portal button gets the same roles for the deployer only if you tick `grantDeployerAccess` (azd passes your principal id itself).
+
 `scripts/azure-up.sh --profile free-trial [--llm replay|openai --llm-base-url ...] [--preview]`; the key comes from `LLM_API_KEY`, never an argument. After a deployment, `scripts/azure/sanity.sh` proves the chain end to end and leaves everything up for you to review ([sequence, stage 12](azure-deployment-sequence.md)). The PowerShell mirrors do not have these options.
 
 Cost (estimates, not measured): demo roughly 120 to 380 USD a month, about 0.02 to 0.03 USD per chat turn; reference 500 to 800.
@@ -251,6 +257,7 @@ Set by `azure-up` or by hand with `azd env set`.
 |---|---|---|
 | `AZURE_LOCATION`, `AZURE_OPENAI_LOCATION` | required, location | region for everything; region for the model account |
 | `DEPLOY_PROFILE` | `demo` | `demo`, `reference` or `free-trial` |
+| `AZURE_OPENAI_LOCAL_AUTH`, `GRANT_DEPLOYER_ACCESS` | `auto`, `false` | `auto` disables key auth on the account when the apps use identity (`enabled`/`disabled` override); the second grants the deploying person the vault and model roles when no `AZURE_PRINCIPAL_ID` is passed (portal) |
 | `DEPLOY_OPENAI` and `EXTERNAL_LLM_*` | `true`, replay | skip the Azure OpenAI account and name another provider; see Profiles |
 | `IMAGE_TAG` | none | pinned GHCR tag, `vX.Y.Z` or `sha-<7>` |
 | `PUBLIC_ACCESS` | `restricted` | `open` lets anyone reach the frontend |
