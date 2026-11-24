@@ -1,10 +1,10 @@
 {
-  "avg_groundedness": 0.7923,
+  "avg_groundedness": 0.9557,
   "avg_correctness": 0.9655,
   "avg_completeness": 0.8893,
-  "overall_score": 0.881,
+  "overall_score": 0.9463,
   "total_tokens_in": 235814,
-  "total_tokens_out": 3822,
+  "total_tokens_out": 4319,
   "agent_name": "pricing-promotions",
   "dataset_path": "evals/datasets/live/pricing_promotions.live.json",
   "setup": {
@@ -30,9 +30,9 @@
   "dataset_cases": 29,
   "live": true,
   "recorded_on": "2026-11-24",
-  "passed_cases": 25,
+  "passed_cases": 28,
   "total_cases": 29,
   "judge_unavailable_cases": 1,
-  "estimated_cost_usd": 0.5022,
+  "estimated_cost_usd": 0.5062,
   "caveat": "Live reference run: k=1, single model (gpt-4.1), judge azure:gpt-5.4-mini, spread unknown (one repeat). A snapshot of one sitting, not a quality guarantee, and not comparable with the replay baselines."
 }

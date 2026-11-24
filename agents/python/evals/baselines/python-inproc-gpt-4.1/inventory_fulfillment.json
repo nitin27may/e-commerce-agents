@@ -1,10 +1,10 @@
 {
-  "avg_groundedness": 0.9655,
+  "avg_groundedness": 1.0,
   "avg_correctness": 0.9655,
-  "avg_completeness": 0.7786,
-  "overall_score": 0.9281,
-  "total_tokens_in": 293173,
-  "total_tokens_out": 5781,
+  "avg_completeness": 0.7897,
+  "overall_score": 0.9441,
+  "total_tokens_in": 301468,
+  "total_tokens_out": 5599,
   "agent_name": "inventory-fulfillment",
   "dataset_path": "evals/datasets/live/inventory_fulfillment.live.json",
   "setup": {
@@ -30,9 +30,9 @@
   "dataset_cases": 29,
   "live": true,
   "recorded_on": "2026-11-24",
-  "passed_cases": 27,
+  "passed_cases": 28,
   "total_cases": 29,
   "judge_unavailable_cases": 0,
-  "estimated_cost_usd": 0.6326,
+  "estimated_cost_usd": 0.6477,
   "caveat": "Live reference run: k=1, single model (gpt-4.1), judge azure:gpt-5.4-mini, spread unknown (one repeat). A snapshot of one sitting, not a quality guarantee, and not comparable with the replay baselines."
 }
