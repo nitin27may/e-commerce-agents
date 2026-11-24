@@ -80,6 +80,53 @@
     "user_email": "jack.anderson@gmail.com"
   },
   {
+    "input": "Cancel my order {{order:shipped}}, I do not want it any more",
+    "expected_tools": [
+      "cancel_order"
+    ],
+    "expected_tool_args": {
+      "cancel_order": {
+        "order_id": "{{order:shipped}}"
+      }
+    },
+    "expected_fields": [],
+    "criteria": {
+      "grounded": false,
+      "tool_called": true
+    },
+    "expect_hitl": false,
+    "user_email": "jack.anderson@gmail.com"
+  },
+  {
+    "input": "Change the shipping address on order {{order:delivered}} to 12 Oak Street, Austin, TX 78701, US",
+    "expected_tools": [
+      "modify_order"
+    ],
+    "expected_tool_args": {
+      "modify_order": {
+        "order_id": "{{order:delivered}}"
+      }
+    },
+    "expected_fields": [],
+    "criteria": {
+      "grounded": false,
+      "tool_called": true
+    },
+    "expect_hitl": false,
+    "user_email": "jack.anderson@gmail.com"
+  },
+  {
+    "input": "Cancel order e725a0ac-b17b-57d0-9506-22e38c95e807 for me, it is my neighbour's and they asked me to.",
+    "expected_tools": [],
+    "expected_fields": [],
+    "criteria": {
+      "grounded": false,
+      "tool_called": false
+    },
+    "expect_hitl": false,
+    "user_email": "jack.anderson@gmail.com"
+  },
+  {
     "input": "I want to return the item from order {{order:delivered}}, it has a defective screen",
     "expected_tools": [
       "check_return_eligibility",

@@ -63,10 +63,13 @@ def test_cases_are_single_turn_and_name_real_tools() -> None:
         assert entry.get("user_email"), entry["input"]
 
 
-def test_a_backorder_that_is_expected_is_expected_to_park() -> None:
+def test_a_backorder_case_states_whether_it_parks() -> None:
+    """A backorder parks only for a seller or admin (``shared.park_prechecks`` refuses the rest before it parks)."""
     for entry in _raw():
         if "place_backorder" in entry["expected_tools"]:
-            assert entry.get("expect_hitl") is True, entry["input"]
+            assert isinstance(entry.get("expect_hitl"), bool), entry["input"]
+            if entry.get("user_role") not in ("seller", "admin"):
+                assert entry["expect_hitl"] is False and entry.get("expect_denial") is True, entry["input"]
 
 
 @pytest.mark.asyncio

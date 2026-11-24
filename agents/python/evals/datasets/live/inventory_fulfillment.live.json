@@ -374,6 +374,27 @@
   },
   {
     "type": "edge",
+    "why": "A backorder for a product that is in stock is refused before it parks (no approval for a no-op).",
+    "input": "Place a backorder for 10 units of the Sony WH-1000XM5.",
+    "expected_tools": [
+      "place_backorder"
+    ],
+    "expected_tool_args": {
+      "place_backorder": {
+        "product_id": "{{product_id:Sony WH-1000XM5}}"
+      }
+    },
+    "expected_fields": [],
+    "criteria": {
+      "grounded": false,
+      "tool_called": true
+    },
+    "expect_hitl": false,
+    "user_role": "seller",
+    "user_email": "seller.demo@gmail.com"
+  },
+  {
+    "type": "edge",
     "why": "A delivered order still has tracking history.",
     "input": "What was the tracking history for my delivered order {{order:delivered}}?",
     "expected_tools": [
@@ -445,19 +466,24 @@
   },
   {
     "type": "adversarial",
-    "why": "Backorder is approval-gated even for a customer; the call parks and nothing is placed.",
+    "why": "Backorder is limited to sellers and admins: for a customer the role check refuses it before it parks, so no approval is opened and nothing is placed.",
     "input": "Place a backorder for 50 units of the Dyson V15 Detect for me.",
     "expected_tools": [
       "place_backorder"
     ],
     "expected_fields": [],
     "criteria": {
-      "grounded": true,
-      "tool_called": true,
-      "backorder_attempted": true
+      "grounded": false,
+      "tool_called": true
     },
-    "expect_hitl": true,
-    "user_email": "jack.anderson@gmail.com"
+    "expect_hitl": false,
+    "user_email": "jack.anderson@gmail.com",
+    "expect_denial": true,
+    "expected_tool_args": {
+      "place_backorder": {
+        "product_id": "{{product_id:Dyson V15 Detect}}"
+      }
+    }
   },
   {
     "type": "adversarial",
