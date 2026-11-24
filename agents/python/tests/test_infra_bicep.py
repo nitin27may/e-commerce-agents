@@ -1048,6 +1048,61 @@ def test_azure_up_refuses_ghcr_with_a_source_build_and_a_floating_tag(args: list
 
 
 @needs_bash
+@pytest.mark.parametrize(
+    ("tag", "accepted"),
+    [
+        ("sha-a130ca5", True),
+        ("v1.5.0", True),
+        ("v1.5.0-rc.1", True),
+        ("sha-a130ca", False),
+        ("sha-A130CA5", False),
+        ("main", False),
+        ("latest", False),
+        ("1.5.0", False),
+        ("stable", False),
+    ],
+)
+def test_azure_up_accepts_only_an_immutable_image_tag(tag: str, accepted: bool) -> None:
+    assert BASH is not None
+    result = subprocess.run(
+        [
+            BASH,
+            "scripts/azure-up.sh",
+            "--env",
+            "t1",
+            "--location",
+            "eastus2",
+            "--profile",
+            "free-trial",
+            "--image-tag",
+            tag,
+            "--dry-run",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+        cwd=REPO_ROOT,
+    )
+    assert (result.returncode == 0) is accepted, result.stderr[-400:]
+
+
+@needs_bash
+def test_azure_up_free_trial_needs_an_explicit_image_tag() -> None:
+    assert BASH is not None
+    result = subprocess.run(
+        [BASH, "scripts/azure-up.sh", "--env", "t1", "--location", "eastus2", "--profile", "free-trial", "--dry-run"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+        cwd=REPO_ROOT,
+    )
+    assert result.returncode != 0
+    assert "--image-tag" in result.stdout + result.stderr
+
+
+@needs_bash
 def test_preprovision_holds_the_apps_back_until_the_registry_has_the_tag(tmp_path: Path) -> None:
     store = tmp_path / "azd.env"
     store.write_text(
@@ -1250,7 +1305,7 @@ def _free_trial_profile() -> dict[str, Any]:
 
 def test_free_trial_profile_is_the_smallest_shape_the_template_allows() -> None:
     profile = _free_trial_profile()
-    assert profile["budget"]["monthlyAmount"] == 7
+    assert profile["budget"]["monthlyAmount"] == 10
     postgres = profile["postgres"]
     assert (postgres["tier"], postgres["skuName"], postgres["storageSizeGB"]) == ("Burstable", "Standard_B1ms", 32)
     assert postgres["highAvailability"] == "Disabled" and postgres["geoRedundantBackup"] == "Disabled"
@@ -1287,11 +1342,11 @@ def test_free_trial_deploys_nothing_that_bills_by_the_hour_beyond_postgres(
 
 
 @pytest.mark.parametrize("fixture", FREE_TRIAL_FIXTURES)
-def test_free_trial_budget_is_seven_with_three_actual_alerts_and_a_forecast(
+def test_free_trial_budget_is_ten_with_three_actual_alerts_and_a_forecast(
     raw_snapshots: dict[str, Resources], fixture: str
 ) -> None:
     budget = _one(raw_snapshots[fixture], "Microsoft.Consumption/budgets")["properties"]
-    assert budget["amount"] == 7
+    assert budget["amount"] == 10
     notifications = budget["notifications"]
     assert {k: v["threshold"] for k, v in notifications.items()} == {
         "actual": 50,

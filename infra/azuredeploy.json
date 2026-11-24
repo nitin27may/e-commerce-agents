@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.49.2.45890",
-      "templateHash": "16623086031426278046"
+      "templateHash": "3309525551772866064"
     }
   },
   "parameters": {
@@ -453,7 +453,7 @@
         "miniCapacity": 10
       },
       "budget": {
-        "monthlyAmount": 7,
+        "monthlyAmount": 10,
         "alertThresholdPercent": 50,
         "additionalActualThresholds": [
           80,

@@ -92,12 +92,19 @@ if [ -z "$image_tag" ] && [ "$BUILD_FROM_SOURCE" = true ]; then
     if [ -n "$(git status --porcelain 2>/dev/null || true)" ]; then image_tag="${image_tag}-dirty$(date +%s)"; fi
     log "image tag: $image_tag (source build; override with --image-tag)"
 fi
+if [ -z "$image_tag" ] && [ "$PROFILE" = free-trial ]; then
+    # The newest release tag lags main; a first trial run must name exactly what it pulls.
+    die "the free-trial profile needs an explicit --image-tag sha-<7> (the main commit whose images you want) or vX.Y.Z"
+fi
 if [ -z "$image_tag" ]; then
     image_tag="$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || true)"
     [ -n "$image_tag" ] || die "no --image-tag given and no vX.Y.Z git tag found. Pass --image-tag <vX.Y.Z or sha-xxxxxxx>."
     log "image tag: $image_tag (latest git tag; override with --image-tag)"
 fi
-case "$image_tag" in latest|main) die "--image-tag $image_tag floats; use vX.Y.Z or sha-<7>" ;; esac
+case "$image_tag" in
+    v[0-9]*.[0-9]*.[0-9]*|sha-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]|src-*) ;;
+    *) die "--image-tag $image_tag is not an immutable tag; use vX.Y.Z or sha-<7 hex> (latest and main float)" ;;
+esac
 
 prereq_args=(--location "$LOCATION" --profile "$PROFILE" --env "$ENV_NAME")
 [ -z "$OPENAI_LOCATION" ] || prereq_args+=(--openai-location "$OPENAI_LOCATION")

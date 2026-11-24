@@ -25,7 +25,7 @@
     "miniCapacity": 10
   },
   "budget": {
-    "monthlyAmount": 7,
+    "monthlyAmount": 10,
     "alertThresholdPercent": 50,
     "additionalActualThresholds": [
       80,

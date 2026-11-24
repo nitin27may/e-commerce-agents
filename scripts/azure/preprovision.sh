@@ -43,7 +43,10 @@ image_tag="$(env_get IMAGE_TAG)"
 if [ -z "$image_tag" ]; then
     die "IMAGE_TAG is not set. Pin a published tag: azd env set IMAGE_TAG v1.4.0   (or sha-<7>; see docs/releasing.md). scripts/azure-up.sh --image-tag does this for you."
 fi
-case "$image_tag" in latest|main) die "IMAGE_TAG=$image_tag floats. Use a release tag (vX.Y.Z) or sha-<7>." ;; esac
+case "$image_tag" in
+    v[0-9]*.[0-9]*.[0-9]*|sha-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]|src-*) ;;
+    *) die "IMAGE_TAG=$image_tag is not an immutable tag. Use a release tag (vX.Y.Z) or sha-<7 hex>; latest and main float." ;;
+esac
 
 # ---- 3. deployer IP --------------------------------------------------------------------------
 public_access="$(env_get PUBLIC_ACCESS)"

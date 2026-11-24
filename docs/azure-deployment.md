@@ -12,7 +12,7 @@ The Bicep in `infra/` is hand-written; it is not generated from the .NET Aspire 
 
 A checklist for a clean subscription. It has not been run end to end yet: [what was and was not verified](#assumptions-to-confirm-on-a-real-subscription).
 
-**On a new personal free trial with a small budget (about 7 USD), use the [free-trial profile and the ordered deployment sequence](azure-deployment-sequence.md)** (`--profile free-trial`): every stage with its cost, time, check, the final sanity check and the teardown. The rest of this page describes the demo and reference profiles. There is also a [Deploy to Azure button](#deploy-to-azure-button).
+**On a new personal free trial with a small budget (about 10 USD), use the [free-trial profile and the ordered deployment sequence](azure-deployment-sequence.md)** (`--profile free-trial`): every stage with its cost, time, check, the final sanity check and the teardown. The rest of this page describes the demo and reference profiles. There is also a [Deploy to Azure button](#deploy-to-azure-button).
 
 **You need**
 
