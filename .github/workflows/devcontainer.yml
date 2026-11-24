@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install the Dev Containers CLI
         run: npm install --global @devcontainers/cli@0.91.0
       - name: Build the image

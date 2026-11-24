@@ -59,7 +59,7 @@ jobs:
       dist_name: ${{ steps.resolve.outputs.dist_name }}
       version: ${{ steps.resolve.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # the main-ancestry check below needs history
 
