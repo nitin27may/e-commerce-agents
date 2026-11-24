@@ -18,10 +18,10 @@
       "value": "${DEPLOY_PROFILE=demo}"
     },
     "chatModelName": {
-      "value": "${AZURE_CHAT_MODEL=gpt-5.1}"
+      "value": "${AZURE_CHAT_MODEL=}"
     },
     "chatModelVersion": {
-      "value": "${AZURE_CHAT_MODEL_VERSION=2025-11-13}"
+      "value": "${AZURE_CHAT_MODEL_VERSION=}"
     },
     "deployMiniModel": {
       "value": "${DEPLOY_MINI_MODEL=false}"

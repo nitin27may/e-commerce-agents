@@ -4,16 +4,18 @@ targetScope = 'subscription'
 @maxLength(32)
 @description('azd environment name; names the resource group and seeds unique names.')
 param environmentName string
-@description('Primary region.')
-param location string
+@description('Primary region. Defaults to the region chosen for the deployment itself, which the portal asks for.')
+param location string = deployment().location
 @description('Region for the Azure OpenAI account. Defaults to location.')
 param openAiLocation string = location
 @description('Deploying user object id (AZURE_PRINCIPAL_ID); empty in CI.')
 param principalId string = ''
 @allowed(['demo', 'reference', 'free-trial'])
 param profile string = 'demo'
-param chatModelName string = 'gpt-5.1'
-param chatModelVersion string = '2025-11-13'
+@description('Chat model. Empty: the profile decides (demo and reference gpt-5.1, free-trial gpt-5.4-nano).')
+param chatModelName string = ''
+@description('Version of the chat model. Set it together with chatModelName.')
+param chatModelVersion string = ''
 param deployMiniModel bool = false
 @description('Azure OpenAI API version the apps call. gpt-5.1 tool calling on the Responses API is unverified; see docs/azure-deployment.md.')
 param openAiApiVersion string = '2025-04-01-preview'
@@ -72,19 +74,26 @@ param gatewayDefaultTokensPerMinute int = 60000
 @description('Per-agent tokens per minute by agent name, e.g. { orchestrator: 120000 }.')
 param gatewayAgentTokenLimits object = {}
 
+// azd (scripts/azure/preprovision.sh) generates every secret below and passes it in. Without azd (the portal's Deploy to
+// Azure button) the defaults generate them: newGuid() is only legal in a parameter default, which is why they are
+// defaults. A re-deployment of the same environment generates NEW values (the Postgres password and every Key Vault
+// secret rotate); use azd for upgrades, which keeps them. Only seedStaffPassword has no default: it is the admin,
+// support and seller login, so the person deploying has to choose and know it.
 @secure()
-param postgresAdminPassword string
+param postgresAdminPassword string = 'Pg1${uniqueString(newGuid())}${toUpper(uniqueString(newGuid()))}'
 @secure()
-param jwtSecret string
+param jwtSecret string = '${newGuid()}${newGuid()}'
 @secure()
-param agentSharedSecret string
+param agentSharedSecret string = '${newGuid()}${newGuid()}'
 @secure()
-param a2aIdentityKey string
+param a2aIdentityKey string = '${newGuid()}${newGuid()}'
 @secure()
-param oauthSeedKey string
+param oauthSeedKey string = '${newGuid()}${newGuid()}'
 @secure()
-param authSigningKeyEncryptionKey string
+param authSigningKeyEncryptionKey string = '${newGuid()}${newGuid()}'
 @secure()
+@minLength(12)
+@description('Login password of the seeded admin, support and seller accounts. Required: nothing generates it for you without azd.')
 param seedStaffPassword string
 
 // ===== BEGIN INFRA-B: reference profile, image source, stack =====
@@ -104,7 +113,11 @@ var profiles = {
   'free-trial': loadJsonContent('profiles/free-trial.json')
 }
 var llmProvider = deployOpenAi ? 'azure' : externalLlmProvider
-var effectiveChatModel = deployOpenAi ? chatModelName : externalLlmModel
+var modelName = empty(chatModelName) ? (cfg.openAi.?chatModelName ?? 'gpt-5.1') : chatModelName
+var modelVersion = empty(chatModelVersion) ? (cfg.openAi.?chatModelVersion ?? '2025-11-13') : chatModelVersion
+// The free-trial profile deploys the Foundry project too; it needs the account, so deployOpenAi=false drops it.
+var foundryOn = deployOpenAi && (deployFoundryProject || (cfg.?deployFoundryProject ?? false))
+var effectiveChatModel = deployOpenAi ? modelName : externalLlmModel
 var cfg = profiles[profile]
 var effectiveOpenAiAuth = openAiAuth == 'auto' ? cfg.openAiAuth : openAiAuth
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
@@ -193,14 +206,14 @@ module openAi 'modules/openai.bicep' = if (deployOpenAi) {
     location: openAiLocation
     tags: tags
     callerPrincipalId: identity.outputs.principalId
-    chatModelName: chatModelName
-    chatModelVersion: chatModelVersion
+    chatModelName: modelName
+    chatModelVersion: modelVersion
     chatCapacity: cfg.openAi.chatCapacity
     embeddingCapacity: cfg.openAi.embeddingCapacity
     deployMiniModel: deployMiniModel
     miniCapacity: cfg.openAi.miniCapacity
     disableLocalAuth: effectiveOpenAiAuth == 'identity'
-    allowProjectManagement: deployFoundryProject
+    allowProjectManagement: foundryOn
     privateOnly: privateNetwork
   }
 }
@@ -346,7 +359,7 @@ module apps 'modules/apps.bicep' = if (deployApps) {
 }
 
 // ---- Foundry project (AZ-2). Appended section; see modules/foundry-project.bicep ----
-module foundryProject 'modules/foundry-project.bicep' = if (deployFoundryProject) {
+module foundryProject 'modules/foundry-project.bicep' = if (foundryOn) {
   scope: rg
   name: 'foundry-project'
   params: {
@@ -440,14 +453,17 @@ output AZURE_CHAT_DEPLOYMENT string = deployOpenAi ? openAi!.outputs.chatDeploym
 output LLM_PROVIDER string = llmProvider
 output AZURE_POSTGRES_FQDN string = postgres.outputs.fqdn
 output APPLICATIONINSIGHTS_NAME string = monitoring.outputs.appInsightsName
-output AZURE_AI_PROJECT_NAME string = deployFoundryProject ? foundryProject!.outputs.name : ''
-output AZURE_AI_PROJECT_ENDPOINT string = deployFoundryProject ? foundryProject!.outputs.endpoint : ''
+output AZURE_AI_PROJECT_NAME string = foundryOn ? foundryProject!.outputs.name : ''
+output AZURE_AI_PROJECT_ENDPOINT string = foundryOn ? foundryProject!.outputs.endpoint : ''
 output AZURE_GATEWAY_ENDPOINT string = deployGateway ? gateway!.outputs.gatewayEndpoint : ''
 output AZURE_APP_IDENTITIES array = deployPerAppIdentities ? appIdentities!.outputs.identities : []
 output AZURE_CONTAINER_APPS_ENVIRONMENT string = cae.outputs.name
 output FRONTEND_URL string = deployApps ? apps!.outputs.frontendUrl : ''
 output ORCHESTRATOR_INTERNAL_URL string = deployApps ? apps!.outputs.orchestratorInternalUrl : ''
 output DB_INIT_JOB_NAME string = deployApps ? apps!.outputs.dbInitJobName : ''
+// Nothing in the template starts the job (a manual Container Apps job has no run-on-create). azd's postprovision hook does;
+// after a portal deployment this one command is the step that makes the app usable.
+output DB_INIT_START_COMMAND string = deployApps ? 'az containerapp job start --name ${apps!.outputs.dbInitJobName} --resource-group ${rg.name}' : ''
 output ADMIN_LOGIN_EMAIL string = 'admin.demo@gmail.com'
 output SUPPORT_LOGIN_EMAIL string = 'support.demo@gmail.com'
 

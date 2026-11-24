@@ -17,14 +17,19 @@
     "allowAzureServices": true
   },
   "openAi": {
+    "chatModelName": "gpt-5.4-nano",
+    "chatModelVersion": "2026-03-17",
     "chatCapacity": 10,
     "embeddingCapacity": 10,
     "miniCapacity": 10
   },
   "budget": {
-    "monthlyAmount": 5,
+    "monthlyAmount": 7,
     "alertThresholdPercent": 50,
-    "additionalActualThresholds": [80, 100]
+    "additionalActualThresholds": [
+      80,
+      100
+    ]
   },
   "containerApps": {
     "minReplicas": 0,
@@ -50,5 +55,6 @@
     "minReplicas": 1,
     "maxReplicas": 1,
     "skuName": ""
-  }
+  },
+  "deployFoundryProject": true
 }
