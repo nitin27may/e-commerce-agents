@@ -391,6 +391,12 @@ class Settings(BaseSettings):
     AUTONOMY_SIMULATOR_ENABLED: bool = False
     # Use this autonomy policy file instead of config/policies/autonomy.yaml (tests, demos with small caps).
     AUTONOMY_POLICY_PATH: str = ""
+    # The ops-responder (#299): after the engine decides, a model drafts the customer-facing message (a short apology or
+    # explanation) from the decision's facts. It only words the message: the amount and the tier are the engine's, the
+    # draft is checked against the decision's facts (amounts, ids, day counts) and a failed check or a model error falls
+    # back to the template. OFF by default; with it off no model is called anywhere in event autonomy. Needs
+    # AUTONOMY_ENABLED and a configured LLM_PROVIDER.
+    AUTONOMY_RESPONDER_ENABLED: bool = False
 
     # ── History compaction (B-15) ────────────────────────────────────
     # Keep only the last N message groups (a user turn with its assistant/tool messages) of the rehydrated

@@ -27,15 +27,27 @@
 #                           never an approval, because approving it would be refused by the same ceiling.
 #   global_per_day          {max_count, max_amount}  every customer, one UTC day
 #
-# `events` maps an event topic to the action it may trigger and the deterministic rule that sizes it: the credit
-# for a delay is the amount of the highest credit_tiers entry whose min_delay_days the delay reaches.
-# Nothing here calls a model.
+# `events` maps an event topic to the action it may trigger and the deterministic rule that sizes it. An action's
+# `kind` says how (default `credit`):
+#
+#   credit            order.shipment_delayed: the credit is the amount of the highest credit_tiers entry whose
+#                     min_delay_days the delay reaches.
+#   price_adjustment  product.price_dropped: every line of a recent order (status eligible, newer than lookback_days)
+#                     for the product is paid (price it was bought at - new price) x quantity back as store credit,
+#                     ONE adjustment per order line, ever. At most max_lines lines per event.
+#   notice            inventory.back_in_stock: customers whose cart still holds the product (touched within
+#                     cart_max_age_days) are told it is back. Money never moves and there is no budget: the bound is the
+#                     audience (an autonomous rule needs `recipients lte N`; an event reaching more people than that
+#                     is logged as no_action for a person to look at) and per_customer_per_day notices per customer.
+#
+# Nothing here calls a model. (An optional responder, AUTONOMY_RESPONDER_ENABLED, only words the customer message of
+# a decision the rules already made; it never sees or changes a tier or an amount. docs/event-autonomy.md.)
 #
 # PLACEHOLDERS: every number in this file is the builder's, not derived from anything. Change a number -> bump
 # policy_version (every decision records the version it was judged by) and extend the golden cases in
 # testdata-autonomy/cases.yaml (a separate folder: the approvals golden cases in testdata/ are also read by the .NET tests).
 
-policy_version: "2026-11-16.1"
+policy_version: "2026-11-24.1"
 
 budgets:
   goodwill_credit:
@@ -43,6 +55,12 @@ budgets:
     per_customer_per_day: { max_count: 1, max_amount: 25.00 }
     per_order_max_count: 1
     global_per_day: { max_count: 20, max_amount: 200.00 }
+
+  price_adjustment:
+    per_action_max_amount: 20.00
+    per_customer_per_day: { max_count: 3, max_amount: 40.00 }
+    per_order_max_count: 5
+    global_per_day: { max_count: 50, max_amount: 400.00 }
 
 actions:
   goodwill_credit:
@@ -66,6 +84,44 @@ actions:
         reason: Outside what the system may do alone
         when: []
 
+  price_adjustment:
+    kind: price_adjustment
+    budget: price_adjustment
+    reversible: true
+    rules:
+      - id: auto-small-adjustment
+        tier: auto
+        reason: A small price adjustment on a purchase of the last 14 days
+        when:
+          - { fact: amount, op: lte, value: 10 }
+          - { fact: days_since_purchase, op: lte, value: 14 }
+          - { fact: drop_percent, op: lte, value: 50 }
+      - id: notify-medium-adjustment
+        tier: auto_notify
+        reason: A mid-size price adjustment on a purchase of the last 14 days; staff are told
+        when:
+          - { fact: amount, op: lte, value: 20 }
+          - { fact: days_since_purchase, op: lte, value: 14 }
+          - { fact: drop_percent, op: lte, value: 50 }
+      - id: default-approval
+        tier: needs_approval
+        reason: Outside what the system may do alone
+        when: []
+
+  back_in_stock_notice:
+    kind: notice
+    reversible: false
+    rules:
+      - id: auto-notice
+        tier: auto_notify
+        reason: A back-in-stock notice to a bounded audience; staff are told once per event
+        when:
+          - { fact: recipients, op: lte, value: 200 }
+      - id: default-approval
+        tier: needs_approval
+        reason: Too many recipients for the system to notify alone
+        when: []
+
 events:
   order.shipment_delayed:
     action: goodwill_credit
@@ -75,3 +131,19 @@ events:
       - { min_delay_days: 2, amount: 5.00 }
       - { min_delay_days: 5, amount: 15.00 }
       - { min_delay_days: 10, amount: 40.00 }
+
+  # product.price_dropped: a customer who bought the product within lookback_days is paid the difference back, up to
+  # the price_adjustment budget. Within 14 days and at most a 50 percent drop acts alone (a bigger drop is more likely
+  # a pricing mistake than a sale, so a person looks); older purchases and bigger amounts ask.
+  product.price_dropped:
+    action: price_adjustment
+    eligible_order_statuses: [confirmed, shipped, out_for_delivery, delivered]
+    lookback_days: 30
+    max_lines: 200
+
+  # inventory.back_in_stock: a notification, no money.
+  inventory.back_in_stock:
+    action: back_in_stock_notice
+    cart_max_age_days: 30
+    max_recipients: 200
+    per_customer_per_day: 2

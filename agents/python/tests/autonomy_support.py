@@ -50,16 +50,96 @@ async def world(pool: asyncpg.Pool) -> World:
     return w
 
 
-async def order(w: World, email: str = CUSTOMER, *, status: str = "shipped", total: str = "80.00") -> uuid.UUID:
+async def order(
+    w: World, email: str = CUSTOMER, *, status: str = "shipped", total: str = "80.00", age_days: int = 0
+) -> uuid.UUID:
     order_id = uuid.uuid4()
     await w.pool.execute(
-        "INSERT INTO orders (id, user_id, status, total, shipping_address) VALUES ($1, $2, $3, $4, '{}'::jsonb)",
+        "INSERT INTO orders (id, user_id, status, total, shipping_address, created_at) "
+        "VALUES ($1, $2, $3, $4, '{}'::jsonb, NOW() - make_interval(days => $5))",
         order_id,
         w.users[email],
         status,
         Decimal(total),
+        age_days,
     )
     return order_id
+
+
+async def product(
+    w: World, name: str = "Widget", *, price: str = "100.00", active: bool = True, stock: int = 0
+) -> uuid.UUID:
+    """A product, with ``stock`` units in one warehouse when given."""
+    product_id = uuid.uuid4()
+    await w.pool.execute(
+        "INSERT INTO products (id, name, description, category, price, is_active) VALUES ($1, $2, 'd', 'c', $3, $4)",
+        product_id,
+        name,
+        Decimal(price),
+        active,
+    )
+    if stock:
+        warehouse = await w.pool.fetchval("SELECT id FROM warehouses LIMIT 1")
+        if warehouse is None:
+            warehouse = await w.pool.fetchval(
+                "INSERT INTO warehouses (name, location, region) VALUES ('East', 'somewhere', 'east') RETURNING id"
+            )
+        await w.pool.execute(
+            "INSERT INTO warehouse_inventory (warehouse_id, product_id, quantity) VALUES ($1, $2, $3)",
+            warehouse,
+            product_id,
+            stock,
+        )
+    return product_id
+
+
+async def line(
+    w: World, order_id: uuid.UUID, product_id: uuid.UUID, *, price: str = "100.00", qty: int = 1
+) -> uuid.UUID:
+    """An order line bought at ``price`` (the price paid, which a later price drop is measured against)."""
+    item_id = uuid.uuid4()
+    await w.pool.execute(
+        "INSERT INTO order_items (id, order_id, product_id, quantity, unit_price, subtotal) "
+        "VALUES ($1, $2, $3, $4, $5, $6)",
+        item_id,
+        order_id,
+        product_id,
+        qty,
+        Decimal(price),
+        Decimal(price) * qty,
+    )
+    return item_id
+
+
+async def cart(w: World, email: str, product_id: uuid.UUID, *, age_days: int = 0) -> None:
+    """The customer's cart holds the product; it was last touched ``age_days`` days ago."""
+    cart_id = await w.pool.fetchval(
+        "INSERT INTO carts (user_id, updated_at) VALUES ($1, NOW() - make_interval(days => $2)) "
+        "ON CONFLICT (user_id) DO UPDATE SET updated_at = EXCLUDED.updated_at RETURNING id",
+        w.users[email],
+        age_days,
+    )
+    await w.pool.execute(
+        "INSERT INTO cart_items (cart_id, product_id, quantity) VALUES ($1, $2, 1) ON CONFLICT DO NOTHING",
+        cart_id,
+        product_id,
+    )
+
+
+def drop(product_id: uuid.UUID, new_price: Any, event_id: str | None = None, **extra: Any) -> dict:
+    """A ``product.price_dropped`` payload."""
+    out: dict[str, Any] = {"product_id": str(product_id), "new_price": str(new_price)}
+    if event_id is not None:
+        out["event_id"] = event_id
+    return {**out, **extra}
+
+
+def restock(product_id: uuid.UUID | str | None, event_id: str | None = None) -> dict:
+    """An ``inventory.back_in_stock`` payload."""
+    out: dict[str, Any] = {"product_id": None if product_id is None else str(product_id)}
+    if event_id is not None:
+        out["event_id"] = event_id
+    return out
 
 
 def payload(order_id: uuid.UUID | str | None, delay_days: Any, event_id: str | None = None, **extra: Any) -> dict:

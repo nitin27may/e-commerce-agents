@@ -271,7 +271,21 @@ export interface AutonomyDecision {
     drew?: { count: number; amount: string } | null;
     usage_before?: { global_count: number; global_amount: string; customer_count: number } | null;
   };
-  input: { event?: { event_id: string; delay_days: number | null }; rule?: string | null };
+  input: {
+    event?: {
+      event_id: string;
+      delay_days?: number | null;
+      product_id?: string;
+      product_name?: string;
+      new_price?: string;
+      line?: { product_name?: string; paid_unit_price?: string; new_price?: string; quantity?: number };
+    };
+    rule?: string | null;
+  };
+  /** The order line a price adjustment is for (#299). */
+  order_item_id?: string | null;
+  /** The customer message the ops-responder drafted, or the template it fell back to; null when none was made. */
+  draft?: { body: string; source: "llm" | "template"; model: string | null; fallback_reason: string | null } | null;
   policy_version: string | null;
   approval_id: string | null;
   approval_status: string | null;
@@ -306,6 +320,9 @@ export interface AutonomyDecisionsResponse {
   simulator_enabled: boolean;
   /** Scenario name -> delay in days; empty unless the simulator is on. */
   scenarios: Record<string, number>;
+  /** Scenario name -> the event it sends (price-drop, back-in-stock); empty unless the simulator is on. */
+  event_scenarios?: Record<string, string>;
+  responder_enabled?: boolean;
 }
 
 export interface NotificationsResponse {
@@ -1362,7 +1379,16 @@ class ApiClient {
   }
 
   simulateAutonomyEvent(scenario: string) {
-    return this.request<{ enqueued: boolean; outbox_id: number | null; event_id: string; order_id: string; delay_days: number }>(
+    return this.request<{
+      enqueued: boolean;
+      outbox_id: number | null;
+      event_id: string;
+      event_type?: string;
+      order_id: string | null;
+      delay_days: number | null;
+      product_id?: string;
+      new_price?: string | null;
+    }>(
       "/api/admin/events/simulate",
       { method: "POST", body: JSON.stringify({ scenario }) },
     );

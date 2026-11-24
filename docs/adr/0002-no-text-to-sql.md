@@ -49,7 +49,7 @@ still stand.
 
 ## Update (2026-11-21)
 
-The 34 tables are the frozen baseline; migrations add 11 more, 45 in all. See
+The 34 tables are the frozen baseline; migrations add 13 more, 47 in all. See
 [database-schema.md](../database-schema.md).
 
 The tool count is now 57, not forty-six: 56 domain tools plus the orchestrator's

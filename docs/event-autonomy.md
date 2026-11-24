@@ -1,9 +1,52 @@
 # Event autonomy
 
-When an event arrives (a shipment running late), the system may act **on its own inside a budget**, and must
-**ask a person outside it**. Python only ([parity row 40](parity-matrix.md); tracked in
-[#94](https://github.com/nitin27may/e-commerce-agents/issues/94)). **Off by default** (`AUTONOMY_ENABLED=false`) and it makes **no model call**:
-the rule is deterministic and the customer text is a template.
+When an event arrives (a shipment running late, a price drop, a product back in stock), the system may act **on its own
+inside a budget**, and must **ask a person outside it**. Python only ([parity row 40](parity-matrix.md); tracked in
+[#94](https://github.com/nitin27may/e-commerce-agents/issues/94) and [#299](https://github.com/nitin27may/e-commerce-agents/issues/299)).
+**Off by default** (`AUTONOMY_ENABLED=false`) and it makes **no model call** unless you also turn on the optional
+`AUTONOMY_RESPONDER_ENABLED` (see [The ops-responder](#the-ops-responder)): the rules are deterministic and the customer text
+is a template.
+
+## Event types
+
+| Topic | Action (`autonomy.yaml`) | Targets | Sized by | Money |
+|---|---|---|---|---|
+| `order.shipment_delayed` | `goodwill_credit` | one order | `credit_tiers`: the delay in days | store credit |
+| `product.price_dropped` | `price_adjustment` | every recent **order line** of the product | `(price paid - new price) x quantity`, read from the line, never from the event | store credit |
+| `inventory.back_in_stock` | `back_in_stock_notice` | every customer whose cart holds the product | not sized | none |
+
+All three go through the same engine: tier rules, then (for money) the budget check and draw under the advisory locks, an
+append-only decision row, `run_once` plus a unique `event_key`, and the same guards (a staff beneficiary is never paid alone,
+the demo tour user is never acted on, the decider is never the subject). The two newer ones **fan out**: one event becomes one
+decision per target, each in its own transaction under `topic:event_id:target`, so a replayed event acts once per target.
+
+**`product.price_dropped`** (payload `product_id`, `new_price`, optional `event_id`). Targets are order lines of orders in an
+eligible status, newer than `lookback_days` (30), bought for more than the new price, at most `max_lines` (200) per event; the
+tour user's lines are never selected. **One adjustment per order line, ever**: a second event for a paid line is
+`no_action: line_already_adjusted` and a reversal does not free the line. The engine checks it under the order lock, and a
+partial unique index (migration 0017) refuses a second paid adjustment on a line even if a bug skipped the check. The order's
+`per_order_max_count` (5) bounds how many of its lines may be adjusted (`no_action: order_adjustment_limit`). Rules: within 14
+days and at most a 50 percent drop, an amount up to 10.00 acts alone (`auto`), up to 20.00 acts alone and tells staff
+(`auto_notify`); anything else, an older purchase, a bigger drop (more likely a pricing mistake than a sale) or a missing fact,
+opens an `autonomous_action` approval. A staff approval pays once for the approval and may only lower the amount.
+
+**`inventory.back_in_stock`** (payload `product_id`, optional `event_id`). A notice, no money and no budget: it is
+`auto_notify` and is bounded by the audience instead. The engine first checks stock itself (`warehouse_inventory` sum above
+zero and the product active; otherwise `no_action: product_not_in_stock`, whatever the event says), then selects carts that still
+hold the product and were touched within `cart_max_age_days` (30). More than `max_recipients` (200) is
+`no_action: recipients_over_cap` for a person to look at (a notice has nothing for the inbox to approve). A customer gets at most
+`per_customer_per_day` (2) notices a UTC day (`no_action: customer_daily_notice_cap`); the read-then-act is serialised by the same
+advisory lock keyed by the action. Staff are skipped (`recipient_is_staff`), the tour user is never selected, and staff get one
+heads-up per event, not one per customer. **There is no wishlist in this repository, so carts are the only audience** (the
+issue also named wishlists).
+
+**Every number is a placeholder** (the `price_adjustment` budget: 20.00 per action, 3 and 40.00 per customer per day, 5 lines per
+order, 50 and 400.00 global per day; the notice limits above). Changing one means bumping `policy_version` and extending
+`testdata-autonomy/cases.yaml`.
+
+The admin simulator sends them: `{"scenario": "price-drop"}` picks the most recent eligible line (a price of 20 or more, no
+decision on it yet) and drops its product 10 percent; `{"scenario": "back-in-stock"}` picks an in-stock product in a recent
+customer cart that the engine has not announced; or give `{"event_type", "product_id", "new_price"}` explicitly.
 
 ## The flow
 
@@ -166,7 +209,7 @@ other path; see *The log is append-only*.
 
 | Route | |
 |---|---|
-| `POST /api/admin/events/simulate` | `{scenario: small\|medium\|large}` or `{order_id, delay_days, event_id?}`. 404 unless `AUTONOMY_ENABLED` **and** `AUTONOMY_SIMULATOR_ENABLED`, for every caller and *before* the role check (a 401/403 would reveal that the route exists on an install that switched it off). A scenario picks the oldest eligible order of a customer with no autonomy activity today and no event queued, so the three land on three customers. Replaying an `event_id` enqueues nothing |
+| `POST /api/admin/events/simulate` | `{scenario: small\|medium\|large}` or `{order_id, delay_days, event_id?}` (delay), `{scenario: price-drop}` or `{event_type: product.price_dropped, product_id, new_price}`, `{scenario: back-in-stock}` or `{event_type: inventory.back_in_stock, product_id}` (#299). 404 unless `AUTONOMY_ENABLED` **and** `AUTONOMY_SIMULATOR_ENABLED`, for every caller and *before* the role check (a 401/403 would reveal that the route exists on an install that switched it off). A scenario picks the oldest eligible order of a customer with no autonomy activity today and no event queued, so the three land on three customers. Replaying an `event_id` enqueues nothing |
 | `GET /api/admin/decisions[?state=&limit=&offset=]` | decisions with state, reasons, the budget each drew on, and today's use per budget. `state` is filtered in SQL over every row (an old `awaiting_approval` decision stays findable); `limit` is at most 200, `offset` pages, `total` counts every match |
 | `POST /api/admin/decisions/{id}/reverse` | admin only; works even when the feature is switched off |
 
@@ -185,7 +228,7 @@ anything; `--attach` drives a stack that is already up. CI runs it as the `flags
 ## Gotchas
 
 - **A flag must be passed through `docker-compose.yml` to be live in a container.** `RETURN_LIFECYCLE_ENABLED` and `MERCHANT_OPS_SCHEDULE_ENABLED` were not, so `RETURN_LIFECYCLE_ENABLED=true ./scripts/dev.sh` left the simulator route a 404 and the worker handlers off until `flag-smoke.sh` booted them together.
-- **Everything is off by default.** `AUTONOMY_ENABLED` gates the engine and the simulator additionally needs `AUTONOMY_SIMULATOR_ENABLED`. Every number in `autonomy.yaml` is a placeholder.
+- **Everything is off by default.** `AUTONOMY_RESPONDER_ENABLED` is a third switch, and the only one that calls a model. `AUTONOMY_ENABLED` gates the engine and the simulator additionally needs `AUTONOMY_SIMULATOR_ENABLED`. Every number in `autonomy.yaml` is a placeholder.
 - **The decision and ledger tables are append-only.** A reversal is a new row, and a reset needs `reset_autonomy_log()`: `TRUNCATE` is refused while they hold rows.
 - **Lock order is budget, then order, then row locks.** Taking them in another order can deadlock two events.
 - **A credited order is `no_action`.** It opens no approval.
@@ -193,9 +236,38 @@ anything; `--attach` drives a stack that is already up. CI runs it as the `flags
 
 ## Not built
 
-The LLM `ops-responder` mode (`EVENT_AGENT_MODE=agent`) and its fixtures need a keyed recording session. Price-drop,
-back-in-stock and order-risk events are out of scope (they need consent UX or sit on the checkout hot path); the engine
-takes another event type by adding an `events:` entry, a parser and a handler line. No real carrier feed produces `order.shipment_delayed`.
+Still open in [#299](https://github.com/nitin27may/e-commerce-agents/issues/299): the order-risk and damaged-item events,
+monthly budgets (every cap is per UTC day), and a real carrier feed (no producer exists for any event; the simulator is the only
+one). The engine takes another event type by adding an action, an `events:` entry, a parser and a handler line. There is no
+replay dataset for the responder: its model call is a plain chat call outside the routable agents, so it is covered by stubbed
+unit tests and one recorded live validation (see the PR), not by fixtures.
+
+## The ops-responder
+
+`AUTONOMY_RESPONDER_ENABLED` (default `false`, needs `AUTONOMY_ENABLED`). After the engine **commits** a decision that paid a
+credit (an autonomous one, or a staff-approved one), a model drafts the short customer message (an apology or an explanation)
+from the decision's facts. It words a decision and cannot change one:
+
+- **After, not during.** The engine enqueues an `autonomy.draft_requested` outbox row in the decision's own transaction (only
+  when the flag is on); the worker handles it later. The ledger entry, the decision row and the customer notification already
+  exist with the template text, so nothing waits on a model and a model outage loses nothing.
+- **It sees only facts, and returns only text.** The prompt (`config/prompts/ops-responder.yaml`, a raw prompt, not a
+  registered specialist: the orchestrator cannot route to it and no replay fixture is involved) gets a JSON object of the
+  amount, order reference, delay or product and prices. Nothing it returns is read back into an amount, a tier or a state;
+  `shared/autonomy/engine.py` reads `decision_drafts` only in the admin read model (a test pins that).
+- **Checked against the facts** (`responder.check_draft`, built on the grounding extractor): every dollar amount must be one of
+  the facts' amounts exactly (a derived sum is not accepted, unlike in chat answers), the credit amount must appear, no id, link,
+  email or percentage, a day count must be the event's own, at most 450 characters.
+- **Falls back to the template** on any failed check, a model error or a timeout, and stores why (`fallback_reason`).
+- **Stored and shown.** One append-only `decision_drafts` row per decision (migration 0017); the admin decisions page shows the
+  message and whether it is the model's or the template's; the customer's notification body is replaced with it (title and link
+  unchanged), found through `notifications.decision_id`.
+- Only money decisions are worded. A back-in-stock notice is not sent to a model (it could be 200 calls for one event).
+- The worker container needs the chat provider variables for it; `docker-compose.yml` passes them. Cost is one short call per
+  granted credit, not routed through run usage accounting.
+
+Gotcha: because the notification is replaced after it was created, a customer who read it in the first seconds saw the template
+and the next load shows the draft.
 
 ### What the TRUNCATE guard is, and is not
 

@@ -1,7 +1,10 @@
 """Event autonomy in the outbox worker (#94): the event handler, and what an SLA breach does to an event approval.
 
-``order.shipment_delayed`` rows are handed to :func:`shared.autonomy.engine.handle_event`, which decides and acts at
-most once per event. Behind ``AUTONOMY_ENABLED`` (default **false**): with it off a row is consumed and does
+``order.shipment_delayed``, ``product.price_dropped`` and ``inventory.back_in_stock`` rows are handed to
+:func:`shared.autonomy.engine.handle_event`, which decides and acts at most once per event (per target for the
+last two).
+``autonomy.draft_requested`` rows (enqueued with a decision, only when ``AUTONOMY_RESPONDER_ENABLED``) go to the
+ops-responder. Behind ``AUTONOMY_ENABLED`` (default **false**): with it off a row is consumed and does
 nothing. Nothing outside the simulator produces the event today, and the simulator has its own switch.
 
 The decision runs on the pool, not on the row's connection: ``run_once`` reserves the event on its own connection
@@ -27,7 +30,7 @@ import asyncpg
 
 from shared.approvals import repo
 from shared.approvals.repo import ApprovalStatus as S
-from shared.autonomy import engine
+from shared.autonomy import engine, responder
 from shared.config import settings
 from shared.db import get_pool
 from shared.log_safe import log_safe
@@ -46,12 +49,27 @@ def _max_waits() -> int:
     return int(settings.HITL_CLAIM_TTL_SECONDS // _DEFER_SECONDS) + _MAX_WAITS_SPARE
 
 
-async def on_shipment_delayed(conn: asyncpg.Connection, row: OutboxRow) -> None:
+async def on_event(conn: asyncpg.Connection, row: OutboxRow) -> None:
+    """An event row of any type the engine knows (it reads the topic): decide it, once per target."""
     if not settings.AUTONOMY_ENABLED:
         logger.info("autonomy event ignored, engine disabled id=%s", log_safe(row.id))
         return
     result = await engine.handle_event(get_pool(), row.topic, row.payload, outbox_id=row.id)
     logger.info("autonomy event handled id=%s status=%s", log_safe(row.id), result.get("status"))
+
+
+async def on_draft_requested(conn: asyncpg.Connection, row: OutboxRow) -> None:
+    """Word the customer message of a decision that already committed (the ops-responder, off by default).
+
+    Runs on the pool, not the row's connection, for the same reason the event handler does: the draft and the
+    notification text commit on their own. A model failure is not a failure here: the responder stores the template and
+    says why, so the row completes and is never retried into a second model call.
+    """
+    if not (settings.AUTONOMY_ENABLED and settings.AUTONOMY_RESPONDER_ENABLED):
+        logger.info("ops-responder request ignored, responder disabled id=%s", log_safe(row.id))
+        return
+    result = await responder.respond_to_decision(get_pool(), str(row.payload.get("decision_id", "")))
+    logger.info("ops-responder handled id=%s status=%s", log_safe(row.id), result.get("status"))
 
 
 async def on_event_breach(conn: asyncpg.Connection, row: OutboxRow, approval: dict[str, Any]) -> None:
@@ -119,4 +137,9 @@ async def on_event_breach(conn: asyncpg.Connection, row: OutboxRow, approval: di
 
 
 #: topic -> handler. Add a line per event type the engine learns.
-HANDLERS: dict[str, Handler] = {engine.TOPIC_SHIPMENT_DELAYED: on_shipment_delayed}
+HANDLERS: dict[str, Handler] = {
+    engine.TOPIC_SHIPMENT_DELAYED: on_event,
+    engine.TOPIC_PRICE_DROPPED: on_event,
+    engine.TOPIC_BACK_IN_STOCK: on_event,
+    engine.TOPIC_DRAFT_REQUESTED: on_draft_requested,
+}

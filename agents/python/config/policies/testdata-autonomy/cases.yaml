@@ -56,6 +56,56 @@ tier_cases:
     action: goodwill_credit
     facts: { amount: 1, delay_days: 1 }
     expect: { tier: needs_approval, rule: default-approval }
+  # price_adjustment (product.price_dropped): amount, days since the purchase and the size of the drop decide.
+  - name: "a 10 adjustment within 14 days acts alone"
+    action: price_adjustment
+    facts: { amount: 10, days_since_purchase: 3, drop_percent: 10 }
+    expect: { tier: auto, rule: auto-small-adjustment }
+  - name: "a 10.01 adjustment is no longer auto but still acts alone with staff told"
+    action: price_adjustment
+    facts: { amount: 10.01, days_since_purchase: 3, drop_percent: 10 }
+    expect: { tier: auto_notify, rule: notify-medium-adjustment }
+  - name: "a 20 adjustment on day 14 acts alone and tells staff"
+    action: price_adjustment
+    facts: { amount: 20, days_since_purchase: 14, drop_percent: 25 }
+    expect: { tier: auto_notify, rule: notify-medium-adjustment }
+  - name: "a 20.01 adjustment needs approval"
+    action: price_adjustment
+    facts: { amount: 20.01, days_since_purchase: 3, drop_percent: 25 }
+    expect: { tier: needs_approval, rule: default-approval }
+  - name: "a purchase on day 15 needs approval even for a tiny amount"
+    action: price_adjustment
+    facts: { amount: 2, days_since_purchase: 15, drop_percent: 10 }
+    expect: { tier: needs_approval, rule: default-approval }
+  - name: "a drop over 50 percent looks like a pricing mistake and needs approval"
+    action: price_adjustment
+    facts: { amount: 5, days_since_purchase: 2, drop_percent: 50.01 }
+    expect: { tier: needs_approval, rule: default-approval }
+  - name: "a drop of exactly 50 percent is still allowed alone"
+    action: price_adjustment
+    facts: { amount: 5, days_since_purchase: 2, drop_percent: 50 }
+    expect: { tier: auto, rule: auto-small-adjustment }
+  - name: "an unknown purchase age never acts alone"
+    action: price_adjustment
+    facts: { amount: 5, drop_percent: 10 }
+    expect: { tier: needs_approval, rule: default-approval }
+  - name: "an unknown drop size never acts alone"
+    action: price_adjustment
+    facts: { amount: 5, days_since_purchase: 2 }
+    expect: { tier: needs_approval, rule: default-approval }
+  # back_in_stock_notice (inventory.back_in_stock): the bound is the audience, there is no money.
+  - name: "a notice to 200 customers goes out alone and staff are told"
+    action: back_in_stock_notice
+    facts: { recipients: 200 }
+    expect: { tier: auto_notify, rule: auto-notice }
+  - name: "a notice to 201 customers is more than the system may send alone"
+    action: back_in_stock_notice
+    facts: { recipients: 201 }
+    expect: { tier: needs_approval, rule: default-approval }
+  - name: "an unknown audience size never goes out alone"
+    action: back_in_stock_notice
+    facts: {}
+    expect: { tier: needs_approval, rule: default-approval }
 
 budget_cases:
   - name: "an empty budget allows a credit of 5"
@@ -108,6 +158,36 @@ budget_cases:
     amount: null
     usage: {}
     expect: { ok: false, tripped: [amount_missing] }
+  - name: "price_adjustment: exactly the per-action cap of 20 is allowed"
+    budget: price_adjustment
+    amount: 20
+    usage: {}
+    expect: { ok: true, tripped: [] }
+  - name: "price_adjustment: a cent over 20 trips the per-action cap"
+    budget: price_adjustment
+    amount: 20.01
+    usage: {}
+    expect: { ok: false, tripped: [per_action_amount] }
+  - name: "price_adjustment: a customer's 4th adjustment of the day trips the count"
+    budget: price_adjustment
+    amount: 5
+    usage: { customer_count: 3, customer_amount: 15 }
+    expect: { ok: false, tripped: [customer_daily_count] }
+  - name: "price_adjustment: a customer reaching 40 in a day trips the amount"
+    budget: price_adjustment
+    amount: 10
+    usage: { customer_count: 2, customer_amount: 35 }
+    expect: { ok: false, tripped: [customer_daily_amount] }
+  - name: "price_adjustment: a 6th adjusted line on one order trips the per-order count"
+    budget: price_adjustment
+    amount: 5
+    usage: { order_count: 5 }
+    expect: { ok: false, tripped: [order_count] }
+  - name: "price_adjustment: the 51st global draw trips the global count"
+    budget: price_adjustment
+    amount: 5
+    usage: { global_count: 50, global_amount: 100 }
+    expect: { ok: false, tripped: [global_daily_count] }
 
 credit_cases:
   - { delay_days: 0, credit: null }
