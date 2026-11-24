@@ -81,7 +81,7 @@ See the [roadmap]({{ site.baseurl }}/getting-started/roadmap.html) and the [chan
 ### Coming next
 
 - **Azure** — the Container Apps deployment is written and checked offline but has not run against a real subscription yet; that first deploy, then Foundry as a model provider.
-- **The dual-backend parity gate in CI** — it runs locally today (`scripts/e2e-both-stacks.sh`).
+- **A model-calling parity run** — the keyless parity gate already runs in CI (`stack-parity.yml`); the live dual-backend browser suite (`scripts/e2e-both-stacks.sh`) still runs locally.
 - **.NET eval suite** — 6 of 7 datasets ported; the recording run, baselines and CI gate remain.
 
 The full list, including what is deliberately not planned, is on the [roadmap]({{ site.baseurl }}/getting-started/roadmap.html).

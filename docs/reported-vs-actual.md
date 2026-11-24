@@ -72,7 +72,9 @@ is the argument for building gates before content.
 The parity gate that catches this class — `web/e2e/orchestration-parity.spec.ts` run
 against both backends — **is not in CI**. It needs a full stack and a real API key, which
 is impractical on every push, so it runs by hand. That is the standing weakness, recorded
-in [ADR 0005](adr/0005-dual-stack-parity.md).
+in [ADR 0005](adr/0005-dual-stack-parity.md). A keyless part of the gate now runs in CI
+(`stack-parity.yml`: both stacks under replay, orchestration modes that call no model); it
+cannot cover a turn that needs a model.
 
 It is also why the numbers here keep growing.
 

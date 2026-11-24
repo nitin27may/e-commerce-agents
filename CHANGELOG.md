@@ -621,7 +621,7 @@ image for as long as the image has had its current shape.
   which closed a real `MCP_ENABLED` divergence.
   **Upgrading an existing database:** the `tsvector` column ships in `docker/postgres/init.sql`,
   which Postgres only runs on an empty data directory — either `./scripts/dev.sh --clean` or apply
-  it in place, see [Troubleshooting](docs/troubleshooting.md#products-search_vector-does-not-exist).
+  it in place, see [Troubleshooting](docs/troubleshooting.md#productssearch_vector-does-not-exist).
 - **A one-command demo that pulls instead of building.** `docker-compose.demo.yml` plus
   `./scripts/dev.sh --demo` (`-Demo` on PowerShell) take a first run from roughly twelve minutes to
   roughly one. Measured on a clean machine: 37s to pull all ten images, 24s to a healthy stack.
