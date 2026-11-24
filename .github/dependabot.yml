@@ -2,7 +2,9 @@
 #
 # Shape of the policy, so a new entry does not have to rediscover it:
 #
-#   * Weekly, one PR per ecosystem for minor/patch bumps (grouped). Majors are
+#   * Weekly for Python, web and .NET; monthly for container images, compose files and
+#     GitHub Actions (they rarely matter and each used to be its own PR).
+#     One PR per ecosystem for minor/patch bumps (grouped). Majors are
 #     left as individual PRs, because a major is where the breakage is and each
 #     deserves its own review.
 #
@@ -108,6 +110,10 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "System.*"
         update-types: ["version-update:semver-major"]
+      # Serilog.AspNetCore 11 breaks the build and every boot job (PR #295, closed):
+      # moving to it is a migration of its own. Minor and patch bumps still arrive.
+      - dependency-name: "Serilog.AspNetCore"
+        update-types: ["version-update:semver-major"]
     groups:
       maf:
         patterns:
@@ -129,8 +135,7 @@ updates:
       - /web
       - /agents/dotnet/src/*
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
     open-pull-requests-limit: 5
     commit-message:
       prefix: "deps(docker)"
@@ -157,8 +162,7 @@ updates:
   - package-ecosystem: docker-compose
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
     open-pull-requests-limit: 3
     commit-message:
       prefix: "deps(compose)"
@@ -176,8 +180,7 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
     open-pull-requests-limit: 3
     commit-message:
       prefix: "ci"
