@@ -7,7 +7,7 @@
   -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <RootNamespace>ECommerceAgents.Evals</RootNamespace>
     <!-- Arguments are parsed by hand: adding System.CommandLine for four flags would
          mean a new central package version for a single consumer. -->
