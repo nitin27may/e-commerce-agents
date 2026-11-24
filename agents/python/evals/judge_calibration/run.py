@@ -122,6 +122,25 @@ def _cost(model: str, tokens_in: int, tokens_out: int) -> float | None:
     return estimate_cost(model, tokens_in, tokens_out)
 
 
+def answered_ids(labels: list[dict[str, Any]], verdicts: list[dict[str, Any]]) -> set[str]:
+    by_id = {v["id"]: v for v in verdicts}
+    return {r["id"] for r in labels if by_id.get(r["id"], {}).get("failure_mode") not in FAILURE_MODES}
+
+
+def common_figures(labels: list[dict[str, Any]], verdicts: list[dict[str, Any]], ids: set[str]) -> dict[str, Any]:
+    """Agreement, kappa and error counts over ``ids`` only, so judges that lost different cases compare fairly."""
+    by_id = {v["id"]: v for v in verdicts}
+    pairs = [(label_passes(r), float(by_id[r["id"]]["score"]) >= PASS_SCORE) for r in labels if r["id"] in ids]
+    n = len(pairs)
+    return {
+        "n": n,
+        "agreement": _round(sum(1 for a, b in pairs if a == b) / n if n else None),
+        "kappa": _round(cohens_kappa(pairs)),
+        "false_pass": sum(1 for a, b in pairs if b and not a),
+        "false_fail": sum(1 for a, b in pairs if a and not b),
+    }
+
+
 def score_judge(model: str, labels: list[dict[str, Any]], verdicts: list[dict[str, Any]]) -> dict[str, Any]:
     """Every figure for one candidate judge, from the labels and that judge's stored verdicts."""
     by_id = {v["id"]: v for v in verdicts}
@@ -144,9 +163,7 @@ def score_judge(model: str, labels: list[dict[str, Any]], verdicts: list[dict[st
 
     case_pairs = [(label_passes(r), pass_at(v, PASS_SCORE)) for r, v in answered]
     lenient_pairs = [(label_passes(r), pass_at(v, LENIENT_SCORE)) for r, v in answered]
-    field_pairs = [
-        (info["present"], pass_at(v, PASS_SCORE)) for r, v in answered for info in r["labels"].values()
-    ]
+    field_pairs = [(info["present"], pass_at(v, PASS_SCORE)) for r, v in answered for info in r["labels"].values()]
 
     n = len(case_pairs)
     agree = sum(1 for a, b in case_pairs if a == b)
@@ -211,7 +228,12 @@ def decide(scored: dict[str, dict[str, Any]], default: str = DEFAULT_JUDGE) -> d
     """
     base = scored.get(default)
     if base is None or base["agreement"] is None:
-        return {"default": default, "chosen": default, "changed": False, "reason": "no default verdicts to compare with"}
+        return {
+            "default": default,
+            "chosen": default,
+            "changed": False,
+            "reason": "no default verdicts to compare with",
+        }
 
     rows: list[dict[str, Any]] = []
     for name, s in scored.items():
@@ -221,12 +243,16 @@ def decide(scored: dict[str, dict[str, Any]], default: str = DEFAULT_JUDGE) -> d
         ratio = None
         if s["cost_per_100_usd"] is not None and base["cost_per_100_usd"]:
             ratio = round(s["cost_per_100_usd"] / base["cost_per_100_usd"], 2)
+        common_gain = None
+        if s.get("on_common_cases") and base.get("on_common_cases"):
+            common_gain = _round(s["on_common_cases"]["agreement"] - base["on_common_cases"]["agreement"])
         beats = gain is not None and gain >= MIN_AGREEMENT_GAIN - 1e-9
         cheap = ratio is not None and ratio < MAX_COST_RATIO
         rows.append(
             {
                 "judge": name,
                 "agreement_gain": gain,
+                "agreement_gain_on_common_cases": common_gain,
                 "cost_ratio": ratio,
                 "beats_by_margin": beats,
                 "under_cost_cap": cheap,
@@ -256,9 +282,10 @@ def decide(scored: dict[str, dict[str, Any]], default: str = DEFAULT_JUDGE) -> d
 def build_results(
     labels: list[dict[str, Any]], verdict_file: dict[str, Any], default: str = DEFAULT_JUDGE
 ) -> dict[str, Any]:
-    scored = {
-        model: score_judge(model, labels, verdicts) for model, verdicts in verdict_file["judges"].items()
-    }
+    scored = {model: score_judge(model, labels, verdicts) for model, verdicts in verdict_file["judges"].items()}
+    common = set.intersection(*(answered_ids(labels, v) for v in verdict_file["judges"].values()))
+    for model, verdicts in verdict_file["judges"].items():
+        scored[model]["on_common_cases"] = common_figures(labels, verdicts, common)
     passes = sum(1 for row in labels if label_passes(row))
     return {
         "schema_version": 1,
@@ -339,7 +366,11 @@ def estimate(labels: list[dict[str, Any]], judges: list[str]) -> dict[str, Any]:
 
     rubric = _approx_tokens(load_raw_prompt("_eval/completeness-judge"))
     tokens_in = sum(
-        rubric + _approx_tokens(r["query"]) + _approx_tokens(r["response"]) + 12 + sum(_approx_tokens(f) for f in r["expected_fields"])
+        rubric
+        + _approx_tokens(r["query"])
+        + _approx_tokens(r["response"])
+        + 12
+        + sum(_approx_tokens(f) for f in r["expected_fields"])
         for r in labels
     )
     out: dict[str, Any] = {"calls_per_judge": len(labels), "tokens_in_per_judge": tokens_in, "judges": {}}
@@ -405,8 +436,7 @@ async def requery(labels: list[dict[str, Any]], judges: list[str], budget_usd: f
         "recorded_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "judge_prompt_sha256_16": judge_prompt_sha(),
         "repeats": 1,
-        "responses_produced_by": "gpt-4.1 (chat model under test) through the product-discovery, order-management, pricing, "
-        "review-sentiment, inventory and orchestrator agents",
+        "responses_produced_by": "gpt-4.1 (chat model under test), six agents, in-process target",
         "guard_spend_usd": round(spent, 4),
         "judges": result,
     }
@@ -419,8 +449,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--rescore", action="store_true", help="recompute results.json from labels and stored verdicts")
     parser.add_argument("--check", action="store_true", help="with --rescore: fail if results.json differs")
-    parser.add_argument("--estimate", action="store_true", help="print the token and cost estimate for --judges; no call")
-    parser.add_argument("--requery", action="store_true", help="call the judges again (spends money) and rewrite verdicts.json")
+    parser.add_argument(
+        "--estimate", action="store_true", help="print the token and cost estimate for --judges; no call"
+    )
+    parser.add_argument(
+        "--requery", action="store_true", help="call the judges again (spends money) and rewrite verdicts.json"
+    )
     parser.add_argument("--judges", default="gpt-4.1-mini,gpt-4.1,gpt-5.4-mini,gpt-5.2")
     parser.add_argument("--budget-usd", type=float, default=1.80)
     args = parser.parse_args(argv)
