@@ -12,7 +12,7 @@
 # 1. Every application service uses `image:` from GHCR instead of `build:`.
 #    Nothing is compiled locally, so a first run is a pull rather than a build
 #    of ten images.
-# 2. No profiles on the core path. docker-compose.yml gates services behind
+# 2. No profiles on the core path (the auth-server is the one exception: `oauth`). docker-compose.yml gates services behind
 #    agents / frontend / seed profiles, which is right for development and
 #    wrong for a demo -- this file starts everything a first-time visitor
 #    needs from one command with no flags. The two MCP servers keep their
@@ -146,8 +146,13 @@ services:
 
   # ── OAuth2 Authorization Server ───────────────────────────────────────────
   #
-  # Idle unless AUTH_MODE=oauth. Started anyway so flipping that one variable
-  # works without also learning which profile to add.
+  # Idle unless AUTH_MODE=oauth, so it is behind the `oauth` profile and the default demo
+  # stack is 11 running containers (plus the one-shot seeder), the target of #86. To use it:
+  #
+  #   AUTH_MODE=oauth docker compose -f docker-compose.demo.yml --profile oauth up -d
+  #
+  # scripts/dev.sh --demo (dev.ps1 -Demo) adds the profile itself when AUTH_MODE=oauth is
+  # exported or set in .env. Nothing else depends_on this service.
   auth-server:
     image: ghcr.io/nitin27may/e-commerce-agents/auth-server:${IMAGE_TAG:-latest}
     ports: ["127.0.0.1:8090:8090"]
@@ -166,6 +171,7 @@ services:
       AUTH_SERVER_AUDIENCE: ${AUTH_SERVER_AUDIENCE:-ecommerce-auth-server}
       AUTH_ALLOW_DYNAMIC_REGISTRATION: ${AUTH_ALLOW_DYNAMIC_REGISTRATION:-false}
       ENVIRONMENT: ${ENVIRONMENT:-development}
+    profiles: ["oauth"]
 
   # ── Orchestrator ──────────────────────────────────────────────────────────
 

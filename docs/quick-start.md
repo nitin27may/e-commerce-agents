@@ -18,7 +18,8 @@ On Windows PowerShell, the last two lines are `Copy-Item .env.minimal .env` (or
 
 The first run takes about a minute. It pulls the eleven released images, seeds the database, starts
 everything, and waits until the orchestrator and frontend answer before printing the summary.
-Nothing is compiled.
+Nothing is compiled. The default demo runs eleven containers (plus the one-shot seeder); the OAuth
+auth-server starts only with `AUTH_MODE=oauth`, which `dev.sh --demo` turns into `--profile oauth` for you.
 
 Then open <http://localhost:3000> and sign in as `alice.johnson@gmail.com` / `customer123`.
 
