@@ -531,7 +531,7 @@ Case counts as of 2026-11-23 (they change; count the files, not this list):
 | `live/orchestrator_routing.live.json` | 31 | live, `type`, `why`, `expected_routes` / `forbidden_routes` |
 | `live/order_management.live.json` | 33 | live, includes multi-turn cases (`turns`) |
 | `live/pricing_promotions.live.json` | 29 | live |
-| `live/review_sentiment.live.json` | 29 | live |
+| `live/review_sentiment.live.json` | 30 | live |
 
 The `live/*.live.json` files are the replay cases and their extensions for a live model, with run-time facts resolved (see
 *Live datasets*). They are not part of the replay gate. The replay datasets are the scorecard's cases; the live ones are

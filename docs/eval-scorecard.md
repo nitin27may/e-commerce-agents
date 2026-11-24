@@ -68,7 +68,7 @@ Tokens per request before the user's message, counted with `o200k_base` (`evals/
 | 2026-11-24 | `python-inproc-gpt-4.1` | gpt-4.1 | azure:gpt-5.4-mini | 1 | order-management | `order_management.live.json` | 33 | 30 (1 judge-unavailable) | 0.96 | 0.92 | 0.92 | 0.94 | 0.71 |
 | 2026-11-24 | `python-inproc-gpt-4.1` | gpt-4.1 | azure:gpt-5.4-mini | 1 | pricing-promotions | `pricing_promotions.live.json` | 29 | 28 (1 judge-unavailable) | 0.96 | 0.97 | 0.89 | 0.95 | 0.51 |
 | 2026-11-24 | `python-inproc-gpt-4.1` | gpt-4.1 | azure:gpt-5.4-mini | 1 | product-discovery | `product_discovery.live.json` | 25 | 25 | 1.00 | 0.98 | 0.88 | 0.97 | 0.49 |
-| 2026-11-24 | `python-inproc-gpt-4.1` | gpt-4.1 | azure:gpt-5.4-mini | 1 | review-sentiment | `review_sentiment.live.json` | 29 | 29 (1 judge-unavailable) | 1.00 | 1.00 | 0.92 | 0.98 | 0.75 |
+| 2026-11-24 | `python-inproc-gpt-4.1` | gpt-4.1 | azure:gpt-5.4-mini | 1 | review-sentiment | `review_sentiment.live.json` | 30 | 29 (1 judge-unavailable) | 1.00 | 1.00 | 0.92 | 0.98 | 0.75 |
 
 ## Community-submitted, not verified by the maintainers
 

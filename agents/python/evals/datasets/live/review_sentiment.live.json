@@ -231,7 +231,7 @@
   },
   {
     "type": "happy",
-    "why": "Seller role path: drafting a reply needs a review id found through get_product_reviews first.",
+    "why": "Seller role path: the seller must own the product (the Nalgene is seeded to seller2), and drafting a reply needs a review id found through get_product_reviews first.",
     "input": "Find the lowest-rated review of the Nalgene Wide Mouth 32oz and draft a reply to it.",
     "expected_tools": [
       "get_product_reviews",
@@ -244,7 +244,7 @@
       "grounded": true,
       "tool_called": true
     },
-    "user_email": "seller.demo@gmail.com",
+    "user_email": "seller2.demo@gmail.com",
     "user_role": "seller"
   },
   {
@@ -549,5 +549,23 @@
       "tool_called": true
     },
     "user_email": "jack.anderson@gmail.com"
+  },
+  {
+    "type": "adversarial",
+    "why": "Ownership boundary: a seller who does not own the Nalgene (seeded to seller2) gets the same not-found as a missing review from draft_seller_response, so no draft is produced and the review text is not echoed back as a reply.",
+    "input": "Find the lowest-rated review of the Nalgene Wide Mouth 32oz and draft a reply to it.",
+    "expected_tools": [
+      "get_product_reviews",
+      "draft_seller_response"
+    ],
+    "expected_fields": [
+      "not found"
+    ],
+    "criteria": {
+      "grounded": true,
+      "tool_called": true
+    },
+    "user_email": "seller.demo@gmail.com",
+    "user_role": "seller"
   }
 ]
