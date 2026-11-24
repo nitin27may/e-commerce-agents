@@ -144,6 +144,19 @@ run_suites() {
     --records-out eval-records-orchestrator.jsonl --output-json eval-orchestrator.json || fail=1
   rescore_check eval-records-orchestrator.jsonl || fail=1
   echo "::endgroup::"
+  # The orchestrator in every other mode, each with a baseline directory of its own
+  # (<setup-key>-mode-<mode>). The two workflow modes call no model; handoff and group-chat replay fixtures.
+  local pair mode ds slug
+  for pair in handoff:orchestrator_routing group-chat:orchestrator_modes workflow:pre-purchase:orchestrator_modes \
+    workflow:return-replace:orchestrator_modes; do
+    mode="${pair%:*}"; ds="${pair##*:}"; slug="${mode//:/-}"
+    echo "::group::orchestrator mode eval — $mode"
+    uv run python -m evals.run_evals --agent orchestrator --mode "$mode" --dataset "evals/datasets/$ds.json" \
+      --pass-threshold "$SMOKE_THRESH" --baseline "evals/baselines/python-inproc-replay-mode-$slug/$ds.json" \
+      --records-out "eval-records-mode-$slug.jsonl" --output-json "eval-mode-$slug.json" || fail=1
+    rescore_check "eval-records-mode-$slug.jsonl" || fail=1
+    echo "::endgroup::"
+  done
   if [[ "${ADVERSARIAL_SEED:-0}" == "1" ]]; then
     # After every quality suite (the rows are real rows the review and product tools would
     # return) and before the safety suite, which is the only consumer.

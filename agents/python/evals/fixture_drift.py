@@ -69,6 +69,32 @@ class Finding:
 # ─────────────────────── live tool specs ───────────────────────
 
 
+# The handoff mesh's start agent offers tools MAF synthesises when the workflow is built (``handoff_to_<name>``), so
+# no ``create_*_agent()`` shows them. They are listed under this name; the replay key sorts tools by name, so the
+# order a process happens to build them in is not a difference (``ORDER_FREE``).
+HANDOFF_TRIAGE = "handoff-triage"
+ORDER_FREE = frozenset({HANDOFF_TRIAGE})
+
+
+def _handoff_triage_specs() -> list[dict[str, Any]]:
+    from evals.harness import SPECIALISTS
+    from orchestrator.handoff import build_orchestrator_handoff_workflow, build_remote_specialist_agents
+
+    # Nothing here is called: the mesh is built only to read the tools MAF gave its start agent.
+    registry = {name: f"http://localhost:{9000 + i}" for i, name in enumerate(sorted(SPECIALISTS))}
+    workflow = build_orchestrator_handoff_workflow(specialists=build_remote_specialist_agents(registry))
+    executor = workflow.executors["orchestrator"]
+    agent = getattr(executor, "_agent", None) or executor.agent
+    tools = (getattr(agent, "default_options", None) or {}).get("tools") or []
+    specs: list[dict[str, Any]] = []
+    for t in tools:
+        try:
+            specs.append(t.to_json_schema_spec())
+        except AttributeError:
+            specs.append({"name": getattr(t, "name", str(t))})
+    return specs
+
+
 def live_tool_specs() -> dict[str, list[dict[str, Any]]]:
     """``{agent name: [tool spec, ...]}`` from each ``create_*_agent()``, in order."""
     import importlib
@@ -104,6 +130,7 @@ def live_tool_specs() -> dict[str, list[dict[str, Any]]]:
                 except AttributeError:
                     agent_specs.append({"name": getattr(t, "name", str(t))})
             specs[name] = agent_specs
+        specs[HANDOFF_TRIAGE] = _handoff_triage_specs()
     finally:
         for candidate, previous in switched.values():
             candidate.LLM_PROVIDER = previous
@@ -184,6 +211,11 @@ def _compare_tools(
         return [(SEMANTIC, f"no live agent offers tools {stored_names[:3]}...")], None
 
     live_specs = live[agent]
+    if agent in ORDER_FREE:
+        by_name = {_tool_name(s): s for s in live_specs}
+        live_specs = [by_name[n] for n in stored_names if n in by_name] + [
+            s for n, s in by_name.items() if n not in stored_names
+        ]
     live_names = [_tool_name(s) for s in live_specs]
     if live_names != stored_names:
         added = sorted(set(live_names) - set(stored_names))

@@ -84,12 +84,20 @@ class Setup(BaseModel):
     pricing_source: str = ""
     # ``http`` target only: host (and port) of the orchestrator that was driven, never a credential or a path.
     endpoint: str = ""
+    # Orchestrator runs only: the orchestration mode every case was run through (``--mode``). Empty is the default
+    # ``tool`` mode, and keeps the key (and so the baseline directory) the one every earlier run used.
+    orchestration_mode: str = ""
 
     @property
     def key(self) -> str:
-        """Directory name for this setup's baselines: ``python-inproc-replay``, ``python-http-gpt-5.1``."""
+        """Directory name for this setup's baselines: ``python-inproc-replay``, ``python-http-gpt-5.1``.
+
+        A run through another orchestration mode adds ``-mode-<slug>`` (``python-inproc-replay-mode-handoff``), so
+        each mode has baselines of its own and a mode's score is never compared with another's.
+        """
         tail = "replay" if self.chat_provider == "replay" else _slug(self.chat_model or self.chat_provider)
-        return f"{self.stack}-{self.target}-{tail}"
+        base = f"{self.stack}-{self.target}-{tail}"
+        return f"{base}-mode-{_slug(self.orchestration_mode)}" if self.orchestration_mode else base
 
     @property
     def deterministic(self) -> bool:

@@ -4,7 +4,7 @@
 
 Scores per specialist and dataset, as committed in `agents/python/evals/baselines/python-inproc-replay/` (baselines are keyed by setup: stack, target and model).
 
-**Read this first.** These numbers are a regression signal, not a quality measurement. Every case was answered from a replay fixture recorded on `gpt-4.1-2025-04-14` (107 fixtures) between 2026-08-21 and 2026-11-24, and the scorer is deterministic: groundedness is a database check, correctness is a tool or route match, and completeness is a keyword check, not a judge model. A score tells you the recorded answers still pass the current code and prompts, which is what the PR job named Replay regression checks. It says nothing about how a different model, or the same model today, would do. Each dataset has five or six cases, so one flipped case moves a score by 0.1 or more, and the score is a property of the recording session as much as of the system (see `agents/python/evals/fixtures/README.md`).
+**Read this first.** These numbers are a regression signal, not a quality measurement. Every case was answered from a replay fixture recorded on `gpt-4.1-2025-04-14` (124 fixtures) between 2026-08-21 and 2026-11-24, and the scorer is deterministic: groundedness is a database check, correctness is a tool or route match, and completeness is a keyword check, not a judge model. A score tells you the recorded answers still pass the current code and prompts, which is what the PR job named Replay regression checks. It says nothing about how a different model, or the same model today, would do. Each dataset has five or six cases, so one flipped case moves a score by 0.1 or more, and the score is a property of the recording session as much as of the system (see `agents/python/evals/fixtures/README.md`).
 
 ## Quality baselines
 
@@ -19,6 +19,18 @@ Scores per specialist and dataset, as committed in `agents/python/evals/baseline
 | review-sentiment | `review_sentiment.json` | 5 | 1.00 | 1.00 | 1.00 | 1.00 |
 
 The baselines record no date or commit of their own. Git history on the baseline files gives the commit that last changed each one.
+
+## Orchestrator by mode
+
+The same replay setup, scored through each orchestration mode (`--mode` on `evals.run_evals`, baselines under `python-inproc-replay-mode-<mode>/`; a mode's score is only ever compared with its own baseline). A case lists the modes it can be scored in (`modes` in the dataset), so each row covers the prompts that make sense for that mode and the case counts differ: routing prompts run in `tool` and `handoff`, the research prompts in `workflow:pre-purchase` and `group-chat`, and a return request in `workflow:return-replace`. The two workflow modes call no model (zero tokens, nothing recorded); the others replay recorded fixtures. Scores are deterministic and say whether a mode still behaves as recorded, not which mode is better.
+
+| Mode | Dataset | Cases | Groundedness | Correctness | Completeness | Overall | Tokens in | Tokens out |
+|------|---------|------:|-------------:|------------:|-------------:|--------:|----------:|-----------:|
+| `tool` | `orchestrator_routing.json` | 6 | 1.00 | 1.00 | 1.00 | 1.00 | 106,141 | 3,520 |
+| `group-chat` | `orchestrator_modes.json` | 2 | 1.00 | 1.00 | 1.00 | 1.00 | 499 | 279 |
+| `handoff` | `orchestrator_routing.json` | 4 | 1.00 | 1.00 | 1.00 | 1.00 | 40,382 | 1,361 |
+| `workflow:pre-purchase` | `orchestrator_modes.json` | 2 | 1.00 | 1.00 | 1.00 | 1.00 | 0 | 0 |
+| `workflow:return-replace` | `orchestrator_modes.json` | 1 | 1.00 | 1.00 | 1.00 | 1.00 | 0 | 0 |
 
 ## Recorded token usage
 

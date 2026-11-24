@@ -59,6 +59,7 @@ the run (`Assertion failed:` in the verbose report, `assertion_failures` in the 
 | `expect_denial` | `true`: a tool refused the call for this role. Read from the step output in any shape it is stored in: a `permission_denied` dict, a one-item list holding that JSON (MAF `Content`), a JSON string, or plain refusal text ("requires one of these roles", "restricted to sellers or admins"). `false`: none did. |
 | `expect_hitl` | `true`: a destructive tool was parked for approval: a pending `tool_approval_requests` row for the case user created during the run (what a parked tool-mode `cancel_order` leaves), a new `hitl_requests` row (a paused workflow), or a `pending_approval` step. `false`: none was. |
 | `expected_routes` / `forbidden_routes` | Orchestrator cases. Every specialist in `expected_routes` must have been called through `call_specialist_agent`; none in `forbidden_routes` may have been (`"*"` is every specialist, so `["*"]` means answer directly). Assertions only, they never move a score. |
+| `modes` / `mode_overrides` | Orchestrator cases. `modes` lists the orchestration modes the case may be scored in (`tool`, `handoff`, `workflow:pre-purchase`, `workflow:return-replace`, `group-chat`); a case with no `modes` runs in `tool` only, so an existing dataset is unchanged. `mode_overrides` restates expectations for one mode (a handoff mesh has no `call_specialist_agent` tool, so its case says `expected_tools: []`); allowed keys are `expected_tools`, `expected_tool_args`, `expected_fields`, `expected_route`, `expected_routes`, `forbidden_routes`, `forbidden_tools`, `expect_hitl`, `expect_denial` and `criteria`. See *Scoring the orchestrator in every mode*. |
 | `why` | One line saying why the case exists. Never scored. Live datasets with typed cases (`orchestrator_routing.live.json`, `inventory_fulfillment.live.json`) also carry `type` (`happy`, `edge`, `adversarial`), which their dataset tests count. |
 
 **A gated action asks the customer first.** In tool mode a gated call (`cancel_order`, `modify_order`, `initiate_return`, `process_refund`, `place_backorder`) does not park on the model's first request: the host asks the customer to confirm (`shared/customer_confirmation.py`), and the call parks after an explicit yes on the next turn. So `expect_hitl: true` needs a two-turn live case (turn 1 `expect_hitl: false`, turn 2 `yes` with `expect_hitl: true`), and a single-turn replay case asserts `expect_hitl: false` plus the gated tool in `expected_tools` (the model asked, the host did not park). `evals/datasets/approvals.json` (replay, order-management, recorded, baseline `python-inproc-replay/approvals.json`) and `evals/datasets/live/approvals.live.json` (the `approvals` suite of `scripts/live-evals.sh`, run as order-management) cover confirm, decline, silence, different arguments, a claimed confirmation and a confirmation injected through pasted text. A stale confirmation needs the clock to move and is tested in `tests/test_customer_confirmation.py`. A reference live run (gpt-4.1 under test, gpt-5.4-mini judge, k=1) passed 10 of 10: overall 96.7%, groundedness 100%, correctness 100%, completeness 83.5% (the judge is stricter than the keyword check on the fixed sentences), 139,177 tokens in, about $0.29. It is not a committed baseline.
@@ -505,6 +506,39 @@ keys one request and no fixture exists for turn 2.
 `--estimate` reads the replay fixtures by case text, so a live variant matches few of them; estimate with its replay
 twin instead (`--dataset evals/datasets/order_management.json --estimate`), which is the same cases and calls.
 
+## Scoring the orchestrator in every mode
+
+`--mode` runs the orchestrator quality suite through one orchestration mode, in-process:
+
+```bash
+cd agents/python
+# five specialists reachable at AGENT_REGISTRY (scripts/replay-evals.sh starts them), then:
+uv run python -m evals.run_evals --agent orchestrator --mode handoff \
+  --dataset evals/datasets/orchestrator_routing.json --baseline-from reference
+uv run python -m evals.run_evals --agent orchestrator --mode workflow:return-replace \
+  --dataset evals/datasets/orchestrator_modes.json --baseline-from reference
+```
+
+* The run keeps the cases whose `modes` list the mode, sets `mode` on each and applies that mode's `mode_overrides`.
+  Case ids keep the dataset index, so a record is stable whichever mode filtered the list. A mode no case lists is an error.
+* The mode is part of the setup, so baselines are separate: `evals/baselines/python-inproc-replay-mode-<mode>/<dataset>.json`
+  (colons become dashes). A mode is only ever compared with its own baseline; the plain `python-inproc-replay` directory
+  is the `tool` mode as before. `scripts/replay-evals.sh` runs every mode and gates each against its directory.
+* Routes in a mode with no `call_specialist_agent` step come from the specialists the run reported in `agents_involved`
+  (the handoff mesh's participants), so `expected_route` and `expected_routes` mean the same thing in every mode.
+* The two workflow modes call no model: no fixtures, zero tokens, and the return graph's pause is asserted with
+  `expect_hitl`. `handoff` and `group-chat` replay fixtures recorded the usual way (`fixtures/README.md`); the handoff
+  triage agent's `handoff_to_<specialist>` tools exist only once the mesh is built, so `evals.fixture_drift` reads them
+  from the mesh (`HANDOFF_TRIAGE`) and compares them without regard to order (the replay key sorts tools by name).
+* `evals/datasets/orchestrator_modes.json` holds the prompts only the other modes can serve (research, a return); the
+  routing prompts of `orchestrator_routing.json` list `tool` and `handoff`. The live datasets carry the same `modes`
+  (`live/orchestrator_routing.live.json`, `live/orchestrator_modes.live.json`), so a live run is
+  `--mode handoff --dataset evals/datasets/live/orchestrator_routing.live.json` and writes a baseline named
+  `python-inproc-<model>-mode-handoff`. No live per-mode baseline is committed yet.
+* `docs/eval-scorecard.md` has an "Orchestrator by mode" table, one row per mode baseline. `group-chat` and `tool`
+  differ in what a score means: `group-chat` panelists call no tools, so its completeness and groundedness are
+  near-trivial; read the row as "still behaves as recorded".
+
 ## Adding New Datasets
 
 1. Create a new JSON file in `evals/datasets/`
@@ -524,11 +558,13 @@ Case counts as of 2026-11-23 (they change; count the files, not this list):
 | `review_sentiment.json` | 5 | replay |
 | `inventory_fulfillment.json` | 5 | replay |
 | `orchestrator_routing.json` | 6 | replay; each case sets `expected_route`, scored on whether the orchestrator handed off to the right specialist via `call_specialist_agent` |
+| `orchestrator_modes.json` | 3 | replay; prompts for the research modes (`workflow:pre-purchase`, `group-chat`) and the return graph (`workflow:return-replace`), scored with `--mode` |
 | `red_team.json` | 8 | safety suite, see below |
 | `stack_parity.json` | 3 | the keyless dual-stack parity gate, orchestration modes that call no model |
 | `live/product_discovery.live.json` | 25 | live, with a `why` line each |
 | `live/inventory_fulfillment.live.json` | 29 | live, `type` (`happy`, `edge`, `adversarial`) and `why` on every case |
 | `live/orchestrator_routing.live.json` | 31 | live, `type`, `why`, `expected_routes` / `forbidden_routes` |
+| `live/orchestrator_modes.live.json` | 3 | live twin of `orchestrator_modes.json` (`{{order:delivered}}` for the return) |
 | `live/order_management.live.json` | 33 | live, includes multi-turn cases (`turns`) |
 | `live/pricing_promotions.live.json` | 29 | live |
 | `live/review_sentiment.live.json` | 30 | live |

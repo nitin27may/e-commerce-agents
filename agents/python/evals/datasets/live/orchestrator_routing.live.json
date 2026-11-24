@@ -18,7 +18,21 @@
     },
     "user_email": "jack.anderson@gmail.com",
     "type": "happy",
-    "why": "Product search with a budget goes to product-discovery."
+    "why": "Product search with a budget goes to product-discovery.",
+    "modes": [
+      "tool",
+      "handoff"
+    ],
+    "mode_overrides": {
+      "handoff": {
+        "expected_tools": [],
+        "expected_tool_args": null,
+        "criteria": {
+          "grounded": true,
+          "routed": true
+        }
+      }
+    }
   },
   {
     "input": "Where is my order {{order:shipped}}? I want tracking.",
@@ -39,7 +53,21 @@
     },
     "user_email": "jack.anderson@gmail.com",
     "type": "happy",
-    "why": "Tracking an order goes to order-management; the id is a seeded shipped order."
+    "why": "Tracking an order goes to order-management; the id is a seeded shipped order.",
+    "modes": [
+      "tool",
+      "handoff"
+    ],
+    "mode_overrides": {
+      "handoff": {
+        "expected_tools": [],
+        "expected_tool_args": null,
+        "criteria": {
+          "grounded": true,
+          "routed": true
+        }
+      }
+    }
   },
   {
     "input": "Do you have any coupons or active discounts I can use?",
@@ -60,7 +88,21 @@
     },
     "user_email": "jack.anderson@gmail.com",
     "type": "happy",
-    "why": "Coupon question goes to pricing-promotions."
+    "why": "Coupon question goes to pricing-promotions.",
+    "modes": [
+      "tool",
+      "handoff"
+    ],
+    "mode_overrides": {
+      "handoff": {
+        "expected_tools": [],
+        "expected_tool_args": null,
+        "criteria": {
+          "grounded": true,
+          "routed": true
+        }
+      }
+    }
   },
   {
     "input": "What are customers saying in reviews about the Dyson V15?",
@@ -81,7 +123,21 @@
     },
     "user_email": "jack.anderson@gmail.com",
     "type": "happy",
-    "why": "Review question goes to review-sentiment."
+    "why": "Review question goes to review-sentiment.",
+    "modes": [
+      "tool",
+      "handoff"
+    ],
+    "mode_overrides": {
+      "handoff": {
+        "expected_tools": [],
+        "expected_tool_args": null,
+        "criteria": {
+          "grounded": true,
+          "routed": true
+        }
+      }
+    }
   },
   {
     "input": "Is the Dyson V15 in stock and how fast can it ship to 10001?",
@@ -102,7 +158,21 @@
     },
     "user_email": "jack.anderson@gmail.com",
     "type": "happy",
-    "why": "Stock and shipping speed go to inventory-fulfillment."
+    "why": "Stock and shipping speed go to inventory-fulfillment.",
+    "modes": [
+      "tool",
+      "handoff"
+    ],
+    "mode_overrides": {
+      "handoff": {
+        "expected_tools": [],
+        "expected_tool_args": null,
+        "criteria": {
+          "grounded": true,
+          "routed": true
+        }
+      }
+    }
   },
   {
     "input": "Please cancel my order {{order:placed}}",
@@ -123,7 +193,21 @@
     },
     "user_email": "jack.anderson@gmail.com",
     "type": "happy",
-    "why": "Cancellation goes to order-management, which parks it for approval."
+    "why": "Cancellation goes to order-management, which parks it for approval.",
+    "modes": [
+      "tool",
+      "handoff"
+    ],
+    "mode_overrides": {
+      "handoff": {
+        "expected_tools": [],
+        "expected_tool_args": null,
+        "criteria": {
+          "grounded": true,
+          "routed": true
+        }
+      }
+    }
   },
   {
     "type": "happy",
@@ -144,7 +228,21 @@
       "tool_called": true,
       "routed": true
     },
-    "user_email": "jack.anderson@gmail.com"
+    "user_email": "jack.anderson@gmail.com",
+    "modes": [
+      "tool",
+      "handoff"
+    ],
+    "mode_overrides": {
+      "handoff": {
+        "expected_tools": [],
+        "expected_tool_args": null,
+        "criteria": {
+          "grounded": true,
+          "routed": true
+        }
+      }
+    }
   },
   {
     "type": "happy",
@@ -165,7 +263,21 @@
       "tool_called": true,
       "routed": true
     },
-    "user_email": "jack.anderson@gmail.com"
+    "user_email": "jack.anderson@gmail.com",
+    "modes": [
+      "tool",
+      "handoff"
+    ],
+    "mode_overrides": {
+      "handoff": {
+        "expected_tools": [],
+        "expected_tool_args": null,
+        "criteria": {
+          "grounded": true,
+          "routed": true
+        }
+      }
+    }
   },
   {
     "type": "happy",
@@ -186,7 +298,21 @@
       "tool_called": true,
       "routed": true
     },
-    "user_email": "jack.anderson@gmail.com"
+    "user_email": "jack.anderson@gmail.com",
+    "modes": [
+      "tool",
+      "handoff"
+    ],
+    "mode_overrides": {
+      "handoff": {
+        "expected_tools": [],
+        "expected_tool_args": null,
+        "criteria": {
+          "grounded": true,
+          "routed": true
+        }
+      }
+    }
   },
   {
     "type": "happy",
@@ -207,7 +333,21 @@
       "tool_called": true,
       "routed": true
     },
-    "user_email": "jack.anderson@gmail.com"
+    "user_email": "jack.anderson@gmail.com",
+    "modes": [
+      "tool",
+      "handoff"
+    ],
+    "mode_overrides": {
+      "handoff": {
+        "expected_tools": [],
+        "expected_tool_args": null,
+        "criteria": {
+          "grounded": true,
+          "routed": true
+        }
+      }
+    }
   },
   {
     "type": "happy",
@@ -228,7 +368,21 @@
       "tool_called": true,
       "routed": true
     },
-    "user_email": "jack.anderson@gmail.com"
+    "user_email": "jack.anderson@gmail.com",
+    "modes": [
+      "tool",
+      "handoff"
+    ],
+    "mode_overrides": {
+      "handoff": {
+        "expected_tools": [],
+        "expected_tool_args": null,
+        "criteria": {
+          "grounded": true,
+          "routed": true
+        }
+      }
+    }
   },
   {
     "type": "happy",
@@ -249,7 +403,21 @@
       "tool_called": true,
       "routed": true
     },
-    "user_email": "jack.anderson@gmail.com"
+    "user_email": "jack.anderson@gmail.com",
+    "modes": [
+      "tool",
+      "handoff"
+    ],
+    "mode_overrides": {
+      "handoff": {
+        "expected_tools": [],
+        "expected_tool_args": null,
+        "criteria": {
+          "grounded": true,
+          "routed": true
+        }
+      }
+    }
   },
   {
     "type": "happy",
@@ -274,7 +442,21 @@
     "expected_routes": [
       "inventory-fulfillment",
       "review-sentiment"
-    ]
+    ],
+    "modes": [
+      "tool",
+      "handoff"
+    ],
+    "mode_overrides": {
+      "handoff": {
+        "expected_tools": [],
+        "expected_tool_args": null,
+        "criteria": {
+          "grounded": true,
+          "routed": true
+        }
+      }
+    }
   },
   {
     "type": "happy",
@@ -299,7 +481,21 @@
     "expected_routes": [
       "product-discovery",
       "pricing-promotions"
-    ]
+    ],
+    "modes": [
+      "tool",
+      "handoff"
+    ],
+    "mode_overrides": {
+      "handoff": {
+        "expected_tools": [],
+        "expected_tool_args": null,
+        "criteria": {
+          "grounded": true,
+          "routed": true
+        }
+      }
+    }
   },
   {
     "type": "edge",

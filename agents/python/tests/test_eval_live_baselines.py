@@ -62,8 +62,13 @@ def test_a_replay_baseline_carries_no_live_marker(tmp_path: Path) -> None:
     assert "live" not in data and "caveat" not in data
 
 
+def _is_replay_dir(name: str) -> bool:
+    """The replay setup's directory and the per-orchestration-mode ones beside it (``<replay key>-mode-<mode>``)."""
+    return name == REPLAY_KEY or name.startswith(f"{REPLAY_KEY}-mode-")
+
+
 def test_every_committed_live_baseline_is_marked_and_keyed_apart() -> None:
-    live_dirs = [d for d in REFERENCE_ROOT.iterdir() if d.is_dir() and d.name != REPLAY_KEY]
+    live_dirs = [d for d in REFERENCE_ROOT.iterdir() if d.is_dir() and not _is_replay_dir(d.name)]
     assert live_dirs, "expected at least one live baseline directory"
     for directory in live_dirs:
         for path in directory.glob("*.json"):
@@ -77,15 +82,17 @@ def test_every_committed_live_baseline_is_marked_and_keyed_apart() -> None:
 
 
 def test_the_replay_directory_holds_only_replay_baselines() -> None:
-    for path in (REFERENCE_ROOT / REPLAY_KEY).glob("*.json"):
-        assert "live" not in json.loads(path.read_text()), path
+    for directory in (d for d in REFERENCE_ROOT.iterdir() if d.is_dir() and _is_replay_dir(d.name)):
+        for path in directory.glob("*.json"):
+            assert "live" not in json.loads(path.read_text()), path
 
 
 def test_the_replay_gate_only_names_the_replay_baseline_directory() -> None:
     """scripts/replay-evals.sh and the PR workflow must never point at a live setup's directory."""
     script = (REPO_ROOT / "scripts" / "replay-evals.sh").read_text()
     assert f'BASELINE_DIR="evals/baselines/{REPLAY_KEY}"' in script
-    mentioned = set(re.findall(r"evals/baselines/([A-Za-z0-9._-]+)", script))
+    # The per-mode directories are built as ``<replay key>-mode-$slug``: the prefix is the only other name allowed.
+    mentioned = set(re.findall(r"evals/baselines/([A-Za-z0-9._-]+)", script)) - {f"{REPLAY_KEY}-mode-"}
     assert mentioned <= {REPLAY_KEY}, mentioned
     workflow = (REPO_ROOT / ".github" / "workflows" / "evals.yml").read_text()
     assert set(re.findall(r"evals/baselines/([A-Za-z0-9._-]+)", workflow)) <= {REPLAY_KEY, "prompt_tokens.json"}

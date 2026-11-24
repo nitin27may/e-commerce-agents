@@ -57,6 +57,9 @@ AGENT_FACTORIES: dict[str, tuple[str, str]] = {
     "orchestrator": ("orchestrator.agent", "create_orchestrator_agent"),
 }
 
+# The specialists an orchestrator can route to: every agent but the orchestrator itself.
+SPECIALISTS = frozenset(name for name in AGENT_FACTORIES if name != "orchestrator")
+
 
 @dataclass
 class RunOutcome:
@@ -482,13 +485,18 @@ class ProductionRunner:
                 parked = True
 
         steps = get_steps()
+        routes = _routes(steps)
+        if not routes and mode_name != "tool":
+            # A mesh or a workflow names its specialists in ``agents_involved`` (there is no ``call_specialist_agent``
+            # step to read), so the specialists it reached are its routes.
+            routes = [a for a in agents_involved if a in SPECIALISTS]
         # run_completed.usage is {total, by_agent}: the orchestrator's calls plus
         # every specialist's, as reported over A2A.
         tokens_in, tokens_out = tokens_from_usage(usage)
         return RunOutcome(
             text=text,
             tools_called=_tools_called(steps),
-            routes=_routes(steps),
+            routes=routes,
             tokens_in=tokens_in,
             tokens_out=tokens_out,
             grounding=grounding,
