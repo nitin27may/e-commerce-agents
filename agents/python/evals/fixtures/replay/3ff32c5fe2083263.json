@@ -7,102 +7,11 @@
         "contents": [
           {
             "additional_properties": {},
-            "text": "How has sentiment for the Sony WH-1000XM5 changed over the last few months?",
+            "text": "Please summarize customer reviews and sentiment for the Dyson V15, including overall ratings, pros and cons, and any notable trends.",
             "type": "text"
           }
         ],
         "role": "user",
-        "type": "message"
-      },
-      {
-        "additional_properties": {},
-        "contents": [
-          {
-            "additional_properties": {},
-            "arguments": "{\"name\":\"Sony WH-1000XM5\"}",
-            "call_id": "call_lqDlL0lOcNqfGMMChbsYtiZ9",
-            "hosted": false,
-            "name": "find_product_by_name",
-            "type": "function_call"
-          }
-        ],
-        "role": "assistant",
-        "type": "message"
-      },
-      {
-        "additional_properties": {},
-        "contents": [
-          {
-            "additional_properties": {},
-            "call_id": "call_lqDlL0lOcNqfGMMChbsYtiZ9",
-            "items": [
-              {
-                "additional_properties": {},
-                "text": "{\"found\": true, \"product_id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"product_name\": \"Sony WH-1000XM5\"}",
-                "type": "text"
-              }
-            ],
-            "result": "{\"found\": true, \"product_id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"product_name\": \"Sony WH-1000XM5\"}",
-            "type": "function_result"
-          }
-        ],
-        "role": "tool",
-        "type": "message"
-      },
-      {
-        "additional_properties": {},
-        "contents": [
-          {
-            "additional_properties": {},
-            "arguments": "{\"product_id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\"}",
-            "call_id": "call_hJEw06SjdxtKbnVJmqlJXhiy",
-            "hosted": false,
-            "name": "analyze_sentiment",
-            "type": "function_call"
-          },
-          {
-            "additional_properties": {},
-            "arguments": "{\"product_id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"months\": 6}",
-            "call_id": "call_EuwhwZqDmdddspO8ksI7SQWo",
-            "hosted": false,
-            "name": "get_sentiment_trend",
-            "type": "function_call"
-          }
-        ],
-        "role": "assistant",
-        "type": "message"
-      },
-      {
-        "additional_properties": {},
-        "contents": [
-          {
-            "additional_properties": {},
-            "call_id": "call_hJEw06SjdxtKbnVJmqlJXhiy",
-            "items": [
-              {
-                "additional_properties": {},
-                "text": "{\"product_id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"product_name\": \"Sony WH-1000XM5\", \"overall_sentiment\": \"very_positive\", \"average_rating\": 4.7, \"total_reviews\": 15, \"rating_distribution\": {\"5\": 5, \"4\": 7, \"3\": 1, \"2\": 1, \"1\": 1}, \"verified_reviews\": 12, \"unverified_reviews\": 3, \"verified_avg_rating\": 3.75, \"pros\": [\"Great\", \"Perfect\", \"Excellent\", \"Fast\", \"Quality\"], \"cons\": [\"Disappointed\"]}",
-                "type": "text"
-              }
-            ],
-            "result": "{\"product_id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"product_name\": \"Sony WH-1000XM5\", \"overall_sentiment\": \"very_positive\", \"average_rating\": 4.7, \"total_reviews\": 15, \"rating_distribution\": {\"5\": 5, \"4\": 7, \"3\": 1, \"2\": 1, \"1\": 1}, \"verified_reviews\": 12, \"unverified_reviews\": 3, \"verified_avg_rating\": 3.75, \"pros\": [\"Great\", \"Perfect\", \"Excellent\", \"Fast\", \"Quality\"], \"cons\": [\"Disappointed\"]}",
-            "type": "function_result"
-          },
-          {
-            "additional_properties": {},
-            "call_id": "call_EuwhwZqDmdddspO8ksI7SQWo",
-            "items": [
-              {
-                "additional_properties": {},
-                "text": "{\"product_id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"product_name\": \"Sony WH-1000XM5\", \"period_months\": 6, \"trend\": \"declining\", \"monthly_data\": [{\"month\": \"2026-03\", \"average_rating\": 4.5, \"review_count\": 2}, {\"month\": \"2026-04\", \"average_rating\": 4.0, \"review_count\": 2}, {\"month\": \"2026-06\", \"average_rating\": 3.6, \"review_count\": 5}, {\"month\": \"2026-07\", \"average_rating\": 3.33, \"review_count\": 3}, {\"month\": \"2026-08\", \"average_rating\": 4.67, \"review_count\": 3}]}",
-                "type": "text"
-              }
-            ],
-            "result": "{\"product_id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"product_name\": \"Sony WH-1000XM5\", \"period_months\": 6, \"trend\": \"declining\", \"monthly_data\": [{\"month\": \"2026-03\", \"average_rating\": 4.5, \"review_count\": 2}, {\"month\": \"2026-04\", \"average_rating\": 4.0, \"review_count\": 2}, {\"month\": \"2026-06\", \"average_rating\": 3.6, \"review_count\": 5}, {\"month\": \"2026-07\", \"average_rating\": 3.33, \"review_count\": 3}, {\"month\": \"2026-08\", \"average_rating\": 4.67, \"review_count\": 3}]}",
-            "type": "function_result"
-          }
-        ],
-        "role": "tool",
         "type": "message"
       }
     ],
@@ -435,16 +344,19 @@
     ]
   },
   "response": {
-    "created_at": "2026-08-26T01:16:58.000000Z",
-    "finish_reason": "stop",
+    "created_at": "2026-11-24T03:07:49.000000Z",
+    "finish_reason": "tool_calls",
     "messages": [
       {
         "additional_properties": {},
         "contents": [
           {
             "additional_properties": {},
-            "text": "The Sony WH-1000XM5 has an overall very positive sentiment, with an average rating of 4.7 from 15 reviews. However, the sentiment trend over the last 6 months shows a decline, with average monthly ratings dipping in June and July before rebounding in August.\n\n```sentiment\n{\n  \"product_id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\",\n  \"product_name\": \"Sony WH-1000XM5\",\n  \"overall_sentiment\": \"very_positive\",\n  \"average_rating\": 4.7,\n  \"total_reviews\": 15,\n  \"rating_distribution\": {\"5\": 5, \"4\": 7, \"3\": 1, \"2\": 1, \"1\": 1},\n  \"pros\": [\"Great\", \"Perfect\", \"Excellent\", \"Fast\", \"Quality\"],\n  \"cons\": [\"Disappointed\"],\n  \"trend\": \"declining\",\n  \"monthly_data\": [\n    {\"month\": \"2026-03\", \"average_rating\": 4.5, \"review_count\": 2},\n    {\"month\": \"2026-04\", \"average_rating\": 4.0, \"review_count\": 2},\n    {\"month\": \"2026-06\", \"average_rating\": 3.6, \"review_count\": 5},\n    {\"month\": \"2026-07\", \"average_rating\": 3.33, \"review_count\": 3},\n    {\"month\": \"2026-08\", \"average_rating\": 4.67, \"review_count\": 3}\n  ]\n}\n```\n\nWould you like a breakdown of what topics (like quality or value) are driving these changes, or do you want to see specific recent reviews?",
-            "type": "text"
+            "arguments": "{\"name\":\"Dyson V15\"}",
+            "call_id": "call_hD6Vuixbh6xjf5ATaoX0phxm",
+            "hosted": false,
+            "name": "find_product_by_name",
+            "type": "function_call"
           }
         ],
         "role": "assistant",
@@ -452,16 +364,20 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-EGwY6lUCCgKcijX5QYPUuFY4VikyO",
+    "response_id": "chatcmpl-EnbAjsj593oPIcRELPb79KNnXOwSj",
     "type": "chat_response",
     "usage_details": {
-      "cache_read_input_token_count": 0,
+      "cache_read_input_token_count": 3840,
+      "completion/accepted_prediction_tokens": 0,
+      "completion/audio_tokens": 0,
       "completion/reasoning_tokens": 0,
-      "input_token_count": 4547,
-      "output_token_count": 378,
-      "prompt/cached_tokens": 0,
+      "completion/rejected_prediction_tokens": 0,
+      "input_token_count": 4026,
+      "output_token_count": 19,
+      "prompt/audio_tokens": 0,
+      "prompt/cached_tokens": 3840,
       "reasoning_output_token_count": 0,
-      "total_token_count": 4925
+      "total_token_count": 4045
     }
   }
 }
