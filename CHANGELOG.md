@@ -35,6 +35,7 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ### Fixed
 
+- **Handoff mode sends the `grounding` frame.** `HandoffMode.run` now goes through `@grounded_run` like the workflow modes and group chat, so its final text is verified per `GROUNDING_MODE` and `chat_stream` emits the frame its .NET twin already sent. Parity row 17 updated.
 - **.NET `ProcessRefund` refuses a denied return.** It only refused an already-refunded one, so a `denied` return could be refunded when the pre-park check was bypassed. It now uses `GateRules.RefundBlocker` and answers Python's payload (`This return was denied and cannot be refunded.` plus `return_id`).
 - **`check_bundle_eligibility` reads the seeded buy-x-get-y shape.** The seed stores `category`/`min_quantity`; the tool read `categories`/`buy_quantity`, so it listed the deal for any cart. It now accepts both spellings and requires the minimum quantity.
 - `test_config_repo_root` no longer fails on macOS: it built its host layout under a literal `/home/...`, which `Path.resolve()` rewrites there; it now uses a resolved temp directory
