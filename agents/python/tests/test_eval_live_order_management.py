@@ -48,9 +48,11 @@ def test_a_case_that_asserts_a_gated_tool_call_expects_the_park() -> None:
     # Keyed on expected_tool_args: the baseline return case lists initiate_return but the model first asks for a
     # refund preference, so it asserts no park.
     for entry in _raw():
-        gated = GATED & set(entry.get("expected_tool_args", {})) | (GATED & {t for t in entry["expected_tools"][:1]})
+        gated = GATED & set(entry.get("expected_tool_args", {})) | (
+            GATED & {t for t in entry.get("expected_tools", [])[:1]}
+        )
         if gated and entry["type"] != "multi_turn":
-            assert entry.get("expect_hitl") is True, (gated, entry["input"])
+            assert entry.get("expect_hitl") is True, (gated, entry.get("input"))
 
 
 def test_every_order_case_runs_as_a_seeded_user() -> None:
