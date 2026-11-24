@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Runs once when the dev container is created. No secrets are needed or read.
+# Runs when the dev container is created or rebuilt. It checks which model variables are
+# present and never prints or writes their values.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -14,12 +15,11 @@ if ! command -v uv >/dev/null 2>&1; then
   export PATH="$HOME/.local/bin:$PATH"
 fi
 
-# .env for scripts/dev.sh: the minimal template, switched to replay so it starts
-# with no key. An existing .env is never overwritten.
-if [ ! -f .env ]; then
-  sed -e 's/^LLM_PROVIDER=.*/LLM_PROVIDER=replay/' \
-      -e 's/^OPENAI_API_KEY=/# OPENAI_API_KEY=/' .env.minimal > .env
-fi
+# .env for scripts/dev.sh. The provider comes from whichever Codespaces secrets are present
+# (provider.sh); no secret value is written to the file. An .env you took over is never touched.
+# shellcheck source=/dev/null
+source .devcontainer/provider.sh
+write_codespaces_env "$PWD"
 
 echo "==> tutorials (Python)"
 uv sync --project tutorials --extra dev
