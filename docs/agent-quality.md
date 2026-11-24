@@ -2,16 +2,16 @@
 
 This page explains how the project measures whether its agents answer correctly and resist attacks: what is scored, on which datasets, and what CI enforces. It is for anyone who wants to judge the agents' quality, run the evals, or add a case.
 
-**Where the scores stand.** Six quality datasets of five or six cases each are scored on groundedness, correctness and completeness. The committed overall scores run from 0.51 to 1.00:
+**Where the scores stand.** Six quality datasets of five or six cases each are scored on groundedness, correctness and completeness. The committed overall scores run from 0.75 to 1.00:
 
 | Agent | Overall |
 |-------|--------:|
 | review-sentiment | 1.00 |
+| orchestrator (routing) | 1.00 |
 | product-discovery | 0.96 |
-| inventory-fulfillment | 0.82 |
-| orchestrator (routing) | 0.80 |
-| pricing-promotions | 0.68 |
-| order-management | 0.51 |
+| pricing-promotions | 0.96 |
+| inventory-fulfillment | 0.90 |
+| order-management | 0.75 |
 
 These scores come from replayed recordings, not a live model run. Every case is answered from a response recorded on `gpt-4.1-2025-04-14`, and the scorer is deterministic. A score says the recorded answers still pass the current code and prompts; it does not say how a model would do today. The [eval scorecard](eval-scorecard.md) has the per-dimension numbers and the full caveat, and [replay mode](replay-mode.md) explains the recordings.
 

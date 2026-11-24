@@ -35,6 +35,7 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ### Fixed
 
+- **Replay baselines refreshed to the re-recorded fixtures.** `python-inproc-replay` only: pricing-promotions 0.68 to 0.96, order-management 0.51 to 0.75, inventory-fulfillment 0.82 to 0.90, orchestrator routing 0.80 to 1.00 (product-discovery 0.96 and review-sentiment 1.00 unchanged). The live `python-inproc-gpt-4.1` baselines are untouched; scorecard and `docs/agent-quality.md` regenerated.
 - **Handoff mode sends the `grounding` frame.** `HandoffMode.run` now goes through `@grounded_run` like the workflow modes and group chat, so its final text is verified per `GROUNDING_MODE` and `chat_stream` emits the frame its .NET twin already sent. Parity row 17 updated.
 - **.NET `ProcessRefund` refuses a denied return.** It only refused an already-refunded one, so a `denied` return could be refunded when the pre-park check was bypassed. It now uses `GateRules.RefundBlocker` and answers Python's payload (`This return was denied and cannot be refunded.` plus `return_id`).
 - **`check_bundle_eligibility` reads the seeded buy-x-get-y shape.** The seed stores `category`/`min_quantity`; the tool read `categories`/`buy_quantity`, so it listed the deal for any cart. It now accepts both spellings and requires the minimum quantity.
