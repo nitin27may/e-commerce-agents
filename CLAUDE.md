@@ -207,6 +207,7 @@ are hashed verbatim, so the fixture would miss on the next seed. Any ordering in
 never on a random id. Parity row 57 (Python only).
 
 ### Event autonomy (#94, Python only)
+### Event autonomy (#94, #299, Python only)
 
 Budgets for what the system may do on its own when an event arrives, `docs/event-autonomy.md`. `order.shipment_delayed`
 (an outbox row; only the admin simulator produces it) is sized into a goodwill credit by a deterministic rule;
@@ -230,6 +231,11 @@ there is no wishlist). The last two fan out, one decision per target under `topi
 the customer message after the decision committed (`shared/autonomy/responder.py`, prompt `ops-responder.yaml`, not a routable
 agent): checked against the decision's facts, template fallback, stored in append-only `decision_drafts`, never read back by the
 engine. Monthly budgets, order-risk and damaged-item events and a carrier feed remain in #299.
+
+#299 added `order.item_damaged` (one credit or replacement offer per order line, ever), `order.risk_flagged` (a score read from
+the database; low is nothing, medium an approval, high an approval plus a reversible `orders.on_hold` flag; **never an autonomous
+tier**, the engine never cancels or refunds) and per-UTC-month budget caps (`global_per_month`). **`lock_budget` takes the day lock and
+then the month lock, always in that order** (migration 0018).
 
 Review-fix rules to keep (details in `docs/event-autonomy.md`): **a reviewer is never the approval's subject**
 (`authorize_decider` / `AuthorizeDecider`, a DB CHECK, and the engine never acts alone for a `support`/`admin` beneficiary;

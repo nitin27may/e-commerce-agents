@@ -204,6 +204,8 @@ async def respond_to_decision(pool: asyncpg.Pool, row_id: str, *, call: ModelCal
     row = await pool.fetchrow("SELECT * FROM agent_decisions WHERE id = $1", target)
     if row is None or row["outcome"] != "executed" or row["amount"] is None or row["order_id"] is None:
         return {"status": "skipped", "reason": "nothing_to_word"}
+    if row["action"] not in engine.RESPONDER_ACTIONS:
+        return {"status": "skipped", "reason": "action_not_worded"}  # no facts for it: the template stands
     if row["entry_type"] == "approved_execution":
         # An approved execution carries only a pointer: the facts were recorded on the decision it executes.
         proposed = await engine.decision_for_approval(pool, str(row["approval_id"]))

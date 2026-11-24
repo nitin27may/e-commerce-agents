@@ -307,12 +307,30 @@ export interface AutonomyDecision {
       product_id?: string;
       product_name?: string;
       new_price?: string;
-      line?: { product_name?: string; paid_unit_price?: string; new_price?: string; quantity?: number };
+      line?: {
+        product_name?: string;
+        paid_unit_price?: string;
+        new_price?: string;
+        quantity?: number;
+        damaged_quantity?: number;
+        damaged_value?: string;
+      };
+      /** order.item_damaged: what was offered (#299). */
+      resolution?: "credit" | "replacement_offer" | null;
+      /** order.risk_flagged: the score read from the database and the signals that fired (#299). */
+      risk?: {
+        score: number;
+        order_total?: string;
+        hold?: boolean;
+        signals?: { signal: string; points: number; actual: string }[];
+      };
     };
     rule?: string | null;
   };
-  /** The order line a price adjustment is for (#299). */
+  /** The order line a price adjustment or a damaged-item remedy is for (#299). */
   order_item_id?: string | null;
+  /** A risk review only: whether its order is on hold right now (null for every other action). */
+  hold_active?: boolean | null;
   /** The customer message the ops-responder drafted, or the template it fell back to; null when none was made. */
   draft?: { body: string; source: "llm" | "template"; model: string | null; fallback_reason: string | null } | null;
   policy_version: string | null;
@@ -336,6 +354,12 @@ export interface AutonomyBudget {
   per_customer_max_count: number;
   per_customer_max_amount: string;
   per_order_max_count: number;
+  /** This UTC month (YYYY-MM) and what the budget has drawn in it; the cap is null when the budget has none (#299). */
+  month?: string;
+  month_used_count?: number;
+  month_used_amount?: string;
+  month_max_count?: number | null;
+  month_max_amount?: string | null;
 }
 
 export interface AutonomyDecisionsResponse {
@@ -1417,6 +1441,8 @@ class ApiClient {
       delay_days: number | null;
       product_id?: string;
       new_price?: string | null;
+      order_item_id?: string | null;
+      quantity?: number | null;
     }>(
       "/api/admin/events/simulate",
       { method: "POST", body: JSON.stringify({ scenario }) },

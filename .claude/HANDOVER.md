@@ -234,3 +234,4 @@ Append newest first. One line per landed change: date, PR, what, and anything le
 - 2026-11-21 (docs session): issue #183 closed by #195; a third docs pass is starting on branch `docs/third-pass` (concept pages, configuration, database schema, API reference, quick start, troubleshooting, releasing, benchmark, reported-vs-actual, audit matrix, plus verifying the suspected mismatches in section 9).
 - 2026-11-21: #194 .NET approval-timeout worker (row 36 Full); v1.4.0 tagged; handover document added.
 - 2026-11-21: #158 to #193: see the plan's Progress block for the list.
+- 2026-11-24: #299 order-risk review, damaged-item remedy and monthly budgets on branch `feat/autonomy-risk-damage-monthly` (migration 0018, Python only). Left open in #299: a real carrier feed (external system), and fulfilment that honours `orders.on_hold`.

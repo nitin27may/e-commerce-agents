@@ -954,7 +954,7 @@ Python only, admin only; see [event-autonomy.md](event-autonomy.md). The feature
 
 | Endpoint | Notes |
 |---|---|
-| `POST /api/admin/events/simulate` | `{"scenario", "order_id", "delay_days", "event_id", "event_type", "product_id", "new_price"}`, all optional. Injects a seeded demo event: `order.shipment_delayed` (default), `product.price_dropped` (scenario `price-drop`, or `event_type` + `product_id` + `new_price`) or `inventory.back_in_stock` (scenario `back-in-stock`, or `event_type` + `product_id`). `404` for everyone unless `AUTONOMY_SIMULATOR_ENABLED`, answered before the admin check so a `401`/`403` cannot reveal the route |
+| `POST /api/admin/events/simulate` | `{"scenario", "order_id", "delay_days", "event_id", "event_type", "product_id", "new_price", "order_item_id", "quantity"}`, all optional. Injects a seeded demo event: `order.shipment_delayed` (default), `product.price_dropped` (scenario `price-drop`, or `event_type` + `product_id` + `new_price`), `inventory.back_in_stock` (scenario `back-in-stock`, or `event_type` + `product_id`), `order.risk_flagged` (scenario `order-risk`, or `event_type` + `order_id`) or `order.item_damaged` (scenario `item-damaged`, or `event_type` + `order_item_id` + optional `quantity`). `404` for everyone unless `AUTONOMY_SIMULATOR_ENABLED`, answered before the admin check so a `401`/`403` cannot reveal the route |
 | `GET /api/admin/decisions` | `?state=`, `?limit=` (default 100), `?offset=`. What the system decided, with its budget use and state |
 | `GET /api/admin/decisions/{id}` | One decision |
 | `POST /api/admin/decisions/{id}/reverse` | `{"note": "..."}` optional. Undoes an executed action with a new log row and a negating ledger entry; it does not return the day's budget |

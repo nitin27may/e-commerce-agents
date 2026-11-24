@@ -21,11 +21,19 @@ event, and a unique index on ``agent_decisions.event_key`` behind it):
 is a new row: ``approved_execution`` when staff approve one, ``reversal`` when an admin undoes one. A reversal is
 a negating ledger entry, never a delete, and does not give the day's budget back (the system did act).
 
-Three event types share this flow (``autonomy.yaml`` ``events:``): ``order.shipment_delayed`` (a goodwill credit per
+Five event types share this flow (``autonomy.yaml`` ``events:``): ``order.shipment_delayed`` (a goodwill credit per
 order), ``product.price_dropped`` (a price-adjustment credit per recent order *line*, one per line ever) and
 ``inventory.back_in_stock`` (a notification to customers whose cart holds the product: no money, no budget). The two
 newer ones fan out: one event becomes one decision per target, each in its own transaction under its own ``event_key``
 (``topic:event_id:target``), so a replayed event acts once per target.
+
+``order.risk_flagged`` scores a placed order from facts in the database (``policy.score_order``), never from the
+event, and ends in nothing (low risk) or an approval (medium); a high score also **holds** the order
+(``orders.on_hold``, reversible, recorded in the decision row and undone by a ``reversal`` row). The engine never
+cancels, refunds or clears an order on its own. ``order.item_damaged`` gives a damaged order line one remedy ever,
+a store credit or a free replacement offer, on the same budget machinery as the delay credit. A budget may also
+carry a per-UTC-month global cap (``global_per_month``): :func:`lock_budget` takes the day lock and then the month
+lock, so the month cap is checked and drawn atomically exactly like the day cap.
 
 No model is called anywhere here, and customer-facing text is a template. The optional ops-responder
 (``shared/autonomy/responder.py``) only re-words that text *after* the decision committed, from an outbox row this
@@ -51,6 +59,7 @@ from shared.approvals import repo
 from shared.approvals.intake import ASSIGNED_ROLE, ROLE_RANK
 from shared.autonomy.policy import (
     AUTONOMOUS_TIERS,
+    RESOLUTION_REPLACEMENT,
     Action,
     AutonomyPolicy,
     AutonomyPolicyError,
@@ -60,6 +69,10 @@ from shared.autonomy.policy import (
     check_budget,
     evaluate_tier,
     get_policy,
+    month_start,
+    next_month_start,
+    score_order,
+    size_damage_remedy,
 )
 from shared.demo_tour import TOUR_EMAIL
 from shared.idempotency import run_once
@@ -78,12 +91,18 @@ AGENT_NAME = "autonomy-engine"
 TOPIC_SHIPMENT_DELAYED = "order.shipment_delayed"
 TOPIC_PRICE_DROPPED = "product.price_dropped"
 TOPIC_BACK_IN_STOCK = "inventory.back_in_stock"
+TOPIC_ITEM_DAMAGED = "order.item_damaged"
+TOPIC_RISK_FLAGGED = "order.risk_flagged"
 TOPIC_DRAFT_REQUESTED = "autonomy.draft_requested"
 ACTION_GOODWILL_CREDIT = "goodwill_credit"
 ACTION_PRICE_ADJUSTMENT = "price_adjustment"
 ACTION_BACK_IN_STOCK = "back_in_stock_notice"
-#: Actions that move money (a store credit), as opposed to a notice.
-MONEY_ACTIONS = (ACTION_GOODWILL_CREDIT, ACTION_PRICE_ADJUSTMENT)
+ACTION_DAMAGE_REMEDY = "damage_goodwill"
+ACTION_RISK_REVIEW = "order_risk_review"
+#: Actions that draw on a budget (a store credit, or a replacement offer valued in money), as opposed to a notice.
+MONEY_ACTIONS = (ACTION_GOODWILL_CREDIT, ACTION_PRICE_ADJUSTMENT, ACTION_DAMAGE_REMEDY)
+#: Actions whose customer message the optional ops-responder may re-word (the credit ones it has facts for).
+RESPONDER_ACTIONS = (ACTION_GOODWILL_CREDIT, ACTION_PRICE_ADJUSTMENT)
 
 REVIEW_LINK = "/admin/approvals"
 DECISIONS_LINK = "/admin/decisions"
@@ -208,6 +227,35 @@ def parse_back_in_stock(payload: dict[str, Any], outbox_id: int | None) -> BackI
     return BackInStock(_event_id(payload, outbox_id), product_id)
 
 
+@dataclass(frozen=True)
+class ItemDamaged:
+    """``order.item_damaged``: the order line and how many units arrived damaged. None when invalid."""
+
+    event_id: str
+    order_item_id: uuid.UUID | None
+    quantity: int | None
+
+
+def parse_item_damaged(payload: dict[str, Any], outbox_id: int | None) -> ItemDamaged:
+    item_id = _uuid_or_none(payload["order_item_id"]) if "order_item_id" in payload else None
+    raw = payload.get("quantity", 1)
+    quantity = raw if isinstance(raw, int) and not isinstance(raw, bool) and 1 <= raw <= 10_000 else None
+    return ItemDamaged(_event_id(payload, outbox_id), item_id, quantity)
+
+
+@dataclass(frozen=True)
+class RiskFlagged:
+    """``order.risk_flagged``: only the order id is read from the event; every fact is read from the database."""
+
+    event_id: str
+    order_id: uuid.UUID | None
+
+
+def parse_risk_flagged(payload: dict[str, Any], outbox_id: int | None) -> RiskFlagged:
+    order_id = _uuid_or_none(payload["order_id"]) if "order_id" in payload else None
+    return RiskFlagged(_event_id(payload, outbox_id), order_id)
+
+
 # ── the result of one decision ───────────────────────────────────────────────
 
 
@@ -222,6 +270,8 @@ class Verdict:
     amount: Decimal | None = None
     evidence: dict[str, Any] = field(default_factory=dict)
     tripped: list[str] = field(default_factory=list)
+    #: A risk review only: hold the order (reversibly) in the same transaction that opens the approval.
+    hold: bool = False
 
 
 def _no_action(reason: str, **evidence: Any) -> Verdict:
@@ -236,8 +286,17 @@ async def lock_budget(conn: asyncpg.Connection, budget_key: str, day: date) -> N
 
     ``pg_advisory_xact_lock`` blocks until the holder commits or rolls back, and the next statement in READ
     COMMITTED then sees the holder's rows: so "read the usage, then draw" cannot interleave across events.
+
+    The **month** cap needs its own lock: two events either side of UTC midnight hold different day locks yet draw on
+    the same month. So the day lock is taken first and the month lock second, always in that order (every caller goes
+    through here, so two transactions can never take them the other way round). A budget with no month cap pays one
+    extra uncontended advisory lock.
     """
     await conn.execute("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", f"autonomy_budget:{budget_key}:{day}")
+    await conn.execute(
+        "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+        f"autonomy_budget_month:{budget_key}:{month_start(day):%Y-%m}",
+    )
 
 
 async def lock_order(conn: asyncpg.Connection, order_id: uuid.UUID) -> None:
@@ -272,15 +331,17 @@ async def credits_on_order(conn: asyncpg.Connection, order_id: uuid.UUID, action
     )
 
 
-async def adjustments_on_line(conn: asyncpg.Connection, order_item_id: uuid.UUID) -> int:
-    """Price adjustments actually paid on this order line (reversed ones count: the line gets one, ever)."""
+async def adjustments_on_line(
+    conn: asyncpg.Connection, order_item_id: uuid.UUID, action: str = ACTION_PRICE_ADJUSTMENT
+) -> int:
+    """Remedies of ``action`` actually granted on this order line (reversed ones count: the line gets one, ever)."""
     return int(
         await conn.fetchval(
             """SELECT count(*) FROM agent_decisions
                 WHERE order_item_id = $1 AND action = $2
                   AND ((entry_type = 'decision' AND outcome = 'executed') OR entry_type = 'approved_execution')""",
             order_item_id,
-            ACTION_PRICE_ADJUSTMENT,
+            action,
         )
     )
 
@@ -308,12 +369,26 @@ async def read_usage(
         sorted(AUTONOMOUS_TIERS),
     )
     on_order = await credits_on_order(conn, order_id, action)
+    # The month is the sum of the budget's per-day draws over the UTC calendar month ``day`` falls in (the day's own
+    # draws included), read under the same locks as the day.
+    month = await conn.fetchrow(
+        """SELECT count(*) AS n, COALESCE(sum(amount), 0) AS total
+             FROM agent_decisions
+            WHERE entry_type = 'decision' AND outcome = 'executed' AND tier = ANY($3::text[])
+              AND budget_key = $1 AND budget_day >= $2 AND budget_day < $4""",
+        budget_key,
+        month_start(day),
+        sorted(AUTONOMOUS_TIERS),
+        next_month_start(day),
+    )
     return Usage(
         global_count=totals["n"],
         global_amount=totals["total"],
         customer_count=totals["cust_n"],
         customer_amount=totals["cust_total"],
         order_count=on_order,
+        month_count=month["n"],
+        month_amount=month["total"],
     )
 
 
@@ -321,9 +396,11 @@ def budget_snapshot(budget: Budget | None, day: date, usage: Usage | None, drew:
     """What the decision row records about the budget: caps, usage before, and what this row drew."""
     if budget is None:  # a notice has no budget
         return {"budget_key": None, "day": day.isoformat(), "caps": None, "usage_before": None, "drew": None}
+    month_cap = budget.global_per_month
     return {
         "budget_key": budget.key,
         "day": day.isoformat(),
+        "month": f"{month_start(day):%Y-%m}",
         "caps": {
             "per_action_max_amount": money(budget.per_action_max_amount),
             "per_customer_per_day": {
@@ -335,6 +412,11 @@ def budget_snapshot(budget: Budget | None, day: date, usage: Usage | None, drew:
                 "max_count": budget.global_per_day.max_count,
                 "max_amount": money(budget.global_per_day.max_amount),
             },
+            "global_per_month": (
+                None
+                if month_cap is None
+                else {"max_count": month_cap.max_count, "max_amount": money(month_cap.max_amount)}
+            ),
         },
         "usage_before": None if usage is None else usage.to_dict(),
         "drew": None if drew is None else {"count": 1, "amount": money(drew)},
@@ -361,8 +443,10 @@ async def _approval_open_on_order(
     )
 
 
-async def _approval_open_on_line(conn: asyncpg.Connection, order_item_id: uuid.UUID) -> bool:
-    """Whether an adjustment for this order line is already waiting on an approval."""
+async def _approval_open_on_line(
+    conn: asyncpg.Connection, order_item_id: uuid.UUID, action: str = ACTION_PRICE_ADJUSTMENT
+) -> bool:
+    """Whether a remedy of ``action`` for this order line is already waiting on an approval."""
     return bool(
         await conn.fetchval(
             """SELECT 1 FROM agent_decisions d JOIN approvals a ON a.id = d.approval_id
@@ -370,7 +454,7 @@ async def _approval_open_on_line(conn: asyncpg.Connection, order_item_id: uuid.U
                   AND d.outcome = 'awaiting_approval' AND a.status = ANY($3::text[])
                 LIMIT 1""",
             order_item_id,
-            ACTION_PRICE_ADJUSTMENT,
+            action,
             _WAITING,
         )
     )
@@ -583,6 +667,217 @@ async def decide_price_dropped(
     return verdict, context
 
 
+async def decide_item_damaged(
+    conn: asyncpg.Connection,
+    event: ItemDamaged,
+    *,
+    policy: AutonomyPolicy,
+    day: date,
+) -> tuple[Verdict, dict[str, Any]]:
+    """The verdict for one ``order.item_damaged`` report. Read-only.
+
+    Run under :func:`lock_budget`, then :func:`lock_order`.
+
+    The remedy is sized from the order line (never the event): a free replacement when the damaged quantity is worth at
+    most ``replacement_max_line_value`` and the product is in stock, otherwise ``credit_percent`` of its value up to
+    ``max_credit``. One remedy per order line, ever (reversed ones count), and the order's ``per_order_max_count``
+    bounds how many of its lines may be remedied.
+    """
+    rule = policy.event(TOPIC_ITEM_DAMAGED)
+    assert rule is not None
+    action = policy.action(rule.action)
+    budget = _budget_of(policy, action)
+    context: dict[str, Any] = {
+        "order_id": None,
+        "order_item_id": None,
+        "user_id": None,
+        "customer_email": None,
+        "budget": budget,
+        "line": {},
+        "resolution": None,
+    }
+    if event.order_item_id is None:
+        return _no_action("invalid_event_item"), context
+    if event.quantity is None:
+        return _no_action("invalid_event_quantity"), context
+    line = await conn.fetchrow(
+        """SELECT oi.id, oi.order_id, oi.product_id, oi.quantity, oi.unit_price,
+                  o.status, o.total, o.user_id, o.created_at, u.email, u.role, p.name AS product_name
+             FROM order_items oi
+             JOIN orders o ON o.id = oi.order_id JOIN users u ON u.id = o.user_id
+             JOIN products p ON p.id = oi.product_id
+            WHERE oi.id = $1""",
+        event.order_item_id,
+    )
+    if line is None:
+        return _no_action("line_not_found"), context
+    if str(line["email"]).strip().lower() == TOUR_EMAIL:
+        return _no_action("demo_user_excluded"), context  # no ids on the row: see decide_shipment_delayed
+    context.update(
+        order_id=line["order_id"], order_item_id=line["id"], user_id=line["user_id"], customer_email=line["email"]
+    )
+    if line["status"] not in rule.eligible_order_statuses:
+        return _no_action("order_not_eligible", order_status=line["status"]), context
+    if event.quantity > line["quantity"]:
+        return _no_action("quantity_exceeds_line", quantity=event.quantity, line_quantity=line["quantity"]), context
+    age_days = max(0, (datetime.now(UTC) - line["created_at"]).days)
+    paid = Decimal(line["unit_price"])
+    value = (paid * event.quantity).quantize(_CENT, rounding=ROUND_HALF_UP)
+    context["line"] = {
+        "order_item_id": str(line["id"]),
+        "product_id": str(line["product_id"]),
+        "product_name": line["product_name"],
+        "quantity": line["quantity"],
+        "damaged_quantity": event.quantity,
+        "paid_unit_price": money(paid),
+        "damaged_value": money(value),
+        "days_since_purchase": age_days,
+    }
+    if age_days > rule.lookback_days:
+        return _no_action("damage_report_too_old", days_since_purchase=age_days), context
+    if await adjustments_on_line(conn, line["id"], ACTION_DAMAGE_REMEDY) >= 1:
+        return _no_action("line_already_remedied", value=money(value)), context
+    if await _approval_open_on_line(conn, line["id"], ACTION_DAMAGE_REMEDY):
+        return _no_action("approval_already_open", value=money(value)), context
+    remedied = await credits_on_order(conn, line["order_id"], ACTION_DAMAGE_REMEDY)
+    if remedied >= budget.per_order_max_count:
+        return _no_action("order_remedy_limit", remedies_on_order=remedied), context
+    stock = await conn.fetchval(
+        "SELECT COALESCE(sum(quantity), 0) FROM warehouse_inventory WHERE product_id = $1", line["product_id"]
+    )
+    sized = size_damage_remedy(rule, value, in_stock=stock >= event.quantity)
+    if sized is None:
+        return _no_action("remedy_below_minimum", value=money(value)), context
+    resolution, amount = sized
+    context["resolution"] = resolution
+    context["line"]["resolution"] = resolution
+    facts = {"amount": amount, "days_since_purchase": age_days, "order_total": line["total"]}
+    verdict = await _tier_and_budget(
+        conn,
+        action=action,
+        budget=budget,
+        facts=facts,
+        amount=amount,
+        beneficiary_role=line["role"],
+        user_id=line["user_id"],
+        order_id=line["order_id"],
+        day=day,
+        context=context,
+    )
+    verdict.evidence = {**verdict.evidence, "resolution": resolution}
+    return verdict, context
+
+
+def _address_key(raw: Any) -> tuple[str, str, str] | None:
+    """Street, zip and country of an address, normalised; None when there is nothing to compare."""
+    value = _loads(raw)
+    if not isinstance(value, dict) or not value:
+        return None
+    parts = tuple(" ".join(str(value.get(k) or "").lower().split()) for k in ("street", "zip", "country"))
+    return None if not any(parts) else parts  # type: ignore[return-value]
+
+
+def address_mismatch(shipping: Any, billing: Any) -> int | None:
+    """1 when shipping and billing differ in street, zip or country; 0 when they match; None when either is unknown."""
+    ship, bill = _address_key(shipping), _address_key(billing)
+    if ship is None or bill is None:
+        return None
+    return int(ship != bill)
+
+
+async def risk_facts(conn: asyncpg.Connection, order: asyncpg.Record, window_hours: int) -> dict[str, Any]:
+    """The signals for a risk score, all read from the database (the event only names the order)."""
+    items = await conn.fetchval("SELECT COALESCE(sum(quantity), 0) FROM order_items WHERE order_id = $1", order["id"])
+    in_window = await conn.fetchval(
+        """SELECT count(*) FROM orders
+            WHERE user_id = $1 AND created_at <= $2 AND created_at > $2 - make_interval(hours => $3)""",
+        order["user_id"],
+        order["created_at"],
+        window_hours,
+    )
+    age = None if order["user_created"] is None else max(0, (datetime.now(UTC) - order["user_created"]).days)
+    return {
+        "order_total": order["total"],
+        "account_age_days": age,
+        "address_mismatch": address_mismatch(order["shipping_address"], order["billing_address"]),
+        "items_count": int(items),
+        "orders_in_window": int(in_window),
+    }
+
+
+async def decide_risk_flagged(
+    conn: asyncpg.Connection, event: RiskFlagged, *, policy: AutonomyPolicy
+) -> tuple[Verdict, dict[str, Any]]:
+    """The verdict for one ``order.risk_flagged`` event. Read-only; run under :func:`lock_order`.
+
+    Low risk is ``no_action``. Medium opens an approval. High opens an approval **and** asks for the order to be held
+    (the hold is applied in the same transaction as the decision row). The engine never acts alone on a risk review:
+    the loader refuses an autonomous tier for one. A staff member's own order is never held by the engine either (the
+    hold is an action taken on them): it gets an approval only, which they cannot decide.
+    """
+    rule = policy.event(TOPIC_RISK_FLAGGED)
+    assert rule is not None
+    action = policy.action(rule.action)
+    context: dict[str, Any] = {"order_id": None, "user_id": None, "customer_email": None, "budget": None, "risk": {}}
+    if event.order_id is None:
+        return _no_action("invalid_event_order"), context
+    order = await conn.fetchrow(
+        """SELECT o.id, o.status, o.total, o.user_id, o.created_at, o.shipping_address, o.billing_address,
+                  o.on_hold, u.email, u.role, u.created_at AS user_created
+             FROM orders o JOIN users u ON u.id = o.user_id WHERE o.id = $1""",
+        event.order_id,
+    )
+    if order is None:
+        return _no_action("order_not_found"), context
+    if str(order["email"]).strip().lower() == TOUR_EMAIL:
+        return _no_action("demo_user_excluded"), context
+    context.update(order_id=order["id"], user_id=order["user_id"], customer_email=order["email"])
+    if order["status"] not in rule.eligible_order_statuses:
+        return _no_action("order_not_eligible", order_status=order["status"]), context
+    if order["on_hold"]:
+        return _no_action("order_already_held"), context
+    if await conn.fetchval(
+        """SELECT 1 FROM agent_decisions
+            WHERE entry_type = 'decision' AND order_id = $1 AND action = $2 AND tier = 'needs_approval' LIMIT 1""",
+        order["id"],
+        action.name,
+    ):
+        # One review per order, whatever the event id: a duplicate flag must not open a second approval or re-hold an
+        # order a person already cleared.
+        return _no_action("order_already_reviewed"), context
+    facts = await risk_facts(conn, order, rule.velocity_window_hours)
+    scored = score_order(rule, facts)
+    tier = evaluate_tier(action, {"risk_score": scored.score})
+    risk = {
+        "score": scored.score,
+        "signals": list(scored.triggered),
+        "facts": {k: None if v is None else str(v) for k, v in sorted(facts.items())},
+        "order_total": money(order["total"]),
+    }
+    context["risk"] = risk
+    evidence = tier.evidence | {"risk": risk}
+    if tier.tier == "no_action":
+        return Verdict("no_action", "no_action", ["risk_low"], rule_id=tier.rule_id, evidence=evidence), context
+    reasons = [tier.reason]
+    hold = tier.hold
+    if (order["role"] or "").lower() in STAFF_ROLES:
+        hold = False
+        reasons.append("beneficiary_is_staff")
+    risk["hold"] = hold
+    return (
+        Verdict(
+            tier="needs_approval",
+            outcome="awaiting_approval",
+            reasons=reasons,
+            rule_id=tier.rule_id,
+            amount=order["total"],  # what is at stake: it routes the approval; nothing is paid
+            evidence=evidence,
+            hold=hold,
+        ),
+        context,
+    )
+
+
 async def _insert_row(conn: asyncpg.Connection, **c: Any) -> None:
     await conn.execute(
         """INSERT INTO agent_decisions (id, entry_type, event_key, event_type, outbox_id, agent_name, action,
@@ -653,10 +948,31 @@ def _adjustment_text(amount: Decimal, order_id: uuid.UUID, line: dict[str, Any])
     )
 
 
+def _damage_text(amount: Decimal, order_id: uuid.UUID, event_input: dict[str, Any]) -> tuple[str, str, str]:
+    line = event_input.get("line", {})
+    name = line.get("product_name") or "An item in your order"
+    ref = str(order_id)[:8]
+    if event_input.get("resolution") == RESOLUTION_REPLACEMENT:
+        return (
+            "autonomy.damage_replacement",
+            "We are sending a replacement",
+            f"We are sorry that {name} in order {ref} arrived damaged. We will send you a replacement at no cost. "
+            "You do not need to do anything.",
+        )
+    return (
+        "autonomy.damage_credit",
+        "We added a store credit to your account",
+        f"We are sorry that {name} in order {ref} arrived damaged. We added ${money(amount)} of store credit to your "
+        "account.",
+    )
+
+
 def credit_message(
     action_name: str, amount: Decimal, order_id: uuid.UUID, event_input: dict[str, Any]
 ) -> tuple[str, str, str]:
     """``(notification kind, title, body)`` for a granted credit. Pure: the same inputs give the same text."""
+    if action_name == ACTION_DAMAGE_REMEDY:
+        return _damage_text(amount, order_id, event_input)
     if action_name == ACTION_PRICE_ADJUSTMENT:
         title, body = _adjustment_text(amount, order_id, event_input.get("line", {}))
         return "autonomy.price_adjustment", title, body
@@ -664,12 +980,22 @@ def credit_message(
     return "autonomy.goodwill_credit", title, body
 
 
-def _staff_note(action_name: str, amount: Decimal) -> str:
-    what = "a price adjustment for a price drop" if action_name == ACTION_PRICE_ADJUSTMENT else "a goodwill credit"
+def _staff_note(action_name: str, amount: Decimal, resolution: str | None = None) -> str:
+    if action_name == ACTION_DAMAGE_REMEDY and resolution == RESOLUTION_REPLACEMENT:
+        return (
+            f"A free replacement worth ${money(amount)} was offered for a damaged item. Nothing ships by itself: "
+            "please send it. The offer can be withdrawn from the decisions page."
+        )
+    what = {
+        ACTION_PRICE_ADJUSTMENT: "a price adjustment for a price drop",
+        ACTION_DAMAGE_REMEDY: "a damaged-item goodwill credit",
+    }.get(action_name, "a goodwill credit")
     return f"${money(amount)} as {what}. It can be reversed from the decisions page."
 
 
 def _ledger_reason(action_name: str, event_input: dict[str, Any], *, approved: bool) -> str:
+    if action_name == ACTION_DAMAGE_REMEDY:
+        return "damaged item: approved by staff" if approved else "damaged item: reported by the customer"
     if action_name == ACTION_PRICE_ADJUSTMENT:
         return "price adjustment: approved by staff" if approved else "price adjustment: price dropped"
     if approved:
@@ -677,7 +1003,19 @@ def _ledger_reason(action_name: str, event_input: dict[str, Any], *, approved: b
     return f"goodwill: shipment delayed {event_input.get('delay_days')} day(s)"
 
 
-def _reversal_message(action_name: str, amount: Decimal) -> tuple[str, str, str]:
+def _reversal_message(action_name: str, amount: Decimal, resolution: str | None = None) -> tuple[str, str, str]:
+    if action_name == ACTION_DAMAGE_REMEDY:
+        if resolution == RESOLUTION_REPLACEMENT:
+            return (
+                "autonomy.damage_reversed",
+                "A replacement offer was withdrawn",
+                "The replacement we offered for your damaged item was withdrawn. Contact support with questions.",
+            )
+        return (
+            "autonomy.damage_reversed",
+            "A store credit was withdrawn",
+            f"The ${money(amount)} credit added to your account for a damaged item was withdrawn.",
+        )
     if action_name == ACTION_PRICE_ADJUSTMENT:
         return (
             "autonomy.price_adjustment_reversed",
@@ -691,13 +1029,34 @@ def _reversal_message(action_name: str, amount: Decimal) -> tuple[str, str, str]
     )
 
 
-def _approval_ask(action_name: str, amount: Decimal) -> str:
-    what = (
-        "price adjustment for a price drop"
-        if action_name == ACTION_PRICE_ADJUSTMENT
-        else "goodwill credit for a late shipment"
-    )
+def _approval_ask(action_name: str, amount: Decimal, event_input: dict[str, Any] | None = None) -> str:
+    if action_name == ACTION_RISK_REVIEW:
+        risk = (event_input or {}).get("risk", {})
+        held = "The order is on hold until you decide. " if risk.get("hold") else ""
+        return f"An order of ${money(amount)} scored {risk.get('score')} for risk. {held}Please review it."
+    if action_name == ACTION_DAMAGE_REMEDY:
+        what = "remedy for a damaged item"
+    elif action_name == ACTION_PRICE_ADJUSTMENT:
+        what = "price adjustment for a price drop"
+    else:
+        what = "goodwill credit for a late shipment"
     return f"A ${money(amount)} {what} is outside what the system may do alone."
+
+
+def _held_text(order_id: uuid.UUID) -> tuple[str, str, str]:
+    return (
+        "autonomy.order_held",
+        "Your order is being reviewed",
+        f"We are reviewing order {str(order_id)[:8]} before it ships. We will update you as soon as that is done.",
+    )
+
+
+def _released_text(order_id: uuid.UUID) -> tuple[str, str, str]:
+    return (
+        "autonomy.order_released",
+        "Your order review is finished",
+        f"The review of order {str(order_id)[:8]} is finished and nothing is holding it any more.",
+    )
 
 
 async def _route_for(amount: Decimal) -> tuple[str, str, str, list[str], dict[str, Any]]:
@@ -722,7 +1081,7 @@ async def _route_for(amount: Decimal) -> tuple[str, str, str, list[str], dict[st
 # ── writing a decision ───────────────────────────────────────────────────────
 
 
-async def enqueue_draft(conn: asyncpg.Connection, row_id: uuid.UUID) -> None:
+async def enqueue_draft(conn: asyncpg.Connection, row_id: uuid.UUID, action_name: str | None = None) -> None:
     """Ask the worker to word this decision's customer message, when the responder is on.
 
     In the decision's own transaction, so the request exists exactly when the decision does. The row is only a
@@ -732,6 +1091,8 @@ async def enqueue_draft(conn: asyncpg.Connection, row_id: uuid.UUID) -> None:
 
     if not settings.AUTONOMY_RESPONDER_ENABLED:
         return
+    if action_name is not None and action_name not in RESPONDER_ACTIONS:
+        return  # the responder has facts for credits and price adjustments only
     await enqueue(
         conn,
         TOPIC_DRAFT_REQUESTED,
@@ -780,10 +1141,11 @@ def _plan_row(plan: Plan, decision_id: uuid.UUID, outbox_id: int | None, policy:
         "tier": v.tier,
         "outcome": v.outcome,
         "reasons": v.reasons,
-        "input": {"event": plan.event_input, "rule": v.rule_id, "evidence": v.evidence},
+        "input": {"event": plan.event_input, "rule": v.rule_id, "evidence": v.evidence}
+        | ({"hold": True} if v.hold else {}),
         "budget": budget_snapshot(plan.budget, plan.day, plan.usage, drew) | {"tripped": v.tripped},
         "policy_version": policy.version,
-        "reversible": plan.action.reversible and acts,
+        "reversible": plan.action.reversible and (acts or v.hold),
         # A notice has no budget, but the day it counts against is how a customer's daily notice cap is read.
         "budget_day": plan.day if (drew is not None or (acts and plan.action.kind == "notice")) else None,
     }
@@ -822,27 +1184,34 @@ async def _write_plan(
     elif v.tier in AUTONOMOUS_TIERS:
         assert v.amount is not None and plan.user_id is not None and plan.order_id is not None
         await _insert_row(conn, **row)
-        await _grant_credit(
-            conn,
-            decision_id=decision_id,
-            user_id=plan.user_id,
-            amount=v.amount,
-            reason=_ledger_reason(plan.action.name, plan.event_input, approved=False),
-        )
+        resolution = plan.event_input.get("resolution")
+        if resolution != RESOLUTION_REPLACEMENT:  # a replacement offer moves no store credit
+            await _grant_credit(
+                conn,
+                decision_id=decision_id,
+                user_id=plan.user_id,
+                amount=v.amount,
+                reason=_ledger_reason(plan.action.name, plan.event_input, approved=False),
+            )
         kind, title, body = credit_message(plan.action.name, v.amount, plan.order_id, plan.event_input)
         await _notify_customer(
             conn, decision_id, kind=kind, title=title, body=body, link=ORDERS_LINK, email=plan.customer_email
         )
-        if v.tier == "auto_notify":
+        if v.tier == "auto_notify" or resolution == RESOLUTION_REPLACEMENT:
+            # A replacement is always flagged to staff: nothing in the system ships it, so somebody has to.
             await notify(
                 conn,
                 kind="autonomy.action_taken",
-                title="The system issued a store credit on its own",
-                body=_staff_note(plan.action.name, v.amount),
+                title=(
+                    "The system offered a replacement on its own"
+                    if resolution == RESOLUTION_REPLACEMENT
+                    else "The system issued a store credit on its own"
+                ),
+                body=_staff_note(plan.action.name, v.amount, resolution),
                 link=DECISIONS_LINK,
                 role="admin",
             )
-        await enqueue_draft(conn, decision_id)
+        await enqueue_draft(conn, decision_id, plan.action.name)
     else:  # needs_approval
         assert v.amount is not None and plan.user_id is not None and plan.order_id is not None
         route, role, version, route_reasons, route_evidence = await _route_for(v.amount)
@@ -871,11 +1240,25 @@ async def _write_plan(
             actor_role="system",
         )
         await _insert_row(conn, **row, approval_id=approval["id"])
+        if v.hold:
+            # The hold goes in with the decision row that records it and names it (hold_decision_id), so a release can
+            # only ever undo this hold. It is a flag: the order's status is untouched.
+            await conn.execute(
+                "UPDATE orders SET on_hold = TRUE, held_at = NOW(), hold_decision_id = $2 "
+                "WHERE id = $1 AND NOT on_hold",
+                plan.order_id,
+                decision_id,
+            )
+            kind, title, body = _held_text(plan.order_id)
+            await _notify_customer(
+                conn, decision_id, kind=kind, title=title, body=body, link=ORDERS_LINK, email=plan.customer_email
+            )
+            result["held"] = True
         await notify(
             conn,
             kind="autonomy.approval_needed",
             title="An automatic action needs your approval",
-            body=_approval_ask(plan.action.name, v.amount),
+            body=_approval_ask(plan.action.name, v.amount, plan.event_input),
             link=REVIEW_LINK,
             approval_id=str(approval["id"]),
             role=role,
@@ -1122,6 +1505,99 @@ async def _handle_price_dropped(
     return _summarise(results, truncated=truncated)
 
 
+# ── a damaged item: one remedy per order line ────────────────────────────────
+
+
+async def _decide_damage_in_tx(
+    pool: asyncpg.Pool, topic: str, event: ItemDamaged, outbox_id: int | None, policy: AutonomyPolicy
+) -> dict[str, Any]:
+    rule = policy.event(topic)
+    assert rule is not None
+    action = policy.action(rule.action)
+    budget = _budget_of(policy, action)
+    key = event_key(topic, event.event_id)
+    day = utc_day()
+    async with pool.acquire() as conn, conn.transaction():
+        # Budget (day, then month) first, then the order (a line never moves between orders), then rows.
+        await lock_budget(conn, budget.key, day)
+        order_id = (
+            None
+            if event.order_item_id is None
+            else await conn.fetchval("SELECT order_id FROM order_items WHERE id = $1", event.order_item_id)
+        )
+        if order_id is not None:
+            await lock_order(conn, order_id)
+        existing = await conn.fetchrow(_EXISTING_SQL, key)
+        if existing is not None:
+            logger.info("autonomy event replayed, no second action decision=%s", log_safe(existing["id"]))
+            return _replayed(existing)
+        verdict, ctx = await decide_item_damaged(conn, event, policy=policy, day=day)
+        plan = Plan(
+            key=key,
+            topic=topic,
+            action=action,
+            budget=budget,
+            day=day,
+            verdict=verdict,
+            event_input={
+                "event_id": event.event_id,
+                "order_item_id": str(event.order_item_id) if event.order_item_id else None,
+                "quantity": event.quantity,
+                "line": ctx.get("line", {}),
+                "resolution": ctx.get("resolution"),
+            },
+            user_id=ctx["user_id"],
+            order_id=ctx["order_id"],
+            order_item_id=ctx["order_item_id"],
+            customer_email=ctx["customer_email"],
+            usage=ctx.get("usage"),
+        )
+        result = await _write_plan(conn, plan, uuid.uuid4(), outbox_id, policy)
+    _log_decision(result, topic)
+    return result
+
+
+# ── order risk: one review per order ─────────────────────────────────────────
+
+
+async def _decide_risk_in_tx(
+    pool: asyncpg.Pool, topic: str, event: RiskFlagged, outbox_id: int | None, policy: AutonomyPolicy
+) -> dict[str, Any]:
+    rule = policy.event(topic)
+    assert rule is not None
+    action = policy.action(rule.action)
+    key = event_key(topic, event.event_id)
+    day = utc_day()
+    async with pool.acquire() as conn, conn.transaction():
+        # No budget (nothing is paid), so the order lock is the first and only advisory lock.
+        if event.order_id is not None:
+            await lock_order(conn, event.order_id)
+        existing = await conn.fetchrow(_EXISTING_SQL, key)
+        if existing is not None:
+            logger.info("autonomy event replayed, no second action decision=%s", log_safe(existing["id"]))
+            return _replayed(existing)
+        verdict, ctx = await decide_risk_flagged(conn, event, policy=policy)
+        plan = Plan(
+            key=key,
+            topic=topic,
+            action=action,
+            budget=None,
+            day=day,
+            verdict=verdict,
+            event_input={
+                "event_id": event.event_id,
+                "order_id": str(event.order_id) if event.order_id else None,
+                "risk": ctx.get("risk", {}),
+            },
+            user_id=ctx["user_id"],
+            order_id=ctx["order_id"],
+            customer_email=ctx["customer_email"],
+        )
+        result = await _write_plan(conn, plan, uuid.uuid4(), outbox_id, policy)
+    _log_decision(result, topic)
+    return result
+
+
 # ── back in stock: one notice per customer ───────────────────────────────────
 
 
@@ -1292,6 +1768,20 @@ async def handle_event(
         return await _handle_price_dropped(pool, topic, payload, outbox_id, policy)
     if kind == "notice":
         return await _handle_back_in_stock(pool, topic, payload, outbox_id, policy)
+    if kind == "damage_credit":
+        damaged = parse_item_damaged(payload, outbox_id)
+        return await run_once(
+            SCOPE_EVENT,
+            event_key(topic, damaged.event_id),
+            lambda: _decide_damage_in_tx(pool, topic, damaged, outbox_id, policy),
+        )
+    if kind == "risk_review":
+        flagged = parse_risk_flagged(payload, outbox_id)
+        return await run_once(
+            SCOPE_EVENT,
+            event_key(topic, flagged.event_id),
+            lambda: _decide_risk_in_tx(pool, topic, flagged, outbox_id, policy),
+        )
     event = parse_shipment_delayed(payload, outbox_id)
     return await run_once(
         SCOPE_EVENT, event_key(topic, event.event_id), lambda: _decide_in_tx(pool, topic, payload, outbox_id, policy)
@@ -1363,6 +1853,8 @@ async def _execute_approved_in_tx(
         )
         if order is None:
             return {"success": False, "status": "failed", "reason": "order_not_found"}
+        if decision["action"] == ACTION_RISK_REVIEW:
+            return await _clear_risk(conn, decision, approver, amount, order["email"])
         policy = get_policy()
         try:
             ceiling = policy.budget(decision["budget_key"]).per_order_max_count
@@ -1376,9 +1868,14 @@ async def _execute_approved_in_tx(
             # Credited some other way since this was proposed. The engine no longer opens such an approval, so this
             # is a backstop for one opened before the order was credited (or by an older build): do not pay twice.
             return {"success": False, "status": "failed", "reason": "order_already_credited"}
-        if decision["order_item_id"] is not None and await adjustments_on_line(conn, decision["order_item_id"]) >= 1:
-            # One adjustment per order line, ever: the same backstop, per line.
+        if (
+            decision["order_item_id"] is not None
+            and await adjustments_on_line(conn, decision["order_item_id"], decision["action"]) >= 1
+        ):
+            # One remedy per order line, ever: the same backstop, per line.
             return {"success": False, "status": "failed", "reason": "line_already_adjusted"}
+        event_input = _loads(decision["input"]).get("event", {})
+        resolution = event_input.get("resolution")
         execution_id = uuid.uuid4()
         await _insert_row(
             conn,
@@ -1394,28 +1891,128 @@ async def _execute_approved_in_tx(
             tier="needs_approval",
             outcome="executed",
             reasons=["approved by staff"],
-            input={"decision_id": str(decision["id"]), "proposed_amount": money(decision["amount"])},
+            input={"decision_id": str(decision["id"]), "proposed_amount": money(decision["amount"])}
+            | ({"resolution": resolution} if resolution else {}),
             budget={"budget_key": decision["budget_key"], "drew": None, "note": "a person authorised this: no draw"},
             policy_version=decision["policy_version"],
             approval_id=decision["approval_id"],
             reversible=reversible,
             actor_email=approver,
         )
-        await _grant_credit(
-            conn,
-            decision_id=execution_id,
-            user_id=decision["user_id"],
-            amount=amount,
-            reason=_ledger_reason(decision["action"], {}, approved=True),
-        )
-        event_input = _loads(decision["input"]).get("event", {})
+        if resolution != RESOLUTION_REPLACEMENT:
+            await _grant_credit(
+                conn,
+                decision_id=execution_id,
+                user_id=decision["user_id"],
+                amount=amount,
+                reason=_ledger_reason(decision["action"], {}, approved=True),
+            )
         kind, title, body = credit_message(decision["action"], amount, decision["order_id"], event_input)
         await _notify_customer(
             conn, execution_id, kind=kind, title=title, body=body, link=ORDERS_LINK, email=order["email"]
         )
-        await enqueue_draft(conn, execution_id)
+        if resolution == RESOLUTION_REPLACEMENT:
+            await notify(
+                conn,
+                kind="autonomy.action_taken",
+                title="A replacement was approved",
+                body=_staff_note(decision["action"], amount, resolution),
+                link=DECISIONS_LINK,
+                role="admin",
+            )
+        await enqueue_draft(conn, execution_id, decision["action"])
     logger.info("autonomy approved action executed approval=%s", log_safe(approval_id))
     return {"success": True, "status": "executed", "decision_id": str(execution_id), "amount": money(amount)}
+
+
+async def _clear_risk(
+    conn: asyncpg.Connection, decision: asyncpg.Record, approver: str, amount: Decimal, customer_email: str
+) -> dict[str, Any]:
+    """A staff approval of a risk review: the order is cleared, and a hold this review placed is released.
+
+    Records an ``approved_execution`` row (no money, not itself reversible) and, if the hold is still in place, a
+    ``reversal`` row that undoes it, in the caller's transaction (which holds the order lock and the approval row lock).
+    Nothing is cancelled, refunded or paid.
+    """
+    if amount != decision["amount"]:
+        return {"success": False, "status": "failed", "reason": "amount_out_of_range"}  # nothing to edit on a review
+    execution_id = uuid.uuid4()
+    released = await _release_hold(conn, decision, actor_email=approver, note="released when staff cleared the review")
+    await _insert_row(
+        conn,
+        id=execution_id,
+        entry_type="approved_execution",
+        event_type=decision["event_type"],
+        action=decision["action"],
+        user_id=decision["user_id"],
+        order_id=decision["order_id"],
+        amount=decision["amount"],
+        tier="needs_approval",
+        outcome="executed",
+        reasons=["approved by staff"],
+        input={"decision_id": str(decision["id"]), "cleared": True, "hold_released": released is not None},
+        budget={"budget_key": None, "drew": None, "note": "a risk review moves no money"},
+        policy_version=decision["policy_version"],
+        approval_id=decision["approval_id"],
+        reversible=False,
+        actor_email=approver,
+    )
+    if released is not None:
+        kind, title, body = _released_text(decision["order_id"])
+        await _notify_customer(
+            conn, execution_id, kind=kind, title=title, body=body, link=ORDERS_LINK, email=customer_email
+        )
+    logger.info("autonomy risk review cleared approval=%s", log_safe(decision["approval_id"]))
+    return {
+        "success": True,
+        "status": "executed",
+        "decision_id": str(execution_id),
+        "amount": money(decision["amount"]),
+        "hold_released": released is not None,
+    }
+
+
+async def _release_hold(
+    conn: asyncpg.Connection, decision: asyncpg.Record, *, actor_email: str, note: str | None
+) -> uuid.UUID | None:
+    """Undo the hold ``decision`` placed: clear the flag and append the ``reversal`` row. None if no hold was in place.
+
+    Only the decision that placed the hold may release it (``hold_decision_id``), so a later hold by another review is
+    never undone by an older reversal. Call under :func:`lock_order`.
+    """
+    if not decision["reversible"]:
+        return None
+    if await conn.fetchval(
+        "SELECT 1 FROM agent_decisions WHERE entry_type = 'reversal' AND reverses_id = $1", decision["id"]
+    ):
+        return None
+    freed = await conn.fetchval(
+        """UPDATE orders SET on_hold = FALSE, held_at = NULL, hold_decision_id = NULL
+            WHERE id = $1 AND on_hold AND hold_decision_id = $2 RETURNING id""",
+        decision["order_id"],
+        decision["id"],
+    )
+    if freed is None:
+        return None
+    reversal_id = uuid.uuid4()
+    await _insert_row(
+        conn,
+        id=reversal_id,
+        entry_type="reversal",
+        event_type=decision["event_type"],
+        action=decision["action"],
+        user_id=decision["user_id"],
+        order_id=decision["order_id"],
+        amount=decision["amount"],
+        outcome="reversed",
+        reasons=["hold released"],
+        input={"reverses": str(decision["id"]), "decision": str(decision["id"])},
+        policy_version=decision["policy_version"],
+        reverses_id=decision["id"],
+        actor_email=actor_email,
+        note=note,
+    )
+    return reversal_id
 
 
 async def execute_approved(
@@ -1457,11 +2054,19 @@ async def reverse(pool: asyncpg.Pool, decision_id: str, *, actor_email: str, not
     except ValueError:
         raise AutonomyError(404, "Decision not found") from None
     async with pool.acquire() as conn, conn.transaction():
+        # Lock order: the order before the decision row, as everywhere (a hold release changes the order).
+        peek = await conn.fetchrow(
+            "SELECT order_id, action FROM agent_decisions WHERE id = $1 AND entry_type = 'decision'", target_id
+        )
+        if peek is not None and peek["action"] == ACTION_RISK_REVIEW and peek["order_id"] is not None:
+            await lock_order(conn, peek["order_id"])
         decision = await conn.fetchrow(
             "SELECT * FROM agent_decisions WHERE id = $1 AND entry_type = 'decision' FOR UPDATE", target_id
         )
         if decision is None:
             raise AutonomyError(404, "Decision not found")
+        if decision["action"] == ACTION_RISK_REVIEW:
+            return await _reverse_hold(conn, decision, actor_email, note)
         if decision["tier"] == "needs_approval":
             executed = await conn.fetchrow(
                 "SELECT * FROM agent_decisions WHERE entry_type = 'approved_execution' AND approval_id = $1 FOR UPDATE",
@@ -1487,7 +2092,9 @@ async def reverse(pool: asyncpg.Pool, decision_id: str, *, actor_email: str, not
         balance = await conn.fetchval(
             "SELECT COALESCE(sum(amount), 0) FROM store_credit_ledger WHERE user_id = $1", executed["user_id"]
         )
-        if balance < executed["amount"]:
+        resolution = _loads(decision["input"]).get("event", {}).get("resolution")
+        moves_money = resolution != RESOLUTION_REPLACEMENT
+        if moves_money and balance < executed["amount"]:
             raise AutonomyError(409, "The credit has already been used, so it cannot be reversed")
         customer = await conn.fetchval("SELECT email FROM users WHERE id = $1", executed["user_id"])
         reversal_id = uuid.uuid4()
@@ -1510,21 +2117,41 @@ async def reverse(pool: asyncpg.Pool, decision_id: str, *, actor_email: str, not
             actor_email=actor_email,
             note=(note or None),
         )
-        await _grant_credit(
-            conn,
-            decision_id=reversal_id,
-            user_id=executed["user_id"],
-            amount=-executed["amount"],
-            reason=(
-                "price adjustment reversed"
-                if executed["action"] == ACTION_PRICE_ADJUSTMENT
-                else "goodwill credit reversed"
-            ),
-        )
-        kind, title, body = _reversal_message(executed["action"], executed["amount"])
+        if moves_money:
+            await _grant_credit(
+                conn,
+                decision_id=reversal_id,
+                user_id=executed["user_id"],
+                amount=-executed["amount"],
+                reason={
+                    ACTION_PRICE_ADJUSTMENT: "price adjustment reversed",
+                    ACTION_DAMAGE_REMEDY: "damaged-item credit reversed",
+                }.get(executed["action"], "goodwill credit reversed"),
+            )
+        kind, title, body = _reversal_message(executed["action"], executed["amount"], resolution)
         await notify(conn, kind=kind, title=title, body=body, link=ORDERS_LINK, user_email=customer)
     logger.info("autonomy action reversed decision=%s", log_safe(decision_id))
     return {"status": "reversed", "reversal_id": str(reversal_id), "reverses_id": str(executed["id"])}
+
+
+async def _reverse_hold(
+    conn: asyncpg.Connection, decision: asyncpg.Record, actor_email: str, note: str | None
+) -> dict[str, Any]:
+    """An admin releases a risk hold: the flag is cleared and a ``reversal`` row says who and why."""
+    if not decision["reversible"]:
+        raise AutonomyError(409, "No hold was placed, so there is nothing to release")
+    if await conn.fetchval(
+        "SELECT 1 FROM agent_decisions WHERE entry_type = 'reversal' AND reverses_id = $1", decision["id"]
+    ):
+        raise AutonomyError(409, "Already reversed")
+    reversal_id = await _release_hold(conn, decision, actor_email=actor_email, note=(note or None))
+    if reversal_id is None:
+        raise AutonomyError(409, "The hold is no longer in place")
+    customer = await conn.fetchval("SELECT email FROM users WHERE id = $1", decision["user_id"])
+    kind, title, body = _released_text(decision["order_id"])
+    await notify(conn, kind=kind, title=title, body=body, link=ORDERS_LINK, user_email=customer)
+    logger.info("autonomy hold released decision=%s", log_safe(decision["id"]))
+    return {"status": "reversed", "reversal_id": str(reversal_id), "reverses_id": str(decision["id"])}
 
 
 # ── reading ──────────────────────────────────────────────────────────────────
@@ -1532,7 +2159,7 @@ async def reverse(pool: asyncpg.Pool, decision_id: str, *, actor_email: str, not
 #: ``state_of`` in SQL, so a state filter and its count run in the database over every row, not over a window.
 #: ``test_the_sql_state_filter_agrees_with_the_derived_state_for_every_state`` pins the two together.
 _STATE_CASE = f"""CASE
-    WHEN r.id IS NOT NULL THEN 'reversed'
+    WHEN r.id IS NOT NULL AND d.action <> '{ACTION_RISK_REVIEW}' THEN 'reversed'
     WHEN d.tier = 'no_action' THEN 'no_action'
     WHEN d.tier IN ({", ".join(f"'{t}'" for t in sorted(AUTONOMOUS_TIERS))}) THEN 'executed'
     WHEN x.id IS NOT NULL THEN 'executed_after_approval'
@@ -1550,20 +2177,26 @@ SELECT d.id, d.event_key, d.event_type, d.action, d.budget_key, d.order_id, d.am
        x.actor_email AS approved_by,
        r.id AS reversal_id, r.created_at AS reversed_at, r.actor_email AS reversed_by, r.note AS reversal_note,
        d.order_item_id, dd.body AS draft_body, dd.source AS draft_source, dd.model AS draft_model,
-       dd.fallback_reason AS draft_fallback
+       dd.fallback_reason AS draft_fallback, ho.on_hold AS order_on_hold, ho.hold_decision_id AS order_hold_decision_id
   FROM agent_decisions d
+  LEFT JOIN orders ho ON ho.id = d.order_id
   LEFT JOIN users u ON u.id = d.user_id
   LEFT JOIN approvals a ON a.id = d.approval_id
   LEFT JOIN agent_decisions x ON x.entry_type = 'approved_execution' AND x.approval_id = d.approval_id
-  LEFT JOIN agent_decisions r ON r.entry_type = 'reversal' AND r.reverses_id = COALESCE(x.id, d.id)
+  LEFT JOIN agent_decisions r ON r.entry_type = 'reversal'
+        AND r.reverses_id = CASE WHEN d.action = 'order_risk_review' THEN d.id ELSE COALESCE(x.id, d.id) END
   LEFT JOIN decision_drafts dd ON dd.decision_id = COALESCE(x.id, d.id)
  WHERE d.entry_type = 'decision'
 """
 
 
 def state_of(row: asyncpg.Record | dict[str, Any]) -> str:
-    """One word for where a decision stands, derived from the append-only rows around it."""
-    if row["reversal_id"]:
+    """One word for where a decision stands, derived from the append-only rows around it.
+
+    A risk review is the exception to "a reversal ends it": its reversal releases the hold, but the review itself is
+    still waiting on (or already got) a person, so its state follows the approval and the hold is reported separately.
+    """
+    if row["reversal_id"] and row["action"] != ACTION_RISK_REVIEW:
         return "reversed"
     if row["tier"] == "no_action":
         return "no_action"
@@ -1585,6 +2218,14 @@ def state_of(row: asyncpg.Record | dict[str, Any]) -> str:
 
 def _present(row: asyncpg.Record) -> dict[str, Any]:
     state = state_of(row)
+    is_risk = row["action"] == ACTION_RISK_REVIEW
+    hold_active = bool(
+        is_risk
+        and row["reversible"]
+        and not row["reversal_id"]
+        and row["order_on_hold"]
+        and row["order_hold_decision_id"] == row["id"]
+    )
     return {
         "id": str(row["id"]),
         "created_at": row["created_at"].isoformat(),
@@ -1618,10 +2259,14 @@ def _present(row: asyncpg.Record) -> dict[str, Any]:
         "approved_by": row["approved_by"],
         "reversed_at": row["reversed_at"].isoformat() if row["reversed_at"] else None,
         "reversed_by": row["reversed_by"],
-        "can_reverse": bool(
+        "can_reverse": hold_active
+        if is_risk
+        else bool(
             state in ("executed", "executed_after_approval")
             and (row["execution_reversible"] if row["execution_id"] else row["reversible"])
         ),
+        # A risk review: whether its order is on hold right now (None for every other action).
+        "hold_active": hold_active if is_risk else None,
     }
 
 
@@ -1686,10 +2331,25 @@ async def budget_overview(
             day,
             sorted(AUTONOMOUS_TIERS),
         )
+        month = budget.global_per_month
+        month_row = await db.fetchrow(
+            """SELECT count(*) AS n, COALESCE(sum(amount), 0) AS total FROM agent_decisions
+                WHERE entry_type = 'decision' AND outcome = 'executed' AND tier = ANY($3::text[])
+                  AND budget_key = $1 AND budget_day >= $2 AND budget_day < $4""",
+            budget.key,
+            month_start(day),
+            sorted(AUTONOMOUS_TIERS),
+            next_month_start(day),
+        )
         out.append(
             {
                 "budget_key": budget.key,
                 "day": day.isoformat(),
+                "month": f"{month_start(day):%Y-%m}",
+                "month_used_count": month_row["n"],
+                "month_used_amount": money(month_row["total"]),
+                "month_max_count": None if month is None else month.max_count,
+                "month_max_amount": None if month is None else money(month.max_amount),
                 "used_count": row["n"],
                 "used_amount": money(row["total"]),
                 "max_count": budget.global_per_day.max_count,

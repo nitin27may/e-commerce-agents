@@ -20,6 +20,16 @@ const STATE: Record<AutonomyState, { label: string; tone: SemanticTone }> = {
   no_action: { label: "Nothing to do", tone: "neutral" },
 };
 
+/** A risk review is "cleared" or "upheld" by a person, not "done" by the system, so it reads differently. */
+const RISK_STATE: Partial<Record<AutonomyState, { label: string; tone: SemanticTone }>> = {
+  awaiting_approval: { label: "Waiting for review", tone: "warning" },
+  approving: { label: "Being cleared", tone: "info" },
+  executed_after_approval: { label: "Cleared by staff", tone: "success" },
+  rejected: { label: "Review rejected", tone: "neutral" },
+  expired: { label: "Expired, nothing was cleared", tone: "neutral" },
+  failed: { label: "Approved but not cleared", tone: "destructive" },
+};
+
 const TIER: Record<string, string> = {
   auto: "Acted alone",
   auto_notify: "Acted alone, staff told",
@@ -35,6 +45,8 @@ const REASON: Record<string, string> = {
   "budget:order_count": "This order has already been credited",
   "budget:global_daily_count": "Today's limit on automatic actions is used up",
   "budget:global_daily_amount": "Would take today's total over its limit",
+  "budget:global_monthly_count": "This month's limit on automatic actions is used up",
+  "budget:global_monthly_amount": "Would take this month's total over its limit",
   "budget:amount_missing": "No amount could be determined",
   invalid_event_order: "The event named no valid order",
   invalid_event_delay: "The event gave no usable delay",
@@ -60,12 +72,24 @@ const REASON: Record<string, string> = {
   recipient_is_staff: "Staff are not notified by the system",
   customer_not_found: "The customer does not exist",
   notice_needs_review: "The policy does not let this notice go out alone",
+  invalid_event_item: "The event named no valid order line",
+  invalid_event_quantity: "The event gave no usable quantity",
+  quantity_exceeds_line: "More units were reported damaged than the order line has",
+  damage_report_too_old: "The damage was reported too long after the purchase",
+  line_already_remedied: "This order line has already had a remedy for damage",
+  order_remedy_limit: "This order has reached its limit of remedied lines",
+  remedy_below_minimum: "The remedy would come to less than one cent",
+  order_already_held: "The order is already on hold",
+  order_already_reviewed: "A person has already been asked to review this order",
+  risk_low: "The order looks ordinary, so nothing was done",
 };
 
 const ACTION_LABEL: Record<string, string> = {
   goodwill_credit: "goodwill credit",
   price_adjustment: "price adjustment",
   back_in_stock_notice: "back-in-stock notice",
+  damage_goodwill: "damaged-item remedy",
+  order_risk_review: "order risk review",
   none: "no action",
 };
 
@@ -92,14 +116,28 @@ export function DecisionCard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const state = STATE[decision.state] ?? { label: decision.state, tone: "neutral" as const };
+  const isRisk = decision.action === "order_risk_review";
+  const state =
+    (isRisk ? RISK_STATE[decision.state] : undefined) ??
+    STATE[decision.state] ?? { label: decision.state, tone: "neutral" as const };
   const drew = decision.budget.drew;
   const tripped = decision.budget.tripped ?? [];
   const actionName = ACTION_LABEL[decision.action] ?? decision.action.replaceAll("_", " ");
-  const amountPart = decision.amount == null && decision.applied_amount == null ? "" : ` ${money(decision.applied_amount ?? decision.amount)}`;
+  // A risk review's amount is the order's total (what is at stake), not something paid: it is shown separately.
+  const amountPart =
+    isRisk || (decision.amount == null && decision.applied_amount == null)
+      ? ""
+      : ` ${money(decision.applied_amount ?? decision.amount)}`;
   const label = `${actionName}${amountPart} for ${decision.customer_email ?? "unknown customer"}`;
   const event = decision.input.event;
   const productName = event?.line?.product_name ?? event?.product_name;
+  const risk = event?.risk;
+  const resolutionText =
+    event?.resolution === "replacement_offer"
+      ? "free replacement offered"
+      : event?.resolution === "credit"
+        ? "store credit"
+        : null;
 
   async function reverse() {
     setBusy(true);
@@ -108,7 +146,7 @@ export function DecisionCard({
       await onReverse(decision.id, note.trim() || undefined);
       setConfirming(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not reverse");
+      setError(e instanceof Error ? e.message : isRisk ? "Could not release the hold" : "Could not reverse");
     } finally {
       setBusy(false);
     }
@@ -130,6 +168,8 @@ export function DecisionCard({
           {event?.line?.paid_unit_price && event.line.new_price
             ? ` · paid ${money(event.line.paid_unit_price)}, now ${money(event.line.new_price)}`
             : ""}
+          {event?.line?.damaged_quantity ? ` · ${event.line.damaged_quantity} damaged` : ""}
+          {resolutionText ? ` · ${resolutionText}` : ""}
           {decision.policy_version ? ` · policy ${decision.policy_version}` : ""}
         </p>
       </CardHeader>
@@ -142,6 +182,29 @@ export function DecisionCard({
             ))}
           </ul>
         </div>
+        {risk && (
+          <div data-testid="decision-risk">
+            <p className="font-medium">
+              Risk score {risk.score} of 100{risk.order_total ? ` for an order of ${money(risk.order_total)}` : ""}
+            </p>
+            {(risk.signals ?? []).length > 0 && (
+              <ul className="list-disc pl-5 text-muted-foreground">
+                {(risk.signals ?? []).map((s) => (
+                  <li key={s.signal}>
+                    {s.signal.replaceAll("-", " ")} (+{s.points})
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="text-muted-foreground">
+              {decision.hold_active
+                ? "The order is on hold until a person decides. Nothing was cancelled or refunded."
+                : decision.reversed_by
+                  ? `The hold was released by ${decision.reversed_by} on ${formatDateTime(decision.reversed_at)}.`
+                  : "The order was not held."}
+            </p>
+          </div>
+        )}
         <p className="text-muted-foreground">
           {drew
             ? `Drew ${money(drew.amount)} from the ${decision.budget.budget_key?.replaceAll("_", " ")} budget for ${decision.budget.day} (UTC).`
@@ -149,7 +212,9 @@ export function DecisionCard({
               ? "Drew nothing: a limit was reached, so a person decides."
               : "Drew nothing from the budget."}
           {decision.approved_by ? ` Approved by ${decision.approved_by}.` : ""}
-          {decision.reversed_by ? ` Reversed by ${decision.reversed_by} on ${formatDateTime(decision.reversed_at)}.` : ""}
+          {decision.reversed_by && !isRisk
+            ? ` Reversed by ${decision.reversed_by} on ${formatDateTime(decision.reversed_at)}.`
+            : ""}
         </p>
         {decision.draft && (
           <div data-testid="decision-draft">
@@ -181,7 +246,7 @@ export function DecisionCard({
               </label>
               <Button type="button" size="sm" variant="destructive" onClick={reverse} disabled={busy}>
                 {busy ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Undo2 data-icon="inline-start" />}
-                Confirm reversal
+                {isRisk ? "Confirm release" : "Confirm reversal"}
               </Button>
               <Button type="button" size="sm" variant="outline" onClick={() => setConfirming(false)} disabled={busy}>
                 Cancel
@@ -190,7 +255,7 @@ export function DecisionCard({
           ) : (
             <Button type="button" size="sm" variant="outline" onClick={() => setConfirming(true)}>
               <Undo2 data-icon="inline-start" />
-              Reverse
+              {isRisk ? "Release hold" : "Reverse"}
             </Button>
           ))}
       </CardContent>

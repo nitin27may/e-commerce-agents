@@ -15,7 +15,9 @@
 #                       small -> an executed, auto decision; medium -> executed, auto_notify; large -> an
 #                       awaiting_approval decision and a pending `autonomous_action` approval in the staff inbox.
 #                       Then the price-drop scenario (one price-adjustment decision per recent order line) and the
-#                       back-in-stock scenario (a notice per cart holding the product, no amount) (#299).
+#                       back-in-stock scenario (a notice per cart holding the product, no amount) (#299), the order-risk
+#                       scenario (a risk review: never an autonomous tier, a hold never changes the order's status), the
+#                       item-damaged scenario (one remedy per order line) and the monthly budget use the page shows.
 #   2. return lifecycle a customer return over the approval threshold pauses for approval; an admin approves it; the
 #                       run waits for a carrier scan (a `carrier_scan` wait, no inbox row); the simulator posts the scan;
 #                       the worker resumes it into inspection; staff accept it and the return is refunded.
@@ -51,6 +53,9 @@ CHECKS=(
   "autonomy: large simulated delay waits for approval and opens an autonomous_action inbox row"
   "autonomy: a simulated price drop gives each recent order line one price-adjustment decision"
   "autonomy: a simulated back-in-stock event notifies the carts that hold the product, with no amount"
+  "autonomy: a simulated order-risk event is scored from the database, never acts alone, and a hold leaves the order's status alone"
+  "autonomy: a simulated damaged item gets at most one remedy per order line"
+  "autonomy: every budget reports this month's use beside the day's"
   "returns: an over-threshold return pauses for approval before anything is created"
   "returns: an admin approving it leaves a carrier_scan wait and no new inbox row"
   "returns: the simulated scan is resumed by the outbox worker into an inspection wait"
@@ -97,6 +102,7 @@ fi
 
 python3 - "$ORCH_URL" <<'PY' || fail "a flagged feature did not behave as documented (see above)"
 import json
+import re
 import subprocess
 import sys
 import time
@@ -223,6 +229,70 @@ told = sql("SELECT count(*) FROM notifications WHERE kind = 'autonomy.back_in_st
 if told == "0":
     raise Step("a back-in-stock decision executed but no customer notification exists")
 ok(f"autonomy back in stock -> {len(sent)} notice(s), no amount, customer notified")
+
+# Order risk (#299): the score is read from the database; a review ends in nothing or a person, and a hold is a flag.
+UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+risk = call("POST", "/api/admin/events/simulate", admin, {"scenario": "order-risk"})
+if not risk.get("enqueued") or risk.get("event_type") != "order.risk_flagged" or not UUID_RE.match(str(risk.get("order_id"))):
+    raise Step(f"the order-risk scenario enqueued nothing usable: {risk}")
+reviewed = wait_for(
+    "a risk decision for the order",
+    lambda: next((d for d in decisions_of("order.risk_flagged") if d.get("order_id") == risk["order_id"]), None),
+)
+if reviewed.get("tier") not in ("needs_approval", "no_action"):
+    raise Step(f"a risk review acted alone: {reviewed}")
+status, held = sql(f"SELECT status, on_hold FROM orders WHERE id = '{risk['order_id']}'").split("|")
+if status not in ("placed", "confirmed"):
+    raise Step(f"a risk review changed the order's status to {status!r}")
+if (held == "t") != bool(reviewed.get("hold_active")):
+    raise Step(f"the order's hold flag ({held}) disagrees with the decision: {reviewed}")
+if held == "t" and (reviewed.get("tier") != "needs_approval" or not reviewed.get("can_reverse")):
+    raise Step(f"a held order must also be waiting for approval and reversible: {reviewed}")
+if reviewed.get("tier") == "needs_approval":
+    inbox = call("GET", "/api/approvals?limit=200", admin)["approvals"]
+    if not any(a.get("kind") == "autonomous_action" and a.get("id") == reviewed.get("approval_id") for a in inbox):
+        raise Step(f"the risk review has no autonomous_action row in the staff inbox: {reviewed}")
+ok(f"autonomy order risk -> {reviewed['tier']}, hold={'yes' if held == 't' else 'no'}, order status unchanged ({status})")
+
+# Damaged item (#299): one remedy per order line, ever.
+dmg = call("POST", "/api/admin/events/simulate", admin, {"scenario": "item-damaged"})
+if not dmg.get("enqueued") or dmg.get("event_type") != "order.item_damaged" or not dmg.get("order_item_id"):
+    raise Step(f"the item-damaged scenario enqueued nothing usable: {dmg}")
+first = wait_for(
+    "a damaged-item decision for the line",
+    lambda: next((d for d in decisions_of("order.item_damaged") if d.get("order_item_id") == dmg["order_item_id"]), None),
+)
+if first.get("action") == "damage_goodwill":
+    if first.get("tier") == "no_action" or first.get("amount") is None:
+        raise Step(f"a damaged-item remedy has no amount or tier: {first}")
+    again = call(
+        "POST", "/api/admin/events/simulate", admin,
+        {"event_type": "order.item_damaged", "order_item_id": dmg["order_item_id"], "event_id": "smoke-damage-again"},
+    )
+    if not again.get("enqueued"):
+        raise Step(f"the second damage report was not enqueued: {again}")
+    wait_for(
+        "the second report to be logged as no_action",
+        lambda: next(
+            (d for d in decisions_of("order.item_damaged") if d.get("input", {}).get("event", {}).get("event_id") == "smoke-damage-again"),
+            None,
+        ),
+    )
+    n = sql(
+        f"SELECT count(*) FROM agent_decisions WHERE order_item_id = '{dmg['order_item_id']}' AND action = 'damage_goodwill'"
+        " AND entry_type = 'decision'"
+    )
+    if n != "1":
+        raise Step(f"more than one remedy decision for one order line: {n}")
+ok(f"autonomy damaged item -> {first.get('action')}/{first.get('tier')}, one decision per order line")
+
+# Monthly budgets (#299): the page's numbers come from the same rows the caps are checked against.
+budgets = call("GET", "/api/admin/decisions?limit=1", admin)["budgets"]
+if not budgets or any(b.get("month_max_count") is None or b.get("month_used_count") is None for b in budgets):
+    raise Step(f"a budget does not report its month: {budgets}")
+if any(b["month_used_count"] < b["used_count"] for b in budgets):
+    raise Step(f"a month cannot have drawn less than its own day: {budgets}")
+ok(f"autonomy monthly budgets -> {len(budgets)} budget(s) report month use and cap")
 
 # ── 2. return lifecycle ───────────────────────────────────────────────────────────────────────────────────────
 # A customer whose newest order is delivered and over the approval threshold, so the policy asks a person.

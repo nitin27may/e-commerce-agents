@@ -162,6 +162,8 @@ async def test_the_list_says_which_scenarios_and_whether_the_responder_is_on(
     assert body["event_scenarios"] == {
         "price-drop": "product.price_dropped",
         "back-in-stock": "inventory.back_in_stock",
+        "order-risk": "order.risk_flagged",
+        "item-damaged": "order.item_damaged",
     }
     assert body["responder_enabled"] is False
     monkeypatch.setattr("shared.config.settings.AUTONOMY_RESPONDER_ENABLED", True)

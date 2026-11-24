@@ -4,6 +4,11 @@
 #                 satisfies a condition, so it can only fall through towards needs_approval.
 #   budget_cases  an amount drawn on top of some usage -> allowed, or the caps that trip (exactly at a cap is allowed).
 #   credit_cases  a delay in days -> the credit it earns (null below the minimum).
+#   risk_score_cases    facts of an order -> the risk score order.risk_flagged gives it (signals add up, capped at 100).
+#   damage_cases        a damaged quantity's value and whether it is in stock -> the remedy order.item_damaged picks.
+#   month_cases         a day -> the first day of its UTC month and of the next (the month budget cap's window).
+#
+# A tier case may also say `hold: true|false` under expect (only a risk review's needs_approval rule holds).
 #
 # Every rule of every action must be hit by a tier case; the tests enforce it.
 
@@ -107,6 +112,61 @@ tier_cases:
     facts: {}
     expect: { tier: needs_approval, rule: default-approval }
 
+  # damage_goodwill (order.item_damaged): amount and days since the purchase decide.
+  - name: "damage: a 10 remedy within 30 days acts alone"
+    action: damage_goodwill
+    facts: { amount: 10, days_since_purchase: 30 }
+    expect: { tier: auto, rule: auto-small-damage }
+  - name: "damage: a 10.01 remedy still acts alone but staff are told"
+    action: damage_goodwill
+    facts: { amount: 10.01, days_since_purchase: 3 }
+    expect: { tier: auto_notify, rule: notify-medium-damage }
+  - name: "damage: exactly the 15 cap acts alone and staff are told"
+    action: damage_goodwill
+    facts: { amount: 15, days_since_purchase: 30 }
+    expect: { tier: auto_notify, rule: notify-medium-damage }
+  - name: "damage: a 15.01 remedy needs approval"
+    action: damage_goodwill
+    facts: { amount: 15.01, days_since_purchase: 3 }
+    expect: { tier: needs_approval, rule: default-approval }
+  - name: "damage: a small remedy reported on day 31 needs approval"
+    action: damage_goodwill
+    facts: { amount: 5, days_since_purchase: 31 }
+    expect: { tier: needs_approval, rule: default-approval }
+  - name: "damage: an unknown age never acts alone"
+    action: damage_goodwill
+    facts: { amount: 5 }
+    expect: { tier: needs_approval, rule: default-approval }
+  # order_risk_review (order.risk_flagged): the risk score alone decides, and it never acts alone.
+  - name: "risk: a score of 0 is low risk, nothing happens"
+    action: order_risk_review
+    facts: { risk_score: 0 }
+    expect: { tier: no_action, rule: risk-low, hold: false }
+  - name: "risk: 29 is still low"
+    action: order_risk_review
+    facts: { risk_score: 29 }
+    expect: { tier: no_action, rule: risk-low, hold: false }
+  - name: "risk: 30 is the lowest medium, a person reviews, no hold"
+    action: order_risk_review
+    facts: { risk_score: 30 }
+    expect: { tier: needs_approval, rule: risk-medium-review, hold: false }
+  - name: "risk: 69 is the highest medium"
+    action: order_risk_review
+    facts: { risk_score: 69 }
+    expect: { tier: needs_approval, rule: risk-medium-review, hold: false }
+  - name: "risk: 70 is high, the order is held and a person reviews"
+    action: order_risk_review
+    facts: { risk_score: 70 }
+    expect: { tier: needs_approval, rule: risk-high-hold, hold: true }
+  - name: "risk: 100 is high"
+    action: order_risk_review
+    facts: { risk_score: 100 }
+    expect: { tier: needs_approval, rule: risk-high-hold, hold: true }
+  - name: "risk: a score that could not be computed asks a person and holds nothing"
+    action: order_risk_review
+    facts: {}
+    expect: { tier: needs_approval, rule: default-approval, hold: false }
+
 budget_cases:
   - name: "an empty budget allows a credit of 5"
     budget: goodwill_credit
@@ -189,6 +249,89 @@ budget_cases:
     usage: { global_count: 50, global_amount: 100 }
     expect: { ok: false, tripped: [global_daily_count] }
 
+  # Monthly caps (global_per_month): checked beside the day's, exactly at a cap is allowed.
+  - name: "month: the 300th draw of the month is allowed"
+    budget: goodwill_credit
+    amount: 5
+    usage: { month_count: 299, month_amount: 1000 }
+    expect: { ok: true, tripped: [] }
+  - name: "month: the 301st draw of the month trips the monthly count"
+    budget: goodwill_credit
+    amount: 5
+    usage: { month_count: 300, month_amount: 1000 }
+    expect: { ok: false, tripped: [global_monthly_count] }
+  - name: "month: a draw landing exactly on the 3000 monthly amount is allowed"
+    budget: goodwill_credit
+    amount: 5
+    usage: { month_count: 100, month_amount: 2995 }
+    expect: { ok: true, tripped: [] }
+  - name: "month: a cent over the monthly amount trips it"
+    budget: goodwill_credit
+    amount: 5
+    usage: { month_count: 100, month_amount: 2995.01 }
+    expect: { ok: false, tripped: [global_monthly_amount] }
+  - name: "month: a day cap and a month cap can trip together, day first"
+    budget: goodwill_credit
+    amount: 5
+    usage: { global_count: 20, global_amount: 100, month_count: 300, month_amount: 3000 }
+    expect: { ok: false, tripped: [global_daily_count, global_monthly_count, global_monthly_amount] }
+  - name: "month: the month cap trips even when the day is empty"
+    budget: goodwill_credit
+    amount: 5
+    usage: { global_count: 0, month_count: 300 }
+    expect: { ok: false, tripped: [global_monthly_count] }
+  - name: "month: price_adjustment's 801st draw trips the monthly count"
+    budget: price_adjustment
+    amount: 5
+    usage: { month_count: 800, month_amount: 100 }
+    expect: { ok: false, tripped: [global_monthly_count] }
+  - name: "month: price_adjustment's 800th draw is allowed"
+    budget: price_adjustment
+    amount: 5
+    usage: { month_count: 799, month_amount: 100 }
+    expect: { ok: true, tripped: [] }
+  # damage_goodwill's own caps.
+  - name: "damage: exactly the per-action cap of 15 is allowed"
+    budget: damage_goodwill
+    amount: 15
+    usage: {}
+    expect: { ok: true, tripped: [] }
+  - name: "damage: a cent over 15 trips the per-action cap and the customer amount"
+    budget: damage_goodwill
+    amount: 15.01
+    usage: {}
+    expect: { ok: false, tripped: [per_action_amount, customer_daily_amount] }
+  - name: "damage: a third remedy on one order trips the per-order count"
+    budget: damage_goodwill
+    amount: 5
+    usage: { order_count: 2 }
+    expect: { ok: false, tripped: [order_count] }
+  - name: "damage: the 11th global draw of the day trips the daily count"
+    budget: damage_goodwill
+    amount: 5
+    usage: { global_count: 10, global_amount: 50, month_count: 10, month_amount: 50 }
+    expect: { ok: false, tripped: [global_daily_count] }
+  - name: "damage: the 150th draw of the month is allowed"
+    budget: damage_goodwill
+    amount: 5
+    usage: { month_count: 149, month_amount: 500 }
+    expect: { ok: true, tripped: [] }
+  - name: "damage: the 151st draw of the month trips the monthly count"
+    budget: damage_goodwill
+    amount: 5
+    usage: { month_count: 150, month_amount: 500 }
+    expect: { ok: false, tripped: [global_monthly_count] }
+  - name: "damage: landing exactly on the 1200 monthly amount is allowed"
+    budget: damage_goodwill
+    amount: 5
+    usage: { month_count: 100, month_amount: 1195 }
+    expect: { ok: true, tripped: [] }
+  - name: "damage: a cent over the monthly amount trips it"
+    budget: damage_goodwill
+    amount: 5
+    usage: { month_count: 100, month_amount: 1195.01 }
+    expect: { ok: false, tripped: [global_monthly_amount] }
+
 credit_cases:
   - { delay_days: 0, credit: null }
   - { delay_days: 1, credit: null }
@@ -198,3 +341,43 @@ credit_cases:
   - { delay_days: 9, credit: 15.00 }
   - { delay_days: 10, credit: 40.00 }
   - { delay_days: 90, credit: 40.00 }
+
+risk_score_cases:
+  - { name: "no signals", facts: {}, score: 0 }
+  - { name: "an order just under 500", facts: { order_total: 499.99 }, score: 0 }
+  - { name: "an order of exactly 500", facts: { order_total: 500 }, score: 20 }
+  - { name: "an order just under 1500", facts: { order_total: 1499.99 }, score: 20 }
+  - { name: "an order of exactly 1500 adds both size signals", facts: { order_total: 1500 }, score: 40 }
+  - { name: "a 6 day old account is new", facts: { account_age_days: 6 }, score: 25 }
+  - { name: "a 7 day old account is not new", facts: { account_age_days: 7 }, score: 0 }
+  - { name: "billing differs from shipping", facts: { address_mismatch: 1 }, score: 15 }
+  - { name: "billing matches shipping", facts: { address_mismatch: 0 }, score: 0 }
+  - { name: "an unknown address comparison adds nothing", facts: { address_mismatch: null }, score: 0 }
+  - { name: "7 items", facts: { items_count: 7 }, score: 0 }
+  - { name: "8 items", facts: { items_count: 8 }, score: 15 }
+  - { name: "2 orders in the window", facts: { orders_in_window: 2 }, score: 0 }
+  - { name: "3 orders in the window", facts: { orders_in_window: 3 }, score: 25 }
+  - { name: "4 orders in the window", facts: { orders_in_window: 4 }, score: 25 }
+  - { name: "5 orders in the window add the second velocity signal", facts: { orders_in_window: 5 }, score: 40 }
+  - { name: "large order, new account, 3 orders a day: exactly the high threshold", facts: { order_total: 600, account_age_days: 1, orders_in_window: 3 }, score: 70 }
+  - { name: "one point under high", facts: { order_total: 1500, account_age_days: 1 }, score: 65 }
+  - { name: "everything at once is capped at 100", facts: { order_total: 2000, account_age_days: 1, address_mismatch: 1, items_count: 10, orders_in_window: 6 }, score: 100 }
+
+damage_cases:
+  - { name: "a 30.00 item in stock is replaced", value: 30.00, in_stock: true, resolution: replacement_offer, amount: 30.00 }
+  - { name: "30.01 is no longer replaced, it earns 20 percent", value: 30.01, in_stock: true, resolution: credit, amount: 6.00 }
+  - { name: "a 30.00 item out of stock earns a credit", value: 30.00, in_stock: false, resolution: credit, amount: 6.00 }
+  - { name: "a 100.00 item earns the 15.00 cap", value: 100.00, in_stock: true, resolution: credit, amount: 15.00 }
+  - { name: "75.00 earns exactly the cap", value: 75.00, in_stock: false, resolution: credit, amount: 15.00 }
+  - { name: "75.05 is held at the cap", value: 75.05, in_stock: false, resolution: credit, amount: 15.00 }
+  - { name: "2.50 out of stock earns 0.50", value: 2.50, in_stock: false, resolution: credit, amount: 0.50 }
+  - { name: "0.03 out of stock rounds half up to 0.01", value: 0.03, in_stock: false, resolution: credit, amount: 0.01 }
+  - { name: "0.02 out of stock earns nothing", value: 0.02, in_stock: false, resolution: null, amount: null }
+  - { name: "a zero value earns nothing even in stock", value: 0.00, in_stock: true, resolution: null, amount: null }
+
+month_cases:
+  - { day: "2026-01-01", start: "2026-01-01", next: "2026-02-01" }
+  - { day: "2026-01-31", start: "2026-01-01", next: "2026-02-01" }
+  - { day: "2026-02-01", start: "2026-02-01", next: "2026-03-01" }
+  - { day: "2028-02-29", start: "2028-02-01", next: "2028-03-01" }
+  - { day: "2026-12-31", start: "2026-12-01", next: "2027-01-01" }

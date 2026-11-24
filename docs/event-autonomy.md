@@ -1,7 +1,7 @@
 # Event autonomy
 
-When an event arrives (a shipment running late, a price drop, a product back in stock), the system may act **on its own
-inside a budget**, and must **ask a person outside it**. Python only ([parity row 40](parity-matrix.md); tracked in
+When an event arrives (a shipment running late, a price drop, a product back in stock, a damaged item, a risky order), the
+system may act **on its own inside a budget**, and must **ask a person outside it**. Python only ([parity row 40](parity-matrix.md); tracked in
 [#94](https://github.com/nitin27may/e-commerce-agents/issues/94) and [#299](https://github.com/nitin27may/e-commerce-agents/issues/299)).
 **Off by default** (`AUTONOMY_ENABLED=false`) and it makes **no model call** unless you also turn on the optional
 `AUTONOMY_RESPONDER_ENABLED` (see [The ops-responder](#the-ops-responder)): the rules are deterministic and the customer text
@@ -14,8 +14,10 @@ is a template.
 | `order.shipment_delayed` | `goodwill_credit` | one order | `credit_tiers`: the delay in days | store credit |
 | `product.price_dropped` | `price_adjustment` | every recent **order line** of the product | `(price paid - new price) x quantity`, read from the line, never from the event | store credit |
 | `inventory.back_in_stock` | `back_in_stock_notice` | every customer whose cart holds the product | not sized | none |
+| `order.item_damaged` | `damage_goodwill` | one order **line** | `credit_percent` of the damaged quantity's value up to `max_credit`, or a free replacement when it is cheap and in stock | store credit, or a replacement offer costed at its value |
+| `order.risk_flagged` | `order_risk_review` | one order | a risk score from facts in the database (the event only names the order) | none; may **hold** the order |
 
-All three go through the same engine: tier rules, then (for money) the budget check and draw under the advisory locks, an
+All five go through the same engine: tier rules, then (for money) the budget check and draw under the advisory locks, an
 append-only decision row, `run_once` plus a unique `event_key`, and the same guards (a staff beneficiary is never paid alone,
 the demo tour user is never acted on, the decider is never the subject). The two newer ones **fan out**: one event becomes one
 decision per target, each in its own transaction under `topic:event_id:target`, so a replayed event acts once per target.
@@ -40,13 +42,97 @@ advisory lock keyed by the action. Staff are skipped (`recipient_is_staff`), the
 heads-up per event, not one per customer. **There is no wishlist in this repository, so carts are the only audience** (the
 issue also named wishlists).
 
+**`order.item_damaged`** (payload `order_item_id`, optional `quantity` (default 1, at most the line's) and `event_id`).
+A customer-reported damaged item, simulated by the admin simulator (there is no customer-facing report path yet). The line must
+belong to a `delivered` order no older than `lookback_days` (60). The remedy is sized from the line, never from the event: the
+damaged quantity's value (`unit_price x quantity`) goes to a **free replacement** when the product has stock for it and the value
+is at most `replacement_max_line_value` (30.00; the offer is costed at that value and drawn on the budget, **no store credit
+moves**), otherwise to a **store credit of `credit_percent` (20) of the value up to `max_credit` (15.00)**. `size_damage_remedy`
+is pure and has golden cases. **One remedy per order line, ever** (a reversal does not free the line): the engine checks it under
+the order lock (`no_action: line_already_remedied`), a partial unique index (migration 0018) refuses a second paid remedy on a
+line, and an approval already open on the line is `approval_already_open`. The order's `per_order_max_count` (2) bounds how many
+of its lines may be remedied (`no_action: order_remedy_limit`). Rules: within 30 days, up to 10.00 acts alone (`auto`), up to
+15.00 acts alone and tells staff (`auto_notify`); anything else asks. A replacement offer is **always** flagged to staff even
+when it acts alone, because nothing in this repository ships it: somebody has to send it. A reversal of a credit takes it back
+with a negating ledger entry; a reversal of a replacement withdraws the offer and touches no ledger. The ops-responder does not
+word damage decisions (it has no facts for them), so no model is ever involved.
+
+**`order.risk_flagged`** (payload `order_id`, optional `event_id`). The engine reads the order from the database and **ignores
+anything else the event says**: the total, the account's age (`users.created_at`), whether shipping and billing differ (street,
+zip or country; unknown when there is no billing address, and unknown adds nothing), the units in the order, and the number of
+this customer's orders placed in the 24 hours up to and including this one. The `signals` in `autonomy.yaml` add points
+(500 or more is +20, 1500 or more another +20, an account under 7 days old +25, an address mismatch +15, 8 or more items +15, 3 or
+more orders in the window +25, 5 or more another +15) and the score is capped at 100. The action's rules read only the score:
+
+```mermaid
+%%{init: {'theme':'base', 'themeVariables': {'primaryColor': '#2563eb', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#1e40af', 'lineColor': '#64748b', 'background': 'transparent'}}}%%
+flowchart TD
+  ev["order.risk_flagged<br/>(names the order only)"] --> facts["facts read from the database<br/>total, account age, address match, items, 24 hour velocity"]
+  facts --> score["risk score 0 to 100<br/>(autonomy.yaml signals)"]
+  score -->|"under 30"| low["no_action<br/>logged, nothing happens"]
+  score -->|"30 to 69"| med["needs_approval<br/>approvals row, kind autonomous_action<br/>no hold"]
+  score -->|"70 or more"| high["needs_approval<br/>AND hold the order<br/>orders.on_hold, reversible"]
+  classDef core     fill:#2563eb,stroke:#1e40af,color:#ffffff
+  classDef success  fill:#10b981,stroke:#047857,color:#ffffff
+  classDef external fill:#f59e0b,stroke:#b45309,color:#000000
+  classDef error    fill:#ef4444,stroke:#b91c1c,color:#ffffff
+  class ev,facts,score core
+  class low success
+  class med external
+  class high error
+```
+
+**A risk review is never `auto`**: the loader refuses an autonomous tier on a `risk_review` action, so the engine can never clear,
+cancel or refund an order itself. It also never touches the order's `status`. A **hold** is the flag `orders.on_hold` (with
+`held_at` and `hold_decision_id`, the decision row that placed it), set in the same transaction as the decision row and the
+approval, so a release can only ever undo the hold its own decision placed. The customer is told "your order is being reviewed" (no
+fraud wording) only when a hold is placed. The approval's amount is the **order total** (what is at stake: it routes the review,
+over 100 goes to a manager), nothing is paid, and there is nothing to edit (an edit is a 422).
+
+- **Staff approve** the review: the order is cleared. An `approved_execution` row records who, and if the hold is still in
+  place a `reversal` row releases it (and the customer is told). **Staff reject**: the flag was upheld, the hold stays until an
+  admin releases it. An SLA breach expires the approval and, for a held order, says the order stays on hold.
+- **An admin releases the hold** from the decisions page ("Release hold", `POST /api/admin/decisions/{id}/reverse`): a
+  `reversal` row, the flag cleared, the customer told. The review itself stays open (its state follows the approval; the hold is
+  reported separately as `hold_active`).
+- **One review per order**: a second event for an order that already has a review is `no_action: order_already_reviewed`, an order
+  already on hold is `order_already_held`, and only `placed` and `confirmed` orders are eligible. A staff member's own order is
+  never held by the engine (`beneficiary_is_staff`: an approval only, which they cannot decide); the demo tour user is never touched.
+- **Nothing in this repository advances an order to `shipped`**, so there is no fulfilment step for the flag to block. It is a
+  recorded, reversible mark that a fulfilment process must honour; wiring it into one is not built.
+
+## Monthly budgets
+
+A budget may carry `global_per_month: {max_count, max_amount}` beside `global_per_day` (every shipped budget does; a budget
+without it has no monthly limit). It caps what the system may spend alone across **every customer in one UTC calendar month**
+(the 1st 00:00 UTC to the last day), summed from the same per-day draws (`budget_day`), and it must be at least the day cap
+(the loader refuses less). Exactly at the cap is allowed, over it trips `global_monthly_count` / `global_monthly_amount`, and an
+autonomous draw that does not fit becomes `needs_approval` with that reason, like any other cap. A reversal does not give a draw
+back and a staff approval draws nothing, as for the day.
+
+It is enforced in the same transaction and by the same helper as the day cap. `lock_budget` takes the **day lock and then the
+month lock** (`autonomy_budget_month:<budget>:<YYYY-MM>`), always in that order. The month lock is not optional: two events on either
+side of UTC midnight hold different day locks yet draw on the same month, so only a month-keyed lock stops both spending the last of
+it (`test_autonomy_monthly.py` has the race and a negative control that fails without it). Every decision row records the month's
+caps and the usage it saw (`budget.caps.global_per_month`, `budget.usage_before.month_*`), and the decisions page shows each budget's
+use this month beside today's.
+
 **Every number is a placeholder** (the `price_adjustment` budget: 20.00 per action, 3 and 40.00 per customer per day, 5 lines per
 order, 50 and 400.00 global per day; the notice limits above). Changing one means bumping `policy_version` and extending
 `testdata-autonomy/cases.yaml`.
 
+`damage_goodwill` (placeholders): 15.00 per action, 1 and 15.00 per customer per day, 2 lines per order, 10 and 100.00 global per
+day, 150 and 1200.00 per month. Every budget's monthly cap (300 and 3000.00, 800 and 6000.00, and that one) is a placeholder too.
+The risk signals, points and the 30 and 70 thresholds are the builder's, not derived from fraud data.
+
 The admin simulator sends them: `{"scenario": "price-drop"}` picks the most recent eligible line (a price of 20 or more, no
 decision on it yet) and drops its product 10 percent; `{"scenario": "back-in-stock"}` picks an in-stock product in a recent
 customer cart that the engine has not announced; or give `{"event_type", "product_id", "new_price"}` explicitly.
+`{"scenario": "order-risk"}` picks the largest eligible (`placed` or `confirmed`) customer order that no review has looked at and
+that is not held (or give `{"event_type": "order.risk_flagged", "order_id"}`); `{"scenario": "item-damaged"}` picks the most recent
+delivered line inside the window with no decision on it (or give `{"event_type": "order.item_damaged", "order_item_id",
+"quantity"?}`). An explicit event is only valid on a customer's own records: never the acting admin's, a staff member's or the demo
+tour user's (422).
 
 ## The flow
 
@@ -209,9 +295,12 @@ other path; see *The log is append-only*.
 
 | Route | |
 |---|---|
-| `POST /api/admin/events/simulate` | `{scenario: small\|medium\|large}` or `{order_id, delay_days, event_id?}` (delay), `{scenario: price-drop}` or `{event_type: product.price_dropped, product_id, new_price}`, `{scenario: back-in-stock}` or `{event_type: inventory.back_in_stock, product_id}` (#299). 404 unless `AUTONOMY_ENABLED` **and** `AUTONOMY_SIMULATOR_ENABLED`, for every caller and *before* the role check (a 401/403 would reveal that the route exists on an install that switched it off). A scenario picks the oldest eligible order of a customer with no autonomy activity today and no event queued, so the three land on three customers. Replaying an `event_id` enqueues nothing |
+| `POST /api/admin/events/simulate` | `{scenario: small\|medium\|large}` or `{order_id, delay_days, event_id?}` (delay), `{scenario: price-drop}` or `{event_type: product.price_dropped, product_id, new_price}`, `{scenario: back-in-stock}` or `{event_type: inventory.back_in_stock, product_id}`, `{scenario: order-risk}` or `{event_type: order.risk_flagged, order_id}`, `{scenario: item-damaged}` or `{event_type: order.item_damaged, order_item_id, quantity?}` (#299). 404 unless `AUTONOMY_ENABLED` **and** `AUTONOMY_SIMULATOR_ENABLED`, for every caller and *before* the role check (a 401/403 would reveal that the route exists on an install that switched it off). A scenario picks the oldest eligible order of a customer with no autonomy activity today and no event queued, so the three land on three customers. Replaying an `event_id` enqueues nothing |
 | `GET /api/admin/decisions[?state=&limit=&offset=]` | decisions with state, reasons, the budget each drew on, and today's use per budget. `state` is filtered in SQL over every row (an old `awaiting_approval` decision stays findable); `limit` is at most 200, `offset` pages, `total` counts every match |
-| `POST /api/admin/decisions/{id}/reverse` | admin only; works even when the feature is switched off |
+| `POST /api/admin/decisions/{id}/reverse` | admin only; works even when the feature is switched off. For a held order it **releases the hold** (no money moves) |
+
+A decision row of a risk review also carries `hold_active` (whether its order is on hold right now). The `budgets` array reports each
+budget's day use and, when it has one, `month`, `month_used_count`, `month_used_amount`, `month_max_count` and `month_max_amount`.
 
 Web: `/admin/decisions`.
 
@@ -221,7 +310,9 @@ Web: `/admin/decisions`.
 `AUTONOMY_SIMULATOR_ENABLED`, `RETURN_LIFECYCLE_ENABLED`, `MERCHANT_OPS_SCHEDULE_ENABLED` and `HITL_ENABLED` on, in its own
 compose project (`eca-flag-smoke`), and drives the real routes and the outbox worker with no model and no key: the three
 simulator scenarios (small is an executed `auto` decision, medium an executed `auto_notify`, large waits and opens an
-`autonomous_action` inbox row), a return through approval, carrier scan and inspection to `refunded`, a merchant run with its
+`autonomous_action` inbox row, then the price-drop, back-in-stock, order-risk (a review is never an autonomous tier, a hold leaves
+the order's status alone, and the flag matches the decision) and item-damaged (one decision per order line) scenarios, and that every
+budget reports its month), a return through approval, carrier scan and inspection to `refunded`, a merchant run with its
 daily timer booked, and a check that no outbox row carries an error. `--dry-run` lists the flags and checks without starting
 anything; `--attach` drives a stack that is already up. CI runs it as the `flags` job in `compose-smoke.yml`.
 
@@ -232,13 +323,20 @@ anything; `--attach` drives a stack that is already up. CI runs it as the `flags
 - **The decision and ledger tables are append-only.** A reversal is a new row, and a reset needs `reset_autonomy_log()`: `TRUNCATE` is refused while they hold rows.
 - **Lock order is budget, then order, then row locks.** Taking them in another order can deadlock two events.
 - **A credited order is `no_action`.** It opens no approval.
+- **A hold is a flag nothing reads yet.** `orders.on_hold` is recorded, reversible and shown on the decisions page, but no code
+  path in this repository ships an order, so nothing is blocked by it.
+- **The risk review's amount is the order total**, so over 100 it routes to a manager and a support reviewer cannot decide it.
+- **The month lock also serialises events on different days.** The old "straddling midnight" order-lock tests keep only the day
+  lock on purpose (`_straddle_midnight`), or the month lock would hide what they prove.
+- **A replacement offer is not a shipment.** It is a recorded, costed promise; staff are told every time to send it.
 - **.NET refuses every decision on an `event` approval** (422, "not supported on this stack").
 
 ## Not built
 
-Still open in [#299](https://github.com/nitin27may/e-commerce-agents/issues/299): the order-risk and damaged-item events,
-monthly budgets (every cap is per UTC day), and a real carrier feed (no producer exists for any event; the simulator is the only
-one). The engine takes another event type by adding an action, an `events:` entry, a parser and a handler line. There is no
+Still open in [#299](https://github.com/nitin27may/e-commerce-agents/issues/299): a real carrier feed. It is an external system, so
+it is not built here: no producer exists for any event (no carrier, no customer damage report, no order-placed hook for a risk
+score); the simulator is the only one. Also not built: fulfilment that honours `orders.on_hold`, and a customer-facing way to report
+damage. The engine takes another event type by adding an action, an `events:` entry, a parser and a handler line. There is no
 replay dataset for the responder: its model call is a plain chat call outside the routable agents, so it is covered by stubbed
 unit tests and one recorded live validation (see the PR), not by fixtures.
 
@@ -262,7 +360,7 @@ from the decision's facts. It words a decision and cannot change one:
 - **Stored and shown.** One append-only `decision_drafts` row per decision (migration 0017); the admin decisions page shows the
   message and whether it is the model's or the template's; the customer's notification body is replaced with it (title and link
   unchanged), found through `notifications.decision_id`.
-- Only money decisions are worded. A back-in-stock notice is not sent to a model (it could be 200 calls for one event).
+- Only credit and price-adjustment decisions are worded (damage remedies and risk reviews are not: no facts for them). A back-in-stock notice is not sent to a model (it could be 200 calls for one event).
 - The worker container needs the chat provider variables for it; `docker-compose.yml` passes them. Cost is one short call per
   granted credit, not routed through run usage accounting.
 

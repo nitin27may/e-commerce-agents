@@ -26,6 +26,11 @@
 #                           not pay twice). At the ceiling a further event is `no_action: order_already_credited`,
 #                           never an approval, because approving it would be refused by the same ceiling.
 #   global_per_day          {max_count, max_amount}  every customer, one UTC day
+#   global_per_month        {max_count, max_amount}  OPTIONAL: every customer, one UTC calendar month (the 1st 00:00 UTC to
+#                           the last day), counted from the same per-day draws. It is checked in the same transaction and
+#                           under the same lock helper as the day cap, so two events on either side of midnight cannot
+#                           both spend the last of a month. It must be at least the day cap. Exactly at it is allowed. A
+#                           reversal does not give a draw back, as for the day.
 #
 # `events` maps an event topic to the action it may trigger and the deterministic rule that sizes it. An action's
 # `kind` says how (default `credit`):
@@ -40,6 +45,16 @@
 #                     audience (an autonomous rule needs `recipients lte N`; an event reaching more people than that
 #                     is logged as no_action for a person to look at) and per_customer_per_day notices per customer.
 #
+#   damage_credit     order.item_damaged: a customer-reported damaged order line gets, by rule, a free replacement (when the
+#                     damaged quantity is worth at most replacement_max_line_value and is in stock) or a store credit of
+#                     credit_percent of its value up to max_credit. ONE remedy per order line, ever. Both draw on the
+#                     budget; a replacement offer moves no store credit.
+#   risk_review       order.risk_flagged: an order is scored from facts already in the database (the event's `signals`
+#                     add points; the score is capped at 100) and the action's rules read `risk_score`. A rule's tier may
+#                     be no_action (low risk: nothing happens) or needs_approval (a person reviews); `hold: true` on a
+#                     needs_approval rule also holds the order, reversibly, while the approval waits. A risk review is
+#                     NEVER auto: the loader refuses it. The engine never cancels, refunds or clears an order itself.
+#
 # Nothing here calls a model. (An optional responder, AUTONOMY_RESPONDER_ENABLED, only words the customer message of
 # a decision the rules already made; it never sees or changes a tier or an amount. docs/event-autonomy.md.)
 #
@@ -47,7 +62,7 @@
 # policy_version (every decision records the version it was judged by) and extend the golden cases in
 # testdata-autonomy/cases.yaml (a separate folder: the approvals golden cases in testdata/ are also read by the .NET tests).
 
-policy_version: "2026-11-24.1"
+policy_version: "2026-11-24.2"
 
 budgets:
   goodwill_credit:
@@ -55,12 +70,21 @@ budgets:
     per_customer_per_day: { max_count: 1, max_amount: 25.00 }
     per_order_max_count: 1
     global_per_day: { max_count: 20, max_amount: 200.00 }
+    global_per_month: { max_count: 300, max_amount: 3000.00 }
 
   price_adjustment:
     per_action_max_amount: 20.00
     per_customer_per_day: { max_count: 3, max_amount: 40.00 }
     per_order_max_count: 5
     global_per_day: { max_count: 50, max_amount: 400.00 }
+    global_per_month: { max_count: 800, max_amount: 6000.00 }
+
+  damage_goodwill:
+    per_action_max_amount: 15.00
+    per_customer_per_day: { max_count: 1, max_amount: 15.00 }
+    per_order_max_count: 2
+    global_per_day: { max_count: 10, max_amount: 100.00 }
+    global_per_month: { max_count: 150, max_amount: 1200.00 }
 
 actions:
   goodwill_credit:
@@ -108,6 +132,53 @@ actions:
         reason: Outside what the system may do alone
         when: []
 
+  damage_goodwill:
+    kind: damage_credit
+    budget: damage_goodwill
+    reversible: true
+    rules:
+      - id: auto-small-damage
+        tier: auto
+        reason: A small remedy for an item reported damaged within 30 days of the purchase
+        when:
+          - { fact: amount, op: lte, value: 10 }
+          - { fact: days_since_purchase, op: lte, value: 30 }
+      - id: notify-medium-damage
+        tier: auto_notify
+        reason: A mid-size remedy for an item reported damaged within 30 days of the purchase; staff are told
+        when:
+          - { fact: amount, op: lte, value: 15 }
+          - { fact: days_since_purchase, op: lte, value: 30 }
+      - id: default-approval
+        tier: needs_approval
+        reason: Outside what the system may do alone
+        when: []
+
+  order_risk_review:
+    kind: risk_review
+    reversible: true
+    rules:
+      - id: risk-low
+        tier: no_action
+        reason: The order looks ordinary; nothing to do
+        when:
+          - { fact: risk_score, op: lt, value: 30 }
+      - id: risk-high-hold
+        tier: needs_approval
+        hold: true
+        reason: A high-risk order is held until a person reviews it
+        when:
+          - { fact: risk_score, op: gte, value: 70 }
+      - id: risk-medium-review
+        tier: needs_approval
+        reason: A medium-risk order needs a person to look at it
+        when:
+          - { fact: risk_score, op: gte, value: 30 }
+      - id: default-approval
+        tier: needs_approval
+        reason: The risk could not be scored, so a person looks
+        when: []
+
   back_in_stock_notice:
     kind: notice
     reversible: false
@@ -147,3 +218,33 @@ events:
     cart_max_age_days: 30
     max_recipients: 200
     per_customer_per_day: 2
+
+  # order.item_damaged (a customer report; only the admin simulator produces it today). Payload: order_item_id, optional
+  # quantity (default 1, at most the line's) and event_id. Delivered orders only, reported within lookback_days of the
+  # purchase. A damaged quantity worth at most replacement_max_line_value, with stock, is offered a free replacement;
+  # otherwise a credit of credit_percent of its value, never more than max_credit. One remedy per order line, ever.
+  order.item_damaged:
+    action: damage_goodwill
+    eligible_order_statuses: [delivered]
+    lookback_days: 60
+    credit_percent: 20
+    max_credit: 15.00
+    replacement_max_line_value: 30.00
+
+  # order.risk_flagged: score a placed order from what the database already holds, then let the rules above choose
+  # (below 30 nothing, 30 to 69 a person reviews, 70 or more the order is held AND a person reviews). Signals are
+  # additive and the score is capped at 100. `orders_in_window` counts this customer's orders, this one included,
+  # placed within velocity_window_hours before it. `address_mismatch` is 1 when shipping and billing differ in street,
+  # zip or country and unknown (adds nothing) when there is no billing address.
+  order.risk_flagged:
+    action: order_risk_review
+    eligible_order_statuses: [placed, confirmed]
+    velocity_window_hours: 24
+    signals:
+      - { id: large-order, fact: order_total, op: gte, value: 500, points: 20 }
+      - { id: very-large-order, fact: order_total, op: gte, value: 1500, points: 20 }
+      - { id: new-account, fact: account_age_days, op: lt, value: 7, points: 25 }
+      - { id: address-mismatch, fact: address_mismatch, op: eq, value: 1, points: 15 }
+      - { id: many-items, fact: items_count, op: gte, value: 8, points: 15 }
+      - { id: order-velocity, fact: orders_in_window, op: gte, value: 3, points: 25 }
+      - { id: high-order-velocity, fact: orders_in_window, op: gte, value: 5, points: 15 }
