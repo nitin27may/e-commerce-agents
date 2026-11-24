@@ -4,14 +4,15 @@ How to point the stack at each model provider, what has actually been exercised,
 The variable reference lives in [configuration.md](configuration.md); this page is the practical
 side: copy a block, know what breaks.
 
-Everything below is selected by `LLM_PROVIDER` in `.env`. Embeddings are a separate setting group
+Everything below is selected by `LLM_PROVIDER` in `.env`; [run profiles](run-profiles.md) set a provider, its
+embeddings and its model together (`./scripts/dev.sh --profile NAME`), and `python -m scripts.doctor` checks the result. Embeddings are a separate setting group
 and are covered [on their own](#embeddings).
 
 ## Verified versus untested
 
 Read this table before choosing a provider. "Verified" means a test in this repo exercises it, and
-the second column says how. Nothing in CI calls a live model; the only live calls ever made were
-recording sessions against Azure OpenAI.
+the second column says how. Nothing in CI calls a live model. Live calls have been made only by hand: the recording
+sessions against Azure OpenAI, and a manual live eval run on 2026-11-23 (see [agent quality](agent-quality.md)).
 
 | Provider | How to select | Verified how | Not verified |
 |---|---|---|---|
@@ -73,9 +74,9 @@ EMBEDDING_PROVIDER=openai          # Claude has no embeddings API
 ```
 
 `LLM_MODEL` is ignored for this provider. Claude is wired on both stacks and covered by
-stubbed-transport tests only. Cost figures are meaningless until prices are added to
-`shared/cost.py`: Claude models fall back to the default entry. Full table in
-[configuration.md](configuration.md#anthropic-claude-python-and-net-stacks).
+stubbed-transport tests only. A Claude model's cost is unknown (null) until it has a row in
+`agents/python/config/pricing/models.yaml`; an unlisted model is never priced as another one. Full table in
+[configuration.md](configuration.md#anthropic-claude--python-and-net-stacks).
 
 ## Any OpenAI-compatible endpoint
 
@@ -152,16 +153,15 @@ EMBEDDING_DIM=768
   `cache_read_input_token_count` and the wire's `cached_input_token_count`). A proxy such as
   LiteLLM or OpenRouter may rename or drop those fields when it translates between providers, so
   cached tokens can read as zero and cost can look higher than the bill. The mechanism for a cached
-  price exists; no cached-input rate has been entered (E-2d).
+  price exists; no cached-input rate has been entered.
 - **Anthropic has never run live.** Treat it as a configured, stub-tested option, not a supported
   one, until a keyed smoke run is recorded.
 - **Model availability moves.** The default `gpt-4.1` and its Azure deployment name are what the
-  fixtures were recorded on. Per the maintainer, gpt-4.1 is closed to new Azure customers, and the
-  gpt-5.x family rejects a `temperature` parameter. Neither claim was re-checked against Azure
-  documentation for this page. The stack sends `LLM_TEMPERATURE` (default 0.2) on every run, so a
-  model that rejects it fails until a change that lets `LLM_TEMPERATURE` be left empty (not sending
-  the parameter) lands; that change is in flight in another pull request. Until then, do not point
-  the stack at a model that rejects temperature.
+  fixtures were recorded on. As of November 2026 gpt-4.1 is closed to new Azure customers (the Azure
+  preflight, `check_model`, refuses a deprecated model before provisioning), and the gpt-5.x family
+  rejects a `temperature` parameter. The stack sends `LLM_TEMPERATURE` (default 0.2) on every run, so for
+  such a model set `LLM_TEMPERATURE=` empty: the option is then omitted on both stacks (parity row 48).
+  The Bicep does this for `gpt-5*` model names.
 - **Per-agent models** (`model:` block in the prompt YAML) need that provider's own credentials,
   and the global `LLM_BASE_URL` is not inherited by an agent that switches provider. See
   [configuration.md](configuration.md#choosing-a-model-per-agent-model-in-the-prompt-yaml).
