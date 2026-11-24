@@ -85,6 +85,7 @@ class LiveRow:
     recorded_on: str
     cost_usd: float | None
     judge_unavailable: int
+    fallback_scored: int = 0
 
 
 def load_live(baselines_root: Path = BASELINES_ROOT, repo_root: Path = REPO_ROOT) -> list[LiveRow]:
@@ -114,6 +115,7 @@ def load_live(baselines_root: Path = BASELINES_ROOT, repo_root: Path = REPO_ROOT
                 recorded_on=str(data.get("recorded_on", "unknown")),
                 cost_usd=data.get("estimated_cost_usd"),
                 judge_unavailable=int(data.get("judge_unavailable_cases") or 0),
+                fallback_scored=int(data.get("fallback_scored_cases") or 0),
             )
         )
     return sorted(rows, key=lambda r: (r.setup_key, r.agent))
@@ -128,7 +130,9 @@ def render_live(rows: list[LiveRow]) -> list[str]:
         "**These are live runs, not replay.** Each row is one sitting of one model with an LLM judge, taken through the "
         "in-process target on a freshly seeded database. With one repeat there is no spread: a single flipped case moves "
         "a suite by a few points, and a rerun can move it too. They are stored under their own setup key and the replay "
-        "gate never compares against them. A self-judged run says so in the Judge column. Cost is the tokens times the "
+        "gate never compares against them. A self-judged run says so in the Judge column. "
+        "A case the judge could not score (content filter) is noted beside Passed, with how many of those the less "
+        "strict keyword fallback scored instead. Cost is the tokens times the "
         "price in `config/pricing/models.yaml` with cached input billed at the full rate, so it is an upper bound, and "
         "it excludes the judge calls.",
         "",
@@ -142,7 +146,10 @@ def render_live(rows: list[LiveRow]) -> list[str]:
         passed = "n/a" if r.passed is None else str(r.passed)
         cells = " | ".join(_fmt(r.scores.get(k)) for k in _SCORES)
         cost = "n/a" if r.cost_usd is None else f"{r.cost_usd:.2f}"
-        note = f" ({r.judge_unavailable} judge-unavailable)" if r.judge_unavailable else ""
+        note = f" ({r.judge_unavailable} judge-unavailable" if r.judge_unavailable else ""
+        if r.judge_unavailable and r.fallback_scored:
+            note += f", {r.fallback_scored} scored by keyword fallback"
+        note += ")" if note else ""
         out.append(
             f"| {r.recorded_on} | `{r.setup_key}` | {_cell(r.model)} | {_cell(r.judge)} | {r.repeats} | {r.agent} "
             f"| `{r.dataset}` | {cases} | {passed}{note} | {cells} | {cost} |"
