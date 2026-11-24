@@ -103,7 +103,7 @@ Copy-Item .env.minimal .env    # then set OPENAI_API_KEY in .env
 [WSL2](https://learn.microsoft.com/windows/wsl/install) still gives the best experience, and
 everything above works unchanged inside it.
 
-**In the browser, no install.** The Codespaces badge above opens a ready environment (Python 3.12 + `uv`, Node 22 +
+**In the browser, no install.** The Codespaces badge above opens a ready environment (Python 3.12 + `uv`, Node 26 +
 `pnpm`, the .NET 10 SDK, Docker-in-Docker) and installs the dependencies ([`.devcontainer/`](./.devcontainer/)).
 The creation screen asks for optional model-key secrets (`OPENAI_API_KEY`, or the Azure OpenAI endpoint, key and
 deployment, or an OpenAI-compatible `LLM_BASE_URL`); the provider is chosen from whichever you supply. With none,
