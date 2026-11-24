@@ -16,10 +16,13 @@ from pathlib import Path
 from shared.config import _resolve_repo_root
 
 
-def test_resolves_three_levels_up_on_the_host_layout() -> None:
+def test_resolves_three_levels_up_on_the_host_layout(tmp_path: Path) -> None:
     # <repo>/agents/python/shared/config.py -> <repo>
-    host_path = Path("/home/user/e-commerce-agents/agents/python/shared/config.py")
-    assert _resolve_repo_root(host_path) == Path("/home/user/e-commerce-agents")
+    # Under a resolved tmp dir, not a literal /home/...: on macOS /home is a synthetic link that
+    # Path.resolve() rewrites to /System/Volumes/Data/home, which made the literal path fail there.
+    repo = tmp_path.resolve() / "e-commerce-agents"
+    host_path = repo / "agents" / "python" / "shared" / "config.py"
+    assert _resolve_repo_root(host_path) == repo
 
 
 def test_falls_back_to_the_immediate_parent_on_the_shallow_docker_layout() -> None:
