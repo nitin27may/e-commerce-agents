@@ -19,7 +19,7 @@ Last updated: 2026-11-24, `main` after #328, release `v1.4.0` published, v1.5.0 
   that do not exist here; #101 is parked; #318 is a human task (narrated video, social preview upload); #103 is the tracker
   and closes last. PR #263 (free-trial Azure profile, `sanity.sh`, `verify-clean.sh`, Deploy to Azure button) is held until
   the Azure step runs.
-- The .NET 11 move (`net10.0` today) is a separate pending item, not started, keyless; do not combine it with the Azure step.
+- The .NET 11 move is prepared as draft PR #331 (`chore/dotnet-11`, `net11.0`, SDK 11.0.100); merge it only after the Azure run, and do not combine it with the Azure step. Rollback is a single revert.
 - Open PRs change often: `gh pr list`. Remote branches: `main` plus whatever is open. Delete a branch after its PR merges
   (section 6).
 - Two Claude sessions have worked in this repo: a "queue" session (features, CI, Azure, evals, cleanups) and a docs session
@@ -76,7 +76,7 @@ real Codespace; every autonomy cap, signal and threshold and the merchant PO-val
   `observe` (both recorded in `docs/agent-quality.md` and `docs/configuration.md`).
 - `Azure.AI.OpenAI` is pinned to the prerelease 2.9.0-beta.1 (no stable release after 2.1.0; the old pin threw
   `MissingMethodException` on native chat calls with a max-token count).
-- Aspire: AppHost packages 17.0.0 (needs .NET 10); the dashboard container image stays on 13.6.5 because no 17.x tag exists on MCR.
+- Aspire: AppHost packages 17.0.0 (needs .NET 10 or later); the dashboard container image stays on 13.6.5 because no 17.x tag exists on MCR.
 - Redis on Azure: a container app for the demo profile (Azure Cache for Redis is closed to new customers).
 - A return over $500 routes to `manager`, which `support` cannot decide; the deploy smoke test picks the decider from the approval's
   `assigned_role`.
