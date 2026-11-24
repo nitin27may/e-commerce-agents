@@ -39,6 +39,14 @@ def _call(name: str, args: dict[str, Any]) -> ChatResponse:
     )
 
 
+@pytest.fixture(autouse=True)
+def _no_customer_confirmation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests are about parking itself; the confirmation before it is in test_customer_confirmation.py."""
+    import shared.config as shared_config
+
+    monkeypatch.setattr(shared_config.settings, "CUSTOMER_CONFIRMATION_ENABLED", False)
+
+
 @pytest_asyncio.fixture
 async def pool(clean_db: asyncpg.Pool, monkeypatch: pytest.MonkeyPatch) -> asyncpg.Pool:
     monkeypatch.setattr(shared_db, "_pool", clean_db)

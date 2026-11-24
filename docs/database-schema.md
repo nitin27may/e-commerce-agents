@@ -2,7 +2,7 @@
 
 This page is the table-by-table reference for the application's one PostgreSQL database, for anyone writing a query, a tool or a migration against it. Both stacks share it.
 
-It is PostgreSQL 16 with the **pgvector** extension for embedding-based semantic search and **pgcrypto** for UUID generation. The frozen baseline (`docker/postgres/init.sql`) has 34 tables in 12 logical groups. Migrations `0003`, `0006`, `0009`, `0011` and `0012` add 11 more (45 in all), described in the sections for refresh tokens, approvals, merchant proposals and event autonomy below. Migrations `0002`, `0004`, `0005`, `0007`, `0008`, `0010`, `0013`, `0014` and `0015` only alter or backfill existing tables.
+It is PostgreSQL 16 with the **pgvector** extension for embedding-based semantic search and **pgcrypto** for UUID generation. The frozen baseline (`docker/postgres/init.sql`) has 34 tables in 12 logical groups. Migrations `0003`, `0006`, `0009`, `0011`, `0012` and `0016` add 12 more (46 in all), described in the sections for refresh tokens, approvals, merchant proposals, event autonomy and customer confirmations below. Migrations `0002`, `0004`, `0005`, `0007`, `0008`, `0010`, `0013`, `0014` and `0015` only alter or backfill existing tables.
 
 ## Entity-Relationship Diagram
 
@@ -524,6 +524,12 @@ Migration `0012` also adds the CHECK `approvals_no_beneficiary_decision`: a revi
 ### Return lifecycle columns (migration `0013`)
 
 `returns` gains `approval_id`, `resolution` (`refund` \| `store_credit` \| `replacement`), `scanned_at` and `inspection` (JSONB). The two waits are `hitl_requests` rows with `kind` `carrier_scan` / `return_inspection`, so there is no new table ([return-lifecycle.md](return-lifecycle.md)).
+
+### Customer confirmations (migration `0016`)
+
+| Table | Key columns | Notes |
+|---|---|---|
+| **customer_confirmations** | `id` (PK), `user_email`, `session_id` (text, `''` when none), `tool_name`, `args_key` (sha256 of the normalised identifying arguments), `tool_input` (JSONB), `asked_by_message`, `status` (`pending` \| `confirmed` \| `declined` \| `expired`), `created_at`, `expires_at`, `resolved_at` | The customer's own confirmation of a gated action, asked before the call parks for staff (`shared/customer_confirmation.py`, [approvals.md](approvals.md)). One open row per (lower-cased user, session, tool, `args_key`) by a partial unique index. Not an approval: no `approvals` row and no audit event. `asked_by_message` is the normalised user message that raised the question, which can never also answer it. |
 
 ### OAuth2 Authorization Server
 

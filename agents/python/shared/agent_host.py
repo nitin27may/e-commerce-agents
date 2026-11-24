@@ -117,7 +117,7 @@ async def _run_agent_native(
     response = await agent.run(messages, options=_run_options(agent))
     raise_if_specialist_missed()
     refused: dict[str, str] = {}
-    notice = await park_pending_approvals(agent, response, refused)
+    notice = await park_pending_approvals(agent, response, refused, user_message)
     if metadata_box is not None:
         metadata_box.update(getattr(response, "additional_properties", None) or {})
         usage = getattr(response, "usage_details", None)
@@ -138,7 +138,9 @@ async def _run_agent_native(
     return text
 
 
-async def park_pending_approvals(agent: Any, response: Any, refused: dict[str, str] | None = None) -> str:
+async def park_pending_approvals(
+    agent: Any, response: Any, refused: dict[str, str] | None = None, user_message: str | None = None
+) -> str:
     """Make a call MAF parked for approval durable, and return the sentence the user reads (``""`` if none).
 
     ``@tool(approval_mode="always_require")`` stops the run before function middleware, so
@@ -147,9 +149,14 @@ async def park_pending_approvals(agent: Any, response: Any, refused: dict[str, s
     ``tool_approval_requests`` row plus its inbox approval (``shared.hitl.park_gated_call``, idempotent), owned by
     the forwarded user, and the tool is never executed here. Before that, ``shared.park_prechecks`` runs the tool's
     role guard and its cheap preconditions (ownership, status, window): a call that can never succeed gets a
-    sentence saying why and no row. No identity, or a database error (including in a precheck), fails closed: the
-    user is told nothing was changed.
+    sentence saying why and no row. Then the customer is asked to confirm the exact action
+    (``shared.customer_confirmation``, not an approval): the first request for a call only opens that question, and
+    the call parks only when it arrives again after the user's own explicit yes. ``user_message`` is what this
+    request was sent as, the fallback when there is no stored conversation to read the user's real words from. No
+    identity, or a database error (including in a precheck), fails closed: the user is told nothing was changed.
     """
+    from shared import customer_confirmation
+    from shared.config import settings
     from shared.context import current_session_id, current_user_email, current_user_role
     from shared.hitl import PARK_FAILED_REPLY, park_gated_call, parked_reply
     from shared.park_prechecks import precheck_gated_call
@@ -180,13 +187,35 @@ async def park_pending_approvals(agent: Any, response: Any, refused: dict[str, s
                 if refused is not None:
                     refused[str(name)] = refusal.reason
                 continue
-            request_id, created = await park_gated_call(
-                user_email=email,
-                session_id=current_session_id.get("") or None,
-                agent_name=str(getattr(agent, "name", "") or "unknown"),
-                tool_name=str(name),
-                tool_input=tool_input,
-            )
+            confirmation = None
+            if settings.CUSTOMER_CONFIRMATION_ENABLED:
+                confirmation = await customer_confirmation.evaluate(
+                    user_email=email,
+                    session_id=current_session_id.get("") or None,
+                    tool_name=str(name),
+                    tool_input=tool_input,
+                    user_message=user_message,
+                )
+                if confirmation.kind in (customer_confirmation.ASK, customer_confirmation.DECLINED):
+                    sentences.append(confirmation.sentence or PARK_FAILED_REPLY)
+                    if refused is not None:
+                        refused[str(name)] = (
+                            "confirmation" if confirmation.kind == customer_confirmation.ASK else "declined"
+                        )
+                    logger.info("hitl.confirmation tool=%s outcome=%s", log_safe(name), log_safe(confirmation.kind))
+                    continue
+            try:
+                request_id, created = await park_gated_call(
+                    user_email=email,
+                    session_id=current_session_id.get("") or None,
+                    agent_name=str(getattr(agent, "name", "") or "unknown"),
+                    tool_name=str(name),
+                    tool_input=tool_input,
+                )
+            except Exception:
+                if confirmation is not None and confirmation.confirmation_id is not None:
+                    await customer_confirmation.reopen(confirmation.confirmation_id)
+                raise
         except Exception:
             logger.exception("hitl.park_failed tool=%s", log_safe(name))
             sentences.append(PARK_FAILED_REPLY)
@@ -250,7 +279,7 @@ async def _run_agent_native_stream(
     final: Any = None
     if hasattr(stream, "get_final_response"):
         final = await stream.get_final_response()
-        if notice := await park_pending_approvals(agent, final):
+        if notice := await park_pending_approvals(agent, final, user_message=user_message):
             yield f"\n\n{notice}" if streamed else notice
     if metadata_box is not None and final is not None:
         metadata_box.update(getattr(final, "additional_properties", None) or {})

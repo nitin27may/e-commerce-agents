@@ -11,7 +11,7 @@
 #   LIVE_MODEL           model name; for azure the deployment name        (required)
 #   LIVE_REPEATS         case repeats (default 1)
 #   LIVE_SUITE           all (default) or one of: product-discovery order-management pricing-promotions
-#                        review-sentiment inventory-fulfillment orchestrator
+#                        review-sentiment inventory-fulfillment orchestrator approvals
 #   LIVE_PASS_THRESHOLD  minimum overall score per suite (default 0.7)
 #   LIVE_USE_JUDGE       true to score completeness with an LLM judge (self-judged unless JUDGE_* is set)
 #   COST_BUDGET_TOKENS_PER_RUN   per-run ceiling, enforced (default 100000)
@@ -33,7 +33,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PY_DIR="$REPO_ROOT/agents/python"
 LOG_DIR="${LIVE_LOG_DIR:-${TMPDIR:-/tmp}}"
 
-AGENTS=(product-discovery order-management pricing-promotions review-sentiment inventory-fulfillment orchestrator)
+# `approvals` is a suite, not an agent: order-management against evals/datasets/live/approvals.live.json (#302).
+AGENTS=(product-discovery order-management pricing-promotions review-sentiment inventory-fulfillment orchestrator approvals)
 
 fail_config() {
   echo "::error::$1" >&2
@@ -200,14 +201,16 @@ run_suites() {
     if [[ "$a" == "orchestrator" ]]; then stem="orchestrator_routing"; fi
     ds="evals/datasets/live/${stem}.live.json"
     twin="evals/datasets/${stem}.json"
+    target="$a"
+    if [[ "$a" == "approvals" ]]; then target="order-management"; fi
     echo "::group::live eval: $a"
     # What the replay twin would cost: informational, calls no model.
-    uv run python -m evals.run_evals --estimate "$LIVE_MODEL" --agent "$a" \
+    uv run python -m evals.run_evals --estimate "$LIVE_MODEL" --agent "$target" \
       --dataset "$twin" --repeats "$LIVE_REPEATS" 2>&1 | tail -5 || true
     # Live cases act on real rows (initiate_return writes), and cancel_order parks an approval: the
     # database is a throwaway one per run. Baselines are keyed by setup and none exists for a live
     # model, so there is no --baseline: the threshold is the gate.
-    uv run python -m evals.run_evals --agent "$a" --dataset "$ds" \
+    uv run python -m evals.run_evals --agent "$target" --dataset "$ds" \
       --pass-threshold "$LIVE_PASS_THRESHOLD" --repeats "$LIVE_REPEATS" "${judge_args[@]}" \
       --records-out "eval-records-live-$a.jsonl" --output-json "eval-live-$a.json" || fail=1
     echo "::endgroup::"

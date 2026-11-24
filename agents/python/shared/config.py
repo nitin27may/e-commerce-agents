@@ -339,6 +339,12 @@ class Settings(BaseSettings):
     # before executing. Requests queue in the hitl_requests DB table and are
     # reviewed at /admin/approvals.
     HITL_ENABLED: bool = True
+    # Before a gated call is parked for staff approval the customer is asked to confirm the exact action in plain
+    # words, and only an explicit yes on a later turn lets it park (shared/customer_confirmation.py, #302). Separate
+    # from HITL_ENABLED: staff approval still applies after the customer confirms. Off = park straight away.
+    CUSTOMER_CONFIRMATION_ENABLED: bool = True
+    # How long an unanswered confirmation stays answerable. A yes after this starts the question over.
+    CUSTOMER_CONFIRMATION_TTL_SECONDS: int = 600
     # How long a resume claim ('processing' on hitl_requests) may be held before
     # another approver can take it over. A crash between claim and release used to
     # strand the row forever; claimed_at (migration 0002) makes that detectable.

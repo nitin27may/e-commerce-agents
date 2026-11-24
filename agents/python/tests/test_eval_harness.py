@@ -150,6 +150,14 @@ async def test_run_captures_exception_as_error_outcome(monkeypatch: pytest.Monke
     assert outcome.text == ""
 
 
+@pytest.fixture(autouse=True)
+def _no_customer_confirmation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests are about parking itself; the confirmation before it is in test_customer_confirmation.py."""
+    import shared.config as shared_config
+
+    monkeypatch.setattr(shared_config.settings, "CUSTOMER_CONFIRMATION_ENABLED", False)
+
+
 @pytest.mark.asyncio
 async def test_specialist_call_parked_by_maf_approval_is_seen_as_a_park(monkeypatch: pytest.MonkeyPatch) -> None:
     # approval_mode="always_require" is decided by MAF before any function middleware runs: the response has no

@@ -45,16 +45,23 @@ def test_per_type_counts_meet_the_minimums() -> None:
 
 
 def test_a_case_that_asserts_a_gated_tool_call_expects_the_park() -> None:
+    """A gated call asks the customer first (nothing parks), then parks on an explicit yes: two turns."""
     # Keyed on expected_tool_args: the baseline return case lists initiate_return but the model first asks for a
     # refund preference, so it asserts no park.
     for entry in _raw():
+        if "turns" in entry:
+            first, last = entry["turns"][0], entry["turns"][-1]
+            if GATED & set(last.get("expected_tools", [])) and last.get("expect_hitl") is True:
+                assert first.get("expect_hitl") is False, entry["input"]
+                assert last["input"] == "yes", entry["input"]
+            continue
         gated = GATED & set(entry.get("expected_tool_args", {})) | (
             GATED & {t for t in entry.get("expected_tools", [])[:1]}
         )
         if gated and entry["type"] != "multi_turn":
             # A case marked `precheck_refusal` expects the host's pre-park check to refuse in words (no approval).
             refused = entry.get("criteria", {}).get("precheck_refusal") is True
-            assert entry.get("expect_hitl") is (not refused), (gated, entry.get("input"))
+            assert refused and entry.get("expect_hitl") is False, (gated, entry.get("input"))
 
 
 def test_a_case_the_precheck_refuses_expects_no_tool_call_and_no_approval() -> None:

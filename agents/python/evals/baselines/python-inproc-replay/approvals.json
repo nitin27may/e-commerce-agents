@@ -1,0 +1,31 @@
+{
+  "avg_groundedness": 1.0,
+  "avg_correctness": 1.0,
+  "avg_completeness": 1.0,
+  "overall_score": 1.0,
+  "total_tokens_in": 32965,
+  "total_tokens_out": 277,
+  "agent_name": "order-management",
+  "dataset_path": "evals/datasets/approvals.json",
+  "setup": {
+    "stack": "python",
+    "target": "inproc",
+    "chat_provider": "replay",
+    "chat_model": "gpt-4.1",
+    "chat_api": "",
+    "embedding_provider": "replay",
+    "embedding_model": "text-embedding-3-small",
+    "judge": {
+      "kind": "keyword",
+      "provider": "",
+      "model": "",
+      "self_judged": false
+    },
+    "gateway": "none",
+    "pricing_source": "pricing:models.yaml@a3bbb0fd",
+    "endpoint": ""
+  },
+  "setup_key": "python-inproc-replay",
+  "repeats": 1,
+  "dataset_cases": 5
+}

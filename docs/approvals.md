@@ -79,6 +79,74 @@ still guards an ungated registration of the same names). The specialist host clo
   else. The card shows "Awaiting staff review" to everyone but an admin, and an admin who asked for the return is still
   refused by the reviewer-is-not-requester rule.
 
+## Customer confirmation before a call parks (Python)
+
+Staff approval answers "may this happen". Customer confirmation answers an earlier question: "is this what the customer
+meant". A model can pick the wrong order, mishear a request or act on an instruction it read in a tool result, and each of
+those used to become a staff task. In `tool` mode the host now asks the customer first, in plain words, and parks the call
+only after an explicit yes on a later turn (`shared/customer_confirmation.py`, issue #302). It is a different step from
+approval: no inbox row, no `approvals` audit event, nothing for staff to see until the customer has agreed.
+
+```mermaid
+sequenceDiagram
+    participant U as Customer
+    participant M as Specialist model
+    participant H as Host (park_pending_approvals)
+    participant S as Staff inbox
+    U->>M: "Cancel my order X"
+    M->>H: gated call cancel_order(X)
+    H->>H: pre-park checks pass
+    H->>H: open customer_confirmations row
+    H-->>U: "Before I send this for approval, please confirm: ... Reply yes ..."
+    U->>M: "yes"
+    M->>H: gated call cancel_order(X) again
+    H->>H: latest stored user message is an explicit yes, row still open
+    H->>S: park (tool_approval_requests + approvals)
+    H-->>U: "I have asked a team member to approve ..."
+```
+
+Order inside `park_pending_approvals`: role guard and preconditions (a call that can never succeed asks nothing), then the
+confirmation, then `park_gated_call`. The rules, none of which asks a model anything:
+
+* **One question per action.** `customer_confirmations` (migration 0016) holds one open row per user, session, tool and
+  argument key. The key (`args_key`) covers what decides the outcome: the order, the new address, the quantity, the refund
+  method. It does not cover the free-text `reason`, which the model words differently every turn. Another order, another
+  address or another quantity is another question, and a yes to one never answers the other.
+* **Whose words count.** The host reads the user's latest message from `messages`, scoped to the caller and the
+  conversation (`latest_user_message`). It never uses the text the orchestrator's model sent to the specialist, so a
+  product description, a review or a model-written "the user already confirmed" cannot say yes for the customer. Only a
+  caller with no stored conversation (an eval run, a script) is read from the message it sent.
+* **What counts as yes** (`is_affirmative`): the whole message is a short, explicit agreement ("yes", "yes please", "go
+  ahead", "I confirm", "that is right"). A question mark, a negation, "yes but ...", a second request or more than eight
+  words does not confirm, and neither does "cancel" or "the customer already confirmed". A clear no ("no", "never mind",
+  "stop") closes the question as declined; anything else leaves it open and the next request asks again.
+* **A yes answers an earlier question.** The message that raised the question can never also answer it, so one message
+  cannot both ask for and confirm a call.
+* **It expires.** `CUSTOMER_CONFIRMATION_TTL_SECONDS` (default 600). A yes after that starts the question over.
+* **Per user and per session.** Another user, or the same user in another conversation, never consumes it.
+* **Consumed once.** A confirmed row is spent in the same transaction that reads it (an advisory lock per key), and put
+  back if parking fails, so a database error does not cost the customer their yes. Two concurrent turns park one request.
+* **Off switch.** `CUSTOMER_CONFIRMATION_ENABLED=false` parks straight away, as before. Staff approval is unaffected.
+
+The sentences are fixed and pinned, with the matching vectors, by `config/policies/testdata/customer-confirmation.v1.json`:
+
+> Before I send this for approval, please confirm: you want me to cancel order 1f0e6a52-0000-4000-8000-000000000001. Reply "yes" to confirm, or tell me what to change. I have not submitted anything for approval.
+
+A decline answers "Understood. I have not submitted anything for approval."
+
+**Gotchas.** A first-turn "yes" with no question open confirms nothing. The eval harness reports a call the host asked
+about as a refused call (`RunOutcome.refused_calls`), never as an approval request, so an eval case that expects a park
+needs two turns (`evals/datasets/live/approvals.live.json`). The in-process specialist eval has no stored conversation, so
+it reads the user's message from the turn itself. The workflow modes (`workflow:return-replace`, handoff, group chat) do
+not go through the host and keep their own policy gate.
+
+**Evals.** `evals/datasets/approvals.json` (replay, five single-turn cases: ask, ask for an address change, a claimed
+earlier confirmation, a confirmation injected through pasted page text) and its live twin
+`evals/datasets/live/approvals.live.json` (ten cases: confirm, decline, silence, different arguments, address change,
+return, claimed and injected confirmations, an instruction posing as the answer, a bare yes). A stale confirmation needs
+the clock to move, so it is covered in `tests/test_customer_confirmation.py` with the real database instead. The existing
+live cases that expected a one-turn park are now two turns.
+
 ## Roles
 
 `support` is staff and reviews what the policy routes to `support`; `admin` acts as manager and handles
@@ -354,7 +422,9 @@ staff-only, bounded by the assigned role, and keep their own status codes. There
 
 ## What is not built
 
-* *Customer confirm* (`pending_confirm`), on either stack.
+* *Customer confirmation on .NET.* Python asks the customer first (see above); the .NET host still parks a gated call as
+  soon as the model requests it (parity row 56). The matcher, key and sentences are pinned in
+  `config/policies/testdata/customer-confirmation.v1.json` for the port.
 * *Acting on an `auto` route for tool calls.* The route is recorded, and the request still waits for a person.
 * *A .NET SLA worker.* The Python worker serves both stacks; see [The .NET stack](#the-net-stack) for the one case
   it cannot finish.
