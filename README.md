@@ -9,7 +9,7 @@
 [![MAF 1.26.0](https://img.shields.io/badge/Microsoft%20Agent%20Framework-1.26.0-5E5DF0.svg)](https://github.com/microsoft/agent-framework)
 [![PostgreSQL + pgvector](https://img.shields.io/badge/PostgreSQL-pgvector-336791.svg)](https://github.com/pgvector/pgvector)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED.svg)](https://docs.docker.com/compose/)
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/nitin27may/e-commerce-agents)
+[<img src="https://github.com/codespaces/badge.svg" alt="Open in GitHub Codespaces" height="20">](https://codespaces.new/nitin27may/e-commerce-agents)
 
 **A complete multi-agent e-commerce application built on [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) (MAF), in Python and .NET, and a 34-chapter course that teaches every piece of it.**
 
@@ -21,7 +21,7 @@ agent and builds up to it one mechanism at a time; chapter 1 runs with no API ke
 
 ![Chat with a side-by-side product comparison, the Compare button and the orchestration mode switcher](docs/images/flow-product-search.png)
 
-### What is in the box
+## What is in the box
 
 | Layer | What runs |
 |---|---|
@@ -31,11 +31,11 @@ agent and builds up to it one mechanism at a time; chapter 1 runs with no API ke
 | **Data** | PostgreSQL with pgvector for semantic search, numbered migrations, a deterministic seeder, Redis for rate limiting |
 | **Identity** | JWT sign-in, five roles (customer, power user, seller, support, admin), identity carried to every agent and tool |
 | **Safety** | Policy-routed human approval, checkpoints and resume, guardrails, grounding checks, idempotency on money-moving actions |
-| **Quality** | An eval suite that replays without a key in CI, a red-team set, more than 30 CI checks per pull request |
+| **Quality** | An eval suite that replays without a key in CI, a red-team set, dozens of CI checks per pull request |
 | **Operations** | OpenTelemetry into the Aspire dashboard, per-request token and cost tracking, Docker Compose with prebuilt images, a draft Azure Container Apps deployment |
 | **Two backends** | All of the above in Python, and in .NET / C# behind the same frontend and database, with the differences listed in the [parity matrix](docs/parity-matrix.md) |
 
-### One orchestrator, five orchestration modes
+## One orchestrator, five orchestration modes
 
 Most agent samples show one orchestration pattern in isolation. Here the orchestrator runs the same
 request through any of five, selected per request in the chat box, so "which one should I use?" has a measured answer:
@@ -54,7 +54,7 @@ The two workflow modes call no model, so they are doing less work, not the same 
 Method, token and cost figures: [orchestration benchmark](docs/orchestration-benchmark.md)
 (gpt-4.1, 40 requests). How each pattern works: [orchestration patterns](docs/concepts/06-orchestration-patterns.md).
 
-### Learn
+## Learn
 
 New to MAF? Run chapter 1 now — no API key, no Docker:
 
@@ -68,7 +68,7 @@ It replays a recorded model response, so it works offline. From there, follow a
 multi-agent orchestration, production concerns — or the short route in the
 [course README](./tutorials/README.md).
 
-### Run it
+## Run it
 
 ```bash
 git clone https://github.com/nitin27may/e-commerce-agents.git
@@ -81,7 +81,7 @@ Then open **http://localhost:3000** and sign in as `alice.johnson@gmail.com` / `
 Docker is the only requirement — no Python, .NET or Node needed.
 
 `--demo` pulls the eleven released images from GitHub Container Registry instead of building them,
-which is the difference between roughly **one minute and roughly twelve**. Images are published for
+which is the difference between a first run of about a minute and one of about twelve (a rough figure; it depends on your network and machine). Images are published for
 `linux/amd64` and `linux/arm64`, so Apple Silicon runs natively.
 
 **No API key?** `./scripts/dev.sh --demo --no-key` (PowerShell: `./scripts/dev.ps1 -Demo -NoKey`) starts the whole stack with no model behind it: browsing, search, cart and checkout work, and chat replays recorded answers for the suggested prompts. Those recordings are not in the released images yet, so until they are, chat prompts report "not recorded"; the tutorials are the fully keyless path today. A local model through Ollama also needs no paid key: see [docs/quick-start.md](docs/quick-start.md#run-without-a-paid-api-key).
@@ -236,7 +236,7 @@ same frontend for either backend. Full detail — request flow, agent internals,
 and the API surface — is in **[Architecture](https://nitinksingh.com/e-commerce-agents/architecture/)**.
 
 **Pick your stack:** [`agents/python/`](./agents/python/) or [`agents/dotnet/`](./agents/dotnet/) —
-switch with `./scripts/dev.sh --dotnet`. Parity is checked by a dual-backend test gate you run locally (`scripts/e2e-both-stacks.sh`; it is not in CI yet), and
+switch with `./scripts/dev.sh --dotnet`. Parity is checked in CI by a keyless gate that boots both stacks under replay (`.github/workflows/stack-parity.yml`); the live dual-backend Playwright suite (`scripts/e2e-both-stacks.sh`) still runs locally. And
 [`docs/parity-matrix.md`](./docs/parity-matrix.md) lists the remaining differences row by row.
 
 ---
@@ -305,8 +305,8 @@ checkboxes and the reasoning for the order, is on the
 
 | Next | What it is |
 |---|---|
-| **Azure and Microsoft Foundry** | A Container Apps deployment is written and checked offline ([Deploy to Azure](#deploy-to-azure)) but has not yet run against a real subscription; that first deploy is next. After it: the same six agents in two more topologies (Foundry as model provider, Foundry Hosted Agents), with what each one costs you |
-| **Finish the gates** | The dual-backend parity suite runs locally but not in CI, and the .NET eval suite needs its baselines. Every parity claim this repo makes rests on a gate nobody runs automatically |
+| **Azure and Microsoft Foundry** | A Container Apps deployment is written and checked offline ([Deploy to Azure](#deploy-to-azure)) but has not yet run against a real subscription. It comes last, after the evaluation and documentation work is merged. After it: the same six agents in two more topologies (Foundry as model provider, Foundry Hosted Agents), with what each one costs you |
+| **Finish the gates** | The keyless parity gate runs in CI, but it covers only turns that call no model. A model-calling comparison across the two stacks needs a key, and the .NET eval suite still needs its baselines |
 | **Retrieval and tooling** | A typed filter DSL for `search_products`, the two MCP servers published to PyPI, and prompt caching — now measurable, because the cost counter ships |
 
 No third backend is planned. The roadmap also records what is **deliberately not** planned, and why, so those are not mistaken

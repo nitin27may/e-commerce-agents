@@ -45,7 +45,7 @@ cell says how it was shown. **Stub-tested** means a test with a faked HTTP trans
 profile that sets `chat_completions` for Python gives .NET the same behaviour it always had.
 
 The suggested judge in each header is a starting point, never the model under test, and **not calibrated**. The
-reference judge is fixed once, after calibration, in the eval work (decision D-7).
+reference judge is fixed once, after calibration, in the eval work.
 
 ## The two commands per profile
 

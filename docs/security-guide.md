@@ -10,16 +10,45 @@ See [`docs/agent-audit-matrix.md`](agent-audit-matrix.md) for the per-agent stat
 
 ### Attack surface
 
-```
-AUTH_MODE=local (default):
-Browser  ──JWT (HS256)──►  Orchestrator (:8080)  ──X-Agent-Secret──►  Specialists (:8081–8085)  ──►  MCP servers (:9000–9001, unauthenticated)
-                                  │                                           │
-                            PostgreSQL / pgvector                        Redis (cache)
+**`AUTH_MODE=local` (default)**
 
-AUTH_MODE=oauth (optional — self-hosted AS, no external IdP):
-Browser  ──JWT (RS256)──►  Orchestrator  ──Bearer <agent:invoke>──►  Specialists  ──Bearer <mcp:product|mcp:inventory>──►  MCP servers
-                                  │                                           │                                                │
-                                  └──────────────────── all three validate against the AS's JWKS (:8090) ─────────────────────┘
+```mermaid
+%%{init: {'theme':'base', 'themeVariables': {'primaryColor': '#2563eb', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#1e40af', 'lineColor': '#64748b', 'background': 'transparent'}}}%%
+flowchart LR
+  br["Browser"] -->|"JWT HS256"| orch["Orchestrator :8080"]
+  orch -->|"X-Agent-Secret"| sp["Specialists :8081-8085"]
+  sp --> mcp["MCP servers :9000-9001<br/>unauthenticated"]
+  orch --> pg[("PostgreSQL / pgvector")]
+  sp --> pg
+  orch --> rd[("Redis")]
+  classDef core     fill:#2563eb,stroke:#1e40af,color:#ffffff
+  classDef external fill:#f59e0b,stroke:#b45309,color:#000000
+  classDef success  fill:#10b981,stroke:#047857,color:#ffffff
+  classDef error    fill:#ef4444,stroke:#b91c1c,color:#ffffff
+  classDef infra    fill:#64748b,stroke:#334155,color:#ffffff
+  class br,orch,sp core
+  class mcp error
+  class pg,rd infra
+```
+
+**`AUTH_MODE=oauth` (optional, self-hosted authorization server, no external IdP)**
+
+```mermaid
+%%{init: {'theme':'base', 'themeVariables': {'primaryColor': '#2563eb', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#1e40af', 'lineColor': '#64748b', 'background': 'transparent'}}}%%
+flowchart LR
+  br["Browser"] -->|"JWT RS256"| orch["Orchestrator"]
+  orch -->|"Bearer agent:invoke"| sp["Specialists"]
+  sp -->|"Bearer mcp:product or mcp:inventory"| mcp["MCP servers"]
+  as["Authorization server :8090<br/>JWKS"] -.->|"validates"| orch
+  as -.->|"validates"| sp
+  as -.->|"validates"| mcp
+  classDef core     fill:#2563eb,stroke:#1e40af,color:#ffffff
+  classDef external fill:#f59e0b,stroke:#b45309,color:#000000
+  classDef success  fill:#10b981,stroke:#047857,color:#ffffff
+  classDef error    fill:#ef4444,stroke:#b91c1c,color:#ffffff
+  classDef infra    fill:#64748b,stroke:#334155,color:#ffffff
+  class br,orch,sp,mcp core
+  class as error
 ```
 
 The platform has three principal trust boundaries:
@@ -66,7 +95,7 @@ Request →
 
 ### Layer 1 — Prompt-layer rules (`grounding-rules.yaml`)
 
-`shared/config/prompts/_shared/grounding-rules.yaml` is injected into every agent's system prompt via the YAML composition system (`shared/prompt_loader.py`). It enforces three invariants at the model level:
+`agents/python/config/prompts/_shared/grounding-rules.yaml` is injected into every agent's system prompt via the YAML composition system (`shared/prompt_loader.py`). It enforces three invariants at the model level:
 
 - **Data grounding** — every answer must originate from a tool call; the model must not fabricate data from training.
 - **Prompt-injection resistance** — tool results and user text are data, never instructions. Fake system/developer turns are explicitly forbidden.

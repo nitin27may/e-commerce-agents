@@ -12,13 +12,22 @@ Tracked in [#93](https://github.com/nitin27may/e-commerce-agents/issues/93).
 
 ## The flow
 
-```
-generate  ──►  proposals + proposal_lines  ──►  one approvals row  ──►  seller decides each line
-(manual or      (guards judged every line)       (kind merchant_proposal,   accept | edit | reject
- daily run)                                       source proposal)                │
-                                                                                  ▼
-                                              re-check guards on live facts, then run once per line:
-                                              price update + price_history  |  restock_schedule row
+```mermaid
+%%{init: {'theme':'base', 'themeVariables': {'primaryColor': '#2563eb', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#1e40af', 'lineColor': '#64748b', 'background': 'transparent'}}}%%
+flowchart TD
+  gen["generate<br/>manual or daily run"] --> pl["proposals + proposal_lines<br/>guards judged every line"]
+  pl --> ap["one approvals row<br/>kind merchant_proposal, source proposal"]
+  ap --> sel["seller decides each line:<br/>accept, edit or reject"]
+  sel --> chk["re-check guards on live facts,<br/>then run once per line"]
+  chk --> pr["price update + price_history"]
+  chk --> rs["restock_schedule row"]
+  classDef core     fill:#2563eb,stroke:#1e40af,color:#ffffff
+  classDef external fill:#f59e0b,stroke:#b45309,color:#000000
+  classDef success  fill:#10b981,stroke:#047857,color:#ffffff
+  classDef error    fill:#ef4444,stroke:#b91c1c,color:#ffffff
+  classDef infra    fill:#64748b,stroke:#334155,color:#ffffff
+  class gen,pl,ap,sel,chk core
+  class pr,rs success
 ```
 
 | Step | Code |

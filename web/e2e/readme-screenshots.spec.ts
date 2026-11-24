@@ -93,38 +93,6 @@ test("guest-01 public storefront", async ({ page }) => {
   await shoot(page, "flow-guest-storefront.png", false);
 });
 
-test("guest-02 public product grid", async ({ page }) => {
-  await clearSession(page);
-  await page.goto("/shop/products");
-  await page.waitForLoadState("networkidle").catch(() => {});
-  await page.waitForTimeout(1_000);
-  await shoot(page, "flow-guest-browse.png");
-});
-
-test("guest-03 public product detail", async ({ page }) => {
-  await clearSession(page);
-  // Fetch the first product id from the public REST endpoint (no auth required)
-  await page.goto("/shop/products");
-  await page.waitForLoadState("networkidle").catch(() => {});
-  await page.waitForTimeout(1_000);
-
-  // Try clicking the first product card image
-  const productImg = page.locator("img[src*='picsum'], img[alt]").first();
-  await productImg
-    .click({ timeout: 8_000 })
-    .catch(async () => {
-      // Fallback: resolve via API
-      const resp = await page.request.get("http://localhost:8080/api/products?limit=1");
-      const data = await resp.json().catch(() => null);
-      const id = data?.products?.[0]?.id ?? data?.[0]?.id;
-      if (id) await page.goto(`/shop/products/${id}`);
-    });
-
-  await page.waitForURL(/\/shop\/products\/[^/]+$/, { timeout: 10_000 }).catch(() => {});
-  await page.waitForLoadState("networkidle").catch(() => {});
-  await shoot(page, "flow-guest-product.png");
-});
-
 test("guest-04 public AI assistant", async ({ page }) => {
   await clearSession(page);
   await page.goto("/shop/assistant");

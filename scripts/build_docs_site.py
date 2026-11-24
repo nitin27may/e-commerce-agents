@@ -91,6 +91,7 @@ SECTIONS: tuple[Section, ...] = (
             "docs/run-profiles.md",
             "docs/demo-guide.md",
             "docs/deployment.md",
+            "docs/azure-deployment.md",
             "docs/troubleshooting.md",
             "docs/roadmap.md",
         ),
@@ -157,6 +158,7 @@ SECTIONS: tuple[Section, ...] = (
         (
             "docs/parity-matrix.md",
             "docs/agent-audit-matrix.md",
+            "docs/auth-route-matrix.md",
             "docs/orchestration-benchmark.md",
             "docs/reported-vs-actual.md",
             "docs/adr/README.md",
@@ -963,6 +965,58 @@ def write_llms_files(pages: list[Page], rendered: dict[Path, str]) -> None:
     print(f"wrote llms.txt ({len(ordered)} pages), llms-full.txt ({size_kb:.0f} KB), robots.txt")
 
 
+NOT_PUBLISHED = {"docs/README.md"}
+
+PARITY_STATUSES = ("Full", "Partial", "Parity", "By design", "Python only", ".NET only", "Neither stack")
+
+
+def check_parity_summary(text: str) -> list[str]:
+    """Compare docs/parity-matrix.md's Summary table with the Matrix table it summarises.
+
+    The counts are derived from the rows, never typed, so a row added or re-statused
+    in one table and not the other fails the build instead of drifting.
+    """
+    rows: dict[int, str] = {}
+    short: list[str] = []
+    for line in text.splitlines():
+        cells = [c.strip() for c in re.split(r"(?<!\\)\|", line)]
+        if len(cells) > 6 and cells[1].isdigit():
+            rows[int(cells[1])] = cells[5]
+            if len(cells) != 9:
+                rows_short = f"parity-matrix row {cells[1]} has {len(cells) - 2} cells, the header has 7"
+                short.append(rows_short)
+    problems: list[str] = list(short)
+    counts = dict.fromkeys(PARITY_STATUSES, 0)
+    for number, status in rows.items():
+        label = next((s for s in PARITY_STATUSES if status.startswith(s)), None)
+        if label is None:
+            problems.append(f"parity-matrix row {number}: status {status!r} is not one of {PARITY_STATUSES}")
+        else:
+            counts[label] += 1
+    summary_start = text.find("## Summary")
+    summary = text[summary_start : text.find("## Matrix", summary_start)]
+    for label, count in counts.items():
+        match = re.search(rf"^\|\s*{re.escape(label)}\s*\|\s*(\d+)\s*\|", summary, re.M)
+        if not match:
+            problems.append(f"parity-matrix Summary has no row for status {label!r}")
+        elif int(match.group(1)) != count:
+            problems.append(f"parity-matrix Summary says {label} {match.group(1)}, the table has {count}")
+    expected = f"{len(rows)} rows, numbered {min(rows)} to {max(rows)}"
+    if expected not in summary:
+        problems.append(f"parity-matrix Summary should say {expected!r}")
+    missing = [n for n in range(min(rows), max(rows) + 1) if n not in rows]
+    if missing and not all(f"number {n} unused" in summary or f"numbers {n}" in summary for n in missing):
+        problems.append(f"parity-matrix has unexplained numbering gaps: {missing}")
+    return problems
+
+
+def find_unpublished_docs(pages: list[Page]) -> list[str]:
+    """Markdown files under docs/ that no nav section publishes."""
+    published = {p.source.as_posix() for p in pages if not p.generated}
+    found = (path.relative_to(REPO_ROOT).as_posix() for path in (REPO_ROOT / "docs").rglob("*.md"))
+    return sorted(f for f in found if f not in published and f not in NOT_PUBLISHED)
+
+
 def build(check_only: bool) -> int:
     pages = collect_pages()
     by_source = {p.source: p for p in pages if not p.generated}
@@ -999,6 +1053,14 @@ def build(check_only: bool) -> int:
             rewriter.problems.append(
                 f"duplicate title {title!r} under parent {parent!r}: {', '.join(where)}"
             )
+
+    # A page under docs/ that is in no nav section is never published, and nothing
+    # else notices: every link to it still resolves on GitHub. docs/README.md is the
+    # folder index GitHub shows, so it is the one deliberate exception.
+    for orphan in find_unpublished_docs(pages):
+        rewriter.problems.append(f"{orphan}: under docs/ but not in the site nav (add it to a Section in SECTIONS)")
+
+    rewriter.problems.extend(check_parity_summary((REPO_ROOT / "docs/parity-matrix.md").read_text(encoding="utf-8")))
 
     known_parents = {p.title for p in pages if p.has_children}
     for page in pages:

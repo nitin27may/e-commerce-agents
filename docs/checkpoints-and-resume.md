@@ -187,3 +187,12 @@ same routes. The differences:
   timeout for a paused return it opened: its `ApprovalTimeoutWorker` hosted service drains those
   `approval.timeout_apply` rows and the Python worker skips them (parity matrix, row 36; added
   after release 1.4.0). The lifecycle waits are not ported (row 41).
+
+## Gotchas
+
+- **A checkpoint belongs to the graph that wrote it.** Flipping `RETURN_LIFECYCLE_ENABLED` changes the graph, so change it only while no return is paused; a paused run cannot resume against a different graph.
+- **Custom types must round-trip.** `PostgresCheckpointStorage` carries `ReturnDecision` and the workflow state; MAF's own `FileCheckpointStorage` refuses custom types, so do not swap it in.
+- **Resume builds a new workflow.** The process that paused the run may not be the one that resumes it, so nothing may depend on in-memory state from before the pause.
+- **A stack resumes only its own checkpoints.** A Python checkpoint is not readable by .NET and the reverse.
+- **No decision means rejection.** When the SLA expires with nobody deciding, the run resumes as a rejection and nothing is created.
+- **Returns paused before the policy gate existed** were expired by migration `0010`; their checkpoints cannot be resumed with the current response type.

@@ -115,6 +115,12 @@ the stored requests offline, with no key.
 - **Hide the calendar entirely.** A few tools filter or bucket on the current date, so a recording
   can go stale as time passes. The fixtures README lists the known cases.
 
+## Gotchas
+
+- **Two eval runs on one machine collide.** The specialists bind ports 8081 to 8085, so a second run reports fixtures missing that are not missing. Serialise runs and never stop services by name.
+- **`fixture_drift` exit 0 does not prove the fixtures match.** It cannot see values MAF generates at run time; `scripts/replay-evals.sh` is the gate after any MAF bump.
+- **A tool's output is part of the key.** Changing what a tool returns invalidates its fixtures, and the harness reports that as an infrastructure miss, not a bad answer.
+
 ## The .NET counterpart
 
 The .NET stack has the same provider. `ReplayChatClient`

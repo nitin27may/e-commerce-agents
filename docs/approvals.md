@@ -189,7 +189,7 @@ approver can wave it through.
 | Key | Meaning |
 |---|---|
 | `margin_floor_pct` | Lowest margin a price may leave, `(price − unit_cost) / price × 100`. Exactly at the floor is allowed; a product with no `unit_cost` is blocked. |
-| `max_change_pct_per_day` | Most a price may move in one UTC day. Every change already in `price_history` today counts, plus the proposed one, each as `|new − old| / old × 100`. Exactly at the cap is allowed. |
+| `max_change_pct_per_day` | Most a price may move in one UTC day. Every change already in `price_history` today counts, plus the proposed one, each as `abs(new − old) / old × 100`. Exactly at the cap is allowed. |
 | `block_during_active_promotion` | Refuse a price change to a product covered by a promotion active now (`promotion_products`, `promotions.is_active`, start and end dates). |
 | `max_lines_per_batch` | Most lines one proposal batch may hold. |
 | `max_restock_quantity` | Most units one restock line may order (1 to INT32). **Placeholder** default 5000. |

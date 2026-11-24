@@ -161,7 +161,7 @@ while [ $# -gt 0 ]; do
             echo "  A profile holds no secrets (keys stay in .env). Your exported variables beat the profile,"
             echo "  and the profile beats .env. Table and commands: docs/run-profiles.md"
             echo ""
-            echo "  --demo is the fast path: no local build, one command, ~2 minutes."
+            echo "  --demo is the fast path: no local build, one command, about a minute on a first run (rough)."
             echo "  Override the image tag with IMAGE_TAG (default: latest):"
             echo "    IMAGE_TAG=main ./scripts/dev.sh --demo"
             echo ""

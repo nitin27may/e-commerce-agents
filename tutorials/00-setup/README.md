@@ -291,7 +291,7 @@ echo "exit code: $?"   # 0 if every check passed
 
 ## How this shows up in the capstone
 
-The full application is set up with the same two scripts. `scripts/verify-setup.sh` and `scripts/dev.sh` are what the main [`README.md`](../../README.md#quick-start) points to under Quick Start.
+The full application is set up with the same two scripts. `scripts/verify-setup.sh` and `scripts/dev.sh` are what the main [Quick Start page](../../docs/quick-start.md) points to.
 
 ## What's next
 

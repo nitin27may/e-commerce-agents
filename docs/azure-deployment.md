@@ -1,7 +1,3 @@
----
-title: Azure deployment (draft)
----
-
 # Azure deployment (draft)
 
 Bicep templates and scripts that deploy the Python stack to Azure Container Apps, for anyone who wants to run the demo in their own subscription.
@@ -132,7 +128,7 @@ Parameters: `GATEWAY_SKU` / `gatewaySku` (default `BasicV2`), `gatewayPublisherE
 
 Cost and time: **UNVERIFIED offline.** v2 tiers provision in minutes and are the cheap end of the tiers that might support the token policies; classic tiers (`Developer`, `Basic`, `Standard`, `Premium`) take 30 to 45 minutes or more to create and to delete. Check the price on the Azure pricing page before a deploy and run `azure-down` afterwards. The first deployed run must also record which tier accepts the policy (plan item M6.2).
 
-## Per-app identities (design)
+## Per-app identities (optional)
 
 `DEPLOY_PER_APP_IDENTITIES` (Bicep `deployPerAppIdentities`, default false; intended for the reference profile) adds `modules/app-identities.bicep`: seven user-assigned identities (`id-<token>-<app>`: orchestrator, the five specialists, outbox-worker), each with Key Vault Secrets User, and Cognitive Services OpenAI User on the account only when there is no gateway. Output `AZURE_APP_IDENTITIES` lists `{ app, id, clientId, principalId }`.
 

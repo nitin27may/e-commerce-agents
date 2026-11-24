@@ -269,18 +269,9 @@ Evals are **not** in the unit-test workflow `tests.yml`. `.github/workflows/eval
 - **`replay-regression`** ("Replay regression") — on every PR and push to `main` touching agent or eval code. Replays committed fixtures with deterministic scorers only: no key, no cost. It fails the PR on a missing fixture, a failed case assertion, or a score drop against the committed baselines. The score it prints is never presented as quality: the answers are frozen, so the number only says whether the code still handles them the way it did when they were recorded.
 - **`full`** — **manual dispatch only** (there is no schedule), with a real key, the LLM judge and a configurable `pass_threshold` (default `0.7`). It spends real money, so a human starts it.
 
-The `full` job:
-
-1. Spins up PostgreSQL 16 (pgvector) and Redis 7 as GitHub Actions services.
-2. Loads the schema with `scripts/migrate.py` (the `docker/postgres/init.sql` baseline plus the migrations) and seeds with `scripts/seed.py` (deterministic: `random.seed(42)`).
-3. Generates embeddings for semantic search.
-4. Runs all six quality evals in sequence, then the safety suite (threshold 0.8).
-5. Fails if any eval exits non-zero.
-6. Uploads all `eval-*.json` result files as artifacts (retained 30 days).
+The `full` job takes the provider, model, repeats, suite, pass threshold, judge switch and two token ceilings as inputs, runs `scripts/live-evals.sh` against a Postgres service container, and uploads the run records and a generated scorecard. The inputs, the secrets each provider needs, what it runs and its gotchas (the red-team suite is not part of it; live cases write to a throwaway database) are in [the evals README](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/evals/README.md#live-runs-in-ci). A test fails the build if a job that reads a model key could run from anything but a manual dispatch.
 
 Every report starts with the run's setup (stack, target, chat and embedding provider and model, judge, gateway, pricing source), and each case can be stored as a JSONL run record (`--records-out`) that re-scores later with no model call (`--rescore`). Baselines are keyed by setup under `agents/python/evals/baselines/<setup-key>/`; your own live results go to a git-ignored `evals/.local/`, and each report says whether it compared against a reference baseline, a personal one, or only the pass-threshold floor. A live run repeats the dataset (`--repeats`, default 3) and reports mean and spread, and its regression threshold follows the case count and the measured spread instead of a flat 0.05. The judge model is set with `JUDGE_PROVIDER` and `JUDGE_MODEL` and is never silently the model under test; a self-judged run is labelled as such. `python -m evals.provider_check` lists what a provider can do and which suites then apply. Details: `agents/python/evals/README.md`.
-
-**Required secret (`full` job only)**: `OPENAI_API_KEY` in the repository settings. The workflow fails fast if the secret is absent rather than running with a dummy key.
 
 ### Foundry evaluators (optional)
 

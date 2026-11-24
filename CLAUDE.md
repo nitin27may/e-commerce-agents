@@ -69,6 +69,22 @@ uv run --project agents/python python -m scripts.migrate
 scripts/replay-evals.sh --setup          # migrate + seed a fresh DB, then every suite
 cd agents/python && uv run python -m evals.fixture_drift   # 0 clean · 1 offline-fixable · 2 re-record
 
+# Live evals (dispatch-only in CI; runs locally too, spends a key). Cost first, no model called:
+cd agents/python && uv run python -m evals.run_evals --estimate gpt-4.1-mini --agent product-discovery --dataset evals/datasets/product_discovery.json
+scripts/live-evals.sh --check-env        # the same script the manual `full` job runs; see agents/python/evals/README.md
+
+# Effective configuration with secrets redacted, and run profiles (a profile holds no secret)
+uv run --project agents/python python -m scripts.doctor
+./scripts/dev.sh --profile ollama        # dev.ps1 -Profile; also --no-key for the replay-backed demo; table in docs/run-profiles.md
+
+# Docs checks (CI: jekyll-gh-pages.yml, tutorials.yml)
+python3 scripts/build_docs_site.py --check     # nav, links, diagrams, parity-matrix summary
+python3 scripts/check_tutorial_readmes.py --check && python3 scripts/check_tutorial_coverage.py --check && python3 scripts/check_tutorial_nav.py --check
+python3 scripts/build_eval_scorecard.py --check && python3 scripts/check_maf_badge.py
+
+# Land a green PR only when its head SHA did not move (see docs/contributing-dependencies.md)
+scripts/merge-when-green.sh <pr>
+
 # Lint Python
 cd agents/python && uv run ruff check .
 cd agents/python && uv run ruff format --check .
@@ -228,7 +244,7 @@ no return paused. .NET: parity row 41, not ported.
 
 ### A2A 1.0 (both stacks)
 
-Every specialist, Python and .NET, serves two wires; `docs/a2a.md` has the detail. The legacy `/message:send` and `/message:stream` are untouched. Beside them the A2A 1.0 JSON-RPC binding is mounted at `/a2a/v1` with the agent card at `/.well-known/agent-card.json`: Python via the official `a2a-sdk` (1.3.0, spec 1.0; `shared/a2a_server.py`), .NET via the official A2A .NET SDK (`A2A` + `A2A.AspNetCore` **1.0.0-preview4**, spec 1.0, pinned exactly, a preview; `Shared/A2A/Protocol/`). JSON-RPC binding only on both. `A2A_TRANSPORT=legacy|a2a` (default `legacy`) picks what the *caller* speaks, on both orchestrators (Python: `orchestrator/agent.py::_call_over_a2a`, `shared/remote_agent.py`, through `shared/a2a_client.py`; .NET: `A2AClient` behind `A2AProtocolClient`), and any orchestrator can call any specialist over `a2a`: `scripts/a2a-interop.sh` proves both directions across processes.
+Every specialist, Python and .NET, serves two wires; `docs/a2a.md` has the detail. The legacy `/message:send` and `/message:stream` are untouched. Beside them the A2A 1.0 JSON-RPC binding is mounted at `/a2a/v1` with the agent card at `/.well-known/agent-card.json`: Python via the official `a2a-sdk` (1.3.1, spec 1.0; `shared/a2a_server.py`), .NET via the official A2A .NET SDK (`A2A` + `A2A.AspNetCore` **1.0.0-preview4**, spec 1.0, pinned exactly, a preview; `Shared/A2A/Protocol/`). JSON-RPC binding only on both. `A2A_TRANSPORT=legacy|a2a` (default `legacy`) picks what the *caller* speaks, on both orchestrators (Python: `orchestrator/agent.py::_call_over_a2a`, `shared/remote_agent.py`, through `shared/a2a_client.py`; .NET: `A2AClient` behind `A2AProtocolClient`), and any orchestrator can call any specialist over `a2a`: `scripts/a2a-interop.sh` proves both directions across processes.
 
 - **The executor is custom, on purpose, on both stacks.** Python's `SpecialistExecutor` calls `shared.agent_host._run_agent_native_stream` (looked up at call time); .NET's `SpecialistA2AExecutor` calls `AgentHost.RunAgentWithHistoryStreamingAsync`. The messages a specialist's model sees are identical on both wires and no replay fixture changes. Do not swap in `agent-framework-a2a`'s `A2AExecutor` (Python): it builds a MAF session from `contextId`. The conformance tests pin model-input equality.
 - **`contextId` is the session id**; the `x-session-id` header is a fallback. Both SDKs invent a `contextId` when the caller sent none and it looks like a session id: Python's generator prefixes invented ids `a2a-ctx-` (`session_id_from_context` ignores them); .NET uses the SDK's `ClientProvidedContextId` flag (`A2AWire.SessionIdFromContext`).
@@ -256,7 +272,7 @@ Separately, the orchestrator's own read of *its* conversation's history (for `Ru
 | Layer | Technology |
 |-------|-----------|
 | Agent Framework | MAF Python SDK — `agent-framework-core` 1.26.0, `-openai` 1.18.2, `-orchestrations` 1.4.2 (pinned in `agents/python/pyproject.toml` and mirrored in `tutorials/pyproject.toml`), plus `-anthropic` 1.0.0b261112 (a beta; `agents/python` only, the tutorials do not use it), with MCP Python SDK `mcp[cli]` 2.x (`>=2.2,<3`; `FastMCP` is now `mcp.server.mcpserver.MCPServer`, and its client stack is `httpx2`); MAF .NET — `Microsoft.Agents.AI` 1.28.0 (`agents/dotnet/Directory.Packages.props`, shared by the tutorials via `tutorials/Directory.Packages.props`) |
-| Agent Communication | A2A Protocol: A2A 1.0 JSON-RPC at `/a2a/v1` on every specialist (`a2a-sdk` 1.3.0 on Python, `A2A` + `A2A.AspNetCore` 1.0.0-preview4 on .NET) and the original `POST /message:send` + `/message:stream` pair (`A2A_TRANSPORT=legacy`, the default); user identity as headers or a signed `X-User-Context` token (`A2A_IDENTITY`) |
+| Agent Communication | A2A Protocol: A2A 1.0 JSON-RPC at `/a2a/v1` on every specialist (`a2a-sdk` 1.3.1 on Python, `A2A` + `A2A.AspNetCore` 1.0.0-preview4 on .NET) and the original `POST /message:send` + `/message:stream` pair (`A2A_TRANSPORT=legacy`, the default); user identity as headers or a signed `X-User-Context` token (`A2A_IDENTITY`) |
 | LLM | OpenAI / Azure OpenAI (gpt-4.1) / Anthropic Claude (`claude-sonnet-5-5`, stub-tested only), configurable via `LLM_PROVIDER` env var — plus any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, OpenRouter, GitHub Models) via `LLM_PROVIDER=openai` + `LLM_BASE_URL` |
 | Backend | Python 3.12, FastAPI (orchestrator), Starlette (specialist agents via agent_host) |
 | Database | PostgreSQL 16 + pgvector (1536-dim embeddings for text-embedding-3-small) |
@@ -339,7 +355,8 @@ LLM_API=chat_completions      # default `responses`; needed where there is no /r
   The golden cases in `config/pricing/testdata/` are shared; change them only when the pricing *rules* change.
 - **Private prices** (a local model at 0, a negotiated rate) go in a file named by `PRICING_OVERRIDES_FILE`,
   never in the shipped file. `PRICING_FILE` replaces the shipped file. Both are read by host-run processes;
-  containers use the copy built into the image (rebuild after editing).
+  containers read the pricing directory mounted read-only at `/pricing` (restart after editing, no rebuild), so
+  `PRICING_OVERRIDES_FILE` must be a path under `/pricing`.
 - **An unlisted model's cost is unknown (null), never a guess.** Do not reintroduce a fallback price: the old
   gpt-4.1 fallback made every Ollama, Gemini and custom-deployment run report invented dollars. Under
   `COST_BUDGET_MODE=enforce` with a ceiling, an unpriced turn stops the run (fail closed).
@@ -350,7 +367,7 @@ no model is called at all — that is what CI, the eval smoke suite and the tuto
 
 ## Database
 
-- Schema: `docker/postgres/init.sql` is the frozen baseline (34 tables; the 11 added by migrations bring it to 45); every change since is a numbered file in `docker/postgres/migrations/` (0002–0013 today: approval claims, refresh tokens, lower-cased user emails, refresh-family expiry, approvals/outbox/notifications, usage cost columns, embedding model, merchant proposals, expiry of pre-policy return approvals, worker leases, event autonomy, return lifecycle columns) applied by `scripts/migrate.py` (the seeder, `dev.sh`/`dev.ps1` and every test fixture run it). Never edit an applied migration — the checksum guard fails the run; add a new one. The runner applies whatever is unapplied in numeric order, so a lower number arriving late is fine.
+- Schema: `docker/postgres/init.sql` is the frozen baseline (34 tables; the 11 added by migrations bring it to 45); every change since is a numbered file in `docker/postgres/migrations/` (0002–0015 today: approval claims, refresh tokens, lower-cased user emails, refresh-family expiry, approvals/outbox/notifications, usage cost columns, embedding model, merchant proposals, expiry of pre-policy return approvals, worker leases, event autonomy, return lifecycle columns, signing-key rotation, usage price source) applied by `scripts/migrate.py` (the seeder, `dev.sh`/`dev.ps1` and every test fixture run it). Never edit an applied migration — the checksum guard fails the run; add a new one. The runner applies whatever is unapplied in numeric order, so a lower number arriving late is fine.
 - All queries use parameterized `$1, $2` syntax (asyncpg)
 - All user-facing queries filter by `user_email` or `user_id`
 - Embeddings stored as `vector(1536)` with ivfflat cosine index

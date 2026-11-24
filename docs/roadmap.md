@@ -21,13 +21,14 @@ to a date.
 | # | Item | Size | Why it is here |
 |---|---|---|---|
 | 1 | [First real Azure deployment](#first-real-azure-deployment) | ~4 d | The Container Apps path is written and checked offline. It has never run against a real subscription |
-| 2 | [Dual-backend parity gate in CI](#dual-backend-parity-gate-in-ci) | ~1 d | Every parity claim rests on a gate that is run by hand |
+| 2 | [Model-calling parity run](#model-calling-parity-run) | ~1 d | The keyless parity gate runs in CI; a comparison that calls a model does not |
 | 3 | [Foundry as model provider](#foundry-as-model-provider) | ~2 d | Small, and the `LLM_PROVIDER` switch it needs exists |
 | 4 | [Foundry Hosted Agents](#foundry-hosted-agents) | 3–5 d | The most unknowns of any item. It hosts both frameworks, which is the point |
 | 5 | [Publish the Azure reference](#publish-the-azure-reference) | ~2 d | Four topologies with verified costs. The difference between them is the content |
 
-Azure comes first because a deployment story is what a worked reference needs most, and because
-live runs catch what tests cannot. Foundry hosted agents are a framework-agnostic runtime, so items
+Azure heads this list because a deployment story is what a worked reference needs most, and because
+live runs catch what tests cannot. The first real deployment is scheduled last, after the evaluation and
+documentation work now under way is merged. Foundry hosted agents are a framework-agnostic runtime, so items
 3 to 5 deploy the same six agents several ways and record what each one costs.
 
 The November 2026 audit produced issues #80–#104, tracked in
@@ -49,11 +50,14 @@ not try it. Acceptance is something that either happened or did not:
 - Playwright passes against that URL.
 - Teardown leaves zero resources and no soft-deleted vault.
 
-### Dual-backend parity gate in CI
+### Model-calling parity run
 
-- [ ] Get `scripts/e2e-both-stacks.sh` into CI. It runs only locally, because it needs both stacks
-      up against a seeded database. [ADR 0005](adr/0005-dual-stack-parity.md) records this as a
-      weakness of the parity approach.
+The keyless half is done: `stack-parity.yml` boots both stacks under replay on every pull request and
+fails when they diverge on orchestration modes that call no model. What remains:
+
+- [ ] Compare the two stacks on turns that call a model, and get `scripts/e2e-both-stacks.sh` (the live
+      browser suite) into a manual-dispatch job. It needs a key and both stacks up against a seeded
+      database. [ADR 0005](adr/0005-dual-stack-parity.md) records the standing weakness.
 
 ### Foundry as model provider
 
@@ -132,9 +136,10 @@ Real work with no position claimed against the items above.
       without this codebase. See [MCP Integration](mcp-integration.md).
 - [ ] **Prompt caching.** Cache system prompts and tool schemas per agent, measured against the
       cost counter that shipped in v1.3.
-- [ ] **Scheduled signing-key rotation.** On-demand rotation with an overlap window, the
-      route/credential matrix and RFC 7591 dynamic client registration (`auth_server/register.py`,
-      opt-in with `AUTH_ALLOW_DYNAMIC_REGISTRATION`, scope-limited) are in place.
+- [ ] **Scheduled signing-key rotation.** Rotation itself is built (on demand, with an overlap window),
+      as are the route/credential matrix and RFC 7591 dynamic client registration
+      (`auth_server/register.py`, opt-in with `AUTH_ALLOW_DYNAMIC_REGISTRATION`, scope-limited). What is
+      left is running rotation on a schedule.
 - [ ] **Agentic workflows on the repository itself.** Coding agents for eval recording,
       documentation-drift checks and review. Ships nothing in the product.
 
@@ -147,6 +152,16 @@ Nothing is blocked on an upstream release.
 One pattern has shaped every release: the reported problem was smaller than the actual one, and
 the difference was found by running something rather than reading it. The nine cases are in
 [Reported vs actual](reported-vs-actual.md).
+
+### Since 1.4 (on `main`, not yet released; as of 2026-11-23)
+
+The [changelog](https://github.com/nitin27may/e-commerce-agents/blob/main/CHANGELOG.md) `[Unreleased]` section has the entries.
+
+- **Run profiles and `python -m scripts.doctor`:** twelve provider setups applied with `--profile`, and a redacted check of the effective configuration ([run-profiles.md](run-profiles.md)).
+- **Pricing in one file and a token budget:** no price is written in code on either stack; `COST_BUDGET_TOKENS_PER_RUN` sits beside the dollar ceiling.
+- **Evals that can run live:** run records, an `http` target, live datasets with resolved facts, a manual live job, Foundry evaluators and community-submitted results ([agent-quality.md](agent-quality.md)).
+- **A keyless stack-parity gate in CI** and gateway attribution headers on every model call.
+- **Azure options, offline only:** the reference profile, per-app identities, an AI gateway and a Foundry project in Bicep ([azure-deployment.md](azure-deployment.md)).
 
 ### v1.4
 
@@ -175,7 +190,7 @@ has the full entries and the known limits.
 ### v1.2
 
 - **All five orchestration modes work in the container images.** `workflow:pre-purchase`, `workflow:return-replace` and `group-chat` were missing from every Docker image, which did not copy `workflows/`.
-- **Hybrid product search.** `search_products` is Postgres full-text search over a weighted `tsvector`, and `semantic_search` fuses that lexical arm with the pgvector cosine arm by reciprocal-rank fusion. A natural phrase matches. To upgrade an existing database, run `./scripts/dev.sh --clean` (drops local data) or apply the column in place; see [Troubleshooting](troubleshooting.md#products-search_vector-does-not-exist).
+- **Hybrid product search.** `search_products` is Postgres full-text search over a weighted `tsvector`, and `semantic_search` fuses that lexical arm with the pgvector cosine arm by reciprocal-rank fusion. A natural phrase matches. To upgrade an existing database, run `./scripts/dev.sh --clean` (drops local data) or apply the column in place; see [Troubleshooting](troubleshooting.md#productssearch_vector-does-not-exist).
 - **A release pipeline and published images.** Container images for every service on GHCR, gated on the test suite, with `release.yml`, `scripts/bump_version.py` and a weekly registry retention policy. `docker-compose.demo.yml` pulls instead of building.
 - **The site is legible to machines.** `llms.txt`, `llms-full.txt` and `robots.txt` are generated from the same page set as the site, so they cannot drift from it.
 - **An orchestration-mode benchmark harness** (`evals/benchmark_modes.py`). It drives the real HTTP API rather than calling modes in-process, so it exercises auth, guardrails, sanitization and grounding.
@@ -212,8 +227,9 @@ Recorded so these are not mistaken for oversights:
 
 - **No third backend.** A LangGraph backend was planned and then parked by maintainer decision on
   2026-11-15. Nothing is planned in that direction.
-- **No .NET container images are published.** The demo path stays Python-only, because a visitor
-  is there for the features, not the backend language. `--dotnet` remains build-from-source.
+- **No .NET demo compose file.** The `.NET` images are published (seven `<service>-dotnet` images, amd64,
+  from `build-images.yml`), but `docker-compose.demo.yml` stays Python-only, because a visitor is there for
+  the features, not the backend language. `./scripts/dev.sh --dotnet` builds from source.
 - **No Langfuse sink on .NET.** OTel already carries GenAI spans to Aspire; a second exporter
   would be additive only.
 - **Anonymous storefront conversations are not persisted** on either stack, so follow-ups there

@@ -7,19 +7,24 @@ the rule is deterministic and the customer text is a template.
 
 ## The flow
 
-```
-POST /api/admin/events/simulate ──► outbox row  order.shipment_delayed   (the only producer today)
-                                          │   outbox worker (worker/autonomy_handlers.py)
-                                          ▼
-     rule: delay_days ──► a credit amount           (autonomy.yaml: events.*.credit_tiers)
-     tier rules (first match wins) ──► auto | auto_notify | needs_approval
-     budget caps (checked and drawn atomically) ──► an autonomous tier that does not fit becomes needs_approval
-                                          │
-        ┌─────────────────────────────────┴──────────────────────────────┐
-        ▼ acts alone                                                      ▼ asks
-  store_credit_ledger +credit                                  approvals row (kind autonomous_action, source event)
-  agent_decisions row (who/what/why/budget)                    agent_decisions row (awaiting_approval)
-  customer notified (auto_notify: staff too)                   staff notified; nothing else happens until they decide
+```mermaid
+%%{init: {'theme':'base', 'themeVariables': {'primaryColor': '#2563eb', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#1e40af', 'lineColor': '#64748b', 'background': 'transparent'}}}%%
+flowchart TD
+  sim["POST /api/admin/events/simulate<br/>(the only producer today)"] --> ob["outbox row<br/>order.shipment_delayed"]
+  ob --> wk["outbox worker<br/>worker/autonomy_handlers.py"]
+  wk --> rule["rule: delay_days gives a credit amount<br/>autonomy.yaml events.*.credit_tiers"]
+  rule --> tier["tier rules, first match wins:<br/>auto, auto_notify or needs_approval"]
+  tier --> cap{"budget caps<br/>checked and drawn atomically"}
+  cap -->|"fits"| act["acts alone<br/>store_credit_ledger credit<br/>agent_decisions row<br/>customer notified (auto_notify: staff too)"]
+  cap -->|"autonomous tier does not fit,<br/>or needs_approval"| ask["asks<br/>approvals row (kind autonomous_action, source event)<br/>agent_decisions row (awaiting_approval)<br/>staff notified, nothing else until they decide"]
+  classDef core     fill:#2563eb,stroke:#1e40af,color:#ffffff
+  classDef external fill:#f59e0b,stroke:#b45309,color:#000000
+  classDef success  fill:#10b981,stroke:#047857,color:#ffffff
+  classDef error    fill:#ef4444,stroke:#b91c1c,color:#ffffff
+  classDef infra    fill:#64748b,stroke:#334155,color:#ffffff
+  class sim,ob,wk,rule,tier,cap core
+  class act success
+  class ask external
 ```
 
 Three delays in the shipped policy land in three tiers: 3 days is a $5.00 credit (`auto`), 6 days $15.00
@@ -166,6 +171,14 @@ other path; see *The log is append-only*.
 | `POST /api/admin/decisions/{id}/reverse` | admin only; works even when the feature is switched off |
 
 Web: `/admin/decisions`.
+
+## Gotchas
+
+- **Everything is off by default.** `AUTONOMY_ENABLED` gates the engine and the simulator additionally needs `AUTONOMY_SIMULATOR_ENABLED`. Every number in `autonomy.yaml` is a placeholder.
+- **The decision and ledger tables are append-only.** A reversal is a new row, and a reset needs `reset_autonomy_log()`: `TRUNCATE` is refused while they hold rows.
+- **Lock order is budget, then order, then row locks.** Taking them in another order can deadlock two events.
+- **A credited order is `no_action`.** It opens no approval.
+- **.NET refuses every decision on an `event` approval** (422, "not supported on this stack").
 
 ## Not built
 

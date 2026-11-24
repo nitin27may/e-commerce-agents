@@ -426,6 +426,13 @@ If the Langfuse exporter fails to initialize (wrong credentials, network unreach
 
 ---
 
+## Gotchas
+
+- **Telemetry is off unless `OTEL_ENABLED=true`.** With it off, `setup_telemetry()` returns at once and the Aspire Dashboard stays empty.
+- **The OTLP port is not 4317.** The dashboard UI is on host `18888`; the receiver is container port `18889`, published on host `18890`. Use `http://localhost:18890` from the host and `http://aspire:18889` from inside the compose network.
+- **Azure's managed OpenTelemetry carries traces and logs only**, so App Insights shows traces without metrics ([troubleshooting](troubleshooting.md#azure-deployment-first-run-failure-catalogue), failure 25). Do not set `OTEL_EXPORTER_OTLP_ENDPOINT` on an app there: the platform injects it and yours would override it.
+- **Cost is an estimate the app computes**, from the pricing file; a model with no price row reports unknown, not zero.
+
 ## Related
 
 - [`docs/architecture.md`](architecture.md) — system overview including the OTel → Aspire pipeline

@@ -176,6 +176,13 @@ than a bad release.
 **`:latest` points at a bad release** — cut the fix as a new release. `:latest` moves forward with
 the next successful release; it is never moved backwards by hand.
 
+## Gotchas
+
+- **`build-images.yml` has no trigger of its own.** It is called by `tests.yml` (for `main`) and `release.yml` (for a tag); a build workflow with its own tag trigger would publish from a red commit.
+- **The release waits for a human.** `release.yml` stops at the `release` environment until the maintainer approves it; nobody should approve it through the API on their behalf.
+- **Never move a published tag.** Fix forward with a new version.
+- **`db-init` is a twelfth image** used only by the Azure deployment, and the GHCR packages must be public for that path.
+
 ## Azure workflow
 
 `.github/workflows/azure.yml` is separate from the release pipeline and never publishes anything.

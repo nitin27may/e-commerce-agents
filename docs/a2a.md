@@ -24,7 +24,7 @@ Because both stacks serve and speak the same wire, **any orchestrator can call a
 
 | | Python | .NET |
 |---|---|---|
-| Package | `a2a-sdk` **1.3.0** (`PROTOCOL_VERSION_CURRENT == "1.0"`), pinned exactly in `agents/python/pyproject.toml` | `A2A` and `A2A.AspNetCore` **1.0.0-preview4** (the official `a2aproject/a2a-dotnet` SDK, spec 1.0), pinned exactly in `agents/dotnet/Directory.Packages.props` |
+| Package | `a2a-sdk` **1.3.1** (`PROTOCOL_VERSION_CURRENT == "1.0"`), pinned exactly in `agents/python/pyproject.toml` | `A2A` and `A2A.AspNetCore` **1.0.0-preview4** (the official `a2aproject/a2a-dotnet` SDK, spec 1.0), pinned exactly in `agents/dotnet/Directory.Packages.props` |
 | Release state | stable | **preview**: pinned exactly and grouped with the other protocol packages in Dependabot |
 | Server | `DefaultRequestHandlerV2` + a custom `SpecialistExecutor` | `A2AServer` subclassed (`SpecialistA2AServer`) + a custom `IAgentHandler` (`SpecialistA2AExecutor`) mapped with `MapA2A` |
 | Client | the SDK client (`shared/a2a_client.py`) | the SDK client (`A2AProtocolClient`, behind `A2AClient`) |
