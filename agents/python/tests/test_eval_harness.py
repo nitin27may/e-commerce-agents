@@ -180,10 +180,17 @@ async def test_specialist_call_parked_by_maf_approval_is_seen_as_a_park(monkeypa
     fake_agent = Agent(client=fake, instructions="test", name="order-management", tools=[cancel_order])
     monkeypatch.setattr("order_management.agent.create_order_management_agent", lambda: fake_agent)
 
-    outcome = await ProductionRunner("order-management").run("cancel order o-1")
+    # The host now makes the park durable (shared.agent_host.park_pending_approvals) and answers in words; stand in
+    # for the database write so this stays a unit test of what the runner reports.
+    async def _fake_park(**kwargs: object) -> tuple[str, bool]:
+        return "req-1", True
+
+    monkeypatch.setattr("shared.hitl.park_gated_call", _fake_park)
+
+    outcome = await ProductionRunner("order-management", user_email="jack@example.com").run("cancel order o-1")
 
     assert ran == [], "a parked call must not execute"
-    assert outcome.text == ""
+    assert "asked a team member to approve" in outcome.text
     assert outcome.hitl_requested is True
     assert outcome.tools_called == ["cancel_order"]
     assert outcome.tool_calls == [
