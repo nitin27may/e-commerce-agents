@@ -516,7 +516,7 @@ called, tool-call accuracy, assertions and the answer. Keyless. The MCP path has
 the request key); record them like any other (`fixtures/README.md`) with `MCP_ENABLED=true` and the two servers reachable at
 `MCP_PRODUCT_SERVER_URL` / `MCP_INVENTORY_SERVER_URL`, on a freshly seeded database (a tool output that depends on database
 state, such as trending products, is part of the key). `mcp_known_differences.json` lists each accepted difference with a reason;
-an unlisted difference, an accuracy drop outside the listed cases and a stale listing all fail. Findings and numbers:
+an unlisted difference, an accuracy drop outside the listed cases and a stale listing all fail. `evals.fixture_drift` checks the MCP-path fixtures' tool *sets* (the server tools read from the server objects, offline, plus the agent's local ones); per-tool descriptions are only known from a live server. Findings and numbers:
 `docs/mcp-integration.md`, *Native versus MCP, measured*.
 
 ## Indirect prompt injection
