@@ -127,7 +127,6 @@ else
 fi
 
 section "Summary"
-passed=$((check_count - fail_count))
 if [[ $fail_count -eq 0 ]]; then
     printf "  ${GREEN}All %d checks passed.${RESET}\n" "$check_count"
     printf "  You're ready to run tutorials — start with ${GREEN}tutorials/01-first-agent/${RESET}.\n"

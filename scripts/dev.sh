@@ -224,7 +224,6 @@ if [ "$DOTNET" = true ]; then
     APP_PROFILES=(--profile seed --profile agents --profile mcp --profile frontend)
     RUN_PROFILES=(--profile agents --profile mcp --profile frontend)
     PGDATA_VOLUME_PATTERN='pgdata-dotnet$'
-    THIS_STACK="e-commerce-agents-dotnet"
     OTHER_STACK="e-commerce-agents"
     OTHER_STACK_LABEL="Python"
     OTHER_STACK_FILE="docker-compose.yml"
@@ -236,7 +235,6 @@ else
     APP_PROFILES=(--profile seed --profile agents --profile frontend)
     RUN_PROFILES=(--profile agents --profile frontend)
     PGDATA_VOLUME_PATTERN='_pgdata$'
-    THIS_STACK="e-commerce-agents"
     OTHER_STACK="e-commerce-agents-dotnet"
     OTHER_STACK_LABEL=".NET"
     OTHER_STACK_FILE="docker-compose.dotnet.yml"
