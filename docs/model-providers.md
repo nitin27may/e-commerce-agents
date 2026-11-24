@@ -145,7 +145,10 @@ EMBEDDING_PROVIDER=openai          # Claude has no embeddings API
 ```
 
 `LLM_MODEL` is ignored for this provider. Claude is wired on both stacks and covered by
-stubbed-transport tests only. A Claude model's cost is unknown (null) until it has a row in
+stubbed-transport tests only: it has never made a live call, and the maintainer decided to leave it that way.
+Claude deployments on Azure are served on the Anthropic Messages route, not the OpenAI chat completions route;
+the two on the probed account answered 404 on the latter. The `azure` provider speaks only the OpenAI wire, so it
+cannot reach them, and the capability table has no row for Claude because the probe never exercised a model. A Claude model's cost is unknown (null) until it has a row in
 `agents/python/config/pricing/models.yaml`; an unlisted model is never priced as another one. Full table in
 [configuration.md](configuration.md#anthropic-claude--python-and-net-stacks).
 

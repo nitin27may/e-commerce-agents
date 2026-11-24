@@ -423,6 +423,10 @@ Tests: `dotnet test agents/dotnet/tests/ECommerceAgents.AppHost.Tests` builds th
   generated `Projects.*` types, and the AppHost no longer carries `ProjectReference` items to the services.
   ASPIRE013 (C# AppHosts want the Aspire CLI bundle) is suppressed like ASPIRE010; nothing here uses the bundle.
   The dashboard image in the compose files stays on its own tag.
+- **Dashboard image is older than the AppHost packages.** The compose files pin
+  `mcr.microsoft.com/dotnet/aspire-dashboard:13.6.5` while the AppHost packages are 17.0.0. No 17.x tag exists on
+  MCR as of 2026-11-24 (check with `curl -s https://mcr.microsoft.com/v2/dotnet/aspire-dashboard/tags/list`); bump
+  all three compose files together once one appears.
 - The AppHost project sets `CentralPackageTransitivePinningEnabled=false`, because Aspire needs newer
   `Microsoft.Extensions.*` than the repo-wide pins; the services themselves keep the pins.
 - Host-side processes reach the auth-server at `http://localhost:8090`, which is also its issuer; containers

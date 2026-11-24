@@ -117,6 +117,20 @@ jobs:
         working-directory: agents/python
         run: uv run ruff format --check .
 
+  # Warning-level shellcheck over every repo script so SC2164 (unchecked cd) and SC2034 (unused
+  # variable) cannot return. Style and info findings are not gated. The azure workflow keeps its own
+  # stricter, default-severity pass over the azure scripts.
+  shellcheck:
+    name: Shell - shellcheck (warning)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: |
+          sudo apt-get install -y --no-install-recommends shellcheck
+          shellcheck -x -S warning scripts/*.sh scripts/lib/*.sh scripts/azure/*.sh scripts/azure/lib/*.sh
+
   mcp-package-tests:
     name: MCP packages · smoke tests
     runs-on: ubuntu-latest
