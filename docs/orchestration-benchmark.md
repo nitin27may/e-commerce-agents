@@ -56,6 +56,11 @@ instantly, which makes latency meaningless.
 | `workflow:pre-purchase` | 0.26 s | 0.28 s | 127 chars | **none** | reviews, stock, price_history, shipping |
 | `workflow:return-replace` | 0.10 s | 0.11 s | 82 chars | **none** | check_eligibility |
 
+![Compare dialog: pre-purchase research and return-and-replace run on one prompt, each card showing its answer, latency, steps and graph](images/compare-dialog.jpg)
+
+*The Compare dialog behind these numbers, here on the no-key stack where only the two workflow modes can
+answer (no model, so no tokens or cost). The measured table above comes from a keyed run.*
+
 ## Read the last two rows carefully
 
 **The workflow modes are deterministic graphs over tool calls.** Their "recommendation" is

@@ -227,6 +227,11 @@ The Aspire Dashboard runs as a Docker container and provides the observability U
 
 Auth mode is set to `Unsecured` for local development (`DASHBOARD__FRONTEND__AUTHMODE: Unsecured`).
 
+![Aspire trace detail for one handoff-mode chat turn: the orchestrator request, its database calls collapsed or listed, the invoke_agent and workflow spans and the per-specialist executors](images/aspire-trace.jpg)
+
+*One `POST /api/chat/stream` trace in the Aspire dashboard (80 spans across the orchestrator and a specialist),
+recorded on the no-key stack, so the durations are replay speed and the model spans are cheap.*
+
 ### What to Look For
 
 | View | Use Case |
