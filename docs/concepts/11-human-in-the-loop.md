@@ -47,6 +47,12 @@ operation directly. **The
 original LLM loop is never resumed.** The approval doesn't continue the conversation — it just
 performs the action the model asked for, outside the conversation entirely.
 
+Before a call is parked at all, the host runs cheap deterministic pre-checks
+([`shared/park_prechecks.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/shared/park_prechecks.py)):
+the tool's role guard and its ownership and status preconditions. A call that could never succeed, such as a customer
+asking for a backorder or a cancel of an order that already shipped, gets a plain sentence saying why and no approval
+row, so a reviewer is never asked to approve the impossible. The sentences are listed in [Approvals](../approvals.md).
+
 **In-workflow suspend/resume** — [`workflows/return_replace.py`](https://github.com/nitin27may/e-commerce-agents/blob/main/agents/python/workflows/return_replace.py)'s `_PolicyGateExecutor`.
 For return requests the approval policy does not mark `auto` (`RETURN_HITL_THRESHOLD` is only the fallback when
 the engine cannot decide), the executor calls `await ctx.request_info(ReturnApprovalRequest(...), response_type=ReturnDecision)` — before the return row, label or order status exist — and

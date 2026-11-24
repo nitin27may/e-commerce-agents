@@ -186,6 +186,8 @@ async def test_specialist_call_parked_by_maf_approval_is_seen_as_a_park(monkeypa
         return "req-1", True
 
     monkeypatch.setattr("shared.hitl.park_gated_call", _fake_park)
+    # "o-1" is not a real order; the pre-park checks (shared.park_prechecks) have their own tests.
+    monkeypatch.setattr("shared.park_prechecks._PRECHECKS", {})
 
     outcome = await ProductionRunner("order-management", user_email="jack@example.com").run("cancel order o-1")
 
@@ -196,3 +198,42 @@ async def test_specialist_call_parked_by_maf_approval_is_seen_as_a_park(monkeypa
     assert outcome.tool_calls == [
         {"tool_name": "cancel_order", "tool_input": {"order_id": "o-1", "reason": "cheaper elsewhere"}}
     ]
+
+
+@pytest.mark.asyncio
+async def test_gated_call_refused_before_parking_is_a_denial_not_an_approval(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A customer asking for a backorder: the host's pre-park role check refuses it, so no approval is requested.
+    # The call still counts as a tool call (name and arguments) and the run reads as denied.
+    from shared.guardrails.roles import requires_role
+
+    @tool(name="place_backorder", description="Backorder", approval_mode="always_require")
+    @requires_role("seller", "admin")
+    async def place_backorder(product_id: str, quantity: int) -> dict:
+        raise AssertionError("never executed")
+
+    args = {"product_id": "p-1", "quantity": 5}
+    call_response = ChatResponse(
+        messages=[
+            Message(
+                role="assistant",
+                contents=[Content.from_function_call(call_id="c1", name="place_backorder", arguments=args)],
+            )
+        ],
+        response_id=str(uuid.uuid4()),
+        finish_reason="tool_calls",
+    )
+    fake_agent = Agent(
+        client=_ScriptedClient(call_response),
+        instructions="test",
+        name="inventory-fulfillment",
+        tools=[place_backorder],
+    )
+    monkeypatch.setattr("inventory_fulfillment.agent.create_inventory_fulfillment_agent", lambda: fake_agent)
+
+    outcome = await ProductionRunner("inventory-fulfillment", user_email="jack@example.com").run("backorder p-1")
+
+    assert "not permitted to place backorders" in outcome.text
+    assert outcome.hitl_requested is False
+    assert outcome.denied is True
+    assert outcome.parked_calls == []
+    assert outcome.tool_calls == [{"tool_name": "place_backorder", "tool_input": args}]

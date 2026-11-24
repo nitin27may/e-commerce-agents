@@ -10,8 +10,16 @@ from pydantic import Field, ValidationError
 
 from shared.context import current_user_email
 from shared.db import get_pool
+from shared.gate_rules import (
+    RETURN_WINDOW_DAYS,
+    days_since_delivery,
+    refund_blocker,
+    return_status_blocker,
+    return_window_expired,
+)
 from shared.guardrails.roles import requires_role
 from shared.idempotency import idempotent
+from shared.park_prechecks import NOT_SUBMITTED, ORDER_NOT_FOUND, RETURN_NOT_FOUND, owned_order, precheck, valid_uuid
 from shared.tool_inputs import (
     InitiateReturnInput,
     ProcessRefundInput,
@@ -67,29 +75,29 @@ async def check_return_eligibility(
             }
 
         # Check 30-day delivery window
-        delivered_entry = await conn.fetchrow(
-            """SELECT timestamp FROM order_status_history
-               WHERE order_id = $1 AND status = 'delivered'
-               ORDER BY timestamp DESC LIMIT 1""",
-            order_id,
-        )
+        days_since = await days_since_delivery(conn, order_id)
 
-        if delivered_entry:
-            days_since = await conn.fetchval(
-                "SELECT EXTRACT(DAY FROM NOW() - $1::timestamptz)::int",
-                delivered_entry["timestamp"],
-            )
-            if days_since > 30:
+        if days_since is not None:
+            if return_window_expired(days_since):
+                delivered_at = await conn.fetchval(
+                    """SELECT timestamp FROM order_status_history
+                       WHERE order_id = $1 AND status = 'delivered'
+                       ORDER BY timestamp DESC LIMIT 1""",
+                    order_id,
+                )
                 return {
                     "eligible": False,
                     "order_id": str(order["id"]),
-                    "reason": f"Return window expired. Order was delivered {days_since} days ago (30-day limit).",
-                    "delivered_at": delivered_entry["timestamp"].isoformat(),
+                    "reason": (
+                        f"Return window expired. Order was delivered {days_since} days ago "
+                        f"({RETURN_WINDOW_DAYS}-day limit)."
+                    ),
+                    "delivered_at": delivered_at.isoformat(),
                 }
-            days_remaining = 30 - days_since
+            days_remaining = RETURN_WINDOW_DAYS - days_since
         else:
             # No delivery timestamp in history — fall back to order created_at
-            days_remaining = 30
+            days_remaining = RETURN_WINDOW_DAYS
 
         return {
             "eligible": True,
@@ -98,6 +106,45 @@ async def check_return_eligibility(
             "days_remaining": days_remaining,
             "message": f"Order is eligible for return. {days_remaining} days remaining in the return window.",
         }
+
+
+@precheck("initiate_return")
+async def _precheck_initiate_return(email: str, tool_input: dict) -> str | None:
+    order = await owned_order(email, tool_input.get("order_id"))
+    if order is None:
+        return ORDER_NOT_FOUND
+    order_id = str(order["id"])
+    if reason := return_status_blocker(order["status"]):
+        return f"Order {order_id} {reason}, so a return cannot be started for it. {NOT_SUBMITTED}"
+    pool = get_pool()
+    if await pool.fetchval("SELECT 1 FROM returns WHERE order_id = $1", order_id):
+        return f"A return has already been started for order {order_id}. {NOT_SUBMITTED}"
+    async with pool.acquire() as conn:
+        days = await days_since_delivery(conn, order_id)
+    if return_window_expired(days):
+        return (
+            f"Order {order_id} was delivered {days} days ago, which is outside the {RETURN_WINDOW_DAYS}-day "
+            f"return window. {NOT_SUBMITTED}"
+        )
+    return None
+
+
+@precheck("process_refund")
+async def _precheck_process_refund(email: str, tool_input: dict) -> str | None:
+    return_id = valid_uuid(tool_input.get("return_id"))
+    row = None
+    if return_id:
+        row = await get_pool().fetchrow(
+            """SELECT r.id, r.status FROM returns r JOIN users u ON r.user_id = u.id
+               WHERE r.id = $1 AND u.email = $2""",
+            return_id,
+            email,
+        )
+    if row is None:
+        return RETURN_NOT_FOUND
+    if reason := refund_blocker(row["status"]):
+        return f"Return {row['id']} {reason}. {NOT_SUBMITTED}"
+    return None
 
 
 @tool(
@@ -143,7 +190,7 @@ async def initiate_return(
             if not order:
                 return {"error": f"Order not found or access denied: {order_id}"}
 
-            if order["status"] != "delivered":
+            if return_status_blocker(order["status"]):
                 return {
                     "error": (
                         f"Cannot return order in '{order['status']}' status. Only delivered orders can be returned."
@@ -240,11 +287,8 @@ async def process_refund(
             if not ret:
                 return {"error": f"Return not found or access denied: {return_id}"}
 
-            if ret["status"] == "refunded":
-                return {"error": "This return has already been refunded.", "return_id": str(ret["id"])}
-
-            if ret["status"] == "denied":
-                return {"error": "This return was denied and cannot be refunded.", "return_id": str(ret["id"])}
+            if blocker := refund_blocker(ret["status"]):
+                return {"error": f"This return {blocker}.", "return_id": str(ret["id"])}
 
             await conn.execute(
                 "UPDATE returns SET status = 'refunded', resolved_at = NOW() WHERE id = $1",

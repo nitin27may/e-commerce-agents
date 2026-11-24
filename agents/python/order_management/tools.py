@@ -10,7 +10,9 @@ from pydantic import Field, ValidationError
 
 from shared.context import current_user_email
 from shared.db import get_pool
+from shared.gate_rules import cancel_blocker, modify_blocker
 from shared.guardrails.roles import requires_role
+from shared.park_prechecks import NOT_SUBMITTED, ORDER_NOT_FOUND, owned_order, precheck
 from shared.tool_inputs import (
     CancelOrderInput,
     ModifyOrderInput,
@@ -236,6 +238,26 @@ async def get_order_tracking(
         }
 
 
+@precheck("cancel_order")
+async def _precheck_cancel_order(email: str, tool_input: dict) -> str | None:
+    order = await owned_order(email, tool_input.get("order_id"))
+    if order is None:
+        return ORDER_NOT_FOUND
+    if reason := cancel_blocker(order["status"]):
+        return f"Order {order['id']} {reason}, so it can no longer be cancelled. {NOT_SUBMITTED}"
+    return None
+
+
+@precheck("modify_order")
+async def _precheck_modify_order(email: str, tool_input: dict) -> str | None:
+    order = await owned_order(email, tool_input.get("order_id"))
+    if order is None:
+        return ORDER_NOT_FOUND
+    if reason := modify_blocker(order["status"]):
+        return f"Order {order['id']} {reason}, so its shipping address can no longer be changed. {NOT_SUBMITTED}"
+    return None
+
+
 @tool(
     name="cancel_order",
     description="Cancel an order. Only orders in 'placed' or 'confirmed' status can be cancelled.",
@@ -276,7 +298,7 @@ async def cancel_order(
             if not order:
                 return {"error": f"Order not found or access denied: {order_id}"}
 
-            if order["status"] not in ("placed", "confirmed"):
+            if cancel_blocker(order["status"]):
                 return {
                     "error": (
                         f"Cannot cancel order in '{order['status']}' status. Only 'placed' or 'confirmed' orders can "
@@ -348,7 +370,7 @@ async def modify_order(
         if not order:
             return {"error": f"Order not found or access denied: {order_id}"}
 
-        if order["status"] not in ("placed", "confirmed"):
+        if modify_blocker(order["status"]):
             return {
                 "error": (
                     f"Cannot modify order in '{order['status']}' status. Only 'placed' or 'confirmed' orders can be "
