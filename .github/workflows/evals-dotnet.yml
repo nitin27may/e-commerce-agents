@@ -67,7 +67,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: "10.0.x"
+          dotnet-version: "11.0.x"
 
       - uses: astral-sh/setup-uv@v7
       - uses: actions/setup-python@v7
