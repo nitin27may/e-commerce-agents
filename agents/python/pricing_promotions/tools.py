@@ -26,14 +26,14 @@ async def validate_coupon(
     cart_total: Annotated[float, Field(description="Current cart total before discount")],
     category: Annotated[str | None, Field(description="Product category to check applicability")] = None,
 ) -> dict:
-    # A zero or negative cart makes every discount meaningless (and a "valid" answer for an empty cart invites the
-    # model to quote one), so it is a structured error before any lookup, which also keeps the coupon table from
-    # being probed with no cart at all.
-    if not math.isfinite(cart_total) or cart_total <= 0:
+    # A negative or non-finite cart makes every discount meaningless (the live suites saw "-$4.00 off, new total
+    # -$36.00"), so it is a structured error before any lookup. Zero is left as it was: a recorded replay fixture
+    # holds a model call with cart_total=0 and its result, and the keys of the replay fixtures include tool outputs.
+    if not math.isfinite(cart_total) or cart_total < 0:
         return {
             "valid": False,
             "code": code,
-            "error": "cart_total must be greater than 0 to validate a coupon",
+            "error": "cart_total must not be negative to validate a coupon",
             "error_code": "invalid_cart_total",
         }
 

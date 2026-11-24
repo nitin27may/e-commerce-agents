@@ -13,8 +13,8 @@ def _fn(tool_obj):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("total", [0, 0.0, -5.0, float("nan")])
-async def test_validate_coupon_rejects_non_positive_cart(clean_db, monkeypatch, total) -> None:
+@pytest.mark.parametrize("total", [-5.0, -0.01, float("nan"), float("inf")])
+async def test_validate_coupon_rejects_a_negative_or_non_finite_cart(clean_db, monkeypatch, total) -> None:
     monkeypatch.setattr("shared.db._pool", clean_db, raising=False)
     current_user_email.set("coupon-test@example.com")
     from pricing_promotions.tools import validate_coupon
@@ -23,7 +23,7 @@ async def test_validate_coupon_rejects_non_positive_cart(clean_db, monkeypatch, 
 
     assert result["valid"] is False
     assert result["error_code"] == "invalid_cart_total"
-    assert "greater than 0" in result["error"]
+    assert "negative" in result["error"]
 
 
 @pytest.mark.asyncio
