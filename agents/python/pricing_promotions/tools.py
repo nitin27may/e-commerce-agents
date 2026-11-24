@@ -547,20 +547,23 @@ async def check_bundle_eligibility(
         bxgy_eligible = []
         for promo in bxgy_promos:
             rules = promo["rules"] if isinstance(promo["rules"], dict) else json.loads(promo["rules"])
-            applicable_cats = rules.get("categories", [])
-            buy_qty = rules.get("buy_quantity", 0)
-            free_qty = rules.get("free_quantity", 0)
+            # Seeded rows write singular `category` and `min_quantity` (scripts/seed.py); older rows
+            # wrote `categories`/`buy_quantity`. Accept both (same drift class as issue #51).
+            applicable_cats = _as_list(rules.get("categories") or rules.get("category"))
+            buy_qty = int(rules.get("buy_quantity") or rules.get("min_quantity") or 0)
+            free_qty = int(rules.get("free_quantity") or 0)
             matching = [p for p in products if not applicable_cats or p["category"] in applicable_cats]
-            if matching:
-                bxgy_eligible.append(
-                    {
-                        "promotion_name": promo["name"],
-                        "buy_quantity": buy_qty,
-                        "free_quantity": free_qty,
-                        "applicable_products": [p["name"] for p in matching],
-                        "end_date": promo["end_date"].isoformat(),
-                    }
-                )
+            if matching and len(matching) >= buy_qty:
+                entry = {
+                    "promotion_name": promo["name"],
+                    "buy_quantity": buy_qty,
+                    "free_quantity": free_qty,
+                    "applicable_products": [p["name"] for p in matching],
+                    "end_date": promo["end_date"].isoformat(),
+                }
+                if rules.get("discount_pct") is not None:
+                    entry["discount_pct"] = rules["discount_pct"]
+                bxgy_eligible.append(entry)
 
         return {
             "eligible": len(eligible_bundles) > 0 or len(bxgy_eligible) > 0,

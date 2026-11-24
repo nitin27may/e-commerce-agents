@@ -2,16 +2,16 @@
 
 This page explains how the project measures whether its agents answer correctly and resist attacks: what is scored, on which datasets, and what CI enforces. It is for anyone who wants to judge the agents' quality, run the evals, or add a case.
 
-**Where the scores stand.** Six quality datasets of five or six cases each are scored on groundedness, correctness and completeness. The committed overall scores run from 0.51 to 1.00:
+**Where the scores stand.** Six quality datasets of five or six cases each are scored on groundedness, correctness and completeness. The committed overall scores run from 0.75 to 1.00:
 
 | Agent | Overall |
 |-------|--------:|
 | review-sentiment | 1.00 |
+| orchestrator (routing) | 1.00 |
 | product-discovery | 0.96 |
-| inventory-fulfillment | 0.82 |
-| orchestrator (routing) | 0.80 |
-| pricing-promotions | 0.68 |
-| order-management | 0.51 |
+| pricing-promotions | 0.96 |
+| inventory-fulfillment | 0.90 |
+| order-management | 0.75 |
 
 These scores come from replayed recordings, not a live model run. Every case is answered from a response recorded on `gpt-4.1-2025-04-14`, and the scorer is deterministic. A score says the recorded answers still pass the current code and prompts; it does not say how a model would do today. The [eval scorecard](eval-scorecard.md) has the per-dimension numbers and the full caveat, and [replay mode](replay-mode.md) explains the recordings.
 
@@ -93,7 +93,7 @@ First reference run of the live suites. **One repeat (k=1), one model, one sitti
 - Cost is tokens times the `models.yaml` price with cached input at the full rate, so the real bill is lower; it leaves out the judge calls (about 0.04 USD per suite at the estimate). The sittings cost about 3.2, 1.8 and 1.2 USD.
 - **Order-management and orchestrator were run in a second sitting** (same setup, a fresh seeded database each, the specialists for the orchestrator suite on their own ports). The orchestrator run is valid: 30 of 30 cases ran, none reported budget exceeded (the per-case token-ceiling reset was in). Pricing and inventory were re-run in a third sitting after the grounding ledger fix (below) and replaced their first-sitting baselines; each suite's stored baseline is one run.
 - **The pricing and inventory baselines were refreshed after a grounding-ledger fix.** Pricing 8, 9 and 11 and inventory 11 had quoted figures the tools did return under field names the ledger did not record; with the ledger fixed, a re-run scores pricing groundedness 0.96 (was 0.79) and inventory 1.00 (was 0.97). Pricing 9 and 11 and inventory 11 now verify fully. Pricing 8 still scores 0.71 on that case: "$600 spent" is in no tool result of the turn and "$2,400 more" is derived, so both stay unverifiable. The other movement between sittings (pricing 25 to 28 passed, inventory 27 to 28) is mostly those fixes, but it is one run each, so some of it may be model variation.
-- Pass counts include the cases kept failing on purpose. Pricing: 8 (the two unverifiable figures above, still passes) and 22 (every coupon code) reports "none valid" and misses the public deals. Inventory: 11 passes but misses the expected `total` field, and 18 (backorder of an in-stock item) is declined by the model, which the case did not expect. Order-management: 0 (recent orders) scores correctness 0 (cause not examined), 5 (address change on a delivered order) is refused correctly so the expected `modify_order` call never happens, and 23 (cancel my last order) parks for approval where the case expects no approval request. Judge-unavailable cases (one each in pricing, review and order-management) are left out of the completeness mean.
+- Pass counts include the cases kept failing on purpose. Pricing: 8 (the two unverifiable figures above, still passes) and 22 (every coupon code) reports "none valid" and misses the public deals. Inventory: 11 passes but misses the expected `total` field, and 18 (backorder of an in-stock item) is declined by the model, which the case did not expect (the case now expects the refusal and no `place_backorder` call; the reference baseline predates that change). Order-management: 0 (recent orders) scores correctness 0 (cause not examined), 5 (address change on a delivered order) is refused correctly so the expected `modify_order` call never happens (the case no longer expects one; the reference baseline predates that), and 23 (cancel my last order) parks for approval where the case expects no approval request. Judge-unavailable cases (one each in pricing, review and order-management) are left out of the completeness mean.
 - Comparing a later run with these is like-for-like only on the same setup key and judge. With one repeat on either side the regression gate allows one case's worth of drop (`1 / cases`).
 
 ### Judge calibration

@@ -7,6 +7,7 @@ payload's report into the ``grounding`` SSE frame. Ledger-tier only: no database
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -15,6 +16,7 @@ from orchestrator.events import OrchestrationEvent
 from orchestrator.modes.base import RunContext
 from orchestrator.modes.grounded import grounded_run
 from orchestrator.modes.group_chat_mode import GroupChatMode
+from orchestrator.modes.handoff_mode import HandoffMode
 from orchestrator.modes.workflow_mode import PrePurchaseMode, ReturnReplaceMode
 from shared.config import settings
 from shared.grounding.ledger import GroundingLedger, ProductFact, current_grounding_ledger
@@ -100,8 +102,42 @@ async def test_group_chat_mode_reports_grounding(monkeypatch: pytest.MonkeyPatch
         assert "grounding" not in final.payload
 
 
+@pytest.mark.asyncio
+async def test_handoff_mode_reports_grounding(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The mesh's assembled final text is verified and the report rides on run_completed."""
+    import orchestrator.handoff as handoff_module
+
+    class _Event:
+        type = "output"
+        executor_id = "orchestrator"
+        data = SimpleNamespace(text=_CARD, contents=[])
+
+    class _Workflow:
+        def run(self, message: str, stream: bool = False):
+            async def gen():
+                yield _Event()
+
+            return gen()
+
+    monkeypatch.setattr(settings, "GROUNDING_MODE", "annotate")
+    monkeypatch.setattr(handoff_module, "_load_registry", lambda: {})
+    monkeypatch.setattr(handoff_module, "build_orchestrator_handoff_workflow", lambda: _Workflow())
+
+    events = [e async for e in HandoffMode().run("hi", RunContext(history=[]))]
+    final = events[-1]
+    assert final.kind == "run_completed"
+    assert final.payload["text"] == _CARD
+    assert (final.payload["grounding"]["total"], final.payload["grounding"]["verified"]) == (1, 1)
+
+
 def test_workflow_modes_run_through_grounding() -> None:
-    for fn in (PrePurchaseMode.run, ReturnReplaceMode.run, ReturnReplaceMode.resume, GroupChatMode.run):
+    for fn in (
+        PrePurchaseMode.run,
+        ReturnReplaceMode.run,
+        ReturnReplaceMode.resume,
+        GroupChatMode.run,
+        HandoffMode.run,
+    ):
         assert hasattr(fn, "__wrapped__"), f"{fn.__qualname__} is not wrapped by grounded_run"
 
 

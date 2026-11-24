@@ -170,3 +170,30 @@ async def test_malformed_rules_are_skipped_not_guessed_at(clean_db, monkeypatch)
 
     assert result["total_savings"] == 0
     assert result["final_total"] == pytest.approx(500.00)
+
+
+@pytest.mark.asyncio
+async def test_check_bundle_eligibility_reads_seeded_buy_x_get_y_shape(clean_db, monkeypatch) -> None:
+    """The seeded rule is `category` + `min_quantity`; the tool read `categories` + `buy_quantity`."""
+    book_a = await _product(clean_db, "Deep Work", "Books", 20.00)
+    book_b = await _product(clean_db, "Atomic Habits", "Books", 18.00)
+    gadget = await _product(clean_db, "Desk Lamp", "Home", 30.00)
+    await _promotion(
+        clean_db,
+        "Buy 2 Books Get 10% Off",
+        "buy_x_get_y",
+        {"category": "Books", "min_quantity": 2, "discount_pct": 10},
+    )
+    monkeypatch.setattr("shared.db._pool", clean_db, raising=False)
+    from pricing_promotions.tools import check_bundle_eligibility
+
+    fn = getattr(check_bundle_eligibility, "func", check_bundle_eligibility)
+    hit = await fn([book_a, book_b, gadget])
+    deals = hit["buy_x_get_y_deals"]
+    assert [d["promotion_name"] for d in deals] == ["Buy 2 Books Get 10% Off"]
+    assert deals[0]["buy_quantity"] == 2
+    assert deals[0]["discount_pct"] == 10
+    assert deals[0]["applicable_products"] == ["Deep Work", "Atomic Habits"]
+
+    short = await fn([book_a, gadget])
+    assert short["buy_x_get_y_deals"] == []

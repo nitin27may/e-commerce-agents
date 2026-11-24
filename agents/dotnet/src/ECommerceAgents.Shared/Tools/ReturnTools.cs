@@ -247,22 +247,38 @@ public sealed class ReturnTools(DatabasePool pool, AgentSettings settings, Idemp
 
         await using var conn = await _pool.OpenAsync();
 
-        // Guarded on the current status inside the UPDATE, so two concurrent
-        // calls cannot both refund — the same claim-before-acting shape #28
-        // established for HITL approvals.
+        // Read first so a refused return gets the same payload Python's tool returns (and the pre-park check
+        // gives): the blockers are GateRules.RefundBlocker's, shared with ParkPrechecks.
+        var current = await conn.QueryFirstOrDefaultAsync(
+            @"SELECT r.id, r.status
+              FROM returns r JOIN orders o ON r.order_id = o.id JOIN users u ON o.user_id = u.id
+              WHERE r.id = @id AND u.email = @email",
+            new { id, email }
+        );
+        if (current is null)
+        {
+            return new { error = $"Return not found or access denied: {returnId}" };
+        }
+        if (GateRules.RefundBlocker((string)current.status) is { } blocker)
+        {
+            return new { error = $"This return {blocker}.", return_id = ((Guid)current.id).ToString() };
+        }
+
+        // Still guarded on the status inside the UPDATE, so two concurrent calls cannot both refund: the same
+        // claim-before-acting shape #28 established for HITL approvals.
         var refunded = await conn.QueryFirstOrDefaultAsync(
             @"UPDATE returns r
               SET status = 'refunded', resolved_at = NOW()
               FROM orders o, users u
               WHERE r.id = @id AND r.order_id = o.id AND o.user_id = u.id
-                AND u.email = @email AND r.status <> 'refunded'
+                AND u.email = @email AND r.status NOT IN ('refunded', 'denied')
               RETURNING r.id, r.refund_amount, r.refund_method",
             new { id, email }
         );
 
         if (refunded is null)
         {
-            return new { error = "Return not found, not yours, or already refunded." };
+            return new { error = "This return has already been refunded.", return_id = returnId };
         }
 
         return new

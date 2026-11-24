@@ -57,6 +57,19 @@ def test_a_case_that_asserts_a_gated_tool_call_expects_the_park() -> None:
             assert entry.get("expect_hitl") is (not refused), (gated, entry.get("input"))
 
 
+def test_a_case_the_precheck_refuses_expects_no_tool_call_and_no_approval() -> None:
+    """The precheck answers in words before the tool runs, so such a case must not expect the tool to be called."""
+    by_input = {entry["input"]: entry for entry in _raw()}
+    address = by_input[
+        "Change the shipping address on order {{order:delivered}} to 12 Oak Street, Austin, TX 78701, US"
+    ]
+    assert address["expected_tools"] == [] and "expected_tool_args" not in address
+    assert address["expect_hitl"] is False and address["criteria"]["precheck_refusal"] is True
+    # 'My last order' is the shipped one: no tool and no approval is ever the right outcome.
+    last = by_input["Cancel my last order."]
+    assert last["expected_tools"] == [] and last["expect_hitl"] is False
+
+
 def test_every_order_case_runs_as_a_seeded_user() -> None:
     for case in load_dataset(DATASET):
         assert case.live and case.user_email, case.input

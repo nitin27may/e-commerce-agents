@@ -21,6 +21,15 @@ import { useAuth } from "@/lib/auth-context";
  * customer sees a read-only "awaiting staff review" state here instead of
  * buttons that could only fail.
  *
+ * Why this gates on `isAdmin` and not `isStaff`: this card only renders in the
+ * conversation's owner's own thread (`chat/page.tsx`), so the viewer is the
+ * requester. The approvals service lets `support` or `admin` decide but never
+ * the requester, so a support user could not decide from here anyway. Staff
+ * review other people's runs on `/runs` and in the approvals inbox, which is
+ * where `isStaff` and the requester check live. The admin branch below is the
+ * demo and single-user case; an admin deciding their own request is still
+ * refused by the backend and the error is shown.
+ *
  * Resolution is deliberately local state, not a refetch. The resumed text
  * comes straight back from the resume call, so the thread can show the
  * outcome immediately; re-reading the conversation would be a slower way to

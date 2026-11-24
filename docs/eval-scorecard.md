@@ -10,18 +10,25 @@ Scores per specialist and dataset, as committed in `agents/python/evals/baseline
 
 | Agent | Dataset | Cases | Groundedness | Correctness | Completeness | Overall |
 |-------|---------|------:|-------------:|------------:|-------------:|--------:|
-| inventory-fulfillment | `inventory_fulfillment.json` | 5 | 0.80 | 1.00 | 0.50 | 0.82 |
-| orchestrator | `orchestrator_routing.json` | 6 | 0.50 | 1.00 | 1.00 | 0.80 |
-| order-management | `order_management.json` | 5 | 0.40 | 0.70 | 0.35 | 0.51 |
-| pricing-promotions | `pricing_promotions.json` | 5 | 0.60 | 0.80 | 0.60 | 0.68 |
+| inventory-fulfillment | `inventory_fulfillment.json` | 5 | 1.00 | 1.00 | 0.50 | 0.90 |
+| orchestrator | `orchestrator_routing.json` | 6 | 1.00 | 1.00 | 1.00 | 1.00 |
+| order-management | `order_management.json` | 5 | 1.00 | 0.70 | 0.35 | 0.75 |
+| pricing-promotions | `pricing_promotions.json` | 5 | 1.00 | 1.00 | 0.80 | 0.96 |
 | product-discovery | `product_discovery.json` | 6 | 1.00 | 0.92 | 0.97 | 0.96 |
 | review-sentiment | `review_sentiment.json` | 5 | 1.00 | 1.00 | 1.00 | 1.00 |
 
 The baselines record no date or commit of their own. Git history on the baseline files gives the commit that last changed each one.
 
-## Cost and latency
+## Recorded token usage
 
-None of the committed baselines carries token, cost or latency fields, so none are shown. Replay latency would only measure reading a JSON file.
+Summed over each suite's fixtures. Informational; it is not a price.
+
+| Agent | Tokens in | Tokens out |
+|-------|----------:|-----------:|
+| inventory-fulfillment | 53,931 | 1,138 |
+| orchestrator | 106,141 | 3,520 |
+| order-management | 51,089 | 420 |
+| pricing-promotions | 48,885 | 1,088 |
 
 ## Prompt and tool-schema size
 
