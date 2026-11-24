@@ -38,7 +38,8 @@ public sealed class ProductTools(DatabasePool pool, IEmbeddingProvider embedding
             ["newest"] = "p.created_at DESC",
         };
 
-    private const string DefaultSortClause = "p.rating DESC, p.review_count DESC";
+    // p.id last: the order must not depend on how Postgres happens to return tied rows.
+    private const string DefaultSortClause = "p.rating DESC, p.review_count DESC, p.id";
 
     /// <summary>
     /// SQL expression turning a text parameter into an OR-joined tsquery.
@@ -311,7 +312,7 @@ public sealed class ProductTools(DatabasePool pool, IEmbeddingProvider embedding
             var ftsSql = $@"
                 WITH fts AS (
                     SELECT p.id AS product_id,
-                           ROW_NUMBER() OVER (ORDER BY ts_rank(p.search_vector, {tsQuery}) DESC) AS rank
+                           ROW_NUMBER() OVER (ORDER BY ts_rank(p.search_vector, {tsQuery}) DESC, p.id) AS rank
                     FROM products p
                     WHERE p.is_active = TRUE
                       AND {tsQuery} <> ''::tsquery
@@ -323,7 +324,7 @@ public sealed class ProductTools(DatabasePool pool, IEmbeddingProvider embedding
                        1.0 / ({RrfK} + f.rank) AS score
                 FROM fts f
                 JOIN products p ON p.id = f.product_id
-                ORDER BY score DESC, p.rating DESC
+                ORDER BY score DESC, p.rating DESC, p.id
                 LIMIT @limit";
             await using var ftsConn = await _pool.OpenAsync();
             var ftsRows = await ftsConn.QueryAsync(ftsSql, new { query, candidates, limit });
@@ -337,7 +338,7 @@ public sealed class ProductTools(DatabasePool pool, IEmbeddingProvider embedding
         var sql = $@"
             WITH vec AS (
                 SELECT product_id, similarity,
-                       ROW_NUMBER() OVER (ORDER BY similarity DESC, rating DESC, name) AS rank
+                       ROW_NUMBER() OVER (ORDER BY similarity DESC, rating DESC, name, product_id) AS rank
                 FROM (
                     -- Rounded to 6 places before ranking and display: pgvector accumulates float32
                     -- distances in a CPU-dependent (SIMD) order, so near-equal products differ in the
@@ -354,7 +355,7 @@ public sealed class ProductTools(DatabasePool pool, IEmbeddingProvider embedding
             ),
             fts AS (
                 SELECT p.id AS product_id,
-                       ROW_NUMBER() OVER (ORDER BY ts_rank(p.search_vector, {tsQuery}) DESC) AS rank
+                       ROW_NUMBER() OVER (ORDER BY ts_rank(p.search_vector, {tsQuery}) DESC, p.id) AS rank
                 FROM products p
                 WHERE p.is_active = TRUE
                   AND {tsQuery} <> ''::tsquery
@@ -372,7 +373,7 @@ public sealed class ProductTools(DatabasePool pool, IEmbeddingProvider embedding
                    fu.similarity, fu.score
             FROM fused fu
             JOIN products p ON p.id = fu.product_id
-            ORDER BY fu.score DESC, p.rating DESC
+            ORDER BY fu.score DESC, p.rating DESC, p.id
             LIMIT @limit";
 
         await using var conn = await _pool.OpenAsync();

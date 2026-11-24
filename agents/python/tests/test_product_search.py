@@ -228,6 +228,38 @@ async def test_inactive_products_are_excluded(_pool: Any) -> None:
     assert str(ANC) not in [r["id"] for r in results]
 
 
+async def _seed_identical_twins(pool: Any) -> list[str]:
+    """Five products with identical text, rating and review count, inserted in descending id order."""
+    ids = [uuid.UUID(f"{n}0000000-0000-4000-8000-000000000000") for n in (9, 7, 5, 3, 1)]
+    async with pool.acquire() as conn:
+        for pid in ids:
+            await conn.execute(
+                """INSERT INTO products (id, name, description, category, brand, price, rating, review_count, is_active)
+                   VALUES ($1, 'Twin Lantern', 'Camping lantern', 'Outdoor', 'Twin', 20, 4.0, 10, TRUE)""",
+                pid,
+            )
+    return sorted(str(i) for i in ids)
+
+
+async def test_tied_text_matches_come_back_in_id_order(_pool: Any) -> None:
+    """Equal ts_rank, rating and review count used to leave the order to the planner."""
+    expected = await _seed_identical_twins(_pool)
+
+    results = await pd_tools.search_products(query="camping lantern")
+
+    assert [r["id"] for r in results] == expected
+
+
+async def test_tied_full_text_arm_ranks_by_id(_pool: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """With no embedding the semantic path is the text arm alone, whose ROW_NUMBER must be deterministic."""
+    expected = await _seed_identical_twins(_pool)
+    monkeypatch.setattr(pd_tools, "create_embedding_client", lambda: None)
+
+    results = await pd_tools.semantic_search(query="camping lantern", limit=5)
+
+    assert [r["id"] for r in results] == expected
+
+
 # ─────────────────────── semantic_search (hybrid RRF) ───────────────────────
 
 

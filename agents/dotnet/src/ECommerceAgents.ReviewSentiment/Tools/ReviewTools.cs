@@ -425,7 +425,7 @@ public sealed class ReviewTools(DatabasePool pool, AgentSettings settings)
         )).Select(r => new
         {
             Rating = (int)r.rating,
-            Text = ((string?)r.title ?? "" + " " + (string)r.body).ToLowerInvariant(),
+            Text = (((string?)r.title ?? "") + " " + (string)r.body).ToLowerInvariant(),
         }).ToList();
 
         var topics = new Dictionary<string, TopicSentiment>();
