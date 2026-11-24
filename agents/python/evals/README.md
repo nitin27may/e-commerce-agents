@@ -317,7 +317,7 @@ is not comparable with an independently judged one. The prompt is `config/prompt
 How well each candidate judge agrees with a human reading is measured in `evals/judge_calibration/` (30 labelled
 responses, stored verdicts, `python -m evals.judge_calibration.run --rescore` to recompute offline, `--requery` to call
 the judges again). The labels there are drafted and not yet reviewed; the README in that directory states the decision
-rule for changing the default judge and the current result.
+rule for changing the judge and the current result: `gpt-5.4-mini` is recommended (`JUDGE_PROVIDER=azure JUDGE_MODEL=gpt-5.4-mini`); no judge is defaulted in code.
 
 ## Capability check
 
@@ -357,6 +357,21 @@ uv run python -m evals.run_evals --agent product-discovery --dataset evals/datas
 uv run python -m evals.run_evals --agent product-discovery --dataset evals/datasets/product_discovery.json \
   --update-baseline evals/baselines/python-inproc-replay/product_discovery.json
 ```
+
+**Live reference baselines.** A live setup has its own key, so its files sit beside the replay ones and never mix:
+`evals/baselines/python-inproc-gpt-4.1/<dataset>.json` is `gpt-4.1` on Azure through the in-process target. Such a file
+carries `"live": true`, the date, `repeats`, `passed_cases`, the cost, the judge (and whether it was self-judged) and a
+`caveat` line; with one repeat there is no `spread`. They are a snapshot of one sitting, not a quality guarantee. The
+replay gate names `python-inproc-replay` explicitly (`scripts/replay-evals.sh`) and `tests/test_eval_live_baselines.py`
+fails if it ever names another directory. To store one without calling a model again, score the records you kept:
+
+```bash
+uv run python -m evals.run_evals --rescore records.jsonl --verify --update-baseline \
+  evals/baselines/python-inproc-gpt-4.1/product_discovery.json
+```
+
+The scorecard (`scripts/build_eval_scorecard.py`) lists live baselines in their own labelled table. Run records stay in
+a scratchpad: only the baseline JSON is committed.
 
 A baseline taken under a different setup key than the run is still compared, with a note that the comparison
 is not like-for-like. `evals/baselines/prompt_tokens.json` is not a score baseline (it measures prompt size,
@@ -507,11 +522,11 @@ Case counts as of 2026-11-23 (they change; count the files, not this list):
 | `red_team.json` | 8 | safety suite, see below |
 | `stack_parity.json` | 3 | the keyless dual-stack parity gate, orchestration modes that call no model |
 | `live/product_discovery.live.json` | 25 | live, with a `why` line each |
-| `live/inventory_fulfillment.live.json` | 28 | live, `type` (`happy`, `edge`, `adversarial`) and `why` on every case |
+| `live/inventory_fulfillment.live.json` | 29 | live, `type` (`happy`, `edge`, `adversarial`) and `why` on every case |
 | `live/orchestrator_routing.live.json` | 30 | live, `type`, `why`, `expected_routes` / `forbidden_routes` |
-| `live/order_management.live.json` | 7 | live, includes multi-turn cases (`turns`) |
-| `live/pricing_promotions.live.json` | 5 | live |
-| `live/review_sentiment.live.json` | 5 | live |
+| `live/order_management.live.json` | 33 | live, includes multi-turn cases (`turns`) |
+| `live/pricing_promotions.live.json` | 29 | live |
+| `live/review_sentiment.live.json` | 29 | live |
 
 The `live/*.live.json` files are the replay cases and their extensions for a live model, with run-time facts resolved (see
 *Live datasets*). They are not part of the replay gate. The replay datasets are the scorecard's cases; the live ones are

@@ -35,6 +35,7 @@ from shared.context import (
     current_user_role,
 )
 from shared.grounding.ledger import reset_grounding_ledger
+from shared.guardrails.cost_budget_middleware import reset_run_cost
 from shared.guardrails.flags import get_guardrail_flags, reset_guardrail_flags
 from shared.replay_client import ReplayFixtureMissingError
 from shared.run_usage import tokens_from_usage
@@ -286,6 +287,10 @@ class ProductionRunner:
         reset_steps()
         reset_grounding_ledger()
         reset_guardrail_flags()
+        # The per-run token ceiling (COST_BUDGET_TOKENS_PER_RUN) counts in a ContextVar. A server resets it per
+        # request; this in-process loop never did, so one eval process summed every case against one ceiling and
+        # refused the rest of the suite (17 of 30 orchestrator cases on the first reference run).
+        reset_run_cost()
 
         hitl_rows_before = await _hitl_rows()
         run_email = user_email or self.user_email

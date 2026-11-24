@@ -237,3 +237,25 @@ async def test_gated_call_refused_before_parking_is_a_denial_not_an_approval(mon
     assert outcome.denied is True
     assert outcome.parked_calls == []
     assert outcome.tool_calls == [{"tool_name": "place_backorder", "tool_input": args}]
+
+
+@pytest.mark.asyncio
+async def test_each_run_starts_with_a_fresh_per_run_token_count(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The in-process loop must reset the per-run ceiling per case, or a long suite exhausts it."""
+    from shared.guardrails.cost_budget_middleware import current_run_tokens, get_run_tokens
+
+    seen: list[int] = []
+
+    async def fake_attempt(self: ProductionRunner, user_input: str, history: list) -> object:
+        seen.append(get_run_tokens())
+        current_run_tokens.set(get_run_tokens() + 90_000)
+        from evals.harness import RunOutcome
+
+        return RunOutcome(text="ok")
+
+    monkeypatch.setattr(ProductionRunner, "_run_specialist", fake_attempt)
+    runner = ProductionRunner("product-discovery")
+    current_run_tokens.set(95_000)
+    await runner.run("one")
+    await runner.run("two")
+    assert seen == [0, 0]

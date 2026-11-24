@@ -222,7 +222,7 @@
       "tokens_in": 9902,
       "tokens_out": 1213,
       "tokens_per_judgement": 370.5,
-      "cost_per_100_usd": null,
+      "cost_per_100_usd": 0.043,
       "latency_ms_median": 1275.0,
       "latency_ms_p95": 1685.0,
       "by_category": {
@@ -301,7 +301,7 @@
       "tokens_in": 9902,
       "tokens_out": 1242,
       "tokens_per_judgement": 371.5,
-      "cost_per_100_usd": null,
+      "cost_per_100_usd": 0.1157,
       "latency_ms_median": 1638.0,
       "latency_ms_p95": 2103.0,
       "by_category": {
@@ -347,9 +347,9 @@
   },
   "decision": {
     "default": "gpt-4.1-mini",
-    "chosen": "gpt-4.1-mini",
-    "changed": false,
-    "reason": "no candidate beats the default by the stated margin within the cost cap",
+    "chosen": "gpt-5.4-mini",
+    "changed": true,
+    "reason": "meets both legs of the rule",
     "candidates": [
       {
         "judge": "gpt-4.1",
@@ -365,20 +365,20 @@
         "judge": "gpt-5.4-mini",
         "agreement_gain": 0.1482,
         "agreement_gain_on_common_cases": 0.1482,
-        "cost_ratio": null,
+        "cost_ratio": 2.14,
         "beats_by_margin": true,
-        "under_cost_cap": false,
-        "cost_known": false,
-        "qualifies": false
+        "under_cost_cap": true,
+        "cost_known": true,
+        "qualifies": true
       },
       {
         "judge": "gpt-5.2",
         "agreement_gain": 0.1482,
         "agreement_gain_on_common_cases": 0.1482,
-        "cost_ratio": null,
+        "cost_ratio": 5.76,
         "beats_by_margin": true,
         "under_cost_cap": false,
-        "cost_known": false,
+        "cost_known": true,
         "qualifies": false
       }
     ]

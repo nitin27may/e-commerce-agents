@@ -70,6 +70,88 @@ def load_rows(baselines_dir: Path = BASELINES, repo_root: Path = REPO_ROOT) -> l
 
 
 @dataclass(frozen=True)
+class LiveRow:
+    """One suite of a live reference baseline (``evals/baselines/<live setup key>/``): one sitting, k as stored."""
+
+    setup_key: str
+    agent: str
+    dataset: str
+    cases: int | None
+    passed: int | None
+    scores: dict[str, float]
+    repeats: int
+    model: str
+    judge: str
+    recorded_on: str
+    cost_usd: float | None
+    judge_unavailable: int
+
+
+def load_live(baselines_root: Path = BASELINES_ROOT, repo_root: Path = REPO_ROOT) -> list[LiveRow]:
+    """Every baseline marked ``"live": true`` under a setup directory other than the replay one."""
+    rows: list[LiveRow] = []
+    for path in sorted(baselines_root.glob("*/*.json")):
+        if path.parent.name == BASELINE_SETUP:
+            continue
+        data: dict[str, Any] = json.loads(path.read_text())
+        if not data.get("live"):
+            continue
+        dataset_rel = str(data.get("dataset_path", ""))
+        dataset_file = repo_root / "agents" / "python" / dataset_rel
+        cases = len(json.loads(dataset_file.read_text())) if dataset_rel and dataset_file.exists() else None
+        setup = data.get("setup") or {}
+        rows.append(
+            LiveRow(
+                setup_key=str(data.get("setup_key", path.parent.name)),
+                agent=str(data.get("agent_name", path.stem)),
+                dataset=Path(dataset_rel).name if dataset_rel else path.name,
+                cases=cases,
+                passed=data.get("passed_cases"),
+                scores={k: float(data[k]) for k in _SCORES if k in data},
+                repeats=int(data.get("repeats") or 1),
+                model=str(setup.get("chat_model", "")),
+                judge=_judge_label(setup),
+                recorded_on=str(data.get("recorded_on", "unknown")),
+                cost_usd=data.get("estimated_cost_usd"),
+                judge_unavailable=int(data.get("judge_unavailable_cases") or 0),
+            )
+        )
+    return sorted(rows, key=lambda r: (r.setup_key, r.agent))
+
+
+def render_live(rows: list[LiveRow]) -> list[str]:
+    if not rows:
+        return []
+    out = [
+        "## Live reference baselines (not a quality guarantee)",
+        "",
+        "**These are live runs, not replay.** Each row is one sitting of one model with an LLM judge, taken through the "
+        "in-process target on a freshly seeded database. With one repeat there is no spread: a single flipped case moves "
+        "a suite by a few points, and a rerun can move it too. They are stored under their own setup key and the replay "
+        "gate never compares against them. A self-judged run says so in the Judge column. Cost is the tokens times the "
+        "price in `config/pricing/models.yaml` with cached input billed at the full rate, so it is an upper bound, and "
+        "it excludes the judge calls.",
+        "",
+        "| Date | Setup | Model | Judge | k | Agent | Dataset | Cases | Passed | Groundedness | Correctness "
+        "| Completeness | Overall | Cost (USD) |",
+        "|------|-------|-------|-------|--:|-------|---------|------:|-------:|-------------:|------------:"
+        "|-------------:|--------:|-----------:|",
+    ]
+    for r in rows:
+        cases = "n/a" if r.cases is None else str(r.cases)
+        passed = "n/a" if r.passed is None else str(r.passed)
+        cells = " | ".join(_fmt(r.scores.get(k)) for k in _SCORES)
+        cost = "n/a" if r.cost_usd is None else f"{r.cost_usd:.2f}"
+        note = f" ({r.judge_unavailable} judge-unavailable)" if r.judge_unavailable else ""
+        out.append(
+            f"| {r.recorded_on} | `{r.setup_key}` | {_cell(r.model)} | {_cell(r.judge)} | {r.repeats} | {r.agent} "
+            f"| `{r.dataset}` | {cases} | {passed}{note} | {cells} | {cost} |"
+        )
+    out.append("")
+    return out
+
+
+@dataclass(frozen=True)
 class CommunityRow:
     """One suite of one community file. Shown as submitted: the maintainers have not re-run it."""
 
@@ -214,6 +296,7 @@ def render(
     last: str,
     prompt_tokens: dict[str, Any],
     community: list[CommunityRow] | None = None,
+    live: list[LiveRow] | None = None,
 ) -> str:
     model_text = ", ".join(f"`{name}` ({count} fixtures)" for name, count in sorted(models.items())) or "unknown"
     out = [
@@ -288,6 +371,7 @@ def render(
                 cells = f"{e['instructions']:,} | {e['tools']:,} | {e['tool_count']} | {e['total']:,}"
                 out.append(f"| {agent} | {role} | {cells} |")
         out.append("")
+    out += render_live(live or [])
     out += render_community(community or [])
     out += [
         "## Regenerating",
@@ -307,7 +391,7 @@ def build() -> str:
     pt_path = BASELINES_ROOT / "prompt_tokens.json"
     prompt_tokens = json.loads(pt_path.read_text()) if pt_path.exists() else {}
     models, first, last = fixture_summary()
-    return render(load_rows(), models, first, last, prompt_tokens, load_community())
+    return render(load_rows(), models, first, last, prompt_tokens, load_community(), load_live())
 
 
 def main(argv: list[str] | None = None) -> int:

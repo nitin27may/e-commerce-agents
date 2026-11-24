@@ -122,8 +122,12 @@ def test_stored_results_are_current_with_labels_and_verdicts() -> None:
     results = cal.build_results(cal.load_labels(), cal.load_verdicts())
     assert cal.RESULTS_PATH.read_text(encoding="utf-8") == cal.dump_results(results)
     assert results["labels"]["reviewed"] == 0
-    assert results["decision"]["changed"] is False
+    # Decision of 2026-11-24, once gpt-5.4-mini and gpt-5.2 had price rows: only gpt-5.4-mini clears both legs.
+    assert results["decision"]["changed"] is True
+    assert results["decision"]["chosen"] == "gpt-5.4-mini"
     assert results["decision"]["default"] == "gpt-4.1-mini"
+    qualifying = [c["judge"] for c in results["decision"]["candidates"] if c["qualifies"]]
+    assert qualifying == ["gpt-5.4-mini"]
     assert set(results["judges"]) >= {"gpt-4.1-mini", "gpt-4.1"}
 
 
@@ -133,7 +137,8 @@ def test_rescore_check_cli_passes_on_the_shipped_files(capsys: pytest.CaptureFix
 
 
 def test_estimate_calls_no_model_and_flags_unpriced(capsys: pytest.CaptureFixture[str]) -> None:
-    plan = cal.estimate(cal.load_labels(), ["gpt-4.1-mini", "gpt-5.4-mini"])
+    plan = cal.estimate(cal.load_labels(), ["gpt-4.1-mini", "gpt-5.4-mini", "unlisted-judge"])
     assert plan["judges"]["gpt-4.1-mini"]["priced"] is True
-    assert plan["judges"]["gpt-5.4-mini"]["priced"] is False
-    assert plan["judges"]["gpt-5.4-mini"]["guard_cost_usd"] is not None
+    assert plan["judges"]["gpt-5.4-mini"]["priced"] is True
+    assert plan["judges"]["unlisted-judge"]["priced"] is False
+    assert plan["judges"]["unlisted-judge"]["guard_cost_usd"] is not None

@@ -21,7 +21,7 @@ A judge's verdict was never copied into a label.
 
 ## The decision rule (written before any judge was run)
 
-The current default judge is `gpt-4.1-mini`. A candidate replaces it only if **both** hold:
+The incumbent judge is `gpt-4.1-mini`. (The code never defaults a judge, see `evals/judge.py`: `JUDGE_*` names it. "Default" here means the judge the project's docs and runs used until this decision.) A candidate replaces it only if **both** hold:
 
 1. its case-level agreement with the labels beats the default's by at least **5 percentage points**, and
 2. its cost per judgement, priced from `config/pricing/models.yaml` and the token usage the call reported, is **under 3 times**
@@ -49,9 +49,10 @@ so a 5-point margin is under two cases: the rule is a floor, and the README says
   candidate, one repeat each. Candidates are the deployments the account lists: `gpt-4.1-mini` (default), `gpt-4.1`,
   `gpt-5.4-mini` and `gpt-5.2`. `gpt-4.1` produced the answers, so as a judge it is self-judged by the repo's
   definition (`evals/judge.py`); a real run would need `--allow-self-judge` to use it on a `gpt-4.1` setup.
-- **Cost.** From the call's reported usage and the shipped pricing file. `gpt-5.4-mini` and `gpt-5.2` have no row there,
-  and the repo's rule is that an unlisted model's cost is unknown, never a guess, so they are reported as unpriced with
-  their token counts.
+- **Cost.** From the call's reported usage and the shipped pricing file. The first run (2026-11-23) found no row for
+  `gpt-5.4-mini` and `gpt-5.2` and reported them unpriced. On 2026-11-24 both were priced from the public Azure Retail
+  Prices API (Global Standard input and output meters, `verified: false`) and `--rescore` was rerun offline: the stored
+  token counts are unchanged, only the cost leg moved.
 
 ## Reproduce
 
@@ -76,8 +77,8 @@ Run on 2026-11-23 against the Azure deployments the account lists. Spend for the
 |---|---|---|---|---|---|---|---|---|---|
 | gpt-4.1-mini (default) | 63% | 44% to 78% | 0.29 | 2 | 8 | 59% | 0.020 USD | 921 | 3 |
 | gpt-4.1 | 87% | 70% to 95% | 0.73 | 0 | 4 | 84% | 0.104 USD | 980 | 0 |
-| gpt-5.4-mini | 78% | 59% to 89% | 0.58 | 0 | 6 | 78% | unpriced | 1275 | 3 |
-| gpt-5.2 | 78% | 59% to 89% | 0.58 | 0 | 6 | 76% | unpriced | 1638 | 3 |
+| gpt-5.4-mini | 78% | 59% to 89% | 0.58 | 0 | 6 | 78% | 0.043 USD | 1275 | 3 |
+| gpt-5.2 | 78% | 59% to 89% | 0.58 | 0 | 6 | 76% | 0.116 USD | 1638 | 3 |
 
 Agreement is case-level over the answered calls (27 of 30 for three judges, 30 for `gpt-4.1`). On the 27 cases every
 judge answered: 63%, 85%, 78%, 78%. A false pass is a judge pass on a response the labels fail; a false fail is the reverse.
@@ -87,15 +88,33 @@ failed to parse. Source of every number: `results.json`, recomputed by `--rescor
 
 ### Decision
 
-**The default stays `gpt-4.1-mini`.** The rule fails on cost, not on agreement:
+**`gpt-5.4-mini` replaces `gpt-4.1-mini` as the recommended judge.** The rule, applied as committed on 2026-11-24 once the
+two `gpt-5.x` models had price rows:
 
-- `gpt-4.1` beats the default by 24 points (22 on the common 27 cases) but costs 5.2 times as much per judgement
-  (0.104 against 0.020 USD per 100), over the 3x cap. Its list price is exactly 5x the mini's on both input and output.
-- `gpt-5.4-mini` and `gpt-5.2` beat it by 15 points but have no row in `config/pricing/models.yaml`, so their cost is
-  unknown and the second leg cannot be shown. Adding a row from the provider's price page (a human step, per the pricing
-  rules in `CLAUDE.md`) would let `--rescore` evaluate them. The completion tokens the provider reported per call were
-  about 41 for every judge, reasoning models included. That count may leave hidden reasoning tokens out, so it is not a
-  basis for a cost claim until the model is priced and billed usage has been checked.
+| Candidate | Agreement gain | Cost ratio to the default | Under 3x | Qualifies |
+|---|---|---|---|---|
+| gpt-4.1 | +24 points (+22 on the common 27) | 5.18 | no | no |
+| gpt-5.4-mini | +15 points (+15 on the common 27) | 2.14 | yes | **yes** |
+| gpt-5.2 | +15 points (+15 on the common 27) | 5.76 | no | no |
+
+- `gpt-5.4-mini` clears the 5-point margin by three times over and costs 2.14 times the default per judgement
+  (0.043 against 0.020 USD per 100; 0.75 and 4.50 USD per 1M tokens against 0.40 and 1.60). It is the only candidate that
+  clears both legs. `gpt-4.1` and `gpt-5.2` agree better or equally but cost over 5 times as much.
+- The price rows are `verified: false` (read from the Azure Retail Prices API, Global Standard). The cost leg also
+  trusts the completion-token count the provider reported (about 41 per call, reasoning model included). If billed usage
+  later shows hidden reasoning tokens the ratio rises; it would take about 80 billed completion tokens per call
+  against the 41 reported to push it past 3.0.
+- The labels are still drafted and unreviewed. The 15-point gain is 4 cases of 27; if the maintainer flips labels, rerun
+  `--rescore` and the decision recomputes.
+- **Content filter.** The Azure filter refused three adversarial rows for every judge except `gpt-4.1`, **including the
+  incumbent**, so the default and `gpt-5.4-mini` are compared on the same 27 rows and the gain does not depend on the
+  filter. It does not change the decision, but it leaves a blind spot: for these judges the adversarial rows (the ones
+  about declining an injection) come back `judge_unavailable`, are left out of the completeness mean and are reported on
+  a `Judge unavailable` line, not scored 0 and not passed. A suite heavy in such rows is judged on fewer cases, and only
+  `gpt-4.1` (a self-judge on `gpt-4.1` runs) could grade them.
+- What "default" means in code: nothing changed, because no judge is defaulted (a run with no `JUDGE_*` stops, or
+  self-judges only when told to). The recommended setting is `JUDGE_PROVIDER=azure JUDGE_MODEL=gpt-5.4-mini`, named in
+  `docs/agent-quality.md` and `evals/README.md`, and it stays overridable by any `JUDGE_*` value.
 
 What the table does say, with the caveats below:
 
