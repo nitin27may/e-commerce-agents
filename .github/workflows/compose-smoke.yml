@@ -12,7 +12,11 @@
 # The turn is the same keyless return workflow, so a mixed pair that cannot talk to each other fails
 # here without a model key.
 #
-# Not covered: a chat turn that needs a model (needs replay fixtures for that path) and the frontend image.
+# The `no-key-tour` job boots the from-source stack with docker-compose.nokey.yml (recorded answers,
+# no key) and runs web/e2e/no-key-tour.spec.ts: every chip of the demo tour answers from a recording and
+# the return pauses for approval (#86). It is the only job here that builds and drives the frontend.
+#
+# Not covered: a chat turn outside the recorded demo prompts (a replay miss, by design).
 name: Compose smoke
 
 on:
@@ -26,6 +30,8 @@ on:
       - "scripts/seed.py"
       - "scripts/compose-smoke.sh"
       - "scripts/flag-smoke.sh"
+      - "web/**"
+      - "docker-compose.nokey.yml"
       - ".github/workflows/compose-smoke.yml"
   push:
     branches: [main]
@@ -37,6 +43,7 @@ on:
       - "scripts/migrate.py"
       - "scripts/compose-smoke.sh"
       - "scripts/flag-smoke.sh"
+      - "web/**"
   workflow_dispatch:
 
 permissions:
@@ -110,3 +117,74 @@ jobs:
 
       - name: Boot with every flag on and drive the flagged features
         run: scripts/flag-smoke.sh
+
+  # The scripted no-key demo tour in a real browser (issue #86). Recorded answers only: LLM_PROVIDER=replay is
+  # hardcoded by docker-compose.nokey.yml, so no key is read or needed.
+  no-key-tour:
+    name: No-key tour (Playwright, replay, keyless)
+    # Pinned like tests.yml's web-ui-smoke: the locked Playwright cannot install Chromium's system
+    # dependencies on the newest ubuntu-latest.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Refuse to run with any API key set
+        run: |
+          leaked="$(env | grep -E '^[A-Za-z0-9_]*(_API_KEY|AZURE_OPENAI_KEY)=.+' | cut -d= -f1 || true)"
+          if [ -n "$leaked" ]; then
+            echo "::error::credentials present in the environment: $leaked"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+
+      - name: Setup Node 26
+        uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install web dependencies and Chromium
+        working-directory: web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install --with-deps chromium
+
+      - name: Boot the no-key stack (docker-compose.yml + docker-compose.nokey.yml)
+        run: ./scripts/dev.sh --no-key
+
+      - name: Wait for the orchestrator and the tour
+        run: |
+          for _ in $(seq 1 60); do
+            curl -fsS -o /dev/null http://localhost:8080/ready \
+              && curl -fsS http://localhost:8080/api/demo/tour | grep -q '"chips"' && exit 0
+            sleep 2
+          done
+          docker compose -f docker-compose.yml -f docker-compose.nokey.yml --profile agents --profile frontend ps
+          exit 1
+
+      - name: Run the tour spec
+        working-directory: web
+        run: pnpm exec playwright test e2e/no-key-tour.spec.ts --project=chromium-python --trace off
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-no-key-tour-results
+          path: web/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Container logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.yml -f docker-compose.nokey.yml --profile agents --profile frontend logs --no-color --tail 150
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.nokey.yml --profile seed --profile agents --profile frontend down -v --remove-orphans
