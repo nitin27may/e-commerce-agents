@@ -505,7 +505,7 @@ public static class SpecialistPipeline
             var toolInput = context.Arguments is null
                 ? new Dictionary<string, object?>()
                 : new Dictionary<string, object?>(context.Arguments);
-            var pending = await gate.TryGateAsync(context.Function.Name, agentName, toolInput);
+            var pending = await gate.TryGateAsync(context.Function.Name, agentName, toolInput, HitlGate.RolesOf(context.Function));
             return pending ?? await next(context, ct);
         };
 

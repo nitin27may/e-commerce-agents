@@ -6,6 +6,7 @@ using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Data;
 using Microsoft.Extensions.Logging;
+using System.Reflection;
 using System.Text.Json;
 
 namespace ECommerceAgents.Shared.Middleware;
@@ -64,12 +65,22 @@ public sealed class HitlGate
 
     private static readonly IReadOnlyDictionary<string, string> ToolLabels = new Dictionary<string, string>
     {
-        ["CancelOrder"] = "cancel order",
-        ["ModifyOrder"] = "modify order",
-        ["PlaceBackorder"] = "place backorder",
-        ["InitiateReturn"] = "initiate return",
-        ["ProcessRefund"] = "process refund",
+        ["cancel_order"] = "cancel order",
+        ["modify_order"] = "modify order",
+        ["place_backorder"] = "place backorder",
+        ["initiate_return"] = "initiate return",
+        ["process_refund"] = "process refund",
     };
+
+    /// <summary>The gated names in the canonical (snake_case) form the pipeline reports them in: <c>AgentTool.Create</c> registers <c>cancel_order</c>, not <c>CancelOrder</c>.</summary>
+    private static readonly IReadOnlySet<string> CanonicalGatedTools =
+        GatedTools.Select(ApprovalIntake.CanonicalToolName).ToHashSet(StringComparer.Ordinal);
+
+    /// <summary>The roles a tool declares with <see cref="Guardrails.RequiresRoleAttribute"/>, or <c>null</c> when it declares none.</summary>
+    public static IReadOnlyList<string>? RolesOf(Microsoft.Extensions.AI.AIFunction function) =>
+        function.UnderlyingMethod?.GetCustomAttribute<Guardrails.RequiresRoleAttribute>()?.Roles;
+
+    private static object FailedClosed() => new { status = "error", message = ParkPrechecks.ParkFailedReply };
 
     private readonly DatabasePool _pool;
     private readonly AgentSettings _settings;
@@ -110,30 +121,51 @@ public sealed class HitlGate
     /// <summary>
     /// Returns <c>null</c> if the call should proceed (HITL disabled, or
     /// <paramref name="toolName"/> isn't gated) — otherwise returns the
-    /// pending-approval (or, on a DB failure, error) object the caller
+    /// refusal, pending-approval (or, on a failure, error) object the caller
     /// should short-circuit with instead of invoking the tool.
     /// </summary>
-    public async Task<object?> TryGateAsync(string toolName, string agentName, object toolInputForAudit)
+    /// <remarks>
+    /// Before anything is written, <see cref="ParkPrechecks"/> runs the tool's declared roles (<paramref name="requiredRoles"/>) and
+    /// its cheap preconditions (ownership, status, window, stock): a call that can never succeed gets a plain sentence and no row,
+    /// as in Python. No identity, or a failure in a precheck or the write, fails closed with <see cref="ParkPrechecks.ParkFailedReply"/>.
+    /// </remarks>
+    public async Task<object?> TryGateAsync(string toolName, string agentName, object toolInputForAudit, IReadOnlyList<string>? requiredRoles = null)
     {
-        if (!_settings.HitlEnabled || !GatedTools.Contains(toolName))
+        var canonicalTool = ApprovalIntake.CanonicalToolName(toolName);
+        if (!_settings.HitlEnabled || !CanonicalGatedTools.Contains(canonicalTool))
         {
             return null;
         }
 
-        var label = ToolLabels.GetValueOrDefault(toolName, toolName);
+        var label = ToolLabels.GetValueOrDefault(canonicalTool, canonicalTool);
 
         Guid requestId;
         string toolInputJson;
-        var canonicalTool = ApprovalIntake.CanonicalToolName(toolName);
         string requester;
         Guid? sessionGuid;
         try
         {
             var email = RequestContext.CurrentUserEmail;
+            if (string.IsNullOrEmpty(email))
+            {
+                _logger?.LogWarning("hitl.park_refused reason=no_identity tool={Tool}", LogSafe.Clean(toolName));
+                return FailedClosed();
+            }
+
             Guid? sessionId = Guid.TryParse(RequestContext.CurrentSessionId, out var sid) ? sid : null;
-            requester = string.IsNullOrEmpty(email) ? "unknown" : email;
+            requester = email;
             sessionGuid = sessionId;
             toolInputJson = SnakeCaseInput(toolInputForAudit);
+
+            using (var inputDoc = JsonDocument.Parse(toolInputJson))
+            {
+                var refusal = await ParkPrechecks.CheckAsync(
+                    _pool, _settings, canonicalTool, inputDoc.RootElement, email, RequestContext.CurrentUserRole, requiredRoles, _logger);
+                if (refusal is not null)
+                {
+                    return new { status = "refused", message = refusal.Sentence };
+                }
+            }
 
             await using var conn = await _pool.OpenAsync();
             requestId = await conn.ExecuteScalarAsync<Guid>(
@@ -159,12 +191,7 @@ public sealed class HitlGate
             // execute unapproved just because the approval record couldn't
             // be written. A transient DB error is not consent.
             _logger?.LogError(ex, "hitl.failed_to_create_request tool={Tool}", LogSafe.Clean(toolName));
-            return new
-            {
-                status = "error",
-                message = $"Could not submit your {label} request for approval right now — " +
-                    "please try again in a moment. No changes have been made.",
-            };
+            return FailedClosed();
         }
 
         // The inbox row, routed by the policy engine. Best effort: the request above is what executing it needs, and a missing inbox
