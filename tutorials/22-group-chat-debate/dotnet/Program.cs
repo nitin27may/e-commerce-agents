@@ -131,9 +131,18 @@ public sealed record GroupChatWorkflow(
     IReadOnlyList<(string Name, Responder Responder)> Panelists,
     Func<GroupChatState, string>? Synthesizer = null)
 {
-    public static string DefaultSynthesis(GroupChatState state) =>
-        $"Synthesized {state.Transcript.Count} perspective(s) "
-        + $"({string.Join(", ", state.Transcript.Select(t => t.Speaker))}) on: {state.Question}";
+    // Lays out what each panelist said (same shape as the capstone's _default_synthesis), so the
+    // reader sees the debate rather than a one-line count.
+    public static string DefaultSynthesis(GroupChatState state)
+    {
+        string turns = string.Join(
+            "\n\n",
+            state.Transcript.Select(t => $"**{Capitalize(t.Speaker)}:** {t.Text}"));
+        return $"Round-table on: {state.Question}\n\n{turns}";
+    }
+
+    private static string Capitalize(string s) =>
+        s.Length == 0 ? s : char.ToUpperInvariant(s[0]) + s[1..].ToLowerInvariant();
 
     internal Workflow Build()
     {

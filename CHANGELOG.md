@@ -39,7 +39,13 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
   pricing loyalty case asks the model to look the tier up (the replay wording let it answer from its context). Grounding no longer scores amounts from `get_loyalty_tier`
   (`spend_needed`, `free_shipping_threshold`, `total_spend`) or `get_active_deals` (fixed coupon values,
   `max_discount`) as unverifiable, and `$1,000` is read as 1000 rather than `$1`. No replay fixture or dataset changes.
-
+- **.NET context enricher sends the full order id.** The recent-orders block cut ids to 8 characters (`Order 1a2b3c4d...`),
+  which a model cannot pass to `get_order_details`; it now writes `order_id=<full id>` like the Python provider.
+- **Tutorial 22 (.NET) default moderator matches the capstone.** `DefaultSynthesis` returns the round-table with each
+  panelist's text instead of "Synthesized N perspective(s)"; test updated.
+- **Compose smoke: cold-start retries.** `scripts/compose-smoke.sh` retries login and the products read up to three times
+  (logged) and the keyless chat turn once, and no longer aborts the customer search on a timeout. Aimed at the one-off
+  `Boot (net-py)` failure that passed on re-run; no root cause could be reproduced from the job alone.
 - **Group chat no longer answers with a placeholder.** The moderator's default verdict was the one line
   "Synthesized 2 perspective(s) (value, quality) on: <prompt>"; it now shows the question followed by each
   panelist's actual words (#210). No model call is involved, so no replay fixture changes.
