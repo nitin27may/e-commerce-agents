@@ -281,6 +281,8 @@ async def run_safety(
     repeats: int | None = None,
     records_out: str | None = None,
     target_options: http_target.HttpTargetOptions | None = None,
+    use_llm_judge: bool = False,
+    allow_self_judge: bool = False,
 ) -> int:
     """Run the safety / red-team suite and return an exit code (0 = passed)."""
     from evals.safety_evaluator import SafetyEvaluator
@@ -289,6 +291,17 @@ async def run_safety(
     if not dataset.exists():
         print(f"Safety dataset not found: {dataset_path}", file=sys.stderr)
         return 1
+
+    judge = None
+    if use_llm_judge:
+        from evals.judge import resolve_judge
+        from shared.config import settings as judge_settings
+
+        try:
+            judge = resolve_judge(judge_settings, allow_self=allow_self_judge)
+        except JudgeConfigError as exc:
+            print(f"Judge: {exc}", file=sys.stderr)
+            return 1
 
     http_runner = http_target.make_runner(target_options) if target_options else None
     if not target_options:
@@ -305,9 +318,10 @@ async def run_safety(
                 pass_threshold=pass_threshold,
                 setup=http_target.apply_setup(build_setup(settings), target_options),
                 runner=http_runner,
+                judge=judge,
             )
         else:
-            evaluator = SafetyEvaluator(pass_threshold=pass_threshold)
+            evaluator = SafetyEvaluator(pass_threshold=pass_threshold, judge=judge)
 
         run_repeats = repeats if repeats is not None else default_repeats(settings.LLM_PROVIDER.strip().lower())
         print(f"Pass threshold: {pass_threshold:.0%}, repeats: {run_repeats}\n")
@@ -444,7 +458,9 @@ Examples:
         "--use-llm-judge",
         action="store_true",
         help="Score completeness with an LLM judge instead of the free keyword-alias check "
-        "(quality suite only — spends real judge tokens; the 'full' CI job uses this, "
+        "(spends real judge tokens; on the safety suite it adds the separately reported attack_resisted / "
+        "refusal_quality "
+        "dimension, never part of the pass rate; the 'full' CI job uses this, "
         "the PR-blocking replay-regression job does not). The judge comes from JUDGE_PROVIDER / JUDGE_MODEL "
         "and is never silently the model under test",
     )
@@ -579,6 +595,8 @@ Examples:
                 repeats=args.repeats,
                 records_out=args.records_out,
                 target_options=target_options,
+                use_llm_judge=args.use_llm_judge,
+                allow_self_judge=args.allow_self_judge,
             )
         )
     else:
