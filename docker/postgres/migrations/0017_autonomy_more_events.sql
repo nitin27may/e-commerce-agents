@@ -1,4 +1,4 @@
--- 0016 -- more autonomy events (#299): price drops, back in stock, and the optional ops-responder's drafts.
+-- 0017 -- more autonomy events (#299): price drops, back in stock, and the optional ops-responder's drafts.
 --
 -- agent_decisions.order_item_id   the order LINE a price adjustment is for. A price drop pays per line, so "one
 --                                 adjustment per line" needs the line on the row. Nullable: a shipment-delay credit
