@@ -20,6 +20,7 @@ public sealed class ReviewToolsTests : IAsyncLifetime
     private ReviewTools _tools = null!;
     private Guid _productAId;
     private Guid _productBId;
+    private Guid _otherSellerReviewId;
 
     public ReviewToolsTests(PostgresFixture pg) => _pg = pg;
 
@@ -40,10 +41,15 @@ public sealed class ReviewToolsTests : IAsyncLifetime
             "TRUNCATE reviews, products, users RESTART IDENTITY CASCADE"
         );
         RequestContext.CurrentUserRole = "";
+        RequestContext.CurrentUserEmail = "";
         await _pool.DisposeAsync();
     }
 
-    private void EnsureSellerScope() => RequestContext.CurrentUserRole = "seller";
+    private void EnsureSellerScope()
+    {
+        RequestContext.CurrentUserRole = "seller";
+        RequestContext.CurrentUserEmail = "seller-a@example.com";
+    }
 
     // ─────────────────────── get_product_reviews ─────────────
 
@@ -271,6 +277,31 @@ public sealed class ReviewToolsTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task DraftSellerResponse_OtherSellersReview_IsIndistinguishableFromMissing()
+    {
+        EnsureSellerScope();
+        var other = await _tools.DraftSellerResponse(_otherSellerReviewId.ToString());
+        var missingId = Guid.NewGuid().ToString();
+        var missing = await _tools.DraftSellerResponse(missingId);
+
+        other.Error.Should().Be($"Review not found: {_otherSellerReviewId}");
+        missing.Error.Should().Be($"Review not found: {missingId}");
+        other.ResponseTemplate.Should().BeNull();
+        other.ReviewBody.Should().BeNull();
+        other.ProductName.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task DraftSellerResponse_AdminMayDraftForAnySellersReview()
+    {
+        RequestContext.CurrentUserRole = "admin";
+        RequestContext.CurrentUserEmail = "admin@example.com";
+        var result = await _tools.DraftSellerResponse(_otherSellerReviewId.ToString());
+        result.Error.Should().BeNull();
+        result.ResponseTemplate.Should().NotBeNull();
+    }
+
+    [Fact]
     public async Task DraftSellerResponse_RejectsBadGuid()
     {
         EnsureSellerScope();
@@ -292,10 +323,19 @@ public sealed class ReviewToolsTests : IAsyncLifetime
               VALUES ('reviewer@example.com', 'x', 'Reviewer', 'customer')
               RETURNING id"
         );
+        var sellerAId = await conn.ExecuteScalarAsync<Guid>(
+            @"INSERT INTO users (email, password_hash, name, role)
+              VALUES ('seller-a@example.com', 'x', 'Seller A', 'seller') RETURNING id"
+        );
+        var sellerBId = await conn.ExecuteScalarAsync<Guid>(
+            @"INSERT INTO users (email, password_hash, name, role)
+              VALUES ('seller-b@example.com', 'x', 'Seller B', 'seller') RETURNING id"
+        );
         _productAId = await conn.ExecuteScalarAsync<Guid>(
-            @"INSERT INTO products (name, description, category, brand, price, rating, review_count)
-              VALUES ('Headphones', 'Sample', 'Electronics', 'X', 200, 4.6, 5)
-              RETURNING id"
+            @"INSERT INTO products (name, description, category, brand, price, rating, review_count, seller_id)
+              VALUES ('Headphones', 'Sample', 'Electronics', 'X', 200, 4.6, 5, @s)
+              RETURNING id",
+            new { s = sellerAId }
         );
         _productBId = await conn.ExecuteScalarAsync<Guid>(
             @"INSERT INTO products (name, description, category, brand, price, rating, review_count)
@@ -321,6 +361,18 @@ public sealed class ReviewToolsTests : IAsyncLifetime
               VALUES (@b, @u, 3, 'Mid', 'It is okay.', TRUE, 0),
                      (@b, @u, 3, 'Average', 'Not great, not bad.', FALSE, 0)",
             new { b = _productBId, u = userId }
+        );
+
+        var productCId = await conn.ExecuteScalarAsync<Guid>(
+            @"INSERT INTO products (name, description, category, brand, price, rating, review_count, seller_id)
+              VALUES ('Case', 'Sample', 'Electronics', 'Z', 20, 3.0, 1, @s)
+              RETURNING id",
+            new { s = sellerBId }
+        );
+        _otherSellerReviewId = await conn.ExecuteScalarAsync<Guid>(
+            @"INSERT INTO reviews (product_id, user_id, rating, title, body, verified_purchase)
+              VALUES (@c, @u, 1, 'Bad', 'Broke fast', TRUE) RETURNING id",
+            new { c = productCId, u = userId }
         );
     }
 }

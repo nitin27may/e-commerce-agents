@@ -689,14 +689,15 @@ public sealed class ReviewTools(DatabasePool pool, AgentSettings settings)
         await using var conn = await _pool.OpenAsync();
         var row = await conn.QueryFirstOrDefaultAsync(
             @"SELECT r.id, r.rating, r.title, r.body, r.created_at,
-                     u.name AS reviewer_name, p.name AS product_name
+                     u.name AS reviewer_name, p.name AS product_name, p.seller_id
               FROM reviews r
               JOIN users u ON r.user_id = u.id
               JOIN products p ON r.product_id = p.id
               WHERE r.id = @id",
             new { id = rid }
         );
-        if (row is null)
+        // Same not-found for a missing review and another seller's product; admin may draft for any.
+        if (row is null || !await CallerMayRespondAsync(conn, (Guid?)row.seller_id))
         {
             return SellerResponseResult.Failure($"Review not found: {reviewId}");
         }
@@ -723,6 +724,25 @@ public sealed class ReviewTools(DatabasePool pool, AgentSettings settings)
             ResponseTemplate: template,
             Note: "This is a template. Customize it with specific details about the customer's concern before sending."
         );
+    }
+
+    private static async Task<bool> CallerMayRespondAsync(System.Data.Common.DbConnection conn, Guid? productSellerId)
+    {
+        if (string.Equals(ECommerceAgents.Shared.Context.RequestContext.CurrentUserRole, "admin", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (productSellerId is null)
+        {
+            return false;
+        }
+
+        var owner = await conn.ExecuteScalarAsync<int?>(
+            "SELECT 1 FROM users WHERE id = @id AND email = @email",
+            new { id = productSellerId.Value, email = ECommerceAgents.Shared.Context.RequestContext.CurrentUserEmail }
+        );
+        return owner is not null;
     }
 
     private static string Truncate(string value, int max) =>
