@@ -64,7 +64,7 @@ The provider never talks to the LLM. It only shapes what the agent sends on the 
 
 ## Python
 
-`main.py` needs an API key. With no key, start with the tests, from the repo root:
+With no key, `main.py` replays a recorded response for its default run. The tests, from the repo root:
 
 ```bash
 uv sync --project tutorials --extra dev
