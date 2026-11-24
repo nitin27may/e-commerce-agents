@@ -13,7 +13,7 @@ without an API key, what a PR must pass, and where to find a first issue.
 |------|---------|------------|
 | Docker with Compose v2 | 24+ | The full stack, and the Postgres containers the Python integration tests start |
 | `uv` | latest | Everything Python (3.12) |
-| Node.js and `pnpm` | 22+ and 10+ (CI uses pnpm 10.15.0) | The frontend |
+| Node.js and `pnpm` | 26+ and 10+ (CI uses pnpm 10.15.0) | The frontend |
 | .NET SDK | 10.0 | Only if you touch `agents/dotnet/` or a tutorial's .NET half |
 
 No API key is needed to build, test or open a PR.

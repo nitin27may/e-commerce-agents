@@ -19,8 +19,8 @@ Optional for local (non-Docker) development:
 |------|---------|-------|
 | Python | 3.12 | Required only for running agents outside Docker |
 | uv | latest | Python package manager (`pip install uv` or `brew install uv`) |
-| Node.js | 22+ | Required only for running the frontend outside Docker |
-| pnpm | 9+ | Enable via `corepack enable && corepack prepare pnpm@latest --activate` |
+| Node.js | 26+ | Required only for running the frontend outside Docker |
+| pnpm | 9+ | `npm install -g pnpm@10` (Node 25+ no longer bundles Corepack) |
 
 ## 2. Docker Compose Architecture
 
@@ -308,9 +308,9 @@ The `web/Dockerfile` uses a 3-stage build for minimal production images:
 
 | Stage | Base | Purpose |
 |-------|------|---------|
-| `deps` | `node:22-alpine` | Install dependencies with `pnpm install --frozen-lockfile` |
-| `builder` | `node:22-alpine` | Build Next.js (`pnpm build`). No backend address is compiled in — see `ORCHESTRATOR_URL` above |
-| `runner` | `node:22-alpine` | Production runtime with standalone output only. Non-root `nextjs` user. |
+| `deps` | `node:26-alpine` | Install dependencies with `pnpm install --frozen-lockfile` |
+| `builder` | `node:26-alpine` | Build Next.js (`pnpm build`). No backend address is compiled in — see `ORCHESTRATOR_URL` above |
+| `runner` | `node:26-alpine` | Production runtime with standalone output only. Non-root `nextjs` user. |
 
 The final image contains only the standalone server, static assets, and public directory -- no `node_modules` or source code.
 

@@ -11,7 +11,7 @@
   "features": {
     "ghcr.io/devcontainers/features/python:1": { "version": "3.12" },
     // Node + pnpm for web/. The pnpm version is pinned in postCreate.sh to the one CI uses.
-    "ghcr.io/devcontainers/features/node:1": { "version": "22" },
+    "ghcr.io/devcontainers/features/node:1": { "version": "26" },
     // global.json at the repo root asks for SDK 10.0.100 and rolls forward within
     // the 10.0 feature band, so any 10.0.x SDK satisfies it.
     "ghcr.io/devcontainers/features/dotnet:2": { "version": "10.0" },

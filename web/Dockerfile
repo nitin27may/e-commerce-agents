@@ -3,10 +3,11 @@
 # Multi-stage build: deps → build → runtime
 # ============================================================
 
-FROM node:22-alpine AS base
+FROM node:26-alpine AS base
 
-# Install pnpm (pin v10.x — v11 errors on ignored build scripts)
-RUN corepack enable && corepack prepare pnpm@10.15.0 --activate
+# Install pnpm (pin v10.x; v11 errors on ignored build scripts). Corepack is not bundled
+# with Node 25+, so pnpm comes from npm.
+RUN npm install -g pnpm@10.15.0
 
 # ── Dependencies ─────────────────────────────────────────────
 FROM base AS deps

@@ -2,6 +2,9 @@
   "name": "web",
   "version": "1.4.0",
   "private": true,
+  "engines": {
+    "node": ">=26"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -38,7 +41,7 @@
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.13",
-    "@types/node": "^20",
+    "@types/node": "^26.6.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^6.3.0",

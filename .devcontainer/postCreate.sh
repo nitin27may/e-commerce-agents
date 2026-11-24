@@ -6,8 +6,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # pnpm, pinned to the version CI uses (the web jobs in the tests workflow).
-corepack enable
-corepack prepare pnpm@10.15.0 --activate
+# Corepack is not bundled with Node 25+, so install pnpm from npm.
+npm install -g pnpm@10.15.0
 
 # uv is not in the base image.
 if ! command -v uv >/dev/null 2>&1; then

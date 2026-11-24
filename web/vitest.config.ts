@@ -12,5 +12,8 @@ export default defineConfig({
     // Playwright specs live under web/e2e and are run with @playwright/test.
     exclude: ["e2e/**", "node_modules/**", ".next/**"],
     css: false,
+    // Node 25+ ships a native localStorage that is unusable without --localstorage-file and shadows
+    // jsdom's, so every test touching storage saw undefined. Turn the native one off.
+    execArgv: ["--no-experimental-webstorage"],
   },
 });
