@@ -12,30 +12,19 @@ namespace ECommerceAgents.Shared.Configuration;
 public static class AgentSettingsLoader
 {
     /// <summary>
-    /// Accepts only the grounding modes .NET actually implements.
+    /// Accepts the four grounding modes Python has: <c>off</c>, <c>observe</c>, <c>annotate</c> and
+    /// <c>enforce</c>. Anything else fails at startup, so a typo cannot silently fall back to a weaker mode.
     /// </summary>
-    /// <remarks>
-    /// Python's "enforce" is deliberately refused rather than quietly treated
-    /// as "annotate". Operators set that value expecting unverified cards to
-    /// be stripped; accepting it would mean the strongest setting is the one
-    /// that lies. Same posture as the config rejection for the unimplemented
-    /// azure_content_safety guardrail provider on the Python side.
-    /// </remarks>
     private static string ValidatedGroundingMode(string raw)
     {
         var mode = raw.Trim().ToLowerInvariant();
-        if (mode is "off" or "observe" or "annotate")
+        if (mode is "off" or "observe" or "annotate" or "enforce")
         {
             return mode;
         }
 
         throw new InvalidOperationException(
-            $"GROUNDING_MODE='{raw}' is not supported. Use off, observe or annotate. "
-                + (mode == "enforce"
-                    ? "enforce (strip unverified cards, correct prices) exists in the Python "
-                        + "stack only — see docs/parity-matrix.md."
-                    : "")
-        );
+            $"GROUNDING_MODE='{raw}' is not supported. Use off, observe, annotate or enforce.");
     }
 
     /// <summary>

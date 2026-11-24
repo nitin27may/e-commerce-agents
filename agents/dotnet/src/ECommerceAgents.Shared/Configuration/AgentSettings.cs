@@ -124,17 +124,15 @@ public sealed record AgentSettings
     /// <summary>Comma-separated browser origins allowed by CORS - Python's <c>CORS_ALLOWED_ORIGINS</c>.</summary>
     public string CorsAllowedOrigins { get; init; } = "http://localhost:3000";
 
-    // ── Grounding (issue #33 PR 7) — .NET twin of Python's GROUNDING_MODE ──
+    // ── Grounding (issue #33) — .NET twin of Python's GROUNDING_MODE ──
     /// <summary>
-    /// "off" | "observe" | "annotate". Defaults to annotate, matching Python.
+    /// "off" | "observe" | "annotate" | "enforce". Defaults to annotate, matching Python.
     /// </summary>
     /// <remarks>
-    /// Python also has "enforce", which strips unverified card blocks and
-    /// corrects prices from the database row before the response leaves. Not
-    /// implemented here yet, and <see cref="AgentSettingsLoader"/> rejects it
-    /// at startup rather than accepting it: a mode that is advertised but
-    /// silently behaves like "annotate" is the exact failure this repo already
-    /// fixed once, when GUARDRAILS_BLOCK_ON_INJECTION did not block.
+    /// <c>enforce</c> reports like annotate and also removes a card that names a product or order that does not
+    /// exist and corrects a card's wrong price or total from the verified row. A streamed answer has already
+    /// reached the browser, so there it corrects only what is persisted; see
+    /// <see cref="Grounding.FinalTextGrounding"/>.
     /// </remarks>
     public string GroundingMode { get; init; } = "annotate";
 

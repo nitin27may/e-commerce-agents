@@ -301,6 +301,9 @@ public static class AgentHost
         messages.Add(new ChatMessage(ChatRole.User, message));
 
         using var notices = RequestContext.EnsureGateNotices();
+        // What the caller typed this turn (not history): a figure the answer echoes from it is the user's own.
+        RequestContext.CurrentGroundingLedger?.NoteUserText(message);
+
         var response = await agent.RunAsync(messages);
         RequestContext.RecordUsage(
             RunUsage.SelfKey,
@@ -337,6 +340,8 @@ public static class AgentHost
             .Select(h => new ChatMessage(h.Role == "assistant" ? ChatRole.Assistant : ChatRole.User, h.Content))
             .ToList();
         messages.Add(new ChatMessage(ChatRole.User, message));
+
+        RequestContext.CurrentGroundingLedger?.NoteUserText(message);
 
         var model = services.GetService<AgentSettings>()?.LlmModel ?? "";
         // No EnsureGateNotices here: an async iterator's AsyncLocal writes are dropped between MoveNextAsync calls, so a sink

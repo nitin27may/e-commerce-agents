@@ -5,6 +5,7 @@ using ECommerceAgents.Shared.Approvals;
 using ECommerceAgents.Shared.Configuration;
 using ECommerceAgents.Shared.Context;
 using ECommerceAgents.Shared.Data;
+using ECommerceAgents.Shared.Grounding;
 using ECommerceAgents.Shared.Logging;
 using ECommerceAgents.Shared.Orchestration;
 using ECommerceAgents.Shared.Policy;
@@ -971,6 +972,15 @@ public sealed class ApprovalsService(
             {
                 RequestContext.CurrentUserEmail = reviewerContextEmail;
                 RequestContext.CurrentUserRole = reviewerContextRole;
+            }
+
+            // The resumed run's text goes through the same grounding as a chat turn (Python's @grounded_run wraps
+            // resume too). Only enforce changes what the caller sees, and the report is not surfaced here.
+            var (_, groundedText) = await FinalTextGrounding.VerifyAsync(
+                result.Text, settings.GroundingMode, RequestContext.CurrentGroundingLedger, pool, logger);
+            if (!string.Equals(groundedText, result.Text, StringComparison.Ordinal))
+            {
+                result = result with { Text = groundedText };
             }
 
             var approved = decision.IsApproval;

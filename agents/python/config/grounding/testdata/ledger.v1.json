@@ -1,0 +1,127 @@
+{
+  "version": 1,
+  "description": "Shared by the Python and .NET stacks (tests/test_grounding_vectors.py, GroundingVectorTests.cs). Ledger recognition, what a user's text supplies, and the verdict a prose amount or id gets. Keys are the Python tool shapes; the .NET test also feeds the real .NET tool records through the same ledger. Change a rule on one stack only with this file in the same change.",
+  "ledger_cases": [
+    {
+      "name": "single product",
+      "tool_results": [{"id": "0fd372fa-ecb2-4db0-bb71-8628a784ced9", "name": "Widget", "price": 19.99, "image_url": "u"}],
+      "expect": {"products": {"0fd372fa-ecb2-4db0-bb71-8628a784ced9": {"name": "Widget", "price": 19.99}}, "known_amounts": [19.99]}
+    },
+    {
+      "name": "list of products",
+      "tool_results": [[
+        {"id": "0fd372fa-ecb2-4db0-bb71-8628a784ced9", "name": "A", "price": 1.0},
+        {"id": "22222222-2222-2222-2222-222222222222", "name": "B", "price": 2.0}
+      ]],
+      "expect": {"product_ids": ["0fd372fa-ecb2-4db0-bb71-8628a784ced9", "22222222-2222-2222-2222-222222222222"]}
+    },
+    {
+      "name": "order keyed by order_id, not id",
+      "tool_results": [{
+        "order_id": "1a2b3c4d-5e6f-7890-abcd-ef0123456789", "status": "shipped", "total": 199.99, "tracking_number": "TRK1",
+        "items": [{"item_id": "x", "product_name": "Widget"}]
+      }],
+      "expect": {"orders": {"1a2b3c4d-5e6f-7890-abcd-ef0123456789": {"status": "shipped", "total": 199.99, "tracking": "TRK1"}}, "no_products": true}
+    },
+    {
+      "name": "order line items are not products",
+      "tool_results": [{
+        "order_id": "1a2b3c4d-5e6f-7890-abcd-ef0123456789", "status": "shipped", "total": 50.0,
+        "items": [{"item_id": "abc", "product_name": "Widget", "unit_price": 25.0}]
+      }],
+      "expect": {"no_products": true}
+    },
+    {
+      "name": "valid coupon becomes a promo",
+      "tool_results": [{"valid": true, "code": "save10", "discount_type": "percentage", "discount_amount": 15.5}],
+      "expect": {"promos": {"SAVE10": 15.5}}
+    },
+    {
+      "name": "invalid coupon is not recorded",
+      "tool_results": [{"valid": false, "code": "EXPIRED", "error": "Coupon has expired"}],
+      "expect": {"no_promos": true}
+    },
+    {
+      "name": "check_stock is not a product",
+      "tool_results": [{"product_id": "0fd372fa-ecb2-4db0-bb71-8628a784ced9", "in_stock": true, "total_quantity": 12}],
+      "expect": {"no_products": true, "no_orders": true}
+    },
+    {
+      "name": "error shape is ignored",
+      "tool_results": [{"error": "Product not found: abc"}],
+      "expect": {"no_products": true, "no_orders": true, "no_promos": true, "no_known_amounts": true}
+    },
+    {
+      "name": "price history aggregates",
+      "tool_results": [{
+        "product_id": "0fd372fa-ecb2-4db0-bb71-8628a784ced9", "product_name": "Widget", "current_price": 299.99, "period_days": 30,
+        "average_price": 283.4, "min_price": 258.93, "max_price": 307.9, "trend": "decreasing", "is_good_deal": true, "data_points": 12
+      }],
+      "expect": {"known_amounts": [299.99, 283.4, 258.93, 307.9], "absent_amounts": [30, 12]}
+    },
+    {
+      "name": "price history with no rows",
+      "tool_results": [{"product_id": "0fd372fa-ecb2-4db0-bb71-8628a784ced9", "product_name": "Widget", "current_price": 199.5, "history": [], "summary": "No price history available"}],
+      "expect": {"known_amounts": [199.5]}
+    },
+    {
+      "name": "active deals: only a fixed coupon's value is dollars",
+      "tool_results": [{
+        "coupons": [
+          {"code": "TECHSAVE", "discount_type": "percentage", "discount_value": 15.0, "min_spend": 100.0, "max_discount": 75.0},
+          {"code": "NEWUSER", "discount_type": "fixed", "discount_value": 10.0, "min_spend": null, "max_discount": null}
+        ],
+        "promotions": []
+      }],
+      "expect": {"known_amounts": [100.0, 75.0, 10.0], "absent_amounts": [15.0, 99.0]}
+    },
+    {
+      "name": "loyalty tier nests next-tier amounts one object down",
+      "tool_results": [{
+        "tier": "bronze", "total_spend": 600.0, "discount_pct": 0.0, "free_shipping_threshold": 75.0, "priority_support": false,
+        "next_tier": {"name": "silver", "spend_needed": 400.0, "discount_pct": 5.0}
+      }],
+      "expect": {"known_amounts": [600.0, 75.0, 400.0]}
+    },
+    {
+      "name": "pricing and fulfillment amounts under their own names",
+      "tool_results": [
+        [{"tier": "silver", "min_spend_required": 1000.0}, {"tier": "gold", "min_spend_required": 3000.0}],
+        {"bundle_deals": [{"promotion_name": "Tech", "bundle_total": 389.98, "savings": 39.0}]},
+        {"original_total": 324.9, "total_savings": 162.44, "final_total": 162.46, "savings": [{"amount": 64.98}]},
+        {"total_shipping_cost": 5.99, "shipments": [{"shipping_cost": 5.99, "carrier": "Standard"}]}
+      ],
+      "expect": {"known_amounts": [1000.0, 3000.0, 389.98, 39.0, 324.9, 162.44, 162.46, 64.98, 5.99]}
+    },
+    {
+      "name": "a derived or invented figure is never recorded",
+      "tool_results": [{"total_savings": 162.44}],
+      "expect": {"known_amounts": [162.44], "absent_amounts": [2400.0, 162.45]}
+    }
+  ],
+  "user_text_cases": [
+    {"name": "dollar amounts", "text": "My cart total is $80 and I want something under $14.99", "amounts": [80.0, 14.99], "ids": []},
+    {"name": "a bare quantity is not an amount", "text": "I want 2 of them", "amounts": [], "ids": []},
+    {"name": "decimal and currency word", "text": "It was 12.50 last week, maybe 30 dollars now", "amounts": [12.5, 30.0], "ids": []},
+    {"name": "thousands separator", "text": "budget is $1,299.00", "amounts": [1299.0], "ids": []},
+    {"name": "a uuid is an id and its digits are not amounts", "text": "Tell me about 99999999-9999-9999-9999-999999999999", "amounts": [], "ids": ["99999999-9999-9999-9999-999999999999"]}
+  ],
+  "tool_argument_cases": [
+    {"name": "numbers and strings in arguments", "arguments": {"max_price": 14.99, "category": "audio", "note": "under $20"}, "amounts": [14.99, 20.0], "ids": []},
+    {"name": "nested arguments", "arguments": {"cart": {"items": [{"qty": 2, "price": 5.5}]}}, "amounts": [2.0, 5.5], "ids": []}
+  ],
+  "verdict_cases": [
+    {"name": "user typed it", "user_text": "My cart total is $80", "claim_amounts": [80.0], "statuses": ["user_supplied"]},
+    {"name": "model invented a figure next to a user's", "user_text": "My cart total is $80", "claim_amounts": [95.0], "statuses": ["unverifiable"]},
+    {"name": "a bare quantity does not ground a figure", "user_text": "I want 2 of them", "claim_amounts": [2.0], "statuses": ["unverifiable"]},
+    {"name": "argument is user supplied", "tool_arguments": {"max_price": 14.99, "category": "audio"}, "claim_amounts": [14.99], "statuses": ["user_supplied"]},
+    {"name": "ledger match wins over user supplied", "known_amounts": [80.0], "user_text": "$80", "claim_amounts": [80.0], "statuses": ["verified"]},
+    {"name": "derived difference of two grounded amounts", "known_amounts": [600.0, 1000.0], "claim_amounts": [400.0], "statuses": ["derived"]},
+    {"name": "derived sum to the cent", "known_amounts": [19.99, 5.01], "claim_amounts": [25.0], "statuses": ["derived"]},
+    {"name": "a wrong sum still fails", "known_amounts": [600.0, 1000.0], "claim_amounts": [450.0, 400.01], "statuses": ["unverifiable", "unverifiable"]},
+    {"name": "derived needs both operands grounded", "known_amounts": [600.0], "claim_amounts": [400.0], "statuses": ["unverifiable"]},
+    {"name": "user figure and ledger figure make a derived one", "known_amounts": [1000.0], "user_text": "I have $600 in credit", "claim_amounts": [400.0], "statuses": ["derived"]},
+    {"name": "id the user typed is user supplied without a database", "user_text": "Tell me about product 99999999-9999-9999-9999-999999999999", "bare_ids": ["99999999-9999-9999-9999-999999999999"], "statuses": ["user_supplied"]},
+    {"name": "id nobody supplied is unverifiable without a database", "bare_ids": ["99999999-9999-9999-9999-999999999999"], "statuses": ["unverifiable"]}
+  ]
+}
