@@ -10,12 +10,11 @@ record was written against.
 
 ## Context
 
-Decision D-6 in the execution plan (`.claude/plans/remaining-work.md`, 2026-11-21) says all six
-agents move to Foundry hosted agents, staged: a design note (this record), one specialist, the rest,
-the orchestrator last. D-9 (open) asks how a Foundry-hosted agent reaches the MCP servers: external
-ingress defended by the existing OAuth 2.1 tokens, or a VNet-integrated Foundry. M5 step 5 is a
-half-day spike that answers both. If the spike fails, the plan says the decision returns to the
-maintainer.
+The maintainer's decision D-6 (2026-11-21) is that all six agents move to Foundry hosted agents,
+staged: a design note (this record), one specialist, the rest, the orchestrator last. Open question
+D-9 asks how a Foundry-hosted agent reaches the MCP servers: external
+ingress defended by the existing OAuth 2.1 tokens, or a VNet-integrated Foundry. A half-day spike
+(step 5 of milestone M5) answers both. If the spike fails, the decision returns to the maintainer.
 
 Today every agent is a container on Azure Container Apps (Bicep written, never deployed), each
 reached by the orchestrator over A2A at an internal FQDN. The plan table says "Foundry anything:
@@ -337,7 +336,7 @@ migration earns its place only if the spike's numbers are good.
 
 | Stage | Work | Exit criterion |
 |---|---|---|
-| 0. M5 spike | S1 to S12 below, findings written into the plan | Gate set passes, D-9 recorded with evidence |
+| 0. M5 spike | S1 to S12 below, findings written back into this record | Gate set passes, D-9 recorded with evidence |
 | 1. Plumbing, no agent moves | ACR plus `az acr import` of the GHCR images (ACR is not built today); Bicep flag for the Foundry project and agent identities; an optional extra, not the lock, for `agent-framework-foundry-hosting` (the DevUI precedent in `CLAUDE.md`); a container entry that serves 8088 and `/readiness` and wraps `_run_agent_native_stream`; identity header adapter; Entra client in the orchestrator; registry value per agent | Existing replay gate and `fixture_drift` unchanged (exit 0); offline Bicep tests green |
 | 2. `review-sentiment` | One hosted agent registered in `AGENT_REGISTRY`; same prompt YAML and database | A live turn routed from the Container Apps orchestrator, frontend unchanged, deployed eval for the agent within its reference spread |
 | 3. The other four, one PR each | `pricing-promotions`, `product-discovery`, `inventory-fulfillment`, `order-management` (HITL and money last) | Each: its deployed eval within spread, its tool approvals still create exactly one row and execute once |
