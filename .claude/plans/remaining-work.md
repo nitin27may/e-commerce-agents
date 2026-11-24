@@ -240,12 +240,22 @@ before each release) screenshots the GitHub page and the site at desktop and mob
 the same height, asserts every nav page returns 200 with a rendered diagram where a diagram exists, and fails on a missing
 favicon or social image; the before and after screenshots go in the PR description.
 
-**Azure preparation branch (parallel, no deployment).** A separate branch prepares everything the deployment needs without
-creating anything: a free-tier parameter profile for the personal trial account (budget module 5 USD, no APIM, no Managed Redis, no
-ACR, no private networking, public images), the ordered deployment sequence with what each step creates, what each costs
-or is free, how long it takes and how to check it worked and undo it, read-only `what-if` and `validate` against the new account,
-and a rehearsed teardown. It is finished when the sequence document and the profile are merged and the what-if is clean; the
-real deployment still waits for NA-1 to NA-12.
+**Azure preparation branch (parallel, no deployment), revised 2026-11-23.** The deployment spins the whole stack, Foundry
+included, on the personal free-trial account; only the Foundry model costs real money, so it uses a low-cost deployment
+and the budget cap is 7 USD (the first 5 plus up to 2 for Foundry, raised only if a measured need appears). Postgres Flexible
+B1ms is spun too (the free account is expected to include about 750 hours of it, still to be verified), with Container Apps,
+Key Vault, Log Analytics, monitoring and the budget alerts. The branch delivers, without creating anything:
+1. The `free-trial` profile with the Foundry account, project, a cheap chat model and the smallest embedding model, and a cost
+   table dated from Azure's public price list.
+2. `scripts/azure/sanity.sh`, the last step of a deployment: database connectivity and content, a direct call to the deployed
+   Foundry model, one full application turn through the deployed orchestrator that touches a specialist and the database, and a
+   small evaluation run through the http target (cost cap about 0.10 USD). PASS or FAIL per check, no keys printed, nothing deleted:
+   teardown is a separate, explicit step the maintainer takes after reviewing the results, and a failed step prints what exists and how
+   to continue or clean up, so no half-built state is left unexplained.
+3. A "Deploy to Azure" button in the README (generated `infra/azuredeploy.json` kept in sync by a test, the portal link, the
+   `azd up` path beside it, a cost warning, and an honest statement of what the button cannot do without `azd` hooks).
+4. The ordered deployment sequence, read-only `what-if` and `validate`, and a rehearsed teardown.
+The real deployment still waits for NA-1 to NA-12.
 
 **Order and parallelism**
 
