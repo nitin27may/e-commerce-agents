@@ -51,8 +51,10 @@ middleware itself does not depend on it being called.
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
+from dataclasses import dataclass
 from typing import Any
 
 from agent_framework import (
@@ -94,6 +96,112 @@ def reset_run_cost() -> float:
 def get_run_tokens() -> int:
     """Return the input + output tokens recorded so far in this run's context."""
     return current_run_tokens.get() or 0
+
+
+# ── The ceiling covers a conversation turn, not one process's share of it ───────────────────────────────────────
+#
+# A turn is the orchestrator's model calls plus every specialist call it makes, and those run in other processes.
+# What the turn has already spent therefore travels with the call: the orchestrator sends ``x-turn-spend`` (its
+# own spend so far plus what earlier specialists reported on the wire) and a specialist counts that as already
+# used before its own first turn. The ceiling stays the one each process has configured; what changes is what is
+# compared with it. The header is accounting only, accepted solely on the inter-agent credential paths
+# (``shared/auth.py``), clamped to finite non-negative numbers, and never read from a user's request. A caller that
+# holds the shared secret could send zeros to look cheaper: it can already do far worse, and the header only ever
+# *adds* to what a specialist counts, so it cannot raise a ceiling.
+
+TURN_SPEND_HEADER = "x-turn-spend"
+_MAX_SPEND_USD = 1_000_000.0
+_MAX_SPEND_TOKENS = 10_000_000_000
+
+
+@dataclass(frozen=True)
+class TurnSpend:
+    """What a turn had spent before the current process's first model call."""
+
+    usd: float = 0.0
+    tokens: int = 0
+    unpriced: bool = False
+
+
+current_inherited_spend: ContextVar[TurnSpend | None] = ContextVar("current_inherited_spend", default=None)
+
+
+def format_turn_spend(spend: TurnSpend) -> str:
+    return f"usd={spend.usd:.6f};tokens={spend.tokens};unpriced={int(spend.unpriced)}"
+
+
+def parse_turn_spend(value: str | None) -> TurnSpend | None:
+    """A ``TurnSpend`` from the header value, or None when absent or malformed (never raises, never guesses)."""
+    if not value or len(value) > 200:
+        return None
+    fields: dict[str, str] = {}
+    for part in value.split(";"):
+        key, sep, raw = part.partition("=")
+        if not sep:
+            return None
+        fields[key.strip()] = raw.strip()
+    try:
+        usd = float(fields["usd"])
+        tokens = int(fields["tokens"])
+        unpriced = fields.get("unpriced", "0") == "1"
+    except (KeyError, ValueError):
+        return None
+    if not math.isfinite(usd) or usd < 0 or usd > _MAX_SPEND_USD or tokens < 0 or tokens > _MAX_SPEND_TOKENS:
+        return None
+    return TurnSpend(usd=usd, tokens=tokens, unpriced=unpriced)
+
+
+def adopt_turn_spend(value: str | None) -> None:
+    """Bind the spend an authenticated caller says the turn has used so far (a bad value binds nothing)."""
+    spend = parse_turn_spend(value)
+    if value and spend is None:
+        logger.warning("cost_budget.turn_spend_header_ignored")
+    current_inherited_spend.set(spend)
+
+
+def clear_turn_spend() -> None:
+    current_inherited_spend.set(None)
+
+
+def _inherited() -> TurnSpend:
+    return current_inherited_spend.get() or TurnSpend()
+
+
+def _remote():
+    """The orchestrator's accumulator of what specialists reported, or None outside an orchestrated turn."""
+    from shared.run_usage import current_run_usage
+
+    return current_run_usage.get()
+
+
+def turn_cost() -> float:
+    """Estimated USD this turn has spent: inherited, this process's own turns, and specialists' reports."""
+    remote = _remote()
+    return _inherited().usd + get_run_cost() + (remote.remote_cost_usd if remote else 0.0)
+
+
+def turn_tokens() -> int:
+    remote = _remote()
+    return _inherited().tokens + get_run_tokens() + (remote.remote_tokens if remote else 0)
+
+
+def turn_has_unpriced() -> bool:
+    remote = _remote()
+    return _inherited().unpriced or run_has_unpriced_turn() or bool(remote and remote.remote_unpriced)
+
+
+def outbound_turn_spend() -> TurnSpend | None:
+    """The spend to send with an inter-agent call, or None when the budget is off (nothing to send)."""
+    if settings.COST_BUDGET_MODE == "off":
+        return None
+    return TurnSpend(usd=turn_cost(), tokens=turn_tokens(), unpriced=turn_has_unpriced())
+
+
+def _note_would_block() -> None:
+    """Count one observe-mode would-block on the turn's usage record (written to ``usage_logs.would_block``)."""
+    remote = _remote()
+    if remote is not None:
+        remote.would_block += 1
 
 
 def token_budget() -> int | None:
@@ -228,31 +336,31 @@ class CostBudgetMiddleware(ChatMiddleware):
                 logger.warning("cost_budget.blocked_untracked budget_tokens=%d", tokens_cap)
                 context.result = self._refusal_result(context, UNTRACKED_REFUSAL_MESSAGE)
                 return
-            if get_run_tokens() >= tokens_cap:
+            if turn_tokens() >= tokens_cap:
                 self.blocked += 1
-                logger.warning(
-                    "cost_budget.blocked_tokens run_tokens=%d budget_tokens=%d", get_run_tokens(), tokens_cap
-                )
+                logger.warning("cost_budget.blocked_tokens run_tokens=%d budget_tokens=%d", turn_tokens(), tokens_cap)
                 context.result = self._refusal_result(context, TOKEN_BUDGET_REFUSAL_MESSAGE)
                 return
 
-        if mode == "observe" and tokens_cap is not None and get_run_tokens() >= tokens_cap:
+        would_block_now = False
+        if mode == "observe" and tokens_cap is not None and turn_tokens() >= tokens_cap:
             self.would_block += 1
-            logger.info("cost_budget.would_block_tokens run_tokens=%d budget_tokens=%d", get_run_tokens(), tokens_cap)
+            would_block_now = True
+            logger.info("cost_budget.would_block_tokens run_tokens=%d budget_tokens=%d", turn_tokens(), tokens_cap)
             record_would_block(agent=settings.OTEL_SERVICE_NAME)
 
-        if mode == "enforce" and budget is not None and run_has_unpriced_turn():
+        if mode == "enforce" and budget is not None and turn_has_unpriced():
             # Fail closed: a budget that cannot price a turn cannot promise the ceiling holds.
             self.blocked += 1
             logger.warning("cost_budget.blocked_unpriced budget_usd=%.4f", budget)
             context.result = self._refusal_result(context, UNPRICED_REFUSAL_MESSAGE)
             return
 
-        if mode == "enforce" and budget is not None and get_run_cost() > budget:
+        if mode == "enforce" and budget is not None and turn_cost() > budget:
             self.blocked += 1
             logger.warning(
                 "cost_budget.blocked run_cost_usd=%.4f budget_usd=%.4f",
-                get_run_cost(),
+                turn_cost(),
                 budget,
             )
             context.result = self._refusal_result(context, BUDGET_REFUSAL_MESSAGE)
@@ -260,16 +368,20 @@ class CostBudgetMiddleware(ChatMiddleware):
             # is made once the run is already over budget.
             return
 
-        if mode == "observe" and budget is not None and get_run_cost() > budget:
+        if mode == "observe" and budget is not None and turn_cost() > budget:
             # What enforce would have done here. Counting it is how an operator learns,
             # before switching to enforce, how often the ceiling would have bitten.
             self.would_block += 1
+            would_block_now = True
             logger.info(
                 "cost_budget.would_block run_cost_usd=%.4f budget_usd=%.4f",
-                get_run_cost(),
+                turn_cost(),
                 budget,
             )
             record_would_block(agent=settings.OTEL_SERVICE_NAME)
+        if would_block_now:
+            # One per LLM turn however many ceilings it crossed: the number a rate is measured from.
+            _note_would_block()
 
         await call_next()
 

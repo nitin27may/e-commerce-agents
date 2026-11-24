@@ -271,7 +271,7 @@ emitted as its own signal rather than left to GenAI spans:
 |---|---|
 | `ecommerce.llm.cost.usd` | Estimated spend per LLM turn, attributes `model`, `agent`, `mode` |
 | `ecommerce.llm.tokens` | Tokens per turn, split by `direction` (`input` / `output`) |
-| `cost_budget.would_block` | Turns the per-run ceiling would have refused. Counted in `observe` mode when a run is already past `COST_BUDGET_USD_PER_RUN`; nothing is refused |
+| `cost_budget.would_block` | Turns the ceiling would have refused. Counted in `observe` mode when the conversation turn (this process plus the spend the caller reported in `x-turn-spend`, plus specialists' reports on the orchestrator) is already past `COST_BUDGET_USD_PER_RUN` or the token ceiling; nothing is refused. The orchestrator's per-turn count is also stored in `usage_logs.would_block` |
 
 The estimate is `shared/cost.py` (Python) / `CostEstimator.cs` (.NET): uncached input + cached
 input + output, each agent priced at the model its usage reported (a dated snapshot such as

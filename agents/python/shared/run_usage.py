@@ -102,6 +102,15 @@ class RunUsage:
 
     def __init__(self) -> None:
         self.by_agent: dict[str, dict[str, Any]] = {}
+        # What the specialists reported, priced, for the turn-level cost ceiling
+        # (``shared/guardrails/cost_budget_middleware.py``): the orchestrator's own spend is counted by its middleware,
+        # so these are only the other processes' share.
+        self.remote_cost_usd = 0.0
+        self.remote_tokens = 0
+        self.remote_unpriced = False
+        # LLM turns that ``COST_BUDGET_MODE=observe`` counted as past the ceiling in this turn
+        # (``usage_logs.would_block``); the snapshot carries it only when it is non-zero.
+        self.would_block = 0
 
     def add(self, agent: str, usage: Mapping[str, Any] | None, model: str | None = None) -> None:
         wire = to_wire_usage(usage, model)
@@ -111,13 +120,34 @@ class RunUsage:
         for key in _COUNT_FIELDS:
             slot[key] += wire[key]
         slot["model"] = wire["model"]
+        if agent != ORCHESTRATOR:
+            self._add_remote_spend(wire)
+
+    def _add_remote_spend(self, wire: Mapping[str, Any]) -> None:
+        """Price one specialist's report into the turn ceiling's remote share (no price: flagged, not guessed)."""
+        from shared.cost import estimate_cost
+
+        self.remote_tokens += wire["input_token_count"] + wire["output_token_count"]
+        cost = estimate_cost(
+            str(wire["model"]), wire["input_token_count"], wire["output_token_count"], wire["cached_input_token_count"]
+        )
+        if cost is None:
+            self.remote_unpriced = True
+        else:
+            self.remote_cost_usd += cost
 
     def total(self) -> dict[str, int]:
         return {key: sum(slot[key] for slot in self.by_agent.values()) for key in _COUNT_FIELDS}
 
     def snapshot(self) -> dict[str, Any]:
         """``{"total": {...}, "by_agent": {...}}`` — the shape ``run_completed.usage`` carries."""
-        return {"total": self.total(), "by_agent": {name: dict(slot) for name, slot in self.by_agent.items()}}
+        snap: dict[str, Any] = {
+            "total": self.total(),
+            "by_agent": {name: dict(slot) for name, slot in self.by_agent.items()},
+        }
+        if self.would_block:
+            snap["would_block"] = self.would_block
+        return snap
 
     def snapshot_with(self, agent: str, usage: Mapping[str, Any] | None, model: str | None = None) -> dict[str, Any]:
         """:meth:`snapshot` plus one more agent's usage, without mutating this accumulator.
@@ -127,6 +157,7 @@ class RunUsage:
         """
         other = RunUsage()
         other.by_agent = {name: dict(slot) for name, slot in self.by_agent.items()}
+        other.would_block = self.would_block
         other.add(agent, usage, model)
         return other.snapshot()
 

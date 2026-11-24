@@ -118,6 +118,10 @@ def _apply_forwarded_identity(request: Request, agent_name: str) -> str | None:
     current_user_email.set(email)
     current_user_role.set(role)
     current_session_id.set(session_id)
+    # Only an authenticated agent may say what the turn has already spent (see cost_budget_middleware.py).
+    from shared.guardrails.cost_budget_middleware import TURN_SPEND_HEADER, adopt_turn_spend
+
+    adopt_turn_spend(request.headers.get(TURN_SPEND_HEADER))
     return None
 
 
@@ -136,6 +140,9 @@ class AgentAuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         begin_run()  # the id a gateway attributes this request's model calls to (shared/gateway_headers.py)
+        from shared.guardrails.cost_budget_middleware import clear_turn_spend
+
+        clear_turn_spend()  # a user's own request inherits no spend; an inter-agent one adopts it below
         agent_secret = request.headers.get("x-agent-secret")
 
         # oauth mode retires the shared secret entirely — a request bearing
