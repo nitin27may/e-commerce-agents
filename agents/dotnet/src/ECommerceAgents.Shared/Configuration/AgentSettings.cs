@@ -393,6 +393,14 @@ public sealed record AgentSettings
     // cross-agent tool-interception queue (HitlApprovalMiddleware).
     public bool HitlEnabled { get; init; } = true;
 
+    // Before a gated call parks for staff the customer is asked to confirm the exact action in plain words, and only an
+    // explicit yes on a later turn lets it park (Middleware/CustomerConfirmation.cs, #302/#307). Separate from HitlEnabled:
+    // staff approval still applies after the customer confirms. Off = park straight away. Python's CUSTOMER_CONFIRMATION_ENABLED.
+    public bool CustomerConfirmationEnabled { get; init; } = true;
+
+    // How long an unanswered confirmation stays answerable; a yes after this starts the question over.
+    public int CustomerConfirmationTtlSeconds { get; init; } = 600;
+
     // How long a resume claim ('processing' on hitl_requests) may be held before
     // another approver can take it over. Mirrors Python's HITL_CLAIM_TTL_SECONDS.
     public int HitlClaimTtlSeconds { get; init; } = 600;

@@ -155,6 +155,8 @@ public sealed class AgentSettingsLoaderTests
             ["RateLimitAuthMaxRequests"] = "RATE_LIMIT_AUTH_MAX_REQUESTS",
             ["RateLimitAuthIpMaxRequests"] = "RATE_LIMIT_AUTH_IP_MAX_REQUESTS",
             ["HitlResumeTimeoutSeconds"] = "HITL_RESUME_TIMEOUT_SECONDS",
+            ["CustomerConfirmationEnabled"] = "CUSTOMER_CONFIRMATION_ENABLED",
+            ["CustomerConfirmationTtlSeconds"] = "CUSTOMER_CONFIRMATION_TTL_SECONDS",
             ["RateLimitTrustedProxyHops"] = "RATE_LIMIT_TRUSTED_PROXY_HOPS",
             ["RateLimitTrustedProxies"] = "RATE_LIMIT_TRUSTED_PROXIES",
             ["CorsAllowedOrigins"] = "CORS_ALLOWED_ORIGINS",

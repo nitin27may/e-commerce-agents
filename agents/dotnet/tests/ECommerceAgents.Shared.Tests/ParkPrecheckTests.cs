@@ -41,7 +41,7 @@ public sealed class ParkPrecheckTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        var settings = new AgentSettings { DatabaseUrl = _pg.ConnectionString, HitlEnabled = true };
+        var settings = new AgentSettings { DatabaseUrl = _pg.ConnectionString, HitlEnabled = true, CustomerConfirmationEnabled = false };
         _pool = new DatabasePool(settings);
         _gate = new HitlGate(_pool, settings);
         await using var conn = await _pool.OpenAsync();
@@ -311,7 +311,7 @@ public sealed class ParkPrecheckTests : IAsyncLifetime
     public async Task GuardrailsOff_SkipsTheRoleLayerOnly()
     {
         var product = await ProductAsync(stock: 0);
-        var settings = new AgentSettings { DatabaseUrl = _pg.ConnectionString, HitlEnabled = true, GuardrailsEnabled = false };
+        var settings = new AgentSettings { DatabaseUrl = _pg.ConnectionString, HitlEnabled = true, GuardrailsEnabled = false, CustomerConfirmationEnabled = false };
         var gate = new HitlGate(_pool, settings);
 
         Parked(await gate.TryGateAsync("place_backorder", "inventory-fulfillment", new { productId = product.ToString(), quantity = 2 }, SellerAdmin));

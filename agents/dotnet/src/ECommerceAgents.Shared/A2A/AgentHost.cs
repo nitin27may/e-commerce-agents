@@ -303,6 +303,7 @@ public static class AgentHost
         using var notices = RequestContext.EnsureGateNotices();
         // What the caller typed this turn (not history): a figure the answer echoes from it is the user's own.
         RequestContext.CurrentGroundingLedger?.NoteUserText(message);
+        RequestContext.NoteTurnMessage(message);
 
         var response = await agent.RunAsync(messages);
         RequestContext.RecordUsage(
@@ -342,6 +343,7 @@ public static class AgentHost
         messages.Add(new ChatMessage(ChatRole.User, message));
 
         RequestContext.CurrentGroundingLedger?.NoteUserText(message);
+        RequestContext.NoteTurnMessage(message);
 
         var model = services.GetService<AgentSettings>()?.LlmModel ?? "";
         // No EnsureGateNotices here: an async iterator's AsyncLocal writes are dropped between MoveNextAsync calls, so a sink

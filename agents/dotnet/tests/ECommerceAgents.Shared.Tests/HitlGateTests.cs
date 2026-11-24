@@ -58,7 +58,7 @@ public sealed class HitlGateTests : IAsyncLifetime
     }
 
     private HitlGate BuildGate(bool hitlEnabled = true) =>
-        new(_pool, new AgentSettings { DatabaseUrl = _pg.ConnectionString, HitlEnabled = hitlEnabled });
+        new(_pool, new AgentSettings { DatabaseUrl = _pg.ConnectionString, HitlEnabled = hitlEnabled, CustomerConfirmationEnabled = false });
 
     [Fact]
     public async Task TryGateAsync_GatedTool_CreatesPendingRequestAndReturnsPendingApproval()

@@ -79,13 +79,15 @@ still guards an ungated registration of the same names). The specialist host clo
   else. The card shows "Awaiting staff review" to everyone but an admin, and an admin who asked for the return is still
   refused by the reviewer-is-not-requester rule.
 
-## Customer confirmation before a call parks (Python)
+## Customer confirmation before a call parks
 
 Staff approval answers "may this happen". Customer confirmation answers an earlier question: "is this what the customer
 meant". A model can pick the wrong order, mishear a request or act on an instruction it read in a tool result, and each of
 those used to become a staff task. In `tool` mode the host now asks the customer first, in plain words, and parks the call
 only after an explicit yes on a later turn (`shared/customer_confirmation.py`, issue #302). It is a different step from
-approval: no inbox row, no `approvals` audit event, nothing for staff to see until the customer has agreed.
+approval: no inbox row, no `approvals` audit event, nothing for staff to see until the customer has agreed. Both stacks
+do it (parity row 56): Python in `shared/customer_confirmation.py`, .NET in `CustomerConfirmation` and
+`CustomerConfirmationRepository`, over the same table and pinned to the same vector file.
 
 ```mermaid
 sequenceDiagram
@@ -133,6 +135,14 @@ The sentences are fixed and pinned, with the matching vectors, by `config/polici
 > Before I send this for approval, please confirm: you want me to cancel order 1f0e6a52-0000-4000-8000-000000000001. Reply "yes" to confirm, or tell me what to change. I have not submitted anything for approval.
 
 A decline answers "Understood. I have not submitted anything for approval."
+
+**On .NET** the step runs in `HitlGate.TryGateAsync` after `ParkPrechecks` and before the request is written. The sentence
+travels as the gate notice (the same path as a refusal), so the model is told the call was handled and the host appends the
+sentence word for word. The user's latest message is read from `messages` for `RequestContext.CurrentSessionId` and the
+caller; `RequestContext.CurrentTurnMessage` (what the request was sent as, noted by `AgentHost`) is the fallback only when
+there is no stored conversation. The services run with `InvariantGlobalization`, where `string.Normalize` leaves
+compatibility characters alone, so the matcher folds the fullwidth forms itself; any other compatibility character stays
+unfolded and so never counts as a yes.
 
 **Gotchas.** A first-turn "yes" with no question open confirms nothing. The eval harness reports a call the host asked
 about as a refused call (`RunOutcome.refused_calls`), never as an approval request, so an eval case that expects a park
@@ -432,9 +442,6 @@ staff-only, bounded by the assigned role, and keep their own status codes. There
 
 ## What is not built
 
-* *Customer confirmation on .NET.* Python asks the customer first (see above); the .NET host still parks a gated call as
-  soon as the model requests it (parity row 56). The matcher, key and sentences are pinned in
-  `config/policies/testdata/customer-confirmation.v1.json` for the port.
 * *Acting on an `auto` route for tool calls.* The route is recorded, and the request still waits for a person.
 * *A .NET SLA worker.* The Python worker serves both stacks; see [The .NET stack](#the-net-stack) for the one case
   it cannot finish.

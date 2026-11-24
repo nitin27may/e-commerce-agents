@@ -140,12 +140,21 @@ public sealed class HitlGate
     private readonly AgentSettings _settings;
     private readonly ILogger<HitlGate>? _logger;
     private readonly ApprovalIntake _intake;
+    private readonly CustomerConfirmationRepository _confirmations;
 
     /// <param name="intake">
     /// Opens the inbox <c>approvals</c> row beside each pending request. Defaults to one built over the same pool and the shared
     /// <c>approvals.yaml</c>; a test passes its own to control the policy.
     /// </param>
-    public HitlGate(DatabasePool pool, AgentSettings settings, ILogger<HitlGate>? logger = null, ApprovalIntake? intake = null)
+    /// <param name="confirmations">
+    /// The customer's own confirmation record (#307). Defaults to one over the same pool; a test passes its own only to share a pool.
+    /// </param>
+    public HitlGate(
+        DatabasePool pool,
+        AgentSettings settings,
+        ILogger<HitlGate>? logger = null,
+        ApprovalIntake? intake = null,
+        CustomerConfirmationRepository? confirmations = null)
     {
         _pool = pool ?? throw new ArgumentNullException(nameof(pool));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
@@ -154,6 +163,7 @@ public sealed class HitlGate
             pool,
             new ApprovalRepository(pool, settings, ApprovalPolicyLocator.Current),
             ApprovalPolicyLocator.Current);
+        _confirmations = confirmations ?? new CustomerConfirmationRepository(pool, settings, logger);
     }
 
     /// <summary>
@@ -192,6 +202,7 @@ public sealed class HitlGate
         }
 
         Guid requestId;
+        Guid? confirmationId = null;
         string toolInputJson;
         string requester;
         Guid? sessionGuid;
@@ -219,6 +230,27 @@ public sealed class HitlGate
                 }
             }
 
+            // The customer confirms the exact action first (not an approval: no inbox row). The first request for a call only opens the
+            // question; it parks when the same call arrives again after the user's own explicit yes.
+            if (_settings.CustomerConfirmationEnabled)
+            {
+                using var inputDoc = JsonDocument.Parse(toolInputJson);
+                var confirmation = await _confirmations.EvaluateAsync(
+                    email, RequestContext.CurrentSessionId, canonicalTool, inputDoc.RootElement.Clone(), RequestContext.CurrentTurnMessage);
+                confirmationId = confirmation.ConfirmationId;
+                if (confirmation.Kind is ConfirmationKind.Ask or ConfirmationKind.Declined)
+                {
+                    var asked = confirmation.Kind == ConfirmationKind.Ask;
+                    _logger?.LogInformation(
+                        "hitl.confirmation tool={Tool} outcome={Outcome}", LogSafe.Clean(toolName), asked ? "ask" : "declined");
+                    return new
+                    {
+                        status = asked ? "confirmation_required" : "declined",
+                        message = confirmation.Sentence ?? ParkPrechecks.ParkFailedReply,
+                    };
+                }
+            }
+
             await using var conn = await _pool.OpenAsync();
             requestId = await conn.ExecuteScalarAsync<Guid>(
                 @"INSERT INTO tool_approval_requests (user_email, session_id, agent_name, tool_name, tool_input)
@@ -243,6 +275,12 @@ public sealed class HitlGate
             // execute unapproved just because the approval record couldn't
             // be written. A transient DB error is not consent.
             _logger?.LogError(ex, "hitl.failed_to_create_request tool={Tool}", LogSafe.Clean(toolName));
+            // The customer's yes should still stand if the park could not be written.
+            if (confirmationId is { } consumed)
+            {
+                await _confirmations.ReopenAsync(consumed);
+            }
+
             return FailedClosed();
         }
 

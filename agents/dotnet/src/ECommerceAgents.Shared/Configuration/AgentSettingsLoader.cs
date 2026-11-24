@@ -279,6 +279,8 @@ public static class AgentSettingsLoader
             WorkflowVisualizationOnBuild = GetBool("WORKFLOW_VISUALIZATION_ON_BUILD", false),
             MafHandoffMode = Get("MAF_HANDOFF_MODE", "tool").ToLowerInvariant(),
             HitlEnabled = GetBool("HITL_ENABLED", true),
+            CustomerConfirmationEnabled = GetBool("CUSTOMER_CONFIRMATION_ENABLED", true),
+            CustomerConfirmationTtlSeconds = GetInt("CUSTOMER_CONFIRMATION_TTL_SECONDS", 600),
             HitlClaimTtlSeconds = GetInt("HITL_CLAIM_TTL_SECONDS", 600),
             HitlResumeTimeoutSeconds = ValidatedResumeTimeout(
                 GetInt("HITL_RESUME_TIMEOUT_SECONDS", 300), GetInt("HITL_CLAIM_TTL_SECONDS", 600)),

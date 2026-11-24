@@ -46,6 +46,9 @@ public static class RequestContext
     // The per-request grounding ledger: one mutable object shared by reference, so a tool call that records into it
     // from a task the function-invocation loop spawned is still seen by the code that verifies the answer.
     private static readonly AsyncLocal<Grounding.GroundingLedger?> _groundingLedger = new();
+    // What this request was sent as: the fallback for the customer confirmation when there is no stored conversation to read the
+    // user's own words from. A box for the reason _replayMiss is one (the streaming host's iterator drops AsyncLocal writes).
+    private static readonly AsyncLocal<StrongBox<string?>?> _turnMessage = new();
 
     public static string CurrentUserEmail
     {
@@ -316,6 +319,18 @@ public static class RequestContext
     /// </summary>
     public static Grounding.GroundingLedger? CurrentGroundingLedger => _groundingLedger.Value;
 
+    /// <summary>The message this request was sent as, or null (python's <c>user_message</c> argument to <c>park_pending_approvals</c>).</summary>
+    public static string? CurrentTurnMessage => _turnMessage.Value?.Value;
+
+    /// <summary>Records the message this request was sent as. A no-op outside a <see cref="Scope"/>.</summary>
+    public static void NoteTurnMessage(string? message)
+    {
+        if (_turnMessage.Value is { } box)
+        {
+            box.Value = message;
+        }
+    }
+
     public static IDisposable Scope(string email, string role, string sessionId, IReadOnlyList<HistoryEntry>? history = null)
     {
         var previous = (
@@ -333,7 +348,8 @@ public static class RequestContext
             RunTokens: _runTokens.Value,
             ReplayMiss: _replayMiss.Value,
             GateNotices: _gateNotices.Value,
-            GroundingLedger: _groundingLedger.Value
+            GroundingLedger: _groundingLedger.Value,
+            TurnMessage: _turnMessage.Value
         );
         _userEmail.Value = email;
         _userRole.Value = role;
@@ -348,6 +364,7 @@ public static class RequestContext
         _replayMiss.Value = new StrongBox<bool>(false);
         _gateNotices.Value = new List<string>();
         _groundingLedger.Value = new Grounding.GroundingLedger();
+        _turnMessage.Value = new StrongBox<string?>(null);
         // A fresh spend tally per scope. Nothing ever called ResetRunCost, and AddRunCost's lazy
         // creation happens inside whatever async frame first prices a turn — a change an
         // AsyncLocal does not carry back to the caller — so the running total, and with it the
@@ -371,6 +388,7 @@ public static class RequestContext
             _replayMiss.Value = previous.ReplayMiss;
             _gateNotices.Value = previous.GateNotices;
             _groundingLedger.Value = previous.GroundingLedger;
+            _turnMessage.Value = previous.TurnMessage;
         });
     }
 
