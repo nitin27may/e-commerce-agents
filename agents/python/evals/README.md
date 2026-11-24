@@ -507,6 +507,18 @@ keys one request and no fixture exists for turn 2.
 `--estimate` reads the replay fixtures by case text, so a live variant matches few of them; estimate with its replay
 twin instead (`--dataset evals/datasets/order_management.json --estimate`), which is the same cases and calls.
 
+## MCP path versus native tools
+
+`scripts/mcp-compare.sh` (the `MCP versus native tools` job in `.github/workflows/evals.yml`) runs `python -m evals.mcp_compare
+--run`: eleven tool calls natively and over the two MCP servers on the seeded database (value and shape differences), then the
+product-discovery and inventory-fulfillment cases twice under replay, `MCP_ENABLED=false` and `true`, comparing the tools
+called, tool-call accuracy, assertions and the answer. Keyless. The MCP path has its own replay fixtures (its tool schemas change
+the request key); record them like any other (`fixtures/README.md`) with `MCP_ENABLED=true` and the two servers reachable at
+`MCP_PRODUCT_SERVER_URL` / `MCP_INVENTORY_SERVER_URL`, on a freshly seeded database (a tool output that depends on database
+state, such as trending products, is part of the key). `mcp_known_differences.json` lists each accepted difference with a reason;
+an unlisted difference, an accuracy drop outside the listed cases and a stale listing all fail. Findings and numbers:
+`docs/mcp-integration.md`, *Native versus MCP, measured*.
+
 ## Indirect prompt injection
 
 `datasets/indirect_injection.json` (replay) and `datasets/live/indirect_injection.live.json` (live twin, one more case) put the

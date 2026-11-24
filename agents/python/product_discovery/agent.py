@@ -2,7 +2,7 @@
 
 When ``settings.MCP_ENABLED`` is True the agent connects to the Product MCP
 server (``ecommerce_mcp_product.server``) via ``MCPStreamableHTTPTool`` instead
-of calling asyncpg directly. Both modes expose the same capabilities.
+of calling asyncpg directly. The capabilities match; the MCP tools' results differ in places (docs/mcp-integration.md).
 """
 
 from agent_framework import Agent, MCPStreamableHTTPTool

@@ -1,0 +1,61 @@
+{
+  "cases": [
+    {
+      "dataset": "inventory_fulfillment",
+      "case": 1,
+      "reason": "Asked when the Sony is back in stock, the model on the MCP path calls get_warehouse_availability, not get_restock_schedule (accuracy 0.00 against 1.00). The MCP restock tool has a different description and result shape (see parity). One recorded model choice; whether the swap alone causes it is not shown. Left open in #303."
+    },
+    {
+      "dataset": "product_discovery",
+      "case": 2,
+      "reason": "Both paths score 0.50 and neither calls compare_products; the MCP recording searches a third time. A recorded model choice, no accuracy difference."
+    },
+    {
+      "dataset": "product_discovery",
+      "case": 4,
+      "reason": "The native recording also calls recall_memories (a local tool both paths offer); the MCP recording goes straight to semantic_search. Accuracy is 1.00 on both."
+    }
+  ],
+  "parity": [
+    {
+      "tool": "search_products",
+      "kind": "shape",
+      "reason": "The native tool also returns image_url and on_sale per product."
+    },
+    {
+      "tool": "get_product_details",
+      "kind": "shape",
+      "reason": "The native tool also returns in_stock, on_sale, seller and total_stock."
+    },
+    {
+      "tool": "compare_products",
+      "kind": "shape",
+      "reason": "The native tool also returns in_stock and original_price per product."
+    },
+    {
+      "tool": "get_price_history",
+      "kind": "shape",
+      "reason": "The native tool also returns a trend summary."
+    },
+    {
+      "tool": "get_restock_schedule",
+      "kind": "shape",
+      "reason": "The native tool returns an object (product, upcoming_restocks, next_restock); the MCP tool returns the bare list of restocks."
+    },
+    {
+      "tool": "estimate_shipping",
+      "kind": "shape",
+      "reason": "Different field names and nesting (options and shipping_options, destination and destination_region, ships_from as an object or a string)."
+    },
+    {
+      "tool": "compare_carriers",
+      "kind": "shape",
+      "reason": "The native tool returns an object with carriers, best_value and fastest; the MCP tool returns the bare list with estimated_days as a string."
+    },
+    {
+      "tool": "get_trending_products",
+      "kind": "value",
+      "reason": "Different ranking: the native tool orders by units sold, the MCP tool by order count, so the top five differ. The fields differ too (units_sold and order_count against recent_orders and review_count)."
+    }
+  ]
+}

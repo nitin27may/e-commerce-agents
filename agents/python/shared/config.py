@@ -408,7 +408,8 @@ class Settings(BaseSettings):
     # ── MCP integration (optional, flag-gated) ──────────────────────
     # When enabled, specialist agents connect to MCP servers for their data
     # layer instead of calling asyncpg directly. MCP servers must be running
-    # at the configured URLs. Both modes are semantically equivalent.
+    # at the configured URLs. The tools overlap but are not identical (field sets, one ranking): see
+    # docs/mcp-integration.md, "Native versus MCP, measured".
     MCP_ENABLED: bool = False
     MCP_PRODUCT_SERVER_URL: str = "http://localhost:9000/mcp"
     MCP_INVENTORY_SERVER_URL: str = "http://localhost:9001/mcp"

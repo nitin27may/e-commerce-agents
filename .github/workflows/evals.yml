@@ -31,6 +31,7 @@ on:
       - "agents/python/evals/**"
       - "agents/python/shared/**"
       - "agents/python/orchestrator/**"
+      - "agents/python/packages/**"
       - "agents/python/*_discovery/**"
       - "agents/python/*_management/**"
       - "agents/python/*_promotions/**"
@@ -194,6 +195,69 @@ jobs:
             agents/python/eval-*.json
             agents/python/eval-records-*.jsonl
           retention-days: 30
+
+  # MCP_ENABLED=true versus native tools, keyless. Starts the two MCP servers, runs the product-discovery and
+  # inventory-fulfillment cases both ways against the committed replay fixtures (the MCP path has its own recorded
+  # fixtures) and compares the tool results themselves, the tools the model called, tool-call accuracy and the
+  # answers. A difference not listed in agents/python/evals/mcp_known_differences.json fails the job.
+  # Reads no secret and calls no model.
+  mcp-parity:
+    name: MCP versus native tools
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ecommerce
+          POSTGRES_PASSWORD: ecommerce_secret
+          POSTGRES_DB: ecommerce_agents
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ecommerce"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+
+    env:
+      LLM_PROVIDER: replay
+      REPLAY_FIXTURES_DIR: evals/fixtures/replay
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: agents/python/uv.lock
+
+      - name: Install Python 3.12
+        run: uv python install 3.12
+
+      # --all-packages brings in the two MCP server packages (ecommerce-mcp-product, ecommerce-mcp-inventory).
+      - name: Sync dependencies
+        working-directory: agents/python
+        run: uv sync --all-packages --extra dev
+
+      - name: Load database schema
+        run: uv run --project agents/python python -m scripts.migrate
+
+      - name: Seed deterministic demo data
+        run: uv run --project agents/python python -m scripts.seed
+
+      - name: Compare the MCP path with native tools
+        run: scripts/mcp-compare.sh
+
+      # Same reason as the replay job: the servers were started with nohup and hold the uv cache open.
+      - name: Stop MCP servers
+        if: always()
+        run: |
+          pkill -f "uvicorn ecommerce_mcp_" || true
+          sleep 2
+          pkill -9 -f "uvicorn ecommerce_mcp_" || true
 
 
   # The live job. It SPENDS MONEY and runs on workflow_dispatch only; the `if` below repeats the
