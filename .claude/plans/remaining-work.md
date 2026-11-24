@@ -33,7 +33,7 @@ in total for this round); the Azure deployment is last and capped at 10 USD; an 
 | 2 | More autonomy events, optional ops-responder | #299 | in progress |
 | 2 | Orchestrator evals per mode, indirect injection, MCP-versus-native gate | #97, #303 | in progress |
 | 2 | Port customer confirmation to .NET (about 12 hours) | #307 | not started |
-| 3 | Missing course chapters that need no Azure | #100 | not started |
+| 3 | Missing course chapters that need no Azure | #100 | chapters 33 to 36 written (injection and red team, structured output, memory, model providers); deploy, durable workflows, Foundry evals and AG-UI remain |
 | 3 | Refresh live baselines after the keyed lanes, once | #97 | after wave 2 |
 | 3 | Tracker, CHANGELOG pass, full verification of green `main` | #103 | after wave 2 |
 | 4 | Azure free-trial deployment: what-if, deploy, sanity check, measured cost, teardown, verify clean | #89, #91, #100 (deploy chapter) | last; PR #263 held until then |

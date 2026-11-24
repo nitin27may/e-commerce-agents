@@ -1,6 +1,6 @@
 # E-Commerce Agents
 
-A complete, end-to-end multi-agent e-commerce application built on **Microsoft Agent Framework**, in **Python and .NET**, and a 34-chapter course that teaches every piece of it. It is a working application with a storefront, sign-in and roles, a database, approvals, evals and tracing, with the concepts written out in full beside the code that runs them.
+A complete, end-to-end multi-agent e-commerce application built on **Microsoft Agent Framework**, in **Python and .NET**, and a 38-chapter course that teaches every piece of it. It is a working application with a storefront, sign-in and roles, a database, approvals, evals and tracing, with the concepts written out in full beside the code that runs them.
 
 An orchestrator and five specialist agents collaborate over the A2A protocol to handle product discovery, orders, pricing, reviews, inventory and support. Five orchestration patterns are selectable at runtime from the same chat box, so you can watch the same question routed five different ways and compare what each costs.
 
@@ -43,7 +43,7 @@ running without an API key, WSL2 notes, and what to do when something breaks.
 | If you are… | Start here |
 |---|---|
 | New to agents — you have not built one before | [Concepts]({{ site.baseurl }}/concepts/) — what an agent is, why more than one, what a graph means here |
-| Ready to build | [Tutorials]({{ site.baseurl }}/tutorials/) — 34 chapters, Python and .NET, each runnable without an API key |
+| Ready to build | [Tutorials]({{ site.baseurl }}/tutorials/) — 38 chapters, Python and .NET (the last four Python only), each runnable without an API key |
 | Wanting to run the application | [Getting Started]({{ site.baseurl }}/getting-started/) |
 | Choosing an orchestration pattern | [Orchestration patterns]({{ site.baseurl }}/concepts/06-orchestration-patterns.html) and the [benchmark]({{ site.baseurl }}/reference/orchestration-benchmark.html): the same question routed five ways, with latency and cost |
 | Evaluating the architecture | [Architecture]({{ site.baseurl }}/architecture/) |

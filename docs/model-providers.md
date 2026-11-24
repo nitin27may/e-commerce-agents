@@ -2,7 +2,8 @@
 
 How to point the stack at each model provider, what has actually been exercised, and what has not.
 The variable reference lives in [configuration.md](configuration.md); this page is the practical
-side: copy a block, know what breaks.
+side: copy a block, know what breaks. [Chapter 36 of the course](../tutorials/36-model-providers/README.md) walks through
+the selection logic and the stored probe results with a runnable script.
 
 Everything below is selected by `LLM_PROVIDER` in `.env`; [run profiles](run-profiles.md) set a provider, its
 embeddings and its model together (`./scripts/dev.sh --profile NAME`), and `python -m scripts.doctor` checks the result. Embeddings are a separate setting group
