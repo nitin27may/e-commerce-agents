@@ -147,7 +147,7 @@ applies, tables that render on GitHub, every page in the docs nav, and no stale 
 | NA-10 | Done: dependency policy and the hardened merge helper (#247) |
 | NA-12 | Audit fixes in review (#265 and the follow-up groups); the `CHANGELOG.md [Unreleased]` regrouping waits for every PR to merge |
 | NA-13 and AZ preparation | In review: public presentation plan (#262), the free-trial Azure profile, sanity script and Deploy to Azure button (#263), Codespaces secrets and provider derivation (#264). The deployment itself stays last (AZ-LAST) |
-| NA-6 | Partly done, 2026-11-24: `gpt-4.1` k=1 live baselines (judge `gpt-5.4-mini`) for all six suites under `evals/baselines/python-inproc-gpt-4.1/`. Still to do: re-run pricing and inventory (the grounding ledger fix postdates them), k=3 and the http target, the `gpt-5.x` mini contrast model, the deliberate-regression check |
+| NA-6 | Partly done, 2026-11-24: `gpt-4.1` k=1 live baselines (judge `gpt-5.4-mini`) for all six suites under `evals/baselines/python-inproc-gpt-4.1/`. Pricing and inventory re-run after the ledger fix. Still to do: k=3 and the http target, the `gpt-5.x` mini contrast model, the deliberate-regression check |
 | NA-7, NA-11 | Not started: they wait on the datasets and the R1 sitting |
 
 **NA-1 Live-eval quality loop.** The round-two lane fixes the cancel case (empty response, pause not detected), the Dyson restock

@@ -16,6 +16,7 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ### Added
 
+- **Refreshed live baselines for pricing-promotions and inventory-fulfillment (k=1).** Re-run after the grounding ledger fix: pricing 28 of 29 passed, overall 0.95 (was 0.88), groundedness 0.96 (was 0.79); inventory 28 of 29, overall 0.94 (was 0.93), groundedness 1.00 (was 0.97).
 - **Live reference baselines for all six suites (NA-6, k=1).** Order-management (33 cases, 30 passed) and orchestrator (30 of 30) join the four from #276 under `evals/baselines/python-inproc-gpt-4.1/`, same setup and judge (`gpt-5.4-mini`, not self-judged); the scorecard and `docs/agent-quality.md` list all six.
 - **Fix: grounding ledger records more tool amounts.** `min_spend_required`, `bundle_total`, `savings`, `original_total`, `total_savings`, `final_total`, `shipping_cost` and `total_shipping_cost` now count as tool-reported figures, so answers quoting them are no longer scored `unverifiable`; derived or invented figures stay unverifiable.
 - **Seven more tutorial chapters run with no key** (04, 05, 07, 12, 13, 14, 16): their default prompts are recorded (22 responses), the keyless runner no longer skips them, and it clears chapter 04's saved session between runs. Only 20b (DevUI) is still skipped.
