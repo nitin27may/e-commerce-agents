@@ -151,6 +151,32 @@ public sealed class ReturnLabelRouteTests(PostgresFixture pg) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task TwoClientsBehindOneProxy_HaveSeparateBudgets()
+    {
+        var gate = new PerClientGate(budget: 3);
+        var settings = new AgentSettings { RateLimitTrustedProxyHops = 1 };
+        using var client = OrchestratorTestHost
+            .Create(_pool, r => r.MapReturnLabelRoutes(), settings, configureServices: s => s.AddSingleton<ILabelLookupGate>(gate))
+            .CreateClient();
+
+        async Task<HttpStatusCode> Lookup(string token, string forwardedFor)
+        {
+            var req = new HttpRequestMessage(HttpMethod.Get, $"/api/returns/{token}/label");
+            req.Headers.Add("X-Forwarded-For", forwardedFor);
+            return (await client.SendAsync(req)).StatusCode;
+        }
+
+        for (var i = 0; i < 3; i++)
+        {
+            // The left-most entry is the caller's own claim and changes every time: it must not mint a budget.
+            (await Lookup(new string('f', 32), $"10.0.0.{i}, 203.0.113.1")).Should().Be(HttpStatusCode.NotFound);
+        }
+
+        (await Lookup(new string('e', 32), "10.9.9.9, 203.0.113.1")).Should().Be(HttpStatusCode.TooManyRequests);
+        (await Lookup(new string('e', 32), "10.9.9.9, 203.0.113.2")).Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
     public async Task ValidLookups_NeverSpendTheBudget()
     {
         await UseTokenAsync(NewToken);
@@ -179,5 +205,41 @@ public sealed class ReturnLabelRouteTests(PostgresFixture pg) : IAsyncLifetime
             Interlocked.Increment(ref _misses);
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class PerClientGate(int budget) : ILabelLookupGate
+    {
+        private readonly ConcurrentDictionary<string, int> _misses = new();
+
+        public Task<bool> IsBlockedAsync(string? clientIp, CancellationToken ct = default) =>
+            Task.FromResult(_misses.GetValueOrDefault(clientIp ?? "") >= budget);
+
+        public Task RecordMissAsync(string? clientIp, CancellationToken ct = default)
+        {
+            _misses.AddOrUpdate(clientIp ?? "", 1, (_, n) => n + 1);
+            return Task.CompletedTask;
+        }
+    }
+}
+
+/// <summary>Removal marker for the legacy 12-character label-token branch (Python twin: test_client_address.py).</summary>
+public sealed class ReturnLabelTokenRemovalTests
+{
+    [Fact]
+    public void RemovalMarker_IsDec312026_AndTheDueCheckIsClockInjectable()
+    {
+        ReturnLabelToken.LegacyRemoveAfter.Should().Be(new DateOnly(2026, 12, 31));
+        ReturnLabelToken.LegacyBranchDueForRemoval(new DateOnly(2026, 12, 31)).Should().BeFalse();
+        ReturnLabelToken.LegacyBranchDueForRemoval(new DateOnly(2027, 1, 1)).Should().BeTrue();
+    }
+
+    [Fact]
+    public void LegacyTokenBranch_IsDueForRemoval()
+    {
+        // Real clock, on purpose: this is the reminder.
+        ReturnLabelToken.LegacyBranchDueForRemoval().Should().BeFalse(
+            $"{ReturnLabelToken.LegacyRemoveAfter:yyyy-MM-dd} has passed: delete the legacy return-label token branch " +
+            "(ReturnLabelToken.IsLegacy/LegacyExpired, the 12-character length in IsWellFormed, their call sites in " +
+            "ReturnLabelRoutes, the Python shared/return_label.py twin) and then delete this test.");
     }
 }

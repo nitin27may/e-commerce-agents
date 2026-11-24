@@ -156,6 +156,7 @@ public sealed class AgentSettingsLoaderTests
             ["RateLimitAuthIpMaxRequests"] = "RATE_LIMIT_AUTH_IP_MAX_REQUESTS",
             ["HitlResumeTimeoutSeconds"] = "HITL_RESUME_TIMEOUT_SECONDS",
             ["RateLimitTrustedProxyHops"] = "RATE_LIMIT_TRUSTED_PROXY_HOPS",
+            ["RateLimitTrustedProxies"] = "RATE_LIMIT_TRUSTED_PROXIES",
             ["CorsAllowedOrigins"] = "CORS_ALLOWED_ORIGINS",
             ["CostBudgetMode"] = "COST_BUDGET_MODE",
             ["GroundingMode"] = "GROUNDING_MODE",

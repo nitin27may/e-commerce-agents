@@ -43,8 +43,7 @@ public static class ReturnLabelRoutes
         var ip = ClientAddress.Resolve(
             http.Request.Headers["X-Forwarded-For"].FirstOrDefault(),
             http.Connection.RemoteIpAddress,
-            settings.RateLimitTrustedProxyHops
-        );
+            settings);
         if (gate is not null && await gate.IsBlockedAsync(ip, http.RequestAborted))
         {
             return Results.Json(
@@ -255,6 +254,17 @@ public static class ReturnLabelToken
     public const int LegacyLength = 12;
     public const int Length = 32;
     public static readonly TimeSpan LegacyValidity = TimeSpan.FromDays(30);
+
+    /// <summary>
+    /// Every legacy token is past its 30 days by this date, so the legacy branch (<c>IsLegacy</c>, <c>LegacyExpired</c>,
+    /// the 12-character length in <c>IsWellFormed</c> and the call sites in <c>ReturnLabelRoutes</c>) is dead code to
+    /// delete. <c>ReturnLabelTokenRemovalTests</c> fails after it. Python twin: <c>LEGACY_LABEL_TOKEN_REMOVE_AFTER</c>.
+    /// </summary>
+    public static readonly DateOnly LegacyRemoveAfter = new(2026, 12, 31);
+
+    /// <summary>True once <paramref name="today"/> (default: the real UTC date; injectable for tests) is past the marker.</summary>
+    public static bool LegacyBranchDueForRemoval(DateOnly? today = null) =>
+        (today ?? DateOnly.FromDateTime(DateTime.UtcNow)) > LegacyRemoveAfter;
 
     public static string New() => System.Security.Cryptography.RandomNumberGenerator.GetHexString(Length).ToLowerInvariant();
 

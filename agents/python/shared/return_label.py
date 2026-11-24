@@ -11,11 +11,16 @@ from __future__ import annotations
 
 import re
 import secrets
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 LABEL_TOKEN_BYTES = 16
 LEGACY_TOKEN_LENGTH = 12
 LEGACY_TOKEN_VALIDITY = timedelta(days=30)
+# Every legacy token is past its 30 days by this date, so the legacy branch (``is_legacy``,
+# ``legacy_token_expired``, the 12-character alternative in ``_TOKEN_RE`` and the call sites in
+# ``orchestrator/routes/legacy.py``) is dead code to delete. ``test_legacy_token_branch_is_due_for_removal``
+# fails after it. The .NET twin is ``ReturnLabelToken.LegacyRemoveAfter``.
+LEGACY_LABEL_TOKEN_REMOVE_AFTER = date(2026, 12, 31)
 
 _TOKEN_RE = re.compile(r"[0-9a-f]{32}|[0-9a-f]{12}")
 
@@ -39,3 +44,8 @@ def legacy_token_expired(created_at: datetime | None, now: datetime | None = Non
     if created_at.tzinfo is None:
         created_at = created_at.replace(tzinfo=UTC)
     return (now or datetime.now(UTC)) - created_at > LEGACY_TOKEN_VALIDITY
+
+
+def legacy_branch_due_for_removal(today: date | None = None) -> bool:
+    """True once ``today`` (default: the real UTC date; injectable for tests) is past the removal marker."""
+    return (today or datetime.now(UTC).date()) > LEGACY_LABEL_TOKEN_REMOVE_AFTER

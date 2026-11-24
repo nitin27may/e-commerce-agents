@@ -170,8 +170,17 @@ brings CORS back with it.
   treats only a 401/403 from refresh as a dead session; a 429, 5xx or network error keeps the user
   signed in and surfaces a retryable error. Local Playwright runs log in repeatedly as a few accounts
   from one address, so raise both limits (e.g. 1000 and 10000) in `.env` before running them.
-- **Client address.** The orchestrator takes the entry `RATE_LIMIT_TRUSTED_PROXY_HOPS` (default 1)
-  places from the **right** of `X-Forwarded-For`; anything to its left is caller-supplied and ignored.
+- **Client address.** One derivation serves every limit keyed by address (chat, the auth ceiling and
+  per-account budget, and the unknown return-label budget), identical on both stacks. The orchestrator
+  takes the entry `RATE_LIMIT_TRUSTED_PROXY_HOPS` places from the **right** of `X-Forwarded-For`;
+  anything to its left is caller-supplied and ignored. The **code default is 0** (header ignored, the
+  TCP peer is the address: safe for a directly exposed orchestrator); the shipped compose files set 1
+  and the Bicep apps set 2. `RATE_LIMIT_TRUSTED_PROXIES` (comma-separated IPs or CIDRs, empty = no gate)
+  adds a peer gate: the header is honoured only when the TCP peer is in the list, so a caller reaching
+  the orchestrator directly cannot pick its bucket. The compose files default it to the private ranges
+  plus loopback; Bicep leaves it empty (the Container Apps ingress peer range is not pinned). A header
+  that is missing, shorter than the hop count or not an IP literal falls back to the peer, and a gate
+  that parses to nothing trusts nobody.
   The Next proxy writes that entry. **Limitation:** a Next 16 route handler cannot know the client
   address — there is no `NextRequest.ip` and the socket is not exposed; Next only fills
   `X-Forwarded-For` from the socket when the header is absent, so a browser-supplied value is

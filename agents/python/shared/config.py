@@ -108,9 +108,17 @@ class Settings(BaseSettings):
     # X-Forwarded-For and are trusted to do so. The client address is the entry
     # that many places from the RIGHT of the header (1 = the right-most entry,
     # i.e. what the Next.js proxy appended). Entries further left were supplied
-    # by the caller and are never trusted. 0 ignores the header entirely and
-    # uses the TCP peer address.
-    RATE_LIMIT_TRUSTED_PROXY_HOPS: int = 1
+    # by the caller and are never trusted. 0 (the code default, safe for a
+    # directly exposed orchestrator) ignores the header entirely and uses the
+    # TCP peer address. The shipped compose files and Bicep set it for the
+    # stack they ship.
+    RATE_LIMIT_TRUSTED_PROXY_HOPS: int = 0
+    # Optional peer gate: comma-separated IPs / CIDRs allowed to set
+    # X-Forwarded-For. When set, the header is honoured only if the TCP peer is
+    # in the list; any other peer is keyed by its own address, so a caller that
+    # reaches the orchestrator directly cannot choose its bucket. Empty = no
+    # gate (hops alone decide). A value that parses to nothing trusts nobody.
+    RATE_LIMIT_TRUSTED_PROXIES: str = ""
 
     # ── CORS ────────────────────────────────────────────────────────
     # Comma-separated list of origins allowed to call the orchestrator from a

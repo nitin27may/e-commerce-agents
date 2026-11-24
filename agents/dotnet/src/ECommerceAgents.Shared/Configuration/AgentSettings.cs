@@ -116,10 +116,17 @@ public sealed record AgentSettings
 
     /// <summary>
     /// Trusted reverse proxies that append to <c>X-Forwarded-For</c>; the client address is the
-    /// entry this many places from the right. 0 ignores the header. Python's
+    /// entry this many places from the right. 0 (the code default, safe for a directly
+    /// exposed orchestrator) ignores the header; the shipped compose files and Bicep set it. Python's
     /// <c>RATE_LIMIT_TRUSTED_PROXY_HOPS</c>.
     /// </summary>
-    public int RateLimitTrustedProxyHops { get; init; } = 1;
+    public int RateLimitTrustedProxyHops { get; init; } = 0;
+
+    /// <summary>
+    /// Optional peer gate: comma-separated IPs / CIDRs allowed to set <c>X-Forwarded-For</c>. When set, the header
+    /// is honoured only if the TCP peer is in the list. Empty = no gate. Python's <c>RATE_LIMIT_TRUSTED_PROXIES</c>.
+    /// </summary>
+    public string RateLimitTrustedProxies { get; init; } = "";
 
     /// <summary>Comma-separated browser origins allowed by CORS - Python's <c>CORS_ALLOWED_ORIGINS</c>.</summary>
     public string CorsAllowedOrigins { get; init; } = "http://localhost:3000";

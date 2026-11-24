@@ -684,7 +684,7 @@ public static class ChatRoutes
             var ip = ClientAddress.Resolve(
                 http.Request.Headers["X-Forwarded-For"].FirstOrDefault(),
                 http.Connection.RemoteIpAddress,
-                settings.RateLimitTrustedProxyHops);
+                settings);
 
             var key = SlidingWindowRateLimiter.KeyFor(RequestContext.CurrentUserEmail, ip);
             if (!await limiter.TryAcquireAsync(key, http.RequestAborted))
