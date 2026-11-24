@@ -257,6 +257,28 @@ Key Vault, Log Analytics, monitoring and the budget alerts. The branch delivers,
 4. The ordered deployment sequence, read-only `what-if` and `validate`, and a rehearsed teardown.
 The real deployment still waits for NA-1 to NA-12.
 
+**NA-14 Local end to end, then Azure (maintainer decision, 2026-11-23).** The next goal is to prove the whole project works
+on a laptop before any Azure layer is added. Live evaluator runs inside CI are not a gate for this: the manual CI job
+(NA-5) is built and tested for trigger safety, and a user who wants it supplies their own keys as repository secrets; if the
+same suites pass locally with the same inputs, that is the evidence. The order is: (1) land the open PRs through the serial
+merge queue; (2) a completeness audit lists every half-built or never-exercised feature outside the Azure deployment; (3) each
+item is finished or explicitly recorded as out of scope with its reason; (4) one full local verification pass; (5) the docs
+audit fixes (NA-12) and the public-presentation fixes (NA-13); (6) Codespaces guidance (NA-15); (7) only then the Azure deployment.
+The full local verification pass is: clean `dev.sh` build and seed, the replay gate (`scripts/replay-evals.sh --setup`),
+`fixture_drift`, the whole Python and .NET suites, the Playwright e2e specs, the mixed-stack boots, the tutorials keyless
+runner, the live quality suites on the keys in the local environment (read by name), and the multi-turn and http-target runs.
+It needs ports 8080 to 8085, so it starts when the other session's demo stack is stopped.
+
+**NA-15 Codespaces: one click, and clear guidance on keys.** The badge is fixed to the same height as the others (NA-13 PR-1).
+The devcontainer is checked to build and start the stack key-free, and the README, the quick start and a Codespaces section of
+`docs/configuration.md` say how a user supplies model keys the safe way: as Codespaces secrets (repository or personal
+settings), declared in `devcontainer.json` under `secrets` so the creation screen prompts for them with a description, never
+committed and never put in `.env` in the repo; which variables each provider needs (`OPENAI_API_KEY`, or the Azure OpenAI
+endpoint, key and deployment names, or an OpenAI-compatible base URL), how to set them after the Codespace exists (add the secret,
+then rebuild or reload the environment so it is injected), how to verify with `python -m scripts.doctor`, and that without
+a key the stack runs in replay mode. Acceptance: the devcontainer builds in Docker locally; the doctor command reports the
+provider from the injected variables; a user who has never seen the repo can follow the section from the badge to a working chat.
+
 **Order and parallelism**
 
 ```mermaid
