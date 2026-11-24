@@ -7,7 +7,7 @@
         "contents": [
           {
             "additional_properties": {},
-            "text": "I need something cozy for winter, maybe a blanket or warm jacket",
+            "text": "Show me the full details for the Sony WH-1000XM5",
             "type": "text"
           }
         ],
@@ -93,6 +93,27 @@
       },
       {
         "function": {
+          "description": "Get detailed warehouse availability for a product including restock schedules.",
+          "name": "get_warehouse_availability",
+          "parameters": {
+            "properties": {
+              "product_id": {
+                "description": "UUID of the product",
+                "title": "Product Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "product_id"
+            ],
+            "title": "get_warehouse_availability_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      },
+      {
+        "function": {
           "description": "Get the current user's profile including loyalty tier and spending history.",
           "name": "get_user_profile",
           "parameters": {
@@ -124,7 +145,72 @@
       },
       {
         "function": {
-          "description": "Search the product catalog with keyword + optional filters.",
+          "description": "Store a memory about the current user's preferences, behavior, or feedback for future reference.",
+          "name": "store_memory",
+          "parameters": {
+            "properties": {
+              "category": {
+                "description": "Memory category: preference, behavior, feedback, or context",
+                "title": "Category",
+                "type": "string"
+              },
+              "content": {
+                "description": "The memory content to store",
+                "title": "Content",
+                "type": "string"
+              },
+              "importance": {
+                "default": 5,
+                "description": "Importance score from 1 (low) to 10 (high)",
+                "title": "Importance",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "category",
+              "content"
+            ],
+            "title": "store_memory_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      },
+      {
+        "function": {
+          "description": "Recall stored memories about the current user's preferences and past interactions.",
+          "name": "recall_memories",
+          "parameters": {
+            "properties": {
+              "category": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Filter by category: preference, behavior, feedback, context",
+                "title": "Category"
+              },
+              "limit": {
+                "default": 10,
+                "description": "Max memories to return",
+                "title": "Limit",
+                "type": "integer"
+              }
+            },
+            "title": "recall_memories_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      },
+      {
+        "function": {
+          "description": "Search the product catalog using natural language. Supports filtering by category, price range, and rating.",
           "name": "search_products",
           "parameters": {
             "properties": {
@@ -138,10 +224,12 @@
                   }
                 ],
                 "default": null,
+                "description": "Filter by category: Electronics, Clothing, Home, Sports, Books",
                 "title": "Category"
               },
               "limit": {
                 "default": 10,
+                "description": "Max results to return",
                 "title": "Limit",
                 "type": "integer"
               },
@@ -155,6 +243,7 @@
                   }
                 ],
                 "default": null,
+                "description": "Maximum price filter",
                 "title": "Max Price"
               },
               "min_price": {
@@ -167,6 +256,7 @@
                   }
                 ],
                 "default": null,
+                "description": "Minimum price filter",
                 "title": "Min Price"
               },
               "min_rating": {
@@ -179,6 +269,7 @@
                   }
                 ],
                 "default": null,
+                "description": "Minimum rating (1-5)",
                 "title": "Min Rating"
               },
               "query": {
@@ -191,6 +282,7 @@
                   }
                 ],
                 "default": null,
+                "description": "Natural language search query (optional if using category filter)",
                 "title": "Query"
               },
               "sort_by": {
@@ -203,6 +295,7 @@
                   }
                 ],
                 "default": null,
+                "description": "Sort by: price_asc, price_desc, rating, newest",
                 "title": "Sort By"
               }
             },
@@ -214,11 +307,12 @@
       },
       {
         "function": {
-          "description": "Get full product details including specs, stock status, and seller info.",
+          "description": "Get complete details for a specific product including full specs.",
           "name": "get_product_details",
           "parameters": {
             "properties": {
               "product_id": {
+                "description": "UUID of the product",
                 "title": "Product Id",
                 "type": "string"
               }
@@ -234,11 +328,12 @@
       },
       {
         "function": {
-          "description": "Compare 2\u20133 products side by side on price, rating, specs, and stock.",
+          "description": "Compare 2-3 products side-by-side on key attributes.",
           "name": "compare_products",
           "parameters": {
             "properties": {
               "product_ids": {
+                "description": "List of 2-3 product UUIDs to compare",
                 "items": {
                   "type": "string"
                 },
@@ -257,7 +352,7 @@
       },
       {
         "function": {
-          "description": "Get trending products ranked by recent order volume.",
+          "description": "Get trending products based on recent order volume.",
           "name": "get_trending_products",
           "parameters": {
             "properties": {
@@ -271,15 +366,18 @@
                   }
                 ],
                 "default": null,
+                "description": "Optional category filter",
                 "title": "Category"
               },
               "days": {
                 "default": 30,
+                "description": "Trending period in days",
                 "title": "Days",
                 "type": "integer"
               },
               "limit": {
                 "default": 10,
+                "description": "Max results",
                 "title": "Limit",
                 "type": "integer"
               }
@@ -292,16 +390,18 @@
       },
       {
         "function": {
-          "description": "Get price trend data with average, min, max, and a deal-quality signal.",
+          "description": "Get price history for a product over a specified number of days. Useful for showing price trends and identifying deals.",
           "name": "get_price_history",
           "parameters": {
             "properties": {
               "days": {
                 "default": 30,
+                "description": "Number of days of history (30, 60, or 90)",
                 "title": "Days",
                 "type": "integer"
               },
               "product_id": {
+                "description": "UUID of the product",
                 "title": "Product Id",
                 "type": "string"
               }
@@ -318,7 +418,7 @@
     ]
   },
   "response": {
-    "created_at": "2026-11-24T16:41:42.000000Z",
+    "created_at": "2026-11-24T19:02:00.000000Z",
     "finish_reason": "tool_calls",
     "messages": [
       {
@@ -326,10 +426,10 @@
         "contents": [
           {
             "additional_properties": {},
-            "arguments": "{\"query\":\"cozy for winter blanket or warm jacket\",\"limit\":8}",
-            "call_id": "call_S9ZCgkiIGz7Ry31uHbC36moX",
+            "arguments": "{\"query\":\"Sony WH-1000XM5\",\"limit\":1}",
+            "call_id": "call_ERbfDO2CeQ63KLyxe4SaHwsa",
             "hosted": false,
-            "name": "semantic_search",
+            "name": "search_products",
             "type": "function_call"
           }
         ],
@@ -338,20 +438,20 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-EnnsMJYtrP5HIjostzheTghHttdYh",
+    "response_id": "chatcmpl-Enq48QBB0yGLDuLGtOwMyagW7dwUL",
     "type": "chat_response",
     "usage_details": {
-      "cache_read_input_token_count": 3584,
+      "cache_read_input_token_count": 3968,
       "completion/accepted_prediction_tokens": 0,
       "completion/audio_tokens": 0,
       "completion/reasoning_tokens": 0,
       "completion/rejected_prediction_tokens": 0,
-      "input_token_count": 3750,
-      "output_token_count": 25,
+      "input_token_count": 4093,
+      "output_token_count": 24,
       "prompt/audio_tokens": 0,
-      "prompt/cached_tokens": 3584,
+      "prompt/cached_tokens": 3968,
       "reasoning_output_token_count": 0,
-      "total_token_count": 3775
+      "total_token_count": 4117
     }
   }
 }

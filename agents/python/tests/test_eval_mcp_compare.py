@@ -156,7 +156,9 @@ def test_run_parity_uses_the_native_function_and_the_mcp_callable(monkeypatch: p
 
 def test_the_committed_known_differences_load_with_a_reason_each() -> None:
     known = mc.load_known_differences()
-    assert known.cases and known.parity
+    assert known.cases
+    # The tools are twins (#320): no tool is accepted as differing in shape or value any more.
+    assert not known.parity
     assert all(reason for reason in known.cases.values())
     assert all(kind in ("shape", "value") and reason for kind, reason in known.parity.values())
     parity_tools = {c.tool for c in mc.PARITY_CALLS}

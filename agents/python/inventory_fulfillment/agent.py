@@ -2,7 +2,8 @@
 
 When ``settings.MCP_ENABLED`` is True the agent connects to the Inventory MCP
 server (``ecommerce_mcp_inventory.server``) via ``MCPStreamableHTTPTool`` instead
-of calling asyncpg directly. The capabilities match; the MCP tools' results differ in places (docs/mcp-integration.md).
+of calling asyncpg directly. The MCP tools mirror their native twins (name, description, schema, query, result), and
+tests/test_mcp_native_equivalence.py keeps them so (docs/mcp-integration.md).
 """
 
 from agent_framework import Agent, MCPStreamableHTTPTool

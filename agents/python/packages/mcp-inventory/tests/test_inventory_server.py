@@ -144,9 +144,11 @@ async def test_get_restock_schedule_empty(
 ) -> None:
     from ecommerce_mcp_inventory.server import get_restock_schedule
 
-    # No restock rows seeded — should return empty list without error
+    # No restock rows seeded: the native tool's object, with an empty list and no next date
     result = await get_restock_schedule(product_id=product_and_warehouse["product_id"])
-    assert isinstance(result, list)
+    assert result["upcoming_restocks"] == []
+    assert result["next_restock"] is None
+    assert result["product_name"] == "Inv Widget"
 
 
 @pytest.mark.integration
@@ -155,6 +157,7 @@ async def test_compare_carriers_no_rates(
 ) -> None:
     from ecommerce_mcp_inventory.server import compare_carriers
 
-    # No shipping_rates seeded — should return empty list without error
+    # No shipping_rates seeded: the native tool's object, with no carriers and a message
     result = await compare_carriers(region_from="east", region_to="west")
-    assert isinstance(result, list)
+    assert result["carriers"] == []
+    assert "message" in result

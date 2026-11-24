@@ -7,7 +7,7 @@
         "contents": [
           {
             "additional_properties": {},
-            "text": "wireless headphones with noise cancellation under $300",
+            "text": "I need something cozy for winter, maybe a blanket or warm jacket",
             "type": "text"
           }
         ],
@@ -19,10 +19,10 @@
         "contents": [
           {
             "additional_properties": {},
-            "arguments": "{\"query\":\"wireless headphones noise cancellation\",\"max_price\":300,\"category\":\"Electronics\",\"limit\":10,\"sort_by\":\"rating\"}",
-            "call_id": "call_pgmVlvB4rNzifTlgums4jLp5",
+            "arguments": "{\"query\":\"cozy for winter, blanket or warm jacket\",\"limit\":6}",
+            "call_id": "call_OoGGBSlzSa4s3vGy8xKC6mUL",
             "hosted": false,
-            "name": "search_products",
+            "name": "semantic_search",
             "type": "function_call"
           }
         ],
@@ -33,91 +33,16 @@
         "additional_properties": {},
         "contents": [
           {
-            "additional_properties": {
-              "_mcp_tool_result_host_payload": {
-                "_meta": {
-                  "io.modelcontextprotocol/serverInfo": {
-                    "name": "product-discovery-mcp",
-                    "version": ""
-                  }
-                },
-                "content": [
-                  {
-                    "text": "{\n  \"id\": \"035ae219-49be-59e2-a71e-94f06ca0fec9\",\n  \"name\": \"Logitech MX Master 3S\",\n  \"category\": \"Electronics\",\n  \"brand\": \"Logitech\",\n  \"price\": 99.99,\n  \"original_price\": 129.99,\n  \"rating\": 4.8,\n  \"review_count\": 16,\n  \"description\": \"Advanced wireless mouse with 8K DPI, quiet clicks, MagSpeed scroll, and multi-device support.\"\n}",
-                    "type": "text"
-                  },
-                  {
-                    "text": "{\n  \"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\",\n  \"name\": \"Sony WH-1000XM5\",\n  \"category\": \"Electronics\",\n  \"brand\": \"Sony\",\n  \"price\": 299.99,\n  \"original_price\": 349.99,\n  \"rating\": 4.7,\n  \"review_count\": 15,\n  \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\"\n}",
-                    "type": "text"
-                  },
-                  {
-                    "text": "{\n  \"id\": \"f79fe707-f901-5dde-9258-c0198eee7c95\",\n  \"name\": \"Kindle Paperwhite Signature\",\n  \"category\": \"Electronics\",\n  \"brand\": \"Amazon\",\n  \"price\": 189.99,\n  \"original_price\": 189.99,\n  \"rating\": 4.7,\n  \"review_count\": 12,\n  \"description\": \"6.8-inch e-reader with wireless charging, auto-adjusting front light, and 32GB storage.\"\n}",
-                    "type": "text"
-                  }
-                ],
-                "isError": false,
-                "resultType": "complete",
-                "structuredContent": {
-                  "result": [
-                    {
-                      "brand": "Logitech",
-                      "category": "Electronics",
-                      "description": "Advanced wireless mouse with 8K DPI, quiet clicks, MagSpeed scroll, and multi-device support.",
-                      "id": "035ae219-49be-59e2-a71e-94f06ca0fec9",
-                      "name": "Logitech MX Master 3S",
-                      "original_price": 129.99,
-                      "price": 99.99,
-                      "rating": 4.8,
-                      "review_count": 16
-                    },
-                    {
-                      "brand": "Sony",
-                      "category": "Electronics",
-                      "description": "Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.",
-                      "id": "dc9e2baa-8182-58f8-9df1-97d049426ba1",
-                      "name": "Sony WH-1000XM5",
-                      "original_price": 349.99,
-                      "price": 299.99,
-                      "rating": 4.7,
-                      "review_count": 15
-                    },
-                    {
-                      "brand": "Amazon",
-                      "category": "Electronics",
-                      "description": "6.8-inch e-reader with wireless charging, auto-adjusting front light, and 32GB storage.",
-                      "id": "f79fe707-f901-5dde-9258-c0198eee7c95",
-                      "name": "Kindle Paperwhite Signature",
-                      "original_price": 189.99,
-                      "price": 189.99,
-                      "rating": 4.7,
-                      "review_count": 12
-                    }
-                  ]
-                }
-              },
-              "_meta": {
-                "io.modelcontextprotocol/serverInfo": {
-                  "name": "product-discovery-mcp",
-                  "version": ""
-                }
-              }
-            },
-            "call_id": "call_pgmVlvB4rNzifTlgums4jLp5",
+            "additional_properties": {},
+            "call_id": "call_OoGGBSlzSa4s3vGy8xKC6mUL",
             "items": [
               {
-                "additional_properties": {
-                  "_meta": {
-                    "io.modelcontextprotocol/serverInfo": {
-                      "name": "product-discovery-mcp",
-                      "version": ""
-                    }
-                  }
-                },
-                "text": "{\"result\": [{\"id\": \"035ae219-49be-59e2-a71e-94f06ca0fec9\", \"name\": \"Logitech MX Master 3S\", \"category\": \"Electronics\", \"brand\": \"Logitech\", \"price\": 99.99, \"original_price\": 129.99, \"rating\": 4.8, \"review_count\": 16, \"description\": \"Advanced wireless mouse with 8K DPI, quiet clicks, MagSpeed scroll, and multi-device support.\"}, {\"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"name\": \"Sony WH-1000XM5\", \"category\": \"Electronics\", \"brand\": \"Sony\", \"price\": 299.99, \"original_price\": 349.99, \"rating\": 4.7, \"review_count\": 15, \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\"}, {\"id\": \"f79fe707-f901-5dde-9258-c0198eee7c95\", \"name\": \"Kindle Paperwhite Signature\", \"category\": \"Electronics\", \"brand\": \"Amazon\", \"price\": 189.99, \"original_price\": 189.99, \"rating\": 4.7, \"review_count\": 12, \"description\": \"6.8-inch e-reader with wireless charging, auto-adjusting front light, and 32GB storage.\"}]}",
+                "additional_properties": {},
+                "text": "[{\"id\": \"bcbbb7ac-3ec2-56cd-911f-c9d2dd70c186\", \"name\": \"Uniqlo Ultra Light Down Jacket\", \"description\": \"Ultra-lightweight packable down jacket with premium 90% duck down.\", \"category\": \"Clothing\", \"brand\": \"Uniqlo\", \"price\": 59.9, \"rating\": 4.3, \"similarity\": 0.099, \"score\": 0.03227, \"image_url\": \"https://images.unsplash.com/photo-1539533018447-63fcce2678e3?w=400&h=400&fit=crop\"}, {\"id\": \"f42ddd98-0ccb-5430-b648-a007d6122ab2\", \"name\": \"North Face Thermoball Eco Jacket\", \"description\": \"Lightweight insulated jacket with recycled ThermoBall fill, packable design.\", \"category\": \"Clothing\", \"brand\": \"The North Face\", \"price\": 179.99, \"rating\": 4.5, \"similarity\": 0.11, \"score\": 0.03226, \"image_url\": \"https://images.unsplash.com/photo-1551028719-00167b16eac5?w=400&h=400&fit=crop\"}, {\"id\": \"7ef8ee71-6106-510b-ac32-f757dde066ea\", \"name\": \"Patagonia Better Sweater\", \"description\": \"Classic fleece jacket made from 100% recycled polyester, Fair Trade Certified.\", \"category\": \"Clothing\", \"brand\": \"Patagonia\", \"price\": 139.0, \"rating\": 4.7, \"similarity\": 0.058, \"score\": 0.02976, \"image_url\": \"https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=400&h=400&fit=crop\"}, {\"id\": \"fc8551cb-1ce4-5f9f-b2ff-a5eb03c588b3\", \"name\": \"Instant Pot Duo Plus 6Qt\", \"description\": \"9-in-1 electric pressure cooker: pressure cook, slow cook, steam, saute, and more.\", \"category\": \"Home\", \"brand\": \"Instant Pot\", \"price\": 89.99, \"rating\": 4.7, \"similarity\": 0.113, \"score\": 0.01639, \"image_url\": \"https://images.unsplash.com/photo-1585515320310-259814833e62?w=400&h=400&fit=crop\"}, {\"id\": \"2f7fab83-486c-5d08-9e1d-6a57d3687284\", \"name\": \"Atomic Habits\", \"description\": \"Tiny changes, remarkable results. Practical guide to building good habits.\", \"category\": \"Books\", \"brand\": \"Avery\", \"price\": 18.99, \"rating\": 4.8, \"similarity\": 0.069, \"score\": 0.01562, \"image_url\": \"https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400&h=400&fit=crop\"}, {\"id\": \"cd3b4a99-2710-54dc-965b-06450c0406aa\", \"name\": \"The Pragmatic Programmer (20th Ed)\", \"description\": \"Classic guide to software craftsmanship, updated for modern development.\", \"category\": \"Books\", \"brand\": \"Addison-Wesley\", \"price\": 49.99, \"rating\": 4.8, \"similarity\": 0.068, \"score\": 0.01538, \"image_url\": \"https://images.unsplash.com/photo-1512820790803-83ca734da794?w=400&h=400&fit=crop\"}]",
                 "type": "text"
               }
             ],
-            "result": "{\"result\": [{\"id\": \"035ae219-49be-59e2-a71e-94f06ca0fec9\", \"name\": \"Logitech MX Master 3S\", \"category\": \"Electronics\", \"brand\": \"Logitech\", \"price\": 99.99, \"original_price\": 129.99, \"rating\": 4.8, \"review_count\": 16, \"description\": \"Advanced wireless mouse with 8K DPI, quiet clicks, MagSpeed scroll, and multi-device support.\"}, {\"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"name\": \"Sony WH-1000XM5\", \"category\": \"Electronics\", \"brand\": \"Sony\", \"price\": 299.99, \"original_price\": 349.99, \"rating\": 4.7, \"review_count\": 15, \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\"}, {\"id\": \"f79fe707-f901-5dde-9258-c0198eee7c95\", \"name\": \"Kindle Paperwhite Signature\", \"category\": \"Electronics\", \"brand\": \"Amazon\", \"price\": 189.99, \"original_price\": 189.99, \"rating\": 4.7, \"review_count\": 12, \"description\": \"6.8-inch e-reader with wireless charging, auto-adjusting front light, and 32GB storage.\"}]}",
+            "result": "[{\"id\": \"bcbbb7ac-3ec2-56cd-911f-c9d2dd70c186\", \"name\": \"Uniqlo Ultra Light Down Jacket\", \"description\": \"Ultra-lightweight packable down jacket with premium 90% duck down.\", \"category\": \"Clothing\", \"brand\": \"Uniqlo\", \"price\": 59.9, \"rating\": 4.3, \"similarity\": 0.099, \"score\": 0.03227, \"image_url\": \"https://images.unsplash.com/photo-1539533018447-63fcce2678e3?w=400&h=400&fit=crop\"}, {\"id\": \"f42ddd98-0ccb-5430-b648-a007d6122ab2\", \"name\": \"North Face Thermoball Eco Jacket\", \"description\": \"Lightweight insulated jacket with recycled ThermoBall fill, packable design.\", \"category\": \"Clothing\", \"brand\": \"The North Face\", \"price\": 179.99, \"rating\": 4.5, \"similarity\": 0.11, \"score\": 0.03226, \"image_url\": \"https://images.unsplash.com/photo-1551028719-00167b16eac5?w=400&h=400&fit=crop\"}, {\"id\": \"7ef8ee71-6106-510b-ac32-f757dde066ea\", \"name\": \"Patagonia Better Sweater\", \"description\": \"Classic fleece jacket made from 100% recycled polyester, Fair Trade Certified.\", \"category\": \"Clothing\", \"brand\": \"Patagonia\", \"price\": 139.0, \"rating\": 4.7, \"similarity\": 0.058, \"score\": 0.02976, \"image_url\": \"https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=400&h=400&fit=crop\"}, {\"id\": \"fc8551cb-1ce4-5f9f-b2ff-a5eb03c588b3\", \"name\": \"Instant Pot Duo Plus 6Qt\", \"description\": \"9-in-1 electric pressure cooker: pressure cook, slow cook, steam, saute, and more.\", \"category\": \"Home\", \"brand\": \"Instant Pot\", \"price\": 89.99, \"rating\": 4.7, \"similarity\": 0.113, \"score\": 0.01639, \"image_url\": \"https://images.unsplash.com/photo-1585515320310-259814833e62?w=400&h=400&fit=crop\"}, {\"id\": \"2f7fab83-486c-5d08-9e1d-6a57d3687284\", \"name\": \"Atomic Habits\", \"description\": \"Tiny changes, remarkable results. Practical guide to building good habits.\", \"category\": \"Books\", \"brand\": \"Avery\", \"price\": 18.99, \"rating\": 4.8, \"similarity\": 0.069, \"score\": 0.01562, \"image_url\": \"https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400&h=400&fit=crop\"}, {\"id\": \"cd3b4a99-2710-54dc-965b-06450c0406aa\", \"name\": \"The Pragmatic Programmer (20th Ed)\", \"description\": \"Classic guide to software craftsmanship, updated for modern development.\", \"category\": \"Books\", \"brand\": \"Addison-Wesley\", \"price\": 49.99, \"rating\": 4.8, \"similarity\": 0.068, \"score\": 0.01538, \"image_url\": \"https://images.unsplash.com/photo-1512820790803-83ca734da794?w=400&h=400&fit=crop\"}]",
             "type": "function_result"
           }
         ],
@@ -203,6 +128,27 @@
       },
       {
         "function": {
+          "description": "Get detailed warehouse availability for a product including restock schedules.",
+          "name": "get_warehouse_availability",
+          "parameters": {
+            "properties": {
+              "product_id": {
+                "description": "UUID of the product",
+                "title": "Product Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "product_id"
+            ],
+            "title": "get_warehouse_availability_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      },
+      {
+        "function": {
           "description": "Get the current user's profile including loyalty tier and spending history.",
           "name": "get_user_profile",
           "parameters": {
@@ -234,7 +180,72 @@
       },
       {
         "function": {
-          "description": "Search the product catalog with keyword + optional filters.",
+          "description": "Store a memory about the current user's preferences, behavior, or feedback for future reference.",
+          "name": "store_memory",
+          "parameters": {
+            "properties": {
+              "category": {
+                "description": "Memory category: preference, behavior, feedback, or context",
+                "title": "Category",
+                "type": "string"
+              },
+              "content": {
+                "description": "The memory content to store",
+                "title": "Content",
+                "type": "string"
+              },
+              "importance": {
+                "default": 5,
+                "description": "Importance score from 1 (low) to 10 (high)",
+                "title": "Importance",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "category",
+              "content"
+            ],
+            "title": "store_memory_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      },
+      {
+        "function": {
+          "description": "Recall stored memories about the current user's preferences and past interactions.",
+          "name": "recall_memories",
+          "parameters": {
+            "properties": {
+              "category": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Filter by category: preference, behavior, feedback, context",
+                "title": "Category"
+              },
+              "limit": {
+                "default": 10,
+                "description": "Max memories to return",
+                "title": "Limit",
+                "type": "integer"
+              }
+            },
+            "title": "recall_memories_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      },
+      {
+        "function": {
+          "description": "Search the product catalog using natural language. Supports filtering by category, price range, and rating.",
           "name": "search_products",
           "parameters": {
             "properties": {
@@ -248,10 +259,12 @@
                   }
                 ],
                 "default": null,
+                "description": "Filter by category: Electronics, Clothing, Home, Sports, Books",
                 "title": "Category"
               },
               "limit": {
                 "default": 10,
+                "description": "Max results to return",
                 "title": "Limit",
                 "type": "integer"
               },
@@ -265,6 +278,7 @@
                   }
                 ],
                 "default": null,
+                "description": "Maximum price filter",
                 "title": "Max Price"
               },
               "min_price": {
@@ -277,6 +291,7 @@
                   }
                 ],
                 "default": null,
+                "description": "Minimum price filter",
                 "title": "Min Price"
               },
               "min_rating": {
@@ -289,6 +304,7 @@
                   }
                 ],
                 "default": null,
+                "description": "Minimum rating (1-5)",
                 "title": "Min Rating"
               },
               "query": {
@@ -301,6 +317,7 @@
                   }
                 ],
                 "default": null,
+                "description": "Natural language search query (optional if using category filter)",
                 "title": "Query"
               },
               "sort_by": {
@@ -313,6 +330,7 @@
                   }
                 ],
                 "default": null,
+                "description": "Sort by: price_asc, price_desc, rating, newest",
                 "title": "Sort By"
               }
             },
@@ -324,11 +342,12 @@
       },
       {
         "function": {
-          "description": "Get full product details including specs, stock status, and seller info.",
+          "description": "Get complete details for a specific product including full specs.",
           "name": "get_product_details",
           "parameters": {
             "properties": {
               "product_id": {
+                "description": "UUID of the product",
                 "title": "Product Id",
                 "type": "string"
               }
@@ -344,11 +363,12 @@
       },
       {
         "function": {
-          "description": "Compare 2\u20133 products side by side on price, rating, specs, and stock.",
+          "description": "Compare 2-3 products side-by-side on key attributes.",
           "name": "compare_products",
           "parameters": {
             "properties": {
               "product_ids": {
+                "description": "List of 2-3 product UUIDs to compare",
                 "items": {
                   "type": "string"
                 },
@@ -367,7 +387,7 @@
       },
       {
         "function": {
-          "description": "Get trending products ranked by recent order volume.",
+          "description": "Get trending products based on recent order volume.",
           "name": "get_trending_products",
           "parameters": {
             "properties": {
@@ -381,15 +401,18 @@
                   }
                 ],
                 "default": null,
+                "description": "Optional category filter",
                 "title": "Category"
               },
               "days": {
                 "default": 30,
+                "description": "Trending period in days",
                 "title": "Days",
                 "type": "integer"
               },
               "limit": {
                 "default": 10,
+                "description": "Max results",
                 "title": "Limit",
                 "type": "integer"
               }
@@ -402,16 +425,18 @@
       },
       {
         "function": {
-          "description": "Get price trend data with average, min, max, and a deal-quality signal.",
+          "description": "Get price history for a product over a specified number of days. Useful for showing price trends and identifying deals.",
           "name": "get_price_history",
           "parameters": {
             "properties": {
               "days": {
                 "default": 30,
+                "description": "Number of days of history (30, 60, or 90)",
                 "title": "Days",
                 "type": "integer"
               },
               "product_id": {
+                "description": "UUID of the product",
                 "title": "Product Id",
                 "type": "string"
               }
@@ -428,7 +453,7 @@
     ]
   },
   "response": {
-    "created_at": "2026-11-24T16:41:40.000000Z",
+    "created_at": "2026-11-24T19:02:09.000000Z",
     "finish_reason": "stop",
     "messages": [
       {
@@ -436,7 +461,7 @@
         "contents": [
           {
             "additional_properties": {},
-            "text": "Here are some wireless headphones with noise cancellation under $300. The Sony WH-1000XM5 stands out for its premium noise-cancelling features, long battery life, and multipoint connection. It's right at your budget limit and currently on sale.\n\nIf you'd like to compare specs or see more options, let me know!\n\n```product\n{\"name\": \"Sony WH-1000XM5\", \"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"price\": 299.99, \"original_price\": 349.99, \"rating\": 4.7, \"review_count\": 15, \"category\": \"Electronics\", \"brand\": \"Sony\", \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\", \"image_url\": \"https://cdn.example.com/products/dc9e2baa-8182-58f8-9df1-97d049426ba1.jpg\"}\n```\n\nLet me know if you want more details or a comparison with other models!",
+            "text": "Here are some cozy options for winter, including warm jackets that are perfect for staying comfortable in cold weather. These are highly rated and offer a mix of lightweight insulation and sustainable materials:\n\n- The Uniqlo Ultra Light Down Jacket is affordable, ultra-light, and packable\u2014great for layering or travel.\n- The North Face Thermoball Eco Jacket features recycled insulation and a packable design, ideal for outdoor activities.\n- The Patagonia Better Sweater is a classic fleece jacket made from recycled polyester, offering warmth and sustainability.\n\nLet me know if you want to see blankets or compare these jackets side-by-side!\n\n```products\n[{\"name\": \"Uniqlo Ultra Light Down Jacket\", \"id\": \"bcbbb7ac-3ec2-56cd-911f-c9d2dd70c186\", \"price\": 59.9, \"rating\": 4.3, \"category\": \"Clothing\", \"brand\": \"Uniqlo\", \"description\": \"Ultra-lightweight packable down jacket with premium 90% duck down.\", \"image_url\": \"https://images.unsplash.com/photo-1539533018447-63fcce2678e3?w=400&h=400&fit=crop\"}, {\"name\": \"North Face Thermoball Eco Jacket\", \"id\": \"f42ddd98-0ccb-5430-b648-a007d6122ab2\", \"price\": 179.99, \"rating\": 4.5, \"category\": \"Clothing\", \"brand\": \"The North Face\", \"description\": \"Lightweight insulated jacket with recycled ThermoBall fill, packable design.\", \"image_url\": \"https://images.unsplash.com/photo-1551028719-00167b16eac5?w=400&h=400&fit=crop\"}, {\"name\": \"Patagonia Better Sweater\", \"id\": \"7ef8ee71-6106-510b-ac32-f757dde066ea\", \"price\": 139.0, \"rating\": 4.7, \"category\": \"Clothing\", \"brand\": \"Patagonia\", \"description\": \"Classic fleece jacket made from 100% recycled polyester, Fair Trade Certified.\", \"image_url\": \"https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=400&h=400&fit=crop\"}]\n```\n\nIf you\u2019d like to see cozy blankets or more winter essentials, just let me know!",
             "type": "text"
           }
         ],
@@ -445,20 +470,20 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-EnnsKRnhqWuykQthmREDch9hc6nLq",
+    "response_id": "chatcmpl-Enq4HokJO0lBhyvCi3Pn6l3jjoEiO",
     "type": "chat_response",
     "usage_details": {
-      "cache_read_input_token_count": 3712,
+      "cache_read_input_token_count": 3968,
       "completion/accepted_prediction_tokens": 0,
       "completion/audio_tokens": 0,
       "completion/reasoning_tokens": 0,
       "completion/rejected_prediction_tokens": 0,
-      "input_token_count": 4124,
-      "output_token_count": 236,
+      "input_token_count": 4975,
+      "output_token_count": 514,
       "prompt/audio_tokens": 0,
-      "prompt/cached_tokens": 3712,
+      "prompt/cached_tokens": 3968,
       "reasoning_output_token_count": 0,
-      "total_token_count": 4360
+      "total_token_count": 5489
     }
   }
 }

@@ -7,156 +7,11 @@
         "contents": [
           {
             "additional_properties": {},
-            "text": "Show me the full details for the Sony WH-1000XM5",
+            "text": "What are the trending electronics this month?",
             "type": "text"
           }
         ],
         "role": "user",
-        "type": "message"
-      },
-      {
-        "additional_properties": {},
-        "contents": [
-          {
-            "additional_properties": {},
-            "arguments": "{\"query\":\"Sony WH-1000XM5\",\"limit\":1}",
-            "call_id": "call_xFkUTLIoa2aPhKxso27J2toa",
-            "hosted": false,
-            "name": "search_products",
-            "type": "function_call"
-          }
-        ],
-        "role": "assistant",
-        "type": "message"
-      },
-      {
-        "additional_properties": {},
-        "contents": [
-          {
-            "additional_properties": {
-              "_mcp_tool_result_host_payload": {
-                "_meta": {
-                  "io.modelcontextprotocol/serverInfo": {
-                    "name": "product-discovery-mcp",
-                    "version": ""
-                  }
-                },
-                "content": [
-                  {
-                    "text": "{\n  \"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\",\n  \"name\": \"Sony WH-1000XM5\",\n  \"category\": \"Electronics\",\n  \"brand\": \"Sony\",\n  \"price\": 299.99,\n  \"original_price\": 349.99,\n  \"rating\": 4.7,\n  \"review_count\": 15,\n  \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\"\n}",
-                    "type": "text"
-                  }
-                ],
-                "isError": false,
-                "resultType": "complete",
-                "structuredContent": {
-                  "result": [
-                    {
-                      "brand": "Sony",
-                      "category": "Electronics",
-                      "description": "Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.",
-                      "id": "dc9e2baa-8182-58f8-9df1-97d049426ba1",
-                      "name": "Sony WH-1000XM5",
-                      "original_price": 349.99,
-                      "price": 299.99,
-                      "rating": 4.7,
-                      "review_count": 15
-                    }
-                  ]
-                }
-              },
-              "_meta": {
-                "io.modelcontextprotocol/serverInfo": {
-                  "name": "product-discovery-mcp",
-                  "version": ""
-                }
-              }
-            },
-            "call_id": "call_xFkUTLIoa2aPhKxso27J2toa",
-            "items": [
-              {
-                "additional_properties": {
-                  "_meta": {
-                    "io.modelcontextprotocol/serverInfo": {
-                      "name": "product-discovery-mcp",
-                      "version": ""
-                    }
-                  }
-                },
-                "text": "{\"result\": [{\"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"name\": \"Sony WH-1000XM5\", \"category\": \"Electronics\", \"brand\": \"Sony\", \"price\": 299.99, \"original_price\": 349.99, \"rating\": 4.7, \"review_count\": 15, \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\"}]}",
-                "type": "text"
-              }
-            ],
-            "result": "{\"result\": [{\"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"name\": \"Sony WH-1000XM5\", \"category\": \"Electronics\", \"brand\": \"Sony\", \"price\": 299.99, \"original_price\": 349.99, \"rating\": 4.7, \"review_count\": 15, \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\"}]}",
-            "type": "function_result"
-          }
-        ],
-        "role": "tool",
-        "type": "message"
-      },
-      {
-        "additional_properties": {},
-        "contents": [
-          {
-            "additional_properties": {},
-            "arguments": "{\"product_id\":\"dc9e2baa-8182-58f8-9df1-97d049426ba1\"}",
-            "call_id": "call_QLQgspmE6xKnUHNpDHgPx6zb",
-            "hosted": false,
-            "name": "get_product_details",
-            "type": "function_call"
-          }
-        ],
-        "role": "assistant",
-        "type": "message"
-      },
-      {
-        "additional_properties": {},
-        "contents": [
-          {
-            "additional_properties": {
-              "_mcp_tool_result_host_payload": {
-                "_meta": {
-                  "io.modelcontextprotocol/serverInfo": {
-                    "name": "product-discovery-mcp",
-                    "version": ""
-                  }
-                },
-                "content": [
-                  {
-                    "text": "{\n  \"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\",\n  \"name\": \"Sony WH-1000XM5\",\n  \"category\": \"Electronics\",\n  \"brand\": \"Sony\",\n  \"price\": 299.99,\n  \"original_price\": 349.99,\n  \"rating\": 4.7,\n  \"review_count\": 15,\n  \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\",\n  \"specs\": {\n    \"type\": \"Over-ear\",\n    \"weight\": \"250g\",\n    \"battery\": \"30 hours\",\n    \"connectivity\": \"Bluetooth 5.2\",\n    \"noise_cancelling\": true\n  },\n  \"seller\": \"Acme Store\",\n  \"in_stock\": true,\n  \"total_stock\": 203\n}",
-                    "type": "text"
-                  }
-                ],
-                "isError": false,
-                "resultType": "complete"
-              },
-              "_meta": {
-                "io.modelcontextprotocol/serverInfo": {
-                  "name": "product-discovery-mcp",
-                  "version": ""
-                }
-              }
-            },
-            "call_id": "call_QLQgspmE6xKnUHNpDHgPx6zb",
-            "items": [
-              {
-                "additional_properties": {
-                  "_meta": {
-                    "io.modelcontextprotocol/serverInfo": {
-                      "name": "product-discovery-mcp",
-                      "version": ""
-                    }
-                  }
-                },
-                "text": "{\"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"name\": \"Sony WH-1000XM5\", \"category\": \"Electronics\", \"brand\": \"Sony\", \"price\": 299.99, \"original_price\": 349.99, \"rating\": 4.7, \"review_count\": 15, \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\", \"specs\": {\"type\": \"Over-ear\", \"weight\": \"250g\", \"battery\": \"30 hours\", \"connectivity\": \"Bluetooth 5.2\", \"noise_cancelling\": true}, \"seller\": \"Acme Store\", \"in_stock\": true, \"total_stock\": 203}",
-                "type": "text"
-              }
-            ],
-            "result": "{\"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"name\": \"Sony WH-1000XM5\", \"category\": \"Electronics\", \"brand\": \"Sony\", \"price\": 299.99, \"original_price\": 349.99, \"rating\": 4.7, \"review_count\": 15, \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\", \"specs\": {\"type\": \"Over-ear\", \"weight\": \"250g\", \"battery\": \"30 hours\", \"connectivity\": \"Bluetooth 5.2\", \"noise_cancelling\": true}, \"seller\": \"Acme Store\", \"in_stock\": true, \"total_stock\": 203}",
-            "type": "function_result"
-          }
-        ],
-        "role": "tool",
         "type": "message"
       }
     ],
@@ -238,6 +93,27 @@
       },
       {
         "function": {
+          "description": "Get detailed warehouse availability for a product including restock schedules.",
+          "name": "get_warehouse_availability",
+          "parameters": {
+            "properties": {
+              "product_id": {
+                "description": "UUID of the product",
+                "title": "Product Id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "product_id"
+            ],
+            "title": "get_warehouse_availability_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      },
+      {
+        "function": {
           "description": "Get the current user's profile including loyalty tier and spending history.",
           "name": "get_user_profile",
           "parameters": {
@@ -269,7 +145,72 @@
       },
       {
         "function": {
-          "description": "Search the product catalog with keyword + optional filters.",
+          "description": "Store a memory about the current user's preferences, behavior, or feedback for future reference.",
+          "name": "store_memory",
+          "parameters": {
+            "properties": {
+              "category": {
+                "description": "Memory category: preference, behavior, feedback, or context",
+                "title": "Category",
+                "type": "string"
+              },
+              "content": {
+                "description": "The memory content to store",
+                "title": "Content",
+                "type": "string"
+              },
+              "importance": {
+                "default": 5,
+                "description": "Importance score from 1 (low) to 10 (high)",
+                "title": "Importance",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "category",
+              "content"
+            ],
+            "title": "store_memory_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      },
+      {
+        "function": {
+          "description": "Recall stored memories about the current user's preferences and past interactions.",
+          "name": "recall_memories",
+          "parameters": {
+            "properties": {
+              "category": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Filter by category: preference, behavior, feedback, context",
+                "title": "Category"
+              },
+              "limit": {
+                "default": 10,
+                "description": "Max memories to return",
+                "title": "Limit",
+                "type": "integer"
+              }
+            },
+            "title": "recall_memories_input",
+            "type": "object"
+          }
+        },
+        "type": "function"
+      },
+      {
+        "function": {
+          "description": "Search the product catalog using natural language. Supports filtering by category, price range, and rating.",
           "name": "search_products",
           "parameters": {
             "properties": {
@@ -283,10 +224,12 @@
                   }
                 ],
                 "default": null,
+                "description": "Filter by category: Electronics, Clothing, Home, Sports, Books",
                 "title": "Category"
               },
               "limit": {
                 "default": 10,
+                "description": "Max results to return",
                 "title": "Limit",
                 "type": "integer"
               },
@@ -300,6 +243,7 @@
                   }
                 ],
                 "default": null,
+                "description": "Maximum price filter",
                 "title": "Max Price"
               },
               "min_price": {
@@ -312,6 +256,7 @@
                   }
                 ],
                 "default": null,
+                "description": "Minimum price filter",
                 "title": "Min Price"
               },
               "min_rating": {
@@ -324,6 +269,7 @@
                   }
                 ],
                 "default": null,
+                "description": "Minimum rating (1-5)",
                 "title": "Min Rating"
               },
               "query": {
@@ -336,6 +282,7 @@
                   }
                 ],
                 "default": null,
+                "description": "Natural language search query (optional if using category filter)",
                 "title": "Query"
               },
               "sort_by": {
@@ -348,6 +295,7 @@
                   }
                 ],
                 "default": null,
+                "description": "Sort by: price_asc, price_desc, rating, newest",
                 "title": "Sort By"
               }
             },
@@ -359,11 +307,12 @@
       },
       {
         "function": {
-          "description": "Get full product details including specs, stock status, and seller info.",
+          "description": "Get complete details for a specific product including full specs.",
           "name": "get_product_details",
           "parameters": {
             "properties": {
               "product_id": {
+                "description": "UUID of the product",
                 "title": "Product Id",
                 "type": "string"
               }
@@ -379,11 +328,12 @@
       },
       {
         "function": {
-          "description": "Compare 2\u20133 products side by side on price, rating, specs, and stock.",
+          "description": "Compare 2-3 products side-by-side on key attributes.",
           "name": "compare_products",
           "parameters": {
             "properties": {
               "product_ids": {
+                "description": "List of 2-3 product UUIDs to compare",
                 "items": {
                   "type": "string"
                 },
@@ -402,7 +352,7 @@
       },
       {
         "function": {
-          "description": "Get trending products ranked by recent order volume.",
+          "description": "Get trending products based on recent order volume.",
           "name": "get_trending_products",
           "parameters": {
             "properties": {
@@ -416,15 +366,18 @@
                   }
                 ],
                 "default": null,
+                "description": "Optional category filter",
                 "title": "Category"
               },
               "days": {
                 "default": 30,
+                "description": "Trending period in days",
                 "title": "Days",
                 "type": "integer"
               },
               "limit": {
                 "default": 10,
+                "description": "Max results",
                 "title": "Limit",
                 "type": "integer"
               }
@@ -437,16 +390,18 @@
       },
       {
         "function": {
-          "description": "Get price trend data with average, min, max, and a deal-quality signal.",
+          "description": "Get price history for a product over a specified number of days. Useful for showing price trends and identifying deals.",
           "name": "get_price_history",
           "parameters": {
             "properties": {
               "days": {
                 "default": 30,
+                "description": "Number of days of history (30, 60, or 90)",
                 "title": "Days",
                 "type": "integer"
               },
               "product_id": {
+                "description": "UUID of the product",
                 "title": "Product Id",
                 "type": "string"
               }
@@ -463,16 +418,19 @@
     ]
   },
   "response": {
-    "created_at": "2026-11-24T16:41:33.000000Z",
-    "finish_reason": "stop",
+    "created_at": "2026-11-24T19:05:07.000000Z",
+    "finish_reason": "tool_calls",
     "messages": [
       {
         "additional_properties": {},
         "contents": [
           {
             "additional_properties": {},
-            "text": "Here are the full details for the Sony WH-1000XM5 headphones. These are premium wireless, over-ear headphones featuring industry-leading noise cancellation, a long 30-hour battery life, and multipoint Bluetooth 5.2 connectivity. They are currently on sale for $299.99 (originally $349.99), making them a great deal. The product is in stock.\n\nKey specs:\n- Type: Over-ear\n- Weight: 250g\n- Battery: 30 hours\n- Connectivity: Bluetooth 5.2\n- Noise Cancelling: Yes\n\nWould you like to see a price history, compare with other headphones, or check shipping options?\n\n```product\n{\"name\": \"Sony WH-1000XM5\", \"id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"price\": 299.99, \"original_price\": 349.99, \"rating\": 4.7, \"review_count\": 15, \"category\": \"Electronics\", \"brand\": \"Sony\", \"description\": \"Premium wireless noise-cancelling headphones with 30-hour battery life, multipoint connection, and speak-to-chat.\", \"image_url\": \"https://images.example.com/products/dc9e2baa-8182-58f8-9df1-97d049426ba1.jpg\"}\n```",
-            "type": "text"
+            "arguments": "{\"category\":\"Electronics\",\"days\":30,\"limit\":10}",
+            "call_id": "call_XQ09dyUBPf99W6LRmP8nfVh4",
+            "hosted": false,
+            "name": "get_trending_products",
+            "type": "function_call"
           }
         ],
         "role": "assistant",
@@ -480,20 +438,20 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-EnnsDy2sbk85du3xxmFPjC8MFXPVc",
+    "response_id": "chatcmpl-Enq79av1PBAhFTcqG8SCMNpyXsf3x",
     "type": "chat_response",
     "usage_details": {
-      "cache_read_input_token_count": 3840,
+      "cache_read_input_token_count": 3968,
       "completion/accepted_prediction_tokens": 0,
       "completion/audio_tokens": 0,
       "completion/reasoning_tokens": 0,
       "completion/rejected_prediction_tokens": 0,
-      "input_token_count": 4124,
-      "output_token_count": 290,
+      "input_token_count": 4087,
+      "output_token_count": 25,
       "prompt/audio_tokens": 0,
-      "prompt/cached_tokens": 3840,
+      "prompt/cached_tokens": 3968,
       "reasoning_output_token_count": 0,
-      "total_token_count": 4414
+      "total_token_count": 4112
     }
   }
 }

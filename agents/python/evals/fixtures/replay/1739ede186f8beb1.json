@@ -7,7 +7,7 @@
         "contents": [
           {
             "additional_properties": {},
-            "text": "Is the Sony WH-1000XM5 in stock right now?",
+            "text": "What's the tracking status of order 550e8400-e29b-41d4-a716-446655440002?",
             "type": "text"
           }
         ],
@@ -19,10 +19,10 @@
         "contents": [
           {
             "additional_properties": {},
-            "arguments": "{\"name\":\"Sony WH-1000XM5\"}",
-            "call_id": "call_9BuHDymgiZ3EgoJJ1AD3hWFf",
+            "arguments": "{\"order_id\":\"550e8400-e29b-41d4-a716-446655440002\"}",
+            "call_id": "call_3eWfGrNRAQPVMRXhpWKHp3RK",
             "hosted": false,
-            "name": "find_product_by_name",
+            "name": "get_tracking_status",
             "type": "function_call"
           }
         ],
@@ -34,80 +34,15 @@
         "contents": [
           {
             "additional_properties": {},
-            "call_id": "call_9BuHDymgiZ3EgoJJ1AD3hWFf",
+            "call_id": "call_3eWfGrNRAQPVMRXhpWKHp3RK",
             "items": [
               {
                 "additional_properties": {},
-                "text": "{\"found\": true, \"product_id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"product_name\": \"Sony WH-1000XM5\"}",
+                "text": "{\"error\": \"Order not found or not accessible: 550e8400-e29b-41d4-a716-446655440002\"}",
                 "type": "text"
               }
             ],
-            "result": "{\"found\": true, \"product_id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\", \"product_name\": \"Sony WH-1000XM5\"}",
-            "type": "function_result"
-          }
-        ],
-        "role": "tool",
-        "type": "message"
-      },
-      {
-        "additional_properties": {},
-        "contents": [
-          {
-            "additional_properties": {},
-            "arguments": "{\"product_id\":\"dc9e2baa-8182-58f8-9df1-97d049426ba1\"}",
-            "call_id": "call_k9Vu1PEMp5aAQrPvcZNLW7w6",
-            "hosted": false,
-            "name": "check_stock",
-            "type": "function_call"
-          }
-        ],
-        "role": "assistant",
-        "type": "message"
-      },
-      {
-        "additional_properties": {},
-        "contents": [
-          {
-            "additional_properties": {
-              "_mcp_tool_result_host_payload": {
-                "_meta": {
-                  "io.modelcontextprotocol/serverInfo": {
-                    "name": "inventory-fulfillment-mcp",
-                    "version": ""
-                  }
-                },
-                "content": [
-                  {
-                    "text": "{\n  \"product_id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\",\n  \"in_stock\": true,\n  \"total_quantity\": 203,\n  \"warehouses\": [\n    {\n      \"warehouse\": \"Central Warehouse\",\n      \"region\": \"central\",\n      \"quantity\": 33,\n      \"low_stock\": false\n    },\n    {\n      \"warehouse\": \"East Coast Warehouse\",\n      \"region\": \"east\",\n      \"quantity\": 168,\n      \"low_stock\": false\n    },\n    {\n      \"warehouse\": \"West Coast Warehouse\",\n      \"region\": \"west\",\n      \"quantity\": 2,\n      \"low_stock\": true\n    }\n  ]\n}",
-                    "type": "text"
-                  }
-                ],
-                "isError": false,
-                "resultType": "complete"
-              },
-              "_meta": {
-                "io.modelcontextprotocol/serverInfo": {
-                  "name": "inventory-fulfillment-mcp",
-                  "version": ""
-                }
-              }
-            },
-            "call_id": "call_k9Vu1PEMp5aAQrPvcZNLW7w6",
-            "items": [
-              {
-                "additional_properties": {
-                  "_meta": {
-                    "io.modelcontextprotocol/serverInfo": {
-                      "name": "inventory-fulfillment-mcp",
-                      "version": ""
-                    }
-                  }
-                },
-                "text": "{\n  \"product_id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\",\n  \"in_stock\": true,\n  \"total_quantity\": 203,\n  \"warehouses\": [\n    {\n      \"warehouse\": \"Central Warehouse\",\n      \"region\": \"central\",\n      \"quantity\": 33,\n      \"low_stock\": false\n    },\n    {\n      \"warehouse\": \"East Coast Warehouse\",\n      \"region\": \"east\",\n      \"quantity\": 168,\n      \"low_stock\": false\n    },\n    {\n      \"warehouse\": \"West Coast Warehouse\",\n      \"region\": \"west\",\n      \"quantity\": 2,\n      \"low_stock\": true\n    }\n  ]\n}",
-                "type": "text"
-              }
-            ],
-            "result": "{\n  \"product_id\": \"dc9e2baa-8182-58f8-9df1-97d049426ba1\",\n  \"in_stock\": true,\n  \"total_quantity\": 203,\n  \"warehouses\": [\n    {\n      \"warehouse\": \"Central Warehouse\",\n      \"region\": \"central\",\n      \"quantity\": 33,\n      \"low_stock\": false\n    },\n    {\n      \"warehouse\": \"East Coast Warehouse\",\n      \"region\": \"east\",\n      \"quantity\": 168,\n      \"low_stock\": false\n    },\n    {\n      \"warehouse\": \"West Coast Warehouse\",\n      \"region\": \"west\",\n      \"quantity\": 2,\n      \"low_stock\": true\n    }\n  ]\n}",
+            "result": "{\"error\": \"Order not found or not accessible: 550e8400-e29b-41d4-a716-446655440002\"}",
             "type": "function_result"
           }
         ],
@@ -229,11 +164,12 @@
       },
       {
         "function": {
-          "description": "Check live stock levels across all regional warehouses for a product.",
+          "description": "Check stock levels across all warehouses for a specific product.",
           "name": "check_stock",
           "parameters": {
             "properties": {
               "product_id": {
+                "description": "UUID of the product to check",
                 "title": "Product Id",
                 "type": "string"
               }
@@ -249,11 +185,12 @@
       },
       {
         "function": {
-          "description": "Get warehouse inventory and upcoming restock schedule for a product.",
+          "description": "Get detailed warehouse availability for a product including restock schedules.",
           "name": "get_warehouse_availability",
           "parameters": {
             "properties": {
               "product_id": {
+                "description": "UUID of the product",
                 "title": "Product Id",
                 "type": "string"
               }
@@ -269,11 +206,12 @@
       },
       {
         "function": {
-          "description": "Get upcoming restock dates and quantities across all warehouses.",
+          "description": "Get upcoming restock schedule for a product across all warehouses.",
           "name": "get_restock_schedule",
           "parameters": {
             "properties": {
               "product_id": {
+                "description": "UUID of the product",
                 "title": "Product Id",
                 "type": "string"
               }
@@ -289,15 +227,17 @@
       },
       {
         "function": {
-          "description": "Estimate shipping cost and delivery time from the nearest stocked warehouse.",
+          "description": "Estimate shipping cost and delivery time for a product to a destination region. Finds the closest warehouse with stock and returns carrier options.",
           "name": "estimate_shipping",
           "parameters": {
             "properties": {
               "destination_region": {
+                "description": "Destination region: 'east', 'central', or 'west'",
                 "title": "Destination Region",
                 "type": "string"
               },
               "product_id": {
+                "description": "UUID of the product",
                 "title": "Product Id",
                 "type": "string"
               }
@@ -314,15 +254,17 @@
       },
       {
         "function": {
-          "description": "Compare all carriers between two regions with pricing and estimated delivery times.",
+          "description": "Compare all carrier options (Standard, Express, Overnight) between two regions with pricing and delivery estimates.",
           "name": "compare_carriers",
           "parameters": {
             "properties": {
               "region_from": {
+                "description": "Origin region: 'east', 'central', or 'west'",
                 "title": "Region From",
                 "type": "string"
               },
               "region_to": {
+                "description": "Destination region: 'east', 'central', or 'west'",
                 "title": "Region To",
                 "type": "string"
               }
@@ -340,7 +282,7 @@
     ]
   },
   "response": {
-    "created_at": "2026-11-24T16:42:03.000000Z",
+    "created_at": "2026-11-24T19:02:41.000000Z",
     "finish_reason": "stop",
     "messages": [
       {
@@ -348,7 +290,7 @@
         "contents": [
           {
             "additional_properties": {},
-            "text": "The Sony WH-1000XM5 is currently in stock across all warehouses.\n\n```inventory\n{\"product_id\":\"dc9e2baa-8182-58f8-9df1-97d049426ba1\",\"in_stock\":true,\"total_quantity\":203,\"warehouses\":[{\"warehouse\":\"Central Warehouse\",\"region\":\"central\",\"quantity\":33,\"low_stock\":false},{\"warehouse\":\"East Coast Warehouse\",\"region\":\"east\",\"quantity\":168,\"low_stock\":false},{\"warehouse\":\"West Coast Warehouse\",\"region\":\"west\",\"quantity\":2,\"low_stock\":true}]}\n```\n\nLet me know if you\u2019d like a shipping estimate or want to place an order!",
+            "text": "I couldn't find any order with the ID 550e8400-e29b-41d4-a716-446655440002, or it may not be accessible to your account. Please double-check the order ID or let me know if you need help with a different order.",
             "type": "text"
           }
         ],
@@ -357,20 +299,20 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-EnnshM0yhNHQD1Mw04DoRx5m4wWSm",
+    "response_id": "chatcmpl-Enq4nJ3t91yxgFnYdBSCSqpck9fNT",
     "type": "chat_response",
     "usage_details": {
-      "cache_read_input_token_count": 3584,
+      "cache_read_input_token_count": 3712,
       "completion/accepted_prediction_tokens": 0,
       "completion/audio_tokens": 0,
       "completion/reasoning_tokens": 0,
       "completion/rejected_prediction_tokens": 0,
-      "input_token_count": 3911,
-      "output_token_count": 138,
+      "input_token_count": 3804,
+      "output_token_count": 58,
       "prompt/audio_tokens": 0,
-      "prompt/cached_tokens": 3584,
+      "prompt/cached_tokens": 3712,
       "reasoning_output_token_count": 0,
-      "total_token_count": 4049
+      "total_token_count": 3862
     }
   }
 }

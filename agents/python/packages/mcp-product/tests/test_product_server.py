@@ -107,7 +107,10 @@ async def test_get_product_details_found(
     assert "error" not in result
     assert result["id"] == product_id
     assert result["name"] == "Widget Pro"
-    assert isinstance(result["in_stock"], bool)
+    # The native tool's shape: sale flag and specs, no stock or seller (check_stock answers stock).
+    assert result["on_sale"] is True
+    assert isinstance(result["specs"], dict)
+    assert not {"in_stock", "total_stock", "seller"} & set(result)
 
 
 @pytest.mark.integration
@@ -227,3 +230,59 @@ async def test_search_stopword_only_query_falls_back_to_filters(
 
     assert fts_catalog["kettle"] in [r["id"] for r in results]
     assert all(r["category"] == "Home" for r in results)
+
+
+# ─────────────────────── Trending ranking ───────────────────────────────────
+
+
+@pytest_asyncio.fixture
+async def trending_catalog(postgres_pool: asyncpg.Pool) -> dict[str, str]:
+    """Product A: three one-unit order lines. Product B: one order line of ten units."""
+    async with postgres_pool.acquire() as conn:
+        user_id = await conn.fetchval(
+            """INSERT INTO users (email, name, role, password_hash)
+               VALUES ('trend-buyer@test.com', 'Trend Buyer', 'customer', 'hash')
+               ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name
+               RETURNING id"""
+        )
+        ids: dict[str, str] = {}
+        for key, name in (("many_lines", "Trend Many Lines"), ("many_units", "Trend Many Units")):
+            ids[key] = str(
+                await conn.fetchval(
+                    """INSERT INTO products (name, description, category, brand, price, rating, is_active)
+                       VALUES ($1, 'trend fixture', 'Sports', 'Acme', 10.00, 4.0, TRUE)
+                       RETURNING id""",
+                    name,
+                )
+            )
+        for key, quantities in (("many_lines", [1, 1, 1]), ("many_units", [10])):
+            for qty in quantities:
+                order_id = await conn.fetchval(
+                    """INSERT INTO orders (user_id, status, total, shipping_address)
+                       VALUES ($1, 'delivered', 10.00, '{}'::jsonb) RETURNING id""",
+                    user_id,
+                )
+                await conn.execute(
+                    """INSERT INTO order_items (order_id, product_id, quantity, unit_price, subtotal)
+                       VALUES ($1, $2, $3::int, 10.00, $3::int * 10.00)""",
+                    order_id,
+                    ids[key],
+                    qty,
+                )
+    return ids
+
+
+@pytest.mark.integration
+async def test_trending_ranks_by_units_sold_not_order_lines(
+    trending_catalog: dict[str, str],
+    _patched_pool: None,
+) -> None:
+    from ecommerce_mcp_product.server import get_trending_products
+
+    results = await get_trending_products(category="Sports", days=30, limit=10)
+    ids = [r["id"] for r in results]
+
+    assert ids.index(trending_catalog["many_units"]) < ids.index(trending_catalog["many_lines"])
+    top = next(r for r in results if r["id"] == trending_catalog["many_units"])
+    assert top["units_sold"] == 10
+    assert top["order_count"] == 1

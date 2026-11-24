@@ -27,6 +27,7 @@ from typing import Annotated
 
 import asyncpg
 from mcp.server.mcpserver import MCPServer
+from pydantic import Field
 
 logger = logging.getLogger(__name__)
 
@@ -93,11 +94,23 @@ def _get_pool() -> asyncpg.Pool:
 
 
 # ─────────────────────── Tools ──────────────────────────────────────────────
+#
+# Each tool below is the twin of one native tool in agents/python (shared/tools/inventory_tools.py,
+# inventory_fulfillment/tools.py): same name, same description sentence, same parameter names and descriptions,
+# same query and ranking, same result fields. A model picks a tool from its name and description, so a reworded
+# description is not cosmetic: it moved "when is it back in stock" from get_restock_schedule to
+# get_warehouse_availability. This package cannot import ``shared`` (it installs on its own), so the code is
+# mirrored by hand and agents/python/tests/test_mcp_native_equivalence.py fails when the two drift, on the schema a
+# model is shown and on the result for the same call. Change a native tool and its twin together.
 
 
-@mcp.tool()
-async def check_stock(product_id: Annotated[str, "UUID of the product to check"]) -> dict:
-    """Check live stock levels across all regional warehouses for a product."""
+@mcp.tool(
+    name="check_stock",
+    description="Check stock levels across all warehouses for a specific product.",
+)
+async def check_stock(
+    product_id: Annotated[str, Field(description="UUID of the product to check")],
+) -> dict:
     async with _get_pool().acquire() as conn:
         rows = await conn.fetch(
             """SELECT w.name as warehouse, w.region, wi.quantity, wi.reorder_threshold
@@ -108,7 +121,7 @@ async def check_stock(product_id: Annotated[str, "UUID of the product to check"]
             product_id,
         )
         if not rows:
-            return {"product_id": product_id, "in_stock": False, "total_quantity": 0, "warehouses": []}
+            return {"product_id": product_id, "in_stock": False, "warehouses": [], "total_quantity": 0}
 
         warehouses = [
             {
@@ -128,11 +141,13 @@ async def check_stock(product_id: Annotated[str, "UUID of the product to check"]
         }
 
 
-@mcp.tool()
+@mcp.tool(
+    name="get_warehouse_availability",
+    description="Get detailed warehouse availability for a product including restock schedules.",
+)
 async def get_warehouse_availability(
-    product_id: Annotated[str, "UUID of the product"],
+    product_id: Annotated[str, Field(description="UUID of the product")],
 ) -> dict:
-    """Get warehouse inventory and upcoming restock schedule for a product."""
     async with _get_pool().acquire() as conn:
         inventory = await conn.fetch(
             """SELECT w.name, w.region, w.location, wi.quantity, wi.reorder_threshold
@@ -172,91 +187,130 @@ async def get_warehouse_availability(
         }
 
 
-@mcp.tool()
+@mcp.tool(
+    name="get_restock_schedule",
+    description="Get upcoming restock schedule for a product across all warehouses.",
+)
 async def get_restock_schedule(
-    product_id: Annotated[str, "UUID of the product"],
-) -> list[dict]:
-    """Get upcoming restock dates and quantities across all warehouses."""
+    product_id: Annotated[str, Field(description="UUID of the product")],
+) -> dict:
     async with _get_pool().acquire() as conn:
+        product = await conn.fetchrow(
+            "SELECT id, name FROM products WHERE id = $1",
+            product_id,
+        )
+        if not product:
+            return {"error": f"Product not found: {product_id}"}
+
         rows = await conn.fetch(
-            """SELECT w.name as warehouse, w.region, rs.expected_quantity, rs.expected_date
+            """SELECT rs.expected_quantity, rs.expected_date,
+                      w.name as warehouse, w.region
                FROM restock_schedule rs
                JOIN warehouses w ON rs.warehouse_id = w.id
                WHERE rs.product_id = $1 AND rs.expected_date >= CURRENT_DATE
                ORDER BY rs.expected_date""",
             product_id,
         )
-        return [
-            {
-                "warehouse": r["warehouse"],
-                "region": r["region"],
-                "expected_quantity": r["expected_quantity"],
-                "expected_date": r["expected_date"].isoformat(),
-            }
-            for r in rows
-        ]
+        return {
+            "product_id": product_id,
+            "product_name": product["name"],
+            "upcoming_restocks": [
+                {
+                    "warehouse": r["warehouse"],
+                    "region": r["region"],
+                    "expected_quantity": r["expected_quantity"],
+                    "expected_date": r["expected_date"].isoformat(),
+                }
+                for r in rows
+            ],
+            "next_restock": rows[0]["expected_date"].isoformat() if rows else None,
+        }
 
 
-@mcp.tool()
+@mcp.tool(
+    name="estimate_shipping",
+    description=(
+        "Estimate shipping cost and delivery time for a product to a destination region. Finds the closest warehouse "
+        "with stock and returns carrier options."
+    ),
+)
 async def estimate_shipping(
-    product_id: Annotated[str, "UUID of the product"],
-    destination_region: Annotated[str, "Destination region: east, central, or west"],
+    product_id: Annotated[str, Field(description="UUID of the product")],
+    destination_region: Annotated[str, Field(description="Destination region: 'east', 'central', or 'west'")],
 ) -> dict:
-    """Estimate shipping cost and delivery time from the nearest stocked warehouse."""
     async with _get_pool().acquire() as conn:
-        source = await conn.fetchrow(
-            """SELECT w.region
+        # Find warehouses with stock, preferring same-region first
+        inventory = await conn.fetch(
+            """SELECT w.id as warehouse_id, w.name as warehouse, w.region, wi.quantity
                FROM warehouse_inventory wi
                JOIN warehouses w ON wi.warehouse_id = w.id
                WHERE wi.product_id = $1 AND wi.quantity > 0
-               ORDER BY CASE w.region
-                   WHEN $2 THEN 0
-                   WHEN 'central' THEN 1
-                   ELSE 2
-               END
-               LIMIT 1""",
+               ORDER BY
+                   CASE WHEN w.region = $2 THEN 0 ELSE 1 END,
+                   wi.quantity DESC""",
             product_id,
             destination_region,
         )
-        if not source:
-            return {"available": False, "message": "Product out of stock in all warehouses"}
+        if not inventory:
+            return {
+                "product_id": product_id,
+                "destination_region": destination_region,
+                "available": False,
+                "message": "Product is out of stock at all warehouses. Check restock schedule.",
+            }
+
+        best_warehouse = inventory[0]
+        region_from = best_warehouse["region"]
 
         rates = await conn.fetch(
-            """SELECT c.name as carrier, c.speed_tier, sr.price,
-                      sr.estimated_days_min, sr.estimated_days_max
+            """SELECT c.name as carrier, c.speed_tier,
+                      sr.price, sr.estimated_days_min, sr.estimated_days_max
                FROM shipping_rates sr
                JOIN carriers c ON sr.carrier_id = c.id
                WHERE sr.region_from = $1 AND sr.region_to = $2
                ORDER BY sr.price""",
-            source["region"],
+            region_from,
             destination_region,
         )
+
         return {
+            "product_id": product_id,
+            "destination_region": destination_region,
             "available": True,
-            "ships_from": source["region"],
-            "destination": destination_region,
-            "options": [
+            "ships_from": {
+                "warehouse": best_warehouse["warehouse"],
+                "region": region_from,
+                "quantity_available": best_warehouse["quantity"],
+            },
+            "shipping_options": [
                 {
                     "carrier": r["carrier"],
                     "speed_tier": r["speed_tier"],
                     "price": float(r["price"]),
-                    "estimated_days": f"{r['estimated_days_min']}–{r['estimated_days_max']}",
+                    "estimated_days_min": r["estimated_days_min"],
+                    "estimated_days_max": r["estimated_days_max"],
+                    "delivery_window": f"{r['estimated_days_min']}-{r['estimated_days_max']} business days",
                 }
                 for r in rates
             ],
         }
 
 
-@mcp.tool()
+@mcp.tool(
+    name="compare_carriers",
+    description=(
+        "Compare all carrier options (Standard, Express, Overnight) between two regions with pricing and delivery "
+        "estimates."
+    ),
+)
 async def compare_carriers(
-    region_from: Annotated[str, "Origin region: east, central, or west"],
-    region_to: Annotated[str, "Destination region: east, central, or west"],
-) -> list[dict]:
-    """Compare all carriers between two regions with pricing and estimated delivery times."""
+    region_from: Annotated[str, Field(description="Origin region: 'east', 'central', or 'west'")],
+    region_to: Annotated[str, Field(description="Destination region: 'east', 'central', or 'west'")],
+) -> dict:
     async with _get_pool().acquire() as conn:
         rows = await conn.fetch(
-            """SELECT c.name as carrier, c.speed_tier, sr.price,
-                      sr.estimated_days_min, sr.estimated_days_max
+            """SELECT c.name as carrier, c.speed_tier, c.base_rate,
+                      sr.price, sr.estimated_days_min, sr.estimated_days_max
                FROM shipping_rates sr
                JOIN carriers c ON sr.carrier_id = c.id
                WHERE sr.region_from = $1 AND sr.region_to = $2
@@ -264,15 +318,37 @@ async def compare_carriers(
             region_from,
             region_to,
         )
-        return [
+        if not rows:
+            return {
+                "region_from": region_from,
+                "region_to": region_to,
+                "carriers": [],
+                "message": "No shipping rates found for this route.",
+            }
+
+        carriers = [
             {
                 "carrier": r["carrier"],
                 "speed_tier": r["speed_tier"],
                 "price": float(r["price"]),
-                "estimated_days": f"{r['estimated_days_min']}–{r['estimated_days_max']}",
+                "base_rate": float(r["base_rate"]),
+                "estimated_days_min": r["estimated_days_min"],
+                "estimated_days_max": r["estimated_days_max"],
+                "delivery_window": f"{r['estimated_days_min']}-{r['estimated_days_max']} business days",
             }
             for r in rows
         ]
+
+        cheapest = min(carriers, key=lambda c: c["price"])
+        fastest = min(carriers, key=lambda c: c["estimated_days_min"])
+
+        return {
+            "region_from": region_from,
+            "region_to": region_to,
+            "carriers": carriers,
+            "best_value": cheapest["carrier"],
+            "fastest": fastest["carrier"],
+        }
 
 
 # ─────────────────────── ASGI entry-point ───────────────────────────────────

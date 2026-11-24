@@ -7,7 +7,7 @@
         "contents": [
           {
             "additional_properties": {},
-            "text": "When will the Sony WH-1000XM5 be back in stock?",
+            "text": "How long will shipping take for the Sony WH-1000XM5 to ZIP code 90210?",
             "type": "text"
           }
         ],
@@ -20,7 +20,7 @@
           {
             "additional_properties": {},
             "arguments": "{\"name\":\"Sony WH-1000XM5\"}",
-            "call_id": "call_004AAGAHJDWPaJachfdpBA1c",
+            "call_id": "call_l7NQXDIz5MGoe68OAC5P0Ysz",
             "hosted": false,
             "name": "find_product_by_name",
             "type": "function_call"
@@ -34,7 +34,7 @@
         "contents": [
           {
             "additional_properties": {},
-            "call_id": "call_004AAGAHJDWPaJachfdpBA1c",
+            "call_id": "call_l7NQXDIz5MGoe68OAC5P0Ysz",
             "items": [
               {
                 "additional_properties": {},
@@ -164,11 +164,12 @@
       },
       {
         "function": {
-          "description": "Check live stock levels across all regional warehouses for a product.",
+          "description": "Check stock levels across all warehouses for a specific product.",
           "name": "check_stock",
           "parameters": {
             "properties": {
               "product_id": {
+                "description": "UUID of the product to check",
                 "title": "Product Id",
                 "type": "string"
               }
@@ -184,11 +185,12 @@
       },
       {
         "function": {
-          "description": "Get warehouse inventory and upcoming restock schedule for a product.",
+          "description": "Get detailed warehouse availability for a product including restock schedules.",
           "name": "get_warehouse_availability",
           "parameters": {
             "properties": {
               "product_id": {
+                "description": "UUID of the product",
                 "title": "Product Id",
                 "type": "string"
               }
@@ -204,11 +206,12 @@
       },
       {
         "function": {
-          "description": "Get upcoming restock dates and quantities across all warehouses.",
+          "description": "Get upcoming restock schedule for a product across all warehouses.",
           "name": "get_restock_schedule",
           "parameters": {
             "properties": {
               "product_id": {
+                "description": "UUID of the product",
                 "title": "Product Id",
                 "type": "string"
               }
@@ -224,15 +227,17 @@
       },
       {
         "function": {
-          "description": "Estimate shipping cost and delivery time from the nearest stocked warehouse.",
+          "description": "Estimate shipping cost and delivery time for a product to a destination region. Finds the closest warehouse with stock and returns carrier options.",
           "name": "estimate_shipping",
           "parameters": {
             "properties": {
               "destination_region": {
+                "description": "Destination region: 'east', 'central', or 'west'",
                 "title": "Destination Region",
                 "type": "string"
               },
               "product_id": {
+                "description": "UUID of the product",
                 "title": "Product Id",
                 "type": "string"
               }
@@ -249,15 +254,17 @@
       },
       {
         "function": {
-          "description": "Compare all carriers between two regions with pricing and estimated delivery times.",
+          "description": "Compare all carrier options (Standard, Express, Overnight) between two regions with pricing and delivery estimates.",
           "name": "compare_carriers",
           "parameters": {
             "properties": {
               "region_from": {
+                "description": "Origin region: 'east', 'central', or 'west'",
                 "title": "Region From",
                 "type": "string"
               },
               "region_to": {
+                "description": "Destination region: 'east', 'central', or 'west'",
                 "title": "Region To",
                 "type": "string"
               }
@@ -275,7 +282,7 @@
     ]
   },
   "response": {
-    "created_at": "2026-11-24T16:42:05.000000Z",
+    "created_at": "2026-11-24T19:02:34.000000Z",
     "finish_reason": "tool_calls",
     "messages": [
       {
@@ -284,9 +291,9 @@
           {
             "additional_properties": {},
             "arguments": "{\"product_id\":\"dc9e2baa-8182-58f8-9df1-97d049426ba1\"}",
-            "call_id": "call_BW0qCcEwvPBka90w27YeTZC1",
+            "call_id": "call_1hpEox5pdQwTUtIKqBBq3w2s",
             "hosted": false,
-            "name": "get_warehouse_availability",
+            "name": "check_stock",
             "type": "function_call"
           }
         ],
@@ -295,7 +302,7 @@
       }
     ],
     "model": "gpt-4.1-2025-04-14",
-    "response_id": "chatcmpl-EnnsjE0USwrmUXe6y0WK27vIuVFZT",
+    "response_id": "chatcmpl-Enq4gcYpiDSqmL7D5LU15XGgmLncX",
     "type": "chat_response",
     "usage_details": {
       "cache_read_input_token_count": 3584,
@@ -303,12 +310,12 @@
       "completion/audio_tokens": 0,
       "completion/reasoning_tokens": 0,
       "completion/rejected_prediction_tokens": 0,
-      "input_token_count": 3711,
-      "output_token_count": 40,
+      "input_token_count": 3805,
+      "output_token_count": 37,
       "prompt/audio_tokens": 0,
       "prompt/cached_tokens": 3584,
       "reasoning_output_token_count": 0,
-      "total_token_count": 3751
+      "total_token_count": 3842
     }
   }
 }
