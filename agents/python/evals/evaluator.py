@@ -17,7 +17,7 @@ import logging
 import math
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -108,6 +108,16 @@ class EvalCase:
     turns: list[EvalTurn] | None = None
     # Tools that must NOT be called. An assertion only: it never moves a score.
     forbidden_tools: list[str] | None = None
+    # Text the answer must not contain (an injected instruction's canary token, a claim that an action was done).
+    # An assertion only, matched case-insensitively.
+    forbidden_substrings: list[str] | None = None
+    # Orchestrator only: the modes this case may be scored in (``--mode``). A case that names none runs in the
+    # default ``tool`` mode alone, so an existing dataset is unchanged. The run's ``--mode`` picks the cases that
+    # list it and sets ``mode`` on each.
+    modes: list[str] | None = None
+    # Per mode, expectations that differ from the case's own (a handoff mesh has no ``call_specialist_agent``
+    # tool, so its case states ``expected_tools: []`` there). Only the keys in ``MODE_OVERRIDABLE``.
+    mode_overrides: dict[str, dict[str, Any]] | None = None
 
 
 @dataclass
@@ -324,6 +334,70 @@ def _parse_route_list(index: int, key: str, raw: Any) -> list[str] | None:
     return raw
 
 
+# The registered orchestration modes (``orchestrator/modes/__init__.py::MODES``; a test pins the two lists together).
+MODE_NAMES = ("tool", "handoff", "workflow:pre-purchase", "workflow:return-replace", "group-chat")
+
+# Expectations a case may restate for one mode (``mode_overrides``). ``input``, ``user_*`` and ``live`` never vary.
+MODE_OVERRIDABLE = (
+    "expected_tools",
+    "expected_tool_args",
+    "expected_fields",
+    "expected_route",
+    "expected_routes",
+    "forbidden_routes",
+    "forbidden_tools",
+    "forbidden_substrings",
+    "expect_hitl",
+    "expect_denial",
+    "criteria",
+)
+
+
+def _parse_modes(index: int, raw: Any) -> list[str] | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or not raw or not all(isinstance(v, str) and v for v in raw):
+        raise ValueError(f"Dataset entry {index}: modes must be a non-empty list of orchestration mode names")
+    unknown = [m for m in raw if m not in MODE_NAMES]
+    if unknown:
+        raise ValueError(f"Dataset entry {index}: unknown mode(s) {unknown}; known: {list(MODE_NAMES)}")
+    return raw
+
+
+def _parse_mode_overrides(index: int, raw: Any, modes: list[str] | None) -> dict[str, dict[str, Any]] | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict) or not all(isinstance(v, dict) for v in raw.values()):
+        raise ValueError(f"Dataset entry {index}: mode_overrides must map a mode name to {{expectation: value}}")
+    for mode, override in raw.items():
+        if modes is not None and mode not in modes:
+            raise ValueError(f"Dataset entry {index}: mode_overrides names {mode!r}, which is not in modes")
+        unknown = sorted(set(override) - set(MODE_OVERRIDABLE))
+        if unknown:
+            raise ValueError(
+                f"Dataset entry {index}: mode_overrides[{mode!r}] sets {unknown}; allowed: {list(MODE_OVERRIDABLE)}"
+            )
+    return raw
+
+
+def select_for_mode(cases: list[EvalCase], mode: str | None) -> list[tuple[int, EvalCase]]:
+    """The ``(dataset index, case)`` pairs a run in ``mode`` scores.
+
+    ``None`` and ``tool`` keep every case that does not name ``modes`` (or names ``tool`` among them), as written.
+    Another mode keeps only the cases that list it, each with ``mode`` set and that mode's ``mode_overrides``
+    applied. The dataset index is kept so a case id and a record stay stable whichever mode filtered the list.
+    """
+    if mode is None or mode == "tool":
+        return [(i, c) for i, c in enumerate(cases) if c.modes is None or "tool" in c.modes]
+    chosen: list[tuple[int, EvalCase]] = []
+    for i, case in enumerate(cases):
+        if not case.modes or mode not in case.modes:
+            continue
+        override = (case.mode_overrides or {}).get(mode, {})
+        chosen.append((i, replace(case, mode=mode, **override)))
+    return chosen
+
+
 def _parse_forbidden_tools(index: int, raw: Any) -> list[str] | None:
     if raw is None:
         return None
@@ -400,6 +474,7 @@ def load_dataset(path: str | Path) -> list[EvalCase]:
     cases = []
     for i, entry in enumerate(raw):
         live = is_live_file or entry.get("live") is True
+        modes = _parse_modes(i, entry.get("modes"))
         turns = _parse_turns(i, entry, live=live) if "turns" in entry else None
         required = ("criteria",) if turns else ("input", "expected_tools", "expected_fields", "criteria")
         if not all(k in entry for k in required):
@@ -423,6 +498,9 @@ def load_dataset(path: str | Path) -> list[EvalCase]:
                 forbidden_routes=_parse_route_list(i, "forbidden_routes", entry.get("forbidden_routes")),
                 why=entry.get("why"),
                 forbidden_tools=_parse_forbidden_tools(i, entry.get("forbidden_tools")),
+                forbidden_substrings=_parse_forbidden_tools(i, entry.get("forbidden_substrings")),
+                modes=modes,
+                mode_overrides=_parse_mode_overrides(i, entry.get("mode_overrides"), modes),
             )
         )
 
@@ -533,6 +611,7 @@ class AgentEvaluator:
         judge: JudgeConfig | None = None,
         allow_self_judge: bool = False,
         runner: Any | None = None,
+        orchestration_mode: str | None = None,
     ) -> None:
         self.agent_name = agent_name
         self.pass_threshold = pass_threshold
@@ -549,6 +628,12 @@ class AgentEvaluator:
             from shared.config import settings
 
             setup = build_setup(settings, judge=self._judge.setup() if self._judge else JudgeSetup())
+        # ``--mode``: orchestrator quality runs only. The mode is part of the setup, so it names the baseline directory.
+        self.orchestration_mode = None if orchestration_mode in (None, "", "tool") else orchestration_mode
+        if self.orchestration_mode:
+            if agent_name != "orchestrator":
+                raise ValueError(f"--mode {orchestration_mode!r} applies to the orchestrator only, not {agent_name!r}")
+            setup = setup.model_copy(update={"orchestration_mode": self.orchestration_mode})
         self.setup = setup
 
     async def run_once(self, user_input: str) -> dict[str, Any]:
@@ -575,10 +660,13 @@ class AgentEvaluator:
     async def evaluate_dataset(self, dataset_path: str | Path, *, repeats: int = 1) -> EvalSummary:
         """Run all cases in a dataset ``repeats`` times and return aggregate scores (mean over repeats)."""
         cases = load_dataset(dataset_path)
+        selected = select_for_mode(cases, self.orchestration_mode)
+        if self.orchestration_mode and not selected:
+            raise ValueError(f"No case in {Path(dataset_path).name} lists mode {self.orchestration_mode!r} in `modes`")
         repeats = max(repeats, 1)
         records: list[RunRecord] = []
         run_id = new_run_id()
-        work = [(repeat, i, case) for repeat in range(repeats) for i, case in enumerate(cases)]
+        work = [(repeat, i, case) for repeat in range(repeats) for i, case in selected]
 
         async def _one(_n: int, item: tuple[int, int, EvalCase]) -> EvalResult:
             repeat, i, case = item
@@ -598,7 +686,7 @@ class AgentEvaluator:
             dataset_path=str(dataset_path),
             setup=self.setup,
             repeats=repeats,
-            dataset_cases=len(cases),
+            dataset_cases=len(selected),
         )
 
     async def _evaluate_case(
@@ -639,6 +727,7 @@ class AgentEvaluator:
             routes=case.expected_routes or [],
             forbidden_routes=case.forbidden_routes or [],
             forbidden_tools=case.forbidden_tools or [],
+            forbidden_substrings=case.forbidden_substrings or [],
             user_role=case.user_role,
             user_email=case.user_email,
             mode=case.mode,
@@ -875,10 +964,16 @@ class AgentEvaluator:
             routes=case.expected_routes or [],
             forbidden_routes=case.forbidden_routes or [],
             forbidden_tools=case.forbidden_tools or [],
+            forbidden_substrings=case.forbidden_substrings or [],
         )
         calls = [ToolCall(name=c.get("tool_name", ""), arguments=c.get("tool_input")) for c in outcome.tool_calls]
         return scoring.check_assertions(
-            expected, calls, outcome.denied, outcome.hitl_requested, routes=list(outcome.routes or [])
+            expected,
+            calls,
+            outcome.denied,
+            outcome.hitl_requested,
+            routes=list(outcome.routes or []),
+            response=outcome.text,
         )
 
     @staticmethod

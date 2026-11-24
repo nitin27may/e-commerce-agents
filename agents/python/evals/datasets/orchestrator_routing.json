@@ -5,7 +5,15 @@
     "expected_tool_args": {"call_specialist_agent": {"agent_name": "product-discovery"}},
     "expected_fields": [],
     "expected_route": "product-discovery",
-    "criteria": {"grounded": true, "tool_called": true, "routed": true}
+    "criteria": {"grounded": true, "tool_called": true, "routed": true},
+    "modes": ["tool", "handoff"],
+    "mode_overrides": {
+      "handoff": {
+        "expected_tools": [],
+        "expected_tool_args": null,
+        "criteria": {"grounded": true, "routed": true}
+      }
+    }
   },
   {
     "input": "Where is my order 550e8400-e29b-41d4-a716-446655440002? I want tracking.",
@@ -13,7 +21,15 @@
     "expected_tool_args": {"call_specialist_agent": {"agent_name": "order-management"}},
     "expected_fields": [],
     "expected_route": "order-management",
-    "criteria": {"grounded": true, "tool_called": true, "routed": true}
+    "criteria": {"grounded": true, "tool_called": true, "routed": true},
+    "modes": ["tool", "handoff"],
+    "mode_overrides": {
+      "handoff": {
+        "expected_tools": [],
+        "expected_tool_args": null,
+        "criteria": {"grounded": true, "routed": true}
+      }
+    }
   },
   {
     "input": "Do you have any coupons or active discounts I can use?",
@@ -21,7 +37,15 @@
     "expected_tool_args": {"call_specialist_agent": {"agent_name": "pricing-promotions"}},
     "expected_fields": [],
     "expected_route": "pricing-promotions",
-    "criteria": {"grounded": true, "tool_called": true, "routed": true}
+    "criteria": {"grounded": true, "tool_called": true, "routed": true},
+    "modes": ["tool", "handoff"],
+    "mode_overrides": {
+      "handoff": {
+        "expected_tools": [],
+        "expected_tool_args": null,
+        "criteria": {"grounded": true, "routed": true}
+      }
+    }
   },
   {
     "input": "What are customers saying in reviews about the Dyson V15?",
@@ -29,7 +53,15 @@
     "expected_tool_args": {"call_specialist_agent": {"agent_name": "review-sentiment"}},
     "expected_fields": [],
     "expected_route": "review-sentiment",
-    "criteria": {"grounded": true, "tool_called": true, "routed": true}
+    "criteria": {"grounded": true, "tool_called": true, "routed": true},
+    "modes": ["tool", "handoff"],
+    "mode_overrides": {
+      "handoff": {
+        "expected_tools": [],
+        "expected_tool_args": null,
+        "criteria": {"grounded": true, "routed": true}
+      }
+    }
   },
   {
     "input": "Is the Dyson V15 in stock and how fast can it ship to 10001?",

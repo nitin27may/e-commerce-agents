@@ -26,7 +26,7 @@ Specialist Agent (MAF)
   → PostgreSQL
 ```
 
-The agent's behavior — prompts, routing, middleware, guardrails — is identical in both modes.
+The agent's prompts, routing, middleware and guardrails are the same in both modes. The data layer is not identical: the MCP tools return different fields for most tools, and one ranks differently. See *Native versus MCP, measured*.
 Only the data access layer changes.
 
 ## MCP Servers
@@ -187,6 +187,29 @@ single-worker server tries to fetch its own JWKS from within its own request han
 
 Both MCP servers have no auth surface at all. A test guards that byte for byte:
 `tests/test_mcp_oauth_integration.py::test_mcp_auth_disabled_is_unchanged_regression_guard`.
+
+## Native versus MCP, measured
+
+`scripts/mcp-compare.sh` (CI job `MCP versus native tools` in `evals.yml`, keyless, no model call) compares the two paths
+two ways, with `agents/python/evals/mcp_compare.py`:
+
+1. **The same tool calls both ways.** Eleven calls (the ones the product-discovery and inventory-fulfillment datasets make)
+   run against the native function and the MCP server on the seeded database. Two return equal results. Eight differ in shape
+   only, the native tool carrying fields the MCP tool lacks (`search_products`: `image_url`, `on_sale`; `get_product_details`:
+   `in_stock`, `on_sale`, `seller`, `total_stock`; `compare_products`: `in_stock`, `original_price`; `get_price_history`:
+   `trend`) or a different container (`get_restock_schedule`, `compare_carriers`, `estimate_shipping`). One differs in
+   value: `get_trending_products` ranks by units sold natively and by order count over MCP, so the top five differ.
+2. **The same cases both ways, replayed.** Eleven cases, each recorded once per path (the MCP tool schemas change the
+   request key, so the MCP path has its own fixtures). Tool-call accuracy is 0.955 native and 0.864 MCP; the gap is one
+   case, "when will the Sony be back in stock", where the model on the MCP path called `get_warehouse_availability` and
+   not `get_restock_schedule`. Two more cases differ only in how many searches or memory lookups the model made, with equal
+   accuracy. Answer text is never identical across two recordings; the report counts it and does not gate on it.
+
+Every accepted difference is listed with its reason in `agents/python/evals/mcp_known_differences.json`; the job fails on a
+new difference, on a drop in tool-call accuracy outside the listed cases, and on a listed entry that stopped differing.
+What this does not show: whether the restock-tool choice is caused by the MCP tool's description (one recording per path),
+and nothing here measures a live model on the MCP path. Aligning the MCP tools with the native ones, or deciding which is
+the reference, is open work (#303).
 
 ## Inspect with MCP Inspector
 

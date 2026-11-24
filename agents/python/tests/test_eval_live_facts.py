@@ -81,6 +81,8 @@ def test_live_datasets_exist_and_are_all_live() -> None:
         "approvals.live.json",
         "inventory_fulfillment.live.json",
         "order_management.live.json",
+        "indirect_injection.live.json",
+        "orchestrator_modes.live.json",
         "orchestrator_routing.live.json",
         "pricing_promotions.live.json",
         "product_discovery.live.json",

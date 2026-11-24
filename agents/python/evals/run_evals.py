@@ -56,7 +56,7 @@ from evals.baselines import (
     reference_path,
     write_baseline,
 )
-from evals.evaluator import AgentEvaluator, EvalSummary, format_summary_report
+from evals.evaluator import MODE_NAMES, AgentEvaluator, EvalSummary, format_summary_report
 from evals.harness import AGENT_FACTORIES
 from evals.judge import JudgeConfigError
 from evals.records import RecordFormatError, read_records, write_records
@@ -188,6 +188,7 @@ async def run_evaluation(
     baseline_from: str | None = None,
     update_personal_baseline: bool = False,
     target_options: http_target.HttpTargetOptions | None = None,
+    mode: str | None = None,
 ) -> int:
     """Run a quality evaluation and return an exit code (0 = passed)."""
     dataset = Path(dataset_path)
@@ -203,9 +204,13 @@ async def run_evaluation(
             use_llm_judge=use_llm_judge,
             allow_self_judge=allow_self_judge,
             runner=http_runner,
+            orchestration_mode=mode,
         )
     except JudgeConfigError as exc:
         print(f"Judge: {exc}", file=sys.stderr)
+        return 1
+    except ValueError as exc:
+        print(f"Mode: {exc}", file=sys.stderr)
         return 1
     if target_options:
         evaluator.setup = http_target.apply_setup(evaluator.setup, target_options)
@@ -406,6 +411,14 @@ Examples:
         help="Dataset JSON path (defaults to the red-team set for --suite safety)",
     )
     parser.add_argument(
+        "--mode",
+        choices=sorted(MODE_NAMES),
+        default=None,
+        help="Orchestrator quality suite only: run the cases that list this orchestration mode in their `modes` "
+        "through it, with its expectations (`mode_overrides`). Baselines are kept per mode "
+        "(`<setup-key>-mode-<mode>`). Default: `tool`, every case that names no `modes`",
+    )
+    parser.add_argument(
         "--verbose",
         "-v",
         action="store_true",
@@ -566,6 +579,8 @@ Examples:
     else:
         if not args.agent or not args.dataset:
             parser.error("--agent and --dataset are required for the quality suite")
+        if args.mode and (args.agent != "orchestrator" or target_options is not None):
+            parser.error("--mode applies to the in-process orchestrator quality suite only")
         exit_code = asyncio.run(
             run_evaluation(
                 agent_name=args.agent,
@@ -583,6 +598,7 @@ Examples:
                 baseline_from=args.baseline_from,
                 update_personal_baseline=args.update_personal_baseline,
                 target_options=target_options,
+                mode=args.mode,
             )
         )
     sys.exit(exit_code)

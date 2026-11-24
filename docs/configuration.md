@@ -470,6 +470,30 @@ fails closed: with a token ceiling set, a turn that reports no usage at all also
 because the count can no longer be trusted. In `observe` it only counts `cost_budget.would_block`.
 With `COST_BUDGET_MODE=off` neither ceiling is attached.
 
+### Why `COST_BUDGET_MODE` stays `observe` (decision, #97)
+
+The default is not changed to `enforce`, and `observe` with the `0.50` demo ceiling in `.env.example` and the compose
+files is the demo-safe setting. The reasons, so the question is not reopened without new facts:
+
+- **Enforce fails closed, and most setups the repo documents have no price.** An unpriced model (Ollama, LM Studio, Gemini's
+  compatible endpoint, an Azure deployment with a custom name) has an unknown cost, so under `enforce` with a ceiling its first
+  turn stops the run. Making that the default would turn a working local or custom-deployment install into one that refuses
+  every request until the operator adds a pricing row. The token ceiling has the same property for a turn that reports no usage.
+- **The prices are not verified.** `config/pricing/models.yaml` carries `verified: false` and no `as_of` date on its rows. A
+  default that refuses turns on the strength of an unverified estimate would be a default that can be wrong in both directions.
+- **There is no measured false-positive rate.** The advice above stands: watch `cost_budget.would_block` first. Nothing in the
+  repo has collected that figure over real traffic, so no ceiling is known to be one that a normal turn stays under.
+- **A per-run ceiling does not bound a user turn.** A run's cost is counted in a ContextVar per process and request: the
+  orchestrator's ceiling covers its own model calls, and each specialist counts its own request against its own ceiling.
+  `enforce` on the orchestrator would therefore not stop the sum of a multi-agent turn, and would read as protection it is not.
+  The per-turn total is reported (`usage.by_agent`, `usage_logs`) but not enforced.
+- **Where a hard stop is needed it is already one flag away and explicit.** The manual `full` eval job sets
+  `COST_BUDGET_TOKENS_PER_RUN` and enforces it, and an operator who has priced their model and watched `would_block` sets
+  `COST_BUDGET_MODE=enforce` with their own ceiling.
+
+What would change this decision: a pricing file with verified rows for the default models, a `would_block` rate from real
+traffic, and a ceiling that covers the whole turn across agents. #97 keeps the item open until the last of those exists.
+
 ### Model prices (`PRICING_*`)
 
 No price is written in code. Both stacks read `agents/python/config/pricing/models.yaml`: one entry per
