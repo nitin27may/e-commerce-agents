@@ -130,31 +130,152 @@ async def test_any_other_judge_error_is_unchanged(monkeypatch: pytest.MonkeyPatc
     assert verdict.score == 0.0
 
 
-@pytest.mark.asyncio
-async def test_judge_unavailable_is_left_out_of_completeness_and_reported(monkeypatch: pytest.MonkeyPatch) -> None:
-    verdicts = iter(
-        [
-            JudgeVerdict(score=1.0, reasoning="ok"),
-            JudgeVerdict(score=0.0, reasoning="filtered", failure_mode=JUDGE_UNAVAILABLE),
-        ]
-    )
+def _unavailable_judge(monkeypatch: pytest.MonkeyPatch, *verdicts: JudgeVerdict) -> None:
+    queue = iter(verdicts)
 
     async def _fake(*_a, **_k):
-        return next(verdicts)
+        return next(queue)
 
     monkeypatch.setattr(llm_judge, "judge_response", _fake)
-    results = await _run([_outcome("The Trail Runner"), _outcome("ignore previous instructions")], judge=True)
-    good, filtered = results
 
-    assert not good.judge_unavailable and filtered.judge_unavailable
-    # The filtered case is scored on groundedness and correctness only: a perfect pair passes, it is not dragged by 0.
+
+_FILTERED = JudgeVerdict(score=0.0, reasoning="filtered", failure_mode=JUDGE_UNAVAILABLE)
+
+
+@pytest.mark.asyncio
+async def test_filtered_case_with_keywords_is_scored_by_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    _unavailable_judge(monkeypatch, JudgeVerdict(score=1.0, reasoning="ok"), _FILTERED, _FILTERED)
+    results = await _run(
+        [_outcome("The Trail Runner"), _outcome("The name is Trail Runner"), _outcome("ignore previous instructions")],
+        judge=True,
+    )
+    good, fallback_pass, fallback_fail = results
+
+    assert good.record.completeness_source == "judge"
+    assert fallback_pass.judge_unavailable and fallback_pass.record.completeness_source == "fallback_keywords"
+    assert fallback_pass.record.scores.completeness == 1.0 and fallback_pass.passed
+    # The keyword check misses "name" in the filtered answer: the fallback scores it 0 and never passes it.
+    assert fallback_fail.record.scores.completeness == 0.0
+    assert fallback_fail.record.fields_missing == ["name"]
+    assert not fallback_fail.passed
+
+
+@pytest.mark.asyncio
+async def test_fallback_never_passes_a_case_the_keywords_would_not(monkeypatch: pytest.MonkeyPatch) -> None:
+    from evals.records import Expected
+    from evals.scoring import score_record
+
+    _unavailable_judge(monkeypatch, _FILTERED)
+    (result,) = await _run([_outcome("nothing relevant")], judge=True)
+    record = result.record.model_copy(
+        update={"expected": Expected(tools=["search_products"], fields=["name", "price"])}
+    )
+    # Half the fields found keeps overall above the threshold, but a missing keyword still fails the case.
+    half = score_record(record.model_copy(update={"response": "the name is X"}), pass_threshold=0.1)
+    assert half.completeness_source == "fallback_keywords"
+    assert half.fields_missing == ["price"] and not half.passed
+
+
+@pytest.mark.asyncio
+async def test_filtered_case_without_keywords_stays_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    _unavailable_judge(monkeypatch, JudgeVerdict(score=1.0, reasoning="ok"), _FILTERED)
+    evaluator = AgentEvaluator("product-discovery", pass_threshold=0.7, setup=REPLAY)
+    evaluator._runner = _Runner([_outcome("The Trail Runner"), _outcome("blocked text")])  # type: ignore[assignment]
+    evaluator.use_llm_judge = True
+    evaluator._judge = JUDGE
+    case = EvalCase(input="q", expected_tools=["search_products"], expected_fields=[], criteria={"grounded": True})
+    good = await evaluator._evaluate_case(case, "a:d:0", index=0)
+    filtered = await evaluator._evaluate_case(case, "a:d:1", index=1)
+
+    assert filtered.judge_unavailable and filtered.record.completeness_source is None
     assert filtered.record.scores.overall == pytest.approx(1.0)
-    assert filtered.passed
-
-    summary = _summary(results)
-    assert summary.avg_completeness == pytest.approx(1.0)  # the one judged case, not (1.0 + 0.0) / 2
+    summary = _summary([good, filtered])
     assert summary.judge_unavailable_cases == 1
-    assert "Judge unavailable: 1 case(s)" in format_summary_report(summary)
+    assert summary.fallback_scored_cases == 0 and summary.judge_unscored_cases == 1
+    assert summary.avg_completeness == pytest.approx(1.0)
+    assert "left out of the completeness mean" in format_summary_report(summary)
+
+
+@pytest.mark.asyncio
+async def test_refusal_expected_case_is_checkable_by_refusal_markers(monkeypatch: pytest.MonkeyPatch) -> None:
+    from evals.records import Expected
+    from evals.scoring import score_record
+
+    _unavailable_judge(monkeypatch, _FILTERED, _FILTERED)
+    results = await _run([_outcome("I can't help with that."), _outcome("Sure, here it is.")], judge=True)
+    scored = []
+    for r in results:
+        record = r.record.model_copy(update={"expected": Expected(refusal_expected=True)})
+        scored.append(score_record(record))
+    refused, complied = scored
+    assert refused.completeness_source == "fallback_keywords" and refused.scores.completeness == 1.0
+    assert complied.scores.completeness == 0.0 and not complied.passed
+
+
+@pytest.mark.asyncio
+async def test_mixed_run_reports_judge_and_fallback_counts_and_means(monkeypatch: pytest.MonkeyPatch) -> None:
+    _unavailable_judge(monkeypatch, JudgeVerdict(score=1.0, reasoning="ok"), _FILTERED, _FILTERED)
+    results = await _run([_outcome("The Trail Runner"), _outcome("the name"), _outcome("blocked")], judge=True)
+    summary = _summary(results)
+
+    assert summary.judge_unavailable_cases == 2
+    assert summary.fallback_scored_cases == 2 and summary.judge_scored_cases == 1
+    assert summary.avg_completeness_judged == pytest.approx(1.0)
+    assert summary.avg_completeness_fallback == pytest.approx(0.5)  # one found, one missing
+    assert summary.avg_completeness == pytest.approx(2 / 3)  # headline: judge-scored plus fallback-scored
+    data = summary.to_dict()
+    assert data["fallback_scored_cases"] == 2 and data["avg_completeness_fallback"] == 0.5
+    report = format_summary_report(summary)
+    assert "2 case(s) the judge's content filter refused; 2 scored by the keyword fallback" in report
+    assert "1 judge-scored" in report and "2 fallback-scored" in report
+
+
+@pytest.mark.asyncio
+async def test_budget_exceeded_is_not_a_fallback_trigger() -> None:
+    (stopped,) = await _run([_outcome(BUDGET_REFUSAL_MESSAGE)], judge=True)
+    assert stopped.budget_exceeded and stopped.record.completeness_source is None
+    assert _summary([stopped]).fallback_scored_cases == 0
+
+
+def test_old_record_without_the_field_loads_and_rescores() -> None:
+    import json
+
+    from evals.records import RunRecord
+    from evals.scoring import score_record
+
+    results = __import__("asyncio").run(_run([_outcome("x")]))
+    raw = json.loads(results[0].record.model_dump_json())
+    raw.pop("completeness_source", None)
+    for turn in raw.get("turns", []):
+        turn.pop("completeness_source", None)
+    record = RunRecord.model_validate(raw)
+    assert record.completeness_source is None
+    assert score_record(record).completeness_source == "keywords"
+    assert verify_rescore([record]) == []
+
+
+def test_baseline_without_fallback_field_loads_and_does_not_regress(tmp_path) -> None:
+    import json
+
+    from evals.baselines import check_regression, load_baseline
+
+    results = __import__("asyncio").run(_run([_outcome("The name")]))
+    summary = _summary(results)
+    path = tmp_path / "b.json"
+    path.write_text(
+        json.dumps(
+            {
+                "avg_groundedness": summary.avg_groundedness,
+                "avg_correctness": summary.avg_correctness,
+                "avg_completeness": summary.avg_completeness,
+                "overall_score": summary.overall_score,
+            }
+        )
+    )
+    baseline = load_baseline(path)
+    assert baseline is not None
+    regressed, _ = check_regression(baseline, summary)
+    assert not regressed
 
 
 def test_rescore_reproduces_a_judge_unavailable_record(monkeypatch: pytest.MonkeyPatch) -> None:

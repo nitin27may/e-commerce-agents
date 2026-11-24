@@ -57,7 +57,7 @@ Tokens per request before the user's message, counted with `o200k_base` (`evals/
 
 ## Live reference baselines (not a quality guarantee)
 
-**These are live runs, not replay.** Each row is one sitting of one model with an LLM judge, taken through the in-process target on a freshly seeded database. With one repeat there is no spread: a single flipped case moves a suite by a few points, and a rerun can move it too. They are stored under their own setup key and the replay gate never compares against them. A self-judged run says so in the Judge column. Cost is the tokens times the price in `config/pricing/models.yaml` with cached input billed at the full rate, so it is an upper bound, and it excludes the judge calls.
+**These are live runs, not replay.** Each row is one sitting of one model with an LLM judge, taken through the in-process target on a freshly seeded database. With one repeat there is no spread: a single flipped case moves a suite by a few points, and a rerun can move it too. They are stored under their own setup key and the replay gate never compares against them. A self-judged run says so in the Judge column. A case the judge could not score (content filter) is noted beside Passed, with how many of those the less strict keyword fallback scored instead. Cost is the tokens times the price in `config/pricing/models.yaml` with cached input billed at the full rate, so it is an upper bound, and it excludes the judge calls.
 
 | Date | Setup | Model | Judge | k | Agent | Dataset | Cases | Passed | Groundedness | Correctness | Completeness | Overall | Cost (USD) |
 |------|-------|-------|-------|--:|-------|---------|------:|-------:|-------------:|------------:|-------------:|--------:|-----------:|

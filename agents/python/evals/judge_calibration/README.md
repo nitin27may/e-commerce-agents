@@ -108,10 +108,7 @@ two `gpt-5.x` models had price rows:
   `--rescore` and the decision recomputes.
 - **Content filter.** The Azure filter refused three adversarial rows for every judge except `gpt-4.1`, **including the
   incumbent**, so the default and `gpt-5.4-mini` are compared on the same 27 rows and the gain does not depend on the
-  filter. It does not change the decision, but it leaves a blind spot: for these judges the adversarial rows (the ones
-  about declining an injection) come back `judge_unavailable`, are left out of the completeness mean and are reported on
-  a `Judge unavailable` line, not scored 0 and not passed. A suite heavy in such rows is judged on fewer cases, and only
-  `gpt-4.1` (a self-judge on `gpt-4.1` runs) could grade them.
+  filter. It does not change the decision. Those rows come back `judge_unavailable`; a regular eval run scores them with the deterministic keyword fallback instead (`completeness_source: fallback_keywords`), which is weaker than a judge verdict and is counted and averaged separately in the report.
 - What "default" means in code: nothing changed, because no judge is defaulted (a run with no `JUDGE_*` stops, or
   self-judges only when told to). The recommended setting is `JUDGE_PROVIDER=azure JUDGE_MODEL=gpt-5.4-mini`, named in
   `docs/agent-quality.md` and `evals/README.md`, and it stays overridable by any `JUDGE_*` value.
