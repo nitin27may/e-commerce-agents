@@ -16,6 +16,7 @@ Releases are cut with `scripts/bump_version.py` and `.github/workflows/release.y
 
 ### Added
 
+- **Azure free-trial profile and an ordered deployment sequence.** `--profile free-trial` (5 USD budget with three alert levels, scale to zero, one replica at most, 0.1 GB/day log cap, no registry or private networking) and `deployOpenAi=false` / `--llm replay|openai`, which skips the Azure OpenAI account for a subscription with no model quota. New page [azure-deployment-sequence.md](docs/azure-deployment-sequence.md) with the stages, costs from the Retail Prices API (2026-11-23) and the read-only rehearsal findings. Offline-verified only; nothing deployed.
 - **Orchestrator live routing dataset grown to 30 cases** (14 happy, 9 edge, 7 adversarial) with a `why` line each, plus `expected_routes` and `forbidden_routes` assertions in the eval schema.
 - **Live product-discovery dataset grows to 25 cases** (11 happy path, 8 edge, 6 adversarial, each with a one-line `why`), single-turn, seeded users and products only (NA-2).
 

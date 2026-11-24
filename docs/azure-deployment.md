@@ -14,6 +14,8 @@ Bicep templates and scripts that deploy the Python stack to Azure Container Apps
 
 A checklist for a clean subscription. It has not been run end to end yet: [what was and was not verified](#assumptions-to-confirm-on-a-real-subscription).
 
+**On a new personal free trial with a hard 5 USD budget, use the [free-trial profile and the ordered deployment sequence](azure-deployment-sequence.md)** (`--profile free-trial --llm replay`): every stage with its cost, time, check and teardown. The rest of this page describes the demo and reference profiles.
+
 **You need**
 
 - An Azure subscription where you are **Owner** (or Contributor plus User Access Administrator): the template creates role assignments (Key Vault Secrets User, Cognitive Services OpenAI User). A pay-as-you-go or free-trial account is fine; a free trial may refuse the model quota or the Postgres SKU, and then the preflight says so before anything is created.
@@ -192,6 +194,15 @@ Images come from `ghcr.io/nitin27may/e-commerce-agents/<service>:<imageTag>`. Th
 | Model auth | account key from Key Vault | Entra ID through the identity; local auth disabled on the account |
 | A2A identity | `both` | `token`, with the distinct `A2A_IDENTITY_KEY` that preprovision generates |
 
+**`free-trial`** (`infra/profiles/free-trial.json`, [sequence and costs](azure-deployment-sequence.md)) is the demo topology at its smallest: every HTTP app scales 0 to 1 (the worker and Redis hold one replica), orchestrator 0.5 vCPU, Postgres B1ms 32 GB, Log Analytics capped at 0.1 GB/day, budget 5 with alerts at 50, 80 and 100 percent actual. It has no Managed Redis, ACR, APIM or private networking, and pairs with `deployOpenAi=false`:
+
+| `deployOpenAi` | Meaning |
+|---|---|
+| `true` (default, every profile) | the Azure OpenAI account, `chat` and `embedding` deployments and the key secret, as before |
+| `false` | none of those. `externalLlmProvider` is `replay` (no model is called) or `openai` (`externalLlmBaseUrl`, `externalLlmModel`, `externalLlmApi`, key in Key Vault secret `llm-api-key`); `externalEmbeddingProvider` defaults to `replay`. Cost budget mode is `observe`. azd: `DEPLOY_OPENAI`, `EXTERNAL_LLM_PROVIDER`, `EXTERNAL_LLM_BASE_URL`, `EXTERNAL_LLM_MODEL`, `EXTERNAL_LLM_API`, `EXTERNAL_EMBEDDING_PROVIDER`, `EXTERNAL_LLM_API_KEY`. Not combinable with the gateway, the Foundry project or the reference profile |
+
+`scripts/azure-up.sh --profile free-trial --llm replay|openai [--llm-base-url ...] [--preview]`; the key comes from `LLM_API_KEY`, never an argument. The PowerShell mirrors do not have these options.
+
 Cost (estimates, not measured): demo roughly 120 to 380 USD a month, about 0.02 to 0.03 USD per chat turn; reference 500 to 800.
 
 ## Reference profile, image source and stack
@@ -211,7 +222,8 @@ Set by `azure-up` or by hand with `azd env set`.
 | Variable | Default | Meaning |
 |---|---|---|
 | `AZURE_LOCATION`, `AZURE_OPENAI_LOCATION` | required, location | region for everything; region for the model account |
-| `DEPLOY_PROFILE` | `demo` | `demo` or `reference` |
+| `DEPLOY_PROFILE` | `demo` | `demo`, `reference` or `free-trial` |
+| `DEPLOY_OPENAI` and `EXTERNAL_LLM_*` | `true`, replay | skip the Azure OpenAI account and name another provider; see Profiles |
 | `IMAGE_TAG` | none | pinned GHCR tag, `vX.Y.Z` or `sha-<7>` |
 | `PUBLIC_ACCESS` | `restricted` | `open` lets anyone reach the frontend |
 | `DEPLOYER_IP`, `ALLOWED_IPS` | detected, empty | `/32` allowed through the frontend ingress; extra CIDRs, comma separated. Restricted with neither allows nobody |

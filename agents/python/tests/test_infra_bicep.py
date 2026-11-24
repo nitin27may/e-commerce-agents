@@ -1217,3 +1217,249 @@ def test_dotnet_dry_run_imports_only_the_images_the_stack_uses() -> None:
     names = {line.split("--image ")[1].split(":")[0] for line in out.splitlines() if "az acr import" in line}
     assert names == DOTNET_IMAGES | SHARED_PYTHON_IMAGES
     assert "azd env set DEPLOY_STACK dotnet" in out
+
+
+# ----------------------------------------------------------------------------------------------
+# Free-trial profile: a 5 USD budget, free resources only (docs/azure-deployment-sequence.md).
+# ----------------------------------------------------------------------------------------------
+
+FREE_TRIAL = "free-trial-replay"
+OPENAI_USER_ROLE = "5e0bd9bd-7b93-4f28-af87-19fc36ad61bd"
+FREE_TRIAL_FIXTURES = ["free-trial", "free-trial-replay", "free-trial-openai"]
+SCRIPT_ENV = {"PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin", "HOME": str(Path.home())}
+
+
+def _script(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    assert BASH is not None
+    return subprocess.run(
+        [BASH, *args],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=120,
+        cwd=REPO_ROOT,
+        env={**SCRIPT_ENV, **(env or {})},
+    )
+
+
+def _free_trial_profile() -> dict[str, Any]:
+    return json.loads((INFRA / "profiles" / "free-trial.json").read_text(encoding="utf-8"))
+
+
+def test_free_trial_profile_is_the_smallest_shape_the_template_allows() -> None:
+    profile = _free_trial_profile()
+    assert profile["budget"]["monthlyAmount"] == 5
+    postgres = profile["postgres"]
+    assert (postgres["tier"], postgres["skuName"], postgres["storageSizeGB"]) == ("Burstable", "Standard_B1ms", 32)
+    assert postgres["highAvailability"] == "Disabled" and postgres["geoRedundantBackup"] == "Disabled"
+    # The API minimum for the daily cap is 0.023 GB; 0.1 GB keeps first-run logs readable.
+    assert 0.023 <= float(profile["logAnalytics"]["dailyQuotaGb"]) <= 0.1
+    assert profile["network"]["enabled"] is False
+    assert profile["redis"]["kind"] == "container" and profile["imageSource"] == "ghcr"
+    assert profile["keyVault"]["enablePurgeProtection"] is False
+    scale = profile["containerApps"]
+    assert scale["minReplicas"] == 0 and scale["orchestratorMinReplicas"] == 0
+    assert scale["maxReplicas"] == 1 and scale["orchestratorMaxReplicas"] == 1
+
+
+@pytest.mark.parametrize("fixture", FREE_TRIAL_FIXTURES)
+def test_free_trial_deploys_nothing_that_bills_by_the_hour_beyond_postgres(
+    raw_snapshots: dict[str, Resources], fixture: str
+) -> None:
+    resources = raw_snapshots[fixture]
+    kinds = {r["type"] for r in resources}
+    assert not kinds & {
+        "Microsoft.Network/virtualNetworks",
+        "Microsoft.Network/privateEndpoints",
+        "Microsoft.Cache/redisEnterprise",
+        "Microsoft.ContainerRegistry/registries",
+        "Microsoft.ApiManagement/service",
+    }
+    postgres = _one(resources, "Microsoft.DBforPostgreSQL/flexibleServers")
+    assert postgres["sku"] == {"name": "Standard_B1ms", "tier": "Burstable"}
+    assert postgres["properties"]["storage"]["storageSizeGB"] == 32
+    assert _one(resources, "Microsoft.KeyVault/vaults")["properties"]["sku"]["name"] == "standard"
+    workspace = _one(resources, "Microsoft.OperationalInsights/workspaces")["properties"]
+    assert workspace["workspaceCapping"]["dailyQuotaGb"] <= 0.1
+    assert workspace["retentionInDays"] == 30
+
+
+@pytest.mark.parametrize("fixture", FREE_TRIAL_FIXTURES)
+def test_free_trial_budget_is_five_with_three_actual_alerts_and_a_forecast(
+    raw_snapshots: dict[str, Resources], fixture: str
+) -> None:
+    budget = _one(raw_snapshots[fixture], "Microsoft.Consumption/budgets")["properties"]
+    assert budget["amount"] == 5
+    notifications = budget["notifications"]
+    assert {k: v["threshold"] for k, v in notifications.items()} == {
+        "actual": 50,
+        "actual_80": 80,
+        "actual_100": 100,
+        "forecast": 100,
+    }
+    assert all(v["contactEmails"] == [] for v in notifications.values())
+
+
+@pytest.mark.parametrize("fixture", FREE_TRIAL_FIXTURES)
+def test_free_trial_http_apps_scale_to_zero_and_never_past_one_replica(
+    snapshots: dict[str, Apps], fixture: str
+) -> None:
+    apps = snapshots[fixture]
+    for name, resource in apps.items():
+        if resource["type"] != "Microsoft.App/containerApps":
+            continue
+        scale = resource["properties"]["template"]["scale"]
+        assert scale["maxReplicas"] == 1, name
+        if name in ("ca-redis", "ca-outbox-worker"):
+            # Neither has an HTTP trigger that could wake it, so each stays at one replica.
+            assert scale["minReplicas"] == 1, name
+        else:
+            assert scale["minReplicas"] == 0, name
+    assert _container(apps["ca-orchestrator"])["resources"] == {"cpu": 0.5, "memory": "1Gi"}
+
+
+def test_free_trial_replay_has_no_model_account_and_no_model_secret(raw_snapshots: dict[str, Resources]) -> None:
+    resources = raw_snapshots[FREE_TRIAL]
+    assert not [r for r in resources if r["type"].startswith("Microsoft.CognitiveServices")]
+    assert not _secret_entries(resources) & {"azure-openai-key", "llm-api-key"}
+    assert OPENAI_USER_ROLE not in _role_ids(resources)
+
+
+def test_free_trial_replay_apps_call_no_model_and_do_not_enforce_a_cost_ceiling(snapshots: dict[str, Apps]) -> None:
+    apps = snapshots[FREE_TRIAL]
+    for name in ("ca-orchestrator", "ca-product-discovery", "ca-outbox-worker", "job-db-init"):
+        env = _env(apps[name])
+        assert env["LLM_PROVIDER"]["value"] == "replay", name
+        assert env["COST_BUDGET_MODE"]["value"] == "observe", name
+        assert not {e for e in env if e.startswith("AZURE_OPENAI")}, name
+        assert "OPENAI_API_KEY" not in env, name
+    # Embeddings are keyless too, so the seeder writes hashing vectors.
+    assert _env(apps["job-db-init"])["EMBEDDING_PROVIDER"]["value"] == "replay"
+
+
+def test_free_trial_with_the_model_account_keeps_azure_openai_and_the_cost_ceiling(
+    raw_snapshots: dict[str, Resources], snapshots: dict[str, Apps]
+) -> None:
+    assert len(_of_type(raw_snapshots["free-trial"], "Microsoft.CognitiveServices/accounts")) == 1
+    env = _env(snapshots["free-trial"]["ca-orchestrator"])
+    assert env["LLM_PROVIDER"]["value"] == "azure" and env["COST_BUDGET_MODE"]["value"] == "enforce"
+
+
+def test_free_trial_openai_reads_an_operator_endpoint_and_a_key_vault_key(
+    raw_snapshots: dict[str, Resources], snapshots: dict[str, Apps]
+) -> None:
+    fixture = "free-trial-openai"
+    assert "llm-api-key" in _secret_entries(raw_snapshots[fixture])
+    assert not [r for r in raw_snapshots[fixture] if r["type"].startswith("Microsoft.CognitiveServices")]
+    for name in ("ca-orchestrator", "ca-review-sentiment", "ca-outbox-worker", "job-db-init"):
+        env = _env(snapshots[fixture][name])
+        assert env["LLM_PROVIDER"]["value"] == "openai", name
+        assert env["LLM_BASE_URL"]["value"] == "https://llm.example.invalid/v1", name
+        assert env["LLM_API"]["value"] == "chat_completions", name
+        assert env["LLM_MODEL"]["value"] == "gpt-4.1-mini", name
+        assert env["OPENAI_API_KEY"].get("secretRef") == "llm-api-key" and "value" not in env["OPENAI_API_KEY"], name
+        assert not {e for e in env if e.startswith("AZURE_OPENAI")}, name
+    secrets = snapshots[fixture]["ca-orchestrator"]["properties"]["configuration"]["secrets"]
+    assert "'llm-api-key')]" in next(s for s in secrets if s["name"] == "llm-api-key")["keyVaultUrl"]
+
+
+def test_the_model_account_stays_the_default() -> None:
+    main = (INFRA / "main.bicep").read_text(encoding="utf-8")
+    assert "param deployOpenAi bool = true" in main
+    assert "${DEPLOY_OPENAI=true}" in (INFRA / "main.parameters.json").read_text(encoding="utf-8")
+
+
+@needs_bash
+def test_azure_up_accepts_the_free_trial_profile_and_skips_the_model_account() -> None:
+    result = _script(
+        "scripts/azure-up.sh", "--env", "t1", "--location", "eastus2", "--profile", "free-trial", "--llm", "replay",
+        "--image-tag", "v1.4.0", "--dry-run",
+    )  # fmt: skip
+    out = result.stderr
+    assert result.returncode == 0, out
+    assert "azd env set DEPLOY_PROFILE free-trial" in out
+    assert "azd env set DEPLOY_OPENAI false" in out and "azd env set EXTERNAL_LLM_PROVIDER replay" in out
+    assert "skipping model and quota checks" in out
+    assert "az cognitiveservices model list" not in out and "azd up" not in out
+    registered = [line.rsplit(" ", 1)[1] for line in out.splitlines() if "az provider register" in line]
+    assert {"Microsoft.App", "Microsoft.DBforPostgreSQL", "Microsoft.KeyVault"} <= set(registered)
+    assert not {"Microsoft.CognitiveServices", "Microsoft.ContainerRegistry", "Microsoft.Network"} & set(registered)
+
+
+@needs_bash
+def test_azure_up_free_trial_with_the_model_account_still_checks_quota() -> None:
+    result = _script(
+        "scripts/azure-up.sh", "--env", "t1", "--location", "eastus2", "--profile", "free-trial",
+        "--image-tag", "v1.4.0", "--dry-run",
+    )  # fmt: skip
+    assert result.returncode == 0, result.stderr
+    assert "az cognitiveservices model list" in result.stderr
+    assert "az provider register --namespace Microsoft.CognitiveServices" in result.stderr
+
+
+@needs_bash
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--llm", "openai"],  # no base URL
+        ["--llm", "openai", "--llm-base-url", "https://x.example/v1"],  # no key in the environment
+        ["--llm", "bogus"],
+        ["--profile", "nope"],
+    ],
+)
+def test_azure_up_refuses_incomplete_model_or_profile_arguments(args: list[str]) -> None:
+    result = _script(
+        "scripts/azure-up.sh", "--env", "t1", "--location", "eastus2", "--image-tag", "v1.4.0", "--dry-run", *args
+    )
+    assert result.returncode != 0
+
+
+@needs_bash
+def test_azure_up_openai_dry_run_never_prints_the_key() -> None:
+    result = _script(
+        "scripts/azure-up.sh", "--env", "t1", "--location", "eastus2", "--image-tag", "v1.4.0", "--dry-run",
+        "--profile", "free-trial", "--llm", "openai", "--llm-base-url", "https://x.example/v1",
+        env={"LLM_API_KEY": "sk-secret-value"},
+    )  # fmt: skip
+    assert result.returncode == 0, result.stderr
+    assert "sk-secret-value" not in result.stdout + result.stderr
+    assert "azd env set EXTERNAL_LLM_BASE_URL https://x.example/v1" in result.stderr
+
+
+@needs_bash
+def test_preprovision_checks_the_external_model_settings_not_model_quota(tmp_path: Path) -> None:
+    base = (
+        'IMAGE_TAG="v1.4.0"\nPUBLIC_ACCESS="open"\nAZURE_LOCATION="eastus2"\n'
+        'DEPLOY_PROFILE="free-trial"\nDEPLOY_OPENAI="false"\n'
+    )
+    store = tmp_path / "azd.env"
+    store.write_text(base + 'EXTERNAL_LLM_PROVIDER="replay"\n', encoding="utf-8")
+    ok = _script("scripts/azure/preprovision.sh", "--dry-run", env={"AZURE_SECRET_STORE_FILE": str(store)})
+    assert ok.returncode == 0, ok.stderr
+    assert "no model account and no model calls" in ok.stderr and "cognitiveservices model list" not in ok.stderr
+    store.write_text(base + 'EXTERNAL_LLM_PROVIDER="openai"\n', encoding="utf-8")
+    failed = _script("scripts/azure/preprovision.sh", "--dry-run", env={"AZURE_SECRET_STORE_FILE": str(store)})
+    assert failed.returncode != 0 and "EXTERNAL_LLM_BASE_URL" in failed.stderr
+
+
+def test_the_deployment_sequence_page_exists_and_is_linked() -> None:
+    page = REPO_ROOT / "docs" / "azure-deployment-sequence.md"
+    assert page.is_file()
+    guide = (REPO_ROOT / "docs" / "azure-deployment.md").read_text(encoding="utf-8")
+    assert "azure-deployment-sequence.md" in guide and "free-trial" in guide
+    text = page.read_text(encoding="utf-8")
+    assert "```mermaid" in text and "az provider register --namespace Microsoft.App" in text
+    # The page is public: it must never carry an account, tenant, subscription or user identifier.
+    assert not re.search(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", text)
+
+
+@needs_bash
+def test_azure_up_preview_runs_a_what_if_and_never_provisions() -> None:
+    result = _script(
+        "scripts/azure-up.sh", "--env", "t1", "--location", "eastus2", "--profile", "free-trial", "--llm", "replay",
+        "--image-tag", "v1.4.0", "--preview", "--dry-run",
+    )  # fmt: skip
+    lines = [line for line in result.stderr.splitlines() if "[dry-run]" in line]
+    assert result.returncode == 0, result.stderr
+    assert any("azd provision --preview --environment t1" in line for line in lines)
+    assert not any("azd provision --environment" in line for line in lines)
