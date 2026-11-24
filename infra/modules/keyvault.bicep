@@ -30,6 +30,10 @@ param seedStaffPassword string
 @secure()
 @description('Operator-supplied API key for an OpenAI-compatible endpoint (free-trial path).')
 param llmApiKey string = ''
+@description('Write the postgres-admin-password secret. Nothing reads it (the apps use database-url, which carries the password); the free-trial profile turns it off so the password exists in one secret only.')
+param storePostgresPassword bool = true
+@description('Write a2a-identity-key, oauth-seed-key and auth-signing-key-encryption-key. The first is optional outside token mode (the key falls back to the agent secret) and the other two are read only with AUTH_MODE=oauth; the free-trial profile turns them off unless the auth server is deployed.')
+param storeAuthSecrets bool = true
 @description('Write the llm-api-key secret. A plain flag, not !empty(llmApiKey): a secure value is not known when the template is evaluated offline.')
 param storeLlmApiKey bool = false
 
@@ -75,7 +79,7 @@ resource deployerRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if 
 
 // Written through the ARM control plane, so the deployment itself needs no
 // data-plane role.
-resource pgPasswordSecret 'Microsoft.KeyVault/vaults/secrets@2025-05-01' = {
+resource pgPasswordSecret 'Microsoft.KeyVault/vaults/secrets@2025-05-01' = if (storePostgresPassword) {
   parent: vault
   name: 'postgres-admin-password'
   properties: { value: postgresAdminPassword }
@@ -93,19 +97,19 @@ resource agentSecretEntry 'Microsoft.KeyVault/vaults/secrets@2025-05-01' = {
   properties: { value: agentSharedSecret }
 }
 
-resource a2aKeyEntry 'Microsoft.KeyVault/vaults/secrets@2025-05-01' = {
+resource a2aKeyEntry 'Microsoft.KeyVault/vaults/secrets@2025-05-01' = if (storeAuthSecrets) {
   parent: vault
   name: 'a2a-identity-key'
   properties: { value: a2aIdentityKey }
 }
 
-resource oauthSeedEntry 'Microsoft.KeyVault/vaults/secrets@2025-05-01' = {
+resource oauthSeedEntry 'Microsoft.KeyVault/vaults/secrets@2025-05-01' = if (storeAuthSecrets) {
   parent: vault
   name: 'oauth-seed-key'
   properties: { value: oauthSeedKey }
 }
 
-resource signingKeyEntry 'Microsoft.KeyVault/vaults/secrets@2025-05-01' = {
+resource signingKeyEntry 'Microsoft.KeyVault/vaults/secrets@2025-05-01' = if (storeAuthSecrets) {
   parent: vault
   name: 'auth-signing-key-encryption-key'
   properties: { value: authSigningKeyEncryptionKey }

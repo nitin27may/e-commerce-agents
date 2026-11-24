@@ -83,6 +83,12 @@
     "deployApps": {
       "value": "${DEPLOY_APPS=true}"
     },
+    "openAiLocalAuth": {
+      "value": "${AZURE_OPENAI_LOCAL_AUTH=auto}"
+    },
+    "grantDeployerAccess": {
+      "value": "${GRANT_DEPLOYER_ACCESS=false}"
+    },
     "deployOpenAi": {
       "value": "${DEPLOY_OPENAI=true}"
     },

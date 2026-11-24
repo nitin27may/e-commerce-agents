@@ -10,6 +10,8 @@ param location string = deployment().location
 param openAiLocation string = location
 @description('Deploying user object id (AZURE_PRINCIPAL_ID); empty in CI.')
 param principalId string = ''
+@description('Grant the person deploying the roles that need no key: Key Vault Secrets Officer and Cognitive Services OpenAI User (so sanity.sh can read secrets and call the model with its own token). azd passes AZURE_PRINCIPAL_ID and needs no flag. In the portal tick this: it uses deployer().objectId and assumes a user, not a service principal.')
+param grantDeployerAccess bool = false
 @allowed(['demo', 'reference', 'free-trial'])
 param profile string = 'demo'
 @description('Chat model. Empty: the profile decides (demo and reference gpt-5.1, free-trial gpt-5.4-nano).')
@@ -19,6 +21,9 @@ param chatModelVersion string = ''
 param deployMiniModel bool = false
 @description('Azure OpenAI API version the apps call. gpt-5.1 tool calling on the Responses API is unverified; see docs/azure-deployment.md.')
 param openAiApiVersion string = '2025-04-01-preview'
+@allowed(['auto', 'enabled', 'disabled'])
+@description('Local (key) authentication on the AIServices account. auto: disabled when the apps use identity (free-trial, reference), enabled when they use the key (demo). Override with enabled to keep keys, for a tool that cannot use Entra ID.')
+param openAiLocalAuth string = 'auto'
 @allowed(['auto', 'key', 'identity'])
 @description('auto: the profile decides (demo key, reference identity). key: apps read the account key from Key Vault. identity: Entra ID through the user-assigned identity (needs Azure P3 in the image) and local auth is disabled on the account.')
 param openAiAuth string = 'auto'
@@ -120,6 +125,10 @@ var foundryOn = deployOpenAi && (deployFoundryProject || (cfg.?deployFoundryProj
 var effectiveChatModel = deployOpenAi ? modelName : externalLlmModel
 var cfg = profiles[profile]
 var effectiveOpenAiAuth = openAiAuth == 'auto' ? cfg.openAiAuth : openAiAuth
+var deployerObjectId = !empty(principalId) ? principalId : (grantDeployerAccess ? deployer().objectId : '')
+var disableOpenAiLocalAuth = openAiLocalAuth == 'auto' ? effectiveOpenAiAuth == 'identity' : openAiLocalAuth == 'disabled'
+// The free-trial profile drops secrets nothing reads (see modules/keyvault.bicep) and says so here.
+var keepAuthSecrets = !(cfg.?minimalSecrets ?? false) || deployAuthServer
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = {
   'azd-env-name': environmentName
@@ -163,7 +172,9 @@ module keyVault 'modules/keyvault.bicep' = {
     location: location
     tags: tags
     readerPrincipalId: identity.outputs.principalId
-    deployerPrincipalId: principalId
+    deployerPrincipalId: deployerObjectId
+    storePostgresPassword: cfg.keyVault.?storePostgresPassword ?? true
+    storeAuthSecrets: keepAuthSecrets
     enablePurgeProtection: cfg.keyVault.enablePurgeProtection
     privateOnly: privateNetwork
     softDeleteRetentionDays: cfg.keyVault.softDeleteRetentionDays
@@ -212,7 +223,8 @@ module openAi 'modules/openai.bicep' = if (deployOpenAi) {
     embeddingCapacity: cfg.openAi.embeddingCapacity
     deployMiniModel: deployMiniModel
     miniCapacity: cfg.openAi.miniCapacity
-    disableLocalAuth: effectiveOpenAiAuth == 'identity'
+    disableLocalAuth: disableOpenAiLocalAuth
+    deployerPrincipalId: deployerObjectId
     allowProjectManagement: foundryOn
     privateOnly: privateNetwork
   }
@@ -355,6 +367,7 @@ module apps 'modules/apps.bicep' = if (deployApps) {
     managedRedis: managedRedis
     deployAuthServer: deployAuthServer
     deployMcp: deployMcp
+    includeAuthSecrets: keepAuthSecrets
   }
 }
 

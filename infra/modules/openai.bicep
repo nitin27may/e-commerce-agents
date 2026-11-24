@@ -22,6 +22,9 @@ param miniModelName string = 'gpt-5.1-mini'
 param miniModelVersion string = '2025-11-13'
 param miniCapacity int = 50
 
+@description('The person deploying (azd AZURE_PRINCIPAL_ID). Gets Cognitive Services OpenAI User so scripts/azure/sanity.sh can call the model with its own Entra token instead of an account key. Empty skips it.')
+param deployerPrincipalId string = ''
+
 var openAiUserRoleId = '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
 
 resource account 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
@@ -100,6 +103,16 @@ resource callerRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   properties: {
     principalId: callerPrincipalId
     principalType: 'ServicePrincipal'
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', openAiUserRoleId)
+  }
+}
+
+resource deployerRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(deployerPrincipalId)) {
+  name: guid(account.id, deployerPrincipalId, openAiUserRoleId)
+  scope: account
+  properties: {
+    principalId: deployerPrincipalId
+    principalType: 'User'
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', openAiUserRoleId)
   }
 }

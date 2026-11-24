@@ -70,6 +70,8 @@ param allowedIpRanges array = []
 
 param deployAuthServer bool = false
 param deployMcp bool = false
+@description('Mount a2a-identity-key, oauth-seed-key and auth-signing-key-encryption-key. False (free-trial) when the auth server is off and the A2A key is the agent secret: those three are not in Key Vault then.')
+param includeAuthSecrets bool = true
 
 var identityOf = toObject(appIdentities, i => i.app)
 var perApp = !empty(appIdentities)
@@ -144,10 +146,14 @@ var backendSecretEnvCore = concat(
     { env: 'DATABASE_URL', secret: 'database-url' }
     { env: 'JWT_SECRET', secret: 'jwt-secret' }
     { env: 'AGENT_SHARED_SECRET', secret: 'agent-shared-secret' }
-    { env: 'A2A_IDENTITY_KEY', secret: 'a2a-identity-key' }
-    { env: 'OAUTH_SEED_KEY', secret: 'oauth-seed-key' }
-    { env: 'AUTH_SIGNING_KEY_ENCRYPTION_KEY', secret: 'auth-signing-key-encryption-key' }
   ],
+  includeAuthSecrets
+    ? [
+        { env: 'A2A_IDENTITY_KEY', secret: 'a2a-identity-key' }
+        { env: 'OAUTH_SEED_KEY', secret: 'oauth-seed-key' }
+        { env: 'AUTH_SIGNING_KEY_ENCRYPTION_KEY', secret: 'auth-signing-key-encryption-key' }
+      ]
+    : [],
   llmProvider == 'azure' && openAiAuth == 'key' ? [{ env: 'AZURE_OPENAI_KEY', secret: 'azure-openai-key' }] : [],
   llmProvider == 'openai' ? [{ env: 'OPENAI_API_KEY', secret: 'llm-api-key' }] : []
 )

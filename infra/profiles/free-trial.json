@@ -5,7 +5,8 @@
   },
   "keyVault": {
     "enablePurgeProtection": false,
-    "softDeleteRetentionDays": 7
+    "softDeleteRetentionDays": 7,
+    "storePostgresPassword": false
   },
   "postgres": {
     "tier": "Burstable",
@@ -41,7 +42,7 @@
     "orchestratorCpu": "0.5",
     "orchestratorMemory": "1Gi"
   },
-  "openAiAuth": "key",
+  "openAiAuth": "identity",
   "a2aIdentity": "both",
   "imageSource": "ghcr",
   "network": {
@@ -56,5 +57,6 @@
     "maxReplicas": 1,
     "skuName": ""
   },
-  "deployFoundryProject": true
+  "deployFoundryProject": true,
+  "minimalSecrets": true
 }
