@@ -101,11 +101,18 @@ def test_postgres_database_waits_for_server_configuration(template: dict[str, An
 def test_model_deployments_are_serialised(template: dict[str, Any]) -> None:
     kind = "Microsoft.CognitiveServices/accounts/deployments"
     deployments = {r["name"]: r for r in _walk_resources(template) if r["type"] == kind}
-    by_leaf = {re.search(r"'([^']+)'\)\]$", name).group(1): r for name, r in deployments.items()}  # type: ignore[union-attr]
-    assert {"chat", "embedding"} <= set(by_leaf)
-    assert any("'chat'" in d for d in by_leaf["embedding"]["dependsOn"])
+
+    def leaf(name: str) -> str:
+        # Deployments are named after their models, so the leaf is a parameter reference (or the literal 'chat-mini').
+        found = re.search(r"parameters\('(\w+)'\)\)\]$", name) or re.search(r"'([^']+)'\)\]$", name)
+        assert found, name
+        return found.group(1)
+
+    by_leaf = {leaf(name): r for name, r in deployments.items()}
+    assert {"chatModelName", "embeddingModelName"} <= set(by_leaf)
+    assert any("chatModelName" in d for d in by_leaf["embeddingModelName"]["dependsOn"])
     if "chat-mini" in by_leaf:
-        assert any("'embedding'" in d for d in by_leaf["chat-mini"]["dependsOn"])
+        assert any("embeddingModelName" in d for d in by_leaf["chat-mini"]["dependsOn"])
 
 
 def test_no_output_looks_secret(template: dict[str, Any]) -> None:
@@ -1540,19 +1547,21 @@ def test_free_trial_deploys_foundry_with_a_nano_chat_model_and_the_smallest_embe
     assert account["kind"] == "AIServices" and account["properties"]["allowProjectManagement"] is True
     assert len(_of_type(resources, "Microsoft.CognitiveServices/accounts/projects")) == 1
     deployments = _model_deployments(resources)
-    assert set(deployments) == {"chat", "embedding"}
-    chat, embedding = deployments["chat"], deployments["embedding"]
-    assert chat["properties"]["model"]["name"] == "gpt-5.4-nano"
-    assert chat["properties"]["model"]["version"] == "2026-03-17"
-    assert chat["sku"] == {"name": "GlobalStandard", "capacity": 10}
-    assert embedding["properties"]["model"]["name"] == "text-embedding-3-small"
-    assert embedding["sku"]["capacity"] <= 10
+    # Deployments are named after their models (the apps price a turn by deployment name).
+    assert set(deployments) == {"gpt-4.1-mini", "text-embedding-3-small"}
+    chat, embedding = deployments["gpt-4.1-mini"], deployments["text-embedding-3-small"]
+    assert chat["properties"]["model"]["version"] == "2025-04-14"
+    # 10 K TPM made every multi-agent turn wait on 429 retries (47 s to the first frame); 100 K is within the
+    # 200 K a new subscription has for this model.
+    assert chat["sku"] == {"name": "GlobalStandard", "capacity": 100}
+    assert embedding["sku"]["capacity"] <= 50
 
 
-def test_free_trial_apps_use_the_nano_model_without_a_temperature(snapshots: dict[str, Apps]) -> None:
+def test_free_trial_apps_use_gpt_4_1_mini_with_a_temperature(snapshots: dict[str, Apps]) -> None:
     env = _env(snapshots["free-trial"]["ca-orchestrator"])
-    assert env["LLM_MODEL"]["value"] == "gpt-5.4-nano"
-    assert env["LLM_TEMPERATURE"]["value"] == "", "gpt-5.x rejects temperature"
+    assert env["LLM_MODEL"]["value"] == "gpt-4.1-mini"
+    assert env["LLM_TEMPERATURE"]["value"] == "0.2", "only gpt-5.x rejects temperature"
+    assert env["AZURE_OPENAI_DEPLOYMENT"]["value"] == "gpt-4.1-mini", "the deployment is named after the model"
 
 
 def test_free_trial_without_the_model_account_has_no_foundry_project(raw_snapshots: dict[str, Resources]) -> None:
@@ -1562,7 +1571,7 @@ def test_free_trial_without_the_model_account_has_no_foundry_project(raw_snapsho
 
 def test_the_demo_profile_keeps_its_default_model_and_no_foundry_project(raw_snapshots: dict[str, Resources]) -> None:
     resources = raw_snapshots["demo-mini-false"]
-    assert _model_deployments(resources)["chat"]["properties"]["model"]["name"] == "gpt-5.1"
+    assert _model_deployments(resources)["gpt-5.1"]["properties"]["model"]["name"] == "gpt-5.1"
     assert not _of_type(resources, "Microsoft.CognitiveServices/accounts/projects")
 
 

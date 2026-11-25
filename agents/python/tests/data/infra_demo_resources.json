@@ -58,11 +58,11 @@
   ],
   [
    "Microsoft.CognitiveServices/accounts/deployments",
-   "foundry-hi2dcakyx3hdw/chat"
+   "foundry-hi2dcakyx3hdw/gpt-5.1"
   ],
   [
    "Microsoft.CognitiveServices/accounts/deployments",
-   "foundry-hi2dcakyx3hdw/embedding"
+   "foundry-hi2dcakyx3hdw/text-embedding-3-small"
   ],
   [
    "Microsoft.Consumption/budgets",
@@ -204,15 +204,15 @@
   ],
   [
    "Microsoft.CognitiveServices/accounts/deployments",
-   "foundry-hi2dcakyx3hdw/chat"
-  ],
-  [
-   "Microsoft.CognitiveServices/accounts/deployments",
    "foundry-hi2dcakyx3hdw/chat-mini"
   ],
   [
    "Microsoft.CognitiveServices/accounts/deployments",
-   "foundry-hi2dcakyx3hdw/embedding"
+   "foundry-hi2dcakyx3hdw/gpt-5.1"
+  ],
+  [
+   "Microsoft.CognitiveServices/accounts/deployments",
+   "foundry-hi2dcakyx3hdw/text-embedding-3-small"
   ],
   [
    "Microsoft.Consumption/budgets",
@@ -366,15 +366,15 @@
   ],
   [
    "Microsoft.CognitiveServices/accounts/deployments",
-   "foundry-eshlhu7isdf2e/chat"
-  ],
-  [
-   "Microsoft.CognitiveServices/accounts/deployments",
    "foundry-eshlhu7isdf2e/chat-mini"
   ],
   [
    "Microsoft.CognitiveServices/accounts/deployments",
-   "foundry-eshlhu7isdf2e/embedding"
+   "foundry-eshlhu7isdf2e/gpt-5.1"
+  ],
+  [
+   "Microsoft.CognitiveServices/accounts/deployments",
+   "foundry-eshlhu7isdf2e/text-embedding-3-small"
   ],
   [
    "Microsoft.Consumption/budgets",

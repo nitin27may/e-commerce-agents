@@ -14,7 +14,7 @@ param principalId string = ''
 param grantDeployerAccess bool = false
 @allowed(['demo', 'reference', 'free-trial'])
 param profile string = 'demo'
-@description('Chat model. Empty: the profile decides (demo and reference gpt-5.1, free-trial gpt-5.4-nano).')
+@description('Chat model. Empty: the profile decides (demo and reference gpt-5.1, free-trial gpt-4.1-mini: a new subscription has no quota for gpt-5.4-nano).')
 param chatModelName string = ''
 @description('Version of the chat model. Set it together with chatModelName.')
 param chatModelVersion string = ''

@@ -2,7 +2,7 @@
 # Sanity check of a DEPLOYED environment. Run it last, after azure-up.sh (or a portal deployment plus the db-init command).
 #
 #   scripts/azure/sanity.sh [--env <azd env>] [--resource-group rg-<env>] [--only db|model|turn|eval]
-#                           [--eval-cases 3] [--no-eval] [--dry-run]
+#                           [--eval-cases 3] [--eval] [--dry-run]
 #
 # Four checks, each printed as PASS, FAIL or SKIP:
 #   db     database connectivity and content, read only, through the deployed path: the frontend proxy, the orchestrator and
@@ -34,13 +34,14 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.." || exit 1
 # shellcheck source=scripts/azure/lib/common.sh
 source scripts/azure/lib/common.sh
 
-ENV_NAME="" RG="" ONLY="" EVAL_CASES=3 RUN_EVAL=1
+ENV_NAME="" RG="" ONLY="" EVAL_CASES=3 RUN_EVAL=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --env) ENV_NAME="$2"; shift 2 ;;
         --resource-group) RG="$2"; shift 2 ;;
         --only) ONLY="$2"; shift 2 ;;
         --eval-cases) EVAL_CASES="$2"; shift 2 ;;
+        --eval) RUN_EVAL=1; shift ;;
         --no-eval) RUN_EVAL=0; shift ;;
         --dry-run) AZURE_DRY_RUN=1; shift ;;
         -h|--help) sed -n '2,36p' "$0"; exit 0 ;;
@@ -288,24 +289,26 @@ if "replay_miss" in other:
     die("replay miss: this environment runs LLM_PROVIDER=replay, which answers no free-form chat. Skip this check or deploy with a model.")
 if "error" in other:
     die("the stream carried an error frame")
-if not routes:
-    die("no specialist was called (steps: %s)" % [s.get("tool_name") for s in steps])
-say("routed to: %s" % ", ".join(str(r) for r in routes))
+# The orchestrator answers an order question with its own order tools on some turns and routes it to a specialist on
+# others; either way what this check proves is that a tool read the database and an answer came back.
+if not routes and not tools:
+    die("no specialist was called and no tool ran (steps: %s)" % [s.get("tool_name") for s in steps])
+say("routed to: %s" % (", ".join(str(r) for r in routes) if routes else "no specialist (the orchestrator used its own tools)"))
 if not tools:
-    die("the specialist called no tool, so nothing read the database")
-say("specialist tools: %s" % ", ".join(sorted(set(str(t) for t in tools))))
+    die("no tool ran, so nothing read the database")
+say("tools: %s" % ", ".join(sorted(set(str(t) for t in tools))))
 if len(answer) < 20:
     die("the answer is empty or too short: %r" % answer)
 say("answer: %d characters" % len(answer))
 PY
-    then pass "turn: routed to a specialist, a tool read the database, an answer came back"
+    then pass "turn: a tool read the database and an answer came back"
     else fail "turn: see above. Scale to zero can make a first turn exceed the A2A timeout: run it again once (troubleshooting row 40)"; fi
 fi
 
 # ---- d: a few eval cases over http -------------------------------------------------------------
 if wanted eval; then
     if [ "$RUN_EVAL" != "1" ]; then
-        skip "eval: --no-eval"
+        skip "eval: opt-in (--eval); run the quality evals locally against the same model, see docs/agent-quality.md"
     elif ! have uv; then
         skip "eval: uv is not installed (the harness is a Python project)"
     else

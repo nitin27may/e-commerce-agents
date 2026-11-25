@@ -191,7 +191,7 @@ def stream(token, body):
 if os.environ.get("SMOKE_NO_MODEL") == "1":
     print("skip  keyed chat turn (--no-model)")
 else:
-    first, frames, text, events = stream(alice, {"message": "Show me some laptops with prices"})
+    first, frames, text, events = stream(alice, {"message": "Show me some wireless headphones with prices"})
     cards = re.findall(r"```products?\s*([\[{][\s\S]*?)```", text)
     ids = []
     for raw in cards:

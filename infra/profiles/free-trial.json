@@ -18,10 +18,10 @@
     "allowAzureServices": true
   },
   "openAi": {
-    "chatModelName": "gpt-5.4-nano",
-    "chatModelVersion": "2026-03-17",
-    "chatCapacity": 10,
-    "embeddingCapacity": 10,
+    "chatModelName": "gpt-4.1-mini",
+    "chatModelVersion": "2025-04-14",
+    "chatCapacity": 100,
+    "embeddingCapacity": 30,
     "miniCapacity": 10
   },
   "budget": {

@@ -46,7 +46,9 @@ resource account 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
 // Deployments on one account are created one at a time, hence the dependsOn chain.
 resource chat 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = {
   parent: account
-  name: 'chat'
+  // Named after the model, not 'chat': the apps price a turn by the deployment name the API reports, and the pricing file is
+  // keyed by model name. A deployment called 'chat' has no price, and COST_BUDGET_MODE=enforce stops every run on it.
+  name: chatModelName
   sku: {
     name: 'GlobalStandard'
     capacity: chatCapacity
@@ -63,7 +65,7 @@ resource chat 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = {
 
 resource embedding 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = {
   parent: account
-  name: 'embedding'
+  name: embeddingModelName
   sku: {
     name: embeddingSkuName
     capacity: embeddingCapacity

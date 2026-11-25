@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.49.2.45890",
-      "templateHash": "2412705614704727526"
+      "templateHash": "2832785580651926994"
     }
   },
   "parameters": {
@@ -58,7 +58,7 @@
       "type": "string",
       "defaultValue": "",
       "metadata": {
-        "description": "Chat model. Empty: the profile decides (demo and reference gpt-5.1, free-trial gpt-5.4-nano)."
+        "description": "Chat model. Empty: the profile decides (demo and reference gpt-5.1, free-trial gpt-4.1-mini: a new subscription has no quota for gpt-5.4-nano)."
       }
     },
     "chatModelVersion": {
@@ -453,10 +453,10 @@
         "allowAzureServices": true
       },
       "openAi": {
-        "chatModelName": "gpt-5.4-nano",
-        "chatModelVersion": "2026-03-17",
-        "chatCapacity": 10,
-        "embeddingCapacity": 10,
+        "chatModelName": "gpt-4.1-mini",
+        "chatModelVersion": "2025-04-14",
+        "chatCapacity": 100,
+        "embeddingCapacity": 30,
         "miniCapacity": 10
       },
       "budget": {
@@ -1374,7 +1374,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.49.2.45890",
-              "templateHash": "11985509228342287533"
+              "templateHash": "7224148638149449544"
             }
           },
           "parameters": {
@@ -1493,7 +1493,7 @@
             {
               "type": "Microsoft.CognitiveServices/accounts/deployments",
               "apiVersion": "2025-06-01",
-              "name": "[format('{0}/{1}', parameters('name'), 'chat')]",
+              "name": "[format('{0}/{1}', parameters('name'), parameters('chatModelName'))]",
               "sku": {
                 "name": "GlobalStandard",
                 "capacity": "[parameters('chatCapacity')]"
@@ -1513,7 +1513,7 @@
             {
               "type": "Microsoft.CognitiveServices/accounts/deployments",
               "apiVersion": "2025-06-01",
-              "name": "[format('{0}/{1}', parameters('name'), 'embedding')]",
+              "name": "[format('{0}/{1}', parameters('name'), parameters('embeddingModelName'))]",
               "sku": {
                 "name": "[parameters('embeddingSkuName')]",
                 "capacity": "[parameters('embeddingCapacity')]"
@@ -1528,7 +1528,7 @@
               },
               "dependsOn": [
                 "[resourceId('Microsoft.CognitiveServices/accounts', parameters('name'))]",
-                "[resourceId('Microsoft.CognitiveServices/accounts/deployments', parameters('name'), 'chat')]"
+                "[resourceId('Microsoft.CognitiveServices/accounts/deployments', parameters('name'), parameters('chatModelName'))]"
               ]
             },
             {
@@ -1550,7 +1550,7 @@
               },
               "dependsOn": [
                 "[resourceId('Microsoft.CognitiveServices/accounts', parameters('name'))]",
-                "[resourceId('Microsoft.CognitiveServices/accounts/deployments', parameters('name'), 'embedding')]"
+                "[resourceId('Microsoft.CognitiveServices/accounts/deployments', parameters('name'), parameters('embeddingModelName'))]"
               ]
             },
             {
@@ -1598,11 +1598,11 @@
             },
             "chatDeploymentName": {
               "type": "string",
-              "value": "chat"
+              "value": "[parameters('chatModelName')]"
             },
             "embeddingDeploymentName": {
               "type": "string",
-              "value": "embedding"
+              "value": "[parameters('embeddingModelName')]"
             }
           }
         }
