@@ -37,7 +37,7 @@ param storeAuthSecrets bool = true
 @description('Write the llm-api-key secret. A plain flag, not !empty(llmApiKey): a secure value is not known when the template is evaluated offline.')
 param storeLlmApiKey bool = false
 
-var secretsUserRoleId = '4633458b-17de-408a-b874-0f5e9c3b6f6c'
+var secretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
 var secretsOfficerRoleId = 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7'
 
 resource vault 'Microsoft.KeyVault/vaults@2025-05-01' = {

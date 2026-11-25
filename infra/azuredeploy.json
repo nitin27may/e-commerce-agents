@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.49.2.45890",
-      "templateHash": "3309525551772866064"
+      "templateHash": "6663077745990006240"
     }
   },
   "parameters": {
@@ -807,7 +807,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.49.2.45890",
-              "templateHash": "12939481079029596526"
+              "templateHash": "5394850406374020773"
             }
           },
           "parameters": {
@@ -902,7 +902,7 @@
             }
           },
           "variables": {
-            "secretsUserRoleId": "4633458b-17de-408a-b874-0f5e9c3b6f6c",
+            "secretsUserRoleId": "4633458b-17de-408a-b874-0445c86b69e6",
             "secretsOfficerRoleId": "b86a8fe4-44ce-4948-aee5-eccb2c155cd7"
           },
           "resources": [
@@ -6361,7 +6361,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.49.2.45890",
-              "templateHash": "9785409102103622233"
+              "templateHash": "3025635326317709637"
             }
           },
           "parameters": {
@@ -6392,7 +6392,7 @@
             }
           },
           "variables": {
-            "secretsUserRoleId": "4633458b-17de-408a-b874-0f5e9c3b6f6c",
+            "secretsUserRoleId": "4633458b-17de-408a-b874-0445c86b69e6",
             "openAiUserRoleId": "5e0bd9bd-7b93-4f28-af87-19fc36ad61bd"
           },
           "resources": [

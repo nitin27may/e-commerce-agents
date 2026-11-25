@@ -50,7 +50,7 @@
   ],
   [
    "Microsoft.Authorization/roleAssignments",
-   "[guid('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-demo/providers/Microsoft.KeyVault/vaults/kv-hi2dcakyx3hdw', reference('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-demo/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-hi2dcakyx3hdw', '2024-11-30').principalId, '4633458b-17de-408a-b874-0f5e9c3b6f6c')]"
+   "[guid('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-demo/providers/Microsoft.KeyVault/vaults/kv-hi2dcakyx3hdw', reference('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-demo/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-hi2dcakyx3hdw', '2024-11-30').principalId, '4633458b-17de-408a-b874-0445c86b69e6')]"
   ],
   [
    "Microsoft.CognitiveServices/accounts",
@@ -196,7 +196,7 @@
   ],
   [
    "Microsoft.Authorization/roleAssignments",
-   "[guid('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-demo/providers/Microsoft.KeyVault/vaults/kv-hi2dcakyx3hdw', reference('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-demo/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-hi2dcakyx3hdw', '2024-11-30').principalId, '4633458b-17de-408a-b874-0f5e9c3b6f6c')]"
+   "[guid('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-demo/providers/Microsoft.KeyVault/vaults/kv-hi2dcakyx3hdw', reference('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-demo/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-hi2dcakyx3hdw', '2024-11-30').principalId, '4633458b-17de-408a-b874-0445c86b69e6')]"
   ],
   [
    "Microsoft.CognitiveServices/accounts",
@@ -358,7 +358,7 @@
   ],
   [
    "Microsoft.Authorization/roleAssignments",
-   "[guid('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-optional/providers/Microsoft.KeyVault/vaults/kv-eshlhu7isdf2e', reference('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-optional/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-eshlhu7isdf2e', '2024-11-30').principalId, '4633458b-17de-408a-b874-0f5e9c3b6f6c')]"
+   "[guid('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-optional/providers/Microsoft.KeyVault/vaults/kv-eshlhu7isdf2e', reference('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-optional/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-eshlhu7isdf2e', '2024-11-30').principalId, '4633458b-17de-408a-b874-0445c86b69e6')]"
   ],
   [
    "Microsoft.CognitiveServices/accounts",
