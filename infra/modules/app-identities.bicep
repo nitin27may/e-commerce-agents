@@ -17,7 +17,7 @@ param keyVaultName string
 @description('Azure OpenAI account the apps call directly. Empty when a gateway sits in front (the gateway holds that role).')
 param openAiAccountName string = ''
 
-var secretsUserRoleId = '4633458b-17de-408a-b874-0f5e9c3b6f6c'
+var secretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
 var openAiUserRoleId = '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
 
 resource vault 'Microsoft.KeyVault/vaults@2025-05-01' existing = {

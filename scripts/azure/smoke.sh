@@ -14,7 +14,8 @@
 #   6. one approval with no model: a return in workflow:return-replace (over the 500 threshold when a seeded
 #      order allows it) is paused, appears in the staff inbox, is decided by a reviewer of the right role, and the
 #      run timeline shows it finished.
-# Steps 5 and 6 need the stack to have a model (5) and are skipped by --quick.
+# Steps 5 and 6 need the stack to have a model (5) and are skipped by --quick. --no-model runs everything except step 5, for
+# a stack on LLM_PROVIDER=replay (the free-trial path); step 6 is meant to need no model but is unverified under replay.
 #
 # Environment: FRONTEND_URL, E2E_STAFF_PASSWORD (admin, support), SMOKE_CUSTOMER_PASSWORD (default customer123),
 # AZURE_RESOURCE_GROUP, DB_INIT_JOB_NAME, SMOKE_FIRST_FRAME_SECONDS (15), SMOKE_MIN_FRAMES (10), SMOKE_WAIT_SECONDS (300).
@@ -22,12 +23,13 @@
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.." || exit 1
 
-QUICK=0 LOCAL=0
+QUICK=0 LOCAL=0 NO_MODEL=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --quick) QUICK=1; shift ;;
         --local) LOCAL=1; shift ;;
-        -h|--help) sed -n '2,22p' "$0"; exit 0 ;;
+        --no-model) NO_MODEL=1; shift ;;
+        -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
 done
@@ -94,7 +96,7 @@ done
 pass "frontend answers 200"
 
 # ---- 3, 4, 5, 6: through the proxy ---------------------------------------------------------------
-QUICK="$QUICK" python3 - <<'PY' || exit 1
+QUICK="$QUICK" SMOKE_NO_MODEL="$NO_MODEL" python3 - <<'PY' || exit 1
 import json
 import os
 import re
@@ -186,27 +188,30 @@ def stream(token, body):
 
 
 # ---- 5. keyed chat turn: a product card and SSE timing --------------------------------------------
-first, frames, text, events = stream(alice, {"message": "Show me some laptops with prices"})
-cards = re.findall(r"```products?\s*([\[{][\s\S]*?)```", text)
-ids = []
-for raw in cards:
-    try:
-        parsed = json.loads(raw)
-    except ValueError:
-        continue
-    for item in parsed if isinstance(parsed, list) else [parsed]:
-        ident = item.get("id") or item.get("product_id")
-        if ident:
-            ids.append(str(ident))
-if not ids:
-    fail(f"chat turn produced no product card with a non-empty id. text={text[:300]!r}")
-print(f"ok    chat turn rendered {len(ids)} product card(s), first id {ids[0]}")
-limit = float(os.environ["SMOKE_FIRST_FRAME_SECONDS"])
-if first > limit:
-    fail(f"first SSE frame after {first:.1f}s (limit {limit:.0f}s): the stream is buffered or the model is slow")
-if frames <= int(os.environ["SMOKE_MIN_FRAMES"]):
-    fail(f"only {frames} SSE frames (need more than {os.environ['SMOKE_MIN_FRAMES']}): the response was buffered")
-print(f"ok    SSE timing: first frame {first:.1f}s, {frames} frames")
+if os.environ.get("SMOKE_NO_MODEL") == "1":
+    print("skip  keyed chat turn (--no-model)")
+else:
+    first, frames, text, events = stream(alice, {"message": "Show me some wireless headphones with prices"})
+    cards = re.findall(r"```products?\s*([\[{][\s\S]*?)```", text)
+    ids = []
+    for raw in cards:
+        try:
+            parsed = json.loads(raw)
+        except ValueError:
+            continue
+        for item in parsed if isinstance(parsed, list) else [parsed]:
+            ident = item.get("id") or item.get("product_id")
+            if ident:
+                ids.append(str(ident))
+    if not ids:
+        fail(f"chat turn produced no product card with a non-empty id. text={text[:300]!r}")
+    print(f"ok    chat turn rendered {len(ids)} product card(s), first id {ids[0]}")
+    limit = float(os.environ["SMOKE_FIRST_FRAME_SECONDS"])
+    if first > limit:
+        fail(f"first SSE frame after {first:.1f}s (limit {limit:.0f}s): the stream is buffered or the model is slow")
+    if frames <= int(os.environ["SMOKE_MIN_FRAMES"]):
+        fail(f"only {frames} SSE frames (need more than {os.environ['SMOKE_MIN_FRAMES']}): the response was buffered")
+    print(f"ok    SSE timing: first frame {first:.1f}s, {frames} frames")
 
 # ---- 6. one approval, no model -------------------------------------------------------------------
 THRESHOLD = 500.0

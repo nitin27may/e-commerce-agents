@@ -43,7 +43,10 @@ image_tag="$(env_get IMAGE_TAG)"
 if [ -z "$image_tag" ]; then
     die "IMAGE_TAG is not set. Pin a published tag: azd env set IMAGE_TAG v1.4.0   (or sha-<7>; see docs/releasing.md). scripts/azure-up.sh --image-tag does this for you."
 fi
-case "$image_tag" in latest|main) die "IMAGE_TAG=$image_tag floats. Use a release tag (vX.Y.Z) or sha-<7>." ;; esac
+case "$image_tag" in
+    v[0-9]*.[0-9]*.[0-9]*|sha-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]|src-*) ;;
+    *) die "IMAGE_TAG=$image_tag is not an immutable tag. Use a release tag (vX.Y.Z) or sha-<7 hex>; latest and main float." ;;
+esac
 
 # ---- 3. deployer IP --------------------------------------------------------------------------
 public_access="$(env_get PUBLIC_ACCESS)"
@@ -103,8 +106,26 @@ chat_version="$(env_get AZURE_CHAT_MODEL_VERSION)"
 
 if [ "$AZURE_DRY_RUN" != "1" ] && ! have jq; then die "jq is required for the region checks"; fi
 check_postgres_sku "$location" "$(jq -r '.postgres.skuName' "$profile_file")"
-check_model "$openai_location" "${chat_model:-gpt-5.1}" "${chat_version:-2025-11-13}" "$(jq -r '.openAi.chatCapacity' "$profile_file")" \
-    "$(jq -r '.openAi.embeddingCapacity' "$profile_file")"
+deploy_openai="$(env_get DEPLOY_OPENAI)"
+deploy_openai="${deploy_openai:-true}"
+if [ "$deploy_openai" = false ]; then
+    # No Azure OpenAI account: the apps use an operator-supplied OpenAI-compatible endpoint, or replay (no model at all).
+    llm_provider="$(env_get EXTERNAL_LLM_PROVIDER)"
+    llm_provider="${llm_provider:-replay}"
+    case "$llm_provider" in
+        replay) log "DEPLOY_OPENAI=false, EXTERNAL_LLM_PROVIDER=replay: no model account and no model calls" ;;
+        openai)
+            [ -n "$(env_get EXTERNAL_LLM_BASE_URL)" ] || die "EXTERNAL_LLM_PROVIDER=openai needs EXTERNAL_LLM_BASE_URL (azd env set EXTERNAL_LLM_BASE_URL https://<host>/v1)"
+            [ -n "$(env_get EXTERNAL_LLM_API_KEY)" ] || die "EXTERNAL_LLM_PROVIDER=openai needs EXTERNAL_LLM_API_KEY (export LLM_API_KEY=... before scripts/azure-up.sh --llm openai, or azd env set EXTERNAL_LLM_API_KEY ...)"
+            ;;
+        *) die "EXTERNAL_LLM_PROVIDER must be replay or openai (got '$llm_provider')" ;;
+    esac
+else
+    default_model="$(jq -r '.openAi.chatModelName // "gpt-5.1"' "$profile_file")"
+    default_version="$(jq -r '.openAi.chatModelVersion // "2025-11-13"' "$profile_file")"
+    check_model "$openai_location" "${chat_model:-$default_model}" "${chat_version:-$default_version}" "$(jq -r '.openAi.chatCapacity' "$profile_file")" \
+        "$(jq -r '.openAi.embeddingCapacity' "$profile_file")"
+fi
 env_name="$(env_get AZURE_ENV_NAME)"
 if [ -n "$env_name" ]; then
     deleted=0

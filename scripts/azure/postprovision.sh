@@ -4,7 +4,8 @@
 #   1. starts job-db-init (migrate, seed if empty, embeddings, ANALYZE) and polls the execution;
 #   2. prints the outputs a user needs (no secret leaves the azd environment except the staff
 #      password this deployment generated for them);
-#   3. runs scripts/azure/smoke.sh --quick unless SKIP_SMOKE=1.
+#   3. runs scripts/azure/smoke.sh --quick (spends nothing) unless SKIP_SMOKE=1. A failed smoke test is reported but does
+#      not make the hook, and so azd, fail.
 #
 # With IMAGE_SOURCE=acr (the reference profile's default) it first puts the images into the registry the template just
 # created: `az acr import` from GHCR, or `az acr build` from this tree when BUILD_FROM_SOURCE=true. Until the registry
@@ -99,8 +100,12 @@ admin_email="$(env_get ADMIN_LOGIN_EMAIL)"
     echo
     echo "  Frontend           : ${frontend_url}"
     echo "  Admin login        : ${admin_email:-admin.demo@gmail.com}"
-    echo "  Staff password     : azd env get-value SEED_STAFF_PASSWORD   (admin, support and seller share it)"
-    echo "  Customer demo user : alice.johnson@gmail.com / customer123 (published demo password)"
+    if [ "$(env_get SEED_DEMO_PASSWORDS)" = "true" ]; then
+        echo "  Demo accounts      : admin.demo@gmail.com / admin123, alice.johnson@gmail.com / customer123 (the documented seed passwords)"
+    else
+        echo "  Staff password     : azd env get-value SEED_STAFF_PASSWORD   (admin, support and seller share it)"
+        echo "  Customer demo user : alice.johnson@gmail.com / customer123 (published demo password)"
+    fi
     echo "  Key Vault          : $(env_get AZURE_KEY_VAULT_NAME)"
     echo "  Resource group     : ${resource_group}"
     echo "  App Insights       : $(env_get APPLICATIONINSIGHTS_NAME)"
@@ -122,5 +127,17 @@ if [ "$AZURE_DRY_RUN" = "1" ]; then
     exit 0
 fi
 export FRONTEND_URL="$frontend_url" AZURE_RESOURCE_GROUP="$resource_group" DB_INIT_JOB_NAME="$job_name"
-export E2E_STAFF_PASSWORD="${E2E_STAFF_PASSWORD:-$(env_get SEED_STAFF_PASSWORD)}"
-scripts/azure/smoke.sh --quick
+# --demo-passwords seeds the documented demo passwords, so the staff accounts use admin123 and friends, not SEED_STAFF_PASSWORD.
+if [ "$(env_get SEED_DEMO_PASSWORDS)" = "true" ]; then
+    export E2E_STAFF_PASSWORD="${E2E_STAFF_PASSWORD:-admin123}"
+else
+    export E2E_STAFF_PASSWORD="${E2E_STAFF_PASSWORD:-$(env_get SEED_STAFF_PASSWORD)}"
+fi
+printf '\n[azure] ---- [4/5] Smoke test: revisions, database job, frontend, logins, products (spends nothing) ----\n' >&2
+# A failed smoke test must not make azd report the provision as failed: that triggered a second, pointless provision.
+# The result is printed here and the environment stays up so the cause can be looked at.
+if scripts/azure/smoke.sh --quick; then
+    log "smoke test passed"
+else
+    warn "the smoke test failed; the environment is up. Re-run: scripts/azure/smoke.sh --quick (FRONTEND_URL and E2E_STAFF_PASSWORD from the azd environment)"
+fi

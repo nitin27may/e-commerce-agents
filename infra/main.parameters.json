@@ -18,10 +18,10 @@
       "value": "${DEPLOY_PROFILE=demo}"
     },
     "chatModelName": {
-      "value": "${AZURE_CHAT_MODEL=gpt-5.1}"
+      "value": "${AZURE_CHAT_MODEL=}"
     },
     "chatModelVersion": {
-      "value": "${AZURE_CHAT_MODEL_VERSION=2025-11-13}"
+      "value": "${AZURE_CHAT_MODEL_VERSION=}"
     },
     "deployMiniModel": {
       "value": "${DEPLOY_MINI_MODEL=false}"
@@ -83,6 +83,33 @@
     "deployApps": {
       "value": "${DEPLOY_APPS=true}"
     },
+    "openAiLocalAuth": {
+      "value": "${AZURE_OPENAI_LOCAL_AUTH=auto}"
+    },
+    "grantDeployerAccess": {
+      "value": "${GRANT_DEPLOYER_ACCESS=false}"
+    },
+    "deployOpenAi": {
+      "value": "${DEPLOY_OPENAI=true}"
+    },
+    "externalLlmProvider": {
+      "value": "${EXTERNAL_LLM_PROVIDER=replay}"
+    },
+    "externalLlmBaseUrl": {
+      "value": "${EXTERNAL_LLM_BASE_URL=}"
+    },
+    "externalLlmModel": {
+      "value": "${EXTERNAL_LLM_MODEL=gpt-4.1-mini}"
+    },
+    "externalLlmApi": {
+      "value": "${EXTERNAL_LLM_API=chat_completions}"
+    },
+    "externalEmbeddingProvider": {
+      "value": "${EXTERNAL_EMBEDDING_PROVIDER=replay}"
+    },
+    "externalLlmApiKey": {
+      "value": "${EXTERNAL_LLM_API_KEY=}"
+    },
     "a2aIdentityKey": {
       "value": "${A2A_IDENTITY_KEY}"
     },
@@ -94,6 +121,9 @@
     },
     "seedStaffPassword": {
       "value": "${SEED_STAFF_PASSWORD}"
+    },
+    "seedDemoPasswords": {
+      "value": "${SEED_DEMO_PASSWORDS=false}"
     }
   }
 }

@@ -32,6 +32,8 @@ regexes = [
   # Throwaway JWT secret for the container smoke test in build-images.yml.
   '''test-jwt-secret-32-bytes-padding''',
   # Azure built-in role definition ids (Key Vault Secrets User and Secrets Officer): public, not secrets.
+  '''4633458b-17de-408a-b874-0445c86b69e6''',
+  # The mistyped id earlier commits of this branch carried (fixed since); history is scanned, so it stays listed.
   '''4633458b-17de-408a-b874-0f5e9c3b6f6c''',
   '''b86a8fe4-44ce-4948-aee5-eccb2c155cd7''',
   # Cognitive Services OpenAI User and Azure AI User built-in role definition ids (app-identities, foundry-project).

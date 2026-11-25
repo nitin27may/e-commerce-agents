@@ -93,6 +93,7 @@ SECTIONS: tuple[Section, ...] = (
             "docs/preview.md",
             "docs/deployment.md",
             "docs/azure-deployment.md",
+            "docs/azure-deployment-sequence.md",
             "docs/troubleshooting.md",
             "docs/roadmap.md",
         ),

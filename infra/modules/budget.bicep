@@ -6,8 +6,19 @@ param amount int
 @minValue(1)
 @maxValue(100)
 param alertThresholdPercent int
+@description('More actual-cost thresholds (percent), each its own notification. The free-trial profile alerts at 50, 80 and 100.')
+param additionalActualThresholds array = []
 @description('First day of the budget month. Must not be in the past on create.')
 param startDate string = utcNow('yyyy-MM-01')
+
+var extraActual = toObject(additionalActualThresholds, t => 'actual_${t}', t => {
+  enabled: true
+  operator: 'GreaterThan'
+  threshold: t
+  thresholdType: 'Actual'
+  contactEmails: []
+  contactRoles: ['Owner', 'Contributor']
+})
 
 // Notifications go to subscription role holders, so no email address lives in the repo.
 resource budget 'Microsoft.Consumption/budgets@2026-06-01' = {
@@ -17,7 +28,7 @@ resource budget 'Microsoft.Consumption/budgets@2026-06-01' = {
     amount: amount
     timeGrain: 'Monthly'
     timePeriod: { startDate: startDate }
-    notifications: {
+    notifications: union({
       actual: {
         enabled: true
         operator: 'GreaterThan'
@@ -34,7 +45,7 @@ resource budget 'Microsoft.Consumption/budgets@2026-06-01' = {
         contactEmails: []
         contactRoles: ['Owner']
       }
-    }
+    }, extraActual)
   }
 }
 

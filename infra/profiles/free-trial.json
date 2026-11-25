@@ -1,0 +1,62 @@
+{
+  "logAnalytics": {
+    "dailyQuotaGb": "0.1",
+    "retentionDays": 30
+  },
+  "keyVault": {
+    "enablePurgeProtection": false,
+    "softDeleteRetentionDays": 7,
+    "storePostgresPassword": false
+  },
+  "postgres": {
+    "tier": "Burstable",
+    "skuName": "Standard_B1ms",
+    "storageSizeGB": 32,
+    "highAvailability": "Disabled",
+    "backupRetentionDays": 7,
+    "geoRedundantBackup": "Disabled",
+    "allowAzureServices": true
+  },
+  "openAi": {
+    "chatModelName": "gpt-4.1-mini",
+    "chatModelVersion": "2025-04-14",
+    "chatCapacity": 100,
+    "embeddingCapacity": 30,
+    "miniCapacity": 10
+  },
+  "budget": {
+    "monthlyAmount": 10,
+    "alertThresholdPercent": 50,
+    "additionalActualThresholds": [
+      80,
+      100
+    ]
+  },
+  "containerApps": {
+    "minReplicas": 0,
+    "maxReplicas": 1,
+    "orchestratorMinReplicas": 0,
+    "orchestratorMaxReplicas": 1,
+    "workerMinReplicas": 1,
+    "httpConcurrency": 20,
+    "orchestratorCpu": "0.5",
+    "orchestratorMemory": "1Gi"
+  },
+  "openAiAuth": "identity",
+  "a2aIdentity": "both",
+  "imageSource": "ghcr",
+  "network": {
+    "enabled": false,
+    "addressPrefix": "10.40.0.0/16",
+    "environmentSubnetPrefix": "10.40.0.0/24",
+    "privateEndpointSubnetPrefix": "10.40.1.0/24"
+  },
+  "redis": {
+    "kind": "container",
+    "minReplicas": 1,
+    "maxReplicas": 1,
+    "skuName": ""
+  },
+  "deployFoundryProject": true,
+  "minimalSecrets": true
+}

@@ -60,7 +60,12 @@ env_get() {
         return 0
     fi
     if [ -n "${!key:-}" ]; then printf '%s' "${!key}"; return 0; fi
-    azd env get-value "$key" 2>/dev/null || true
+    # azd 1.39 prints "ERROR: key not found in environment values" on STDOUT and exits 1 for a missing key, so the output is
+    # a value only when the exit code is 0. Reading the text as a value made every unset secret look present, and
+    # ensure_azure_secrets generated nothing.
+    local out
+    if out="$(azd env get-value "$key" 2>/dev/null)"; then printf '%s' "$out"; fi
+    return 0
 }
 
 env_set() {

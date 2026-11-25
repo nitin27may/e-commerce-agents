@@ -4,8 +4,8 @@ param logAnalyticsName string
 param appInsightsName string
 param location string
 param tags object
-@description('Daily ingestion cap in GB. -1 disables the cap.')
-param dailyQuotaGb int
+@description('Daily ingestion cap in GB, as a decimal string because the free-trial profile caps below one GB (the API minimum is 0.023). -1 disables the cap.')
+param dailyQuotaGb string
 param retentionDays int
 
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2025-07-01' = {
@@ -15,7 +15,7 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2025-07-01' = {
   properties: {
     sku: { name: 'PerGB2018' }
     retentionInDays: retentionDays
-    workspaceCapping: { dailyQuotaGb: dailyQuotaGb }
+    workspaceCapping: { dailyQuotaGb: json(dailyQuotaGb) }
     features: { enableLogAccessUsingOnlyResourcePermissions: true }
   }
 }
