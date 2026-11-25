@@ -117,7 +117,7 @@ def test_no_output_looks_secret(template: dict[str, Any]) -> None:
 def test_globally_unique_names_use_the_resource_token() -> None:
     main = (INFRA / "main.bicep").read_text(encoding="utf-8")
     assert "uniqueString(subscription().id, environmentName, location)" in main
-    for prefix in ("kv", "psql", "ai", "log", "appi", "id"):
+    for prefix in ("kv", "psql", "foundry", "log", "appi", "id"):
         assert f"'{prefix}-${{resourceToken}}'" in main, f"{prefix}- name must embed resourceToken"
 
 

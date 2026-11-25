@@ -215,7 +215,9 @@ module openAi 'modules/openai.bicep' = if (deployOpenAi) {
   scope: rg
   name: 'openai'
   params: {
-    name: 'ai-${resourceToken}'
+    // 'foundry-' not 'ai-': Cognitive Services refused 'ai-<token>' names at pre-flight (715-123420, "unusual activity") for a
+    // new subscription while the same module validated under other names. The account name is also its custom subdomain.
+    name: 'foundry-${resourceToken}'
     location: openAiLocation
     tags: tags
     callerPrincipalId: identity.outputs.principalId
