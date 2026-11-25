@@ -208,3 +208,121 @@ def test_prereqs_dry_run_waits_for_providers_and_checks_azd_sign_in() -> None:
     assert "az provider register --namespace Microsoft.Network" in result.stderr
     text = (REPO_ROOT / "scripts/azure/prereqs.sh").read_text(encoding="utf-8")
     assert "azd auth login --check-status" in text and "PROVIDER_WAIT_SECONDS" in text
+
+
+def _azure_up_dry_run(*extra: str) -> str:
+    assert BASH is not None
+    result = subprocess.run(
+        [
+            BASH,
+            "scripts/azure-up.sh",
+            "--env",
+            "t1",
+            "--location",
+            "centralus",
+            "--profile",
+            "free-trial",
+            "--image-tag",
+            "sha-0123abc",
+            "--dry-run",
+            *extra,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=90,
+        cwd=REPO_ROOT,
+    )
+    assert result.returncode == 0, result.stderr
+    return result.stdout + result.stderr
+
+
+def test_every_azure_up_run_states_the_foundry_and_password_settings() -> None:
+    """A value left in the azd environment by an earlier run must not carry over.
+
+    A first run with --llm replay stored DEPLOY_OPENAI=false; the next run without --llm skipped Foundry
+    silently because nothing set it back. Every run now writes both settings.
+    """
+    out = _azure_up_dry_run()
+    assert "azd env set DEPLOY_OPENAI true" in out
+    assert "azd env set EXTERNAL_LLM_PROVIDER replay" in out
+    assert "azd env set SEED_DEMO_PASSWORDS true" in out, "the documented demo accounts are the default"
+    assert "azd env set SEED_DEMO_PASSWORDS false" in _azure_up_dry_run("--generated-passwords")
+    assert "DEPLOY_OPENAI false" not in out
+
+
+def test_azure_up_llm_replay_skips_foundry_and_demo_passwords_flag_is_explicit() -> None:
+    replay = _azure_up_dry_run("--llm", "replay")
+    assert "azd env set DEPLOY_OPENAI false" in replay
+    demo = _azure_up_dry_run("--demo-passwords")
+    assert "azd env set SEED_DEMO_PASSWORDS true" in demo
+    assert "azd env set SEED_DEMO_PASSWORDS false" in _azure_up_dry_run("--generated-passwords")
+
+
+def test_azure_up_generates_secrets_before_the_first_provision() -> None:
+    """azd resolves template parameters before it runs hooks, so generation cannot live only in preprovision.
+
+    Hook-only generation stopped a first run on the staff password (no template default) and let the first provision use
+    the template's random defaults while later runs used the hook's values, which rotated the database password.
+    """
+    text = (REPO_ROOT / "scripts/azure-up.sh").read_text(encoding="utf-8")
+    selected = text.index("azd env select")
+    generate = text.index("ensure_azure_secrets", selected)
+    first_provision = text.index("azd provision --no-prompt", selected)
+    assert generate < first_provision
+
+
+def test_a_missing_azd_key_reads_as_empty_and_secrets_are_generated(tmp_path: Path) -> None:
+    """azd 1.39 prints 'key not found' on stdout and exits 1; that text must not count as a value.
+
+    env_get used `azd env get-value ... || true`, so every unset secret looked present and ensure_azure_secrets
+    generated nothing: the first provision then took the template's random defaults.
+    """
+    assert BASH is not None
+    store = tmp_path / "store.env"
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    fake = bindir / "azd"
+    fake.write_text(
+        "#!/usr/bin/env bash\n"
+        'store="$AZD_FAKE_STORE"\n'
+        'if [ "$1 $2" = "env get-value" ]; then\n'
+        '  v="$(grep -E "^$3=" "$store" 2>/dev/null | tail -n1 | cut -d= -f2- | sed -e \'s/^"//\' -e \'s/"$//\')"\n'
+        '  if [ -n "$v" ]; then printf "%s" "$v"; exit 0; fi\n'
+        '  printf "\\nERROR: key not found in environment values: \'"$3"\'\\n"; exit 1\n'
+        "fi\n"
+        'if [ "$1 $2" = "env set" ]; then printf \'%s="%s"\\n\' "$3" "$4" >> "$store"; exit 0; fi\n'
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    env = {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}", "AZURE_DRY_RUN": "0", "AZD_FAKE_STORE": str(store)}
+    for name in ("AZURE_SECRET_STORE_FILE", "SEED_STAFF_PASSWORD", "POSTGRES_ADMIN_PASSWORD", "JWT_SECRET"):
+        env.pop(name, None)
+    snippet = (
+        "set -uo pipefail; source scripts/azure/lib/common.sh; source scripts/azure/lib/secrets.sh; "
+        'echo "missing=[$(env_get NO_SUCH_KEY)]"; generated="$(ensure_azure_secrets)"; echo "$generated"'
+    )
+    result = subprocess.run(
+        [BASH, "-c", snippet], capture_output=True, text=True, check=False, timeout=60, cwd=REPO_ROOT, env=env
+    )
+    assert result.returncode == 0, result.stderr
+    assert "missing=[]" in result.stdout
+    for name in ("POSTGRES_ADMIN_PASSWORD", "JWT_SECRET", "AGENT_SHARED_SECRET", "SEED_STAFF_PASSWORD"):
+        assert name in result.stdout, f"{name} was not generated: {result.stdout}"
+    stored = store.read_text(encoding="utf-8")
+    assert "SEED_STAFF_PASSWORD=" in stored and "ERROR" not in stored
+
+
+def test_quota_lookup_finds_the_row_azure_spells_without_the_hyphen(tmp_path: Path) -> None:
+    """Azure names the gpt-4.1-mini usage row OpenAI.GlobalStandard.gpt4.1-mini; the hyphenated name found nothing."""
+    usage = '[{"name":{"value":"OpenAI.GlobalStandard.gpt4.1-mini"},"currentValue":0,"limit":200}]'
+    ok = _call(
+        tmp_path, {}, f"USAGE_JSON='{usage}'; check_quota centralus OpenAI.GlobalStandard.gpt-4.1-mini 100 gpt-4.1-mini"
+    )
+    assert ok.returncode == 0, ok.stderr
+    assert "no quota row" not in ok.stderr
+    too_small = _call(
+        tmp_path, {}, f"USAGE_JSON='{usage}'; check_quota centralus OpenAI.GlobalStandard.gpt-4.1-mini 500 gpt-4.1-mini"
+    )
+    assert too_small.returncode != 0, "a limit of 200 K TPM cannot satisfy 500"

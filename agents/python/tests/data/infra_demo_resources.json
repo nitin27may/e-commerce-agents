@@ -46,23 +46,23 @@
   ],
   [
    "Microsoft.Authorization/roleAssignments",
-   "[guid('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-demo/providers/Microsoft.CognitiveServices/accounts/ai-hi2dcakyx3hdw', reference('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-demo/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-hi2dcakyx3hdw', '2024-11-30').principalId, '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')]"
+   "[guid('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-demo/providers/Microsoft.CognitiveServices/accounts/foundry-hi2dcakyx3hdw', reference('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-demo/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-hi2dcakyx3hdw', '2024-11-30').principalId, '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')]"
   ],
   [
    "Microsoft.Authorization/roleAssignments",
-   "[guid('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-demo/providers/Microsoft.KeyVault/vaults/kv-hi2dcakyx3hdw', reference('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-demo/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-hi2dcakyx3hdw', '2024-11-30').principalId, '4633458b-17de-408a-b874-0f5e9c3b6f6c')]"
+   "[guid('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-demo/providers/Microsoft.KeyVault/vaults/kv-hi2dcakyx3hdw', reference('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-demo/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-hi2dcakyx3hdw', '2024-11-30').principalId, '4633458b-17de-408a-b874-0445c86b69e6')]"
   ],
   [
    "Microsoft.CognitiveServices/accounts",
-   "ai-hi2dcakyx3hdw"
+   "foundry-hi2dcakyx3hdw"
   ],
   [
    "Microsoft.CognitiveServices/accounts/deployments",
-   "ai-hi2dcakyx3hdw/chat"
+   "foundry-hi2dcakyx3hdw/gpt-5.1"
   ],
   [
    "Microsoft.CognitiveServices/accounts/deployments",
-   "ai-hi2dcakyx3hdw/embedding"
+   "foundry-hi2dcakyx3hdw/text-embedding-3-small"
   ],
   [
    "Microsoft.Consumption/budgets",
@@ -192,27 +192,27 @@
   ],
   [
    "Microsoft.Authorization/roleAssignments",
-   "[guid('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-demo/providers/Microsoft.CognitiveServices/accounts/ai-hi2dcakyx3hdw', reference('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-demo/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-hi2dcakyx3hdw', '2024-11-30').principalId, '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')]"
+   "[guid('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-demo/providers/Microsoft.CognitiveServices/accounts/foundry-hi2dcakyx3hdw', reference('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-demo/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-hi2dcakyx3hdw', '2024-11-30').principalId, '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')]"
   ],
   [
    "Microsoft.Authorization/roleAssignments",
-   "[guid('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-demo/providers/Microsoft.KeyVault/vaults/kv-hi2dcakyx3hdw', reference('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-demo/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-hi2dcakyx3hdw', '2024-11-30').principalId, '4633458b-17de-408a-b874-0f5e9c3b6f6c')]"
+   "[guid('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-demo/providers/Microsoft.KeyVault/vaults/kv-hi2dcakyx3hdw', reference('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-demo/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-hi2dcakyx3hdw', '2024-11-30').principalId, '4633458b-17de-408a-b874-0445c86b69e6')]"
   ],
   [
    "Microsoft.CognitiveServices/accounts",
-   "ai-hi2dcakyx3hdw"
+   "foundry-hi2dcakyx3hdw"
   ],
   [
    "Microsoft.CognitiveServices/accounts/deployments",
-   "ai-hi2dcakyx3hdw/chat"
+   "foundry-hi2dcakyx3hdw/chat-mini"
   ],
   [
    "Microsoft.CognitiveServices/accounts/deployments",
-   "ai-hi2dcakyx3hdw/chat-mini"
+   "foundry-hi2dcakyx3hdw/gpt-5.1"
   ],
   [
    "Microsoft.CognitiveServices/accounts/deployments",
-   "ai-hi2dcakyx3hdw/embedding"
+   "foundry-hi2dcakyx3hdw/text-embedding-3-small"
   ],
   [
    "Microsoft.Consumption/budgets",
@@ -354,27 +354,27 @@
   ],
   [
    "Microsoft.Authorization/roleAssignments",
-   "[guid('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-optional/providers/Microsoft.CognitiveServices/accounts/ai-eshlhu7isdf2e', reference('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-optional/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-eshlhu7isdf2e', '2024-11-30').principalId, '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')]"
+   "[guid('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-optional/providers/Microsoft.CognitiveServices/accounts/foundry-eshlhu7isdf2e', reference('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-optional/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-eshlhu7isdf2e', '2024-11-30').principalId, '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')]"
   ],
   [
    "Microsoft.Authorization/roleAssignments",
-   "[guid('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-optional/providers/Microsoft.KeyVault/vaults/kv-eshlhu7isdf2e', reference('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-optional/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-eshlhu7isdf2e', '2024-11-30').principalId, '4633458b-17de-408a-b874-0f5e9c3b6f6c')]"
+   "[guid('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-optional/providers/Microsoft.KeyVault/vaults/kv-eshlhu7isdf2e', reference('/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-ci-optional/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-eshlhu7isdf2e', '2024-11-30').principalId, '4633458b-17de-408a-b874-0445c86b69e6')]"
   ],
   [
    "Microsoft.CognitiveServices/accounts",
-   "ai-eshlhu7isdf2e"
+   "foundry-eshlhu7isdf2e"
   ],
   [
    "Microsoft.CognitiveServices/accounts/deployments",
-   "ai-eshlhu7isdf2e/chat"
+   "foundry-eshlhu7isdf2e/chat-mini"
   ],
   [
    "Microsoft.CognitiveServices/accounts/deployments",
-   "ai-eshlhu7isdf2e/chat-mini"
+   "foundry-eshlhu7isdf2e/gpt-5.1"
   ],
   [
    "Microsoft.CognitiveServices/accounts/deployments",
-   "ai-eshlhu7isdf2e/embedding"
+   "foundry-eshlhu7isdf2e/text-embedding-3-small"
   ],
   [
    "Microsoft.Consumption/budgets",

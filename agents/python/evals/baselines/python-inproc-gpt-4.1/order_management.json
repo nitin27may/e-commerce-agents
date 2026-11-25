@@ -1,10 +1,10 @@
 {
-  "avg_groundedness": 0.9646,
-  "avg_correctness": 0.9242,
-  "avg_completeness": 0.9175,
-  "overall_score": 0.9391,
-  "total_tokens_in": 331198,
-  "total_tokens_out": 6406,
+  "avg_groundedness": 0.9414,
+  "avg_correctness": 0.8919,
+  "avg_completeness": 0.85,
+  "overall_score": 0.9033,
+  "total_tokens_in": 459624,
+  "total_tokens_out": 9334,
   "agent_name": "order-management",
   "dataset_path": "evals/datasets/live/order_management.live.json",
   "setup": {
@@ -23,16 +23,18 @@
     },
     "gateway": "none",
     "pricing_source": "pricing:models.yaml@a3bbb0fd",
-    "endpoint": ""
+    "endpoint": "",
+    "orchestration_mode": ""
   },
   "setup_key": "python-inproc-gpt-4.1",
   "repeats": 1,
-  "dataset_cases": 33,
+  "dataset_cases": 37,
   "live": true,
   "recorded_on": "2026-11-24",
   "passed_cases": 30,
-  "total_cases": 33,
+  "total_cases": 37,
   "judge_unavailable_cases": 1,
-  "estimated_cost_usd": 0.7136,
+  "fallback_scored_cases": 1,
+  "estimated_cost_usd": 0.9939,
   "caveat": "Live reference run: k=1, single model (gpt-4.1), judge azure:gpt-5.4-mini, spread unknown (one repeat). A snapshot of one sitting, not a quality guarantee, and not comparable with the replay baselines."
 }

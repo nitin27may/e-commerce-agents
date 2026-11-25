@@ -33,6 +33,15 @@ check_quota() {
     used="$(jq -r --arg n "$usage_name" '[.[] | select(.name.value == $n)][0].currentValue // empty' <<<"$USAGE_JSON" 2>/dev/null || true)"
     limit="$(jq -r --arg n "$usage_name" '[.[] | select(.name.value == $n)][0].limit // empty' <<<"$USAGE_JSON" 2>/dev/null || true)"
     if [ -z "$limit" ]; then
+        # Azure spells the 4.x rows without the hyphen: the usage row for gpt-4.1-mini is OpenAI.GlobalStandard.gpt4.1-mini.
+        local alt
+        alt="$(sed -E 's/^(OpenAI\.[A-Za-z]+\.)gpt-([0-9])/\1gpt\2/' <<<"$usage_name")"
+        if [ "$alt" != "$usage_name" ]; then
+            used="$(jq -r --arg n "$alt" '[.[] | select(.name.value == $n)][0].currentValue // empty' <<<"$USAGE_JSON" 2>/dev/null || true)"
+            limit="$(jq -r --arg n "$alt" '[.[] | select(.name.value == $n)][0].limit // empty' <<<"$USAGE_JSON" 2>/dev/null || true)"
+        fi
+    fi
+    if [ -z "$limit" ]; then
         warn "no quota row for $usage_name in $location; cannot confirm ${needed}K TPM is free for $label. Continuing."
         return 0
     fi
@@ -132,3 +141,22 @@ check_soft_deleted() {
     [ "$protected" -eq 0 ] || return 2
     return 0
 }
+
+# deployments_of_env <env>: names of the subscription-scope deployment records that belong to this environment: named exactly
+# <env> or <env>-<suffix> (azd), or whose outputs name rg-<env> (a portal deployment). A substring match would sweep up
+# other people's records, so it is not used.
+deployments_of_env() {
+    local env_name="$1"
+    az deployment sub list --query "[?name=='$env_name' || starts_with(name, '$env_name-') || properties.outputs.AZURE_RESOURCE_GROUP.value=='rg-$env_name'].name" \
+        --output tsv 2>/dev/null || true
+}
+
+# budget_exists <scope-path-after-/subscriptions/<id>> <budget-name>: read-only GET; true when the budget answers 200.
+budget_exists() {
+    local scope="$1" name="$2" sub
+    sub="$(az account show --query id --output tsv 2>/dev/null || true)"
+    [ -n "$sub" ] || return 1
+    az rest --method get --url "https://management.azure.com/subscriptions/$sub${scope}/providers/Microsoft.Consumption/budgets/$name?api-version=2023-05-01" >/dev/null 2>&1
+}
+subscription_budget_exists() { budget_exists "" "budget-$1"; }
+group_budget_exists() { budget_exists "/resourceGroups/rg-$1" "budget-$1"; }

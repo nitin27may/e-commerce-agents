@@ -117,3 +117,7 @@ aspire.config.json
 
 # Claude Code session lock
 .claude/scheduled_tasks.lock
+
+# Local outputs left by replay-evals.sh and stack-parity.sh
+agents/python/eval-records-*.jsonl
+stack-parity-out/

@@ -254,15 +254,25 @@ switch with `./scripts/dev.sh --dotnet`. Parity is checked in CI by a keyless ga
 
 ## Deploy to Azure
 
-Draft, Python stack only, **not yet deployed to a real subscription**. The Bicep, the azd hooks and the scripts are written and checked offline; the first real deploy is still to come, so expect fix-forward changes.
+Python stack. Deployed and tested from a clean subscription with one command; a no-argument run took 10 minutes 30 seconds to a working URL.
 
 ```bash
 az login && azd auth login
-scripts/azure-up.sh --env demo1 --location eastus2 --image-tag v1.4.0   # PowerShell: scripts/azure-up.ps1
-scripts/azure-down.sh --env demo1                                        # removes everything, checks nothing is soft-deleted
+scripts/azure-up.sh                    # progress, then the URL, the demo accounts and what to try
+scripts/azure-down.sh --env <env>      # removes everything and proves it (the name is in the banner)
 ```
 
-It creates a Container Apps environment (frontend, orchestrator, five specialists, outbox worker, Redis), PostgreSQL with pgvector, an Azure OpenAI account (gpt-5.1) and Key Vault, and runs a database job. The frontend is reachable only from your public IP by default, and a demo costs roughly $4 to $12 a day while it is up. Prerequisites, the wiring, costs, assumptions and the failure catalogue are in [docs/azure-deployment.md](docs/azure-deployment.md) and [docs/troubleshooting.md](docs/troubleshooting.md#azure-deployment-first-run-failure-catalogue).
+Every value has a default (environment name, region, profile, image tag, model) and a flag or `ECA_*` variable to override it; they are listed in [docs/azure-deployment-sequence.md](docs/azure-deployment-sequence.md#the-command). The default `free-trial` profile creates a Container Apps environment (frontend, orchestrator, five specialists, outbox worker, Redis), PostgreSQL with pgvector, a Foundry account with `gpt-4.1-mini` and embeddings, Key Vault and a database job. It is keyless: the apps reach the model with their managed identity, there is no model key anywhere, and Key Vault holds four generated secrets. The seeded accounts are the documented ones (`admin.demo@gmail.com` / `admin123` and so on, listed in [docs/demo-guide.md](docs/demo-guide.md)), and the frontend answers only your public IP. It costs about 1.4 USD a day idle; the `demo` profile is roughly 4 to 12 USD a day. Prerequisites, the wiring, costs and limits are in [docs/azure-deployment.md](docs/azure-deployment.md) and [docs/troubleshooting.md](docs/troubleshooting.md#azure-deployment-first-run-failure-catalogue).
+
+---
+
+## Deploy to Azure (optional)
+
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fnitin27may%2Fe-commerce-agents%2Fmain%2Finfra%2Fazuredeploy.json)
+
+**This costs money while it runs** (the demo profile roughly $4 to $12 a day; the `free-trial` profile about $1.4 a day idle, see [the free-trial page](docs/azure-deployment-sequence.md)). The button opens the portal on `infra/azuredeploy.json`, the compiled `infra/main.bicep`, and **the link works after this change is merged to `main`**, because the portal reads the raw file from there.
+
+The button is the template alone, without the azd hooks, so three things differ from `scripts/azure-up.sh`: you type `imageTag` (an immutable tag: `sha-<7>` of a main commit, or a release such as `v1.4.0`; never `latest`), `seedStaffPassword` (the admin login, 12 characters or more) and, to reach the frontend, your public address in `deployerIp` (or set `publicAccess` to `open`), and tick `grantDeployerAccess` if you want to run `scripts/azure/sanity.sh` (it gives you the model and vault roles); the other secrets are generated for you; and **nothing starts the database job, so after the deployment finishes you run the one command it prints** (`DB_INIT_START_COMMAND` in the outputs, `az containerapp job start --name job-db-init --resource-group rg-<env>`). Until then the apps answer 503. Use `profile` `demo` or `free-trial`; `reference` needs azd (two passes). The other path is `azd up` / `scripts/azure-up.sh` above. What the template alone does and does not do: [docs/azure-deployment.md](docs/azure-deployment.md#deploy-to-azure-button).
 
 ---
 
@@ -316,7 +326,7 @@ checkboxes and the reasoning for the order, is on the
 
 | Next | What it is |
 |---|---|
-| **Azure and Microsoft Foundry** | A Container Apps deployment is written and checked offline ([Deploy to Azure](#deploy-to-azure)) but has not yet run against a real subscription. It comes last, after the evaluation and documentation work is merged. After it: Foundry features that need an Azure credential (hosted agents, evaluators logging to a project) and the measured cost of each topology. The .NET 11 move is a separate, later change |
+| **Azure and Microsoft Foundry** | The one-command Container Apps deployment ran from a clean subscription ([Deploy to Azure](#deploy-to-azure)). Next: Foundry features that need an Azure credential (hosted agents, evaluators logging to a project) and the measured cost of the larger topologies. The .NET 11 move is a separate, later change |
 | **Finish the gates** | The keyless parity gate runs in CI, but it covers only turns that call no model. A model-calling comparison across the two stacks needs a key, and the .NET eval suite still needs its baselines |
 | **Retrieval and tooling** | A typed filter DSL for `search_products`, the two MCP servers published to PyPI, and prompt caching — now measurable, because the cost counter ships |
 

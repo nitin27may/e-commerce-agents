@@ -15,11 +15,10 @@ Last updated: 2026-11-24, `main` after #328, release `v1.4.0` published, v1.5.0 
   (`scripts/bump_version.py`, then the `release` environment approval, which stays the maintainer's click: do not approve
   `release.yml` through the API unless they say so).
 - Everything that needs no Azure subscription is built and merged. What is left, and why, is the table in the plan's live
-  block: #89, #91 and the deploy chapter of #100 wait for the Azure run; #97, #299 and #303 have remainders; #300 needs keys
+  block: the Azure run is done (PR #263 merged; #89 and #91 closed, remainders in #335) and only the deploy chapter of #100 is left; #97, #299 and #303 have remainders; #300 needs keys
   that do not exist here; #101 is parked; #318 is a human task (narrated video, social preview upload); #103 is the tracker
-  and closes last. PR #263 (free-trial Azure profile, `sanity.sh`, `verify-clean.sh`, Deploy to Azure button) is held until
-  the Azure step runs.
-- The .NET 11 move is prepared as draft PR #331 (`chore/dotnet-11`, `net11.0`, SDK 11.0.100); merge it only after the Azure run, and do not combine it with the Azure step. Rollback is a single revert.
+  and closes last. PR #263 (the keyless one-command Azure deployment) is merged.
+- The .NET 11 move is PR #331 (`chore/dotnet-11`, `net11.0`, SDK 11.0.100), now that the Azure run is done. Rollback is a single revert.
 - Open PRs change often: `gh pr list`. Remote branches: `main` plus whatever is open. Delete a branch after its PR merges
   (section 6).
 - Two Claude sessions have worked in this repo: a "queue" session (features, CI, Azure, evals, cleanups) and a docs session

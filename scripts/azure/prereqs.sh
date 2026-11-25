@@ -2,7 +2,8 @@
 # Azure deployment prerequisites. Read-mostly: it installs the `containerapp` CLI extension and
 # registers missing resource providers (both idempotent), nothing else.
 #
-#   scripts/azure/prereqs.sh [--location eastus2] [--openai-location eastus2] [--profile demo] [--dry-run]
+#   scripts/azure/prereqs.sh [--location eastus2] [--openai-location eastus2] [--profile demo|reference|free-trial]
+#                            [--no-openai] [--dry-run]
 #
 # Checks, in order: az / azd / bicep floor versions, jq and curl, az login, the containerapp
 # extension, resource provider registrations, role-assignment write rights, and (when a location is
@@ -29,6 +30,9 @@ LOCATION="${AZURE_LOCATION:-}"
 OPENAI_LOCATION="${AZURE_OPENAI_LOCATION:-}"
 PROFILE="${DEPLOY_PROFILE:-demo}"
 ENV_NAME="${AZURE_ENV_NAME:-}"
+# false (--no-openai, or DEPLOY_OPENAI in the azd environment): no Azure OpenAI account, so no model, quota or provider check for it.
+DEPLOY_OPENAI="${DEPLOY_OPENAI:-$(env_get DEPLOY_OPENAI)}"
+DEPLOY_OPENAI="${DEPLOY_OPENAI:-true}"
 while [ $# -gt 0 ]; do
     case "$1" in
         --location) LOCATION="$2"; shift 2 ;;
@@ -36,7 +40,8 @@ while [ $# -gt 0 ]; do
         --profile) PROFILE="$2"; shift 2 ;;
         --env) ENV_NAME="$2"; shift 2 ;;
         --dry-run) AZURE_DRY_RUN=1; shift ;;
-        -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
+        --no-openai) DEPLOY_OPENAI=false; shift ;;
+        -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
         *) die "unknown argument: $1" ;;
     esac
 done
@@ -89,6 +94,16 @@ run az extension add --name containerapp --upgrade --only-show-errors
 providers=("${PROVIDERS[@]}")
 case "$PROFILE" in reference) providers+=(Microsoft.Cache) ;; esac
 [ "$(env_get DEPLOY_GATEWAY)" != true ] || providers+=(Microsoft.ApiManagement)
+# The free-trial profile has no registry and no VNet (and, without Azure OpenAI, no Cognitive Services): register only what it uses.
+if [ "$PROFILE" = free-trial ]; then
+    drop=" Microsoft.ContainerRegistry Microsoft.Network "
+    [ "$DEPLOY_OPENAI" != false ] || drop="$drop Microsoft.CognitiveServices "
+    kept=()
+    for p in "${providers[@]}"; do
+        case "$drop" in *" $p "*) ;; *) kept+=("$p") ;; esac
+    done
+    providers=("${kept[@]}")
+fi
 pending=()
 for p in "${providers[@]}"; do
     if [ "$AZURE_DRY_RUN" = "1" ]; then
@@ -163,7 +178,14 @@ sku="$(jq -r '.postgres.skuName' "$profile_file")"
 capacity="$(jq -r '.openAi.chatCapacity' "$profile_file")"
 embedding_capacity="$(jq -r '.openAi.embeddingCapacity' "$profile_file")"
 check_postgres_sku "$LOCATION" "$sku"
-check_model "$OPENAI_LOCATION" "${AZURE_CHAT_MODEL:-gpt-5.1}" "${AZURE_CHAT_MODEL_VERSION:-2025-11-13}" "$capacity" "$embedding_capacity"
+if [ "$DEPLOY_OPENAI" = false ]; then
+    log "DEPLOY_OPENAI=false: no Azure OpenAI account, skipping model and quota checks"
+else
+    # The profile names its own default model (free-trial: gpt-4.1-mini, which has quota on a new subscription); an explicit AZURE_CHAT_MODEL wins.
+    default_model="$(jq -r '.openAi.chatModelName // "gpt-5.1"' "$profile_file")"
+    default_version="$(jq -r '.openAi.chatModelVersion // "2025-11-13"' "$profile_file")"
+    check_model "$OPENAI_LOCATION" "${AZURE_CHAT_MODEL:-$default_model}" "${AZURE_CHAT_MODEL_VERSION:-$default_version}" "$capacity" "$embedding_capacity"
+fi
 if [ -n "$ENV_NAME" ]; then
     deleted=0
     check_soft_deleted "$ENV_NAME" || deleted=$?

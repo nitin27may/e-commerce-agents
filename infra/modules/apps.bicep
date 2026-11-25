@@ -32,9 +32,19 @@ param registryServer string = ''
 @description('Pinned release tag, e.g. v1.4.0 or sha-1a2b3c4. Never latest: a re-deploy must not change what runs.')
 param imageTag string
 
-param openAiEndpoint string
-param chatDeployment string
-param embeddingDeployment string
+@description('azure (default): the Azure OpenAI account the template created. openai: an operator-supplied OpenAI-compatible endpoint (llmBaseUrl, key in the llm-api-key secret). replay: no model is called (recorded responses only).')
+@allowed(['azure', 'openai', 'replay'])
+param llmProvider string = 'azure'
+@description('OpenAI-compatible base URL (llmProvider openai). Empty otherwise.')
+param llmBaseUrl string = ''
+@description('responses or chat_completions (llmProvider openai); several compatible endpoints have no /responses route.')
+@allowed(['responses', 'chat_completions'])
+param llmApi string = 'responses'
+@description('EMBEDDING_PROVIDER for a non-azure provider: empty follows the chat provider, replay uses the keyless hashing vectors.')
+param embeddingProvider string = ''
+param openAiEndpoint string = ''
+param chatDeployment string = ''
+param embeddingDeployment string = ''
 param chatModelName string
 param openAiApiVersion string
 @allowed(['key', 'identity'])
@@ -55,11 +65,15 @@ param costBudgetUsdPerRun string = '0.50'
 @description('restricted: the frontend accepts only allowedIpRanges (default). open: anyone, which is an open spend tap.')
 @allowed(['restricted', 'open'])
 param publicAccess string = 'restricted'
+@description('True: the db-init job gets no SEED_STAFF_PASSWORD, so the seeder uses the documented demo passwords.')
+param seedDemoPasswords bool = false
 @description('CIDR ranges allowed to reach the frontend when publicAccess is restricted.')
 param allowedIpRanges array = []
 
 param deployAuthServer bool = false
 param deployMcp bool = false
+@description('Mount a2a-identity-key, oauth-seed-key and auth-signing-key-encryption-key. False (free-trial) when the auth server is off and the A2A key is the agent secret: those three are not in Key Vault then.')
+param includeAuthSecrets bool = true
 
 var identityOf = toObject(appIdentities, i => i.app)
 var perApp = !empty(appIdentities)
@@ -134,11 +148,16 @@ var backendSecretEnvCore = concat(
     { env: 'DATABASE_URL', secret: 'database-url' }
     { env: 'JWT_SECRET', secret: 'jwt-secret' }
     { env: 'AGENT_SHARED_SECRET', secret: 'agent-shared-secret' }
-    { env: 'A2A_IDENTITY_KEY', secret: 'a2a-identity-key' }
-    { env: 'OAUTH_SEED_KEY', secret: 'oauth-seed-key' }
-    { env: 'AUTH_SIGNING_KEY_ENCRYPTION_KEY', secret: 'auth-signing-key-encryption-key' }
   ],
-  openAiAuth == 'key' ? [{ env: 'AZURE_OPENAI_KEY', secret: 'azure-openai-key' }] : []
+  includeAuthSecrets
+    ? [
+        { env: 'A2A_IDENTITY_KEY', secret: 'a2a-identity-key' }
+        { env: 'OAUTH_SEED_KEY', secret: 'oauth-seed-key' }
+        { env: 'AUTH_SIGNING_KEY_ENCRYPTION_KEY', secret: 'auth-signing-key-encryption-key' }
+      ]
+    : [],
+  llmProvider == 'azure' && openAiAuth == 'key' ? [{ env: 'AZURE_OPENAI_KEY', secret: 'azure-openai-key' }] : [],
+  llmProvider == 'openai' ? [{ env: 'OPENAI_API_KEY', secret: 'llm-api-key' }] : []
 )
 // The Python outbox worker and the db-init job do not use Redis on the dotnet stack, and the Redis secret
 // that exists there is the .NET connection string, so they take the core set.
@@ -154,17 +173,28 @@ var authEnv = deployAuthServer
     ]
   : [{ name: 'AUTH_MODE', value: 'local' }]
 
+var azureModelEnv = llmProvider == 'azure'
+  ? [
+      { name: 'AZURE_OPENAI_ENDPOINT', value: openAiEndpoint }
+      { name: 'AZURE_OPENAI_DEPLOYMENT', value: chatDeployment }
+      { name: 'AZURE_EMBEDDING_DEPLOYMENT', value: embeddingDeployment }
+      { name: 'AZURE_OPENAI_API_VERSION', value: openAiApiVersion }
+      { name: 'AZURE_OPENAI_AUTH', value: openAiAuth }
+    ]
+  : concat(
+      llmProvider == 'openai' ? [{ name: 'LLM_BASE_URL', value: llmBaseUrl }, { name: 'LLM_API', value: llmApi }] : [],
+      empty(embeddingProvider) ? [] : [{ name: 'EMBEDDING_PROVIDER', value: embeddingProvider }]
+    )
+
 var coreEnv = concat(
   [
     { name: 'ENVIRONMENT', value: 'production' }
-    { name: 'LLM_PROVIDER', value: 'azure' }
+    { name: 'LLM_PROVIDER', value: llmProvider }
     { name: 'LLM_MODEL', value: chatModelName }
     { name: 'LLM_TEMPERATURE', value: llmTemperature }
-    { name: 'AZURE_OPENAI_ENDPOINT', value: openAiEndpoint }
-    { name: 'AZURE_OPENAI_DEPLOYMENT', value: chatDeployment }
-    { name: 'AZURE_EMBEDDING_DEPLOYMENT', value: embeddingDeployment }
-    { name: 'AZURE_OPENAI_API_VERSION', value: openAiApiVersion }
-    { name: 'AZURE_OPENAI_AUTH', value: openAiAuth }
+  ],
+  azureModelEnv,
+  [
     { name: 'EMBEDDING_MODEL', value: 'text-embedding-3-small' }
     { name: 'COST_BUDGET_MODE', value: costBudgetMode }
     { name: 'COST_BUDGET_USD_PER_RUN', value: costBudgetUsdPerRun }
@@ -211,7 +241,7 @@ module dbInit 'db-init-job.bicep' = {
     registryServer: registryServer
     keyVaultUri: keyVaultUri
     env: concat(batchEnv, clientIdEnv(identityClientId), [{ name: 'OTEL_SERVICE_NAME', value: 'ecommerce.db-init' }])
-    secretEnv: concat(batchSecretEnv, [{ env: 'SEED_STAFF_PASSWORD', secret: 'seed-staff-password' }])
+    secretEnv: seedDemoPasswords ? batchSecretEnv : concat(batchSecretEnv, [{ env: 'SEED_STAFF_PASSWORD', secret: 'seed-staff-password' }])
   }
 }
 
@@ -232,8 +262,8 @@ module orchestrator 'container-app.bicep' = {
     minReplicas: scale.orchestratorMinReplicas
     maxReplicas: scale.orchestratorMaxReplicas
     httpConcurrency: scale.httpConcurrency
-    cpu: '1'
-    memory: '2Gi'
+    cpu: scale.?orchestratorCpu ?? '1'
+    memory: scale.?orchestratorMemory ?? '2Gi'
     env: concat(backendEnv, clientIdEnv(perApp ? identityOf.orchestrator.clientId : identityClientId), [
       { name: 'OTEL_SERVICE_NAME', value: 'ecommerce.orchestrator${otelSuffix}' }
       { name: 'OAUTH_CLIENT_ID', value: 'orchestrator' }

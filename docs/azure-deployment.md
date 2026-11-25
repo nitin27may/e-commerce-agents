@@ -1,68 +1,81 @@
-# Azure deployment (draft)
+# Azure deployment
 
 Bicep templates and scripts that deploy the Python stack to Azure Container Apps, for anyone who wants to run the demo in their own subscription.
 
-**Status: written, compiled and linted, never deployed.** Everything here was checked offline: the Bicep builds and lints, the compiled wiring is asserted by `agents/python/tests/test_infra_bicep.py`, the scripts pass `bash -n` and a dry run, and the secret generator has its own test. **Nothing has run against a real subscription**, and every behaviour that needs one is listed under [Assumptions to confirm](#assumptions-to-confirm-on-a-real-subscription). The Python stack is the default; the .NET stack (`--stack dotnet`) is deployable too, verified offline only. For local and Compose paths see [deployment.md](deployment.md).
+**Status: deployed and tested from a clean subscription, with one command.** `scripts/azure-up.sh` with no arguments provisioned the free-trial profile in 7 minutes 32 seconds, printed the URL and accounts at 10 minutes 30 seconds, and passed the smoke test (real model answers with product cards, a return paused, approved and executed), the database, chat-turn and direct model checks; the teardown was verified clean. The numbers, the findings and the known limits are on [the free-trial page](azure-deployment-sequence.md). The `demo` and `reference` profiles, the gateway, the per-app identities and the .NET stack (`--stack dotnet`) were checked offline only; the assumptions that need a subscription for them are at the [end of this page](#assumptions-still-to-confirm). For local and Compose paths see [deployment.md](deployment.md).
 
 The Bicep in `infra/` is hand-written; it is not generated from the .NET Aspire AppHost, which is a local development tool and not a deployment path.
 
 **Azure is optional.** Nothing outside `infra/`, `azure.yaml`, `scripts/azure*` and `.github/workflows/azure.yml` needs it. The default dev, demo and eval paths run with `LLM_PROVIDER=openai`, `replay` or any OpenAI-compatible endpoint and never touch Azure.
 
-## First deploy on a new subscription
-
-A checklist for a clean subscription. It has not been run end to end yet: [what was and was not verified](#assumptions-to-confirm-on-a-real-subscription).
-
-**You need**
-
-- An Azure subscription where you are **Owner** (or Contributor plus User Access Administrator): the template creates role assignments (Key Vault Secrets User, Cognitive Services OpenAI User). A pay-as-you-go or free-trial account is fine; a free trial may refuse the model quota or the Postgres SKU, and then the preflight says so before anything is created.
-- `az` 2.67 or newer, `azd` 1.18 or newer (`azd version`), Bicep 0.34 or newer (`az bicep install`), `jq`, `curl`, and `bash` (or PowerShell with the `.ps1` mirrors). The released images are public on GHCR, so no Docker is needed.
-- Rough cost: the demo profile is about 4 to 12 USD a day while it is up (these are estimates, not measurements). The reference profile (zone-redundant Postgres, Managed Redis, private endpoints, ACR) costs several times that. A budget alert is created, but it only notifies; it does not stop spending. Run the teardown when you are done.
-
-**Commands, in order**
+## One command
 
 ```bash
-az login                                     # opens a browser; then, if you have several subscriptions:
-az account set --subscription <subscription-id>
-azd auth login                               # azd keeps its own sign-in; az login does not cover it
-
-scripts/azure-up.sh --env <env> --location <region> --image-tag v1.4.0 --dry-run   # prints every command, changes nothing
-scripts/azure-up.sh --env <env> --location <region> --image-tag v1.4.0             # PowerShell: scripts/azure-up.ps1 -EnvName ...
+az login && azd auth login
+scripts/azure-up.sh                  # prints progress, then the URL, the accounts and what to test
+scripts/azure-down.sh --env <env>    # removes everything and proves it (the env name is in the banner)
 ```
 
-`<env>` is lowercase letters, digits and dashes (it names the resource group `rg-<env>`). Pick a `<region>` where the subscription can create Postgres Flexible Server and where `gpt-5.1` has quota (`eastus2` and `swedencentral` are common). `--image-tag` must be a published tag; `v1.4.0` is the latest release. Add `--openai-location <region>` to put only the model account in another region.
+You need an Azure subscription where you are **Owner** (or Contributor plus User Access Administrator, because the template creates role assignments), `az` 2.67+, `azd` 1.18+, Bicep 0.34+ (`az bicep install`), `jq`, `curl` and `bash`. No Docker, no model key, no app registration, nothing to invent: every secret is generated, and the images are public on GHCR.
+
+The defaults, and the flag or `ECA_*` variable that overrides each, are in [the table on the free-trial page](azure-deployment-sequence.md#the-command). In short: environment `eca-<hash of your subscription>`, the first region where PostgreSQL `Standard_B1ms` is offered, the `free-trial` profile (`gpt-4.1-mini` through Foundry), the newest `main` image that is published, the documented demo accounts, and a frontend reachable only from your public IP. `--dry-run` prints every command and changes nothing.
+
+**Cost.** The free-trial profile is about 1.4 USD a day idle and roughly 0.4 USD for a two hour test (list prices, [the breakdown](azure-deployment-sequence.md#estimate-for-the-profile)); the `demo` profile is 4 to 12 USD a day and `reference` several times that. The budget alert only notifies, it does not stop spending: run the teardown when you are done.
 
 **What each step does**
 
-| Step | What happens | Creates | Typical time |
-|---|---|---|---|
-| `prereqs.sh` | Checks tools and both sign-ins, registers resource providers and waits for them, checks you can create role assignments, checks the Postgres SKU, model availability and quota (chat and embeddings), and soft-deleted names | Nothing except provider registrations and the `containerapp` CLI extension | Under a minute; 2 to 10 minutes on a subscription that has never registered the providers |
-| azd environment | `azd env new` pinned to the active subscription; the settings go into `.azure/<env>/.env` | Local files only | Seconds |
-| `preprovision` hook | Generates every secret once (never overwritten), records your public IP for the frontend allow-list, repeats the region checks | Local files only | Seconds |
-| `azd provision` | Deploys `infra/main.bicep` at subscription scope | Resource group, Log Analytics, App Insights, identity, Key Vault, Postgres + pgvector, the Azure OpenAI account with chat and embedding deployments, Container Apps environment, 8 apps, the db-init job, budget (reference profile adds a VNet, private endpoints, Managed Redis and ACR, in two passes) | 15 to 30 minutes (estimate; Postgres and the model account dominate) |
-| `postprovision` hook | Starts `job-db-init` (migrations, seed, embeddings) and waits, prints the login, runs the quick smoke test (waits up to 5 minutes for revisions and the frontend) | Database content | 5 to 15 minutes (the embeddings step dominates) |
+| Step | What happens | Typical time |
+|---|---|---|
+| `[1/5]` checks (`prereqs.sh`) | tools and both sign-ins, resource provider registration (waits), role-assignment permission, the Postgres SKU, model availability and quota, soft-deleted names | under a minute; up to 10 on a subscription that never registered the providers |
+| `[2/5]` secrets | the azd environment is created and every secret is generated once, **before** the first provision, because azd reads template parameters before it runs hooks | seconds |
+| `[3/5]` `azd provision` | `infra/main.bicep` at subscription scope: resource group, Log Analytics, App Insights, identities, Key Vault, Postgres with pgvector, the Foundry account, project and model deployments, the Container Apps environment, the apps, the db-init job, the budget | about 8 minutes measured for the free-trial profile |
+| `[4/5]` smoke test (`postprovision`) | starts `job-db-init` (migrations, seed, embeddings) and waits, then the smoke test: login, catalogue, a streamed chat turn with product cards, a return that parks, is approved and runs | about 2 minutes measured |
+| `[5/5]` done | the banner, then `sanity.sh` (database, chat turn, direct model call with a bearer token) unless `--no-verify` | about 1 minute |
 
-When it finishes it prints the frontend URL. Sign in as `admin.demo@gmail.com` with `azd env get-value SEED_STAFF_PASSWORD`. The frontend answers only your public IP; if it changes, `azd env set DEPLOYER_IP <ip>` and run the script again (it is idempotent: secrets, environment and resources are reused).
-
-**If a step fails:** read the message, fix the cause and re-run the same command. The failures a new subscription meets are: a resource provider still registering (the script waits up to 20 minutes, `PROVIDER_WAIT_SECONDS`), no `gpt-5.1` quota (request it, or `AZURE_CHAT_MODEL=<name> AZURE_CHAT_MODEL_VERSION=<version> scripts/azure-up.sh ...`), a region that restricts Postgres (pick another `--location`), and a soft-deleted name from an earlier attempt (`scripts/azure-down.sh --env <env> --purge-only`). More in [troubleshooting.md](troubleshooting.md#azure-deployment-first-run-failure-catalogue).
+**If a step fails:** read the message, fix the cause and re-run the same command; it is idempotent (secrets, environment and resources are reused). The failures a new subscription meets are [listed with their fixes](azure-deployment-sequence.md#limits-a-new-subscription-meets) and in [troubleshooting.md](troubleshooting.md#azure-deployment-first-run-failure-catalogue). The frontend answers only your public IP; if it changes, `azd env set DEPLOYER_IP <ip>` and run the script again.
 
 **Tear down** (everything, including the soft-deleted Key Vault and model account that would block a re-deploy):
 
 ```bash
 scripts/azure-down.sh --env <env>            # azd down --purge --force, purges leftovers, then proves rg-<env> is gone
+scripts/azure/verify-clean.sh --env <env>    # read only; nine CLEAN lines
 ```
 
 The reference profile turns on Key Vault purge protection, which cannot be undone: after teardown its vault stays soft-deleted for the retention period (90 days) and **that `--env` name cannot be deployed again until then**. Use a new name. The teardown reports this and exits 0, because nothing is billed for it.
 
-## Deploy
+## Accounts
 
-```bash
-az login && azd auth login
-scripts/azure-up.sh --env demo1 --location eastus2 --image-tag v1.4.0     # PowerShell: scripts/azure-up.ps1 -EnvName ...
-# when you are done (the demo costs roughly 4 to 12 USD a day while it is up):
-scripts/azure-down.sh --env demo1
+The default run seeds the documented accounts, the same ones a local `./scripts/dev.sh` run has: `admin.demo@gmail.com` / `admin123`, `support.demo@gmail.com` / `support123`, `seller.demo@gmail.com` / `seller123`, `power.demo@gmail.com` / `power123` and the customers (for example `alice.johnson@gmail.com`) with `customer123`. These passwords are public, so they are seeded only while the frontend is IP-restricted: the template passes `seedDemoPasswords` through only when `publicAccess` is `restricted`, and `--public-open` falls back to a generated staff password. `--generated-passwords` does the same on a restricted frontend; the password is then `azd env get-value SEED_STAFF_PASSWORD`.
+
+## Do you need an Entra app registration?
+
+No. Not for the application: it signs users in with its own JWT auth server (no Entra login), service-to-service calls use the managed identity, and the images are public on GHCR. Not for a local deployment (`azd` and `scripts/azure-up.sh` run as the signed-in user) and not for the portal button (it runs as you). The only thing that would use an app registration is the optional GitHub Actions deploy workflow `.github/workflows/azure.yml`; if you want that, the comment block at the top of that file describes the federated credential (`repo:<owner>/<repo>:environment:azure-deploy`, no client secret) you would create by hand. Nothing in `scripts/` creates or deletes one, so teardown has none to remove.
+
+## Deploy to Azure button
+
+`infra/azuredeploy.json` is `infra/main.bicep` compiled (`bicep build main.bicep --outfile azuredeploy.json`, run from `infra/`). It is generated and committed so the portal can read it; `test_azuredeploy_json_is_a_fresh_build_of_main_bicep` fails when it is stale (it ignores Bicep's own version stamp). The README button is:
+
+```markdown
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fnitin27may%2Fe-commerce-agents%2Fmain%2Finfra%2Fazuredeploy.json)
 ```
 
-`azure-up` runs `scripts/azure/prereqs.sh`, creates the azd environment, then `azd provision` (the template declares no services, so `azd up` would add nothing). The azd hooks do the rest: `preprovision` generates secrets and records your IP, `postprovision` runs the database job, prints the login and runs the smoke test. The frontend is reachable **only from your public IP** unless you pass `--public-open` or `--allowed-ips`. The admin, support and seller accounts get a generated password (`azd env get-value SEED_STAFF_PASSWORD`); customers keep the published demo passwords, so keep the frontend restricted.
+The URL is the url-encoded raw address of the file on `main`, so it resolves only after the branch that adds the file is merged. For a fork or a tag, encode that raw URL instead. The template deploys at subscription scope, so the portal asks for a region for the deployment record and `location` defaults to it. No `createUiDefinition` is needed: the portal builds a form from the parameters, and only three have no default.
+
+**What the button does not do, because there is no azd.** The hooks (`scripts/azure/preprovision.sh`, `postprovision.sh`) do not run. Each of their jobs, and what the template alone does about it:
+
+| azd hook job | Portal deployment |
+|---|---|
+| Generate secrets (JWT, agent secret, A2A key, OAuth seed, signing key, Postgres password) | Generated by parameter defaults (`newGuid()`, which is only legal there). A re-deployment of the same environment **generates new values** and rotates them: use azd for upgrades |
+| The staff login password | **Required parameter** `seedStaffPassword` (12 characters or more). Nothing generates it, because nobody could read it afterwards |
+| Pin the image tag | **Required parameter** `imageTag` (`v1.4.0`); no default, so a deployment never floats |
+| Record your public IP for the restricted frontend | **Not done.** `deployerIp` is empty, so the frontend allows nobody (`192.0.2.1/32`) until you type your address or set `publicAccess` to `open` |
+| Region, SKU, quota and soft-deleted-name checks | **Not done.** The same problems appear as deployment errors, after some resources exist |
+| Register resource providers | **Not done.** ARM registers the providers a template uses when you may; on a fresh subscription register them first ([sequence, stage 3](azure-deployment-sequence.md#stage-3-provider-registration-you-run-it)) |
+| Registry fill for `IMAGE_SOURCE=acr` (two-pass) | **Not supported.** Use `profile` `demo` or `free-trial` (public GHCR). `reference` needs azd |
+| Start `job-db-init` (migrate, seed, embeddings) | **Not done, and the template cannot do it**: a manual Container Apps job has no run-on-create, and a deployment script would add a storage account and a container instance for one command. The deployment prints it as output `DB_INIT_START_COMMAND`: `az containerapp job start --name job-db-init --resource-group rg-<env>`. Until it has run, the apps answer 503 on `/ready` and logins fail |
+| Smoke test | **Not done.** Run `scripts/azure/smoke.sh` and `scripts/azure/sanity.sh` |
+
+So the button reaches a working app with one extra command and three typed values; it is not one click. The other path is `azd up` or `scripts/azure-up.sh`, which does all of the above (`azure.yaml` declares no services, so `azd provision` is the whole job). The portal path itself has not been run; the one-command path is the tested one.
 
 ## Topology
 
@@ -145,7 +158,7 @@ Cost and time: **UNVERIFIED offline.** v2 tiers provision in minutes and are the
 | User-assigned identity | `id-<token>` | resolves Key Vault references; Entra caller for the model when `AZURE_OPENAI_AUTH=identity` |
 | Key Vault | `kv-<token>` | RBAC; holds every secret listed below |
 | PostgreSQL Flexible Server 16 | `psql-<token>` | database `ecommerce_agents`, admin `ecomadmin`, `azure.extensions = VECTOR,PGCRYPTO`, TLS required |
-| Azure OpenAI (AIServices) | `ai-<token>` | `chat` (default gpt-5.1) and `embedding` (text-embedding-3-small); optional `chat-mini` |
+| Azure OpenAI (AIServices) | `foundry-<token>` | the chat model (profile default: gpt-5.1 for demo and reference, gpt-4.1-mini for free-trial) and `text-embedding-3-small`, each deployment named after its model; optional `chat-mini` |
 | Container Apps environment | `cae-<token>` | Consumption profile, Log Analytics, managed OpenTelemetry to App Insights |
 | Container apps | `ca-frontend`, `ca-orchestrator`, `ca-product-discovery`, `ca-order-management`, `ca-pricing-promotions`, `ca-review-sentiment`, `ca-inventory-fulfillment`, `ca-outbox-worker`, `ca-redis` | no token in the name (32 character limit); opt-in: `ca-auth-server`, `ca-mcp-product`, `ca-mcp-inventory` |
 | Container Apps job | `job-db-init` | manual trigger, 15 minute timeout |
@@ -190,6 +203,19 @@ Images come from `ghcr.io/nitin27may/e-commerce-agents/<service>:<imageTag>`. Th
 | Model auth | account key from Key Vault | Entra ID through the identity; local auth disabled on the account |
 | A2A identity | `both` | `token`, with the distinct `A2A_IDENTITY_KEY` that preprovision generates |
 
+**`free-trial`** (`infra/profiles/free-trial.json`, [sequence and costs](azure-deployment-sequence.md)) is the demo topology at its smallest, **with Foundry**: the AIServices account, a Foundry project, a `gpt-4.1-mini` chat deployment (GlobalStandard, 100K TPM) and a `text-embedding-3-small` deployment (30K TPM), each named after its model so the cost guard can price a turn. Every HTTP app scales 0 to 1 (the worker and Redis hold one replica), orchestrator 0.5 vCPU, Postgres B1ms 32 GB, Log Analytics capped at 0.1 GB/day, budget 10 with alerts at 50, 80 and 100 percent actual. It has no Managed Redis, ACR, APIM or private networking. `deployOpenAi=false` stays an option for a subscription with no model quota:
+
+| `deployOpenAi` | Meaning |
+|---|---|
+| `true` (default, every profile) | the Azure OpenAI account, `chat` and `embedding` deployments and the key secret, as before; the free-trial profile also creates the Foundry project |
+| `false` | none of those, and no Foundry project. `externalLlmProvider` is `replay` (no model is called) or `openai` (`externalLlmBaseUrl`, `externalLlmModel`, `externalLlmApi`, key in Key Vault secret `llm-api-key`); `externalEmbeddingProvider` defaults to `replay`. Cost budget mode is `observe`. azd: `DEPLOY_OPENAI`, `EXTERNAL_LLM_PROVIDER`, `EXTERNAL_LLM_BASE_URL`, `EXTERNAL_LLM_MODEL`, `EXTERNAL_LLM_API`, `EXTERNAL_EMBEDDING_PROVIDER`, `EXTERNAL_LLM_API_KEY`. Not combinable with the gateway or the reference profile |
+
+The chat model is the profile's choice unless `AZURE_CHAT_MODEL` and `AZURE_CHAT_MODEL_VERSION` are set (set both): `chatModelName` and `chatModelVersion` are empty by default and the profile fills them (demo and reference `gpt-5.1`, free-trial `gpt-4.1-mini`). The Foundry project is on when the profile says so or `deployFoundryProject` is true.
+
+The free-trial profile is keyless where the code allows (identity to the model, `disableLocalAuth` on the account, Key Vault references, public images); `openAiLocalAuth` overrides it. Postgres keeps a generated password. Every remaining secret and the reason is in [the keyless section](azure-deployment-sequence.md#keyless-which-credentials-remain). The portal button gets the same roles for the deployer only if you tick `grantDeployerAccess` (azd passes your principal id itself).
+
+`scripts/azure-up.sh --profile free-trial [--llm replay|openai --llm-base-url ...] [--preview]`; the key comes from `LLM_API_KEY`, never an argument. After a deployment, `scripts/azure/sanity.sh` proves the chain end to end and leaves everything up for you to review ([sequence, stage 12](azure-deployment-sequence.md)). The PowerShell mirrors do not have these options.
+
 Cost (estimates, not measured): demo roughly 120 to 380 USD a month, about 0.02 to 0.03 USD per chat turn; reference 500 to 800.
 
 ## Reference profile, image source and stack
@@ -209,11 +235,14 @@ Set by `azure-up` or by hand with `azd env set`.
 | Variable | Default | Meaning |
 |---|---|---|
 | `AZURE_LOCATION`, `AZURE_OPENAI_LOCATION` | required, location | region for everything; region for the model account |
-| `DEPLOY_PROFILE` | `demo` | `demo` or `reference` |
+| `DEPLOY_PROFILE` | `demo` | `demo`, `reference` or `free-trial` |
+| `AZURE_OPENAI_LOCAL_AUTH`, `GRANT_DEPLOYER_ACCESS` | `auto`, `false` | `auto` disables key auth on the account when the apps use identity (`enabled`/`disabled` override); the second grants the deploying person the vault and model roles when no `AZURE_PRINCIPAL_ID` is passed (portal) |
+| `DEPLOY_OPENAI` and `EXTERNAL_LLM_*` | `true`, replay | skip the Azure OpenAI account and name another provider; see Profiles |
 | `IMAGE_TAG` | none | pinned GHCR tag, `vX.Y.Z` or `sha-<7>` |
 | `PUBLIC_ACCESS` | `restricted` | `open` lets anyone reach the frontend |
 | `DEPLOYER_IP`, `ALLOWED_IPS` | detected, empty | `/32` allowed through the frontend ingress; extra CIDRs, comma separated. Restricted with neither allows nobody |
-| `AZURE_CHAT_MODEL`, `AZURE_CHAT_MODEL_VERSION` | `gpt-5.1`, `2025-11-13` | gpt-4.1 is deprecated and closed to new customers |
+| `AZURE_CHAT_MODEL`, `AZURE_CHAT_MODEL_VERSION` | the profile's (`gpt-5.1` `2025-11-13`; free-trial `gpt-4.1-mini` `2025-04-14`) | set both; `azure-up.sh --chat-model` exports them |
+| `SEED_DEMO_PASSWORDS` | `false` (`azure-up.sh` sets `true`) | seeds the documented demo passwords; honoured only while `PUBLIC_ACCESS` is `restricted` |
 | `AZURE_OPENAI_API_VERSION` | `2025-04-01-preview` | API version the apps call |
 | `AZURE_OPENAI_AUTH` | `auto` | `auto` (demo key, reference identity), `key` or `identity` (needs an image built with `AZURE_OPENAI_AUTH` support; disables local auth on the account) |
 | `DEPLOY_STACK` | `python` | `python` or `dotnet` |
@@ -254,38 +283,16 @@ scripts/azure-up.sh --env demo1 --location eastus2 --image-tag v1.4.0 --dry-run 
 - **Budget start date** defaults to the first of the current month via `utcNow`, so redeploying in a later month moves it.
 - **Troubleshooting:** the first-run failure catalogue and its guards are in [troubleshooting.md](troubleshooting.md#azure-deployment-first-run-failure-catalogue).
 
-## Assumptions to confirm on a real subscription
+## Assumptions still to confirm
 
-Foundry project, gateway and per-app identities (added offline; none has been deployed):
+**Confirmed by the clean free-trial run** (so no longer assumptions): Key Vault references with the identity resolve; internal ingress FQDNs and `ca-redis:6379` work; `RATE_LIMIT_TRUSTED_PROXY_HOPS=2` and `WEB_TRUSTED_PROXY_HOPS=1` fit the ingress; the AIServices account accepts `allowProjectManagement` and a project, deployments named after their models, GlobalStandard for both models and identity-only access (`disableLocalAuth`) with the managed-identity token path (embeddings and chat answered, no key in any app); `azure.extensions` accepts `VECTOR,PGCRYPTO`; the AllowAllAzureServices firewall rule and budget notifications with `contactRoles` are accepted; the apps start under `ENVIRONMENT=production` with the generated secret set; an empty `LLM_TEMPERATURE` is accepted; azd evaluates `main.parameters.json` **before** the hooks (the opposite of what was assumed, which is why `azure-up.sh` generates the secrets itself); the list-deleted shapes `checks.sh` parses; and the teardown plus `verify-clean.sh`.
 
-- Microsoft.CognitiveServices `2026-09-01` (projects, connections) is live in the target region. It is the newest the Bicep type set carries; `2025-06-01` (what `openai.bicep` uses) is the fallback.
-- An account created with `allowProjectManagement` and a system-assigned identity accepts a project, and flipping the flag on an existing account in place is allowed (otherwise recreate the account).
-- The `AppInsights` project connection with `authType: ApiKey` and the connection string as the credential is what the tracing view reads, and Container Apps traces then show there. GenAI semantic-convention fields missing on either stack are not yet checked (plan M5.3).
-- Role definition `53ca6127-db72-4b80-b1b0-d745d6d5456d` is **Azure AI User** and is sufficient for the data actions the apps use on a project.
-- **API Management tier support for `azure-openai-token-limit` and `azure-openai-emit-token-metric` is unverified.** `BasicV2` is a guess; so are its price and provisioning time. `tokens-per-minute` accepts the literal per-agent values built here, and the policy expressions (`(Jwt)context.Variables[...]`, `Jwt.Claims`, `Split`, double quotes inside attributes) compile in the gateway.
-- Custom metric dimensions (`Agent`, `AgentTrusted`) reach Application Insights; a workspace-based component may need custom metric dimensions enabled.
-- The OpenAI SDK request paths `/openai/deployments/{d}/chat/completions`, `/embeddings` and `/openai/v1/responses` are the whole surface the apps use; anything else gets a 404 from the gateway.
-- A managed-identity token for `https://cognitiveservices.azure.com` is accepted by `validate-azure-ad-token` with that audience, and its `oid` claim is the identity's principal id.
-- Streaming (SSE) passes through with `buffer-response="false"` and the 230 s backend timeout.
+**Still unverified** (checked offline only; none has been deployed):
 
-Earlier assumptions:
-
-- gpt-5.1 `2025-11-13` accepts the requested capacity in the region; a `gpt-5.1-mini` name exists for `DEPLOY_MINI_MODEL`. text-embedding-3-small `1` accepts `GlobalStandard` (else set `embeddingSkuName`).
-- The image tag contains the settings these templates rely on: an empty `LLM_TEMPERATURE` omits the field, and `DB_POOL_*`. An older image fails settings validation on an empty `LLM_TEMPERATURE`.
-- `AZURE_OPENAI_API_VERSION` `2025-04-01-preview` supports gpt-5.1 tool calling on the Responses API.
-- An empty environment-variable value is accepted by Container Apps (`LLM_TEMPERATURE`).
-- `Microsoft.App/managedEnvironments@2025-02-02-preview` accepts `appInsightsConfiguration` and `openTelemetryConfiguration`, and the Python SDK's exporter accepts the endpoint the agent injects.
-- Key Vault references with the identity resolve on first revision creation after one RBAC propagation retry; versionless `keyVaultUrl` is accepted.
-- Internal ingress FQDN is `<app>.internal.<defaultDomain>`; internal TCP ingress is reachable as `ca-redis:6379`; a `command` override on the Redis image works.
-- `RATE_LIMIT_TRUSTED_PROXY_HOPS=2` gives each client its own bucket; `WEB_TRUSTED_PROXY_HOPS=1` is right for the Container Apps ingress.
-- The MCP servers answer 2xx on `/mcp` (or the protected-resource metadata) for probes, and accept the internal FQDN as `Host`.
-- azd evaluates `main.parameters.json` after the `preprovision` hook (the generated secrets reach the deployment).
-- `keyvault list-deleted`, `account list-deleted` and `apim deletedservice list` return the JSON shapes `scripts/azure/lib/checks.sh` parses. (`postgres flexible-server list-skus`, `cognitiveservices model list` and `usage list` were checked against live read-only listings, and `az deployment sub validate` and `what-if` accepted the demo and reference parameters; that is the extent of the Azure-side verification.)
-- `AZURE_PRINCIPAL_ID` is set by azd for a signed-in user; the deployer role assignment is skipped when it is empty.
-- The AllowAllAzureServices firewall rule and the `source` value `user-override` for `azure.extensions` are accepted.
-- Reference profile: private endpoint DNS (`privatelink.redis.azure.net` is the Managed Redis zone; the three AIServices zones cover its hostnames); Key Vault secrets written through ARM still succeed with public access off, and Container Apps resolves the references over the private endpoint; the Container Apps subnet size (`/24`) is enough; a Postgres private endpoint (not VNet integration) is accepted by the flexible server API version used.
-- Azure Managed Redis `Balanced_B0` exists in the chosen region at an acceptable price, and `Microsoft.Cache/redisEnterprise@2025-07-01` takes `publicNetworkAccess` and `accessKeysAuthentication`. Availability and price must be checked at deploy time.
-- `az acr import` from public GHCR works without credentials once the packages are public, and `az acr build` accepts these Dockerfiles and the repo root as context.
-- The `.NET` images start and answer `/health` with dummy settings (CI smoke), and the .NET hosts run under `ENVIRONMENT=production` with the Python-shaped secrets, `DATABASE_URL` with `sslmode=require`, and `AZURE_OPENAI_AUTH=identity`.
-- The PowerShell hooks mirror the bash ones for the ACR flow; they have not been run (no PowerShell here).
-- Budget notifications with `contactRoles` and no `contactEmails` are accepted.
+- The `demo` and `reference` profiles, including private endpoints and their DNS zones, Azure Managed Redis `Balanced_B0` availability and price, `az acr import` and `az acr build`, and the two-pass ACR flow.
+- The API Management gateway: tier support for `azure-openai-token-limit` and `azure-openai-emit-token-metric` (`BasicV2` is a guess, as are its price and provisioning time), custom metric dimensions in Application Insights, streaming through `buffer-response="false"`, and `validate-azure-ad-token` accepting the identity token with that audience.
+- Per-app identities: the `oid` claim vouching for the agent name at the gateway.
+- Microsoft.CognitiveServices `2026-09-01` for project connections in other regions, and the `AppInsights` connection feeding the project tracing view; Azure AI User `53ca6127-db72-4b80-b1b0-d745d6d5456d` being sufficient for every data action the apps use on a project.
+- The .NET stack (`--stack dotnet`) in Azure, and the MCP servers' probes.
+- The PowerShell mirrors, and the Deploy to Azure button itself (the portal accepting the subscription-scope template).
+- The free monthly grants and the real bill: portal cost data lags by hours.
